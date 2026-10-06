@@ -68,7 +68,7 @@ interface RawEdge { src?: unknown; dst?: unknown; type?: unknown; note?: unknown
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 
-/** Re-exported for `CraftScreen`, which resolves reference titles from the same answer. */
+/** Re-exported for `GraphPage`, which resolves reference titles from the same answer. */
 export function nodeRefId(node: RawNode): EntityId | null {
   return graphNodeRef(node);
 }

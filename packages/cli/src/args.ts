@@ -92,6 +92,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
   'no-session-link',     // entity create — suppress the automatic created_in edge
+  'no-activate',         // workspace tabs open --no-activate
   'clear',               // task axis --clear
   'untick',              // task tick --untick
   'claim',               // task transition --claim — also record the caller as working_on

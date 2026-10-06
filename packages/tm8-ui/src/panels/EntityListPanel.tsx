@@ -118,6 +118,9 @@ import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch
 import { AttentionTileSubtitle, attentionTileLine } from '../attention/AttentionTileSubtitle';
 import { isNeedsMeFilter, needsMeCount, needsMeRecheckAt } from '../attention/needs-me';
 import { SettingsHomeLink } from './SettingsHomeLink';
+import { useFreshGlow, useRetainLeaving } from '../domain/useFreshGlow';
+
+const rowId = (row: EntitySummary): string => row.id;
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -3123,7 +3126,8 @@ function Band({
   query?: string;
 }) {
   const bandAttention = useAttentionOptional();
-  const rows = filter === null ? NO_ROWS : props.rowsFor(filter, sort);
+  /* A row deleted live stays for its exit (R41) — see `useRetainLeaving`. */
+  const rows = useRetainLeaving(filter === null ? NO_ROWS : props.rowsFor(filter, sort), rowId);
   const page = filter === null ? undefined : props.pageStateOf?.(filter, sort);
   /* "Needs me" reads LOADING for a bounded time per pulled root; nothing else
      re-renders a quiet list when that time runs out, so wake once then. */
@@ -3714,6 +3718,7 @@ export function Tile({
   path?: ReadonlySet<string>;
 }) {
   const { oneSurface } = useMobileSurface();
+  const glow = useFreshGlow(row.id);
   /* Attention v2 (chapter 4): a CHIP replaces the words "Needs attention".
      `attention` also carries a kind's derived predicate (session liveness),
      which has no request behind it and keeps the old label. With the store
@@ -4252,6 +4257,7 @@ export function Tile({
   return (
     <>
     <div
+      {...glow.attrs}
       ref={tileRef}
       className={[
         'lp__tile',
@@ -4358,6 +4364,7 @@ export function Tile({
             }}
           >
             {row.title}
+            {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
           </button>
 
           {/* Quiet facts and the priority tag ride IN the row, the way a

@@ -56,14 +56,14 @@ export interface ForgeWatcherOptions {
   claims: () => Promise<DbClaims>;
   /** Tests: one client for every space. Production resolves per space (`resolveToken`). */
   client?: GithubClient;
-  /** 304: a space's own GitHub token credential, used for that space's PRs only. */
+  /** 306: a space's own GitHub token credential, used for that space's PRs only. */
   resolveToken?: TrackingTokenResolver;
   /**
    * Which client polls which space, plus rate-limit backoff. The job wrapper
    * creates one for its lifetime so a backoff outlives the tick that hit it.
    */
   clients?: TrackingClients;
-  /** 304: a gated in_review task whose PR has not been polled for this long raises attention. */
+  /** 306: a gated in_review task whose PR has not been polled for this long raises attention. */
   staleAfterSeconds?: number;
   /** PRs per tick. Small: this is a watcher, not a backfill. */
   targetBudget?: number;
@@ -105,13 +105,13 @@ export interface ForgeWatchTickDetail extends Record<string, unknown> {
   /** Budgets backed off at the end of the tick (`space:<id>`, `env`, `anonymous`). */
   limitedBudgets: string[];
   staleSignals: number;
-  /** 304 §6: per-space freshness, surfaced on `/health` as `tracking`. */
+  /** 306 §6: per-space freshness, surfaced on `/health` as `tracking`. */
   health?: TrackingHealthSummary;
   problems: string[];
 }
 
 /**
- * 304 §6: the answer to "is tracking actually running?", computed every tick
+ * 306 §6: the answer to "is tracking actually running?", computed every tick
  * from `public.tracking_health` and carried on the job outcome, which `/health`
  * already publishes. `authenticated` is false when a space has no GitHub token
  * credential AND the node has no env token: that space is read on the shared
@@ -195,7 +195,7 @@ export async function runForgeWatchTick(
   const claims = await options.claims();
   const budget = options.targetBudget ?? 25;
 
-  // 304 §3: the door orders by priority tier and backs off cold rows itself;
+  // 306 §3: the door orders by priority tier and backs off cold rows itself;
   // this floor is the hottest tier's.
   const listed = await options.db.rpc<{ targets?: unknown }>(
     claims,
@@ -258,7 +258,7 @@ export async function runForgeWatchTick(
     log?.(`tracking.forge-watcher: nudge drain: ${describe(error)}`);
   }
 
-  // 304 §6: staleness made visible where it costs something — a gated
+  // 306 §6: staleness made visible where it costs something — a gated
   // in_review task whose pull request has not been polled. Provider-free.
   try {
     const swept = await options.db.rpc<{ raised?: number }>(
@@ -481,7 +481,7 @@ function limited(retryAtMs: number | undefined): WatchOutcome {
   return { status: 'rate_limited', retryAtMs };
 }
 
-/** 304 §2: `last_polled_at` / `last_poll_error` for one row. */
+/** 306 §2: `last_polled_at` / `last_poll_error` for one row. */
 async function recordPoll(
   options: { db: Db },
   claims: DbClaims,

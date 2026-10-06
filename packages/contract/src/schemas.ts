@@ -46,6 +46,7 @@ import { BUILTIN_STYLES } from './builtins/index.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
 import { OpRequestEntityFactsSchema } from './op-requests.js';
 import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
+import { DesignContentSchema, DesignStateSchema, EntityContextDesignPageSchema } from './design.js';
 import {
   SELECTION_HEADER_KINDS,
   SELECTION_HEADER_SOURCES,
@@ -241,6 +242,9 @@ export const CoreEntityKindSchema = z.enum([
   'story', 'mcp_server',
   // Space styles (284). Not in `CreatableEntityKind`: `styles.push` is its door.
   'style',
+  // Designs (304): ordered pages by `contains`. Creatable through the generic
+  // envelope.
+  'design',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -686,6 +690,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   }).strict(),
   // 283 — the story's computed summary.
   StoryStateSchema,
+  // 304 — the design's page count.
+  DesignStateSchema,
   McpServerEntitySchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
@@ -1106,6 +1112,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   }).passthrough(),
   // 283 — the story's description and, on a detail read, its page.
   StoryContentSchema,
+  // 304 — the design's description and, on a detail read, its ordered pages.
+  DesignContentSchema,
   McpServerEntitySchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({
@@ -1811,6 +1819,9 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
  */
 const ControlSinceSchema = z.number().int().nonnegative().safe();
 
+/** A window-generated id (uuid in practice); bounded, never parsed for meaning. */
+const WorkspaceInstanceIdSchema = z.string().min(1).max(128);
+
 const ControlSpaceIdsSchema = z.array(SpaceIdSchema).min(1).max(MAX_CONTROL_FRAME_SPACES);
 
 export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
@@ -1826,11 +1837,61 @@ export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
       viewing: z.boolean(),
       typing: z.boolean(),
     }).strict(),
+    z.object({
+      type: z.literal('workspace.register'),
+      spaceId: SpaceIdSchema,
+      instanceId: WorkspaceInstanceIdSchema,
+      windowId: WorkspaceInstanceIdSchema,
+      focused: z.boolean(),
+      visible: z.boolean(),
+      view: z.string().min(1).max(64),
+      mounted: z.boolean(),
+      revision: z.number().int().nonnegative().safe(),
+      lastFocusedAt: z.string().max(64).optional(),
+    }).strict(),
+    z.object({ type: z.literal('workspace.unregister'), instanceId: WorkspaceInstanceIdSchema }).strict(),
+    z.object({
+      type: z.literal('workspace.apply'),
+      spaceId: SpaceIdSchema,
+      instanceId: WorkspaceInstanceIdSchema,
+      requestId: z.string().min(1).max(128),
+      env: z.record(z.unknown()),
+      ids: z.array(z.string().min(1).max(128)).max(16),
+    }).strict(),
+    z.object({
+      type: z.literal('workspace.import'),
+      spaceId: SpaceIdSchema,
+      instanceId: WorkspaceInstanceIdSchema,
+      state: z.record(z.unknown()),
+      drafts: z.array(z.object({
+        draftId: z.string().uuid(),
+        kind: z.string().min(1).max(64),
+        values: z.record(z.unknown()),
+      }).strict()).max(30),
+    }).strict(),
+    z.object({
+      type: z.literal('workspace.draft.patch'),
+      spaceId: SpaceIdSchema,
+      instanceId: WorkspaceInstanceIdSchema,
+      draftId: z.string().uuid(),
+      kind: z.string().min(1).max(64),
+      fields: z.record(z.object({ v: z.unknown(), base: z.number().int().nonnegative() }).strict()),
+    }).strict(),
+    z.object({
+      type: z.literal('workspace.result'),
+      instanceId: WorkspaceInstanceIdSchema,
+      requestId: z.string().min(1).max(128),
+      result: z.record(z.unknown()),
+    }).strict(),
   ]);
 
 export const WorkspaceControlAckSchema: z.ZodType<WorkspaceControlAck> = z.object({
   type: z.literal('control.refused'),
-  frame: z.enum(['subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set']),
+  frame: z.enum([
+    'subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set',
+    'workspace.register', 'workspace.unregister', 'workspace.result',
+    'workspace.apply', 'workspace.import', 'workspace.draft.patch',
+  ]),
   spaceId: SpaceIdSchema.optional(),
   reason: z.enum(['forbidden', 'malformed']),
 }).strict();
@@ -4473,7 +4534,7 @@ const ENTITY_CONTEXT_V1_SECTIONS = ['summary', 'hierarchy', 'connections', 'mess
 // aliases the server reads as the section that carries them.
 const ENTITY_CONTEXT_V2_SECTIONS = [
   'assignment', 'summary', 'hierarchy', 'blockers', 'connections', 'messages', 'actions',
-  'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
+  'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments', 'pages',
 ] as const;
 const ENTITY_CONTEXT_V2_PAGED: readonly string[] = ['hierarchy', 'children', 'blockers', 'connections', 'messages', 'story'];
 
@@ -4509,7 +4570,7 @@ export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object(
   schema: z.enum(['v1', 'v2']).optional(),
   sections: uniqueArray(z.enum([
     'summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions', 'assignment', 'blockers',
-    'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments',
+    'acceptance', 'acceptanceWrite', 'header', 'assignees', 'gate', 'children', 'parent', 'story', 'tasks', 'anchor', 'parentMessage', 'attachments', 'pages',
   ])).optional(),
   totalBytes: z.number().int().min(1024).max(32_768).optional(),
   sectionBytes: z.number().int().min(512).max(8192).optional(),
@@ -4704,6 +4765,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   mode: NullableString,
   projectId: NullableString,
   story: EntityContextStorySchema.optional(),
+  pages: z.array(EntityContextDesignPageSchema).optional(),
   anchor: ContextRefSchema.optional(),
   parentMessage: ContextRefSchema.nullable().optional(),
   attachments: z.array(z.object({

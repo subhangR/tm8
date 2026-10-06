@@ -136,7 +136,7 @@ describe('one identity path (R2 / claims contract)', () => {
     // identity, not a side channel — it only narrows (credential reads refuse
     // it), and like session_space_id only db/client.ts may bind it.
     'via_link',
-    // 304 (P0e): the in-process tracking job a transaction runs for. Bound
+    // 306 (P0e): the in-process tracking job a transaction runs for. Bound
     // ONLY by db/client.ts, from a closed list, never under a space pin; it
     // widens only the tracking doors (internal.is_tracking_worker), and no
     // request path sets it (tracking-clients.test.ts guards the setters).

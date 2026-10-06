@@ -91,7 +91,7 @@ export function projectForgeFacts(
   };
 }
 
-/** 304 (P0e): an open PR not polled for this long is stale. */
+/** 306 (P0e): an open PR not polled for this long is stale. */
 export const TRACKING_STALE_AFTER_MS = 60 * 60_000;
 
 function isoOrNullOf(value: unknown): string | null {
@@ -104,7 +104,7 @@ function isoOrNullOf(value: unknown): string | null {
  * The freshness half of a `pull_request` EntityState, shared by every door
  * that serves one.
  *
- * `fetchedAt` is when facts were last WRITTEN; `lastPolledAt` (304) is when
+ * `fetchedAt` is when facts were last WRITTEN; `lastPolledAt` (306) is when
  * tracking last ASKED, whatever it was told. `stale` used to be "never
  * fetched", which read false forever once a PR had been fetched once — the
  * exact blind spot that let six spaces' tracking stop unnoticed. It now means:

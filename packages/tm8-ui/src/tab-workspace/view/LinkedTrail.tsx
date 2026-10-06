@@ -140,21 +140,21 @@ export function LinkedTrail({ tab }: LinkedTrailProps) {
       const next = { left: Math.max(0, box.left - own.left), right: Math.max(0, own.right - box.right) };
       setInset((prev) => (prev && prev.left === next.left && prev.right === next.right ? prev : next));
     };
-    const sizes = new ResizeObserver(read);
-    sizes.observe(main);
-    sizes.observe(nav);
+    const sizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read);
+    sizes?.observe(main);
+    sizes?.observe(nav);
     const findHead = () => {
       if (head?.isConnected) return;
-      if (head) sizes.unobserve(head);
+      if (head) sizes?.unobserve(head);
       head = main.querySelector<HTMLElement>('.pn-embedded-head');
-      if (head) sizes.observe(head);
+      if (head) sizes?.observe(head);
       read();
     };
     findHead();
     const mounts = new MutationObserver(findHead);
     mounts.observe(main, { childList: true, subtree: true });
     return () => {
-      sizes.disconnect();
+      sizes?.disconnect();
       mounts.disconnect();
     };
   }, [hasTrail]);

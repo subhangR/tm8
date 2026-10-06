@@ -236,10 +236,10 @@ const ACT_GUIDES = [
     + 'session a queued one waits for (to: resume).', {
     params: { responseId: '<response-id>' }, body: { to: 'new_session' },
   }),
-  guide('collections.addItem', 'Add or reposition an entity in a collection.', {
+  guide('collections.addItem', 'Add or reposition an entity in a collection, a story or a design (a design\'s members are its ordered pages; position orders them).', {
     params: { id: '<collection-id>' }, body: { entityId: '<entity-id>' },
   }),
-  guide('collections.removeItem', 'Remove collection membership without deleting the entity.', {
+  guide('collections.removeItem', 'Remove membership of a collection, story or design without deleting the entity.', {
     params: { id: '<collection-id>', entityId: '<entity-id>' }, body: {},
   }),
 ] as const satisfies readonly OperationGuide[];

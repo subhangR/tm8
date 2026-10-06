@@ -35,7 +35,7 @@
  * override branch of `shellFor` is checked first and unconditionally, so it
  * cannot be defeated by a jsdom default.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
@@ -44,6 +44,10 @@ import { createMemoryTarget } from '../routes';
 import { SHELL_OVERRIDE_KEY } from '../mobile';
 import type { EntityId } from '@tm8/contract';
 import { FIXTURE_SPACE_ID } from '../fixtures';
+
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 const SPACE = FIXTURE_SPACE_ID;
 /** A task the fixture dataset really holds, so Connections has edges to draw. */

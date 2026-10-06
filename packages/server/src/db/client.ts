@@ -438,7 +438,7 @@ export class PgDb implements Db {
         claimValue(claims.sessionSpaceId),
         // 256 (W7p). Absent binds as `''`: not link-bound.
         claimValue(claims.viaLinkId),
-        // 304 (P0e). Absent binds as `''`: not a background job. A pinned
+        // 306 (P0e). Absent binds as `''`: not a background job. A pinned
         // session never binds it, whatever built `claims`, and neither does a
         // value outside the closed list.
         backgroundJobClaim(claims.sessionSpaceId ? undefined : claims.backgroundJob),

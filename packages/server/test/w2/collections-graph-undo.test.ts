@@ -427,7 +427,7 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
       state: 'open',
       url: 'https://github.com/subhangR/tm8/pull/89',
       fetchedAt: '2026-08-09T12:00:00.000Z',
-      // 304: never polled (no last_polled_at) and open, with facts written
+      // 306: never polled (no last_polled_at) and open, with facts written
       // long ago — stale under the freshness ruling, through the same helper.
       lastPolledAt: null,
       stale: true,

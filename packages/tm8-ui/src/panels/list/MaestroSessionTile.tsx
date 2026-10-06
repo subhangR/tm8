@@ -4,6 +4,7 @@ import { useMobileSurface } from '../../mobile/surface';
 import { RowLead, leadTooltip } from './RowLead';
 import { Avatar } from '../../kit/Avatar';
 import { copyToClipboard } from '../../terminal/domUtils';
+import { useFreshGlow } from '../../domain/useFreshGlow';
 
 /**
  * Maestro's session-row anatomy, fed exclusively by tm8 contract data.
@@ -113,6 +114,7 @@ export function MaestroSessionTile({
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const glow = useFreshGlow(id);
   const copySessionId = async () => {
     if (!(await copyToClipboard(id))) return;
     setCopied(true);
@@ -121,6 +123,7 @@ export function MaestroSessionTile({
 
   return (
     <div
+      {...glow.attrs}
       className={`pn-st${selected ? ' pn-st--selected' : ''}${attention ? ' pn-st--attention' : ''}${archived ? ' pn-st--archived' : ''}`}
       data-attention-tone={attention ? attentionTone : undefined}
       data-testid="list-tile"
@@ -160,6 +163,7 @@ export function MaestroSessionTile({
             />
             <span className="pn-st__title lp__title" title={`${title} · ${id}`}>
               <span className="pn-st__titleText">{title}</span>
+              {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
             </span>
           </>
         ) : (
@@ -189,6 +193,7 @@ export function MaestroSessionTile({
             title={statusTitle ?? status}
           />
           <span className="pn-st__titleText">{title}</span>
+              {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
         </span>
           </>
         )}

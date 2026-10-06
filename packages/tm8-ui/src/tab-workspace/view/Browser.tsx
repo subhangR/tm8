@@ -25,7 +25,9 @@ import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../.
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
 import { getKindAdapter } from '../adapters/registry';
 import { activeEntityId } from '../runtime/selectors';
-import { EMPTY_BROWSER_KIND_STATE } from '../runtime/commands/browser';
+import { workspaceCommands } from '@tm8/contract/workspace';
+
+const { EMPTY_BROWSER_KIND_STATE } = workspaceCommands.browser;
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import './browser.css';
@@ -144,7 +146,7 @@ export function Browser() {
   return (
     <section
       className="tws-browser"
-      aria-label="Workspace browser"
+      aria-label="Work browser"
       data-testid="tws-browser"
       data-narrow={narrow || undefined}
       data-scrolled={scroll.scrolled || undefined}
@@ -161,7 +163,7 @@ export function Browser() {
           /* Row 1: the kind icon and + New, around the panel's own search. */
           toolbarStart={
             <ListRootHeader
-              rootsLabel="Workspace browser"
+              rootsLabel="Work browser"
               kindMenuLabel={`${cell.label} — change kind`}
               kindMenuIconOnly
               cell={cell}
@@ -383,17 +385,17 @@ function useTierRowEdges(hostRef: RefObject<HTMLDivElement | null>) {
       if (fade) row.setAttribute('data-fade', fade);
       else row.removeAttribute('data-fade');
     };
-    const resize = new ResizeObserver(measure);
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     const sync = () => {
       const next = host.querySelector<HTMLElement>('.lp__tierscroll');
       if (next !== row) {
         row?.removeEventListener('scroll', measure);
-        resize.disconnect();
+        resize?.disconnect();
         row = next;
         activeId = null;
         if (row) {
           row.addEventListener('scroll', measure, { passive: true });
-          resize.observe(row);
+          resize?.observe(row);
         }
       }
       if (!row) return;
@@ -413,7 +415,7 @@ function useTierRowEdges(hostRef: RefObject<HTMLDivElement | null>) {
     sync();
     return () => {
       observer.disconnect();
-      resize.disconnect();
+      resize?.disconnect();
       row?.removeEventListener('scroll', measure);
     };
   }, [hostRef]);

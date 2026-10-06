@@ -1,3 +1,4 @@
+import { WorkspaceCommandInputSchema, WorkspaceDraftPatchInputSchema } from '@tm8/contract';
 import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema } from '@tm8/contract';
 import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
@@ -227,6 +228,9 @@ const UndoCommandInputSchema = z.object({
 }).strict();
 
 export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
+  // Workspace remote bridge (Spec C): the window validates `args` itself.
+  'workspace.command': WorkspaceCommandInputSchema,
+  'workspace.drafts.patch': WorkspaceDraftPatchInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,
   'mcp.servers.delete': McpServerDeleteInputSchema,

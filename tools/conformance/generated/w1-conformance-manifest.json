@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:a7f5666db1b7986c492ab05e55f4242a1bcc1316e90898f2fa9a90b4080b5154",
+  "catalogDigest": "sha256:212d8a68e5113aa53d686945c3a745cbab929f362d050e82af73b551b481331f",
   "catalog": {
-    "total": 342,
-    "v1": 340,
+    "total": 347,
+    "v1": 345,
     "reserved": 2,
-    "http": 340,
+    "http": 345,
     "ws": 1,
-    "registerableV1Http": 338,
+    "registerableV1Http": 343,
     "methods": {
-      "GET": 111,
-      "POST": 168,
+      "GET": 114,
+      "POST": 170,
       "PATCH": 19,
       "DELETE": 22,
       "PUT": 20,
       "WS": 2
     },
     "kinds": {
-      "read": 117,
-      "command": 223,
+      "read": 120,
+      "command": 225,
       "stream": 2
     },
-    "uniqueNames": 342,
-    "uniqueBindings": 341
+    "uniqueNames": 347,
+    "uniqueBindings": 346
   },
   "reservedOperations": [
     "search.query",
@@ -1503,6 +1503,41 @@
         "source": "server-router"
       },
       {
+        "operation": "workspace.instances.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/workspace/instances",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.inspect",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/workspace/inspect",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.command",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspace/commands",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/workspace",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.drafts.patch",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspace/drafts/:draftId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.spawn",
         "method": "POST",
         "path": "/v2/execution/spawn",
@@ -2798,7 +2833,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 310
+    "unimplementedV1Http": 315
   },
   "schemas": {
     "additive": {
@@ -6091,6 +6126,88 @@
         "intentTags": [
           "presence",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.instances.list",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.instances.list",
+        "intentTags": [
+          "workspace",
+          "instances",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.inspect",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.inspect",
+        "intentTags": [
+          "workspace",
+          "inspect"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.command",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.command",
+        "intentTags": [
+          "workspace",
+          "command"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.get",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.get",
+        "intentTags": [
+          "workspace",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.drafts.patch",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.drafts.patch",
+        "intentTags": [
+          "workspace",
+          "drafts",
+          "patch"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -9818,6 +9935,39 @@
         },
         "migration": {
           "strategy": "story-detail"
+        }
+      },
+      "design": {
+        "kind": "design",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "designs"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "design-detail"
         }
       },
       "style": {

@@ -1,4 +1,4 @@
-// 304 (Game v1 P0e): the tracking jobs span every space, so WHICH credential
+// 306 (Game v1 P0e): the tracking jobs span every space, so WHICH credential
 // reads a space's pull requests and WHICH provider budget a rate limit stops
 // are now per space. No network, no database.
 //

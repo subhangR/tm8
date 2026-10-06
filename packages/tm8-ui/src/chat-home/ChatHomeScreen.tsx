@@ -2425,7 +2425,7 @@ export function ChatHomeScreen({
             the overlay, so it never doubles as `leaveStage`. */}
         <EntityHelpOverlay />
         {/* NOT IN SOLO MODE. Solo means the HOST drew the thread column as its
-            own header — Craft's `CraftChatPicker` prints this exact title one
+            own header — a design's chat pane thread picker prints this exact title one
             row above — so rendering it again spends 57px restating what the
             viewer just read, and the fallback line ("Work with your graph from
             one place") is a caption for a chooser that solo does not have.

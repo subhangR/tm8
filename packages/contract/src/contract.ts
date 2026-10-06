@@ -26,6 +26,7 @@ import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
+import type { DesignContent, DesignState, EntityContextDesignPage } from './design.js';
 import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
 
 // ===========================================================================
@@ -100,7 +101,10 @@ export type CoreEntityKind =
   // READ-ONLY theme in a space. Born and re-versioned only by `styles.push`;
   // `entities.create`/`entities.patch` refuse it. Personal styles are NOT
   // entities (they live in `personal_styles`, owner-only).
-  | 'style' | 'mcp_server';
+  | 'style' | 'mcp_server'
+  // Designs (migration 304, Craft → Designs 2026-10-06): an ordered set of
+  // PAGES, each any entity, held as ordered `contains` edges. See ./design.ts.
+  | 'design';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -339,7 +343,7 @@ export type CoreEntityState =
   | { kind: 'pull_request'; repository: string; number: number; state: string;
       url?: string; fetchedAt?: string | null; stale: boolean;
       /**
-       * 304 (P0e): when tracking last ASKED the provider about this PR, whatever
+       * 306 (P0e): when tracking last ASKED the provider about this PR, whatever
        * it answered. `fetchedAt` is when facts last changed. `stale` is true
        * when it was never polled, or is open and unpolled for over an hour.
        */
@@ -542,6 +546,8 @@ export type CoreEntityState =
    * last activity. Computed by `internal.story_summary` on BOTH read paths.
    */
   | StoryState
+  /** A design's page count and page kinds in order (304), `internal.design_summary` on BOTH read paths. */
+  | DesignState
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
   /** A space credential's row facts (W10a). Never the secret, hint or login. */
@@ -994,6 +1000,8 @@ export type CoreEntityContent =
       appState: Record<string, unknown>; files: Record<string, unknown> }
   /** A story's description, plus the computed page on a detail read (283). */
   | StoryContent
+  /** A design's description, plus its ordered pages on a detail read (304). */
+  | DesignContent
   /**
    * A form (209), everything its panel needs in one read: settings with
    * defaults applied, and sections and questions in order. Responses are not
@@ -1778,7 +1786,106 @@ export type WorkspaceControlFrame =
    * Ephemeral by construction (DEV-4): this never produces a durable row, never
    * advances the durable cursor, and is not replayable.
    */
-  | { type: 'presence.set'; spaceId: SpaceId; entityId: EntityId; viewing: boolean; typing: boolean };
+  | { type: 'presence.set'; spaceId: SpaceId; entityId: EntityId; viewing: boolean; typing: boolean }
+  /**
+   * Workspace remote bridge (Spec C §1): announce or refresh this window as a
+   * live Workspace instance. Authorized like `subscribe`; the member is derived
+   * from the socket's identity, never sent. Re-sent on change and as a heartbeat.
+   */
+  | {
+      type: 'workspace.register';
+      spaceId: SpaceId;
+      instanceId: string;
+      windowId: string;
+      focused: boolean;
+      visible: boolean;
+      view: string;
+      mounted: boolean;
+      revision: number;
+      lastFocusedAt?: string;
+    }
+  /** Give up an instance. Unauthorized, like `unsubscribe`. */
+  | { type: 'workspace.unregister'; instanceId: string }
+  /**
+   * The window's answer to a forwarded `workspace.command`. Honoured only on
+   * the connection that owns `instanceId`.
+   */
+  | { type: 'workspace.result'; instanceId: string; requestId: string; result: Record<string, unknown> }
+  /**
+   * Spec D §3: a command this window committed locally, for the node to apply
+   * to the stored workspace. `ids` are the ids its reducer minted, in order, so
+   * the node's reduce produces the identical result. Accepted only from a
+   * registered window on a human (browser / auto-owner) socket.
+   */
+  | { type: 'workspace.apply'; spaceId: SpaceId; instanceId: string; requestId: string; env: Record<string, unknown>; ids: string[] }
+  /** Spec D §6: the one-time import of this browser's legacy workspace state. */
+  | {
+      type: 'workspace.import';
+      spaceId: SpaceId;
+      instanceId: string;
+      state: Record<string, unknown>;
+      drafts: { draftId: string; kind: string; values: Record<string, unknown> }[];
+    }
+  /** Spec D §3: a debounced draft write (per-field, last writer wins). */
+  | {
+      type: 'workspace.draft.patch';
+      spaceId: SpaceId;
+      instanceId: string;
+      draftId: string;
+      kind: string;
+      fields: Record<string, { v?: unknown; base: number }>;
+    };
+
+/** Spec D §3, node → the identity's windows only: the stored workspace after a commit. */
+export interface WorkspaceStateFrame {
+  type: 'workspace.state';
+  spaceId: SpaceId;
+  revision: number;
+  /** Null when this identity has no workspace row in the space yet. */
+  state: Record<string, unknown> | null;
+  /** The window command this commit answers, when one caused it. */
+  cause?: { instanceId: string; requestId: string; result: Record<string, unknown> };
+}
+
+/** Spec D §3, node → the sending window only: a command it sent that did not commit. */
+export interface WorkspaceAppliedFrame {
+  type: 'workspace.applied';
+  spaceId: SpaceId;
+  requestId: string;
+  result: Record<string, unknown>;
+}
+
+/** Spec D §3, node → the identity's windows: one draft's values after a write. */
+export interface WorkspaceDraftFrame {
+  type: 'workspace.draft';
+  spaceId: SpaceId;
+  draftId: string;
+  kind?: string;
+  revision: number;
+  /** `{name: {v, r}}` — each field's value and revision. Absent when deleted. */
+  fields?: Record<string, { v: unknown; r: number }>;
+  deleted?: boolean;
+  /** The window whose write this was (it already shows the values). */
+  sourceInstanceId?: string;
+}
+
+/**
+ * Server → ONE client: run a Workspace command in that window (Spec C §1).
+ * Sent to the connection that owns `instanceId`, never fanned out. The window
+ * dispatches it with `source: 'remote'` and answers with `workspace.result`.
+ */
+export interface WorkspaceBridgeCommandFrame {
+  type: 'workspace.command';
+  requestId: string;
+  instanceId: string;
+  command: string;
+  args?: unknown;
+  expectedRevision?: number;
+  /** Who is behind the call: an agent session, or the human's own CLI. */
+  actorClass: 'human' | 'agent';
+  /** The calling actor's display name, for the window's "<name> opened …" notice. */
+  actorName?: string;
+}
 
 /**
  * The ONLY server→client message on this socket that is not a `WorkspaceEvent`.
@@ -7467,7 +7574,7 @@ export type EntityContextSection = 'summary' | 'hierarchy' | 'connections' | 'me
 export type EntityContextV2Section =
   | 'assignment' | 'summary' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions'
   | 'acceptance' | 'acceptanceWrite' | 'header' | 'assignees' | 'gate' | 'children' | 'parent'
-  | 'story' | 'tasks' | 'anchor' | 'parentMessage' | 'attachments';
+  | 'story' | 'tasks' | 'anchor' | 'parentMessage' | 'attachments' | 'pages';
 
 export interface EntityContextQuery {
   /**
@@ -7721,6 +7828,8 @@ export interface EntityContextV2View {
   projectId?: string | null;
   // story (283): the page projected small for an agent.
   story?: EntityContextStory;
+  // design (304): its pages in page order (kind, title, id, position).
+  pages?: EntityContextDesignPage[];
   // message
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;

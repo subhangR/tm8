@@ -29,7 +29,7 @@ export interface WorkspaceGateHandles {
   /** The tm8 mark. */
   goHome(): void;
   openInbox(): void;
-  /** The view selector (Home · Workspace · Work · Board · Graph) and the other shell tabs (Craft, Settings, Help…). */
+  /** The view selector (Work · Design · Observe, D31) and the other shell tabs (Design, Settings, Help…). */
   viewTabs: ShellTab[];
   shellTabs: ShellTab[];
   activeViewTabId: string | null;

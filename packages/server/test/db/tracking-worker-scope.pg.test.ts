@@ -1,5 +1,5 @@
 /**
- * 304 (Game v1 P0e) against a real Postgres, through the REAL claim binding
+ * 306 (Game v1 P0e) against a real Postgres, through the REAL claim binding
  * (`PgDb.rpc` → BIND_CLAIMS_SQL), because the fix IS a claim.
  *
  * ## The defect this file exists for
@@ -144,7 +144,7 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-describe('304 §1: the tracking worker reaches every space, and nothing else does', () => {
+describe('306 §1: the tracking worker reaches every space, and nothing else does', () => {
   it('lists, applies and records a PR in a space the worker identity is not a member of', async () => {
     const { prId } = await trackedTask({ workStatus: 'working' });
 
@@ -217,7 +217,7 @@ describe('owner ruling: tracking never moves a task', () => {
   });
 });
 
-describe('304 §2/§6: freshness is visible', () => {
+describe('306 §2/§6: freshness is visible', () => {
   it('raises attention on a gated in_review task whose PR has gone stale, and a clean poll clears it', async () => {
     const { taskId, prId } = await trackedTask({ workStatus: 'in_review', gate: 'pr_merged' });
     await asOwner(`update public.pull_requests set created_at=now()-interval '3 hours' where entity_id=$1`, [prId]);

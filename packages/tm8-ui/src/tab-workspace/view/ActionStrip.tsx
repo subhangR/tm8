@@ -20,7 +20,7 @@ import { countMessages } from '../../panels';
 import { attachmentsFor } from '../../files/port';
 import { useAlwaysDarkTheme } from '../../theme/useAlwaysDarkTheme';
 import { build, emptyPanels, normalize } from '../../routes';
-import { useEntityChrome } from '../adapters/entity';
+import { useEntityChrome, type EntityChromeContextValue } from '../adapters/entity';
 import { getKindAdapter } from '../adapters/registry';
 import { TAB_SUBVIEWS, type EntityTabRecord, type TabSubview } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
@@ -28,9 +28,26 @@ import './content.css';
 
 export interface ActionStripProps {
   tab: EntityTabRecord;
+  /**
+   * OPT-IN SUBJECT SPLIT (Craft → Designs, D6). Absent ⇒ the strip is one
+   * entity's, exactly as in the Workspace. Present ⇒ the TOP section is `tab`'s
+   * (the PAGE: its kind controls, verbs and its own Run) and the BOTTOM section
+   * is the owner's (the DESIGN: its sections, Run, Expand and More), each
+   * reading its own chrome slots.
+   */
+  owner?: ActionStripOwner;
 }
 
-/** `#/s/{space}/tabs?tab=<id>` as an absolute URL (Spec A §12). */
+export interface ActionStripOwner {
+  /** The owner's record, in the same runtime store as `tab`. */
+  tab: EntityTabRecord;
+  /** The slots the owner's panel portals its Run, ⋯ items and stats into. */
+  chrome: EntityChromeContextValue | null;
+  /** What "Copy link" copies; absent ⇒ the owner's Workspace tab link. */
+  linkUrl?: string;
+}
+
+/** `#/s/{space}/work?tab=<id>` as an absolute URL (Spec A §12; D31). */
 export function tabLinkUrl(spaceId: string, entityId: string): string {
   const { hash } = build(
     normalize({ spaceId: spaceId as SpaceId, target: { view: 'tabs', tab: entityId as EntityId }, panels: emptyPanels() }),
@@ -148,14 +165,19 @@ function useStripTips(stats: string) {
   return { show, hide, node };
 }
 
-export function ActionStrip({ tab }: ActionStripProps) {
+export function ActionStrip({ tab, owner }: ActionStripProps) {
   const { dispatch, gate, spaceId } = useWorkspace();
   const expanded = useWorkspaceState((s) => s.layout.expanded);
   const chrome = useEntityChrome();
   const adapter = getKindAdapter(tab.kind);
   const detail = gate.data.detailOf(tab.entityId);
   const kindConfig = getKind(tab.kind);
-  const canvas = kindConfig.panel.composition === 'canvas';
+  /* The BOTTOM section's subject: the owner when split, else the tab itself. */
+  const commonTab = owner?.tab ?? tab;
+  const commonChrome = owner ? owner.chrome : chrome;
+  const commonAdapter = getKindAdapter(commonTab.kind);
+  const commonDetail = owner ? gate.data.detailOf(commonTab.entityId) : detail;
+  const canvas = getKind(commonTab.kind).panel.composition === 'canvas';
   /* On the always-dark terminal body the strip opens the same dark token scope
      the panel does, so it reads as part of the surface (R30). */
   const darkBody = kindConfig.panel.archetype === 'terminal';
@@ -168,7 +190,7 @@ export function ActionStrip({ tab }: ActionStripProps) {
   /* The session's live reading arrives as the panel's own component in the
      hidden stats slot; the strip reads it as one line of text. */
   const [stats, setStats] = useState('');
-  const statsEl = chrome?.statsSlot ?? null;
+  const statsEl = commonChrome?.statsSlot ?? null;
   useEffect(() => {
     if (!statsEl) return;
     const read = () => setStats((statsEl.textContent ?? '').replace(/\s+/g, ' ').trim());
@@ -200,8 +222,8 @@ export function ActionStrip({ tab }: ActionStripProps) {
   }, [outlineOpen]);
 
   /* The ⋯ menu dismisses on outside press and Escape, returning focus to its trigger. */
-  const menuOpen = chrome?.menuOpen ?? false;
-  const setMenuOpen = chrome?.setMenuOpen;
+  const menuOpen = commonChrome?.menuOpen ?? false;
+  const setMenuOpen = commonChrome?.setMenuOpen;
   useEffect(() => {
     if (!menuOpen || !setMenuOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -221,9 +243,9 @@ export function ActionStrip({ tab }: ActionStripProps) {
   }, [menuOpen, setMenuOpen]);
 
   const setSubview = (subview: TabSubview) =>
-    dispatch({ command: 'workspace.tabs.setUi', args: { tabId: tab.id, patch: { subview } }, source: 'click' });
+    dispatch({ command: 'workspace.tabs.setUi', args: { tabId: commonTab.id, patch: { subview } }, source: 'click' });
   const chatOpen = tab.ui.chat?.open ?? false;
-  const messages = detail ? countMessages(detail, gate.data.messagesOf(tab.entityId)) : 0;
+  const messages = commonDetail ? countMessages(commonDetail, gate.data.messagesOf(commonTab.entityId)) : 0;
 
   const copyLink = () => {
     const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
@@ -232,7 +254,7 @@ export function ActionStrip({ tab }: ActionStripProps) {
       setTimeout(() => setCopied('idle'), 2000);
     };
     if (!clip?.writeText) return say('failed');
-    clip.writeText(tabLinkUrl(spaceId, tab.entityId)).then(
+    clip.writeText(owner?.linkUrl ?? tabLinkUrl(spaceId, commonTab.entityId)).then(
       () => say('done'),
       () => say('failed'),
     );
@@ -247,7 +269,7 @@ export function ActionStrip({ tab }: ActionStripProps) {
       data-surface={darkBody ? 'dark' : 'light'}
       role="toolbar"
       aria-orientation="vertical"
-      aria-label={`${adapter.noun} actions`}
+      aria-label={`${owner ? commonAdapter.noun : adapter.noun} actions`}
       data-testid="tws-action-strip"
       data-tab={tab.id}
       onKeyDown={onToolbarKey}
@@ -291,6 +313,10 @@ export function ActionStrip({ tab }: ActionStripProps) {
           />
         </div>
         <div ref={chrome?.setVerbsSlot} className="tws-astrip-cluster tws-astrip-verbs" data-testid="tws-astrip-verbs" />
+        {/* Split: the PAGE's own Run sits up here (a nested design's Run, D7). */}
+        {owner ? (
+          <div ref={chrome?.setCommonVerbsSlot} className="tws-astrip-cluster tws-astrip-verbs" data-testid="tws-astrip-page-common" />
+        ) : null}
         {kindConfig.mcpEquipment && detail && detail.deletedAt == null ? (
           <div className="tws-astrip-cluster">
             <ConnectorsButton entityId={tab.entityId} />
@@ -305,11 +331,11 @@ export function ActionStrip({ tab }: ActionStripProps) {
 
       {/* BOTTOM — the actions every kind shares. */}
       <div className="tws-astrip-section tws-astrip-section--common">
-        {detail && !canvas ? (
+        {commonDetail && !canvas ? (
           <div className="tws-astrip-cluster" role="radiogroup" aria-label="Section">
             {TAB_SUBVIEWS.map((subview) => {
-              const label = sectionLabel(subview, adapter.noun);
-              const selected = tab.ui.subview === subview;
+              const label = sectionLabel(subview, commonAdapter.noun);
+              const selected = commonTab.ui.subview === subview;
               return (
                 <button
                   key={subview}
@@ -324,7 +350,7 @@ export function ActionStrip({ tab }: ActionStripProps) {
                   onClick={() => setSubview(subview)}
                 >
                   {subview === 'entity' ? (
-                    <KindIcon kind={tab.kind} size={14} />
+                    <KindIcon kind={commonTab.kind} size={14} />
                   ) : subview === 'connections' ? (
                     <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
                       <path
@@ -360,8 +386,9 @@ export function ActionStrip({ tab }: ActionStripProps) {
 
         <div className="tws-astrip-cluster">
           {/* Run, from the panel's own bar (flows and refusals unchanged). */}
-          <div ref={chrome?.setCommonVerbsSlot} className="tws-astrip-verbs tws-astrip-common" data-testid="tws-astrip-common" />
-          {adapter.supportsChat ? (
+          <div ref={commonChrome?.setCommonVerbsSlot} className="tws-astrip-verbs tws-astrip-common" data-testid="tws-astrip-common" />
+          {/* Split: the owner's chat is the host's own pane, not a per-tab dock. */}
+          {adapter.supportsChat && !owner ? (
             <button
               type="button"
               className="tws-astrip-btn tws-astrip-chat"
@@ -425,12 +452,12 @@ export function ActionStrip({ tab }: ActionStripProps) {
                 </div>
               ) : null}
               {/* Rename (from the panel's save flow) */}
-              <div ref={chrome?.setMenuSlot} className="tws-astrip-slot" />
+              <div ref={commonChrome?.setMenuSlot} className="tws-astrip-slot" />
               <button type="button" className="pn-overflow__item" role="menuitem" onClick={copyLink}>
                 {copied === 'done' ? 'Copied' : copied === 'failed' ? 'Could not copy' : 'Copy link'}
               </button>
               {/* A separator, then the destructive verbs (from the panel) */}
-              <div ref={chrome?.setDangerSlot} className="tws-astrip-slot tws-astrip-danger" />
+              <div ref={commonChrome?.setDangerSlot} className="tws-astrip-slot tws-astrip-danger" />
             </div>
           ) : null}
         </div>
@@ -441,6 +468,9 @@ export function ActionStrip({ tab }: ActionStripProps) {
         (R32.4): outside the toolbar, hidden and inert, so nothing invisible
         is focusable or announced. */}
     <div ref={chrome?.setStatsSlot} className="tws-astrip-stats-source" hidden inert aria-hidden="true" />
+    {owner ? (
+      <div ref={owner.chrome?.setStatsSlot} className="tws-astrip-stats-source" hidden inert aria-hidden="true" />
+    ) : null}
     </>
   );
 }

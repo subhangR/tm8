@@ -28,6 +28,7 @@ export * from './op-requests.js';
 export * from './servers.js';
 export * from './forms.js';
 export * from './story.js';
+export * from './design.js';
 export * from './kind-info.js';
 export * from './orchestration.js';
 export * from './selection-header.js';
@@ -39,3 +40,4 @@ export * from './style-css.js';
 export * from './builtins/index.js';
 
 export * from './mcp.js';
+export * from './workspace-bridge.js';

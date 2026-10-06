@@ -1617,6 +1617,7 @@ const ROWS: Record<OperationName, Row> = {
       'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate, axes: {<axis-name>: <value>}} — axis names and values are the Space registry\u2019s (`tm8 space task-axis list`)',
       "doc content shape: {kind: 'doc', body, format: 'markdown'}",
       "story content shape: {description} (title rides the envelope; status is the ordinary workflow status, born to_do and set by hand with `tm8 entity update <story-id> --status <status>` — never derived from contents). --parent <story-id> makes a child story whose progress rolls up into the parent. Put things in with `tm8 collection add <story-id> <entity-id>` — those are the story's roots; everything connected to a root follows at read time. Read it with `tm8 entity context <story-id>` (agents) or `tm8 entity get <story-id>` (the page)",
+      "design content shape: {description} (title rides the envelope). A design is an ordered set of PAGES — any entity (graph, doc, artifact, drawing, another design): create the page, then `tm8 collection add <design-id> <entity-id> [--position <n>]`; re-adding with a new --position moves it, `tm8 collection remove` takes it out without deleting it. A design never contains itself or a design above it. Read the pages with `tm8 entity context <design-id>`",
       '--when-to-use (when a later session should open it, in one sentence: "Open when changing how balances are rounded", not "Rounding policy doc"; shown whole to every later agent) / --summary (what it holds) / --keyword write the selection header in the same call; all optional, guideline limits in `tm8 help entity header set`; change it later with `tm8 entity header set`',
       'a header applies to team_member, doc, artifact, drawing, file, task, collection and story; on any other kind the entity is still created and the header is skipped with a warning (skills use their description, memories their subject_scope)',
     ],
@@ -1625,6 +1626,7 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 entity create doc "<title>" --content @body.json --when-to-use "<when an agent should load it>" --summary "<what it contains>"',
       'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
       'tm8 entity create story "<title>" --content \'{"description":"…"}\' [--parent <story-id>]',
+      'tm8 entity create design "<title>" --content \'{"description":"…"}\'',
     ],
   },
   'entities.patch': {
@@ -2116,16 +2118,17 @@ const ROWS: Record<OperationName, Row> = {
   'collections.addItem': {
     cmd: ['collection', 'add'],
     syn: 'tm8 collection add <collection-id> <entity-id>... [--from-file <path|->] [--position <number>] [--mutation-id <id>]',
-    sum: 'Put an entity into a collection or a story — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
+    sum: 'Put an entity into a collection, a story or a design — membership is a `contains` edge, appended after the current maximum position when --position is omitted',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'pin', 'list', 'story'],
+    tags: ['membership', 'curate', 'pin', 'list', 'story', 'design', 'page'],
     notes: [
       'multiple ids or --from-file (whitespace-separated ids, - for stdin) run one membership write per id and return one receipt with per-id results; partial failures return a nonzero exit code, and the reported batch mutationId makes retries safe',
       '--position is only valid for a single entity; bulk adds append in input order and deduplicate repeated ids',
       're-adding an existing member re-positions it rather than duplicating it',
       'list a collection\'s members with `tm8 edge list --source <collection-id> --type contains`',
       'the container may also be a story: adding puts the entity in BY HAND as one of the story\'s roots (ordered by --position); everything connected to it then follows at read time — see `tm8 entity context <story-id>`',
+      'the container may also be a design: adding makes the entity a PAGE, in --position order; re-adding an existing page with a new --position moves it; a design cannot contain itself or a design it is inside — see `tm8 entity context <design-id>`',
     ],
     examples: [
       'tm8 collection add <collection-id> <entity-id>',
@@ -2135,13 +2138,14 @@ const ROWS: Record<OperationName, Row> = {
   'collections.removeItem': {
     cmd: ['collection', 'remove'],
     syn: 'tm8 collection remove <collection-id> <entity-id> --yes [--mutation-id <id>]',
-    sum: 'Take an entity out of a collection or a story — deletes the `contains` edge; the entity itself is untouched',
+    sum: 'Take an entity out of a collection, a story or a design — deletes the `contains` edge; the entity itself is untouched',
     authz: 'entity',
     input: 'bound',
-    tags: ['membership', 'curate', 'unpin', 'story'],
+    tags: ['membership', 'curate', 'unpin', 'story', 'design', 'page'],
     notes: [
       'add and remove use tm8.receipt.v1 for agent callers; --full preserves the full result',
       'the container may also be a story: removing takes a root out of the story; the entity and its own edges are untouched',
+      'the container may also be a design: removing takes a page out of the design; the page entity is never deleted',
     ],
   },
   'graph.query': {
@@ -2643,6 +2647,79 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['online', 'who', 'typing'],
   },
 
+  // ── workspace remote bridge (Spec C, doc 01a1111d-589e) ───────────────────
+  'workspace.instances.list': {
+    cmd: ['workspace', 'instances'],
+    syn: 'tm8 workspace instances [--space <space-id>]',
+    sum: 'List your live Workspace windows in this Space (an agent sees its human’s)',
+    authz: 'space',
+    input: 'none',
+    tags: ['window', 'windows', 'browser', 'live', 'workspace', 'instance'],
+    notes: [
+      'only windows signed in as the caller’s own identity; an agent token carries its owner’s identity, so an agent sees the windows of the human it works for',
+      'no tab titles or ids here: `tm8 workspace inspect` returns the tabs',
+    ],
+    examples: ['tm8 workspace instances --space <space-id>'],
+  },
+  'workspace.inspect': {
+    cmd: ['workspace', 'inspect'],
+    syn: 'tm8 workspace inspect [--instance <instance-id>] [--space <space-id>]',
+    sum: 'Read a live Workspace window’s tabs, scope, active tab and layout',
+    authz: 'space',
+    input: 'none',
+    tags: ['tabs', 'window', 'workspace', 'state', 'scope'],
+    notes: [
+      'ids and kinds only, never draft or chat content; a fresh read every time',
+      'with no --instance the node picks your only live window, or your only focused one',
+    ],
+    examples: ['tm8 workspace inspect --instance <instance-id>'],
+  },
+  'workspace.command': {
+    cmd: ['workspace', 'command'],
+    syn: 'tm8 workspace command <command-name> [--args <json>] [--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]',
+    sum: 'Run one Workspace command in your live window (the verbs below are sugar for it)',
+    authz: 'space',
+    input: 'bound',
+    side: 'none',
+    ver: 'expectedVersion',
+    tags: ['tabs', 'window', 'workspace', 'remote', 'drive'],
+    notes: [
+      'the window runs the command exactly as its own UI would, with source `remote`; it cannot resolve the human’s choices, discard unsaved work or mark a draft clean',
+      'idempotent by --request-id: the same id and arguments return the recorded result; the same id with different arguments is refused (request_id_reused); after a timeout (no_reply, exit 7) retry with the same id',
+      'exit 0 applied/no_op; 16 requires_user_choice (the human must choose in the window); 4/2/6 rejected; 6 conflict',
+    ],
+    examples: ['tm8 workspace command workspace.tabs.open --args \'{"kind":"task","entityId":"<task-id>"}\''],
+  },
+
+  'workspace.get': {
+    cmd: ['workspace', 'get'],
+    syn: 'tm8 workspace get [--space <space-id>]',
+    sum: 'Read your stored workspace in this Space: tabs, scope, layout, drafts (no window needed)',
+    authz: 'space',
+    input: 'none',
+    tags: ['workspace', 'tabs', 'stored', 'drafts', 'state'],
+    notes: [
+      'your own workspace only (an agent reads the one of the human it works for); tabs whose entity you can no longer read are marked unavailable, never titled',
+      'revision 0 means you have no stored workspace in this Space yet',
+    ],
+    examples: ['tm8 workspace get --space <space-id>'],
+  },
+  'workspace.drafts.patch': {
+    cmd: ['workspace', 'drafts', 'set'],
+    syn: 'tm8 workspace drafts set <draft-id> --field <name>=<value>... [--base <name>=<revision>...]',
+    sum: 'Write fields of an open draft in your workspace (per-field, last writer wins)',
+    authz: 'space',
+    input: 'bound',
+    side: 'none',
+    tags: ['workspace', 'draft', 'form', 'field', 'value'],
+    notes: [
+      'the draft must be open as a draft tab (tm8 workspace drafts open <kind>); the human submits it, never this command',
+      'a value is parsed as JSON when it can be, else taken as text; the write marks the draft dirty, so a later close asks the human',
+      'each field reports the revision it now has; pass --base <name>=<revision> to learn (in `overwrote`) when you replaced someone else’s newer edit',
+    ],
+    examples: ['tm8 workspace drafts set <draft-id> --field title=<text>'],
+  },
+
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
@@ -3113,6 +3190,7 @@ const ROWS: Record<OperationName, Row> = {
       'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children continues in `entity children --cursor`',
       '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
       'a story prints its description as the body, then overall task progress, its roots with per-root progress, what follows them grouped by kind, who runs what (sessions by call sign, teammates by mode), what is blocked and its child stories with rolled-up progress',
+      'a design prints its description as the body, then its pages in page order (position, kind, title, id)',
       'header (text: a `header:` line plus an untrusted_data block) is present only when someone authored one: whenToUse says when to open the entity (always whole), summary what it holds; clipped names a field shown cut short; stale means the body changed after it was written (the purpose usually still holds); bytes is the full body size; header.version is what `tm8 entity header set --expect-version` takes',
     ],
     examples: ['tm8 entity context <entity-id> --sections summary,actions'],
@@ -3855,6 +3933,7 @@ const ROWS: Record<OperationName, Row> = {
  */
 const NOUN_BY_FAMILY: Record<string, string> = {
   mcp: 'mcp',
+  workspace: 'workspace',
   identity: 'identity',
   auth: 'auth',
   serverConnections: 'server',
@@ -3976,6 +4055,8 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for Spec C (+workspace.instances.list|inspect|command) and Spec D (+workspace.get|drafts.patch) on main 0edaefe41 — RECOMPUTED, not adjusted.
+  // Re-measured for Spec C (+workspace.instances.list|inspect|command, the Workspace remote bridge) — RECOMPUTED, not adjusted.
   // Re-measured for 992 (+credentials.space.share|unshare|shares) — RECOMPUTED, not adjusted.
   // Re-measured for L3 (+entities.refs.list|add|remove, cross-space references, 279) — RECOMPUTED from
   // JSON.stringify(OPERATIONS), not adjusted.
@@ -4037,7 +4118,7 @@ export const CATALOG_DIGEST =
   // Re-measured (styles, 284): +15 styles.*, identity.stylePrefs.get|set, spaces.styleDefault.get|set. RECOMPUTED from JSON.stringify(OPERATIONS).
   // Re-measured (main sync: cross-space + styles).
   // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
-  'sha256:a7f5666db1b7986c492ab05e55f4242a1bcc1316e90898f2fa9a90b4080b5154';
+  'sha256:212d8a68e5113aa53d686945c3a745cbab929f362d050e82af73b551b481331f';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -4724,6 +4805,81 @@ COMMAND_OPS.set('whoami', ['identity.get']);
 const identityGetIndex = COMMAND_ORDER.indexOf('identity get');
 COMMAND_ORDER.splice(identityGetIndex < 0 ? COMMAND_ORDER.length : identityGetIndex + 1, 0, 'whoami');
 
+// Workspace remote bridge (Spec C): every verb below is sugar over the ONE
+// `workspace.command` row, and is exactly as available as that row.
+const WORKSPACE_COMMON = '[--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]';
+const WORKSPACE_IDEMPOTENCY =
+  'idempotent by --request-id: the same id and arguments return the recorded result and never run twice; a reused id with other arguments is refused (request_id_reused)';
+const WORKSPACE_EXIT = 'exit 0 applied/no_op; 16 requires_user_choice (the human must choose in the window); 4/2/6 rejected; 6 conflict';
+const WORKSPACE_VERBS: Array<[string, string, string, string[], string[]]> = [
+  ['workspace tabs open', `tm8 workspace tabs open <kind> <entity-id> [--no-activate] [--subview entity|connections|messages] ${WORKSPACE_COMMON}`,
+    'Open an entity as a tab in your live Workspace window (workspace.tabs.open)',
+    ['applies to your stored workspace with no window open; a live window also brings it to the front (`activation` says whether)', 'an open tab for the same entity is focused, not duplicated', 'a kind outside a By type scope stores a prompt for the human and exits 16; set the scope first to avoid it'],
+    ['tm8 workspace tabs open <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> --no-activate']],
+  ['workspace tabs close', `tm8 workspace tabs close <tab-id> ${WORKSPACE_COMMON}`,
+    'Close one tab (workspace.tabs.close); never discards unsaved work',
+    ['a dirty draft raises the in-window confirmation and exits 16: only the human can discard'],
+    ['tm8 workspace tabs close <tab-id>']],
+  ['workspace tabs close-visible', `tm8 workspace tabs close-visible [--except <tab-id>] ${WORKSPACE_COMMON}`,
+    'Close every visible tab (workspace.tabs.closeVisible)',
+    ['dirty drafts raise one in-window confirmation and nothing closes until the human answers (exit 16)'],
+    ['tm8 workspace tabs close-visible --except <tab-id>']],
+  ['workspace tabs activate', `tm8 workspace tabs activate <tab-id> ${WORKSPACE_COMMON}`,
+    'Bring a visible tab to the front (workspace.tabs.activate)',
+    ['needs a live window: focus is per window', 'refused (user_typing) while the human is typing in that window'],
+    ['tm8 workspace tabs activate <tab-id> --instance <instance-id>']],
+  ['workspace tabs move', `tm8 workspace tabs move <tab-id> [--before <tab-id>] ${WORKSPACE_COMMON}`,
+    'Reorder a tab; without --before it moves to the end (workspace.tabs.move)',
+    [],
+    ['tm8 workspace tabs move <tab-id> --before <other-tab-id>']],
+  ['workspace scope set', `tm8 workspace scope set mixed | by-type [<kind>...] [--kinds <a,b>] ${WORKSPACE_COMMON}`,
+    'Set the tab scope: Mixed, or By type with the given kinds (workspace.tabScope.set)',
+    ['by-type with no kinds restores the last By type selection'],
+    ['tm8 workspace scope set by-type <kind> <kind>', 'tm8 workspace scope set mixed --instance <instance-id>']],
+  ['workspace drafts open', `tm8 workspace drafts open <kind> ${WORKSPACE_COMMON}`,
+    'Open a creation draft tab (workspace.drafts.open); `work_session` is the new-session launch sheet',
+    ['opening a draft creates nothing: the human submits it'],
+    ['tm8 workspace drafts open <kind>']],
+  ['workspace browser set', `tm8 workspace browser set [--kind <kind>] [--search <text>] ${WORKSPACE_COMMON}`,
+    'Point the Workspace browser at a kind and search (workspace.browser.set)',
+    ['never touches tabs or scope'],
+    ['tm8 workspace browser set --kind <kind> --search <text>']],
+  ['workspace layout set', `tm8 workspace layout set [--expanded true|false] [--browser-width <px>] [--chat-width <px>] ${WORKSPACE_COMMON}`,
+    'Expand the content or resize the browser and chat panes (workspace.layout.set)',
+    ['widths are clamped: browser 280–480 px, chat 320–640 px'],
+    ['tm8 workspace layout set --expanded true --instance <instance-id>']],
+  ['workspace dialogs open', `tm8 workspace dialogs open palette|prompts|agentTools|newSpace|addServer ${WORKSPACE_COMMON}`,
+    'Open a registered dialog in your live window (workspace.dialogs.open)',
+    ['needs a live window', 'opening is not approving: a dialog opened remotely submits nothing', 'busy while another dialog or prompt is open; not_rendered when the window could not show it'],
+    ['tm8 workspace dialogs open palette --instance <instance-id>']],
+  ['workspace dialogs close', `tm8 workspace dialogs close <dialog-id> ${WORKSPACE_COMMON}`,
+    'Dismiss a registered dialog (workspace.dialogs.close); never submits it',
+    [],
+    ['tm8 workspace dialogs close <dialog-id>']],
+  ['workspace view set', `tm8 workspace view set tabs ${WORKSPACE_COMMON}`,
+    'Switch your window to the Workspace route so tab commands apply (workspace.view.set)',
+    ['needs a live window', 'the Workspace is the only target; other views are refused', 'does not raise or focus the browser window'],
+    ['tm8 workspace view set tabs --instance <instance-id>']],
+];
+for (const [key, syntax, summary, notes, examples] of WORKSPACE_VERBS) {
+  COMMAND_ALIASES.set(key, {
+    path: key.split(' '),
+    syntax,
+    summary,
+    notes: [...notes, WORKSPACE_IDEMPOTENCY, WORKSPACE_EXIT],
+    examples,
+  });
+  COMMAND_OPS.set(key, ['workspace.command']);
+}
+{
+  const workspaceCommandIndex = COMMAND_ORDER.indexOf('workspace command');
+  COMMAND_ORDER.splice(
+    workspaceCommandIndex < 0 ? COMMAND_ORDER.length : workspaceCommandIndex + 1,
+    0,
+    ...WORKSPACE_VERBS.map(([key]) => key),
+  );
+}
+
 /**
  * A command is as available as its LEAST available stage. `file upload` that
  * can initialize but not complete is not an available command, and saying it is
@@ -4834,6 +4990,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   'space-link': 'Alias of `link`: Space links; act in a linked Space with `tm8 --space <alias> <command>`',
   whoami: 'This process\'s session, Space, actor and access mode',
   style: 'UI styles: personal styles, push/pull to a Space, and the one you use',
+  workspace: 'Drive your own live Workspace window: tabs, scope, layout, dialogs',
 };
 
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */

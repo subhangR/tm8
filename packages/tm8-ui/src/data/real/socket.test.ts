@@ -72,7 +72,15 @@ describe('socket: control-frame encoding — exact bytes (server parses .strict(
   it('has NO way to send a presence frame at all (R8 — structural, not a comment)', () => {
     const { handle } = connected();
     expect(handle).not.toHaveProperty('presence');
-    expect(Object.keys(handle).sort()).toEqual(['close', 'isOpen', 'resume', 'subscribe', 'unsubscribe']);
+    expect(Object.keys(handle).sort()).toEqual(['close', 'isOpen', 'resume', 'sendWorkspace', 'subscribe', 'unsubscribe']);
+  });
+
+  it('the Workspace bridge sender carries workspace.* frames only (Spec C; R8 still holds)', () => {
+    const { ws, handle } = connected();
+    const sneaky = { type: 'presence.set', spaceId: 's', entityId: 'e', viewing: true, typing: false };
+    expect(handle.sendWorkspace(sneaky as never)).toBe(false);
+    expect(handle.sendWorkspace({ type: 'workspace.unregister', instanceId: 'i1' })).toBe(true);
+    expect(ws.frames()).toEqual([{ type: 'workspace.unregister', instanceId: 'i1' }]);
   });
 
   it('chunks past the 100-space frame cap — an over-long frame is refused WHOLE', () => {

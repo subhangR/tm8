@@ -80,7 +80,7 @@ export interface DbClaims {
    */
   readonly viaLinkId?: string | undefined;
   /**
-   * → `SET LOCAL tm8.background_job`. The eighth claim (304, P0e): the name of
+   * → `SET LOCAL tm8.background_job`. The eighth claim (306, P0e): the name of
    * the IN-PROCESS scheduler job this transaction runs for. Only the tracking
    * jobs built in main.ts set it; no HTTP, CLI or MCP claims builder does, and
    * `identity/claims.ts` never binds it. `internal.is_tracking_worker()` reads it

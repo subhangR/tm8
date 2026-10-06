@@ -26,7 +26,7 @@ import type {
   ExecutionSpawnLaunch,
   SpawnAccessModeSource,
 } from '@tm8/contract';
-import type { CoordinatorKind, PromptContextIndex, PromptStoryContext, PromptVersion } from '@tm8/prompt';
+import type { CoordinatorKind, PromptContextIndex, PromptDesignContext, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
 export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
@@ -1083,6 +1083,18 @@ export interface GraphPort {
     input: { taskId?: string; sessionId?: string },
   ): Promise<PromptStoryContext | null>;
   /**
+   * Run on a design (304): the design `taskId` was derived from (Run → the
+   * launch sheet on a design derives the session's task from it), with its
+   * ordered pages, folded into the bounded prompt shape. `null`: the task was
+   * not launched from a design. Optional; a graph without it renders no
+   * design block. A failed page read resolves with `snapshot` naming the
+   * reason rather than rejecting.
+   */
+  loadDesignContext?(
+    auth: GraphAuth,
+    input: { taskId: string },
+  ): Promise<PromptDesignContext | null>;
+  /**
    * The tasks' version and status as they stand NOW, read after
    * `execution_spawn` has started them. `loadSpawnContext` reads before that
    * transition, so its version is one behind for every task the spawn
@@ -1510,6 +1522,12 @@ export interface Tm8Manifest {
    * or the graph cannot say.
    */
   story?: PromptStoryContext;
+  /**
+   * Run on a design (304): the design the primary task was derived from, its
+   * ordered pages, read once at spawn (`GraphPort.loadDesignContext`).
+   * Absent: the task was not launched from a design, or the graph cannot say.
+   */
+  design?: PromptDesignContext;
 }
 
 // --- SpawnService inputs/outputs ---------------------------------------------

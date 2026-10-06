@@ -1,5 +1,8 @@
 import { McpSessionBindings } from './mcp/session-bindings.js';
 import { loadMcpServer } from './mcp/definitions.js';
+import { WorkspaceBridge } from './workspace/bridge.js';
+import { WorkspaceService } from './workspace/service.js';
+import { memberForClaims } from './workspace/handlers.js';
 import { McpTestResultSchema } from '@tm8/contract';
 /**
  * Bootstrap — assembles the frame and starts listening.
@@ -327,6 +330,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // Declared before the registration block because `presence.get` is only
   // mounted when a presence source exists — see registerEventHandlers.
   const presence = new InMemoryPresenceStore();
+  // The Workspace remote bridge (Spec C): live windows and in-flight forwards,
+  // in memory like presence, shared by the socket and the HTTP handlers.
+  const workspaceBridge = new WorkspaceBridge();
+  // Spec D: the stored workspaces, written through the shared reducer and
+  // pushed to the owner's own windows over that bridge.
+  const workspaceService = db ? new WorkspaceService({ db, bridge: workspaceBridge }) : undefined;
   const subscriptions = new SubscriptionRegistry();
   // Factory callers get the composed context; block callers pass through
   // unchanged (every test harness injects the block form directly).
@@ -531,7 +540,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         return pinned ?? claimed;
       },
     });
-    registerEventHandlers(registry, { db, config, presence });
+    registerEventHandlers(registry, {
+      db,
+      config,
+      presence,
+      workspace: workspaceBridge,
+      ...(workspaceService ? { workspaceService } : {}),
+    });
     // The delivery seam again, and narrow for the same reason it is narrow
     // above: `execution.dispatch` pushes a trusted envelope at a dispatcher's
     // terminal, which only the delivery role may do. Absent, a dispatch still
@@ -606,6 +621,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         log: eventLog,
         claimsFor: wsClaimsFor,
         presence,
+        workspace: {
+          bridge: workspaceBridge,
+          memberFor: async (identity, spaceId) => memberForClaims(db, await wsClaimsFor(identity), spaceId),
+          ...(workspaceService ? { service: workspaceService } : {}),
+        },
         ...(pump ? { cursors: pump } : {}),
         ...(highWaterMark ? { highWaterMark } : {}),
         onError: (message) => console.warn(`ws control frame: ${message}`),
@@ -645,6 +665,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(control ? { onClientMessage: (conn, text) => void control.handle(conn, text) } : {}),
     onDisconnect: (connId) => {
       presence.dropConnection(connId);
+      workspaceBridge.dropConnection(connId);
       pump?.forget(connId);
     },
   });
@@ -915,8 +936,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           }
         : {},
     );
-    // 304 (P0e): the tracking jobs span EVERY space. They run as the node's
-    // owner, who is a member of its own spaces only, so before 304 every PR
+    // 306 (P0e): the tracking jobs span EVERY space. They run as the node's
+    // owner, who is a member of its own spaces only, so before 306 every PR
     // linked anywhere else was never polled. `backgroundJob` is the claim the
     // tracking doors accept instead of membership; only these two jobs bind it,
     // and nodeAdmin is deliberately NOT what opens them.

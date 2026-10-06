@@ -61,7 +61,7 @@ export interface TrackingObserverOptions {
   claims: () => Promise<DbClaims>;
   /** Tests: one client for every space. Production resolves per space (`resolveToken`). */
   client?: GithubClient;
-  /** 304: a space's own GitHub token credential, used for that space's rows only. */
+  /** 306: a space's own GitHub token credential, used for that space's rows only. */
   resolveToken?: TrackingTokenResolver;
   /** Per-space clients and rate-limit backoff; the job wrapper keeps one for its lifetime. */
   clients?: TrackingClients;
@@ -122,7 +122,7 @@ export async function runTrackingObserverTick(
   for (const request of requests) {
     const problems: string[] = [];
     let succeeded = 0;
-    // 304: every target in a request belongs to the request's space, so one
+    // 306: every target in a request belongs to the request's space, so one
     // client — that space's credential, or the node fallback — serves them all.
     const { client, budget: spend } = await clients.forSpace(request.spaceId);
     if (clients.isLimited(spend)) {
@@ -165,7 +165,7 @@ export async function runTrackingObserverTick(
       } catch (error) {
         outcome = `apply failed: ${error instanceof Error ? error.message : String(error)}`;
       }
-      // 304 §2: the row was looked at. A rate limit is not evidence about it.
+      // 306 §2: the row was looked at. A rate limit is not evidence about it.
       if (outcome !== 'rate_limited') {
         try {
           await options.db.rpc(claims, 'public.record_tracking_poll', [
@@ -274,7 +274,7 @@ async function refreshOne(
       res.value.baseRef,
       res.value.mergeableState,
     ]);
-    // 304: a refresh reads CI too. The rollup comes back from the door that
+    // 306: a refresh reads CI too. The rollup comes back from the door that
     // stores the check rows, exactly as the watcher does it, so the column and
     // the facts behind it agree. A checks failure does not undo the PR facts.
     if (res.value.headSha !== null) {

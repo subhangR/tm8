@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { EntityId } from '@tm8/contract';
-import { CraftScreen } from '../src/craft/CraftScreen';
+import { DesignScreen, type DesignTarget } from '../src/craft/DesignScreen';
+import { fixtureDesignSource } from '../src/craft/design-source';
+import type { WorkspaceGateHandles } from '../src/tab-workspace';
 import { createFixtureSeam } from '../src/data';
 import { FIXTURE_SPACE_ID } from '../src/fixtures';
 import type { DetailReasons } from '../src/panels';
@@ -25,7 +27,9 @@ import '../src/terminal/terminal.css';
  * under it. The vitest suite proves structure and arithmetic; only a browser
  * proves any of the above.
  *
- * It mounts the REAL `CraftScreen` over the fixture seam, with the same
+ * It mounts the REAL `DesignScreen` (Craft → Designs) over the fixture seam
+ * and a fixture design whose pages are the drawn graph, a second graph, a
+ * doc and a nested design, with the same
  * `useGateData` injection port `EntityView`'s harness uses — so the entity
  * column here is the shipping `AuxEntityPanel`, not a stand-in for it.
  *
@@ -48,6 +52,7 @@ import '../src/terminal/terminal.css';
  *   /e2e/craft-harness.html?scenario=typical
  */
 const SPACE = FIXTURE_SPACE_ID;
+const DESIGN = 'harness-design' as EntityId;
 
 const REASONS: DetailReasons = {
   presenceHollow: 'Presence isn’t measured yet.',
@@ -160,6 +165,32 @@ function Harness() {
   const seam = useMemo(() => createFixtureSeam(), []);
   const data = useGateData({ leftKind: 'task', rightKind: 'task', seam });
   const [seeded, setSeeded] = useState(false);
+  const source = useMemo(() => fixtureDesignSource(seam, SPACE, [{ id: DESIGN, title: 'Craft UI fixes' }]), [seam]);
+  const [target, setTarget] = useState<DesignTarget>({ designId: DESIGN });
+  /* The Workspace handles the page bodies and the strip read — the parts a
+     design touches; navigation out of the harness is a no-op. */
+  const gate = useMemo(
+    () =>
+      ({
+        data,
+        reasons: REASONS,
+        serverBaseUrl: undefined,
+        viewerMemberId: 'ada',
+        onNotice: () => undefined,
+        openPalette: () => undefined,
+        navigateTo: () => undefined,
+        navigateView: () => undefined,
+        goHome: () => undefined,
+        openInbox: () => undefined,
+        viewTabs: [],
+        shellTabs: [],
+        activeViewTabId: null,
+        onSelectViewTab: () => undefined,
+        switcherSlot: null,
+        accountSlot: undefined,
+      }) as WorkspaceGateHandles,
+    [data],
+  );
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
@@ -169,7 +200,7 @@ function Harness() {
       /* Seeded FIRST so it is the OLDER row: the studio adopts the most
          recent graph on cold start, and the harness wants to open on the
          drawn one. */
-      await seam.commands.createEntity({
+      const older = await seam.commands.createEntity({
         clientMutationId: 'craft-harness-0',
         spaceId: SPACE,
         kind: 'graph',
@@ -212,6 +243,14 @@ function Harness() {
           },
         });
       }
+      /* The design: the drawn graph first, then the older graph, a doc and a nested design. */
+      if (id) await source.placePage(DESIGN, id, 1);
+      if (older.entity) await source.placePage(DESIGN, older.entity.id as EntityId, 2);
+      const doc = await seam.query({ spaceId: SPACE, kinds: ['doc'], limit: 1 });
+      if (doc.page.items[0]) await source.placePage(DESIGN, doc.page.items[0].id, 3);
+      const nested = await source.createPage(DESIGN, 'design', 4);
+      source.designs.get(nested)!.title = 'Backend';
+      if (older.entity) await source.placePage(nested, older.entity.id as EntityId, 1);
       if (alive) setSeeded(true);
     })();
     return () => {
@@ -234,12 +273,22 @@ function Harness() {
         theme
       </button>
       {seeded && data.ready ? (
-        <CraftScreen
-          seam={seam}
-          spaceId={SPACE}
-          nodeKey="fixture"
-          panelHost={{ data, reasons: REASONS, viewerMemberId: 'ada' }}
-        />
+        target.designId ? (
+          <DesignScreen
+            seam={seam}
+            spaceId={SPACE}
+            nodeKey="fixture"
+            source={source}
+            designId={target.designId}
+            pageId={target.pageId}
+            nestedPageId={target.nestedPageId}
+            onNavigate={setTarget}
+            gate={gate}
+            panelHost={{ data, reasons: REASONS, viewerMemberId: 'ada' }}
+          />
+        ) : (
+          <p data-testid="harness-home">Designs home</p>
+        )
       ) : (
         <p data-testid="harness-booting">Seeding the studio…</p>
       )}

@@ -111,6 +111,12 @@ import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
  * NOT behind this seam (R9): the PTY terminal byte stream. The terminal
  * transport is transplanted verbatim by FE and shares `/v2/ws?sessionId=`
  * without being this client.
+ *
+ * Workspace remote bridge (2026-10-06, Spec C doc 01a1111d-589e, task
+ * 01a11117-3526): optional `workspaceBridge` port — registers this window as a
+ * live Workspace instance on the existing events socket and carries forwarded
+ * commands and their results. Additive and optional like `onChatContext`;
+ * fixtures have none. Listed for the seam owners' re-consensus.
  */
 import type {
   CreateInviteInput,
@@ -633,6 +639,8 @@ export interface Seam {
   onChatTurn(cb: (frame: ChatTurnFrame) => void): Unsubscribe;
   /** A chat's latest context reading (`chat.context`). Optional: fixtures have none. */
   onChatContext?(cb: (frame: ChatContextFrame) => void): Unsubscribe;
+  /** Spec C: the Workspace remote bridge over the events socket. Optional: fixtures have none. */
+  workspaceBridge?: WorkspaceBridgePort;
   onConnection(cb: (s: ConnectionState) => void): Unsubscribe;
   getConnection(): ConnectionState;
   /**
@@ -1735,4 +1743,21 @@ export interface FixtureControls {
 
 export interface FixtureSeam extends Seam {
   fixtureControls: FixtureControls;
+}
+
+/**
+ * The window side of the Workspace remote bridge (Spec C §1). Frames ride the
+ * events socket the page already holds; there is no second connection.
+ */
+export interface WorkspaceBridgePort {
+  /** Send one `workspace.*` control frame; false when the socket is not open. */
+  send(frame: import('./real/socket').WorkspaceBridgeFrame): boolean;
+  /** A command the node forwarded to this page (filter by `instanceId`). */
+  onCommand(cb: (frame: import('@tm8/contract').WorkspaceBridgeCommandFrame) => void): Unsubscribe;
+  /** The socket opened (first time and every reconnect): register again. */
+  onOpen(cb: () => void): Unsubscribe;
+  /** Spec D: the stored workspace (state / applied / draft) for this identity's windows. */
+  onSync?(cb: (frame: import('./real/socket').WorkspaceSyncFrame) => void): Unsubscribe;
+  /** True while the socket is open (the sync is online). */
+  isOpen?(): boolean;
 }

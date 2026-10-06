@@ -682,7 +682,7 @@ export class DbSpaceCredentialStore {
   }
 
   /**
-   * 304 (P0e): the space's default GitHub token, for the TRACKING WORKER to read
+   * 306 (P0e): the space's default GitHub token, for the TRACKING WORKER to read
    * that space's own pull requests — never another space's, never a session.
    * SQL refuses any caller without the in-process `tm8.background_job` claim.
    * Null when the space holds no eligible credential: the poller falls back.
