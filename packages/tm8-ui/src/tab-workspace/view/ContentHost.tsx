@@ -19,7 +19,7 @@ import type { EntityTabRecord, TabId } from '../runtime/types';
 import { ChatDock } from './ChatDock';
 import { Chooser } from './Chooser';
 import { useWorkspace, useWorkspaceState } from './context';
-import { FloatingGroup } from './FloatingGroup';
+import { ActionStrip } from './ActionStrip';
 import { LinkedTrail } from './LinkedTrail';
 import { StartSurface } from './StartSurface';
 import './content.css';
@@ -66,8 +66,10 @@ function EntityTab({
   handleRef: React.MutableRefObject<{ tabId: TabId; handle: EntityAdapterHandle } | null>;
 }) {
   const [verbsSlot, setVerbsSlot] = useState<HTMLElement | null>(null);
+  const [kindSlot, setKindSlot] = useState<HTMLElement | null>(null);
+  const [commonVerbsSlot, setCommonVerbsSlot] = useState<HTMLElement | null>(null);
+  const [statsSlot, setStatsSlot] = useState<HTMLElement | null>(null);
   const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null);
-  const [secondarySlot, setSecondarySlot] = useState<HTMLElement | null>(null);
   const [dangerSlot, setDangerSlot] = useState<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -88,18 +90,22 @@ function EntityTab({
   const chrome = useMemo<EntityChromeContextValue>(
     () => ({
       verbsSlot,
+      kindSlot,
+      commonVerbsSlot,
+      statsSlot,
       menuSlot,
-      secondarySlot,
       dangerSlot,
       menuOpen,
       setMenuOpen,
       contentWidth,
       setVerbsSlot,
+      setKindSlot,
+      setCommonVerbsSlot,
+      setStatsSlot,
       setMenuSlot,
-      setSecondarySlot,
       setDangerSlot,
     }),
-    [verbsSlot, menuSlot, secondarySlot, dangerSlot, menuOpen, contentWidth],
+    [verbsSlot, kindSlot, commonVerbsSlot, statsSlot, menuSlot, dangerSlot, menuOpen, contentWidth],
   );
 
   const tabId = tab.id;
@@ -115,14 +121,18 @@ function EntityTab({
     <EntityChromeContext.Provider value={chrome}>
       <div className="tws-entity">
         <LinkedTrail tab={tab} />
-        <div className="tws-entity-row">
-          <div ref={setMainEl} className="tws-entity-main tws-entity-host">
-            {/* Outside the body's scroll: the panel's `.pn-body` scrolls, this does not. */}
-            <FloatingGroup tab={tab} />
-            <EntityTabBody tab={tab} adapter={getKindAdapter(tab.kind)} onHandle={onHandle} />
+        <div className="tws-entity-band">
+          {/* The chat dock / overlay lives in this row, so it opens between the
+              content and the strip and an overlay never covers the strip. */}
+          <div className="tws-entity-row">
+            <div ref={setMainEl} className="tws-entity-main tws-entity-host">
+              <EntityTabBody tab={tab} adapter={getKindAdapter(tab.kind)} onHandle={onHandle} />
+            </div>
+            {/* Right-hand slot: the per-tab chat dock (workstream G). */}
+            <ChatDock tab={tab} />
           </div>
-          {/* Right-hand slot: the per-tab chat dock (workstream G). */}
-          <ChatDock tab={tab} />
+          {/* The entity action strip, pinned to the far right in every state. */}
+          <ActionStrip tab={tab} />
         </div>
       </div>
     </EntityChromeContext.Provider>

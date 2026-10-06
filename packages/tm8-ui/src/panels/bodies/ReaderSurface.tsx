@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
@@ -54,6 +55,12 @@ import { ReaderBody } from './ReaderBody';
  * "discard" (L6: visible, dead, and stating the reason).
  */
 export interface ReaderSurfaceProps {
+  /**
+   * Where the read stance's Edit / Download controls render (the Workspace
+   * action strip). Absent ⇒ the toolbar row above the document, unchanged;
+   * null ⇒ the host's slot is not mounted yet, so nothing is drawn.
+   */
+  toolbarSlot?: HTMLElement | null;
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   historyUnavailableReason: string;
@@ -225,17 +232,24 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
     );
   }
 
+  const barControls = (
+    <>
+      <EditEntryControl
+        detail={detail}
+        commands={commands}
+        editRefusal={editRefusal}
+        onEnterEdit={commands ? () => setEditing(true) : undefined}
+      />
+      <DownloadDocControl detail={detail} onDownload={downloadPdf} />
+    </>
+  );
   return (
     <div className="rs-root" data-testid="reader-surface" data-stance="read">
-      <div className="rs-bar">
-        <EditEntryControl
-          detail={detail}
-          commands={commands}
-          editRefusal={editRefusal}
-          onEnterEdit={commands ? () => setEditing(true) : undefined}
-        />
-        <DownloadDocControl detail={detail} onDownload={downloadPdf} />
-      </div>
+      {props.toolbarSlot ? (
+        createPortal(<div className="rs-bar rs-bar--slotted">{barControls}</div>, props.toolbarSlot)
+      ) : props.toolbarSlot === undefined ? (
+        <div className="rs-bar">{barControls}</div>
+      ) : null}
       <div className="rs-body" ref={bodyRef}>
         <ReaderBody
           detail={detail}

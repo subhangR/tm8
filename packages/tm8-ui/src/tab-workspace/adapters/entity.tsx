@@ -59,8 +59,10 @@ export interface EntityTabBodyProps {
  */
 export interface EntityChromeSlots {
   verbsSlot: HTMLElement | null;
+  kindSlot: HTMLElement | null;
+  commonVerbsSlot: HTMLElement | null;
+  statsSlot: HTMLElement | null;
   menuSlot: HTMLElement | null;
-  secondarySlot: HTMLElement | null;
   dangerSlot: HTMLElement | null;
   menuOpen: boolean;
   setMenuOpen(open: boolean): void;
@@ -70,8 +72,10 @@ export interface EntityChromeSlots {
 
 export interface EntityChromeContextValue extends EntityChromeSlots {
   setVerbsSlot(el: HTMLElement | null): void;
+  setKindSlot(el: HTMLElement | null): void;
+  setCommonVerbsSlot(el: HTMLElement | null): void;
+  setStatsSlot(el: HTMLElement | null): void;
   setMenuSlot(el: HTMLElement | null): void;
-  setSecondarySlot(el: HTMLElement | null): void;
   setDangerSlot(el: HTMLElement | null): void;
 }
 
@@ -83,6 +87,8 @@ export function useEntityChrome(): EntityChromeContextValue | null {
 
 /** Verbs Workspace draws itself, so the panel's bar leaves them out. */
 const WORKSPACE_OWN_ACTIONS: readonly ActionRef[] = ['chat-about'];
+/** Verbs every kind shares, drawn in the action strip's common section. */
+const WORKSPACE_COMMON_ACTIONS: readonly ActionRef[] = ['run'];
 
 // ---------------------------------------------------------------------------
 // Section mapping (TabSubview ⇄ the panel's PanelTab)
@@ -521,8 +527,11 @@ export function EntityTabBody({ tab, adapter, onHandle }: EntityTabBodyProps) {
 
   const embeddedChrome: EmbeddedChrome = {
     verbsSlot: chrome?.verbsSlot ?? null,
+    kindSlot: chrome?.kindSlot ?? null,
+    commonVerbsSlot: chrome?.commonVerbsSlot ?? null,
+    statsSlot: chrome?.statsSlot ?? null,
+    commonActions: WORKSPACE_COMMON_ACTIONS,
     menuSlot: chrome?.menuSlot ?? null,
-    secondarySlot: chrome?.secondarySlot ?? null,
     dangerSlot: chrome?.dangerSlot ?? null,
     omitActions: WORKSPACE_OWN_ACTIONS,
     omitConnectors: true,

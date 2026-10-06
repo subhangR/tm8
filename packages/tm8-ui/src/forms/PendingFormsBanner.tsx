@@ -87,12 +87,26 @@ export function PendingFormsBanner({
   if (variant === 'chip') {
     const label = pending.total > 0 ? formsWaitingText(pending.total) : answersQueuedText(pending.queued);
     const tooltip = pending.forms.map((item) => item.title).join('\n') || label;
-    return <PendingFormsChip label={label} tooltip={tooltip}>{banner}</PendingFormsChip>;
+    return (
+      <PendingFormsChip label={label} tooltip={tooltip} count={pending.total > 0 ? pending.total : pending.queued}>
+        {banner}
+      </PendingFormsChip>
+    );
   }
   return banner;
 }
 
-function PendingFormsChip({ label, tooltip, children }: { label: string; tooltip: string; children: ReactNode }) {
+function PendingFormsChip({
+  label,
+  tooltip,
+  count,
+  children,
+}: {
+  label: string;
+  tooltip: string;
+  count: number;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useDismissable(open, ref, useCallback(() => setOpen(false), []));
@@ -105,6 +119,8 @@ function PendingFormsChip({ label, tooltip, children }: { label: string; tooltip
         aria-haspopup="dialog"
         aria-expanded={open}
         data-testid="pending-forms-chip"
+        data-count={count}
+        aria-label={label}
         onClick={() => setOpen((was) => !was)}
       >
         <span className="att-chip__b" aria-hidden>●</span>
