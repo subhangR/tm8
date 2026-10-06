@@ -281,6 +281,12 @@ function entityReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receip
       const open = criteria.filter((c) => isRecord(c) && c.done !== true).map((c) => str(rec(c).id) ?? '');
       receipt.acceptance = { done: criteria.length - open.length, total: criteria.length };
       receipt.open = capped(open, 'open', receipt);
+      const state = rec(entity.state);
+      const id = str(entity.id);
+      const next = id === undefined || typeof entity.version !== 'number'
+        ? undefined
+        : nextAfterTick(id, str(state.status), str(state.completionGate), entity.version, open.length, criteria.length);
+      if (next !== undefined) receipt.next = next;
     }
   }
 
@@ -298,6 +304,29 @@ function entityReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receip
   }
 
   return tail(receipt, dto, input, refs);
+}
+
+/**
+ * The step a tick that leaves nothing open hands the holder (Spec D1 §6.3 R3,
+ * P0h): complete the task, or, under the `pr_merged` gate, move it to
+ * `in_review`. The Server builds the same `next` into its own receipt
+ * (`nextAfterTick` in packages/server/src/facade/receipt.ts); this is the
+ * projection for a Server that predates it, and the two stay in step.
+ */
+export function nextAfterTick(
+  id: string,
+  status: string | undefined,
+  gate: string | undefined,
+  version: number,
+  open: number,
+  total: number,
+): string | undefined {
+  if (total === 0 || open > 0) return undefined;
+  if (status === 'done' || status === 'cancelled') return undefined;
+  if (gate === 'pr_merged') {
+    return status === 'in_review' ? undefined : `tm8 task transition ${id} in_review`;
+  }
+  return `tm8 task complete ${id} --expect-version ${version}`;
 }
 
 /** The first `patches[]` summary of a kind — where link-pr/commit put the artifact. */
@@ -611,6 +640,14 @@ export function renderReceiptHuman(receipt: Receipt): string {
     }
     if (typeof receipt.branch === 'string') head.push(`branch:${receipt.branch}`);
     head.push(...postureHead(receipt));
+    // A tick says how far the checklist got, what is left, and the step after
+    // the last one (P0h): an agent that reads only the text still sees it.
+    const acceptance = rec(receipt.acceptance);
+    if (typeof acceptance.done === 'number' && typeof acceptance.total === 'number') {
+      head.push(`acceptance:${acceptance.done}/${acceptance.total}`);
+      const open = Array.isArray(receipt.open) ? receipt.open : [];
+      if (open.length > 0) clauses.push(`open ${open.join(' ')}`);
+    }
     const credentials = credentialsClause(receipt);
     if (credentials !== undefined) clauses.push(credentials);
     for (const ref of (receipt.refs as ReceiptRef[] | undefined) ?? []) clauses.push(refText(ref));
@@ -628,5 +665,6 @@ export function renderReceiptHuman(receipt: Receipt): string {
     clauses.unshift(reason === undefined ? 'NO CHANGE' : `NO CHANGE (${reason})`);
   }
   for (const w of warnings) if (w.code !== 'no_change') clauses.push(warningText(w));
+  if (typeof receipt.next === 'string') clauses.push(`next: ${receipt.next}`);
   return [head.join(' '), ...clauses].join(' · ');
 }

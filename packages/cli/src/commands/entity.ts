@@ -890,10 +890,54 @@ export function headerTextOptions(cmd: CommandContext): Record<string, unknown> 
 /** The header flag names, for option allowlists. */
 export const HEADER_TEXT_OPTIONS = ['when-to-use', 'summary', 'keyword'] as const;
 
+/** The range `--estimate` accepts (owner, form 01a111f3-b612: any number 1-100). */
+export const ESTIMATE_MIN = 1;
+export const ESTIMATE_MAX = 100;
+
+/**
+ * `--criterion <text>...` and `--estimate <n>` on a task create: sugar for
+ * `content.acceptanceCriteria` (ids `ac1`, `ac2`… in flag order, unticked) and
+ * `content.pointsEstimate`, merged into whatever `--content` carried. Both are
+ * optional; nothing requires a task to have either. `undefined` when neither
+ * flag was passed, so the body is left exactly as `--content` made it.
+ */
+export function taskContentFlags(cmd: CommandContext, kind: string, content: unknown): Record<string, unknown> | undefined {
+  const criteria = cmd.options.values('criterion');
+  const estimateText = cmd.options.value('estimate');
+  if (criteria.length === 0 && estimateText === undefined) return undefined;
+  if (kind !== 'task') {
+    throw new CliError('--criterion and --estimate apply only to `entity create task`', EXIT_USAGE);
+  }
+  const merged: Record<string, unknown> = content !== null && typeof content === 'object' && !Array.isArray(content)
+    ? { ...(content as Record<string, unknown>) }
+    : {};
+  if (criteria.length > 0) {
+    if (merged.acceptanceCriteria !== undefined) {
+      throw new CliError('pass acceptance criteria either as --criterion or in --content, not both', EXIT_USAGE);
+    }
+    const blank = criteria.findIndex((text) => text.trim() === '');
+    if (blank !== -1) throw new CliError(`--criterion ${blank + 1} is empty`, EXIT_USAGE);
+    merged.acceptanceCriteria = criteria.map((text, i) => ({ id: `ac${i + 1}`, done: false, text: text.trim() }));
+  }
+  if (estimateText !== undefined) {
+    if (merged.pointsEstimate !== undefined) {
+      throw new CliError('pass the estimate either as --estimate or in --content, not both', EXIT_USAGE);
+    }
+    const estimate = Number(estimateText);
+    if (!Number.isInteger(estimate) || estimate < ESTIMATE_MIN || estimate > ESTIMATE_MAX) {
+      throw new CliError(`--estimate must be a whole number from ${ESTIMATE_MIN} to ${ESTIMATE_MAX}`, EXIT_USAGE, {
+        hint: `got \`${estimateText}\``,
+      });
+    }
+    merged.pointsEstimate = estimate;
+  }
+  return merged;
+}
+
 async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [
     'parent', 'position', 'content', 'attach-to', 'relate-to', 'connect', 'mutation-id',
-    'no-session-link', ...HEADER_TEXT_OPTIONS,
+    'no-session-link', 'criterion', 'estimate', ...HEADER_TEXT_OPTIONS,
   ]);
   const kind = requireArg(cmd, 0, '<kind>');
   // A space style is born only by `styles.push` (284): the Server refuses a
@@ -919,6 +963,8 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   if (position !== undefined) body.position = position;
   const content = cmd.options.value('content');
   if (content !== undefined) body.content = await readContent(content);
+  const taskContent = taskContentFlags(cmd, kind, body.content);
+  if (taskContent !== undefined) body.content = taskContent;
   const connections = initialConnections(cmd);
   if (connections.length > 0) body.connections = connections;
   const header = headerTextOptions(cmd);
