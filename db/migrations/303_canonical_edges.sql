@@ -44,6 +44,8 @@ create table if not exists internal.edge_migration_log (
   check ((action = 'delete') = (new_row is null))
 );
 create index if not exists edge_migration_log_batch_idx on internal.edge_migration_log(batch, id);
+-- 225's rule: no table is left never-analyzed (planner estimates on real numbers).
+analyze internal.edge_migration_log;
 
 comment on table internal.edge_migration_log is
   '303: one row per edge a semantic edge migration rewrote, deleted or inserted, '
