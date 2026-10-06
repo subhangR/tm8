@@ -181,12 +181,16 @@ describe('the selector is Work · Design · Observe', () => {
     for (const retired of ['Home', 'Workspace', 'Board', 'Craft', 'Graph']) expect(labels).not.toContain(retired);
   });
 
-  it("Work's rail keeps Design, Settings and Help as tools, after Needs you and Status", async () => {
+  it("Work's rail keeps Needs you at the bottom, and Design, Settings and Help behind the user switch", async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
-    const tools = view.getByRole('group', { name: 'Work tools' });
+    const controls = view.getByRole('group', { name: 'Rail controls' });
+    const bottom = [...controls.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
+    expect(bottom).toEqual(['Needs you', 'Settings & tools', 'Expand sidebar']);
+    fireEvent.click(view.getByTestId('tws-rail-switch'));
+    const tools = view.getByRole('group', { name: 'Settings and tools' });
     const names = [...tools.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
-    expect(names.slice(0, 2)).toEqual(['Needs you', 'Status']);
+    expect(names[0]).toBe('Status');
     for (const tool of ['Command palette', 'Design', 'Settings', 'Help']) expect(names).toContain(tool);
   });
 });

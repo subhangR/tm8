@@ -363,13 +363,19 @@ describe('the help route', () => {
     const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/graph`)} />);
     await waitFor(() => view.getByTestId('app-frame'));
     expect(view.queryByTestId('space-tab-bar')).toBeNull();
+    /* Rail fixes (2026-10-07): the tools sit behind the rail's user switch. */
+    fireEvent.click(view.getByTestId('tws-rail-switch'));
     const tools = [...view.getByTestId('tws-rail').querySelectorAll<HTMLElement>('[data-rail-tool]')];
-    expect(tools.map((tool) => tool.getAttribute('data-rail-tool'))).toEqual(['craft', 'settings', 'help']);
+    expect(tools.map((tool) => tool.getAttribute('data-rail-tool'))).toEqual(['inbox', 'messages', 'files', 'git', 'craft', 'settings', 'help']);
     expect(view.queryByTestId('open-help')).toBeNull();
 
     fireEvent.click(view.getByRole('button', { name: 'Help' }));
     await waitFor(() => view.getByTestId('help-screen'));
     expect(view.getByTestId('tws-view-select').textContent).toContain('Help');
+    /* Current: Help itself when the tools are up, else the switch that holds it. */
+    const rail = view.getByTestId('tws-rail');
+    const current = rail.querySelector('[data-rail-tool="help"][aria-current="page"]') ?? rail.querySelector('[data-testid="tws-rail-switch"][aria-current="page"]');
+    expect(current).not.toBeNull();
     view.unmount();
   });
 });

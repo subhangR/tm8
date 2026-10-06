@@ -315,13 +315,13 @@
 }
 /* Overflow hints: a list taller than the column fades the edge that has more. */
 .tws-rail-top[data-more-below] {
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent);
 }
 .tws-rail-top[data-more-above] {
-  mask-image: linear-gradient(to top, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to top, black calc(100% - 32px), transparent);
 }
 .tws-rail-top[data-more-above][data-more-below] {
-  mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, black 32px, black calc(100% - 32px), transparent);
 }
 /* Hairlines: below Pinned and above the bottom group, 20px, centred on the
    icon column. */
