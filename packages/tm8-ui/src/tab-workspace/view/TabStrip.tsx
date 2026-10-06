@@ -649,8 +649,8 @@ export function TabStrip({ leading }: TabStripProps = {}) {
     const index = tabIds.indexOf(overId) + (after ? 1 : 0);
     const beforeTabId = tabIds[index];
     const box = scroller.getBoundingClientRect();
-    // Centre of the 4px gap the tab will land in.
-    const edge = (after ? rect.right + 2 : rect.left - 2) - box.left + scroller.scrollLeft;
+    // The boundary the tab will land on (tabs sit flush, R27).
+    const edge = (after ? rect.right : rect.left) - box.left + scroller.scrollLeft;
     setDrop((prev) => (prev?.beforeTabId === beforeTabId && prev.x === edge ? prev : { beforeTabId, x: edge }));
   };
   const endDrag = () => {

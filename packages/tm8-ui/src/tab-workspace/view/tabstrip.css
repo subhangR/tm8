@@ -4,11 +4,12 @@
  * everything here is scoped under `.tws-ts`.
  */
 .tws-strip.tws-ts {
-  /* R3: every control is a 36px box, 8px top inset, bottom-aligned over the
-     hairline, so labels share the left header's centre line (y = 26px). */
+  /* R27 (overrides R3's 8px inset): a 40px band. Tabs run its full height,
+     edge to edge; every other control is a 36px box 2px from the top and the
+     bottom edge, so all labels share the left header's centre (y = 20). */
   align-items: flex-start;
   gap: 0;
-  padding: var(--pn-space-2) var(--pn-space-3) 0 var(--pn-space-2);
+  padding: 0 var(--pn-space-3) 0 var(--pn-space-2);
   overflow: visible;
 }
 .tws-strip.tws-ts[data-has-leading] {
@@ -21,6 +22,7 @@
   gap: var(--pn-space-1);
   flex: none;
   height: 36px;
+  margin-top: 2px;
   margin-right: var(--pn-space-2);
 }
 
@@ -30,12 +32,12 @@
   z-index: 1;
   display: flex;
   align-items: flex-end;
-  gap: var(--pn-space-1);
+  gap: 0;
   flex: 1 1 auto;
   min-width: 0;
-  /* 36px from the 8px inset to the strip's bottom edge: the last pixel row is
-     the hairline, which the active tab covers to join the content plane. */
-  height: 36px;
+  /* The full band: the last pixel row is the hairline, which the active tab
+     covers to join the content plane. */
+  height: 40px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -62,9 +64,10 @@
   flex: 0 1 220px;
   min-width: 120px;
   max-width: 220px;
-  height: 36px;
+  height: 40px;
   padding-left: var(--pn-space-3);
-  border-radius: var(--pn-r-sm) var(--pn-r-sm) 0 0;
+  /* R27: a full-height tab has no free corner to round. */
+  border-radius: 0;
   color: var(--pn-ink-3);
   user-select: none;
 }
@@ -87,7 +90,7 @@
   gap: var(--pn-space-2);
   flex: 1 1 auto;
   min-width: 0;
-  height: 36px;
+  height: 40px;
   margin-right: var(--pn-space-1);
   cursor: pointer;
   border-radius: var(--pn-r-xs);
@@ -126,7 +129,7 @@
   justify-content: center;
   flex: none;
   width: 36px;
-  height: 36px;
+  height: 40px;
 }
 .tws-ts-state {
   display: inline-flex;
@@ -200,7 +203,7 @@
 /* ---- drag insertion marker: 2×24 brand bar, centred in the gap ---- */
 .tws-ts-marker {
   position: absolute;
-  bottom: 6px;
+  bottom: 8px;
   width: 2px;
   height: 24px;
   border-radius: 1px;
@@ -213,6 +216,7 @@
   display: flex;
   align-items: center;
   height: 36px;
+  margin-top: 2px;
   gap: var(--pn-space-2);
   flex: none;
   margin-left: var(--pn-space-2);
