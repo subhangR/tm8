@@ -9,6 +9,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import { getKind } from '../../domain';
+import { McpEquipment } from '../../mcp/McpEquipment';
+import { useMcpCatalog } from '../../mcp/context';
 import { countMessages } from '../../panels';
 import { build, emptyPanels, normalize } from '../../routes';
 import { useEntityChrome } from '../adapters/entity';
@@ -153,6 +155,9 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
       <div className="tws-fg-cluster">
         {/* The panel's action bar lands here (registry verbs, flows, save). */}
         <div ref={chrome?.setVerbsSlot} className="tws-fg-verbs" data-testid="tws-floating-verbs" />
+        {getKind(tab.kind).mcpEquipment && detail && detail.deletedAt == null ? (
+          <ConnectorsButton entityId={tab.entityId} />
+        ) : null}
         {adapter.supportsChat ? (
           <button
             type="button"
@@ -232,6 +237,72 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Connectors (Subhang's ruling, round 3): the task kind's McpEquipment block,
+ * folded into one plug button with an anchored popover in Workspace. Shown only
+ * where the panel would have drawn the block — the kind's `mcpEquipment` flag
+ * and the catalog's `canAttach`. The badge counts attached connectors.
+ */
+function ConnectorsButton({ entityId }: { entityId: string }) {
+  const { catalog } = useMcpCatalog(entityId);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      setOpen(false);
+      ref.current?.querySelector<HTMLButtonElement>('.tws-fg-connectors')?.focus();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  if (!catalog?.canAttach) return null;
+  const attached = catalog.attachedServerIds?.length ?? 0;
+  return (
+    <div className="tws-fg-pop-anchor" ref={ref}>
+      <button
+        type="button"
+        className="tws-icon-btn tws-fg-connectors"
+        aria-label={attached > 0 ? `Connectors, ${attached} attached` : 'Connectors'}
+        title="Connectors"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-testid="tws-connectors"
+        onClick={() => setOpen((was) => !was)}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M6 1.5v3M10 1.5v3M4 4.5h8v3a4 4 0 0 1-8 0zM8 11.5v3"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        {attached > 0 ? (
+          <span className="tws-fg-count" aria-hidden="true">
+            {attached}
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <div className="tws-fg-popover pn-overflow__menu" role="dialog" aria-label="Connectors" data-testid="tws-connectors-popover">
+          <McpEquipment targetId={entityId} />
+        </div>
+      ) : null}
     </div>
   );
 }

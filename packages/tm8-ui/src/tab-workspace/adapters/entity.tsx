@@ -525,6 +525,7 @@ export function EntityTabBody({ tab, adapter, onHandle }: EntityTabBodyProps) {
     secondarySlot: chrome?.secondarySlot ?? null,
     dangerSlot: chrome?.dangerSlot ?? null,
     omitActions: WORKSPACE_OWN_ACTIONS,
+    omitConnectors: true,
     onMenuDone: () => chrome?.setMenuOpen(false),
   };
   const fullView = adapter.body === 'fullView';

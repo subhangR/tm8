@@ -394,12 +394,45 @@
   width: 36px;
 }
 
-/* The task's Connectors block (its own registry block, also on Home) rides the
-   head's measure here, like the title and pills above it. */
-.cv2-root .tws-panel .mcp-equipment {
-  box-sizing: border-box;
-  width: calc(100% - 2 * var(--pn-space-3));
-  max-width: var(--pn-read-measure);
-  margin-inline: auto;
-  padding-inline: 0;
+
+/* Connectors (round 3): a plug button with the attached count, opening the
+   task's McpEquipment block in an anchored popover. */
+.tws-fg-pop-anchor {
+  position: relative;
+  display: flex;
+}
+.tws-icon-btn.tws-fg-connectors {
+  width: auto;
+  min-width: 36px;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-2);
+}
+.tws-fg-connectors[aria-expanded='true'] {
+  color: var(--pn-ink);
+  background: var(--pn-active);
+}
+.cv2-root .tws-fg-popover {
+  width: 320px;
+  max-width: calc(100vw - 2 * var(--pn-space-6));
+  padding: var(--pn-space-3);
+  box-shadow: var(--pn-sh-pop);
+  border-radius: var(--pn-r-md);
+}
+.cv2-root .tws-fg-popover .mcp-equipment {
+  padding: 0;
+}
+.cv2-root .tws-fg-popover .mcp-equipment h3 {
+  margin: 0 0 var(--pn-space-1);
+  font-size: var(--pn-fs-title);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .tws-fg-popover .mcp-equipment p {
+  margin: 0 0 var(--pn-space-2);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-fg-popover .mcp-equipment a {
+  color: var(--pn-brand-2);
+  font-size: var(--pn-fs-sm);
 }
