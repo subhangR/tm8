@@ -26,19 +26,148 @@
   background: var(--pn-card);
 }
 
-/* Reserve the floating group's footprint only (design log §7). The panel body
-   is a flex column, so text cannot float around a spacer; the group's height
-   is reserved at the top of the body instead, or beside the control band when
-   one leads the body. Canvases keep their own chrome out of it through
-   --pn-canvas-bar-w/-h, published by the group. */
-.cv2-root .tws-panel > .pn-panel:not(.pn-panel--canvas):not(:has(> .pn-controls)) > .pn-body {
-  padding-top: calc(var(--tws-fg-h, 44px) + 2 * var(--pn-space-3));
+/* --- The embedded head (design log R2, R13): title, then pills, in the measure --- */
+.cv2-root .tws-panel .pn-embedded-head {
+  flex: none;
+  padding: var(--pn-space-3) var(--pn-space-3) 0;
 }
-.cv2-root .tws-panel > .pn-panel > .pn-controls {
-  min-height: calc(var(--tws-fg-h, 44px) + 2 * var(--pn-space-3));
-  padding-right: calc(var(--tws-fg-w, 0px) + 2 * var(--pn-space-3));
-  box-sizing: border-box;
+.cv2-root .tws-panel .pn-embedded-head__measure {
+  display: flow-root;
+  max-width: var(--pn-read-measure);
+  margin: 0 auto var(--pn-space-3);
 }
+/* The floating group's footprint, intersected with the measure: the group sits
+   12px in from the content's top-right corner (100cqw = the panel), so only
+   the part of it that overlaps the measure is reserved. */
+.cv2-root .tws-panel .pn-embedded-head__spacer {
+  float: right;
+  width: max(0px, calc(var(--tws-fg-w, 0px) + 2 * var(--pn-space-3) - (100cqw - 100%) / 2));
+  height: calc(var(--tws-fg-h, 44px) + var(--pn-space-3));
+}
+.cv2-root .tws-panel .pn-embedded-head__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  margin: 0;
+  font-size: var(--pn-fs-h2);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-tight);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+.cv2-root .tws-panel .pn-embedded-head__pills {
+  margin-top: var(--pn-space-3);
+}
+.cv2-root .tws-panel .pn-embedded-head__title + .pn-embedded-head__pills {
+  margin-top: var(--pn-space-3);
+}
+.cv2-root .tws-panel .pn-embedded-head__spacer + .pn-embedded-head__pills {
+  margin-top: 0;
+}
+
+/* A document scrolls as ONE column: head, body and footer on one card plane. */
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document'] {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='document'] > .pn-body {
+  flex: none;
+  min-height: auto;
+  overflow: visible;
+  padding-top: var(--pn-space-3);
+}
+/* A body that owns its height (terminal, chat, frame) keeps its own scroll
+   under a fixed head (R14): row A is the title on one line, centred on the
+   group (12 + group + 12 = 68px); row B is the body's own tools (36px); then
+   12px and the body. Full width, 24px sides, no measure, no spacer. */
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head {
+  padding: var(--pn-space-3) var(--pn-space-6);
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__measure {
+  max-width: none;
+  margin: 0;
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__spacer {
+  display: none;
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__title {
+  display: block;
+  height: var(--tws-fg-h, 44px);
+  line-height: var(--tws-fg-h, 44px);
+  /* Up to 16px before the group (group sits 12px from the edge; we pad 24). */
+  padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-1));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .tws-panel .pn-embedded-head__tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-3);
+  height: 36px;
+  margin-top: var(--pn-space-3);
+}
+.cv2-root .tws-panel > .pn-panel[data-embedded-flow='fill'] .pn-embedded-head__spacer + .pn-embedded-head__tools {
+  /* No title (canvas): the tools row takes row A's place beside the group. */
+  margin-top: 0;
+  height: var(--tws-fg-h, 44px);
+  padding-right: calc(var(--tws-fg-w, 0px) + var(--pn-space-1));
+}
+.cv2-root .tws-panel .pn-embedded-head__surface {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch {
+  display: flex;
+  gap: var(--pn-space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab svg {
+  width: 16px;
+  height: 16px;
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-panel .pn-embedded-head__surface .pn-surface-switch__tab[aria-selected='true'] {
+  background: var(--pn-active);
+  color: var(--pn-ink);
+  box-shadow: none;
+}
+.cv2-root .tws-panel .pn-embedded-head__reading {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-panel .pn-embedded-head__reading * {
+  font: inherit;
+  color: inherit;
+}
+
 /* The attention pill hangs under the group, never under it. */
 .cv2-root .tws-panel > .pn-panel > .att-block-dock > .att-block {
   top: calc(var(--tws-fg-h, 44px) + 2 * var(--pn-space-3));
@@ -213,4 +342,50 @@
   height: 12px;
   border-radius: var(--pn-r-xs);
   background: var(--pn-hover);
+}
+
+/* --- Verbs (design log R6): one labelled verb, the rest 36x36 icons --- */
+.cv2-root .tws-fg-verbs .pn-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+.cv2-root .tws-fg-verbs .pn-btn.pn-btn--primary {
+  height: 36px;
+  min-width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-2);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  box-shadow: none;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+}
+.cv2-root .tws-fg-verbs .pn-btn.pn-btn--primary:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-fg-verbs .pn-btn.pn-btn--lead {
+  padding: 0 var(--pn-space-3);
+  color: var(--pn-brand-2);
+}
+.cv2-root .tws-fg-verbs .pn-btn.pn-btn--lead:hover {
+  background: var(--pn-brand-soft);
+}
+.cv2-root .tws-fg-verbs .pn-btn.pn-btn--mark {
+  width: 36px;
+}
+
+/* The task's Connectors block (its own registry block, also on Home) rides the
+   head's measure here, like the title and pills above it. */
+.cv2-root .tws-panel .mcp-equipment {
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--pn-space-3));
+  max-width: var(--pn-read-measure);
+  margin-inline: auto;
+  padding-inline: 0;
 }

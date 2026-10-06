@@ -569,6 +569,8 @@ export interface EmbeddedChrome {
   verbsSlot: HTMLElement | null;
   /** The top of the host's open ⋯ menu (Rename). Null ⇒ closed. */
   menuSlot: HTMLElement | null;
+  /** After the host's own ⋯ items: secondary verbs (Transfer). */
+  secondarySlot: HTMLElement | null;
   /** The end of the host's open ⋯ menu, after its own items (destructive verbs). */
   dangerSlot: HTMLElement | null;
   /** Primaries the host draws itself (Workspace's own Chat toggle). */
@@ -1047,8 +1049,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       </>
     ) : (
     <>
-      {isTerminal && props.sessionContextSurface ? props.sessionContextSurface : null}
-      {controlsRideBar ? (
+      {/* Embedded: the reading and the surface chips ride the head (R14). */}
+      {isTerminal && props.sessionContextSurface && !embedded ? props.sessionContextSurface : null}
+      {controlsRideBar && !embedded ? (
         <div
           className="pn-panelbar__surface"
           ref={setSurfaceSlot}
@@ -1077,6 +1080,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            five surface chips, so it is the only one whose primaries have
            to give up their words. Registry data, never a kind literal. */
         markPrimaries={isTerminal}
+        leadLabelOnly={embedded !== null}
         /* Filled from the detail — see `panelActionContext`, which is
            also what the phone's action menu asks, so the bar and the menu
            cannot form different opinions about the same verb. */
@@ -1193,7 +1197,30 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           Self-gating: renders nothing unless a remote server connection
           is registered, so the single-server case never sees it. Kind
           awareness lives in src/transfer, not here (§15.2). */}
-      <TransferControl detail={detail} />
+      <TransferControl
+        detail={detail}
+        {...(embedded
+          ? {
+              trigger: (open: () => void) =>
+                embedded.secondarySlot
+                  ? createPortal(
+                      <button
+                        type="button"
+                        className="pn-overflow__item"
+                        role="menuitem"
+                        onClick={() => {
+                          open();
+                          embedded.onMenuDone?.();
+                        }}
+                      >
+                        Transfer to another server…
+                      </button>,
+                      embedded.secondarySlot,
+                    )
+                  : null,
+            }
+          : {})}
+      />
       {/* THE TOMBSTONE VERB, ONE CLICK BACK. It used to ride the control
           strip as the last chip and, being the widest item there, was the
           one flex-wrap ejected — onto its own line, directly under `✕`. A
@@ -1295,6 +1322,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       data-testid="entity-detail-panel"
       data-host={host}
       data-archetype={config.panel.archetype}
+      /* Embedded (Workspace tab): a document scrolls as one column with its
+         head; a body that owns its height (terminal, chat, frame, canvas)
+         keeps its own scroll under the head. */
+      data-embedded-flow={embedded ? (bodyOwnsBottom || canvas ? 'fill' : 'document') : undefined}
       /* THE PANEL IS THE FALLBACK DROP TARGET (2026-08-18). With the empty ＋
          tile gone, drop is the attach path — and the only body that had marked
          itself a drophost was `subtree`, so every other kind would have had no
@@ -1398,7 +1429,43 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       {/* The band is gated on the strip alone: a kind with no controls (a doc
           declares none) would otherwise draw an empty padded row with a
           hairline under the tabs. No archetype gate — see `strip` above. */}
-      {strip ? (
+      {embedded ? (
+        /* THE EMBEDDED HEAD: title (unless the body draws its own — the full
+           view, a canvas), then the property pills, inside the body's measure.
+           The spacer reserves the host's floating group so neither sits
+           under it (design log R2, R13). */
+        <div className="pn-embedded-head" data-testid="panel-embedded-head">
+          <div className="pn-embedded-head__measure">
+            <span className="pn-embedded-head__spacer" aria-hidden="true" />
+            {host !== 'z4' && !canvas ? (
+              <h1 className="pn-embedded-head__title" title={detail.title}>
+                {detail.title}
+              </h1>
+            ) : null}
+            {/* Row B (R14): the body's own surface switch and the live reading.
+                The chips switch the body, so they belong to the body. */}
+            {controlsRideBar && tab === 'content' ? (
+              <div className="pn-embedded-head__tools">
+                <div
+                  className="pn-panelbar__surface pn-embedded-head__surface"
+                  ref={setSurfaceSlot}
+                  data-testid="panel-surface-slot"
+                />
+                {isTerminal && props.sessionContextSurface ? (
+                  <div className="pn-embedded-head__reading" data-testid="panel-session-context">
+                    {props.sessionContextSurface}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {strip ? (
+              <div className="pn-embedded-head__pills" data-testid="panel-controls">
+                {strip}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : strip ? (
         <div className="pn-controls" data-testid="panel-controls">
           {/* The BAND is full-bleed; its contents ride the reading measure. */}
           <div className="pn-controls__measure">{strip}</div>

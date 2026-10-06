@@ -192,7 +192,15 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
           data-testid="tws-expand"
           onClick={() => dispatch({ command: 'workspace.layout.set', args: { expanded: !expanded }, source: 'click' })}
         >
-          <span aria-hidden="true">⤢</span>
+          {expanded ? (
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6.5 2.5v4h-4M9.5 13.5v-4h4M6.5 6.5l-4-4M9.5 9.5l4 4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5l-4.5 4.5M2.5 13.5l4.5-4.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
         </button>
         <button
           type="button"
@@ -204,7 +212,11 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
           data-testid="tws-more"
           onClick={() => setMenuOpen?.(!menuOpen)}
         >
-          <span aria-hidden="true">⋯</span>
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="3.5" cy="8" r="1.25" fill="currentColor" />
+            <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+            <circle cx="12.5" cy="8" r="1.25" fill="currentColor" />
+          </svg>
         </button>
         {menuOpen ? (
           <div className="tws-fg-menu pn-overflow__menu" role="menu" data-testid="tws-more-menu">
@@ -213,6 +225,8 @@ export function FloatingGroup({ tab }: FloatingGroupProps) {
             <button type="button" className="pn-overflow__item" role="menuitem" onClick={copyLink}>
               {copied === 'done' ? 'Copied' : copied === 'failed' ? 'Could not copy' : 'Copy link'}
             </button>
+            {/* Secondary verbs from the panel (Transfer) */}
+            <div ref={chrome?.setSecondarySlot} className="tws-fg-slot" />
             {/* A separator, then the destructive verbs (from the panel) */}
             <div ref={chrome?.setDangerSlot} className="tws-fg-slot tws-fg-danger" />
           </div>
