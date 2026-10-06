@@ -11,10 +11,16 @@
  * Every write goes through `workspace.browser.set`; nothing here touches tabs
  * or scope except a row click (`tabs.open`) and + New (`drafts.open`).
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useAttentionOptional } from '../../attention';
 import { needsMeListSource } from '../../attention/needs-me';
-import { getKind, isHomeRootKind } from '../../domain';
+import type { EntityId } from '@tm8/contract';
+import { getKind, isHomeRootKind, resolveAction, type ActionRef } from '../../domain';
+import { composeListActions, useChatAbout } from '../../views/useChatAbout';
+import { useLaunchPort } from '../../views/useLaunchPort';
+import { usePanelPrimaries } from '../../views/usePanelPrimaries';
+import { useRowLifecycle } from '../../views/useRowLifecycle';
+import { useSessionStart } from '../../views/useSessionStart';
 import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../../panels/EntityListPanel';
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
 import { getKindAdapter } from '../adapters/registry';
@@ -102,6 +108,8 @@ export function Browser() {
   );
 
   const scroll = useRememberedScroll(kindState.scrollTop, set, `${kind}:${generation}`);
+  const listRef = useRef<HTMLDivElement>(null);
+  useTierRowEdges(listRef);
 
   const renderEmpty = useCallback(
     (state: ListEmptyState) => {
@@ -125,6 +133,8 @@ export function Browser() {
     [retry, clearSearch, createDraft, disabledReason, noun, nounPlural],
   );
 
+  const verbs = useRowVerbs(kind);
+
   const source = needsMeListSource(attentionApi, kind, data, {
     rowsFor: data.rowsFor(kind),
     pageStateOf: data.pageStateOf(kind),
@@ -139,7 +149,7 @@ export function Browser() {
       data-narrow={narrow || undefined}
       data-scrolled={scroll.scrolled || undefined}
     >
-      <div className="tws-browser-list">
+      <div className="tws-browser-list" ref={listRef}>
         <EntityListPanel
           key={`${kind}:${generation}`}
           kind={kind}
@@ -187,6 +197,21 @@ export function Browser() {
           {...(data.linkedPullRequestsOf ? { linkedPullRequestsOf: data.linkedPullRequestsOf } : {})}
           capabilitiesOf={data.capabilitiesOf}
           connectionsOf={data.connectionsOf}
+          /* The row verbs (hover bar, expanded strip) — Home's executors. */
+          onSetState={verbs.rowLifecycle.setState}
+          onArchive={verbs.rowLifecycle.archive}
+          onComplete={verbs.rowLifecycle.complete}
+          onTerminate={verbs.primaries.terminate}
+          onShareSession={verbs.primaries.shareSession}
+          onResume={verbs.primaries.resume}
+          onSetValue={verbs.rowLifecycle.setValue}
+          onAssign={verbs.rowLifecycle.assign}
+          assignableActors={verbs.rowLifecycle.assignable}
+          onMembership={verbs.rowLifecycle.membership}
+          membershipSets={verbs.rowLifecycle.membershipSets}
+          launch={verbs.launch}
+          onAction={verbs.listActions.onAction}
+          wiredActions={verbs.listActions.wiredActions}
           /* The active tab's row wears the list's own selected treatment; the
              list is not scrolled to it. */
           selectedId={selectedId}
@@ -202,6 +227,79 @@ export function Browser() {
       </div>
     </section>
   );
+}
+
+/**
+ * THE ROW VERBS, WIRED AS HOME WIRES THEM — the same executor hooks, so the
+ * hover bar's Run / complete / terminate / chat-about carry the same gates,
+ * refusals and launch flow. What differs is only where a result LANDS: a
+ * started or spawned session, and a chat about an entity, open as tabs here.
+ */
+function useRowVerbs(kind: string) {
+  const { dispatch, gate } = useWorkspace();
+  const { data, onNotice, viewerMemberId } = gate;
+
+  const openTab = useCallback(
+    (tabKind: string, entityId: string, chat = false) => {
+      const result = dispatch({ command: 'workspace.tabs.open', args: { kind: tabKind, entityId }, source: 'click' });
+      if (chat && result.status === 'applied' && result.tabId) {
+        dispatch({
+          command: 'workspace.tabs.setUi',
+          args: { tabId: result.tabId, patch: { chat: { open: true } } },
+          source: 'click',
+        });
+      }
+    },
+    [dispatch],
+  );
+  const notifyFailed = useCallback(
+    (verb: ActionRef, _entityId: string, error: unknown) => {
+      onNotice({
+        id: `tws-row-${verb}`,
+        tone: 'error',
+        title: `${resolveAction(verb).label} failed`,
+        body: String((error as { message?: string })?.message ?? error),
+        ttlMs: 6_000,
+      });
+    },
+    [onNotice],
+  );
+
+  const launch = useLaunchPort(data, {
+    onSpawn: async (input) => {
+      const sessionId = await data.spawn(input);
+      openTab('work_session', sessionId);
+    },
+  });
+  const primaries = usePanelPrimaries({
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onError: notifyFailed,
+    versionOf: (id) => data.detailOf(id)?.version,
+  });
+  const sessionStart = useSessionStart({
+    spaceId: data.spaceId,
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    projectId: data.launch.projects.find((p) => p.selectedByDefault && p.trusted)?.id ?? null,
+    onOpen: (id: EntityId) => openTab('work_session', id),
+    onError: (verb: ActionRef, error: unknown) => notifyFailed(verb, '', error),
+  });
+  const chatAbout = useChatAbout({
+    open: (aboutId) => {
+      if (aboutId) openTab(kind, aboutId, true);
+    },
+  });
+  const listActions = useMemo(
+    () =>
+      composeListActions([
+        { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
+        { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
+      ]),
+    [sessionStart.onAction, sessionStart.wiredActions, chatAbout.onAction, chatAbout.wiredActions],
+  );
+  const rowLifecycle = useRowLifecycle({ data, viewerMemberId, onNotice });
+  return { launch, primaries, listActions, rowLifecycle };
 }
 
 /**
@@ -264,6 +362,61 @@ function useRememberedScroll(
   }, [body, set, mountKey]);
 
   return { ref: setBody, scrolled };
+}
+
+/**
+ * The lifecycle tier row scrolls on one line (R37): the clipped edge fades
+ * over 16px (`data-fade` = start | end | both), and the active tier is kept
+ * in view. Watches the host, because the panel inside remounts per kind.
+ */
+function useTierRowEdges(hostRef: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let row: HTMLElement | null = null;
+    let activeId: string | null = null;
+    const measure = () => {
+      if (!row) return;
+      const start = row.scrollLeft > 1;
+      const end = row.scrollLeft + row.clientWidth < row.scrollWidth - 1;
+      const fade = start && end ? 'both' : start ? 'start' : end ? 'end' : null;
+      if (fade) row.setAttribute('data-fade', fade);
+      else row.removeAttribute('data-fade');
+    };
+    const resize = new ResizeObserver(measure);
+    const sync = () => {
+      const next = host.querySelector<HTMLElement>('.lp__tierscroll');
+      if (next !== row) {
+        row?.removeEventListener('scroll', measure);
+        resize.disconnect();
+        row = next;
+        activeId = null;
+        if (row) {
+          row.addEventListener('scroll', measure, { passive: true });
+          resize.observe(row);
+        }
+      }
+      if (!row) return;
+      const active = row.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      const id = active?.textContent ?? null;
+      if (active && id !== activeId) {
+        activeId = id;
+        const left = active.offsetLeft - row.offsetLeft;
+        if (left < row.scrollLeft || left + active.offsetWidth > row.scrollLeft + row.clientWidth) {
+          row.scrollLeft = Math.max(0, left - 16);
+        }
+      }
+      measure();
+    };
+    const observer = new MutationObserver(sync);
+    observer.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
+    sync();
+    return () => {
+      observer.disconnect();
+      resize.disconnect();
+      row?.removeEventListener('scroll', measure);
+    };
+  }, [hostRef]);
 }
 
 /** The list's empty and no-match states (design log §11): one line and a text action. */

@@ -1,7 +1,7 @@
 import type { ActorSummary, EntitySummary } from '@tm8/contract';
 import { useState, type ReactNode } from 'react';
 import { useMobileSurface } from '../../mobile/surface';
-import { RowLead } from './RowLead';
+import { RowLead, leadTooltip } from './RowLead';
 import { Avatar } from '../../kit/Avatar';
 import { copyToClipboard } from '../../terminal/domUtils';
 
@@ -152,7 +152,7 @@ export function MaestroSessionTile({
                 />
               }
               rowTitle={title}
-              tooltip={statusTitle ?? status}
+              tooltip={leadTooltip(statusTitle ?? status, 'Session')}
               childCount={childCount}
               expanded={childrenExpanded}
               onToggle={onToggleChildren}
