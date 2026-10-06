@@ -174,7 +174,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
   }, 120_000);
 
   it('A: both reserved operations answer with a standard closed 501 not_implemented envelope', async () => {
-    expect(reserved.length).toBe(2);
+    expect(reserved.length).toBe(0 /* +2 execution.complete, entities.commands.release (Spec D1, 302). MEASURED. */);
     for (const entry of reserved) {
       const response = await harness.request(entry.method, concretePath(entry.path));
       expectHonest501(response, entry.operation);
