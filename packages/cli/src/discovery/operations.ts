@@ -2759,6 +2759,79 @@ const ROWS: Record<OperationName, Row> = {
     examples: ['tm8 workspace drafts set <draft-id> --field title=<text>'],
   },
 
+  // ── managing the list (API doc 01a115c4 §5.7–§5.11, §8.2) ─────────────────
+  'workspace.create': {
+    cmd: ['workspace', 'create'],
+    syn: 'tm8 workspace create [<name>] [--color <color>] [--before <ws>] [--request-id <id>]',
+    sum: 'Create a workspace in this Space; it never becomes the active one',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'workspaces', 'new', 'add'],
+    notes: [
+      'no name: "Workspace N", the lowest N from 2 not taken; names are 1–64 characters and unique per Space, ignoring case (workspace_name_taken, exit 6)',
+      'colours: gray, red, orange, yellow, green, teal, blue, purple, pink, or none; at most 20 workspaces per Space (workspace_cap, exit 6)',
+      'creating never switches, for a human or an agent: switch with tm8 workspace use <ws>',
+      '<ws> is a workspace id or its name (case-insensitive); idempotent by --request-id',
+    ],
+    examples: ['tm8 workspace create <name> --color <color>'],
+  },
+  'workspace.update': {
+    cmd: ['workspace', 'rename'],
+    syn: 'tm8 workspace rename <ws> <name> [--request-id <id>]',
+    sum: 'Rename or recolour one of your workspaces (last writer wins)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'rename', 'color', 'colour', 'label'],
+    notes: [
+      'an agent may rename and recolour too; the human sees who did it',
+      'the same name or colour again is no_op (exit 0)',
+      'recolour with `tm8 workspace color <ws> <color|none>`',
+    ],
+    examples: ['tm8 workspace rename <ws> <name>'],
+  },
+  'workspace.reorder': {
+    cmd: ['workspace', 'reorder'],
+    syn: 'tm8 workspace reorder <ws> (--before <ws> | --last) [--request-id <id>]',
+    sum: 'Move one of your workspaces in the list (human only)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'order', 'move', 'reorder'],
+    notes: ['the order is the human\u2019s: an agent gets human_only (exit 4)'],
+    examples: ['tm8 workspace reorder <ws> --last'],
+  },
+  'workspace.delete': {
+    cmd: ['workspace', 'delete'],
+    syn: 'tm8 workspace delete <ws> [--discard] [--request-id <id>]',
+    sum: 'Delete one of your workspaces and its drafts (human only)',
+    authz: 'space',
+    input: 'none',
+    side: 'durable',
+    tags: ['workspace', 'delete', 'remove'],
+    notes: [
+      'deleting the active workspace first switches to the next one in the list (else the previous); the last one cannot go (last_workspace, exit 6)',
+      'unsaved drafts refuse it (rejected / unsaved_changes, exit 6) unless --discard',
+      'an agent gets human_only (exit 4); a replay of the same --request-id returns the recorded result',
+    ],
+    examples: ['tm8 workspace delete <ws>'],
+  },
+  'workspace.switch': {
+    cmd: ['workspace', 'use'],
+    syn: 'tm8 workspace use <ws> [--request-id <id>]',
+    sum: 'Make one of your workspaces the active one; every open window follows (human only)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'switch', 'use', 'active', 'activate'],
+    notes: [
+      'works with no window open; already active is no_op',
+      'an agent gets human_only (exit 4): ask the human to switch',
+    ],
+    examples: ['tm8 workspace use <ws>'],
+  },
+
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
@@ -4188,7 +4261,8 @@ export const CATALOG_DIGEST =
   // Re-measured (main sync: cross-space + styles).
   // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
   // Re-measured for Spec D1 / 302 (+execution.complete, +entities.commands.release) on main 2bca8148c — RECOMPUTED.
-  'sha256:2215256330a1b8f016af57fa522d61b4fc74f3d98b797e4bc40bb49c92c15254';
+  // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
+  'sha256:369fb9ce69fdd31c9e3d94a42e2901e15486b59f9ab2f3d05e83b33925f49b9d';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -4754,6 +4828,18 @@ const COMMAND_ALIASES = new Map<string, {
     // No example: a zero-arg command has no `<placeholder>` (see `node mode`).
     examples: [],
   }],
+  // `workspace color` is the recolour spelling of `workspace.update`, the row
+  // `workspace rename` owns (API 01a115c4 §8.2).
+  ['workspace color', {
+    path: ['workspace', 'color'],
+    syntax: 'tm8 workspace color <ws> <color|none> [--request-id <id>]',
+    summary: 'Recolour one of your workspaces — the colour half of `workspace rename`\u2019s operation',
+    notes: [
+      'colours: gray, red, orange, yellow, green, teal, blue, purple, pink; `none` clears it',
+      'the same colour again is no_op (exit 0)',
+    ],
+    examples: ['tm8 workspace color <ws> <color>'],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
@@ -4876,6 +4962,9 @@ COMMAND_ORDER.splice(teammateIndex < 0 ? COMMAND_ORDER.length : teammateIndex, 0
 COMMAND_OPS.set('whoami', ['identity.get']);
 const identityGetIndex = COMMAND_ORDER.indexOf('identity get');
 COMMAND_ORDER.splice(identityGetIndex < 0 ? COMMAND_ORDER.length : identityGetIndex + 1, 0, 'whoami');
+COMMAND_OPS.set('workspace color', ['workspace.update']);
+const workspaceRenameIndex = COMMAND_ORDER.indexOf('workspace rename');
+COMMAND_ORDER.splice(workspaceRenameIndex < 0 ? COMMAND_ORDER.length : workspaceRenameIndex + 1, 0, 'workspace color');
 
 // Workspace remote bridge (Spec C): every verb below is sugar over the ONE
 // `workspace.command` row, and is exactly as available as that row.

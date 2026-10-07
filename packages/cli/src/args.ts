@@ -97,6 +97,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'confirm-agent-generated', // teammate interaction-profile set-default
   'no-session-link',     // entity create — accepted, no effect since 308 (the server records authored_from)
   'no-activate',         // workspace tabs open --no-activate
+  'discard',             // workspace delete --discard
   'clear',               // task axis --clear
   'untick',              // task tick --untick
   'claim',               // task transition --claim — also record the caller as working_on
@@ -170,6 +171,18 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
  * reads that set to report published-vs-parseable flag arity.
  */
 export const COMMAND_SCOPED_GLOBALS: ReadonlySet<string> = new Set(['version']);
+
+/**
+ * Bare flags that are bare on ONE command path only, because the same name
+ * takes a value elsewhere: `tm8 session transcript --last <count>` but
+ * `tm8 workspace reorder <ws> --last` (API 01a115c4 §8.4). The path is the
+ * leading bare words seen so far, so the flag must follow the command path
+ * (§3's EBNF puts command options there). Everywhere else the name keeps its
+ * value arity.
+ */
+export const PATH_SCOPED_BOOLEANS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['last', new Set(['workspace reorder'])],
+]);
 
 /**
  * Retired options. `--json` is not merely unknown: an agent that learned the
@@ -397,6 +410,10 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     // row, and the value-taking rule would eat each one as the previous one's
     // value. The variable namespace is open, so it cannot be an allowlist.
     if (body.startsWith('pn-')) {
+      record(body, true);
+      continue;
+    }
+    if (PATH_SCOPED_BOOLEANS.get(body)?.has(positionals.slice(0, 2).join(' '))) {
       record(body, true);
       continue;
     }
