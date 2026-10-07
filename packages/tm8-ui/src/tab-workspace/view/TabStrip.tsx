@@ -409,11 +409,15 @@ function Tab(props: TabProps) {
         onKeyDown={(event) => props.onKeyDown(event, tab.id)}
         onFocus={() => props.onFocus(tab.id)}
       >
-        <TabLeadIcon tab={tab} />
+        {/* The state rides the icon as a subscript badge (task 01a11573), so
+            hovering for × never hides it. */}
+        <span className="tws-ts-lead">
+          <TabLeadIcon tab={tab} />
+          <TabStateGlyph state={state} id={stateId} />
+        </span>
         <span className="tws-ts-title">{title}</span>
       </div>
       <span className="tws-ts-slot">
-        <TabStateGlyph state={state} id={stateId} />
         <button
           type="button"
           className="tws-ts-close"

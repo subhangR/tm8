@@ -4,12 +4,16 @@
  * everything here is scoped under `.tws-ts`.
  */
 .tws-strip.tws-ts {
-  /* Subhang feedback 6: the band sits one surface step darker (--pn-paper) so
-     the --pn-card active tab stands out; the left header matches. */
-  background: var(--pn-paper);
-  /* R27 (overrides R3's 8px inset): a 40px band. Tabs run its full height,
-     edge to edge; every other control is a 36px box 2px from the top and the
-     bottom edge, so all labels share the left header's centre (y = 20). */
+  /* Subhang feedback 6, task 01a11573: the band (--tws-band) sits a clear
+     step darker than the --pn-card active tab, which stays the content
+     plane's colour; the left header matches. */
+  background: var(--tws-band, var(--pn-paper));
+  border-bottom-color: var(--tws-band-line, var(--pn-line));
+  /* R27 (overrides R3's 8px inset): a --tws-header-h (32px) band. Tabs run
+     its full height, edge to edge; every other control is a --tws-band-ctl
+     box 2px from the top and the bottom edge, so all labels share the left
+     header's centre. Outside the workspace (Craft's page row borrows these
+     classes) the old 40/36px fallbacks apply unchanged. */
   align-items: flex-start;
   gap: 0;
   padding: 0 var(--pn-space-3) 0 var(--pn-space-2);
@@ -24,7 +28,7 @@
   align-items: center;
   gap: var(--pn-space-1);
   flex: none;
-  height: 36px;
+  height: var(--tws-band-ctl, 36px);
   margin-top: 2px;
   margin-right: var(--pn-space-2);
 }
@@ -40,7 +44,7 @@
   min-width: 0;
   /* The full band: the last pixel row is the hairline, which the active tab
      covers to join the content plane. */
-  height: 40px;
+  height: var(--tws-header-h, 40px);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -67,7 +71,9 @@
   flex: 0 1 220px;
   min-width: 120px;
   max-width: 220px;
-  height: 40px;
+  height: var(--tws-header-h, 40px);
+  /* What the state badge's ring cuts out of the icon (see .tws-ts-lead). */
+  --tws-ts-bg: var(--tws-band, var(--pn-paper));
   padding-left: var(--pn-space-3);
   /* R27: a full-height tab has no free corner to round. */
   border-radius: 0;
@@ -75,12 +81,14 @@
   user-select: none;
 }
 .tws-ts-tab:hover {
-  /* One step darker than the --pn-paper band; stops 1px short so an inactive
-     tab's hover never paints over the hairline. */
-  background: linear-gradient(var(--pn-active), var(--pn-active)) top / 100% calc(100% - 1px) no-repeat;
+  /* One step darker than the band; stops 1px short so an inactive tab's
+     hover never paints over the hairline. */
+  --tws-ts-bg: var(--tws-band-hover, var(--pn-active));
+  background: linear-gradient(var(--tws-ts-bg), var(--tws-ts-bg)) top / 100% calc(100% - 1px) no-repeat;
   color: var(--pn-ink);
 }
 .tws-ts-tab[data-active] {
+  --tws-ts-bg: var(--pn-card);
   background: var(--pn-card);
   color: var(--pn-ink);
 }
@@ -94,7 +102,7 @@
   gap: var(--pn-space-2);
   flex: 1 1 auto;
   min-width: 0;
-  height: 40px;
+  height: var(--tws-header-h, 40px);
   margin-right: var(--pn-space-1);
   cursor: pointer;
   border-radius: var(--pn-r-xs);
@@ -120,6 +128,42 @@
   color: var(--pn-ink);
 }
 
+/* ---- state badge: the running / unsaved / error mark sits on the lead
+   icon's bottom-right corner as a subscript (task 01a11573), ringed in the
+   tab's own fill so it reads as cut out of the icon. ---- */
+.tws-ts-lead {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.tws-ts-lead > .tws-ts-state {
+  position: absolute;
+  right: -3px;
+  bottom: -2px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--tws-ts-bg, var(--pn-paper));
+  pointer-events: none;
+}
+.tws-ts-lead > .tws-ts-state[data-state='running'] {
+  width: 7px;
+  height: 7px;
+  background: var(--pn-run);
+}
+.tws-ts-lead > .tws-ts-state[data-state='running']::after {
+  content: none;
+}
+.tws-ts-lead > .tws-ts-state:is([data-state='error'], [data-state='deleted'], [data-state='unavailable']) {
+  right: -5px;
+  bottom: -4px;
+  width: 11px;
+  height: 11px;
+  background: var(--tws-ts-bg, var(--pn-paper));
+}
+.tws-ts-lead > .tws-ts-state svg {
+  width: 9px;
+  height: 9px;
+}
+
 .tws-ts-title {
   min-width: 0;
   overflow: hidden;
@@ -127,7 +171,9 @@
   white-space: nowrap;
 }
 
-/* ---- right slot: state glyph OR close, never both; always reserved ---- */
+/* ---- right slot: the close button, always reserved. A workspace tab's state
+   is a badge on its icon (.tws-ts-lead); Craft's page row still shows its
+   state glyph here, swapped for nothing on hover. ---- */
 .tws-ts-slot {
   position: relative;
   display: inline-flex;
@@ -135,7 +181,7 @@
   justify-content: center;
   flex: none;
   width: 36px;
-  height: 40px;
+  height: var(--tws-header-h, 40px);
 }
 .tws-ts-state {
   display: inline-flex;
@@ -193,7 +239,7 @@
 }
 .tws-ts-close:hover {
   /* Darker than the hovered tab under it. */
-  background: var(--pn-line);
+  background: var(--tws-band-press, var(--pn-line));
   color: var(--pn-ink);
 }
 /* Shown on hover or focus inside the tab; always focusable (Spec A §16). */
@@ -207,12 +253,12 @@
   visibility: hidden;
 }
 
-/* ---- drag insertion marker: 2×24 brand bar, centred in the gap ---- */
+/* ---- drag insertion marker: 2×20 brand bar, centred in the gap ---- */
 .tws-ts-marker {
   position: absolute;
-  bottom: 8px;
+  bottom: 6px;
   width: 2px;
-  height: 24px;
+  height: 20px;
   border-radius: 1px;
   background: var(--pn-brand);
   pointer-events: none;
@@ -222,7 +268,7 @@
 .tws-ts-pinned {
   display: flex;
   align-items: center;
-  height: 36px;
+  height: var(--tws-band-ctl, 36px);
   margin-top: 2px;
   gap: var(--pn-space-2);
   flex: none;
@@ -233,8 +279,8 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 36px;
-  height: 36px;
+  width: var(--tws-band-ctl, 36px);
+  height: var(--tws-band-ctl, 36px);
   padding: 0;
   background: none;
   border: 0;
@@ -247,12 +293,12 @@
 @media (hover: hover) {
   .tws-ts-btn:hover {
     /* Same 1px stop as a tab: the box sits on the hairline row. */
-    background: linear-gradient(var(--pn-active), var(--pn-active)) top / 100% calc(100% - 1px) no-repeat;
+    background: linear-gradient(var(--tws-band-hover, var(--pn-active)), var(--tws-band-hover, var(--pn-active))) top / 100% calc(100% - 1px) no-repeat;
     color: var(--pn-ink);
   }
 }
 .tws-ts-btn:active {
-  background: linear-gradient(var(--pn-line), var(--pn-line)) top / 100% calc(100% - 1px) no-repeat;
+  background: linear-gradient(var(--tws-band-press, var(--pn-line)), var(--tws-band-press, var(--pn-line))) top / 100% calc(100% - 1px) no-repeat;
   color: var(--pn-ink);
 }
 .tws-ts-btn:focus-visible {
