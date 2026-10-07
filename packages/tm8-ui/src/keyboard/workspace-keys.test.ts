@@ -55,6 +55,7 @@ describe('Workspace bindings', () => {
     ['l l', 'work.browser.focus', undefined],
     ['l t', 'work.browser.focus', 'task'],
     ['l s', 'work.browser.focus', 'work_session'],
+    ['l a', 'work.browser.focus', 'artifact'],
     ['l 1', 'work.browser.focus', 'pin:1'],
     ['l 9', 'work.browser.focus', 'pin:9'],
     ['t e', 'work.tab.section', 'entity'],

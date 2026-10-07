@@ -260,6 +260,7 @@ const LIST_CHORDS: readonly Binding[] = (
     ['s', 'work_session', 'List sessions'],
     ['c', 'chat', 'List chats'],
     ['f', 'form', 'List forms'],
+    ['a', 'artifact', 'List artifacts'],
     ['p', 'project', 'List projects'],
     ['x', 'drawing', 'List drawings'],
     ['m', 'team_member', 'List teammates'],
