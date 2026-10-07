@@ -13,7 +13,7 @@ import { createWorkspaceRuntime } from '../runtime/dispatch';
 import { createWorkspaceStore } from '../runtime/store';
 import { activeTabId, visibleTabs } from '../runtime/selectors';
 import { getRailStore } from '../runtime/railStore';
-import { handleWorkKey } from './useWorkspaceKeys';
+import { focusLinksList, handleWorkKey } from './useWorkspaceKeys';
 import { useListCursor } from './listCursor';
 
 let n = 0;
@@ -147,6 +147,22 @@ describe('handleWorkKey — creation and the browser', () => {
     const notify = vi.fn();
     handleWorkKey(rt, { command: 'work.launch' }, notify);
     expect(notify).toHaveBeenCalledWith('Nothing to launch on this tab.');
+  });
+});
+
+describe('t l — the links list takes focus', () => {
+  it('focuses the Links list inside the open tab, and reports when there is none', () => {
+    expect(focusLinksList()).toBe(false);
+    const host = document.createElement('div');
+    host.setAttribute('data-testid', 'tws-content');
+    host.innerHTML = '<ul data-testid="pn-peers-list" tabindex="-1"><li data-peer-id="a">a</li></ul>';
+    document.body.appendChild(host);
+    try {
+      expect(focusLinksList()).toBe(true);
+      expect(document.activeElement).toBe(host.querySelector('[data-testid="pn-peers-list"]'));
+    } finally {
+      host.remove();
+    }
   });
 });
 

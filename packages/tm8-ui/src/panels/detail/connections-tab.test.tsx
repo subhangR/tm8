@@ -337,6 +337,76 @@ describe('ConnectionsTab — read as a timeline', () => {
  * 16 of 28 rows were messages it posted or received — the Discussion tab's
  * content, listed a second time, one row each.
  */
+describe('ConnectionsTab — the keyboard cursor (task 01a11567)', () => {
+  const threeRows = () =>
+    detailWith(
+      [
+        timedGroup('relates_to', 'relates to', 'outgoing', [
+          { id: 'e1', peer: alpha, createdAt: '2026-07-28T10:00:00Z' },
+          { id: 'e2', peer: beta, createdAt: '2026-07-28T11:00:00Z' },
+          { id: 'e3', peer: gamma, createdAt: '2026-07-28T12:00:00Z' },
+        ]),
+      ],
+      [],
+    );
+  const cursorId = (list: HTMLElement) => list.querySelector('[data-kbd-cursor]')?.getAttribute('data-peer-id');
+
+  it('is a script-focusable list whose rows publish their peer id, newest first', () => {
+    const { getByTestId } = render(<ConnectionsTab detail={threeRows()} />);
+    const list = getByTestId('pn-peers-list');
+    expect(list.tagName).toBe('UL');
+    expect(list.getAttribute('tabindex')).toBe('-1');
+    const ids = [...list.querySelectorAll('.pn-peers__row')].map((r) => r.getAttribute('data-peer-id'));
+    expect(ids).toEqual(['peer-gamma', 'peer-beta', 'peer-alpha']);
+  });
+
+  it('focus lands on the first row; j/k/arrows move and clamp; Enter opens the peer under the cursor', () => {
+    const onOpenEntity = vi.fn();
+    const { getByTestId } = render(<ConnectionsTab detail={threeRows()} onOpenEntity={onOpenEntity} />);
+    const list = getByTestId('pn-peers-list');
+    list.focus();
+    expect(cursorId(list)).toBe('peer-gamma');
+    fireEvent.keyDown(list, { key: 'j' });
+    expect(cursorId(list)).toBe('peer-beta');
+    fireEvent.keyDown(list, { key: 'ArrowDown' });
+    fireEvent.keyDown(list, { key: 'j' });
+    expect(cursorId(list)).toBe('peer-alpha'); // clamps at the end
+    fireEvent.keyDown(list, { key: 'k' });
+    expect(cursorId(list)).toBe('peer-beta');
+    fireEvent.keyDown(list, { key: 'Enter' });
+    expect(onOpenEntity).toHaveBeenCalledWith('peer-beta');
+    fireEvent.keyDown(list, { key: 'End' });
+    expect(cursorId(list)).toBe('peer-alpha');
+    fireEvent.keyDown(list, { key: 'Home' });
+    expect(cursorId(list)).toBe('peer-gamma');
+    fireEvent.keyDown(list, { key: 'o' });
+    expect(onOpenEntity).toHaveBeenLastCalledWith('peer-gamma');
+  });
+
+  it('lets every other key through to the shell, and leaves on Esc with no cursor behind', () => {
+    const { getByTestId } = render(<ConnectionsTab detail={threeRows()} />);
+    const list = getByTestId('pn-peers-list');
+    list.focus();
+    for (const key of [']', 'w', 'r', 't', 'n']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      list.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    fireEvent.keyDown(list, { key: 'Escape' });
+    expect(document.activeElement).not.toBe(list);
+    expect(cursorId(list)).toBeUndefined();
+  });
+
+  it('draws each row at reading size: an 18px kind mark and the kind said beside the chip', () => {
+    const { container } = render(<ConnectionsTab detail={threeRows()} />);
+    const row = container.querySelector('.pn-peers__row')!;
+    const mark = row.querySelector('.kit-chip__glyph svg');
+    expect(mark?.getAttribute('width')).toBe('18');
+    expect(row.querySelector('.pn-peers__kind')?.textContent).toBeTruthy();
+    expect(container.querySelector('#tabpanel-connections')?.classList.contains('pn-body--links')).toBe(true);
+  });
+});
+
 describe('ConnectionsTab — messages as one summary row', () => {
   const msg = (id: string) => peer(id, `Status update ${id}`, CONVERSATION_KIND);
 

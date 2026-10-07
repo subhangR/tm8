@@ -452,7 +452,9 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'work.launch', layer: 'global', keys: 'r', label: 'Launch a session on this', command: 'work.launch', guaranteed: true, match: plain('r') },
   // `t` + a letter: the open tab's own controls (the action strip's buttons).
   { id: 't.entity', layer: 'global', keys: 't e', label: 'Tab: details', command: 'work.tab.section', ref: 'entity', guaranteed: true, match: tabChord('e') },
-  { id: 't.links', layer: 'global', keys: 't l', label: 'Tab: links', command: 'work.tab.section', ref: 'connections', guaranteed: true, match: tabChord('l') },
+  // `t l` also FOCUSES the links list, where j/k move and Enter opens (the
+  // Lists rows below; the list handles them itself, like the Work browser).
+  { id: 't.links', layer: 'global', keys: 't l', label: 'Tab: links (focus the list)', command: 'work.tab.section', ref: 'connections', guaranteed: true, match: tabChord('l') },
   { id: 't.messages', layer: 'global', keys: 't m', label: 'Tab: messages', command: 'work.tab.section', ref: 'messages', guaranteed: true, match: tabChord('m') },
   { id: 't.chat', layer: 'global', keys: 't c', label: 'Tab: open / close chat', command: 'work.tab.chat', guaranteed: true, match: tabChord('c') },
   { id: 't.fullscreen', layer: 'global', keys: 't f', label: 'Tab: full screen', command: 'work.tab.fullscreen', guaranteed: true, match: tabChord('f') },

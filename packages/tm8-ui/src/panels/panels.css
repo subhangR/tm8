@@ -957,27 +957,71 @@
   flex-direction: column;
 }
 
+/* LINKS — the Connections tab's list, drawn at READING size (task 01a11567).
+
+   The rows were 20px chips with 14px marks and 11px verbs, built for a 320px
+   side panel. In the Workspace the tab is a full column, and at that width
+   the same rows read as a footnote: marks too small to tell apart, chips too
+   small to aim at, verbs the ink-4 quiet of a timestamp. So the tab carries
+   `.pn-body--links`, and under it every chip grows (the parent and children
+   rows too, so the three sections agree), each peer row becomes a card the
+   pointer and the keyboard cursor can both land on, and the relation verbs
+   become pills a reader can scan. The row's grammar is unchanged — chip ·
+   kind · verbs · clock, one line — only its scale. */
+.cv2-root .pn-body--links { gap: 14px; }
+.cv2-root .pn-body--links > .pn-section { gap: 10px; padding-bottom: 14px; }
+.cv2-root .pn-body--links .pn-chiprow { gap: 8px; }
+.cv2-root .pn-body--links .kit-chip {
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--pn-ink);
+}
+.cv2-root .pn-body--links .kit-chip__glyph { color: var(--pn-ink-2); }
+.cv2-root .pn-body--links .kit-chip:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
 /* Connections tab: one row per connected ENTITY, its edge types trailing it.
    The peer chip leads because "what is this connected to" is the question;
-   the relation verbs answer "how" without competing for the eye. */
+   the relation verbs answer "how" without competing for the eye. The list is
+   focusable by script (`t l`) and shows no ring of its own: the cursor row is
+   the focus indicator. */
 .cv2-root .pn-peers {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  outline: none;
 }
 /* ONE LINE, ALWAYS. The row used to wrap, so a long title (a message body, a
    PR title) filled the width and pushed its relations and its clock onto a
    second line — every row two lines tall. Now the chip is the one thing that
    gives: it shrinks and its title ends in an ellipsis, with the full title on
-   hover; the verbs and the clock keep their width. */
+   hover; the kind, the verbs and the clock keep their width. */
 .cv2-root .pn-peers__row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+.cv2-root .pn-peers__row:hover { background: var(--pn-hover); }
+/* THE KEYBOARD CURSOR — the Work browser's own mark (`data-kbd-cursor`), so
+   one attribute means "the row under the cursor" on every list. A brand
+   hairline and the brand wash together, because the hover wash alone would
+   be indistinguishable from a pointer resting on a neighbouring row. */
+.cv2-root .pn-peers__row[data-kbd-cursor] {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
 }
 .cv2-root .pn-peers__row > .kit-chip {
   flex: 0 1 auto;
@@ -991,31 +1035,36 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cv2-root .pn-peers__rels {
-  display: flex;
+/* The kind, once, in the quiet ink: a label the eye can skip. */
+.cv2-root .pn-peers__kind {
   flex: none;
-  gap: 4px;
-  align-items: center;
-}
-/* A verb, not a badge: plain quiet text, several joined by a middle dot. */
-.cv2-root .pn-peers__rel {
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 11.5px;
   color: var(--pn-ink-4);
   white-space: nowrap;
 }
-.cv2-root .pn-peers__rel + .pn-peers__rel::before {
-  content: '·';
-  margin-right: 4px;
-  color: var(--pn-ink-4);
+.cv2-root .pn-peers__rels {
+  display: flex;
+  flex: none;
+  gap: 5px;
+  align-items: center;
+}
+/* A verb as a PILL: the relation is the second thing the row says, and at
+   reading size it needs a shape of its own to be scanned down the column. */
+.cv2-root .pn-peers__rel {
+  font-size: 11.5px;
+  line-height: 18px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--pn-hover);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
 }
 /* An unresolved HARD dependency is why something is blocked — it keeps a
    block-ramp outline so it cannot be mistaken for any other relation. */
 .cv2-root .pn-peers__rel--hard {
   color: var(--pn-block);
-  padding: 0 5px;
+  background: transparent;
   border: 1px solid var(--pn-block);
-  border-radius: 3px;
 }
 
 /* The messages posted on or from this entity, as ONE row — they are the
@@ -1026,10 +1075,10 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 10px 12px;
   border: 1px dashed var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--pn-ink-3);
 }
 .cv2-root .pn-convo__glyph {
@@ -1070,8 +1119,9 @@
 .cv2-root .pn-peers__when {
   flex: none;
   margin-left: auto;
+  padding-left: 6px;
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--pn-ink-4);
   white-space: nowrap;
 }
@@ -1082,13 +1132,13 @@
 .cv2-root .pn-peers__day {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 0 1px;
+  gap: 8px;
+  padding: 10px 0 4px;
 }
 .cv2-root .pn-peers__day:first-child { padding-top: 0; }
 .cv2-root .pn-peers__day-label {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: 10.5px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--pn-ink-4);
