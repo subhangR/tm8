@@ -709,3 +709,33 @@
   color: var(--pn-ink-4);
   cursor: default;
 }
+
+/* ---------------------------------------------------------------------------
+   THE PAGE'S RICH DESCRIPTION (task 01a1163a PR2, mockup r6). One editor,
+   always mounted, on the page itself: no card, no inner scroll — the text
+   grows the page, and the writing gets room before anything else does.
+   --------------------------------------------------------------------------- */
+.cv2-root .sb-description--rich .sb-description__head {
+  justify-content: flex-start;
+  min-height: 22px;
+}
+.cv2-root .sb-description__spacer {
+  flex: 1;
+}
+.cv2-root .sb-description--rich .de-rich {
+  background: transparent;
+}
+.cv2-root .sb-description--rich .de-rich__body {
+  overflow: visible;
+}
+.cv2-root .sb-description--rich .de-rich__doc {
+  min-height: 160px;
+  padding: 4px 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.cv2-root .sb-description__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
