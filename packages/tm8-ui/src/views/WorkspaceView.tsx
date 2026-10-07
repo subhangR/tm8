@@ -51,7 +51,7 @@ import { needsAttentionOf } from '../domain/needs-attention';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
-import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { composePanelActions, panelSessionControlsFor, usePanelPrimaries } from './usePanelPrimaries';
 import { WithChatCounts, useChatSlot } from '../entity-chat';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
@@ -309,7 +309,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
    * nothing if only one of them consults it.
    */
   const handleSessionResume = primaries.resume;
-  const resumingId = primaries.resumingId;
 
   /** Opening is a read: it navigates and records a read mark, and never
       settles an attention request (Attention v2 — see `open-entity.ts`). */
@@ -568,15 +567,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     linkedPullRequestsOf={data.linkedPullRequestsOf}
                     mentionOptions={data.mentionOptions}
                     skillOptions={data.skillOptions}
-                    onResumeSession={() => handleSessionResume(id)}
-                    resumingSession={resumingId === id}
-                    /* The stale card's chip — Spec D1 §5.6 "Mark lost": the ghost
-                       reaper, now, for this session (`terminate` with `markLost`).
-                       It records a process fact only; the outcome stays open and
-                       the row moves to Interrupted as Lost. Same executor as the
-                       row's verbs (`usePanelPrimaries.sessionVerb`). */
-                    onMarkSessionExited={() => primaries.sessionVerb('mark-lost', id)}
-                    onSessionVerb={(ref) => primaries.sessionVerb(ref, id)}
+                    /* Resume, its guard, Mark lost and the outcome verbs — the
+                       same executor as the row's verbs, shared by every host. */
+                    {...panelSessionControlsFor(primaries, id)}
                     actorNameOf={(actorId) => data.members.find((m) => m.id === actorId)?.displayName}
                     /* GAP-2 (data-wiring handover): hand the seam commands down so the
                        save path is live in the workspace panels too. */

@@ -165,6 +165,11 @@ describe('§5.2 row actions by case', () => {
     expect(sessionVerbsOf(session(), 'live')).toEqual(['complete-session', 'terminate']);
     expect(sessionVerbsOf(session({ status: 'idle' }), 'live')).toEqual(['complete-session', 'terminate']);
   });
+  it('stale (record live, no PTY): Resume first, then Complete, Terminate and Mark lost', () => {
+    for (const status of ['running', 'idle']) {
+      expect(sessionVerbsOf(session({ status }), 'stale')).toEqual(['resume', 'complete-session', 'terminate', 'mark-lost']);
+    }
+  });
   it('completed, process open: Stop only (closes the process, no dialog)', () => {
     expect(sessionVerbsOf(session({ outcome: 'completed' }), 'live')).toEqual(['close-process']);
   });

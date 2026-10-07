@@ -60,11 +60,14 @@ describe('Spec D1 is reachable on the workspace page', () => {
   it('the detail panel wires the panel-state verbs and Mark lost', () => {
     const details = mounts('EntityDetailPanel');
     expect(details.length).toBeGreaterThan(0);
+    // Through the shared helper every EntityDetailPanel host spreads (see
+    // panel-host-wiring.test.ts), which maps Mark lost onto the row's executor.
     for (const props of details) {
-      expect(props).toContain('onSessionVerb=');
-      expect(props).toContain('onMarkSessionExited=');
+      expect(props).toContain('{...panelSessionControlsFor(primaries, id)}');
     }
-    expect(SOURCE).toMatch(/onMarkSessionExited=\{\(\) => primaries\.sessionVerb\('mark-lost'/);
+    const HELPER = readFileSync(join(HERE, 'usePanelPrimaries.ts'), 'utf8');
+    expect(HELPER).toMatch(/onMarkSessionExited: \(\) => primaries\.sessionVerb\('mark-lost'/);
+    expect(HELPER).toMatch(/onSessionVerb: \(ref\) => primaries\.sessionVerb\(ref, entityId\)/);
   });
 
   it('the page renders the Complete/Terminate dialogs and opts in to them', () => {

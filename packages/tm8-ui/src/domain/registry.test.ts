@@ -1487,6 +1487,17 @@ describe('the ActionRef registry (§2.5)', () => {
     expect(resolveAction('terminate').availability(base)).toEqual({ kind: 'available' });
   });
 
+  it('RESUME is offered on a STALE session — the node marks it lost and resumes it', () => {
+    // The record still says running/idle, so the session has not "ended" —
+    // but nothing is answering, and `execution.resume` now records the lost
+    // verdict itself rather than making the user wait out the reaper.
+    const running = { kind: 'work_session', status: 'running', outcome: 'open' } as unknown;
+    const base = { spaceId: 's', entityId: 'sess-1', sessionState: running } as const;
+    expect(resolveAction('resume').availability({ ...base, liveness: 'stale' })).toEqual({ kind: 'available' });
+    // A live one is still refused: there is a process to talk to.
+    expect(resolveAction('resume').availability({ ...base, liveness: 'live' }).kind).toBe('disabled');
+  });
+
   it('and refuses it on a row that has already ended', () => {
     // The one refusal left, and it is a statement rather than a capability
     // guess: a row under Done with nothing answering cannot be ended again.

@@ -386,6 +386,8 @@ export function StaleFallback({
   label,
   reason,
   onMarkExited,
+  onResume,
+  resuming,
 }: {
   /**
    * The registry's WORD for this verdict (`liveTreatment('stale').label`).
@@ -405,6 +407,15 @@ export function StaleFallback({
    * L6 note there, which this now obeys too.
    */
   onMarkExited?: () => void;
+  /**
+   * Resume it NOW, without waiting for the lost-session reaper. The node marks
+   * the ghost `failed / lost` first and then resumes it (SpawnService.resume),
+   * so this is one click rather than Mark lost → wait → Resume. Absent ⇒ the
+   * button renders DISABLED with a reason, as on the exited canvas.
+   */
+  onResume?: () => void;
+  /** True while that resume is in flight — never double-fire a spawn. */
+  resuming?: boolean;
 }) {
   // L6, the same ruling `ExitedFallback` applies to Resume. This chip had been
   // rendering ENABLED with `onClick={undefined}` since it was written, which is
@@ -412,6 +423,7 @@ export function StaleFallback({
   // — and it is the one control this screen exists to offer, on the one screen
   // a user reaches after a node restart killed their work.
   const markDisabled = !onMarkExited;
+  const resumeDisabled = !onResume || Boolean(resuming);
 
   return (
     <div className="term-fallback" data-testid="session-stale-fallback">
@@ -423,6 +435,22 @@ export function StaleFallback({
           This session reported running, but its process is gone. Liveness never lies.
         </span>
         {reason ? <span className="term-fallback__meta">{reason}</span> : null}
+        {/* Spec D1 §5.6 Stale: "Resume · Mark lost". Resume is the primary —
+            it is what the user came back for — and the node records the lost
+            verdict itself before relaunching the same conversation. */}
+        <button
+          type="button"
+          className="term-fallback__action"
+          data-testid="session-stale-resume"
+          onClick={onResume}
+          disabled={resumeDisabled}
+          aria-disabled={resumeDisabled}
+          title={onResume
+            ? 'Marks the lost process and resumes the same conversation now.'
+            : 'Resume is not wired on this surface yet.'}
+        >
+          {resuming ? 'Resuming…' : 'Resume session'}
+        </button>
         <button
           type="button"
           className="term-fallback__chip"

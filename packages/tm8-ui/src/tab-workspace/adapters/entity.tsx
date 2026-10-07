@@ -181,6 +181,10 @@ function useWorkspacePanelHost(
     reconcileCommand: data.reconcileCommand,
     onError: notifyActionFailed,
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5 — opts into the outcome dialogs, rendered below: the
+       session canvas's Complete and Reopen open one, so without it they would
+       set a dialog that renders nowhere. */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
   const rowLifecycle = useRowLifecycle({ data, viewerMemberId, onNotice });
   const membership = useMembershipSurface({
@@ -564,6 +568,8 @@ export function EntityTabBody({ tab, adapter, onHandle, onOpenEntity: hostOpen, 
       data-kind={tab.kind}
       data-body={adapter.body}
     >
+      {/* Spec D1 §5.4/§5.5 — the session outcome dialogs (fixed-position). */}
+      {host.primaries.dialog}
       <AuxEntityPanel
         host={host}
         entityId={tab.entityId as EntityId}

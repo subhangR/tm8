@@ -341,6 +341,26 @@ describe('fallbacks — each verdict states what is actually known', () => {
     expect(el.textContent).not.toMatch(/reconnect/i);
   });
 
+  it('stale offers Resume straight away — no wait for the reaper', () => {
+    const onResume = vi.fn();
+    const { getByTestId, rerender } = render(<StaleFallback onResume={onResume} />);
+    const button = getByTestId('session-stale-resume') as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(onResume).toHaveBeenCalledTimes(1);
+    // In flight: never a second spawn onto the same session id.
+    rerender(<StaleFallback onResume={onResume} resuming />);
+    expect((getByTestId('session-stale-resume') as HTMLButtonElement).disabled).toBe(true);
+    expect(getByTestId('session-stale-resume').textContent).toBe('Resuming…');
+  });
+
+  it('stale Resume unwired renders DISABLED with its reason, never hidden (L6)', () => {
+    const { getByTestId } = render(<StaleFallback />);
+    const button = getByTestId('session-stale-resume') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toContain('not wired');
+  });
+
   it('unverified claims neither life nor death', () => {
     const { getByTestId } = render(<UnverifiedFallback />);
     const text = (getByTestId('session-unverified-fallback').textContent ?? '').toLowerCase();

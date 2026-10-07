@@ -508,7 +508,8 @@ export function sessionHeadline(
 
 /**
  * The verbs a session row offers, by case (§5.2). Refs, not components:
- *   working / waiting / ready / idle / stale  → complete-session, terminate
+ *   working / waiting / ready / idle          → complete-session, terminate
+ *   stale (record live, no PTY)               → resume, complete-session, terminate, mark-lost
  *   finished, still open                      → close-process ("Stop")
  *   completed, process closed                 → reopen-session, follow-up
  *   stopped                                   → resume
@@ -534,9 +535,13 @@ export function sessionVerbsOf(state: EntityState | unknown, liveness?: SessionL
   if (rec.outcome === 'completed') return live ? ['close-process'] : ['reopen-session', 'follow-up'];
   if (rec.outcome === 'stopped') return live ? ['close-process'] : ['resume'];
   if (live) {
-    // §5.6 Stale: "Resume · Mark lost" lives in the panel's StaleFallback; the
-    // row keeps Complete and Terminate, so a ghost is still retirable.
-    return liveness === 'stale' ? ['complete-session', 'terminate', 'mark-lost'] : ['complete-session', 'terminate'];
+    // §5.6 Stale: "Resume · Mark lost", on the row as on the panel's
+    // StaleFallback — the node marks the ghost lost and resumes it in one
+    // command, so nobody waits out the reaper. Complete and Terminate stay,
+    // so a ghost is still retirable without resuming it.
+    return liveness === 'stale'
+      ? ['resume', 'complete-session', 'terminate', 'mark-lost']
+      : ['complete-session', 'terminate'];
   }
   return ['resume', 'complete-session', 'dismiss-session'];
 }

@@ -284,7 +284,14 @@ export function hasEnded(ctx: Pick<ActionContext, 'category' | 'liveness' | 'ses
 /** The literal complement of `endableGate`'s refusal — see `hasEnded`. */
 function resumableGate(ctx: ActionContext): ActionAvailability | null {
   if (!ctx.entityId) return disabled(REASONS.noEntity);
-  if (!hasEnded(ctx)) return disabled(REASONS.notEnded);
+  /* A STALE session (its record says live, the node holds no PTY) is
+     resumable too: `execution.resume` marks the ghost lost and relaunches it,
+     so the user does not wait out the reaper. Only with the session's own
+     record in hand — that is when `sessionVerbsOf` picks the row's verbs and
+     offers Resume beside Terminate on purpose. Without it the one-slot swap
+     (`processControlFor`) still needs the two gates to be exact complements. */
+  const staleSession = sessionRecordOf(ctx.sessionState) !== null && ctx.liveness === 'stale';
+  if (!hasEnded(ctx) && !staleSession) return disabled(REASONS.notEnded);
   return null;
 }
 

@@ -34,7 +34,7 @@ import type { AttachmentsPort } from '../files/port';
 import type { GateData } from './useGateData';
 import type { LaunchPort } from './useLaunchPort';
 import type { MembershipSurface } from './membershipSurface';
-import { composePanelActions, type PanelPrimaries } from './usePanelPrimaries';
+import { composePanelActions, panelSessionControlsFor, type PanelPrimaries } from './usePanelPrimaries';
 import type { ChatAbout } from './useChatAbout';
 import { useChatCounts } from '../entity-chat';
 import type { RowLifecycle } from './useRowLifecycle';
@@ -141,6 +141,8 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHos
       controls={host.controls}
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
+      /* Resume, its guard, Mark lost and the outcome verbs on the session canvas. */
+      {...panelSessionControlsFor(host.primaries, entityId)}
       primaryCounts={chatCounts}
       membershipAuthoring={host.membership.authoringFor(detail)}
       launch={host.launchPort}
