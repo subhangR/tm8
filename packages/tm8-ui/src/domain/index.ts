@@ -291,6 +291,8 @@ export type { LaunchSourceChoice, LaunchSourceOption, LaunchSourceOptionsInput }
 export { CONVERSATION_KIND, EDGE_VERBS, edgeVerb, edgeVerbBoth, isConversationEdge } from './edge-verbs';
 export type { EdgeDirection, EdgeVerb } from './edge-verbs';
 export { EDGE_KINDS, relationsOf } from './edge-kinds';
+export { EDGE_FAMILIES, EDGE_FAMILY_LABEL, EDGE_FAMILY_ORDER, edgeFamily } from './edge-families';
+export type { EdgeFamily } from './edge-families';
 export type { EdgeKinds, KindRelation, RelationDirection } from './edge-kinds';
 export { GENERIC_ENTITY_COMMANDS, KIND_CLI_VOCABULARY, kindCliVocabulary } from './kind-nouns';
 export type { KindCliVocabulary } from './kind-nouns';
