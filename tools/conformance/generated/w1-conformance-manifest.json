@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:d8cbfa90cf4911f99d3992c42c25bca775bf16ed79ec7c1976e06a74a15c8ba9",
+  "catalogDigest": "sha256:f5a78ce3c6d5a49f22949f38bb9e87ff1fc53368f9fb59f9fbfc91f9d99f8944",
   "catalog": {
-    "total": 356,
-    "v1": 354,
+    "total": 358,
+    "v1": 356,
     "reserved": 2,
-    "http": 354,
+    "http": 356,
     "ws": 1,
-    "registerableV1Http": 352,
+    "registerableV1Http": 354,
     "methods": {
-      "GET": 115,
+      "GET": 117,
       "POST": 176,
       "PATCH": 20,
       "DELETE": 23,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 121,
+      "read": 123,
       "command": 233,
       "stream": 2
     },
-    "uniqueNames": 356,
-    "uniqueBindings": 355
+    "uniqueNames": 358,
+    "uniqueBindings": 357
   },
   "reservedOperations": [
     "search.query",
@@ -1678,6 +1678,20 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.gitCheckouts",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/git/checkouts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.gitCheckoutDiff",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/git/checkouts/diff",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.gitCheckpoint",
         "method": "POST",
         "path": "/v2/work-sessions/:workSessionId/git/checkpoint",
@@ -2896,7 +2910,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 324
+    "unimplementedV1Http": 326
   },
   "schemas": {
     "additive": {
@@ -6597,6 +6611,41 @@
         "intentTags": [
           "execution",
           "git",
+          "diff"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitCheckouts",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitCheckouts",
+        "intentTags": [
+          "execution",
+          "git",
+          "checkouts"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitCheckoutDiff",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitCheckoutDiff",
+        "intentTags": [
+          "execution",
+          "git",
+          "checkout",
           "diff"
         ],
         "inputSchemaRef": null,

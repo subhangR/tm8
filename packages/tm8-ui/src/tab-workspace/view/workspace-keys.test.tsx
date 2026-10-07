@@ -7,11 +7,12 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { installWorkKeys, queueWorkKey, runWorkKey, workKeysMounted } from '../keys';
 import { createWorkspaceRuntime } from '../runtime/dispatch';
 import { createWorkspaceStore } from '../runtime/store';
 import { activeTabId, visibleTabs } from '../runtime/selectors';
+import { getRailStore } from '../runtime/railStore';
 import { focusLinksList, handleWorkKey } from './useWorkspaceKeys';
 import { useListCursor } from './listCursor';
 
@@ -118,6 +119,29 @@ describe('handleWorkKey — creation and the browser', () => {
     expect(rt.store.getState().layout.expanded).toBe(false);
   });
 
+  it('l 1…l 9 switch the browser to that pinned rail kind, in the rail\'s order', () => {
+    const rt = runtime();
+    // The default pins, top to bottom: chats, tasks, sessions.
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:2' }, () => {});
+    expect(rt.store.getState().browsers.main.kind).toBe('task');
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:3' }, () => {});
+    expect(rt.store.getState().browsers.main.kind).toBe('work_session');
+
+    // The rail is the user's: unpin chats and the numbers follow.
+    getRailStore(rt.spaceId).getState().togglePin('chat');
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:1' }, () => {});
+    expect(rt.store.getState().browsers.main.kind).toBe('task');
+  });
+
+  it('l with a digit past the pins leaves the browser and says so', () => {
+    const rt = runtime();
+    rt.dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'doc' }, source: 'click' });
+    const notify = vi.fn();
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:7' }, notify);
+    expect(rt.store.getState().browsers.main.kind).toBe('doc');
+    expect(notify).toHaveBeenCalledWith('Only 3 pinned on the rail.');
+  });
+
   it('r on a tab with nothing to launch says so', () => {
     const rt = withTabs(1);
     const notify = vi.fn();
@@ -211,6 +235,63 @@ describe('the Work browser row cursor', () => {
     expect(chord.defaultPrevented).toBe(false);
     fireEvent.keyDown(getAllByText('Run')[0]!, { key: 'j' });
     expect(cursorId(list)).toBe('a');
+  });
+
+  it('←/→ step the lifecycle tabs, wrapping, and the cursor starts over', () => {
+    const picked: string[] = [];
+    function TabsHarness() {
+      const ref = useRef<HTMLDivElement>(null);
+      const [active, setActive] = useState('running');
+      const cursor = useListCursor(ref, () => {}, () => {});
+      return (
+        <div ref={ref} tabIndex={-1} data-testid="list" onFocus={cursor.onFocus} onKeyDown={cursor.onKeyDown}>
+          <div className="lp__tierrow" role="tablist">
+            {['running', 'interrupted', 'completed'].map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={id === active}
+                onClick={() => {
+                  picked.push(id);
+                  setActive(id);
+                }}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
+          <div className="lp__branch">
+            <div data-flight-anchor="x">x</div>
+          </div>
+        </div>
+      );
+    }
+    const { getByTestId } = render(<TabsHarness />);
+    const list = getByTestId('list');
+    list.focus();
+    expect(cursorId(list)).toBe('x');
+    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    expect(cursorId(list)).toBeUndefined();
+    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    fireEvent.keyDown(list, { key: 'ArrowLeft' });
+    expect(picked).toEqual(['interrupted', 'completed', 'running', 'completed']);
+    expect(document.activeElement).toBe(list);
+    fireEvent.keyDown(list, { key: 'j' });
+    expect(cursorId(list)).toBe('x');
+  });
+
+  it('←/→ on a list without status tabs says so', () => {
+    const notify = vi.fn();
+    function Bare() {
+      const ref = useRef<HTMLDivElement>(null);
+      const cursor = useListCursor(ref, () => {}, notify);
+      return <div ref={ref} tabIndex={-1} data-testid="list" onKeyDown={cursor.onKeyDown} />;
+    }
+    const { getByTestId } = render(<Bare />);
+    fireEvent.keyDown(getByTestId('list'), { key: 'ArrowRight' });
+    expect(notify).toHaveBeenCalledWith('This list has no status tabs.');
   });
 
   it('Esc leaves the list', () => {

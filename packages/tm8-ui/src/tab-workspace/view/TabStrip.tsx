@@ -18,7 +18,7 @@ import {
 } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { KindIcon } from '../../domain';
+import { getKind, KindIcon, type ActionContext } from '../../domain';
 import { NOTICE_TTL_MS } from '../../shell';
 import { build, defaultRoute } from '../../routes';
 import type { SpaceId } from '@tm8/contract';
@@ -29,6 +29,8 @@ import type { Source, TabId, TabRecord } from '../runtime/types';
 import { ConfirmDiscard } from './ConfirmDiscard';
 import { useWorkspace, useWorkspaceState } from './context';
 import { ScopePicker } from './ScopePicker';
+import { entityMenuItems, readTranscriptText, type TabMenuItem } from './tabEntityMenu';
+import { usePanelPrimaries } from '../../views/usePanelPrimaries';
 import { useFreshGlow, type FreshGlowAttrs } from '../../domain/useFreshGlow';
 import './tabstrip.css';
 
@@ -229,13 +231,7 @@ function isMod(event: globalThis.KeyboardEvent): boolean {
 // Menus (context menu and overflow): focus moves in, arrows move, Esc returns
 // ---------------------------------------------------------------------------
 
-interface MenuItem {
-  key: string;
-  label: ReactNode;
-  disabled?: boolean;
-  checked?: boolean;
-  run(source: Source): void;
-}
+type MenuItem = TabMenuItem;
 
 function StripMenu({
   items,
@@ -300,11 +296,13 @@ function StripMenu({
       style={{ left: pos.x, top: pos.y }}
       onKeyDown={onKeyDown}
     >
-      {items.map((item) => (
+      {items.map((item) => [
+        item.divider ? <div key={`${item.key}-rule`} className="tws-ts-menu-rule" role="separator" /> : null,
         <button
           key={item.key}
           type="button"
           tabIndex={-1}
+          title={item.hint}
           role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
           aria-checked={item.checked}
           aria-disabled={item.disabled || undefined}
@@ -322,8 +320,8 @@ function StripMenu({
             </span>
           ) : null}
           {item.label}
-        </button>
-      ))}
+        </button>,
+      ])}
     </div>
   );
 }
@@ -353,6 +351,8 @@ interface TabProps {
   onKeyDown(event: KeyboardEvent<HTMLDivElement>, tabId: TabId): void;
   onFocus(tabId: TabId): void;
   onContextMenu(tabId: TabId, at: { x: number; y: number }, title: string): void;
+  /** The lead icon was clicked: open the tab's menu under it. */
+  onIconMenu(tabId: TabId, icon: HTMLElement): void;
   onDragStart(event: DragEvent<HTMLDivElement>, tabId: TabId): void;
   onDragOver(event: DragEvent<HTMLDivElement>, tabId: TabId): void;
   onDragEnd(): void;
@@ -409,11 +409,24 @@ function Tab(props: TabProps) {
         onKeyDown={(event) => props.onKeyDown(event, tab.id)}
         onFocus={() => props.onFocus(tab.id)}
       >
-        <TabLeadIcon tab={tab} />
+        {/* The state rides the icon as a subscript badge (task 01a11573), so
+            hovering for × never hides it. */}
+        {/* Clicking the icon opens the tab's menu (task 01a115a6); the
+            keyboard reaches the same menu with Shift+F10 / the Menu key. */}
+        <span
+          className="tws-ts-lead"
+          data-menu=""
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onIconMenu(tab.id, event.currentTarget);
+          }}
+        >
+          <TabLeadIcon tab={tab} />
+          <TabStateGlyph state={state} id={stateId} />
+        </span>
         <span className="tws-ts-title">{title}</span>
       </div>
       <span className="tws-ts-slot">
-        <TabStateGlyph state={state} id={stateId} />
         <button
           type="button"
           className="tws-ts-close"
@@ -699,25 +712,81 @@ export function TabStrip({ leading }: TabStripProps = {}) {
     setMenu(null);
   }, []);
 
-  const copyLink = useCallback(
-    async (entityId: string) => {
-      const hash = build(defaultRoute(spaceId as SpaceId, { view: 'tabs', tab: entityId as never })).hash;
-      const url = `${window.location.origin}${window.location.pathname}${hash.startsWith('#') ? hash : `#${hash}`}`;
+  /** Copy `text`, then say so — or show it, so it can be copied by hand. */
+  const copyText = useCallback(
+    async (text: string, what: string) => {
       try {
-        await navigator.clipboard.writeText(url);
-        gate.onNotice({ id: `tws-copy-${Date.now()}`, tone: 'info', title: 'Link copied', body: '', ttlMs: NOTICE_TTL_MS });
+        await navigator.clipboard.writeText(text);
+        gate.onNotice({ id: `tws-copy-${Date.now()}`, tone: 'info', title: `${what} copied`, body: '', ttlMs: NOTICE_TTL_MS });
       } catch {
         gate.onNotice({
           id: `tws-copy-${Date.now()}`,
           tone: 'info',
-          title: "Couldn't copy the link",
-          body: url,
+          title: `Couldn't copy the ${what.toLowerCase()}`,
+          body: text.length > 400 ? `${text.slice(0, 400)}…` : text,
           ttlMs: NOTICE_TTL_MS,
         });
       }
     },
-    [spaceId, gate],
+    [gate],
   );
+
+  const copyLink = useCallback(
+    (entityId: string) => {
+      const hash = build(defaultRoute(spaceId as SpaceId, { view: 'tabs', tab: entityId as never })).hash;
+      void copyText(`${window.location.origin}${window.location.pathname}${hash.startsWith('#') ? hash : `#${hash}`}`, 'Link');
+    },
+    [spaceId, copyText],
+  );
+
+  const data = gate.data;
+  const notifyActionFailed = useCallback(
+    (_verb: unknown, _entityId: string, error: unknown) =>
+      gate.onNotice({
+        id: 'tws-action-failed',
+        tone: 'error',
+        title: 'That did not go through',
+        body: String((error as { message?: string })?.message ?? error),
+        ttlMs: 6_000,
+      }),
+    [gate],
+  );
+  // The panel bar's executor: Terminate here opens the same outcome dialog.
+  const primaries = usePanelPrimaries({
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onError: notifyActionFailed,
+    versionOf: (id) => data.detailOf(id)?.version,
+    stateOf: (id) => data.detailOf(id)?.state,
+  });
+
+  const copyTranscript = useCallback(
+    async (sessionId: string) => {
+      gate.onNotice({ id: 'tws-transcript', tone: 'info', title: 'Reading the transcript…', body: '', ttlMs: NOTICE_TTL_MS });
+      try {
+        const { text, complete } = await readTranscriptText((opts) => data.seam.transcript(sessionId as never, opts));
+        await copyText(text, complete ? 'Transcript' : 'Transcript (newest part)');
+      } catch (error) {
+        gate.onNotice({
+          id: 'tws-transcript',
+          tone: 'error',
+          title: "Couldn't copy the transcript",
+          body: String((error as { message?: string })?.message ?? error),
+          ttlMs: 6_000,
+        });
+      }
+    },
+    [data, gate, copyText],
+  );
+
+  // Opening a tab's menu reads its entity, so the session verbs know its state.
+  const menuTab = menu?.type === 'tab' ? tabs.find((t) => t.id === menu.tabId) : undefined;
+  const menuEntity = menuTab?.type === 'entity' ? menuTab.entityId : null;
+  useEffect(() => {
+    if (menuEntity && !data.detailOf(menuEntity)) data.refetchDetail(menuEntity);
+  }, [menuEntity, data]);
+  const menuSummary = useStore(data.domain.store, (s) => (menuEntity ? s.entities[menuEntity] : undefined));
+  const menuDetail = menuEntity ? data.detailOf(menuEntity) : undefined;
 
   const menuItems = useMemo<MenuItem[]>(() => {
     if (!menu) return [];
@@ -734,8 +803,45 @@ export function TabStrip({ leading }: TabStripProps = {}) {
     }
     const tab = tabs.find((t) => t.id === menu.tabId);
     if (!tab) return [];
+    let entity: MenuItem[] = [];
+    if (tab.type === 'entity') {
+      const id = tab.entityId;
+      const row = menuDetail ?? menuSummary;
+      const ctx: ActionContext = {
+        spaceId: spaceId as SpaceId,
+        entityId: id as never,
+        kind: tab.kind as never,
+        capabilities: data.capabilitiesOf(id) ?? null,
+        liveness: data.livenessOf(id),
+        ...(menuSummary?.category ? { category: menuSummary.category } : {}),
+        ...(row ? { sessionState: row.state } : {}),
+      };
+      entity = entityMenuItems(
+        {
+          entityId: id,
+          kind: tab.kind,
+          noun: getKindAdapter(tab.kind).noun,
+          title: row?.title ?? lastKnownTitles.get(id) ?? '',
+          subview: tab.ui.subview,
+          sections: getKind(tab.kind as never).panel.composition !== 'canvas',
+          ctx,
+          wired: primaries.wiredActions,
+        },
+        {
+          showSubview: (subview) => {
+            activateTab(tab.id, 'click');
+            dispatch({ command: 'workspace.tabs.setUi', args: { tabId: tab.id, patch: { subview } }, source: 'click' });
+          },
+          runVerb: (ref) => primaries.forEntity(id)?.(ref),
+          copy: (text, what) => void copyText(text, what),
+          copyLink: () => copyLink(id),
+          copyTranscript: () => void copyTranscript(id),
+        },
+      );
+    }
     return [
-      { key: 'close', label: 'Close', run: (source) => closeTab(tab.id, source) },
+      ...entity,
+      { key: 'close', label: 'Close', divider: entity.length > 0, run: (source) => closeTab(tab.id, source) },
       {
         key: 'others',
         label: 'Close others',
@@ -743,16 +849,11 @@ export function TabStrip({ leading }: TabStripProps = {}) {
         run: (source) => closeVisible(source, tab.id),
       },
       { key: 'visible', label: 'Close visible tabs', run: (source) => closeVisible(source) },
-      {
-        key: 'copy',
-        label: 'Copy link',
-        disabled: tab.type !== 'entity',
-        run: () => {
-          if (tab.type === 'entity') void copyLink(tab.entityId);
-        },
-      },
     ];
-  }, [menu, tabs, active, activateTab, closeTab, closeVisible, copyLink, tabEl]);
+  }, [
+    menu, tabs, active, activateTab, closeTab, closeVisible, copyLink, copyText, copyTranscript, tabEl,
+    dispatch, spaceId, data, primaries, menuDetail, menuSummary,
+  ]);
 
   const restore = leading ?? (expanded ? (
     <button
@@ -797,6 +898,10 @@ export function TabStrip({ leading }: TabStripProps = {}) {
             onKeyDown={onTabKeyDown}
             onFocus={setFocusId}
             onContextMenu={(tabId, at) => setMenu({ type: 'tab', tabId, at, trigger: tabEl(tabId) })}
+            onIconMenu={(tabId, icon) => {
+              const r = icon.getBoundingClientRect();
+              setMenu({ type: 'tab', tabId, at: { x: r.left - 6, y: r.bottom + 8 }, trigger: tabEl(tabId) });
+            }}
             onDragStart={onDragStart}
             onDragOver={onDragOver}
             onDragEnd={endDrag}
@@ -844,6 +949,7 @@ export function TabStrip({ leading }: TabStripProps = {}) {
           onClose={closeMenu}
         />
       ) : null}
+      {primaries.dialog}
       <ConfirmDiscard
         onResolved={(choice) => {
           // Keep editing returns focus to where it was; a discard follows the close.

@@ -181,6 +181,8 @@ import {
   type ExecutionGitRollbackInput,
   type SessionGitCheckpointResult,
   type SessionGitCommitResult,
+  type SessionCheckoutDiff,
+  type SessionCheckouts,
   type SessionGitDiff,
   type SessionGitMergeResult,
   type SessionGitCherryPickResult,
@@ -1290,6 +1292,20 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SessionGitDiff>('execution.gitDiff', {
         params: { workSessionId },
         query: { maxBytes: opts?.maxBytes, path: opts?.path, scope: opts?.scope },
+      });
+    },
+    gitCheckouts(workSessionId: EntityId): Promise<SessionCheckouts> {
+      return http.call<SessionCheckouts>('execution.gitCheckouts', { params: { workSessionId } });
+    },
+    gitCheckoutDiff(
+      workSessionId: EntityId,
+      checkout: string,
+      path: string,
+      opts?: { maxBytes?: number },
+    ): Promise<SessionCheckoutDiff> {
+      return http.call<SessionCheckoutDiff>('execution.gitCheckoutDiff', {
+        params: { workSessionId },
+        query: { checkout, path, maxBytes: opts?.maxBytes },
       });
     },
     gitCheckpoint(workSessionId: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult> {

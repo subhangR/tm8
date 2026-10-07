@@ -12,6 +12,8 @@ export {
   CHORD_LEADS,
   CHORD_WINDOW_MS,
   CREATE_LEAD,
+  LAUNCH_KEYS,
+  PIN_REF_PREFIX,
   LAYER_ORDER,
   LIST_LEAD,
   TAB_LEAD,
@@ -25,7 +27,7 @@ export {
   isTerminalToggleChord,
 } from './contract';
 
-export type { Binding, BindingGroup, KeyCommand, KeyInput, KeyLayer, KeyMatcher, Platform } from './contract';
+export type { Binding, BindingGroup, LaunchKeyAction, KeyCommand, KeyInput, KeyLayer, KeyMatcher, Platform } from './contract';
 
 export { createKeyboardController } from './controller';
 export type {

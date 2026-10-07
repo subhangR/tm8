@@ -65,6 +65,8 @@ import {
   type ContentionReport,
   type ProjectFileBlame,
   type ProjectFileHistory,
+  type SessionCheckoutDiff,
+  type SessionCheckouts,
   type SessionGitDiff,
   type SessionGitStatus,
   type SessionJournalPage,
@@ -451,6 +453,13 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     gitStatus: (workSessionId: EntityId): Promise<SessionGitStatus> => ops.gitStatus(workSessionId),
     gitDiff: (workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> =>
       ops.gitDiff(workSessionId, opts),
+    gitCheckouts: (workSessionId: EntityId): Promise<SessionCheckouts> => ops.gitCheckouts(workSessionId),
+    gitCheckoutDiff: (
+      workSessionId: EntityId,
+      checkout: string,
+      path: string,
+      opts?: { maxBytes?: number },
+    ): Promise<SessionCheckoutDiff> => ops.gitCheckoutDiff(workSessionId, checkout, path, opts),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
     attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
       ops.attentionRequests(input),

@@ -1,6 +1,7 @@
 /**
  * The Work browser's row cursor (task 01a113aa): `l l` / `l t` put focus on
- * the list, then j/k/↑/↓ move, Enter opens, `r` launches, Esc leaves.
+ * the list, then j/k/↑/↓ move, ←/→ step the lifecycle tabs, Enter opens,
+ * `r` launches, Esc leaves.
  *
  * DOM-driven on purpose. The browser hosts `EntityListPanel`, whose tiles come
  * in several anatomies (default, task, session) that already publish their
@@ -14,6 +15,22 @@ import { clickLaunch } from './useWorkspaceKeys';
 
 const ROW_SELECTOR = '.lp__branch > [data-flight-anchor], .lp__branch > [data-session-node]';
 const CURSOR_ATTR = 'data-kbd-cursor';
+
+/** The panel's lifecycle tabs (`CategoryTabs`): Running · Interrupted · …, To Do · In Progress · …. */
+const STATUS_TAB_SELECTOR = '.lp__tierrow [role="tab"]';
+
+/**
+ * Click the lifecycle tab `delta` away from the selected one, wrapping — the
+ * same click the pointer makes. False when the list has no tabs.
+ */
+export function stepStatusTab(root: ParentNode, delta: 1 | -1): boolean {
+  const tabs = [...root.querySelectorAll<HTMLElement>(STATUS_TAB_SELECTOR)];
+  if (tabs.length === 0) return false;
+  const at = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
+  const next = tabs[at < 0 ? (delta > 0 ? 0 : tabs.length - 1) : (at + delta + tabs.length) % tabs.length]!;
+  next.click();
+  return true;
+}
 
 function rowId(el: Element): string | null {
   return el.getAttribute('data-flight-anchor') ?? el.getAttribute('data-session-node');
@@ -90,6 +107,16 @@ export function useListCursor(
         case 'End':
           move(rows.length - 1);
           break;
+        case 'ArrowLeft':
+        case 'ArrowRight': {
+          if (!stepStatusTab(event.currentTarget, event.key === 'ArrowRight' ? 1 : -1)) {
+            notify('This list has no status tabs.');
+            break;
+          }
+          // The rows are the new tab's: the next j/↓ starts from the top.
+          paint([], null);
+          break;
+        }
         case 'Enter':
           if (cursor.current && at >= 0) open(cursor.current);
           break;
