@@ -56,6 +56,7 @@ export type KeyCommand =
   | 'list.next'
   | 'list.prev'
   | 'list.open'
+  | 'list.status'
   | 'list.primary'
   | 'list.create'
   | 'list.search'
@@ -476,6 +477,10 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'list.prev.arrow', layer: 'focus', keys: '↑', label: 'Previous item', command: 'list.prev', guaranteed: true, match: { type: 'plain', key: 'ArrowUp' } },
   { id: 'list.open', layer: 'focus', keys: 'Enter', label: 'Open', command: 'list.open', guaranteed: true, match: { type: 'plain', key: 'Enter' } },
   { id: 'list.primary', layer: 'focus', keys: 'Mod+Enter', label: 'Primary action', command: 'list.primary', guaranteed: false, match: { type: 'mod', key: 'Enter' } },
+  /* The list's lifecycle tabs (Running · Interrupted · …, To Do · In Progress · …),
+     stepped from the Work list's row cursor (task 01a1156f). */
+  { id: 'list.status.prev', layer: 'focus', keys: '←', label: 'Previous status tab', command: 'list.status', ref: 'prev', guaranteed: true, surfaceOwned: true, match: { type: 'plain', key: 'ArrowLeft' } },
+  { id: 'list.status.next', layer: 'focus', keys: '→', label: 'Next status tab', command: 'list.status', ref: 'next', guaranteed: true, surfaceOwned: true, match: { type: 'plain', key: 'ArrowRight' } },
   { id: 'list.launch', layer: 'focus', keys: 'r', label: 'Launch a session on the selected item', command: 'work.launch', guaranteed: true, surfaceOwned: true, match: { type: 'plain', key: 'r' } },
   { id: 'list.create', layer: 'focus', keys: 'c', label: 'Create in this kind', command: 'list.create', guaranteed: true, match: { type: 'plain', key: 'c' } },
   /**

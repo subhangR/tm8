@@ -33,6 +33,8 @@ const LIVE_FOCUS_ROWS: ReadonlySet<string> = new Set([
   'list.prev.arrow',
   'list.open',
   'list.launch',
+  'list.status.prev',
+  'list.status.next',
   'board.colPrev.arrow',
   'board.colNext.arrow',
   'board.movePrev',

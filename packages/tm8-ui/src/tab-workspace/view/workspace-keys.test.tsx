@@ -7,7 +7,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { installWorkKeys, queueWorkKey, runWorkKey, workKeysMounted } from '../keys';
 import { createWorkspaceRuntime } from '../runtime/dispatch';
 import { createWorkspaceStore } from '../runtime/store';
@@ -235,6 +235,63 @@ describe('the Work browser row cursor', () => {
     expect(chord.defaultPrevented).toBe(false);
     fireEvent.keyDown(getAllByText('Run')[0]!, { key: 'j' });
     expect(cursorId(list)).toBe('a');
+  });
+
+  it('←/→ step the lifecycle tabs, wrapping, and the cursor starts over', () => {
+    const picked: string[] = [];
+    function TabsHarness() {
+      const ref = useRef<HTMLDivElement>(null);
+      const [active, setActive] = useState('running');
+      const cursor = useListCursor(ref, () => {}, () => {});
+      return (
+        <div ref={ref} tabIndex={-1} data-testid="list" onFocus={cursor.onFocus} onKeyDown={cursor.onKeyDown}>
+          <div className="lp__tierrow" role="tablist">
+            {['running', 'interrupted', 'completed'].map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={id === active}
+                onClick={() => {
+                  picked.push(id);
+                  setActive(id);
+                }}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
+          <div className="lp__branch">
+            <div data-flight-anchor="x">x</div>
+          </div>
+        </div>
+      );
+    }
+    const { getByTestId } = render(<TabsHarness />);
+    const list = getByTestId('list');
+    list.focus();
+    expect(cursorId(list)).toBe('x');
+    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    expect(cursorId(list)).toBeUndefined();
+    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    fireEvent.keyDown(list, { key: 'ArrowLeft' });
+    expect(picked).toEqual(['interrupted', 'completed', 'running', 'completed']);
+    expect(document.activeElement).toBe(list);
+    fireEvent.keyDown(list, { key: 'j' });
+    expect(cursorId(list)).toBe('x');
+  });
+
+  it('←/→ on a list without status tabs says so', () => {
+    const notify = vi.fn();
+    function Bare() {
+      const ref = useRef<HTMLDivElement>(null);
+      const cursor = useListCursor(ref, () => {}, notify);
+      return <div ref={ref} tabIndex={-1} data-testid="list" onKeyDown={cursor.onKeyDown} />;
+    }
+    const { getByTestId } = render(<Bare />);
+    fireEvent.keyDown(getByTestId('list'), { key: 'ArrowRight' });
+    expect(notify).toHaveBeenCalledWith('This list has no status tabs.');
   });
 
   it('Esc leaves the list', () => {
