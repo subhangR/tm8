@@ -96,10 +96,14 @@
 }
 
 /* --- the title, written in the editor (New doc UX, 2026-10-06) ------------
-   One title, at document size, above the text it names. The bar above keeps
-   only the exit; the footer keeps the save word. */
+   One title, above the text it names. Compact, in its own band with a rule
+   under it, from the left edge (Subhang, 2026-10-07: "i dont want the title
+   to be showing that big … a title section on the top, that is separated").
+   In a Workspace tab the band IS the tab's title bar (`ReaderSurface`
+   `titleSlot`) and this row is not drawn; it is the phone's title. */
 .cv2-root .de-titlerow {
-  padding: 16px 20px 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--pn-line);
 }
 
 .cv2-root .de-title {
@@ -108,10 +112,10 @@
   outline: none;
   background: transparent;
   padding: 0;
-  font-family: var(--pn-serif);
-  font-size: 26px;
+  font-family: var(--pn-ui);
+  font-size: 18px;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.3;
   color: var(--pn-ink);
 }
 

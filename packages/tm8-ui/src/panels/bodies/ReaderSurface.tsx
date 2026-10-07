@@ -6,6 +6,7 @@ import { getKind } from '../../domain';
 import {
   DocEditor,
   DocSplitView,
+  DocTitleField,
   DownloadDocControl,
   EditEntryControl,
   freshDocTitle,
@@ -69,6 +70,14 @@ export interface ReaderSurfaceProps {
   toolbarSlot?: HTMLElement | null;
   /** Where the reader's outline renders (see `ReaderBody.outlineSlot`). */
   outlineSlot?: HTMLElement | null;
+  /**
+   * The host's title band (the Workspace tab's title bar). While editing, the
+   * title is written THERE, so a doc reads top-down as one title band and then
+   * the text, both from the left edge (Subhang, 2026-10-07: "a title section
+   * on the top, that is separated, then the writing section"). Absent ⇒ the
+   * editor draws its own title row; null ⇒ the slot is not mounted yet.
+   */
+  titleSlot?: HTMLElement | null;
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   historyUnavailableReason: string;
@@ -113,6 +122,7 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
      at mount — the effect below spends the arrival. */
   const [arrival] = useState(() => isFreshArrival(detail.id));
   const [editing, setEditing] = useState(arrival);
+  const editRoot = useRef<HTMLDivElement | null>(null);
   const { oneSurface } = useMobileSurface();
 
   const config = getKind(detail.kind);
@@ -236,13 +246,26 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
       },
     };
 
+    /* The phone has no title bar to write into (the host skips it there too). */
+    const titleElsewhere = props.titleSlot !== undefined && !oneSurface;
     return (
       <div
+        ref={editRoot}
         className="rs-root"
         data-testid="reader-surface"
         data-stance="edit"
         data-arrangement={oneSurface ? 'phone' : 'desktop'}
       >
+        {titleElsewhere && props.titleSlot
+          ? createPortal(
+              <DocTitleField
+                save={save}
+                autoFocus={arrival}
+                onEnter={() => editRoot.current?.querySelector<HTMLElement>('[data-testid="doc-source"]')?.focus()}
+              />,
+              props.titleSlot,
+            )
+          : null}
         {oneSurface ? (
           <DocEditor
             save={save}
@@ -252,6 +275,7 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
             onAttached={props.onAttached}
             skillOptions={props.skillOptions}
             focusTitle={arrival}
+            titleElsewhere={titleElsewhere}
             {...exit}
           />
         ) : (
@@ -263,6 +287,7 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
             onAttached={props.onAttached}
             skillOptions={props.skillOptions}
             focusTitle={arrival}
+            titleElsewhere={titleElsewhere}
             {...exit}
           />
         )}

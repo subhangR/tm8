@@ -18,6 +18,7 @@ import {
 } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { useLiveTitle } from '../../doc-edit';
 import { getKind, KindIcon, type ActionContext } from '../../domain';
 import { NOTICE_TTL_MS } from '../../shell';
 import { build, defaultRoute } from '../../routes';
@@ -72,7 +73,7 @@ export function useTabFacts(tab: TabRecord): { title: string; noun: string | nul
   const { gate } = useWorkspace();
   const data = gate.data as typeof gate.data & { pull?: (id: string) => void };
   const entityId = tab.type === 'entity' ? tab.entityId : null;
-  const { title, deleted, known } = useStore(
+  const { title: savedTitle, deleted, known } = useStore(
     data.domain.store,
     useShallow((s) => {
       if (!entityId) return { title: null, deleted: false, known: false };
@@ -80,7 +81,9 @@ export function useTabFacts(tab: TabRecord): { title: string; noun: string | nul
       return { title: row?.title ?? null, deleted: Boolean(row?.deletedAt), known: row !== undefined };
     }),
   );
-  if (entityId && title) lastKnownTitles.set(entityId, title);
+  // The title being typed wins over the saved one: the tab follows the keys.
+  const title = useLiveTitle(entityId) ?? savedTitle;
+  if (entityId && savedTitle) lastKnownTitles.set(entityId, savedTitle);
   const live = useTabLiveStatus(tab);
   const [probe, setProbe] = useState(() => (entityId ? probed.get(entityId) : undefined));
 

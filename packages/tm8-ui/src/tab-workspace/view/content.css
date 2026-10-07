@@ -670,6 +670,27 @@
   background: var(--pn-card);
 }
 
+/* A DOC STARTS AT THE TOP LEFT (Subhang, 2026-10-07): "a title section on the
+   top, that is separated, then the writing section, both start left most".
+   For a reader the title bar, the pills and the text all keep one left edge
+   at the panel's own padding, instead of the centred reading measure. The
+   text keeps the measure as its WIDTH, so lines stay readable. */
+.tws-entity-host:has(.pn-panel[data-archetype='reader']) > .tws-titlebar {
+  padding-left: var(--pn-space-3);
+}
+.cv2-root .tws-panel .pn-panel[data-archetype='reader'] .pn-embedded-head__pills,
+.cv2-root .tws-panel .pn-panel[data-archetype='reader'] [data-testid='reader-body'] {
+  margin-inline: 0;
+}
+/* While the doc is being edited its title field is written into this bar
+   (`ReaderSurface` `titleSlot`): one title, so the read-only one steps aside. */
+.tws-titlebar__text:has(.de-title) > .pn-embedded-title {
+  display: none;
+}
+.cv2-root .tws-titlebar .de-title {
+  font-size: var(--pn-fs-title);
+}
+
 /* R32.1: a reader's body sits in the reading measure; its outline lives in the
    strip's Outline popover. */
 .cv2-root .tws-panel [data-testid='reader-body'] {

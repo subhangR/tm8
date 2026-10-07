@@ -61,6 +61,7 @@ import { classifyFailure, type ConflictFailure, type RefusedFailure } from '../a
 import type { UnavailableReason } from '../panels/honesty/DisabledWithReason';
 import { docBodyOf, docPatchInput, savedVersionOf, type DocCommands, type DocEdits } from './commands';
 import { clearLocalDraft, readLocalDraft, writeLocalDraft } from './localDraft';
+import { clearLiveTitle, setLiveTitle } from './liveTitles';
 
 export type DocSavePhase =
   | { phase: 'clean' }
@@ -216,7 +217,10 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
   }, [detail]);
 
   const settle = useCallback(() => {
-    if (owner.current !== null) clearLocalDraft(owner.current);
+    if (owner.current !== null) {
+      clearLocalDraft(owner.current);
+      clearLiveTitle(owner.current);
+    }
     draft.current = {};
     base.current = null;
     owner.current = null;
@@ -262,7 +266,10 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
         }
         onSaved?.(result);
       } catch (error) {
-        if (owner.current !== id) return;
+        if (owner.current !== id) {
+          clearLiveTitle(id);
+          return;
+        }
         const failure = classifyFailure(error, 'save');
         // THE DRAFT SURVIVES BOTH ARMS. "Your draft is still yours" is the
         // oracle's own promise (line 96), and it is the difference between a
@@ -282,6 +289,7 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
       owner.current = detail.id;
       draft.current = { ...draft.current, ...patch };
       seq.current += 1;
+      if (patch.title !== undefined) setLiveTitle(detail.id, patch.title);
       setEdits(draft.current);
       if (base.current === null) {
         const e = echoRef.current;

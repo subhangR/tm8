@@ -14,7 +14,7 @@ import {
   type PatchEntityInput,
 } from '@tm8/contract';
 import { ReaderSurface } from '../panels/bodies/ReaderSurface';
-import { AUTOSAVE_DELAY_MS, forgetFreshDoc, markFreshDoc, readLocalDraft } from './index';
+import { AUTOSAVE_DELAY_MS, forgetFreshDoc, markFreshDoc, readLocalDraft, useLiveTitle } from './index';
 
 const ada: ActorSummary = { id: 'm-ada', kind: 'member', displayName: 'ada', isAgent: false };
 const DOC_ID = 'doc-autosave';
@@ -226,6 +226,39 @@ describe('the title, written in the editor', () => {
 
     fireEvent.keyDown(screen.getByTestId('doc-title'), { key: 'Enter' });
     expect(document.activeElement).toBe(screen.getByTestId('doc-source'));
+  });
+
+  it("is written in the host's title band when there is one, once, and Enter still reaches the body", () => {
+    const { commands } = scriptedCommands();
+    const band = document.body.appendChild(document.createElement('div'));
+    render(
+      <ReaderSurface detail={docDetail()} blocks={[]} historyUnavailableReason="" commands={commands} titleSlot={band} />,
+    );
+    enterEdit();
+
+    expect(screen.getAllByTestId('doc-title')).toHaveLength(1);
+    expect(band.contains(screen.getByTestId('doc-title'))).toBe(true);
+    fireEvent.keyDown(screen.getByTestId('doc-title'), { key: 'Enter' });
+    expect(document.activeElement).toBe(screen.getByTestId('doc-source'));
+    band.remove();
+  });
+
+  it('the tab follows the title as it is typed, and hands back to the saved title once it lands', async () => {
+    const { commands, answers } = scriptedCommands();
+    function TabLabel() {
+      return <span data-testid="tab-label">{useLiveTitle(DOC_ID) ?? 'saved title'}</span>;
+    }
+    render(<TabLabel />);
+    mount(commands);
+    enterEdit();
+
+    fireEvent.change(screen.getByTestId('doc-title'), { target: { value: 'Launch plan' } });
+    expect(screen.getByTestId('tab-label').textContent).toBe('Launch plan');
+
+    await pause();
+    await act(async () => answers[0]!.resolve(saved(4)));
+    await settle();
+    expect(screen.getByTestId('tab-label').textContent).toBe('saved title');
   });
 });
 

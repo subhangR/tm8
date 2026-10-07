@@ -20,7 +20,16 @@ import type { DocSaveHandle } from './useDocSave';
 
 const shownTitle = (title: string) => (title === FRESH_DOC_TITLE ? '' : title);
 
-export function DocTitleField({ save, autoFocus }: { save: DocSaveHandle; autoFocus?: boolean }) {
+export function DocTitleField({
+  save,
+  autoFocus,
+  onEnter,
+}: {
+  save: DocSaveHandle;
+  autoFocus?: boolean;
+  /** Where Enter sends the caret when the field sits outside the editor (a host's title bar). */
+  onEnter?: () => void;
+}) {
   const [text, setText] = useState(() => shownTitle(save.title));
   const focused = useRef(false);
   const field = useRef<HTMLInputElement | null>(null);
@@ -38,6 +47,10 @@ export function DocTitleField({ save, autoFocus }: { save: DocSaveHandle; autoFo
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      if (onEnter) {
+        onEnter();
+        return;
+      }
       e.currentTarget
         .closest('[data-doc-editor]')
         ?.querySelector<HTMLTextAreaElement>('[data-testid="doc-source"]')

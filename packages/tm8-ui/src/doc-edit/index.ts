@@ -55,6 +55,7 @@ export { DocPreview } from './DocPreview';
 export { DocSource, type DocAttach } from './DocSource';
 export { DocSplitView } from './DocSplitView';
 export { DocTitleField } from './DocTitleField';
+export { useLiveTitle } from './liveTitles';
 export {
   FRESH_DOC_TITLE,
   emptyFreshDocIds,

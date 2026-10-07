@@ -35,11 +35,17 @@ export function DocSplitView({
   onAttached,
   skillOptions,
   focusTitle,
+  titleElsewhere,
 }: {
   save: DocSaveHandle;
   detail: EntityDetail;
   /** Put the caret in the title on mount — a doc New doc just created. */
   focusTitle?: boolean;
+  /**
+   * The host draws the title in its own top band (the Workspace tab's title
+   * bar), so the editor starts at the writing area and draws no second one.
+   */
+  titleElsewhere?: boolean;
   /** Resolves `tm8://file/<id>` images in the preview pane. See `DocPreview`. */
   fileHref?: MarkdownFileHref;
   /** Uploads a file and writes its reference at the caret. See `DocAttach`. */
@@ -90,7 +96,7 @@ export function DocSplitView({
 
       <ConflictBanner save={save} actor={conflictActor} />
 
-      {save.autosave ? (
+      {save.autosave && !titleElsewhere ? (
         <div className="de-titlerow">
           <DocTitleField save={save} autoFocus={focusTitle} />
         </div>
