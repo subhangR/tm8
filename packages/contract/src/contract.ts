@@ -27,6 +27,7 @@ import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 import type { DesignContent, DesignState, EntityContextDesignPage } from './design.js';
+import type { WorkspaceWindowCap } from './workspace-bridge.js';
 import type { TaskProgress } from './progress.js';
 import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
 
@@ -1889,6 +1890,10 @@ export type WorkspaceControlFrame =
       mounted: boolean;
       revision: number;
       lastFocusedAt?: string;
+      /** `multiWorkspace`: this window keeps per-workspace queues (S9/S10). Absent: an old window. */
+      caps?: WorkspaceWindowCap[];
+      /** The workspace the window shows; null = the synthetic "Main". */
+      workspaceId?: string | null;
     }
   /** Give up an instance. Unauthorized, like `unsubscribe`. */
   | { type: 'workspace.unregister'; instanceId: string }
@@ -1903,7 +1908,20 @@ export type WorkspaceControlFrame =
    * the node's reduce produces the identical result. Accepted only from a
    * registered window on a human (browser / auto-owner) socket.
    */
-  | { type: 'workspace.apply'; spaceId: SpaceId; instanceId: string; requestId: string; env: Record<string, unknown>; ids: string[] }
+  | {
+      type: 'workspace.apply';
+      spaceId: SpaceId;
+      instanceId: string;
+      requestId: string;
+      env: Record<string, unknown>;
+      ids: string[];
+      /**
+       * The workspace the window committed it in (R9): a string applies there,
+       * null means the synthetic "Main" it saw, absent is an old window (S9:
+       * the active workspace).
+       */
+      workspaceId?: string | null;
+    }
   /** Spec D §6: the one-time import of this browser's legacy workspace state. */
   | {
       type: 'workspace.import';
@@ -1911,6 +1929,8 @@ export type WorkspaceControlFrame =
       instanceId: string;
       state: Record<string, unknown>;
       drafts: { draftId: string; kind: string; values: Record<string, unknown> }[];
+      /** Only null: an import only ever creates the first workspace. */
+      workspaceId?: null;
     }
   /** Spec D §3: a debounced draft write (per-field, last writer wins). */
   | {
@@ -1920,6 +1940,8 @@ export type WorkspaceControlFrame =
       draftId: string;
       kind: string;
       fields: Record<string, { v?: unknown; base: number }>;
+      /** Must own the draft; absent: the draft's owner. */
+      workspaceId?: string;
     };
 
 /** Spec D §3, node → the identity's windows only: the stored workspace after a commit. */
@@ -1929,6 +1951,10 @@ export interface WorkspaceStateFrame {
   revision: number;
   /** Null when this identity has no workspace row in the space yet. */
   state: Record<string, unknown> | null;
+  /** Whose state this is; null = the synthetic "Main". Old windows ignore it. */
+  workspaceId: string | null;
+  /** Whether it is the active workspace. A window without `multiWorkspace` only ever gets the active one. */
+  active: boolean;
   /** The window command this commit answers, when one caused it. */
   cause?: { instanceId: string; requestId: string; result: Record<string, unknown> };
 }
@@ -1938,6 +1964,8 @@ export interface WorkspaceAppliedFrame {
   type: 'workspace.applied';
   spaceId: SpaceId;
   requestId: string;
+  /** The workspace the command resolved to; absent when it was refused before resolving. */
+  workspaceId?: string | null;
   result: Record<string, unknown>;
 }
 
@@ -1945,6 +1973,8 @@ export interface WorkspaceAppliedFrame {
 export interface WorkspaceDraftFrame {
   type: 'workspace.draft';
   spaceId: SpaceId;
+  /** The workspace that owns the draft. */
+  workspaceId: string | null;
   draftId: string;
   kind?: string;
   revision: number;
@@ -1967,6 +1997,8 @@ export interface WorkspaceBridgeCommandFrame {
   command: string;
   args?: unknown;
   expectedRevision?: number;
+  /** The resolved target workspace (API doc §7.3). */
+  workspaceId?: string | null;
   /** Who is behind the call: an agent session, or the human's own CLI. */
   actorClass: 'human' | 'agent';
   /** The calling actor's display name, for the window's "<name> opened …" notice. */

@@ -60,6 +60,72 @@ export const WORKSPACES_PER_IDENTITY_CAP = 20;
 /** The name of the backfilled and lazily created workspace (Q7). */
 export const WORKSPACE_DEFAULT_NAME = 'Main';
 
+/**
+ * How a command's target workspace was picked (API doc 01a115c4 §3.2):
+ * `window` = a socket write addressed by its frame (R9), `explicit` = the
+ * caller named it, `owner` = the workspace holding the named tab or draft,
+ * `active` = the identity's active workspace.
+ */
+export type WorkspaceResolvedBy = 'active' | 'explicit' | 'owner' | 'window';
+
+/** The workspace a result applied to, named on every result (R8). */
+export interface WorkspaceRef {
+  /** null only for the synthetic "Main" of an identity with no row yet (S12). */
+  id: string | null;
+  name: string;
+  color: WorkspaceColor | null;
+  resolvedBy: WorkspaceResolvedBy;
+  /** Whether it is the active workspace (after the command). */
+  active: boolean;
+}
+
+/** One of the caller's workspaces, as lists show it (API doc §2). */
+export interface WorkspaceSummary {
+  /** null = the synthetic "Main" (no row yet). */
+  id: string | null;
+  name: string;
+  color: WorkspaceColor | null;
+  /** List order; ties break by creation (positions are not unique). */
+  position: number;
+  active: boolean;
+  /** The row's state revision (0 = no row). */
+  revision: number;
+  tabCount: number;
+  draftCount: number;
+  dirtyDraftCount: number;
+  createdAt: string | null;
+  createdBy: { actorId: string | null; actorClass: 'human' | 'agent' } | null;
+  /** The activity dot: an agent changed it after it was last active. */
+  agentChangedSinceActive: boolean;
+  lastAgentChange: { at: string; actorName?: string } | null;
+}
+
+/** A node-held agent request the human must answer (D8; phase 3). */
+export interface WorkspacePrompt {
+  promptId: string;
+  kind: 'switch' | 'delete';
+  workspaceId: string;
+  workspaceName: string;
+  actorName?: string;
+  state: 'open' | 'accepted' | 'declined' | 'expired' | 'superseded';
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+/** `workspace.list`: the caller's workspaces in the space. Never empty. */
+export interface WorkspaceListResult {
+  items: WorkspaceSummary[];
+  activeWorkspaceId: string | null;
+  /** 0 when the identity has no row yet. */
+  listRevision: number;
+  cap: number;
+  prompts: WorkspacePrompt[];
+}
+
+/** The window capabilities `workspace.register` may announce (S9). */
+export const WORKSPACE_WINDOW_CAPS = ['multiWorkspace'] as const;
+export type WorkspaceWindowCap = (typeof WORKSPACE_WINDOW_CAPS)[number];
+
 /** How long the node waits for a window's answer, in ms. */
 export const WORKSPACE_COMMAND_TIMEOUT = { default: 10_000, min: 500, max: 30_000 } as const;
 
@@ -83,6 +149,10 @@ export interface WorkspaceInstanceView {
   lastSeen: string;
   /** When the window last gained focus; null if never this page load. */
   lastFocusedAt: string | null;
+  /** The workspace the window shows (= active under R7); null = synthetic Main or not known yet. */
+  workspaceId: string | null;
+  /** From `workspace.register`; a window without `multiWorkspace` sees only the active workspace (S9). */
+  caps: WorkspaceWindowCap[];
 }
 
 export interface WorkspaceInstancesListResult {
@@ -95,7 +165,13 @@ export interface WorkspaceRemoteResult {
   requestId: string;
   instanceId: string;
   status: 'applied' | 'no_op' | 'requires_user_choice' | 'rejected' | 'conflict';
+  /** The TARGET workspace's revision. */
   revision: number;
+  /**
+   * The workspace it applied to (R8). Always set by a node that keeps stored
+   * workspaces; absent only from a Spec C node or a refused window frame.
+   */
+  workspace?: WorkspaceRef;
   tabId?: string;
   outcome?: 'created' | 'reused' | 'focused';
   reason?: string;
@@ -109,7 +185,7 @@ export interface WorkspaceRemoteResult {
    * Spec D §4: an agent `tabs.open` applies to the stored workspace; this says
    * whether a live window also brought it to the front.
    */
-  activation?: 'activated' | 'no_window' | 'user_typing' | 'not_requested';
+  activation?: 'activated' | 'no_window' | 'user_typing' | 'not_requested' | 'not_active';
 }
 
 /** `workspace.get` (Spec D §2): the caller's stored workspace. */
@@ -121,18 +197,30 @@ export interface WorkspaceGetResult {
   drafts: { draftId: string; kind: string; revision: number; fields: Record<string, { v: unknown; r: number }> }[];
   /** Live windows of this identity in the space. */
   windows: number;
+  /** The workspace this answer reads (explicit, else active). */
+  workspace: WorkspaceRef;
+  /** null = the synthetic "Main" (no row yet). */
+  activeWorkspaceId: string | null;
+  /** All of the caller's workspaces in the space, list order. */
+  workspaces: WorkspaceSummary[];
 }
 
 /** `workspace.drafts.patch` body: per-field values with the revision each was based on. */
 export interface WorkspaceDraftPatchInput {
   fields: Record<string, { v?: unknown; base?: number }>;
   clientMutationId?: string;
+  /** Explicit target (R4); must own the draft. */
+  workspaceId?: string;
+  /** Pin (R5). Accepted from phase 1, checked from phase 3. */
+  expectedWorkspaceId?: string;
 }
 
 export const WorkspaceDraftPatchInputSchema: z.ZodType<WorkspaceDraftPatchInput> = z
   .object({
     fields: z.record(z.object({ v: z.unknown(), base: z.number().int().nonnegative().optional() }).strict()),
     clientMutationId: z.string().min(1).optional(),
+    workspaceId: z.string().uuid().optional(),
+    expectedWorkspaceId: z.string().uuid().optional(),
   })
   .strict();
 
@@ -142,6 +230,8 @@ export interface WorkspaceDraftPatchResult {
   fields: Record<string, { v: unknown; r: number }>;
   /** Fields this write overwrote after someone else had changed them (LWW). */
   overwrote: string[];
+  /** The workspace that owns the draft (R8). */
+  workspace: WorkspaceRef;
 }
 
 /** The `workspace.command` body; the space comes from the path. */
@@ -155,6 +245,10 @@ export interface WorkspaceCommandInput {
   expectedRevision?: number;
   timeoutMs?: number;
   clientMutationId?: string;
+  /** Explicit target (R4): one of the caller's workspaces. Never switches. */
+  workspaceId?: string;
+  /** Pin (R5). Accepted from phase 1, checked from phase 3. */
+  expectedWorkspaceId?: string;
 }
 
 const Id = z.string().uuid();
@@ -170,6 +264,8 @@ export const WorkspaceCommandInputSchema: z.ZodType<WorkspaceCommandInput> = z
     expectedRevision: z.number().int().nonnegative().optional(),
     timeoutMs: z.number().int().positive().optional(),
     clientMutationId: z.string().min(1).optional(),
+    workspaceId: Id.optional(),
+    expectedWorkspaceId: Id.optional(),
   })
   .strict();
 

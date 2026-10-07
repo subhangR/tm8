@@ -318,7 +318,12 @@ export type ResultReason =
   | 'dialog_unavailable'
   | 'not_rendered'
   // ADDITIVE (Spec D §7): the node's hard tab limit.
-  | 'tab_limit';
+  | 'tab_limit'
+  // ADDITIVE (multiple workspaces, API doc 01a115c4 §4): the resolved target refused.
+  | 'workspace_not_found'
+  | 'workspace_switched'
+  | 'workspace_mismatch'
+  | 'not_active';
 
 export type Result = {
   status: ResultStatus;

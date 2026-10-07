@@ -1,4 +1,5 @@
 import { McpServerEntitySchema, McpSelectionsSchema } from './mcp.js';
+import { WORKSPACE_WINDOW_CAPS } from './workspace-bridge.js';
 /**
  * Zod schemas for every contract shape — the single validation source
  * (server input validation, CLI `--json`, conformance response assertions,
@@ -1914,6 +1915,10 @@ export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
       mounted: z.boolean(),
       revision: z.number().int().nonnegative().safe(),
       lastFocusedAt: z.string().max(64).optional(),
+      // Multiple workspaces (API doc 01a115c4 §7.1): optional, so a window
+      // that predates them registers exactly as before (S9).
+      caps: z.array(z.enum(WORKSPACE_WINDOW_CAPS)).max(8).optional(),
+      workspaceId: z.string().uuid().nullable().optional(),
     }).strict(),
     z.object({ type: z.literal('workspace.unregister'), instanceId: WorkspaceInstanceIdSchema }).strict(),
     z.object({
@@ -1923,6 +1928,7 @@ export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
       requestId: z.string().min(1).max(128),
       env: z.record(z.unknown()),
       ids: z.array(z.string().min(1).max(128)).max(16),
+      workspaceId: z.string().uuid().nullable().optional(),
     }).strict(),
     z.object({
       type: z.literal('workspace.import'),
@@ -1934,6 +1940,7 @@ export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
         kind: z.string().min(1).max(64),
         values: z.record(z.unknown()),
       }).strict()).max(30),
+      workspaceId: z.null().optional(),
     }).strict(),
     z.object({
       type: z.literal('workspace.draft.patch'),
@@ -1942,6 +1949,7 @@ export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
       draftId: z.string().uuid(),
       kind: z.string().min(1).max(64),
       fields: z.record(z.object({ v: z.unknown(), base: z.number().int().nonnegative() }).strict()),
+      workspaceId: z.string().uuid().optional(),
     }).strict(),
     z.object({
       type: z.literal('workspace.result'),
