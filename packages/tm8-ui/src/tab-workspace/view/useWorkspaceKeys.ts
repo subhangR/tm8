@@ -97,6 +97,9 @@ export function handleWorkKey(
     case 'work.create':
       if (key.ref && isWorkspaceKind(key.ref)) create(key.ref);
       return true;
+    case 'work.newTab':
+      dispatch({ command: 'workspace.chooser.open', args: {}, source: 'keyboard' });
+      return true;
     case 'list.create':
       create(state.browsers.main.kind);
       return true;

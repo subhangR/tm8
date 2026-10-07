@@ -16,6 +16,8 @@ export {
   PIN_REF_PREFIX,
   LAYER_ORDER,
   LIST_LEAD,
+  NEW_KINDS,
+  NEW_MAIN_COUNT,
   TAB_LEAD,
   bindingGroup,
   hasMod,
@@ -27,7 +29,7 @@ export {
   isTerminalToggleChord,
 } from './contract';
 
-export type { Binding, BindingGroup, LaunchKeyAction, KeyCommand, KeyInput, KeyLayer, KeyMatcher, Platform } from './contract';
+export type { Binding, BindingGroup, LaunchKeyAction, KeyCommand, NewKind, KeyInput, KeyLayer, KeyMatcher, Platform } from './contract';
 
 export { createKeyboardController } from './controller';
 export type {
