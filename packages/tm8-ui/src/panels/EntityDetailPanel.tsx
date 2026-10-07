@@ -2100,7 +2100,11 @@ function PanelBody(
         /* Embedded (Workspace): the reader's Edit / Download ride the host's
            action strip instead of a toolbar row above the document. */
         {...(props.embeddedChrome
-          ? { toolbarSlot: props.embeddedChrome.kindSlot, outlineSlot: props.embeddedChrome.outlineSlot ?? null }
+          ? {
+              toolbarSlot: props.embeddedChrome.kindSlot,
+              outlineSlot: props.embeddedChrome.outlineSlot ?? null,
+              titleSlot: props.embeddedChrome.titleSlot ?? null,
+            }
           : {})}
       />
     );

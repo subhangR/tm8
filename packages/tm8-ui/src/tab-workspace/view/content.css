@@ -670,6 +670,27 @@
   background: var(--pn-card);
 }
 
+/* A DOC BEING WRITTEN STARTS AT THE TOP LEFT (Subhang, 2026-10-07): "a title
+   section on the top, that is separated, then the writing section, both start
+   left most". While a reader is in its edit stance the title bar and the pills
+   keep one left edge at the panel's own padding, instead of the centred
+   reading measure. READING IS UNTOUCHED (Subhang, same day: "the current doc
+   viewing page is very good"): every rule here is scoped to the edit stance. */
+.tws-entity-host:has(.pn-panel[data-archetype='reader'] [data-stance='edit']) > .tws-titlebar {
+  padding-left: var(--pn-space-3);
+}
+.cv2-root .tws-panel .pn-panel[data-archetype='reader']:has([data-stance='edit']) .pn-embedded-head__pills {
+  margin-inline: 0;
+}
+/* While the doc is being edited its title field is written into this bar
+   (`ReaderSurface` `titleSlot`): one title, so the read-only one steps aside. */
+.tws-titlebar__text:has(.de-title) > .pn-embedded-title {
+  display: none;
+}
+.cv2-root .tws-titlebar .de-title {
+  font-size: var(--pn-fs-title);
+}
+
 /* R32.1: a reader's body sits in the reading measure; its outline lives in the
    strip's Outline popover. */
 .cv2-root .tws-panel [data-testid='reader-body'] {

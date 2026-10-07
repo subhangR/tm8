@@ -41,7 +41,10 @@ import { ReaderSurface } from './ReaderSurface';
  * suite next door needed no changes at all.
  */
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 const ada: ActorSummary = { id: 'm-ada', kind: 'member', displayName: 'ada', isAgent: false };
 
@@ -175,24 +178,20 @@ describe('ReaderSurface chooses its edit surface by arrangement', () => {
    * about missing wiring, which would be a true-shaped sentence about the
    * wrong cause.
    */
-  it('refuses the exit visibly, with the host’s reason, while the draft is dirty', () => {
-    const { commands } = commandsSpy();
+  /* AUTOSAVE (New doc UX, 2026-10-06): leaving no longer costs a draft, so
+     Done is never withheld for one — it saves what is pending and leaves. */
+  it('Done saves a dirty draft and leaves the editor', async () => {
+    const { commands, sent } = commandsSpy();
     phone(<ReaderSurface detail={docDetail()} blocks={[]} historyUnavailableReason="" commands={commands} />);
     enterEdit();
 
     fireEvent.change(screen.getByTestId('doc-source'), { target: { value: '# Floors\n\nedited' } });
+    fireEvent.click(screen.getByTestId('doc-collapse'));
 
-    expect(screen.queryByTestId('doc-collapse')).toBeNull();
-    /* Scoped to the editor's own bar. There is a SECOND disabled-with-reason
-       on this screen — the file-insert control, refused because no `attach` is
-       wired in this harness — and a bare query would resolve to whichever the
-       DOM happened to order first. */
-    const refused = within(screen.getByTestId('doc-editor').querySelector('.de-bar')!)
-      .getByTestId('disabled-with-reason');
-    expect(refused.textContent).toContain('unsaved changes');
-    /* Not the wiring fallback. That sentence would send the reader looking for
-       a missing prop instead of at the draft they have not saved. */
-    expect(refused.textContent).not.toContain('collapse dispatch');
+    expect(screen.getByTestId('reader-surface').getAttribute('data-stance')).toBe('read');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.expectedVersion).toBe(3);
+    expect((sent[0]!.content as { body: string }).body).toContain('edited');
   });
 
   /**
@@ -212,7 +211,7 @@ describe('ReaderSurface chooses its edit surface by arrangement', () => {
     enterEdit();
 
     fireEvent.change(screen.getByTestId('doc-source'), { target: { value: '# Floors\n\nedited on a phone' } });
-    fireEvent.click(screen.getByTestId('doc-save'));
+    fireEvent.keyDown(screen.getByTestId('doc-source'), { key: 'Enter', metaKey: true });
 
     await screen.findByTestId('doc-save-word');
     expect(sent).toHaveLength(1);
