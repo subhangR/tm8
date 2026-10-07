@@ -1316,6 +1316,36 @@
 .cv2-root .shell-notice__dismiss:hover {
   color: var(--pn-ink);
 }
+/* A notice's one follow-up (an agent toast's Go; a prompt's choices). */
+.cv2-root .shell-notice__action {
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-info);
+  background: transparent;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm, 4px);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.cv2-root .shell-notice__action:hover:not(:disabled) {
+  border-color: var(--pn-info);
+}
+.cv2-root .shell-notice__action:disabled {
+  color: var(--pn-ink-3);
+  cursor: default;
+}
+/* An agent's Switch/Stay, Delete/Keep ask (D8): a notice that waits. */
+.cv2-root .tws-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cv2-root .tws-prompt__choices {
+  display: flex;
+  gap: 6px;
+  align-self: center;
+}
 
 /* --- Shell frame (§4) ----------------------------------------------------- */
 /* NO VIEWPORT UNIT MAY SIZE THE SHELL — THE TWO ENGINES DISAGREE ABOUT WHAT
@@ -2041,6 +2071,14 @@
 .cv2-root .tws-wsw__dot[data-color='teal'] { background: #12a594; }
 .cv2-root .tws-wsw__dot[data-color='blue'] { background: #0090ff; }
 .cv2-root .tws-wsw__dot[data-color='purple'] { background: #8e4ec6; }
+/* An agent changed this workspace since it was last active. */
+.cv2-root .tws-wsw__activity {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-info);
+  flex: none;
+}
 .cv2-root .tws-wsw__dot[data-color='pink'] { background: #d6409f; }
 .cv2-root .tws-wsw__pop { left: 0; }
 .cv2-root .tws-wsw__line { display: flex; align-items: center; }
