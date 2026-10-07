@@ -122,6 +122,69 @@ export interface WorkspaceListResult {
   prompts: WorkspacePrompt[];
 }
 
+/**
+ * The result of every management operation (API doc 01a115c4 §2): create,
+ * update, reorder, delete, switch. `conflict` is F2: a switch whose
+ * `expectedActiveWorkspaceId` is no longer active.
+ */
+export interface WorkspaceManageResult {
+  requestId: string;
+  status: 'applied' | 'no_op' | 'requires_user_choice' | 'rejected' | 'conflict';
+  reason?: string;
+  /** The workspace acted on; for a delete, its last summary. */
+  workspace: WorkspaceSummary;
+  /** The active workspace after the operation. */
+  activeWorkspaceId: string;
+  listRevision: number;
+  /** requires_user_choice only (phase 3). */
+  prompt?: WorkspacePrompt;
+  choices?: string[];
+  promptDelivered?: number;
+  /** A delete refused with `unsaved_changes`. */
+  dirtyDraftIds?: string[];
+  /** F2, with reason `workspace_switched`: what the caller expected, and what is active. */
+  expectedWorkspaceId?: string;
+}
+
+/** Why the workspace list changed, on a `workspace.summary` frame (§7.3). */
+export type WorkspaceSummaryCauseKind = 'created' | 'renamed' | 'recolored' | 'reordered' | 'deleted' | 'switched' | 'agent_change';
+
+/** `workspace.create` (§5.7). Creating never switches. */
+export interface WorkspaceCreateInput {
+  requestId: string;
+  /** Omitted: "Workspace N", the lowest N ≥ 2 not taken. */
+  name?: string;
+  color?: WorkspaceColor | null;
+  /** Omitted or null: last. */
+  beforeWorkspaceId?: string | null;
+  /** Reserved: answers not_implemented in v1 (Q8). */
+  copyFrom?: string;
+  clientMutationId?: string;
+}
+
+/** `workspace.update` (§5.8): rename and/or recolour. */
+export interface WorkspaceUpdateInput {
+  requestId: string;
+  name?: string;
+  color?: WorkspaceColor | null;
+  clientMutationId?: string;
+}
+
+/** `workspace.reorder` (§5.9): null = to the end. */
+export interface WorkspaceReorderInput {
+  requestId: string;
+  beforeWorkspaceId: string | null;
+  clientMutationId?: string;
+}
+
+/** `workspace.switch` (§5.11). */
+export interface WorkspaceSwitchInput {
+  requestId: string;
+  /** Guard against a double switch from two devices: a mismatch is `conflict` / `workspace_switched`. */
+  expectedActiveWorkspaceId?: string;
+  clientMutationId?: string;
+}
+
 /** The window capabilities `workspace.register` may announce (S9). */
 export const WORKSPACE_WINDOW_CAPS = ['multiWorkspace'] as const;
 export type WorkspaceWindowCap = (typeof WORKSPACE_WINDOW_CAPS)[number];
@@ -284,3 +347,57 @@ export const WorkspaceRemoteResultBodySchema = z
     dialogState: z.enum(['open', 'closed']).optional(),
   })
   .strip();
+
+/**
+ * Names are checked by the handler, not here, so a bad one answers
+ * `invalid_input` with reason `invalid_name` (§4); the bound only stops a
+ * runaway body. Colours are the shared token list (Q10).
+ */
+const ManageName = z.string().max(256);
+const ManageColor = z.string().max(64).nullable();
+
+export const WorkspaceCreateInputSchema: z.ZodType<WorkspaceCreateInput> = z
+  .object({
+    requestId: RequestId,
+    name: ManageName.optional(),
+    color: ManageColor.optional(),
+    beforeWorkspaceId: Id.nullable().optional(),
+    copyFrom: Id.optional(),
+    clientMutationId: z.string().min(1).optional(),
+  })
+  .strict() as z.ZodType<WorkspaceCreateInput>;
+
+export const WorkspaceUpdateInputSchema: z.ZodType<WorkspaceUpdateInput> = z
+  .object({
+    requestId: RequestId,
+    name: ManageName.optional(),
+    color: ManageColor.optional(),
+    clientMutationId: z.string().min(1).optional(),
+  })
+  .strict() as z.ZodType<WorkspaceUpdateInput>;
+
+export const WorkspaceReorderInputSchema: z.ZodType<WorkspaceReorderInput> = z
+  .object({
+    requestId: RequestId,
+    beforeWorkspaceId: Id.nullable(),
+    clientMutationId: z.string().min(1).optional(),
+  })
+  .strict();
+
+export const WorkspaceSwitchInputSchema: z.ZodType<WorkspaceSwitchInput> = z
+  .object({
+    requestId: RequestId,
+    expectedActiveWorkspaceId: Id.optional(),
+    clientMutationId: z.string().min(1).optional(),
+  })
+  .strict();
+
+/** A workspace name as stored: trimmed, 1–64 characters, no control characters (§4 `invalid_name`). */
+export function isWorkspaceName(name: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return name === name.trim() && name.length >= 1 && name.length <= 64 && !/[\u0000-\u001f\u007f]/.test(name);
+}
+
+export function isWorkspaceColor(color: string): color is WorkspaceColor {
+  return (WORKSPACE_COLORS as readonly string[]).includes(color);
+}
