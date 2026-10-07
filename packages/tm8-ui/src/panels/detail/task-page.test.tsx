@@ -12,7 +12,15 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { Editor } from '@tiptap/react';
-import type { AcceptanceCriterion, CommandResult, EntityDetail, EntityId, PatchTaskInput } from '@tm8/contract';
+import type {
+  AcceptanceCriterion,
+  CommandResult,
+  EntityDetail,
+  EntityId,
+  EntitySummary,
+  PatchTaskInput,
+} from '@tm8/contract';
+import type { AttachmentsPort } from '../../files/port';
 import { AUTOSAVE_DELAY_MS } from '../../doc-edit';
 import { REASONS as DOMAIN_REASONS, type ActionContext } from '../../domain';
 import { FIXTURE_SPACE_ID, fixtureDetails, presenceHollowReason, taskUuidTitle } from '../../fixtures';
@@ -37,7 +45,7 @@ const TASK: EntityDetail = {
   content: { ...(BASE.content as object), acceptanceCriteria: CRITERIA, pointsEstimate: 3 } as EntityDetail['content'],
 };
 
-function mount(detail: EntityDetail = TASK, opts: { embedded?: boolean } = {}) {
+function mount(detail: EntityDetail = TASK, opts: { embedded?: boolean; attachments?: AttachmentsPort } = {}) {
   const slot = document.createElement('div');
   document.body.appendChild(slot);
   const patchTask = vi.fn((_id: EntityId, _input: PatchTaskInput) => Promise.resolve({} as CommandResult));
@@ -48,6 +56,7 @@ function mount(detail: EntityDetail = TASK, opts: { embedded?: boolean } = {}) {
         reasons={REASONS}
         ctx={ctx}
         commands={{ createEntity: vi.fn(), patchTask }}
+        {...(opts.attachments ? { attachments: opts.attachments } : {})}
         {...(opts.embedded === false
           ? {}
           : {
@@ -252,5 +261,116 @@ describe('the description is written in place', () => {
       fireEvent.keyDown(field, { key: 'Enter' });
     });
     expect(document.activeElement).toBe(screen.getByTestId('doc-rich'));
+  });
+});
+
+describe('the rail carries what this task waits on, and what waits on it', () => {
+  const peer = (id: string, title: string) =>
+    ({ id, kind: BASE.kind, title, state: { kind: BASE.kind, status: 'working' } }) as unknown as EntitySummary;
+  const UPSTREAM = peer('task-upstream', 'Ship the API');
+  const DOWNSTREAM = peer('task-downstream', 'Write the docs');
+  const self = { id: TASK.id, kind: TASK.kind, title: TASK.title } as unknown as EntitySummary;
+  const edge = (id: string, source: EntitySummary, target: EntitySummary) => ({ id, type: 'depends_on', source, target });
+  const LINKED_TASK: EntityDetail = {
+    ...TASK,
+    capabilities: { ...TASK.capabilities, canLink: true },
+    connections: {
+      ...TASK.connections,
+      outgoing: [
+        ...TASK.connections.outgoing,
+        { type: 'depends_on', direction: 'outgoing', edges: [edge('e-up', self, UPSTREAM)] },
+      ] as EntityDetail['connections']['outgoing'],
+      incoming: [
+        ...TASK.connections.incoming,
+        { type: 'depends_on', direction: 'incoming', edges: [edge('e-down', DOWNSTREAM, self)] },
+      ] as EntityDetail['connections']['incoming'],
+    },
+  };
+  function port() {
+    return {
+      startUpload: () => {
+        throw new Error('unused');
+      },
+      detach: vi.fn((_edgeId: string) => Promise.resolve()),
+      search: vi.fn((_kind: string, _text: string) =>
+        Promise.resolve([self, UPSTREAM, peer('task-new', 'Design the schema')]),
+      ),
+      link: vi.fn((_input: { srcId: EntityId; dstId: EntityId; type: string }) => Promise.resolve()),
+    } satisfies AttachmentsPort;
+  }
+  const openLinked = () => {
+    const section = screen.getByTestId('linked-section');
+    fireEvent.click(within(section).getByRole('button', { name: /LINKED/ }));
+    return section;
+  };
+  const row = (direction: 'outgoing' | 'incoming') =>
+    screen.getAllByTestId('rail-relation').find((node) => node.getAttribute('data-direction') === direction)!;
+
+  it('draws Depends on and Blocks in the rail, and LINKED does not repeat them', () => {
+    mount(LINKED_TASK, { attachments: port() });
+    const rail = screen.getByTestId('subtree-rail');
+    expect(within(rail).getByTestId('rail-relations')).toBeTruthy();
+    expect(within(row('outgoing')).getByText('Depends on')).toBeTruthy();
+    expect(within(row('outgoing')).getByText('Ship the API')).toBeTruthy();
+    expect(within(row('incoming')).getByText('Blocks')).toBeTruthy();
+    expect(within(row('incoming')).getByText('Write the docs')).toBeTruthy();
+    const linked = openLinked();
+    expect(within(linked).queryByText('Ship the API')).toBeNull();
+    expect(within(linked).queryByText('Write the docs')).toBeNull();
+  });
+
+  it('keeps them in LINKED on a pinned panel, which has no rail', () => {
+    mount(LINKED_TASK, { embedded: false, attachments: port() });
+    expect(screen.queryByTestId('rail-relations')).toBeNull();
+    expect(within(openLinked()).getByText('Ship the API')).toBeTruthy();
+  });
+
+  it('removes the edge, never the task', async () => {
+    const attachments = port();
+    mount(LINKED_TASK, { attachments });
+    await act(async () => {
+      fireEvent.click(within(row('outgoing')).getByTestId('rail-relation-remove'));
+    });
+    expect(attachments.detach).toHaveBeenCalledWith('e-up');
+  });
+
+  it('adds a dependency from a search that leaves out this task and what is already linked', async () => {
+    vi.useFakeTimers();
+    const attachments = port();
+    mount(LINKED_TASK, { attachments });
+    fireEvent.click(within(row('outgoing')).getByTestId('rail-relation-add'));
+    fireEvent.change(screen.getByTestId('rail-relation-search'), { target: { value: 'schema' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(attachments.search).toHaveBeenLastCalledWith(BASE.kind, 'schema');
+    const results = screen.getAllByTestId('rail-relation-result');
+    expect(results.map((node) => node.textContent)).toEqual(['Design the schema']);
+    await act(async () => {
+      fireEvent.click(results[0]!);
+    });
+    expect(attachments.link).toHaveBeenCalledWith({ srcId: TASK.id, dstId: 'task-new', type: 'depends_on' });
+  });
+
+  it('writes Blocks from the other end', async () => {
+    vi.useFakeTimers();
+    const attachments = port();
+    mount(LINKED_TASK, { attachments });
+    fireEvent.click(within(row('incoming')).getByTestId('rail-relation-add'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    await act(async () => {
+      fireEvent.keyDown(screen.getByTestId('rail-relation-search'), { key: 'Enter' });
+    });
+    // UPSTREAM is offered here: it is linked through the OTHER row, not this one.
+    expect(attachments.link).toHaveBeenCalledWith({ srcId: 'task-upstream', dstId: TASK.id, type: 'depends_on' });
+  });
+
+  it('says why add is not here when the node refuses links', () => {
+    mount({ ...LINKED_TASK, capabilities: { ...LINKED_TASK.capabilities, canLink: false } }, { attachments: port() });
+    expect(screen.queryByTestId('rail-relation-add')).toBeNull();
+    expect(screen.queryByTestId('rail-relation-remove')).toBeNull();
+    expect(within(row('outgoing')).getByText('＋ Add')).toBeTruthy();
   });
 });

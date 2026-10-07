@@ -71,6 +71,7 @@ import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody'
 import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
 import { TaskDescription } from './bodies/TaskDescription';
+import { RailRelations, relationLinks } from './bodies/RailRelations';
 import { ReaderSurface } from './bodies/ReaderSurface';
 import type { DocCommands } from '../doc-edit';
 import { clearLiveTitle, freshDocTitle, isFreshArrival, noteFreshArrived, noteFreshDocEmpty, setLiveTitle } from '../doc-edit';
@@ -1696,6 +1697,39 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                   />
                 ) : null;
               const bodyConsumesSlot = config.panel.archetype === 'subtree';
+              /* THE RAIL'S RELATIONS (PR3): registry rows, read only on the
+                 two-column page, written through the same link port as the
+                 palette. Their edges are the rail's there, so LINKED skips
+                 them by edge id, the way it skips the strip's tiles. */
+              const relationRows = twoColumn ? config.panel.railRelations ?? [] : [];
+              const relationEdgeIds = relationRows.flatMap((row) =>
+                relationLinks(detail, row).map((link) => link.edgeId),
+              );
+              const bodySkipEdgeIds =
+                relationEdgeIds.length > 0
+                  ? new Set([...(attachmentSlot ? stripEdgeIds : []), ...relationEdgeIds])
+                  : attachmentSlot
+                    ? stripEdgeIds
+                    : undefined;
+              const railTail =
+                relationRows.length > 0 ? (
+                  <RailRelations
+                    detail={detail}
+                    rows={relationRows}
+                    port={
+                      port?.search && port.link
+                        ? {
+                            search: (kind, text) => port.search!(kind, text),
+                            link: (input) => port.link!(input),
+                            unlink: (edgeId) => port.detach(edgeId),
+                          }
+                        : null
+                    }
+                    refusal={detail.capabilities.canLink ? null : 'The node refuses new links on this task'}
+                    onChanged={props.onAttachmentUploaded}
+                    onOpenEntity={props.onOpenEntity}
+                  />
+                ) : null;
               /* ATTENTION HISTORY IS NO LONGER HERE. It was a section in this
                  body for every archetype that could take one, with a second
                  mount on the Connections tab for the ones that could not — two
@@ -1714,10 +1748,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     surfaceSlot={embedded ? embedded.kindSlot : surfaceSlot}
                     barSlot={embedded ? embedded.kindSlot : barHasRoom ? surfaceSlot : null}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
-                    stripEdgeIds={attachmentSlot ? stripEdgeIds : undefined}
+                    stripEdgeIds={bodySkipEdgeIds}
                     onSelectTab={selectTab}
                     twoColumn={twoColumn}
                     railSlot={railStrip}
+                    railTailSlot={railTail}
                   />
                   {bodyConsumesSlot ? null : attachmentSlot}
                 </>
@@ -2003,6 +2038,8 @@ function PanelBody(
     twoColumn?: boolean;
     /** The control strip as rail rows, built only for a two-column layout. */
     railSlot?: ReactNode;
+    /** Rail rows after the facts (the relations), two-column only. */
+    railTailSlot?: ReactNode;
   },
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
@@ -2203,6 +2240,7 @@ function PanelBody(
         criteriaUnavailableReason={saveRefusal}
         layout={twoColumn ? 'two-column' : undefined}
         rail={props.railSlot}
+        railTail={props.railTailSlot}
         onPointsChange={
           twoColumn && !save.unavailable
             ? (pointsEstimate) => void save.commitNow({ pointsEstimate })

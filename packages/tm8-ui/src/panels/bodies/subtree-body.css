@@ -585,7 +585,8 @@
   background: none;
 }
 .cv2-root .sb-rail .lp__rowdetail-label,
-.cv2-root .sb-grid--rail .sb-grid__label {
+.cv2-root .sb-grid--rail .sb-grid__label,
+.cv2-root .sb-relation__label {
   flex: none;
   width: 72px;
   font-size: 11px;
@@ -738,4 +739,115 @@
   margin: 0;
   font-size: 12px;
   color: var(--pn-ink-3);
+}
+
+/* --- the rail's relations: Depends on, Blocks (PR3) ---------------------- */
+.cv2-root .sb-relations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding-top: var(--pn-space-3);
+  border-top: 1px solid var(--pn-x-hairline-soft);
+}
+.cv2-root .sb-relation {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+}
+.cv2-root .sb-relation__label {
+  padding-top: 3px;
+}
+.cv2-root .sb-relation__values {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.cv2-root .sb-relation__peer {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+}
+.cv2-root .sb-relation__open,
+.cv2-root .sb-relation__result {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  color: var(--pn-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .sb-relation__open:hover,
+.cv2-root .sb-relation__result:hover,
+.cv2-root .sb-relation__result[aria-selected='true'] {
+  background: var(--pn-x-hairline-soft);
+}
+.cv2-root .sb-relation__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .sb-relation__remove,
+.cv2-root .sb-relation__add {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .sb-relation__remove {
+  visibility: hidden;
+}
+.cv2-root .sb-relation__peer:hover .sb-relation__remove,
+.cv2-root .sb-relation__remove:focus-visible {
+  visibility: visible;
+}
+.cv2-root .sb-relation__add:hover,
+.cv2-root .sb-relation__remove:hover {
+  color: var(--pn-ink);
+}
+.cv2-root .sb-relation__none {
+  margin: 0;
+  padding: 2px 4px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .sb-relation__picker {
+  width: 100%;
+}
+.cv2-root .sb-relation__search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  border: 1px solid var(--pn-brand);
+  border-radius: 5px;
+  background: var(--pn-card);
+  font: inherit;
+  color: var(--pn-ink);
+}
+.cv2-root .sb-relation__search:focus {
+  outline: none;
+}
+.cv2-root .sb-relation__results {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow: auto;
+}
+.cv2-root .sb-relation__error {
+  color: var(--pn-block);
+}
+.cv2-root[data-shell='mobile'] .sb-relation__remove {
+  visibility: visible;
 }

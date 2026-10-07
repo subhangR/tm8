@@ -168,6 +168,12 @@ export interface SubtreeBodyProps {
    */
   rail?: ReactNode;
   /**
+   * Rail rows drawn after the facts — the host's relations ("Depends on",
+   * "Blocks"), which write edges and so are built where the link port is.
+   * Two-column only.
+   */
+  railTail?: ReactNode;
+  /**
    * Writes the estimate in one gesture. Absent ⇒ the rail shows the value
    * read-only (or nothing, when there is none). Two-column only.
    */
@@ -203,6 +209,7 @@ export function SubtreeBody({
   stripEdgeIds,
   layout,
   rail,
+  railTail,
   onPointsChange,
   descriptionSlot,
 }: SubtreeBodyProps) {
@@ -402,6 +409,7 @@ export function SubtreeBody({
           <aside className="sb-rail" aria-label="Properties" data-testid="subtree-rail">
             {rail ?? null}
             <MetaGrid detail={detail} onOpenEntity={onOpenEntity} variant="rail" onPointsChange={onPointsChange} />
+            {railTail ?? null}
           </aside>
         </div>
       </div>

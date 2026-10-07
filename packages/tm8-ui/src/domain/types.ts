@@ -1377,10 +1377,20 @@ export interface PanelConfig {
    *   · criteria are written one gesture at a time (tick, add, edit, reorder,
    *     remove), never staged behind a Save pill.
    *
-   * Absent ⇒ the stacked body every other kind keeps. Phone widths stack the
-   * rail under the main column (CSS), so this is a desktop decision only.
+   * Absent ⇒ the stacked body every other kind keeps. Narrow panels stack the
+   * rail above the main column (CSS), so this is a desktop decision only.
    */
   layout?: 'two-column';
+  /**
+   * EDGES THE RAIL DRAWS AS PROPERTIES, with add and remove in place — the
+   * task page's "Depends on" and "Blocks" (mockup r6). Same row shape as
+   * `attachPalette`: the one kind the picker searches, the edge a pick
+   * writes, and which end the open entity is, so one edge type read from
+   * both ends gives two rows. Read only by a `layout: 'two-column'` page;
+   * there the rows own their edges, so LINKED does not draw them again.
+   * Elsewhere they stay in LINKED, as before.
+   */
+  railRelations?: readonly AttachPaletteRow[];
   /**
    * THE BODY OWNS ITS OWN BOTTOM EDGE, and this says which way.
    *
