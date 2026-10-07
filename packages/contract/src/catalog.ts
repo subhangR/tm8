@@ -375,6 +375,13 @@ export const OPERATIONS = [
   // Multiple workspaces (API doc 01a115c4 §5.6): the caller's workspaces in
   // the space. Plural path = the list; the singular one = a workspace's content.
   { name: 'workspace.list',          method: 'GET',    path: '/v2/spaces/:spaceId/workspaces',              kind: 'read',    status: 'v1' },
+  // §5.7–§5.11: managing the list. Creating never switches; an agent's switch
+  // or delete never applies (D6); reorder is the human's alone.
+  { name: 'workspace.create',        method: 'POST',   path: '/v2/spaces/:spaceId/workspaces',              kind: 'command', status: 'v1' },
+  { name: 'workspace.update',        method: 'PATCH',  path: '/v2/spaces/:spaceId/workspaces/:workspaceId', kind: 'command', status: 'v1' },
+  { name: 'workspace.reorder',       method: 'POST',   path: '/v2/spaces/:spaceId/workspaces/:workspaceId/move', kind: 'command', status: 'v1' },
+  { name: 'workspace.delete',        method: 'DELETE', path: '/v2/spaces/:spaceId/workspaces/:workspaceId', kind: 'command', status: 'v1' },
+  { name: 'workspace.switch',        method: 'POST',   path: '/v2/spaces/:spaceId/workspaces/:workspaceId/activate', kind: 'command', status: 'v1' },
 
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },

@@ -332,7 +332,8 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         // Spec D §3: a window that just (re)registered gets the stored
         // workspace and its drafts — this socket only. A heartbeat does not.
         if (!known && workspace.service) {
-          const shown = await workspace.service.snapshot(claims, frame.spaceId, (out) => {
+          const capable = (frame.caps ?? []).includes('multiWorkspace');
+          const shown = await workspace.service.snapshot(claims, frame.spaceId, capable, (out) => {
             try {
               sink.send(JSON.stringify(out));
             } catch {

@@ -27,7 +27,7 @@ import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 import type { DesignContent, DesignState, EntityContextDesignPage } from './design.js';
-import type { WorkspaceWindowCap } from './workspace-bridge.js';
+import type { WorkspaceSummary, WorkspaceSummaryCauseKind, WorkspaceWindowCap } from './workspace-bridge.js';
 import type { TaskProgress } from './progress.js';
 import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
 
@@ -1983,6 +1983,30 @@ export interface WorkspaceDraftFrame {
   deleted?: boolean;
   /** The window whose write this was (it already shows the values). */
   sourceInstanceId?: string;
+}
+
+/**
+ * Multiple workspaces (API doc 01a115c4 §7.3), node → the identity's CAPABLE
+ * windows only: the active workspace changed. The new active state and its
+ * drafts follow, then a `workspace.summary`.
+ */
+export interface WorkspaceSwitchedFrame {
+  type: 'workspace.switched';
+  spaceId: SpaceId;
+  workspaceId: string;
+  previousWorkspaceId: string | null;
+  listRevision: number;
+  at: string;
+}
+
+/** §7.3, capable windows only: the workspace list after any change to it. Drop one older than the last seen `listRevision`. */
+export interface WorkspaceSummaryFrame {
+  type: 'workspace.summary';
+  spaceId: SpaceId;
+  listRevision: number;
+  activeWorkspaceId: string | null;
+  items: WorkspaceSummary[];
+  cause?: { kind: WorkspaceSummaryCauseKind; workspaceId: string; actorClass: 'human' | 'agent'; actorName?: string };
 }
 
 /**
