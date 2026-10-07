@@ -25,6 +25,7 @@ import { AUTOSAVE_DELAY_MS } from '../../doc-edit';
 import { REASONS as DOMAIN_REASONS, type ActionContext } from '../../domain';
 import { FIXTURE_SPACE_ID, fixtureDetails, presenceHollowReason, taskUuidTitle } from '../../fixtures';
 import { EntityDetailPanel, type DetailReasons } from '../index';
+import type { ControlHost } from '../controls/EntityControls';
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 const REASONS: DetailReasons = {
@@ -47,7 +48,7 @@ const TASK: EntityDetail = {
 
 function mount(
   detail: EntityDetail = TASK,
-  opts: { embedded?: boolean; attachments?: AttachmentsPort; discussion?: boolean } = {},
+  opts: { embedded?: boolean; attachments?: AttachmentsPort; discussion?: boolean; controls?: ControlHost } = {},
 ) {
   const slot = document.createElement('div');
   document.body.appendChild(slot);
@@ -60,6 +61,7 @@ function mount(
         ctx={ctx}
         commands={{ createEntity: vi.fn(), patchTask }}
         {...(opts.attachments ? { attachments: opts.attachments } : {})}
+        {...(opts.controls ? { controls: opts.controls } : {})}
         {...(opts.discussion ? { discussionSurface: <div data-testid="host-discussion">conversation</div> } : {})}
         {...(opts.embedded === false
           ? {}
@@ -396,5 +398,53 @@ describe('the page ends in its conversation', () => {
   it('is a page section only: a pinned panel keeps it in Messages', () => {
     mount(TASK, { embedded: false, discussion: true });
     expect(screen.queryByTestId('subtree-activity')).toBeNull();
+  });
+});
+
+describe('the rail refuses Done while the checklist is open, and says why', () => {
+  const working = (criteria: AcceptanceCriterion[]): EntityDetail => ({
+    ...TASK,
+    state: { ...(TASK.state as object), status: 'working' } as EntityDetail['state'],
+    content: { ...(TASK.content as object), acceptanceCriteria: criteria } as EntityDetail['content'],
+  });
+  const controls = (): ControlHost & { onSetState: ReturnType<typeof vi.fn> } => ({
+    kind: TASK.kind,
+    ctx,
+    capabilitiesOf: () => TASK.capabilities,
+    onSetState: vi.fn(),
+  });
+  const option = (id: string) => {
+    const rail = screen.getByTestId('subtree-rail');
+    fireEvent.click(within(rail).getByTestId('row-state-select'));
+    return within(rail)
+      .getAllByRole('menuitemradio')
+      .find((node) => node.getAttribute('data-option-id') === id)!;
+  };
+
+  it('an open criterion disables Done with the count, and the click writes nothing', () => {
+    const host = controls();
+    mount(working(CRITERIA), { controls: host });
+    const done = option('done');
+
+    expect((done as HTMLButtonElement).disabled).toBe(true);
+    expect(done.textContent).toContain('1 acceptance criterion is still open');
+    fireEvent.click(done);
+    expect(host.onSetState).not.toHaveBeenCalled();
+  });
+
+  it('only the option routed through the gated verb is refused', () => {
+    mount(working(CRITERIA), { controls: controls() });
+
+    expect((option('blocked') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('a ticked checklist lets Done through to the completion verb', () => {
+    const host = controls();
+    mount(working(CRITERIA.map((c) => ({ ...c, done: true }))), { controls: host });
+    const done = option('done');
+
+    expect((done as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(done);
+    expect(host.onSetState).toHaveBeenCalledWith(TASK.id, 'done', 'complete');
   });
 });

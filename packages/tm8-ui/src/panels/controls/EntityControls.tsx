@@ -62,6 +62,7 @@ import type {
   KindConfig,
   MembershipListControl,
   StateControl,
+  StateOption,
   StatusPillSpec,
   ValueControl,
 } from '../../domain';
@@ -719,6 +720,7 @@ export function EntityControlStrip({
   omitArchive = false,
   inlineEditors = false,
   trailing,
+  stateOptionRefusal,
 }: {
   row: ControlSubject;
   props: ControlHost;
@@ -747,6 +749,8 @@ export function EntityControlStrip({
    * per-kind facts of its own (§15.2 — no kind literals in `panels/`).
    */
   trailing?: ReactNode;
+  /** The host's own reason a state option is refused — see `RowStateControl`. */
+  stateOptionRefusal?: (option: StateOption) => string | undefined;
 }) {
   const list = config.list;
   const control = list.stateControl;
@@ -849,6 +853,7 @@ export function EntityControlStrip({
               control={control}
               pill={config.panel.statusPill}
               inlineEditors={inlineEditors}
+              optionRefusal={stateOptionRefusal}
             />,
           )
         : null}
@@ -1846,11 +1851,21 @@ export function RowStateControl({
   variant = 'select',
   glyph,
   inlineEditors = false,
+  optionRefusal,
 }: {
   row: ControlSubject;
   props: ControlHost;
   /** Show the value and open the picker on click — see `ChipMenu`. */
   inlineEditors?: boolean;
+  /**
+   * A HOST-KNOWN PRECONDITION on one option, drawn as W4's narrowing is:
+   * disabled, with the reason in the option's own text. The detail panel uses
+   * it for the acceptance gate — an option routed through `complete` while
+   * criteria are still open (task 01a1163a, mockup r4: the Status field
+   * "refuses Done and says why"). Usability only: the server's gate is the
+   * real one, and a refusal it raises still surfaces as it always has.
+   */
+  optionRefusal?: (option: StateOption) => string | undefined;
   /** REQUIRED — see the note above; a kind with no state draws no control. */
   control: StateControl;
   /** The kind's existing value→word / value→tone map. The ONLY source for both. */
@@ -1912,6 +1927,13 @@ export function RowStateControl({
   const typeValue = workflowTypeOf(row.state);
   const barred = (id: string): boolean =>
     vocabulary !== null && id !== current && !vocabulary.includes(id);
+  /** Why `option` cannot be chosen, or null — the workflow first, then the host. */
+  const refusalOf = (option: StateOption): string | null =>
+    option.id === current
+      ? null
+      : barred(option.id)
+        ? `not in type ${typeValue}`
+        : optionRefusal?.(option) ?? null;
   /**
    * OFF-WORKFLOW is a DERIVED fact (owner ruling): the CURRENT status sits
    * outside the type's vocabulary — reachable by re-typing — and is flagged,
@@ -1987,7 +2009,8 @@ export function RowStateControl({
               >
                 {control.options.map((o) => {
                   const on = o.id === current;
-                  const off = barred(o.id);
+                  const why = refusalOf(o);
+                  const off = why !== null;
                   return (
                     <button
                       key={o.id}
@@ -2029,7 +2052,7 @@ export function RowStateControl({
                           from until the value is chosen. The mark stays where
                           it is a fact: on the trigger. */}
                       <span className="lp__assignopt-name">
-                        {off ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
+                        {off ? `${wordFor(o.id)} — ${why}` : wordFor(o.id)}
                       </span>
                       <span className="lp__assignopt-mark" aria-hidden>
                         {on ? '✓' : ''}
@@ -2059,8 +2082,8 @@ export function RowStateControl({
           options={control.options.map((o) => ({
             id: o.id,
             label: wordFor(o.id),
-            disabled: barred(o.id),
-            reason: barred(o.id) ? `not in type ${typeValue}` : undefined,
+            disabled: refusalOf(o) !== null,
+            reason: refusalOf(o) ?? undefined,
           }))}
           onPick={(next) => {
             if (next === current) return;
@@ -2123,8 +2146,8 @@ export function RowStateControl({
           is already this option's label — so the suffix says only the part the
           label does not: which type is refusing. */}
       {control.options.map((o) => (
-        <option key={o.id} value={o.id} disabled={barred(o.id)}>
-          {barred(o.id) ? `${wordFor(o.id)} — not in type ${typeValue}` : wordFor(o.id)}
+        <option key={o.id} value={o.id} disabled={refusalOf(o) !== null}>
+          {refusalOf(o) !== null ? `${wordFor(o.id)} — ${refusalOf(o)}` : wordFor(o.id)}
         </option>
       ))}
     </select>

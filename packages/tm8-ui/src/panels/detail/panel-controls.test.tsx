@@ -330,7 +330,14 @@ describe('the way back — done and archived both reopen', () => {
 
   it('completing still routes through the gated completion verb', () => {
     const h = host();
-    const { getByTestId } = panel(taskAt('working'), h);
+    /* A ticked checklist: with one open, the picker refuses Done itself and
+       says why (task-page.test), so the click never reaches the verb. */
+    const content = TASK.content as unknown as { acceptanceCriteria?: { done: boolean }[] };
+    const ticked = {
+      ...content,
+      acceptanceCriteria: (content.acceptanceCriteria ?? []).map((c) => ({ ...c, done: true })),
+    } as unknown as EntityDetail['content'];
+    const { getByTestId } = panel(taskAt('working', { content: ticked }), h);
     pick(getByTestId, 'row-state-select', 'done');
 
     // `done` is the ONE value the database refuses on both write doors.

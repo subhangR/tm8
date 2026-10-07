@@ -18,7 +18,7 @@ import type {
 import type { OpRequestsOps, SessionLiveness } from '../data/seam';
 import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
-import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
+import type { ActionContext, ActionRef, ContentBlockRef, KindConfig, StateOption } from '../domain';
 import { getKind, headerAuthorable, isConversationEdge, newLaunchMutationId, resolveAction, sessionSharingOf, SHARING_CONTROL, sharingControlFor } from '../domain';
 /* The Run/Coordinate flow opens the canvas composer as a modal tile now —
    design import 2026-09-07. */
@@ -214,6 +214,24 @@ function gateChipFor(detail: EntityDetail): ReactNode {
       Gate · {word}
     </span>
   );
+}
+
+/**
+ * WHY A STATE OPTION IS REFUSED BEFORE IT IS PICKED (mockup r4: the Status
+ * field "refuses Done and says why"). An option routed through `complete`
+ * meets the server's acceptance gate (migration 151), and the criteria are in
+ * the detail already, so an open one is said in the picker instead of as a
+ * refusal after the click. Read structurally — a content shape with no
+ * criteria member refuses nothing — and usability only: the server's gate,
+ * and the completion gate this panel cannot evaluate, still have the last word.
+ */
+function stateOptionRefusalFor(detail: EntityDetail): ((option: StateOption) => string | undefined) | undefined {
+  const criteria = (detail.content as unknown as Record<string, unknown>).acceptanceCriteria;
+  if (!Array.isArray(criteria)) return undefined;
+  const open = criteria.filter((c) => !(c as { done?: unknown }).done).length;
+  if (open === 0) return undefined;
+  const words = `${open} acceptance ${open === 1 ? 'criterion is' : 'criteria are'} still open`;
+  return (option) => (option.via === 'complete' ? words : undefined);
 }
 
 function subjectOf(detail: EntityDetail): ControlSubject {
@@ -1024,6 +1042,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         variant="lines"
         inlineEditors
         trailing={gateChipFor(detail)}
+        stateOptionRefusal={stateOptionRefusalFor(detail)}
         omitArchive
       />
     ) : null;
@@ -1043,6 +1062,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         inlineEditors
         /* The gate rides the metadata line now, and only when it is set. */
         trailing={gateChipFor(detail)}
+        stateOptionRefusal={stateOptionRefusalFor(detail)}
         /* Moved to `PanelOverflow` beside the window controls. The list's
            control card keeps its Archive; only this host opts out, because
            only this host has somewhere better to put it. */
