@@ -4,9 +4,9 @@
 import { findEntityTab, kindInScope } from '../selectors.js';
 import { isWorkspaceKind } from '../types.js';
 import type { DraftTabRecord, EntityTabRecord, TabId, TabRecord, WorkspaceState } from '../types.js';
-import { activate, isNonEmptyString, isRecord, reject, replaceChooser, toFront, type Planner } from './shared.js';
+import { activate, isNonEmptyString, isRecord, reject, replaceChooser, afterActive, type Planner } from './shared.js';
 
-/** §5.2 Open a draft: reuse the untouched one of that kind, else create at index 0. */
+/** §5.2 Open a draft: reuse the untouched one of that kind, else create one right after the active tab. */
 export const openDraft: Planner = ({ state, env, hooks }) => {
   const args = env.args;
   if (!isRecord(args) || !isNonEmptyString(args.kind)) return reject('invalid_arguments');
@@ -25,7 +25,7 @@ export const openDraft: Planner = ({ state, env, hooks }) => {
   // A dirty (or submitting) draft is never reused or reset.
   const untouched = drafts.find((tab) => !tab.dirty && !tab.submitting);
   if (untouched) {
-    let next: WorkspaceState = { ...state, orderedTabIds: toFront(state.orderedTabIds, untouched.id) };
+    let next: WorkspaceState = { ...state, orderedTabIds: afterActive(state, untouched.id) };
     if (next.orderedTabIds.every((id, i) => id === state.orderedTabIds[i])) next = state;
     next = activate(next, untouched.id, hooks);
     next = replaceChooser(next, args.replaceTabId, untouched.id, true, hooks);
@@ -46,7 +46,7 @@ export const openDraft: Planner = ({ state, env, hooks }) => {
     ordinal: drafts.reduce((max, tab) => Math.max(max, tab.ordinal), 0) + 1,
   };
   let next = activate(
-    { ...state, tabs: { ...state.tabs, [record.id]: record }, orderedTabIds: toFront(state.orderedTabIds, record.id) },
+    { ...state, tabs: { ...state.tabs, [record.id]: record }, orderedTabIds: afterActive(state, record.id) },
     record.id,
     hooks,
   );
