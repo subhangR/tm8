@@ -123,11 +123,12 @@ export function TerminalChromeStrip({
             onClick={onExitTerminal}
             data-testid="exit-terminal-chip"
             /* The keyboard contract, stated to AT as well as to the eye. */
-            aria-label="Exit terminal focus — press Control and backtick"
+            aria-label="Exit terminal focus — press Control and ]"
+            aria-keyshortcuts="Control+BracketRight"
           >
             {compact ? 'exit ' : 'exit terminal '}
             <span className="term-exit-chip__key" aria-hidden>
-              ⌃`
+              ⌃]
             </span>
           </button>
         ) : null}

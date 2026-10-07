@@ -25,6 +25,7 @@ import { ScopeRepairBanner } from './RestoreOffer';
 import { RevealPrompt } from './RevealPrompt';
 import { TabStrip } from './TabStrip';
 import { WorkspaceRail } from './WorkspaceRail';
+import { useWorkspaceKeys } from './useWorkspaceKeys';
 import './workspace.css';
 
 export interface TabWorkspaceViewProps {
@@ -106,6 +107,10 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorks
     drainWorkArrival(runtime, ctx);
     return onWorkArrival(() => drainWorkArrival(runtime, ctx));
   }, [runtime, viewerId, spaceId, resolveKind]);
+  /* Keyboard commands from the shell (tabs, drafts, browser, the tab's
+     controls) — installed AFTER the restore and arrivals above, so a command
+     queued from another view lands on the restored tabs. */
+  useWorkspaceKeys(runtime, onNotice);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({ runtime, store: runtime.store, dispatch: runtime.dispatch, viewerId, spaceId, gate }),

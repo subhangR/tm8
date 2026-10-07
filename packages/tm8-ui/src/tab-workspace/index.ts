@@ -6,3 +6,4 @@ export { openInWorkspace } from './gateOpen';
 export { queueWorkArrival, type WorkArrival } from './runtime/arrival';
 export { isWorkspaceKind } from './runtime/types';
 export { useWorkspaceBridge, type BridgeDialogControl } from './bridge/useWorkspaceBridge';
+export { queueWorkKey, runWorkKey, workKeysMounted, type WorkKey } from './keys';

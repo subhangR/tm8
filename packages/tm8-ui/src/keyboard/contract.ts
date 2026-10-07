@@ -287,7 +287,7 @@ const CREATE_CHORDS: readonly Binding[] = (
     ['s', 'work_session', 'New session'],
     ['c', 'chat', 'New chat'],
     ['f', 'form', 'New form'],
-    ['p', 'project', 'New project'],
+    // No `n p`: projects have no Work creation draft (`canCreateKind`).
     ['x', 'drawing', 'New drawing'],
   ] as const
 ).map(([key, kind, label]) => ({
@@ -484,12 +484,17 @@ export function isAdvertised(binding: Binding, platform: Platform): boolean {
 }
 
 /** Help-overlay sections, in display order. */
-export type BindingGroup = 'Workspace' | 'Create' | 'Navigate' | 'Lists' | 'General';
+export type BindingGroup = 'Focus' | 'Workspace' | 'Create' | 'Navigate' | 'Lists' | 'General';
 
-export const BINDING_GROUPS: readonly BindingGroup[] = ['Lists', 'Workspace', 'Create', 'Navigate', 'General'];
+/**
+ * `Focus` leads: leaving a text field or a terminal is what makes every other
+ * shortcut reachable, so it is the first thing the help overlay teaches.
+ */
+export const BINDING_GROUPS: readonly BindingGroup[] = ['Focus', 'Lists', 'Workspace', 'Create', 'Navigate', 'General'];
 
 /** Which help section a binding belongs to — derived, so no row can forget one. */
 export function bindingGroup(binding: Binding): BindingGroup {
+  if (binding.command === 'text.blur' || binding.command.startsWith('terminal.')) return 'Focus';
   if (binding.command === 'work.create' || binding.command === 'list.create') return 'Create';
   if (binding.command === 'work.browser.focus' || binding.layer === 'focus') return 'Lists';
   if (binding.command.startsWith('work.')) return 'Workspace';
