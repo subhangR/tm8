@@ -500,6 +500,7 @@ export function ConnectionsTab({
           <div className="pn-chiprow">
             <Chip
               glyph={<KindIcon kind={parent.kind} size={16} />}
+              kind={parent.kind}
               onClick={() => onOpenEntity?.(parent.id)}
               title={peerTitle(parent.kind, parent.title)}
             >
@@ -549,10 +550,19 @@ export function ConnectionsTab({
                 {/* ONE LINE PER ROW: title · verbs · clock, on a grid, so a long
                     title truncates instead of pushing its relations and its time
                     onto a second line. The full title is on the chip's hover. */}
-                <li className="pn-peers__row" data-peer-id={entry.peer.id} data-peer-kind={entry.peer.kind}>
+                {/* THE WHOLE CARD OPENS THE PEER. The chip is the card's title
+                    and its Tab stop; its click (pointer or Enter on the button)
+                    bubbles to the row, which holds the one handler, so the
+                    verbs, the clock and the padding are all a target too. */}
+                <li
+                  className="pn-peers__row"
+                  data-peer-id={entry.peer.id}
+                  data-peer-kind={entry.peer.kind}
+                  onClick={() => onOpenEntity?.(entry.peer.id)}
+                >
                   <Chip
                     glyph={<KindIcon kind={entry.peer.kind} size={18} />}
-                    onClick={() => onOpenEntity?.(entry.peer.id)}
+                    kind={entry.peer.kind}
                     /* An unresolved HARD dependency is why something is blocked —
                        the chip says so rather than looking like any other link. */
                     title={
@@ -563,9 +573,10 @@ export function ConnectionsTab({
                   >
                     <span className="pn-peers__title">{entry.peer.title}</span>
                   </Chip>
-                  {/* WHAT KIND it is, said once beside the chip: the mark alone
-                      is not enough at reading distance, and the kind is the
-                      first thing a reader scanning down the list asks. */}
+                  {/* THE SECOND LINE: what kind it is, then how it relates. The
+                      mark alone is not enough at reading distance, and the kind
+                      is the first thing a reader scanning down the list asks. */}
+                  <div className="pn-peers__meta">
                   <span className="pn-peers__kind">{getKind(entry.peer.kind).label}</span>
                   <div className="pn-peers__rels">
                     {entry.relations.map((rel) => (
@@ -587,6 +598,7 @@ export function ConnectionsTab({
                         {rel.count > 1 ? ` · ${rel.count}` : ''}
                       </span>
                     ))}
+                  </div>
                   </div>
                   {/* WHEN — the fact this row has always held and never showed.
                       The stamp is the peer's newest edge, which is also what the
@@ -637,6 +649,7 @@ export function ConnectionsTab({
               <Chip
                 key={c.id}
                 glyph={<KindIcon kind={c.kind} size={16} />}
+                kind={c.kind}
                 onClick={() => onOpenEntity?.(c.id)}
                 title={peerTitle(c.kind, c.title)}
               >
