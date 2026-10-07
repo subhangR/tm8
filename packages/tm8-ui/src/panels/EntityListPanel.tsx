@@ -103,7 +103,6 @@ import { ChildCountBadge } from './list/ChildCountBadge';
 import { RowLead, ToneKindIcon, leadTooltip } from './list/RowLead';
 import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
-import { LiveSessionChip, liveSessionChipOf } from './LiveSessionChip';
 import { usePendingForms } from '../forms/pending';
 import { SessionLaneLine, WORKTREE_RELATION, sessionLaneOf } from '../git/SessionLane';
 import { TileCountBadges, hasTileCounts } from './list/TileCountBadges';
@@ -4126,13 +4125,10 @@ export function Tile({
       the count badges — doors where a count names a real collection kind.
       Clickability requires a wired `connectionsOf`; without the projection
       an opened group could never fill. */
-  const liveSession = row.badges.liveSession;
   const tileBadges =
-    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters, countVisible) || hasPendingFormsChip(pendingForms) || liveSessionChipOf(liveSession) != null ? (
+    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters, countVisible) || hasPendingFormsChip(pendingForms) ? (
       <>
         <PendingFormsChip pending={pendingForms} />
-        {/* P0g: "No live session" / "Session crashed" on working and blocked tasks. */}
-        <LiveSessionChip live={liveSession} />
         {sessionChip}
         {linkedPullRequests.length > 0 ? (
           <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
@@ -4322,9 +4318,6 @@ export function Tile({
       <>
       <MaestroTaskTile
         lead={lead ?? undefined}
-        /* Lead mode drops the status mark, so the row's criteria figure rides
-           the trailing meta instead (Work browser only; Home keeps its row). */
-        progress={leadMode ? acceptanceProgressOf(row) : null}
         rootRef={tileRef}
         id={row.id}
         title={row.title}
@@ -4372,9 +4365,10 @@ export function Tile({
         }
         assignees={view.shows('avatar') ? controlFacts.assignees : EMPTY_MEMBERS}
         creator={view.shows('avatar') ? controlFacts.creator : null}
-        badges={attentionLine || tileBadges || (progress && view.shows('progress')) ? (
+        /* No attention roll-up line here: the chip on the title row already
+           says it, and the criteria count rides the progress bar alone. */
+        badges={tileBadges || (progress && view.shows('progress')) ? (
           <>
-            <AttentionTileSubtitle line={attentionLine} />
             {tileBadges}
             {/* 307: the task's weighted progress, as the standard tile draws it. */}
             {progress && view.shows('progress') ? <TileProgressBar progress={progress} /> : null}
