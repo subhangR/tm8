@@ -827,6 +827,13 @@ const ROWS: readonly KindConfig[] = [
       /* The writing in a wide column, the properties in a rail beside it —
          see `PanelConfig.layout`. */
       layout: 'two-column',
+      /* What this task waits on and what waits on it: one `depends_on` edge
+         (src task → dst task, the CLI's `task depends_on task`) read from
+         each end. */
+      railRelations: [
+        { kind: 'task', label: 'Depends on', edgeType: 'depends_on', direction: 'outgoing' },
+        { kind: 'task', label: 'Blocks', edgeType: 'depends_on', direction: 'incoming' },
+      ],
       statusPill: {
         source: 'status',
         tones: {

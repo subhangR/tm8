@@ -18,7 +18,7 @@ import type {
 import type { OpRequestsOps, SessionLiveness } from '../data/seam';
 import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
-import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
+import type { ActionContext, ActionRef, ContentBlockRef, KindConfig, StateOption } from '../domain';
 import { getKind, headerAuthorable, isConversationEdge, newLaunchMutationId, resolveAction, sessionSharingOf, SHARING_CONTROL, sharingControlFor } from '../domain';
 /* The Run/Coordinate flow opens the canvas composer as a modal tile now —
    design import 2026-09-07. */
@@ -71,6 +71,7 @@ import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody'
 import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
 import { TaskDescription } from './bodies/TaskDescription';
+import { RailRelations, relationLinks } from './bodies/RailRelations';
 import { ReaderSurface } from './bodies/ReaderSurface';
 import type { DocCommands } from '../doc-edit';
 import { clearLiveTitle, freshDocTitle, isFreshArrival, noteFreshArrived, noteFreshDocEmpty, setLiveTitle } from '../doc-edit';
@@ -213,6 +214,24 @@ function gateChipFor(detail: EntityDetail): ReactNode {
       Gate · {word}
     </span>
   );
+}
+
+/**
+ * WHY A STATE OPTION IS REFUSED BEFORE IT IS PICKED (mockup r4: the Status
+ * field "refuses Done and says why"). An option routed through `complete`
+ * meets the server's acceptance gate (migration 151), and the criteria are in
+ * the detail already, so an open one is said in the picker instead of as a
+ * refusal after the click. Read structurally — a content shape with no
+ * criteria member refuses nothing — and usability only: the server's gate,
+ * and the completion gate this panel cannot evaluate, still have the last word.
+ */
+function stateOptionRefusalFor(detail: EntityDetail): ((option: StateOption) => string | undefined) | undefined {
+  const criteria = (detail.content as unknown as Record<string, unknown>).acceptanceCriteria;
+  if (!Array.isArray(criteria)) return undefined;
+  const open = criteria.filter((c) => !(c as { done?: unknown }).done).length;
+  if (open === 0) return undefined;
+  const words = `${open} acceptance ${open === 1 ? 'criterion is' : 'criteria are'} still open`;
+  return (option) => (option.via === 'complete' ? words : undefined);
 }
 
 function subjectOf(detail: EntityDetail): ControlSubject {
@@ -1023,6 +1042,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         variant="lines"
         inlineEditors
         trailing={gateChipFor(detail)}
+        stateOptionRefusal={stateOptionRefusalFor(detail)}
         omitArchive
       />
     ) : null;
@@ -1042,6 +1062,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         inlineEditors
         /* The gate rides the metadata line now, and only when it is set. */
         trailing={gateChipFor(detail)}
+        stateOptionRefusal={stateOptionRefusalFor(detail)}
         /* Moved to `PanelOverflow` beside the window controls. The list's
            control card keeps its Archive; only this host opts out, because
            only this host has somewhere better to put it. */
@@ -1696,6 +1717,39 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                   />
                 ) : null;
               const bodyConsumesSlot = config.panel.archetype === 'subtree';
+              /* THE RAIL'S RELATIONS (PR3): registry rows, read only on the
+                 two-column page, written through the same link port as the
+                 palette. Their edges are the rail's there, so LINKED skips
+                 them by edge id, the way it skips the strip's tiles. */
+              const relationRows = twoColumn ? config.panel.railRelations ?? [] : [];
+              const relationEdgeIds = relationRows.flatMap((row) =>
+                relationLinks(detail, row).map((link) => link.edgeId),
+              );
+              const bodySkipEdgeIds =
+                relationEdgeIds.length > 0
+                  ? new Set([...(attachmentSlot ? stripEdgeIds : []), ...relationEdgeIds])
+                  : attachmentSlot
+                    ? stripEdgeIds
+                    : undefined;
+              const railTail =
+                relationRows.length > 0 ? (
+                  <RailRelations
+                    detail={detail}
+                    rows={relationRows}
+                    port={
+                      port?.search && port.link
+                        ? {
+                            search: (kind, text) => port.search!(kind, text),
+                            link: (input) => port.link!(input),
+                            unlink: (edgeId) => port.detach(edgeId),
+                          }
+                        : null
+                    }
+                    refusal={detail.capabilities.canLink ? null : 'The node refuses new links on this task'}
+                    onChanged={props.onAttachmentUploaded}
+                    onOpenEntity={props.onOpenEntity}
+                  />
+                ) : null;
               /* ATTENTION HISTORY IS NO LONGER HERE. It was a section in this
                  body for every archetype that could take one, with a second
                  mount on the Connections tab for the ones that could not — two
@@ -1714,10 +1768,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     surfaceSlot={embedded ? embedded.kindSlot : surfaceSlot}
                     barSlot={embedded ? embedded.kindSlot : barHasRoom ? surfaceSlot : null}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
-                    stripEdgeIds={attachmentSlot ? stripEdgeIds : undefined}
+                    stripEdgeIds={bodySkipEdgeIds}
                     onSelectTab={selectTab}
                     twoColumn={twoColumn}
                     railSlot={railStrip}
+                    railTailSlot={railTail}
                   />
                   {bodyConsumesSlot ? null : attachmentSlot}
                 </>
@@ -2003,6 +2058,8 @@ function PanelBody(
     twoColumn?: boolean;
     /** The control strip as rail rows, built only for a two-column layout. */
     railSlot?: ReactNode;
+    /** Rail rows after the facts (the relations), two-column only. */
+    railTailSlot?: ReactNode;
   },
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
@@ -2203,6 +2260,10 @@ function PanelBody(
         criteriaUnavailableReason={saveRefusal}
         layout={twoColumn ? 'two-column' : undefined}
         rail={props.railSlot}
+        railTail={props.railTailSlot}
+        /* The page reads top to bottom into its conversation; the Messages
+           section draws the same surface for every other host and tab. */
+        activity={twoColumn ? props.discussionSurface : undefined}
         onPointsChange={
           twoColumn && !save.unavailable
             ? (pointsEstimate) => void save.commitNow({ pointsEstimate })
