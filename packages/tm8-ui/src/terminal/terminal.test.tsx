@@ -121,8 +121,9 @@ describe('chrome strip — the focus-capture contract', () => {
         <TerminalChromeStrip persona="forge" provider="claude-fable-5" presentation={presentation} />,
       );
       const chip = getByTestId('exit-terminal-chip');
-      expect(chip.textContent).toContain('⌃`');
-      expect(chip.getAttribute('aria-label')).toMatch(/backtick/i);
+      // Ctrl+] is the advertised chord (task 01a113aa); Ctrl+` still works.
+      expect(chip.textContent).toContain('⌃]');
+      expect(chip.getAttribute('aria-label')).toMatch(/Control and \]/);
       unmount();
     }
   });
@@ -132,7 +133,7 @@ describe('chrome strip — the focus-capture contract', () => {
       <TerminalChromeStrip persona="forge" presentation="running" compact />,
     );
     const chip = getByTestId('exit-terminal-chip');
-    expect(chip.textContent).toContain('⌃`');
+    expect(chip.textContent).toContain('⌃]');
     expect(chip.textContent).not.toContain('terminal');
   });
 

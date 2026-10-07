@@ -887,7 +887,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * Keyed on the ARCHETYPE, a registry field: no kind literal (§15.2).
    */
   const isTerminal = config.panel.archetype === 'terminal';
-  const alwaysDark = isTerminal;
+  /*
+   * ONLY WHILE THE TERMINAL IS THE SURFACE (user ruling 2026-10-07, task
+   * 01a11567). The dark scope exists for the composed terminal canvas; the
+   * same panel's Links and Messages sections are ordinary reading surfaces,
+   * and painting them with the terminal's ramp left a black page sitting in a
+   * light-themed app, inconsistent with everything beside it. `tab` is the
+   * clamped section above, so the scope follows the section exactly: switch
+   * to Links and the panel takes the theme, switch back and the terminal is
+   * dark again. The workspace's own terminal background rule in
+   * `tab-workspace/view/content.css` is scoped the same way.
+   */
+  const alwaysDark = isTerminal && tab === 'content';
 
   /**
    * THE BODY ENDS THE PANEL — the trailing regions are off.

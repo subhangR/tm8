@@ -712,3 +712,14 @@
   background: var(--pn-line);
   pointer-events: none;
 }
+
+/* The keyboard row cursor (`l l`, then j/k): the list itself takes focus, the
+   cursor row carries the ring. */
+.tws-browser-list:focus {
+  outline: none;
+}
+.tws-browser-list:focus [data-kbd-cursor] {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+  border-radius: 6px;
+}

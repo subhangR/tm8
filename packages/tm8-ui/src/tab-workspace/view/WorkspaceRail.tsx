@@ -45,10 +45,10 @@ import {
   type ReactNode,
 } from 'react';
 import { useStore } from 'zustand';
-import { KindIcon, VIEW_ART, homeRailPinnedKinds, homeRootKinds, type KindConfig } from '../../domain';
+import { KindIcon, VIEW_ART, homeRootKinds, type KindConfig } from '../../domain';
 import { Avatar } from '../../kit/Avatar';
 import { VectorIcon } from '../../kit/VectorIcon';
-import { getRailStore } from '../runtime/railStore';
+import { getRailStore, workspacePinnedKinds } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
 import { useShellFrame } from './context';
 import { railCountLabel, railKindLabel, isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts';
@@ -100,7 +100,7 @@ export function WorkspaceRail() {
   const viewer = gate.data?.viewerActor ?? null;
   const more = useScrollHints(topRef, tools);
 
-  const pinned = useMemo(() => homeRailPinnedKinds(pins).filter((config) => isWorkspaceKind(config.kind)), [pins]);
+  const pinned = useMemo(() => workspacePinnedKinds(pins), [pins]);
   /* A pinned kind MOVES to Pinned and leaves the list; an unpinned one comes
      back at the TOP of the list, most recent first (Subhang, 2026-10-07). */
   const kinds = useMemo(() => {

@@ -22,6 +22,7 @@ import { ChatDock } from './ChatDock';
 import { Chooser } from './Chooser';
 import { useWorkspace, useWorkspaceState } from './context';
 import { ActionStrip } from './ActionStrip';
+import { mayTakeFocus, scrollContentForKey } from './contentScroll';
 import { LinkedTrail } from './LinkedTrail';
 import { StartSurface } from './StartSurface';
 import './content.css';
@@ -43,8 +44,26 @@ export function ContentHost() {
     [runtime],
   );
 
+  /* Switching or opening a tab gives the content the keyboard, so ↑/↓ scroll
+     it straight away (contentScroll.ts). Child effects run first, so a draft
+     that focused its own field keeps it. */
+  const hostRef = useRef<HTMLElement>(null);
+  const tabId = tab?.id ?? null;
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !tabId || !mayTakeFocus(host)) return;
+    host.focus({ preventScroll: true });
+  }, [tabId]);
+
+  const onKeyDown = useCallback((event: React.KeyboardEvent<HTMLElement>) => {
+    // Only the host itself: a field, a button or a terminal inside keeps its keys.
+    if (event.target !== event.currentTarget || event.defaultPrevented) return;
+    if (!scrollContentForKey(event.currentTarget, event)) return;
+    event.preventDefault();
+  }, []);
+
   return (
-    <main className="tws-content" data-testid="tws-content">
+    <main ref={hostRef} className="tws-content" data-testid="tws-content" tabIndex={-1} onKeyDown={onKeyDown}>
       {!tab ? (
         <StartSurface />
       ) : tab.type === 'chooser' ? (

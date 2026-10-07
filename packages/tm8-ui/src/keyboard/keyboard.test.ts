@@ -71,6 +71,9 @@ describe('layer 1 — browser/OS is never intercepted', () => {
   it('no binding in the table uses a hard-excluded chord', () => {
     for (const binding of BINDINGS) {
       if (binding.match.type !== 'mod') continue;
+      // Documentation rows (the tab strip's Mod+ALT chords) are never matched
+      // by the controller, so they cannot intercept anything.
+      if (binding.surfaceOwned) continue;
       for (const platform of ['mac', 'other'] as const) {
         const input = key({
           key: binding.match.key,
@@ -361,7 +364,7 @@ describe('the g-chord machine', () => {
   it('binds to registry/view REFS, never to menu positions', () => {
     // Every g-chord names a slug or a view name; a menu edit cannot reach them.
     for (const binding of BINDINGS) {
-      if (binding.match.type !== 'chord') continue;
+      if (binding.match.type !== 'chord' || binding.match.lead !== CHORD_LEAD) continue;
       expect(binding.ref).toBeTruthy();
       expect(binding.command === 'nav.kind' || binding.command === 'nav.view').toBe(true);
     }

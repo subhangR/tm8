@@ -11,6 +11,8 @@
  * not "use the default".
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { homeRailPinnedKinds, type KindConfig } from '../../domain';
+import { isWorkspaceKind } from './types';
 
 export const DEFAULT_WORKSPACE_RAIL_PINS: readonly string[] = ['chat', 'task', 'work_session'];
 export const railPinsKey = (spaceId: string) => `tm8.workspace.rail-pins:${spaceId}`;
@@ -46,6 +48,11 @@ function write(key: string, value: unknown): void {
   } catch {
     // No storage ⇒ the choice lasts as long as the page. Still honoured.
   }
+}
+
+/** The rail's Pinned group, top to bottom: what it draws and what `l 1`…`l 9` count. */
+export function workspacePinnedKinds(pins: readonly string[]): KindConfig[] {
+  return homeRailPinnedKinds(pins).filter((config) => isWorkspaceKind(config.kind));
 }
 
 export function loadWorkspaceRailPins(spaceId: string): readonly string[] {

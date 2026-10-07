@@ -18,7 +18,7 @@ import { spaceSessionFor } from '../auth/space-sessions';
 import { readActiveServerId } from '../servers/server-key';
 import { registerTerminal } from './pty/runtime.js';
 import { attachTouchScroll } from './touchScroll.js';
-import { scrollTerminalLines } from './scrollTerminal';
+import { registerScrollTerminal, scrollTerminalLines } from './scrollTerminal';
 import {
   clientFittedSessions,
   measureSpawnTerminalSize,
@@ -383,6 +383,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     patchXtermRenderServiceDimensions(term);
     termRef.current = term;
     fitRef.current = fit;
+    // Keyboard scrolling from outside the terminal (the Work tab's ↑/↓).
+    const unregisterScroll = registerScrollTerminal(container, term);
 
     // xterm receives keyboard input through a hidden textarea. The credential
     // login panel is mounted in an already-focused Settings surface, so the
@@ -635,10 +637,16 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     }
 
     term.attachCustomKeyEventHandler((event) => {
-      if (event.type === 'keydown' && isTerminalBlurChord(event)) {
+      if (isTerminalBlurChord(event)) {
         // Intercepted here so ZERO bytes reach the PTY (R5-5) — the same
-        // physical chord the exit-terminal chip's aria-label promises.
-        term.blur();
+        // physical chord the exit-terminal chip's aria-label promises. Ctrl+]
+        // is the easy one (task 01a113aa). Stopped here: the shell binds the
+        // same Ctrl+] to RETURN to the terminal, and must not see the leave.
+        // Every phase (keydown/keypress/keyup) is swallowed so none reaches
+        // the PTY; only the keydown blurs.
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.type === 'keydown') term.blur();
         return false;
       }
       const shiftEnter =
@@ -829,6 +837,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       ptyTransport.closeSession(sessionId);
       clientFittedSessions.delete(sessionId);
       serverPtySizes.delete(sessionId);
+      unregisterScroll();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;

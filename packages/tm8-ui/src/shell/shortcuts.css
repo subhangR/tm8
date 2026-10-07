@@ -1,0 +1,53 @@
+/* ==========================================================================
+   SHORTCUT HELP OVERLAY (`?`) — rides the palette's scrim and frame, so the
+   two read as one family of surfaces.
+   ========================================================================== */
+
+.cv2-root .kbh { width: 620px; max-height: 72vh; }
+
+.cv2-root .kbh__body {
+  overflow-y: auto;
+  padding: 4px 0 10px;
+}
+
+.cv2-root .kbh__note {
+  margin: 0 14px 4px;
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .kbh__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+}
+
+.cv2-root .kbh__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .kbh__keys { display: inline-flex; gap: 3px; flex: none; }
+
+.cv2-root .kbh__kbd,
+.cv2-root .pal__kbd {
+  min-width: 18px;
+  padding: 1px 5px;
+  text-align: center;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+  background: var(--pn-surface-2, var(--pn-hover));
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+}
+
+.cv2-root .pal__row-keys { display: inline-flex; gap: 3px; flex: none; }

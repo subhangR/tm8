@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import { CONVERSATION_KIND } from '../../domain';
@@ -51,6 +52,17 @@ function detailWith(outgoing: unknown[], incoming: unknown[]): EntityDetail {
   } as unknown as EntityDetail;
 }
 
+/**
+ * The tab opens on its grouped Links reading. The assertions that are about
+ * EVERY relation on a row, and about time as the order, are assertions about
+ * the Timeline reading, so they switch to it first.
+ */
+function renderTimeline(ui: ReactElement) {
+  const result = render(ui);
+  fireEvent.click(result.getByRole('button', { name: 'Timeline' }));
+  return result;
+}
+
 const alpha = peer('peer-alpha', 'Alpha');
 const beta = peer('peer-beta', 'Beta');
 
@@ -63,7 +75,7 @@ describe('ConnectionsTab — grouped by entity, edge types per entity', () => {
       ],
       [],
     );
-    const { container, getAllByText } = render(<ConnectionsTab detail={detail} />);
+    const { container, getAllByText } = renderTimeline(<ConnectionsTab detail={detail} />);
     const rows = container.querySelectorAll('.pn-peers__row');
     expect(rows).toHaveLength(2);
     // Alpha appears once as an entity, not once per edge.
@@ -83,7 +95,7 @@ describe('ConnectionsTab — grouped by entity, edge types per entity', () => {
       [group('depends_on', 'depends_on', 'outgoing', [{ id: 'e1', peer: alpha }])],
       [group('depends_on', 'depends_on (incoming)', 'incoming', [{ id: 'e2', peer: alpha }])],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     expect(container.querySelectorAll('.pn-peers__row')).toHaveLength(1);
     const rels = [...container.querySelectorAll('.pn-peers__rel')].map((n) => n.textContent);
     expect(rels).toEqual(['Depends on', 'Needed by']);
@@ -97,7 +109,7 @@ describe('ConnectionsTab — grouped by entity, edge types per entity', () => {
       [group('messaged', 'messaged', 'outgoing', [{ id: 'e1', peer: alpha }])],
       [group('messaged', 'messaged (incoming)', 'incoming', [{ id: 'e2', peer: alpha }])],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     const rels = [...container.querySelectorAll('.pn-peers__rel')].map((n) => n.textContent);
     expect(rels).toEqual(['Talked with · 2']);
   });
@@ -112,7 +124,7 @@ describe('ConnectionsTab — grouped by entity, edge types per entity', () => {
       ],
       [],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     expect(container.querySelectorAll('.pn-peers__row')).toHaveLength(1);
     const rel = container.querySelector('.pn-peers__rel')!;
     expect(rel.textContent).toContain('· 2');
@@ -200,7 +212,7 @@ describe('ConnectionsTab — read as a timeline', () => {
       ],
       [],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     const titles = [...container.querySelectorAll('.pn-peers__row')]
       .map((r) => r.querySelector('.kit-chip')?.textContent);
     expect(titles).toEqual(['Gamma', 'Beta', 'Alpha']);
@@ -213,7 +225,7 @@ describe('ConnectionsTab — read as a timeline', () => {
       ])],
       [],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     const stamp = container.querySelector('time.pn-peers__when')!;
     expect(stamp.getAttribute('datetime')).toBe('2026-08-14T21:31:40.854Z');
     expect(stamp.getAttribute('title')).toContain('linked');
@@ -244,7 +256,7 @@ describe('ConnectionsTab — read as a timeline', () => {
       ])],
       [],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     // Two days across three rows ⇒ two dividers, not three and not one.
     const days = [...container.querySelectorAll('[data-testid="pn-peers-day"]')];
     expect(days).toHaveLength(2);
@@ -265,7 +277,7 @@ describe('ConnectionsTab — read as a timeline', () => {
       ],
       [],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     // ONE divider for the one day present: the undated row neither opens a run
     // nor closes one, because it is not evidence that the day changed.
     expect(container.querySelectorAll('[data-testid="pn-peers-day"]')).toHaveLength(1);
@@ -285,7 +297,7 @@ describe('ConnectionsTab — read as a timeline', () => {
         { id: 'e2', peer: beta, createdAt: '2026-08-14T21:31:40.854Z' },
       ])],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     const rows = [...container.querySelectorAll('.pn-peers__row')];
     const alphaRow = rows.find((r) => r.textContent?.includes('Alpha'))!;
     const betaRow = rows.find((r) => r.textContent?.includes('Beta'))!;
@@ -305,7 +317,7 @@ describe('ConnectionsTab — read as a timeline', () => {
       [group('relates_to', 'relates to', 'outgoing', [{ id: 'e1', peer: alpha }])],
       [],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     expect(container.querySelectorAll('.pn-peers__row')).toHaveLength(1);
     expect(container.querySelector('.pn-peers__when')).toBeNull();
   });
@@ -318,7 +330,7 @@ describe('ConnectionsTab — read as a timeline', () => {
       ])],
       [],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     // One peer, one relation counted twice — the existing inversion is intact.
     expect(container.querySelectorAll('.pn-peers__row')).toHaveLength(1);
     expect(container.querySelector('.pn-peers__rel')!.textContent).toContain('· 2');
@@ -337,6 +349,76 @@ describe('ConnectionsTab — read as a timeline', () => {
  * 16 of 28 rows were messages it posted or received — the Discussion tab's
  * content, listed a second time, one row each.
  */
+describe('ConnectionsTab — the keyboard cursor (task 01a11567)', () => {
+  const threeRows = () =>
+    detailWith(
+      [
+        timedGroup('relates_to', 'relates to', 'outgoing', [
+          { id: 'e1', peer: alpha, createdAt: '2026-07-28T10:00:00Z' },
+          { id: 'e2', peer: beta, createdAt: '2026-07-28T11:00:00Z' },
+          { id: 'e3', peer: gamma, createdAt: '2026-07-28T12:00:00Z' },
+        ]),
+      ],
+      [],
+    );
+  const cursorId = (list: HTMLElement) => list.querySelector('[data-kbd-cursor]')?.getAttribute('data-peer-id');
+
+  it('is a script-focusable list whose rows publish their peer id, newest first', () => {
+    const { getByTestId } = render(<ConnectionsTab detail={threeRows()} />);
+    const list = getByTestId('pn-peers-list');
+    expect(list.tagName).toBe('UL');
+    expect(list.getAttribute('tabindex')).toBe('-1');
+    const ids = [...list.querySelectorAll('.pn-peers__row')].map((r) => r.getAttribute('data-peer-id'));
+    expect(ids).toEqual(['peer-gamma', 'peer-beta', 'peer-alpha']);
+  });
+
+  it('focus lands on the first row; j/k/arrows move and clamp; Enter opens the peer under the cursor', () => {
+    const onOpenEntity = vi.fn();
+    const { getByTestId } = render(<ConnectionsTab detail={threeRows()} onOpenEntity={onOpenEntity} />);
+    const list = getByTestId('pn-peers-list');
+    list.focus();
+    expect(cursorId(list)).toBe('peer-gamma');
+    fireEvent.keyDown(list, { key: 'j' });
+    expect(cursorId(list)).toBe('peer-beta');
+    fireEvent.keyDown(list, { key: 'ArrowDown' });
+    fireEvent.keyDown(list, { key: 'j' });
+    expect(cursorId(list)).toBe('peer-alpha'); // clamps at the end
+    fireEvent.keyDown(list, { key: 'k' });
+    expect(cursorId(list)).toBe('peer-beta');
+    fireEvent.keyDown(list, { key: 'Enter' });
+    expect(onOpenEntity).toHaveBeenCalledWith('peer-beta');
+    fireEvent.keyDown(list, { key: 'End' });
+    expect(cursorId(list)).toBe('peer-alpha');
+    fireEvent.keyDown(list, { key: 'Home' });
+    expect(cursorId(list)).toBe('peer-gamma');
+    fireEvent.keyDown(list, { key: 'o' });
+    expect(onOpenEntity).toHaveBeenLastCalledWith('peer-gamma');
+  });
+
+  it('lets every other key through to the shell, and leaves on Esc with no cursor behind', () => {
+    const { getByTestId } = render(<ConnectionsTab detail={threeRows()} />);
+    const list = getByTestId('pn-peers-list');
+    list.focus();
+    for (const key of [']', 'w', 'r', 't', 'n']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      list.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    fireEvent.keyDown(list, { key: 'Escape' });
+    expect(document.activeElement).not.toBe(list);
+    expect(cursorId(list)).toBeUndefined();
+  });
+
+  it('draws each row at reading size: an 18px kind mark and the kind said beside the chip', () => {
+    const { container } = render(<ConnectionsTab detail={threeRows()} />);
+    const row = container.querySelector('.pn-peers__row')!;
+    const mark = row.querySelector('.kit-chip__glyph svg');
+    expect(mark?.getAttribute('width')).toBe('18');
+    expect(row.querySelector('.pn-peers__kind')?.textContent).toBeTruthy();
+    expect(container.querySelector('#tabpanel-connections')?.classList.contains('pn-body--links')).toBe(true);
+  });
+});
+
 describe('ConnectionsTab — messages as one summary row', () => {
   const msg = (id: string) => peer(id, `Status update ${id}`, CONVERSATION_KIND);
 
@@ -362,7 +444,7 @@ describe('ConnectionsTab — messages as one summary row', () => {
     const rows = [...container.querySelectorAll('.pn-peers__row')];
     expect(rows).toHaveLength(1);
     expect(rows[0]!.textContent).toContain('Alpha');
-    expect(container.textContent).toContain('LINKED · 1');
+    expect(container.querySelector('[data-testid="pn-link-stats"]')!.textContent).toContain('1 link');
     const summary = container.querySelector('[data-testid="pn-convo"]')!;
     expect(summary.textContent).toContain('3 messages');
     expect(summary.textContent).toContain('2 sent from here');
@@ -390,7 +472,7 @@ describe('ConnectionsTab — messages as one summary row', () => {
         group('anchored_to', 'anchored_to (incoming)', 'incoming', [{ id: 'v2', peer: evidence }]),
       ],
     );
-    const { container } = render(<ConnectionsTab detail={detail} />);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
     const rows = container.querySelectorAll('.pn-peers__row');
     expect(rows).toHaveLength(1);
     // The row carries the relation that matters, not the traffic edge.
@@ -443,5 +525,150 @@ describe('ConnectionsTab — a counted group (a credential\'s runs_on)', () => {
     expect(section.textContent).toContain('USED BY · 3');
     expect(section.textContent).toContain('usage');
     expect(queryByText(/Nothing linked yet/)).toBeNull();
+  });
+});
+
+describe('ConnectionsTab — the Links reading, grouped by family (task 01a115b8)', () => {
+  const at = '2026-10-06T10:00:00.000Z';
+  const task = (id: string, title: string, status: string) =>
+    ({ ...peer(id, title, 'task'), state: { kind: 'task', status } }) as unknown as EntitySummary;
+  const pr = (id: string, title: string) =>
+    ({ ...peer(id, title, 'pull_request'), state: { kind: 'pull_request', number: 1101, state: 'open', ciStatus: 'passing' } }) as unknown as EntitySummary;
+  const blocker = task('peer-blocker', 'Credential store', 'working');
+  const done = task('peer-done', 'Schema migration', 'done');
+  const session = peer('peer-session', 'A run', 'work_session');
+  const shipped = pr('peer-pr', 'feat: credential reference');
+
+  function mixed() {
+    return detailWith(
+      [
+        group('depends_on', 'depends on', 'outgoing', [
+          { id: 'd1', peer: blocker, hard: true, resolved: false },
+          { id: 'd2', peer: done, hard: true, resolved: true },
+        ]),
+        group('relates_to', 'relates to', 'outgoing', [{ id: 'r1', peer: done }]),
+        timedGroup('tracks', 'tracks', 'outgoing', [{ id: 't1', peer: shipped, createdAt: at }]),
+      ],
+      [timedGroup('working_on', 'working_on (incoming)', 'incoming', [{ id: 'w1', peer: session, createdAt: at }])],
+    );
+  }
+  const sectionNames = (root: HTMLElement) =>
+    [...root.querySelectorAll('[data-testid="pn-link-section"]')].map((s) => s.getAttribute('data-section'));
+
+  it('opens on Links, offers Timeline always and Graph only when the host can draw one', () => {
+    const { getByRole, queryByRole, unmount } = render(<ConnectionsTab detail={mixed()} />);
+    expect(getByRole('button', { name: 'Links' }).getAttribute('aria-pressed')).toBe('true');
+    expect(getByRole('button', { name: 'Timeline' }).getAttribute('aria-pressed')).toBe('false');
+    expect(queryByRole('button', { name: 'Graph' })).toBeNull();
+    unmount();
+    const withGraph = render(<ConnectionsTab detail={mixed()} graph={<div data-testid="canvas" />} />);
+    fireEvent.click(withGraph.getByRole('button', { name: 'Graph' }));
+    expect(withGraph.getByTestId('canvas')).toBeTruthy();
+  });
+
+  it('puts the blocker first, then the families in order, with provenance folded last', () => {
+    const { container } = render(<ConnectionsTab detail={mixed()} />);
+    expect(sectionNames(container)).toEqual(['blocking', 'work', 'code', 'sessions']);
+    const blocking = container.querySelector('[data-section="blocking"]')!;
+    expect(blocking.textContent).toContain('Credential store');
+    // The blocker keeps its red pill — it is why the row is in this section.
+    expect(blocking.querySelector('.pn-peers__rel--hard')).toBeTruthy();
+    // Folded: no rows, so the cursor cannot land on something hidden, and the
+    // header says what is in it.
+    const sessions = container.querySelector('[data-section="sessions"]')!;
+    expect(sessions.querySelectorAll('[data-peer-id]')).toHaveLength(0);
+    expect(sessions.textContent).toContain('Worked on by 1');
+    fireEvent.click(within(sessions as HTMLElement).getByRole('button', { expanded: false }));
+    expect(sessions.querySelectorAll('[data-peer-id]')).toHaveLength(1);
+  });
+
+  it('files a peer once, under its most specific relation, and names the others on the row', () => {
+    const { container } = render(<ConnectionsTab detail={mixed()} />);
+    expect(container.querySelectorAll('[data-peer-id="peer-done"]')).toHaveLength(1);
+    const work = container.querySelector('[data-section="work"]')!;
+    expect(work.querySelector('.pn-linkgroup__sub')!.textContent).toBe('Depends on');
+    const row = work.querySelector('[data-peer-id="peer-done"]')!;
+    // "Depends on" is the sub-heading; the row adds what the heading does not say.
+    expect([...row.querySelectorAll('.pn-peers__rel')].map((n) => n.textContent)).toEqual(['Related']);
+    expect(row.querySelector('.pn-status')!.textContent).toBe('done');
+  });
+
+  it('draws the peer’s own state: task status, PR state and CI, and who linked it', () => {
+    const { container } = render(<ConnectionsTab detail={mixed()} />);
+    const prRow = container.querySelector('[data-peer-id="peer-pr"]')!;
+    expect(prRow.querySelector('.pn-status')!.textContent).toBe('open');
+    expect(prRow.textContent).toContain('#1101 · CI passing');
+    expect(prRow.querySelector('.pn-link__by')!.textContent).toContain(self.createdBy.displayName);
+    expect(container.querySelector('[data-peer-id="peer-blocker"] .pn-status')!.textContent).toBe('working');
+  });
+
+  it('counts what is linked in tiles, and drops them in compact mode', () => {
+    const { getByTestId, getByRole, queryByTestId } = render(<ConnectionsTab detail={mixed()} />);
+    const stats = getByTestId('pn-link-stats').textContent;
+    expect(stats).toContain('1 blocking');
+    expect(stats).toContain('4 links');
+    expect(stats).toContain('1 PR · 1 open');
+    fireEvent.click(getByRole('button', { name: 'Compact' }));
+    expect(queryByTestId('pn-link-stats')).toBeNull();
+    expect(getByRole('button', { name: 'Compact' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('folds a long section behind "Show N more"', () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({ id: `e${i}`, peer: peer(`p${i}`, `Peer ${i}`) }));
+    const { container, getByRole } = render(
+      <ConnectionsTab detail={detailWith([group('relates_to', 'relates to', 'outgoing', many)], [])} />,
+    );
+    expect(container.querySelectorAll('[data-peer-id]')).toHaveLength(8);
+    fireEvent.click(getByRole('button', { name: 'Show 4 more' }));
+    expect(container.querySelectorAll('[data-peer-id]')).toHaveLength(12);
+  });
+
+  it('keeps j/k walking the grouped rows in the order they are drawn', () => {
+    const { getByTestId } = render(<ConnectionsTab detail={mixed()} />);
+    const list = getByTestId('pn-peers-list');
+    list.focus();
+    expect(list.querySelector('[data-kbd-cursor]')!.getAttribute('data-peer-id')).toBe('peer-blocker');
+    fireEvent.keyDown(list, { key: 'j' });
+    expect(list.querySelector('[data-kbd-cursor]')!.getAttribute('data-peer-id')).toBe('peer-done');
+  });
+});
+
+describe('ConnectionsTab — the Timeline reading (task 01a115b8)', () => {
+  const blocker = peer('peer-blocker', 'Credential store', 'task');
+  const doc = peer('peer-doc', 'Design note', 'doc');
+  const session = peer('peer-session', 'A run', 'work_session');
+  function mixed() {
+    return detailWith(
+      [
+        group('depends_on', 'depends on', 'outgoing', [{ id: 'd1', peer: blocker, hard: true, resolved: false }]),
+        timedGroup('produces', 'produces', 'outgoing', [{ id: 'p1', peer: doc, createdAt: '2026-10-06T10:00:00.000Z' }]),
+      ],
+      [timedGroup('working_on', 'working_on (incoming)', 'incoming', [
+        { id: 'w1', peer: session, createdAt: '2026-10-06T11:00:00.000Z' },
+      ])],
+    );
+  }
+
+  it('says "Blocked by N" above the history and opens the blocker', () => {
+    const onOpenEntity = vi.fn();
+    const { getByTestId } = renderTimeline(<ConnectionsTab detail={mixed()} onOpenEntity={onOpenEntity} />);
+    const banner = getByTestId('pn-blocked');
+    expect(banner.textContent).toContain('Blocked by 1');
+    fireEvent.click(within(banner).getByRole('button', { name: 'Open →' }));
+    expect(onOpenEntity).toHaveBeenCalledWith('peer-blocker');
+  });
+
+  it('folds session links into one line under All, and narrows by family', () => {
+    const { container, getByRole } = renderTimeline(<ConnectionsTab detail={mixed()} />);
+    const ids = () => [...container.querySelectorAll('[data-peer-id]')].map((r) => r.getAttribute('data-peer-id'));
+    expect(ids()).not.toContain('peer-session');
+    expect(container.textContent).toContain('+ 1 session & provenance link');
+    fireEvent.click(getByRole('button', { name: /^Files & docs/ }));
+    expect(ids()).toEqual(['peer-doc']);
+    fireEvent.click(getByRole('button', { name: /^Sessions/ }));
+    expect(ids()).toEqual(['peer-session']);
+    fireEvent.click(getByRole('button', { name: /^All/ }));
+    fireEvent.click(getByRole('button', { name: 'Show' }));
+    expect(ids()).toContain('peer-session');
   });
 });
