@@ -20,6 +20,9 @@ import type { DocSaveHandle } from './useDocSave';
 
 const shownTitle = (title: string) => (title === FRESH_DOC_TITLE ? '' : title);
 
+/** The body a title's Enter moves to: the rich editor, or its markdown source. */
+export const BODY_FIELD = '[data-testid="doc-rich"], [data-testid="doc-source"]';
+
 export function DocTitleField({
   save,
   autoFocus,
@@ -53,7 +56,7 @@ export function DocTitleField({
       }
       e.currentTarget
         .closest('[data-doc-editor]')
-        ?.querySelector<HTMLTextAreaElement>('[data-testid="doc-source"]')
+        ?.querySelector<HTMLElement>(BODY_FIELD)
         ?.focus();
     } else if (e.key === 'Escape') {
       // Esc inside a field belongs to the field (C6 layer 4), and here it

@@ -155,7 +155,7 @@ export function DocSource({
 // INSERT A FILE — upload, then write the reference where the caret was
 // ---------------------------------------------------------------------------
 
-function InsertBar({
+export function InsertBar({
   canInsert,
   busy,
   error,
