@@ -32,6 +32,7 @@
  * variant.
  */
 import {
+  CollabError,
   isHumanAuthKind,
   WorkspaceControlFrameSchema,
   type SpaceId,
@@ -45,7 +46,7 @@ import type { RequestIdentity, SpaceSessionsMode } from '../http/types.js';
 import { MAX_POLL_LIMIT, type DurableEventLog } from './poll.js';
 import type { PresenceStore } from './presence.js';
 import type { SubscriptionRegistry } from './subscriptions.js';
-import type { WorkspaceBridge } from '../workspace/bridge.js';
+import { isCapable, type WorkspaceBridge } from '../workspace/bridge.js';
 import type { WorkspaceService } from '../workspace/service.js';
 import type { EventSink } from './ws-connection.js';
 
@@ -175,6 +176,12 @@ export interface ControlChannel {
 
 /** How many events one `resume` may replay before the client must ask again. */
 export const MAX_RESUME_BATCH = MAX_POLL_LIMIT;
+
+/** A failed window write's reason: the error's own (`request_id_reused`, …), else its code. */
+function rejection(error: unknown): string {
+  if (error instanceof CollabError && typeof error.details?.['reason'] === 'string') return error.details['reason'];
+  return error instanceof Error && 'code' in error ? String((error as { code: unknown }).code) : 'failed';
+}
 
 function refuse(sink: EventSink, ack: WorkspaceControlAck): void {
   try {
@@ -325,13 +332,15 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         // Spec D §3: a window that just (re)registered gets the stored
         // workspace and its drafts — this socket only. A heartbeat does not.
         if (!known && workspace.service) {
-          await workspace.service.snapshot(claims, frame.spaceId, (out) => {
+          const capable = (frame.caps ?? []).includes('multiWorkspace');
+          const shown = await workspace.service.snapshot(claims, frame.spaceId, capable, (out) => {
             try {
               sink.send(JSON.stringify(out));
             } catch {
               // The close path drops the instance.
             }
           });
+          workspace.bridge.shows(frame.instanceId, shown);
         }
         return;
       }
@@ -355,11 +364,14 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         if (frame.type === 'workspace.apply') {
           // Through the request-id record: a window resends what it could not
           // see confirmed after a reconnect, and a resend must not apply twice.
+          // The frame's own workspaceId is hashed (D5; absent from an old
+          // window) and addresses the write (R9, §3.2 step 1).
           const identityId = claims.identityId;
+          const addressed = frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId };
           await workspace.bridge.recorded(
             identityId,
             `window:${frame.requestId}`,
-            { spaceId: frame.spaceId, env: frame.env, ids: frame.ids },
+            { spaceId: frame.spaceId, env: frame.env, ids: frame.ids, ...addressed },
             30_000,
             async () => {
               const result = await service.apply(claims, frame.spaceId, {
@@ -367,15 +379,17 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
                 ids: frame.ids,
                 requestId: frame.requestId,
                 origin: { kind: 'window', instanceId: frame.instanceId },
+                target: { frame: addressed },
               });
               return { ...result, requestId: frame.requestId, instanceId: frame.instanceId } as never;
             },
           ).then((result) => {
             // A replayed record still owes this window its answer.
             if (result && (result as { status?: string }).status !== undefined) {
+              const workspaceId = (result as { workspace?: { id: string | null } }).workspace?.id ?? null;
               workspace.bridge.push(identityId, frame.spaceId, {
-                type: 'workspace.applied', spaceId: frame.spaceId, requestId: frame.requestId, result,
-              }, frame.instanceId);
+                type: 'workspace.applied', spaceId: frame.spaceId, workspaceId, requestId: frame.requestId, result,
+              }, { only: frame.instanceId });
             }
           }).catch((error: unknown) => {
             // A failure is still an answer: the window rolls the command back.
@@ -383,8 +397,9 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
               sink.send(JSON.stringify({
                 type: 'workspace.applied',
                 spaceId: frame.spaceId,
+                ...(frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId }),
                 requestId: frame.requestId,
-                result: { status: 'rejected', revision: 0, reason: error instanceof Error && 'code' in error ? String((error as { code: unknown }).code) : 'failed' },
+                result: { status: 'rejected', revision: 0, reason: rejection(error) },
               }));
             } catch {
               // ignore
@@ -393,7 +408,25 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         } else if (frame.type === 'workspace.import') {
           await service.importLegacy(claims, frame.spaceId, frame.state, frame.drafts);
         } else {
-          await service.patchDraft(claims, frame.spaceId, frame.draftId, frame.fields, { kind: 'window', instanceId: frame.instanceId });
+          try {
+            await service.patchDraft(claims, frame.spaceId, frame.draftId, frame.fields, { kind: 'window', instanceId: frame.instanceId }, {
+              frame: frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId },
+            });
+          } catch (error) {
+            // A capable window learns its typing was not kept (§7.3); an old
+            // one has no frame for it.
+            const sender = workspace.bridge.list(claims.identityId, frame.spaceId).find((i) => i.instanceId === frame.instanceId);
+            if (sender && isCapable(sender)) {
+              workspace.bridge.push(claims.identityId, frame.spaceId, {
+                type: 'workspace.draft.rejected',
+                spaceId: frame.spaceId,
+                workspaceId: frame.workspaceId ?? null,
+                draftId: frame.draftId,
+                reason: draftRejection(error),
+              }, { only: frame.instanceId });
+            }
+            throw error;
+          }
         }
         return;
       }
@@ -454,6 +487,18 @@ const FRAME_TYPES = new Set<string>([
   'workspace.register', 'workspace.unregister', 'workspace.result',
   'workspace.apply', 'workspace.import', 'workspace.draft.patch',
 ]);
+
+/** Why a window's draft write failed, as `workspace.draft.rejected` names it. */
+function draftRejection(error: unknown): 'workspace_not_found' | 'not_found' | 'limit_exceeded' | 'payload_too_large' {
+  const reason = (error as { details?: { reason?: unknown } } | null)?.details?.reason;
+  if (reason === 'workspace_not_found' || reason === 'workspace_switched') return 'workspace_not_found';
+  switch ((error as { code?: unknown } | null)?.code) {
+    case '53400': return 'limit_exceeded';
+    case '54000': return 'payload_too_large';
+    case 'P0002': return 'workspace_not_found';
+    default: return 'not_found';
+  }
+}
 
 function isFrameType(value: string): value is WorkspaceControlFrame['type'] {
   return FRAME_TYPES.has(value);

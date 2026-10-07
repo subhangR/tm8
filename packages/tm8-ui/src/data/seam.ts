@@ -1808,4 +1808,24 @@ export interface WorkspaceBridgePort {
   onSync?(cb: (frame: import('./real/socket').WorkspaceSyncFrame) => void): Unsubscribe;
   /** True while the socket is open (the sync is online). */
   isOpen?(): boolean;
+  /** The socket went live (true) or down (false): the switcher is offline-disabled (S13). */
+  onStatus?(cb: (online: boolean) => void): Unsubscribe;
+  /** Multiple workspaces (API doc 01a115c4 §5): the HTTP management ops. */
+  manage?: WorkspaceManagePort;
+}
+
+/** The HTTP `workspace.*` management ops, scoped to one call's space. */
+export interface WorkspaceManagePort {
+  list(spaceId: string): Promise<import('@tm8/contract').WorkspaceListResult>;
+  create(spaceId: string, input: { name?: string; color?: import('@tm8/contract').WorkspaceColor | null }): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  update(
+    spaceId: string,
+    workspaceId: string,
+    input: { name?: string; color?: import('@tm8/contract').WorkspaceColor | null },
+  ): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  reorder(spaceId: string, workspaceId: string, beforeWorkspaceId: string | null): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  remove(spaceId: string, workspaceId: string, discard: boolean): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  switch(spaceId: string, workspaceId: string, expectedActiveWorkspaceId: string | null): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  /** §5.12: answer an agent's prompt (accept = Switch / Delete, decline = Stay / Keep); `discard` is F1's. */
+  resolvePrompt(spaceId: string, promptId: string, choice: 'accept' | 'decline', discard: boolean): Promise<import('@tm8/contract').WorkspaceManageResult>;
 }

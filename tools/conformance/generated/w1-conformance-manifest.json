@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:cc7df0480a29d9e690e408dd91e2e3400d60eefc6326462aecd20773c7b760b1",
+  "catalogDigest": "sha256:f5a78ce3c6d5a49f22949f38bb9e87ff1fc53368f9fb59f9fbfc91f9d99f8944",
   "catalog": {
-    "total": 351,
-    "v1": 349,
+    "total": 358,
+    "v1": 356,
     "reserved": 2,
-    "http": 349,
+    "http": 356,
     "ws": 1,
-    "registerableV1Http": 347,
+    "registerableV1Http": 354,
     "methods": {
-      "GET": 116,
-      "POST": 172,
-      "PATCH": 19,
-      "DELETE": 22,
+      "GET": 117,
+      "POST": 176,
+      "PATCH": 20,
+      "DELETE": 23,
       "PUT": 20,
       "WS": 2
     },
     "kinds": {
-      "read": 122,
-      "command": 227,
+      "read": 123,
+      "command": 233,
       "stream": 2
     },
-    "uniqueNames": 351,
-    "uniqueBindings": 350
+    "uniqueNames": 358,
+    "uniqueBindings": 357
   },
   "reservedOperations": [
     "search.query",
@@ -1545,6 +1545,55 @@
         "source": "server-router"
       },
       {
+        "operation": "workspace.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/workspaces",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspaces",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.update",
+        "method": "PATCH",
+        "path": "/v2/spaces/:spaceId/workspaces/:workspaceId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.reorder",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspaces/:workspaceId/move",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.delete",
+        "method": "DELETE",
+        "path": "/v2/spaces/:spaceId/workspaces/:workspaceId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.switch",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspaces/:workspaceId/activate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.prompts.resolve",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspace/prompts/:promptId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.spawn",
         "method": "POST",
         "path": "/v2/execution/spawn",
@@ -2861,7 +2910,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 319
+    "unimplementedV1Http": 326
   },
   "schemas": {
     "additive": {
@@ -6253,6 +6302,119 @@
           "workspace",
           "drafts",
           "patch"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.list",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.list",
+        "intentTags": [
+          "workspace",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.create",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.create",
+        "intentTags": [
+          "workspace",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.update",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.update",
+        "intentTags": [
+          "workspace",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.reorder",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.reorder",
+        "intentTags": [
+          "workspace",
+          "reorder"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.delete",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.delete",
+        "intentTags": [
+          "workspace",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.switch",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.switch",
+        "intentTags": [
+          "workspace",
+          "switch"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.prompts.resolve",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.prompts.resolve",
+        "intentTags": [
+          "workspace",
+          "prompts",
+          "resolve"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

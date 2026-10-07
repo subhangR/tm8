@@ -13,6 +13,7 @@ import { McpProvider } from '../mcp/context';
 import { McpSettings } from '../mcp/McpSettings';
 import { PendingFormsProvider, usePendingFormsStoreFor } from '../forms/pending';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { useStore } from 'zustand';
 import type { ChatMode, EntityId, EntitySummary, ProjectTrustLevel, SpaceId } from '@tm8/contract';
 import { startFolderImport } from '../files-explorer/folder-import';
 import {
@@ -60,6 +61,11 @@ import {
   queueWorkKey,
   runWorkKey,
   useWorkspaceBridge,
+  createWorkspaceListStore,
+  getWorkspaceListStore,
+  openWorkspaceSwitcher,
+  WorkspacePrompts,
+  WorkspaceSwitcher,
   TabWorkspaceView,
   useWorkspaceShareRoute,
   type WorkspaceGateHandles,
@@ -298,6 +304,8 @@ function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteVie
         ? ref === 'tab'
           ? hintFor('work.newTab', undefined, platform)
           : hintFor('work.create', ref, platform)
+        : scope === 'workspace'
+          ? hintFor('workspace.switcher', undefined, platform)
         : scope === 'help'
           ? hintFor('help.open', undefined, platform)
           : scope === 'view' && ref === 'craft'
@@ -310,6 +318,9 @@ function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteVie
     return hint ? { ...view, hint } : view;
   });
 }
+
+/** Stands in for the workspace list before a space and viewer are known. */
+const NO_WORKSPACE_LIST = createWorkspaceListStore();
 
 /** Work keyboard commands that take you TO Work when pressed elsewhere. */
 const WORK_FROM_ANYWHERE: ReadonlySet<string> = new Set(['work.create', 'work.newTab', 'list.create', 'work.browser.focus']);
@@ -1302,6 +1313,23 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
+  /* Multiple workspaces (API doc 01a115c4 §10): the switcher's list, fed by
+     the bridge. Nothing shows until the node has proved it knows workspaces. */
+  const workspaceSpaceId = data.ready && data.spaceId ? data.spaceId : null;
+  const workspaceList = useMemo(
+    () => (workspaceSpaceId && viewerMemberId ? getWorkspaceListStore(viewerMemberId, workspaceSpaceId) : NO_WORKSPACE_LIST),
+    [workspaceSpaceId, viewerMemberId],
+  );
+  const workspacesCapable = useStore(workspaceList, (s) => s.capable);
+  /* An agent's Switch/Stay and Delete/Keep asks (D8), in the notice region. */
+  const workspacePromptsEl = workspaceSpaceId ? (
+    <WorkspacePrompts
+      store={workspaceList}
+      spaceId={workspaceSpaceId}
+      manage={data.seam.workspaceBridge?.manage}
+      notify={(title) => notices.push({ id: 'workspace-manage', tone: 'info', title, body: '', ttlMs: NOTICE_TTL_MS })}
+    />
+  ) : null;
   /* Workspace Copy link (Spec A §4/§12): `tabs?tab=<active entity id>`; null elsewhere. */
   const workspaceShareRoute = useWorkspaceShareRoute(viewerMemberId, data.spaceId || null, navView.view === 'tabs');
   /* The graph screen's narrow port cannot build a channel feed port itself,
@@ -1590,6 +1618,11 @@ export function GateApp(props: GateAppProps = {}) {
       navigateToRouteView({ view: 'kind', slug: ref, mode: null, q: null }, ref);
     }
     if (command === 'help.open') setShortcutsOpen(true);
+    /* `g w`: a no-op with a notice while the socket is down (S13). */
+    if (command === 'workspace.switcher') {
+      openWorkspaceSwitcher(workspaceList, (title) =>
+        noticeSink.current({ id: 'kbd-workspace', tone: 'info', title, body: '', ttlMs: 4_000 }));
+    }
     /* Esc in a text field LEAVES it. The controller has always emitted this and
        consumed the key, but nothing acted on it, so Esc did nothing at all and
        every single-key shortcut stayed unreachable from a field. */
@@ -1990,10 +2023,11 @@ export function GateApp(props: GateAppProps = {}) {
             { id: 'new:tab', label: 'New tab', glyph: '＋' },
             ...NEW_KINDS.map(({ kind, label }) => ({ id: `new:${kind}`, label, glyph: <KindIcon kind={kind} /> })),
           ]),
+      ...(workspacesCapable ? [{ id: 'workspace:switch', label: 'Switch workspace…', glyph: '◫' }] : []),
       { id: 'help:shortcuts', label: 'Keyboard shortcuts', glyph: '⌨' },
       ...recentFilePaletteViews(recentFiles, projectNames, paletteQuery),
     ]),
-    [threeModes, shell, kbPlatform, recentFiles, projectNames, paletteQuery],
+    [threeModes, shell, kbPlatform, workspacesCapable, recentFiles, projectNames, paletteQuery],
   );
   const openPaletteView = useCallback((id: string) => {
     const [scope, ref] = id.split(':', 2) as [string, string];
@@ -2007,6 +2041,8 @@ export function GateApp(props: GateAppProps = {}) {
     if (scope === 'kind') navigateTo({ type: 'kind', ref });
     if (scope === 'new') commandSink.current(ref === 'tab' ? 'work.newTab' : 'work.create', ref === 'tab' ? undefined : ref);
     if (scope === 'help') setShortcutsOpen(true);
+    // After the palette has closed and handed focus back, so the list keeps it.
+    if (scope === 'workspace') setTimeout(() => commandSink.current('workspace.switcher'), 0);
     if (scope === FILE_PALETTE_SCOPE) {
       const file = parseFilePaletteRef(ref);
       /* Like an entity pick: outside Work the route carries it (Work opens
@@ -2320,7 +2356,11 @@ export function GateApp(props: GateAppProps = {}) {
           }}
           onLaunchSubmit={submitLaunch}
           onLaunchDispatch={submitDispatch}
-          notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
+          notices={
+            <NoticeHost notices={notices.notices} onDismiss={notices.dismiss}>
+              {workspacePromptsEl}
+            </NoticeHost>
+          }
         />
         <AttentionUndoToast />
         <StyleEditorHost seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
@@ -2422,6 +2462,14 @@ export function GateApp(props: GateAppProps = {}) {
       onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
     />
   );
+  const workspaceSwitcherEl = workspaceSpaceId ? (
+    <WorkspaceSwitcher
+      store={workspaceList}
+      spaceId={workspaceSpaceId}
+      manage={data.seam.workspaceBridge?.manage}
+      notify={(title) => notices.push({ id: 'workspace-manage', tone: 'info', title, body: '', ttlMs: NOTICE_TTL_MS })}
+    />
+  ) : null;
   const accountEl =
     authAccount && data.viewerActor ? (
       <AccountMenu
@@ -2521,6 +2569,7 @@ export function GateApp(props: GateAppProps = {}) {
     activeScreenRef: activeTarget?.type === 'view' ? activeTarget.ref : null,
     onSelectViewTab: openTab,
     switcherSlot: switcherEl,
+    workspaceSwitcherSlot: workspaceSwitcherEl,
     accountSlot: accountEl,
   };
 
@@ -2578,6 +2627,7 @@ export function GateApp(props: GateAppProps = {}) {
              leaveSpaceContext THEN resetAddress, together, in this order,
              wherever this control lives. */
           switcherSlot={switcherEl}
+          workspaceSwitcherSlot={workspaceSwitcherEl}
           /* R2: the menu's groups, as tabs. */
           viewTabs={viewTabs}
           tabs={threeModes ? shellTabs.filter((tab) => !VIEW_GROUP_ORDER.includes(tab.id)) : shellTabs}
@@ -3459,7 +3509,9 @@ export function GateApp(props: GateAppProps = {}) {
         />
         <PromptsOverlay open={promptsOpen} onClose={() => setPromptsOpen(false)} />
         <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-        <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
+        <NoticeHost notices={notices.notices} onDismiss={notices.dismiss}>
+          {workspacePromptsEl}
+        </NoticeHost>
         <AddServerDialog
           open={addServerOpen}
           onDismiss={() => setAddServerOpen(false)}

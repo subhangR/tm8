@@ -33,7 +33,9 @@ import {
   type WorkspaceBridgeCommandFrame,
   type WorkspaceControlFrame,
   type WorkspaceInstanceView,
+  type WorkspaceRef,
   type WorkspaceRemoteResult,
+  type WorkspaceWindowCap,
 } from '@tm8/contract';
 
 /** The send side of one socket; `EventSink` satisfies it. */
@@ -58,6 +60,9 @@ interface InstanceRecord {
   view: string;
   mounted: boolean;
   revision: number;
+  caps: WorkspaceWindowCap[];
+  /** The workspace whose state this window was last sent as active (§5.2). */
+  workspaceId: string | null;
   connectedAt: number;
   lastSeen: number;
   lastFocusedAt: number | null;
@@ -72,7 +77,7 @@ interface PendingForward {
 interface RetryRecord {
   readonly hash: string;
   readonly at: number;
-  readonly outcome: Promise<WorkspaceRemoteResult>;
+  readonly outcome: Promise<unknown>;
 }
 
 export interface WorkspaceRunInput {
@@ -87,6 +92,23 @@ export interface WorkspaceRunInput {
   timeoutMs?: number;
   actorClass: 'human' | 'agent';
   actorName?: string;
+  /** The resolved target (§3.2): named on the forward, stamped on the answer. */
+  workspace?: WorkspaceRef;
+}
+
+/** Who a `push` reaches, within the identity's live windows in the space. */
+export interface PushOptions {
+  /** Only this instance. */
+  only?: string;
+  /** Only windows that announced `multiWorkspace` (S9): a non-active workspace's frames. */
+  capableOnly?: boolean;
+  /** The frame is this workspace's state, as active: the windows now show it. */
+  shows?: string;
+}
+
+/** Whether a window takes every workspace's frames, not just the active one's (S9). */
+export function isCapable(view: Pick<WorkspaceInstanceView, 'caps'>): boolean {
+  return view.caps.includes('multiWorkspace');
 }
 
 export interface WorkspaceBridgeOptions {
@@ -190,6 +212,8 @@ export class WorkspaceBridge {
       view: frame.view,
       mounted: frame.mounted,
       revision: frame.revision,
+      caps: [...new Set(frame.caps ?? [])],
+      workspaceId: frame.workspaceId !== undefined ? frame.workspaceId : (existing?.workspaceId ?? null),
       connectedAt: existing && existing.sink.id === sink.id ? existing.connectedAt : now,
       lastSeen: now,
       lastFocusedAt,
@@ -284,13 +308,13 @@ export class WorkspaceBridge {
    * when the workspace or its window has since moved on. A refusal that never
    * reached anything (`delivered: false`) is not remembered: a retry should run.
    */
-  recorded(
+  recorded<T = WorkspaceRemoteResult>(
     identityId: string,
     requestId: string,
     payload: unknown,
     timeoutMs: number,
-    start: () => Promise<WorkspaceRemoteResult>,
-  ): Promise<WorkspaceRemoteResult> {
+    start: () => Promise<T>,
+  ): Promise<T> {
     const hash = createHash('sha256').update(stable(payload)).digest('hex');
     const records = this.recordsFor(identityId);
     const prior = records.get(requestId);
@@ -300,7 +324,7 @@ export class WorkspaceBridge {
           details: { reason: 'request_id_reused' },
         }));
       }
-      return this.wait(prior.outcome, timeoutMs);
+      return this.wait(prior.outcome as Promise<T>, timeoutMs);
     }
 
     const outcome = start();
@@ -331,13 +355,15 @@ export class WorkspaceBridge {
    * space — never to anyone else's, never through the space fan-out. Returns
    * how many sockets took it.
    */
-  push(identityId: string, spaceId: string, frame: object, only?: string): number {
+  push(identityId: string, spaceId: string, frame: object, opts: PushOptions = {}): number {
     const text = JSON.stringify(frame);
     let sent = 0;
     for (const record of this.candidates(identityId, spaceId)) {
-      if (only !== undefined && record.instanceId !== only) continue;
+      if (opts.only !== undefined && record.instanceId !== opts.only) continue;
+      if (opts.capableOnly && !isCapable(record)) continue;
       try {
         record.sink.send(text);
+        if (opts.shows !== undefined) record.workspaceId = opts.shows;
         sent += 1;
       } catch {
         // The socket's close path drops the instance.
@@ -346,9 +372,23 @@ export class WorkspaceBridge {
     return sent;
   }
 
+  /** The window was just sent this workspace's state as active (the register snapshot). */
+  shows(instanceId: string, workspaceId: string | null): void {
+    const record = this.instances.get(instanceId);
+    if (record) record.workspaceId = workspaceId;
+  }
+
   /** Live instances, for tests and diagnostics. */
   size(): number {
     return this.instances.size;
+  }
+
+  /**
+   * Forward one command under an id the caller records itself (inside
+   * `recorded`), naming and stamping its resolved workspace.
+   */
+  dispatch(input: WorkspaceRunInput & { requestId: string }): Promise<WorkspaceRemoteResult> {
+    return this.forward(input);
   }
 
   // -- internals -------------------------------------------------------------
@@ -378,9 +418,10 @@ export class WorkspaceBridge {
       ...(input.expectedRevision === undefined ? {} : { expectedRevision: input.expectedRevision }),
       actorClass: input.actorClass,
       ...(input.actorName ? { actorName: input.actorName } : {}),
+      ...(input.workspace ? { workspaceId: input.workspace.id } : {}),
     };
 
-    return new Promise<WorkspaceRemoteResult>((resolve, reject) => {
+    const answered = new Promise<WorkspaceRemoteResult>((resolve, reject) => {
       this.pending.set(key, { connId: target.sink.id, resolve, reject });
       try {
         if (!target.sink.isOpen) throw new Error('socket closed');
@@ -391,9 +432,11 @@ export class WorkspaceBridge {
         return;
       }
     });
+    const workspace = input.workspace;
+    return workspace ? answered.then((result) => ({ ...result, workspace })) : answered;
   }
 
-  private async wait(outcome: Promise<WorkspaceRemoteResult>, timeoutMs: number): Promise<WorkspaceRemoteResult> {
+  private async wait<T>(outcome: Promise<T>, timeoutMs: number): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -482,6 +525,8 @@ export class WorkspaceBridge {
       view: record.view,
       mounted: record.mounted,
       revision: record.revision,
+      workspaceId: record.workspaceId,
+      caps: [...record.caps],
       connectedAt: iso(record.connectedAt),
       lastSeen: iso(record.lastSeen),
       lastFocusedAt: record.lastFocusedAt === null ? null : iso(record.lastFocusedAt),

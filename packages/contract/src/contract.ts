@@ -27,6 +27,7 @@ import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 import type { DesignContent, DesignState, EntityContextDesignPage } from './design.js';
+import type { WorkspacePrompt, WorkspaceSummary, WorkspaceSummaryCauseKind, WorkspaceWindowCap } from './workspace-bridge.js';
 import type { TaskProgress } from './progress.js';
 import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
 
@@ -1889,6 +1890,10 @@ export type WorkspaceControlFrame =
       mounted: boolean;
       revision: number;
       lastFocusedAt?: string;
+      /** `multiWorkspace`: this window keeps per-workspace queues (S9/S10). Absent: an old window. */
+      caps?: WorkspaceWindowCap[];
+      /** The workspace the window shows; null = the synthetic "Main". */
+      workspaceId?: string | null;
     }
   /** Give up an instance. Unauthorized, like `unsubscribe`. */
   | { type: 'workspace.unregister'; instanceId: string }
@@ -1903,7 +1908,20 @@ export type WorkspaceControlFrame =
    * the node's reduce produces the identical result. Accepted only from a
    * registered window on a human (browser / auto-owner) socket.
    */
-  | { type: 'workspace.apply'; spaceId: SpaceId; instanceId: string; requestId: string; env: Record<string, unknown>; ids: string[] }
+  | {
+      type: 'workspace.apply';
+      spaceId: SpaceId;
+      instanceId: string;
+      requestId: string;
+      env: Record<string, unknown>;
+      ids: string[];
+      /**
+       * The workspace the window committed it in (R9): a string applies there,
+       * null means the synthetic "Main" it saw, absent is an old window (S9:
+       * the active workspace).
+       */
+      workspaceId?: string | null;
+    }
   /** Spec D §6: the one-time import of this browser's legacy workspace state. */
   | {
       type: 'workspace.import';
@@ -1911,6 +1929,8 @@ export type WorkspaceControlFrame =
       instanceId: string;
       state: Record<string, unknown>;
       drafts: { draftId: string; kind: string; values: Record<string, unknown> }[];
+      /** Only null: an import only ever creates the first workspace. */
+      workspaceId?: null;
     }
   /** Spec D §3: a debounced draft write (per-field, last writer wins). */
   | {
@@ -1920,6 +1940,8 @@ export type WorkspaceControlFrame =
       draftId: string;
       kind: string;
       fields: Record<string, { v?: unknown; base: number }>;
+      /** Must own the draft; absent: the draft's owner. */
+      workspaceId?: string;
     };
 
 /** Spec D §3, node → the identity's windows only: the stored workspace after a commit. */
@@ -1929,8 +1951,21 @@ export interface WorkspaceStateFrame {
   revision: number;
   /** Null when this identity has no workspace row in the space yet. */
   state: Record<string, unknown> | null;
-  /** The window command this commit answers, when one caused it. */
-  cause?: { instanceId: string; requestId: string; result: Record<string, unknown> };
+  /** Whose state this is; null = the synthetic "Main". Old windows ignore it. */
+  workspaceId: string | null;
+  /** Whether it is the active workspace. A window without `multiWorkspace` only ever gets the active one. */
+  active: boolean;
+  /**
+   * What caused this commit: the window command it answers (`instanceId`), or
+   * for an HTTP write (an agent or the CLI) who made it (`actor`), so the UI
+   * can name them (API doc §7.3).
+   */
+  cause?: {
+    instanceId?: string;
+    requestId: string;
+    result: Record<string, unknown>;
+    actor?: { actorClass: 'human' | 'agent'; actorName?: string };
+  };
 }
 
 /** Spec D §3, node → the sending window only: a command it sent that did not commit. */
@@ -1938,6 +1973,8 @@ export interface WorkspaceAppliedFrame {
   type: 'workspace.applied';
   spaceId: SpaceId;
   requestId: string;
+  /** The workspace the command resolved to; absent when it was refused before resolving. */
+  workspaceId?: string | null;
   result: Record<string, unknown>;
 }
 
@@ -1945,6 +1982,8 @@ export interface WorkspaceAppliedFrame {
 export interface WorkspaceDraftFrame {
   type: 'workspace.draft';
   spaceId: SpaceId;
+  /** The workspace that owns the draft. */
+  workspaceId: string | null;
   draftId: string;
   kind?: string;
   revision: number;
@@ -1953,6 +1992,46 @@ export interface WorkspaceDraftFrame {
   deleted?: boolean;
   /** The window whose write this was (it already shows the values). */
   sourceInstanceId?: string;
+}
+
+/**
+ * Multiple workspaces (API doc 01a115c4 §7.3), node → the identity's CAPABLE
+ * windows only: the active workspace changed. The new active state and its
+ * drafts follow, then a `workspace.summary`.
+ */
+export interface WorkspaceSwitchedFrame {
+  type: 'workspace.switched';
+  spaceId: SpaceId;
+  workspaceId: string;
+  previousWorkspaceId: string | null;
+  listRevision: number;
+  at: string;
+}
+
+/** §7.3, capable windows only: the workspace list after any change to it. Drop one older than the last seen `listRevision`. */
+export interface WorkspaceSummaryFrame {
+  type: 'workspace.summary';
+  spaceId: SpaceId;
+  listRevision: number;
+  activeWorkspaceId: string | null;
+  items: WorkspaceSummary[];
+  cause?: { kind: WorkspaceSummaryCauseKind; workspaceId: string; actorClass: 'human' | 'agent'; actorName?: string };
+}
+
+/** §7.3, capable windows only: an agent's Switch/Stay or Delete/Keep prompt, on open and on every state change (D8). */
+export interface WorkspacePromptFrame {
+  type: 'workspace.prompt';
+  spaceId: SpaceId;
+  prompt: WorkspacePrompt;
+}
+
+/** §7.3, the sending capable window only: its `workspace.draft.patch` was not written. */
+export interface WorkspaceDraftRejectedFrame {
+  type: 'workspace.draft.rejected';
+  spaceId: SpaceId;
+  workspaceId: string | null;
+  draftId: string;
+  reason: 'workspace_not_found' | 'not_found' | 'limit_exceeded' | 'payload_too_large';
 }
 
 /**
@@ -1967,6 +2046,8 @@ export interface WorkspaceBridgeCommandFrame {
   command: string;
   args?: unknown;
   expectedRevision?: number;
+  /** The resolved target workspace (API doc §7.3). */
+  workspaceId?: string | null;
   /** Who is behind the call: an agent session, or the human's own CLI. */
   actorClass: 'human' | 'agent';
   /** The calling actor's display name, for the window's "<name> opened …" notice. */

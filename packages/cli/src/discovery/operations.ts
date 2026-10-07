@@ -2689,7 +2689,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'workspace.inspect': {
     cmd: ['workspace', 'inspect'],
-    syn: 'tm8 workspace inspect [--instance <instance-id>] [--space <space-id>]',
+    syn: 'tm8 workspace inspect [--instance <instance-id>] [--workspace <id|name>] [--expect-workspace <id>] [--space <space-id>]',
     sum: 'Read a live Workspace window’s tabs, scope, active tab and layout',
     authz: 'space',
     input: 'none',
@@ -2702,7 +2702,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'workspace.command': {
     cmd: ['workspace', 'command'],
-    syn: 'tm8 workspace command <command-name> [--args <json>] [--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]',
+    syn: 'tm8 workspace command <command-name> [--args <json>] [--workspace <id|name>] [--expect-workspace <id>] [--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]',
     sum: 'Run one Workspace command in your live window (the verbs below are sugar for it)',
     authz: 'space',
     input: 'bound',
@@ -2717,9 +2717,22 @@ const ROWS: Record<OperationName, Row> = {
     examples: ['tm8 workspace command workspace.tabs.open --args \'{"kind":"task","entityId":"<task-id>"}\''],
   },
 
+  'workspace.list': {
+    cmd: ['workspace', 'list'],
+    syn: 'tm8 workspace list [--space <space-id>]',
+    sum: 'List your workspaces in this Space: names, colors, which is active, tab and draft counts',
+    authz: 'space',
+    input: 'none',
+    tags: ['workspace', 'workspaces', 'list', 'active'],
+    notes: [
+      'your own workspaces only (an agent lists the ones of the human it works for), in list order',
+      'never empty: with no stored workspace yet it lists the default "Main" with id null',
+    ],
+  },
+
   'workspace.get': {
     cmd: ['workspace', 'get'],
-    syn: 'tm8 workspace get [--space <space-id>]',
+    syn: 'tm8 workspace get [--workspace <id|name>] [--expect-workspace <id>] [--space <space-id>]',
     sum: 'Read your stored workspace in this Space: tabs, scope, layout, drafts (no window needed)',
     authz: 'space',
     input: 'none',
@@ -2732,7 +2745,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'workspace.drafts.patch': {
     cmd: ['workspace', 'drafts', 'set'],
-    syn: 'tm8 workspace drafts set <draft-id> --field <name>=<value>... [--base <name>=<revision>...]',
+    syn: 'tm8 workspace drafts set <draft-id> --field <name>=<value>... [--base <name>=<revision>...] [--workspace <id|name>] [--expect-workspace <id>]',
     sum: 'Write fields of an open draft in your workspace (per-field, last writer wins)',
     authz: 'space',
     input: 'bound',
@@ -2744,6 +2757,96 @@ const ROWS: Record<OperationName, Row> = {
       'each field reports the revision it now has; pass --base <name>=<revision> to learn (in `overwrote`) when you replaced someone else’s newer edit',
     ],
     examples: ['tm8 workspace drafts set <draft-id> --field title=<text>'],
+  },
+
+  // ── managing the list (API doc 01a115c4 §5.7–§5.11, §8.2) ─────────────────
+  'workspace.create': {
+    cmd: ['workspace', 'create'],
+    syn: 'tm8 workspace create [<name>] [--color <color>] [--before <ws>] [--request-id <id>]',
+    sum: 'Create a workspace in this Space; it never becomes the active one',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'workspaces', 'new', 'add'],
+    notes: [
+      'no name: "Workspace N", the lowest N from 2 not taken; names are 1–64 characters and unique per Space, ignoring case (workspace_name_taken, exit 6)',
+      'colours: gray, red, orange, yellow, green, teal, blue, purple, pink, or none; at most 20 workspaces per Space (workspace_cap, exit 6)',
+      'creating never switches, for a human or an agent: switch with tm8 workspace use <ws>',
+      '<ws> is a workspace id or its name (case-insensitive); idempotent by --request-id',
+    ],
+    examples: ['tm8 workspace create <name> --color <color>'],
+  },
+  'workspace.update': {
+    cmd: ['workspace', 'rename'],
+    syn: 'tm8 workspace rename <ws> <name> [--request-id <id>]',
+    sum: 'Rename or recolour one of your workspaces (last writer wins)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'rename', 'color', 'colour', 'label'],
+    notes: [
+      'an agent may rename and recolour too; the human sees who did it',
+      'the same name or colour again is no_op (exit 0)',
+      'recolour with `tm8 workspace color <ws> <color|none>`',
+    ],
+    examples: ['tm8 workspace rename <ws> <name>'],
+  },
+  'workspace.reorder': {
+    cmd: ['workspace', 'reorder'],
+    syn: 'tm8 workspace reorder <ws> (--before <ws> | --last) [--request-id <id>]',
+    sum: 'Move one of your workspaces in the list (human only)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'order', 'move', 'reorder'],
+    notes: ['the order is the human\u2019s: an agent gets human_only (exit 4)'],
+    examples: ['tm8 workspace reorder <ws> --last'],
+  },
+  'workspace.delete': {
+    cmd: ['workspace', 'delete'],
+    syn: 'tm8 workspace delete <ws> [--discard] [--request-id <id>]',
+    sum: 'Delete one of your workspaces and its drafts',
+    authz: 'space',
+    input: 'none',
+    side: 'durable',
+    tags: ['workspace', 'delete', 'remove'],
+    notes: [
+      'deleting the active workspace first switches to the next one in the list (else the previous); the last one cannot go (last_workspace, exit 6)',
+      'unsaved drafts refuse it (rejected / unsaved_changes, exit 6) unless --discard',
+      'an agent may delete only a workspace it created that is not active and has no unsaved drafts; otherwise it asks the human (exit 16, prompt id) and --discard is ignored',
+      'a replay of the same --request-id returns the recorded result',
+    ],
+    examples: ['tm8 workspace delete <ws>'],
+  },
+  'workspace.switch': {
+    cmd: ['workspace', 'use'],
+    syn: 'tm8 workspace use <ws> [--request-id <id>]',
+    sum: 'Make one of your workspaces the active one; every open window follows',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'switch', 'use', 'active', 'activate'],
+    notes: [
+      'works with no window open; already active is no_op',
+      'from an agent it only asks: exit 16 with a prompt id, and the human chooses Switch or Stay; tm8 workspace list shows the outcome',
+      'if your prompt disappears from tm8 workspace list, treat it as not accepted and ask again',
+    ],
+    examples: ['tm8 workspace use <ws>'],
+  },
+  'workspace.prompts.resolve': {
+    cmd: ['workspace', 'prompts', 'resolve'],
+    syn: 'tm8 workspace prompts resolve <prompt-id> accept|decline [--discard] [--request-id <id>]',
+    sum: 'Answer an agent\u2019s switch or delete prompt (human only)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'prompt', 'answer', 'switch', 'delete', 'approve'],
+    notes: [
+      'accept runs the switch or delete as the human; decline leaves everything as it is',
+      'an agent gets human_only (exit 4); a prompt already answered is prompt_resolved (exit 6), an unknown or expired one prompt_not_found (exit 5)',
+      'accepting a delete of a workspace with unsaved drafts needs --discard',
+    ],
+    examples: ['tm8 workspace prompts resolve <prompt-id> accept'],
   },
 
   // ── execution ────────────────────────────────────────────────────────────
@@ -4128,6 +4231,7 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for MW W1.2 (+workspace.list) — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command) and Spec D (+workspace.get|drafts.patch) on main 0edaefe41 — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command, the Workspace remote bridge) — RECOMPUTED, not adjusted.
   // Re-measured for 992 (+credentials.space.share|unshare|shares) — RECOMPUTED, not adjusted.
@@ -4192,7 +4296,10 @@ export const CATALOG_DIGEST =
   // Re-measured (main sync: cross-space + styles).
   // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
   // Re-measured for Spec D1 / 302 (+execution.complete, +entities.commands.release) on main 2bca8148c — RECOMPUTED.
-  'sha256:cc7df0480a29d9e690e408dd91e2e3400d60eefc6326462aecd20773c7b760b1';
+  // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
+  // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
+  // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
+  'sha256:f5a78ce3c6d5a49f22949f38bb9e87ff1fc53368f9fb59f9fbfc91f9d99f8944';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -4758,6 +4865,18 @@ const COMMAND_ALIASES = new Map<string, {
     // No example: a zero-arg command has no `<placeholder>` (see `node mode`).
     examples: [],
   }],
+  // `workspace color` is the recolour spelling of `workspace.update`, the row
+  // `workspace rename` owns (API 01a115c4 §8.2).
+  ['workspace color', {
+    path: ['workspace', 'color'],
+    syntax: 'tm8 workspace color <ws> <color|none> [--request-id <id>]',
+    summary: 'Recolour one of your workspaces — the colour half of `workspace rename`\u2019s operation',
+    notes: [
+      'colours: gray, red, orange, yellow, green, teal, blue, purple, pink; `none` clears it',
+      'the same colour again is no_op (exit 0)',
+    ],
+    examples: ['tm8 workspace color <ws> <color>'],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
@@ -4880,18 +4999,21 @@ COMMAND_ORDER.splice(teammateIndex < 0 ? COMMAND_ORDER.length : teammateIndex, 0
 COMMAND_OPS.set('whoami', ['identity.get']);
 const identityGetIndex = COMMAND_ORDER.indexOf('identity get');
 COMMAND_ORDER.splice(identityGetIndex < 0 ? COMMAND_ORDER.length : identityGetIndex + 1, 0, 'whoami');
+COMMAND_OPS.set('workspace color', ['workspace.update']);
+const workspaceRenameIndex = COMMAND_ORDER.indexOf('workspace rename');
+COMMAND_ORDER.splice(workspaceRenameIndex < 0 ? COMMAND_ORDER.length : workspaceRenameIndex + 1, 0, 'workspace color');
 
 // Workspace remote bridge (Spec C): every verb below is sugar over the ONE
 // `workspace.command` row, and is exactly as available as that row.
-const WORKSPACE_COMMON = '[--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]';
+const WORKSPACE_COMMON = '[--workspace <id|name>] [--expect-workspace <id>] [--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]';
 const WORKSPACE_IDEMPOTENCY =
   'idempotent by --request-id: the same id and arguments return the recorded result and never run twice; a reused id with other arguments is refused (request_id_reused)';
 const WORKSPACE_EXIT = 'exit 0 applied/no_op; 16 requires_user_choice (the human must choose in the window); 4/2/6 rejected; 6 conflict';
 const WORKSPACE_VERBS: Array<[string, string, string, string[], string[]]> = [
-  ['workspace tabs open', `tm8 workspace tabs open <kind> <entity-id> [--no-activate] [--subview entity|connections|messages] ${WORKSPACE_COMMON}`,
+  ['workspace tabs open', `tm8 workspace tabs open <kind> <entity-id> [<kind> <entity-id>...] [--no-activate] [--subview entity|connections|messages] ${WORKSPACE_COMMON}`,
     'Open an entity as a tab in your live Workspace window (workspace.tabs.open)',
-    ['applies to your stored workspace with no window open; a live window also brings it to the front (`activation` says whether)', 'an open tab for the same entity is focused, not duplicated', 'a kind outside a By type scope stores a prompt for the human and exits 16; set the scope first to avoid it'],
-    ['tm8 workspace tabs open <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> --no-activate']],
+    ['applies to your stored workspace with no window open; a live window also brings it to the front (`activation` says whether)', 'an open tab for the same entity is focused, not duplicated', 'a kind outside a By type scope stores a prompt for the human and exits 16; set the scope first to avoid it', 'several pairs open together or not at all: at most 50 tabs (tab_limit), and an entity you cannot read refuses the batch (entity_unavailable, unavailableEntityIds); the first opened tab is activated'],
+    ['tm8 workspace tabs open <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> --no-activate']],
   ['workspace tabs close', `tm8 workspace tabs close <tab-id> ${WORKSPACE_COMMON}`,
     'Close one tab (workspace.tabs.close); never discards unsaved work',
     ['a dirty draft raises the in-window confirmation and exits 16: only the human can discard'],

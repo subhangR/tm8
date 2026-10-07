@@ -136,6 +136,16 @@ describe('spaceLinks.invoke classification — every start, grant and session-bo
     }
   });
 
+  it('every workspace op is refused at home (personal_workspace), reads too: a Workspace is one human\'s own', () => {
+    const ops = OPERATIONS.filter((o) => o.name.startsWith('workspace.'));
+    for (const op of ['workspace.prompts.resolve', 'workspace.switch', 'workspace.delete', 'workspace.list', 'workspace.command']) {
+      expect(ops.map((o) => o.name)).toContain(op);
+    }
+    for (const o of ops) {
+      expect(spaceLinkRefusal(o.name, o.kind as 'read' | 'command' | 'stream', {}, true), o.name).toBe('personal_workspace');
+    }
+  });
+
   it('entities.refs.add is refused through a link (L3: no transitive link use); list and remove pass', () => {
     expect(spaceLinkRefusal('entities.refs.add', 'command', {}, true)).toBe('link_management');
     expect(spaceLinkRefusal('entities.refs.list', 'read', {}, true)).toBeNull();

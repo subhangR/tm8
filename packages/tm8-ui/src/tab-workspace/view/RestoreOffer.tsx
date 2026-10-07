@@ -1,7 +1,7 @@
 /**
  * Two small persistence banners over the content area (Spec B §8, Spec A §12):
  *
- * - RESTORE OFFER: a new window (empty sessionStorage) whose `tm8.ws.last.v1`
+ * - RESTORE OFFER: a new window (empty sessionStorage) whose `tm8.ws.last.v2`
  *   holds tabs offers "Restore N tabs from your last session" on the start
  *   surface. Restoring brings back state only — no Create, no Run, no prompt.
  * - SCOPE REPAIR: a restored By type selection lost every kind (outside D7).

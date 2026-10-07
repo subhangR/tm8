@@ -95,6 +95,8 @@ export type KeyCommand =
   | 'work.tab.fullscreen'
   /** Out of a focused terminal, or back into the visible one. */
   | 'terminal.toggle'
+  /** Open the workspace switcher with focus in its list (API doc 01a115c4 §10). */
+  | 'workspace.switcher'
   // -- Launch card (the New session screen) -----------------------------------
   // Never emitted by the controller: the card handles its own keys
   // (`new-session/launch-keys.ts`); these name its rows in the help overlay.
@@ -457,6 +459,8 @@ export const BINDINGS: readonly Binding[] = [
   // `g ,` is the GUARANTEED Settings path: Mod+, is browser Settings on
   // Chrome/macOS and Safari/macOS, so it is not bound at all.
   { id: 'g.settings', layer: 'global', keys: 'g ,', label: 'Settings', command: 'nav.view', ref: 'settings', guaranteed: true, match: chord(',') },
+  // Not a navigation chord: it opens the switcher, which names its own destinations.
+  { id: 'g.workspace', layer: 'global', keys: 'g w', label: 'Switch workspace', command: 'workspace.switcher', guaranteed: true, match: chord('w') },
 
   // -- Workspace (Work) -------------------------------------------------------
   // Plain keys and chords only — browser-proof by construction, and dead while
@@ -609,7 +613,7 @@ export function bindingGroup(binding: Binding): BindingGroup {
   if (binding.command === 'text.blur' || binding.command.startsWith('terminal.')) return 'Focus';
   if (binding.command === 'work.create' || binding.command === 'work.newTab' || binding.command === 'list.create') return 'Create';
   if (binding.command === 'work.browser.focus' || binding.layer === 'focus') return 'Lists';
-  if (binding.command.startsWith('work.')) return 'Workspace';
+  if (binding.command.startsWith('work.') || binding.command === 'workspace.switcher') return 'Workspace';
   if (binding.command === 'nav.view' || binding.command === 'nav.kind') return 'Navigate';
   return 'General';
 }
