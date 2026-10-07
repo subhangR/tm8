@@ -2,11 +2,18 @@
  * Persistence (Spec B §8): browser storage only, every key versioned and
  * scoped `{viewerId}:{spaceId}`.
  *
- *   tm8.ws.tabs.v1     sessionStorage  order, content-free records, presentation,
+ *   tm8.ws.tabs.v2     sessionStorage  order, content-free records, presentation,
  *                                      recency, rememberedActive, per-tab ui
- *   tm8.ws.last.v1     localStorage    mirror of the latest tabs snapshot
- *   tm8.ws.prefs.v1    localStorage    scope (mode + ids), layout widths, expanded
- *   tm8.ws.browser.v1  localStorage    browser kind + perKind
+ *   tm8.ws.last.v2     localStorage    mirror of the latest tabs snapshot
+ *   tm8.ws.prefs.v2    localStorage    scope (mode + ids), layout widths, expanded
+ *   tm8.ws.browser.v2  localStorage    browser kind + perKind
+ *
+ * v2 (multiple workspaces, API doc 01a115c4): the keys hold the ONE workspace
+ * a window shows while the node does not hold it. Once it does (server mode)
+ * they are neither written nor read back — the node's state, per workspace,
+ * is the truth — and this window's `tabs` key is dropped so a reload never
+ * flashes another workspace's tabs. The v1 keys are read only by the one-time
+ * legacy import (`legacySnapshot`).
  *
  * Draft values live in `draftStore.ts` under their own keys.
  *
@@ -28,7 +35,7 @@
  * banner — never a silent Mixed.
  *
  * A NEW WINDOW (empty sessionStorage) does not restore by itself: when
- * `tm8.ws.last.v1` holds tabs, the start surface offers "Restore N tabs from
+ * `tm8.ws.last.v2` holds tabs, the start surface offers "Restore N tabs from
  * your last session" (`restoreOfferOf` / `acceptRestoreOffer`).
  */
 import { activeTabId, isEligible, scopeKey } from './selectors';
@@ -57,12 +64,21 @@ export interface WorkspaceInitContext {
   spaceId: string;
 }
 
-const VERSION = 1;
+const VERSION = 2;
+/** The keys before multiple workspaces: read once, by the legacy import. */
+const LEGACY_VERSION = 1;
 export const SAVE_DEBOUNCE_MS = 250;
 
-export function persistKey(name: 'tabs' | 'last' | 'prefs' | 'browser', ctx: WorkspaceInitContext): string {
-  return `tm8.ws.${name}.v${VERSION}:${ctx.viewerId}:${ctx.spaceId}`;
+export function persistKey(
+  name: 'tabs' | 'last' | 'prefs' | 'browser',
+  ctx: WorkspaceInitContext,
+  version: number = VERSION,
+): string {
+  return `tm8.ws.${name}.v${version}:${ctx.viewerId}:${ctx.spaceId}`;
 }
+
+/** The snapshot shapes did not change between v1 and v2. */
+const isKnownVersion = (v: unknown): boolean => v === VERSION || v === LEGACY_VERSION;
 
 // ---------------------------------------------------------------------------
 // Storage access (failures read as absent and are swallowed)
@@ -98,9 +114,9 @@ function writeJson(which: 'session' | 'local', key: string, value: unknown): voi
 // Snapshot shapes
 // ---------------------------------------------------------------------------
 
-/** The tabs snapshot (`tabs.v1`, mirrored to `last.v1`). No content. */
+/** The tabs snapshot (`tabs.v2`, mirrored to `last.v2`). No content. */
 export interface TabsSnapshot {
-  v: 1;
+  v: 2;
   savedAt: number;
   orderedTabIds: TabId[];
   tabs: Record<TabId, TabRecord>;
@@ -110,13 +126,13 @@ export interface TabsSnapshot {
 }
 
 interface PrefsSnapshot {
-  v: 1;
+  v: 2;
   scope: TabScope;
   layout: WorkspaceLayout;
 }
 
 interface BrowserSnapshot {
-  v: 1;
+  v: 2;
   kind: KindId;
   perKind: Record<KindId, BrowserKindState>;
 }
@@ -192,7 +208,7 @@ function validRecord(id: TabId, v: unknown): TabRecord | null {
 
 /** The restorable part of a saved tabs snapshot, or null when there is none. */
 export function validTabsSnapshot(raw: unknown): Omit<TabsSnapshot, 'v' | 'savedAt'> | null {
-  if (!isRecord(raw) || raw.v !== VERSION || !Array.isArray(raw.orderedTabIds) || !isRecord(raw.tabs)) return null;
+  if (!isRecord(raw) || !isKnownVersion(raw.v) || !Array.isArray(raw.orderedTabIds) || !isRecord(raw.tabs)) return null;
   const tabs: Record<TabId, TabRecord> = {};
   const orderedTabIds: TabId[] = [];
   const entityKeys = new Set<string>();
@@ -228,7 +244,7 @@ function validKinds(v: unknown): { kept: KindId[]; dropped: KindId[] } {
 }
 
 function validPrefs(raw: unknown): { scope?: TabScope; repair?: KindId[]; layout?: WorkspaceLayout } {
-  if (!isRecord(raw) || raw.v !== VERSION) return {};
+  if (!isRecord(raw) || !isKnownVersion(raw.v)) return {};
   const out: { scope?: TabScope; repair?: KindId[]; layout?: WorkspaceLayout } = {};
   const s = raw.scope;
   if (isRecord(s) && s.mode === 'mixed') {
@@ -256,7 +272,7 @@ function validPrefs(raw: unknown): { scope?: TabScope; repair?: KindId[]; layout
 }
 
 function validBrowser(raw: unknown): BrowserState | null {
-  if (!isRecord(raw) || raw.v !== VERSION || !isRecord(raw.perKind)) return null;
+  if (!isRecord(raw) || !isKnownVersion(raw.v) || !isRecord(raw.perKind)) return null;
   const perKind: Record<KindId, BrowserKindState> = {};
   for (const [kind, v] of Object.entries(raw.perKind)) {
     if (!isWorkspaceKind(kind) || !isRecord(v)) continue;
@@ -299,7 +315,7 @@ function hydrate(runtime: WorkspaceRuntime, patch: Partial<WorkspaceState>): voi
 }
 
 // ---------------------------------------------------------------------------
-// Restore offer (a new window with a `last.v1` snapshot)
+// Restore offer (a new window with a `last.v2` snapshot)
 // ---------------------------------------------------------------------------
 
 interface OfferSlot {
@@ -356,6 +372,7 @@ export function dismissRestoreOffer(runtime: WorkspaceRuntime): void {
 const loaded = new WeakSet<WorkspaceRuntime>();
 /** Runtimes whose workspace now lives on the node (Spec D): no storage writes, no offer. */
 const serverMode = new WeakSet<WorkspaceRuntime>();
+const contexts = new WeakMap<WorkspaceRuntime, WorkspaceInitContext>();
 
 /**
  * Spec D §6: the node holds this workspace now. Browser storage is no longer
@@ -366,23 +383,33 @@ export function enterServerMode(runtime: WorkspaceRuntime): void {
   serverMode.add(runtime);
   loaded.add(runtime);
   setOffer(runtime, null);
+  // The node now says which workspace this window shows, and what is in it.
+  const ctx = contexts.get(runtime) ?? { viewerId: runtime.viewerId, spaceId: runtime.spaceId };
+  try {
+    storage('session')?.removeItem(persistKey('tabs', ctx));
+  } catch {
+    // ignore
+  }
 }
 
 /**
  * The browser's legacy Workspace state for (viewer, space), read without
  * touching any store: this window's tabs (or, for a new window, the last
- * session's), the prefs, the browser state. Null when storage holds nothing.
+ * session's), the prefs, the browser state — v2 first, then the v1 keys.
+ * Null when storage holds nothing.
  */
 export function legacySnapshot(ctx: WorkspaceInitContext): Partial<WorkspaceState> | null {
+  const read = (which: 'session' | 'local', name: 'tabs' | 'last' | 'prefs' | 'browser') =>
+    readJson(which, persistKey(name, ctx)) ?? readJson(which, persistKey(name, ctx, LEGACY_VERSION));
   const patch: Partial<WorkspaceState> = {};
-  const prefs = validPrefs(readJson('local', persistKey('prefs', ctx)));
+  const prefs = validPrefs(read('local', 'prefs'));
   if (prefs.scope) patch.scope = prefs.scope;
   if (prefs.layout) patch.layout = prefs.layout;
-  const browser = validBrowser(readJson('local', persistKey('browser', ctx)));
+  const browser = validBrowser(read('local', 'browser'));
   if (browser) patch.browsers = { main: browser };
   const tabs =
-    validTabsSnapshot(readJson('session', persistKey('tabs', ctx))) ??
-    validTabsSnapshot(readJson('local', persistKey('last', ctx)));
+    validTabsSnapshot(read('session', 'tabs')) ??
+    validTabsSnapshot(read('local', 'last'));
   if (tabs) Object.assign(patch, tabs);
   return Object.keys(patch).length > 0 ? patch : null;
 }
@@ -414,7 +441,6 @@ function load(runtime: WorkspaceRuntime, ctx: WorkspaceInitContext): void {
   if (Object.keys(patch).length > 0) hydrate(runtime, patch);
 }
 
-const contexts = new WeakMap<WorkspaceRuntime, WorkspaceInitContext>();
 
 function saveNow(runtime: WorkspaceRuntime): void {
   if (serverMode.has(runtime)) return;
