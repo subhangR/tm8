@@ -189,9 +189,13 @@ begin
   if saved is null then
     raise exception 'workspace revision is stale' using errcode = '40001';
   end if;
-  -- Repair a lost pointer (see workspace_active): the written workspace becomes active.
+  -- Repair a lost pointer (see workspace_active) in this transaction. It goes
+  -- to the workspace reads already treat as active: the first in list order.
   insert into public.workspace_active(space_id, identity_id, workspace_id)
-  values (p_space_id, me_identity, saved)
+  select p_space_id, me_identity, w.workspace_id from public.workspaces w
+   where w.space_id = p_space_id and w.identity_id = me_identity
+   order by w.position, w.created_at, w.workspace_id
+   limit 1
   on conflict (space_id, identity_id) do nothing;
   return saved;
 end;
@@ -201,7 +205,9 @@ $$;
 -- workspaces, compare-and-swap on the draft's own revision (0 = create).
 -- Returns the new revision (0 after a delete). P0002 when the workspace is
 -- not the caller's (or does not exist); at most 30 drafts per workspace.
-create or replace function public.workspace_draft_save(
+-- Named _write, not _save: 305's workspace_draft_save has the same argument
+-- types (its first uuid is the space), and it stays as a rollback shim below.
+create or replace function public.workspace_draft_write(
   p_workspace_id uuid, p_draft_id uuid, p_kind text, p_expected bigint, p_fields jsonb
 )
 returns bigint language plpgsql security definer set search_path = public, internal, pg_temp as $$
@@ -219,6 +225,13 @@ begin
     raise exception 'no such workspace' using errcode = 'P0002';
   end if;
   perform internal.require_space_member(ws_space);
+  -- Any write repairs a lost pointer, as workspace_save does.
+  insert into public.workspace_active(space_id, identity_id, workspace_id)
+  select ws_space, me_identity, w.workspace_id from public.workspaces w
+   where w.space_id = ws_space and w.identity_id = me_identity
+   order by w.position, w.created_at, w.workspace_id
+   limit 1
+  on conflict (space_id, identity_id) do nothing;
   if p_fields is null then
     delete from public.workspace_drafts where workspace_id = p_workspace_id and draft_id = p_draft_id;
     return 0;
@@ -248,9 +261,76 @@ end;
 $$;
 
 revoke all on function public.workspace_save(uuid, uuid, bigint, bigint, jsonb, uuid) from public;
-revoke all on function public.workspace_draft_save(uuid, uuid, text, bigint, jsonb) from public;
+revoke all on function public.workspace_draft_write(uuid, uuid, text, bigint, jsonb) from public;
 grant execute on function public.workspace_save(uuid, uuid, bigint, bigint, jsonb, uuid) to tm8_app;
+grant execute on function public.workspace_draft_write(uuid, uuid, text, bigint, jsonb) to tm8_app;
+
+-- 8. Rollback shims: the 305 signatures, for a binary rolled back past 310.
+-- The previous build addresses "the" workspace of (space, identity), which is
+-- only well defined while there is at most one, so they FAIL CLOSED with two
+-- or more (55000, 'multiple workspaces: roll forward') and write nothing. The
+-- node never calls them: workspace_save here takes 4 arguments and the new one
+-- 5 or 6, and the new draft writer has its own name.
+create function public.workspace_save(p_space_id uuid, p_expected bigint, p_next bigint, p_state jsonb)
+returns bigint language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  me_identity text := internal.identity_id();
+  ids uuid[];
+begin
+  select coalesce(array_agg(workspace_id), '{}') into ids from public.workspaces
+   where space_id = p_space_id and identity_id = me_identity;
+  if cardinality(ids) >= 2 then
+    raise exception 'multiple workspaces: roll forward' using errcode = '55000';
+  end if;
+  if cardinality(ids) = 0 then
+    -- 305 updated nothing for a missing row: the same stale answer.
+    if p_expected <> 0 then
+      raise exception 'workspace revision is stale' using errcode = '40001';
+    end if;
+    perform public.workspace_save(p_space_id, null::uuid, p_expected, p_next, p_state);
+    return p_next;
+  end if;
+  -- 305 inserted at p_expected 0, and a row already exists: stale.
+  if p_expected = 0 then
+    raise exception 'workspace revision is stale' using errcode = '40001';
+  end if;
+  perform public.workspace_save(p_space_id, ids[1], p_expected, p_next, p_state);
+  return p_next;
+end;
+$$;
+
+create function public.workspace_draft_save(
+  p_space_id uuid, p_draft_id uuid, p_kind text, p_expected bigint, p_fields jsonb
+)
+returns bigint language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  me_identity text := internal.identity_id();
+  ids uuid[];
+begin
+  perform internal.require_space_member(p_space_id);
+  if me_identity is null then
+    raise exception 'not a member of this space' using errcode = '42501';
+  end if;
+  select coalesce(array_agg(workspace_id), '{}') into ids from public.workspaces
+   where space_id = p_space_id and identity_id = me_identity;
+  if cardinality(ids) >= 2 then
+    raise exception 'multiple workspaces: roll forward' using errcode = '55000';
+  end if;
+  if cardinality(ids) = 0 then
+    raise exception 'no workspace yet' using errcode = 'P0002';
+  end if;
+  return public.workspace_draft_write(ids[1], p_draft_id, p_kind, p_expected, p_fields);
+end;
+$$;
+
+revoke all on function public.workspace_save(uuid, bigint, bigint, jsonb) from public;
+revoke all on function public.workspace_draft_save(uuid, uuid, text, bigint, jsonb) from public;
+grant execute on function public.workspace_save(uuid, bigint, bigint, jsonb) to tm8_app;
 grant execute on function public.workspace_draft_save(uuid, uuid, text, bigint, jsonb) to tm8_app;
+comment on function public.workspace_save(uuid, bigint, bigint, jsonb) is
+  'compat-only for binary rollback past 310; refuses with >=2 workspaces; drop in a follow-up migration once a later release is the rollback floor';
+comment on function public.workspace_draft_save(uuid, uuid, text, bigint, jsonb) is
+  'compat-only for binary rollback past 310; refuses with >=2 workspaces; drop in a follow-up migration once a later release is the rollback floor';
 
 -- A new table is analyzed at birth (never-analyzed-tables.pg.test.ts); the
 -- re-keyed ones too, so their new indexes plan on real numbers.
