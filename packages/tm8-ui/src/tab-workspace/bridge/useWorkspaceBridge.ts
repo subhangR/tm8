@@ -11,7 +11,11 @@
  *    uses, under the remote policy in dispatch.ts — and sends the Result back;
  *  - owns the shell side of the remote-only hooks: the registered dialogs, the
  *    route switch to the Workspace, and the 2 s typing guard;
- *  - shows the coalesced "<actor> opened …" notice (ruling Q5, R35).
+ *  - shows the coalesced "<actor> opened …" notice (ruling Q5, R35);
+ *  - multiple workspaces (API doc 01a115c4 §7.6, §10.2): once the node has
+ *    proved it knows workspaces, registers with `caps` and the workspace on
+ *    screen, refuses a forward addressed to another one, and feeds the
+ *    switcher's list store.
  *
  * The instance id is new on every page load and space switch; it survives
  * socket reconnects so a retried request still finds its window.
@@ -26,6 +30,7 @@ import { getWorkspaceRuntime } from '../runtime/dispatch';
 import { enterServerMode, legacySnapshot } from '../runtime/persistence';
 import { applyStoredRail, attachRailWriter, legacyRail } from '../runtime/railStore';
 import { WorkspaceSync } from './sync';
+import { getWorkspaceListStore } from './workspaceList';
 import { newUuid, WINDOW_ID } from '../runtime/store';
 import type {
   CommandEnvelope,
@@ -37,7 +42,7 @@ import type {
   WorkspaceState,
 } from '../runtime/types';
 import { COMMAND_NAMES, DIALOG_IDS } from '../runtime/types';
-import { actorLabel, DIALOG_TITLES, RemoteNoticeCoalescer, scopeLabel, type RemoteChange } from './notices';
+import { actorLabel, DIALOG_TITLES, inWorkspace, RemoteNoticeCoalescer, scopeLabel, type RemoteChange } from './notices';
 
 export interface BridgeDialogControl {
   open: boolean;
@@ -105,6 +110,7 @@ function registerFrame(
   instanceId: string,
   view: string,
   lastFocusedAt: number | null,
+  sync: WorkspaceSync | null,
 ): WorkspaceBridgeFrame {
   return {
     type: 'workspace.register',
@@ -117,6 +123,8 @@ function registerFrame(
     mounted: runtime.hooks.viewMounted(),
     revision: runtime.store.getState().revision,
     ...(lastFocusedAt !== null ? { lastFocusedAt: new Date(lastFocusedAt).toISOString() } : {}),
+    // §10.2: caps and the shown workspace only after the node's proof.
+    ...(sync ? sync.registerFields() : {}),
   };
 }
 
@@ -180,6 +188,7 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
   const instanceId = useMemo(() => (runtime ? newUuid() : null), [runtime]);
   const lastTypedAt = useRef(0);
   const lastFocusedAt = useRef<number | null>(null);
+  const syncRef = useRef<WorkspaceSync | null>(null);
   const coalescer = useMemo(() => new RemoteNoticeCoalescer(), []);
 
   // The typing guard: a keystroke in an editable field, window-wide.
@@ -230,7 +239,7 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
 
     const register = () => {
       if (document.hasFocus()) lastFocusedAt.current = Date.now();
-      const frame = registerFrame(runtime, spaceId, instanceId, latest.current.view, lastFocusedAt.current);
+      const frame = registerFrame(runtime, spaceId, instanceId, latest.current.view, lastFocusedAt.current, syncRef.current);
       lastSentRevision = runtime.store.getState().revision;
       port.send(frame);
     };
@@ -250,6 +259,12 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
       const recorded = results.get(frame.requestId);
       if (recorded) {
         port.send({ type: 'workspace.result', instanceId, requestId: frame.requestId, result: recorded });
+        return;
+      }
+      // §7.6: a forward for a workspace this window does not show is not its to run.
+      const current = syncRef.current;
+      if (current?.capable && frame.workspaceId !== undefined && frame.workspaceId !== current.shown) {
+        reply(frame.requestId, { status: 'rejected', reason: 'workspace_switched', revision: runtime.store.getState().revision });
         return;
       }
       if (!(COMMAND_NAMES as readonly string[]).includes(frame.command)) {
@@ -300,6 +315,9 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
     // after it registers; from then on the window's commits go to the node and
     // every commit anywhere comes back as a push.
     const viewerId = runtime.viewerId;
+    const list = getWorkspaceListStore(viewerId, spaceId);
+    list.setState({ online: port.isOpen?.() ?? true, open: false });
+    const offStatus = port.onStatus?.((online) => list.setState(online ? { online } : { online, open: false })) ?? (() => {});
     const sync = port.onSync
       ? new WorkspaceSync(runtime, spaceId, instanceId, {
           send: (frame) => port.send(frame),
@@ -318,8 +336,27 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
             }
           },
           legacy: () => ({ state: legacySnapshot({ viewerId, spaceId }), rail: legacyRail(spaceId) }),
+          // The register snapshot is first-register only: announce caps now
+          // and read the list over HTTP; summaries keep it current from here.
+          onCapable: () => {
+            queueMicrotask(register);
+            void port.manage?.list(spaceId).then(
+              (result) => syncRef.current?.adoptList(result.items, result.listRevision, result.activeWorkspaceId),
+              () => {},
+            );
+          },
+          onWorkspaces: (view) => list.setState(view),
+          notifyDraftElsewhere: (_draftId, workspaceName) =>
+            latest.current.notify({
+              id: `tws-draft-elsewhere-${workspaceName}`,
+              tone: 'info',
+              title: inWorkspace('A draft was discarded', workspaceName),
+              body: '',
+              ttlMs: NOTICE_TTL_MS,
+            }),
         })
       : null;
+    syncRef.current = sync;
     const offSync = sync && port.onSync ? port.onSync((frame) => sync.onFrame(frame)) : () => {};
     let lastRail: unknown = runtime.store.getState().rail;
     const offRail = runtime.store.subscribe((state) => {
@@ -353,8 +390,10 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
       offCommand();
       offOpen();
       offSync();
+      offStatus();
       offRail();
       sync?.dispose();
+      syncRef.current = null;
       attachRailWriter(spaceId, null);
       offStore();
       clearInterval(heartbeat);
@@ -371,7 +410,7 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
   useEffect(() => {
     if (!runtime || !port || !spaceId || !instanceId) return undefined;
     const timer = setTimeout(() => {
-      port.send(registerFrame(runtime, spaceId, instanceId, options.view, lastFocusedAt.current));
+      port.send(registerFrame(runtime, spaceId, instanceId, options.view, lastFocusedAt.current, syncRef.current));
     }, 50);
     return () => clearTimeout(timer);
   }, [runtime, port, spaceId, instanceId, options.view]);

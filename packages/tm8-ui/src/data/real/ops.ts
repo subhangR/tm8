@@ -235,6 +235,9 @@ import {
   type ClearEntityHeaderInput,
   type EntityHeaderResult,
   type EntityHeaderView,
+  type WorkspaceColor,
+  type WorkspaceListResult,
+  type WorkspaceManageResult,
 } from '@tm8/contract';
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
 
@@ -403,6 +406,55 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<MembershipEndResult>('spaces.members.remove', {
         params: { spaceId, memberId },
         body: { clientMutationId: newId('memremove') },
+      });
+    },
+
+    // -- multiple workspaces (API doc 01a115c4 §5) ---------------------------
+
+    listWorkspaces(spaceId: SpaceId): Promise<WorkspaceListResult> {
+      return http.call<WorkspaceListResult>('workspace.list', { params: { spaceId } });
+    },
+
+    createWorkspace(spaceId: SpaceId, input: { name?: string; color?: WorkspaceColor | null }): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.create', {
+        params: { spaceId },
+        body: { ...input, requestId: newId('wscreate') },
+      });
+    },
+
+    updateWorkspace(
+      spaceId: SpaceId,
+      workspaceId: string,
+      input: { name?: string; color?: WorkspaceColor | null },
+    ): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.update', {
+        params: { spaceId, workspaceId },
+        body: { ...input, requestId: newId('wsupdate') },
+      });
+    },
+
+    reorderWorkspace(spaceId: SpaceId, workspaceId: string, beforeWorkspaceId: string | null): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.reorder', {
+        params: { spaceId, workspaceId },
+        body: { requestId: newId('wsmove'), beforeWorkspaceId },
+      });
+    },
+
+    /** Body-less: `requestId` and `discard` travel in the query (§5.10). */
+    deleteWorkspace(spaceId: SpaceId, workspaceId: string, discard: boolean): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.delete', {
+        params: { spaceId, workspaceId },
+        query: { requestId: newId('wsdelete'), ...(discard ? { discard: 'true' } : {}) },
+      });
+    },
+
+    switchWorkspace(spaceId: SpaceId, workspaceId: string, expectedActiveWorkspaceId: string | null): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.switch', {
+        params: { spaceId, workspaceId },
+        body: {
+          requestId: newId('wsswitch'),
+          ...(expectedActiveWorkspaceId === null ? {} : { expectedActiveWorkspaceId }),
+        },
       });
     },
 
