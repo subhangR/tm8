@@ -418,6 +418,10 @@ export const OPERATIONS = [
   // no worktree answers `available:false` with a named reason, never a 500.
   { name: 'execution.gitStatus',      method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/status',      kind: 'read',    status: 'v1' },
   { name: 'execution.gitDiff',        method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/diff',        kind: 'read',    status: 'v1' },
+  // What a session WITHOUT a worktree changed: the git checkouts in its own
+  // working directory, read-only. Paths derive from the session row only.
+  { name: 'execution.gitCheckouts',   method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/checkouts',      kind: 'read',    status: 'v1' },
+  { name: 'execution.gitCheckoutDiff', method: 'GET',  path: '/v2/work-sessions/:workSessionId/git/checkouts/diff', kind: 'read',    status: 'v1' },
   { name: 'execution.gitCheckpoint',  method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/checkpoint',  kind: 'command', status: 'v1' },
   { name: 'execution.gitRollback',    method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/rollback',    kind: 'command', status: 'v1' },
   { name: 'execution.gitCommit',      method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/commit',      kind: 'command', status: 'v1' },
