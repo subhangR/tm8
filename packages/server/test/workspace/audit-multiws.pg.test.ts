@@ -203,4 +203,25 @@ describeIfPg('AUDIT: what a capable window hears after content writes (real Post
     // The window's list still names the synthetic Main (id null) as active.
     expect(win.frames.some((f) => f.type === 'workspace.summary' && f['activeWorkspaceId'] === state?.['workspaceId'])).toBe(true);
   });
+
+  it('F10: a batch open outside a By-type scope answers requires_user_choice with a prompt that was never stored', async () => {
+    const space = (await db.rpc<{ space: { id: string } }>({ identityId: human }, 'public.create_space', ['Audit scope', 'audit', 'private', null, null])).space.id;
+    const owner = (await memberForClaims(db, { identityId: human }, space))!;
+    const ids: string[] = [];
+    for (const title of ['S1', 'S2']) {
+      ids.push((await db.rpc<{ entity: { id: string } }>(claims(), 'public.create_task', [
+        space, title, owner, '', null, null, null, 'medium', null, null, null, null, null, 'attached_to', `cmid_${randomUUID()}`,
+      ])).entity.id);
+    }
+    // The human's workspace shows docs only.
+    await call('workspace.command', { requestId: randomUUID(), command: 'workspace.tabScope.set', args: { mode: 'byType', selectedTypeIds: ['doc'] } }, { space });
+    const result = await call('workspace.command', {
+      requestId: randomUUID(), command: 'workspace.tabs.open', args: { entities: ids.map((entityId) => ({ kind: 'task', entityId })) },
+    }, { as: asAgent, space });
+    // The agent is told to wait for the human (exit 16) on an interaction id…
+    expect(result).toMatchObject({ status: 'requires_user_choice', reason: 'scope_choice_required' });
+    const stored = await call('workspace.get', undefined, { space, method: 'GET' });
+    // …that no window can ever show: the batch path returned before saving it (service.ts:653-654).
+    expect((stored['state'] as { pending?: { id: string } }).pending?.id).toBe(result['pendingInteractionId']);
+  });
 });
