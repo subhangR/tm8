@@ -3,6 +3,7 @@
  * 01a1111d-589e, Spec D doc 01a11171-3aba).
  *
  *   workspace.get             GET  /v2/spaces/:spaceId/workspace
+ *   workspace.list            GET  /v2/spaces/:spaceId/workspaces
  *   workspace.instances.list  GET  /v2/spaces/:spaceId/workspace/instances
  *   workspace.inspect         GET  /v2/spaces/:spaceId/workspace/inspect
  *   workspace.command         POST /v2/spaces/:spaceId/workspace/commands
@@ -33,7 +34,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { WORKSPACE_DIALOG_IDS } from '@tm8/contract';
+import { WORKSPACE_DIALOG_IDS, type WorkspaceListResult } from '@tm8/contract';
 
 import { requireSpace } from '../context.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
@@ -211,6 +212,15 @@ async function get(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+async function list(cmd: CommandContext): Promise<ExitCode> {
+  const spaceId = requireSpace(cmd.ctx);
+  const listed = await observedInvoke<WorkspaceListResult>(clientFor(cmd.ctx), 'workspace.list', { params: { spaceId } });
+  cmd.out.data(listed, (data) => (data as WorkspaceListResult).items
+    .map((w) => `${w.active ? '*' : ' '} ${w.name} (${w.id ?? 'no row yet'}) · ${w.tabCount} tab(s) · ${w.draftCount} draft(s)`)
+    .join('\n'));
+  return EXIT_OK;
+}
+
 function parseField(raw: string, flag: string): [string, string] {
   const at = raw.indexOf('=');
   if (at <= 0) usage(`--${flag} expects <name>=<value>, got ${JSON.stringify(raw)}`, `--${flag} title=<text>`);
@@ -255,6 +265,7 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
   { path: ['workspace', 'instances'], run: instances },
   { path: ['workspace', 'inspect'], run: inspect },
   { path: ['workspace', 'get'], run: get },
+  { path: ['workspace', 'list'], run: list },
   { path: ['workspace', 'drafts', 'set'], run: draftsSet },
   {
     path: ['workspace', 'command'],

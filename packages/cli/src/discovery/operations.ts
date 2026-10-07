@@ -2717,6 +2717,19 @@ const ROWS: Record<OperationName, Row> = {
     examples: ['tm8 workspace command workspace.tabs.open --args \'{"kind":"task","entityId":"<task-id>"}\''],
   },
 
+  'workspace.list': {
+    cmd: ['workspace', 'list'],
+    syn: 'tm8 workspace list [--space <space-id>]',
+    sum: 'List your workspaces in this Space: names, colors, which is active, tab and draft counts',
+    authz: 'space',
+    input: 'none',
+    tags: ['workspace', 'workspaces', 'list', 'active'],
+    notes: [
+      'your own workspaces only (an agent lists the ones of the human it works for), in list order',
+      'never empty: with no stored workspace yet it lists the default "Main" with id null',
+    ],
+  },
+
   'workspace.get': {
     cmd: ['workspace', 'get'],
     syn: 'tm8 workspace get [--space <space-id>]',
@@ -4110,6 +4123,7 @@ function exposureFor(operation: OperationName): Exposure {
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 export const CATALOG_DIGEST =
+  // Re-measured for MW W1.2 (+workspace.list) — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command) and Spec D (+workspace.get|drafts.patch) on main 0edaefe41 — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command, the Workspace remote bridge) — RECOMPUTED, not adjusted.
   // Re-measured for 992 (+credentials.space.share|unshare|shares) — RECOMPUTED, not adjusted.
@@ -4174,7 +4188,7 @@ export const CATALOG_DIGEST =
   // Re-measured (main sync: cross-space + styles).
   // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
   // Re-measured for Spec D1 / 302 (+execution.complete, +entities.commands.release) on main 2bca8148c — RECOMPUTED.
-  'sha256:72c73363cec8409807e0f54d4755aebfebc0064e993dcd54227ec064b13035b1';
+  'sha256:2215256330a1b8f016af57fa522d61b4fc74f3d98b797e4bc40bb49c92c15254';
 
 export const GRAMMAR_VERSION = '2';
 

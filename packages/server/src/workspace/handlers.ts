@@ -1,6 +1,11 @@
 /**
  * `workspace.instances.list`, `workspace.inspect` and `workspace.command`
- * (Spec C §2): the caller side of the Workspace remote bridge.
+ * (Spec C §2): the caller side of the Workspace remote bridge. With stored
+ * workspaces (Spec D), also `workspace.get`, `workspace.list` and
+ * `workspace.drafts.patch`.
+ *
+ * Every command resolves its target workspace in the service, inside the
+ * (space, identity) lock (API doc 01a115c4 §3.2), and its result names it.
  *
  * Every handler answers for the CALLER'S OWN windows only. The caller's
  * identity comes from the resolved request (an agent token resolves to its
@@ -21,6 +26,7 @@ import { loadActors } from '../facade/entity-read.js';
 import { json, type OperationHandler, type RequestContext } from '../http/types.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import { clampTimeout, type WorkspaceBridge } from './bridge.js';
+import { TargetRefused, type TargetRequest } from './resolve.js';
 import type { WorkspaceService } from './service.js';
 
 export interface WorkspaceHandlerDeps {
@@ -46,7 +52,32 @@ export interface WorkspaceHandlers {
   readonly inspect: OperationHandler;
   readonly command: OperationHandler;
   readonly get: OperationHandler;
+  readonly workspaces: OperationHandler;
   readonly patchDraft: OperationHandler;
+}
+
+/** Commands addressed by a tab id: explicit (must agree) → owner → active (§3.3). */
+const OWNER_COMMANDS: ReadonlySet<string> = new Set([
+  'workspace.tabs.close',
+  'workspace.tabs.move',
+  'workspace.tabs.setUi',
+  'workspace.tabs.activate',
+]);
+
+/** The command's target request (§3.3). */
+function targetOf(input: WorkspaceCommandInput): TargetRequest {
+  const tabId = (input.args as { tabId?: unknown } | null | undefined)?.tabId;
+  return {
+    ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
+    ...(OWNER_COMMANDS.has(input.command) && typeof tabId === 'string' ? { tabId } : {}),
+  };
+}
+
+/** An optional `?workspaceId=` (a uuid). */
+function workspaceQuery(ctx: RequestContext): string | undefined {
+  const id = ctx.query.get('workspaceId') ?? undefined;
+  if (id !== undefined && !UUID_RE.test(id)) throw new CollabError('invalid_input', 'workspaceId must be a workspace id (uuid)');
+  return id;
 }
 
 /**
@@ -106,10 +137,23 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
     if (instanceId !== undefined && (instanceId === '' || instanceId.length > 128)) {
       throw new CollabError('invalid_input', 'instanceId must be a Workspace instance id');
     }
-    // Spec D: with no live window, the stored workspace answers.
-    if (deps.service && instanceId === undefined && deps.bridge.list(who.identityId, who.spaceId).length === 0) {
-      const stored = await deps.service.inspectStored(who.claims, who.spaceId);
-      return json({ ...stored, requestId: `stored-${Date.now()}`, instanceId: '' });
+    const workspaceId = workspaceQuery(ctx);
+    // Spec D: with no live window, or for a workspace not on screen, the
+    // stored workspace answers (§5.3).
+    if (deps.service) {
+      const target = workspaceId === undefined ? undefined : await deps.service.resolve(who.claims, who.spaceId, { workspaceId });
+      const stored = async () => ({
+        ...(await deps.service!.inspectStored(who.claims, who.spaceId, workspaceId)),
+        requestId: `stored-${Date.now()}`,
+        instanceId: '',
+      });
+      if (target && !target.ref.active) {
+        if (instanceId !== undefined) {
+          return json({ requestId: `stored-${Date.now()}`, instanceId, status: 'rejected', revision: target.revision, reason: 'not_active', workspace: target.ref });
+        }
+        return json(await stored());
+      }
+      if (instanceId === undefined && deps.bridge.list(who.identityId, who.spaceId).length === 0) return json(await stored());
     }
     // A read: never recorded, so every inspect is a fresh snapshot.
     return json(await deps.bridge.run({
@@ -128,7 +172,7 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
     const service = deps.service;
     // Spec D §4: dialogs, the route, focus and the human's answer need a live
     // window; everything else applies to the stored workspace.
-    if (!service || WINDOW_ONLY_COMMANDS.has(input.command as CommandName)) {
+    if (!service) {
       return json(await deps.bridge.run({
         identityId: who.identityId,
         spaceId: who.spaceId,
@@ -142,6 +186,48 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
         ...(who.actorName ? { actorName: who.actorName } : {}),
       }));
     }
+    // D5: the target keys are hashed AS SENT, so a retry after a switch
+    // replays the recorded result, which names the workspace it applied to.
+    const sent = {
+      workspaceId: input.workspaceId ?? null,
+      expectedWorkspaceId: input.expectedWorkspaceId ?? null,
+    };
+    const routing = targetOf(input);
+    if (WINDOW_ONLY_COMMANDS.has(input.command as CommandName)) {
+      const payload = {
+        spaceId: who.spaceId,
+        instanceId: input.instanceId ?? null,
+        command: input.command,
+        args: input.args ?? null,
+        expectedRevision: input.expectedRevision ?? null,
+        ...sent,
+      };
+      return json(await deps.bridge.recorded(who.identityId, input.requestId, payload, clampTimeout(input.timeoutMs), async () => {
+        let resolved;
+        try {
+          resolved = await service.resolve(who.claims, who.spaceId, routing);
+        } catch (error) {
+          if (!(error instanceof TargetRefused)) throw error;
+          return { requestId: input.requestId, instanceId: '', status: error.status, revision: 0, reason: error.reason, ...(error.ref ? { workspace: error.ref } : {}) };
+        }
+        // A window shows the active workspace; never switch to reach another.
+        if (!resolved.ref.active) {
+          return { requestId: input.requestId, instanceId: '', status: 'rejected', revision: resolved.revision, reason: 'not_active', workspace: resolved.ref };
+        }
+        return deps.bridge.dispatch({
+          identityId: who.identityId,
+          spaceId: who.spaceId,
+          requestId: input.requestId,
+          command: input.command,
+          actorClass: who.actorClass,
+          workspace: resolved.ref,
+          ...(input.args === undefined ? {} : { args: input.args }),
+          ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+          ...(input.expectedRevision === undefined ? {} : { expectedRevision: input.expectedRevision }),
+          ...(who.actorName ? { actorName: who.actorName } : {}),
+        });
+      }));
+    }
     const payload = {
       stored: true,
       spaceId: who.spaceId,
@@ -149,9 +235,11 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
       command: input.command,
       args: input.args ?? null,
       expectedRevision: input.expectedRevision ?? null,
+      ...sent,
     };
     return json(await deps.bridge.recorded(who.identityId, input.requestId, payload, clampTimeout(input.timeoutMs), async () => {
       const result = await service.apply(who.claims, who.spaceId, {
+        target: routing,
         env: {
           command: input.command as CommandName,
           args: input.args,
@@ -164,6 +252,7 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
       const out: WorkspaceRemoteResult = { ...(result as unknown as WorkspaceRemoteResult), requestId: input.requestId, instanceId: '' };
       if (input.command !== 'workspace.tabs.open' || result.status !== 'applied' || !result.tabId) return out;
       if ((input.args as { activate?: unknown } | undefined)?.activate === false) return { ...out, activation: 'not_requested' };
+      if (result.workspace && !result.workspace.active) return { ...out, activation: 'not_active' };
       // The stored workspace has it; a live window ALSO brings it to the front,
       // under the window's own typing rule.
       const target = deps.bridge.targetOf(who.identityId, who.spaceId, input.instanceId);
@@ -192,7 +281,13 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
   const get: OperationHandler = async (ctx) => {
     const who = await caller(ctx);
     if (!deps.service) throw new CollabError('not_implemented', 'this node keeps no stored workspaces');
-    return json(await deps.service.get(who.claims, who.spaceId));
+    return json(await deps.service.get(who.claims, who.spaceId, workspaceQuery(ctx)));
+  };
+
+  const workspaces: OperationHandler = async (ctx) => {
+    const who = await caller(ctx);
+    if (!deps.service) throw new CollabError('not_implemented', 'this node keeps no stored workspaces');
+    return json(await deps.service.list(who.claims, who.spaceId));
   };
 
   const patchDraft: OperationHandler = async (ctx) => {
@@ -202,10 +297,11 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
     if (!UUID_RE.test(draftId)) throw new CollabError('invalid_input', 'draftId must be a draft id (uuid)');
     const input = ctx.body as WorkspaceDraftPatchInput;
     if (Object.keys(input.fields).length === 0) throw new CollabError('invalid_input', 'name at least one field');
-    return json(await deps.service.patchDraft(who.claims, who.spaceId, draftId, input.fields, { kind: 'http' }));
+    return json(await deps.service.patchDraft(who.claims, who.spaceId, draftId, input.fields, { kind: 'http' },
+      input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }));
   };
 
-  return { list, inspect, command, get, patchDraft };
+  return { list, inspect, command, get, workspaces, patchDraft };
 }
 
 /**

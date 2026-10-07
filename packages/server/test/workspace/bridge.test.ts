@@ -96,8 +96,8 @@ describe('discovery is per identity', () => {
     expect(bridge.list(STRANGER, SPACE).map((v) => v.instanceId)).toEqual(['i2']);
     // No titles, tab ids or entity ids in discovery.
     expect(Object.keys(bridge.list(HUMAN, SPACE)[0]!).sort()).toEqual([
-      'connectedAt', 'focused', 'instanceId', 'lastFocusedAt', 'lastSeen', 'mounted', 'revision',
-      'spaceId', 'view', 'viewerMemberId', 'visible', 'windowId',
+      'caps', 'connectedAt', 'focused', 'instanceId', 'lastFocusedAt', 'lastSeen', 'mounted', 'revision',
+      'spaceId', 'view', 'viewerMemberId', 'visible', 'windowId', 'workspaceId',
     ]);
   });
 

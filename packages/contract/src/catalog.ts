@@ -372,6 +372,9 @@ export const OPERATIONS = [
   // writable with no window open.
   { name: 'workspace.get',           method: 'GET',    path: '/v2/spaces/:spaceId/workspace',               kind: 'read',    status: 'v1' },
   { name: 'workspace.drafts.patch',  method: 'POST',   path: '/v2/spaces/:spaceId/workspace/drafts/:draftId', kind: 'command', status: 'v1' },
+  // Multiple workspaces (API doc 01a115c4 §5.6): the caller's workspaces in
+  // the space. Plural path = the list; the singular one = a workspace's content.
+  { name: 'workspace.list',          method: 'GET',    path: '/v2/spaces/:spaceId/workspaces',              kind: 'read',    status: 'v1' },
 
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },

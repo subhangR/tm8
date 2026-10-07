@@ -424,3 +424,110 @@ describeIfPg('migration 310 backfills a seeded 305-era database', () => {
     expect(await scratch.query('select 1 from public.workspace_drafts where workspace_id = $1', [annS2])).toHaveLength(2);
   });
 });
+
+/**
+ * Advisor rulings #4–#6 (build log 01a115d7): the active pointer heals itself,
+ * and the 305 signatures stay as rollback shims that refuse, writing nothing,
+ * once an identity holds two workspaces. The shims are called with the old
+ * binary's exact untyped SQL text, so overload resolution is proven too.
+ */
+describeIfPg('migration 310: pointer healing and the 305 rollback shims', () => {
+  let db: TestDb;
+  let service: WorkspaceService;
+  let spaceId: string;
+  const dan = `identity_${randomUUID()}`;
+  const as = (): DbClaims => ({ identityId: dan, nodeAdmin: false, requestId: `req_${randomUUID()}` });
+  const old = (sql: string, params: unknown[]) => db.tx(as(), async (q) => {
+    await q.query('set local role tm8_app');
+    return q.query<Record<string, string>>(sql, params);
+  });
+  const SAVE = 'select public.workspace_save($1,$2,$3,$4) as r';
+  const DRAFT = 'select public.workspace_draft_save($1,$2,$3,$4,$5) as r';
+  const rows = () => db.asOwner((q) => q.query<{ workspace_id: string; name: string; revision: string }>(
+    'select workspace_id, name, revision from public.workspaces where space_id = $1 and identity_id = $2 order by position, created_at, workspace_id',
+    [spaceId, dan],
+  ));
+  const pointers = () => db.asOwner((q) => q.query<{ workspace_id: string }>(
+    'select workspace_id from public.workspace_active where space_id = $1 and identity_id = $2', [spaceId, dan],
+  ));
+  const seed = (name: string, position: number) => db.asOwner(async (q) => (await q.query<{ workspace_id: string }>(
+    `insert into public.workspaces(space_id, identity_id, member_id, state, revision, name, position)
+     select space_id, identity_id, member_id, '{}'::jsonb, 1, $3, $4 from public.workspaces where space_id = $1 and identity_id = $2 limit 1
+     returning workspace_id`,
+    [spaceId, dan, name, position],
+  ))[0]!.workspace_id);
+
+  beforeAll(async () => {
+    db = createTestDb(url!);
+    await db.rpc({ identityId: dan }, 'public.upsert_user_profile', ['Dan', null, null]);
+    spaceId = (await db.rpc<{ space: { id: string } }>({ identityId: dan }, 'public.create_space', ['Shims', 'rollback', 'private', null, null])).space.id;
+    service = new WorkspaceService({ db, bridge: new WorkspaceBridge() });
+  });
+
+  afterAll(async () => {
+    await db?.end();
+  });
+
+  it('the new workspace_save needs five arguments, so the old four-argument text is never ambiguous', async () => {
+    const [fn] = await db.asOwner((q) => q.query<{ n: number; d: number }>(
+      `select pronargs as n, pronargdefaults as d from pg_proc
+        where oid = 'public.workspace_save(uuid, uuid, bigint, bigint, jsonb, uuid)'::regprocedure`,
+    ));
+    expect(fn).toEqual({ n: 6, d: 1 });
+  });
+
+  it('old signatures, no workspace: the save creates "Main" and its pointer', async () => {
+    expect(await old(SAVE, [spaceId, 0, 1, JSON.stringify({ orderedTabIds: [] })])).toEqual([{ r: '1' }]);
+    const [main] = await rows();
+    expect(main).toMatchObject({ name: 'Main', revision: '1' });
+    expect(await pointers()).toEqual([{ workspace_id: main!.workspace_id }]);
+  });
+
+  it('old signatures, one workspace: 305 compare-and-swap semantics', async () => {
+    expect(await old(SAVE, [spaceId, 1, 2, '{}'])).toEqual([{ r: '2' }]);
+    await expect(old(SAVE, [spaceId, 1, 3, '{}'])).rejects.toMatchObject({ code: '40001' });
+    expect(await old(DRAFT, [spaceId, randomUUID(), 'task', 0, JSON.stringify({ title: { v: 't', r: 1 } })])).toEqual([{ r: '1' }]);
+  });
+
+  it('old signatures, two workspaces: both refuse with 55000 and change nothing', async () => {
+    await seed('Second', 1);
+    const before = await rows();
+    const drafts = () => db.asOwner((q) => q.query('select draft_id from public.workspace_drafts d join public.workspaces w using (workspace_id) where w.identity_id = $1', [dan]));
+    const draftsBefore = await drafts();
+    await expect(old(SAVE, [spaceId, 2, 3, '{}'])).rejects.toMatchObject({ code: '55000' });
+    await expect(old(DRAFT, [spaceId, randomUUID(), 'task', 0, '{}'])).rejects.toMatchObject({ code: '55000' });
+    expect(await rows()).toEqual(before);
+    expect(await drafts()).toEqual(draftsBefore);
+  });
+
+  it('a lost pointer reads as the first workspace; the next write restores exactly one pointer to it', async () => {
+    const [main] = await rows();
+    const third = await seed('Third', 2);
+    await db.asOwner((q) => q.query('update public.workspace_active set workspace_id = $1 where space_id = $2 and identity_id = $3', [third, spaceId, dan]));
+    await db.asOwner((q) => q.query('delete from public.workspaces where workspace_id = $1', [third]));
+    expect(await pointers()).toEqual([]);
+
+    const got = await service.get(as(), spaceId);
+    expect(got).toMatchObject({ activeWorkspaceId: main!.workspace_id, workspace: { id: main!.workspace_id, active: true } });
+    expect(await pointers()).toEqual([]);
+
+    const result = await service.apply(as(), spaceId, {
+      env: { command: 'workspace.layout.set', args: { expanded: true }, source: 'remote' },
+      requestId: randomUUID(),
+      origin: { kind: 'http' },
+    });
+    expect(result).toMatchObject({ status: 'applied', workspace: { id: main!.workspace_id, resolvedBy: 'active' } });
+    expect(await pointers()).toEqual([{ workspace_id: main!.workspace_id }]);
+  });
+
+  it('the new draft writer is SECURITY DEFINER with a pinned search_path, executable by tm8_app only', async () => {
+    const [fn] = await db.asOwner((q) => q.query<{ secdef: boolean; config: string[]; app: boolean; pub: boolean }>(
+      `select p.prosecdef as secdef, p.proconfig as config,
+              has_function_privilege('tm8_app', p.oid, 'execute') as app,
+              exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE') as pub
+         from pg_proc p where p.oid = 'public.workspace_draft_write(uuid, uuid, text, bigint, jsonb)'::regprocedure`,
+    ));
+    expect(fn).toMatchObject({ secdef: true, app: true, pub: false });
+    expect(fn!.config.some((c) => c.startsWith('search_path='))).toBe(true);
+  });
+});
