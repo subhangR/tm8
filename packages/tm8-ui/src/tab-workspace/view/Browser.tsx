@@ -30,6 +30,7 @@ import { workspaceCommands } from '@tm8/contract/workspace';
 const { EMPTY_BROWSER_KIND_STATE } = workspaceCommands.browser;
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
+import { useListCursor } from './listCursor';
 import './browser.css';
 
 const BROWSER_ID = 'main';
@@ -164,6 +165,17 @@ export function Browser() {
   const scroll = useRememberedScroll(kindState.scrollTop, set, `${kind}:${generation}`);
   const listRef = useRef<HTMLDivElement>(null);
   useTierRowEdges(listRef);
+  /* The keyboard row cursor (`l l`, then j/k, Enter, r, Esc). */
+  const openRowByKey = useCallback(
+    (entityId: string) => dispatch({ command: 'workspace.tabs.open', args: { kind, entityId }, source: 'keyboard' }),
+    [dispatch, kind],
+  );
+  const { onNotice } = gate;
+  const notify = useCallback(
+    (text: string) => onNotice({ id: `tws-list-${Date.now()}`, tone: 'info', title: text, body: '', ttlMs: 4_000 }),
+    [onNotice],
+  );
+  const cursor = useListCursor(listRef, openRowByKey, notify);
 
   const renderEmpty = useCallback(
     (state: ListEmptyState) => {
@@ -203,7 +215,18 @@ export function Browser() {
       data-narrow={narrow || undefined}
       data-scrolled={scroll.scrolled || undefined}
     >
-      <div className="tws-browser-list" ref={listRef}>
+      <div
+        className="tws-browser-list"
+        ref={listRef}
+        data-testid="tws-browser-list"
+        /* Focusable by script only (`l l`); Tab order is unchanged. */
+        tabIndex={-1}
+        aria-label={`${adapter.nounPlural} — j/k to move, Enter to open, r to launch`}
+        aria-keyshortcuts="L L"
+        onFocus={cursor.onFocus}
+        onBlur={cursor.onBlur}
+        onKeyDown={cursor.onKeyDown}
+      >
         <EntityListPanel
           key={`${kind}:${generation}`}
           kind={kind}

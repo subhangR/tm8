@@ -7,17 +7,25 @@
 
 export {
   BINDINGS,
+  BINDING_GROUPS,
   CHORD_LEAD,
+  CHORD_LEADS,
   CHORD_WINDOW_MS,
+  CREATE_LEAD,
   LAYER_ORDER,
+  LIST_LEAD,
+  TAB_LEAD,
+  bindingGroup,
   hasMod,
+  hintFor,
   isAdvertised,
   isBrowserReserved,
   isTerminalBlurChord,
   isTerminalPasteChord,
+  isTerminalToggleChord,
 } from './contract';
 
-export type { Binding, KeyCommand, KeyInput, KeyLayer, KeyMatcher, Platform } from './contract';
+export type { Binding, BindingGroup, KeyCommand, KeyInput, KeyLayer, KeyMatcher, Platform } from './contract';
 
 export { createKeyboardController } from './controller';
 export type {

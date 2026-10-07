@@ -635,10 +635,16 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     }
 
     term.attachCustomKeyEventHandler((event) => {
-      if (event.type === 'keydown' && isTerminalBlurChord(event)) {
+      if (isTerminalBlurChord(event)) {
         // Intercepted here so ZERO bytes reach the PTY (R5-5) — the same
-        // physical chord the exit-terminal chip's aria-label promises.
-        term.blur();
+        // physical chord the exit-terminal chip's aria-label promises. Ctrl+]
+        // is the easy one (task 01a113aa). Stopped here: the shell binds the
+        // same Ctrl+] to RETURN to the terminal, and must not see the leave.
+        // Every phase (keydown/keypress/keyup) is swallowed so none reaches
+        // the PTY; only the keydown blurs.
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.type === 'keydown') term.blur();
         return false;
       }
       const shiftEnter =

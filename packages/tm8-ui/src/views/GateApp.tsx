@@ -56,6 +56,8 @@ import {
   isWorkspaceKind,
   openInWorkspace,
   queueWorkArrival,
+  queueWorkKey,
+  runWorkKey,
   useWorkspaceBridge,
   TabWorkspaceView,
   useWorkspaceShareRoute,
@@ -64,7 +66,8 @@ import {
 import { DesignScreen, DesignsHome, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
-import { createKeyboardController, type KeyboardController } from '../keyboard';
+import { createKeyboardController, hintFor, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
+import { ShortcutsOverlay } from '../shell/ShortcutsOverlay';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { Landing } from '../domain/nav-targets';
 import type { NavView } from '../routes';
@@ -276,6 +279,53 @@ function legacyViewTabs(groups: readonly { id: string; label: string }[]): { vie
 
 /** Work, the desktop's default landing (D31). */
 const WORK_VIEW: NavView = { view: 'tabs' };
+
+/** The kinds the palette offers a "New …" row for — the `n` chords' kinds. */
+const NEW_DRAFT_KINDS = ['task', 'doc', 'work_session', 'chat', 'form', 'drawing'] as const;
+
+/**
+ * Put each palette row's keyboard shortcut on it, read from the contract —
+ * never a second copy of a key. A row with no advertised binding shows none.
+ */
+function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteView[] {
+  return views.map((view) => {
+    const [scope, ref] = view.id.split(':', 2) as [string, string];
+    const slug = scope === 'kind' ? slugOfKind(ref) : null;
+    const hint =
+      scope === 'new'
+        ? hintFor('work.create', ref, platform)
+        : scope === 'help'
+          ? hintFor('help.open', undefined, platform)
+          : scope === 'view' && ref === 'craft'
+            ? hintFor('work.design.toggle', undefined, platform)
+            : scope === 'view'
+              ? hintFor('nav.view', ref, platform)
+              : slug
+                ? hintFor('nav.kind', slug, platform)
+                : null;
+    return hint ? { ...view, hint } : view;
+  });
+}
+
+/** Work keyboard commands that take you TO Work when pressed elsewhere. */
+const WORK_FROM_ANYWHERE: ReadonlySet<string> = new Set(['work.create', 'list.create', 'work.browser.focus']);
+
+/**
+ * `Ctrl+]` from outside a terminal: back into the terminal on screen. xterm
+ * focuses through its hidden textarea; the first VISIBLE one is the terminal
+ * the viewer is looking at (pooled, hidden terminals have no layout box).
+ */
+function focusVisibleTerminal(): boolean {
+  const areas = document.querySelectorAll<HTMLTextAreaElement>('.xterm .xterm-helper-textarea');
+  for (const area of areas) {
+    const term = area.closest<HTMLElement>('.xterm');
+    if (term && term.offsetParent !== null && term.getClientRects().length > 0) {
+      area.focus();
+      return true;
+    }
+  }
+  return false;
+}
 /** Remembered view refs that are retired on the desktop and restore as Work. */
 const RETIRED_VIEW_REFS: ReadonlySet<string> = new Set(['dashboard', 'workspace', 'board']);
 
@@ -1504,6 +1554,8 @@ export function GateApp(props: GateAppProps = {}) {
    */
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
+  /* The `?` overlay: every shortcut, read from the keyboard contract. */
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const keyboardRef = useRef<KeyboardController | null>(null);
   /**
    * THE SINK TAKES THE REF, AND THAT ONE ARGUMENT IS THE WHOLE BUG.
@@ -1533,15 +1585,50 @@ export function GateApp(props: GateAppProps = {}) {
     if (command === 'nav.kind' && ref) {
       navigateToRouteView({ view: 'kind', slug: ref, mode: null, q: null }, ref);
     }
+    if (command === 'help.open') setShortcutsOpen(true);
+    /* Esc in a text field LEAVES it. The controller has always emitted this and
+       consumed the key, but nothing acted on it, so Esc did nothing at all and
+       every single-key shortcut stayed unreachable from a field. */
+    if (command === 'text.blur') (document.activeElement as HTMLElement | null)?.blur?.();
+    if (command === 'terminal.toggle' && !focusVisibleTerminal()) {
+      noticeSink.current({ id: 'kbd-terminal', tone: 'info', title: 'No terminal on screen', body: '', ttlMs: 4_000 });
+    }
+    if (command === 'work.design.toggle') {
+      if (navView.view === 'craft') navStore.getState().navigate(WORK_VIEW);
+      else navigateTo({ type: 'view', ref: 'craft' as never });
+      return;
+    }
+    if (command.startsWith('work.') || command === 'list.create') {
+      const key = { command: command as KeyCommand, ref };
+      /* Work acts on its own commands while it is on screen. From any other
+         view, the ones that make sense from anywhere (`n t`, `l t`, `c`)
+         land on Work and run there once it has restored its tabs; the rest
+         (`]`, `w`, `t f`…) are about tabs that are not on screen. */
+      if (!runWorkKey(key) && shell !== 'mobile' && WORK_FROM_ANYWHERE.has(command)) {
+        queueWorkKey(key);
+        navStore.getState().navigate(WORK_VIEW);
+      }
+    }
   };
   useEffect(() => {
     const kb = keyboardRef.current;
     if (!kb) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      /* A surface that already acted on this key (a mention popup's Esc, a
+         menu's arrows) has the last word: the shell never acts on it twice. */
+      if (event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
+      /* xterm types into a hidden TEXTAREA, but a focused terminal is not a
+         text field: it owns every key (Esc included — vim and agents need it)
+         and leaves on its own Ctrl+] / Ctrl+`, which it stops before here. */
+      const terminalFocused = !!target?.closest?.('.xterm');
       const textEntry =
+        !terminalFocused &&
         !!target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
       /* A surface that binds plain keys of its own marks itself, and the shell
          asks for the MARKER, never for a kind (§15.2): a canvas's `g`, `t` and
          `/` are tools, not chords and palette. `closest` is optional-chained
@@ -1550,8 +1637,10 @@ export function GateApp(props: GateAppProps = {}) {
       kb.setContext({
         textEntry,
         surfaceOwnsKeys,
+        terminalFocused,
+        terminalSurface: 'terminal',
         modalDepth:
-          paletteOpen || promptsOpen || (launch.isModalOpen?.() ?? false) ? 1 : 0,
+          paletteOpen || shortcutsOpen || promptsOpen || (launch.isModalOpen?.() ?? false) ? 1 : 0,
       });
       // Legacy ⌘\ stays honored even if the binding table names it
       // differently — losing a shipped shortcut would be its own regression.
@@ -1579,7 +1668,7 @@ export function GateApp(props: GateAppProps = {}) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [paletteOpen, promptsOpen, launch, onDashboard, setHomeFocus, setMenuCollapsed]);
+  }, [paletteOpen, shortcutsOpen, promptsOpen, launch, onDashboard, setHomeFocus, setMenuCollapsed]);
 
   /**
    * Kind refs resolve through the DOMAIN REGISTRY (§15.2) — shell never maps a
@@ -1858,8 +1947,9 @@ export function GateApp(props: GateAppProps = {}) {
     return out;
   }, [paletteQuery, data.rowsFor]);
 
+  const kbPlatform = keyboardRef.current?.getContext().platform ?? 'other';
   const paletteViews = useMemo<PaletteView[]>(
-    () => [
+    () => withShortcutHints(kbPlatform, [
       /* D31: the three modes lead, in selector order. Home and the old Work
          are retired on the desktop and have no row; `route:work` is Work,
          which is route-only (no MenuTarget names it). */
@@ -1884,8 +1974,18 @@ export function GateApp(props: GateAppProps = {}) {
       ...allKinds()
         .filter((row) => !row.kind.startsWith('c:'))
         .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: <KindIcon kind={row.kind} /> })),
-    ],
-    [threeModes],
+      /* The creation drafts and the help overlay, as rows: the palette is
+         where a shortcut is discovered, so each carries its key. */
+      ...(shell === 'mobile'
+        ? []
+        : NEW_DRAFT_KINDS.map((kind) => ({
+            id: `new:${kind}`,
+            label: `New ${getKind(kind).label.toLowerCase()}`,
+            glyph: <KindIcon kind={kind} />,
+          }))),
+      { id: 'help:shortcuts', label: 'Keyboard shortcuts', glyph: '⌨' },
+    ]),
+    [threeModes, shell, kbPlatform],
   );
   const openPaletteView = useCallback((id: string) => {
     const [scope, ref] = id.split(':', 2) as [string, string];
@@ -1897,6 +1997,8 @@ export function GateApp(props: GateAppProps = {}) {
       navigateTo({ type: 'view', ref: ref as never });
     }
     if (scope === 'kind') navigateTo({ type: 'kind', ref });
+    if (scope === 'new') commandSink.current('work.create', ref);
+    if (scope === 'help') setShortcutsOpen(true);
     setPaletteOpen(false);
   }, [channelEntities, navigateTo]);
 
@@ -3340,6 +3442,7 @@ export function GateApp(props: GateAppProps = {}) {
           onDismiss={() => setPaletteOpen(false)}
         />
         <PromptsOverlay open={promptsOpen} onClose={() => setPromptsOpen(false)} />
+        <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
         <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
         <AddServerDialog
           open={addServerOpen}
