@@ -9,9 +9,11 @@
  * and pushes the new state to that identity's live windows — and only to them
  * (`WorkspaceBridge.push`).
  *
- * Every read and write here targets the ACTIVE workspace. `load` and the
- * writers already take a workspace id, so routing to another one is a matter
- * of resolving the target first (API doc 01a115c4 §3).
+ * Every read and write first resolves its target workspace (`resolveTarget`,
+ * API doc 01a115c4 §3.2) and names it on its result (R8). A write resolves
+ * INSIDE the lock below, so the workspace it resolved is the one it writes.
+ * A workspace that is not active pushes its frames to capable windows only;
+ * an old window only ever sees the active one (S9).
  *
  * Writes for one (space, identity) — all of its workspaces, so a switch and
  * the commands around it stay in order (API D4) — are serialized in process: the node is the
@@ -21,7 +23,14 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { CollabError, type WorkspaceGetResult, type WorkspaceRemoteResult } from '@tm8/contract';
+import {
+  CollabError,
+  WORKSPACES_PER_IDENTITY_CAP,
+  type WorkspaceGetResult,
+  type WorkspaceListResult,
+  type WorkspaceRef,
+  type WorkspaceRemoteResult,
+} from '@tm8/contract';
 import {
   defaultWorkspaceState,
   inspect as inspectState,
@@ -38,6 +47,7 @@ import {
 
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import type { WorkspaceBridge } from './bridge.js';
+import { loadWorkspaces, resolveTarget, summaries, TargetRefused, type Resolution, type TargetRequest } from './resolve.js';
 
 type DraftFields = Record<string, { v: unknown; r: number }>;
 
@@ -69,7 +79,15 @@ export interface ApplyInput {
   ids?: string[];
   requestId: string;
   origin: ApplyOrigin;
+  /** What picks the workspace (§3.2); absent = the active one. */
+  target?: TargetRequest;
 }
+
+/** A command's result, naming the workspace it applied to (R8). */
+export type AppliedResult = Result & { workspace?: WorkspaceRef };
+
+/** The workspace a command resolved to, and whether it is the one on screen. */
+export type ResolvedTarget = Resolution & { activeWorkspaceId: string | null };
 
 const ENTITY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -80,9 +98,9 @@ export class WorkspaceService {
 
   // -- reads -----------------------------------------------------------------
 
-  /** `workspace.get`: the caller's stored workspace; unreadable tabs marked, never titled. */
-  async get(claims: DbClaims, spaceId: string): Promise<WorkspaceGetResult> {
-    const loaded = await this.load(claims, spaceId);
+  /** `workspace.get`: one of the caller's stored workspaces; unreadable tabs marked, never titled. */
+  async get(claims: DbClaims, spaceId: string, workspaceId?: string): Promise<WorkspaceGetResult> {
+    const { ws, target, loaded } = await this.read(claims, spaceId, workspaceId);
     const state = toStoredState(loaded.state) as unknown as Record<string, unknown>;
     const entityIds = Object.values(loaded.state.tabs).flatMap((t) => (t.type === 'entity' && ENTITY_ID.test(t.entityId) ? [t.entityId] : []));
     const readable = await this.readable(claims, entityIds);
@@ -95,34 +113,82 @@ export class WorkspaceService {
       state,
       drafts: [...loaded.drafts.values()].map((d) => ({ draftId: d.draftId, kind: d.kind, revision: d.revision, fields: d.fields })),
       windows: claims.identityId ? this.deps.bridge.list(claims.identityId, spaceId).length : 0,
+      workspace: target.ref,
+      activeWorkspaceId: ws.activeId,
+      workspaces: summaries(ws),
     };
   }
 
-  /** `workspace.inspect` with no live window: the stored state, presentation = last active. */
-  async inspectStored(claims: DbClaims, spaceId: string): Promise<Omit<WorkspaceRemoteResult, 'requestId' | 'instanceId'>> {
-    const loaded = await this.load(claims, spaceId);
-    return { status: 'no_op', revision: loaded.revision, inspection: inspectState(loaded.state) as unknown as Record<string, unknown> };
+  /** `workspace.list`: the caller's workspaces in the space, never empty (synthetic "Main"). */
+  async list(claims: DbClaims, spaceId: string): Promise<WorkspaceListResult> {
+    const ws = await this.deps.db.tx(claims, async (q) => {
+      await q.query('set local role tm8_app');
+      await requireSpace(q, spaceId);
+      return loadWorkspaces(q, spaceId);
+    });
+    return { items: summaries(ws), activeWorkspaceId: ws.activeId, listRevision: ws.listRevision, cap: WORKSPACES_PER_IDENTITY_CAP, prompts: [] };
   }
 
-  /** What a window gets right after it registers: the state, then each draft. */
-  async snapshot(claims: DbClaims, spaceId: string, send: (frame: object) => void): Promise<void> {
-    const loaded = await this.load(claims, spaceId);
+  /**
+   * Resolve a target without writing, after every write queued before it
+   * (D4): what a window-only command forwards to. The lock is released before
+   * the caller forwards; the window's own write takes it again.
+   */
+  resolve(claims: DbClaims, spaceId: string, req: TargetRequest): Promise<ResolvedTarget> {
+    return this.serialize(claims, spaceId, () => this.target(claims, spaceId, req));
+  }
+
+  /** `workspace.inspect` answered from the stored state, presentation = last active. */
+  async inspectStored(claims: DbClaims, spaceId: string, workspaceId?: string): Promise<Omit<WorkspaceRemoteResult, 'requestId' | 'instanceId'>> {
+    const { target, loaded } = await this.read(claims, spaceId, workspaceId);
+    return {
+      status: 'no_op',
+      revision: loaded.revision,
+      workspace: target.ref,
+      inspection: inspectState(loaded.state) as unknown as Record<string, unknown>,
+    };
+  }
+
+  /**
+   * What a window gets right after it registers (§7.4): the ACTIVE
+   * workspace's state, then its drafts. Returns that workspace's id.
+   */
+  async snapshot(claims: DbClaims, spaceId: string, send: (frame: object) => void): Promise<string | null> {
+    const { loaded } = await this.read(claims, spaceId);
+    const workspaceId = loaded.workspaceId;
     send({
       type: 'workspace.state',
       spaceId,
+      workspaceId,
+      active: true,
       revision: loaded.revision,
       state: loaded.exists ? (toStoredState(loaded.state) as unknown as Record<string, unknown>) : null,
     });
     for (const draft of loaded.drafts.values()) {
-      send({ type: 'workspace.draft', spaceId, draftId: draft.draftId, kind: draft.kind, revision: draft.revision, fields: draft.fields });
+      send({ type: 'workspace.draft', spaceId, workspaceId, draftId: draft.draftId, kind: draft.kind, revision: draft.revision, fields: draft.fields });
     }
+    return workspaceId;
   }
 
   // -- writes ----------------------------------------------------------------
 
-  /** Apply one command to the stored workspace; push the result to the identity's windows. */
-  apply(claims: DbClaims, spaceId: string, input: ApplyInput): Promise<Result> {
-    return this.serialize(claims, spaceId, () => this.applyNow(claims, spaceId, input));
+  /**
+   * Resolve the target, apply one command to it and push the result to the
+   * identity's windows, all in one turn of the lock. A target that refuses
+   * (§3.2) is an answer, not an error, so a retry gets the same one.
+   */
+  apply(claims: DbClaims, spaceId: string, input: ApplyInput): Promise<AppliedResult> {
+    return this.serialize(claims, spaceId, async () => {
+      let target: ResolvedTarget;
+      try {
+        target = await this.target(claims, spaceId, input.target ?? {});
+      } catch (error) {
+        if (!(error instanceof TargetRefused)) throw error;
+        const refused: AppliedResult = { status: error.status, revision: 0, reason: error.reason, ...(error.ref ? { workspace: error.ref } : {}) };
+        return this.answer(input, spaceId, claims, null, refused);
+      }
+      return this.applyNow(claims, spaceId, input, target);
+    });
   }
 
   /**
@@ -136,12 +202,12 @@ export class WorkspaceService {
     drafts: { draftId: string; kind: string; values: Record<string, unknown> }[],
   ): Promise<boolean> {
     return this.serialize(claims, spaceId, async () => {
-      if ((await this.load(claims, spaceId)).exists) return false;
+      if ((await this.read(claims, spaceId)).ws.rows.length > 0) return false;
       // Sanitized: unknown kinds dropped, titles dropped, no pending prompt
       // (it belonged to another session), at most the hard tab limit.
       const stored = { ...toStoredState(sanitizeWorkspaceState(raw, spaceId) ?? defaultWorkspaceState(spaceId)), revision: 1 };
       const workspaceId = await this.save(claims, spaceId, null, 0, 1, stored);
-      this.pushState(claims, spaceId, 1, stored);
+      this.pushState(claims, spaceId, workspaceId, true, 1, stored);
       const kept = new Map(Object.values(stored.tabs).flatMap((t) => (t.type === 'draft' ? [[t.draftId, t.kind] as const] : [])));
       for (const draft of drafts.slice(0, 30)) {
         const kind = kept.get(draft.draftId);
@@ -149,7 +215,7 @@ export class WorkspaceService {
         const fields: DraftFields = {};
         for (const [name, v] of Object.entries(draft.values)) fields[name] = { v, r: 1 };
         const revision = await this.saveDraft(claims, workspaceId, draft.draftId, kind, 0, fields).catch(() => 0);
-        if (revision > 0) this.deps.bridge.push(claims.identityId!, spaceId, { type: 'workspace.draft', spaceId, draftId: draft.draftId, kind, revision, fields });
+        if (revision > 0) this.deps.bridge.push(claims.identityId!, spaceId, { type: 'workspace.draft', spaceId, workspaceId, draftId: draft.draftId, kind, revision, fields });
       }
       return true;
     });
@@ -166,9 +232,20 @@ export class WorkspaceService {
     draftId: string,
     patch: Record<string, { v?: unknown; base?: number }>,
     origin: ApplyOrigin,
-  ): Promise<{ draftId: string; revision: number; fields: DraftFields; overwrote: string[] }> {
+    target: Omit<TargetRequest, 'draftId'> = {},
+  ): Promise<{ draftId: string; revision: number; fields: DraftFields; overwrote: string[]; workspace: WorkspaceRef }> {
     return this.serialize(claims, spaceId, async () => {
-      const loaded = await this.load(claims, spaceId);
+      let resolved: ResolvedTarget;
+      try {
+        resolved = await this.target(claims, spaceId, { ...target, draftId });
+      } catch (error) {
+        // This op has no result status to carry a refusal (§5.7).
+        if (!(error instanceof TargetRefused)) throw error;
+        throw new CollabError(error.reason === 'workspace_mismatch' ? 'conflict' : 'not_found', `the draft's workspace: ${error.reason}`, {
+          details: { reason: error.reason },
+        });
+      }
+      const loaded = await this.load(claims, spaceId, resolved.workspaceId);
       const tab = Object.values(loaded.state.tabs).find((t) => t.type === 'draft' && t.draftId === draftId);
       if (!tab || tab.type !== 'draft') throw new CollabError('not_found', `no draft ${draftId} in this workspace`);
       const row = loaded.drafts.get(draftId);
@@ -185,28 +262,30 @@ export class WorkspaceService {
       this.deps.bridge.push(claims.identityId!, spaceId, {
         type: 'workspace.draft',
         spaceId,
+        workspaceId: loaded.workspaceId,
         draftId,
         kind: tab.kind,
         revision,
         fields,
         ...(origin.instanceId ? { sourceInstanceId: origin.instanceId } : {}),
-      });
+      }, { capableOnly: !resolved.ref.active });
       // Someone else's write makes the draft dirty: a later close must ask.
       if (origin.kind === 'http' && !tab.dirty && Object.keys(patch).length > 0) {
         await this.applyNow(claims, spaceId, {
           env: { command: 'workspace.drafts.markDirty', args: { tabId: tab.id, dirty: true }, source: 'system' },
           requestId: randomUUID(),
           origin,
-        });
+        }, resolved);
       }
-      return { draftId, revision, fields, overwrote };
+      return { draftId, revision, fields, overwrote, workspace: resolved.ref };
     });
   }
 
   // -- internals -------------------------------------------------------------
 
-  private async applyNow(claims: DbClaims, spaceId: string, input: ApplyInput): Promise<Result> {
-    const loaded = await this.load(claims, spaceId);
+  private async applyNow(claims: DbClaims, spaceId: string, input: ApplyInput, target: ResolvedTarget): Promise<AppliedResult> {
+    const loaded = await this.load(claims, spaceId, target.workspaceId);
+    const workspace = target.ref;
     const state = loaded.state;
     const { env } = input;
 
@@ -215,7 +294,7 @@ export class WorkspaceService {
     if (input.origin.kind === 'http' && env.command === 'workspace.tabs.open') {
       const entityId = (env.args as { entityId?: unknown } | null)?.entityId;
       if (typeof entityId !== 'string' || !ENTITY_ID.test(entityId) || !(await this.readable(claims, [entityId])).has(entityId)) {
-        return this.answer(input, spaceId, claims, { status: 'rejected', revision: loaded.revision, reason: 'entity_unavailable' });
+        return this.answer(input, spaceId, claims, loaded.workspaceId, { status: 'rejected', revision: loaded.revision, reason: 'entity_unavailable', workspace });
       }
     }
 
@@ -243,43 +322,50 @@ export class WorkspaceService {
     for (const commit of reduction.commits) for (const step of commit.after) step();
     const significant = reduction.commits.some((c) => c.significant);
     if (!significant) {
-      return this.answer(input, spaceId, claims, { ...reduction.result, revision: loaded.revision });
+      return this.answer(input, spaceId, claims, loaded.workspaceId, { ...reduction.result, revision: loaded.revision, workspace });
     }
     if (
       reduction.state.orderedTabIds.length > WORKSPACE_TAB_HARD_CAP &&
       reduction.state.orderedTabIds.length > state.orderedTabIds.length
     ) {
-      return this.answer(input, spaceId, claims, { status: 'rejected', revision: loaded.revision, reason: 'tab_limit' });
+      return this.answer(input, spaceId, claims, loaded.workspaceId, { status: 'rejected', revision: loaded.revision, reason: 'tab_limit', workspace });
     }
     const next = toStoredState(reduction.state);
     const workspaceId = await this.save(claims, spaceId, loaded.workspaceId, loaded.exists ? loaded.revision : 0, reduction.state.revision, next);
     for (const draftId of deletedDrafts) {
       await this.saveDraft(claims, workspaceId, draftId, 'task', 0, null).catch(() => 0);
-      this.deps.bridge.push(claims.identityId!, spaceId, { type: 'workspace.draft', spaceId, draftId, revision: 0, deleted: true });
+      this.deps.bridge.push(claims.identityId!, spaceId, { type: 'workspace.draft', spaceId, workspaceId, draftId, revision: 0, deleted: true }, {
+        capableOnly: !workspace.active,
+      });
     }
-    const result = reduction.result;
-    this.pushState(claims, spaceId, reduction.state.revision, next, input.origin.instanceId
+    // The first write of an identity creates "Main" (S12): name the row it made.
+    const result: AppliedResult = { ...reduction.result, workspace: workspace.id === null ? { ...workspace, id: workspaceId } : workspace };
+    this.pushState(claims, spaceId, workspaceId, workspace.active, reduction.state.revision, next, input.origin.instanceId
       ? { instanceId: input.origin.instanceId, requestId: input.requestId, result: result as unknown as Record<string, unknown> }
       : undefined);
     return result;
   }
 
   /** A command that did not commit: the sending window still needs its answer. */
-  private answer(input: ApplyInput, spaceId: string, claims: DbClaims, result: Result): Result {
+  private answer(input: ApplyInput, spaceId: string, claims: DbClaims, workspaceId: string | null, result: AppliedResult): AppliedResult {
     if (input.origin.kind === 'window' && input.origin.instanceId && claims.identityId) {
       this.deps.bridge.push(claims.identityId, spaceId, {
         type: 'workspace.applied',
         spaceId,
+        workspaceId: result.workspace?.id ?? workspaceId,
         requestId: input.requestId,
         result,
-      }, input.origin.instanceId);
+      }, { only: input.origin.instanceId });
     }
     return result;
   }
 
+  /** Every capable window gets every workspace's state; an old window only the active one's (S9). */
   private pushState(
     claims: DbClaims,
     spaceId: string,
+    workspaceId: string,
+    active: boolean,
     revision: number,
     state: WorkspaceState,
     cause?: { instanceId: string; requestId: string; result: Record<string, unknown> },
@@ -288,10 +374,33 @@ export class WorkspaceService {
     this.deps.bridge.push(claims.identityId, spaceId, {
       type: 'workspace.state',
       spaceId,
+      workspaceId,
+      active,
       revision,
       state: state as unknown as Record<string, unknown>,
       ...(cause ? { cause } : {}),
+    }, active ? { shows: workspaceId } : { capableOnly: true });
+  }
+
+  /** §3.2 over the caller's workspaces, as the caller. */
+  private async target(claims: DbClaims, spaceId: string, req: TargetRequest): Promise<ResolvedTarget> {
+    return this.deps.db.tx(claims, async (q) => {
+      await q.query('set local role tm8_app');
+      await requireSpace(q, spaceId);
+      const ws = await loadWorkspaces(q, spaceId, req);
+      return { ...resolveTarget(ws, req), activeWorkspaceId: ws.activeId };
     });
+  }
+
+  /** A read: explicit, else active (§3.3). */
+  private async read(claims: DbClaims, spaceId: string, workspaceId?: string) {
+    const ws = await this.deps.db.tx(claims, async (q) => {
+      await q.query('set local role tm8_app');
+      await requireSpace(q, spaceId);
+      return loadWorkspaces(q, spaceId);
+    });
+    const target = resolveTarget(ws, workspaceId === undefined ? {} : { workspaceId });
+    return { ws, target, loaded: await this.load(claims, spaceId, target.workspaceId) };
   }
 
   private serialize<T>(claims: DbClaims, spaceId: string, run: () => Promise<T>): Promise<T> {
@@ -307,31 +416,21 @@ export class WorkspaceService {
   }
 
   /**
-   * One of the caller's workspaces in the space: `workspaceId`, or the active
-   * one when it is omitted. With no row at all it is the default state at
-   * revision 0 and `workspaceId: null`. Should the active pointer be missing
-   * (its workspace cascaded away), the first workspace in list order stands in
-   * until the next write repairs the pointer (migration 310).
+   * One of the caller's workspaces, as resolved. `null` is the synthetic
+   * "Main" of an identity with no row yet: the default state at revision 0.
    */
-  private async load(claims: DbClaims, spaceId: string, workspaceId?: string): Promise<Loaded> {
+  private async load(claims: DbClaims, spaceId: string, workspaceId: string | null): Promise<Loaded> {
     return this.deps.db.tx(claims, async (q) => {
       await q.query('set local role tm8_app');
-      const space = await q.query('select 1 from public.spaces where id = $1', [spaceId]);
-      if (space.length === 0) throw new CollabError('not_found', `no space ${spaceId}`);
-      const rows = await q.query<{ workspace_id: string; state: unknown; revision: string | number }>(
-        workspaceId === undefined
-          ? `select w.workspace_id, w.state, w.revision
-               from public.workspaces w
-               left join public.workspace_active a on a.workspace_id = w.workspace_id
-              where w.space_id = $1 and w.identity_id = (select internal.identity_id())
-              order by a.workspace_id is null, w.position, w.created_at
-              limit 1`
-          : `select workspace_id, state, revision from public.workspaces
+      const rows = workspaceId === null
+        ? []
+        : await q.query<{ workspace_id: string; state: unknown; revision: string | number }>(
+            `select workspace_id, state, revision from public.workspaces
               where space_id = $1 and identity_id = (select internal.identity_id()) and workspace_id = $2`,
-        workspaceId === undefined ? [spaceId] : [spaceId, workspaceId],
-      );
+            [spaceId, workspaceId],
+          );
       const row = rows[0];
-      if (!row && workspaceId !== undefined) throw new CollabError('not_found', `no workspace ${workspaceId}`);
+      if (!row && workspaceId !== null) throw new CollabError('not_found', `no workspace ${workspaceId}`, { details: { reason: 'workspace_not_found' } });
       const drafts = row
         ? await q.query<{ draft_id: string; kind: string; fields: DraftFields; revision: string | number }>(
             'select draft_id, kind, fields, revision from public.workspace_drafts where workspace_id = $1',
@@ -384,7 +483,7 @@ export class WorkspaceService {
     return this.deps.db.tx(claims, async (q) => {
       await q.query('set local role tm8_app');
       const rows = await q.query<{ revision: string | number }>(
-        'select public.workspace_draft_save($1, $2, $3, $4, $5) as revision',
+        'select public.workspace_draft_write($1, $2, $3, $4, $5) as revision',
         [workspaceId, draftId, kind, expected, fields === null ? null : JSON.stringify(fields)],
       );
       return Number(rows[0]?.revision ?? 0);
@@ -403,6 +502,11 @@ export class WorkspaceService {
       return new Set(rows.map((r) => r.id));
     });
   }
+}
+
+async function requireSpace(q: Querier, spaceId: string): Promise<void> {
+  const space = await q.query('select 1 from public.spaces where id = $1', [spaceId]);
+  if (space.length === 0) throw new CollabError('not_found', `no space ${spaceId}`);
 }
 
 /** A stored row is trusted shape-wise but re-sanitized: it may predate a change. */

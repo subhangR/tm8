@@ -176,6 +176,7 @@ export function registerEventHandlers(registry: HandlerRegistry, deps: EventHand
     registry.register('workspace.inspect', workspace.inspect);
     registry.register('workspace.command', workspace.command);
     registry.register('workspace.get', workspace.get);
+    registry.register('workspace.list', workspace.workspaces);
     registry.register('workspace.drafts.patch', workspace.patchDraft);
   }
 }
