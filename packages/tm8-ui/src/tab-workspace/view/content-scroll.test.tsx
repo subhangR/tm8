@@ -6,7 +6,15 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerScrollTerminal, type ScrollTerminal } from '../../terminal/scrollTerminal';
-import { mainScroller, mayTakeFocus, scrollContentForKey } from './contentScroll';
+import {
+  ARROW_SCROLL_PX,
+  HOLD_MAX_BOOST,
+  HOLD_RAMP_MS,
+  holdBoost,
+  mainScroller,
+  mayTakeFocus,
+  scrollContentForKey,
+} from './contentScroll';
 
 const key = (k: string, mods: Partial<KeyboardEvent> = {}) =>
   ({ key: k, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...mods }) as KeyboardEvent;
@@ -49,11 +57,11 @@ describe('scrollContentForKey', () => {
     expect(mainScroller(root)).toBe(big);
 
     expect(scrollContentForKey(root, key('ArrowDown'))).toBe(true);
-    expect(big.scrollBy).toHaveBeenLastCalledWith({ top: 40 });
+    expect(big.scrollBy).toHaveBeenLastCalledWith({ top: 100, behavior: 'smooth' });
     scrollContentForKey(root, key('ArrowUp'));
-    expect(big.scrollBy).toHaveBeenLastCalledWith({ top: -40 });
+    expect(big.scrollBy).toHaveBeenLastCalledWith({ top: -100, behavior: 'smooth' });
     scrollContentForKey(root, key('PageDown'));
-    expect(big.scrollBy).toHaveBeenLastCalledWith({ top: 360 });
+    expect(big.scrollBy).toHaveBeenLastCalledWith({ top: 300, behavior: 'smooth' });
     expect(small.scrollBy).not.toHaveBeenCalled();
   });
 
@@ -80,8 +88,11 @@ describe('scrollContentForKey', () => {
     const term = fakeTerm();
     const unregister = registerScrollTerminal(host, term);
 
+    // 2.5 lines a tap: 2, then the carried half makes 3.
     scrollContentForKey(root, key('ArrowDown'));
-    expect(term.scrollLines).toHaveBeenLastCalledWith(1);
+    expect(term.scrollLines).toHaveBeenLastCalledWith(2);
+    scrollContentForKey(root, key('ArrowDown', { repeat: true } as Partial<KeyboardEvent>));
+    expect(term.scrollLines).toHaveBeenLastCalledWith(3);
     scrollContentForKey(root, key('PageUp'));
     expect(term.scrollLines).toHaveBeenLastCalledWith(-23);
 
@@ -89,6 +100,38 @@ describe('scrollContentForKey', () => {
     term.scrollLines.mockClear();
     scrollContentForKey(root, key('ArrowDown'));
     expect(term.scrollLines).not.toHaveBeenCalled();
+  });
+
+  it('a held arrow speeds up along the hold curve, and a new press starts over', () => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+    try {
+      const root = document.createElement('main');
+      const big = scroller(400);
+      root.append(big);
+      const steps = () => (big.scrollBy as ReturnType<typeof vi.fn>).mock.calls.map(([o]) => (o as ScrollToOptions).top);
+      scrollContentForKey(root, key('ArrowDown'));
+      vi.advanceTimersByTime(HOLD_RAMP_MS / 2);
+      scrollContentForKey(root, key('ArrowDown', { repeat: true } as Partial<KeyboardEvent>));
+      vi.advanceTimersByTime(HOLD_RAMP_MS * 2);
+      scrollContentForKey(root, key('ArrowDown', { repeat: true } as Partial<KeyboardEvent>));
+      scrollContentForKey(root, key('ArrowDown'));
+      expect(steps()).toEqual([
+        ARROW_SCROLL_PX,
+        Math.round(ARROW_SCROLL_PX * holdBoost(HOLD_RAMP_MS / 2)),
+        ARROW_SCROLL_PX * HOLD_MAX_BOOST,
+        ARROW_SCROLL_PX,
+      ]);
+      expect((big.scrollBy as ReturnType<typeof vi.fn>).mock.calls[1]![0]).toMatchObject({ behavior: 'auto' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the curve eases in from 1× to the cap', () => {
+    expect(holdBoost(0)).toBe(1);
+    expect(holdBoost(HOLD_RAMP_MS / 2)).toBeCloseTo(1 + (HOLD_MAX_BOOST - 1) / 4);
+    expect(holdBoost(HOLD_RAMP_MS)).toBe(HOLD_MAX_BOOST);
+    expect(holdBoost(HOLD_RAMP_MS * 10)).toBe(HOLD_MAX_BOOST);
   });
 
   it('leaves modified and other keys alone', () => {

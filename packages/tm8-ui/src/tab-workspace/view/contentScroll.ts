@@ -11,8 +11,29 @@
  */
 import { scrollTerminalLines, visibleScrollTerminal } from '../../terminal/scrollTerminal';
 
-/** One arrow press, in px for a document. */
-export const ARROW_SCROLL_PX = 40;
+/** One arrow press, in px for a document (user ruling: 40px + 150%). */
+export const ARROW_SCROLL_PX = 100;
+/** One arrow press in a terminal, in lines (1 + 150%); the fraction carries over. */
+export const ARROW_SCROLL_LINES = 2.5;
+
+/**
+ * THE HOLD CURVE (user ruling, task 01a1156f): a held arrow speeds up. A tap is
+ * one base step; while the key auto-repeats, each step is multiplied by
+ * `holdBoost`, easing in from 1× to HOLD_MAX_BOOST× over HOLD_RAMP_MS, so a
+ * short hold stays readable and a long one crosses a long page quickly.
+ */
+export const HOLD_RAMP_MS = 1200;
+export const HOLD_MAX_BOOST = 4;
+
+/** The step multiplier `heldMs` into a hold: ease-in (quadratic), clamped. */
+export function holdBoost(heldMs: number): number {
+  const t = Math.min(1, Math.max(0, heldMs) / HOLD_RAMP_MS);
+  return 1 + (HOLD_MAX_BOOST - 1) * t * t;
+}
+
+/** When the current hold began, and the terminal's fractional line carry. */
+let holdStartedAt = 0;
+let lineCarry = 0;
 
 const KEYS: Record<string, 'line' | 'page'> = {
   ArrowDown: 'line',
@@ -28,7 +49,7 @@ function scrollsY(el: HTMLElement): boolean {
 }
 
 /** The parts of a key event the host reads (DOM or React). */
-export type ScrollKey = Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>;
+export type ScrollKey = Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'> & { repeat?: boolean };
 
 /** The tab's main scroller: the visible one with the largest box. */
 export function mainScroller(root: HTMLElement): HTMLElement | null {
@@ -55,15 +76,31 @@ export function scrollContentForKey(root: HTMLElement, event: ScrollKey): boolea
   const unit = KEYS[event.key];
   if (!unit) return false;
   const sign = event.key === 'ArrowDown' || event.key === 'PageDown' ? 1 : -1;
+  const now = performance.now();
+  if (!event.repeat) {
+    holdStartedAt = now;
+    lineCarry = 0;
+  }
+  // Pages are already big; only the arrows ride the curve.
+  const boost = unit === 'line' ? holdBoost(now - holdStartedAt) : 1;
   const term = visibleScrollTerminal(root);
   if (term) {
-    scrollTerminalLines(term, sign * (unit === 'page' ? Math.max(1, term.rows - 1) : 1));
+    if (unit === 'page') {
+      scrollTerminalLines(term, sign * Math.max(1, term.rows - 1));
+    } else {
+      lineCarry += ARROW_SCROLL_LINES * boost;
+      const lines = Math.floor(lineCarry);
+      lineCarry -= lines;
+      scrollTerminalLines(term, sign * lines);
+    }
     return true;
   }
   const scroller = mainScroller(root);
   if (scroller) {
-    const step = unit === 'page' ? Math.max(ARROW_SCROLL_PX, scroller.clientHeight - ARROW_SCROLL_PX) : ARROW_SCROLL_PX;
-    scroller.scrollBy({ top: sign * step });
+    const step =
+      unit === 'page' ? Math.max(ARROW_SCROLL_PX, scroller.clientHeight - ARROW_SCROLL_PX) : Math.round(ARROW_SCROLL_PX * boost);
+    // A tap glides; a held key's repeats land at once, or each would chase the last.
+    scroller.scrollBy({ top: sign * step, behavior: event.repeat ? 'auto' : 'smooth' });
   }
   return true;
 }
