@@ -5,6 +5,7 @@
  * the action strip's section, chat and expand buttons. No second path.
  */
 import { useEffect } from 'react';
+import { focusTabTerminal } from './terminalFocus';
 import { NOTICE_TTL_MS, type Notice } from '../../shell';
 import { canCreateKind, getKindAdapter } from '../adapters/registry';
 import { installWorkKeys, type WorkKey } from '../keys';
@@ -64,7 +65,11 @@ export function handleWorkKey(
   const tab = activeTab(state);
   const entityTab = tab?.type === 'entity' ? tab : null;
   const activate = (tabId: string | undefined) => {
-    if (tabId) dispatch({ command: 'workspace.tabs.activate', args: { tabId }, source: 'keyboard' });
+    if (!tabId) return;
+    dispatch({ command: 'workspace.tabs.activate', args: { tabId }, source: 'keyboard' });
+    // A session tab takes the keyboard into its terminal.
+    const next = visibleTabs(state).find((t) => t.id === tabId);
+    if (next && next.type !== 'chooser' && next.kind === 'work_session') focusTabTerminal();
   };
   const create = (kind: KindId) => {
     if (!canCreateKind(kind)) {
