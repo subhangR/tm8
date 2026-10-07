@@ -35,7 +35,7 @@ import {
 import { ChatHomeSurface } from '../../chat-home/ChatHomeSurface';
 import { subscribeDrafts } from '../runtime/draftStore';
 import { nodeKeyOf } from '../../data/launch-cache';
-import { EMPTY_HEADER_DRAFT, getKind, headerDraftHasText, headerInputOf, type HeaderDraft } from '../../domain';
+import { EMPTY_HEADER_DRAFT, getKind, headerDraftHasText, headerInputOf, placeholderNameFor, type HeaderDraft } from '../../domain';
 import { pickFiles } from '../../files/pick';
 import { createFileUploadTask, safeUploadReason } from '../../files/upload';
 import { NewSessionScreen } from '../../new-session';
@@ -364,7 +364,7 @@ function DraftActions({
 }
 
 // ---------------------------------------------------------------------------
-// doc: created at once, landed in the editor
+// instant kinds: created at once, landed on their own page
 // ---------------------------------------------------------------------------
 
 /**
@@ -372,52 +372,69 @@ function DraftActions({
  * second mount and a remote-values remount (`key={remoteVersion}`) both find
  * the create already running here instead of starting another.
  */
-const docCreates = new Map<string, Promise<string | null>>();
+const instantCreates = new Map<string, Promise<string | null>>();
 
 /**
- * NEW DOC IS NOT A FORM (New doc UX, Subhang 2026-10-06: "directly show
- * editor"). The doc is created "Untitled" the moment its draft opens, and
- * `drafts.bind` turns this tab into the doc's own tab, where `ReaderSurface`
- * opens it in the editor with the caret in the title (`freshDocs.ts`). The
- * agent-header fields the generic form asked for up front are the doc's
- * Details, written later and never blocking create. A doc left untitled and
- * empty is deleted when its tab closes (`useAbandonedDocSweep`).
+ * The title an instant create is born with. A doc keeps New doc's bare
+ * "Untitled", which its title field shows as a placeholder; every other kind
+ * wears its own ("Untitled task"), shaped to the kind's title grammar so a
+ * channel's is a slug the server accepts.
  */
-function DocDraftBody({ tab, onCreated, onCancel, onSubmitting }: DraftHostProps) {
+function instantTitleFor(kind: KindId): string {
+  const config = getKind(kind);
+  if (config.createInstant === 'editor') return FRESH_DOC_TITLE;
+  return placeholderNameFor(config, placeholderTitleFor(config.label));
+}
+
+/**
+ * NEW IS NOT A FORM for a kind whose only required field is its title (New
+ * doc UX, Subhang 2026-10-06: "directly show editor"; Kalai 2026-10-07: the
+ * same for task, drawing, story, collection and channel). The record is
+ * created under its placeholder the moment its draft opens, and `drafts.bind`
+ * turns this tab into the record's own tab: a doc opens in the editor with
+ * the caret in its title (`ReaderSurface`), every other kind on its page with
+ * the title selected (`EntityDetailPanel`). Both read the arrival from
+ * `freshDocs.ts`. Anything the old form asked for up front is written on the
+ * page, later, and never blocks create. One left untitled and untouched is
+ * deleted once no tab holds it (`useAbandonedSweep`).
+ */
+function InstantDraftBody({ tab, onCreated, onCancel, onSubmitting }: DraftHostProps) {
   const { gate, spaceId } = useWorkspace();
   const [failure, setFailure] = useState<RefusedFailure | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const noun = getKind(tab.kind).label.toLowerCase();
 
   useEffect(() => {
     let live = true;
     const key = `${tab.draftId}#${attempt}`;
-    let pending = docCreates.get(key);
-    const kind = creatableKind('doc');
+    let pending = instantCreates.get(key);
+    const kind = creatableKind(tab.kind as Parameters<typeof creatableKind>[0]);
     if (!pending && kind !== null) {
       onSubmitting(true);
+      const title = instantTitleFor(tab.kind);
       pending = gate.data.seam.commands
-        .createEntity(newEntityInput(spaceId as SpaceId, kind, FRESH_DOC_TITLE))
+        .createEntity(newEntityInput(spaceId as SpaceId, kind, title))
         .then((result) => {
           gate.data.reconcileCommand(result);
           const id = createdIdOf(result);
           // Bound here, once, rather than per mount: marked fresh BEFORE the
-          // bind, so the doc's surface finds it on its first render.
+          // bind, so the record's surface finds it on its first render.
           if (id !== null) {
-            markFreshDoc(id);
-            onCreated(id, FRESH_DOC_TITLE);
+            markFreshDoc(id, title);
+            onCreated(id, title);
           }
           return id;
         });
-      docCreates.set(key, pending);
+      instantCreates.set(key, pending);
     }
     pending?.then(
       (id) => {
         if (!live || id !== null) return;
-        setFailure(noIdFailure('doc'));
+        setFailure(noIdFailure(noun));
         onSubmitting(false);
       },
       (error: unknown) => {
-        docCreates.delete(key);
+        instantCreates.delete(key);
         if (!live) return;
         const classified = classifyFailure(error, 'create');
         setFailure(
@@ -438,13 +455,13 @@ function DocDraftBody({ tab, onCreated, onCancel, onSubmitting }: DraftHostProps
 
   if (failure === null) {
     return (
-      <div className="tws-draft-form" aria-busy="true" data-testid="tws-doc-creating">
-        <p className="tws-draft-note">Creating a new doc…</p>
+      <div className="tws-draft-form" aria-busy="true" data-testid="tws-instant-creating">
+        <p className="tws-draft-note">{`Creating a new ${noun}…`}</p>
       </div>
     );
   }
   return (
-    <div className="tws-draft-form" data-testid="tws-doc-create-failed">
+    <div className="tws-draft-form" data-testid="tws-instant-create-failed">
       <DraftHeading kind={tab.kind} />
       <RefusalCard
         word={failure.cause}
@@ -631,7 +648,7 @@ function ChatDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
 export function draftBodyFor(kind: KindId): ComponentType<DraftHostProps> | undefined {
   if (kind === 'work_session') return LaunchDraftBody;
   if (kind === 'chat') return ChatDraftBody;
-  if (kind === 'doc') return DocDraftBody;
+  if (getKind(kind).createInstant) return InstantDraftBody;
   const form = getKind(kind).createForm;
   if (form === 'file-upload') return FileDraftBody;
   if (form === 'skill-file') return SkillDraftBody;

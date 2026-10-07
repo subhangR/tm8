@@ -1614,6 +1614,18 @@ export interface KindConfig {
    */
   createForm?: 'scheduled-work' | 'file-upload' | 'skill-file';
   /**
+   * NEW CREATES THE RECORD AT ONCE, NOT A FORM (Kalai, 2026-10-07: instant
+   * create for every kind whose only required field is its title). The draft
+   * tab creates it under its placeholder title and becomes its tab:
+   *
+   * - `'editor'` lands in the body's editor with the caret in the title (a doc);
+   * - `'title'` lands on its page with the title selected, so typing names it.
+   *
+   * Left untitled and untouched, it is deleted once no tab holds it
+   * (`useAbandonedSweep`). Absent ⇒ New opens this kind's create form.
+   */
+  createInstant?: 'editor' | 'title';
+  /**
    * The create control ALSO offers "with header…" beside the immediate ＋: the
    * optional "When should an agent open this?" / "What does it hold?" fields,
    * sent as `header` on the same `entities.create` (I9a). The immediate flow
