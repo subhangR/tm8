@@ -24,3 +24,31 @@ export function scrollTerminalLines(term: ScrollTerminal, lines: number): boolea
   term.scrollLines(lines);
   return true;
 }
+
+/*
+ * THE MOUNTED TERMINALS, by their host element — so a surface that does not
+ * own a terminal (the Work tab's content, task 01a1156f) can scroll the one on
+ * screen with the keyboard without reaching into React. Weak, so a host that
+ * leaves the DOM takes its entry with it; LiveTerminal also unregisters.
+ */
+const mounted = new WeakMap<Element, ScrollTerminal>();
+
+/** Register a terminal under its host; returns the unregister. */
+export function registerScrollTerminal(host: Element, term: ScrollTerminal): () => void {
+  mounted.set(host, term);
+  return () => {
+    if (mounted.get(host) === term) mounted.delete(host);
+  };
+}
+
+/** The first VISIBLE registered terminal inside `root` (pooled, hidden ones have no box). */
+export function visibleScrollTerminal(root: ParentNode): ScrollTerminal | null {
+  for (const el of root.querySelectorAll<HTMLElement>('.xterm')) {
+    if (el.getClientRects().length === 0) continue;
+    for (let node: Element | null = el; node && node !== root; node = node.parentElement) {
+      const term = mounted.get(node);
+      if (term) return term;
+    }
+  }
+  return null;
+}

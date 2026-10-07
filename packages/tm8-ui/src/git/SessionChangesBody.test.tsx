@@ -139,8 +139,16 @@ type Deferred = {
 
 type Harness = {
   seam: Seam;
-  /** Every gitDiff request, in the order the component made them. */
+  /**
+   * Every ONE-FILE gitDiff request, in the order the component made them. The
+   * whole-session numstat read behind the row counts goes to `statCalls`, so
+   * the ordering tests below keep measuring the reads a click makes.
+   */
   readonly diffCalls: { path: string; scope: SessionGitDiffScope }[];
+  /** Whole-session numstat reads (no `path`) — the row counts. */
+  statCalls: number;
+  /** What the NEXT numstat read answers: path → [added, removed]. */
+  stats: Record<string, [number, number]>;
   /** Every gitStage request. */
   readonly stageCalls: ExecutionGitStageInput[];
   readonly commitCalls: ExecutionGitCommitInput[];
@@ -172,6 +180,8 @@ function harness(files: SessionGitFile[] = FILES, over: Partial<SessionGitStatus
   const h: Harness = {
     seam: base,
     diffCalls: [],
+    statCalls: 0,
+    stats: {},
     stageCalls: [],
     commitCalls: [],
     pending: [],
@@ -219,7 +229,16 @@ function harness(files: SessionGitFile[] = FILES, over: Partial<SessionGitStatus
       });
     },
     async gitDiff(_id: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> {
-      const path = opts?.path ?? '';
+      if (opts?.path === undefined) {
+        h.statCalls += 1;
+        const files = Object.entries(h.stats).map(([path, [additions, deletions]]) => ({
+          path,
+          additions,
+          deletions,
+        }));
+        return { ...diffOf('', 'session'), path: null, diff: '', diffTruncated: true, files };
+      }
+      const path = opts.path;
       const scope = opts?.scope ?? 'session';
       h.diffCalls.push({ path, scope });
       if (!h.holdDiffs) return diffOf(path, scope, h.hunksPerDiff);
@@ -272,6 +291,10 @@ describe('the four states, counted and filtered', () => {
     mount(harness());
     await screen.findByTestId('session-changes-files');
 
+    // The tree (the desktop default) puts folders first, then names in order.
+    expect(shownPaths()).toEqual(['src/a.ts', 'src/b.ts', 'new.txt', 'notes.md']);
+    // The flat list keeps git's own order.
+    fireEvent.click(screen.getByTestId('session-changes-view-list'));
     expect(shownPaths()).toEqual(['src/a.ts', 'src/b.ts', 'notes.md', 'new.txt']);
     expect(chip('all').textContent).toContain('4');
     // `src/a.ts` is counted TWICE across staged and unstaged, on purpose: it

@@ -146,6 +146,8 @@ import {
   type SessionGitStashResult,
   type SessionGitStashEntry,
   type SessionGitRollbackResult,
+  type SessionCheckoutDiff,
+  type SessionCheckouts,
   type SessionGitStatus,
   type SessionJournalPage,
   type SessionLaunchRecord,
@@ -1619,6 +1621,41 @@ export function createFixtureSeam(): FixtureSeam {
   let prMergeGuard: FixturePrMergeGuard = 'available';
   /** oid → the files a stash entry holds, so pop restores what push took. */
   const stashedFiles = new Map<string, SessionGitFile[]>();
+  const fxCheckouts = (workSessionId: EntityId): SessionCheckouts => {
+    requireSummary(workSessionId);
+    if (workSessionId === sessionLive.id) {
+      return { sessionId: workSessionId, available: false, unavailableReason: 'has_worktree', checkouts: [], checkoutsTruncated: false, checkedAt: FIXTURE_NOW };
+    }
+    return clone({
+      sessionId: workSessionId,
+      available: true,
+      unavailableReason: null,
+      checkouts: [
+        {
+          name: 'w266',
+          shared: false,
+          readable: true,
+          branch: 'crawl/266',
+          remote: 'https://github.com/example/app.git',
+          baseRef: 'origin/main',
+          mergeBaseOid: 'f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0',
+          headOid: 'a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1',
+          ahead: 3,
+          uncommitted: 1,
+          lastCommitAt: FIXTURE_NOW,
+          files: [
+            { path: 'src/crawl/fetch.ts', change: 'M', additions: 7, deletions: 2, uncommitted: false },
+            { path: 'src/crawl/queue.ts', change: 'A', additions: 40, deletions: 0, uncommitted: false },
+            { path: 'notes/run.md', change: '?', additions: 3, deletions: 0, uncommitted: true },
+          ],
+          filesTruncated: false,
+          stat: { filesChanged: 3, additions: 50, deletions: 2 },
+        },
+      ],
+      checkoutsTruncated: false,
+      checkedAt: FIXTURE_NOW,
+    } satisfies SessionCheckouts);
+  };
   const gitUnavailable = (
     sessionId: EntityId,
     kind: 'status' | 'diff',
@@ -3497,6 +3534,38 @@ export function createFixtureSeam(): FixtureSeam {
         stashes: gitLane.stashes.map((e, index) => ({ ...e, index })),
         checkedAt: FIXTURE_NOW,
       });
+    },
+    /**
+     * A worktree-less session's own checkouts. The live PTY has a worktree and
+     * answers `has_worktree`; every other session shows one scratch clone, a
+     * branch ahead of origin with committed and uncommitted work — the shape
+     * prod agents leave (measured 2026-10-07).
+     */
+    async gitCheckouts(workSessionId): Promise<SessionCheckouts> {
+      return fxCheckouts(workSessionId);
+    },
+    async gitCheckoutDiff(workSessionId, checkout, path, opts): Promise<SessionCheckoutDiff> {
+      const listing = fxCheckouts(workSessionId);
+      const file = listing.checkouts.find((c) => c.name === checkout)?.files.find((f) => f.path === path);
+      if (file === undefined) throw new CollabError('not_found', `${path} has no change in ${checkout}`);
+      let diff = fxFileDiff(path);
+      let diffTruncated = false;
+      if (opts?.maxBytes !== undefined && diff.length > opts.maxBytes) {
+        diff = diff.slice(0, opts.maxBytes);
+        diffTruncated = true;
+      }
+      return {
+        sessionId: workSessionId,
+        checkout,
+        path,
+        change: file.change,
+        additions: file.additions,
+        deletions: file.deletions,
+        baseRef: 'origin/main',
+        diff,
+        diffTruncated,
+        checkedAt: FIXTURE_NOW,
+      };
     },
     /**
      * Honours `maxBytes` HERE too (the projectBranches rule): a fixture that

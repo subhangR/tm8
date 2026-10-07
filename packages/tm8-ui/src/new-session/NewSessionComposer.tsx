@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import type { LaunchModelEffort } from '@tm8/contract';
 
 import {
@@ -24,6 +24,8 @@ import {
 import { Avatar } from '../kit';
 import { useDismissable } from '../panels/useDismissable';
 import { TITLE_MAX } from './prompt-title';
+import { LAUNCH_KEYS } from '../keyboard';
+import { LAUNCH_HINTS, focusMenuChoice, isTextField, launchActionFor, moveMenuFocus } from './launch-keys';
 
 /**
  * THE NEW SESSION COMPOSER — type a prompt, press Enter, get a running agent.
@@ -326,6 +328,27 @@ export function NewSessionComposer({
     setSub(null);
   };
 
+  /* KEYBOARD (Esc, then a letter — see `launch-keys.ts`). `keysActive` is
+     focus on the card but not in a field: the hint line names the letters only
+     then. `byKey` marks a menu opened from the keyboard, so its options take
+     focus and, once it closes, focus comes back to the card instead of
+     falling to the page. A pointer-opened menu leaves focus where it was. */
+  const [keysActive, setKeysActive] = useState(false);
+  const byKey = useRef(false);
+  useEffect(() => {
+    const root = card.current;
+    if (!root || !byKey.current) return;
+    if (open !== null) {
+      const menu = root.querySelector<HTMLElement>('[role="menu"]');
+      if (menu) focusMenuChoice(menu);
+      return;
+    }
+    byKey.current = false;
+    // Only when focus fell to the page (the picked option unmounted) — never
+    // pull it back from wherever a click outside just put it.
+    if (document.activeElement === null || document.activeElement === document.body) root.focus();
+  }, [open]);
+
   /* Escape and outside-pointer dismissal, shared with every other popover in
      the package. Scoped to `open !== null` so Escape is only CONSUMED while a
      menu is actually up — with none open it still reaches whatever surface
@@ -341,7 +364,8 @@ export function NewSessionComposer({
   useEffect(() => {
     if (open !== null || !onDismissRequest) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      // The card already used this Escape to leave the prompt for the card.
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
       event.stopPropagation();
       onDismissRequest();
@@ -404,6 +428,63 @@ export function NewSessionComposer({
     onEffortChange(effortStops[(at + 1) % effortStops.length] ?? null);
   };
 
+  const openByKey = (name: MenuName) => {
+    byKey.current = true;
+    toggle(name);
+  };
+
+  const onCardKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const consume = () => { event.preventDefault(); event.stopPropagation(); };
+    /* In the prompt or the title, only Escape is ours: it leaves the field for
+       the card. Every other key is typing. A popover the field owns (the skill
+       picker) takes its Escape first and prevents it, which the guard above
+       respects. */
+    if (isTextField(event.target)) {
+      if (event.key === 'Escape') { consume(); card.current?.focus(); }
+      return;
+    }
+    if (open !== null && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      const menu = card.current?.querySelector<HTMLElement>('[role="menu"]');
+      if (menu) { consume(); moveMenuFocus(menu, event.key === 'ArrowDown' ? 1 : -1); }
+      return;
+    }
+    /* Escape with a menu up never gets here (`useDismissable` takes it at
+       capture). With none up, a popup host's own listener dismisses the card;
+       the full-screen card hands focus back to the page, where the app's
+       single-key shortcuts live. */
+    if (event.key === 'Escape') {
+      if (onDismissRequest) return;
+      consume();
+      card.current?.blur();
+      return;
+    }
+    if (busy) return;
+    // Enter on a control activates THAT control; on the card itself it launches.
+    if (event.key === 'Enter') {
+      if (event.target !== card.current) return;
+      consume();
+      if (!blocked) onSubmit();
+      return;
+    }
+    const action = launchActionFor(event.key);
+    if (action === null) return;
+    consume();
+    switch (action) {
+      case 'model': openByKey('model'); break;
+      case 'permission': openByKey('perm'); break;
+      case 'teammate': openByKey('team'); break;
+      case 'workdir': openByKey('workdir'); break;
+      case 'options': openByKey('dots'); break;
+      case 'effort': cycleEffort(); break;
+      case 'worktree':
+        if (workdirChoosable) onWorkdirModeChange(workdirMode === 'worktree' ? 'project' : 'worktree');
+        break;
+      case 'prompt': close(); area.current?.focus(); break;
+    }
+  };
+
   const stopThen = (act: () => void) => (event: { stopPropagation(): void }) => {
     event.stopPropagation();
     act();
@@ -414,13 +495,30 @@ export function NewSessionComposer({
       {/* The card-level click closes menus (blank card space, the textarea);
           every trigger and menu item stops propagation before this sees it.
           Not a keyboard surface: Escape does the same job via useDismissable. */}
-      <div className="nsx-composer" data-busy={busy || undefined} ref={card} onClick={close}>
+      <div
+        className="nsx-composer"
+        data-busy={busy || undefined}
+        ref={card}
+        onClick={close}
+        /* Focusable but not a tab stop: Esc from the prompt lands here, and
+           the card's letters work from here (see `onCardKeyDown`). */
+        tabIndex={-1}
+        role="group"
+        aria-label="Launch card"
+        data-testid="nsx-card"
+        onKeyDown={onCardKeyDown}
+        onFocus={(event) => setKeysActive(!isTextField(event.target))}
+        onBlur={(event) => {
+          if (!card.current?.contains(event.relatedTarget as Node | null)) setKeysActive(false);
+        }}
+      >
         <div className="nsx-head">
           <div className="nsx-anchor">
             <button
               type="button"
               className="nsx-head__workdir"
               data-testid="nsx-workdir"
+              aria-keyshortcuts={LAUNCH_KEYS.workdir}
               aria-haspopup="menu"
               aria-expanded={open === 'workdir'}
               aria-label={`Working directory: ${selectedWorkdir?.name ?? 'not chosen'}`}
@@ -479,6 +577,7 @@ export function NewSessionComposer({
             type="button"
             className="nsx-head__copy"
             data-testid="nsx-copy"
+            aria-keyshortcuts={LAUNCH_KEYS.worktree}
             aria-disabled={!workdirChoosable || undefined}
             title={workdirChoosable
               ? `${copyDef?.description ?? ''} Click to switch.`
@@ -499,6 +598,7 @@ export function NewSessionComposer({
               type="button"
               className="nsx-head__dots"
               data-testid="nsx-dots"
+              aria-keyshortcuts={LAUNCH_KEYS.options}
               aria-haspopup="menu"
               aria-expanded={open === 'dots'}
               aria-label="More launch options"
@@ -739,6 +839,7 @@ export function NewSessionComposer({
               type="button"
               className="nsx-tool"
               data-testid="nsx-model"
+              aria-keyshortcuts={LAUNCH_KEYS.model}
               aria-haspopup="menu"
               aria-expanded={open === 'model'}
               aria-label={`Model: ${modelLabel}`}
@@ -780,6 +881,7 @@ export function NewSessionComposer({
             type="button"
             className="nsx-tool"
             data-testid="nsx-effort"
+            aria-keyshortcuts={LAUNCH_KEYS.effort}
             aria-disabled={effortStops.length === 0 || undefined}
             title={effortStops.length === 0
               ? EFFORT_NOT_TUNABLE_REASON
@@ -806,6 +908,7 @@ export function NewSessionComposer({
               type="button"
               className="nsx-tool"
               data-testid="nsx-perm"
+              aria-keyshortcuts={LAUNCH_KEYS.permission}
               aria-haspopup="menu"
               aria-expanded={open === 'perm'}
               title={describeAccessMode(accessMode)}
@@ -845,6 +948,7 @@ export function NewSessionComposer({
               type="button"
               className="nsx-tool"
               data-testid="nsx-team"
+              aria-keyshortcuts={LAUNCH_KEYS.teammate}
               aria-haspopup="menu"
               aria-expanded={open === 'team'}
               aria-label={teammate ? `Teammate: ${teammate.name}` : 'Teammate: chosen automatically'}
@@ -923,6 +1027,19 @@ export function NewSessionComposer({
           </button>
         </div>
       </div>
+
+      {/* The card's letters, named while they work; otherwise the way in. */}
+      <p className="nsx-keys" data-testid="nsx-keys" aria-hidden="true">
+        {keysActive ? (
+          LAUNCH_HINTS.map((hint) => (
+            <span key={hint.label} className="nsx-keys__hint">
+              <kbd>{hint.key}</kbd> {hint.label}
+            </span>
+          ))
+        ) : (
+          <span className="nsx-keys__hint"><kbd>Esc</kbd> then a letter sets the options</span>
+        )}
+      </p>
 
       {(refusal ?? notice) ? (
         <p className="nsx-refusal" id="nsx-refusal" role="alert">{refusal ?? notice}</p>

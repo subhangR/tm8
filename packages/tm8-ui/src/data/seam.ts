@@ -265,6 +265,8 @@ import type {
   ExecutionGitRollbackInput,
   SessionGitCheckpointResult,
   SessionGitCommitResult,
+  SessionCheckoutDiff,
+  SessionCheckouts,
   SessionGitDiff,
   SessionGitDiffScope,
   SessionGitMergeResult,
@@ -962,6 +964,22 @@ export interface Seam {
    */
   gitStatus(workSessionId: EntityId): Promise<SessionGitStatus>;
   gitDiff(workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff>;
+  /**
+   * The Changes rail for a session WITHOUT a worktree: every git checkout in
+   * its own working directory (scratch clones, or the shared project dir),
+   * with branch, commits ahead and the files changed vs the remote's default
+   * branch — committed and uncommitted. Read-only. A worktree session answers
+   * `available:false` / `has_worktree`: its lane is `gitStatus`'s. A node that
+   * predates the op answers 404; callers fall back to the transcript.
+   */
+  gitCheckouts(workSessionId: EntityId): Promise<SessionCheckouts>;
+  /** One file's diff in one checkout `gitCheckouts` listed. */
+  gitCheckoutDiff(
+    workSessionId: EntityId,
+    checkout: string,
+    path: string,
+    opts?: { maxBytes?: number },
+  ): Promise<SessionCheckoutDiff>;
   /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter
