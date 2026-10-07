@@ -76,7 +76,12 @@
    terminal's own background: no lighter strip or frame. The grid stays
    left-aligned; its glyphs get a 4px inset on the `.xterm` element, which
    FitAddon subtracts, so a drivable session still fits exactly. */
-.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] {
+/* …and ONLY while the terminal is the section on screen (task 01a11567): a
+   terminal session's Links and Messages are reading surfaces, drawn in the
+   theme like every other tab's. The panel drops its always-dark scope for
+   them (see `alwaysDark` in EntityDetailPanel), so this rule must step back
+   too, or the panel stays black with light-theme ink on it. */
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal']:not([data-embedded-section='connections']):not([data-embedded-section='discussion']) {
   background: var(--pn-x-term-bg);
 }
 .cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] .pn-terminal-stage {
