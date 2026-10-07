@@ -278,10 +278,10 @@ describe('what the phone action menu contains is derived, not typed out', () => 
 
   it('a live primary dispatches through the host, and a refused one cannot', () => {
     const onAction = vi.fn();
-    const live = menu({ onAction, wiredActions: ['edit'] }).find((i) => i.id === 'edit');
+    const live = menu({ onAction, wiredActions: ['chat-about'] }).find((i) => i.id === 'chat-about');
     expect(live?.reason).toBeUndefined();
     live?.onSelect?.();
-    expect(onAction).toHaveBeenCalledWith('edit');
+    expect(onAction).toHaveBeenCalledWith('chat-about');
   });
 
   it('Run opens the host\u2019s full launch sheet rather than the inline expand', () => {

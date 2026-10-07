@@ -351,9 +351,10 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
    * the assertion exact (rather than `toContain`) is what stops the toolbar
    * silently re-growing the two verbs the original ruling turned away.
    */
-  it('the task DETAIL toolbar keeps Run and Edit, and nothing else', () => {
-    // Chat beside Run is the one addition since (entity chat §3.2).
-    expect(getKind('task').panel.primaries).toEqual(['run', 'chat-about', 'edit']);
+  it('the task DETAIL toolbar keeps Run, and nothing else', () => {
+    // Chat beside Run is the one addition since (entity chat §3.2). Edit left
+    // with the dialog (task 01a1163a): the page edits every field in place.
+    expect(getKind('task').panel.primaries).toEqual(['run', 'chat-about']);
   });
 
   it('5. SPEC D1 §5.3 — a session tabs by process liveness, then outcome (its own row)', () => {
@@ -1699,59 +1700,28 @@ describe('§15.1 — edit declares its fields, and fields declare their verb', (
   });
 
   /**
-   * THE TASK'S DUE DATE — the write surface the field never had.
+   * THE TASK HAS NO EDIT DIALOG (task 01a1163a, owner ruling in form
+   * 01a1164f). Its page edits in place, so the dialog's three rows — title and
+   * both dates — were a second door to fields the page already writes. What
+   * this pins is that nothing was lost when the door closed:
    *
-   * `dueDate` was modelled end to end and fillable only from the CLI: the
-   * column, the `PatchTaskInput` member, the `::date` sort (`BY_DUE`, offered
-   * on this very row) and the read projection all existed with no control
-   * behind them. The three things pinned here are the three that make it work
-   * rather than merely appear:
-   *
-   *   · `valueType: 'date'` — a calendar day, matching a `date` column. A
-   *     plain text field would let a locale string reach a column that refuses
-   *     it, and a datetime control would invent precision the column cannot
-   *     hold.
-   *   · `readFrom: 'state'` — the server projects `due_date` onto
-   *     `EntityState` and leaves it out of `contentOf`, so a field seeded from
-   *     content opens BLANK on a task that has a due date. Since an empty date
-   *     is an explicit `null`, that blank is a pending deletion: open the
-   *     dialog, press Save, lose the date. This is the assertion that would
-   *     have caught it.
-   *   · NOT `required` — `tasks.due_date` is nullable, so "no due date" is a
-   *     value the database holds rather than a hole in the record.
+   *   · both dates are still strip controls, so each is still writable and each
+   *     sort still has something a human can fill;
+   *   · the title is still inline-editable;
+   *   · the verb went with its fields (§15.1), so no surface offers an Edit
+   *     that would open an empty form.
    */
-  it('the task offers a Title and BOTH dates, read from state, written to content', () => {
-    const fields = getKind('task').editFields ?? [];
-    expect(fields.map((f) => f.label)).toEqual(['Title', 'Start date', 'Due date']);
-
-    /* THE SAME FOUR PROPERTIES ON EACH, checked in a loop rather than written
-       twice: both columns are nullable `date`s whose halves live apart — the
-       server projects them onto `state` and leaves them out of `contentOf` —
-       so a `readFrom` missing on either opens the dialog blank on a task that
-       HAS the value and clears it on Save. That is a silent data loss, and it
-       is the one property here worth holding for every date rather than for
-       the one that happened to be written first. */
-    for (const source of ['startDate', 'dueDate']) {
-      const field = fields.find((f) => f.source === source);
-      expect(field, source).toBeDefined();
-      expect(field?.target).toBe('content');
-      expect(field?.readFrom).toBe('state');
-      expect(field?.valueType).toBe('date');
-      expect(field?.required ?? false).toBe(false);
-
-      // Each sort now has something a human can fill — `dueDate`'s row existed
-      // and could only be filled by the CLI; `startDate`'s ships filled.
-      expect(getKind('task').list.sort.map((s) => s.key)).toContain(source);
+  it('the task edits in place: no dialog fields, no Edit verb, every field still writable', () => {
+    const task = getKind('task');
+    expect(task.editFields ?? []).toEqual([]);
+    expect(task.panel.primaries ?? []).not.toContain('edit');
+    expect(task.panel.layout).toBe('two-column');
+    expect(task.list.inlineEdit?.title).toBe(true);
+    const dates = (task.list.dateControls ?? []).map((c) => c.source);
+    expect(dates).toEqual(['startDate', 'dueDate']);
+    for (const source of dates) {
+      expect(task.list.sort.map((s) => s.key)).toContain(source);
     }
-
-    /* The dialog row and the strip control are the SAME registry `source` and
-       the same patch, so the two surfaces cannot disagree about a field name.
-       Holding it here is what would catch a date added to one and not the
-       other — the state the due date sat in for as long as it was invisible. */
-    const strip = getKind('task').list.dateControls ?? [];
-    expect(strip.map((c) => c.source)).toEqual(
-      fields.filter((f) => f.valueType === 'date').map((f) => f.source),
-    );
   });
 
   it('the channel offers exactly Name and an OPTIONAL Topic (user ruling 2026-08-07)', () => {

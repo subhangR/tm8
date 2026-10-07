@@ -1363,6 +1363,25 @@ export interface PanelConfig {
    */
   gitSection?: boolean;
   /**
+   * THE PAGE LAYOUT of the embedded body (task 01a1163a, scope settled with
+   * the owner in form 01a1164f): `'two-column'` puts the writing in a
+   * wide main column and every property in a sticky rail beside it.
+   *
+   * What it changes, all derived from this one field so no component asks the
+   * kind (§15.2):
+   *   · the control strip moves from the band above the body into the rail,
+   *     drawn as labelled rows rather than chips;
+   *   · the composed metadata grid joins the rail too, so a fact is drawn once;
+   *   · the title in the host's title bar is a live field at rest, not a
+   *     double-click rename;
+   *   · criteria are written one gesture at a time (tick, add, edit, reorder,
+   *     remove), never staged behind a Save pill.
+   *
+   * Absent ⇒ the stacked body every other kind keeps. Phone widths stack the
+   * rail under the main column (CSS), so this is a desktop decision only.
+   */
+  layout?: 'two-column';
+  /**
    * THE BODY OWNS ITS OWN BOTTOM EDGE, and this says which way.
    *
    * EITHER value means the panel mounts no AttachmentStrip, no attention

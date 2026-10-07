@@ -538,3 +538,174 @@
   font-size: var(--pn-fs-micro);
   color: var(--pn-block);
 }
+
+/* ==========================================================================
+   THE TWO-COLUMN PAGE (`panel.layout: 'two-column'`, task 01a1163a).
+
+   The writing gets the room: a main column capped at 820px, FLUSH LEFT
+   (Subhang: the page reads from the same left edge as the title above it,
+   not centred in a wide pane), and a 248px rail beside it that stays in view
+   while the main column scrolls. Flex, not grid — the main column must be
+   allowed to shrink below its content, and the file bans `minmax(0` (L4).
+   ========================================================================== */
+.cv2-root .sb-body--two-column {
+  padding: var(--pn-space-6) var(--pn-space-8) var(--pn-space-8);
+}
+.cv2-root .sb-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 40px;
+}
+.cv2-root .sb-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 820px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-5);
+}
+.cv2-root .sb-rail {
+  flex: none;
+  width: 248px;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding-left: var(--pn-space-4);
+  border-left: 1px solid var(--pn-x-hairline-soft);
+}
+/* The strip in the rail is a list of properties, not the list tile's attached
+   card: no hairline, no recessed fill, a label column wide enough for
+   "Assignees". */
+.cv2-root .sb-rail .lp__rowdetail {
+  padding: 0;
+  gap: var(--pn-space-2);
+  border-top: 0;
+  background: none;
+}
+.cv2-root .sb-rail .lp__rowdetail-label,
+.cv2-root .sb-grid--rail .sb-grid__label {
+  flex: none;
+  width: 72px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--pn-ink-3);
+}
+.cv2-root .sb-grid--rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+.cv2-root .sb-grid--rail .sb-grid__cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The estimate is a field that looks like a value until it is used. */
+.cv2-root .sb-points {
+  width: 64px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pn-ink);
+}
+.cv2-root .sb-points:hover {
+  border-color: var(--pn-line);
+}
+.cv2-root .sb-points:focus {
+  outline: none;
+  border-color: var(--pn-brand);
+  background: var(--pn-card);
+}
+/* NARROW: the rail stacks ABOVE the writing (form 01a1164f: "phone stacks the
+   columns for now"). Above, because it is the compact block — the status a
+   phone user came to change is one glance away, and the description below it
+   still has the full width. */
+@container panel (max-width: 760px) {
+  .cv2-root .sb-body--two-column {
+    padding: var(--pn-space-4);
+  }
+  .cv2-root .sb-layout {
+    flex-direction: column;
+    gap: var(--pn-space-5);
+  }
+  .cv2-root .sb-main {
+    max-width: none;
+    width: 100%;
+  }
+  .cv2-root .sb-rail {
+    order: -1;
+    position: static;
+    width: 100%;
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+/* --- the checklist, written in place ------------------------------------- */
+.cv2-root .sb-criterion--authoring,
+.cv2-root .sb-criterion--add {
+  font-size: 13px;
+}
+.cv2-root .sb-criterion__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  color: var(--pn-ink);
+}
+.cv2-root .sb-criterion__input:focus {
+  outline: none;
+  border-color: var(--pn-line);
+  background: var(--pn-card);
+}
+.cv2-root .sb-criterion__input.sb-criterion__text--done {
+  color: var(--pn-ink-3);
+}
+.cv2-root .sb-criterion__plus {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  color: var(--pn-ink-4);
+}
+/* The move and remove tools are there for the row in hand: shown on hover or
+   when focus is inside the row, and always reachable by Tab. */
+.cv2-root .sb-criterion__tools {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+}
+.cv2-root .sb-criterion--authoring:hover .sb-criterion__tools,
+.cv2-root .sb-criterion--authoring:focus-within .sb-criterion__tools {
+  opacity: 1;
+}
+.cv2-root[data-shell='mobile'] .sb-criterion__tools {
+  opacity: 1;
+}
+.cv2-root .sb-criterion__tool {
+  appearance: none;
+  border: 0;
+  padding: 0 4px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .sb-criterion__tool:hover:not(:disabled) {
+  color: var(--pn-ink);
+}
+.cv2-root .sb-criterion__tool:disabled {
+  color: var(--pn-ink-4);
+  cursor: default;
+}

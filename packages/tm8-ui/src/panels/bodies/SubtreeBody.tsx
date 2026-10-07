@@ -154,6 +154,24 @@ export interface SubtreeBodyProps {
    * not one of its runs.
    */
   stripEdgeIds?: ReadonlySet<string>;
+  /**
+   * `panel.layout`, handed down: `'two-column'` draws the writing in a main
+   * column and the properties in a rail beside it (task 01a1163a). Absent ⇒
+   * the stacked body, unchanged.
+   */
+  layout?: 'two-column';
+  /**
+   * The rail's live controls — the host's `EntityControlStrip`, built where
+   * the `ControlHost` is in hand. Opaque here for the reason `gitSection` is:
+   * this body is presentational and the strip is registry-driven already.
+   * Read only in the two-column layout.
+   */
+  rail?: ReactNode;
+  /**
+   * Writes the estimate in one gesture. Absent ⇒ the rail shows the value
+   * read-only (or nothing, when there is none). Two-column only.
+   */
+  onPointsChange?: (next: number | null) => void;
 }
 
 export function SubtreeBody({
@@ -176,7 +194,11 @@ export function SubtreeBody({
   onAttached,
   attachmentSlot,
   stripEdgeIds,
+  layout,
+  rail,
+  onPointsChange,
 }: SubtreeBodyProps) {
+  const twoColumn = layout === 'two-column';
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
   const peers = peersOf(detail, stripEdgeIds);
@@ -228,34 +250,34 @@ export function SubtreeBody({
   const membershipEmpty =
     membershipEdgeCount === 0 && membershipAuthoring != null && !membershipAuthoring.refusal;
 
-  return (
-    <div
-      className="pn-body pn-body--measured sb-body"
-      id="tabpanel-content"
-      role="tabpanel"
-      aria-labelledby="tab-content"
-      data-testid="subtree-body"
-    >
-      <MetaGrid detail={detail} onOpenEntity={onOpenEntity} />
-      <DescriptionEditor
-        detail={detail}
-        draft={descriptionDraft}
-        onChange={onDescriptionChange}
-        unavailableReason={descriptionUnavailableReason}
-        skillOptions={skillOptions}
-        attach={attach}
-        onAttached={onAttached}
-        attachmentSlot={attachmentSlot}
-      />
-      {/* Keyed by entity: the `+N more` overflow must not ride from one task
-          onto the next in the same panel slot. */}
-      <RunsStrip key={detail.id} runs={runs} livenessOf={livenessOf} onOpenEntity={onOpenEntity} />
-      <AcceptanceSection
-        detail={detail}
-        draft={criteriaDraft}
-        onChange={onCriteriaChange}
-        unavailableReason={criteriaUnavailableReason}
-      />
+  const description = (
+    <DescriptionEditor
+      detail={detail}
+      draft={descriptionDraft}
+      onChange={onDescriptionChange}
+      unavailableReason={descriptionUnavailableReason}
+      skillOptions={skillOptions}
+      attach={attach}
+      onAttached={onAttached}
+      attachmentSlot={attachmentSlot}
+    />
+  );
+  /* Keyed by entity: the `+N more` overflow must not ride from one task onto
+     the next in the same panel slot. */
+  const runsStrip = (
+    <RunsStrip key={detail.id} runs={runs} livenessOf={livenessOf} onOpenEntity={onOpenEntity} />
+  );
+  const acceptance = (
+    <AcceptanceSection
+      detail={detail}
+      draft={criteriaDraft}
+      onChange={onCriteriaChange}
+      unavailableReason={criteriaUnavailableReason}
+      authoring={twoColumn}
+    />
+  );
+  const rest = (
+    <>
       <SubtreeSection
         detail={detail}
         childWork={childWork}
@@ -274,6 +296,10 @@ export function SubtreeBody({
           {gitSection}
         </CollapsibleSection>
       ) : null}
+      {/* RUNS FOLLOW THE WORK on the two-column page (mockup r6): the main
+          column reads as the task's definition first — what, done-when, the
+          pieces — and then its history. The stacked body keeps them high. */}
+      {twoColumn ? runsStrip : null}
       {memorySet ? (
         <CollapsibleSection
           id="memories"
@@ -333,6 +359,60 @@ export function SubtreeBody({
         </div>
       ) : null}
       <EmptySectionsToggle />
+    </>
+  );
+
+  /*
+   * THE TWO-COLUMN PAGE (task 01a1163a; owner: "the things i need space to
+   * write, that is the main thing, it should not be clutter"). The main
+   * column is the writing — description, then what done means, then the
+   * pieces, then everything the task is connected to, further down. Every
+   * property is in the rail: the host's live controls first, then the facts
+   * the grid composed, drawn once in the same labelled-row voice.
+   *
+   * THE GRID MOVES, IT IS NOT DROPPED. It is the only place a custom kind's
+   * scalars, the axes and the parent are drawn, and its suppression of the
+   * strip's own fields still applies — so nothing is shown twice, and nothing
+   * shown before is lost.
+   */
+  if (twoColumn) {
+    return (
+      <div
+        className="pn-body sb-body sb-body--two-column"
+        id="tabpanel-content"
+        role="tabpanel"
+        aria-labelledby="tab-content"
+        data-testid="subtree-body"
+        data-layout="two-column"
+      >
+        <div className="sb-layout">
+          <div className="sb-main" data-testid="subtree-main">
+            {description}
+            {acceptance}
+            {rest}
+          </div>
+          <aside className="sb-rail" aria-label="Properties" data-testid="subtree-rail">
+            {rail ?? null}
+            <MetaGrid detail={detail} onOpenEntity={onOpenEntity} variant="rail" onPointsChange={onPointsChange} />
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="pn-body pn-body--measured sb-body"
+      id="tabpanel-content"
+      role="tabpanel"
+      aria-labelledby="tab-content"
+      data-testid="subtree-body"
+    >
+      <MetaGrid detail={detail} onOpenEntity={onOpenEntity} />
+      {description}
+      {runsStrip}
+      {acceptance}
+      {rest}
     </div>
   );
 }
@@ -366,7 +446,19 @@ const COMPOSED_KEYS = new Set([
   'completionGate',
 ]);
 
-function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity?: (id: string) => void }) {
+function MetaGrid({
+  detail,
+  onOpenEntity,
+  variant = 'grid',
+  onPointsChange,
+}: {
+  detail: EntityDetail;
+  onOpenEntity?: (id: string) => void;
+  /** `rail` draws one labelled row per fact, in the two-column page's rail. */
+  variant?: 'grid' | 'rail';
+  /** Wired ⇒ the estimate is a field, written on commit (two-column only). */
+  onPointsChange?: (next: number | null) => void;
+}) {
   const state = detail.state as unknown as Record<string, unknown>;
   const content = detail.content as unknown as Record<string, unknown>;
   const config = getKind(detail.kind);
@@ -435,11 +527,20 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
   // The estimate lives in CONTENT, not state — the same member-name read the
   // description does one region below, and the reason the grid was silent
   // about a field the create and patch inputs have always carried.
-  if (typeof content.pointsEstimate === 'number') {
+  const points = typeof content.pointsEstimate === 'number' ? content.pointsEstimate : null;
+  if (onPointsChange) {
+    /* A WRITABLE ESTIMATE IS DRAWN EVEN WHEN UNSET: an absent value with a
+       live field is an invitation, and the rail is where a property is set. */
     cells.push({
       key: 'pointsEstimate',
       label: 'Points',
-      value: <span className="sb-grid__strong">{content.pointsEstimate}</span>,
+      value: <PointsField key={`${detail.id}:${points ?? ''}`} value={points} onCommit={onPointsChange} />,
+    });
+  } else if (points !== null) {
+    cells.push({
+      key: 'pointsEstimate',
+      label: 'Points',
+      value: <span className="sb-grid__strong">{points}</span>,
     });
   }
 
@@ -524,13 +625,56 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
 
   if (cells.length === 0) return null;
   return (
-    <div className="sb-grid" data-testid="subtree-grid">
+    <div className={variant === 'rail' ? 'sb-grid sb-grid--rail' : 'sb-grid'} data-testid="subtree-grid">
       {cells.map((cell) => (
         <div className="sb-grid__cell" key={cell.key}>
           <span className="sb-grid__label">{cell.label}</span> {cell.value}
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * THE ESTIMATE, in place. Commits on Enter or blur — one gesture, one write —
+ * and an emptied field clears the estimate (`null` is the server's clear).
+ * Escape puts the saved value back. Remounted by its key when the saved value
+ * changes, so an outside write is never hidden behind a stale draft.
+ */
+function PointsField({ value, onCommit }: { value: number | null; onCommit: (next: number | null) => void }) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value));
+  const commit = () => {
+    const trimmed = draft.trim();
+    const next = trimmed === '' ? null : Number(trimmed);
+    if (next !== null && (!Number.isFinite(next) || next < 0)) {
+      setDraft(value === null ? '' : String(value));
+      return;
+    }
+    if (next !== value) onCommit(next);
+  };
+  return (
+    <input
+      type="number"
+      min={0}
+      step={1}
+      inputMode="numeric"
+      className="sb-points"
+      aria-label="Points estimate"
+      placeholder="—"
+      data-testid="subtree-points"
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          setDraft(value === null ? '' : String(value));
+        }
+      }}
+    />
   );
 }
 
@@ -699,11 +843,19 @@ function AcceptanceSection({
   draft,
   onChange,
   unavailableReason,
+  authoring = false,
 }: {
   detail: EntityDetail;
   draft?: readonly AcceptanceCriterion[];
   onChange?: (next: AcceptanceCriterion[]) => void;
   unavailableReason?: string;
+  /**
+   * The two-column page's checklist: criteria are written here, not only
+   * ticked — add, rename, reorder and remove (owner ruling, form 01a1164f).
+   * Falls back to the tick-only rows whenever the list is not editable, so a
+   * refusal still renders through the honesty vocabulary below.
+   */
+  authoring?: boolean;
 }) {
   const content = detail.content as unknown as Record<string, unknown>;
   const persisted = content.acceptanceCriteria;
@@ -724,6 +876,23 @@ function AcceptanceSection({
    * are now the same decision.
    */
   const editable = onChange != null && unavailableReason == null;
+
+  if (authoring && editable) {
+    return (
+      <CollapsibleSection
+        id="acceptance"
+        label="ACCEPTANCE"
+        count={`${completed}/${criteria.length}`}
+        /* A writable checklist is never "empty": its add row is the
+           invitation, and the page is where criteria get written. */
+        empty={false}
+        defaultOpen
+        testId="acceptance-section"
+      >
+        <CriteriaEditor key={detail.id} criteria={criteria} onChange={onChange} />
+      </CollapsibleSection>
+    );
+  }
 
   return (
     <CollapsibleSection
@@ -798,6 +967,207 @@ function AcceptanceSection({
       )}
     </CollapsibleSection>
   );
+}
+
+/**
+ * THE CHECKLIST, WRITTEN IN PLACE.
+ *
+ * EVERY GESTURE IS ONE WHOLE-LIST WRITE — a tick, an Enter in the add row, a
+ * rename landing on blur, a move, a removal. There is no staged draft: the
+ * host binds `onChange` to a commit, so the version guard in `useTaskSave`
+ * turns a concurrent edit into a conflict card rather than a lost criterion.
+ * A rename is held locally until it commits, so a keystroke is not a write.
+ *
+ * THE CLIENT MINTS THE ID. The server names an id-less criterion
+ * `ac_<index+1>`, which is an index, not an identity: after a reorder or a
+ * removal two criteria could trade names between writes, and a CLI tick by id
+ * would land on the wrong one. Minting here keeps the id stable from birth.
+ *
+ * REORDER IS KEYBOARD-FIRST: Alt+↑/↓ in a row's field moves it, and the move
+ * buttons beside it do the same for a pointer.
+ */
+function CriteriaEditor({
+  criteria,
+  onChange,
+}: {
+  criteria: readonly AcceptanceCriterion[];
+  onChange: (next: AcceptanceCriterion[]) => void;
+}) {
+  const [adding, setAdding] = useState('');
+  const rows = useRef<(HTMLInputElement | null)[]>([]);
+  const focusRow = (index: number) => {
+    // After the write re-renders the list in its new order.
+    requestAnimationFrame(() => rows.current[index]?.focus());
+  };
+
+  const move = (index: number, by: -1 | 1) => {
+    const to = index + by;
+    if (to < 0 || to >= criteria.length) return;
+    const next = [...criteria];
+    const [moved] = next.splice(index, 1);
+    next.splice(to, 0, moved!);
+    onChange(next);
+    focusRow(to);
+  };
+  const remove = (index: number) => onChange(criteria.filter((_, i) => i !== index));
+  const rename = (index: number, text: string) => {
+    const trimmed = text.trim();
+    const current = criteria[index];
+    if (!current || trimmed === current.text) return;
+    // An emptied criterion is a removal, said the only way a text field can.
+    if (trimmed === '') remove(index);
+    else onChange(criteria.map((c, i) => (i === index ? { ...c, text: trimmed } : c)));
+  };
+  const add = () => {
+    const text = adding.trim();
+    if (text === '') return;
+    onChange([...criteria, { id: mintCriterionId(criteria), text, done: false }]);
+    setAdding('');
+  };
+
+  return (
+    <div className="sb-rows sb-checklist" data-testid="acceptance-editor">
+      {criteria.map((criterion, index) => (
+        <div
+          key={criterion.id || `criterion-${index}`}
+          className="sb-criterion sb-criterion--authoring"
+          data-testid="acceptance-row"
+          data-done={criterion.done ? 'true' : 'false'}
+        >
+          <input
+            type="checkbox"
+            className="sb-criterion__box"
+            aria-label={criterion.done ? `Reopen: ${criterion.text}` : `Done: ${criterion.text}`}
+            checked={criterion.done}
+            onChange={(event) =>
+              onChange(criteria.map((c, i) => (i === index ? withDone(c, event.target.checked) : c)))
+            }
+          />
+          <CriterionText
+            key={`${criterion.id}:${criterion.text}`}
+            text={criterion.text}
+            done={criterion.done}
+            inputRef={(el) => {
+              rows.current[index] = el;
+            }}
+            onCommit={(text) => rename(index, text)}
+            onMove={(by) => move(index, by)}
+          />
+          <span className="sb-criterion__tools">
+            <button
+              type="button"
+              className="sb-criterion__tool"
+              aria-label="Move up"
+              title="Move up (Alt+↑)"
+              disabled={index === 0}
+              onClick={() => move(index, -1)}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              className="sb-criterion__tool"
+              aria-label="Move down"
+              title="Move down (Alt+↓)"
+              disabled={index === criteria.length - 1}
+              onClick={() => move(index, 1)}
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              className="sb-criterion__tool"
+              aria-label={`Remove: ${criterion.text}`}
+              title="Remove"
+              data-testid="acceptance-remove"
+              onClick={() => remove(index)}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      ))}
+      <div className="sb-criterion sb-criterion--add">
+        <span className="sb-criterion__plus" aria-hidden>
+          ＋
+        </span>
+        <input
+          className="sb-criterion__input"
+          aria-label="Add a criterion"
+          placeholder={criteria.length === 0 ? 'Add what “done” means…' : 'Add a criterion…'}
+          data-testid="acceptance-add"
+          value={adding}
+          onChange={(event) => setAdding(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              add();
+            } else if (event.key === 'Escape') {
+              setAdding('');
+            }
+          }}
+          onBlur={add}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CriterionText({
+  text,
+  done,
+  inputRef,
+  onCommit,
+  onMove,
+}: {
+  text: string;
+  done: boolean;
+  inputRef: (el: HTMLInputElement | null) => void;
+  onCommit: (text: string) => void;
+  onMove: (by: -1 | 1) => void;
+}) {
+  const [draft, setDraft] = useState(text);
+  return (
+    <input
+      ref={inputRef}
+      className={done ? 'sb-criterion__input sb-criterion__text--done' : 'sb-criterion__input'}
+      aria-label="Criterion"
+      data-testid="acceptance-text"
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => onCommit(draft)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          setDraft(text);
+        } else if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+          event.preventDefault();
+          if (draft.trim() !== text) onCommit(draft);
+          else onMove(event.key === 'ArrowUp' ? -1 : 1);
+        }
+      }}
+    />
+  );
+}
+
+/**
+ * The next id in the server's own `ac_<n>` vocabulary, one past the highest
+ * number any current id ends in — readable in a CLI tick, and never one of
+ * the ids already on the list.
+ */
+function mintCriterionId(criteria: readonly AcceptanceCriterion[]): string {
+  let max = criteria.length;
+  for (const criterion of criteria) {
+    const match = /(\d+)$/.exec(criterion.id ?? '');
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  let n = max + 1;
+  const taken = new Set(criteria.map((c) => c.id));
+  while (taken.has(`ac_${n}`)) n += 1;
+  return `ac_${n}`;
 }
 
 /**

@@ -998,8 +998,35 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * only where at least one of its controls can be used.
    */
   const controlHost = props.controls ?? { kind: detail.kind, ctx: props.ctx };
+  /*
+   * THE TWO-COLUMN PAGE MOVES THE STRIP INTO THE BODY'S RAIL (registry
+   * `panel.layout`, task 01a1163a): the same controls, drawn as labelled rows
+   * beside the writing instead of a chip band above it. Built here, where the
+   * `ControlHost` is in hand, and handed to the body as an opaque slot.
+   *
+   * ONLY ON THE WORKSPACE PAGE, AND ONLY ON ITS CONTENT. The layout is a page
+   * layout: a pinned side panel is a column a few hundred pixels wide, and the
+   * other sections (Connections, Activity) have no rail to carry the controls.
+   * Both keep the chip band, so the controls stay reachable from every tab —
+   * the 2026-08-05 ruling `panel-controls.test` pins.
+   */
+  const twoColumn =
+    config.panel.layout === 'two-column' && props.embeddedChrome != null && tab === 'content';
+  const stripLive = controlsFor(config) && stripHasLiveControl(controlHost, config) && !isTombstone;
+  const railStrip =
+    twoColumn && stripLive ? (
+      <EntityControlStrip
+        row={subjectOf(detail)}
+        props={controlHost}
+        config={config}
+        variant="lines"
+        inlineEditors
+        trailing={gateChipFor(detail)}
+        omitArchive
+      />
+    ) : null;
   const strip =
-    controlsFor(config) && stripHasLiveControl(controlHost, config) && !isTombstone ? (
+    !twoColumn && stripLive ? (
       <EntityControlStrip
         row={subjectOf(detail)}
         props={controlHost}
@@ -1406,6 +1433,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               byline={byline}
               editable={titleEditable}
               arrival={titleArrival && titleEditable}
+              /* The two-column page edits in place, the title first among
+                 them: a live field at rest, and Enter carries on into the
+                 description, as the doc's title does. */
+              live={config.panel.layout === 'two-column' && titleEditable}
+              onEnter={twoColumn ? () => focusDescription(panelEl) : undefined}
               onCommit={async (title) => {
                 await save.commitNow({ title });
               }}
@@ -1683,6 +1715,8 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
                     stripEdgeIds={attachmentSlot ? stripEdgeIds : undefined}
                     onSelectTab={selectTab}
+                    twoColumn={twoColumn}
+                    railSlot={railStrip}
                   />
                   {bodyConsumesSlot ? null : attachmentSlot}
                 </>
@@ -1746,6 +1780,11 @@ function useTitleArrival(detail: EntityDetail | null): boolean {
  * follows what is typed (`setLiveTitle`), the abandoned sweep hears whether it
  * is still untitled, and a name typed but never entered is saved when the
  * field goes (the tab closed under it) rather than lost.
+ *
+ * LIVE (the two-column page, task 01a1163a): the field IS the title at rest —
+ * no double-click, styled as the title until it has focus. It follows the
+ * saved title until typed in, commits on Enter or blur, and Enter then hands
+ * the caret on (`onEnter`), the way the doc's title hands it to the body.
  */
 function EmbeddedTitle({
   entityId,
@@ -1753,6 +1792,8 @@ function EmbeddedTitle({
   byline,
   editable,
   arrival = false,
+  live = false,
+  onEnter,
   onCommit,
 }: {
   entityId: string;
@@ -1760,6 +1801,8 @@ function EmbeddedTitle({
   byline: string;
   editable: boolean;
   arrival?: boolean;
+  live?: boolean;
+  onEnter?: () => void;
   onCommit: (title: string) => Promise<void>;
 }) {
   const [draft, setDraftState] = useState<string | null>(() => (arrival ? title : null));
@@ -1791,7 +1834,7 @@ function EmbeddedTitle({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (draft === null) {
+  if (draft === null && !live) {
     return (
       <span
         className="pn-embedded-title"
@@ -1804,7 +1847,7 @@ function EmbeddedTitle({
     );
   }
   const commit = () => {
-    if (committing.current) return;
+    if (committing.current || draft === null) return;
     const next = draft.trim();
     if (next === '' || next === title) {
       setDraft(null);
@@ -1819,25 +1862,48 @@ function EmbeddedTitle({
   return (
     <input
       ref={field}
-      className="pn-embedded-title pn-embedded-title--editing"
-      aria-label="Rename"
+      className={live ? 'pn-embedded-title pn-embedded-title--live' : 'pn-embedded-title pn-embedded-title--editing'}
+      aria-label={live ? 'Title' : 'Rename'}
       data-testid="panel-embedded-title-input"
-      autoFocus
-      value={draft}
+      /* A live field does not take the caret on every open — only a record
+         that just arrived, whose placeholder is there to be typed over. */
+      autoFocus={!live || arrival}
+      value={draft ?? title}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           commit();
+          onEnter?.();
         } else if (e.key === 'Escape') {
           e.preventDefault();
           e.stopPropagation();
           setDraft(null);
+          if (live) e.currentTarget.blur();
         }
       }}
       onBlur={commit}
     />
   );
+}
+
+/**
+ * Enter in the title carries on into the description (two-column page). The
+ * description opens as its editor when empty — a new task's — and otherwise
+ * reads until asked, so a read stance is asked first and the field focused on
+ * the next frame, once it exists.
+ */
+function focusDescription(panel: HTMLElement | null): void {
+  const block = panel?.querySelector<HTMLElement>('[data-testid="task-description-editor"]');
+  if (!block) return;
+  const field = () => block.querySelector<HTMLTextAreaElement>('textarea');
+  const now = field();
+  if (now) {
+    now.focus();
+    return;
+  }
+  block.querySelector<HTMLButtonElement>('[data-testid="task-description-stance"]')?.click();
+  requestAnimationFrame(() => field()?.focus());
 }
 
 /**
@@ -1926,6 +1992,10 @@ function PanelBody(
     stripEdgeIds?: ReadonlySet<string>;
     /** The panel's own tab switch, for a body that links to another tab. */
     onSelectTab?: (tab: PanelTab) => void;
+    /** The panel's verdict on `panel.layout` for this host and tab. */
+    twoColumn?: boolean;
+    /** The control strip as rail rows, built only for a two-column layout. */
+    railSlot?: ReactNode;
   },
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
@@ -2099,6 +2169,7 @@ function PanelBody(
      finished bodies had ZERO importers — the switch was the unowned edit).
      Same law as the terminal arm: ARCHETYPE, a registry field, never kind. */
   if (config.panel.archetype === 'subtree') {
+    const twoColumn = props.twoColumn === true;
     return (
       <SubtreeBody
         detail={detail}
@@ -2116,9 +2187,20 @@ function PanelBody(
         onCriteriaChange={
           save.unavailable
             ? undefined
-            : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
+            : twoColumn
+              /* The two-column checklist writes each gesture — see
+                 `PanelConfig.layout` — under the same version guard. */
+              ? (acceptanceCriteria) => void save.commitNow({ acceptanceCriteria })
+              : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
         }
         criteriaUnavailableReason={saveRefusal}
+        layout={twoColumn ? 'two-column' : undefined}
+        rail={props.railSlot}
+        onPointsChange={
+          twoColumn && !save.unavailable
+            ? (pointsEstimate) => void save.commitNow({ pointsEstimate })
+            : undefined
+        }
         gitSection={config.panel.gitSection ? props.taskGitSection : undefined}
         skillOptions={props.skillOptions}
         /* Same binding as the Discussion composer and the doc editor: the
