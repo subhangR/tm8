@@ -24,6 +24,7 @@ import { LeftHeader } from '../tab-workspace/view/LeftHeader';
 import { WorkspaceRail } from '../tab-workspace/view/WorkspaceRail';
 import { getRailStore } from '../tab-workspace/runtime/railStore';
 import { queueWorkArrival } from '../tab-workspace/runtime/arrival';
+import { getBrowserSourceStore } from '../tab-workspace/runtime/browserSourceStore';
 import { isWorkspaceKind, LAYOUT_BOUNDS } from '../tab-workspace/runtime/types';
 import { PanelResizer, usePanelWidth } from '../kit/PanelResizer';
 import { VectorIcon } from '../kit/VectorIcon';
@@ -81,11 +82,19 @@ export function AppFrame({ gate, spaceId, viewerId, title, panel, strip = false,
   const selectKind = useCallback(
     (kind: string) => {
       if (viewerId && isWorkspaceKind(kind)) {
+        getBrowserSourceStore(spaceId).getState().setSource(null);
         queueWorkArrival(viewerId, spaceId, { open: [], activate: null, trail: [], browserKind: kind, chat: null });
       }
       goToWork();
     },
     [viewerId, spaceId, goToWork],
+  );
+  const selectSource = useCallback(
+    (sourceId: string) => {
+      getBrowserSourceStore(spaceId).getState().setSource(sourceId);
+      goToWork();
+    },
+    [spaceId, goToWork],
   );
   const hasPanel = panel !== null && !expanded;
   const frame = useMemo<ShellFrameValue>(
@@ -93,11 +102,13 @@ export function AppFrame({ gate, spaceId, viewerId, title, panel, strip = false,
       gate: { ...gate, screenLabel: title },
       spaceId,
       currentKind: null,
+      currentSource: null,
       selectKind,
+      selectSource,
       /* No panel: the header still spans Work's default width, never narrow. */
       panelWidth: panel !== null ? panelWidth : PANEL_DEFAULT,
     }),
-    [gate, title, spaceId, selectKind, panel, panelWidth],
+    [gate, title, spaceId, selectKind, selectSource, panel, panelWidth],
   );
   const slots = useMemo<FrameSlots>(
     () => ({ panel: hasPanel && panel === 'host' ? panelHost : null, top: topHost, strip: strip ? stripHost : null }),

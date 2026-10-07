@@ -23,7 +23,10 @@ import { useRowLifecycle } from '../../views/useRowLifecycle';
 import { useSessionStart } from '../../views/useSessionStart';
 import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../../panels/EntityListPanel';
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
+import { useStore } from 'zustand';
+import { getBrowserSource } from '../adapters/browserSources';
 import { getKindAdapter } from '../adapters/registry';
+import { getBrowserSourceStore } from '../runtime/browserSourceStore';
 import { activeEntityId } from '../runtime/selectors';
 import { workspaceCommands } from '@tm8/contract/workspace';
 
@@ -102,7 +105,26 @@ export function NewBox({
   );
 }
 
+/**
+ * The browser column: a kind's entity list, or the selected non-entity
+ * source's panel (`adapters/browserSources.ts`, e.g. Project files), read
+ * from the registry so the column never knows which source it shows.
+ */
 export function Browser() {
+  const { spaceId } = useWorkspace();
+  const sources = useMemo(() => getBrowserSourceStore(spaceId), [spaceId]);
+  const source = getBrowserSource(useStore(sources, (s) => s.source));
+  if (source) {
+    return (
+      <section className="tws-browser" aria-label={source.label} data-testid="tws-browser" data-source={source.id}>
+        <source.Panel />
+      </section>
+    );
+  }
+  return <EntityBrowser />;
+}
+
+function EntityBrowser() {
   const { dispatch, gate } = useWorkspace();
   const { data } = gate;
   const kind = useWorkspaceState((s) => s.browsers.main.kind);
