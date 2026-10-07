@@ -174,6 +174,13 @@ export interface SubtreeBodyProps {
    */
   railTail?: ReactNode;
   /**
+   * The entity's conversation — the host's discussion surface, the same one
+   * the Messages section draws — placed LAST in the main column (form
+   * 01a1164f: "activity inline at the bottom"). Two-column only; absent ⇒ no
+   * section, never an empty box.
+   */
+  activity?: ReactNode;
+  /**
    * Writes the estimate in one gesture. Absent ⇒ the rail shows the value
    * read-only (or nothing, when there is none). Two-column only.
    */
@@ -210,6 +217,7 @@ export function SubtreeBody({
   layout,
   rail,
   railTail,
+  activity,
   onPointsChange,
   descriptionSlot,
 }: SubtreeBodyProps) {
@@ -405,6 +413,15 @@ export function SubtreeBody({
             {description}
             {acceptance}
             {rest}
+            {activity ? (
+              /* A bounded box, because the conversation scrolls itself and
+                 keeps its composer at its own bottom edge; the page scrolls
+                 past it to nothing, since it is the last thing here. */
+              <section className="sb-activity" aria-label="Activity" data-testid="subtree-activity">
+                <h2 className="sb-activity__label">Activity</h2>
+                <div className="sb-activity__surface">{activity}</div>
+              </section>
+            ) : null}
           </div>
           <aside className="sb-rail" aria-label="Properties" data-testid="subtree-rail">
             {rail ?? null}

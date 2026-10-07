@@ -2241,6 +2241,9 @@ function PanelBody(
         layout={twoColumn ? 'two-column' : undefined}
         rail={props.railSlot}
         railTail={props.railTailSlot}
+        /* The page reads top to bottom into its conversation; the Messages
+           section draws the same surface for every other host and tab. */
+        activity={twoColumn ? props.discussionSurface : undefined}
         onPointsChange={
           twoColumn && !save.unavailable
             ? (pointsEstimate) => void save.commitNow({ pointsEstimate })

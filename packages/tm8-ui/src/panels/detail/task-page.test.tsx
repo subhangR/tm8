@@ -45,7 +45,10 @@ const TASK: EntityDetail = {
   content: { ...(BASE.content as object), acceptanceCriteria: CRITERIA, pointsEstimate: 3 } as EntityDetail['content'],
 };
 
-function mount(detail: EntityDetail = TASK, opts: { embedded?: boolean; attachments?: AttachmentsPort } = {}) {
+function mount(
+  detail: EntityDetail = TASK,
+  opts: { embedded?: boolean; attachments?: AttachmentsPort; discussion?: boolean } = {},
+) {
   const slot = document.createElement('div');
   document.body.appendChild(slot);
   const patchTask = vi.fn((_id: EntityId, _input: PatchTaskInput) => Promise.resolve({} as CommandResult));
@@ -57,6 +60,7 @@ function mount(detail: EntityDetail = TASK, opts: { embedded?: boolean; attachme
         ctx={ctx}
         commands={{ createEntity: vi.fn(), patchTask }}
         {...(opts.attachments ? { attachments: opts.attachments } : {})}
+        {...(opts.discussion ? { discussionSurface: <div data-testid="host-discussion">conversation</div> } : {})}
         {...(opts.embedded === false
           ? {}
           : {
@@ -372,5 +376,25 @@ describe('the rail carries what this task waits on, and what waits on it', () =>
     expect(screen.queryByTestId('rail-relation-add')).toBeNull();
     expect(screen.queryByTestId('rail-relation-remove')).toBeNull();
     expect(within(row('outgoing')).getByText('＋ Add')).toBeTruthy();
+  });
+});
+
+describe('the page ends in its conversation', () => {
+  it('draws the host discussion surface as the last thing in the main column', () => {
+    mount(TASK, { discussion: true });
+    const main = screen.getByTestId('subtree-main');
+    const activity = within(main).getByTestId('subtree-activity');
+    expect(within(activity).getByTestId('host-discussion')).toBeTruthy();
+    expect(main.lastElementChild).toBe(activity);
+  });
+
+  it('draws no Activity box when the host has no surface to give', () => {
+    mount(TASK);
+    expect(screen.queryByTestId('subtree-activity')).toBeNull();
+  });
+
+  it('is a page section only: a pinned panel keeps it in Messages', () => {
+    mount(TASK, { embedded: false, discussion: true });
+    expect(screen.queryByTestId('subtree-activity')).toBeNull();
   });
 });

@@ -851,3 +851,29 @@
 .cv2-root[data-shell='mobile'] .sb-relation__remove {
   visibility: visible;
 }
+
+/* --- activity, inline at the bottom of the page (PR3) -------------------- */
+.cv2-root .sb-activity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding-top: var(--pn-space-4);
+  border-top: 1px solid var(--pn-x-hairline-soft);
+}
+.cv2-root .sb-activity__label {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+.cv2-root .sb-activity__surface {
+  display: flex;
+  flex-direction: column;
+  height: clamp(360px, 70vh, 720px);
+  border: 1px solid var(--pn-x-hairline-soft);
+  border-radius: 8px;
+  overflow: hidden;
+}
