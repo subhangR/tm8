@@ -26,6 +26,8 @@ export interface Notice {
   body: string;
   /** Milliseconds before auto-dismiss; T1-4 says 6s. */
   ttlMs: number;
+  /** One optional follow-up (e.g. "Go" to an agent's workspace); running it dismisses the notice. */
+  action?: { label: string; run(): void };
 }
 
 export const NOTICE_TTL_MS = 6000;

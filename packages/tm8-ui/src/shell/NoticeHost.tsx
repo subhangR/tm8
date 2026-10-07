@@ -9,7 +9,7 @@
  * `aria-live="polite"` (C8): these are consequences of the viewer's own action
  * and must be announced without stealing focus.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Notice } from './notices';
 
 export interface NoticeHostHandle {
@@ -60,11 +60,14 @@ export function useNotices(): NoticeHostHandle & { notices: Notice[] } {
 export interface NoticeHostProps {
   notices: readonly Notice[];
   onDismiss(id: string): void;
+  /** Standing items above the notices (the agent prompts), in the same region. */
+  children?: ReactNode;
 }
 
-export function NoticeHost({ notices, onDismiss }: NoticeHostProps) {
+export function NoticeHost({ notices, onDismiss, children }: NoticeHostProps) {
   return (
     <div className="shell-notices" role="status" aria-live="polite" data-testid="notice-host">
+      {children}
       {notices.map((notice) => (
         <div key={notice.id} className={`shell-notice shell-notice--${notice.tone}`}>
           <span className="shell-notice__glyph" aria-hidden="true">
@@ -74,6 +77,18 @@ export function NoticeHost({ notices, onDismiss }: NoticeHostProps) {
             <span className="shell-notice__title">{notice.title}</span>
             <span className="shell-notice__body">{notice.body}</span>
           </div>
+          {notice.action ? (
+            <button
+              type="button"
+              className="shell-notice__action"
+              onClick={() => {
+                notice.action?.run();
+                onDismiss(notice.id);
+              }}
+            >
+              {notice.action.label}
+            </button>
+          ) : null}
           <button
             type="button"
             className="shell-notice__dismiss"

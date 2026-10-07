@@ -17,6 +17,8 @@ export interface WorkspaceListState extends WorkspaceView {
   online: boolean;
   /** The switcher's popover is open. */
   open: boolean;
+  /** Forget an answered (or vanished) prompt now; the sync owns the list, so the bridge points this at it. */
+  dropPrompt(promptId: string): void;
 }
 
 export type WorkspaceListStore = StoreApi<WorkspaceListState>;
@@ -27,15 +29,17 @@ export const WORKSPACE_SWITCHER_OFFLINE = 'Workspaces are unavailable while offl
 const stores = new Map<string, WorkspaceListStore>();
 
 export function createWorkspaceListStore(initial: Partial<WorkspaceListState> = {}): WorkspaceListStore {
-  return createStore<WorkspaceListState>(() => ({
+  return createStore<WorkspaceListState>((set) => ({
     capable: false,
     shown: null,
     switching: false,
     listRevision: 0,
     activeWorkspaceId: null,
     items: [],
+    prompts: [],
     online: false,
     open: false,
+    dropPrompt: (promptId) => set((s) => ({ prompts: s.prompts.filter((p) => p.promptId !== promptId) })),
     ...initial,
   }));
 }
