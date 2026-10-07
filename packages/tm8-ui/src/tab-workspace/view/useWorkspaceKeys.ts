@@ -5,10 +5,12 @@
  * the action strip's section, chat and expand buttons. No second path.
  */
 import { useEffect } from 'react';
+import { PIN_REF_PREFIX } from '../../keyboard';
 import { NOTICE_TTL_MS, type Notice } from '../../shell';
 import { canCreateKind, getKindAdapter } from '../adapters/registry';
 import { installWorkKeys, type WorkKey } from '../keys';
 import type { WorkspaceRuntime } from '../runtime/dispatch';
+import { getRailStore, workspacePinnedKinds } from '../runtime/railStore';
 import { activeTab, activeTabId, visibleTabs } from '../runtime/selectors';
 import { isWorkspaceKind, TAB_SUBVIEWS, type KindId, type TabSubview } from '../runtime/types';
 
@@ -91,8 +93,19 @@ export function handleWorkKey(
       create(state.browsers.main.kind);
       return true;
     case 'work.browser.focus': {
-      if (key.ref && isWorkspaceKind(key.ref) && key.ref !== state.browsers.main.kind) {
-        dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind: key.ref }, source: 'keyboard' });
+      let kind = key.ref;
+      // `l 1`…`l 9`: the Nth kind in the rail's Pinned group, read at press time.
+      if (kind?.startsWith(PIN_REF_PREFIX)) {
+        const n = Number(kind.slice(PIN_REF_PREFIX.length));
+        const pinned = workspacePinnedKinds(getRailStore(runtime.spaceId).getState().pins);
+        kind = pinned[n - 1]?.kind;
+        if (!kind) {
+          notify(pinned.length === 0 ? 'Nothing is pinned on the rail.' : `Only ${pinned.length} pinned on the rail.`);
+          return true;
+        }
+      }
+      if (kind && isWorkspaceKind(kind) && kind !== state.browsers.main.kind) {
+        dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind }, source: 'keyboard' });
       }
       // Full screen hides the browser; asking for the list brings it back.
       if (state.layout.expanded) dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'keyboard' });

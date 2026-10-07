@@ -73,7 +73,7 @@ export function helpRows(platform: Platform): { group: string; rows: Binding[] }
 const GROUP_NOTE: Partial<Record<string, string>> = {
   Focus: 'Single-key shortcuts never fire while you type. Leave the field or terminal first.',
   Launch: 'On the New session screen (n s). Esc leaves the prompt; the letters then work on the card.',
-  Lists: 'l l focuses the list on the left, as it is; l plus a letter switches it to that kind first.',
+  Lists: 'l l focuses the list on the left, as it is; l plus a letter switches it to that kind first; l plus a digit, to that pinned kind on the rail.',
 };
 
 export function ShortcutsOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {

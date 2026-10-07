@@ -275,6 +275,25 @@ const LIST_CHORDS: readonly Binding[] = (
   match: listChord(key),
 }));
 
+/** The `ref` prefix `l 1`…`l 9` send: the Nth kind in the icon rail's Pinned group. */
+export const PIN_REF_PREFIX = 'pin:';
+
+/**
+ * `l 1`…`l 9` (user ruling, task 01a1156f): the Nth PINNED kind on the Work
+ * icon rail, top to bottom — the same as clicking it, then focus the list. The
+ * pins are the user's, so the label names the position, not a kind.
+ */
+const LIST_PIN_CHORDS: readonly Binding[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((n) => ({
+  id: `l.pin.${n}`,
+  layer: 'global' as const,
+  keys: `l ${n}`,
+  label: `List pinned kind ${n}`,
+  command: 'work.browser.focus' as const,
+  ref: `${PIN_REF_PREFIX}${n}`,
+  guaranteed: true,
+  match: listChord(n),
+}));
+
 /**
  * `1`…`9` jump to a Work tab by position. Plain digits, not Mod+digit: Mod+1…9
  * is the browser's own tab switcher everywhere, so it is never bound.
@@ -422,6 +441,7 @@ export const BINDINGS: readonly Binding[] = [
   // typing (layer 4). Every one also has a pointer path in the Work view.
   { id: 'work.design', layer: 'global', keys: 'd', label: 'Toggle Design mode', command: 'work.design.toggle', guaranteed: true, match: plain('d') },
   ...LIST_CHORDS,
+  ...LIST_PIN_CHORDS,
   { id: 'work.tab.next', layer: 'global', keys: ']', label: 'Next tab', command: 'work.tab.next', guaranteed: true, match: plain(']') },
   { id: 'work.tab.prev', layer: 'global', keys: '[', label: 'Previous tab', command: 'work.tab.prev', guaranteed: true, match: plain('[') },
   ...TAB_NTH,

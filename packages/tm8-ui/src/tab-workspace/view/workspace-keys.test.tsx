@@ -12,6 +12,7 @@ import { installWorkKeys, queueWorkKey, runWorkKey, workKeysMounted } from '../k
 import { createWorkspaceRuntime } from '../runtime/dispatch';
 import { createWorkspaceStore } from '../runtime/store';
 import { activeTabId, visibleTabs } from '../runtime/selectors';
+import { getRailStore } from '../runtime/railStore';
 import { handleWorkKey } from './useWorkspaceKeys';
 import { useListCursor } from './listCursor';
 
@@ -116,6 +117,29 @@ describe('handleWorkKey — creation and the browser', () => {
     handleWorkKey(rt, { command: 'work.browser.focus', ref: 'work_session' }, () => {});
     expect(rt.store.getState().browsers.main.kind).toBe('work_session');
     expect(rt.store.getState().layout.expanded).toBe(false);
+  });
+
+  it('l 1…l 9 switch the browser to that pinned rail kind, in the rail\'s order', () => {
+    const rt = runtime();
+    // The default pins, top to bottom: chats, tasks, sessions.
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:2' }, () => {});
+    expect(rt.store.getState().browsers.main.kind).toBe('task');
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:3' }, () => {});
+    expect(rt.store.getState().browsers.main.kind).toBe('work_session');
+
+    // The rail is the user's: unpin chats and the numbers follow.
+    getRailStore(rt.spaceId).getState().togglePin('chat');
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:1' }, () => {});
+    expect(rt.store.getState().browsers.main.kind).toBe('task');
+  });
+
+  it('l with a digit past the pins leaves the browser and says so', () => {
+    const rt = runtime();
+    rt.dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'doc' }, source: 'click' });
+    const notify = vi.fn();
+    handleWorkKey(rt, { command: 'work.browser.focus', ref: 'pin:7' }, notify);
+    expect(rt.store.getState().browsers.main.kind).toBe('doc');
+    expect(notify).toHaveBeenCalledWith('Only 3 pinned on the rail.');
   });
 
   it('r on a tab with nothing to launch says so', () => {
