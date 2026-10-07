@@ -4369,9 +4369,12 @@ export function Tile({
            says it, and the criteria count rides the progress bar alone. */
         badges={tileBadges || (progress && view.shows('progress')) ? (
           <>
-            {tileBadges}
-            {/* 307: the task's weighted progress, as the standard tile draws it. */}
+            {/* 307: the task's weighted progress, as the standard tile draws it.
+                FIRST, before the edge chips: the chip set varies row to row,
+                so a bar drawn after it starts at a different x on every task
+                and the column cannot be scanned. Leading, it lines up. */}
             {progress && view.shows('progress') ? <TileProgressBar progress={progress} /> : null}
+            {tileBadges}
           </>
         ) : null}
         /* The same cluster the standard tile draws, in the same order — one
