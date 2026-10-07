@@ -136,6 +136,24 @@
   display: inline-flex;
   flex: none;
 }
+/* The icon opens the tab's menu (task 01a115a6): a soft well on hover. */
+.tws-ts-lead[data-menu] {
+  cursor: pointer;
+  isolation: isolate;
+}
+.tws-ts-lead[data-menu]::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -4px;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  transition: background var(--pn-dur-fast) var(--pn-ease-out);
+  pointer-events: none;
+}
+.tws-ts-lead[data-menu]:hover::before {
+  background: color-mix(in srgb, var(--pn-ink) 9%, transparent);
+}
 .tws-ts-lead > .tws-ts-state {
   position: absolute;
   right: -3px;
@@ -378,6 +396,12 @@
 }
 .tws-ts-menu-row[aria-disabled='true']:hover {
   background: none;
+}
+.tws-ts-menu-rule {
+  flex: none;
+  height: 1px;
+  margin: var(--pn-space-1) var(--pn-space-1);
+  background: var(--pn-line);
 }
 .tws-ts-menu-check {
   display: inline-flex;
