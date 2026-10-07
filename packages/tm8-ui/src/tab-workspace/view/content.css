@@ -741,3 +741,23 @@
   color: var(--pn-ink-3);
   white-space: nowrap;
 }
+
+/* THE LIVE TITLE (two-column page, task 01a1163a): a field that reads as the
+   title until it has the caret — no box at rest, the editing box on focus. */
+.cv2-root .pn-embedded-title--live {
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  margin-left: calc(-1 * var(--pn-space-2) - 1px);
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  cursor: text;
+}
+.cv2-root .pn-embedded-title--live:hover {
+  border-color: var(--pn-line);
+}
+.cv2-root .pn-embedded-title--live:focus {
+  outline: none;
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
+}

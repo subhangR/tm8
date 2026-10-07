@@ -673,65 +673,16 @@ const ROWS: readonly KindConfig[] = [
     createInstant: 'title',
     icon: '◻',
     iconArt: KIND_ART.task,
-    /**
-     * TITLE AND THE TWO DATES — the write surface `dueDate` never had, and the
-     * one `startDate` is born with rather than waiting for its own report.
-     *
-     * The due date was modelled end to end and reachable from nowhere: the
-     * column, the `PatchTaskInput` member, the `::date` sort and the read
-     * projection all existed, and no control in the app wrote one. So `BY_DUE`
-     * below sorted a field only the CLI could fill, which is a sort that works
-     * perfectly and can never have anything to order.
-     *
-     * WHY THE DIALOG AND NOT A `valueControl`. That list is explicitly "an enum
-     * member of `EntityState` this kind lets a user set" — it renders a picker
-     * over declared `options`, and a calendar has none. The dialog is the
-     * surface that already draws arbitrary typed fields, so a due date is one
-     * more `editFields` row rather than a new control shape.
-     *
-     * TITLE RIDES ALONG because the dialog is "Edit task" and a form that
-     * cannot touch the name reads broken. It grants nothing new — the row and
-     * the panel header already edit the title inline (`inlineEdit.title`) — and
-     * it is not `required` theatre: `entities.title` is `not null`, so an empty
-     * one is a refusal the dialog states before spending a round trip.
-     *
-     * DESCRIPTION IS DELIBERATELY ABSENT. It is a body, not a field; the panel
-     * renders it as prose, and a three-row textarea in a dialog is where a long
-     * description goes to get truncated by hand.
+    /*
+     * NO `editFields`, AND SO NO EDIT DIALOG (task 01a1163a, owner ruling in
+     * form 01a1164f: "no Edit dialog"). The dialog was the first write surface
+     * for the two dates, and it was the right one while it was the only one.
+     * It no longer is: the two-column page (`panel.layout`) edits title, both
+     * dates and every other property in place, so a dialog repeating three of
+     * them was a second door to the same fields, and it carried their
+     * split-half `readFrom: 'state'` bookkeeping for nothing. §15.1 pins the
+     * `edit` verb to this list, so dropping it drops the verb by derivation.
      */
-    editFields: [
-      { target: 'title', label: 'Title', required: true, placeholder: 'What needs doing' },
-      {
-        target: 'content',
-        source: 'startDate',
-        /* Same split halves as `dueDate` below — projected onto `state`, absent
-           from `contentOf` — so the same `readFrom`. Without it the dialog
-           opens blank on a task that HAS a start date and Save clears it. */
-        readFrom: 'state',
-        label: 'Start date',
-        valueType: 'date',
-      },
-      {
-        target: 'content',
-        source: 'dueDate',
-        /*
-         * WRITTEN to `content.dueDate`, READ from `state.dueDate`. The server
-         * projects the column onto state (`entity-read.ts:1112`) and leaves it
-         * out of `contentOf` (`:1502-1508`), so this is the one field in the
-         * app whose two halves live in different places. Without this the
-         * dialog opens blank on a task that has a due date and Save clears it.
-         */
-        readFrom: 'state',
-        label: 'Due date',
-        /*
-         * OPTIONAL, and unusually literally so: `tasks.due_date` is a NULLABLE
-         * column, so "no due date" is a value the database holds rather than a
-         * hole in the record. Clearing the box sends an explicit `null`, which
-         * is the only thing the server reads as a clear — see `valueForWire`.
-         */
-        valueType: 'date',
-      },
-    ],
     slug: 'tasks',
     strategy: 'collection',
     defaultMode: 'list',
@@ -864,18 +815,18 @@ const ROWS: readonly KindConfig[] = [
         COLLECTIONS_BLOCK,
       ],
       /*
-       * The detail header keeps Run and Edit. Coordinate and Complete remain
-       * available from their task-specific surfaces, not this compact panel
-       * toolbar — but `edit` is not a fourth verb competing for that space, it
-       * is the ONLY door to `editFields` (§15.1 pins the two together, and
-       * `useEntityVerbs` drops the verb on a kind that declares nothing). A
-       * task with fields and no verb would be the "declared and unreachable"
-       * half of that rule.
+       * The detail header keeps Run. Coordinate and Complete remain available
+       * from their task-specific surfaces. `edit` LEFT with `editFields`
+       * (above): the page edits every field in place, and §15.1 would refuse
+       * the verb without the list anyway.
        */
-      primaries: ['run', 'edit'],
+      primaries: ['run'],
       // Git UI wave: tasks carry the git section (tracked PRs, provenance,
       // gate honesty). A registry field, so the panel never asks the kind.
       gitSection: true,
+      /* The writing in a wide column, the properties in a rail beside it —
+         see `PanelConfig.layout`. */
+      layout: 'two-column',
       statusPill: {
         source: 'status',
         tones: {

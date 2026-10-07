@@ -94,9 +94,14 @@ describe('a record New just made', () => {
     expect(patchTask.mock.calls[0]![1]).toMatchObject({ title: 'Half a thought' });
   });
 
-  it('any other record opens with its title as text, as before', () => {
+  it('any other record opens with its title in place, without taking the caret', () => {
+    /* The task page edits its title in place (`panel.layout: 'two-column'`,
+       task 01a1163a), so the title is a field at rest. What arrival alone
+       adds is the caret and the selection, and neither may happen here. */
     mount();
-    expect(screen.queryByTestId('panel-embedded-title-input')).toBeNull();
-    expect(screen.getByTestId('panel-embedded-title').textContent).toBe(PLACEHOLDER);
+    const field = screen.getByTestId('panel-embedded-title-input') as HTMLInputElement;
+    expect(field.value).toBe(PLACEHOLDER);
+    expect(document.activeElement).not.toBe(field);
+    expect(emptyFreshDocs()).toEqual([]);
   });
 });
