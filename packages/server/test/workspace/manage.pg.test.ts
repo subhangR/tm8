@@ -267,4 +267,28 @@ describeIfPg('workspace management over real Postgres (§5.7–§5.11)', () => {
     await expect(remove(await idOf('Billing'))).rejects.toMatchObject({ code: 'conflict', details: { reason: 'last_workspace' } });
     expect(await create()).toMatchObject({ workspace: { name: 'Workspace 2' } });
   });
+
+  it('a session pinned to one space cannot tell its own workspace in another space from no workspace (227 pin)', async () => {
+    const [elsewhereWs] = (await db.asOwner((q) => q.query<{ workspace_id: string }>(
+      'select workspace_id from public.workspaces where space_id = $1 and identity_id = $2 order by position limit 1',
+      [otherSpaceId, human],
+    ))).map((r) => r.workspace_id);
+    expect(elsewhereWs).toBeDefined();
+    // The harness binds only the first four claims; bind the 227 pin as the node does.
+    const refused = (fn: string, args: unknown[]) => db.tx(claims(), async (q) => {
+      await q.query(`select set_config('tm8.session_space_id', $1, true)`, [spaceId]);
+      return q.rpc(fn, args);
+    });
+    // The same P0002 a workspace id that exists nowhere gets: no oracle across the pin.
+    for (const id of [elsewhereWs!, randomUUID()]) {
+      await expect(refused('public.workspace_draft_write', [id, randomUUID(), 'task', 0, JSON.stringify({ title: { v: 'x', r: 1 } })]))
+        .rejects.toMatchObject({ code: 'P0002' });
+      await expect(refused('public.workspace_switch', [id])).rejects.toMatchObject({ code: 'P0002' });
+      await expect(refused('public.workspace_update', [id, 'Renamed', false, null])).rejects.toMatchObject({ code: 'P0002' });
+    }
+    // The 305 rollback shim checks the pinned membership before it counts anything.
+    await expect(refused('public.workspace_save', [otherSpaceId, 5, 6, '{}'])).rejects.toMatchObject({ code: '42501' });
+    // Unpinned, the same caller reaches it.
+    expect(await db.rpc(claims(), 'public.workspace_switch', [elsewhereWs!])).toBeTypeOf('string');
+  });
 });
