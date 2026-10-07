@@ -146,10 +146,11 @@ export function useEntityVerbs(options: EntityVerbsOptions): EntityVerbsHandle {
     placeholderTitle: childTitle,
     commands,
     onCreated: (id) => {
-      /* A child doc lands like New doc's (New doc UX): in the editor, title
-         first, and swept if it is left untitled and empty. Asked of the
-         registry's archetype, never of a kind name (§15.2). */
-      if (config?.panel.archetype === 'reader') markFreshDoc(id, childTitle);
+      /* A child lands like New's (New doc UX; instant create, 2026-10-07):
+         a doc in the editor, title first, any other instant kind with its
+         title selected, and swept if it is left untitled and untouched.
+         Asked of registry data, never of a kind name (§15.2). */
+      if (config?.createInstant !== undefined) markFreshDoc(id, childTitle);
       onCreated?.(id);
     },
   });

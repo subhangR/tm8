@@ -24,7 +24,7 @@ import { LeftHeader, ViewSelector } from './LeftHeader';
 import { ScopeRepairBanner } from './RestoreOffer';
 import { RevealPrompt } from './RevealPrompt';
 import { TabStrip } from './TabStrip';
-import { useAbandonedDocSweep } from './useAbandonedDocSweep';
+import { useAbandonedSweep } from './useAbandonedSweep';
 import { WorkspaceRail } from './WorkspaceRail';
 import { useWorkspaceKeys } from './useWorkspaceKeys';
 import './workspace.css';
@@ -68,7 +68,7 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorks
     [runtime, onNotice],
   );
   useEffect(() => installDevHook(runtime), [runtime]);
-  useAbandonedDocSweep(runtime, gate.data);
+  useAbandonedSweep(runtime, gate.data);
   useEffect(() => initPersistence(runtime, { viewerId, spaceId }), [runtime, viewerId, spaceId]);
   /* The URL carries only an entity id; its kind comes from the data layer.
      A cold id is fetched once and polled briefly (the read lands in `data`). */

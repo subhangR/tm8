@@ -72,6 +72,7 @@ import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
 import { ReaderSurface } from './bodies/ReaderSurface';
 import type { DocCommands } from '../doc-edit';
+import { clearLiveTitle, freshDocTitle, isFreshArrival, noteFreshArrived, noteFreshDocEmpty, setLiveTitle } from '../doc-edit';
 import { HubBody } from './bodies/HubBody';
 import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
 import type { MembershipAuthoring } from './bodies/MembershipBlock';
@@ -809,6 +810,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * is the designed consequence of holding the version the edit was based on.
    */
   const editableConfig = detail ? getKind(detail.kind) : null;
+  const titleArrival = useTitleArrival(detail ?? null);
   const save = useTaskSave({
     detail: detail ?? null,
     commands: props.commands ?? null,
@@ -1399,9 +1401,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       {embedded?.titleSlot && !oneSurface
         ? createPortal(
             <EmbeddedTitle
+              entityId={detail.id}
               title={detail.title}
               byline={byline}
               editable={titleEditable}
+              arrival={titleArrival && titleEditable}
               onCommit={async (title) => {
                 await save.commitNow({ title });
               }}
@@ -1425,7 +1429,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            actual click/keyboard editor is still mounted only when writable. */
         titleEditable={titleEditable}
         titleLockReason={editsPossible && config.list.inlineEdit?.title ? saveRefusal : undefined}
-        autoFocusTitle={props.justCreated}
+        autoFocusTitle={props.justCreated || titleArrival}
         supplemental={
           (props.linkedPullRequests?.length ?? 0) > 0 ? (
             <LinkedPullRequestChips
@@ -1710,23 +1714,83 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
 }
 
 /**
+ * A record New just created at once (`createInstant: 'title'`) lands with its
+ * title selected (Kalai, 2026-10-07: "the new task detail screen, with the
+ * title selected"). True from the render that first sees it, and for the rest
+ * of this panel's life on that record; the effect spends the registry's
+ * arrival and records the version it arrived at, which the abandoned sweep
+ * compares against. Asked of registry data, never of a kind name (§15.2).
+ */
+function useTitleArrival(detail: EntityDetail | null): boolean {
+  const id = detail?.id ?? null;
+  const fresh = detail !== null && getKind(detail.kind).createInstant === 'title' && isFreshArrival(detail.id);
+  const [arrivedId, setArrivedId] = useState<string | null>(null);
+  const version = detail?.version ?? null;
+  useEffect(() => {
+    if (!fresh || id === null) return;
+    noteFreshArrived(id, version);
+    setArrivedId(id);
+    // Spent once, at the version it arrived with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fresh, id]);
+  return id !== null && (fresh || arrivedId === id);
+}
+
+/**
  * The embedded host's title bar text (Subhang, round 5): one line, the full
  * title in its tooltip; double-click renames inline through the panel's save
  * flow — the same path as ⋯ Rename. Enter saves, Escape cancels.
+ *
+ * ON ARRIVAL (a record New just created) it starts as the field, its
+ * placeholder title selected, so typing names it. While it is a field the tab
+ * follows what is typed (`setLiveTitle`), the abandoned sweep hears whether it
+ * is still untitled, and a name typed but never entered is saved when the
+ * field goes (the tab closed under it) rather than lost.
  */
 function EmbeddedTitle({
+  entityId,
   title,
   byline,
   editable,
+  arrival = false,
   onCommit,
 }: {
+  entityId: string;
   title: string;
   byline: string;
   editable: boolean;
+  arrival?: boolean;
   onCommit: (title: string) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraftState] = useState<string | null>(() => (arrival ? title : null));
   const committing = useRef(false);
+  const field = useRef<HTMLInputElement | null>(null);
+  const pending = useRef<{ draft: string | null; title: string; onCommit: typeof onCommit }>({ draft, title, onCommit });
+  pending.current = { draft, title, onCommit };
+
+  const setDraft = (next: string | null) => {
+    setDraftState(next);
+    if (next === null) {
+      clearLiveTitle(entityId);
+      return;
+    }
+    setLiveTitle(entityId, next.trim() === '' ? title : next);
+    const created = freshDocTitle(entityId);
+    noteFreshDocEmpty(entityId, next.trim() === '' || next.trim() === created);
+  };
+
+  useEffect(() => {
+    if (arrival) field.current?.select();
+    return () => {
+      clearLiveTitle(entityId);
+      const { draft: left, title: saved, onCommit: commitLeft } = pending.current;
+      const next = left?.trim() ?? '';
+      if (!committing.current && next !== '' && next !== saved) void commitLeft(next);
+    };
+    // Mount and unmount only: the selection is the arrival's, once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (draft === null) {
     return (
       <span
@@ -1754,6 +1818,7 @@ function EmbeddedTitle({
   };
   return (
     <input
+      ref={field}
       className="pn-embedded-title pn-embedded-title--editing"
       aria-label="Rename"
       data-testid="panel-embedded-title-input"
