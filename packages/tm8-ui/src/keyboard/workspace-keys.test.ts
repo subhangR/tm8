@@ -80,6 +80,14 @@ describe('Workspace bindings', () => {
     expect(press('g t')).toEqual([{ command: 'nav.kind', ref: 'tasks' }]);
   });
 
+  it('g w opens the workspace switcher, on a chord no other binding holds', () => {
+    expect(press('g w')).toEqual([{ command: 'workspace.switcher', ref: undefined }]);
+    expect(press('g w', { textEntry: true })).toEqual([]);
+    expect(BINDINGS.filter((b) => b.keys === 'g w').map((b) => b.id)).toEqual(['g.workspace']);
+    expect(hintFor('workspace.switcher', undefined, 'other')).toBe('g w');
+    expect(bindingGroup(BINDINGS.find((b) => b.id === 'g.workspace')!)).toBe('Workspace');
+  });
+
   it('a chord letter only means something under its own lead', () => {
     // `t` then `t` is not a binding: cancelled, consumed, nothing fires.
     expect(press('t t')).toEqual([]);

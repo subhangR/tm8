@@ -2020,6 +2020,63 @@
 .cv2-root .shell-rail--collapsed .shell-switcher__trigger { justify-content: center; padding: 5px 0; }
 .cv2-root .shell-rail--collapsed .shell-switcher__pop { left: 4px; min-width: 200px; }
 
+/* The workspace switcher (API doc 01a115c4 §10): the space switcher's
+   popover, with a colour dot, a tab count and a row's ⋯ actions. */
+.cv2-root .tws-wsw { position: relative; padding: 0; }
+.cv2-root .tws-wsw__trigger { display: flex; align-items: center; gap: 6px; width: auto; }
+.cv2-root .tws-wsw__trigger[aria-disabled='true'] { color: var(--pn-ink-4); cursor: not-allowed; }
+.cv2-root .tws-wsw__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pn-ink-4);
+}
+.cv2-root .tws-wsw__dot[data-color='none'] { background: transparent; box-shadow: inset 0 0 0 1px var(--pn-line); }
+.cv2-root .tws-wsw__dot[data-color='gray'] { background: #8b8d98; }
+.cv2-root .tws-wsw__dot[data-color='red'] { background: #e5484d; }
+.cv2-root .tws-wsw__dot[data-color='orange'] { background: #f76b15; }
+.cv2-root .tws-wsw__dot[data-color='yellow'] { background: #ffc53d; }
+.cv2-root .tws-wsw__dot[data-color='green'] { background: #30a46c; }
+.cv2-root .tws-wsw__dot[data-color='teal'] { background: #12a594; }
+.cv2-root .tws-wsw__dot[data-color='blue'] { background: #0090ff; }
+.cv2-root .tws-wsw__dot[data-color='purple'] { background: #8e4ec6; }
+.cv2-root .tws-wsw__dot[data-color='pink'] { background: #d6409f; }
+.cv2-root .tws-wsw__pop { left: 0; }
+.cv2-root .tws-wsw__line { display: flex; align-items: center; }
+.cv2-root .tws-wsw__line .shell-switcher__space-row { flex: 1; min-width: 0; padding-left: 8px; }
+.cv2-root .tws-wsw__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv2-root .tws-wsw__count { flex: none; color: var(--pn-ink-4); font-family: var(--pn-mono); font-size: 10px; }
+.cv2-root .tws-wsw__more,
+.cv2-root .tws-wsw__actions button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.cv2-root .tws-wsw__more { flex: none; width: 24px; height: 24px; }
+.cv2-root .tws-wsw__more:hover,
+.cv2-root .tws-wsw__actions button:hover { background: var(--pn-hover); }
+.cv2-root .tws-wsw__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px 8px 4px 27px; }
+.cv2-root .tws-wsw__actions button { padding: 3px 6px; }
+.cv2-root .tws-wsw__actions button:disabled { color: var(--pn-ink-4); cursor: not-allowed; }
+.cv2-root .tws-wsw__actions .shell-switcher__hint { padding: 0 6px 0 0; }
+.cv2-root .tws-wsw__swatch[aria-pressed='true'] { box-shadow: inset 0 0 0 1px var(--pn-ink-3); }
+.cv2-root .tws-wsw__rename {
+  width: calc(100% - 16px);
+  margin: 2px 8px;
+  padding: 3px 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+}
+
 /* Revision 11: the expanded rail draws NO group eyebrows — the group boundary
    is spacing (the accessible name rides the group's aria-label). */
 .cv2-root .shell-rail--expanded .shell-rail__group + .shell-rail__group { margin-top: 9px; }

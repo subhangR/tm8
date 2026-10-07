@@ -119,6 +119,8 @@ export interface SpaceTabBarProps {
    * bar simply has no identity control, which is every pre-R1 test.
    */
   switcherSlot?: ReactNode;
+  /** The workspace switcher, beside the space name (API doc 01a115c4 §10). */
+  workspaceSwitcherSlot?: ReactNode;
   /**
    * The top-level tabs, derived from the resolved menu config's groups (R2).
    * Data, not chrome: the bar never invents a tab. Absent → no tablist.
@@ -250,6 +252,7 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
         )}
 
         {props.switcherSlot ?? null}
+        {props.workspaceSwitcherSlot ?? null}
       </div>
 
       {/* CENTRE ZONE — the `auto` column between two equal `1fr` tracks, which

@@ -38,6 +38,8 @@ export interface WorkspaceGateHandles {
   onSelectViewTab(id: string): void;
   /** The existing SpaceSwitcher element, ready to mount. */
   switcherSlot: ReactNode;
+  /** The workspace switcher element, beside the space name; null until the node knows workspaces. */
+  workspaceSwitcherSlot?: ReactNode;
   /** The screen's name when it is not one of the three modes (Inbox, Messages…): the view selector's label. */
   screenLabel?: string | undefined;
   /** The existing AccountMenu element (with Inbox and Copy link rows), or undefined without an account. */
