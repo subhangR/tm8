@@ -88,3 +88,36 @@ export function useRecentProjectFiles(viewerId: string | null, spaceId: string):
 export function resetRecentProjectFilesForTest(): void {
   cache.clear();
 }
+
+/** One New-tab row: an entity, or a recent project file. */
+export type RecentPick<E> =
+  | { type: 'entity'; id: string; row: E }
+  | { type: 'file'; id: string; file: RecentProjectFile };
+
+/**
+ * Entities (already newest first) and recent files merged newest first, up
+ * to `limit`. An entity's time is its `activityAt`; a file's, when it was
+ * last opened.
+ */
+export function mergeRecentPicks<E extends { id: string; activityAt: string }>(
+  entities: readonly E[],
+  files: readonly RecentProjectFile[],
+  limit: number,
+): RecentPick<E>[] {
+  const out: RecentPick<E>[] = [];
+  let e = 0;
+  let f = 0;
+  while (out.length < limit && (e < entities.length || f < files.length)) {
+    const entity = entities[e];
+    const file = files[f];
+    const entityAt = entity ? Date.parse(entity.activityAt) : -Infinity;
+    if (file && (!entity || !(entityAt >= file.openedAt))) {
+      out.push({ type: 'file', id: `file:${file.projectId}\u0000${file.path}`, file });
+      f += 1;
+    } else if (entity) {
+      out.push({ type: 'entity', id: entity.id, row: entity });
+      e += 1;
+    }
+  }
+  return out;
+}

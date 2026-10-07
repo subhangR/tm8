@@ -32,9 +32,10 @@ function subscribe(listener: () => void): () => void {
 }
 
 /** Read the space's project names once (again after a failure). */
-export function loadProjectNames(seam: Pick<Seam, 'projects'>, spaceId: string): Promise<void> {
+export function loadProjectNames(seam: Pick<Seam, 'projects'> | undefined, spaceId: string): Promise<void> {
   const pending = nameReads.get(spaceId);
   if (pending) return pending;
+  if (typeof seam?.projects !== 'function') return Promise.resolve();
   const read = seam.projects(spaceId as SpaceId).then(
     (projects) => {
       names.set(spaceId, new Map(projects.map((p) => [p.id, p.name || p.workingDir || p.id])));
@@ -49,12 +50,20 @@ export function loadProjectNames(seam: Pick<Seam, 'projects'>, spaceId: string):
 }
 
 /** The project's name, or null while unknown. */
-export function useProjectName(seam: Pick<Seam, 'projects'>, spaceId: string, projectId: string): string | null {
+export function useProjectName(seam: Pick<Seam, 'projects'> | undefined, spaceId: string, projectId: string): string | null {
   useEffect(() => {
     void loadProjectNames(seam, spaceId);
   }, [seam, spaceId]);
   const map = useSyncExternalStore(subscribe, () => names.get(spaceId) ?? EMPTY);
   return map.get(projectId) ?? null;
+}
+
+/** Every project name in the space (id → name); empty while unknown. */
+export function useProjectNames(seam: Pick<Seam, 'projects'> | undefined, spaceId: string): ReadonlyMap<string, string> {
+  useEffect(() => {
+    if (spaceId) void loadProjectNames(seam, spaceId);
+  }, [seam, spaceId]);
+  return useSyncExternalStore(subscribe, () => names.get(spaceId) ?? EMPTY);
 }
 
 /** The project's root, from its root listing. Rejects when files are unreadable. */

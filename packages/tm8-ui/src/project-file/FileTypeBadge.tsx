@@ -4,6 +4,7 @@
  */
 import { extensionOf } from './language';
 import { baseName } from './paths';
+import './project-file.css';
 
 const SHORT: Record<string, string> = {
   json: '{}', jsonc: '{}', markdown: 'MD', yml: 'YML', yaml: 'YML',

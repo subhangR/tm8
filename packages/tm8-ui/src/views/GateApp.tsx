@@ -55,6 +55,7 @@ import { BoardV2Screen } from '../board-v2';
 import {
   isWorkspaceKind,
   openInWorkspace,
+  openProjectFileInWorkspace,
   queueWorkArrival,
   queueWorkKey,
   runWorkKey,
@@ -63,6 +64,9 @@ import {
   useWorkspaceShareRoute,
   type WorkspaceGateHandles,
 } from '../tab-workspace';
+import { FILE_PALETTE_SCOPE, parseFilePaletteRef, recentFilePaletteViews } from '../project-file/palette';
+import { useProjectNames } from '../project-file/projects';
+import { useRecentProjectFiles } from '../project-file/recent';
 import { DesignScreen, DesignsHome, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -1948,6 +1952,10 @@ export function GateApp(props: GateAppProps = {}) {
   }, [paletteQuery, data.rowsFor]);
 
   const kbPlatform = keyboardRef.current?.getContext().platform ?? 'other';
+  /* The viewer's recent project files (#1102's Recent source for files): ⌘K
+     rows that open a read-only file tab in Work. Desktop only, like Work. */
+  const recentFiles = useRecentProjectFiles(shell === 'mobile' ? null : viewerMemberId, data.spaceId);
+  const projectNames = useProjectNames(data.seam, data.spaceId);
   const paletteViews = useMemo<PaletteView[]>(
     () => withShortcutHints(kbPlatform, [
       /* D31: the three modes lead, in selector order. Home and the old Work
@@ -1983,8 +1991,9 @@ export function GateApp(props: GateAppProps = {}) {
             ...NEW_KINDS.map(({ kind, label }) => ({ id: `new:${kind}`, label, glyph: <KindIcon kind={kind} /> })),
           ]),
       { id: 'help:shortcuts', label: 'Keyboard shortcuts', glyph: '⌨' },
+      ...recentFilePaletteViews(recentFiles, projectNames, paletteQuery),
     ]),
-    [threeModes, shell, kbPlatform],
+    [threeModes, shell, kbPlatform, recentFiles, projectNames, paletteQuery],
   );
   const openPaletteView = useCallback((id: string) => {
     const [scope, ref] = id.split(':', 2) as [string, string];
@@ -1998,8 +2007,15 @@ export function GateApp(props: GateAppProps = {}) {
     if (scope === 'kind') navigateTo({ type: 'kind', ref });
     if (scope === 'new') commandSink.current(ref === 'tab' ? 'work.newTab' : 'work.create', ref === 'tab' ? undefined : ref);
     if (scope === 'help') setShortcutsOpen(true);
+    if (scope === FILE_PALETTE_SCOPE) {
+      const file = parseFilePaletteRef(ref);
+      /* Like an entity pick: outside Work the route carries it (Work opens
+         `?fp=&f=` on mount); inside, it opens as a kept tab. */
+      if (file && navStore.getState().view.view !== 'tabs') navStore.getState().navigate({ view: 'tabs', file });
+      else if (file && viewerMemberId) openProjectFileInWorkspace(viewerMemberId, data.spaceId, file);
+    }
     setPaletteOpen(false);
-  }, [channelEntities, navigateTo]);
+  }, [channelEntities, navigateTo, viewerMemberId, data.spaceId]);
 
   /* The resolved menu's groups are the tabs, with one route-only seat for the
      new Board — then split in two (task 01a0dc6d, owner-ruled 2026-09-26):
