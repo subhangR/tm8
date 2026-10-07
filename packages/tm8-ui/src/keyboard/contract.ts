@@ -56,6 +56,7 @@ export type KeyCommand =
   | 'list.next'
   | 'list.prev'
   | 'list.open'
+  | 'list.status'
   | 'list.primary'
   | 'list.create'
   | 'list.search'
@@ -91,7 +92,22 @@ export type KeyCommand =
   | 'work.tab.chat'
   | 'work.tab.fullscreen'
   /** Out of a focused terminal, or back into the visible one. */
-  | 'terminal.toggle';
+  | 'terminal.toggle'
+  // -- Launch card (the New session screen) -----------------------------------
+  // Never emitted by the controller: the card handles its own keys
+  // (`new-session/launch-keys.ts`); these name its rows in the help overlay.
+  | 'launch.card'
+  | 'launch.model'
+  | 'launch.effort'
+  | 'launch.permission'
+  | 'launch.teammate'
+  | 'launch.workdir'
+  | 'launch.worktree'
+  | 'launch.options'
+  | 'launch.prompt'
+  | 'launch.submit'
+  | 'launch.menu.next'
+  | 'launch.menu.prev';
 
 export interface Binding {
   id: string;
@@ -245,6 +261,7 @@ const LIST_CHORDS: readonly Binding[] = (
     ['s', 'work_session', 'List sessions'],
     ['c', 'chat', 'List chats'],
     ['f', 'form', 'List forms'],
+    ['a', 'artifact', 'List artifacts'],
     ['p', 'project', 'List projects'],
     ['x', 'drawing', 'List drawings'],
     ['m', 'team_member', 'List teammates'],
@@ -258,6 +275,25 @@ const LIST_CHORDS: readonly Binding[] = (
   ...(kind ? { ref: kind } : {}),
   guaranteed: true,
   match: listChord(key),
+}));
+
+/** The `ref` prefix `l 1`…`l 9` send: the Nth kind in the icon rail's Pinned group. */
+export const PIN_REF_PREFIX = 'pin:';
+
+/**
+ * `l 1`…`l 9` (user ruling, task 01a1156f): the Nth PINNED kind on the Work
+ * icon rail, top to bottom — the same as clicking it, then focus the list. The
+ * pins are the user's, so the label names the position, not a kind.
+ */
+const LIST_PIN_CHORDS: readonly Binding[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((n) => ({
+  id: `l.pin.${n}`,
+  layer: 'global' as const,
+  keys: `l ${n}`,
+  label: `List pinned kind ${n}`,
+  command: 'work.browser.focus' as const,
+  ref: `${PIN_REF_PREFIX}${n}`,
+  guaranteed: true,
+  match: listChord(n),
 }));
 
 /**
@@ -299,6 +335,51 @@ const CREATE_CHORDS: readonly Binding[] = (
   ref: kind,
   guaranteed: true,
   match: createChord(key),
+}));
+
+/**
+ * THE LAUNCH CARD'S KEYS — one letter per control, live while focus is on the
+ * card but NOT in its prompt or title (Esc gets you there, `i` goes back). The
+ * card matches on these, and the help rows below are built from them, so the
+ * overlay cannot name a letter the card does not answer to.
+ */
+export const LAUNCH_KEYS = {
+  model: 'm',
+  effort: 'e',
+  permission: 'p',
+  teammate: 'a',
+  workdir: 'o',
+  worktree: 'b',
+  options: '.',
+  prompt: 'i',
+} as const;
+
+export type LaunchKeyAction = keyof typeof LAUNCH_KEYS;
+
+const LAUNCH_ROWS: readonly Binding[] = (
+  [
+    ['launch.card', 'Escape', 'Esc', 'Leave the prompt for the card (again: close the menu, then the card)'],
+    ['launch.model', LAUNCH_KEYS.model, LAUNCH_KEYS.model, 'Model'],
+    ['launch.effort', LAUNCH_KEYS.effort, LAUNCH_KEYS.effort, 'Cycle reasoning effort'],
+    ['launch.permission', LAUNCH_KEYS.permission, LAUNCH_KEYS.permission, 'Permission mode'],
+    ['launch.teammate', LAUNCH_KEYS.teammate, LAUNCH_KEYS.teammate, 'Teammate (agent)'],
+    ['launch.workdir', LAUNCH_KEYS.workdir, LAUNCH_KEYS.workdir, 'Working directory'],
+    ['launch.worktree', LAUNCH_KEYS.worktree, LAUNCH_KEYS.worktree, 'Worktree ⇄ current branch'],
+    ['launch.options', LAUNCH_KEYS.options, LAUNCH_KEYS.options, 'More options (···)'],
+    ['launch.prompt', LAUNCH_KEYS.prompt, LAUNCH_KEYS.prompt, 'Back into the prompt'],
+    ['launch.submit', 'Enter', 'Enter', 'Launch'],
+    ['launch.menu.next', 'ArrowDown', '↓', 'Next option in the open menu'],
+    ['launch.menu.prev', 'ArrowUp', '↑', 'Previous option in the open menu'],
+  ] as const
+).map(([command, key, keys, label]) => ({
+  id: command,
+  layer: 'focus' as const,
+  keys,
+  label,
+  command,
+  guaranteed: true,
+  surfaceOwned: true,
+  match: plain(key),
 }));
 
 /**
@@ -362,6 +443,7 @@ export const BINDINGS: readonly Binding[] = [
   // typing (layer 4). Every one also has a pointer path in the Work view.
   { id: 'work.design', layer: 'global', keys: 'd', label: 'Toggle Design mode', command: 'work.design.toggle', guaranteed: true, match: plain('d') },
   ...LIST_CHORDS,
+  ...LIST_PIN_CHORDS,
   { id: 'work.tab.next', layer: 'global', keys: ']', label: 'Next tab', command: 'work.tab.next', guaranteed: true, match: plain(']') },
   { id: 'work.tab.prev', layer: 'global', keys: '[', label: 'Previous tab', command: 'work.tab.prev', guaranteed: true, match: plain('[') },
   ...TAB_NTH,
@@ -395,6 +477,10 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'list.prev.arrow', layer: 'focus', keys: '↑', label: 'Previous item', command: 'list.prev', guaranteed: true, match: { type: 'plain', key: 'ArrowUp' } },
   { id: 'list.open', layer: 'focus', keys: 'Enter', label: 'Open', command: 'list.open', guaranteed: true, match: { type: 'plain', key: 'Enter' } },
   { id: 'list.primary', layer: 'focus', keys: 'Mod+Enter', label: 'Primary action', command: 'list.primary', guaranteed: false, match: { type: 'mod', key: 'Enter' } },
+  /* The list's lifecycle tabs (Running · Interrupted · …, To Do · In Progress · …),
+     stepped from the Work list's row cursor (task 01a1156f). */
+  { id: 'list.status.prev', layer: 'focus', keys: '←', label: 'Previous status tab', command: 'list.status', ref: 'prev', guaranteed: true, surfaceOwned: true, match: { type: 'plain', key: 'ArrowLeft' } },
+  { id: 'list.status.next', layer: 'focus', keys: '→', label: 'Next status tab', command: 'list.status', ref: 'next', guaranteed: true, surfaceOwned: true, match: { type: 'plain', key: 'ArrowRight' } },
   { id: 'list.launch', layer: 'focus', keys: 'r', label: 'Launch a session on the selected item', command: 'work.launch', guaranteed: true, surfaceOwned: true, match: { type: 'plain', key: 'r' } },
   { id: 'list.create', layer: 'focus', keys: 'c', label: 'Create in this kind', command: 'list.create', guaranteed: true, match: { type: 'plain', key: 'c' } },
   /**
@@ -473,6 +559,9 @@ export const BINDINGS: readonly Binding[] = [
     guaranteed: true,
     match: { type: 'code', code: 'BracketRight', ctrl: true },
   },
+
+  // -- Launch card ----------------------------------------------------------
+  ...LAUNCH_ROWS,
 ];
 
 /**
@@ -486,16 +575,17 @@ export function isAdvertised(binding: Binding, platform: Platform): boolean {
 }
 
 /** Help-overlay sections, in display order. */
-export type BindingGroup = 'Focus' | 'Workspace' | 'Create' | 'Navigate' | 'Lists' | 'General';
+export type BindingGroup = 'Focus' | 'Workspace' | 'Create' | 'Launch' | 'Navigate' | 'Lists' | 'General';
 
 /**
  * `Focus` leads: leaving a text field or a terminal is what makes every other
  * shortcut reachable, so it is the first thing the help overlay teaches.
  */
-export const BINDING_GROUPS: readonly BindingGroup[] = ['Focus', 'Lists', 'Workspace', 'Create', 'Navigate', 'General'];
+export const BINDING_GROUPS: readonly BindingGroup[] = ['Focus', 'Lists', 'Workspace', 'Create', 'Launch', 'Navigate', 'General'];
 
 /** Which help section a binding belongs to — derived, so no row can forget one. */
 export function bindingGroup(binding: Binding): BindingGroup {
+  if (binding.command.startsWith('launch.')) return 'Launch';
   if (binding.command === 'text.blur' || binding.command.startsWith('terminal.')) return 'Focus';
   if (binding.command === 'work.create' || binding.command === 'list.create') return 'Create';
   if (binding.command === 'work.browser.focus' || binding.layer === 'focus') return 'Lists';

@@ -108,6 +108,8 @@
 }
 
 .nsx-composer:focus-within { border-color: var(--pn-line-2); }
+/* The card itself holds focus after Esc: its letters are live, so say so. */
+.nsx-composer:focus { outline: none; border-color: var(--pn-brand); }
 
 .nsx-composer[data-busy] { border-color: color-mix(in srgb, var(--pn-brand) 45%, var(--pn-line-2)); }
 
@@ -475,6 +477,23 @@
   padding: 6px 10px;
   color: var(--pn-ink-3);
   font: var(--pn-fs-label)/1.4 var(--pn-ui);
+}
+
+/* The card's keyboard letters (see launch-keys.ts) — quiet until the card has focus. */
+.nsx-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 6px 2px 0;
+  color: var(--pn-ink-4);
+  font: 10px/1.5 var(--pn-ui);
+}
+.nsx-keys kbd {
+  padding: 0 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  color: var(--pn-ink);
 }
 
 .nsx-refusal {
