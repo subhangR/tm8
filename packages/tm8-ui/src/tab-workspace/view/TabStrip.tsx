@@ -29,7 +29,6 @@ import type { Source, TabId, TabRecord } from '../runtime/types';
 import { ConfirmDiscard } from './ConfirmDiscard';
 import { useWorkspace, useWorkspaceState } from './context';
 import { ScopePicker } from './ScopePicker';
-import { focusTabTerminal } from './terminalFocus';
 import { entityMenuItems, readTranscriptText, type TabMenuItem } from './tabEntityMenu';
 import { usePanelPrimaries } from '../../views/usePanelPrimaries';
 import { useFreshGlow, type FreshGlowAttrs } from '../../domain/useFreshGlow';
@@ -406,13 +405,7 @@ function Tab(props: TabProps) {
         aria-label={accessibleTabName(title, noun) + (glow.srSuffix ?? '')}
         aria-describedby={state ? stateId : undefined}
         tabIndex={props.focusable ? 0 : -1}
-        onClick={(event) => {
-          const source = event.detail === 0 ? 'keyboard' : 'click';
-          props.onActivate(tab.id, source);
-          // A pointer switch to a session hands the keyboard to its terminal;
-          // a keyboard switch keeps focus on the strip so arrows still rove.
-          if (source === 'click' && tab.type !== 'chooser' && tab.kind === 'work_session') focusTabTerminal();
-        }}
+        onClick={(event) => props.onActivate(tab.id, event.detail === 0 ? 'keyboard' : 'click')}
         onKeyDown={(event) => props.onKeyDown(event, tab.id)}
         onFocus={() => props.onFocus(tab.id)}
       >
