@@ -601,7 +601,7 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   // schema would refuse every legitimate upload. Its parameters travel in the
   // path and the query.
   'containers.files.put',
-  // multiple workspaces (311): GENUINELY body-less, the first clause above.
+  // multiple workspaces (312): GENUINELY body-less, the first clause above.
   // `workspace.delete` is a DELETE whose `requestId` and `discard` travel in
   // the query (API doc §5.10); the handler checks both.
   'workspace.delete',

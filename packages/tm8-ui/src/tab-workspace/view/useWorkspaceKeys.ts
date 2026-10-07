@@ -10,6 +10,7 @@ import { NOTICE_TTL_MS, type Notice } from '../../shell';
 import { canCreateKind, getKindAdapter } from '../adapters/registry';
 import { installWorkKeys, type WorkKey } from '../keys';
 import type { WorkspaceRuntime } from '../runtime/dispatch';
+import { getBrowserSourceStore } from '../runtime/browserSourceStore';
 import { getRailStore, workspacePinnedKinds } from '../runtime/railStore';
 import { activeTab, activeTabId, visibleTabs } from '../runtime/selectors';
 import { isWorkspaceKind, TAB_SUBVIEWS, type KindId, type TabSubview } from '../runtime/types';
@@ -97,6 +98,9 @@ export function handleWorkKey(
     case 'work.create':
       if (key.ref && isWorkspaceKind(key.ref)) create(key.ref);
       return true;
+    case 'work.newTab':
+      dispatch({ command: 'workspace.chooser.open', args: {}, source: 'keyboard' });
+      return true;
     case 'list.create':
       create(state.browsers.main.kind);
       return true;
@@ -112,8 +116,12 @@ export function handleWorkKey(
           return true;
         }
       }
-      if (kind && isWorkspaceKind(kind) && kind !== state.browsers.main.kind) {
-        dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind }, source: 'keyboard' });
+      if (kind && isWorkspaceKind(kind)) {
+        // A kind asked for by key replaces a non-entity source (Project files) too.
+        getBrowserSourceStore(runtime.spaceId).getState().setSource(null);
+        if (kind !== state.browsers.main.kind) {
+          dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind }, source: 'keyboard' });
+        }
       }
       // Full screen hides the browser; asking for the list brings it back.
       if (state.layout.expanded) dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'keyboard' });

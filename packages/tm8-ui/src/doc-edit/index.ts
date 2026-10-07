@@ -15,11 +15,13 @@ import './doc-print.css';
 
 export {
   docBodyOf,
+  docCodec,
   docFormatOf,
   docPatchInput,
   savedVersionOf,
   type DocCommands,
   type DocEdits,
+  type SaveCodec,
 } from './commands';
 
 export {
@@ -32,6 +34,7 @@ export {
 } from './blocks';
 
 export {
+  AUTOSAVE_DELAY_MS,
   useDocSave,
   type DocSaveHandle,
   type DocSaveOptions,
@@ -53,6 +56,25 @@ export { DocEditor } from './DocEditor';
 export { DocPreview } from './DocPreview';
 export { DocSource, type DocAttach } from './DocSource';
 export { DocSplitView } from './DocSplitView';
+export { RichBody, slashItems, type SlashItem } from './rich/RichBody';
+export { RichDocView } from './rich/RichDocView';
+export { encodeMinimal, reserialise, richExtensions, roundTrips } from './rich/markdown';
+export { BODY_FIELD, DocTitleField } from './DocTitleField';
+export { clearLiveTitle, setLiveTitle, useLiveTitle } from './liveTitles';
+export {
+  FRESH_DOC_TITLE,
+  emptyFreshDocs,
+  forgetFreshDoc,
+  isEmptyDoc,
+  isFreshArrival,
+  isFreshDoc,
+  isStillEmptyFreshDoc,
+  freshDocTitle,
+  markFreshDoc,
+  noteFreshArrived,
+  noteFreshDocEmpty,
+} from './freshDocs';
+export { clearLocalDraft, readLocalDraft, writeLocalDraft, type LocalDocDraft } from './localDraft';
 export { DownloadDocControl } from './DownloadDocControl';
 export { EditEntryControl } from './EditEntryControl';
 export { canPrint, printDoc, PRINT_ROOT_ID, type PrintDocInput } from './printDoc';

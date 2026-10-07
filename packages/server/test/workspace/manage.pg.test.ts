@@ -1,7 +1,7 @@
 /**
  * Managing the workspace list (API doc 01a115c4 §5.7–§5.11) against a REAL
  * database: create, update, reorder, delete and switch through the handlers,
- * the SQL writers of migration 311 underneath, and what each window hears.
+ * the SQL writers of migration 312 underneath, and what each window hears.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';

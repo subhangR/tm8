@@ -17,7 +17,7 @@
  * A missing active pointer (its workspace cascaded away) is healed in the
  * read: the first workspace in list order — (position, created_at,
  * workspace_id), as every list here orders — stands in, and the next write
- * repairs the pointer to the same one (workspace_save, migration 310).
+ * repairs the pointer to the same one (workspace_save, migration 311).
  */
 import {
   CollabError,

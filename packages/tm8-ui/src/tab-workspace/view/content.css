@@ -670,6 +670,27 @@
   background: var(--pn-card);
 }
 
+/* A DOC BEING WRITTEN STARTS AT THE TOP LEFT (Subhang, 2026-10-07): "a title
+   section on the top, that is separated, then the writing section, both start
+   left most". While a reader is in its edit stance the title bar and the pills
+   keep one left edge at the panel's own padding, instead of the centred
+   reading measure. READING IS UNTOUCHED (Subhang, same day: "the current doc
+   viewing page is very good"): every rule here is scoped to the edit stance. */
+.tws-entity-host:has(.pn-panel[data-archetype='reader'] [data-stance='edit']) > .tws-titlebar {
+  padding-left: var(--pn-space-3);
+}
+.cv2-root .tws-panel .pn-panel[data-archetype='reader']:has([data-stance='edit']) .pn-embedded-head__pills {
+  margin-inline: 0;
+}
+/* While the doc is being edited its title field is written into this bar
+   (`ReaderSurface` `titleSlot`): one title, so the read-only one steps aside. */
+.tws-titlebar__text:has(.de-title) > .pn-embedded-title {
+  display: none;
+}
+.cv2-root .tws-titlebar .de-title {
+  font-size: var(--pn-fs-title);
+}
+
 /* R32.1: a reader's body sits in the reading measure; its outline lives in the
    strip's Outline popover. */
 .cv2-root .tws-panel [data-testid='reader-body'] {
@@ -719,4 +740,24 @@
   font-size: var(--pn-fs-label);
   color: var(--pn-ink-3);
   white-space: nowrap;
+}
+
+/* THE LIVE TITLE (two-column page, task 01a1163a): a field that reads as the
+   title until it has the caret — no box at rest, the editing box on focus. */
+.cv2-root .pn-embedded-title--live {
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  margin-left: calc(-1 * var(--pn-space-2) - 1px);
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  cursor: text;
+}
+.cv2-root .pn-embedded-title--live:hover {
+  border-color: var(--pn-line);
+}
+.cv2-root .pn-embedded-title--live:focus {
+  outline: none;
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
 }

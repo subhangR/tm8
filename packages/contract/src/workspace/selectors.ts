@@ -3,6 +3,7 @@
  * derived from eligibility and never stored.
  */
 import type {
+  FileTabRecord,
   KindId,
   TabId,
   TabRecord,
@@ -23,7 +24,7 @@ export function kindInScope(scope: TabScope, kind: KindId): boolean {
 }
 
 export function isEligible(scope: TabScope, tab: TabRecord): boolean {
-  return tab.type === 'chooser' || kindInScope(scope, tab.kind);
+  return tab.type === 'chooser' || tab.type === 'file' || kindInScope(scope, tab.kind);
 }
 
 export function visibleTabIds(state: WorkspaceState): TabId[] {
@@ -60,6 +61,24 @@ export function findEntityTab(state: WorkspaceState, kind: KindId, entityId: str
   return null;
 }
 
+/** ADDITIVE (File tabs): the open tab for (projectId, path), if any. */
+export function findFileTab(state: WorkspaceState, projectId: string, path: string): FileTabRecord | null {
+  for (const id of state.orderedTabIds) {
+    const tab = state.tabs[id];
+    if (tab?.type === 'file' && tab.projectId === projectId && tab.path === path) return tab;
+  }
+  return null;
+}
+
+/** ADDITIVE (File tabs): the one preview file tab, if any. */
+export function findPreviewFileTab(state: WorkspaceState): FileTabRecord | null {
+  for (const id of state.orderedTabIds) {
+    const tab = state.tabs[id];
+    if (tab?.type === 'file' && tab.preview) return tab;
+  }
+  return null;
+}
+
 /** The scope's kinds as a list: By type's selection, or [] for Mixed. */
 export function selectedKinds(scope: TabScope): KindId[] {
   return scope.mode === 'byType' ? scope.selectedTypeIds : [];
@@ -76,6 +95,7 @@ export function inspect(state: WorkspaceState): WorkspaceInspection {
       if (!tab) return [];
       if (tab.type === 'entity') return [{ id, type: tab.type, kind: tab.kind, entityId: tab.entityId }];
       if (tab.type === 'draft') return [{ id, type: tab.type, kind: tab.kind, dirty: tab.dirty }];
+      if (tab.type === 'file') return [{ id, type: tab.type, projectId: tab.projectId, path: tab.path, preview: tab.preview }];
       return [{ id, type: tab.type }];
     }),
     scope: state.scope,

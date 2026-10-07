@@ -197,7 +197,18 @@ export function replaceChooser(
   return removeTabs(next, [chooserId], hooks).next;
 }
 
-/** Insert or move a tab id to index 0. */
-export function toFront(order: readonly TabId[], tabId: TabId): TabId[] {
-  return [tabId, ...order.filter((id) => id !== tabId)];
+/**
+ * Insert or move a tab id to just after the active tab (Kalai, 2026-10-07:
+ * "New tabs open right after the active tab"), the way a browser does. With
+ * no active tab (the start surface) it goes to the end. When the tab is
+ * already the active one, the order is unchanged.
+ */
+export function afterActive(state: WorkspaceState, tabId: TabId): TabId[] {
+  const order = state.orderedTabIds;
+  const active = state.presentation.surface === 'tab' ? state.presentation.tabId : null;
+  if (active === tabId) return [...order];
+  const rest = order.filter((id) => id !== tabId);
+  const at = active === null ? -1 : rest.indexOf(active);
+  if (at < 0) return [...rest, tabId];
+  return [...rest.slice(0, at + 1), tabId, ...rest.slice(at + 1)];
 }

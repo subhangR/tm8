@@ -2065,15 +2065,17 @@
   border-radius: 50%;
   background: var(--pn-ink-4);
 }
+/* The nine colour tokens (311 WORKSPACE_COLORS) on the diagram hue palette,
+   red and yellow on the status hues: themed, never a raw hex (§14). */
 .cv2-root .tws-wsw__dot[data-color='none'] { background: transparent; box-shadow: inset 0 0 0 1px var(--pn-line); }
-.cv2-root .tws-wsw__dot[data-color='gray'] { background: #8b8d98; }
-.cv2-root .tws-wsw__dot[data-color='red'] { background: #e5484d; }
-.cv2-root .tws-wsw__dot[data-color='orange'] { background: #f76b15; }
-.cv2-root .tws-wsw__dot[data-color='yellow'] { background: #ffc53d; }
-.cv2-root .tws-wsw__dot[data-color='green'] { background: #30a46c; }
-.cv2-root .tws-wsw__dot[data-color='teal'] { background: #12a594; }
-.cv2-root .tws-wsw__dot[data-color='blue'] { background: #0090ff; }
-.cv2-root .tws-wsw__dot[data-color='purple'] { background: #8e4ec6; }
+.cv2-root .tws-wsw__dot[data-color='gray'] { background: var(--pn-x-dia-8); }
+.cv2-root .tws-wsw__dot[data-color='red'] { background: var(--pn-block); }
+.cv2-root .tws-wsw__dot[data-color='orange'] { background: var(--pn-x-dia-5); }
+.cv2-root .tws-wsw__dot[data-color='yellow'] { background: var(--pn-wait); }
+.cv2-root .tws-wsw__dot[data-color='green'] { background: var(--pn-x-dia-3); }
+.cv2-root .tws-wsw__dot[data-color='teal'] { background: var(--pn-x-dia-2); }
+.cv2-root .tws-wsw__dot[data-color='blue'] { background: var(--pn-x-dia-1); }
+.cv2-root .tws-wsw__dot[data-color='purple'] { background: var(--pn-x-dia-7); }
 /* An agent changed this workspace since it was last active. */
 .cv2-root .tws-wsw__activity {
   width: 6px;
@@ -2082,7 +2084,7 @@
   background: var(--pn-info);
   flex: none;
 }
-.cv2-root .tws-wsw__dot[data-color='pink'] { background: #d6409f; }
+.cv2-root .tws-wsw__dot[data-color='pink'] { background: var(--pn-x-dia-6); }
 .cv2-root .tws-wsw__pop { left: 0; }
 .cv2-root .tws-wsw__line { display: flex; align-items: center; }
 .cv2-root .tws-wsw__line .shell-switcher__space-row { flex: 1; min-width: 0; padding-left: 8px; }

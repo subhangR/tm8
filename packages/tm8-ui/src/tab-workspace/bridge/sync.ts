@@ -147,6 +147,9 @@ const ROLLBACK_COPY: Partial<Record<CommandName, string>> = {
   'workspace.tabs.close': 'Couldn’t close that tab: your workspace changed elsewhere',
   'workspace.tabs.move': 'Couldn’t move that tab: your workspace changed elsewhere',
   'workspace.tabScope.set': 'Couldn’t change the tab scope: your workspace changed elsewhere',
+  /* A node built before file tabs refuses the command (no planner ⇒
+     `invalid_arguments`), so the copy does not blame another window. */
+  'workspace.files.open': 'Couldn’t open that file: the node didn’t accept it',
 };
 
 export class WorkspaceSync {

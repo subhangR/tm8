@@ -137,6 +137,11 @@
 .tws-pick-row:active {
   background: var(--pn-active);
 }
+/* The row Enter would open: the search keeps focus, so this is its caret. */
+.tws-pick-row[data-current] {
+  background: var(--pn-hover);
+  box-shadow: inset 2px 0 0 var(--pn-brand);
+}
 .tws-pick-row svg {
   flex: none;
   color: var(--pn-ink-3);
@@ -155,15 +160,77 @@
   color: var(--pn-ink-4);
 }
 
+/* The kinds row sits right under the search; Recent keeps the larger gap. */
+.tws-pick-section--create {
+  margin-top: var(--pn-space-4);
+}
+
+/* Four kinds and More, one row; two columns when the pane is narrow. */
 .tws-pick-create {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--pn-space-2);
 }
-@container (max-width: 479px) {
+@container (max-width: 559px) {
   .tws-pick-create {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.tws-pick-new-key {
+  margin-left: auto;
+  flex: none;
+  font: inherit;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  font-weight: 400;
+  color: var(--pn-ink-4);
+}
+
+.tws-pick-more {
+  position: relative;
+  min-width: 0;
+}
+.tws-pick-more > .tws-pick-new {
+  width: 100%;
+}
+.tws-pick-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + var(--pn-space-1));
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+}
+.tws-pick-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  height: 32px;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  text-align: left;
+  color: var(--pn-ink);
+  cursor: pointer;
+}
+.tws-pick-menu-item svg {
+  flex: none;
+  color: var(--pn-ink-3);
+}
+.tws-pick-menu-item:hover,
+.tws-pick-menu-item:focus-visible {
+  background: var(--pn-hover);
+  outline: none;
 }
 
 /* Bordered quiet: 32 visible inside a 36 hit box. */

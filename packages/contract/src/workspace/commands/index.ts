@@ -1,6 +1,7 @@
 export * as browser from './browser.js';
 export * as drafts from './drafts.js';
 export * as external from './external.js';
+export * as files from './files.js';
 export * as interactions from './interactions.js';
 export * as layout from './layout.js';
 export * as panels from './panels.js';

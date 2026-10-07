@@ -7,6 +7,7 @@ import { isWorkspaceKind, TAB_SUBVIEWS, UI_SOURCES } from '../types.js';
 import type { EntityTabRecord, Source, TabId, TabUi, TrailCrumb } from '../types.js';
 import {
   activate,
+  afterActive,
   isFiniteNumber,
   isNonEmptyString,
   isRecord,
@@ -110,7 +111,7 @@ export const open: Planner = ({ state, env, hooks }) => {
   let next = {
     ...state,
     tabs: { ...state.tabs, [record.id]: record },
-    orderedTabIds: [...state.orderedTabIds, record.id],
+    orderedTabIds: afterActive(state, record.id),
     recency: shouldActivate ? state.recency : [...state.recency, record.id],
   };
   if (shouldActivate) next = activate(next, record.id, hooks);

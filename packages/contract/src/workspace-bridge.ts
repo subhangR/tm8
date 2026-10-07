@@ -47,14 +47,14 @@ export type WorkspaceDialogId = (typeof WORKSPACE_DIALOG_IDS)[number];
 /**
  * Workspace colours: palette tokens, not free CSS, so they theme in light and
  * dark (API doc 01a115c4 §2, Q10). `null` means no colour. Migration
- * 310_multiple_workspaces.sql hard-codes the same list in its check
+ * 311_multiple_workspaces.sql hard-codes the same list in its check
  * constraint; stored.pg.test.ts holds the two together.
  */
 export const WORKSPACE_COLORS = ['gray', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'] as const;
 export type WorkspaceColor = (typeof WORKSPACE_COLORS)[number];
 export const workspaceColorSchema = z.enum(WORKSPACE_COLORS);
 
-/** Workspaces per (space, identity) (Q9). Migration 310 hard-codes the same number. */
+/** Workspaces per (space, identity) (Q9). Migration 311 hard-codes the same number. */
 export const WORKSPACES_PER_IDENTITY_CAP = 20;
 
 /** The name of the backfilled and lazily created workspace (Q7). */

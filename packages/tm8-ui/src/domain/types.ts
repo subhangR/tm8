@@ -1363,6 +1363,35 @@ export interface PanelConfig {
    */
   gitSection?: boolean;
   /**
+   * THE PAGE LAYOUT of the embedded body (task 01a1163a, scope settled with
+   * the owner in form 01a1164f): `'two-column'` puts the writing in a
+   * wide main column and every property in a sticky rail beside it.
+   *
+   * What it changes, all derived from this one field so no component asks the
+   * kind (§15.2):
+   *   · the control strip moves from the band above the body into the rail,
+   *     drawn as labelled rows rather than chips;
+   *   · the composed metadata grid joins the rail too, so a fact is drawn once;
+   *   · the title in the host's title bar is a live field at rest, not a
+   *     double-click rename;
+   *   · criteria are written one gesture at a time (tick, add, edit, reorder,
+   *     remove), never staged behind a Save pill.
+   *
+   * Absent ⇒ the stacked body every other kind keeps. Narrow panels stack the
+   * rail above the main column (CSS), so this is a desktop decision only.
+   */
+  layout?: 'two-column';
+  /**
+   * EDGES THE RAIL DRAWS AS PROPERTIES, with add and remove in place — the
+   * task page's "Depends on" and "Blocks" (mockup r6). Same row shape as
+   * `attachPalette`: the one kind the picker searches, the edge a pick
+   * writes, and which end the open entity is, so one edge type read from
+   * both ends gives two rows. Read only by a `layout: 'two-column'` page;
+   * there the rows own their edges, so LINKED does not draw them again.
+   * Elsewhere they stay in LINKED, as before.
+   */
+  railRelations?: readonly AttachPaletteRow[];
+  /**
    * THE BODY OWNS ITS OWN BOTTOM EDGE, and this says which way.
    *
    * EITHER value means the panel mounts no AttachmentStrip, no attention
@@ -1613,6 +1642,18 @@ export interface KindConfig {
    * affordance at all.
    */
   createForm?: 'scheduled-work' | 'file-upload' | 'skill-file';
+  /**
+   * NEW CREATES THE RECORD AT ONCE, NOT A FORM (Kalai, 2026-10-07: instant
+   * create for every kind whose only required field is its title). The draft
+   * tab creates it under its placeholder title and becomes its tab:
+   *
+   * - `'editor'` lands in the body's editor with the caret in the title (a doc);
+   * - `'title'` lands on its page with the title selected, so typing names it.
+   *
+   * Left untitled and untouched, it is deleted once no tab holds it
+   * (`useAbandonedSweep`). Absent ⇒ New opens this kind's create form.
+   */
+  createInstant?: 'editor' | 'title';
   /**
    * The create control ALSO offers "with header…" beside the immediate ＋: the
    * optional "When should an agent open this?" / "What does it hold?" fields,

@@ -1,8 +1,8 @@
--- 311 — Workspace management writers (API doc 01a115c4 §5.7–§5.11; build
+-- 312 — Workspace management writers (API doc 01a115c4 §5.7–§5.11; build
 -- decisions 01a115d7, advisor #4).
 --
 -- create / update (rename, recolour) / reorder / delete / switch, one
--- SECURITY DEFINER function each, over the tables migration 310 made. The
+-- SECURITY DEFINER function each, over the tables migration 311 made. The
 -- node calls them inside its (space, identity) write lock (D4) and checks the
 -- caller-facing refusals (name taken, cap, last workspace, unsaved drafts)
 -- first, so it can answer with a reason. The checks here are the backstop.
@@ -62,14 +62,17 @@ begin
 end;
 $$;
 
--- The caller's workspace p_workspace_id in its space, or P0002.
+-- The caller's workspace p_workspace_id in its space, or P0002. The lookup
+-- honours the pinned space (is_space_member, 227): the caller's workspace in
+-- any other space answers P0002, exactly like one that does not exist.
 create or replace function internal.workspace_owned(p_workspace_id uuid)
 returns uuid language plpgsql stable set search_path = public, internal, pg_temp as $$
 declare
   ws_space uuid;
 begin
   select space_id into ws_space from public.workspaces
-   where workspace_id = p_workspace_id and identity_id = internal.identity_id();
+   where workspace_id = p_workspace_id and identity_id = internal.identity_id()
+     and internal.is_space_member(space_id);
   if ws_space is null then
     raise exception 'no such workspace' using errcode = 'P0002';
   end if;
@@ -216,7 +219,7 @@ begin
   select workspace_id into previous from public.workspace_active
    where space_id = ws_space and identity_id = me_identity;
   if previous is null then
-    -- A lost pointer reads as the first workspace (310).
+    -- A lost pointer reads as the first workspace (311).
     select workspace_id into previous from public.workspaces
      where space_id = ws_space and identity_id = me_identity
      order by position, created_at, workspace_id
@@ -283,3 +286,8 @@ grant execute on function public.workspace_update(uuid, text, boolean, text) to 
 grant execute on function public.workspace_reorder(uuid, uuid) to tm8_app;
 grant execute on function public.workspace_switch(uuid) to tm8_app;
 grant execute on function public.workspace_delete(uuid) to tm8_app;
+
+-- The internal helpers run only inside the writers above (as their owner).
+revoke all on function internal.workspaces_place(uuid, text, uuid, uuid) from public;
+revoke all on function internal.workspaces_list_bump(uuid, text) from public;
+revoke all on function internal.workspace_owned(uuid) from public;

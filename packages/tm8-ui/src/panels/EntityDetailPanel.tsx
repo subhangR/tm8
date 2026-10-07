@@ -18,7 +18,7 @@ import type {
 import type { OpRequestsOps, SessionLiveness } from '../data/seam';
 import { useMobileSurface } from '../mobile';
 import type { ContentSurface } from '../routes';
-import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
+import type { ActionContext, ActionRef, ContentBlockRef, KindConfig, StateOption } from '../domain';
 import { getKind, headerAuthorable, isConversationEdge, newLaunchMutationId, resolveAction, sessionSharingOf, SHARING_CONTROL, sharingControlFor } from '../domain';
 /* The Run/Coordinate flow opens the canvas composer as a modal tile now —
    design import 2026-09-07. */
@@ -70,8 +70,11 @@ import {
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
+import { TaskDescription } from './bodies/TaskDescription';
+import { RailRelations, relationLinks } from './bodies/RailRelations';
 import { ReaderSurface } from './bodies/ReaderSurface';
 import type { DocCommands } from '../doc-edit';
+import { clearLiveTitle, freshDocTitle, isFreshArrival, noteFreshArrived, noteFreshDocEmpty, setLiveTitle } from '../doc-edit';
 import { HubBody } from './bodies/HubBody';
 import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
 import type { MembershipAuthoring } from './bodies/MembershipBlock';
@@ -211,6 +214,24 @@ function gateChipFor(detail: EntityDetail): ReactNode {
       Gate · {word}
     </span>
   );
+}
+
+/**
+ * WHY A STATE OPTION IS REFUSED BEFORE IT IS PICKED (mockup r4: the Status
+ * field "refuses Done and says why"). An option routed through `complete`
+ * meets the server's acceptance gate (migration 151), and the criteria are in
+ * the detail already, so an open one is said in the picker instead of as a
+ * refusal after the click. Read structurally — a content shape with no
+ * criteria member refuses nothing — and usability only: the server's gate,
+ * and the completion gate this panel cannot evaluate, still have the last word.
+ */
+function stateOptionRefusalFor(detail: EntityDetail): ((option: StateOption) => string | undefined) | undefined {
+  const criteria = (detail.content as unknown as Record<string, unknown>).acceptanceCriteria;
+  if (!Array.isArray(criteria)) return undefined;
+  const open = criteria.filter((c) => !(c as { done?: unknown }).done).length;
+  if (open === 0) return undefined;
+  const words = `${open} acceptance ${open === 1 ? 'criterion is' : 'criteria are'} still open`;
+  return (option) => (option.via === 'complete' ? words : undefined);
 }
 
 function subjectOf(detail: EntityDetail): ControlSubject {
@@ -809,6 +830,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * is the designed consequence of holding the version the edit was based on.
    */
   const editableConfig = detail ? getKind(detail.kind) : null;
+  const titleArrival = useTitleArrival(detail ?? null);
   const save = useTaskSave({
     detail: detail ?? null,
     commands: props.commands ?? null,
@@ -996,8 +1018,36 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * only where at least one of its controls can be used.
    */
   const controlHost = props.controls ?? { kind: detail.kind, ctx: props.ctx };
+  /*
+   * THE TWO-COLUMN PAGE MOVES THE STRIP INTO THE BODY'S RAIL (registry
+   * `panel.layout`, task 01a1163a): the same controls, drawn as labelled rows
+   * beside the writing instead of a chip band above it. Built here, where the
+   * `ControlHost` is in hand, and handed to the body as an opaque slot.
+   *
+   * ONLY ON THE WORKSPACE PAGE, AND ONLY ON ITS CONTENT. The layout is a page
+   * layout: a pinned side panel is a column a few hundred pixels wide, and the
+   * other sections (Connections, Activity) have no rail to carry the controls.
+   * Both keep the chip band, so the controls stay reachable from every tab —
+   * the 2026-08-05 ruling `panel-controls.test` pins.
+   */
+  const twoColumn =
+    config.panel.layout === 'two-column' && props.embeddedChrome != null && tab === 'content';
+  const stripLive = controlsFor(config) && stripHasLiveControl(controlHost, config) && !isTombstone;
+  const railStrip =
+    twoColumn && stripLive ? (
+      <EntityControlStrip
+        row={subjectOf(detail)}
+        props={controlHost}
+        config={config}
+        variant="lines"
+        inlineEditors
+        trailing={gateChipFor(detail)}
+        stateOptionRefusal={stateOptionRefusalFor(detail)}
+        omitArchive
+      />
+    ) : null;
   const strip =
-    controlsFor(config) && stripHasLiveControl(controlHost, config) && !isTombstone ? (
+    !twoColumn && stripLive ? (
       <EntityControlStrip
         row={subjectOf(detail)}
         props={controlHost}
@@ -1012,6 +1062,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         inlineEditors
         /* The gate rides the metadata line now, and only when it is set. */
         trailing={gateChipFor(detail)}
+        stateOptionRefusal={stateOptionRefusalFor(detail)}
         /* Moved to `PanelOverflow` beside the window controls. The list's
            control card keeps its Archive; only this host opts out, because
            only this host has somewhere better to put it. */
@@ -1399,9 +1450,16 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       {embedded?.titleSlot && !oneSurface
         ? createPortal(
             <EmbeddedTitle
+              entityId={detail.id}
               title={detail.title}
               byline={byline}
               editable={titleEditable}
+              arrival={titleArrival && titleEditable}
+              /* The two-column page edits in place, the title first among
+                 them: a live field at rest, and Enter carries on into the
+                 description, as the doc's title does. */
+              live={config.panel.layout === 'two-column' && titleEditable}
+              onEnter={twoColumn ? () => focusDescription(panelEl) : undefined}
               onCommit={async (title) => {
                 await save.commitNow({ title });
               }}
@@ -1425,7 +1483,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            actual click/keyboard editor is still mounted only when writable. */
         titleEditable={titleEditable}
         titleLockReason={editsPossible && config.list.inlineEdit?.title ? saveRefusal : undefined}
-        autoFocusTitle={props.justCreated}
+        autoFocusTitle={props.justCreated || titleArrival}
         supplemental={
           (props.linkedPullRequests?.length ?? 0) > 0 ? (
             <LinkedPullRequestChips
@@ -1659,6 +1717,39 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                   />
                 ) : null;
               const bodyConsumesSlot = config.panel.archetype === 'subtree';
+              /* THE RAIL'S RELATIONS (PR3): registry rows, read only on the
+                 two-column page, written through the same link port as the
+                 palette. Their edges are the rail's there, so LINKED skips
+                 them by edge id, the way it skips the strip's tiles. */
+              const relationRows = twoColumn ? config.panel.railRelations ?? [] : [];
+              const relationEdgeIds = relationRows.flatMap((row) =>
+                relationLinks(detail, row).map((link) => link.edgeId),
+              );
+              const bodySkipEdgeIds =
+                relationEdgeIds.length > 0
+                  ? new Set([...(attachmentSlot ? stripEdgeIds : []), ...relationEdgeIds])
+                  : attachmentSlot
+                    ? stripEdgeIds
+                    : undefined;
+              const railTail =
+                relationRows.length > 0 ? (
+                  <RailRelations
+                    detail={detail}
+                    rows={relationRows}
+                    port={
+                      port?.search && port.link
+                        ? {
+                            search: (kind, text) => port.search!(kind, text),
+                            link: (input) => port.link!(input),
+                            unlink: (edgeId) => port.detach(edgeId),
+                          }
+                        : null
+                    }
+                    refusal={detail.capabilities.canLink ? null : 'The node refuses new links on this task'}
+                    onChanged={props.onAttachmentUploaded}
+                    onOpenEntity={props.onOpenEntity}
+                  />
+                ) : null;
               /* ATTENTION HISTORY IS NO LONGER HERE. It was a section in this
                  body for every archetype that could take one, with a second
                  mount on the Connections tab for the ones that could not — two
@@ -1677,8 +1768,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     surfaceSlot={embedded ? embedded.kindSlot : surfaceSlot}
                     barSlot={embedded ? embedded.kindSlot : barHasRoom ? surfaceSlot : null}
                     attachmentSlot={bodyConsumesSlot ? attachmentSlot : null}
-                    stripEdgeIds={attachmentSlot ? stripEdgeIds : undefined}
+                    stripEdgeIds={bodySkipEdgeIds}
                     onSelectTab={selectTab}
+                    twoColumn={twoColumn}
+                    railSlot={railStrip}
+                    railTailSlot={railTail}
                   />
                   {bodyConsumesSlot ? null : attachmentSlot}
                 </>
@@ -1710,24 +1804,93 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
 }
 
 /**
+ * A record New just created at once (`createInstant: 'title'`) lands with its
+ * title selected (Kalai, 2026-10-07: "the new task detail screen, with the
+ * title selected"). True from the render that first sees it, and for the rest
+ * of this panel's life on that record; the effect spends the registry's
+ * arrival and records the version it arrived at, which the abandoned sweep
+ * compares against. Asked of registry data, never of a kind name (§15.2).
+ */
+function useTitleArrival(detail: EntityDetail | null): boolean {
+  const id = detail?.id ?? null;
+  const fresh = detail !== null && getKind(detail.kind).createInstant === 'title' && isFreshArrival(detail.id);
+  const [arrivedId, setArrivedId] = useState<string | null>(null);
+  const version = detail?.version ?? null;
+  useEffect(() => {
+    if (!fresh || id === null) return;
+    noteFreshArrived(id, version);
+    setArrivedId(id);
+    // Spent once, at the version it arrived with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fresh, id]);
+  return id !== null && (fresh || arrivedId === id);
+}
+
+/**
  * The embedded host's title bar text (Subhang, round 5): one line, the full
  * title in its tooltip; double-click renames inline through the panel's save
  * flow — the same path as ⋯ Rename. Enter saves, Escape cancels.
+ *
+ * ON ARRIVAL (a record New just created) it starts as the field, its
+ * placeholder title selected, so typing names it. While it is a field the tab
+ * follows what is typed (`setLiveTitle`), the abandoned sweep hears whether it
+ * is still untitled, and a name typed but never entered is saved when the
+ * field goes (the tab closed under it) rather than lost.
+ *
+ * LIVE (the two-column page, task 01a1163a): the field IS the title at rest —
+ * no double-click, styled as the title until it has focus. It follows the
+ * saved title until typed in, commits on Enter or blur, and Enter then hands
+ * the caret on (`onEnter`), the way the doc's title hands it to the body.
  */
 function EmbeddedTitle({
+  entityId,
   title,
   byline,
   editable,
+  arrival = false,
+  live = false,
+  onEnter,
   onCommit,
 }: {
+  entityId: string;
   title: string;
   byline: string;
   editable: boolean;
+  arrival?: boolean;
+  live?: boolean;
+  onEnter?: () => void;
   onCommit: (title: string) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraftState] = useState<string | null>(() => (arrival ? title : null));
   const committing = useRef(false);
-  if (draft === null) {
+  const field = useRef<HTMLInputElement | null>(null);
+  const pending = useRef<{ draft: string | null; title: string; onCommit: typeof onCommit }>({ draft, title, onCommit });
+  pending.current = { draft, title, onCommit };
+
+  const setDraft = (next: string | null) => {
+    setDraftState(next);
+    if (next === null) {
+      clearLiveTitle(entityId);
+      return;
+    }
+    setLiveTitle(entityId, next.trim() === '' ? title : next);
+    const created = freshDocTitle(entityId);
+    noteFreshDocEmpty(entityId, next.trim() === '' || next.trim() === created);
+  };
+
+  useEffect(() => {
+    if (arrival) field.current?.select();
+    return () => {
+      clearLiveTitle(entityId);
+      const { draft: left, title: saved, onCommit: commitLeft } = pending.current;
+      const next = left?.trim() ?? '';
+      if (!committing.current && next !== '' && next !== saved) void commitLeft(next);
+    };
+    // Mount and unmount only: the selection is the arrival's, once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (draft === null && !live) {
     return (
       <span
         className="pn-embedded-title"
@@ -1740,7 +1903,7 @@ function EmbeddedTitle({
     );
   }
   const commit = () => {
-    if (committing.current) return;
+    if (committing.current || draft === null) return;
     const next = draft.trim();
     if (next === '' || next === title) {
       setDraft(null);
@@ -1754,25 +1917,55 @@ function EmbeddedTitle({
   };
   return (
     <input
-      className="pn-embedded-title pn-embedded-title--editing"
-      aria-label="Rename"
+      ref={field}
+      className={live ? 'pn-embedded-title pn-embedded-title--live' : 'pn-embedded-title pn-embedded-title--editing'}
+      aria-label={live ? 'Title' : 'Rename'}
       data-testid="panel-embedded-title-input"
-      autoFocus
-      value={draft}
+      /* A live field does not take the caret on every open — only a record
+         that just arrived, whose placeholder is there to be typed over. */
+      autoFocus={!live || arrival}
+      value={draft ?? title}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           commit();
+          onEnter?.();
         } else if (e.key === 'Escape') {
           e.preventDefault();
           e.stopPropagation();
           setDraft(null);
+          if (live) e.currentTarget.blur();
         }
       }}
       onBlur={commit}
     />
   );
+}
+
+/**
+ * Enter in the title carries on into the description (two-column page). The
+ * description opens as its editor when empty — a new task's — and otherwise
+ * reads until asked, so a read stance is asked first and the field focused on
+ * the next frame, once it exists.
+ */
+function focusDescription(panel: HTMLElement | null): void {
+  const block = panel?.querySelector<HTMLElement>('[data-testid="task-description-editor"]');
+  if (!block) return;
+  // The page's rich editor is always mounted: the caret goes straight in.
+  const rich = block.querySelector<HTMLElement>('[data-testid="doc-rich"]');
+  if (rich) {
+    rich.focus();
+    return;
+  }
+  const field = () => block.querySelector<HTMLTextAreaElement>('textarea');
+  const now = field();
+  if (now) {
+    now.focus();
+    return;
+  }
+  block.querySelector<HTMLButtonElement>('[data-testid="task-description-stance"]')?.click();
+  requestAnimationFrame(() => field()?.focus());
 }
 
 /**
@@ -1861,6 +2054,12 @@ function PanelBody(
     stripEdgeIds?: ReadonlySet<string>;
     /** The panel's own tab switch, for a body that links to another tab. */
     onSelectTab?: (tab: PanelTab) => void;
+    /** The panel's verdict on `panel.layout` for this host and tab. */
+    twoColumn?: boolean;
+    /** The control strip as rail rows, built only for a two-column layout. */
+    railSlot?: ReactNode;
+    /** Rail rows after the facts (the relations), two-column only. */
+    railTailSlot?: ReactNode;
   },
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
@@ -2034,6 +2233,7 @@ function PanelBody(
      finished bodies had ZERO importers — the switch was the unowned edit).
      Same law as the terminal arm: ARCHETYPE, a registry field, never kind. */
   if (config.panel.archetype === 'subtree') {
+    const twoColumn = props.twoColumn === true;
     return (
       <SubtreeBody
         detail={detail}
@@ -2051,9 +2251,24 @@ function PanelBody(
         onCriteriaChange={
           save.unavailable
             ? undefined
-            : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
+            : twoColumn
+              /* The two-column checklist writes each gesture — see
+                 `PanelConfig.layout` — under the same version guard. */
+              ? (acceptanceCriteria) => void save.commitNow({ acceptanceCriteria })
+              : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
         }
         criteriaUnavailableReason={saveRefusal}
+        layout={twoColumn ? 'two-column' : undefined}
+        rail={props.railSlot}
+        railTail={props.railTailSlot}
+        /* The page reads top to bottom into its conversation; the Messages
+           section draws the same surface for every other host and tab. */
+        activity={twoColumn ? props.discussionSurface : undefined}
+        onPointsChange={
+          twoColumn && !save.unavailable
+            ? (pointsEstimate) => void save.commitNow({ pointsEstimate })
+            : undefined
+        }
         gitSection={config.panel.gitSection ? props.taskGitSection : undefined}
         skillOptions={props.skillOptions}
         /* Same binding as the Discussion composer and the doc editor: the
@@ -2063,6 +2278,28 @@ function PanelBody(
         onAttached={props.onAttachmentUploaded}
         attachmentSlot={props.attachmentSlot}
         stripEdgeIds={props.stripEdgeIds}
+        descriptionSlot={
+          twoColumn ? (
+            /* THE PAGE'S PROSE RIDES THE DOC SAVE FLOW (PR2 of task 01a1163a):
+               one rich editor, always mounted, autosaving through
+               `patchTask` — the same editor and the same save path as a doc,
+               not a second one. The stacked body keeps its stance editor on
+               this panel's own save bar. */
+            <TaskDescription
+              key={detail.id}
+              detail={detail}
+              commands={props.commands ?? null}
+              editRefusal={config.panel.capabilityReasons?.canEdit}
+              onSaved={props.onSaved}
+              onReload={props.onReloadDetail}
+              fileHref={props.attachments?.downloadHref}
+              attach={startUpload ? (file: File) => startUpload(file, detail.id) : undefined}
+              onAttached={props.onAttachmentUploaded}
+              skillOptions={props.skillOptions}
+              attachmentSlot={props.attachmentSlot}
+            />
+          ) : undefined
+        }
       />
     );
   }
@@ -2100,7 +2337,11 @@ function PanelBody(
         /* Embedded (Workspace): the reader's Edit / Download ride the host's
            action strip instead of a toolbar row above the document. */
         {...(props.embeddedChrome
-          ? { toolbarSlot: props.embeddedChrome.kindSlot, outlineSlot: props.embeddedChrome.outlineSlot ?? null }
+          ? {
+              toolbarSlot: props.embeddedChrome.kindSlot,
+              outlineSlot: props.embeddedChrome.outlineSlot ?? null,
+              titleSlot: props.embeddedChrome.titleSlot ?? null,
+            }
           : {})}
       />
     );

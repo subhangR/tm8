@@ -1,4 +1,4 @@
--- 310 — Multiple workspaces per (space, identity): data layer (design doc
+-- 311 — Multiple workspaces per (space, identity): data layer (design doc
 -- 01a11593 §7, API doc 01a115c4 §2.1; build decisions 01a115d7, D and Q7/Q9/Q10).
 --
 -- * Every workspace gets its own id (the new primary key), a name, a colour
@@ -219,8 +219,12 @@ begin
   if me_identity is null then
     raise exception 'not a member of this space' using errcode = '42501';
   end if;
+  -- The lookup itself honours the pinned space (is_space_member, 227): a
+  -- workspace of the caller's in any other space answers exactly like one
+  -- that does not exist, so a pinned session learns nothing about it.
   select space_id into ws_space from public.workspaces
-   where workspace_id = p_workspace_id and identity_id = me_identity;
+   where workspace_id = p_workspace_id and identity_id = me_identity
+     and internal.is_space_member(space_id);
   if ws_space is null then
     raise exception 'no such workspace' using errcode = 'P0002';
   end if;
@@ -265,7 +269,7 @@ revoke all on function public.workspace_draft_write(uuid, uuid, text, bigint, js
 grant execute on function public.workspace_save(uuid, uuid, bigint, bigint, jsonb, uuid) to tm8_app;
 grant execute on function public.workspace_draft_write(uuid, uuid, text, bigint, jsonb) to tm8_app;
 
--- 8. Rollback shims: the 305 signatures, for a binary rolled back past 310.
+-- 8. Rollback shims: the 305 signatures, for a binary rolled back past 311.
 -- The previous build addresses "the" workspace of (space, identity), which is
 -- only well defined while there is at most one, so they FAIL CLOSED with two
 -- or more (55000, 'multiple workspaces: roll forward') and write nothing. The
@@ -277,6 +281,9 @@ declare
   me_identity text := internal.identity_id();
   ids uuid[];
 begin
+  -- Membership (pinned, 227) before any read, as 305 did: the count below
+  -- must not answer for a space outside the pin.
+  perform internal.require_space_member(p_space_id);
   select coalesce(array_agg(workspace_id), '{}') into ids from public.workspaces
    where space_id = p_space_id and identity_id = me_identity;
   if cardinality(ids) >= 2 then
@@ -328,9 +335,9 @@ revoke all on function public.workspace_draft_save(uuid, uuid, text, bigint, jso
 grant execute on function public.workspace_save(uuid, bigint, bigint, jsonb) to tm8_app;
 grant execute on function public.workspace_draft_save(uuid, uuid, text, bigint, jsonb) to tm8_app;
 comment on function public.workspace_save(uuid, bigint, bigint, jsonb) is
-  'compat-only for binary rollback past 310; refuses with >=2 workspaces; drop in a follow-up migration once a later release is the rollback floor';
+  'compat-only for binary rollback past 311; refuses with >=2 workspaces; drop in a follow-up migration once a later release is the rollback floor';
 comment on function public.workspace_draft_save(uuid, uuid, text, bigint, jsonb) is
-  'compat-only for binary rollback past 310; refuses with >=2 workspaces; drop in a follow-up migration once a later release is the rollback floor';
+  'compat-only for binary rollback past 311; refuses with >=2 workspaces; drop in a follow-up migration once a later release is the rollback floor';
 
 -- A new table is analyzed at birth (never-analyzed-tables.pg.test.ts); the
 -- re-keyed ones too, so their new indexes plan on real numbers.

@@ -5,7 +5,7 @@
  * answer, the one-time import, the bounds, and privacy — another member of
  * the same space never reads the row or receives a frame.
  *
- * Migration 310 (multiple workspaces): the lazy "Main" + active pointer of an
+ * Migration 311 (multiple workspaces): the lazy "Main" + active pointer of an
  * identity's first write (S12), and the backfill of a seeded 305-era database.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -255,9 +255,9 @@ describeIfPg('stored workspaces over real Postgres (Spec D)', () => {
  * Decision C (build log 01a115d7): no prod copy. A database is migrated to
  * 309, seeded through the 305 writers themselves — several identities across
  * two spaces, a workspace at the 30-draft cap, one at the 128 KB state cap,
- * and a member with no row — and then 310 is applied to it.
+ * and a member with no row — and then 311 is applied to it.
  */
-describeIfPg('migration 310 backfills a seeded 305-era database', () => {
+describeIfPg('migration 311 backfills a seeded 305-era database', () => {
   vi.setConfig({ testTimeout: 60_000, hookTimeout: 600_000 });
   let scratch: W1ScratchDatabase;
   let sdb: TestDb;
@@ -299,17 +299,17 @@ describeIfPg('migration 310 backfills a seeded 305-era database', () => {
     )).map((r) => r.workspace_id);
 
   beforeAll(async () => {
-    scratch = await createW1ScratchDatabase('mw310');
+    scratch = await createW1ScratchDatabase('mw311');
     const files = migrationFiles();
-    const at = files.indexOf('310_multiple_workspaces.sql');
+    const at = files.indexOf('311_multiple_workspaces.sql');
     expect(at).toBeGreaterThan(0);
     scratch.apply(files.slice(0, at));
     sdb = createTestDb(scratch.url);
     for (const [id, name] of [[ann, 'Ann'], [ben, 'Ben'], [cy, 'Cy']] as const) {
       await sdb.rpc({ identityId: id }, 'public.upsert_user_profile', [name, null, null]);
     }
-    s1 = (await sdb.rpc<{ space: { id: string } }>({ identityId: ann }, 'public.create_space', ['One', 'mw310', 'private', null, null])).space.id;
-    s2 = (await sdb.rpc<{ space: { id: string } }>({ identityId: ben }, 'public.create_space', ['Two', 'mw310', 'private', null, null])).space.id;
+    s1 = (await sdb.rpc<{ space: { id: string } }>({ identityId: ann }, 'public.create_space', ['One', 'mw311', 'private', null, null])).space.id;
+    s2 = (await sdb.rpc<{ space: { id: string } }>({ identityId: ben }, 'public.create_space', ['Two', 'mw311', 'private', null, null])).space.id;
     await join(s1, ben, 'Ben');
     await join(s1, cy, 'Cy');
     await join(s2, ann, 'Ann');
@@ -431,7 +431,7 @@ describeIfPg('migration 310 backfills a seeded 305-era database', () => {
  * once an identity holds two workspaces. The shims are called with the old
  * binary's exact untyped SQL text, so overload resolution is proven too.
  */
-describeIfPg('migration 310: pointer healing and the 305 rollback shims', () => {
+describeIfPg('migration 311: pointer healing and the 305 rollback shims', () => {
   let db: TestDb;
   let service: WorkspaceService;
   let spaceId: string;

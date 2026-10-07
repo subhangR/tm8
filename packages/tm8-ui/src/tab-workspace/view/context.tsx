@@ -9,7 +9,9 @@ import type { DetailReasons } from '../../panels';
 import type { NavView } from '../../routes/types';
 import type { GateData } from '../../views/useGateData';
 import type { WorkspaceRuntime } from '../runtime/dispatch';
+import { getBrowserSourceStore } from '../runtime/browserSourceStore';
 import { useWorkspaceStore, type WorkspaceStore } from '../runtime/store';
+import { useStore } from 'zustand';
 import type { CommandEnvelope, Result, TypedCommand, WorkspaceState } from '../runtime/types';
 
 /** What GateApp hands the Workspace view (Spec B §7 "GateApp"). */
@@ -74,10 +76,14 @@ export function WorkspaceProvider({ value, children }: { value: WorkspaceContext
 export interface ShellFrameValue {
   gate: WorkspaceGateHandles;
   spaceId: string;
-  /** The kind Work's browser shows; null outside Work (no rail kind reads current). */
+  /** The kind Work's browser shows; null outside Work, or while a non-entity source shows (no rail kind reads current). */
   currentKind: string | null;
+  /** The non-entity browser source Work shows (`adapters/browserSources.ts`); null for a kind's list, and outside Work. */
+  currentSource: string | null;
   /** A rail kind press: Work swaps its browser; elsewhere it goes to Work with that browser. */
   selectKind(kind: string): void;
+  /** A rail source press: Work shows that source in its browser; elsewhere it goes to Work with it. */
+  selectSource(sourceId: string): void;
   /** Width of the column beside the rail (Work's browser, a screen's panel). */
   panelWidth: number;
 }
@@ -91,18 +97,26 @@ export function useShellFrame(): ShellFrameValue {
 }
 
 function WorkspaceFrame({ value, children }: { value: WorkspaceContextValue; children: ReactNode }) {
-  const currentKind = useWorkspaceStore(value.store, (s) => s.browsers.main.kind);
+  const browserKind = useWorkspaceStore(value.store, (s) => s.browsers.main.kind);
   const panelWidth = useWorkspaceStore(value.store, (s) => s.layout.browserWidth);
   const { dispatch, gate, spaceId } = value;
+  const sources = useMemo(() => getBrowserSourceStore(spaceId), [spaceId]);
+  const currentSource = useStore(sources, (s) => s.source);
+  const currentKind = currentSource === null ? browserKind : null;
   const frame = useMemo<ShellFrameValue>(
     () => ({
       gate,
       spaceId,
       currentKind,
+      currentSource,
       panelWidth,
-      selectKind: (kind) => dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind }, source: 'click' }),
+      selectKind: (kind) => {
+        sources.getState().setSource(null);
+        dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind }, source: 'click' });
+      },
+      selectSource: (sourceId) => sources.getState().setSource(sourceId),
     }),
-    [gate, spaceId, currentKind, panelWidth, dispatch],
+    [gate, spaceId, currentKind, currentSource, panelWidth, dispatch, sources],
   );
   return <ShellFrameContext.Provider value={frame}>{children}</ShellFrameContext.Provider>;
 }

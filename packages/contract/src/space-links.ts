@@ -259,6 +259,7 @@ export type SpaceLinkRefusalReason =
   | 'process_start'
   | 'session_body'
   | 'membership'
+  | 'personal_workspace'
   | 'spawn_switch_off'
   | 'spawn_explicit_credentials'
   | 'unknown_op'
@@ -344,7 +345,7 @@ export type SpaceLinkRefusalReason =
  * unaffected: this list only gates spaceLinks.invoke.
  *
  * The reason is the CLASS the refusal error carries: `grant`,
- * `process_start`, `session_body`, `membership`, and the
+ * `process_start`, `session_body`, `membership`, `personal_workspace`, and the
  * credential/link/session classes.
  */
 export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
@@ -391,6 +392,15 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'spaces.members.', kinds: 'command', reason: 'membership' },
   { prefix: 'spaces.invites.', kinds: 'command', reason: 'membership' },
   { prefix: 'spaces.leave', kinds: 'all', reason: 'membership', exact: true },
+  // Multiple workspaces (311/312, PR #1103): a Workspace is one identity's
+  // private windows, tabs and drafts in B, and its list (create, rename,
+  // reorder, switch, delete) and an agent's Switch/Stay or Delete/Keep asks
+  // are that human's (D6: answering a prompt, reordering, are human-only).
+  // A link caller holds no windows in B and B's handlers already refuse a
+  // `link` session; refusing here too keeps a link-borne agent, which B sees
+  // as auth kind `link` rather than `agent`, from ever answering for the
+  // human. A prefix, reads too, so a future workspace op is covered.
+  { prefix: 'workspace.', kinds: 'all', reason: 'personal_workspace' },
 ];
 
 /** The spawn op, refused through a link with the switch off or explicit credentials (F9). */

@@ -2,7 +2,7 @@
  * Server-side Workspaces (Spec D, doc 01a11171-3aba).
  *
  * Stored workspaces live in `public.workspaces`, keyed by `workspace_id`
- * since migration 310: an identity may hold several per space, and
+ * since migration 311: an identity may hold several per space, and
  * `public.workspace_active` points at the one it is using. Draft values live in
  * `public.workspace_drafts`, per workspace. Every write runs the SAME `reduce`
  * the window runs (`@tm8/contract/workspace`), then compare-and-swaps the row
@@ -331,7 +331,7 @@ export class WorkspaceService {
   // -- managing the list (§5.7–§5.11) ----------------------------------------
   //
   // Each op checks the caller-facing refusals inside the lock first, so it can
-  // answer with a reason; the database functions (311) are the backstop. A
+  // answer with a reason; the database functions (312) are the backstop. A
   // list change always reaches capable windows as one `workspace.summary`.
 
   /** §5.7: never switches. An identity with no row gets "Main", active, first (S12). */
@@ -1018,7 +1018,7 @@ function nameTakenError(name: string): CollabError {
   return manageError('conflict', 'workspace_name_taken', `you already have a workspace named ${JSON.stringify(name)}`);
 }
 
-/** The database's backstop refusals (311), with the reason the node would have given. */
+/** The database's backstop refusals (312), with the reason the node would have given. */
 function manageFailure(error: unknown): unknown {
   if (error instanceof CollabError) return error;
   switch ((error as { code?: unknown } | null)?.code) {

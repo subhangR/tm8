@@ -56,6 +56,7 @@ import { BoardV2Screen } from '../board-v2';
 import {
   isWorkspaceKind,
   openInWorkspace,
+  openProjectFileInWorkspace,
   queueWorkArrival,
   queueWorkKey,
   runWorkKey,
@@ -69,10 +70,13 @@ import {
   useWorkspaceShareRoute,
   type WorkspaceGateHandles,
 } from '../tab-workspace';
+import { FILE_PALETTE_SCOPE, parseFilePaletteRef, recentFilePaletteViews } from '../project-file/palette';
+import { useProjectNames } from '../project-file/projects';
+import { useRecentProjectFiles } from '../project-file/recent';
 import { DesignScreen, DesignsHome, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
-import { createKeyboardController, hintFor, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
+import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
 import { ShortcutsOverlay } from '../shell/ShortcutsOverlay';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { Landing } from '../domain/nav-targets';
@@ -286,8 +290,6 @@ function legacyViewTabs(groups: readonly { id: string; label: string }[]): { vie
 /** Work, the desktop's default landing (D31). */
 const WORK_VIEW: NavView = { view: 'tabs' };
 
-/** The kinds the palette offers a "New …" row for — the `n` chords' kinds. */
-const NEW_DRAFT_KINDS = ['task', 'doc', 'work_session', 'chat', 'form', 'drawing'] as const;
 
 /**
  * Put each palette row's keyboard shortcut on it, read from the contract —
@@ -299,7 +301,9 @@ function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteVie
     const slug = scope === 'kind' ? slugOfKind(ref) : null;
     const hint =
       scope === 'new'
-        ? hintFor('work.create', ref, platform)
+        ? ref === 'tab'
+          ? hintFor('work.newTab', undefined, platform)
+          : hintFor('work.create', ref, platform)
         : scope === 'workspace'
           ? hintFor('workspace.switcher', undefined, platform)
         : scope === 'help'
@@ -319,7 +323,7 @@ function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteVie
 const NO_WORKSPACE_LIST = createWorkspaceListStore();
 
 /** Work keyboard commands that take you TO Work when pressed elsewhere. */
-const WORK_FROM_ANYWHERE: ReadonlySet<string> = new Set(['work.create', 'list.create', 'work.browser.focus']);
+const WORK_FROM_ANYWHERE: ReadonlySet<string> = new Set(['work.create', 'work.newTab', 'list.create', 'work.browser.focus']);
 
 /**
  * `Ctrl+]` from outside a terminal: back into the terminal on screen. xterm
@@ -1981,6 +1985,10 @@ export function GateApp(props: GateAppProps = {}) {
   }, [paletteQuery, data.rowsFor]);
 
   const kbPlatform = keyboardRef.current?.getContext().platform ?? 'other';
+  /* The viewer's recent project files (#1102's Recent source for files): ⌘K
+     rows that open a read-only file tab in Work. Desktop only, like Work. */
+  const recentFiles = useRecentProjectFiles(shell === 'mobile' ? null : viewerMemberId, data.spaceId);
+  const projectNames = useProjectNames(data.seam, data.spaceId);
   const paletteViews = useMemo<PaletteView[]>(
     () => withShortcutHints(kbPlatform, [
       /* D31: the three modes lead, in selector order. Home and the old Work
@@ -2011,15 +2019,15 @@ export function GateApp(props: GateAppProps = {}) {
          where a shortcut is discovered, so each carries its key. */
       ...(shell === 'mobile'
         ? []
-        : NEW_DRAFT_KINDS.map((kind) => ({
-            id: `new:${kind}`,
-            label: `New ${getKind(kind).label.toLowerCase()}`,
-            glyph: <KindIcon kind={kind} />,
-          }))),
+        : [
+            { id: 'new:tab', label: 'New tab', glyph: '＋' },
+            ...NEW_KINDS.map(({ kind, label }) => ({ id: `new:${kind}`, label, glyph: <KindIcon kind={kind} /> })),
+          ]),
       ...(workspacesCapable ? [{ id: 'workspace:switch', label: 'Switch workspace…', glyph: '◫' }] : []),
       { id: 'help:shortcuts', label: 'Keyboard shortcuts', glyph: '⌨' },
+      ...recentFilePaletteViews(recentFiles, projectNames, paletteQuery),
     ]),
-    [threeModes, shell, kbPlatform, workspacesCapable],
+    [threeModes, shell, kbPlatform, workspacesCapable, recentFiles, projectNames, paletteQuery],
   );
   const openPaletteView = useCallback((id: string) => {
     const [scope, ref] = id.split(':', 2) as [string, string];
@@ -2031,12 +2039,19 @@ export function GateApp(props: GateAppProps = {}) {
       navigateTo({ type: 'view', ref: ref as never });
     }
     if (scope === 'kind') navigateTo({ type: 'kind', ref });
-    if (scope === 'new') commandSink.current('work.create', ref);
+    if (scope === 'new') commandSink.current(ref === 'tab' ? 'work.newTab' : 'work.create', ref === 'tab' ? undefined : ref);
     if (scope === 'help') setShortcutsOpen(true);
     // After the palette has closed and handed focus back, so the list keeps it.
     if (scope === 'workspace') setTimeout(() => commandSink.current('workspace.switcher'), 0);
+    if (scope === FILE_PALETTE_SCOPE) {
+      const file = parseFilePaletteRef(ref);
+      /* Like an entity pick: outside Work the route carries it (Work opens
+         `?fp=&f=` on mount); inside, it opens as a kept tab. */
+      if (file && navStore.getState().view.view !== 'tabs') navStore.getState().navigate({ view: 'tabs', file });
+      else if (file && viewerMemberId) openProjectFileInWorkspace(viewerMemberId, data.spaceId, file);
+    }
     setPaletteOpen(false);
-  }, [channelEntities, navigateTo]);
+  }, [channelEntities, navigateTo, viewerMemberId, data.spaceId]);
 
   /* The resolved menu's groups are the tabs, with one route-only seat for the
      new Board — then split in two (task 01a0dc6d, owner-ruled 2026-09-26):
@@ -2588,6 +2603,7 @@ export function GateApp(props: GateAppProps = {}) {
                 viewerId={viewerMemberId}
                 spaceId={data.spaceId}
                 {...(navView.tab ? { routeTab: navView.tab } : {})}
+                {...(navView.file ? { routeFile: navView.file } : {})}
                 gate={workspaceGate}
               />
             </CatchBoundary>

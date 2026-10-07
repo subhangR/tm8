@@ -12,6 +12,7 @@
  * sync opens it as a deeplink. This opens the others, sets the browser kind,
  * seeds the activated tab's linked trail and opens its chat dock.
  */
+import { getBrowserSourceStore } from './browserSourceStore';
 import type { WorkspaceRuntime } from './dispatch';
 import { isWorkspaceKind, type KindId, type TrailCrumb } from './types';
 
@@ -79,6 +80,7 @@ export function drainWorkArrival(runtime: WorkspaceRuntime, ctx: DrainContext): 
   if (!arrival) return;
   pending.delete(key);
   if (arrival.browserKind && isWorkspaceKind(arrival.browserKind)) {
+    getBrowserSourceStore(ctx.spaceId).getState().setSource(null);
     runtime.dispatch({
       command: 'workspace.browser.set',
       args: { browserId: 'main', kind: arrival.browserKind },

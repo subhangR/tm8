@@ -48,6 +48,7 @@ import { useStore } from 'zustand';
 import { KindIcon, VIEW_ART, homeRootKinds, type KindConfig } from '../../domain';
 import { Avatar } from '../../kit/Avatar';
 import { VectorIcon } from '../../kit/VectorIcon';
+import { browserSources, type BrowserSource } from '../adapters/browserSources';
 import { getRailStore, workspacePinnedKinds } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
 import { useShellFrame } from './context';
@@ -86,7 +87,7 @@ function prefersReducedMotion(): boolean {
 }
 
 export function WorkspaceRail() {
-  const { gate, spaceId, currentKind: browserKind, selectKind } = useShellFrame();
+  const { gate, spaceId, currentKind: browserKind, currentSource, selectKind, selectSource } = useShellFrame();
   const railStore = useMemo(() => getRailStore(spaceId), [spaceId]);
   const pins = useStore(railStore, (s) => s.pins);
   const lifted = useStore(railStore, (s) => s.lifted);
@@ -260,6 +261,19 @@ export function WorkspaceRail() {
           <div className="tws-rail-group" role="group" aria-label="Kinds" data-testid="tws-rail-kinds">
             {kinds.map((config) => kindButton(config, 'list'))}
           </div>
+          {/* Non-entity browser sources (Project files), from their registry. */}
+          <hr className="tws-rail-rule" />
+          <div className="tws-rail-group" role="group" aria-label="Sources" data-testid="tws-rail-sources">
+            {browserSources().map((source) => (
+              <SourceButton
+                key={source.id}
+                source={source}
+                current={source.id === currentSource}
+                expanded={expanded}
+                onSelect={selectSource}
+              />
+            ))}
+          </div>
         </div>
       )}
       <hr className="tws-rail-rule" />
@@ -379,6 +393,37 @@ function ToolButton({
           <VectorIcon paths={art} size={18} />
         </span>
         {expanded ? <span className="tws-rail-label">{label}</span> : null}
+      </button>
+    </RailTip>
+  );
+}
+
+/** A non-entity browser source: a click shows it in the browser column. */
+function SourceButton({
+  source,
+  current,
+  expanded,
+  onSelect,
+}: {
+  source: BrowserSource;
+  current: boolean;
+  expanded: boolean;
+  onSelect(sourceId: string): void;
+}) {
+  return (
+    <RailTip label={expanded ? null : source.label}>
+      <button
+        type="button"
+        className="tws-rail-btn tws-rail-kind"
+        aria-label={source.label}
+        aria-current={current ? 'true' : undefined}
+        data-source={source.id}
+        onClick={() => onSelect(source.id)}
+      >
+        <span className="tws-rail-icon">
+          <VectorIcon paths={source.art} size={18} />
+        </span>
+        {expanded ? <span className="tws-rail-label">{source.label}</span> : null}
       </button>
     </RailTip>
   );

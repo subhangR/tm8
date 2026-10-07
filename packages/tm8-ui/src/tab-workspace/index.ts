@@ -15,3 +15,10 @@ export {
 export { WorkspaceSwitcher } from './view/WorkspaceSwitcher';
 export { WorkspacePrompts } from './view/WorkspacePrompts';
 export { queueWorkKey, runWorkKey, workKeysMounted, type WorkKey } from './keys';
+export {
+  openProjectFile,
+  openProjectFileInWorkspace,
+  useOpenProjectFile,
+  type OpenProjectFileOptions,
+} from './adapters/projectFile';
+export { toRelativePath, toAbsolutePath, type ProjectFileTarget } from '../project-file/paths';
