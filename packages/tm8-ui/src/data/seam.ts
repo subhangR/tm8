@@ -1808,4 +1808,6 @@ export interface WorkspaceManagePort {
   reorder(spaceId: string, workspaceId: string, beforeWorkspaceId: string | null): Promise<import('@tm8/contract').WorkspaceManageResult>;
   remove(spaceId: string, workspaceId: string, discard: boolean): Promise<import('@tm8/contract').WorkspaceManageResult>;
   switch(spaceId: string, workspaceId: string, expectedActiveWorkspaceId: string | null): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  /** §5.12: answer an agent's prompt (accept = Switch / Delete, decline = Stay / Keep); `discard` is F1's. */
+  resolvePrompt(spaceId: string, promptId: string, choice: 'accept' | 'decline', discard: boolean): Promise<import('@tm8/contract').WorkspaceManageResult>;
 }
