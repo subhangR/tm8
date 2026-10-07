@@ -13,11 +13,20 @@
  *   workspace.reorder         POST   /v2/spaces/:spaceId/workspaces/:workspaceId/move
  *   workspace.delete          DELETE /v2/spaces/:spaceId/workspaces/:workspaceId
  *   workspace.switch          POST   /v2/spaces/:spaceId/workspaces/:workspaceId/activate
+ *   workspace.prompts.resolve POST   /v2/spaces/:spaceId/workspace/prompts/:promptId
  *
  * MANAGING THE LIST (API doc 01a115c4 §8.2). `<ws>` is a workspace id or its
  * name (case-insensitive), resolved through `workspace.list` before any write.
- * Creating never switches. Reordering, switching and deleting are the
- * human's: an agent gets `human_only` (exit 4).
+ * Creating never switches. Reordering and answering prompts are the human's:
+ * an agent gets `human_only` (exit 4). An agent's `use`, and its `delete` of
+ * anything but its own off-screen clean workspace, only ASK the human: exit 16
+ * with the prompt id (D6, D8).
+ *
+ * WHICH WORKSPACE (§8.1). Content verbs take `--workspace <id|name>` (resolved
+ * through `workspace.list` before anything is sent; never switches) and the
+ * pin `--expect-workspace <id>`: if the command would land anywhere else it is
+ * refused (`workspace_switched` / `workspace_mismatch`, exit 6) and nothing
+ * changes.
  *
  * Every mutating verb is sugar over the ONE `workspace.command` row: it builds
  * the same `{command, args}` the window's own UI dispatches. The node applies
@@ -74,6 +83,9 @@ interface RemoteResult {
   revision?: number;
   tabId?: string;
   outcome?: string;
+  tabIds?: string[];
+  outcomes?: string[];
+  unavailableEntityIds?: string[];
   reason?: string;
   pendingInteractionId?: string;
   choices?: string[];
@@ -85,6 +97,8 @@ interface RemoteResult {
   expectedWorkspaceId?: string;
   activeWorkspaceId?: string | null;
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const SCOPE_MODES: Record<string, 'mixed' | 'byType'> = { mixed: 'mixed', 'by-type': 'byType', bytype: 'byType' };
 
@@ -143,7 +157,10 @@ function workspaceLines(r: { workspace?: WorkspaceRef; reason?: string; expected
 function renderResult(data: unknown): string {
   const r = data as RemoteResult;
   const lines = [`${r.status ?? '?'}${r.reason ? ` (${r.reason})` : ''}  revision ${r.revision ?? '?'}`, ...workspaceLines(r)];
-  if (r.tabId) lines.push(`tab: ${r.tabId}${r.outcome ? ` (${r.outcome})` : ''}`);
+  if (r.tabIds && r.tabIds.length > 1) {
+    r.tabIds.forEach((id, i) => lines.push(`tab: ${id}${r.outcomes?.[i] ? ` (${r.outcomes[i]})` : ''}`));
+  } else if (r.tabId) lines.push(`tab: ${r.tabId}${r.outcome ? ` (${r.outcome})` : ''}`);
+  if (r.unavailableEntityIds?.length) lines.push(`unavailable: ${r.unavailableEntityIds.join(', ')} (nothing was opened)`);
   if (r.dialogId) lines.push(`dialog: ${r.dialogId}${r.dialogState ? ` ${r.dialogState}` : ''}`);
   if (r.activation) lines.push(`window: ${r.activation.replace('_', ' ')}`);
   if (r.pendingInteractionId) {
@@ -177,10 +194,33 @@ function renderInspection(raw: Record<string, unknown>): string {
   return lines.join('\n');
 }
 
+/**
+ * §8.1: `--workspace <id|name>` → `workspaceId` (a name resolves through
+ * `workspace.list`, before any write), `--expect-workspace <id>` →
+ * `expectedWorkspaceId` (an id only: the pin is meant to be exact).
+ */
+async function targetFlags(cmd: CommandContext, spaceId: string): Promise<{ workspaceId?: string; expectedWorkspaceId?: string }> {
+  const named = cmd.options.value('workspace');
+  const expected = cmd.options.value('expect-workspace');
+  if (expected !== undefined && !UUID_RE.test(expected)) {
+    usage(`--expect-workspace takes a workspace id, got ${JSON.stringify(expected)}`, '--expect-workspace <id>  (the workspace.id of your first result)');
+  }
+  let workspaceId: string | undefined;
+  if (named !== undefined) {
+    const listed = await observedInvoke<WorkspaceListResult>(clientFor(cmd.ctx), 'workspace.list', { params: { spaceId } });
+    workspaceId = resolveWs(listed, named).id;
+  }
+  return {
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    ...(expected === undefined ? {} : { expectedWorkspaceId: expected }),
+  };
+}
+
 /** Send one Workspace command through the node and print the window's Result. */
 async function send(cmd: CommandContext, command: string, args?: unknown): Promise<ExitCode> {
   refuseMutationId(cmd.path.join(' '), cmd.options.value('mutation-id'));
   const spaceId = requireSpace(cmd.ctx);
+  const target = await targetFlags(cmd, spaceId);
   const instanceId = cmd.options.value('instance');
   const expectedRevision = integerOption(cmd, 'expect-revision');
   const waitMs = integerOption(cmd, 'wait-ms');
@@ -192,6 +232,7 @@ async function send(cmd: CommandContext, command: string, args?: unknown): Promi
       requestId,
       command,
       ...(args === undefined ? {} : { args }),
+      ...target,
       ...(instanceId ? { instanceId } : {}),
       ...(expectedRevision === undefined ? {} : { expectedRevision }),
       ...(waitMs === undefined ? {} : { timeoutMs: waitMs }),
@@ -219,20 +260,21 @@ async function instances(cmd: CommandContext): Promise<ExitCode> {
 async function inspect(cmd: CommandContext): Promise<ExitCode> {
   const spaceId = requireSpace(cmd.ctx);
   const instanceId = cmd.options.value('instance');
+  const query = { ...(await targetFlags(cmd, spaceId)), ...(instanceId ? { instanceId } : {}) };
   const result = await observedInvoke<RemoteResult>(clientFor(cmd.ctx), 'workspace.inspect', {
     params: { spaceId },
-    ...(instanceId ? { query: { instanceId } } : {}),
+    ...(Object.keys(query).length > 0 ? { query } : {}),
   });
   cmd.out.data(result, renderResult);
   return exitForResult(result);
 }
 
-const OPEN_HINT = 'tm8 workspace tabs open <kind> <entity-id> [--no-activate]';
+const OPEN_HINT = 'tm8 workspace tabs open <kind> <entity-id> [<kind> <entity-id> …] [--no-activate]';
 
 async function get(cmd: CommandContext): Promise<ExitCode> {
   const spaceId = requireSpace(cmd.ctx);
   const stored = await observedInvoke<{ revision: number; state: Record<string, unknown>; drafts: unknown[]; windows: number; workspace?: WorkspaceRef }>(
-    clientFor(cmd.ctx), 'workspace.get', { params: { spaceId } },
+    clientFor(cmd.ctx), 'workspace.get', { params: { spaceId }, query: await targetFlags(cmd, spaceId) },
   );
   cmd.out.data(stored, (data) => {
     const s = data as typeof stored;
@@ -256,8 +298,10 @@ async function list(cmd: CommandContext): Promise<ExitCode> {
     const l = data as WorkspaceListResult;
     const lines = l.items.map((w) =>
       `${w.active ? '*' : ' '} ${w.name}  (${w.id ?? 'no row yet'})  ${w.tabCount} tabs  ${w.draftCount} drafts${w.agentChangedSinceActive ? '  ●' : ''}`);
-    for (const p of l.prompts.filter((p) => p.state === 'open')) {
-      lines.push(`waiting for the human: ${p.kind} ${p.workspaceName}? prompt ${p.promptId}`);
+    for (const p of l.prompts) {
+      lines.push(p.state === 'open'
+        ? `waiting for the human: ${promptQuestion(p)} prompt ${p.promptId}`
+        : `prompt ${p.promptId} (${promptQuestion(p)}): ${p.state}`);
     }
     return lines.join('\n');
   });
@@ -292,6 +336,9 @@ async function managing(cmd: CommandContext): Promise<Managing> {
 
 const label = (w: { name: string; id: string | null }) => `${w.name} (${w.id ?? 'no row yet'})`;
 
+const promptQuestion = (p: { kind: 'switch' | 'delete'; workspaceName: string }) =>
+  `${p.kind === 'switch' ? 'switch to' : 'delete'} ${p.workspaceName}?`;
+
 /** A management result: the verb's own line when applied (§8.2), else what stopped it. */
 function renderManaged(r: WorkspaceManageResult, applied: (r: WorkspaceManageResult) => string): string {
   if (r.status === 'applied') return applied(r);
@@ -299,7 +346,9 @@ function renderManaged(r: WorkspaceManageResult, applied: (r: WorkspaceManageRes
   const lines = [`${r.status}${r.reason ? ` (${r.reason})` : ''}: ${label(r.workspace)}`];
   if (r.reason === 'workspace_switched') lines.push(`expected ${r.expectedWorkspaceId ?? '?'} · active ${r.activeWorkspaceId}`);
   if (r.dirtyDraftIds?.length) lines.push(`unsaved drafts: ${r.dirtyDraftIds.join(', ')} (pass --discard to drop them)`);
-  if (r.prompt) lines.push(`waiting for the human: ${r.prompt.kind} ${r.prompt.workspaceName}? [${(r.choices ?? []).join(', ')}] prompt ${r.prompt.promptId}`);
+  if (r.prompt && r.prompt.state === 'open') {
+    lines.push(`waiting for the human: ${promptQuestion(r.prompt)} [${(r.choices ?? []).join(', ')}] prompt ${r.prompt.promptId}`);
+  }
   return lines.join('\n');
 }
 
@@ -381,6 +430,27 @@ async function use(cmd: CommandContext): Promise<ExitCode> {
   return exitForResult(result);
 }
 
+/** `tm8 workspace prompts resolve <prompt-id> accept|decline [--discard]` (§5.12): the human's answer. */
+async function promptsResolve(cmd: CommandContext): Promise<ExitCode> {
+  const hint = 'tm8 workspace prompts resolve <prompt-id> accept|decline [--discard]';
+  refuseMutationId(cmd.path.join(' '), cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const promptId = arg(cmd, 0, 'prompt-id', hint);
+  const choice = arg(cmd, 1, 'accept|decline', hint);
+  if (choice !== 'accept' && choice !== 'decline') usage(`answer accept or decline, got ${JSON.stringify(choice)}`, hint);
+  const result = await observedInvoke<WorkspaceManageResult>(clientFor(cmd.ctx), 'workspace.prompts.resolve', {
+    params: { spaceId, promptId },
+    body: { requestId: cmd.options.value('request-id') ?? randomUUID(), choice, ...(cmd.options.bool('discard') ? { discard: true } : {}) },
+  });
+  cmd.out.data(result, (data) => {
+    const r = data as WorkspaceManageResult;
+    if (r.status !== 'applied' && r.status !== 'no_op') return renderManaged(r, () => '');
+    const active = `active: ${r.activeWorkspaceId}`;
+    return r.prompt ? `prompt ${r.prompt.promptId} (${promptQuestion(r.prompt)}): ${r.prompt.state} · ${active}` : active;
+  });
+  return exitForResult(result);
+}
+
 function parseField(raw: string, flag: string): [string, string] {
   const at = raw.indexOf('=');
   if (at <= 0) usage(`--${flag} expects <name>=<value>, got ${JSON.stringify(raw)}`, `--${flag} title=<text>`);
@@ -409,7 +479,7 @@ async function draftsSet(cmd: CommandContext): Promise<ExitCode> {
   }
   if (Object.keys(fields).length === 0) usage('name at least one --field', 'tm8 workspace drafts set <draft-id> --field title=<text>');
   const result = await observedInvoke<{ revision: number; fields: Record<string, { v: unknown; r: number }>; overwrote: string[]; workspace?: WorkspaceRef }>(
-    clientFor(cmd.ctx), 'workspace.drafts.patch', { params: { spaceId, draftId }, body: { fields } },
+    clientFor(cmd.ctx), 'workspace.drafts.patch', { params: { spaceId, draftId }, body: { fields, ...(await targetFlags(cmd, spaceId)) } },
   );
   cmd.out.data(result, (data) => {
     const r = data as typeof result;
@@ -433,6 +503,7 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
   { path: ['workspace', 'delete'], run: remove },
   { path: ['workspace', 'use'], run: use },
   { path: ['workspace', 'drafts', 'set'], run: draftsSet },
+  { path: ['workspace', 'prompts', 'resolve'], run: promptsResolve },
   {
     path: ['workspace', 'command'],
     run: (cmd) => {
@@ -455,12 +526,17 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
       const kind = arg(cmd, 0, 'kind', OPEN_HINT);
       const entityId = arg(cmd, 1, 'entity-id', OPEN_HINT);
       const subview = cmd.options.value('subview');
-      return send(cmd, 'workspace.tabs.open', {
-        kind,
-        entityId,
+      const options = {
         ...(cmd.options.bool('no-activate') ? { activate: false } : {}),
         ...(subview ? { subview } : {}),
-      });
+      };
+      // §8.3: two or more pairs are one all-or-nothing batch; one pair keeps
+      // the single shape, so it still works against an older node.
+      if (cmd.args.length <= 2) return send(cmd, 'workspace.tabs.open', { kind, entityId, ...options });
+      if (cmd.args.length % 2 !== 0) usage('tabs open takes <kind> <entity-id> pairs', OPEN_HINT);
+      const entities = [];
+      for (let i = 0; i < cmd.args.length; i += 2) entities.push({ kind: cmd.args[i]!, entityId: cmd.args[i + 1]! });
+      return send(cmd, 'workspace.tabs.open', { entities, ...options });
     },
   },
   {

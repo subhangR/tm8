@@ -2689,7 +2689,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'workspace.inspect': {
     cmd: ['workspace', 'inspect'],
-    syn: 'tm8 workspace inspect [--instance <instance-id>] [--space <space-id>]',
+    syn: 'tm8 workspace inspect [--instance <instance-id>] [--workspace <id|name>] [--expect-workspace <id>] [--space <space-id>]',
     sum: 'Read a live Workspace window’s tabs, scope, active tab and layout',
     authz: 'space',
     input: 'none',
@@ -2702,7 +2702,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'workspace.command': {
     cmd: ['workspace', 'command'],
-    syn: 'tm8 workspace command <command-name> [--args <json>] [--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]',
+    syn: 'tm8 workspace command <command-name> [--args <json>] [--workspace <id|name>] [--expect-workspace <id>] [--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]',
     sum: 'Run one Workspace command in your live window (the verbs below are sugar for it)',
     authz: 'space',
     input: 'bound',
@@ -2732,7 +2732,7 @@ const ROWS: Record<OperationName, Row> = {
 
   'workspace.get': {
     cmd: ['workspace', 'get'],
-    syn: 'tm8 workspace get [--space <space-id>]',
+    syn: 'tm8 workspace get [--workspace <id|name>] [--expect-workspace <id>] [--space <space-id>]',
     sum: 'Read your stored workspace in this Space: tabs, scope, layout, drafts (no window needed)',
     authz: 'space',
     input: 'none',
@@ -2745,7 +2745,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'workspace.drafts.patch': {
     cmd: ['workspace', 'drafts', 'set'],
-    syn: 'tm8 workspace drafts set <draft-id> --field <name>=<value>... [--base <name>=<revision>...]',
+    syn: 'tm8 workspace drafts set <draft-id> --field <name>=<value>... [--base <name>=<revision>...] [--workspace <id|name>] [--expect-workspace <id>]',
     sum: 'Write fields of an open draft in your workspace (per-field, last writer wins)',
     authz: 'space',
     input: 'bound',
@@ -2805,7 +2805,7 @@ const ROWS: Record<OperationName, Row> = {
   'workspace.delete': {
     cmd: ['workspace', 'delete'],
     syn: 'tm8 workspace delete <ws> [--discard] [--request-id <id>]',
-    sum: 'Delete one of your workspaces and its drafts (human only)',
+    sum: 'Delete one of your workspaces and its drafts',
     authz: 'space',
     input: 'none',
     side: 'durable',
@@ -2813,23 +2813,40 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'deleting the active workspace first switches to the next one in the list (else the previous); the last one cannot go (last_workspace, exit 6)',
       'unsaved drafts refuse it (rejected / unsaved_changes, exit 6) unless --discard',
-      'an agent gets human_only (exit 4); a replay of the same --request-id returns the recorded result',
+      'an agent may delete only a workspace it created that is not active and has no unsaved drafts; otherwise it asks the human (exit 16, prompt id) and --discard is ignored',
+      'a replay of the same --request-id returns the recorded result',
     ],
     examples: ['tm8 workspace delete <ws>'],
   },
   'workspace.switch': {
     cmd: ['workspace', 'use'],
     syn: 'tm8 workspace use <ws> [--request-id <id>]',
-    sum: 'Make one of your workspaces the active one; every open window follows (human only)',
+    sum: 'Make one of your workspaces the active one; every open window follows',
     authz: 'space',
     input: 'bound',
     side: 'durable',
     tags: ['workspace', 'switch', 'use', 'active', 'activate'],
     notes: [
       'works with no window open; already active is no_op',
-      'an agent gets human_only (exit 4): ask the human to switch',
+      'from an agent it only asks: exit 16 with a prompt id, and the human chooses Switch or Stay; tm8 workspace list shows the outcome',
+      'if your prompt disappears from tm8 workspace list, treat it as not accepted and ask again',
     ],
     examples: ['tm8 workspace use <ws>'],
+  },
+  'workspace.prompts.resolve': {
+    cmd: ['workspace', 'prompts', 'resolve'],
+    syn: 'tm8 workspace prompts resolve <prompt-id> accept|decline [--discard] [--request-id <id>]',
+    sum: 'Answer an agent\u2019s switch or delete prompt (human only)',
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['workspace', 'prompt', 'answer', 'switch', 'delete', 'approve'],
+    notes: [
+      'accept runs the switch or delete as the human; decline leaves everything as it is',
+      'an agent gets human_only (exit 4); a prompt already answered is prompt_resolved (exit 6), an unknown or expired one prompt_not_found (exit 5)',
+      'accepting a delete of a workspace with unsaved drafts needs --discard',
+    ],
+    examples: ['tm8 workspace prompts resolve <prompt-id> accept'],
   },
 
   // ── execution ────────────────────────────────────────────────────────────
@@ -4262,7 +4279,8 @@ export const CATALOG_DIGEST =
   // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
   // Re-measured for Spec D1 / 302 (+execution.complete, +entities.commands.release) on main 2bca8148c — RECOMPUTED.
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
-  'sha256:369fb9ce69fdd31c9e3d94a42e2901e15486b59f9ab2f3d05e83b33925f49b9d';
+  // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
+  'sha256:d8cbfa90cf4911f99d3992c42c25bca775bf16ed79ec7c1976e06a74a15c8ba9';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -4968,15 +4986,15 @@ COMMAND_ORDER.splice(workspaceRenameIndex < 0 ? COMMAND_ORDER.length : workspace
 
 // Workspace remote bridge (Spec C): every verb below is sugar over the ONE
 // `workspace.command` row, and is exactly as available as that row.
-const WORKSPACE_COMMON = '[--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]';
+const WORKSPACE_COMMON = '[--workspace <id|name>] [--expect-workspace <id>] [--instance <instance-id>] [--expect-revision <n>] [--request-id <id>] [--wait-ms <ms>]';
 const WORKSPACE_IDEMPOTENCY =
   'idempotent by --request-id: the same id and arguments return the recorded result and never run twice; a reused id with other arguments is refused (request_id_reused)';
 const WORKSPACE_EXIT = 'exit 0 applied/no_op; 16 requires_user_choice (the human must choose in the window); 4/2/6 rejected; 6 conflict';
 const WORKSPACE_VERBS: Array<[string, string, string, string[], string[]]> = [
-  ['workspace tabs open', `tm8 workspace tabs open <kind> <entity-id> [--no-activate] [--subview entity|connections|messages] ${WORKSPACE_COMMON}`,
+  ['workspace tabs open', `tm8 workspace tabs open <kind> <entity-id> [<kind> <entity-id>...] [--no-activate] [--subview entity|connections|messages] ${WORKSPACE_COMMON}`,
     'Open an entity as a tab in your live Workspace window (workspace.tabs.open)',
-    ['applies to your stored workspace with no window open; a live window also brings it to the front (`activation` says whether)', 'an open tab for the same entity is focused, not duplicated', 'a kind outside a By type scope stores a prompt for the human and exits 16; set the scope first to avoid it'],
-    ['tm8 workspace tabs open <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> --no-activate']],
+    ['applies to your stored workspace with no window open; a live window also brings it to the front (`activation` says whether)', 'an open tab for the same entity is focused, not duplicated', 'a kind outside a By type scope stores a prompt for the human and exits 16; set the scope first to avoid it', 'several pairs open together or not at all: at most 50 tabs (tab_limit), and an entity you cannot read refuses the batch (entity_unavailable, unavailableEntityIds); the first opened tab is activated'],
+    ['tm8 workspace tabs open <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> <kind> <entity-id>', 'tm8 workspace tabs open <kind> <entity-id> --no-activate']],
   ['workspace tabs close', `tm8 workspace tabs close <tab-id> ${WORKSPACE_COMMON}`,
     'Close one tab (workspace.tabs.close); never discards unsaved work',
     ['a dirty draft raises the in-window confirmation and exits 16: only the human can discard'],

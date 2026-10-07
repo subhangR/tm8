@@ -56,6 +56,7 @@ import type { AvailabilityLedger } from './availability.js';
 import { matchIntent, matchReason, rank } from './search.js';
 import { storyGuide } from './story-guide.js';
 import { routineGuide } from './routine-guide.js';
+import { workspaceGuide } from './workspace-guide.js';
 import { formGuide, type GuideSection } from './form-guide.js';
 import { edgeTypeGuide } from './edge-guide.js';
 
@@ -162,6 +163,7 @@ const NOUN_GUIDES: Readonly<Record<string, () => GuideSection[]>> = {
   story: storyGuide,
   routine: routineGuide,
   'edge-type': edgeTypeGuide,
+  workspace: workspaceGuide,
 };
 
 export interface CommandHelp {
