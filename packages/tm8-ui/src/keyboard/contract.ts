@@ -91,7 +91,22 @@ export type KeyCommand =
   | 'work.tab.chat'
   | 'work.tab.fullscreen'
   /** Out of a focused terminal, or back into the visible one. */
-  | 'terminal.toggle';
+  | 'terminal.toggle'
+  // -- Launch card (the New session screen) -----------------------------------
+  // Never emitted by the controller: the card handles its own keys
+  // (`new-session/launch-keys.ts`); these name its rows in the help overlay.
+  | 'launch.card'
+  | 'launch.model'
+  | 'launch.effort'
+  | 'launch.permission'
+  | 'launch.teammate'
+  | 'launch.workdir'
+  | 'launch.worktree'
+  | 'launch.options'
+  | 'launch.prompt'
+  | 'launch.submit'
+  | 'launch.menu.next'
+  | 'launch.menu.prev';
 
 export interface Binding {
   id: string;
@@ -302,6 +317,51 @@ const CREATE_CHORDS: readonly Binding[] = (
 }));
 
 /**
+ * THE LAUNCH CARD'S KEYS — one letter per control, live while focus is on the
+ * card but NOT in its prompt or title (Esc gets you there, `i` goes back). The
+ * card matches on these, and the help rows below are built from them, so the
+ * overlay cannot name a letter the card does not answer to.
+ */
+export const LAUNCH_KEYS = {
+  model: 'm',
+  effort: 'e',
+  permission: 'p',
+  teammate: 'a',
+  workdir: 'o',
+  worktree: 'b',
+  options: '.',
+  prompt: 'i',
+} as const;
+
+export type LaunchKeyAction = keyof typeof LAUNCH_KEYS;
+
+const LAUNCH_ROWS: readonly Binding[] = (
+  [
+    ['launch.card', 'Escape', 'Esc', 'Leave the prompt for the card (again: close the menu, then the card)'],
+    ['launch.model', LAUNCH_KEYS.model, LAUNCH_KEYS.model, 'Model'],
+    ['launch.effort', LAUNCH_KEYS.effort, LAUNCH_KEYS.effort, 'Cycle reasoning effort'],
+    ['launch.permission', LAUNCH_KEYS.permission, LAUNCH_KEYS.permission, 'Permission mode'],
+    ['launch.teammate', LAUNCH_KEYS.teammate, LAUNCH_KEYS.teammate, 'Teammate (agent)'],
+    ['launch.workdir', LAUNCH_KEYS.workdir, LAUNCH_KEYS.workdir, 'Working directory'],
+    ['launch.worktree', LAUNCH_KEYS.worktree, LAUNCH_KEYS.worktree, 'Worktree ⇄ current branch'],
+    ['launch.options', LAUNCH_KEYS.options, LAUNCH_KEYS.options, 'More options (···)'],
+    ['launch.prompt', LAUNCH_KEYS.prompt, LAUNCH_KEYS.prompt, 'Back into the prompt'],
+    ['launch.submit', 'Enter', 'Enter', 'Launch'],
+    ['launch.menu.next', 'ArrowDown', '↓', 'Next option in the open menu'],
+    ['launch.menu.prev', 'ArrowUp', '↑', 'Previous option in the open menu'],
+  ] as const
+).map(([command, key, keys, label]) => ({
+  id: command,
+  layer: 'focus' as const,
+  keys,
+  label,
+  command,
+  guaranteed: true,
+  surfaceOwned: true,
+  match: plain(key),
+}));
+
+/**
  * THE TABLE. Order within the array is irrelevant — the LAYER decides
  * precedence, never registration order.
  */
@@ -471,6 +531,9 @@ export const BINDINGS: readonly Binding[] = [
     guaranteed: true,
     match: { type: 'code', code: 'BracketRight', ctrl: true },
   },
+
+  // -- Launch card ----------------------------------------------------------
+  ...LAUNCH_ROWS,
 ];
 
 /**
@@ -484,16 +547,17 @@ export function isAdvertised(binding: Binding, platform: Platform): boolean {
 }
 
 /** Help-overlay sections, in display order. */
-export type BindingGroup = 'Focus' | 'Workspace' | 'Create' | 'Navigate' | 'Lists' | 'General';
+export type BindingGroup = 'Focus' | 'Workspace' | 'Create' | 'Launch' | 'Navigate' | 'Lists' | 'General';
 
 /**
  * `Focus` leads: leaving a text field or a terminal is what makes every other
  * shortcut reachable, so it is the first thing the help overlay teaches.
  */
-export const BINDING_GROUPS: readonly BindingGroup[] = ['Focus', 'Lists', 'Workspace', 'Create', 'Navigate', 'General'];
+export const BINDING_GROUPS: readonly BindingGroup[] = ['Focus', 'Lists', 'Workspace', 'Create', 'Launch', 'Navigate', 'General'];
 
 /** Which help section a binding belongs to — derived, so no row can forget one. */
 export function bindingGroup(binding: Binding): BindingGroup {
+  if (binding.command.startsWith('launch.')) return 'Launch';
   if (binding.command === 'text.blur' || binding.command.startsWith('terminal.')) return 'Focus';
   if (binding.command === 'work.create' || binding.command === 'list.create') return 'Create';
   if (binding.command === 'work.browser.focus' || binding.layer === 'focus') return 'Lists';

@@ -62,7 +62,8 @@ export function helpRows(platform: Platform): { group: string; rows: Binding[] }
     (b) =>
       isAdvertised(b, platform) &&
       !DUPLICATE_ROWS.has(b.id) &&
-      (b.layer !== 'focus' || LIVE_FOCUS_ROWS.has(b.id)),
+      // The launch card answers its own keys, so all of its rows are live.
+      (b.layer !== 'focus' || LIVE_FOCUS_ROWS.has(b.id) || bindingGroup(b) === 'Launch'),
   );
   return BINDING_GROUPS.map((group) => ({ group, rows: shown.filter((b) => bindingGroup(b) === group) })).filter(
     (section) => section.rows.length > 0,
@@ -71,6 +72,7 @@ export function helpRows(platform: Platform): { group: string; rows: Binding[] }
 
 const GROUP_NOTE: Partial<Record<string, string>> = {
   Focus: 'Single-key shortcuts never fire while you type. Leave the field or terminal first.',
+  Launch: 'On the New session screen (n s). Esc leaves the prompt; the letters then work on the card.',
   Lists: 'l l focuses the list on the left, as it is; l plus a letter switches it to that kind first.',
 };
 
