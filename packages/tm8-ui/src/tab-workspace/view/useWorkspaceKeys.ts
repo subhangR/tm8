@@ -28,6 +28,14 @@ export function focusWorkBrowser(): boolean {
   return true;
 }
 
+/** Focus the open tab's Links list; it puts its row cursor on the first row. */
+export function focusLinksList(): boolean {
+  const list = document.querySelector<HTMLElement>('[data-testid="tws-content"] [data-testid="pn-peers-list"]');
+  if (!list) return false;
+  list.focus();
+  return true;
+}
+
 /** Click the first launch verb inside `root`, as the pointer would. */
 export function clickLaunch(root: ParentNode): boolean {
   for (const ref of LAUNCH_PRIMARIES) {
@@ -104,6 +112,10 @@ export function handleWorkKey(
       const subview = key.ref as TabSubview;
       if (!TAB_SUBVIEWS.includes(subview)) return true;
       dispatch({ command: 'workspace.tabs.setUi', args: { tabId: entityTab.id, patch: { subview } }, source: 'keyboard' });
+      // `t l` lands IN the links, not merely on them: the list takes focus so
+      // j/k/Enter work at once (task 01a11567). Nothing linked ⇒ no list, and
+      // the section switch alone is the whole effect.
+      if (subview === 'connections') afterPaint(() => void focusLinksList());
       return true;
     }
     case 'work.tab.chat':

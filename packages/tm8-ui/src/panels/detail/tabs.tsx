@@ -5,7 +5,7 @@
    nothing in this package fails on a dead import: there is no lint step, and
    `tsc` is configured without `noUnusedLocals`. They only get removed if
    whoever deletes the code deletes them too. */
-import { Fragment, useState, type ReactNode } from 'react';
+import { Fragment, useRef, useState, type ReactNode } from 'react';
 import type { Connections, EdgeGroup, EntityDetail } from '@tm8/contract';
 import { Chip, Eyebrow } from '../../kit';
 /* THE ONE FORMATTER, called directly — the same three helpers `channel-screen`
@@ -15,6 +15,7 @@ import { Chip, Eyebrow } from '../../kit';
 import { absTime, clockTime, dayLabel, dayStart, relTime } from '../../kit/time';
 import { CONVERSATION_KIND, KindIcon, edgeVerb, edgeVerbBoth, getKind, isConversationEdge } from '../../domain';
 import { EmptyBody } from './PanelStates';
+import { useLinksCursor } from './linksCursor';
 
 /**
  * THE SHARED TABS — designed once, rendered for every kind.
@@ -449,6 +450,11 @@ export function ConnectionsTab({
   crossSpaceRefs?: ReactNode;
 }) {
   const [view, setView] = useState<'list' | 'graph'>('list');
+  /* The list's row cursor (task 01a11567): focus lands on the list by script
+     (`t l`), then j/k move and Enter opens. Declared above the graph arm's
+     early return because a hook must run on every render. */
+  const listRef = useRef<HTMLUListElement>(null);
+  const cursor = useLinksCursor(listRef, (id) => onOpenEntity?.(id));
   const groups: EdgeGroup[] = [
     ...(connections?.outgoing ?? detail.connections.outgoing),
     ...(connections?.incoming ?? detail.connections.incoming),
@@ -476,7 +482,7 @@ export function ConnectionsTab({
   }
 
   return (
-    <div className="pn-body" id="tabpanel-connections" role="tabpanel" aria-labelledby="tab-connections">
+    <div className="pn-body pn-body--links" id="tabpanel-connections" role="tabpanel" aria-labelledby="tab-connections">
       {graph === undefined ? null : <ConnectionsViewSwitch view={view} onChange={setView} />}
       {launchContext}
       {header}
@@ -493,7 +499,7 @@ export function ConnectionsTab({
           <Eyebrow faint>PARENT</Eyebrow>
           <div className="pn-chiprow">
             <Chip
-              glyph={<KindIcon kind={parent.kind} />}
+              glyph={<KindIcon kind={parent.kind} size={16} />}
               onClick={() => onOpenEntity?.(parent.id)}
               title={peerTitle(parent.kind, parent.title)}
             >
@@ -513,7 +519,19 @@ export function ConnectionsTab({
       {peers.length > 0 ? (
         <section className="pn-section">
           <Eyebrow faint>{`LINKED · ${peers.length}`}</Eyebrow>
-          <ul className="pn-peers">
+          {/* Focusable by script only (`t l`); Tab order is unchanged — every
+              chip is still a button in it. */}
+          <ul
+            className="pn-peers"
+            ref={listRef}
+            tabIndex={-1}
+            data-testid="pn-peers-list"
+            aria-label="Linked entities — j/k to move, Enter to open, Esc to leave"
+            aria-keyshortcuts="T L"
+            onFocus={cursor.onFocus}
+            onBlur={cursor.onBlur}
+            onKeyDown={cursor.onKeyDown}
+          >
             {withDayDividers(peers).map((entry) => (
               <Fragment key={entry.peer.id}>
                 {entry.dayLabel ? (
@@ -531,9 +549,9 @@ export function ConnectionsTab({
                 {/* ONE LINE PER ROW: title · verbs · clock, on a grid, so a long
                     title truncates instead of pushing its relations and its time
                     onto a second line. The full title is on the chip's hover. */}
-                <li className="pn-peers__row">
+                <li className="pn-peers__row" data-peer-id={entry.peer.id} data-peer-kind={entry.peer.kind}>
                   <Chip
-                    glyph={<KindIcon kind={entry.peer.kind} />}
+                    glyph={<KindIcon kind={entry.peer.kind} size={18} />}
                     onClick={() => onOpenEntity?.(entry.peer.id)}
                     /* An unresolved HARD dependency is why something is blocked —
                        the chip says so rather than looking like any other link. */
@@ -545,6 +563,10 @@ export function ConnectionsTab({
                   >
                     <span className="pn-peers__title">{entry.peer.title}</span>
                   </Chip>
+                  {/* WHAT KIND it is, said once beside the chip: the mark alone
+                      is not enough at reading distance, and the kind is the
+                      first thing a reader scanning down the list asks. */}
+                  <span className="pn-peers__kind">{getKind(entry.peer.kind).label}</span>
                   <div className="pn-peers__rels">
                     {entry.relations.map((rel) => (
                       <span
@@ -614,7 +636,7 @@ export function ConnectionsTab({
             {children.map((c) => (
               <Chip
                 key={c.id}
-                glyph={<KindIcon kind={c.kind} />}
+                glyph={<KindIcon kind={c.kind} size={16} />}
                 onClick={() => onOpenEntity?.(c.id)}
                 title={peerTitle(c.kind, c.title)}
               >
