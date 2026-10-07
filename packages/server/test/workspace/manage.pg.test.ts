@@ -144,17 +144,20 @@ describeIfPg('workspace management over real Postgres (§5.7–§5.11)', () => {
     await expect(create({}, { space: otherSpaceId })).rejects.toMatchObject({ code: 'conflict', details: { reason: 'workspace_cap' } });
   });
 
-  it('an agent may not reorder, switch or delete; nothing changes', async () => {
+  it('an agent may not reorder; its switch and delete only ask the human (D6, D8); nothing changes', async () => {
     const review = await idOf('Review');
     const before = await list();
-    for (const attempt of [
-      () => reorder(review, null, { as: asAgent }),
-      () => switchTo(review, {}, { as: asAgent }),
-      () => remove(review, {}, { as: asAgent }),
-    ]) {
-      await expect(attempt()).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'human_only' } });
+    await expect(reorder(review, null, { as: asAgent })).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'human_only' } });
+    const asked = [await switchTo(review, {}, { as: asAgent }), await remove(review, { discard: 'true' }, { as: asAgent })];
+    expect(asked).toMatchObject([
+      { status: 'requires_user_choice', reason: 'agent_switch', choices: ['switch', 'stay'], prompt: { kind: 'switch', state: 'open', workspaceId: review } },
+      { status: 'requires_user_choice', reason: 'agent_delete', choices: ['delete', 'keep'], prompt: { kind: 'delete', state: 'open', workspaceId: review } },
+    ]);
+    expect((await list()).items).toEqual(before.items);
+    // The human keeps things as they are, so later cases start with no prompt open.
+    for (const { prompt } of asked as Array<{ prompt: { promptId: string } }>) {
+      await call('workspace.prompts.resolve', { requestId: randomUUID(), choice: 'decline' }, { params: { promptId: prompt.promptId } });
     }
-    expect(await list()).toEqual(before);
   });
 
   it('switch: capable windows hear switched → state → drafts → summary, capless ones state → drafts, nobody else anything', async () => {
