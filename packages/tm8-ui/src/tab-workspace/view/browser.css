@@ -529,16 +529,6 @@
   }
 }
 
-/* R43: the hover bar takes the trailing slot the criteria count holds, so the
-   count steps out of it in place — hidden, not removed, so the title never
-   shifts or re-truncates on hover. */
-@media (hover: hover) and (pointer: fine) {
-  .cv2-root:not([data-shell='mobile']) .tws-browser .lp__tree
-    .pn-tt:is(:hover, :focus-within) > .pn-tt__main .pn-tt__progress {
-    visibility: hidden;
-  }
-}
-
 /* ---- Row lead (rowLead="icon"): the kind icon IS the disclosure ---------- */
 
 /* Geometry: body (inset − 4) + row 4 ⇒ the 18px icon sits at the inset (16),
@@ -561,6 +551,11 @@
 }
 .cv2-root .tws-browser .pn-tt[data-depth] {
   --tt-indent: 0px;
+}
+/* The badge line (PR, messages, progress) starts under the TITLE, not under
+   the old chevron + status column: row pad + 18px lead + gap. */
+.cv2-root .tws-browser .pn-tt__badges {
+  padding-inline-start: calc(var(--pn-space-1) + 18px + var(--pn-space-2));
 }
 
 .cv2-root .tws-browser .pn-tt__status--lead {
