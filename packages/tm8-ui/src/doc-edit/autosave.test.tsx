@@ -13,6 +13,7 @@ import {
   type EntityDetail,
   type PatchEntityInput,
 } from '@tm8/contract';
+import type { Editor } from '@tiptap/core';
 import { ReaderSurface } from '../panels/bodies/ReaderSurface';
 import { AUTOSAVE_DELAY_MS, forgetFreshDoc, markFreshDoc, readLocalDraft, useLiveTitle } from './index';
 
@@ -68,7 +69,14 @@ function mount(commands: never, detail = docDetail()) {
 }
 
 const enterEdit = () => fireEvent.click(screen.getByRole('button', { name: /edit/i }));
-const typeBody = (value: string) => fireEvent.change(screen.getByTestId('doc-source'), { target: { value } });
+/* The body is the rich editor; TipTap hangs the editor off its own node. */
+const bodyField = () => screen.getByTestId('doc-rich');
+const editorOf = () => (bodyField() as unknown as { editor: Editor }).editor;
+const typeBody = (value: string) =>
+  act(() => {
+    editorOf().commands.setContent(value, { contentType: 'markdown', emitUpdate: true });
+  });
+const bodyText = () => editorOf().getMarkdown();
 const pause = (ms = AUTOSAVE_DELAY_MS) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const settle = () => act(async () => { await Promise.resolve(); });
 
@@ -109,7 +117,7 @@ describe('autosave', () => {
     expect(sent).toHaveLength(1);
     typeBody('ab');
     await act(async () => answers[0]!.resolve(saved(4)));
-    expect((screen.getByTestId('doc-source') as HTMLTextAreaElement).value).toBe('ab');
+    expect(bodyText()).toBe('ab');
 
     await pause();
     expect(sent).toHaveLength(2);
@@ -127,7 +135,7 @@ describe('autosave', () => {
     await act(async () => answers[0]!.resolve(saved(4)));
 
     expect(screen.getByTestId('doc-save-word').textContent).toContain('Saved · v4');
-    expect((screen.getByTestId('doc-source') as HTMLTextAreaElement).value).toBe('saved text');
+    expect(bodyText()).toBe('saved text');
   });
 
   it('parks on a conflict: typing on keeps the draft and sends nothing until the banner is answered', async () => {
@@ -145,7 +153,7 @@ describe('autosave', () => {
 
     expect(sent).toHaveLength(1);
     expect(screen.getByTestId('doc-save-word').textContent).toContain('Conflict');
-    expect((screen.getByTestId('doc-source') as HTMLTextAreaElement).value).toBe('mine, more');
+    expect(bodyText()).toBe('mine, more');
   });
 
   it('Esc throws nothing away', () => {
@@ -154,9 +162,9 @@ describe('autosave', () => {
     enterEdit();
 
     typeBody('kept');
-    fireEvent.keyDown(screen.getByTestId('doc-source'), { key: 'Escape' });
+    fireEvent.keyDown(bodyField(), { key: 'Escape' });
 
-    expect((screen.getByTestId('doc-source') as HTMLTextAreaElement).value).toBe('kept');
+    expect(bodyText()).toBe('kept');
     expect(screen.queryByTestId('doc-cancel')).toBeNull();
   });
 });
@@ -225,7 +233,7 @@ describe('the title, written in the editor', () => {
     enterEdit();
 
     fireEvent.keyDown(screen.getByTestId('doc-title'), { key: 'Enter' });
-    expect(document.activeElement).toBe(screen.getByTestId('doc-source'));
+    expect(document.activeElement).toBe(bodyField());
   });
 
   it("is written in the host's title band when there is one, once, and Enter still reaches the body", () => {
@@ -239,7 +247,7 @@ describe('the title, written in the editor', () => {
     expect(screen.getAllByTestId('doc-title')).toHaveLength(1);
     expect(band.contains(screen.getByTestId('doc-title'))).toBe(true);
     fireEvent.keyDown(screen.getByTestId('doc-title'), { key: 'Enter' });
-    expect(document.activeElement).toBe(screen.getByTestId('doc-source'));
+    expect(document.activeElement).toBe(bodyField());
     band.remove();
   });
 

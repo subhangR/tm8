@@ -15,11 +15,13 @@ import './doc-print.css';
 
 export {
   docBodyOf,
+  docCodec,
   docFormatOf,
   docPatchInput,
   savedVersionOf,
   type DocCommands,
   type DocEdits,
+  type SaveCodec,
 } from './commands';
 
 export {
@@ -54,7 +56,10 @@ export { DocEditor } from './DocEditor';
 export { DocPreview } from './DocPreview';
 export { DocSource, type DocAttach } from './DocSource';
 export { DocSplitView } from './DocSplitView';
-export { DocTitleField } from './DocTitleField';
+export { RichBody, slashItems, type SlashItem } from './rich/RichBody';
+export { RichDocView } from './rich/RichDocView';
+export { encodeMinimal, reserialise, richExtensions, roundTrips } from './rich/markdown';
+export { BODY_FIELD, DocTitleField } from './DocTitleField';
 export { clearLiveTitle, setLiveTitle, useLiveTitle } from './liveTitles';
 export {
   FRESH_DOC_TITLE,

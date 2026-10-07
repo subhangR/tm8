@@ -4,8 +4,7 @@ import type { CommandResult, EntityDetail } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
 import {
-  DocEditor,
-  DocSplitView,
+  BODY_FIELD,
   DocTitleField,
   DownloadDocControl,
   EditEntryControl,
@@ -16,6 +15,7 @@ import {
   noteFreshArrived,
   noteFreshDocEmpty,
   printDoc,
+  RichDocView,
   useDocSave,
   type DocAttach,
   type DocCommands,
@@ -206,28 +206,17 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
 
   if (editing) {
     /**
-     * THE SPLIT IS THE EDIT SURFACE (user ruling 2026-07-31): markdown source
-     * on the left, the live rendered preview on the right, one draft between
-     * them. This centre column is full-width, and at that width showing both
-     * at once beats making the viewer choose.
+     * ONE RICH EDITOR IS THE EDIT SURFACE (New doc UX, 2026-10-07), on the
+     * desktop and the phone alike. It replaced the source/preview split (user
+     * ruling 2026-07-31) and the phone's Write⇄Preview toggle (2026-08-20):
+     * once the text is written as it reads, there is no second pane to show.
+     * A body it cannot keep opens as markdown source instead (`RichDocView`).
      *
-     * ON A PHONE IT IS NOT (user ruling 2026-08-20: "no split view on the
-     * phone"). Two honest columns do not exist at 390px — the split's own
-     * annotation says the stance is "chosen by geometry, not preference", and
-     * this is the geometry it meant. `DocEditor` is that answer: one pane, a
-     * Write⇄Preview toggle, the SAME `DocSaveHandle`. Same session, same draft,
-     * same conflict story; only the arrangement differs, which is the whole
-     * reason both frames were built against one hook.
+     * `oneSurface` still decides where the title goes: the phone has no title
+     * bar to write into, so the editor draws its own.
      *
-     * THE FORK IS `oneSurface`, NOT A WIDTH. A media query would restyle the
-     * desktop shell in a narrow window (`mobile/surface.tsx` states why at
-     * length); off the phone shell there is no provider, so the phone arm here
-     * is unreachable by construction rather than by a selector.
-     *
-     * ONE EXIT, not two, in BOTH arrangements. `⇲` in the editor's own bar IS
-     * the exit, and it is withheld while the draft is dirty so a click cannot
-     * silently discard text — with `collapseRefusal` carrying the true reason,
-     * since the control's own fallback copy would blame the wiring instead.
+     * ONE EXIT. Done in the editor's own bar, withheld during a conflict with
+     * `collapseRefusal` carrying the true reason.
      */
     /* UNDER AUTOSAVE, Done saves what is pending and leaves — nothing is
        lost by leaving. Only a conflict holds the editor open, because the
@@ -261,36 +250,22 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
               <DocTitleField
                 save={save}
                 autoFocus={arrival}
-                onEnter={() => editRoot.current?.querySelector<HTMLElement>('[data-testid="doc-source"]')?.focus()}
+                onEnter={() => editRoot.current?.querySelector<HTMLElement>(BODY_FIELD)?.focus()}
               />,
               props.titleSlot,
             )
           : null}
-        {oneSurface ? (
-          <DocEditor
-            save={save}
-            detail={detail}
-            fileHref={props.fileHref}
-            attach={props.attach}
-            onAttached={props.onAttached}
-            skillOptions={props.skillOptions}
-            focusTitle={arrival}
-            titleElsewhere={titleElsewhere}
-            {...exit}
-          />
-        ) : (
-          <DocSplitView
-            save={save}
-            detail={detail}
-            fileHref={props.fileHref}
-            attach={props.attach}
-            onAttached={props.onAttached}
-            skillOptions={props.skillOptions}
-            focusTitle={arrival}
-            titleElsewhere={titleElsewhere}
-            {...exit}
-          />
-        )}
+        <RichDocView
+          save={save}
+          detail={detail}
+          fileHref={props.fileHref}
+          attach={props.attach}
+          onAttached={props.onAttached}
+          skillOptions={props.skillOptions}
+          focusTitle={arrival}
+          titleElsewhere={titleElsewhere}
+          {...exit}
+        />
       </div>
     );
   }

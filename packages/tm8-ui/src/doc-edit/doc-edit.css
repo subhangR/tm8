@@ -732,3 +732,139 @@
    construction rather than a media query defending it. Stated as a constraint,
    NOT as a measurement: this has not yet been looked at in a browser at 320px,
    and the handover's NOT-CHECKED section says so. */
+
+/* --- the rich editor (New doc UX, 2026-10-07) -----------------------------
+   The body is written in the reader's own typography (`md-root rd-md` on the
+   ProseMirror element) and padded like the reader's `.pn-body`, so entering
+   edit does not move the text. Flush left, like the title band above it. */
+.cv2-root .de-richview__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cv2-root .de-richview__note {
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--pn-line);
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .de-rich {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-card);
+}
+
+.cv2-root .de-rich__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.cv2-root .de-rich__doc {
+  min-height: 100%;
+  padding: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.cv2-root .de-rich__doc p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .de-rich__doc pre {
+  padding: 8px 10px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-surface);
+  font-family: var(--pn-mono);
+  font-size: 12px;
+}
+
+.cv2-root .de-rich__doc ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 2px;
+}
+
+.cv2-root .de-rich__doc ul[data-type='taskList'] li {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.cv2-root .de-rich__doc ul[data-type='taskList'] li > div {
+  flex: 1;
+}
+
+.cv2-root .de-rich__doc table {
+  border-collapse: collapse;
+}
+
+.cv2-root .de-rich__doc th,
+.cv2-root .de-rich__doc td {
+  border: 1px solid var(--pn-line);
+  padding: 4px 8px;
+  min-width: 48px;
+}
+
+.cv2-root .de-rich__doc .selectedCell {
+  background: var(--pn-hover);
+}
+
+.cv2-root .de-rich__doc img {
+  max-width: 100%;
+}
+
+.cv2-root .de-rich__doc img.ProseMirror-selectednode {
+  outline: 2px solid var(--pn-brand);
+}
+
+/* The '/' menu. Fixed to the caret's coordinates; above the panel chrome. */
+.cv2-root .de-slash {
+  z-index: 50;
+  min-width: 220px;
+  max-height: 300px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+  font-size: 12.5px;
+}
+
+.cv2-root .de-slash__group {
+  padding: 6px 8px 2px;
+  font-size: 10.5px;
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .de-slash__item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-radius: var(--pn-r-xs);
+  color: var(--pn-ink);
+  cursor: pointer;
+}
+
+.cv2-root .de-slash__item[data-current] {
+  background: var(--pn-hover);
+}
+
+.cv2-root .de-slash__meta {
+  color: var(--pn-ink-4);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

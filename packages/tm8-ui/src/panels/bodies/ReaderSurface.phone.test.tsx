@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { Editor } from '@tiptap/core';
 import type {
   ActorSummary,
   CommandResult,
@@ -16,29 +17,17 @@ import { MobileSurfaceProvider } from '../../mobile';
 import { ReaderSurface } from './ReaderSurface';
 
 /**
- * NO SPLIT VIEW ON THE PHONE — user ruling 2026-08-20.
+ * THE EDIT SURFACE ON A PHONE AND ON THE DESKTOP.
  *
- * `DocEditor` has existed, exported and single-pane, since T5-3, with a
- * `Write|Preview` toggle its own annotation calls "chosen by geometry, not
- * preference". Nothing mounted it. `ReaderSurface` picked `DocSplitView` in
- * both arrangements, so a 390px phone got two columns of a two-column editor.
+ * History: the phone got the single-pane `DocEditor` (user ruling 2026-08-20,
+ * "no split view on the phone") while the desktop kept the split. Since the
+ * rich editor (New doc UX, 2026-10-07) both arrangements write the text as it
+ * reads, in one `RichDocView`; the fork that remains is where the title goes.
  *
- * ── WHAT THIS FILE CAN AND CANNOT SETTLE ─────────────────────────────────
- *
- * jsdom has NO LAYOUT and loads NO STYLESHEETS. It cannot tell you that the
- * split was cramped, that a control is 44px, or that an input clears the 16px
- * iOS zoom floor. Those are `doc-edit-phone.test.ts`'s (as source) and the
- * build service's (as pixels).
- *
- * What it CAN settle is the part no screenshot can: WHICH COMPONENT WAS
- * CHOSEN, in both directions. A fork asserted in one direction only would also
- * pass on a component that had simply been changed for everyone — which is the
- * failure mode that matters here, because the desktop split is in daily use
- * and this lane is not allowed to take it away.
- *
- * The fork is the HOST's — `useMobileSurface()` — so every phone case mounts
- * the provider and every desktop case does not. That is also why the desktop
- * suite next door needed no changes at all.
+ * jsdom has NO LAYOUT and loads NO STYLESHEETS, so this file settles which
+ * component was chosen and that the one save handle reaches it — not pixels.
+ * The fork is the HOST's (`useMobileSurface()`), so every phone case mounts
+ * the provider and every desktop case does not.
  */
 
 afterEach(() => {
@@ -107,41 +96,37 @@ function enterEdit() {
   fireEvent.click(screen.getByRole('button', { name: /edit/i }));
 }
 
+/** Types into the rich editor through the editor TipTap hangs off its node. */
+function typeBody(value: string) {
+  const editor = (screen.getByTestId('doc-rich') as unknown as { editor: Editor }).editor;
+  act(() => {
+    editor.commands.setContent(value, { contentType: 'markdown', emitUpdate: true });
+  });
+}
+
 describe('ReaderSurface chooses its edit surface by arrangement', () => {
-  it('mounts the single-pane DocEditor on a phone', () => {
+  /* ONE RICH EDITOR IN BOTH ARRANGEMENTS (New doc UX, 2026-10-07). The split
+     and the phone's Write⇄Preview pane are gone for everyone; what the
+     arrangement still decides is only where the title is written. */
+  it('mounts the rich editor on a phone, with no split and no stance toggle', () => {
     const { commands } = commandsSpy();
     phone(<ReaderSurface detail={docDetail()} blocks={[]} historyUnavailableReason="" commands={commands} />);
     enterEdit();
 
-    expect(screen.getByTestId('doc-editor')).toBeTruthy();
+    expect(screen.getByTestId('doc-rich-view')).toBeTruthy();
+    expect(screen.getByTestId('doc-rich')).toBeTruthy();
     expect(screen.queryByTestId('doc-split')).toBeNull();
-    /* The pane switch is the whole point of picking this component: with one
-       column, the preview has to be reachable some other way than beside the
-       source. A DocEditor with no toggle would satisfy the assertion above and
-       none of the ruling. */
-    expect(screen.getByTestId('doc-stance-write')).toBeTruthy();
-    expect(screen.getByTestId('doc-stance-preview')).toBeTruthy();
-    /* The splitter is not merely unrendered — it cannot be, since the split is
-       not mounted — but naming it says which control the phone does NOT get. */
-    expect(screen.queryByTestId('doc-splitter')).toBeNull();
+    expect(screen.queryByTestId('doc-stance-preview')).toBeNull();
     expect(screen.getByTestId('reader-surface').dataset.arrangement).toBe('phone');
   });
 
-  /**
-   * THE CONTROL ON THE CONTROL, and the reason it is not optional here. Every
-   * assertion above would pass just as well on a branch that had replaced the
-   * split view for EVERYONE. The user ruled a phone arrangement, not a product
-   * change: "the DESKTOP KEEPS ITS SPLIT VIEW".
-   */
-  it('leaves the desktop on the split view, with its splitter', () => {
+  it('mounts the same editor on the desktop', () => {
     const { commands } = commandsSpy();
     render(<ReaderSurface detail={docDetail()} blocks={[]} historyUnavailableReason="" commands={commands} />);
     enterEdit();
 
-    expect(screen.getByTestId('doc-split')).toBeTruthy();
-    expect(screen.getByTestId('doc-splitter')).toBeTruthy();
-    expect(screen.queryByTestId('doc-editor')).toBeNull();
-    expect(screen.queryByTestId('doc-stance-write')).toBeNull();
+    expect(screen.getByTestId('doc-rich-view')).toBeTruthy();
+    expect(screen.queryByTestId('doc-splitter')).toBeNull();
     expect(screen.getByTestId('reader-surface').dataset.arrangement).toBe('desktop');
   });
 
@@ -167,7 +152,7 @@ describe('ReaderSurface chooses its edit surface by arrangement', () => {
 
     fireEvent.click(screen.getByTestId('doc-collapse'));
     expect(screen.getByTestId('reader-surface').dataset.stance).toBe('read');
-    expect(screen.queryByTestId('doc-editor')).toBeNull();
+    expect(screen.queryByTestId('doc-rich-view')).toBeNull();
   });
 
   /**
@@ -185,7 +170,7 @@ describe('ReaderSurface chooses its edit surface by arrangement', () => {
     phone(<ReaderSurface detail={docDetail()} blocks={[]} historyUnavailableReason="" commands={commands} />);
     enterEdit();
 
-    fireEvent.change(screen.getByTestId('doc-source'), { target: { value: '# Floors\n\nedited' } });
+    typeBody('# Floors\n\nedited');
     fireEvent.click(screen.getByTestId('doc-collapse'));
 
     expect(screen.getByTestId('reader-surface').getAttribute('data-stance')).toBe('read');
@@ -210,8 +195,8 @@ describe('ReaderSurface chooses its edit surface by arrangement', () => {
     phone(<ReaderSurface detail={docDetail()} blocks={[]} historyUnavailableReason="" commands={commands} />);
     enterEdit();
 
-    fireEvent.change(screen.getByTestId('doc-source'), { target: { value: '# Floors\n\nedited on a phone' } });
-    fireEvent.keyDown(screen.getByTestId('doc-source'), { key: 'Enter', metaKey: true });
+    typeBody('# Floors\n\nedited on a phone');
+    fireEvent.keyDown(screen.getByTestId('doc-rich'), { key: 'Enter', metaKey: true });
 
     await screen.findByTestId('doc-save-word');
     expect(sent).toHaveLength(1);
