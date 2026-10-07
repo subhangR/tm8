@@ -909,9 +909,9 @@
   max-width: var(--pn-read-measure);
 }
 
-/* Connections has TWO renderings of ONE fact, so the switch is a segmented
-   control rather than a tab: List and Graph are the same edges, read
-   differently. It sits above the surface it governs and never scrolls with it. */
+/* Connections has THREE renderings of ONE fact, so the switch is a segmented
+   control rather than a tab: Links, Timeline and Graph are the same edges,
+   read differently. It sits above the surface it governs and never scrolls with it. */
 .cv2-root .pn-viewswitch {
   flex: none;
   align-self: flex-start;
@@ -957,77 +957,371 @@
   flex-direction: column;
 }
 
-/* LINKS — the Connections tab's list, drawn at READING size (task 01a11567).
+/* LINKS — the Connections tab, drawn at READING size (task 01a11567).
 
    The rows were 20px chips with 14px marks and 11px verbs, built for a 320px
    side panel. In the Workspace the tab is a full column, and at that width
    the same rows read as a footnote: marks too small to tell apart, chips too
    small to aim at, verbs the ink-4 quiet of a timestamp. So the tab carries
-   `.pn-body--links`, and under it every chip grows (the parent and children
-   rows too, so the three sections agree), each peer row becomes a card the
-   pointer and the keyboard cursor can both land on, and the relation verbs
-   become pills a reader can scan. The row's grammar is unchanged — chip ·
-   kind · verbs · clock, one line — only its scale. */
-.cv2-root .pn-body--links { gap: 14px; }
-.cv2-root .pn-body--links > .pn-section { gap: 10px; padding-bottom: 14px; }
+   `.pn-body--links`, and under it:
+
+     · every chip grows, with its kind mark in a soft TILE (parent and
+       children rows too, so the three sections agree);
+     · each peer row — mark tile and bold title on the first line, the kind
+       and the relation pills on the second, status and stamp at the end — is
+       a target the pointer and the keyboard cursor can both land on, and it
+       opens the peer wherever it is clicked (the row rules are further down,
+       under "LINKS — the list readings");
+     · the day labels and the messages summary scale with it. */
+.cv2-root .pn-body--links {
+  gap: 18px;
+  padding: 16px 18px 28px;
+}
+.cv2-root .pn-body--links > .pn-section {
+  gap: 12px;
+  padding-bottom: 18px;
+}
+.cv2-root .pn-body--links > .pn-section > .kit-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+/* Chips in the PARENT / CHILDREN rows: the same atom at reading size. */
 .cv2-root .pn-body--links .pn-chiprow { gap: 8px; }
-.cv2-root .pn-body--links .kit-chip {
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 9px;
+.cv2-root .pn-body--links .pn-chiprow .kit-chip {
+  gap: 9px;
+  padding: 6px 13px 6px 7px;
+  border-radius: 11px;
   font-size: 13px;
   line-height: 18px;
   color: var(--pn-ink);
+  transition: border-color 120ms ease, background-color 120ms ease;
 }
-.cv2-root .pn-body--links .kit-chip__glyph { color: var(--pn-ink-2); }
+.cv2-root .pn-body--links .pn-chiprow .kit-chip:hover {
+  border-color: var(--pn-line-2);
+  background: var(--pn-hover);
+}
 .cv2-root .pn-body--links .kit-chip:focus-visible {
   outline: 2px solid var(--pn-brand);
-  outline-offset: 1px;
+  outline-offset: 2px;
+}
+/* THE MARK TILE. A drawn mark on its own is a thin line of ink; on a soft
+   tile it becomes a shape the eye can find going down a column. Neutral
+   here; the kind-family rules below give it its colour. */
+.cv2-root .pn-body--links .kit-chip__glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-/* Connections tab: one row per connected ENTITY, its edge types trailing it.
-   The peer chip leads because "what is this connected to" is the question;
-   the relation verbs answer "how" without competing for the eye. The list is
-   focusable by script (`t l`) and shows no ring of its own: the cursor row is
-   the focus indicator. */
+/* THE KIND'S COLOUR. Each mark tile takes the colour of its kind's FAMILY
+   from the functional ramp the rest of the shell already speaks — work is
+   brand amber, sessions are run green, people are info blue, code is the
+   merged purple, content is gold — so a column of links reads by colour
+   before it reads by shape. Families, not kinds: thirty distinct hues would
+   be noise, five is a legend you learn once. The tile stays tinted under the
+   pointer and the cursor; only the rest of the row changes. */
+.cv2-root .pn-body--links .kit-chip[data-kind] > .kit-chip__glyph {
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+}
+.cv2-root .pn-body--links .kit-chip:is([data-kind='work_session'], [data-kind='chat'], [data-kind='container'], [data-kind='loop']) > .kit-chip__glyph {
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+}
+.cv2-root .pn-body--links .kit-chip:is([data-kind='member'], [data-kind='team_member'], [data-kind='space_link'], [data-kind='interaction_profile']) > .kit-chip__glyph {
+  background: var(--pn-info-soft);
+  color: var(--pn-info);
+}
+.cv2-root .pn-body--links .kit-chip:is([data-kind='pull_request'], [data-kind='commit'], [data-kind='worktree'], [data-kind='server'], [data-kind='mcp_server'], [data-kind='credential']) > .kit-chip__glyph {
+  background: var(--pn-pr-merged-soft);
+  color: var(--pn-pr-merged);
+}
+.cv2-root .pn-body--links .kit-chip:is([data-kind='doc'], [data-kind='file'], [data-kind='artifact'], [data-kind='drawing'], [data-kind='design'], [data-kind='form'], [data-kind='message'], [data-kind='channel'], [data-kind='voice_channel'], [data-kind='memory'], [data-kind='graph'], [data-kind='style']) > .kit-chip__glyph {
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+.cv2-root .pn-body--links .kit-chip:is([data-kind='spell'], [data-kind='skill']) > .kit-chip__glyph {
+  background: var(--pn-idle-soft);
+  color: var(--pn-ink-2);
+}
+
+/* LINKS — the list readings (task 01a115b8). One list (`.pn-peers`, the
+   element `t l` focuses) holds either reading:
+
+     · `.pn-peers--links`: a CARD per family section (Blocking, Work, Code,
+       Files & docs, People, Sessions & provenance), each with a header that
+       folds it, sub-headings by relation, and hairline-separated rows;
+     · `.pn-peers--timeline`: rows on a rail under day labels, each row's dot
+       in its family colour.
+
+   A row's FAMILY (`data-family`) sets `--pn-fam`, so the section dot, the
+   rail dot and the blocker's red all come from one place. The mark tile keeps
+   its kind colour from the rules above. */
+.cv2-root .pn-peers [data-family='work'],
+.cv2-root .pn-peers [data-section='work'] { --pn-fam: var(--pn-brand); }
+.cv2-root .pn-peers [data-family='code'],
+.cv2-root .pn-peers [data-section='code'] { --pn-fam: var(--pn-pr-merged); }
+.cv2-root .pn-peers [data-family='files'],
+.cv2-root .pn-peers [data-section='files'] { --pn-fam: var(--pn-wait); }
+.cv2-root .pn-peers [data-family='people'],
+.cv2-root .pn-peers [data-section='people'] { --pn-fam: var(--pn-info); }
+.cv2-root .pn-peers [data-family='sessions'],
+.cv2-root .pn-peers [data-section='sessions'] { --pn-fam: var(--pn-run); }
+.cv2-root .pn-peers [data-family='block'],
+.cv2-root .pn-peers [data-section='blocking'] { --pn-fam: var(--pn-block); }
+
+/* The toolbar: the view switch, and the Links view's density toggle. */
+.cv2-root .pn-linkbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cv2-root .pn-linkbar__toggle {
+  margin-left: auto;
+  appearance: none;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 7px;
+  background: var(--pn-card);
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .pn-linkbar__toggle:hover { color: var(--pn-ink); }
+.cv2-root .pn-linkbar__toggle[aria-pressed='true'] {
+  color: var(--pn-brand);
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+}
+.cv2-root .pn-linkbar button:focus-visible,
+.cv2-root .pn-linkfilter:focus-visible,
+.cv2-root .pn-linkgroup__head:focus-visible,
+.cv2-root .pn-linkgroup__more:focus-visible,
+.cv2-root .pn-blocked__open:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+/* Tiles: what is linked, counted. */
+.cv2-root .pn-linkstats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cv2-root .pn-linkstat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 88px;
+  padding: 7px 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  background: var(--pn-card);
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-linkstat b {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--pn-ink);
+}
+.cv2-root .pn-linkstat--alert {
+  border-color: color-mix(in srgb, var(--pn-block) 40%, transparent);
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+}
+.cv2-root .pn-linkstat--alert b { color: var(--pn-block); }
+
+/* Where it lives: "In ‹parent› · 2 children below". */
+.cv2-root .pn-lives {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--pn-ink-3);
+}
+
 .cv2-root .pn-peers {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 12px;
   outline: none;
 }
-/* ONE LINE, ALWAYS. The row used to wrap, so a long title (a message body, a
-   PR title) filled the width and pushed its relations and its clock onto a
-   second line — every row two lines tall. Now the chip is the one thing that
-   gives: it shrinks and its title ends in an ellipsis, with the full title on
-   hover; the kind, the verbs and the clock keep their width. */
-.cv2-root .pn-peers__row {
+
+/* ---- the Links reading: section cards ---- */
+.cv2-root .pn-linkgroup {
+  border: 1px solid var(--pn-line);
+  border-radius: 12px;
+  background: var(--pn-card);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(40, 34, 24, 0.05);
+}
+.cv2-root .pn-linkgroup__head {
+  appearance: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 6px 8px;
-  margin: 0 -8px;
-  border: 1px solid transparent;
-  border-radius: 12px;
+  gap: 9px;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pn-ink);
+  text-align: left;
+  cursor: pointer;
 }
+.cv2-root .pn-linkgroup__head:hover { background: var(--pn-hover); }
+.cv2-root .pn-linkgroup__chev {
+  width: 12px;
+  flex: none;
+  font-size: 11px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-linkgroup__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--pn-fam, var(--pn-ink-4));
+}
+.cv2-root .pn-linkgroup__count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--pn-active);
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-linkgroup__hint {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pn-ink-3);
+}
+/* Blocking: the one section in the block ramp — it is why the work waits. */
+.cv2-root .pn-linkgroup[data-section='blocking'] {
+  border-color: color-mix(in srgb, var(--pn-block) 45%, transparent);
+}
+.cv2-root .pn-linkgroup[data-section='blocking'] > .pn-linkgroup__head {
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+}
+.cv2-root .pn-linkgroup[data-section='blocking'] .pn-linkgroup__count {
+  background: color-mix(in srgb, var(--pn-block) 18%, transparent);
+  color: var(--pn-block);
+}
+/* Provenance, folded: dashed and flat, so it reads as bookkeeping. */
+.cv2-root .pn-linkgroup[data-section='sessions'][data-open='false'] {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+}
+.cv2-root .pn-linkgroup[data-section='sessions'][data-open='false'] > .pn-linkgroup__head {
+  color: var(--pn-ink-2);
+}
+.cv2-root .pn-linkgroup__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cv2-root .pn-linkgroup__sub {
+  padding: 10px 14px 4px 54px;
+  border-top: 1px solid var(--pn-line);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-linkgroup__more-row {
+  padding: 8px 14px 10px 54px;
+  border-top: 1px solid var(--pn-line);
+}
+.cv2-root .pn-linkgroup__more {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pn-brand);
+  cursor: pointer;
+}
+.cv2-root .pn-linkgroup__more:hover { text-decoration: underline; }
+
+/* ---- the row, in both readings ---- */
+.cv2-root .pn-peers__row {
+  display: grid;
+  /* FLOORED (L4): the title track never collapses past 120px, so a wide
+     status or stamp shortens the title to an ellipsis, never to nothing. */
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  grid-template-areas:
+    'chip status end'
+    'meta status end';
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
+  min-width: 0;
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.cv2-root .pn-linkgroup__rows > .pn-peers__row { border-top: 1px solid var(--pn-line); }
+.cv2-root .pn-linkgroup__sub + .pn-peers__row { border-top: 0; }
 .cv2-root .pn-peers__row:hover { background: var(--pn-hover); }
 /* THE KEYBOARD CURSOR — the Work browser's own mark (`data-kbd-cursor`), so
-   one attribute means "the row under the cursor" on every list. A brand
-   hairline and the brand wash together, because the hover wash alone would
-   be indistinguishable from a pointer resting on a neighbouring row. */
+   one attribute means "the row under the cursor" on every list: a brand wash
+   and a brand edge, which the hover wash alone cannot be mistaken for. */
 .cv2-root .pn-peers__row[data-kbd-cursor] {
-  border-color: var(--pn-brand);
   background: var(--pn-brand-soft);
+  box-shadow: inset 3px 0 0 var(--pn-brand);
 }
 .cv2-root .pn-peers__row > .kit-chip {
-  flex: 0 1 auto;
+  grid-area: chip;
+  justify-self: start;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--pn-ink);
+}
+.cv2-root .pn-peers__row > .kit-chip:hover { background: none; }
+.cv2-root .pn-peers__row > .kit-chip > .kit-chip__glyph {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
 }
 .cv2-root .pn-peers__title {
   min-width: 0;
@@ -1035,37 +1329,275 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The kind, once, in the quiet ink: a label the eye can skip. */
+/* A dependency that is met, or a claim that is over: still listed, quieter. */
+.cv2-root .pn-link--settled .pn-peers__title { color: var(--pn-ink-2); }
+/* The second line, indented to the title: tile (28) + gap (12). */
+.cv2-root .pn-peers__meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  padding-left: 40px;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
+/* The kind, once, as a quiet mono label the eye can skip. */
 .cv2-root .pn-peers__kind {
   flex: none;
-  font-size: 11.5px;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--pn-ink-4);
   white-space: nowrap;
 }
 .cv2-root .pn-peers__rels {
-  display: flex;
-  flex: none;
+  display: inline-flex;
+  flex-wrap: wrap;
   gap: 5px;
   align-items: center;
+  min-width: 0;
 }
-/* A verb as a PILL: the relation is the second thing the row says, and at
-   reading size it needs a shape of its own to be scanned down the column. */
 .cv2-root .pn-peers__rel {
   font-size: 11.5px;
   line-height: 18px;
-  padding: 1px 9px;
+  padding: 0 8px;
   border-radius: 999px;
-  background: var(--pn-hover);
-  color: var(--pn-ink-3);
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
   white-space: nowrap;
 }
 /* An unresolved HARD dependency is why something is blocked — it keeps a
    block-ramp outline so it cannot be mistaken for any other relation. */
 .cv2-root .pn-peers__rel--hard {
   color: var(--pn-block);
-  background: transparent;
-  border: 1px solid var(--pn-block);
+  border-color: var(--pn-block);
+  font-weight: 600;
 }
+.cv2-root .pn-peers__rel--met::after { content: ' ✓'; color: var(--pn-run); }
+.cv2-root .pn-peers__rel--ended { color: var(--pn-ink-4); border-style: dashed; }
+.cv2-root .pn-link__fact { white-space: nowrap; }
+.cv2-root .pn-link__status { grid-area: status; }
+.cv2-root .pn-link__end {
+  grid-area: end;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 96px;
+}
+.cv2-root .pn-link__by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 140px;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-link__by-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The peer's own state, as a pill whose dot carries the tone. */
+.cv2-root .pn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px 1px 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--pn-ink-2);
+  background: var(--pn-idle-soft);
+}
+.cv2-root .pn-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cv2-root .pn-status[data-tone='run'] { color: var(--pn-run); background: var(--pn-run-soft); }
+.cv2-root .pn-status[data-tone='done'] { color: var(--pn-ink-3); }
+.cv2-root .pn-status[data-tone='done']::before { background: var(--pn-run); }
+.cv2-root .pn-status[data-tone='todo']::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--pn-ink-3); }
+.cv2-root .pn-status[data-tone='block'] { color: var(--pn-block); background: var(--pn-block-soft); }
+.cv2-root .pn-status[data-tone='info'] { color: var(--pn-info); background: var(--pn-info-soft); }
+.cv2-root .pn-status[data-tone='merged'] { color: var(--pn-pr-merged); background: var(--pn-pr-merged-soft); }
+.cv2-root .pn-status[data-tone='idle'] { color: var(--pn-ink-3); }
+
+/* People as tiles: a name is the whole row, so they wrap side by side. */
+.cv2-root .pn-linkgroup__rows--tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 14px 14px;
+}
+.cv2-root .pn-linkgroup__rows--tiles > .pn-linkgroup__sub { display: none; }
+.cv2-root .pn-linkgroup__rows--tiles > .pn-peers__row {
+  grid-template-columns: auto;
+  grid-template-areas: 'chip' 'meta';
+  max-width: 100%;
+  padding: 7px 12px 7px 7px;
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  background: var(--pn-surface);
+}
+.cv2-root .pn-linkgroup__rows--tiles > .pn-peers__row > :is(.pn-link__status, .pn-link__end) { display: none; }
+
+/* COMPACT: one line per row — title, then its relations, status, stamp. */
+.cv2-root .pn-body--compact .pn-peers__row {
+  grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) auto auto;
+  grid-template-areas: 'chip meta status end';
+  padding: 5px 14px;
+}
+.cv2-root .pn-body--compact .pn-peers__row > .kit-chip { font-size: 13.5px; }
+.cv2-root .pn-body--compact .pn-peers__row > .kit-chip > .kit-chip__glyph {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+.cv2-root .pn-body--compact .pn-peers__meta {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  padding-left: 0;
+}
+.cv2-root .pn-body--compact .pn-peers__kind,
+.cv2-root .pn-body--compact .pn-link__by-name { display: none; }
+.cv2-root .pn-body--compact .pn-linkgroup__sub { padding-left: 48px; }
+
+/* ---- the Timeline reading: a rail ---- */
+.cv2-root .pn-blocked {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--pn-block) 35%, transparent);
+  border-radius: 12px;
+  background: var(--pn-block-soft);
+  font-size: 13.5px;
+  color: var(--pn-block);
+}
+.cv2-root .pn-blocked__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .pn-blocked__more { font-size: 12px; }
+.cv2-root .pn-blocked__open {
+  margin-left: auto;
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--pn-block);
+  cursor: pointer;
+}
+.cv2-root .pn-linkfilters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cv2-root .pn-linkfilter {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  background: var(--pn-card);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root .pn-linkfilter i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-fam);
+}
+.cv2-root .pn-linkfilter[data-family='work'] { --pn-fam: var(--pn-brand); }
+.cv2-root .pn-linkfilter[data-family='code'] { --pn-fam: var(--pn-pr-merged); }
+.cv2-root .pn-linkfilter[data-family='files'] { --pn-fam: var(--pn-wait); }
+.cv2-root .pn-linkfilter[data-family='people'] { --pn-fam: var(--pn-info); }
+.cv2-root .pn-linkfilter[data-family='sessions'] { --pn-fam: var(--pn-run); }
+.cv2-root .pn-linkfilter em {
+  font-style: normal;
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-linkfilter[aria-pressed='true'] {
+  background: var(--pn-ink);
+  border-color: var(--pn-ink);
+  color: var(--pn-surface);
+}
+.cv2-root .pn-linkfilter[aria-pressed='true'] em { color: var(--pn-ink-4); }
+
+.cv2-root .pn-peers--timeline {
+  gap: 2px;
+  margin-left: 6px;
+  padding-left: 14px;
+  border-left: 2px solid var(--pn-line);
+}
+.cv2-root .pn-peers--timeline > .pn-peers__row {
+  position: relative;
+  grid-template-columns: 44px minmax(120px, 1fr) auto;
+  grid-template-areas:
+    'when chip status'
+    'when meta status';
+  padding: 7px 12px 7px 4px;
+  border-radius: 0 10px 10px 0;
+}
+/* The rail's dot, in the row's family colour. */
+.cv2-root .pn-peers--timeline > .pn-peers__row::before {
+  content: '';
+  position: absolute;
+  left: -21px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -6px;
+  border: 2px solid var(--pn-fam, var(--pn-line-2));
+  border-radius: 50%;
+  background: var(--pn-surface);
+}
+.cv2-root .pn-peers--timeline > .pn-peers__row > .pn-peers__when {
+  grid-area: when;
+  align-self: center;
+  text-align: right;
+}
+.cv2-root .pn-timeline__folded {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-timeline__folded b { color: var(--pn-ink-2); }
+.cv2-root .pn-timeline__folded .pn-linkgroup__more { margin-left: auto; }
+
 
 /* The messages posted on or from this entity, as ONE row — they are the
    Discussion tab's content, summarised here rather than listed. Dashed, so it
@@ -1075,9 +1607,9 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 12px 16px 12px 12px;
   border: 1px dashed var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
+  border-radius: 14px;
   font-size: 12.5px;
   color: var(--pn-ink-3);
 }
@@ -1086,6 +1618,18 @@
   flex: none;
   color: var(--pn-ink-3);
 }
+.cv2-root .pn-body--links .pn-convo { gap: 11px; }
+.cv2-root .pn-body--links .pn-convo__glyph {
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+}
+.cv2-root .pn-body--links .pn-convo__count { font-size: 13.5px; font-weight: 600; }
+.cv2-root .pn-body--links .pn-convo__open { font-weight: 600; }
 .cv2-root .pn-convo__text {
   flex: 1 1 auto;
   min-width: 0;
@@ -1113,43 +1657,39 @@
   outline-offset: 2px;
   border-radius: var(--pn-r-xs);
 }
-/* WHEN the link was made, pushed to the row's trailing edge so the stamps form
-   a column and the list can be read down as the descending sequence it is
-   sorted into. `margin-left:auto` pins it to the row's end. */
+/* WHEN the link was made — a mono stamp: the clock on the Timeline (the day is
+   on the label above it), how long ago in the Links view. */
 .cv2-root .pn-peers__when {
   flex: none;
-  margin-left: auto;
-  padding-left: 6px;
   font-family: var(--pn-mono);
   font-size: 11px;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-3);
   white-space: nowrap;
 }
-/* The day a run of links belongs to, said ONCE over that run — the same
-   divider grammar the channel feed uses, at this surface's smaller scale. It is
-   a list item so the `<ul>` stays valid, and it is not a row: no marker, no
-   hairline, just the label in the quietest ink the ramp has. */
+/* The day a run of links belongs to, said ONCE over that run — the channel
+   feed's divider grammar. A list item so the `<ul>` stays valid; not a row. */
 .cv2-root .pn-peers__day {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 0 4px;
+  gap: 10px;
+  padding: 12px 2px 4px;
 }
-.cv2-root .pn-peers__day:first-child { padding-top: 0; }
+.cv2-root .pn-peers__day:first-child { padding-top: 2px; }
 .cv2-root .pn-peers__day-label {
   font-family: var(--pn-mono);
   font-size: 10.5px;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--pn-ink-4);
+  color: var(--pn-ink-3);
 }
-/* The rule that carries the eye across to the stamps under it. */
 .cv2-root .pn-peers__day::after {
   content: '';
   flex: 1;
   height: 1px;
   background: var(--pn-x-hairline-soft);
 }
+
 
 /* LAUNCH CONTEXT — a session's launch selections, atop its Connections tab. */
 .cv2-root .pn-launch__badge {

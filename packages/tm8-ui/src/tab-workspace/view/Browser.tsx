@@ -221,7 +221,7 @@ export function Browser() {
         data-testid="tws-browser-list"
         /* Focusable by script only (`l l`); Tab order is unchanged. */
         tabIndex={-1}
-        aria-label={`${adapter.nounPlural} — j/k to move, Enter to open, r to launch`}
+        aria-label={`${adapter.nounPlural} — j/k to move, ←/→ for status, Enter to open, r to launch`}
         aria-keyshortcuts="L L"
         onFocus={cursor.onFocus}
         onBlur={cursor.onBlur}

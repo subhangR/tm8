@@ -18,8 +18,7 @@ import { spaceSessionFor } from '../auth/space-sessions';
 import { readActiveServerId } from '../servers/server-key';
 import { registerTerminal } from './pty/runtime.js';
 import { attachTouchScroll } from './touchScroll.js';
-import { scrollTerminalLines } from './scrollTerminal';
-import { registerScrollTarget } from './scrollTargets';
+import { registerScrollTerminal, scrollTerminalLines } from './scrollTerminal';
 import {
   clientFittedSessions,
   measureSpawnTerminalSize,
@@ -384,7 +383,8 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     patchXtermRenderServiceDimensions(term);
     termRef.current = term;
     fitRef.current = fit;
-    const unregisterScroll = registerScrollTarget(term);
+    // Keyboard scrolling from outside the terminal (the Work tab's ↑/↓).
+    const unregisterScroll = registerScrollTerminal(container, term);
 
     // xterm receives keyboard input through a hidden textarea. The credential
     // login panel is mounted in an already-focused Settings surface, so the

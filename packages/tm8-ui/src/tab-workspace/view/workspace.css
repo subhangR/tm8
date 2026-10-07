@@ -904,3 +904,9 @@
   padding: 0;
   background: none;
 }
+
+/* Focused by a tab switch so ↑/↓ scroll the tab (contentScroll.ts); the tab
+   itself is the indication, not a ring around the whole content. */
+.tws-content:focus {
+  outline: none;
+}
