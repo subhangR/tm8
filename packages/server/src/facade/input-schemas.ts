@@ -1,4 +1,11 @@
-import { WorkspaceCommandInputSchema, WorkspaceDraftPatchInputSchema } from '@tm8/contract';
+import {
+  WorkspaceCommandInputSchema,
+  WorkspaceCreateInputSchema,
+  WorkspaceDraftPatchInputSchema,
+  WorkspaceReorderInputSchema,
+  WorkspaceSwitchInputSchema,
+  WorkspaceUpdateInputSchema,
+} from '@tm8/contract';
 import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema } from '@tm8/contract';
 import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
@@ -233,6 +240,11 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // Workspace remote bridge (Spec C): the window validates `args` itself.
   'workspace.command': WorkspaceCommandInputSchema,
   'workspace.drafts.patch': WorkspaceDraftPatchInputSchema,
+  // §5.7–§5.11: names and colours are checked by the handler, for the reason.
+  'workspace.create': WorkspaceCreateInputSchema,
+  'workspace.update': WorkspaceUpdateInputSchema,
+  'workspace.reorder': WorkspaceReorderInputSchema,
+  'workspace.switch': WorkspaceSwitchInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,
   'mcp.servers.delete': McpServerDeleteInputSchema,
@@ -587,4 +599,8 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   // schema would refuse every legitimate upload. Its parameters travel in the
   // path and the query.
   'containers.files.put',
+  // multiple workspaces (311): GENUINELY body-less, the first clause above.
+  // `workspace.delete` is a DELETE whose `requestId` and `discard` travel in
+  // the query (API doc §5.10); the handler checks both.
+  'workspace.delete',
 ];

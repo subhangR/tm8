@@ -77,7 +77,7 @@ interface PendingForward {
 interface RetryRecord {
   readonly hash: string;
   readonly at: number;
-  readonly outcome: Promise<WorkspaceRemoteResult>;
+  readonly outcome: Promise<unknown>;
 }
 
 export interface WorkspaceRunInput {
@@ -308,13 +308,13 @@ export class WorkspaceBridge {
    * when the workspace or its window has since moved on. A refusal that never
    * reached anything (`delivered: false`) is not remembered: a retry should run.
    */
-  recorded(
+  recorded<T = WorkspaceRemoteResult>(
     identityId: string,
     requestId: string,
     payload: unknown,
     timeoutMs: number,
-    start: () => Promise<WorkspaceRemoteResult>,
-  ): Promise<WorkspaceRemoteResult> {
+    start: () => Promise<T>,
+  ): Promise<T> {
     const hash = createHash('sha256').update(stable(payload)).digest('hex');
     const records = this.recordsFor(identityId);
     const prior = records.get(requestId);
@@ -324,7 +324,7 @@ export class WorkspaceBridge {
           details: { reason: 'request_id_reused' },
         }));
       }
-      return this.wait(prior.outcome, timeoutMs);
+      return this.wait(prior.outcome as Promise<T>, timeoutMs);
     }
 
     const outcome = start();
@@ -436,7 +436,7 @@ export class WorkspaceBridge {
     return workspace ? answered.then((result) => ({ ...result, workspace })) : answered;
   }
 
-  private async wait(outcome: Promise<WorkspaceRemoteResult>, timeoutMs: number): Promise<WorkspaceRemoteResult> {
+  private async wait<T>(outcome: Promise<T>, timeoutMs: number): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {

@@ -1,8 +1,9 @@
 /**
  * `workspace.instances.list`, `workspace.inspect` and `workspace.command`
  * (Spec C §2): the caller side of the Workspace remote bridge. With stored
- * workspaces (Spec D), also `workspace.get`, `workspace.list` and
- * `workspace.drafts.patch`.
+ * workspaces (Spec D), also `workspace.get`, `workspace.list`,
+ * `workspace.drafts.patch` and managing the list (create, update, reorder,
+ * delete, switch; API doc §5.7–§5.11).
  *
  * Every command resolves its target workspace in the service, inside the
  * (space, identity) lock (API doc 01a115c4 §3.2), and its result names it.
@@ -14,9 +15,18 @@
  */
 import {
   CollabError,
+  isWorkspaceColor,
+  isWorkspaceName,
+  WORKSPACE_COMMAND_TIMEOUT,
+  type WorkspaceColor,
   type WorkspaceCommandInput,
+  type WorkspaceCreateInput,
   type WorkspaceDraftPatchInput,
+  type WorkspaceManageResult,
   type WorkspaceRemoteResult,
+  type WorkspaceReorderInput,
+  type WorkspaceSwitchInput,
+  type WorkspaceUpdateInput,
 } from '@tm8/contract';
 import { WINDOW_ONLY_COMMANDS, type CommandName } from '@tm8/contract/workspace';
 
@@ -54,6 +64,11 @@ export interface WorkspaceHandlers {
   readonly get: OperationHandler;
   readonly workspaces: OperationHandler;
   readonly patchDraft: OperationHandler;
+  readonly create: OperationHandler;
+  readonly update: OperationHandler;
+  readonly reorder: OperationHandler;
+  readonly remove: OperationHandler;
+  readonly switchTo: OperationHandler;
 }
 
 /** Commands addressed by a tab id: explicit (must agree) → owner → active (§3.3). */
@@ -77,6 +92,32 @@ function targetOf(input: WorkspaceCommandInput): TargetRequest {
 function workspaceQuery(ctx: RequestContext): string | undefined {
   const id = ctx.query.get('workspaceId') ?? undefined;
   if (id !== undefined && !UUID_RE.test(id)) throw new CollabError('invalid_input', 'workspaceId must be a workspace id (uuid)');
+  return id;
+}
+
+/** A name as given, trimmed; `invalid_name` unless 1–64 characters with no control characters (§4). */
+function manageName(name: string | undefined): string | undefined {
+  if (name === undefined) return undefined;
+  const trimmed = name.trim();
+  if (!isWorkspaceName(trimmed)) {
+    throw new CollabError('invalid_input', 'a workspace name is 1–64 characters, with no control characters', { details: { reason: 'invalid_name' } });
+  }
+  return trimmed;
+}
+
+/** A palette token or null (Q10); `invalid_color` otherwise. */
+function manageColor(color: string | null | undefined): WorkspaceColor | null | undefined {
+  if (color === undefined || color === null) return color;
+  if (!isWorkspaceColor(color)) {
+    throw new CollabError('invalid_input', `unknown workspace colour ${JSON.stringify(color)}`, { details: { reason: 'invalid_color' } });
+  }
+  return color;
+}
+
+/** The path's `:workspaceId`, a uuid; anything else names no workspace. */
+function workspaceParam(ctx: RequestContext): string {
+  const id = ctx.params['workspaceId'] ?? '';
+  if (!UUID_RE.test(id)) throw new CollabError('invalid_input', 'workspaceId must be a workspace id (uuid)');
   return id;
 }
 
@@ -301,7 +342,99 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
       input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }));
   };
 
-  return { list, inspect, command, get, workspaces, patchDraft };
+  // -- managing the list (§5.7–§5.11) ----------------------------------------
+  //
+  // Every op is recorded under `manage:<requestId>` (D5), hashed over the op,
+  // its path and its body as sent, so a retry gets the recorded answer and a
+  // reused id with a different request is refused. The server-minted
+  // `clientMutationId` is left out: it differs on every attempt.
+
+  async function managed(
+    ctx: RequestContext,
+    requestId: string,
+    run: (who: Caller, service: WorkspaceService) => Promise<WorkspaceManageResult>,
+    humanOnly?: string,
+  ): Promise<WorkspaceManageResult> {
+    const who = await caller(ctx);
+    // D6: order, switching and deleting are the human's in this release (the
+    // agent's Switch/Stay and Delete/Keep prompts land later).
+    if (humanOnly !== undefined && who.actorClass === 'agent') {
+      throw new CollabError('forbidden', `only a human can ${humanOnly} workspaces`, { details: { reason: 'human_only' } });
+    }
+    const service = deps.service;
+    if (!service) throw new CollabError('not_implemented', 'this node keeps no stored workspaces');
+    const { clientMutationId: _minted, ...body } = (ctx.body ?? {}) as Record<string, unknown>;
+    const payload = { op: ctx.opName, params: ctx.params, body, query: ctx.method === 'DELETE' ? Object.fromEntries(ctx.query) : null };
+    return deps.bridge.recorded(who.identityId, `manage:${requestId}`, payload, WORKSPACE_COMMAND_TIMEOUT.max, () => run(who, service));
+  }
+
+  function actorOf(who: Caller) {
+    return { actorClass: who.actorClass, ...(who.actorName ? { actorName: who.actorName } : {}) };
+  }
+
+  const create: OperationHandler = async (ctx) => {
+    const input = ctx.body as WorkspaceCreateInput;
+    if (input.copyFrom !== undefined) throw new CollabError('not_implemented', 'copying a workspace is not available yet');
+    const name = manageName(input.name);
+    const color = manageColor(input.color);
+    return json(await managed(ctx, input.requestId, (who, service) => service.create(who.claims, who.spaceId, {
+      requestId: input.requestId,
+      ...(name === undefined ? {} : { name }),
+      ...(color === undefined ? {} : { color }),
+      ...(input.beforeWorkspaceId === undefined ? {} : { beforeWorkspaceId: input.beforeWorkspaceId }),
+      actor: actorOf(who),
+    })));
+  };
+
+  const update: OperationHandler = async (ctx) => {
+    const workspaceId = workspaceParam(ctx);
+    const input = ctx.body as WorkspaceUpdateInput;
+    if (input.name === undefined && input.color === undefined) throw new CollabError('invalid_input', 'name a new name or colour');
+    const name = manageName(input.name);
+    const color = manageColor(input.color);
+    return json(await managed(ctx, input.requestId, (who, service) => service.update(who.claims, who.spaceId, workspaceId, {
+      requestId: input.requestId,
+      ...(name === undefined ? {} : { name }),
+      ...(color === undefined ? {} : { color }),
+      actor: actorOf(who),
+    })));
+  };
+
+  const reorder: OperationHandler = async (ctx) => {
+    const workspaceId = workspaceParam(ctx);
+    const input = ctx.body as WorkspaceReorderInput;
+    return json(await managed(ctx, input.requestId, (who, service) => service.reorder(who.claims, who.spaceId, workspaceId, {
+      requestId: input.requestId,
+      beforeWorkspaceId: input.beforeWorkspaceId,
+      actor: actorOf(who),
+    }), 'reorder'));
+  };
+
+  /** §5.10: body-less, so `requestId` and `discard` travel in the query. */
+  const remove: OperationHandler = async (ctx) => {
+    const workspaceId = workspaceParam(ctx);
+    const requestId = ctx.query.get('requestId') ?? '';
+    if (requestId.length === 0 || requestId.length > 128) throw new CollabError('invalid_input', 'requestId is required (1–128 characters)');
+    const discardRaw = ctx.query.get('discard');
+    if (discardRaw !== null && discardRaw !== 'true' && discardRaw !== 'false') throw new CollabError('invalid_input', 'discard is true or false');
+    return json(await managed(ctx, requestId, (who, service) => service.remove(who.claims, who.spaceId, workspaceId, {
+      requestId,
+      discard: discardRaw === 'true',
+      actor: actorOf(who),
+    }), 'delete'));
+  };
+
+  const switchTo: OperationHandler = async (ctx) => {
+    const workspaceId = workspaceParam(ctx);
+    const input = ctx.body as WorkspaceSwitchInput;
+    return json(await managed(ctx, input.requestId, (who, service) => service.switch(who.claims, who.spaceId, workspaceId, {
+      requestId: input.requestId,
+      ...(input.expectedActiveWorkspaceId === undefined ? {} : { expectedActiveWorkspaceId: input.expectedActiveWorkspaceId }),
+      actor: actorOf(who),
+    }), 'switch'));
+  };
+
+  return { list, inspect, command, get, workspaces, patchDraft, create, update, reorder, remove, switchTo };
 }
 
 /**

@@ -26,10 +26,14 @@ import { randomUUID } from 'node:crypto';
 import {
   CollabError,
   WORKSPACES_PER_IDENTITY_CAP,
+  type WorkspaceColor,
   type WorkspaceGetResult,
   type WorkspaceListResult,
+  type WorkspaceManageResult,
   type WorkspaceRef,
   type WorkspaceRemoteResult,
+  type WorkspaceSummary,
+  type WorkspaceSummaryCauseKind,
 } from '@tm8/contract';
 import {
   defaultWorkspaceState,
@@ -47,7 +51,7 @@ import {
 
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import type { WorkspaceBridge } from './bridge.js';
-import { loadWorkspaces, resolveTarget, summaries, TargetRefused, type Resolution, type TargetRequest } from './resolve.js';
+import { loadWorkspaces, resolveTarget, summaries, TargetRefused, type Resolution, type TargetRequest, type Workspaces } from './resolve.js';
 
 type DraftFields = Record<string, { v: unknown; r: number }>;
 
@@ -88,6 +92,12 @@ export type AppliedResult = Result & { workspace?: WorkspaceRef };
 
 /** The workspace a command resolved to, and whether it is the one on screen. */
 export type ResolvedTarget = Resolution & { activeWorkspaceId: string | null };
+
+/** Who asked for a management op; named on the `workspace.summary` cause. */
+export interface ManageActor {
+  actorClass: 'human' | 'agent';
+  actorName?: string;
+}
 
 const ENTITY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -150,12 +160,16 @@ export class WorkspaceService {
   }
 
   /**
-   * What a window gets right after it registers (§7.4): the ACTIVE
-   * workspace's state, then its drafts. Returns that workspace's id.
+   * What a window gets right after it registers (§7.4): a capable window the
+   * list first, then every window the ACTIVE workspace's state and its
+   * drafts. Returns that workspace's id.
    */
-  async snapshot(claims: DbClaims, spaceId: string, send: (frame: object) => void): Promise<string | null> {
-    const { loaded } = await this.read(claims, spaceId);
+  async snapshot(claims: DbClaims, spaceId: string, capable: boolean, send: (frame: object) => void): Promise<string | null> {
+    const { ws, loaded } = await this.read(claims, spaceId);
     const workspaceId = loaded.workspaceId;
+    if (capable) {
+      send({ type: 'workspace.summary', spaceId, listRevision: ws.listRevision, activeWorkspaceId: ws.activeId, items: summaries(ws) });
+    }
     send({
       type: 'workspace.state',
       spaceId,
@@ -281,6 +295,158 @@ export class WorkspaceService {
     });
   }
 
+  // -- managing the list (§5.7–§5.11) ----------------------------------------
+  //
+  // Each op checks the caller-facing refusals inside the lock first, so it can
+  // answer with a reason; the database functions (311) are the backstop. A
+  // list change always reaches capable windows as one `workspace.summary`.
+
+  /** §5.7: never switches. An identity with no row gets "Main", active, first (S12). */
+  create(
+    claims: DbClaims,
+    spaceId: string,
+    input: { requestId: string; name?: string; color?: WorkspaceColor | null; beforeWorkspaceId?: string | null; actor: ManageActor },
+  ): Promise<WorkspaceManageResult> {
+    return this.serialize(claims, spaceId, async () => {
+      const { id, ws } = await this.manageTx(claims, spaceId, async (q, before) => {
+        if (before.rows.length >= WORKSPACES_PER_IDENTITY_CAP) throw manageError('conflict', 'workspace_cap', `at most ${WORKSPACES_PER_IDENTITY_CAP} workspaces per space`);
+        if (input.name !== undefined && nameTaken(before, input.name)) throw nameTakenError(input.name);
+        const placed = input.beforeWorkspaceId ?? null;
+        if (placed !== null && !before.rows.some((r) => r.id === placed)) throw workspaceNotFound(placed);
+        const state = JSON.stringify(toStoredState(defaultWorkspaceState(spaceId)));
+        if (before.rows.length === 0) {
+          await q.query('select public.workspace_save($1, null, 0, 1, $2)', [spaceId, state]);
+        }
+        const rows = await q.query<{ id: string }>(
+          'select public.workspace_create($1, $2, $3, $4, $5, $6) as id',
+          [spaceId, input.name ?? null, input.color ?? null, placed, state, input.actor.actorClass === 'agent'],
+        );
+        return rows[0]!.id;
+      });
+      this.pushSummary(claims, spaceId, ws, { kind: 'created', workspaceId: id, ...input.actor });
+      return manageResult(input.requestId, 'applied', ws, id);
+    });
+  }
+
+  /** §5.8: rename and/or recolour; `no_op` when nothing changes. No CAS: last writer wins. */
+  update(
+    claims: DbClaims,
+    spaceId: string,
+    workspaceId: string,
+    input: { requestId: string; name?: string; color?: WorkspaceColor | null; actor: ManageActor },
+  ): Promise<WorkspaceManageResult> {
+    return this.serialize(claims, spaceId, async () => {
+      let renamed = false;
+      const { id: changed, ws } = await this.manageTx(claims, spaceId, async (q, before) => {
+        const row = before.rows.find((r) => r.id === workspaceId);
+        if (!row) throw workspaceNotFound(workspaceId);
+        if (input.name !== undefined && nameTaken(before, input.name, workspaceId)) throw nameTakenError(input.name);
+        renamed = input.name !== undefined && input.name !== row.name;
+        const rows = await q.query<{ changed: boolean }>(
+          'select public.workspace_update($1, $2, $3, $4) as changed',
+          [workspaceId, input.name ?? null, input.color !== undefined, input.color ?? null],
+        );
+        return rows[0]!.changed;
+      });
+      if (!changed) return manageResult(input.requestId, 'no_op', ws, workspaceId);
+      this.pushSummary(claims, spaceId, ws, { kind: renamed ? 'renamed' : 'recolored', workspaceId, ...input.actor });
+      return manageResult(input.requestId, 'applied', ws, workspaceId);
+    });
+  }
+
+  /** §5.9: move before another workspace, or last. The handler keeps agents out (D6). */
+  reorder(
+    claims: DbClaims,
+    spaceId: string,
+    workspaceId: string,
+    input: { requestId: string; beforeWorkspaceId: string | null; actor: ManageActor },
+  ): Promise<WorkspaceManageResult> {
+    return this.serialize(claims, spaceId, async () => {
+      const { id: changed, ws } = await this.manageTx(claims, spaceId, async (q, before) => {
+        for (const id of [workspaceId, input.beforeWorkspaceId]) {
+          if (id !== null && !before.rows.some((r) => r.id === id)) throw workspaceNotFound(id);
+        }
+        const rows = await q.query<{ changed: boolean }>('select public.workspace_reorder($1, $2) as changed', [workspaceId, input.beforeWorkspaceId]);
+        return rows[0]!.changed;
+      });
+      if (!changed) return manageResult(input.requestId, 'no_op', ws, workspaceId);
+      this.pushSummary(claims, spaceId, ws, { kind: 'reordered', workspaceId, ...input.actor });
+      return manageResult(input.requestId, 'applied', ws, workspaceId);
+    });
+  }
+
+  /**
+   * §5.11: make a workspace the active one. A stale `expectedActiveWorkspaceId`
+   * is `conflict` / `workspace_switched` (F2) and changes nothing.
+   */
+  switch(
+    claims: DbClaims,
+    spaceId: string,
+    workspaceId: string,
+    input: { requestId: string; expectedActiveWorkspaceId?: string; actor: ManageActor },
+  ): Promise<WorkspaceManageResult> {
+    return this.serialize(claims, spaceId, async () => {
+      let refused: WorkspaceManageResult | undefined;
+      const { id: previous, ws } = await this.manageTx(claims, spaceId, async (q, before) => {
+        if (!before.rows.some((r) => r.id === workspaceId)) throw workspaceNotFound(workspaceId);
+        const expected = input.expectedActiveWorkspaceId;
+        if (expected !== undefined && expected !== before.activeId) {
+          refused = {
+            ...manageResult(input.requestId, 'conflict', before, workspaceId),
+            reason: 'workspace_switched',
+            expectedWorkspaceId: expected,
+          };
+          return null;
+        }
+        const rows = await q.query<{ previous: string }>('select public.workspace_switch($1) as previous', [workspaceId]);
+        return rows[0]!.previous;
+      });
+      if (refused) return refused;
+      if (previous === workspaceId) return manageResult(input.requestId, 'no_op', ws, workspaceId);
+      await this.pushSwitch(claims, spaceId, ws, previous, { kind: 'switched', workspaceId, ...input.actor });
+      return manageResult(input.requestId, 'applied', ws, workspaceId);
+    });
+  }
+
+  /**
+   * §5.10: delete a workspace and its drafts. Deleting the active one moves
+   * the pointer first (next in list order, else the previous) in the same
+   * transaction, with the same frames as a switch. Dirty drafts need `discard`.
+   */
+  remove(
+    claims: DbClaims,
+    spaceId: string,
+    workspaceId: string,
+    input: { requestId: string; discard: boolean; actor: ManageActor },
+  ): Promise<WorkspaceManageResult> {
+    return this.serialize(claims, spaceId, async () => {
+      const loaded = await this.load(claims, spaceId, workspaceId).catch((error: unknown) => {
+        throw error instanceof CollabError && error.code === 'not_found' ? workspaceNotFound(workspaceId) : error;
+      });
+      let last: WorkspaceSummary | undefined;
+      let refused: WorkspaceManageResult | undefined;
+      let wasActive = false;
+      const { id: active, ws } = await this.manageTx(claims, spaceId, async (q, before) => {
+        if (!before.rows.some((r) => r.id === workspaceId)) throw workspaceNotFound(workspaceId);
+        if (before.rows.length <= 1) throw manageError('conflict', 'last_workspace', 'a space keeps at least one workspace');
+        last = summaries(before).find((s) => s.id === workspaceId);
+        wasActive = before.activeId === workspaceId;
+        const dirty = Object.values(loaded.state.tabs).flatMap((t) => (t.type === 'draft' && t.dirty ? [t.draftId] : []));
+        if (dirty.length > 0 && !input.discard) {
+          refused = { ...manageResult(input.requestId, 'rejected', before, workspaceId), reason: 'unsaved_changes', dirtyDraftIds: dirty };
+          return null;
+        }
+        const rows = await q.query<{ active: string }>('select public.workspace_delete($1) as active', [workspaceId]);
+        return rows[0]!.active;
+      });
+      if (refused) return refused;
+      const cause = { kind: 'deleted' as const, workspaceId, ...input.actor };
+      if (wasActive) await this.pushSwitch(claims, spaceId, ws, workspaceId, cause);
+      else this.pushSummary(claims, spaceId, ws, cause);
+      return { requestId: input.requestId, status: 'applied', workspace: { ...last!, active: false }, activeWorkspaceId: active!, listRevision: ws.listRevision };
+    });
+  }
+
   // -- internals -------------------------------------------------------------
 
   private async applyNow(claims: DbClaims, spaceId: string, input: ApplyInput, target: ResolvedTarget): Promise<AppliedResult> {
@@ -344,6 +510,80 @@ export class WorkspaceService {
       ? { instanceId: input.origin.instanceId, requestId: input.requestId, result: result as unknown as Record<string, unknown> }
       : undefined);
     return result;
+  }
+
+  /**
+   * One management transaction, as the caller: the list before (for the
+   * refusals), the op, then the list after. A refusal the database raises
+   * anyway (a race the node's checks cannot see) keeps its reason.
+   */
+  private async manageTx<T>(
+    claims: DbClaims,
+    spaceId: string,
+    run: (q: Querier, before: Workspaces) => Promise<T>,
+  ): Promise<{ id: T; ws: Workspaces }> {
+    try {
+      return await this.deps.db.tx(claims, async (q) => {
+        await q.query('set local role tm8_app');
+        await requireSpace(q, spaceId);
+        const id = await run(q, await loadWorkspaces(q, spaceId));
+        return { id, ws: await loadWorkspaces(q, spaceId) };
+      });
+    } catch (error) {
+      throw manageFailure(error);
+    }
+  }
+
+  /** The list, to capable windows only: an old window cannot read the frame (§7.3). */
+  private pushSummary(
+    claims: DbClaims,
+    spaceId: string,
+    ws: Workspaces,
+    cause: { kind: WorkspaceSummaryCauseKind; workspaceId: string } & ManageActor,
+  ): void {
+    if (!claims.identityId) return;
+    this.deps.bridge.push(claims.identityId, spaceId, {
+      type: 'workspace.summary',
+      spaceId,
+      listRevision: ws.listRevision,
+      activeWorkspaceId: ws.activeId,
+      items: summaries(ws),
+      cause,
+    }, { capableOnly: true });
+  }
+
+  /**
+   * The switch sequence (§7.5), inside the lock: capable windows get
+   * `workspace.switched`, then every window the new active state and its
+   * drafts, then capable windows the list. To an old window this is an
+   * ordinary remote change of the one workspace it knows.
+   */
+  private async pushSwitch(
+    claims: DbClaims,
+    spaceId: string,
+    ws: Workspaces,
+    previous: string | null,
+    cause: { kind: WorkspaceSummaryCauseKind; workspaceId: string } & ManageActor,
+  ): Promise<void> {
+    const identityId = claims.identityId;
+    const workspaceId = ws.activeId;
+    if (!identityId || workspaceId === null) return;
+    const loaded = await this.load(claims, spaceId, workspaceId);
+    this.deps.bridge.push(identityId, spaceId, {
+      type: 'workspace.switched',
+      spaceId,
+      workspaceId,
+      previousWorkspaceId: previous,
+      listRevision: ws.listRevision,
+      at: new Date().toISOString(),
+    }, { capableOnly: true });
+    this.pushState(claims, spaceId, workspaceId, true, loaded.revision, toStoredState(loaded.state));
+    for (const draft of loaded.drafts.values()) {
+      this.deps.bridge.push(identityId, spaceId, {
+        type: 'workspace.draft', spaceId, workspaceId, draftId: draft.draftId, kind: draft.kind, revision: draft.revision, fields: draft.fields,
+      });
+    }
+    this.pushSummary(claims, spaceId, ws, cause);
   }
 
   /** A command that did not commit: the sending window still needs its answer. */
@@ -516,4 +756,45 @@ function sanitizeStored(raw: unknown, spaceId: string): WorkspaceState | null {
   // A pending interaction survives a reload of the row (it is shared state).
   const pending = (raw as { pending?: unknown }).pending;
   return pending && typeof pending === 'object' ? { ...clean, pending: pending as WorkspaceState['pending'] } : clean;
+}
+
+/** A management result naming `workspaceId` as it is in `ws`. */
+function manageResult(
+  requestId: string,
+  status: WorkspaceManageResult['status'],
+  ws: Workspaces,
+  workspaceId: string,
+): WorkspaceManageResult {
+  const workspace = summaries(ws).find((s) => s.id === workspaceId)!;
+  return { requestId, status, workspace, activeWorkspaceId: ws.activeId!, listRevision: ws.listRevision };
+}
+
+function nameTaken(ws: Workspaces, name: string, except?: string): boolean {
+  const wanted = name.toLowerCase();
+  return ws.rows.some((r) => r.id !== except && r.name.toLowerCase() === wanted);
+}
+
+function manageError(code: 'conflict' | 'not_found' | 'invalid_input', reason: string, message: string): CollabError {
+  return new CollabError(code, message, { details: { reason } });
+}
+
+function workspaceNotFound(workspaceId: string): CollabError {
+  return manageError('not_found', 'workspace_not_found', `no workspace ${workspaceId}`);
+}
+
+function nameTakenError(name: string): CollabError {
+  return manageError('conflict', 'workspace_name_taken', `you already have a workspace named ${JSON.stringify(name)}`);
+}
+
+/** The database's backstop refusals (311), with the reason the node would have given. */
+function manageFailure(error: unknown): unknown {
+  if (error instanceof CollabError) return error;
+  switch ((error as { code?: unknown } | null)?.code) {
+    case '23505': return manageError('conflict', 'workspace_name_taken', 'you already have a workspace with that name');
+    case '53400': return manageError('conflict', 'workspace_cap', `at most ${WORKSPACES_PER_IDENTITY_CAP} workspaces per space`);
+    case '55000': return manageError('conflict', 'last_workspace', 'a space keeps at least one workspace');
+    case 'P0002': return manageError('not_found', 'workspace_not_found', 'no such workspace');
+    case '22023': return manageError('invalid_input', 'invalid_name', 'invalid workspace name');
+    default: return error;
+  }
 }
