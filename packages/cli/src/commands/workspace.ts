@@ -551,6 +551,20 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
     },
   },
   {
+    path: ['workspace', 'files', 'open'],
+    run: (cmd) => {
+      const hint = 'tm8 workspace files open <project-id> <path> [--preview] [--no-activate]';
+      const projectId = arg(cmd, 0, 'project-id', hint);
+      const path = arg(cmd, 1, 'path', hint);
+      return send(cmd, 'workspace.files.open', {
+        projectId,
+        path,
+        preview: cmd.options.bool('preview'),
+        ...(cmd.options.bool('no-activate') ? { activate: false } : {}),
+      });
+    },
+  },
+  {
     path: ['workspace', 'tabs', 'activate'],
     run: (cmd) => send(cmd, 'workspace.tabs.activate', { tabId: arg(cmd, 0, 'tab-id', 'tm8 workspace tabs activate <tab-id>') }),
   },

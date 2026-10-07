@@ -96,7 +96,8 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
   'no-session-link',     // entity create — accepted, no effect since 308 (the server records authored_from)
-  'no-activate',         // workspace tabs open --no-activate
+  'no-activate',         // workspace tabs open / files open --no-activate
+  'preview',             // workspace files open --preview — the one preview tab, not a kept one
   'discard',             // workspace delete --discard
   'clear',               // task axis --clear
   'untick',              // task tick --untick

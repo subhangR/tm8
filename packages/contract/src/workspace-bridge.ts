@@ -17,7 +17,11 @@
  */
 import { z } from 'zod';
 
-/** Every command a remote caller may NAME. The window decides what it accepts. */
+/**
+ * Every command a remote caller may NAME. The window decides what it accepts.
+ * Every workspace COMMAND_NAMES entry is here or in REMOTE_FORBIDDEN
+ * (workspace-remote-commands.test.ts holds the two together).
+ */
 export const WORKSPACE_REMOTE_COMMANDS = [
   'workspace.inspect',
   'workspace.browser.set',
@@ -37,6 +41,7 @@ export const WORKSPACE_REMOTE_COMMANDS = [
   'workspace.dialogs.open',
   'workspace.dialogs.close',
   'workspace.view.set',
+  'workspace.files.open',
 ] as const;
 export type WorkspaceRemoteCommand = (typeof WORKSPACE_REMOTE_COMMANDS)[number];
 

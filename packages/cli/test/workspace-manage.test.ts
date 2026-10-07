@@ -172,6 +172,24 @@ describe('tm8 workspace: which workspace (W3.1)', () => {
     expect(recorded.map((x) => x.method)).toEqual(['GET']);
   });
 
+  it('files open sends workspace.files.open: kept by default, --preview and --no-activate as flags', async () => {
+    routes[`POST ${COMMANDS}`] = () => ok({ ...applied, tabId: 't1', outcome: 'created' });
+    const kept = await tm8(['workspace', 'files', 'open', 'p1', 'src/a.ts', '--workspace', 'review']);
+    expect(kept.code, kept.stderr).toBe(0);
+    expect(recorded[1]?.body).toMatchObject({
+      command: 'workspace.files.open',
+      args: { projectId: 'p1', path: 'src/a.ts', preview: false },
+      workspaceId: REVIEW,
+    });
+    recorded = [];
+    const preview = await tm8(['workspace', 'files', 'open', 'p1', 'README.md', '--preview', '--no-activate']);
+    expect(preview.code, preview.stderr).toBe(0);
+    expect(recorded.at(-1)?.body).toMatchObject({
+      command: 'workspace.files.open',
+      args: { projectId: 'p1', path: 'README.md', preview: true, activate: false },
+    });
+  });
+
   it("an agent's use waits for the human: exit 16 with the prompt id", async () => {
     const prompt = { promptId: 'p1', kind: 'switch', workspaceId: REVIEW, workspaceName: 'Review', state: 'open', createdAt: '2026-10-07T08:00:00.000Z' };
     routes[`POST ${WS}/${REVIEW}/activate`] = () => ok(manage('requires_user_choice', summary(REVIEW, 'Review', 2), {

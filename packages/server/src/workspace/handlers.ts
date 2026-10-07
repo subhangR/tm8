@@ -313,7 +313,8 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
         actor: actorOf(who),
       });
       const out: WorkspaceRemoteResult = { ...(result as unknown as WorkspaceRemoteResult), requestId: input.requestId, instanceId: '' };
-      if (input.command !== 'workspace.tabs.open' || result.status !== 'applied' || !result.tabId) return out;
+      const opens = input.command === 'workspace.tabs.open' || input.command === 'workspace.files.open';
+      if (!opens || result.status !== 'applied' || !result.tabId) return out;
       if ((input.args as { activate?: unknown } | undefined)?.activate === false) return { ...out, activation: 'not_requested' };
       if (result.workspace && !result.workspace.active) return { ...out, activation: 'not_active' };
       // The stored workspace has it; a live window ALSO brings it to the front,
