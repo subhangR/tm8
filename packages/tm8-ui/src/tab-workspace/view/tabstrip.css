@@ -253,6 +253,31 @@
   visibility: hidden;
 }
 
+/* Workspace tabs only (task 01a11573, owner: "a lot of space is getting
+   wasted"): with the state on the icon, the reserved 36px slot sat empty
+   beside every truncated title. The title now runs to the tab's 8px inset and
+   the × overlays its tail on hover/focus, over a fade in the tab's own fill.
+   Craft's page row keeps the reserved slot — its state glyph still lives there. */
+.tws-strip .tws-ts-tab {
+  padding-right: var(--pn-space-2);
+}
+.tws-strip .tws-ts-tab-main {
+  margin-right: 0;
+}
+.tws-strip .tws-ts-slot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 1px;
+  width: 32px;
+  height: auto;
+  pointer-events: none;
+}
+.tws-strip .tws-ts-tab:hover .tws-ts-slot,
+.tws-strip .tws-ts-tab:focus-within .tws-ts-slot {
+  background: linear-gradient(to right, transparent, var(--tws-ts-bg) 10px);
+}
+
 /* ---- drag insertion marker: 2×20 brand bar, centred in the gap ---- */
 .tws-ts-marker {
   position: absolute;
