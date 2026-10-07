@@ -619,7 +619,7 @@
 
 /* ── Checkouts: a worktree-less session's own git clones ───────────────── */
 .cv2-root .pn-chg__status[data-change='A'],
-.cv2-root .pn-chg__status[data-change='?'] { color: var(--pn-run); }
+.cv2-root .pn-chg__status[data-change='U'] { color: var(--pn-run); }
 .cv2-root .pn-chg__status[data-change='D'] { color: var(--pn-block); }
 .cv2-root .pn-chg__status[data-change='M'],
 .cv2-root .pn-chg__status[data-change='R'] { color: var(--pn-wait); }

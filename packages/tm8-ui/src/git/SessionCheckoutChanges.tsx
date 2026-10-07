@@ -3,7 +3,7 @@ import type { EntityId, SessionCheckout, SessionCheckoutDiff, SessionCheckoutFil
 import type { Seam } from '../data/seam';
 import { DiffView, Pill } from '../kit';
 import { useMobileSurface } from '../mobile';
-import { relativeTime } from '../messages/messages-model';
+import { relTime } from '../kit/time';
 import { buildChangeTree, visibleChangeRows } from './change-paths';
 import { ChangeDirRow, ChangesViewToggle, useCollapsedFolders, type ChangesView } from './ChangesTree';
 import { SessionTranscriptChanges } from './SessionTranscriptChanges';
@@ -77,11 +77,10 @@ function countsSig(f: SessionCheckoutFile): string {
   return `${f.change}:${f.additions ?? 'b'}:${f.deletions ?? 'b'}:${f.uncommitted ? 1 : 0}`;
 }
 
-function agoText(iso: string | null, now: Date): string | null {
+function lastCommitLabel(iso: string | null, now: Date): string | null {
   if (iso === null) return null;
-  const rel = relativeTime(iso, now);
-  if (rel === '') return null;
-  return rel === 'now' ? 'just now' : `${rel} ago`;
+  const rel = relTime(iso, now.getTime());
+  return rel === '' ? null : rel;
 }
 
 export function SessionCheckoutChanges({ seam, sessionId, live, cause, noWorktree }: SessionCheckoutChangesProps) {
@@ -256,7 +255,7 @@ export function SessionCheckoutChanges({ seam, sessionId, live, cause, noWorktre
         data-just-changed={fresh ? 'true' : undefined}
         style={{ '--pn-chg-depth': depth } as never}
       >
-        <code className="pn-chg__status" data-change={f.change} title={CHANGE_WORD[f.change]}>
+        <code className="pn-chg__status" data-change={f.change === '?' ? 'U' : f.change} title={CHANGE_WORD[f.change]}>
           {f.change === '?' ? 'U' : f.change}
         </code>
         <button
@@ -273,7 +272,7 @@ export function SessionCheckoutChanges({ seam, sessionId, live, cause, noWorktre
           <span
             className={`pn-chg__turn${live ? ' pn-chg__turn--live' : ''}`}
             data-testid="session-changes-just-changed"
-            title="Changed on disk since the previous read, a few seconds ago"
+            title="Changed on disk since the previous read a few seconds earlier"
           >
             <span aria-hidden className="pn-chg__turn-dot" />
             just changed
@@ -301,7 +300,7 @@ export function SessionCheckoutChanges({ seam, sessionId, live, cause, noWorktre
     // Folder paths repeat across checkouts; the collapsed set is keyed per checkout.
     const prefix = `${c.name}\u0000`;
     const mineShut = new Set([...collapsed].filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length)));
-    const ago = agoText(c.lastCommitAt, nowDate);
+    const lastCommit = lastCommitLabel(c.lastCommitAt, nowDate);
     const anyFresh = c.files.some((f) => justChanged(keyOf(c.name, f.path)));
     return (
       <section key={c.name} className="pn-chg__checkout" data-testid="session-changes-checkout" data-checkout={c.name}>
@@ -337,7 +336,7 @@ export function SessionCheckoutChanges({ seam, sessionId, live, cause, noWorktre
             ? `${c.ahead} commit${c.ahead === 1 ? '' : 's'} ahead of ${c.baseRef}`
             : 'no upstream — showing uncommitted edits only'}
           {` · ${c.uncommitted} uncommitted`}
-          {ago !== null ? ` · last commit ${ago}` : ''}
+          {lastCommit !== null ? ` · last commit ${lastCommit}` : ''}
           {c.shared ? ' · shared directory: other sessions’ changes show here too' : ''}
         </p>
         {isShut ? null : c.files.length === 0 ? (
