@@ -280,9 +280,10 @@ export type NavView =
    * WORKSPACE TABS (2026-10-06, Spec A/B): the tabbed entity workspace.
    * Route-only and client-added exactly like `boardV2`. `tab` is the entity
    * id of the active tab (`?tab=`); absent while a draft, the chooser or no
-   * tab is active.
+   * tab is active. `file` (`?fp=<projectId>&f=<path>`, 2026-10-07) is the
+   * active read-only project file tab instead; the path is project-relative.
    */
-  | { view: 'tabs'; tab?: EntityId }
+  | { view: 'tabs'; tab?: EntityId; file?: { projectId: string; path: string } }
   /*
    * NEW SESSION (2026-08-16): the create screen that mints a task from a typed
    * prompt and spawns on it. Flat segment, no parameters.

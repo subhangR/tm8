@@ -9,7 +9,7 @@ import { canCreateKind } from '../adapters/registry';
 import { getWorkspaceRuntime } from '../runtime/dispatch';
 import { installDevHook } from '../runtime/devHook';
 import { initPersistence } from '../runtime/persistence';
-import { initUrlSync } from '../runtime/url';
+import { initUrlSync, type RouteFile } from '../runtime/url';
 import { drainWorkArrival, onWorkArrival } from '../runtime/arrival';
 import { getRailStore } from '../runtime/railStore';
 import { NOTICE_TTL_MS } from '../../shell';
@@ -34,10 +34,12 @@ export interface TabWorkspaceViewProps {
   spaceId: string;
   /** The route's `?tab=` entity id, if any. */
   routeTab?: string | undefined;
+  /** The route's `?fp=&f=` project file, if any. */
+  routeFile?: RouteFile | undefined;
   gate: WorkspaceGateHandles;
 }
 
-export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorkspaceViewProps) {
+export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate }: TabWorkspaceViewProps) {
   const runtime = useMemo(() => getWorkspaceRuntime(viewerId, spaceId), [viewerId, spaceId]);
   const layout = useWorkspaceStore(runtime.store, (s) => s.layout);
   /* The icon rail's expanded flag pushes the browser: 48 → 200px. The width
@@ -92,7 +94,7 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, gate }: TabWorks
     [],
   );
   useEffect(
-    () => initUrlSync(runtime, { viewerId, spaceId, routeTab, navigateView, resolveKind }),
+    () => initUrlSync(runtime, { viewerId, spaceId, routeTab, routeFile, navigateView, resolveKind }),
     // routeTab is read at mount; later changes arrive through hashchange (workstream I).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [runtime, viewerId, spaceId, navigateView, resolveKind],

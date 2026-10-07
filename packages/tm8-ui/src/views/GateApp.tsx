@@ -2538,6 +2538,7 @@ export function GateApp(props: GateAppProps = {}) {
                 viewerId={viewerMemberId}
                 spaceId={data.spaceId}
                 {...(navView.tab ? { routeTab: navView.tab } : {})}
+                {...(navView.file ? { routeFile: navView.file } : {})}
                 gate={workspaceGate}
               />
             </CatchBoundary>

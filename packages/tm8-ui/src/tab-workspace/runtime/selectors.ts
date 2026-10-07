@@ -4,6 +4,8 @@ export {
   activeTab,
   activeTabId,
   findEntityTab,
+  findFileTab,
+  findPreviewFileTab,
   inspect,
   isEligible,
   kindInScope,

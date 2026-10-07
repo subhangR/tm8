@@ -18,6 +18,7 @@
  *     be made lossy by a Phase-1 client.
  */
 import type { EntityId, MenuViewRef, SpaceId } from '@tm8/contract';
+import { isFileTabPath, isFileTabProjectId } from '@tm8/contract/workspace';
 import { ALL_MODES, VIEW_REF_ROUTE, kindBySlug } from '../domain';
 import type { CollectionMode } from '../domain';
 import { decodeQ, encodeQ } from './q';
@@ -482,7 +483,16 @@ function parseTarget(
          docs) and `build` never emits it. `?tab=` names the active entity
          tab. Lossy-tolerant like `?about=`: a non-id value is not carried. */
       const tab = query.get('tab');
-      return tab && ID_LIKE.test(tab) ? { view: 'tabs', tab: tab as EntityId } : { view: 'tabs' };
+      if (tab && ID_LIKE.test(tab)) return { view: 'tabs', tab: tab as EntityId };
+      /* `?fp=&f=` names an active project file tab (project id, relative
+         path), held to the workspace's own file-tab rule. */
+      const rawProject = query.get('fp');
+      const rawPath = query.get('f');
+      const projectId = rawProject === null ? null : dec(rawProject);
+      const path = rawPath === null ? null : dec(rawPath);
+      return isFileTabProjectId(projectId) && isFileTabPath(path)
+        ? { view: 'tabs', file: { projectId, path } }
+        : { view: 'tabs' };
     }
     case 'board-v2':
       /* Board v2 (2026-08-18) — hyphenated segment, camel member, exactly the
@@ -671,6 +681,7 @@ export function build(route: Route): BuildOutcome {
     if (t.msg) viewParams.push(['msg', enc(t.msg)]);
   } else if (t.view === 'tabs') {
     if (t.tab) viewParams.push(['tab', enc(t.tab)]);
+    else if (t.file) viewParams.push(['fp', enc(t.file.projectId)], ['f', enc(t.file.path)]);
   }
   if (route.panels.session) viewParams.push(['session', enc(route.panels.session)]);
   /* The chat slot rides with the VIEW params, outside every drop tier: it is
