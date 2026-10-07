@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:2215256330a1b8f016af57fa522d61b4fc74f3d98b797e4bc40bb49c92c15254",
+  "catalogDigest": "sha256:369fb9ce69fdd31c9e3d94a42e2901e15486b59f9ab2f3d05e83b33925f49b9d",
   "catalog": {
-    "total": 350,
-    "v1": 348,
+    "total": 355,
+    "v1": 353,
     "reserved": 2,
-    "http": 348,
+    "http": 353,
     "ws": 1,
-    "registerableV1Http": 346,
+    "registerableV1Http": 351,
     "methods": {
       "GET": 115,
-      "POST": 172,
-      "PATCH": 19,
-      "DELETE": 22,
+      "POST": 175,
+      "PATCH": 20,
+      "DELETE": 23,
       "PUT": 20,
       "WS": 2
     },
     "kinds": {
       "read": 121,
-      "command": 227,
+      "command": 232,
       "stream": 2
     },
-    "uniqueNames": 350,
-    "uniqueBindings": 349
+    "uniqueNames": 355,
+    "uniqueBindings": 354
   },
   "reservedOperations": [
     "search.query",
@@ -1552,6 +1552,41 @@
         "source": "server-router"
       },
       {
+        "operation": "workspace.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspaces",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.update",
+        "method": "PATCH",
+        "path": "/v2/spaces/:spaceId/workspaces/:workspaceId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.reorder",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspaces/:workspaceId/move",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.delete",
+        "method": "DELETE",
+        "path": "/v2/spaces/:spaceId/workspaces/:workspaceId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.switch",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspaces/:workspaceId/activate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.spawn",
         "method": "POST",
         "path": "/v2/execution/spawn",
@@ -2854,7 +2889,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 318
+    "unimplementedV1Http": 323
   },
   "schemas": {
     "additive": {
@@ -6262,6 +6297,86 @@
         "intentTags": [
           "workspace",
           "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.create",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.create",
+        "intentTags": [
+          "workspace",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.update",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.update",
+        "intentTags": [
+          "workspace",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.reorder",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.reorder",
+        "intentTags": [
+          "workspace",
+          "reorder"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.delete",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.delete",
+        "intentTags": [
+          "workspace",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.switch",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.switch",
+        "intentTags": [
+          "workspace",
+          "switch"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
