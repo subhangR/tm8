@@ -323,7 +323,9 @@ export type ResultReason =
   | 'workspace_not_found'
   | 'workspace_switched'
   | 'workspace_mismatch'
-  | 'not_active';
+  | 'not_active'
+  // D7: an agent emptying a workspace must pin it once there are two.
+  | 'workspace_pin_required';
 
 export type Result = {
   status: ResultStatus;

@@ -183,6 +183,7 @@ export function registerEventHandlers(registry: HandlerRegistry, deps: EventHand
     registry.register('workspace.reorder', workspace.reorder);
     registry.register('workspace.delete', workspace.remove);
     registry.register('workspace.switch', workspace.switchTo);
+    registry.register('workspace.prompts.resolve', workspace.resolvePrompt);
   }
 }
 

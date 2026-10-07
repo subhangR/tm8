@@ -27,7 +27,7 @@ import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 import type { DesignContent, DesignState, EntityContextDesignPage } from './design.js';
-import type { WorkspaceSummary, WorkspaceSummaryCauseKind, WorkspaceWindowCap } from './workspace-bridge.js';
+import type { WorkspacePrompt, WorkspaceSummary, WorkspaceSummaryCauseKind, WorkspaceWindowCap } from './workspace-bridge.js';
 import type { TaskProgress } from './progress.js';
 import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
 
@@ -1955,8 +1955,17 @@ export interface WorkspaceStateFrame {
   workspaceId: string | null;
   /** Whether it is the active workspace. A window without `multiWorkspace` only ever gets the active one. */
   active: boolean;
-  /** The window command this commit answers, when one caused it. */
-  cause?: { instanceId: string; requestId: string; result: Record<string, unknown> };
+  /**
+   * What caused this commit: the window command it answers (`instanceId`), or
+   * for an HTTP write (an agent or the CLI) who made it (`actor`), so the UI
+   * can name them (API doc §7.3).
+   */
+  cause?: {
+    instanceId?: string;
+    requestId: string;
+    result: Record<string, unknown>;
+    actor?: { actorClass: 'human' | 'agent'; actorName?: string };
+  };
 }
 
 /** Spec D §3, node → the sending window only: a command it sent that did not commit. */
@@ -2007,6 +2016,22 @@ export interface WorkspaceSummaryFrame {
   activeWorkspaceId: string | null;
   items: WorkspaceSummary[];
   cause?: { kind: WorkspaceSummaryCauseKind; workspaceId: string; actorClass: 'human' | 'agent'; actorName?: string };
+}
+
+/** §7.3, capable windows only: an agent's Switch/Stay or Delete/Keep prompt, on open and on every state change (D8). */
+export interface WorkspacePromptFrame {
+  type: 'workspace.prompt';
+  spaceId: SpaceId;
+  prompt: WorkspacePrompt;
+}
+
+/** §7.3, the sending capable window only: its `workspace.draft.patch` was not written. */
+export interface WorkspaceDraftRejectedFrame {
+  type: 'workspace.draft.rejected';
+  spaceId: SpaceId;
+  workspaceId: string | null;
+  draftId: string;
+  reason: 'workspace_not_found' | 'not_found' | 'limit_exceeded' | 'payload_too_large';
 }
 
 /**

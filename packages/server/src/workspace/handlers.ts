@@ -23,6 +23,7 @@ import {
   type WorkspaceCreateInput,
   type WorkspaceDraftPatchInput,
   type WorkspaceManageResult,
+  type WorkspacePromptsResolveInput,
   type WorkspaceRemoteResult,
   type WorkspaceReorderInput,
   type WorkspaceSwitchInput,
@@ -55,6 +56,7 @@ interface Caller {
   spaceId: string;
   actorClass: 'human' | 'agent';
   actorName?: string;
+  actorId?: string;
 }
 
 export interface WorkspaceHandlers {
@@ -69,6 +71,7 @@ export interface WorkspaceHandlers {
   readonly reorder: OperationHandler;
   readonly remove: OperationHandler;
   readonly switchTo: OperationHandler;
+  readonly resolvePrompt: OperationHandler;
 }
 
 /** Commands addressed by a tab id: explicit (must agree) → owner → active (§3.3). */
@@ -84,15 +87,26 @@ function targetOf(input: WorkspaceCommandInput): TargetRequest {
   const tabId = (input.args as { tabId?: unknown } | null | undefined)?.tabId;
   return {
     ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
+    ...(input.expectedWorkspaceId === undefined ? {} : { expectedWorkspaceId: input.expectedWorkspaceId }),
     ...(OWNER_COMMANDS.has(input.command) && typeof tabId === 'string' ? { tabId } : {}),
   };
 }
 
 /** An optional `?workspaceId=` (a uuid). */
-function workspaceQuery(ctx: RequestContext): string | undefined {
-  const id = ctx.query.get('workspaceId') ?? undefined;
-  if (id !== undefined && !UUID_RE.test(id)) throw new CollabError('invalid_input', 'workspaceId must be a workspace id (uuid)');
+function workspaceQuery(ctx: RequestContext, name: 'workspaceId' | 'expectedWorkspaceId' = 'workspaceId'): string | undefined {
+  const id = ctx.query.get(name) ?? undefined;
+  if (id !== undefined && !UUID_RE.test(id)) throw new CollabError('invalid_input', `${name} must be a workspace id (uuid)`);
   return id;
+}
+
+/** A read's target: `?workspaceId=` and the pin `?expectedWorkspaceId=` (§3.2). */
+function readQuery(ctx: RequestContext): Pick<TargetRequest, 'workspaceId' | 'expectedWorkspaceId'> {
+  const workspaceId = workspaceQuery(ctx);
+  const expectedWorkspaceId = workspaceQuery(ctx, 'expectedWorkspaceId');
+  return {
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    ...(expectedWorkspaceId === undefined ? {} : { expectedWorkspaceId }),
+  };
 }
 
 /** A name as given, trimmed; `invalid_name` unless 1–64 characters with no control characters (§4). */
@@ -164,6 +178,7 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
       spaceId,
       actorClass: agent ? 'agent' : 'human',
       ...(actorName ? { actorName } : {}),
+      ...(claims.actorId ? { actorId: claims.actorId } : {}),
     };
   }
 
@@ -178,13 +193,19 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
     if (instanceId !== undefined && (instanceId === '' || instanceId.length > 128)) {
       throw new CollabError('invalid_input', 'instanceId must be a Workspace instance id');
     }
-    const workspaceId = workspaceQuery(ctx);
+    const req = readQuery(ctx);
     // Spec D: with no live window, or for a workspace not on screen, the
-    // stored workspace answers (§5.3).
+    // stored workspace answers (§5.3). A pin that doesn't hold is a 409.
     if (deps.service) {
-      const target = workspaceId === undefined ? undefined : await deps.service.resolve(who.claims, who.spaceId, { workspaceId });
+      let target;
+      try {
+        target = Object.keys(req).length === 0 ? undefined : await deps.service.resolve(who.claims, who.spaceId, req);
+      } catch (error) {
+        if (!(error instanceof TargetRefused)) throw error;
+        throw new CollabError('conflict', `the workspace: ${error.reason}`, { details: { reason: error.reason, ...(error.pin ?? {}) } });
+      }
       const stored = async () => ({
-        ...(await deps.service!.inspectStored(who.claims, who.spaceId, workspaceId)),
+        ...(await deps.service!.inspectStored(who.claims, who.spaceId, req)),
         requestId: `stored-${Date.now()}`,
         instanceId: '',
       });
@@ -249,7 +270,7 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
           resolved = await service.resolve(who.claims, who.spaceId, routing);
         } catch (error) {
           if (!(error instanceof TargetRefused)) throw error;
-          return { requestId: input.requestId, instanceId: '', status: error.status, revision: 0, reason: error.reason, ...(error.ref ? { workspace: error.ref } : {}) };
+          return { requestId: input.requestId, instanceId: '', status: error.status, revision: 0, ...error.fields };
         }
         // A window shows the active workspace; never switch to reach another.
         if (!resolved.ref.active) {
@@ -289,6 +310,7 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
         },
         requestId: input.requestId,
         origin: { kind: 'http' },
+        actor: actorOf(who),
       });
       const out: WorkspaceRemoteResult = { ...(result as unknown as WorkspaceRemoteResult), requestId: input.requestId, instanceId: '' };
       if (input.command !== 'workspace.tabs.open' || result.status !== 'applied' || !result.tabId) return out;
@@ -322,7 +344,7 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
   const get: OperationHandler = async (ctx) => {
     const who = await caller(ctx);
     if (!deps.service) throw new CollabError('not_implemented', 'this node keeps no stored workspaces');
-    return json(await deps.service.get(who.claims, who.spaceId, workspaceQuery(ctx)));
+    return json(await deps.service.get(who.claims, who.spaceId, readQuery(ctx)));
   };
 
   const workspaces: OperationHandler = async (ctx) => {
@@ -338,8 +360,10 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
     if (!UUID_RE.test(draftId)) throw new CollabError('invalid_input', 'draftId must be a draft id (uuid)');
     const input = ctx.body as WorkspaceDraftPatchInput;
     if (Object.keys(input.fields).length === 0) throw new CollabError('invalid_input', 'name at least one field');
-    return json(await deps.service.patchDraft(who.claims, who.spaceId, draftId, input.fields, { kind: 'http' },
-      input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }));
+    return json(await deps.service.patchDraft(who.claims, who.spaceId, draftId, input.fields, { kind: 'http' }, {
+      ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
+      ...(input.expectedWorkspaceId === undefined ? {} : { expectedWorkspaceId: input.expectedWorkspaceId }),
+    }));
   };
 
   // -- managing the list (§5.7–§5.11) ----------------------------------------
@@ -356,8 +380,8 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
     humanOnly?: string,
   ): Promise<WorkspaceManageResult> {
     const who = await caller(ctx);
-    // D6: order, switching and deleting are the human's in this release (the
-    // agent's Switch/Stay and Delete/Keep prompts land later).
+    // D6: order and answering prompts are the human's; an agent's switch and
+    // delete become prompts in the service.
     if (humanOnly !== undefined && who.actorClass === 'agent') {
       throw new CollabError('forbidden', `only a human can ${humanOnly} workspaces`, { details: { reason: 'human_only' } });
     }
@@ -369,7 +393,11 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
   }
 
   function actorOf(who: Caller) {
-    return { actorClass: who.actorClass, ...(who.actorName ? { actorName: who.actorName } : {}) };
+    return {
+      actorClass: who.actorClass,
+      ...(who.actorName ? { actorName: who.actorName } : {}),
+      ...(who.actorId ? { actorId: who.actorId } : {}),
+    };
   }
 
   const create: OperationHandler = async (ctx) => {
@@ -421,7 +449,7 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
       requestId,
       discard: discardRaw === 'true',
       actor: actorOf(who),
-    }), 'delete'));
+    })));
   };
 
   const switchTo: OperationHandler = async (ctx) => {
@@ -431,10 +459,23 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
       requestId: input.requestId,
       ...(input.expectedActiveWorkspaceId === undefined ? {} : { expectedActiveWorkspaceId: input.expectedActiveWorkspaceId }),
       actor: actorOf(who),
-    }), 'switch'));
+    })));
   };
 
-  return { list, inspect, command, get, workspaces, patchDraft, create, update, reorder, remove, switchTo };
+  /** §5.12: the human answers an agent's Switch/Stay or Delete/Keep. */
+  const resolvePrompt: OperationHandler = async (ctx) => {
+    const promptId = ctx.params['promptId'] ?? '';
+    if (!UUID_RE.test(promptId)) throw new CollabError('invalid_input', 'promptId must be a prompt id (uuid)');
+    const input = ctx.body as WorkspacePromptsResolveInput;
+    return json(await managed(ctx, input.requestId, (who, service) => service.resolvePrompt(who.claims, who.spaceId, promptId, {
+      requestId: input.requestId,
+      choice: input.choice,
+      discard: input.discard === true,
+      actor: actorOf(who),
+    }), 'answer prompts about'));
+  };
+
+  return { list, inspect, command, get, workspaces, patchDraft, create, update, reorder, remove, switchTo, resolvePrompt };
 }
 
 /**

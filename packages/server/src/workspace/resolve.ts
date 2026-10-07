@@ -10,8 +10,9 @@
  *   3. owner: the workspace holding the named tab or draft (R3); not found
  *      anywhere falls through, so the reducer gives today's answer;
  *   4. active (R2). With no row at all it is the synthetic "Main" (id null),
- *      which the first write creates (S12).
- * The pin (step 5) is phase 3.
+ *      which the first write creates (S12);
+ *   5. the pin (R5/S1): a resolved target other than `expectedWorkspaceId`
+ *      refuses, so a multi-step job never lands somewhere it didn't mean to.
  *
  * A missing active pointer (its workspace cascaded away) is healed in the
  * read: the first workspace in list order — (position, created_at,
@@ -38,6 +39,8 @@ export interface TargetRequest {
   tabId?: string;
   /** The operation names this draft. */
   draftId?: string;
+  /** The pin (R5): apply only if the target is this workspace. Windows don't pin. */
+  expectedWorkspaceId?: string;
 }
 
 export interface WorkspaceRow {
@@ -83,8 +86,15 @@ export class TargetRefused extends Error {
     readonly status: 'rejected' | 'conflict',
     readonly reason: 'workspace_not_found' | 'workspace_switched' | 'workspace_mismatch',
     readonly ref?: WorkspaceRef,
+    /** A pin that didn't hold (§3.2 step 5): what the caller expected, and what is active. */
+    readonly pin?: { expectedWorkspaceId: string; activeWorkspaceId: string | null },
   ) {
     super(reason);
+  }
+
+  /** The fields a result carries for this refusal. */
+  get fields(): { reason: string; workspace?: WorkspaceRef; expectedWorkspaceId?: string; activeWorkspaceId?: string | null } {
+    return { reason: this.reason, ...(this.ref ? { workspace: this.ref } : {}), ...(this.pin ?? {}) };
   }
 }
 
@@ -143,8 +153,22 @@ export async function loadWorkspaces(q: Querier, spaceId: string, find: { tabId?
   };
 }
 
-/** §3.2 steps 1, 2, 3 and 4 over the caller's workspaces. */
+/** §3.2 over the caller's workspaces: steps 1–4, then the pin (step 5). */
 export function resolveTarget(ws: Workspaces, req: TargetRequest): Resolution {
+  const resolved = pickTarget(ws, req);
+  const expected = req.expectedWorkspaceId;
+  if (expected === undefined || req.frame || resolved.workspaceId === expected) return resolved;
+  // A pin naming no workspace at all refuses the same way: the agent's next
+  // step is the same (ask the human), and nothing leaks about other rows.
+  throw new TargetRefused(
+    'conflict',
+    resolved.ref.resolvedBy === 'active' ? 'workspace_switched' : 'workspace_mismatch',
+    resolved.ref,
+    { expectedWorkspaceId: expected, activeWorkspaceId: ws.activeId },
+  );
+}
+
+function pickTarget(ws: Workspaces, req: TargetRequest): Resolution {
   const byId = (id: string | null) => ws.rows.find((r) => r.id === id);
   const pick = (row: WorkspaceRow | undefined, resolvedBy: WorkspaceResolvedBy): Resolution => ({
     workspaceId: row?.id ?? null,
@@ -212,7 +236,9 @@ export function summaries(ws: Workspaces): WorkspaceSummary[] {
     dirtyDraftCount: r.dirtyDraftCount,
     createdAt: r.createdAt,
     createdBy: r.createdByClass ? { actorId: r.createdByActorId, actorClass: r.createdByClass } : null,
-    agentChangedSinceActive: r.lastAgentChangeAt !== null && (r.lastActiveAt === null || r.lastAgentChangeAt > r.lastActiveAt),
+    // The dot is for the workspaces NOT on screen: the active one shows its changes.
+    agentChangedSinceActive: r.id !== ws.activeId && r.lastAgentChangeAt !== null
+      && (r.lastActiveAt === null || r.lastAgentChangeAt > r.lastActiveAt),
     lastAgentChange: r.lastAgentChangeAt ? { at: r.lastAgentChangeAt } : null,
   }));
 }
