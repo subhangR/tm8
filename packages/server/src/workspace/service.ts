@@ -1,13 +1,20 @@
 /**
  * Server-side Workspaces (Spec D, doc 01a11171-3aba).
  *
- * One stored workspace per (space, IDENTITY) in `public.workspaces`, draft
- * values in `public.workspace_drafts` (migration 305). Every write runs the
- * SAME `reduce` the window runs (`@tm8/contract/workspace`), then
- * compare-and-swaps the row and pushes the new state to that identity's live
- * windows — and only to them (`WorkspaceBridge.push`).
+ * Stored workspaces live in `public.workspaces`, keyed by `workspace_id`
+ * since migration 310: an identity may hold several per space, and
+ * `public.workspace_active` points at the one it is using. Draft values live in
+ * `public.workspace_drafts`, per workspace. Every write runs the SAME `reduce`
+ * the window runs (`@tm8/contract/workspace`), then compare-and-swaps the row
+ * and pushes the new state to that identity's live windows — and only to them
+ * (`WorkspaceBridge.push`).
  *
- * Writes for one (space, identity) are serialized in process: the node is the
+ * Every read and write here targets the ACTIVE workspace. `load` and the
+ * writers already take a workspace id, so routing to another one is a matter
+ * of resolving the target first (API doc 01a115c4 §3).
+ *
+ * Writes for one (space, identity) — all of its workspaces, so a switch and
+ * the commands around it stay in order (API D4) — are serialized in process: the node is the
  * only writer, so a promise chain per key gives every caller the latest row
  * and keeps a window's commands in the order it sent them. The row's CAS is
  * the backstop.
@@ -42,6 +49,8 @@ interface DraftRow {
 }
 
 interface Loaded {
+  /** null: the identity has no workspace in this space yet; the first write creates "Main" (S12). */
+  workspaceId: string | null;
   revision: number;
   state: WorkspaceState;
   exists: boolean;
@@ -131,7 +140,7 @@ export class WorkspaceService {
       // Sanitized: unknown kinds dropped, titles dropped, no pending prompt
       // (it belonged to another session), at most the hard tab limit.
       const stored = { ...toStoredState(sanitizeWorkspaceState(raw, spaceId) ?? defaultWorkspaceState(spaceId)), revision: 1 };
-      await this.save(claims, spaceId, 0, 1, stored);
+      const workspaceId = await this.save(claims, spaceId, null, 0, 1, stored);
       this.pushState(claims, spaceId, 1, stored);
       const kept = new Map(Object.values(stored.tabs).flatMap((t) => (t.type === 'draft' ? [[t.draftId, t.kind] as const] : [])));
       for (const draft of drafts.slice(0, 30)) {
@@ -139,7 +148,7 @@ export class WorkspaceService {
         if (!kind) continue;
         const fields: DraftFields = {};
         for (const [name, v] of Object.entries(draft.values)) fields[name] = { v, r: 1 };
-        const revision = await this.saveDraft(claims, spaceId, draft.draftId, kind, 0, fields).catch(() => 0);
+        const revision = await this.saveDraft(claims, workspaceId, draft.draftId, kind, 0, fields).catch(() => 0);
         if (revision > 0) this.deps.bridge.push(claims.identityId!, spaceId, { type: 'workspace.draft', spaceId, draftId: draft.draftId, kind, revision, fields });
       }
       return true;
@@ -171,7 +180,8 @@ export class WorkspaceService {
         if (change.base !== undefined && change.base < current.r) overwrote.push(name);
         fields[name] = { v: change.v ?? null, r: current.r + 1 };
       }
-      const revision = await this.saveDraft(claims, spaceId, draftId, tab.kind, row?.revision ?? 0, fields);
+      // A draft tab is only ever found in a stored row, so the workspace id is set.
+      const revision = await this.saveDraft(claims, loaded.workspaceId!, draftId, tab.kind, row?.revision ?? 0, fields);
       this.deps.bridge.push(claims.identityId!, spaceId, {
         type: 'workspace.draft',
         spaceId,
@@ -242,9 +252,9 @@ export class WorkspaceService {
       return this.answer(input, spaceId, claims, { status: 'rejected', revision: loaded.revision, reason: 'tab_limit' });
     }
     const next = toStoredState(reduction.state);
-    await this.save(claims, spaceId, loaded.exists ? loaded.revision : 0, reduction.state.revision, next);
+    const workspaceId = await this.save(claims, spaceId, loaded.workspaceId, loaded.exists ? loaded.revision : 0, reduction.state.revision, next);
     for (const draftId of deletedDrafts) {
-      await this.saveDraft(claims, spaceId, draftId, 'task', 0, null).catch(() => 0);
+      await this.saveDraft(claims, workspaceId, draftId, 'task', 0, null).catch(() => 0);
       this.deps.bridge.push(claims.identityId!, spaceId, { type: 'workspace.draft', spaceId, draftId, revision: 0, deleted: true });
     }
     const result = reduction.result;
@@ -296,25 +306,42 @@ export class WorkspaceService {
     return mine;
   }
 
-  private async load(claims: DbClaims, spaceId: string): Promise<Loaded> {
+  /**
+   * One of the caller's workspaces in the space: `workspaceId`, or the active
+   * one when it is omitted. With no row at all it is the default state at
+   * revision 0 and `workspaceId: null`. Should the active pointer be missing
+   * (its workspace cascaded away), the first workspace in list order stands in
+   * until the next write repairs the pointer (migration 310).
+   */
+  private async load(claims: DbClaims, spaceId: string, workspaceId?: string): Promise<Loaded> {
     return this.deps.db.tx(claims, async (q) => {
       await q.query('set local role tm8_app');
       const space = await q.query('select 1 from public.spaces where id = $1', [spaceId]);
       if (space.length === 0) throw new CollabError('not_found', `no space ${spaceId}`);
-      const rows = await q.query<{ state: unknown; revision: string | number }>(
-        `select state, revision from public.workspaces
-          where space_id = $1 and identity_id = (select internal.identity_id())`,
-        [spaceId],
-      );
-      const drafts = await q.query<{ draft_id: string; kind: string; fields: DraftFields; revision: string | number }>(
-        `select draft_id, kind, fields, revision from public.workspace_drafts
-          where space_id = $1 and identity_id = (select internal.identity_id())`,
-        [spaceId],
+      const rows = await q.query<{ workspace_id: string; state: unknown; revision: string | number }>(
+        workspaceId === undefined
+          ? `select w.workspace_id, w.state, w.revision
+               from public.workspaces w
+               left join public.workspace_active a on a.workspace_id = w.workspace_id
+              where w.space_id = $1 and w.identity_id = (select internal.identity_id())
+              order by a.workspace_id is null, w.position, w.created_at
+              limit 1`
+          : `select workspace_id, state, revision from public.workspaces
+              where space_id = $1 and identity_id = (select internal.identity_id()) and workspace_id = $2`,
+        workspaceId === undefined ? [spaceId] : [spaceId, workspaceId],
       );
       const row = rows[0];
+      if (!row && workspaceId !== undefined) throw new CollabError('not_found', `no workspace ${workspaceId}`);
+      const drafts = row
+        ? await q.query<{ draft_id: string; kind: string; fields: DraftFields; revision: string | number }>(
+            'select draft_id, kind, fields, revision from public.workspace_drafts where workspace_id = $1',
+            [row.workspace_id],
+          )
+        : [];
       const revision = row ? Number(row.revision) : 0;
       const state = row ? (sanitizeStored(row.state, spaceId) ?? defaultWorkspaceState(spaceId)) : defaultWorkspaceState(spaceId);
       return {
+        workspaceId: row?.workspace_id ?? null,
         revision,
         exists: row !== undefined,
         state: { ...state, revision },
@@ -323,16 +350,32 @@ export class WorkspaceService {
     });
   }
 
-  private async save(claims: DbClaims, spaceId: string, expected: number, next: number, state: WorkspaceState): Promise<void> {
-    await this.deps.db.tx(claims, async (q) => {
+  /**
+   * Compare-and-swap one workspace row; returns its id. `workspaceId` null is
+   * the identity's first write in the space: the database creates "Main" and
+   * the active pointer in the same transaction (S12).
+   */
+  private async save(
+    claims: DbClaims,
+    spaceId: string,
+    workspaceId: string | null,
+    expected: number,
+    next: number,
+    state: WorkspaceState,
+  ): Promise<string> {
+    return this.deps.db.tx(claims, async (q) => {
       await q.query('set local role tm8_app');
-      await q.query('select public.workspace_save($1, $2, $3, $4)', [spaceId, expected, next, JSON.stringify(state)]);
+      const rows = await q.query<{ workspace_id: string }>(
+        'select public.workspace_save($1, $2, $3, $4, $5) as workspace_id',
+        [spaceId, workspaceId, expected, next, JSON.stringify(state)],
+      );
+      return rows[0]!.workspace_id;
     });
   }
 
   private async saveDraft(
     claims: DbClaims,
-    spaceId: string,
+    workspaceId: string,
     draftId: string,
     kind: string,
     expected: number,
@@ -342,7 +385,7 @@ export class WorkspaceService {
       await q.query('set local role tm8_app');
       const rows = await q.query<{ revision: string | number }>(
         'select public.workspace_draft_save($1, $2, $3, $4, $5) as revision',
-        [spaceId, draftId, kind, expected, fields === null ? null : JSON.stringify(fields)],
+        [workspaceId, draftId, kind, expected, fields === null ? null : JSON.stringify(fields)],
       );
       return Number(rows[0]?.revision ?? 0);
     });

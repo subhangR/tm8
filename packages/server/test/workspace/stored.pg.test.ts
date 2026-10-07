@@ -4,14 +4,19 @@
  * per-field last-writer-wins, the pending interaction only a window may
  * answer, the one-time import, the bounds, and privacy — another member of
  * the same space never reads the row or receives a frame.
+ *
+ * Migration 310 (multiple workspaces): the lazy "Main" + active pointer of an
+ * identity's first write (S12), and the backfill of a seeded 305-era database.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { WORKSPACE_COLORS, WORKSPACES_PER_IDENTITY_CAP } from '@tm8/contract';
 
 import type { DbClaims } from '../../src/db/types.js';
 import { WorkspaceBridge } from '../../src/workspace/bridge.js';
 import { WorkspaceService } from '../../src/workspace/service.js';
 import { createTestDb, TEST_DATABASE_URL, type TestDb } from '../events/pg-harness.js';
+import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from '../db/w1-pg.js';
 
 const url = TEST_DATABASE_URL;
 const describeIfPg = url === undefined ? describe.skip : describe;
@@ -111,6 +116,39 @@ describeIfPg('stored workspaces over real Postgres (Spec D)', () => {
     expect(theirs.map((r) => r.identity_id)).toEqual([alice]);
   });
 
+  it('an identity’s first write creates "Main" and its active pointer in one transaction (S12)', async () => {
+    const carol = `identity_${randomUUID()}`;
+    await db.rpc({ identityId: carol }, 'public.upsert_user_profile', ['Carol', null, null]);
+    await db.asOwner(async (q) => {
+      const member = randomUUID();
+      await q.query(`insert into public.entities(id, space_id, kind, created_by) values ($1, $2, 'member', $1)`, [member, spaceId]);
+      await q.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', 'Carol')`,
+        [member, spaceId, carol],
+      );
+    });
+    const mine = () => db.tx(claims(carol), (q) => q.query<{ workspace_id: string; name: string; active_id: string | null; same_tx: boolean }>(
+      `select w.workspace_id, w.name, a.workspace_id as active_id, w.xmin = a.xmin as same_tx
+         from public.workspaces w left join public.workspace_active a using (space_id, identity_id)
+        where w.space_id = $1`,
+      [spaceId],
+    ));
+    expect(await mine()).toEqual([]);
+    const result = await service.apply(claims(carol), spaceId, {
+      env: { command: 'workspace.tabs.open', args: { kind: 'task', entityId: taskId, activate: false }, source: 'remote' },
+      requestId: 's12',
+      origin: { kind: 'http' },
+    });
+    expect(result).toMatchObject({ status: 'applied', revision: 1 });
+    const [row, ...rest] = await mine();
+    expect(rest).toEqual([]);
+    // Same xmin: the row and its pointer were written by one transaction.
+    expect(row).toMatchObject({ name: 'Main', active_id: row!.workspace_id, same_tx: true });
+    // A second "first write" is stale, not a second Main.
+    await expect(db.tx(claims(carol), (q) => q.query('select public.workspace_save($1, null, 0, 1, $2)', [spaceId, '{}'])))
+      .rejects.toMatchObject({ code: '40001' });
+  });
+
   it('a window’s command reproduces the window’s own ids on the node', async () => {
     const tabId = randomUUID();
     const draftId = randomUUID();
@@ -208,7 +246,181 @@ describeIfPg('stored workspaces over real Postgres (Spec D)', () => {
     const huge = { blob: 'x'.repeat(140_000) };
     await expect(db.tx(claims(alice), async (q) => {
       await q.query('set local role tm8_app');
-      return q.query('select public.workspace_save($1, $2, $3, $4)', [spaceId, 1000, 1001, JSON.stringify(huge)]);
+      return q.query('select public.workspace_save($1, null, $2, $3, $4)', [spaceId, 0, 1, JSON.stringify(huge)]);
     })).rejects.toMatchObject({ code: '54000' });
+  });
+});
+
+/**
+ * Decision C (build log 01a115d7): no prod copy. A database is migrated to
+ * 309, seeded through the 305 writers themselves — several identities across
+ * two spaces, a workspace at the 30-draft cap, one at the 128 KB state cap,
+ * and a member with no row — and then 310 is applied to it.
+ */
+describeIfPg('migration 310 backfills a seeded 305-era database', () => {
+  vi.setConfig({ testTimeout: 60_000, hookTimeout: 600_000 });
+  let scratch: W1ScratchDatabase;
+  let sdb: TestDb;
+  let s1: string;
+  let s2: string;
+  const ann = `identity_${randomUUID()}`;
+  const ben = `identity_${randomUUID()}`;
+  const cy = `identity_${randomUUID()}`;
+  const as = (identityId: string): DbClaims => ({ identityId, nodeAdmin: false, requestId: `req_${randomUUID()}` });
+  const draftsOf = new Map<string, string[]>();
+
+  async function join(spaceId: string, identityId: string, name: string): Promise<void> {
+    await sdb.asOwner(async (q) => {
+      const member = randomUUID();
+      await q.query(`insert into public.entities(id, space_id, kind, created_by) values ($1, $2, 'member', $1)`, [member, spaceId]);
+      await q.query(
+        `insert into public.members(entity_id, space_id, identity_id, role, display_name) values ($1, $2, $3, 'member', $4)`,
+        [member, spaceId, identityId, name],
+      );
+    });
+  }
+
+  /** A row through the 305 writer, then `drafts` drafts through the 305 draft writer. */
+  async function seed(identityId: string, spaceId: string, state: object, drafts: number): Promise<void> {
+    await sdb.rpc(as(identityId), 'public.workspace_save', [spaceId, 0, 1, JSON.stringify(state)]);
+    const ids: string[] = [];
+    for (let i = 0; i < drafts; i += 1) {
+      const draftId = randomUUID();
+      await sdb.rpc(as(identityId), 'public.workspace_draft_save', [spaceId, draftId, 'task', 0, JSON.stringify({ title: { v: `d${i}`, r: 1 } })]);
+      ids.push(draftId);
+    }
+    draftsOf.set(`${spaceId}/${identityId}`, ids);
+  }
+
+  const workspaceOf = async (spaceId: string, identityId: string) =>
+    (await scratch.query<{ workspace_id: string }>(
+      'select workspace_id from public.workspaces where space_id = $1 and identity_id = $2',
+      [spaceId, identityId],
+    )).map((r) => r.workspace_id);
+
+  beforeAll(async () => {
+    scratch = await createW1ScratchDatabase('mw310');
+    const files = migrationFiles();
+    const at = files.indexOf('310_multiple_workspaces.sql');
+    expect(at).toBeGreaterThan(0);
+    scratch.apply(files.slice(0, at));
+    sdb = createTestDb(scratch.url);
+    for (const [id, name] of [[ann, 'Ann'], [ben, 'Ben'], [cy, 'Cy']] as const) {
+      await sdb.rpc({ identityId: id }, 'public.upsert_user_profile', [name, null, null]);
+    }
+    s1 = (await sdb.rpc<{ space: { id: string } }>({ identityId: ann }, 'public.create_space', ['One', 'mw310', 'private', null, null])).space.id;
+    s2 = (await sdb.rpc<{ space: { id: string } }>({ identityId: ben }, 'public.create_space', ['Two', 'mw310', 'private', null, null])).space.id;
+    await join(s1, ben, 'Ben');
+    await join(s1, cy, 'Cy');
+    await join(s2, ann, 'Ann');
+
+    await seed(ann, s1, { orderedTabIds: [] }, 30);
+    await seed(ann, s2, { orderedTabIds: [] }, 2);
+    await seed(ben, s2, { orderedTabIds: [] }, 1);
+    // At the 128 KB cap exactly: {"pad": "…"} renders as 11 characters plus the padding.
+    await seed(ben, s1, { pad: 'x'.repeat(131072 - 11) }, 0);
+    const [big] = await scratch.query<{ n: number }>(
+      'select octet_length(state::text) as n from public.workspaces where space_id = $1 and identity_id = $2', [s1, ben],
+    );
+    expect(big!.n).toBe(131072);
+
+    scratch.apply(files.slice(at, at + 1));
+  });
+
+  afterAll(async () => {
+    await sdb?.end();
+    await scratch?.destroy();
+  });
+
+  it('turns every row into "Main" with exactly one active pointer, and leaves the row-less member alone', async () => {
+    const rows = await scratch.query<{ space_id: string; identity_id: string; name: string; position: number; active: string | null; pointers: number }>(
+      `select w.space_id, w.identity_id, w.name, w.position,
+              (select a.workspace_id::text from public.workspace_active a
+                where a.space_id = w.space_id and a.identity_id = w.identity_id and a.workspace_id = w.workspace_id) as active,
+              (select count(*)::int from public.workspace_active a where a.space_id = w.space_id and a.identity_id = w.identity_id) as pointers
+         from public.workspaces w where w.space_id in ($1, $2)`,
+      [s1, s2],
+    );
+    expect(rows).toHaveLength(4);
+    for (const row of rows) expect(row).toMatchObject({ name: 'Main', position: 0, pointers: 1, active: expect.any(String) });
+    expect(await scratch.query('select 1 from public.workspace_active where space_id in ($1, $2)', [s1, s2])).toHaveLength(4);
+    expect(await workspaceOf(s1, cy)).toEqual([]);
+    expect(await scratch.query('select 1 from public.workspace_active where identity_id = $1', [cy])).toEqual([]);
+  });
+
+  it('gives every draft its row’s workspace_id, the 30 at the cap included', async () => {
+    for (const [spaceId, identityId, count] of [[s1, ann, 30], [s2, ann, 2], [s2, ben, 1], [s1, ben, 0]] as const) {
+      const [workspaceId] = await workspaceOf(spaceId, identityId);
+      const drafts = await scratch.query<{ draft_id: string }>(
+        'select draft_id from public.workspace_drafts where workspace_id = $1 order by draft_id', [workspaceId],
+      );
+      expect(drafts.map((d) => d.draft_id)).toEqual([...draftsOf.get(`${spaceId}/${identityId}`)!].sort());
+      expect(drafts).toHaveLength(count);
+    }
+  });
+
+  it('keys rows, pointers and drafts by workspace_id, and a pointer cannot cross identities', async () => {
+    const defs = await scratch.query<{ conname: string; def: string }>(
+      `select conname, pg_get_constraintdef(oid) as def from pg_constraint
+        where conrelid in ('public.workspaces'::regclass, 'public.workspace_drafts'::regclass, 'public.workspace_active'::regclass)
+          and contype in ('p', 'f')`,
+    );
+    const def = (name: string) => defs.find((d) => d.conname === name)?.def;
+    expect(def('workspaces_pkey')).toBe('PRIMARY KEY (workspace_id)');
+    expect(def('workspace_drafts_pkey')).toBe('PRIMARY KEY (workspace_id, draft_id)');
+    expect(def('workspace_active_pkey')).toBe('PRIMARY KEY (space_id, identity_id)');
+    const [annS1] = await workspaceOf(s1, ann);
+    await expect(scratch.query('update public.workspace_active set workspace_id = $1 where space_id = $2 and identity_id = $3', [annS1, s1, ben]))
+      .rejects.toMatchObject({ code: '23503' });
+    await expect(scratch.query('update public.workspace_drafts set identity_id = $1 where workspace_id = $2', [ben, annS1]))
+      .rejects.toMatchObject({ code: '23503' });
+  });
+
+  it('checks colours against the shared tokens and caps workspaces at the shared limit', async () => {
+    const [benS2] = await workspaceOf(s2, ben);
+    for (const color of WORKSPACE_COLORS) {
+      await scratch.query('update public.workspaces set color = $1 where workspace_id = $2', [color, benS2]);
+    }
+    await expect(scratch.query(`update public.workspaces set color = 'magenta' where workspace_id = $1`, [benS2]))
+      .rejects.toMatchObject({ code: '23514' });
+    const insert = (name: string) => scratch.query(
+      `insert into public.workspaces(space_id, identity_id, member_id, state, revision, name, position)
+       select space_id, identity_id, member_id, '{}'::jsonb, 1, $2, 1 from public.workspaces where workspace_id = $1`,
+      [benS2, name],
+    );
+    // Names are unique per (space, identity), case-insensitively.
+    await expect(insert('main')).rejects.toMatchObject({ code: '23505' });
+    for (let n = 2; n <= WORKSPACES_PER_IDENTITY_CAP; n += 1) await insert(`Workspace ${n}`);
+    await expect(insert('One too many')).rejects.toMatchObject({ code: '53400' });
+  });
+
+  it('RLS: another identity reads none of the workspaces, pointers or drafts', async () => {
+    const read = (identityId: string, spaceId: string) => sdb.tx(as(identityId), async (q) => ({
+      workspaces: (await q.query<{ identity_id: string }>('select identity_id from public.workspaces where space_id = $1', [spaceId])).map((r) => r.identity_id),
+      active: (await q.query<{ identity_id: string }>('select identity_id from public.workspace_active where space_id = $1', [spaceId])).map((r) => r.identity_id),
+      drafts: (await q.query<{ identity_id: string }>('select identity_id from public.workspace_drafts where space_id = $1', [spaceId])).map((r) => r.identity_id),
+    }));
+    expect(await read(ben, s1)).toEqual({ workspaces: [ben], active: [ben], drafts: [] });
+    expect(await read(ann, s2)).toEqual({ workspaces: [ann], active: [ann], drafts: [ann, ann] });
+    expect(await read(cy, s1)).toEqual({ workspaces: [], active: [], drafts: [] });
+  });
+
+  it('analyzes the new and re-keyed tables at birth', async () => {
+    const rows = await scratch.query<{ relname: string; reltuples: number }>(
+      `select relname, reltuples from pg_class
+        where oid in ('public.workspaces'::regclass, 'public.workspace_drafts'::regclass, 'public.workspace_active'::regclass)`,
+    );
+    expect(rows).toHaveLength(3);
+    for (const row of rows) expect(Number(row.reltuples), row.relname).toBeGreaterThanOrEqual(0);
+  });
+
+  it('cascades a workspace’s drafts and its pointer when it is deleted', async () => {
+    const [annS1] = await workspaceOf(s1, ann);
+    await scratch.query('delete from public.workspaces where workspace_id = $1', [annS1]);
+    expect(await scratch.query('select 1 from public.workspace_drafts where workspace_id = $1', [annS1])).toEqual([]);
+    expect(await scratch.query('select 1 from public.workspace_active where workspace_id = $1', [annS1])).toEqual([]);
+    // Ann's other space is untouched.
+    const [annS2] = await workspaceOf(s2, ann);
+    expect(await scratch.query('select 1 from public.workspace_drafts where workspace_id = $1', [annS2])).toHaveLength(2);
   });
 });
