@@ -37,6 +37,8 @@ import {
   type WorkspaceBridgeCommandFrame,
   type WorkspaceControlAck,
   type WorkspaceDraftFrame,
+  type WorkspaceSummaryFrame,
+  type WorkspaceSwitchedFrame,
   type WorkspaceStateFrame,
   type WorkspaceControlFrame,
 } from '@tm8/contract';
@@ -78,8 +80,13 @@ const BRIDGE_FRAME_TYPES: ReadonlySet<string> = new Set([
   'workspace.register', 'workspace.unregister', 'workspace.result',
   'workspace.apply', 'workspace.import', 'workspace.draft.patch',
 ]);
-/** Spec D, node → window: the stored workspace and its drafts. */
-export type WorkspaceSyncFrame = WorkspaceStateFrame | WorkspaceAppliedFrame | WorkspaceDraftFrame;
+/** Spec D, node → window: the stored workspace and its drafts; and (capable windows) the switch and the list. */
+export type WorkspaceSyncFrame =
+  | WorkspaceStateFrame
+  | WorkspaceAppliedFrame
+  | WorkspaceDraftFrame
+  | WorkspaceSwitchedFrame
+  | WorkspaceSummaryFrame;
 
 /** `WebSocket.OPEN`. Named rather than inlined so the fake reads the same. */
 export const WS_OPEN = 1;
@@ -188,7 +195,10 @@ export function parseFrame(raw: unknown): ParsedFrame {
   }
 
   // Spec D: the stored workspace, sent to this identity's own windows only.
-  if (type === 'workspace.state' || type === 'workspace.applied' || type === 'workspace.draft') {
+  if (
+    type === 'workspace.state' || type === 'workspace.applied' || type === 'workspace.draft'
+    || type === 'workspace.switched' || type === 'workspace.summary'
+  ) {
     if (typeof raw.spaceId !== 'string') return { kind: 'malformed', reason: `${type} has no spaceId` };
     return { kind: 'workspace-sync', frame: raw as unknown as WorkspaceSyncFrame };
   }

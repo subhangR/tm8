@@ -40,6 +40,17 @@ export function quoteTitle(title: string): string {
   return `“${cut}”`;
 }
 
+/**
+ * S14: a notice about a workspace that is not on screen names it
+ * ("… in Billing"), so a rollback there is not read as one here.
+ */
+export function inWorkspace(text: string, name: string | undefined): string {
+  const trimmed = name?.trim();
+  if (!trimmed) return text;
+  const cut = trimmed.length > TITLE_MAX ? `${trimmed.slice(0, TITLE_MAX).trimEnd()}…` : trimmed;
+  return `${text} in ${cut}`;
+}
+
 /** The scope control's own label: `Mixed` or `By type · N`. */
 export function scopeLabel(scope: TabScope): string {
   return scope.mode === 'mixed' ? 'Mixed' : `By type · ${scope.selectedTypeIds.length}`;

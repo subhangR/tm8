@@ -363,8 +363,10 @@ describe('the g-chord machine', () => {
 
   it('binds to registry/view REFS, never to menu positions', () => {
     // Every g-chord names a slug or a view name; a menu edit cannot reach them.
+    // `g w` opens the workspace switcher, which names its own destinations.
     for (const binding of BINDINGS) {
       if (binding.match.type !== 'chord' || binding.match.lead !== CHORD_LEAD) continue;
+      if (binding.command === 'workspace.switcher') continue;
       expect(binding.ref).toBeTruthy();
       expect(binding.command === 'nav.kind' || binding.command === 'nav.view').toBe(true);
     }

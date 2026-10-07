@@ -67,6 +67,17 @@ describe('the guaranteed navigation chords resolve to real screens', () => {
     }
   });
 
+  it('g w is guaranteed but not a navigation chord, and takes no key from one', () => {
+    /* It opens the workspace switcher, which lists its own destinations, so it
+       stays out of the nine — and must not collide with any of them. */
+    const gw = BINDINGS.find((binding) => binding.keys === 'g w');
+    expect(gw?.command).toBe('workspace.switcher');
+    expect(gw?.guaranteed).toBe(true);
+    expect(NAV_BINDINGS.map((binding) => binding.keys)).not.toContain('g w');
+    const chords = BINDINGS.filter((binding) => binding.keys.startsWith('g ')).map((binding) => binding.keys);
+    expect(new Set(chords).size).toBe(chords.length);
+  });
+
   it('refuses a ref in the WRONG vocabulary, which is the failure mode', () => {
     /* The two mistakes this file exists to catch, asserted as refusals so the
        resolver's honesty is pinned and not merely assumed. */

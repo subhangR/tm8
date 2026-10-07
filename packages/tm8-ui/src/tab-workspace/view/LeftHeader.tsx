@@ -29,6 +29,7 @@ export function LeftHeader() {
       </div>
       <div className="tws-space-slot" data-narrow={narrow || undefined}>
         {switcher}
+        {gate.workspaceSwitcherSlot ?? null}
       </div>
       <ViewSelector variant="label" />
     </header>
