@@ -84,7 +84,7 @@ export function WorkspacePrompts(props: WorkspacePromptsProps) {
         const title = online ? undefined : WORKSPACE_SWITCHER_OFFLINE;
         const [yes, no] = prompt.kind === 'switch' ? ['Switch', 'Stay'] : ['Delete', 'Keep'];
         return (
-          <div key={id} className="shell-notice shell-notice--info tws-prompt" role="alertdialog" aria-label={promptLine(prompt)}>
+          <div key={id} className="shell-notice shell-notice--info tws-prompts__item" role="alertdialog" aria-label={promptLine(prompt)}>
             <span className="shell-notice__glyph" aria-hidden="true">◬</span>
             <div className="shell-notice__text">
               <span className="shell-notice__title">

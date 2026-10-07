@@ -1335,7 +1335,10 @@
   color: var(--pn-ink-3);
   cursor: default;
 }
-/* An agent's Switch/Stay, Delete/Keep ask (D8): a notice that waits. */
+/* An agent's Switch/Stay, Delete/Keep ask (D8): a notice that waits. Its row is
+   `tws-prompts__item`, never `tws-prompt`: that class is RevealPrompt's,
+   absolutely positioned under the tab header (workspace.css), and would carry
+   the notice out of the viewport. */
 .cv2-root .tws-prompts {
   display: flex;
   flex-direction: column;
