@@ -14,6 +14,7 @@ import {
   StanceToggle,
   type DocStance,
 } from './EditorChrome';
+import { DocTitleField } from './DocTitleField';
 import type { DocSaveHandle } from './useDocSave';
 import './doc-edit-phone.css';
 
@@ -64,9 +65,12 @@ export function DocEditor({
   attach,
   onAttached,
   skillOptions,
+  focusTitle,
 }: {
   save: DocSaveHandle;
   detail: EntityDetail;
+  /** Put the caret in the title on mount — a doc New doc just created. */
+  focusTitle?: boolean;
   /** Resolves `tm8://file/<id>` images in the preview stance. See `DocPreview`. */
   fileHref?: MarkdownFileHref;
   /** Uploads a file and writes its reference at the caret. See `DocAttach`. */
@@ -120,13 +124,13 @@ export function DocEditor({
   };
 
   return (
-    <div className="de-root" data-testid="doc-editor">
+    <div className="de-root" data-testid="doc-editor" data-doc-editor="">
       <div className="de-bar">
         <StanceToggle stance={stance} onChange={setStance} />
         <span className="de-bar__spacer" />
         {onCollapse ? (
           <button type="button" className="de-btn de-btn--quiet" data-testid="doc-collapse" onClick={onCollapse}>
-            ⇲ close
+            {save.autosave ? 'Done' : '⇲ close'}
           </button>
         ) : collapseRefusal ? (
           <DisabledIconControl label="Close the editor" reason={collapseRefusal}>
@@ -137,6 +141,12 @@ export function DocEditor({
       </div>
 
       <ConflictBanner save={save} actor={conflictActor} />
+
+      {save.autosave ? (
+        <div className="de-titlerow">
+          <DocTitleField save={save} autoFocus={focusTitle} />
+        </div>
+      ) : null}
 
       <div className="de-body">
         {stance === 'write' ? (
@@ -151,7 +161,7 @@ export function DocEditor({
       <div className="de-foot">
         <SaveWord save={save} version={detail.version} />
         <span className="de-foot__spacer" />
-        <span className="de-foot__hint">esc cancels · ⌘enter saves</span>
+        <span className="de-foot__hint">{save.autosave ? 'saves as you type' : 'esc cancels · ⌘enter saves'}</span>
       </div>
     </div>
   );

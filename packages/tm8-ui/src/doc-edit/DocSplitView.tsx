@@ -7,6 +7,7 @@ import { DocPreview } from './DocPreview';
 import { DocSource, type DocAttach } from './DocSource';
 import type { TriggerOption } from '../rich-input';
 import { ConflictBanner, RefusalHost, SaveActions, SaveWord } from './EditorChrome';
+import { DocTitleField } from './DocTitleField';
 import type { DocSaveHandle } from './useDocSave';
 
 /**
@@ -33,9 +34,12 @@ export function DocSplitView({
   attach,
   onAttached,
   skillOptions,
+  focusTitle,
 }: {
   save: DocSaveHandle;
   detail: EntityDetail;
+  /** Put the caret in the title on mount — a doc New doc just created. */
+  focusTitle?: boolean;
   /** Resolves `tm8://file/<id>` images in the preview pane. See `DocPreview`. */
   fileHref?: MarkdownFileHref;
   /** Uploads a file and writes its reference at the caret. See `DocAttach`. */
@@ -61,11 +65,11 @@ export function DocSplitView({
   const { ratio, onKeyDown, onPointerDown, frame } = useSplitRatio();
 
   return (
-    <div className="de-split" data-testid="doc-split">
+    <div className="de-split" data-testid="doc-split" data-doc-editor="">
       <div className="de-bar">
         {onCollapse ? (
           <button type="button" className="de-btn de-btn--quiet" data-testid="doc-collapse" onClick={onCollapse}>
-            ⇲ collapse
+            {save.autosave ? 'Done' : '⇲ collapse'}
           </button>
         ) : (
           <DisabledIconControl
@@ -78,12 +82,19 @@ export function DocSplitView({
             ⇲ collapse
           </DisabledIconControl>
         )}
-        <span className="de-bar__title">{detail.title} · full view</span>
+        {/* Under autosave the title is written in the editor, once (below). */}
+        {save.autosave ? null : <span className="de-bar__title">{detail.title} · full view</span>}
         <span className="de-bar__spacer" />
         <SaveActions save={save} />
       </div>
 
       <ConflictBanner save={save} actor={conflictActor} />
+
+      {save.autosave ? (
+        <div className="de-titlerow">
+          <DocTitleField save={save} autoFocus={focusTitle} />
+        </div>
+      ) : null}
 
       <div className="de-split__panes" ref={frame}>
         <div className="de-split__pane" style={{ flexGrow: ratio }}>
@@ -136,7 +147,11 @@ export function DocSplitView({
          * canvas's sentence and mean none of it, the footer states what is
          * actually true here. GAP G7.
          */}
-        <span className="de-foot__hint">ratio resets when this view closes · esc cancels · ⌘enter saves</span>
+        <span className="de-foot__hint">
+          {save.autosave
+            ? 'saves as you type · ⌘enter saves now'
+            : 'ratio resets when this view closes · esc cancels · ⌘enter saves'}
+        </span>
       </div>
     </div>
   );

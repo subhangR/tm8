@@ -41,6 +41,7 @@ import {
   type NewTaskHandle,
 } from '../authoring';
 import { getKind, placeholderNameFor, titleNormalizerFor, type ActionRef, type KindConfig } from '../domain';
+import { markFreshDoc } from '../doc-edit';
 
 /**
  * EVERY VERB THIS HOOK CAN PERFORM — the second panel dispatcher's counterpart
@@ -137,15 +138,20 @@ export function useEntityVerbs(options: EntityVerbsOptions): EntityVerbsHandle {
    * then anyway, so the fallback is never dispatched, and `useNewTask` needs a
    * kind to compute its refusal from.
    */
+  const childTitle = config ? placeholderNameFor(config, placeholderTitleFor(config.label)) : '';
   const addChild = useNewTask({
     spaceId,
     kind: detail?.kind ?? 'task',
     parentId: detail?.id ?? null,
-    placeholderTitle: config
-      ? placeholderNameFor(config, placeholderTitleFor(config.label))
-      : '',
+    placeholderTitle: childTitle,
     commands,
-    onCreated: (id) => onCreated?.(id),
+    onCreated: (id) => {
+      /* A child doc lands like New doc's (New doc UX): in the editor, title
+         first, and swept if it is left untitled and empty. Asked of the
+         registry's archetype, never of a kind name (§15.2). */
+      if (config?.panel.archetype === 'reader') markFreshDoc(id, childTitle);
+      onCreated?.(id);
+    },
   });
 
   /**

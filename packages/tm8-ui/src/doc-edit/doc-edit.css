@@ -95,6 +95,30 @@
   min-width: 0;
 }
 
+/* --- the title, written in the editor (New doc UX, 2026-10-06) ------------
+   One title, at document size, above the text it names. The bar above keeps
+   only the exit; the footer keeps the save word. */
+.cv2-root .de-titlerow {
+  padding: 16px 20px 4px;
+}
+
+.cv2-root .de-title {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--pn-serif);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pn-ink);
+}
+
+.cv2-root .de-title::placeholder {
+  color: var(--pn-ink-4);
+}
+
 /* --- Write ⇄ Preview (F1b line 82-85) -------------------------------------
    Oracle: a bordered pill containing two segments; the active one takes
    #ECE8DF, the quiet one #8E897B ink with a #E7E3D9 divider. */

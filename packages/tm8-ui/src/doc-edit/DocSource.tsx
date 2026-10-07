@@ -104,7 +104,10 @@ export function DocSource({
         // it never also pops the panel stack underneath. (With the skill
         // popover open, the hook already consumed Esc to close it.)
         e.stopPropagation();
-        save.cancel();
+        // Under autosave Esc discards nothing (New doc UX, 2026-10-06): the
+        // draft is already on its way to the server and on this device.
+        if (save.autosave) void save.flush();
+        else save.cancel();
       }
     },
   });
@@ -122,6 +125,7 @@ export function DocSource({
           readOnly={readOnly}
           spellCheck={false}
           {...rich.areaProps}
+          onBlur={save.autosave ? () => void save.flush() : undefined}
         />
         <TriggerPopover
           popover={rich.popover}

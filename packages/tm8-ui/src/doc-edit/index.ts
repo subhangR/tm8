@@ -32,6 +32,7 @@ export {
 } from './blocks';
 
 export {
+  AUTOSAVE_DELAY_MS,
   useDocSave,
   type DocSaveHandle,
   type DocSaveOptions,
@@ -53,6 +54,20 @@ export { DocEditor } from './DocEditor';
 export { DocPreview } from './DocPreview';
 export { DocSource, type DocAttach } from './DocSource';
 export { DocSplitView } from './DocSplitView';
+export { DocTitleField } from './DocTitleField';
+export {
+  FRESH_DOC_TITLE,
+  emptyFreshDocIds,
+  forgetFreshDoc,
+  isEmptyDoc,
+  isFreshArrival,
+  isFreshDoc,
+  freshDocTitle,
+  markFreshDoc,
+  noteFreshArrived,
+  noteFreshDocEmpty,
+} from './freshDocs';
+export { clearLocalDraft, readLocalDraft, writeLocalDraft, type LocalDocDraft } from './localDraft';
 export { DownloadDocControl } from './DownloadDocControl';
 export { EditEntryControl } from './EditEntryControl';
 export { canPrint, printDoc, PRINT_ROOT_ID, type PrintDocInput } from './printDoc';

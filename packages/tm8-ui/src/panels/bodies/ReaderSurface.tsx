@@ -8,6 +8,12 @@ import {
   DocSplitView,
   DownloadDocControl,
   EditEntryControl,
+  freshDocTitle,
+  isEmptyDoc,
+  isFreshArrival,
+  isFreshDoc,
+  noteFreshArrived,
+  noteFreshDocEmpty,
   printDoc,
   useDocSave,
   type DocAttach,
@@ -102,7 +108,11 @@ export interface ReaderSurfaceProps {
 
 export function ReaderSurface(props: ReaderSurfaceProps) {
   const { detail, onOpenEntity } = props;
-  const [editing, setEditing] = useState(false);
+  /* A doc New doc just created opens in the editor with the caret in its
+     title (New doc UX, 2026-10-06); every other doc opens to read. Read once,
+     at mount — the effect below spends the arrival. */
+  const [arrival] = useState(() => isFreshArrival(detail.id));
+  const [editing, setEditing] = useState(arrival);
   const { oneSurface } = useMobileSurface();
 
   const config = getKind(detail.kind);
@@ -127,7 +137,19 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
     editRefusal,
     onSaved: props.onSaved,
     onReload: props.onReloadDetail,
+    /* Saves as you type, keeps a device copy, never discards on a key. */
+    autosave: true,
   });
+
+  useEffect(() => {
+    if (arrival) noteFreshArrived(detail.id);
+  }, [arrival, detail.id]);
+
+  /* A fresh doc that is still untitled and empty when its tab closes is
+     deleted by the workspace sweep; this keeps the sweep's answer current. */
+  useEffect(() => {
+    if (isFreshDoc(detail.id)) noteFreshDocEmpty(detail.id, isEmptyDoc(save.title, save.body, freshDocTitle(detail.id)));
+  }, [detail.id, save.title, save.body]);
 
   /**
    * A different entity in the same panel slot is a DIFFERENT DOCUMENT. Without
@@ -135,7 +157,10 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
    * the doc the user just closed onto the one they just opened, and the next
    * ⌘enter would write one document's text into another's record.
    */
+  const shownId = useRef(detail.id);
   useEffect(() => {
+    if (shownId.current === detail.id) return;
+    shownId.current = detail.id;
     setEditing(false);
   }, [detail.id]);
 
@@ -194,11 +219,20 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
      * silently discard text — with `collapseRefusal` carrying the true reason,
      * since the control's own fallback copy would blame the wiring instead.
      */
+    /* UNDER AUTOSAVE, Done saves what is pending and leaves — nothing is
+       lost by leaving. Only a conflict holds the editor open, because the
+       answer to it lives in this editor's banner. */
     const exit = {
-      onCollapse: save.dirty ? undefined : () => setEditing(false),
+      onCollapse:
+        save.state.phase === 'conflict'
+          ? undefined
+          : () => {
+              void save.flush();
+              setEditing(false);
+            },
       collapseRefusal: {
-        cause: 'This document has unsaved changes',
-        remedy: 'save them, or use Cancel to drop the draft first',
+        cause: 'This document has a save conflict',
+        remedy: 'choose load theirs or overwrite in the banner first',
       },
     };
 
@@ -217,6 +251,7 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
             attach={props.attach}
             onAttached={props.onAttached}
             skillOptions={props.skillOptions}
+            focusTitle={arrival}
             {...exit}
           />
         ) : (
@@ -227,6 +262,7 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
             attach={props.attach}
             onAttached={props.onAttached}
             skillOptions={props.skillOptions}
+            focusTitle={arrival}
             {...exit}
           />
         )}

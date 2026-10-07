@@ -40,6 +40,7 @@ import { pickFiles } from '../../files/pick';
 import { createFileUploadTask, safeUploadReason } from '../../files/upload';
 import { NewSessionScreen } from '../../new-session';
 import { HeaderFields } from '../../panels/detail/HeaderSection';
+import { FRESH_DOC_TITLE, markFreshDoc } from '../../doc-edit';
 import { SkillCreateControl } from '../../skills/SkillCreateControl';
 import { onDraftFocusRequest } from '../runtime/draftFocus';
 import type { DraftTabRecord, KindId } from '../runtime/types';
@@ -363,6 +364,100 @@ function DraftActions({
 }
 
 // ---------------------------------------------------------------------------
+// doc: created at once, landed in the editor
+// ---------------------------------------------------------------------------
+
+/**
+ * One create per draft, however many times its body mounts: StrictMode's
+ * second mount and a remote-values remount (`key={remoteVersion}`) both find
+ * the create already running here instead of starting another.
+ */
+const docCreates = new Map<string, Promise<string | null>>();
+
+/**
+ * NEW DOC IS NOT A FORM (New doc UX, Subhang 2026-10-06: "directly show
+ * editor"). The doc is created "Untitled" the moment its draft opens, and
+ * `drafts.bind` turns this tab into the doc's own tab, where `ReaderSurface`
+ * opens it in the editor with the caret in the title (`freshDocs.ts`). The
+ * agent-header fields the generic form asked for up front are the doc's
+ * Details, written later and never blocking create. A doc left untitled and
+ * empty is deleted when its tab closes (`useAbandonedDocSweep`).
+ */
+function DocDraftBody({ tab, onCreated, onCancel, onSubmitting }: DraftHostProps) {
+  const { gate, spaceId } = useWorkspace();
+  const [failure, setFailure] = useState<RefusedFailure | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    const key = `${tab.draftId}#${attempt}`;
+    let pending = docCreates.get(key);
+    const kind = creatableKind('doc');
+    if (!pending && kind !== null) {
+      onSubmitting(true);
+      pending = gate.data.seam.commands
+        .createEntity(newEntityInput(spaceId as SpaceId, kind, FRESH_DOC_TITLE))
+        .then((result) => {
+          gate.data.reconcileCommand(result);
+          const id = createdIdOf(result);
+          // Bound here, once, rather than per mount: marked fresh BEFORE the
+          // bind, so the doc's surface finds it on its first render.
+          if (id !== null) {
+            markFreshDoc(id);
+            onCreated(id, FRESH_DOC_TITLE);
+          }
+          return id;
+        });
+      docCreates.set(key, pending);
+    }
+    pending?.then(
+      (id) => {
+        if (!live || id !== null) return;
+        setFailure(noIdFailure('doc'));
+        onSubmitting(false);
+      },
+      (error: unknown) => {
+        docCreates.delete(key);
+        if (!live) return;
+        const classified = classifyFailure(error, 'create');
+        setFailure(
+          classified.kind === 'refused'
+            ? classified
+            : { kind: 'refused', cause: classified.cause, detail: classified.detail, aftermath: 'Nothing was created.', code: 'version_conflict', retryable: true },
+        );
+        onSubmitting(false);
+      },
+    );
+    return () => {
+      live = false;
+    };
+    // The create is keyed by draft and attempt; the callbacks are the host's
+    // stable ones.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab.draftId, attempt]);
+
+  if (failure === null) {
+    return (
+      <div className="tws-draft-form" aria-busy="true" data-testid="tws-doc-creating">
+        <p className="tws-draft-note">Creating a new doc…</p>
+      </div>
+    );
+  }
+  return (
+    <div className="tws-draft-form" data-testid="tws-doc-create-failed">
+      <DraftHeading kind={tab.kind} />
+      <RefusalCard
+        word={failure.cause}
+        detail={failure.detail}
+        aftermath={failure.aftermath}
+        moves={failure.retryable ? [{ label: 'retry', onSelect: () => { setFailure(null); setAttempt((n) => n + 1); } }] : []}
+      />
+      <DraftActions onCancel={onCancel} submitting={false} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // file: the upload door
 // ---------------------------------------------------------------------------
 
@@ -536,6 +631,7 @@ function ChatDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
 export function draftBodyFor(kind: KindId): ComponentType<DraftHostProps> | undefined {
   if (kind === 'work_session') return LaunchDraftBody;
   if (kind === 'chat') return ChatDraftBody;
+  if (kind === 'doc') return DocDraftBody;
   const form = getKind(kind).createForm;
   if (form === 'file-upload') return FileDraftBody;
   if (form === 'skill-file') return SkillDraftBody;
