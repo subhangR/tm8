@@ -23,6 +23,12 @@ import { getKindAdapter } from '../adapters/registry';
 import { WORKSPACE_KINDS, type KindId, type TabId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import { useFreshGlow, useRetainLeaving } from '../../domain/useFreshGlow';
+import { openProjectFile } from '../adapters/projectFile';
+import { FileTypeBadge } from '../../project-file/FileTypeBadge';
+import { fileMatches, fileRowLabel } from '../../project-file/palette';
+import { baseName } from '../../project-file/paths';
+import { useProjectNames } from '../../project-file/projects';
+import { mergeRecentPicks, useRecentProjectFiles, type RecentPick, type RecentProjectFile } from '../../project-file/recent';
 import './creation.css';
 
 export interface ChooserProps {
@@ -54,7 +60,7 @@ function matches(row: EntitySummary, q: string): boolean {
 }
 
 export function Chooser({ tabId, variant, restoreSlot, afterRecent }: ChooserProps) {
-  const { dispatch, gate } = useWorkspace();
+  const { dispatch, gate, runtime, viewerId, spaceId } = useWorkspace();
   const byType = useWorkspaceState((s) => s.scope.mode === 'byType');
   const [query, setQuery] = useState('');
   const [current, setCurrent] = useState(-1);
@@ -86,15 +92,32 @@ export function Chooser({ tabId, variant, restoreSlot, afterRecent }: ChooserPro
     return q ? all.filter((row) => matches(row, q)).slice(0, RESULT_LIMIT) : all.slice(0, RECENT_LIMIT);
   }, [rowsFor, q]);
   /* A row deleted live stays for its exit (R41). */
-  const rows = useRetainLeaving(liveRows, rowIdOf);
+  const entityRows = useRetainLeaving(liveRows, rowIdOf);
+  /* The viewer's recent project files share Recent and the results, newest first. */
+  const recentFiles = useRecentProjectFiles(viewerId, spaceId);
+  const projectNames = useProjectNames(gate.data.seam, spaceId);
+  const fileRows = useMemo(
+    () => recentFiles.filter((file) => fileMatches(file, projectNames.get(file.projectId), q)),
+    [recentFiles, projectNames, q],
+  );
+  const rows = useMemo(
+    () => mergeRecentPicks(entityRows, fileRows, q ? RESULT_LIMIT : RECENT_LIMIT),
+    [entityRows, fileRows, q],
+  );
 
   const offered = useMemo(() => NEW_KINDS.filter((entry) => getKindAdapter(entry.kind).creatable === true), []);
   const main = offered.slice(0, NEW_MAIN_COUNT);
   const more = offered.slice(NEW_MAIN_COUNT);
   const replace = tabId ? { replaceTabId: tabId } : {};
 
-  const openRow = (row: EntitySummary) =>
+  const openEntity = (row: EntitySummary) =>
     dispatch({ command: 'workspace.tabs.open', args: { kind: row.kind, entityId: row.id, ...replace }, source: 'click' });
+  /* A file opens kept, next to this tab; the New tab it was picked from closes. */
+  const openFile = (file: RecentProjectFile) => {
+    const result = openProjectFile(runtime, file, { preview: false });
+    if (tabId && result.status === 'applied') dispatch({ command: 'workspace.tabs.close', args: { tabId }, source: 'click' });
+  };
+  const openRow = (pick: RecentPick<EntitySummary>) => (pick.type === 'file' ? openFile(pick.file) : openEntity(pick.row));
   const newDraft = (kind: KindId) =>
     dispatch({ command: 'workspace.drafts.open', args: { kind, ...replace }, source: 'click' });
 
@@ -159,14 +182,25 @@ export function Chooser({ tabId, variant, restoreSlot, afterRecent }: ChooserPro
         </section>
       ) : null}
       <section className="tws-pick-section" aria-label={q ? 'Results' : 'Recent'}>
-        <span className="t-eyebrow">{q ? `Results in this space (${liveRows.length})` : 'Recent'}</span>
+        <span className="t-eyebrow">{q ? `Results in this space (${liveRows.length + fileRows.length})` : 'Recent'}</span>
         {rows.length === 0 ? (
           <p className="tws-pick-empty">{q ? `No matches for “${query.trim()}”` : 'Nothing here yet.'}</p>
         ) : (
           <ul className="tws-pick-list" id={listId} role="listbox" aria-label={q ? 'Results' : 'Recent'}>
-            {rows.map((row, i) => (
-              <ChooserRow key={row.id} id={`${listId}-${i}`} row={row} current={i === highlighted} onOpen={openRow} />
-            ))}
+            {rows.map((pick, i) =>
+              pick.type === 'file' ? (
+                <FileRow
+                  key={pick.id}
+                  id={`${listId}-${i}`}
+                  file={pick.file}
+                  projectName={projectNames.get(pick.file.projectId) ?? null}
+                  current={i === highlighted}
+                  onOpen={openFile}
+                />
+              ) : (
+                <ChooserRow key={pick.id} id={`${listId}-${i}`} row={pick.row} current={i === highlighted} onOpen={openEntity} />
+              ),
+            )}
           </ul>
         )}
       </section>
@@ -292,6 +326,38 @@ function ChooserRow({
         <span className="tws-pick-row-title">{row.title}</span>
         {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
         <span className="tws-pick-row-kind">{getKindAdapter(row.kind).noun}</span>
+      </button>
+    </li>
+  );
+}
+
+/** A recent project file in Recent / Results: badge, name, then project and path. */
+function FileRow({
+  id,
+  file,
+  projectName,
+  current,
+  onOpen,
+}: {
+  id: string;
+  file: RecentProjectFile;
+  projectName: string | null;
+  current: boolean;
+  onOpen(file: RecentProjectFile): void;
+}) {
+  return (
+    <li role="option" id={id} aria-selected={current}>
+      <button
+        type="button"
+        className="tws-pick-row"
+        data-current={current || undefined}
+        onClick={() => onOpen(file)}
+        title={fileRowLabel(file, projectName)}
+        data-testid="tws-chooser-file-row"
+      >
+        <FileTypeBadge path={file.path} />
+        <span className="tws-pick-row-title">{baseName(file.path)}</span>
+        <span className="tws-pick-row-kind">{`${projectName ?? 'Project'} · ${file.path}`}</span>
       </button>
     </li>
   );

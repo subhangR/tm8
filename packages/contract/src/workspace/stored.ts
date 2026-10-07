@@ -13,6 +13,8 @@
 import { DEFAULT_RAIL } from './commands/rail.js';
 import { isEligible, scopeKey } from './selectors.js';
 import {
+  isFileTabPath,
+  isFileTabProjectId,
   isWorkspaceKind,
   LAYOUT_BOUNDS,
   TAB_SUBVIEWS,
@@ -118,6 +120,10 @@ const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinit
 function cleanTab(id: string, raw: unknown): TabRecord | null {
   if (!isObj(raw) || raw.id !== id) return null;
   if (raw.type === 'chooser') return { id, type: 'chooser', query: typeof raw.query === 'string' ? raw.query.slice(0, 200) : '' };
+  if (raw.type === 'file') {
+    if (!isFileTabProjectId(raw.projectId) || !isFileTabPath(raw.path)) return null;
+    return { id, type: 'file', projectId: raw.projectId, path: raw.path, preview: raw.preview === true };
+  }
   if (!isWorkspaceKind(raw.kind)) return null;
   if (raw.type === 'draft') {
     if (!str(raw.draftId)) return null;

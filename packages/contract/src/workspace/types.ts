@@ -70,7 +70,39 @@ export type DraftTabRecord = {
   ordinal: number;
 };
 export type ChooserTabRecord = { id: TabId; type: 'chooser'; query: string };
-export type TabRecord = EntityTabRecord | DraftTabRecord | ChooserTabRecord;
+/**
+ * ADDITIVE (File tabs): a read-only view of one file in a connected project
+ * folder. Files are not entities: the tab is keyed by (projectId, path) and
+ * has no kind, so — like the chooser — every scope shows it. `preview` is the
+ * italic tab the next preview open replaces; opening it for keeps clears it.
+ */
+export type FileTabRecord = { id: TabId; type: 'file'; projectId: string; path: string; preview: boolean };
+export type TabRecord = EntityTabRecord | DraftTabRecord | ChooserTabRecord | FileTabRecord;
+
+/** The longest project-relative path a file tab holds. */
+export const FILE_TAB_PATH_MAX = 4096;
+
+/** A file tab's project id: a non-empty bounded string. */
+export function isFileTabProjectId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 200;
+}
+
+/**
+ * A file tab's path: non-empty, at most FILE_TAB_PATH_MAX, relative to the
+ * project root (no leading `/` or `\\`, no drive letter), free of NUL, and
+ * `/`-separated with no empty, `.` or `..` segment.
+ */
+export function isFileTabPath(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= FILE_TAB_PATH_MAX &&
+    !value.includes('\0') &&
+    !/^[\\/]/.test(value) &&
+    !/^[A-Za-z]:/.test(value) &&
+    value.split('/').every((part) => part !== '' && part !== '.' && part !== '..')
+  );
+}
 
 export interface BrowserKindState {
   query: string;
@@ -211,6 +243,8 @@ export const COMMAND_NAMES = [
   'workspace.view.set',
   // ADDITIVE (Spec D): the rail preferences, so they persist with the workspace.
   'workspace.rail.set',
+  // ADDITIVE (File tabs): open, preview or keep a project file's tab.
+  'workspace.files.open',
 ] as const;
 export type CommandName = (typeof COMMAND_NAMES)[number];
 
@@ -264,6 +298,12 @@ export type DialogsOpenArgs = { dialogId: DialogId };
 export type DialogsCloseArgs = { dialogId: DialogId };
 /** ADDITIVE (Spec D): patch the rail prefs; `open` merges per section. */
 export type RailSetArgs = { pins?: string[]; open?: Record<string, boolean>; expanded?: boolean; lifted?: string[] };
+/**
+ * ADDITIVE (File tabs). `preview` (default false) opens the italic preview
+ * tab, replacing the current one; without it the tab is kept (and an open
+ * preview of the same file is pinned).
+ */
+export type FilesOpenArgs = { projectId: string; path: string; preview?: boolean; activate?: boolean };
 /** The Workspace route is the only target (coordinator ruling Q1). */
 export type ViewSetArgs = { view: 'tabs' };
 
@@ -287,6 +327,7 @@ export interface CommandArgsMap {
   'workspace.dialogs.close': DialogsCloseArgs;
   'workspace.view.set': ViewSetArgs;
   'workspace.rail.set': RailSetArgs;
+  'workspace.files.open': FilesOpenArgs;
 }
 
 export type CommandEnvelope = {
@@ -349,6 +390,10 @@ export interface WorkspaceInspection {
     kind?: KindId;
     entityId?: string;
     dirty?: boolean;
+    /** ADDITIVE (File tabs): a file tab's project and path. */
+    projectId?: string;
+    path?: string;
+    preview?: boolean;
   }[];
   scope: TabScope;
   browserKind: KindId;

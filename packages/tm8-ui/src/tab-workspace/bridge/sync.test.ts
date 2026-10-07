@@ -94,6 +94,23 @@ describe('WorkspaceSync', () => {
     expect(notices).toEqual(['Couldn’t open that tab: your workspace changed elsewhere']);
   });
 
+  it('an older node refusing a file open rolls it back once, with a notice and no resend', () => {
+    const { runtime, sync, sent, notices } = setup();
+    sync.onFrame({ type: 'workspace.state', spaceId: SPACE, revision: 1, state: toStoredState(runtime.store.getState()) as never });
+    runtime.dispatch({ command: 'workspace.files.open', args: { projectId: 'p1', path: 'src/a.ts', preview: true }, source: 'click' });
+    expect(runtime.store.getState().orderedTabIds).toHaveLength(1);
+    const applies = () => sent.filter((f) => f['type'] === 'workspace.apply');
+    expect(applies()).toHaveLength(1);
+    // What a node without the planner answers: the planner lookup throws.
+    sync.onFrame({ type: 'workspace.applied', spaceId: SPACE, requestId: applies()[0]!['requestId'] as string, result: { status: 'rejected', reason: 'invalid_arguments' } });
+    expect(runtime.store.getState().orderedTabIds).toHaveLength(0);
+    expect(notices).toEqual(['Couldn’t open that file: the node didn’t accept it']);
+    // The next state push from the node neither resends the open nor repeats the notice.
+    sync.onFrame({ type: 'workspace.state', spaceId: SPACE, revision: 1, state: toStoredState(runtime.store.getState()) as never });
+    expect(applies()).toHaveLength(1);
+    expect(notices).toHaveLength(1);
+  });
+
   it('imports the browser’s legacy state once, only into an empty workspace', () => {
     const legacyTab = { id: 'legacy', type: 'entity' as const, kind: 'task', entityId: 'e-old', ui: { subview: 'entity' as const } };
     const { sync, sent } = setup({ orderedTabIds: ['legacy'], tabs: { legacy: legacyTab } });

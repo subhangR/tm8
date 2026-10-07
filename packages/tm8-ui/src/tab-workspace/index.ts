@@ -7,3 +7,10 @@ export { queueWorkArrival, type WorkArrival } from './runtime/arrival';
 export { isWorkspaceKind } from './runtime/types';
 export { useWorkspaceBridge, type BridgeDialogControl } from './bridge/useWorkspaceBridge';
 export { queueWorkKey, runWorkKey, workKeysMounted, type WorkKey } from './keys';
+export {
+  openProjectFile,
+  openProjectFileInWorkspace,
+  useOpenProjectFile,
+  type OpenProjectFileOptions,
+} from './adapters/projectFile';
+export { toRelativePath, toAbsolutePath, type ProjectFileTarget } from '../project-file/paths';

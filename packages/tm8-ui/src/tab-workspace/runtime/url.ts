@@ -20,6 +20,9 @@
  * source `history` (`deeplink` for the address the view mounted with). The
  * codec carries only the entity id, so the kind comes from an open tab with
  * that id, else from the data layer (`resolveKind`).
+ *
+ * A project file tab is addressed `?fp=<projectId>&f=<path>` the same way
+ * (`routeFile`): IN focuses its open tab, or opens it as a kept tab.
  */
 import type { SpaceId, EntityId } from '@tm8/contract';
 import { build, defaultRoute } from '../../routes/codec';
@@ -27,12 +30,20 @@ import type { NavView } from '../../routes/types';
 import { navStore } from '../../stores/navStore';
 import type { WorkspaceRuntime } from './dispatch';
 import type { WorkspaceInitContext } from './persistence';
-import { activeEntityId } from './selectors';
+import { activeEntityId, activeTab, findFileTab } from './selectors';
 import type { CommandName, KindId, Source, WorkspaceState } from './types';
+
+/** A project file a Workspace address names. */
+export interface RouteFile {
+  projectId: string;
+  path: string;
+}
 
 export interface UrlSyncContext extends WorkspaceInitContext {
   /** The route's `?tab=` (entity id) at mount, if any. */
   routeTab: string | undefined;
+  /** The route's `?fp=&f=` (project file) at mount, if any. */
+  routeFile?: RouteFile | undefined;
   /** Write a route view (push). */
   navigateView(view: NavView): void;
   /**
@@ -46,6 +57,29 @@ export interface UrlSyncContext extends WorkspaceInitContext {
 /** The route view for a Workspace address. */
 export function workspaceTabView(entityId?: string | null): NavView {
   return entityId ? { view: 'tabs', tab: entityId as EntityId } : { view: 'tabs' };
+}
+
+/** The route view for the Workspace with a project file tab active. */
+export function workspaceFileView(file: RouteFile): NavView {
+  return { view: 'tabs', file: { projectId: file.projectId, path: file.path } };
+}
+
+/**
+ * What the address should say for `state`: `e:<entityId>`, `f:<project>\0<path>`,
+ * or null (a draft, the chooser, no tab). One string so changes compare cheaply.
+ */
+function addressOf(state: WorkspaceState): string | null {
+  const entityId = activeEntityId(state);
+  if (entityId) return `e:${entityId}`;
+  const tab = activeTab(state);
+  return tab?.type === 'file' ? `f:${tab.projectId}\u0000${tab.path}` : null;
+}
+
+function viewOfAddress(state: WorkspaceState): NavView {
+  const entityId = activeEntityId(state);
+  if (entityId) return workspaceTabView(entityId);
+  const tab = activeTab(state);
+  return tab?.type === 'file' ? workspaceFileView(tab) : workspaceTabView(null);
 }
 
 /**
@@ -64,11 +98,16 @@ const PUSH_COMMANDS: readonly CommandName[] = [
   'workspace.tabs.activate',
   'workspace.drafts.open',
   'workspace.chooser.open',
+  'workspace.files.open',
 ];
 
-function routedTab(): { inTabs: boolean; tab: string | null } {
+function routedTab(): { inTabs: boolean; tab: string | null; file: RouteFile | null; address: string | null } {
   const view = navStore.getState().view;
-  return view.view === 'tabs' ? { inTabs: true, tab: view.tab ?? null } : { inTabs: false, tab: null };
+  if (view.view !== 'tabs') return { inTabs: false, tab: null, file: null, address: null };
+  const tab = view.tab ?? null;
+  const file = !tab && view.file ? view.file : null;
+  const address = tab ? `e:${tab}` : file ? `f:${file.projectId}\u0000${file.path}` : null;
+  return { inTabs: true, tab, file, address };
 }
 
 /** Write the Workspace route view with replace history (no new entry). */
@@ -91,10 +130,11 @@ export function initUrlSync(runtime: WorkspaceRuntime, ctx: UrlSyncContext): () 
   const syncOut = (mode: 'push' | 'replace') => {
     const routed = routedTab();
     if (!routed.inTabs) return;
-    const want = activeEntityId(runtime.store.getState());
-    if (routed.tab === want) return;
-    if (mode === 'push') ctx.navigateView(workspaceTabView(want));
-    else replaceView(workspaceTabView(want));
+    const state = runtime.store.getState();
+    if (routed.address === addressOf(state)) return;
+    const view = viewOfAddress(state);
+    if (mode === 'push') ctx.navigateView(view);
+    else replaceView(view);
   };
 
   /** Open the routed entity unless it is already the active tab. */
@@ -106,11 +146,22 @@ export function initUrlSync(runtime: WorkspaceRuntime, ctx: UrlSyncContext): () 
     runtime.dispatch({ command: 'workspace.tabs.open', args: { kind, entityId, activate: true }, source });
   };
 
+  /** Focus the routed file's open tab (preview or not), else open it kept. */
+  const syncInFile = (file: RouteFile, source: Source) => {
+    const state = runtime.store.getState();
+    const open = findFileTab(state, file.projectId, file.path);
+    if (open) {
+      if (activeTab(state)?.id !== open.id) runtime.dispatch({ command: 'workspace.tabs.activate', args: { tabId: open.id }, source });
+      return;
+    }
+    runtime.dispatch({ command: 'workspace.files.open', args: { projectId: file.projectId, path: file.path, preview: false }, source });
+  };
+
   /** States a dispatch effect already synced; the store listener skips them. */
   const handled = new WeakSet<WorkspaceState>();
   const unregister = runtime.registerEffect(({ env, prev, next }) => {
     handled.add(next);
-    if (activeEntityId(prev) === activeEntityId(next)) return;
+    if (addressOf(prev) === addressOf(next)) return;
     const push = PUSH_SOURCES.includes(env.source) && PUSH_COMMANDS.includes(env.command);
     syncOut(push ? 'push' : 'replace');
   });
@@ -118,23 +169,25 @@ export function initUrlSync(runtime: WorkspaceRuntime, ctx: UrlSyncContext): () 
   // Non-dispatch writes (restore). Effects run synchronously right after the
   // commit's setState, so by this microtask a dispatched state is in `handled`.
   const unsubscribeStore = runtime.store.subscribe((next, prev) => {
-    if (activeEntityId(prev) === activeEntityId(next)) return;
+    if (addressOf(prev) === addressOf(next)) return;
     queueMicrotask(() => {
       if (!disposed && !handled.has(next) && runtime.store.getState() === next) syncOut('replace');
     });
   });
 
   // Back/Forward and pasted addresses land in navStore through attachRouter.
-  let lastTab = routedTab().tab;
+  let lastAddress = routedTab().address;
   const unsubscribeNav = navStore.subscribe(() => {
     const routed = routedTab();
-    if (!routed.inTabs || routed.tab === lastTab) return;
-    lastTab = routed.tab;
+    if (!routed.inTabs || routed.address === lastAddress) return;
+    lastAddress = routed.address;
     if (routed.tab) void syncIn(routed.tab, 'history');
+    else if (routed.file && routed.address !== addressOf(runtime.store.getState())) syncInFile(routed.file, 'history');
   });
 
   // Mount: a deep link opens its tab; otherwise the address follows the state.
   if (ctx.routeTab) void syncIn(ctx.routeTab, 'deeplink');
+  else if (ctx.routeFile) syncInFile(ctx.routeFile, 'deeplink');
   else syncOut('replace');
 
   return () => {
