@@ -84,6 +84,8 @@ export type KeyCommand =
   | 'work.tab.close'
   /** `ref` is the kind to draft. */
   | 'work.create'
+  /** The New tab: search the space, or pick a kind to make. */
+  | 'work.newTab'
   | 'work.chat.focus'
   /** Launch a session on the open tab's entity (the list's own `r` does the selected row). */
   | 'work.launch'
@@ -312,30 +314,48 @@ const TAB_NTH: readonly Binding[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'
 }));
 
 /**
- * `n` + a kind letter opens that kind's creation draft. The letters echo the
- * `g` chords where a kind has one (`g t` Tasks, `n t` New task), so one
- * mnemonic serves both. Mod+N is the browser's new window — never bound.
+ * THE KINDS YOU MAKE FROM WORK, in the order they are offered (Kalai,
+ * 2026-10-07). The New tab's main row (the first `NEW_MAIN_COUNT`) and its
+ * More menu, the ⌘K palette's New rows and the `n` chords all read this one
+ * list, so a kind cannot be offered in one place and missing from another.
+ * No file (it is uploaded, not made) and no pull request (it comes from git).
+ *
+ * The letters echo the `g` and `l` chords where a kind has one (`l t` Tasks,
+ * `n t` New task), so one mnemonic serves both. `n n` is the New tab itself.
  */
-const CREATE_CHORDS: readonly Binding[] = (
-  [
-    ['t', 'task', 'New task'],
-    ['d', 'doc', 'New doc'],
-    ['s', 'work_session', 'New session'],
-    ['c', 'chat', 'New chat'],
-    ['f', 'form', 'New form'],
-    // No `n p`: projects have no Work creation draft (`canCreateKind`).
-    ['x', 'drawing', 'New drawing'],
-  ] as const
-).map(([key, kind, label]) => ({
-  id: `n.${kind}`,
-  layer: 'global' as const,
-  keys: `n ${key}`,
-  label,
-  command: 'work.create' as const,
-  ref: kind,
-  guaranteed: true,
-  match: createChord(key),
-}));
+export const NEW_KINDS = [
+  { kind: 'task', key: 't', label: 'New task' },
+  { kind: 'doc', key: 'd', label: 'New doc' },
+  { kind: 'work_session', key: 's', label: 'New session' },
+  { kind: 'chat', key: 'c', label: 'New chat' },
+  { kind: 'form', key: 'f', label: 'New form' },
+  { kind: 'drawing', key: 'x', label: 'New drawing' },
+  { kind: 'story', key: 'y', label: 'New story' },
+  { kind: 'collection', key: 'o', label: 'New collection' },
+  { kind: 'channel', key: 'h', label: 'New channel' },
+  { kind: 'skill', key: 'k', label: 'New skill' },
+  { kind: 'team_member', key: 'm', label: 'New teammate' },
+] as const;
+
+export type NewKind = (typeof NEW_KINDS)[number]['kind'];
+
+/** How many of `NEW_KINDS` the New tab shows as cards; the rest sit under More. */
+export const NEW_MAIN_COUNT = 4;
+
+/** Mod+N is the browser's new window — never bound. */
+const CREATE_CHORDS: readonly Binding[] = [
+  { id: 'n.tab', layer: 'global', keys: 'n n', label: 'New tab', command: 'work.newTab', guaranteed: true, match: createChord('n') },
+  ...NEW_KINDS.map(({ kind, key, label }) => ({
+    id: `n.${kind}`,
+    layer: 'global' as const,
+    keys: `n ${key}`,
+    label,
+    command: 'work.create' as const,
+    ref: kind,
+    guaranteed: true,
+    match: createChord(key),
+  })),
+];
 
 /**
  * THE LAUNCH CARD'S KEYS — one letter per control, live while focus is on the
@@ -587,7 +607,7 @@ export const BINDING_GROUPS: readonly BindingGroup[] = ['Focus', 'Lists', 'Works
 export function bindingGroup(binding: Binding): BindingGroup {
   if (binding.command.startsWith('launch.')) return 'Launch';
   if (binding.command === 'text.blur' || binding.command.startsWith('terminal.')) return 'Focus';
-  if (binding.command === 'work.create' || binding.command === 'list.create') return 'Create';
+  if (binding.command === 'work.create' || binding.command === 'work.newTab' || binding.command === 'list.create') return 'Create';
   if (binding.command === 'work.browser.focus' || binding.layer === 'focus') return 'Lists';
   if (binding.command.startsWith('work.')) return 'Workspace';
   if (binding.command === 'nav.view' || binding.command === 'nav.kind') return 'Navigate';

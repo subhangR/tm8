@@ -66,7 +66,7 @@ import {
 import { DesignScreen, DesignsHome, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
-import { createKeyboardController, hintFor, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
+import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
 import { ShortcutsOverlay } from '../shell/ShortcutsOverlay';
 import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { Landing } from '../domain/nav-targets';
@@ -280,8 +280,6 @@ function legacyViewTabs(groups: readonly { id: string; label: string }[]): { vie
 /** Work, the desktop's default landing (D31). */
 const WORK_VIEW: NavView = { view: 'tabs' };
 
-/** The kinds the palette offers a "New …" row for — the `n` chords' kinds. */
-const NEW_DRAFT_KINDS = ['task', 'doc', 'work_session', 'chat', 'form', 'drawing'] as const;
 
 /**
  * Put each palette row's keyboard shortcut on it, read from the contract —
@@ -293,7 +291,9 @@ function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteVie
     const slug = scope === 'kind' ? slugOfKind(ref) : null;
     const hint =
       scope === 'new'
-        ? hintFor('work.create', ref, platform)
+        ? ref === 'tab'
+          ? hintFor('work.newTab', undefined, platform)
+          : hintFor('work.create', ref, platform)
         : scope === 'help'
           ? hintFor('help.open', undefined, platform)
           : scope === 'view' && ref === 'craft'
@@ -308,7 +308,7 @@ function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteVie
 }
 
 /** Work keyboard commands that take you TO Work when pressed elsewhere. */
-const WORK_FROM_ANYWHERE: ReadonlySet<string> = new Set(['work.create', 'list.create', 'work.browser.focus']);
+const WORK_FROM_ANYWHERE: ReadonlySet<string> = new Set(['work.create', 'work.newTab', 'list.create', 'work.browser.focus']);
 
 /**
  * `Ctrl+]` from outside a terminal: back into the terminal on screen. xterm
@@ -1978,11 +1978,10 @@ export function GateApp(props: GateAppProps = {}) {
          where a shortcut is discovered, so each carries its key. */
       ...(shell === 'mobile'
         ? []
-        : NEW_DRAFT_KINDS.map((kind) => ({
-            id: `new:${kind}`,
-            label: `New ${getKind(kind).label.toLowerCase()}`,
-            glyph: <KindIcon kind={kind} />,
-          }))),
+        : [
+            { id: 'new:tab', label: 'New tab', glyph: '＋' },
+            ...NEW_KINDS.map(({ kind, label }) => ({ id: `new:${kind}`, label, glyph: <KindIcon kind={kind} /> })),
+          ]),
       { id: 'help:shortcuts', label: 'Keyboard shortcuts', glyph: '⌨' },
     ]),
     [threeModes, shell, kbPlatform],
@@ -1997,7 +1996,7 @@ export function GateApp(props: GateAppProps = {}) {
       navigateTo({ type: 'view', ref: ref as never });
     }
     if (scope === 'kind') navigateTo({ type: 'kind', ref });
-    if (scope === 'new') commandSink.current('work.create', ref);
+    if (scope === 'new') commandSink.current(ref === 'tab' ? 'work.newTab' : 'work.create', ref === 'tab' ? undefined : ref);
     if (scope === 'help') setShortcutsOpen(true);
     setPaletteOpen(false);
   }, [channelEntities, navigateTo]);
