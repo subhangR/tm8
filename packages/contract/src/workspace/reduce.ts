@@ -12,7 +12,7 @@
  * `hooks.newId`: a window records the ids it consumed and sends them, so the
  * node mints the same ones.
  */
-import { browser, drafts, external, interactions, layout, panels, rail, scope, tabs } from './commands/index.js';
+import { browser, drafts, external, files, interactions, layout, panels, rail, scope, tabs } from './commands/index.js';
 import type { Plan, Planner } from './commands/shared.js';
 import { inspect } from './selectors.js';
 import { ACCEPTED_SOURCES, COMMAND_NAMES, UI_SOURCES } from './types.js';
@@ -38,6 +38,7 @@ export const PLANNERS: Record<CommandName, Planner> = {
   'workspace.dialogs.close': external.closeDialog,
   'workspace.view.set': external.setView,
   'workspace.rail.set': rail.setRail,
+  'workspace.files.open': files.openFile,
 };
 
 /**
@@ -75,7 +76,8 @@ export const WINDOW_ONLY_COMMANDS: ReadonlySet<CommandName> = new Set([
 /** Commands that move the human's focus — refused while they are typing. */
 export function takesFocus(env: CommandEnvelope): boolean {
   switch (env.command) {
-    case 'workspace.tabs.open': {
+    case 'workspace.tabs.open':
+    case 'workspace.files.open': {
       const args = env.args as { activate?: unknown } | null | undefined;
       return args?.activate !== false;
     }

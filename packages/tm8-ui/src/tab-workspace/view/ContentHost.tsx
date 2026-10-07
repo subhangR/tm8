@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DraftHost } from '../adapters/draft';
+import { ProjectFileTab } from '../adapters/projectFile';
 import {
   EntityChromeContext,
   EntityTabBody,
@@ -72,6 +73,8 @@ export function ContentHost() {
         /* The draft host renders the kind's `draftBody` (or the generic form);
            workstream F owns it. No floating group on drafts (Spec A §8). */
         <DraftHost key={tab.id} tab={tab} />
+      ) : tab.type === 'file' ? (
+        <ProjectFileTab key={`${tab.id}:${tab.projectId}\u0000${tab.path}`} tab={tab} />
       ) : (
         <EntityTab key={tab.id} tab={tab} handleRef={handle} />
       )}

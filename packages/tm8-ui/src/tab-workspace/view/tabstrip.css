@@ -526,3 +526,14 @@
   text-decoration: line-through;
   text-decoration-color: var(--pn-ink-3);
 }
+
+/* A preview file tab (mockup v2): italic until kept. */
+.tws-ts-tab[data-preview] .tws-ts-title {
+  font-style: italic;
+}
+.tws-ts-detail {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-fine);
+  white-space: nowrap;
+}

@@ -25,6 +25,9 @@ import { build, defaultRoute } from '../../routes';
 import type { SpaceId } from '@tm8/contract';
 import { useTabLiveStatus } from '../adapters/entity';
 import { draftTitle, getKindAdapter } from '../adapters/registry';
+import { pinFileTab, useFileTabFacts } from '../adapters/projectFile';
+import { FileTypeBadge } from '../../project-file/FileTypeBadge';
+import { baseName } from '../../project-file/paths';
 import { activeTabId, visibleTabs } from '../runtime/selectors';
 import type { Source, TabId, TabRecord } from '../runtime/types';
 import { ConfirmDiscard } from './ConfirmDiscard';
@@ -45,6 +48,7 @@ export const SOFT_CAP = 21;
 export function tabTitle(tab: TabRecord, entityTitle?: string | null): string {
   if (tab.type === 'chooser') return 'New tab';
   if (tab.type === 'draft') return draftTitle(tab.kind, tab.ordinal);
+  if (tab.type === 'file') return baseName(tab.path);
   return entityTitle?.trim() || getKindAdapter(tab.kind).noun;
 }
 
@@ -69,8 +73,17 @@ const probed = new Map<string, 'deleted' | 'unavailable'>();
 const PROBE_AFTER_MS = 1_500;
 
 /** The live facts a tab's label needs: title, kind noun and state indicator. */
-export function useTabFacts(tab: TabRecord): { title: string; noun: string | null; state: TabState } {
+export function useTabFacts(tab: TabRecord): {
+  title: string;
+  noun: string | null;
+  state: TabState;
+  /** What tells same-named file tabs apart (`index.ts · files`). */
+  detail?: string | null;
+  /** The hover text when it says more than `title — noun` (a file's project and path). */
+  tooltip?: string;
+} {
   const { gate } = useWorkspace();
+  const file = useFileTabFacts(tab);
   const data = gate.data as typeof gate.data & { pull?: (id: string) => void };
   const entityId = tab.type === 'entity' ? tab.entityId : null;
   const { title: savedTitle, deleted, known } = useStore(
@@ -117,7 +130,8 @@ export function useTabFacts(tab: TabRecord): { title: string; noun: string | nul
     };
   }, [entityId, known]);
 
-  const noun = tab.type === 'chooser' ? null : getKindAdapter(tab.kind).noun;
+  if (file) return { title: file.title, noun: 'File', state: null, detail: file.detail, tooltip: file.tooltip };
+  const noun = tab.type === 'chooser' || tab.type === 'file' ? null : getKindAdapter(tab.kind).noun;
   let state: TabState = null;
   let shownTitle = tabTitle(tab, title);
   if (tab.type === 'draft') {
@@ -215,7 +229,7 @@ export function TabStateGlyph({ state, id }: { state: TabState; id?: string }) {
 export function TabLeadIcon({ tab }: { tab: TabRecord }) {
   return (
     <span className="tws-ts-icon" aria-hidden="true">
-      {tab.type === 'chooser' ? <SearchGlyph /> : <KindIcon kind={tab.kind} size={14} />}
+      {tab.type === 'chooser' ? <SearchGlyph /> : tab.type === 'file' ? <FileTypeBadge path={tab.path} /> : <KindIcon kind={tab.kind} size={14} />}
     </span>
   );
 }
@@ -363,7 +377,8 @@ interface TabProps {
 
 function Tab(props: TabProps) {
   const { tab, active } = props;
-  const { title, noun, state } = useTabFacts(tab);
+  const { title, noun, state, detail, tooltip } = useTabFacts(tab);
+  const { runtime } = useWorkspace();
   const stateId = `tws-ts-state-${tab.id}`;
   const glow = useFreshGlow(tab.type === 'entity' ? tab.entityId : null);
   /* R40/R41: a tab never collapses or goes inert — a deleted entity keeps its
@@ -381,7 +396,8 @@ function Tab(props: TabProps) {
       data-active={active || undefined}
       data-dragging={props.dragging || undefined}
       data-state={state ?? undefined}
-      title={accessibleTabName(title, noun)}
+      data-preview={(tab.type === 'file' && tab.preview) || undefined}
+      title={tooltip ?? accessibleTabName(title, noun)}
       draggable
       onDragStart={(event) => props.onDragStart(event, tab.id)}
       onDragOver={(event) => props.onDragOver(event, tab.id)}
@@ -405,10 +421,14 @@ function Tab(props: TabProps) {
         id={`tws-ts-tab-${tab.id}`}
         className="tws-ts-tab-main"
         aria-selected={active}
-        aria-label={accessibleTabName(title, noun) + (glow.srSuffix ?? '')}
+        aria-label={accessibleTabName(detail ? `${title} · ${detail}` : title, noun) + (tab.type === 'file' && tab.preview ? ', preview' : '') + (glow.srSuffix ?? '')}
         aria-describedby={state ? stateId : undefined}
         tabIndex={props.focusable ? 0 : -1}
         onClick={(event) => props.onActivate(tab.id, event.detail === 0 ? 'keyboard' : 'click')}
+        // A preview file tab is kept by double-clicking it (mockup v2).
+        onDoubleClick={() => {
+          if (tab.type === 'file') pinFileTab(runtime, tab);
+        }}
         onKeyDown={(event) => props.onKeyDown(event, tab.id)}
         onFocus={() => props.onFocus(tab.id)}
       >
@@ -428,6 +448,7 @@ function Tab(props: TabProps) {
           <TabStateGlyph state={state} id={stateId} />
         </span>
         <span className="tws-ts-title">{title}</span>
+        {detail ? <span className="tws-ts-detail">· {detail}</span> : null}
       </div>
       <span className="tws-ts-slot">
         <button

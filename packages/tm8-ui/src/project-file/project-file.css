@@ -1,0 +1,123 @@
+/* Read-only project file viewer and file-tab badges (mockup v2). Tokens only. */
+.pf-viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--pn-card);
+  color: var(--pn-ink);
+}
+.pf-crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+  min-width: 0;
+}
+.pf-crumb-path {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pf-crumb-project { color: var(--pn-ink-2); }
+.pf-crumb-seg { display: inline-flex; gap: var(--pn-space-1); }
+.pf-crumb-sep { color: var(--pn-ink-4); }
+.pf-crumb-name { color: var(--pn-ink); font-weight: 600; }
+.pf-crumb-gap { flex: 1; }
+.pf-chip {
+  font-size: var(--pn-fs-fine);
+  padding: 0 var(--pn-space-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+.pf-button {
+  font: inherit;
+  font-size: var(--pn-fs-fine);
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.pf-button:hover { background: var(--pn-hover); }
+.pf-button[aria-pressed='true'] { background: var(--pn-active); color: var(--pn-ink); }
+.pf-note {
+  margin: 0;
+  padding: var(--pn-space-1) var(--pn-space-4);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+.pf-banner {
+  margin: 0;
+  padding: var(--pn-space-2) var(--pn-space-4);
+  font-size: var(--pn-fs-sm);
+  background: var(--pn-wait-soft);
+  color: var(--pn-ink-2);
+  border-bottom: 1px solid var(--pn-line);
+}
+.pf-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: var(--pn-space-8);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-body);
+  text-align: center;
+}
+.pf-empty > div { display: flex; flex-direction: column; align-items: center; gap: var(--pn-space-2); }
+.pf-empty b { color: var(--pn-ink); }
+
+/* Code: CodeMirror read-only, `classHighlighter` tok-* classes. */
+.pf-code { flex: 1; min-height: 0; overflow: auto; }
+.pf-code .cm-editor { height: 100%; background: transparent; font-size: var(--pn-fs-mono); }
+.pf-code .cm-editor.cm-focused { outline: none; }
+.pf-code .cm-scroller { font-family: var(--pn-mono); line-height: var(--pn-lh-body); }
+.pf-code .cm-gutters { background: var(--pn-surface); color: var(--pn-ink-4); border-right: 1px solid var(--pn-line); }
+.pf-code .cm-activeLineGutter { background: transparent; color: var(--pn-ink-2); }
+.pf-code .cm-content { caret-color: transparent; }
+.pf-code .tok-keyword, .pf-code .tok-operatorKeyword { color: var(--pn-pr-merged); }
+.pf-code .tok-string, .pf-code .tok-string2 { color: var(--pn-run); }
+.pf-code .tok-comment { color: var(--pn-ink-4); font-style: italic; }
+.pf-code .tok-number, .pf-code .tok-bool, .pf-code .tok-atom { color: var(--pn-wait); }
+.pf-code .tok-typeName, .pf-code .tok-className, .pf-code .tok-namespace { color: var(--pn-block); }
+.pf-code .tok-variableName.tok-definition, .pf-code .tok-propertyName.tok-definition { color: var(--pn-info); }
+.pf-code .tok-propertyName { color: var(--pn-info); }
+.pf-code .tok-heading { color: var(--pn-ink); font-weight: 600; }
+.pf-code .tok-link, .pf-code .tok-url { color: var(--pn-brand); text-decoration: underline; }
+.pf-code .tok-emphasis { font-style: italic; }
+.pf-code .tok-strong { font-weight: 600; }
+.pf-code .tok-meta, .pf-code .tok-punctuation { color: var(--pn-ink-3); }
+.pf-code .tok-invalid { color: var(--pn-block); }
+
+/* Images: Fit or 100%. */
+.pf-image { flex: 1; min-height: 0; overflow: auto; padding: var(--pn-space-4); display: flex; flex-direction: column; gap: var(--pn-space-2); }
+.pf-image-tools { display: flex; gap: var(--pn-space-1); }
+.pf-image[data-fit] img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.pf-image img { align-self: flex-start; background: var(--pn-surface); }
+
+/* The file-type badge on a file tab. */
+.pf-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6em;
+  padding: 0 2px;
+  border-radius: var(--pn-r-xs);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--pn-info);
+  background: var(--pn-info-soft);
+}

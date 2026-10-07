@@ -35,6 +35,8 @@ import { activeTabId, isEligible, scopeKey } from './selectors';
 import type { WorkspaceRuntime } from './dispatch';
 import { DEFAULT_BROWSER_KIND } from './store';
 import {
+  isFileTabPath,
+  isFileTabProjectId,
   isWorkspaceKind,
   LAYOUT_BOUNDS,
   TAB_SUBVIEWS,
@@ -176,6 +178,11 @@ function validUi(v: unknown): TabUi {
 function validRecord(id: TabId, v: unknown): TabRecord | null {
   if (!isRecord(v) || v.id !== id) return null;
   if (v.type === 'chooser') return { id, type: 'chooser', query: typeof v.query === 'string' ? v.query : '' };
+  if (v.type === 'file') {
+    // File tabs carry no kind: a project and a relative path (File tabs).
+    if (!isFileTabProjectId(v.projectId) || !isFileTabPath(v.path)) return null;
+    return { id, type: 'file', projectId: v.projectId, path: v.path, preview: v.preview === true };
+  }
   // Unknown kinds (outside D7) are dropped from tabs (§8).
   if (!isWorkspaceKind(v.kind)) return null;
   if (v.type === 'entity') {
@@ -196,6 +203,7 @@ export function validTabsSnapshot(raw: unknown): Omit<TabsSnapshot, 'v' | 'saved
   const tabs: Record<TabId, TabRecord> = {};
   const orderedTabIds: TabId[] = [];
   const entityKeys = new Set<string>();
+  let previewSeen = false;
   for (const id of raw.orderedTabIds) {
     if (!isId(id) || tabs[id]) continue;
     const record = validRecord(id, raw.tabs[id]);
@@ -205,6 +213,16 @@ export function validTabsSnapshot(raw: unknown): Omit<TabsSnapshot, 'v' | 'saved
       const key = `${record.kind}:${record.entityId}`;
       if (entityKeys.has(key)) continue;
       entityKeys.add(key);
+    }
+    if (record.type === 'file') {
+      // Dedup key (project + path), and at most one preview tab: first wins.
+      const key = `file:${record.projectId}\u0000${record.path}`;
+      if (entityKeys.has(key)) continue;
+      entityKeys.add(key);
+      if (record.preview) {
+        if (previewSeen) record.preview = false;
+        previewSeen = true;
+      }
     }
     tabs[id] = record;
     orderedTabIds.push(id);
