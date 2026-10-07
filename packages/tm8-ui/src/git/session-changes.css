@@ -476,3 +476,239 @@
 .cv2-root .pn-chg[data-arrangement='phone'] .pn-chg__message {
   flex: 1 1 100%;
 }
+
+/* -- tree | list, folders, and what the agent touched last -----------------
+
+   DEPTH IS ONE CUSTOM PROPERTY set per row (`--pn-chg-depth`), so a folder
+   and the files inside it indent by the same rule and never drift apart. */
+.cv2-root .pn-chg__list-head {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cv2-root .pn-chg__view {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-chg__view-btn {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 0;
+  padding: 1px var(--pn-space-2);
+  cursor: pointer;
+}
+
+.cv2-root .pn-chg__view-btn[aria-pressed='true'] {
+  color: var(--pn-ink);
+  background: var(--pn-paper);
+}
+
+.cv2-root .pn-chg__file,
+.cv2-root .pn-chg__dir {
+  padding-left: calc(var(--pn-chg-depth, 0) * 14px);
+}
+
+.cv2-root .pn-chg__dir {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.cv2-root .pn-chg__dir-toggle {
+  font: inherit;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  min-width: 0;
+  text-align: left;
+}
+
+.cv2-root .pn-chg__dir-toggle:hover .pn-chg__dir-name {
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-chg__twisty {
+  flex: none;
+  width: 1ch;
+}
+
+.cv2-root .pn-chg__dir-name {
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .pn-chg__dir-count {
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .pn-chg__root {
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-micro);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .pn-chg__source {
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+/* "latest turn" / "just changed": a WORD beside a dot, never the dot alone
+   (A20 — colour is never the only signal). */
+.cv2-root .pn-chg__turn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-wait);
+  border: 1px solid var(--pn-wait);
+  background: var(--pn-wait-soft);
+  padding: 0 4px;
+}
+
+.cv2-root .pn-chg__turn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-wait);
+}
+
+@keyframes pn-chg-pulse {
+  0% { box-shadow: 0 0 0 0 var(--pn-wait); }
+  70% { box-shadow: 0 0 0 5px transparent; }
+  100% { box-shadow: 0 0 0 5px transparent; }
+}
+
+.cv2-root .pn-chg__turn--live .pn-chg__turn-dot {
+  animation: pn-chg-pulse 1.6s var(--pn-ease-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pn-chg__turn--live .pn-chg__turn-dot { animation: none; }
+}
+
+.cv2-root .pn-chg__row-counts {
+  flex: none;
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* The diff's heading stays in view while its body scrolls under it — a long
+   diff otherwise scrolls its own file name away. */
+.cv2-root .pn-chg__diff-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+/* ── Checkouts: a worktree-less session's own git clones ───────────────── */
+.cv2-root .pn-chg__status[data-change='A'],
+.cv2-root .pn-chg__status[data-change='?'] { color: var(--pn-run); }
+.cv2-root .pn-chg__status[data-change='D'] { color: var(--pn-block); }
+.cv2-root .pn-chg__status[data-change='M'],
+.cv2-root .pn-chg__status[data-change='R'] { color: var(--pn-wait); }
+
+.cv2-root .pn-chg__checkout {
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  margin: 0 0 8px;
+  overflow: hidden;
+  /* The list pane is a flex column with a fixed height: without this a
+     section shrinks to its header and clips its own file rows. */
+  flex: none;
+}
+
+.cv2-root .pn-chg__checkout-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cv2-root .pn-chg__checkout-head:hover { background: var(--pn-info-soft); }
+.cv2-root .pn-chg__checkout-head:focus-visible { outline: 2px solid var(--pn-info); outline-offset: -2px; }
+
+.cv2-root .pn-chg__checkout-name {
+  font-family: var(--pn-mono);
+  font-weight: 600;
+}
+
+.cv2-root .pn-chg__branch {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  padding: 1px 6px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .pn-chg__checkout-head .pn-chg__counts { margin-left: auto; }
+
+.cv2-root .pn-chg__checkout-facts {
+  margin: 0;
+  padding: 2px 8px 6px 28px;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-chg__checkout .pn-chg__files { margin: 4px 0; }
+.cv2-root .pn-chg__checkout > .pn-chg__note { padding: 4px 8px; }
+
+.cv2-root .pn-chg__uncommitted {
+  font-size: 8px;
+  color: var(--pn-wait);
+  flex: none;
+}
+
+.cv2-root .pn-chg__live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-run);
+  flex: none;
+  animation: pn-chg-live 2s ease-in-out infinite;
+}
+
+@keyframes pn-chg-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pn-chg__live-dot { animation: none; }
+}
+
+.cv2-root .pn-chg__source-bar {
+  display: flex;
+  padding: 0 0 6px;
+}
+.cv2-root .pn-chg__list-head .pn-chg__view:first-child { margin-left: 0; }

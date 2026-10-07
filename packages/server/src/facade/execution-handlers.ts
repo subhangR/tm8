@@ -122,6 +122,7 @@ import { loadDesignContextForTask } from './spawn-design.js';
 import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
+import { sessionCheckoutHandlers } from './services/session-checkouts.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
 import { resolveSpawnParentId } from '../chat/scope.js';
 import { issuePtyGrantToken } from '../pty/grant-token.js';
@@ -3444,6 +3445,11 @@ function registerHandlers(
       }),
     );
   });
+  // The worktree-less half of the Changes rail — beside the transcript, whose
+  // authorization (session row under the caller's claims) it shares.
+  const checkouts = sessionCheckoutHandlers({ db, resolveOwner, ...(dataDir === undefined ? {} : { dataDir }) });
+  registry.register('execution.gitCheckouts', checkouts.gitCheckouts);
+  registry.register('execution.gitCheckoutDiff', checkouts.gitCheckoutDiff);
   registry.register('execution.spawn', (ctx) =>
     singleFlight(inFlightKey('execution.spawn', ctx, commandEnvelope(ctx).clientMutationId), () =>
       executionSpawn(ctx)));

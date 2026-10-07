@@ -6786,6 +6786,85 @@ export interface SessionGitDiff {
   checkedAt: string;
 }
 
+/**
+ * One file a session's own checkout changed — working tree vs the merge-base
+ * of HEAD and the remote's default branch, so committed and uncommitted work
+ * both count.
+ */
+export interface SessionCheckoutFile {
+  /** Relative to the checkout root. */
+  path: string;
+  /** A added · M modified · D deleted · R renamed (path = destination) · ? untracked. */
+  change: 'A' | 'M' | 'D' | 'R' | '?';
+  /** null when git cannot count lines (binary, or an untracked file too big to count). */
+  additions: number | null;
+  deletions: number | null;
+  /** True when the working tree still differs from HEAD here — not yet committed. */
+  uncommitted: boolean;
+}
+
+/** A git checkout discovered inside a session's working directory. */
+export interface SessionCheckout {
+  /** Its directory relative to the session's working directory ('.' for the dir itself). The identity `execution.gitCheckoutDiff` takes. */
+  name: string;
+  /** True for a project-mode session's SHARED checkout — the changes are not only this session's. */
+  shared: boolean;
+  /** False when git could not read it; every list below is then empty. */
+  readable: boolean;
+  branch: string | null;
+  /** `remote.origin.url` with any embedded credentials removed. */
+  remote: string | null;
+  /** The ref the files are measured against (e.g. `origin/main`); null = uncommitted vs HEAD only. */
+  baseRef: string | null;
+  mergeBaseOid: string | null;
+  headOid: string | null;
+  /** Commits on HEAD that `baseRef` lacks. */
+  ahead: number | null;
+  /** `git status` entries — edits not yet committed. */
+  uncommitted: number;
+  lastCommitAt: string | null;
+  files: SessionCheckoutFile[];
+  filesTruncated: boolean;
+  /** Over ALL changed files, not only the returned ones. */
+  stat: { filesChanged: number; additions: number; deletions: number };
+}
+
+/**
+ * execution.gitCheckouts — GET /v2/work-sessions/:workSessionId/git/checkouts.
+ * For a session WITHOUT a tm8 worktree: every git checkout found in its own
+ * working directory (two levels down at most), read-only. A worktree session
+ * answers `available:false, unavailableReason:'has_worktree'` — its lane is
+ * `execution.gitStatus`'s.
+ */
+export interface SessionCheckouts {
+  sessionId: EntityId;
+  available: boolean;
+  unavailableReason: 'has_worktree' | 'no_workdir' | 'workdir_missing' | 'node_has_no_data_dir' | null;
+  /** Most recently committed first. */
+  checkouts: SessionCheckout[];
+  checkoutsTruncated: boolean;
+  checkedAt: string;
+}
+
+/**
+ * execution.gitCheckoutDiff — GET /v2/work-sessions/:workSessionId/git/checkouts/diff?checkout=&path=.
+ * One file's diff in one discovered checkout. Both names must come from the
+ * listing; anything else is `not_found`.
+ */
+export interface SessionCheckoutDiff {
+  sessionId: EntityId;
+  checkout: string;
+  path: string;
+  change: SessionCheckoutFile['change'];
+  additions: number | null;
+  deletions: number | null;
+  baseRef: string | null;
+  /** Unified diff text, capped at `maxBytes`. */
+  diff: string;
+  diffTruncated: boolean;
+  checkedAt: string;
+}
+
 export interface SessionGitCheckpointResult {
   sessionId: EntityId;
   worktreeId: EntityId;

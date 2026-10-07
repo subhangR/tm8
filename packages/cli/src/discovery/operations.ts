@@ -2977,6 +2977,24 @@ const ROWS: Record<OperationName, Row> = {
     reason: 'cli_runs_git_locally',
     notes: ['the numstat digest is never cut; `diffTruncated` says when the unified text was'],
   },
+  'execution.gitCheckouts': {
+    cmd: null,
+    sum: "Read the git checkouts inside a worktree-less session's own working directory: branch, commits ahead, changed files with +/-",
+    authz: 'entity',
+    input: 'none',
+    tags: ['git', 'changes', 'checkout', 'scratch', 'review'],
+    reason: 'cli_runs_git_locally',
+    notes: ['read-only: never takes the agent\'s index lock; a worktree session answers `available:false` (has_worktree)'],
+  },
+  'execution.gitCheckoutDiff': {
+    cmd: null,
+    sum: "Read one changed file's diff in a checkout `execution.gitCheckouts` listed",
+    authz: 'entity',
+    input: 'none',
+    tags: ['git', 'diff', 'checkout', 'scratch', 'review'],
+    reason: 'cli_runs_git_locally',
+    notes: ['checkout and path must both come from the listing; anything else is not_found'],
+  },
   'execution.gitCheckpoint': {
     cmd: null,
     sum: "Commit a session worktree's entire work-in-progress to its own branch and return the oid as the checkpoint ref",
@@ -4174,7 +4192,7 @@ export const CATALOG_DIGEST =
   // Re-measured (main sync: cross-space + styles).
   // +1 spaceLinks.inbound.grant (W9c, 301): read from the regenerated conformance manifest.
   // Re-measured for Spec D1 / 302 (+execution.complete, +entities.commands.release) on main 2bca8148c — RECOMPUTED.
-  'sha256:72c73363cec8409807e0f54d4755aebfebc0064e993dcd54227ec064b13035b1';
+  'sha256:cc7df0480a29d9e690e408dd91e2e3400d60eefc6326462aecd20773c7b760b1';
 
 export const GRAMMAR_VERSION = '2';
 

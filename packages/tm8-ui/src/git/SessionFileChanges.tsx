@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { EntityId, SessionFileChange, SessionFileChanges as Changes } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { DiffView } from '../kit';
+import { keepRepoChanges } from './change-paths';
 import './session-git.css';
 
 /**
@@ -29,10 +30,10 @@ export interface SessionFileChangesProps {
 type State =
   | { phase: 'loading' }
   | { phase: 'silent' }
-  | { phase: 'ready'; changes: Changes };
+  | { phase: 'ready'; changes: Changes; kept: ReturnType<typeof keepRepoChanges> };
 
 /** A renderable unified diff from the hunks that still carry text. */
-function diffTextOf(change: SessionFileChange): string | null {
+export function diffTextOf(change: SessionFileChange): string | null {
   const parts: string[] = [];
   for (const hunk of change.hunks) {
     if (hunk.oldText === null && hunk.newText === null) continue;
@@ -43,7 +44,7 @@ function diffTextOf(change: SessionFileChange): string | null {
   return parts.length > 0 ? parts.join('\n') : null;
 }
 
-function elidedCount(change: SessionFileChange): number {
+export function elidedCount(change: SessionFileChange): number {
   return change.hunks.filter((h) => h.oldText === null && h.newText === null).length;
 }
 
@@ -56,14 +57,17 @@ export function SessionFileChanges({ seam, sessionId }: SessionFileChangesProps)
       // section wants the file accounting, not the prose.
       const page = await seam.transcript(sessionId, { last: 1, files: true });
       const changes = page.fileChanges ?? null;
-      if (changes === null || changes.files.length === 0) {
+      // D9: /tmp notes and agent-private files are not repo changes. A
+      // session whose only edits were those changed nothing worth listing.
+      const kept = changes === null ? null : keepRepoChanges(changes);
+      if (changes === null || kept === null || kept.files.length === 0) {
         // No accounting (codex dialect, no transcript, or a session that
         // changed nothing): silence, not an empty frame — the rail's other
         // sections already explain their own absences.
         setState({ phase: 'silent' });
         return;
       }
-      setState({ phase: 'ready', changes });
+      setState({ phase: 'ready', changes, kept });
     } catch {
       setState({ phase: 'silent' });
     }
@@ -74,15 +78,15 @@ export function SessionFileChanges({ seam, sessionId }: SessionFileChangesProps)
   }, [load]);
 
   if (state.phase !== 'ready') return null;
-  const { changes } = state;
+  const { changes, kept } = state;
 
   return (
     <div className="pn-git__facts pn-git__file-changes" data-testid="session-file-changes">
       <div className="pn-git__facts-row">
         <span className="pn-git__facts-label">Files this session changed</span>
         <span className="pn-git__change-totals" data-testid="session-file-changes-totals">
-          <span className="pn-git__added">+{changes.totalAdded}</span>
-          <span className="pn-git__removed">−{changes.totalRemoved}</span>
+          <span className="pn-git__added">+{kept.totalAdded}</span>
+          <span className="pn-git__removed">−{kept.totalRemoved}</span>
         </span>
         <span className="pn-git__note pn-git__change-source">
           observed from the agent transcript, not git — shell-made changes are not counted
@@ -90,7 +94,7 @@ export function SessionFileChanges({ seam, sessionId }: SessionFileChangesProps)
       </div>
 
       <ul className="pn-git__change-list">
-        {changes.files.map((file) => {
+        {kept.files.map((file) => {
           const diff = diffTextOf(file);
           const elided = elidedCount(file);
           return (
@@ -117,6 +121,11 @@ export function SessionFileChanges({ seam, sessionId }: SessionFileChangesProps)
         })}
         {changes.filesTruncated ? (
           <li className="pn-git__note">…more files were changed than the cap carries</li>
+        ) : null}
+        {kept.hidden > 0 ? (
+          <li className="pn-git__note" data-testid="session-file-changes-hidden">
+            {kept.hidden} edited file{kept.hidden === 1 ? '' : 's'} outside any repository (temp or agent-private) not listed
+          </li>
         ) : null}
       </ul>
     </div>
