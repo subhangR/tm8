@@ -15,11 +15,13 @@ import './doc-print.css';
 
 export {
   docBodyOf,
+  docCodec,
   docFormatOf,
   docPatchInput,
   savedVersionOf,
   type DocCommands,
   type DocEdits,
+  type SaveCodec,
 } from './commands';
 
 export {

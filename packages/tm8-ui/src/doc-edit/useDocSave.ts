@@ -20,8 +20,17 @@
  * `docEdit.test.tsx` asserts the sent number directly, and
  * `docEdit-seam.test.tsx` asserts the real executor enforces it.
  *
- * WHAT THIS HOOK NEVER DOES: retry, re-read the version, merge, or resolve a
- * conflict on its own. A conflict parks and waits for a person.
+ * WHAT THIS HOOK NEVER DOES: re-read the version, merge, or resolve a conflict
+ * over text someone else changed. Such a conflict parks and waits for a person.
+ *
+ * THE ONE RETRY. A conflict whose winning write left every field this save
+ * touches as it was when the draft began (someone moved a task's status while
+ * you typed its description) is not a conflict over your text. When the node
+ * sends its current record and that is provably so, the same edits go out
+ * ONCE more against the new version. Anything less certain parks as above.
+ *
+ * THE CODEC. A kind's read and write ends ride `SaveCodec` (`commands.ts`);
+ * the doc codec is the default, and a task or story passes its own.
  *
  * ITS RELATION TO `authoring/useTaskSave`. Same law, different command and
  * different edit vocabulary: that hook rides `patchTask`/`PatchTaskInput`
@@ -59,7 +68,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandResult, EntityDetail, EntityId } from '@tm8/contract';
 import { classifyFailure, type ConflictFailure, type RefusedFailure } from '../authoring';
 import type { UnavailableReason } from '../panels/honesty/DisabledWithReason';
-import { docBodyOf, docPatchInput, savedVersionOf, type DocCommands, type DocEdits } from './commands';
+import { docCodec, savedVersionOf, type DocCommands, type DocEdits, type SaveCodec } from './commands';
 import { clearLocalDraft, readLocalDraft, writeLocalDraft } from './localDraft';
 import { clearLiveTitle, setLiveTitle } from './liveTitles';
 
@@ -116,11 +125,13 @@ export interface DocSaveHandle {
   dismiss(): void;
 }
 
-export interface DocSaveOptions {
+export interface DocSaveOptions<C = DocCommands> {
   /** Null is legal: a panel may render before its detail has hydrated. */
   detail: EntityDetail | null;
   /** Null ⇒ no executor is wired, and every control says so. */
-  commands: DocCommands | null;
+  commands: C | null;
+  /** The kind's read and write ends. Absent ⇒ the doc codec. Pass a stable (module) value. */
+  codec?: SaveCodec<C>;
   onSaved?(result: CommandResult): void;
   /** Handed the server's detail when the viewer chooses "load theirs". */
   onReload?(current: EntityDetail): void;
@@ -159,8 +170,18 @@ interface Echo {
   version: number;
 }
 
-export function useDocSave(options: DocSaveOptions): DocSaveHandle {
+/** What the draft's fields were when it began: the test for the one retry. */
+interface DraftBase {
+  title: string;
+  body: string;
+}
+
+export function useDocSave(options: DocSaveOptions<DocCommands>): DocSaveHandle;
+export function useDocSave<C>(options: DocSaveOptions<C> & { codec: SaveCodec<C> }): DocSaveHandle;
+export function useDocSave<C>(options: DocSaveOptions<C>): DocSaveHandle {
   const { detail, commands, onSaved, onReload, editRefusal } = options;
+  // The overloads make the default reachable only where `C` is `DocCommands`.
+  const codec = (options.codec ?? docCodec) as SaveCodec<C>;
   const autosave = options.autosave === true;
   const delay = options.autosaveDelayMs ?? AUTOSAVE_DELAY_MS;
   const [state, setPhaseState] = useState<DocSavePhase>({ phase: 'clean' });
@@ -185,6 +206,7 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
   const inFlight = useRef(false);
   const phase = useRef<DocSavePhase['phase']>('clean');
   const echoRef = useRef<Echo | null>(null);
+  const draftBase = useRef<DraftBase | null>(null);
 
   const setState = useCallback((next: DocSavePhase) => {
     phase.current = next.phase;
@@ -205,7 +227,7 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
   const echoAhead = (e: Echo | null): DocEdits | null =>
     e && detail && e.id === detail.id && detail.version < e.version ? e.edits : null;
   const shown = echoAhead(echo);
-  const served = detail ? docBodyOf(detail) : '';
+  const served = detail ? codec.bodyOf(detail) : '';
   const body = edits.body ?? shown?.body ?? served;
   const title = edits.title ?? shown?.title ?? detail?.title ?? '';
 
@@ -213,8 +235,8 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
     if (draft.current.body !== undefined) return draft.current.body;
     const e = echoRef.current;
     if (e && detail && e.id === detail.id && detail.version < e.version && e.edits.body !== undefined) return e.edits.body;
-    return detail ? docBodyOf(detail) : '';
-  }, [detail]);
+    return detail ? codec.bodyOf(detail) : '';
+  }, [codec, detail]);
 
   const settle = useCallback(() => {
     if (owner.current !== null) {
@@ -224,10 +246,31 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
     draft.current = {};
     base.current = null;
     owner.current = null;
+    draftBase.current = null;
     setEdits({});
     setBaseVersion(null);
     setState({ phase: 'clean' });
   }, [setState]);
+
+  /**
+   * The version to send the same edits again on, or null to park. Only when
+   * the node sent its current record and every field being saved still reads
+   * as it did when the draft began: then the winning write was elsewhere.
+   */
+  const rebaseFor = useCallback(
+    (error: unknown, patch: DocEdits): number | null => {
+      const failure = classifyFailure(error, 'save');
+      const began = draftBase.current;
+      if (failure.kind !== 'conflict' || failure.current === null || failure.currentVersion === null || began === null) {
+        return null;
+      }
+      const theirs = failure.current;
+      if (patch.title !== undefined && theirs.title !== began.title) return null;
+      if (patch.body !== undefined && codec.bodyOf(theirs) !== began.body) return null;
+      return failure.currentVersion;
+    },
+    [codec],
+  );
 
   /** THE one place a patch is sent. Every path above lands here. */
   const flush = useCallback(
@@ -240,7 +283,14 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
       inFlight.current = true;
       setState({ phase: 'saving' });
       try {
-        const result = await commands.patchEntity(id as EntityId, docPatchInput(patch, expectedVersion));
+        let result: CommandResult;
+        try {
+          result = await codec.send(commands, id as EntityId, patch, expectedVersion);
+        } catch (error) {
+          const rebased = owner.current === id ? rebaseFor(error, patch) : null;
+          if (rebased === null) throw error;
+          result = await codec.send(commands, id as EntityId, patch, rebased);
+        }
         const saved = savedVersionOf(result);
         // A different document took this slot while the save was in flight:
         // its state is not ours to settle.
@@ -261,6 +311,8 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
           // on the version just written, and goes out with the next save.
           base.current = saved ?? expectedVersion;
           setBaseVersion(base.current);
+          const began = draftBase.current;
+          if (began) draftBase.current = { title: patch.title ?? began.title, body: patch.body ?? began.body };
           if (autosave) writeLocalDraft(id, { edits: draft.current, baseVersion: base.current });
           setState({ phase: 'dirty' });
         }
@@ -279,7 +331,7 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
         inFlight.current = false;
       }
     },
-    [autosave, commands, onSaved, setState, settle],
+    [autosave, codec, commands, onSaved, rebaseFor, setState, settle],
   );
 
   const edit = useCallback(
@@ -293,7 +345,12 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
       setEdits(draft.current);
       if (base.current === null) {
         const e = echoRef.current;
-        base.current = e && e.id === detail.id && e.version > detail.version ? e.version : detail.version;
+        const ahead = e && e.id === detail.id && e.version > detail.version ? e : null;
+        base.current = ahead ? ahead.version : detail.version;
+        draftBase.current = {
+          title: ahead?.edits.title ?? detail.title,
+          body: ahead?.edits.body ?? codec.bodyOf(detail),
+        };
         setBaseVersion(base.current);
       }
       if (autosave) writeLocalDraft(detail.id, { edits: draft.current, baseVersion: base.current });
@@ -302,7 +359,7 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
       if (phase.current === 'saving' || (autosave && phase.current === 'conflict')) return;
       setState({ phase: 'dirty' });
     },
-    [autosave, detail, setState, unavailable],
+    [autosave, codec, detail, setState, unavailable],
   );
 
   const save = useCallback(async () => {
@@ -364,6 +421,7 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
     draft.current = {};
     base.current = null;
     owner.current = null;
+    draftBase.current = null;
     seq.current += 1;
     setEdits({});
     setBaseVersion(null);
@@ -381,7 +439,7 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
     const stored = readLocalDraft(detail.id);
     if (!stored) return;
     const same =
-      (stored.edits.body === undefined || stored.edits.body === docBodyOf(detail)) &&
+      (stored.edits.body === undefined || stored.edits.body === codec.bodyOf(detail)) &&
       (stored.edits.title === undefined || stored.edits.title === detail.title);
     if (same) {
       clearLocalDraft(detail.id);
@@ -394,7 +452,7 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
     setEdits(stored.edits);
     setBaseVersion(stored.baseVersion);
     setState({ phase: 'dirty' });
-  }, [autosave, editable, detail, setState]);
+  }, [autosave, codec, editable, detail, setState]);
 
   /* THE PAUSE. Every edit re-arms it; only a dirty draft arms it at all. */
   const latestFlush = useRef(flushNow);
