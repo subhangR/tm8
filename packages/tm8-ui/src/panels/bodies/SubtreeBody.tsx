@@ -172,6 +172,13 @@ export interface SubtreeBodyProps {
    * read-only (or nothing, when there is none). Two-column only.
    */
   onPointsChange?: (next: number | null) => void;
+  /**
+   * The description block, built by the host when it owns the prose's save
+   * flow (`TaskDescription` on the doc save path). Replaces the in-body
+   * stance editor; the host places `attachmentSlot` inside it. Absent ⇒ the
+   * stacked body's own `DescriptionEditor`, unchanged.
+   */
+  descriptionSlot?: ReactNode;
 }
 
 export function SubtreeBody({
@@ -197,6 +204,7 @@ export function SubtreeBody({
   layout,
   rail,
   onPointsChange,
+  descriptionSlot,
 }: SubtreeBodyProps) {
   const twoColumn = layout === 'two-column';
   const children = [...detail.hierarchy.children.items];
@@ -250,7 +258,7 @@ export function SubtreeBody({
   const membershipEmpty =
     membershipEdgeCount === 0 && membershipAuthoring != null && !membershipAuthoring.refusal;
 
-  const description = (
+  const description = descriptionSlot ?? (
     <DescriptionEditor
       detail={detail}
       draft={descriptionDraft}

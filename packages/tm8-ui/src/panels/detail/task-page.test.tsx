@@ -9,9 +9,11 @@
  * PANEL makes from the registry and the host; the body only draws what it is
  * handed.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { Editor } from '@tiptap/react';
 import type { AcceptanceCriterion, CommandResult, EntityDetail, EntityId, PatchTaskInput } from '@tm8/contract';
+import { AUTOSAVE_DELAY_MS } from '../../doc-edit';
 import { REASONS as DOMAIN_REASONS, type ActionContext } from '../../domain';
 import { FIXTURE_SPACE_ID, fixtureDetails, presenceHollowReason, taskUuidTitle } from '../../fixtures';
 import { EntityDetailPanel, type DetailReasons } from '../index';
@@ -69,9 +71,29 @@ function lastPatch(patchTask: ReturnType<typeof mount>['patchTask']): PatchTaskI
   return patchTask.mock.calls.at(-1)![1];
 }
 
+/* Focusing the rich editor scrolls its selection into view, which measures a
+   Range; jsdom draws nothing, so the Range measures nothing. */
+beforeAll(() => {
+  Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
+  Range.prototype.getBoundingClientRect ??= () => new DOMRect();
+});
+
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  localStorage.clear();
   document.body.innerHTML = '';
+});
+
+/* The description is the shared rich editor; TipTap hangs itself off its node. */
+const editorOf = () => (screen.getByTestId('doc-rich') as unknown as { editor: Editor }).editor;
+const typeDescription = (value: string) =>
+  act(() => {
+    editorOf().commands.setContent(value, { contentType: 'markdown', emitUpdate: true });
+  });
+const withDescription = (description: string): EntityDetail => ({
+  ...TASK,
+  content: { ...(TASK.content as object), description } as EntityDetail['content'],
 });
 
 describe('the two-column page', () => {
@@ -184,5 +206,51 @@ describe('the checklist writes each gesture', () => {
       fireEvent.click(screen.getAllByTestId('acceptance-remove')[0]!);
     });
     expect(lastPatch(patchTask).acceptanceCriteria?.map((c) => c.id)).toEqual(['ac_2']);
+  });
+});
+
+describe('the description is written in place', () => {
+  it('is the rich editor, mounted with no Edit to cross and no chrome while reading', () => {
+    mount(withDescription('## Plan\n\n- step one'));
+    const block = screen.getByTestId('task-description-editor');
+    expect(within(block).getByTestId('doc-rich')).toBeTruthy();
+    expect(editorOf().getMarkdown()).toContain('- step one');
+    expect(block.getAttribute('data-stance')).toBe('reading');
+    expect(screen.queryByTestId('task-description-stance')).toBeNull();
+    expect(within(block).queryByTestId('doc-save-word')).toBeNull();
+  });
+
+  it('saves a pause after typing, through patchTask, with the description alone', async () => {
+    vi.useFakeTimers();
+    const { patchTask } = mount(withDescription('old words'));
+    typeDescription('new words');
+    expect(screen.getByTestId('task-description-editor').getAttribute('data-stance')).toBe('writing');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    });
+    expect(patchTask).toHaveBeenCalledTimes(1);
+    expect(patchTask.mock.calls[0]![0]).toBe(TASK.id);
+    expect(lastPatch(patchTask)).toEqual({ description: 'new words', expectedVersion: TASK.version });
+  });
+
+  it('opens a body the editor would not keep as markdown source, saying why', () => {
+    mount(withDescription('<div align="center">kept as written</div>'));
+    expect(screen.queryByTestId('doc-rich')).toBeNull();
+    expect(screen.getByTestId('task-description-source-reason')).toBeTruthy();
+  });
+
+  it('keeps the stacked stance editor on a pinned panel', () => {
+    mount(withDescription('words'), { embedded: false });
+    expect(screen.queryByTestId('doc-rich')).toBeNull();
+    expect(screen.getByTestId('task-description-stance')).toBeTruthy();
+  });
+
+  it('Enter in the title puts the caret in the description', async () => {
+    mount();
+    const field = screen.getByTestId('panel-embedded-title-input') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.keyDown(field, { key: 'Enter' });
+    });
+    expect(document.activeElement).toBe(screen.getByTestId('doc-rich'));
   });
 });

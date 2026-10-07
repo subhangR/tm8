@@ -70,6 +70,7 @@ import {
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
+import { TaskDescription } from './bodies/TaskDescription';
 import { ReaderSurface } from './bodies/ReaderSurface';
 import type { DocCommands } from '../doc-edit';
 import { clearLiveTitle, freshDocTitle, isFreshArrival, noteFreshArrived, noteFreshDocEmpty, setLiveTitle } from '../doc-edit';
@@ -1896,6 +1897,12 @@ function EmbeddedTitle({
 function focusDescription(panel: HTMLElement | null): void {
   const block = panel?.querySelector<HTMLElement>('[data-testid="task-description-editor"]');
   if (!block) return;
+  // The page's rich editor is always mounted: the caret goes straight in.
+  const rich = block.querySelector<HTMLElement>('[data-testid="doc-rich"]');
+  if (rich) {
+    rich.focus();
+    return;
+  }
   const field = () => block.querySelector<HTMLTextAreaElement>('textarea');
   const now = field();
   if (now) {
@@ -2210,6 +2217,28 @@ function PanelBody(
         onAttached={props.onAttachmentUploaded}
         attachmentSlot={props.attachmentSlot}
         stripEdgeIds={props.stripEdgeIds}
+        descriptionSlot={
+          twoColumn ? (
+            /* THE PAGE'S PROSE RIDES THE DOC SAVE FLOW (PR2 of task 01a1163a):
+               one rich editor, always mounted, autosaving through
+               `patchTask` — the same editor and the same save path as a doc,
+               not a second one. The stacked body keeps its stance editor on
+               this panel's own save bar. */
+            <TaskDescription
+              key={detail.id}
+              detail={detail}
+              commands={props.commands ?? null}
+              editRefusal={config.panel.capabilityReasons?.canEdit}
+              onSaved={props.onSaved}
+              onReload={props.onReloadDetail}
+              fileHref={props.attachments?.downloadHref}
+              attach={startUpload ? (file: File) => startUpload(file, detail.id) : undefined}
+              onAttached={props.onAttachmentUploaded}
+              skillOptions={props.skillOptions}
+              attachmentSlot={props.attachmentSlot}
+            />
+          ) : undefined
+        }
       />
     );
   }
