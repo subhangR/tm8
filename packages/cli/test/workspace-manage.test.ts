@@ -3,7 +3,10 @@
  * 01a115c4 §8.2). Drives `run()` against a local fake node: `<ws>` resolves by
  * id or case-insensitive name through `workspace.list`, `--last` is bare only
  * on `workspace reorder`, delete sends its request id and `--discard` in the
- * query, and a switch conflict exits 6.
+ * query, and a switch conflict exits 6. W3.1 (§8.1, §8.3): `--workspace`
+ * resolves a name to an id before anything is sent, `--expect-workspace`
+ * rides along as the pin, several `tabs open` pairs are one batch, and an
+ * agent's switch waits for the human (exit 16).
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -140,5 +143,42 @@ describe('tm8 workspace management verbs', () => {
     const missing = await tm8(['workspace', 'use', 'Nope']);
     expect(missing.code).toBe(5);
     expect(recorded.map((x) => x.method)).toEqual(['GET']);
+  });
+});
+
+describe('tm8 workspace: which workspace (W3.1)', () => {
+  const COMMANDS = `/v2/spaces/${SPACE}/workspace/commands`;
+  const applied = { requestId: 'r1', status: 'applied', revision: 2, workspace: { id: REVIEW, name: 'Review', color: null, resolvedBy: 'explicit', active: false } };
+
+  it('--workspace resolves a name before sending; several pairs are one batch with the pin', async () => {
+    routes[`POST ${COMMANDS}`] = () => ok({ ...applied, tabIds: ['t1', 't2'], outcomes: ['opened', 'opened'] });
+    const r = await tm8([
+      'workspace', 'tabs', 'open', 'task', 'a1', 'doc', 'b2',
+      '--workspace', 'review', '--expect-workspace', REVIEW, '--request-id', 'r1',
+    ]);
+    expect(r.code, r.stderr).toBe(0);
+    expect(recorded.map((x) => `${x.method} ${x.path}`)).toEqual([`GET ${WS}`, `POST ${COMMANDS}`]);
+    expect(recorded[1]?.body).toMatchObject({
+      command: 'workspace.tabs.open',
+      args: { entities: [{ kind: 'task', entityId: 'a1' }, { kind: 'doc', entityId: 'b2' }] },
+      workspaceId: REVIEW,
+      expectedWorkspaceId: REVIEW,
+    });
+  });
+
+  it('an unknown --workspace exits 5 before any write', async () => {
+    const r = await tm8(['workspace', 'tabs', 'open', 'task', 'a1', '--workspace', 'Nope']);
+    expect(r.code).toBe(5);
+    expect(recorded.map((x) => x.method)).toEqual(['GET']);
+  });
+
+  it("an agent's use waits for the human: exit 16 with the prompt id", async () => {
+    const prompt = { promptId: 'p1', kind: 'switch', workspaceId: REVIEW, workspaceName: 'Review', state: 'open', createdAt: '2026-10-07T08:00:00.000Z' };
+    routes[`POST ${WS}/${REVIEW}/activate`] = () => ok(manage('requires_user_choice', summary(REVIEW, 'Review', 2), {
+      reason: 'agent_switch', choices: ['switch', 'stay'], prompt, promptDelivered: 1,
+    }));
+    const r = await tm8(['workspace', 'use', 'Review']);
+    expect(r.code).toBe(16);
+    expect(r.stdout).toContain('waiting for the human: switch to Review? [switch, stay] prompt p1');
   });
 });

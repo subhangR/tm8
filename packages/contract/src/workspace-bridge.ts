@@ -146,6 +146,24 @@ export interface WorkspaceManageResult {
   expectedWorkspaceId?: string;
 }
 
+/** How long an open prompt waits for the human, and how long its outcome stays listed (D8). */
+export const WORKSPACE_PROMPT_TTL_MS = 10 * 60_000;
+
+/** Prompts kept per (identity, space); at the cap the oldest open delete prompt expires (Q5). */
+export const WORKSPACE_PROMPTS_CAP = 8;
+
+/**
+ * `workspace.prompts.resolve` (§5.12, F1): the human's answer. `accept` is
+ * Switch / Delete, `decline` is Stay / Keep. `discard` is for a delete prompt
+ * whose workspace has unsaved drafts.
+ */
+export interface WorkspacePromptsResolveInput {
+  requestId: string;
+  choice: 'accept' | 'decline';
+  discard?: boolean;
+  clientMutationId?: string;
+}
+
 /** Why the workspace list changed, on a `workspace.summary` frame (§7.3). */
 export type WorkspaceSummaryCauseKind = 'created' | 'renamed' | 'recolored' | 'reordered' | 'deleted' | 'switched' | 'agent_change';
 
@@ -236,8 +254,16 @@ export interface WorkspaceRemoteResult {
    */
   workspace?: WorkspaceRef;
   tabId?: string;
+  /** A batch `tabs.open`: one per entity, in input order (`tabId` is the first). */
+  tabIds?: string[];
   outcome?: 'created' | 'reused' | 'focused';
+  outcomes?: ('created' | 'reused' | 'focused')[];
   reason?: string;
+  /** With reason `workspace_switched` / `workspace_mismatch`: the pin, and what is active. */
+  expectedWorkspaceId?: string;
+  activeWorkspaceId?: string | null;
+  /** A batch `tabs.open` refused with `entity_unavailable`: the entities the caller cannot read. */
+  unavailableEntityIds?: string[];
   pendingInteractionId?: string;
   choices?: string[];
   /** `workspace.inspect` only: ids and kinds, never draft or chat content. */
@@ -388,6 +414,15 @@ export const WorkspaceSwitchInputSchema: z.ZodType<WorkspaceSwitchInput> = z
   .object({
     requestId: RequestId,
     expectedActiveWorkspaceId: Id.optional(),
+    clientMutationId: z.string().min(1).optional(),
+  })
+  .strict();
+
+export const WorkspacePromptsResolveInputSchema: z.ZodType<WorkspacePromptsResolveInput> = z
+  .object({
+    requestId: RequestId,
+    choice: z.enum(['accept', 'decline']),
+    discard: z.boolean().optional(),
     clientMutationId: z.string().min(1).optional(),
   })
   .strict();

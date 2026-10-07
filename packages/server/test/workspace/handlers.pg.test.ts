@@ -298,3 +298,256 @@ describeIfPg('workspace targets over real Postgres (multiple workspaces)', () =>
     });
   });
 });
+
+/**
+ * Phase 3 safety (API doc 01a115c4 §3.2 step 5, §5.4, §5.10–§5.12, D6–D8):
+ * pins, D7, batch open, the agent's prompts and the activity stamp.
+ */
+describeIfPg('workspace safety over real Postgres (pins, D7, batch, prompts)', () => {
+  let db: TestDb;
+  let spaceId: string;
+  let member: string;
+  let main: string;
+  let second: string;
+  const tasks: string[] = [];
+  const human = `identity_${randomUUID()}`;
+  const bridge = new WorkspaceBridge();
+  const registry = new HandlerRegistry();
+  const asHuman = { kind: 'bearer', identityId: human, authKind: 'cli' } as const;
+  let asAgent: RequestContext['identity'];
+  const claims = (): DbClaims => ({ identityId: human, nodeAdmin: false, requestId: `req_${randomUUID()}` });
+  let control: ReturnType<typeof createControlChannel>;
+
+  class Win {
+    readonly frames: Frame[] = [];
+    readonly identity = { kind: 'auto-owner', identityId: human } as RequestContext['identity'];
+    isOpen = true;
+    constructor(readonly id: string) {}
+    send(text: string): void {
+      this.frames.push(JSON.parse(text) as Frame);
+    }
+    close(): void {
+      this.isOpen = false;
+    }
+  }
+  const capable = new Win('conn-safety');
+
+  type Data = Record<string, unknown>;
+  interface Call { as?: RequestContext['identity']; params?: Record<string, string>; query?: Record<string, string>; method?: string }
+  const call = async (op: OperationName, body?: unknown, opts: Call = {}): Promise<Data> =>
+    ((await registry.get(op)!({
+      op: getOperation(op), opName: op, params: { spaceId, ...opts.params }, query: new URLSearchParams(opts.query),
+      body, requestId: `req_${randomUUID()}`, identity: opts.as ?? asAgent, headers: {}, method: opts.method ?? 'POST', path: '/',
+    } as unknown as RequestContext)) as { data: Data }).data;
+  const command = (command: string, args: unknown, extra: Data = {}, as?: RequestContext['identity']) =>
+    call('workspace.command', { requestId: randomUUID(), command, args, ...extra }, as ? { as } : {});
+  const switchTo = (workspaceId: string, as: RequestContext['identity']) =>
+    call('workspace.switch', { requestId: randomUUID() }, { as, params: { workspaceId } });
+  const remove = (workspaceId: string, as: RequestContext['identity'], query: Record<string, string> = {}) =>
+    call('workspace.delete', undefined, { as, method: 'DELETE', params: { workspaceId }, query: { requestId: randomUUID(), ...query } });
+  const resolve = (promptId: string, body: Data, as: RequestContext['identity'] = asHuman) =>
+    call('workspace.prompts.resolve', { requestId: randomUUID(), ...body }, { as, params: { promptId } });
+  const list = () => call('workspace.list', undefined, { as: asHuman }) as Promise<{
+    activeWorkspaceId: string; items: Array<{ id: string; name: string }>; prompts: Array<{ promptId: string; state: string }>;
+  }>;
+  const stored = async (workspaceId: string) => (await call('workspace.get', undefined, { query: { workspaceId } }))['state'] as {
+    tabs: Record<string, { id: string; entityId?: string; draftId?: string; type: string }>; orderedTabIds: string[]; recency: string[];
+  };
+  const row = async (workspaceId: string) => (await db.asOwner((q) => q.query<{ revision: string; last_agent_change_at: Date | null; last_agent_actor_id: string | null }>(
+    'select revision, last_agent_change_at, last_agent_actor_id from public.workspaces where workspace_id = $1', [workspaceId],
+  )))[0]!;
+  const types = () => capable.frames.map((f) => f.type);
+
+  beforeAll(async () => {
+    db = createTestDb(url!);
+    await db.rpc({ identityId: human }, 'public.upsert_user_profile', ['Safety Human', null, null]);
+    spaceId = (await db.rpc<{ space: { id: string } }>({ identityId: human }, 'public.create_space', [
+      'Safety space', 'workspace safety proof', 'private', null, null,
+    ])).space.id;
+    member = (await memberForClaims(db, { identityId: human }, spaceId))!;
+    asAgent = { kind: 'bearer', identityId: human, actorId: member, authKind: 'agent' } as RequestContext['identity'];
+    // One more than the tab limit, for the all-or-nothing batch.
+    for (let i = 0; i < 52; i += 1) {
+      tasks.push((await db.rpc<{ entity: { id: string } }>(claims(), 'public.create_task', [
+        spaceId, `Task ${i}`, member, '', null, null, null, 'medium', null, null, null, null, null, 'attached_to', `cmid_${randomUUID()}`,
+      ])).entity.id);
+    }
+    const service = new WorkspaceService({ db, bridge });
+    registerEventHandlers(registry, { db, config: {} as never, workspace: bridge, workspaceService: service, owner: () => Promise.resolve({
+      identityId: human, accountId: '00000000-0000-0000-0000-000000000000', username: 'h', isNodeAdmin: false, isOwner: true,
+    }) });
+    control = createControlChannel({
+      registry: new SubscriptionRegistry(),
+      authorizer: { canSubscribe: () => Promise.resolve(true) } as unknown as SubscriptionAuthorizer,
+      log: {} as DurableEventLog,
+      claimsFor: () => Promise.resolve(claims()),
+      workspace: { bridge, service, memberFor: () => Promise.resolve(member) },
+    });
+    second = ((await call('workspace.create', { requestId: randomUUID(), name: 'Second' }, { as: asHuman }))['workspace'] as { id: string }).id;
+    main = (await list()).activeWorkspaceId;
+    await control.handle(capable as never, JSON.stringify({
+      spaceId, type: 'workspace.register', instanceId: 'safety-win', windowId: 'safety-win', focused: false, visible: true,
+      view: 'tabs', mounted: true, revision: 0, caps: ['multiWorkspace'], workspaceId: main,
+    }));
+  });
+
+  afterAll(async () => {
+    await db?.end();
+  });
+
+  it('a pin that does not hold is conflict with the expected and active ids, and applies nothing (§3.2 step 5)', async () => {
+    const before = await row(main);
+    expect(await command('workspace.tabs.open', { kind: 'task', entityId: tasks[0] }, { expectedWorkspaceId: second })).toMatchObject({
+      status: 'conflict', reason: 'workspace_switched', expectedWorkspaceId: second, activeWorkspaceId: main, workspace: { id: main },
+    });
+    expect(await command('workspace.tabs.open', { kind: 'task', entityId: tasks[0] }, { workspaceId: main, expectedWorkspaceId: second })).toMatchObject({
+      status: 'conflict', reason: 'workspace_mismatch', expectedWorkspaceId: second, activeWorkspaceId: main,
+    });
+    // A pin naming no workspace answers the same way, not 404.
+    const nowhere = randomUUID();
+    expect(await command('workspace.tabs.open', { kind: 'task', entityId: tasks[0] }, { expectedWorkspaceId: nowhere })).toMatchObject({
+      status: 'conflict', reason: 'workspace_switched', expectedWorkspaceId: nowhere,
+    });
+    await expect(call('workspace.get', undefined, { query: { expectedWorkspaceId: second } })).rejects.toMatchObject({
+      code: 'conflict', details: { reason: 'workspace_switched', expectedWorkspaceId: second, activeWorkspaceId: main },
+    });
+    expect((await row(main)).revision).toBe(before.revision);
+    expect(await command('workspace.tabs.open', { kind: 'task', entityId: tasks[0], activate: false }, { expectedWorkspaceId: main }))
+      .toMatchObject({ status: 'applied', workspace: { id: main } });
+  });
+
+  it('an explicit non-active target leaves the pointer: activation not_active; a window verb there is not_active', async () => {
+    const opened = await command('workspace.tabs.open', { kind: 'task', entityId: tasks[1] }, { workspaceId: second });
+    expect(opened).toMatchObject({ status: 'applied', activation: 'not_active', workspace: { id: second, resolvedBy: 'explicit', active: false } });
+    expect((await list()).activeWorkspaceId).toBe(main);
+    expect(await command('workspace.tabs.activate', { tabId: opened['tabId'] }, { workspaceId: second })).toMatchObject({
+      status: 'rejected', reason: 'not_active', workspace: { id: second },
+    });
+  });
+
+  it('an agent stored write stamps the workspace and is named; a non-active target also gets a summary agent_change', async () => {
+    capable.frames.length = 0;
+    expect((await row(second)).last_agent_change_at).not.toBeNull();
+    expect((await row(second)).last_agent_actor_id).toBe(member);
+    await command('workspace.tabs.open', { kind: 'task', entityId: tasks[2], activate: false }, { workspaceId: second });
+    expect(types()).toEqual(['workspace.state', 'workspace.summary']);
+    expect(capable.frames[0]).toMatchObject({ workspaceId: second, active: false, cause: { actor: { actorClass: 'agent', actorName: 'Safety Human' } } });
+    expect(capable.frames[1]).toMatchObject({ cause: { kind: 'agent_change', workspaceId: second, actorClass: 'agent' } });
+    expect((capable.frames[1]!['items'] as Array<{ id: string; agentChangedSinceActive: boolean }>).find((w) => w.id === second))
+      .toMatchObject({ agentChangedSinceActive: true });
+    // The active one: the human sees it, so no summary and no dot.
+    capable.frames.length = 0;
+    await command('workspace.tabs.open', { kind: 'task', entityId: tasks[2], activate: false });
+    expect(types()).toEqual(['workspace.state']);
+    expect((await row(main)).last_agent_actor_id).toBe(member);
+    // A human's write stamps nothing.
+    const stamped = (await row(second)).last_agent_change_at;
+    await command('workspace.tabs.open', { kind: 'task', entityId: tasks[3], activate: false }, { workspaceId: second }, asHuman);
+    expect((await row(second)).last_agent_change_at).toEqual(stamped);
+    // A window's draft write that fails is answered, not swallowed.
+    capable.frames.length = 0;
+    const draftId = randomUUID();
+    await expect(control.handle(capable as never, JSON.stringify({
+      spaceId, type: 'workspace.draft.patch', instanceId: 'safety-win', workspaceId: main, draftId, kind: 'task', fields: { title: { v: 'x', base: 0 } },
+    }))).resolves.toBeUndefined();
+    expect(capable.frames).toContainEqual(expect.objectContaining({ type: 'workspace.draft.rejected', workspaceId: main, draftId, reason: 'not_found' }));
+  });
+
+  it('D7: an agent closeVisible needs a pin once there are two workspaces; with one it applies', async () => {
+    const before = await row(main);
+    expect(await command('workspace.tabs.closeVisible', {})).toMatchObject({ status: 'rejected', reason: 'workspace_pin_required', workspace: { id: main } });
+    expect((await row(main)).revision).toBe(before.revision);
+    expect(await command('workspace.tabs.closeVisible', {}, {}, asHuman)).toMatchObject({ status: 'applied', workspace: { id: main } });
+    expect(await command('workspace.tabs.closeVisible', {}, { workspaceId: second, expectedWorkspaceId: second })).toMatchObject({ status: 'applied', workspace: { id: second } });
+
+    // Another space, one workspace: today's behaviour.
+    const solo = (await db.rpc<{ space: { id: string } }>({ identityId: human }, 'public.create_space', ['Solo', 'one workspace', 'private', null, null])).space.id;
+    const task = (await db.rpc<{ entity: { id: string } }>(claims(), 'public.create_task', [
+      solo, 'Solo task', (await memberForClaims(db, { identityId: human }, solo))!, '', null, null, null, 'medium', null, null, null, null, null, 'attached_to', `cmid_${randomUUID()}`,
+    ])).entity.id;
+    const inSolo = async (body: Data) => ((await registry.get('workspace.command')!({
+      op: getOperation('workspace.command'), opName: 'workspace.command', params: { spaceId: solo }, query: new URLSearchParams(),
+      body: { requestId: randomUUID(), ...body }, requestId: `req_${randomUUID()}`, identity: asAgent, headers: {}, method: 'POST', path: '/',
+    } as unknown as RequestContext)) as { data: Data }).data;
+    await inSolo({ command: 'workspace.tabs.open', args: { kind: 'task', entityId: task, activate: false } });
+    expect(await inSolo({ command: 'workspace.tabs.closeVisible', args: {} })).toMatchObject({ status: 'applied' });
+  });
+
+  it('a batch open is all or nothing: entity_unavailable names the unreadable, tab_limit past 50; it activates the first', async () => {
+    const before = await row(main);
+    const unreadable = randomUUID();
+    expect(await command('workspace.tabs.open', { entities: [{ kind: 'task', entityId: tasks[0] }, { kind: 'task', entityId: unreadable }] })).toMatchObject({
+      status: 'rejected', reason: 'entity_unavailable', unavailableEntityIds: [unreadable],
+    });
+    const fifty = tasks.slice(0, 50).map((entityId) => ({ kind: 'task', entityId }));
+    expect(await command('workspace.tabs.open', { entities: fifty, activate: false })).toMatchObject({ status: 'applied' });
+    expect((await stored(main)).orderedTabIds).toHaveLength(50);
+    const full = await row(main);
+    expect(Number(full.revision)).toBe(Number(before.revision) + 1);
+    expect(await command('workspace.tabs.open', { entities: [{ kind: 'task', entityId: tasks[0] }, { kind: 'task', entityId: tasks[50] }] }))
+      .toMatchObject({ status: 'rejected', reason: 'tab_limit' });
+    expect((await row(main)).revision).toBe(full.revision);
+    await command('workspace.tabs.closeVisible', {}, { expectedWorkspaceId: main });
+
+    const batch = await command('workspace.tabs.open', { entities: [{ kind: 'task', entityId: tasks[50] }, { kind: 'task', entityId: tasks[51] }] });
+    const tabIds = batch['tabIds'] as string[];
+    // The stored workspace focuses the first; the test window doesn't answer the forward.
+    expect(batch).toMatchObject({ status: 'applied', tabId: tabIds[0], outcomes: ['created', 'created'], activation: 'no_window' });
+    expect((await stored(main)).recency[0]).toBe(tabIds[0]);
+    await expect(command('workspace.tabs.open', { kind: 'task', entityId: tasks[0], entities: [{ kind: 'task', entityId: tasks[0] }] }))
+      .resolves.toMatchObject({ status: 'rejected', reason: 'invalid_arguments' });
+  });
+
+  it('an agent switch raises Switch/Stay (newest supersedes); a human switch applies and supersedes; agents cannot answer', async () => {
+    capable.frames.length = 0;
+    const first = await switchTo(second, asAgent);
+    expect(first).toMatchObject({
+      status: 'requires_user_choice', reason: 'agent_switch', choices: ['switch', 'stay'], promptDelivered: 1, activeWorkspaceId: main,
+      prompt: { kind: 'switch', workspaceId: second, workspaceName: 'Second', state: 'open', actorName: 'Safety Human' },
+    });
+    expect(await switchTo(main, asAgent)).toMatchObject({ status: 'no_op' });
+    const newer = await switchTo(second, asAgent);
+    const [a, b] = [first, newer].map((r) => (r['prompt'] as { promptId: string }).promptId);
+    expect((await list()).prompts.map((p) => [p.promptId, p.state])).toEqual([[a, 'superseded'], [b, 'open']]);
+    expect(capable.frames.filter((f) => f.type === 'workspace.prompt').map((f) => (f['prompt'] as { state: string }).state))
+      .toEqual(['open', 'superseded', 'open']);
+    await expect(resolve(b!, { choice: 'accept' }, asAgent)).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'human_only' } });
+
+    expect(await switchTo(second, asHuman)).toMatchObject({ status: 'applied', activeWorkspaceId: second });
+    expect((await list()).prompts.find((p) => p.promptId === b)).toMatchObject({ state: 'superseded' });
+    await expect(resolve(b!, { choice: 'accept' })).rejects.toMatchObject({ code: 'conflict', details: { reason: 'prompt_resolved' } });
+    await expect(resolve(randomUUID(), { choice: 'accept' })).rejects.toMatchObject({ code: 'not_found', details: { reason: 'prompt_not_found' } });
+
+    const back = await switchTo(main, asAgent);
+    const accepted = await resolve((back['prompt'] as { promptId: string }).promptId, { choice: 'accept' });
+    expect(accepted).toMatchObject({ status: 'applied', activeWorkspaceId: main, prompt: { state: 'accepted' } });
+    const stay = await switchTo(second, asAgent);
+    expect(await resolve((stay['prompt'] as { promptId: string }).promptId, { choice: 'decline' }))
+      .toMatchObject({ prompt: { state: 'declined' }, activeWorkspaceId: main });
+  });
+
+  it('an agent deletes only its own, inactive, clean workspace (D6); otherwise it asks, and F1 needs discard', async () => {
+    const own = ((await call('workspace.create', { requestId: randomUUID(), name: 'Scratch' }))['workspace'] as { id: string }).id;
+    expect(await remove(own, asAgent)).toMatchObject({ status: 'applied', workspace: { id: own } });
+
+    // Not its own: a Delete/Keep prompt; its discard is ignored (F3).
+    const asked = await remove(second, asAgent, { discard: 'true' });
+    expect(asked).toMatchObject({ status: 'requires_user_choice', reason: 'agent_delete', choices: ['delete', 'keep'], prompt: { kind: 'delete', workspaceId: second } });
+    // Its own but active: asks too.
+    const mine = ((await call('workspace.create', { requestId: randomUUID(), name: 'Mine' }))['workspace'] as { id: string }).id;
+    await switchTo(mine, asHuman);
+    expect(await remove(mine, asAgent)).toMatchObject({ status: 'requires_user_choice', reason: 'agent_delete' });
+    await switchTo(main, asHuman);
+
+    // F1: the workspace has a dirty draft; accepting without discard keeps the prompt open.
+    await command('workspace.drafts.open', { kind: 'task' }, { workspaceId: second });
+    const draft = Object.values((await stored(second)).tabs).find((t) => t.type === 'draft')!;
+    await call('workspace.drafts.patch', { fields: { title: { v: 'Unsaved' } } }, { params: { draftId: draft.draftId! } });
+    const promptId = (asked['prompt'] as { promptId: string }).promptId;
+    expect(await resolve(promptId, { choice: 'accept' })).toMatchObject({
+      status: 'rejected', reason: 'unsaved_changes', dirtyDraftIds: [draft.draftId], prompt: { state: 'open' },
+    });
+    expect(await resolve(promptId, { choice: 'accept', discard: true })).toMatchObject({ status: 'applied', prompt: { state: 'accepted' } });
+    expect((await list()).items.map((w) => w.id)).not.toContain(second);
+  });
+});

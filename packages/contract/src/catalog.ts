@@ -382,6 +382,9 @@ export const OPERATIONS = [
   { name: 'workspace.reorder',       method: 'POST',   path: '/v2/spaces/:spaceId/workspaces/:workspaceId/move', kind: 'command', status: 'v1' },
   { name: 'workspace.delete',        method: 'DELETE', path: '/v2/spaces/:spaceId/workspaces/:workspaceId', kind: 'command', status: 'v1' },
   { name: 'workspace.switch',        method: 'POST',   path: '/v2/spaces/:spaceId/workspaces/:workspaceId/activate', kind: 'command', status: 'v1' },
+  // §5.12: the human's answer to an agent's Switch/Stay or Delete/Keep prompt
+  // (D8: the prompts live in the node's memory). Humans only.
+  { name: 'workspace.prompts.resolve', method: 'POST', path: '/v2/spaces/:spaceId/workspace/prompts/:promptId', kind: 'command', status: 'v1' },
 
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },

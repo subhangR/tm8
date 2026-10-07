@@ -46,7 +46,7 @@ import type { RequestIdentity, SpaceSessionsMode } from '../http/types.js';
 import { MAX_POLL_LIMIT, type DurableEventLog } from './poll.js';
 import type { PresenceStore } from './presence.js';
 import type { SubscriptionRegistry } from './subscriptions.js';
-import type { WorkspaceBridge } from '../workspace/bridge.js';
+import { isCapable, type WorkspaceBridge } from '../workspace/bridge.js';
 import type { WorkspaceService } from '../workspace/service.js';
 import type { EventSink } from './ws-connection.js';
 
@@ -408,9 +408,25 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         } else if (frame.type === 'workspace.import') {
           await service.importLegacy(claims, frame.spaceId, frame.state, frame.drafts);
         } else {
-          await service.patchDraft(claims, frame.spaceId, frame.draftId, frame.fields, { kind: 'window', instanceId: frame.instanceId }, {
-            frame: frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId },
-          });
+          try {
+            await service.patchDraft(claims, frame.spaceId, frame.draftId, frame.fields, { kind: 'window', instanceId: frame.instanceId }, {
+              frame: frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId },
+            });
+          } catch (error) {
+            // A capable window learns its typing was not kept (§7.3); an old
+            // one has no frame for it.
+            const sender = workspace.bridge.list(claims.identityId, frame.spaceId).find((i) => i.instanceId === frame.instanceId);
+            if (sender && isCapable(sender)) {
+              workspace.bridge.push(claims.identityId, frame.spaceId, {
+                type: 'workspace.draft.rejected',
+                spaceId: frame.spaceId,
+                workspaceId: frame.workspaceId ?? null,
+                draftId: frame.draftId,
+                reason: draftRejection(error),
+              }, { only: frame.instanceId });
+            }
+            throw error;
+          }
         }
         return;
       }
@@ -471,6 +487,18 @@ const FRAME_TYPES = new Set<string>([
   'workspace.register', 'workspace.unregister', 'workspace.result',
   'workspace.apply', 'workspace.import', 'workspace.draft.patch',
 ]);
+
+/** Why a window's draft write failed, as `workspace.draft.rejected` names it. */
+function draftRejection(error: unknown): 'workspace_not_found' | 'not_found' | 'limit_exceeded' | 'payload_too_large' {
+  const reason = (error as { details?: { reason?: unknown } } | null)?.details?.reason;
+  if (reason === 'workspace_not_found' || reason === 'workspace_switched') return 'workspace_not_found';
+  switch ((error as { code?: unknown } | null)?.code) {
+    case '53400': return 'limit_exceeded';
+    case '54000': return 'payload_too_large';
+    case 'P0002': return 'workspace_not_found';
+    default: return 'not_found';
+  }
+}
 
 function isFrameType(value: string): value is WorkspaceControlFrame['type'] {
   return FRAME_TYPES.has(value);

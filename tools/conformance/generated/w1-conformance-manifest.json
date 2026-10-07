@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:369fb9ce69fdd31c9e3d94a42e2901e15486b59f9ab2f3d05e83b33925f49b9d",
+  "catalogDigest": "sha256:d8cbfa90cf4911f99d3992c42c25bca775bf16ed79ec7c1976e06a74a15c8ba9",
   "catalog": {
-    "total": 355,
-    "v1": 353,
+    "total": 356,
+    "v1": 354,
     "reserved": 2,
-    "http": 353,
+    "http": 354,
     "ws": 1,
-    "registerableV1Http": 351,
+    "registerableV1Http": 352,
     "methods": {
       "GET": 115,
-      "POST": 175,
+      "POST": 176,
       "PATCH": 20,
       "DELETE": 23,
       "PUT": 20,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 121,
-      "command": 232,
+      "command": 233,
       "stream": 2
     },
-    "uniqueNames": 355,
-    "uniqueBindings": 354
+    "uniqueNames": 356,
+    "uniqueBindings": 355
   },
   "reservedOperations": [
     "search.query",
@@ -1587,6 +1587,13 @@
         "source": "server-router"
       },
       {
+        "operation": "workspace.prompts.resolve",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/workspace/prompts/:promptId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.spawn",
         "method": "POST",
         "path": "/v2/execution/spawn",
@@ -2889,7 +2896,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 323
+    "unimplementedV1Http": 324
   },
   "schemas": {
     "additive": {
@@ -6377,6 +6384,23 @@
         "intentTags": [
           "workspace",
           "switch"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.prompts.resolve",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.prompts.resolve",
+        "intentTags": [
+          "workspace",
+          "prompts",
+          "resolve"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
