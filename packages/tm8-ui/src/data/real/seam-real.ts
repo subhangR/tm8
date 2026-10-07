@@ -342,6 +342,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         reorder: (spaceId, workspaceId, before) => ops.reorderWorkspace(spaceId as SpaceId, workspaceId, before),
         remove: (spaceId, workspaceId, discard) => ops.deleteWorkspace(spaceId as SpaceId, workspaceId, discard),
         switch: (spaceId, workspaceId, expected) => ops.switchWorkspace(spaceId as SpaceId, workspaceId, expected),
+        resolvePrompt: (spaceId, promptId, choice, discard) => ops.resolveWorkspacePrompt(spaceId as SpaceId, promptId, choice, discard),
       },
     },
     onConnection: (cb) => connection.onConnection(cb),

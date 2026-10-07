@@ -63,6 +63,7 @@ import {
   createWorkspaceListStore,
   getWorkspaceListStore,
   openWorkspaceSwitcher,
+  WorkspacePrompts,
   WorkspaceSwitcher,
   TabWorkspaceView,
   useWorkspaceShareRoute,
@@ -1316,6 +1317,15 @@ export function GateApp(props: GateAppProps = {}) {
     [workspaceSpaceId, viewerMemberId],
   );
   const workspacesCapable = useStore(workspaceList, (s) => s.capable);
+  /* An agent's Switch/Stay and Delete/Keep asks (D8), in the notice region. */
+  const workspacePromptsEl = workspaceSpaceId ? (
+    <WorkspacePrompts
+      store={workspaceList}
+      spaceId={workspaceSpaceId}
+      manage={data.seam.workspaceBridge?.manage}
+      notify={(title) => notices.push({ id: 'workspace-manage', tone: 'info', title, body: '', ttlMs: NOTICE_TTL_MS })}
+    />
+  ) : null;
   /* Workspace Copy link (Spec A §4/§12): `tabs?tab=<active entity id>`; null elsewhere. */
   const workspaceShareRoute = useWorkspaceShareRoute(viewerMemberId, data.spaceId || null, navView.view === 'tabs');
   /* The graph screen's narrow port cannot build a channel feed port itself,
@@ -2331,7 +2341,11 @@ export function GateApp(props: GateAppProps = {}) {
           }}
           onLaunchSubmit={submitLaunch}
           onLaunchDispatch={submitDispatch}
-          notices={<NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />}
+          notices={
+            <NoticeHost notices={notices.notices} onDismiss={notices.dismiss}>
+              {workspacePromptsEl}
+            </NoticeHost>
+          }
         />
         <AttentionUndoToast />
         <StyleEditorHost seam={data.seam} spaceId={data.spaceId || null} members={data.members} />
@@ -3479,7 +3493,9 @@ export function GateApp(props: GateAppProps = {}) {
         />
         <PromptsOverlay open={promptsOpen} onClose={() => setPromptsOpen(false)} />
         <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-        <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
+        <NoticeHost notices={notices.notices} onDismiss={notices.dismiss}>
+          {workspacePromptsEl}
+        </NoticeHost>
         <AddServerDialog
           open={addServerOpen}
           onDismiss={() => setAddServerOpen(false)}

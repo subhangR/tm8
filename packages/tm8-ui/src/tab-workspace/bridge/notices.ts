@@ -11,7 +11,7 @@
  * Copy (R35): the actor's name opens the sentence, plain; titles go in curly
  * quotes and are cut at 40 characters with "…"; body empty, no action.
  */
-import type { DialogId, TabScope } from '../runtime/types';
+import type { DialogId, TabRecord, TabScope } from '../runtime/types';
 
 export type RemoteChange =
   | { verb: 'opened'; count: number; title?: string }
@@ -47,8 +47,45 @@ export function quoteTitle(title: string): string {
 export function inWorkspace(text: string, name: string | undefined): string {
   const trimmed = name?.trim();
   if (!trimmed) return text;
-  const cut = trimmed.length > TITLE_MAX ? `${trimmed.slice(0, TITLE_MAX).trimEnd()}…` : trimmed;
-  return `${text} in ${cut}`;
+  return `${text} in ${cutName(trimmed)}`;
+}
+
+function cutName(name: string): string {
+  return name.length > TITLE_MAX ? `${name.slice(0, TITLE_MAX).trimEnd()}…` : name;
+}
+
+/** A tab as a notice names it: the entity's title, or the draft's kind. */
+export function tabTitle(tab: TabRecord | undefined, titleOf: (id: string) => string | undefined): string | undefined {
+  if (!tab) return undefined;
+  if (tab.type === 'entity') return titleOf(tab.entityId);
+  if (tab.type === 'draft') return `New ${tab.kind.replace(/_/g, ' ')}`;
+  return undefined;
+}
+
+/**
+ * An agent's stored-path write (API doc 01a115c4 §7.3 `cause.actor`), named
+ * with its workspace (S14). On the active workspace it "opened" what the
+ * human now sees; on another one it "prepared" it, and the notice offers Go.
+ * `count` 0 is a write that opened nothing (close, move, scope…).
+ */
+export function agentWriteLine(
+  actor: string,
+  write: { workspaceName: string | undefined; active: boolean; count: number; title?: string },
+): string {
+  const verb = write.active ? 'opened' : 'prepared';
+  const what = write.count === 0 ? 'changed tabs' : tabsPhrase(verb, write.count, write.count === 1 ? write.title : undefined);
+  return inWorkspace(`${actor} ${what}`, write.workspaceName);
+}
+
+/** An agent's change to the workspace list (Q3: create, rename, recolour; D6 delete). */
+export function agentManageLine(actor: string, kind: 'created' | 'renamed' | 'recolored' | 'deleted', name: string): string {
+  const cut = cutName(name.trim());
+  switch (kind) {
+    case 'created': return `${actor} created ${cut}`;
+    case 'renamed': return `${actor} renamed a workspace to ${cut}`;
+    case 'recolored': return `${actor} changed the colour of ${cut}`;
+    case 'deleted': return `${actor} deleted ${cut}`;
+  }
 }
 
 /** The scope control's own label: `Mixed` or `By type · N`. */
@@ -63,7 +100,7 @@ export function actorLabel(actorClass: 'human' | 'agent', actorName?: string): s
   return actorClass === 'agent' ? 'An agent' : 'Your CLI';
 }
 
-function tabsPhrase(verb: 'opened' | 'closed' | 'moved', count: number, title: string | undefined): string {
+function tabsPhrase(verb: 'opened' | 'closed' | 'moved' | 'prepared', count: number, title: string | undefined): string {
   if (count === 1) return title ? `${verb} ${quoteTitle(title)}` : `${verb} a tab`;
   return `${verb} ${count} tabs`;
 }

@@ -31,6 +31,7 @@ import { enterServerMode, legacySnapshot } from '../runtime/persistence';
 import { applyStoredRail, attachRailWriter, legacyRail } from '../runtime/railStore';
 import { WorkspaceSync } from './sync';
 import { getWorkspaceListStore } from './workspaceList';
+import { manageRefusalCopy, reasonOf } from '../view/WorkspaceSwitcher';
 import { newUuid, WINDOW_ID } from '../runtime/store';
 import type {
   CommandEnvelope,
@@ -38,11 +39,10 @@ import type {
   DialogId,
   ExternalOutcome,
   Result,
-  TabRecord,
   WorkspaceState,
 } from '../runtime/types';
 import { COMMAND_NAMES, DIALOG_IDS } from '../runtime/types';
-import { actorLabel, DIALOG_TITLES, inWorkspace, RemoteNoticeCoalescer, scopeLabel, type RemoteChange } from './notices';
+import { actorLabel, DIALOG_TITLES, inWorkspace, RemoteNoticeCoalescer, scopeLabel, tabTitle, type RemoteChange } from './notices';
 
 export interface BridgeDialogControl {
   open: boolean;
@@ -126,13 +126,6 @@ function registerFrame(
     // §10.2: caps and the shown workspace only after the node's proof.
     ...(sync ? sync.registerFields() : {}),
   };
-}
-
-function tabTitle(tab: TabRecord | undefined, titleOf: (id: string) => string | undefined): string | undefined {
-  if (!tab) return undefined;
-  if (tab.type === 'entity') return titleOf(tab.entityId);
-  if (tab.type === 'draft') return `New ${tab.kind.replace(/_/g, ' ')}`;
-  return undefined;
 }
 
 /** What the human now sees differently, for the notice; null = stay silent. */
@@ -292,7 +285,11 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
       reply(frame.requestId, result);
 
       const change = changeOf(env, result, prev, runtime.store.getState(), latest.current.titleOf);
-      if (change) {
+      // A stored-path open was already announced from its state push; the
+      // node's follow-up activate is the same act, not a second change.
+      const tabId = (env.args as { tabId?: unknown } | undefined)?.tabId;
+      const echoed = env.command === 'workspace.tabs.activate' && typeof tabId === 'string' && syncRef.current?.announced(tabId);
+      if (change && !echoed) {
         const actor = actorLabel(frame.actorClass, frame.actorName);
         const { id, title } = coalescer.add(actor, change);
         latest.current.notify({ id, tone: 'info', title, body: '', ttlMs: NOTICE_TTL_MS });
@@ -318,10 +315,37 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
     const list = getWorkspaceListStore(viewerId, spaceId);
     list.setState({ online: port.isOpen?.() ?? true, open: false });
     const offStatus = port.onStatus?.((online) => list.setState(online ? { online } : { online, open: false })) ?? (() => {});
+    const refusalNotice = (reason: string | undefined): Notice => ({
+      id: `tws-go-${Date.now()}`,
+      tone: 'info',
+      title: manageRefusalCopy(reason),
+      body: '',
+      ttlMs: NOTICE_TTL_MS,
+    });
+    const goToWorkspace = (workspaceId: string) => {
+      if (!port.manage || !list.getState().online) return;
+      void port.manage.switch(spaceId, workspaceId, syncRef.current?.shown ?? null).then(
+        (result) => {
+          if (result.status !== 'applied' && result.status !== 'no_op') latest.current.notify(refusalNotice(reasonOf(result)));
+        },
+        (error: unknown) => latest.current.notify(refusalNotice(reasonOf(error))),
+      );
+    };
     const sync = port.onSync
       ? new WorkspaceSync(runtime, spaceId, instanceId, {
           send: (frame) => port.send(frame),
           notify: (title) => latest.current.notify({ id: `tws-sync-${Date.now()}`, tone: 'info', title, body: '', ttlMs: NOTICE_TTL_MS }),
+          // An agent's write or workspace change; Go is the human's switch there.
+          notifyAgent: ({ id, title, goTo }) =>
+            latest.current.notify({
+              id,
+              tone: 'info',
+              title,
+              body: '',
+              ttlMs: NOTICE_TTL_MS,
+              ...(goTo === undefined ? {} : { action: { label: 'Go', run: () => goToWorkspace(goTo) } }),
+            }),
+          titleOf: (entityId) => latest.current.titleOf(entityId),
           onServerMode: () => {
             enterServerMode(runtime);
             attachRailWriter(spaceId, {
@@ -341,7 +365,7 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
           onCapable: () => {
             queueMicrotask(register);
             void port.manage?.list(spaceId).then(
-              (result) => syncRef.current?.adoptList(result.items, result.listRevision, result.activeWorkspaceId),
+              (result) => syncRef.current?.adoptList(result.items, result.listRevision, result.activeWorkspaceId, result.prompts),
               () => {},
             );
           },
@@ -357,6 +381,7 @@ export function useWorkspaceBridge(options: WorkspaceBridgeOptions): void {
         })
       : null;
     syncRef.current = sync;
+    if (sync) list.setState({ dropPrompt: (promptId) => sync.dropPrompt(promptId) });
     const offSync = sync && port.onSync ? port.onSync((frame) => sync.onFrame(frame)) : () => {};
     let lastRail: unknown = runtime.store.getState().rail;
     const offRail = runtime.store.subscribe((state) => {

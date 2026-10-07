@@ -4,11 +4,13 @@
  * DOES run once the condition is lifted.
  */
 import { describe, expect, it } from 'vitest';
+import { toStoredState } from '@tm8/contract/workspace';
 
 import { createWorkspaceRuntime } from '../runtime/dispatch';
 import { createWorkspaceStore } from '../runtime/store';
 import type { WorkspaceRuntime } from '../runtime/dispatch';
 import { noticeLine, quoteTitle, RemoteNoticeCoalescer } from './notices';
+import { WorkspaceSync, type AgentNotice } from './sync';
 
 let n = 0;
 function runtime(opts: { mounted?: boolean; typing?: boolean } = {}): WorkspaceRuntime {
@@ -131,5 +133,68 @@ describe('the R35 notice copy', () => {
     expect(c.add('Other', { verb: 'closed', count: 1, title: 'C' }).id).toBe('tws-remote-Other');
     now = 5000;
     expect(c.add('Worker', { verb: 'moved', count: 1, title: 'D' }).title).toBe('Worker moved “D”');
+  });
+});
+
+describe('an agent’s stored-path write (W3.2)', () => {
+  const SPACE = 'space-agent';
+  /** A capable window on Main (A), Billing (B) in the list, and an agent's open as the node stores it. */
+  function onMain() {
+    const rt = runtime();
+    const toasts: AgentNotice[] = [];
+    const sync = new WorkspaceSync(rt, SPACE, 'win-1', {
+      send: () => true,
+      notify: () => {},
+      onServerMode: () => {},
+      legacy: () => ({ state: null, rail: null }),
+      notifyAgent: (notice) => void toasts.push(notice),
+      titleOf: (id) => (id === 'e1' ? 'Fix the login page' : undefined),
+    });
+    const empty = toStoredState(rt.store.getState());
+    const frame = (workspaceId: string, revision: number, state: unknown, extra: Record<string, unknown> = {}) =>
+      ({ type: 'workspace.state', spaceId: SPACE, revision, state, workspaceId, active: true, ...extra }) as never;
+    sync.onFrame(frame('A', 1, empty));
+    sync.onFrame({
+      type: 'workspace.summary', spaceId: SPACE, listRevision: 1, activeWorkspaceId: 'A',
+      items: [{ id: 'A', name: 'Main' }, { id: 'B', name: 'Billing' }] as never,
+    });
+    const agent = runtime();
+    agent.dispatch(open('e1'));
+    const tabId = agent.store.getState().orderedTabIds[0]!;
+    const opened = toStoredState({ ...agent.store.getState(), revision: 2 });
+    const cause = {
+      requestId: 'r1',
+      result: { status: 'applied', outcome: 'created', tabId },
+      actor: { actorClass: 'agent', actorName: 'Codex' },
+    };
+    return { sync, toasts, frame, opened, cause, tabId };
+  }
+
+  it('names the actor and the workspace it opened in, once', () => {
+    const { sync, toasts, frame, opened, cause, tabId } = onMain();
+    sync.onFrame(frame('A', 2, opened, { cause }));
+    expect(toasts).toEqual([{ id: 'tws-agent-Codex-A', title: 'Codex opened “Fix the login page” in Main' }]);
+    // The node's follow-up activate is the same act: the bridge asks before toasting it again.
+    expect(sync.announced(tabId)).toBe(true);
+    // This window's own write, and a human's, are not announced.
+    sync.onFrame(frame('A', 3, opened, { cause: { ...cause, instanceId: 'win-1' } }));
+    sync.onFrame(frame('A', 4, opened, { cause: { ...cause, actor: { actorClass: 'human' } } }));
+    expect(toasts).toHaveLength(1);
+  });
+
+  it('a write to a workspace not active says prepared, with Go', () => {
+    const { sync, toasts, frame, opened, cause } = onMain();
+    sync.onFrame(frame('B', 2, opened, { active: false, cause }));
+    expect(toasts).toEqual([{ id: 'tws-agent-Codex-B', title: 'Codex prepared “Fix the login page” in Billing', goTo: 'B' }]);
+  });
+
+  it('an agent’s new workspace says created, with Go', () => {
+    const { sync, toasts } = onMain();
+    sync.onFrame({
+      type: 'workspace.summary', spaceId: SPACE, listRevision: 2, activeWorkspaceId: 'A',
+      items: [{ id: 'A', name: 'Main' }, { id: 'B', name: 'Billing' }, { id: 'C', name: 'Research' }] as never,
+      cause: { kind: 'created', workspaceId: 'C', actorClass: 'agent', actorName: 'Codex' },
+    } as never);
+    expect(toasts).toEqual([{ id: 'tws-agent-Codex-C', title: 'Codex created Research', goTo: 'C' }]);
   });
 });

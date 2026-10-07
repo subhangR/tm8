@@ -37,6 +37,8 @@ import {
   type WorkspaceBridgeCommandFrame,
   type WorkspaceControlAck,
   type WorkspaceDraftFrame,
+  type WorkspaceDraftRejectedFrame,
+  type WorkspacePromptFrame,
   type WorkspaceSummaryFrame,
   type WorkspaceSwitchedFrame,
   type WorkspaceStateFrame,
@@ -86,7 +88,9 @@ export type WorkspaceSyncFrame =
   | WorkspaceAppliedFrame
   | WorkspaceDraftFrame
   | WorkspaceSwitchedFrame
-  | WorkspaceSummaryFrame;
+  | WorkspaceSummaryFrame
+  | WorkspacePromptFrame
+  | WorkspaceDraftRejectedFrame;
 
 /** `WebSocket.OPEN`. Named rather than inlined so the fake reads the same. */
 export const WS_OPEN = 1;
@@ -198,6 +202,7 @@ export function parseFrame(raw: unknown): ParsedFrame {
   if (
     type === 'workspace.state' || type === 'workspace.applied' || type === 'workspace.draft'
     || type === 'workspace.switched' || type === 'workspace.summary'
+    || type === 'workspace.prompt' || type === 'workspace.draft.rejected'
   ) {
     if (typeof raw.spaceId !== 'string') return { kind: 'malformed', reason: `${type} has no spaceId` };
     return { kind: 'workspace-sync', frame: raw as unknown as WorkspaceSyncFrame };

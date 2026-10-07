@@ -263,3 +263,18 @@ describe('WorkspaceSync, notices for a workspace not on screen (S14)', () => {
     expect(elsewhere).toEqual(['Billing']);
   });
 });
+
+describe('WorkspaceSync, a draft the node would not keep (W3.2)', () => {
+  it('names the workspace and drops this window’s copy', () => {
+    const { runtime, sync, notices } = setup();
+    sync.onFrame(stateOf('A', 1, toStoredState(runtime.store.getState())));
+    sync.onFrame({
+      type: 'workspace.summary', spaceId: SPACE, listRevision: 1, activeWorkspaceId: 'A',
+      items: [{ id: 'A', name: 'Billing' }] as never,
+    });
+    runtime.drafts.set('d1', { title: 'too much' });
+    sync.onFrame({ type: 'workspace.draft.rejected', spaceId: SPACE, workspaceId: 'A', draftId: 'd1', reason: 'payload_too_large' });
+    expect(notices).toEqual(['Couldn’t save a draft in Billing: it is too large']);
+    expect(runtime.drafts.get('d1')).toBeNull();
+  });
+});

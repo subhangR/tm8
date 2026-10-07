@@ -31,6 +31,13 @@
  * old workspace until the new one's state lands, then replaces the store and
  * its draft values. Old queue entries stay addressed to their workspace and
  * are never re-applied on the new base.
+ *
+ * AGENTS (phase 3, §7.3). An agent's stored-path write names its actor on
+ * the state it caused; the window says so, naming the workspace, and offers
+ * Go when it is not the active one. Its prompts (Switch/Stay, Delete/Keep)
+ * arrive as `workspace.prompt` and are published with the list. A draft
+ * write the node refused (`workspace.draft.rejected`) is dropped here with a
+ * notice, so it is not re-sent forever.
  */
 import {
   overlayWindow,
@@ -44,13 +51,20 @@ import {
   type WorkspaceState,
 } from '@tm8/contract/workspace';
 
-import { WORKSPACE_DEFAULT_NAME, type WorkspaceStateFrame, type WorkspaceSummary } from '@tm8/contract';
+import {
+  WORKSPACE_DEFAULT_NAME,
+  type WorkspaceDraftRejectedFrame,
+  type WorkspacePrompt,
+  type WorkspaceStateFrame,
+  type WorkspaceSummary,
+  type WorkspaceSummaryFrame,
+} from '@tm8/contract';
 
 import type { WorkspaceBridgeFrame, WorkspaceSyncFrame } from '../../data/real/socket';
 import type { DispatchRecord, WorkspaceRuntime } from '../runtime/dispatch';
 import { flushDraftValues } from '../runtime/draftStore';
 import { newUuid } from '../runtime/store';
-import { inWorkspace } from './notices';
+import { actorLabel, agentManageLine, agentWriteLine, inWorkspace, tabTitle } from './notices';
 
 /** Commands that never leave this window: reads, dialogs and the route. */
 const WINDOW_LOCAL: ReadonlySet<CommandName> = new Set([
@@ -80,7 +94,26 @@ export interface WorkspaceView {
   listRevision: number;
   activeWorkspaceId: WorkspaceKey;
   items: WorkspaceSummary[];
+  /** The agents' open prompts, oldest first (D8). */
+  prompts: WorkspacePrompt[];
 }
+
+/** An agent's change, as a notice; `goTo` = the workspace its Go switches to. */
+export interface AgentNotice {
+  id: string;
+  title: string;
+  goTo?: string;
+}
+
+/** How long a stored-path open stays "announced" (the forwarded activate that follows is not a second notice). */
+const ANNOUNCED_MS = 5000;
+
+const DRAFT_REJECTED_COPY: Record<WorkspaceDraftRejectedFrame['reason'], string> = {
+  not_found: 'it no longer exists',
+  workspace_not_found: 'its workspace no longer exists',
+  limit_exceeded: 'too many drafts are open',
+  payload_too_large: 'it is too large',
+};
 
 export interface SyncIo {
   /** Send one bridge frame; false while the socket is not open. */
@@ -99,6 +132,10 @@ export interface SyncIo {
   onWorkspaces?(view: WorkspaceView): void;
   /** Another window or an agent deleted a draft of a workspace not on screen (S14). */
   notifyDraftElsewhere?(draftId: string, workspaceName: string): void;
+  /** An agent wrote to a workspace or changed the list (phase 3): name it, and offer Go. */
+  notifyAgent?(notice: AgentNotice): void;
+  /** An entity's title, for naming what an agent opened. */
+  titleOf?(entityId: string): string | undefined;
 }
 
 function draftTabOf(state: WorkspaceState, draftId: string): DraftTabRecord | undefined {
@@ -127,6 +164,9 @@ export class WorkspaceSync {
   private listRevision = 0;
   private activeWorkspaceId: WorkspaceKey = null;
   private items: WorkspaceSummary[] = [];
+  private prompts: WorkspacePrompt[] = [];
+  /** Tabs an agent's stored-path open was announced for, and when. */
+  private readonly announcedTabs = new Map<string, number>();
   private readonly unsubscribe: () => void;
 
   constructor(
@@ -168,12 +208,29 @@ export class WorkspaceSync {
   }
 
   /** The list as `workspace.list` returned it over HTTP; a frame at least as new wins. */
-  adoptList(items: WorkspaceSummary[], listRevision: number, activeWorkspaceId: WorkspaceKey): void {
-    if (listRevision < this.listRevision) return;
-    this.listRevision = listRevision;
-    this.items = items;
-    this.activeWorkspaceId = activeWorkspaceId;
+  adoptList(items: WorkspaceSummary[], listRevision: number, activeWorkspaceId: WorkspaceKey, prompts?: WorkspacePrompt[]): void {
+    // The list's prompts are the node's whole current set: one it no longer lists is gone.
+    if (prompts) this.prompts = prompts.filter((p) => p.state === 'open');
+    if (listRevision >= this.listRevision) {
+      this.listRevision = listRevision;
+      this.items = items;
+      this.activeWorkspaceId = activeWorkspaceId;
+    }
     this.publish();
+  }
+
+  /** Drop a prompt the human answered (or the node no longer knows) before its frame lands. */
+  dropPrompt(promptId: string): void {
+    const kept = this.prompts.filter((p) => p.promptId !== promptId);
+    if (kept.length === this.prompts.length) return;
+    this.prompts = kept;
+    this.publish();
+  }
+
+  /** An agent's stored-path open of this tab was just announced (§7.3). */
+  announced(tabId: string): boolean {
+    const at = this.announcedTabs.get(tabId);
+    return at !== undefined && Date.now() - at < ANNOUNCED_MS;
   }
 
   /** A workspace's name, for notices about one not on screen. */
@@ -190,6 +247,11 @@ export class WorkspaceSync {
    */
   reconnected(): void {
     for (const queue of this.queues.values()) for (const item of queue) item.sent = false;
+    // The register snapshot re-sends the prompts still open; any other closed while away.
+    if (this.prompts.length > 0) {
+      this.prompts = [];
+      this.publish();
+    }
     this.flush();
   }
 
@@ -252,6 +314,7 @@ export class WorkspaceSync {
       }
       case 'workspace.summary': {
         if (frame.listRevision < this.listRevision) return;
+        this.announceManage(frame);
         this.listRevision = frame.listRevision;
         this.items = frame.items;
         this.activeWorkspaceId = frame.activeWorkspaceId;
@@ -262,6 +325,18 @@ export class WorkspaceSync {
           this.switchingTo = frame.activeWorkspaceId;
         }
         this.publish();
+        return;
+      }
+      case 'workspace.prompt': {
+        const others = this.prompts.filter((p) => p.promptId !== frame.prompt.promptId);
+        this.prompts = frame.prompt.state === 'open' ? [...others, frame.prompt] : others;
+        this.publish();
+        return;
+      }
+      case 'workspace.draft.rejected': {
+        // Not kept: forget this window's copy so the edit is not re-sent forever.
+        this.runtime.drafts.delete(frame.draftId);
+        this.io.notify(`${inWorkspace('Couldn’t save a draft', this.nameOf(frame.workspaceId))}: ${DRAFT_REJECTED_COPY[frame.reason] ?? 'it was refused'}`);
         return;
       }
     }
@@ -286,6 +361,57 @@ export class WorkspaceSync {
       listRevision: this.listRevision,
       activeWorkspaceId: this.activeWorkspaceId,
       items: this.items,
+      prompts: this.prompts,
+    });
+  }
+
+  /**
+   * §7.3: an agent's write over HTTP (never this window's own, never a
+   * human's) names the actor and the workspace. One notice per (actor,
+   * workspace); a newer one replaces it.
+   */
+  private announceWrite(frame: WorkspaceStateFrame): void {
+    const cause = frame.cause;
+    if (!cause?.actor || cause.actor.actorClass !== 'agent' || cause.instanceId) return;
+    const result = cause.result as { status?: string; tabId?: string; tabIds?: string[]; outcome?: string; outcomes?: string[] };
+    if (result.status !== 'applied') return;
+    const opened = result.outcome !== undefined || result.outcomes !== undefined
+      ? result.tabIds ?? (result.tabId ? [result.tabId] : [])
+      : [];
+    const workspaceId = frame.workspaceId ?? null;
+    const active = frame.workspaceId === undefined ? true : frame.active;
+    const state = frame.state as WorkspaceState | null;
+    const title = opened.length === 1 ? tabTitle(state?.tabs[opened[0]!], (id) => this.io.titleOf?.(id)) : undefined;
+    const actor = actorLabel('agent', cause.actor.actorName);
+    const now = Date.now();
+    for (const tabId of opened) this.announcedTabs.set(tabId, now);
+    for (const [tabId, at] of this.announcedTabs) if (now - at >= ANNOUNCED_MS) this.announcedTabs.delete(tabId);
+    this.io.notifyAgent?.({
+      id: `tws-agent-${actor}-${workspaceId ?? 'main'}`,
+      title: agentWriteLine(actor, {
+        workspaceName: this.capableNow ? this.nameOf(workspaceId) : undefined,
+        active,
+        count: opened.length,
+        ...(title ? { title } : {}),
+      }),
+      ...(!active && workspaceId !== null ? { goTo: workspaceId } : {}),
+    });
+  }
+
+  /** Q3/D6: an agent created, renamed, recoloured or deleted a workspace. */
+  private announceManage(frame: WorkspaceSummaryFrame): void {
+    const cause = frame.cause;
+    if (!cause || cause.actorClass !== 'agent') return;
+    if (cause.kind !== 'created' && cause.kind !== 'renamed' && cause.kind !== 'recolored' && cause.kind !== 'deleted') return;
+    // A deleted workspace is named from the list before this one.
+    const named = (cause.kind === 'deleted' ? this.items : frame.items).find((w) => w.id === cause.workspaceId);
+    if (!named) return;
+    const actor = actorLabel('agent', cause.actorName);
+    const go = cause.kind !== 'deleted' && cause.workspaceId !== frame.activeWorkspaceId;
+    this.io.notifyAgent?.({
+      id: `tws-agent-${actor}-${cause.workspaceId}`,
+      title: agentManageLine(actor, cause.kind, named.name),
+      ...(go ? { goTo: cause.workspaceId } : {}),
     });
   }
 
@@ -324,6 +450,7 @@ export class WorkspaceSync {
       this.io.onCapable?.();
       this.publish();
     }
+    this.announceWrite(frame);
     const confirm = (queue: Queued[]) => {
       if (frame.cause?.instanceId !== this.instanceId) return;
       const at = queue.findIndex((q) => q.requestId === frame.cause!.requestId);

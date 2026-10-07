@@ -10,6 +10,10 @@
  * own answer. A refusal (last workspace, the cap, a taken name…) is a notice.
  * Deleting a workspace with unsaved drafts asks Discard / Keep first.
  *
+ * The activity dot (phase 3): a row whose workspace an agent changed since it
+ * was last active (`agentChangedSinceActive`) carries a dot, and so does the
+ * trigger while any such row exists. It clears once that workspace is active.
+ *
  * Drawn with the space switcher's own popover classes. Absent until the node
  * has proved it knows workspaces (§10.2); disabled, with a tooltip, while the
  * events socket is down (S13). `g w` and the palette open it through
@@ -45,7 +49,7 @@ export function manageRefusalCopy(reason: string | undefined): string {
 }
 
 /** The reason of a refused call: in the result, or in the error's details. */
-function reasonOf(outcome: WorkspaceManageResult | unknown): string | undefined {
+export function reasonOf(outcome: WorkspaceManageResult | unknown): string | undefined {
   const value = outcome as { reason?: unknown; details?: { reason?: unknown } } | null;
   if (typeof value?.reason === 'string') return value.reason;
   return typeof value?.details?.reason === 'string' ? value.details.reason : undefined;
@@ -60,6 +64,7 @@ export function WorkspaceSwitcher(props: WorkspaceSwitcherProps) {
   const open = useStore(store, (s) => s.open);
   const shown = useStore(store, (s) => s.shown);
   const items = useStore(store, (s) => s.items);
+  const activeWorkspaceId = useStore(store, (s) => s.activeWorkspaceId);
   const [mode, setMode] = useState<RowMode | null>(null);
   const [draftName, setDraftName] = useState('');
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -68,6 +73,8 @@ export function WorkspaceSwitcher(props: WorkspaceSwitcherProps) {
   const setOpen = (value: boolean) => store.setState({ open: value });
   const current = items.find((w) => w.id === shown);
   const name = current?.name ?? WORKSPACE_DEFAULT_NAME;
+  const changed = (w: WorkspaceSummary) => w.agentChangedSinceActive && !w.active && w.id !== activeWorkspaceId;
+  const anyChanged = items.some(changed);
 
   useEffect(() => {
     if (!open) {
@@ -183,6 +190,7 @@ export function WorkspaceSwitcher(props: WorkspaceSwitcherProps) {
       >
         <span className="tws-wsw__dot" data-color={current?.color ?? 'none'} aria-hidden="true" />
         <span className="shell-switcher__space">{name}</span>
+        {anyChanged ? <span className="tws-wsw__activity" data-testid="workspace-activity" aria-label="An agent changed another workspace" /> : null}
         <span className="shell-switcher__caret" aria-hidden="true">▾</span>
       </button>
 
@@ -224,6 +232,14 @@ export function WorkspaceSwitcher(props: WorkspaceSwitcherProps) {
                         <span className="shell-switcher__check" aria-hidden="true">{workspace.active ? '*' : ''}</span>
                         <span className="tws-wsw__dot" data-color={workspace.color ?? 'none'} aria-hidden="true" />
                         <span className="tws-wsw__name">{workspace.name}</span>
+                        {changed(workspace) ? (
+                          <span
+                            className="tws-wsw__activity"
+                            data-testid="workspace-row-activity"
+                            role="img"
+                            aria-label={workspace.lastAgentChange?.actorName ? `Changed by ${workspace.lastAgentChange.actorName}` : 'Changed by an agent'}
+                          />
+                        ) : null}
                         <span className="tws-wsw__count" aria-label={`${workspace.tabCount} tabs`}>{workspace.tabCount}</span>
                       </button>
                       {id !== null ? (

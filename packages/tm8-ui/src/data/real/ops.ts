@@ -458,6 +458,13 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    resolveWorkspacePrompt(spaceId: SpaceId, promptId: string, choice: 'accept' | 'decline', discard: boolean): Promise<WorkspaceManageResult> {
+      return http.call<WorkspaceManageResult>('workspace.prompts.resolve', {
+        params: { spaceId, promptId },
+        body: { requestId: newId('wsprompt'), choice, ...(discard ? { discard: true } : {}) },
+      });
+    },
+
     /** Node admin only: revoke every session of an account and stop its agents. */
     disableAccount(accountId: string): Promise<AccountDisableResult> {
       return http.call<AccountDisableResult>('accounts.disable', {
