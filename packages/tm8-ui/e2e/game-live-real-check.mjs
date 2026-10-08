@@ -2,14 +2,14 @@ import {chromium,expect} from '@playwright/test';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 const fixture=JSON.parse(await readFile(process.env.GAME_FIXTURE_FILE??'/tmp/tm8-live-verifier-infra-01a11c29/fixture.json','utf8'));
 const output=process.env.GAME_EVIDENCE_DIR??'/tmp/tm8-live-verifier-evidence-01a11c29';await mkdir(output,{recursive:true});
-const checks=[],errors=[],responses=[],timings=[],sessions=[],scenes=[];
+const checks=[],errors=[],responses=[],timings=[],sessions=[],scenes=[],handoffs=[];
 const pendingAssets=new Set(),assetFailures=[];
 const fallback=process.env.GAME_FALLBACK==='1',noScreenshots=process.env.GAME_NO_SCREENSHOTS==='1';
 console.log('Launching isolated Chromium');
 const browser=await chromium.launch({headless:true,executablePath:process.env.GAME_CHROMIUM,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-dev-shm-usage',...(fallback?['--disable-webgl','--disable-gpu']:[]),...(process.env.GAME_SINGLE_PROCESS==='1'?['--no-zygote','--single-process']:[])]});
 console.log('Chromium launched');
-process.on('SIGTERM',()=>browser.close().finally(()=>process.exit(143)));
 const page=await browser.newPage({viewport:{width:1280,height:800},reducedMotion:process.env.GAME_REDUCED_MOTION==='1'?'reduce':'no-preference'});
+process.on('SIGTERM',()=>page.evaluate(()=>window.__gameLive?.stopWorkerFrameAudit?.()).catch(()=>{}).finally(()=>browser.close().finally(()=>process.exit(143))));
 console.log('Page created');page.setDefaultTimeout(60000);page.on('pageerror',e=>{errors.push(e.message);console.log('Browser error',e.message);});
 page.on('response',r=>{if(new URL(r.url()).pathname.startsWith('/v2/'))responses.push({url:new URL(r.url()).pathname,status:r.status()});});
 page.on('request',request=>{if(/\.(glb|gltf|bin)(\?|$)/.test(request.url()))pendingAssets.add(request);});
@@ -37,6 +37,7 @@ const claimId=async(sessionId,taskId)=>{
 };
 const showWorker=async(id,text)=>{const row=host.locator(`[data-worker-id="robot:${id}"]`);await row.waitFor({state:'attached'});await host.locator('details.walking-workers').evaluate(el=>el.open=true);if(text)await expect(row).toContainText(text);return row;};
 const scene=()=>page.evaluate(()=>window.__gameLive.sceneSnapshot());
+const frameAudit=()=>page.evaluate(()=>window.__gameLive.workerFrameAudit());
 const closeWorker=async(workerId,taskTitle)=>{
  if(fallback)return null;
  const before=await scene(),workerBefore=before.workers.find(worker=>worker.id===`robot:${workerId}`);expect(workerBefore).toBeTruthy();
@@ -119,10 +120,31 @@ try{
    record(`${scope}: burst immediately updates worker pose, combines effects with stable identity and preserves canvas/player/camera`);
    await shot(`${prefix}-burst`,edgeA);
    await tick(taskA,true);await event('task.criterion_changed',taskA);await tick(taskA,false);
-   await work(taskB,'working',sessionId);const edgeB=await claimId(sessionId,taskB);
+   const handoff={scope,expectation:'B earliest attached local x/z equals A last drawn local x/z within1e-4, same live-workers parent; normal first draw advances at most0.7; reduced first draw equals real motion target',releaseStartedAt:await page.evaluate(()=>performance.now()),beforeRelease:fallback?null:await scene(),auditBefore:fallback?null:await frameAudit()};handoffs.push(handoff);
    await rpc('release_task_claim',[taskA,'Synthetic move to next site'],sessionId);
-   await showWorker(edgeB,`${prefix} site B`);await expect(host.locator(`[data-worker-id="robot:${edgeA}"]`)).toHaveCount(0);
+   await expect(host.locator(`[data-worker-id="robot:${edgeA}"]`)).toHaveCount(0);
    if(!fallback)await expect.poll(async()=>(await scene()).workers.some(w=>w.id===`robot:${edgeA}`),{timeout:30000}).toBe(false);
+   handoff.absentAt=await page.evaluate(()=>performance.now());handoff.intermediateScene=fallback?null:await scene();
+   await work(taskB,'working',sessionId);const edgeB=await claimId(sessionId,taskB);
+   await showWorker(edgeB,`${prefix} site B`);handoff.claimObservedAt=await page.evaluate(()=>performance.now());
+   handoff.events=await page.evaluate(({edgeA,edgeB})=>window.__gameLive.events.filter(e=>(e.type==='edge.ended'&&e.edgeId===edgeA)||(e.type==='edge.upsert'&&e.edge.id===edgeB)).map(e=>({type:e.type,seq:e.seq,edgeId:e.edgeId??e.edge.id,occurredAt:e.occurredAt})),{edgeA,edgeB});
+   if(!fallback){
+    await expect.poll(async()=>{const audit=await frameAudit();return audit.records.some(record=>record.id===`robot:${edgeB}`&&record.firstDrawn);},{timeout:30000}).toBe(true);
+    handoff.auditAfter=await frameAudit();handoff.afterClaim=await scene();
+    const aUuid=handoff.beforeRelease.workers.find(worker=>worker.id===`robot:${edgeA}`).uuid;
+    const a=handoff.auditAfter.records.find(record=>record.uuid===aUuid),b=handoff.auditAfter.records.find(record=>record.id===`robot:${edgeB}`);
+    Object.assign(handoff,{aLastDrawn:a.lastDrawn,bFirstAttached:b.firstAttached,bFirstDrawn:b.firstDrawn,aId:a.id,aUuid:a.uuid,bId:b.id,bUuid:b.uuid,target:b.motion?.target,realIntervalMs:handoff.claimObservedAt-handoff.absentAt});
+    handoff.worldDrawnDisplacement=Math.hypot(...b.firstDrawn.worldTranslation.map((value,index)=>value-a.lastDrawn.worldTranslation[index]));
+    expect(handoff.realIntervalMs).toBeLessThan(60000);expect(a.detached).toBeTruthy();expect(b.firstAttached.at).toBeGreaterThan(handoff.absentAt);
+    expect(b.firstAttached.parentUuid).toEqual(a.lastDrawn.parentUuid);expect(b.firstAttached.parentUuid).toBeTruthy();
+    expect(maxDelta([b.firstAttached.localPosition[0],b.firstAttached.localPosition[2]],[a.lastDrawn.localPosition[0],a.lastDrawn.localPosition[2]])).toBeLessThan(cameraTolerance);
+    expect(b.firstAttached.localPosition[1]).toEqual(.2);
+    const loop=handoff.auditAfter.scenes[b.firstAttached.sceneId],beforeLoop=handoff.auditBefore.scenes[b.firstAttached.sceneId];
+    expect(loop.before-beforeLoop.before).toBeGreaterThan(0);expect(loop.after-beforeLoop.after).toBeGreaterThan(0);expect(loop.lastGlFrame-beforeLoop.lastGlFrame).toBeGreaterThan(0);
+    if(process.env.GAME_REDUCED_MOTION==='1')expect([b.firstDrawn.localPosition[0],b.firstDrawn.localPosition[2]]).toEqual([b.motion.target.x,b.motion.target.z]);
+    else{expect(Math.hypot(b.firstDrawn.localPosition[0]-b.firstAttached.localPosition[0],b.firstDrawn.localPosition[2]-b.firstAttached.localPosition[2])).toBeLessThanOrEqual(.700001);expect(handoff.worldDrawnDisplacement).toBeLessThanOrEqual(.700001);}
+    const ended=handoff.events.find(e=>e.type==='edge.ended'),claimed=handoff.events.find(e=>e.type==='edge.upsert');expect(ended).toBeTruthy();expect(claimed).toBeTruthy();expect(claimed.seq).toBeGreaterThan(ended.seq);
+   }
    record(`${scope}: real claim/release moves worker to second task and edge.ended removes first claim`);await shot(`${prefix}-move`,edgeB,await closeWorker(edgeB,`${prefix} site B`));
    await work(taskB,'in_review',sessionId);const receipt=await rpc('receipt',[sessionId]);
    await rpc('complete_work_session',[sessionId,receipt.messageId]);await event('session.outcome_changed',sessionId);
@@ -156,7 +178,7 @@ try{
   await expect(host).toHaveAttribute('data-map-id',`map:space:${fixture.foreignSpaceId}:hub`);record('Route/scope navigation isolates pending old-map reads and callbacks');
   if(errors.length)throw new Error(`Browser runtime errors: ${errors.join('; ')}`);
   const stats=await page.evaluate(()=>({eventTypes:window.__gameLive.eventCounts,readsSinceLastReload:window.__gameLive.reads.length}));
-  await writeFile(`${output}/report.json`,JSON.stringify({passed:true,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,dependencies:process.env.GAME_DEPENDENCY_HEADS,renderer:fallback?'Production DOM fallback; no 3D WorkerLayer evidence':fixture.renderer,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,stats,responses,errors},null,2));
+  await writeFile(`${output}/report.json`,JSON.stringify({passed:true,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,dependencies:process.env.GAME_DEPENDENCY_HEADS,renderer:fallback?'Production DOM fallback; no 3D WorkerLayer evidence':fixture.renderer,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,handoffs,stats,responses,errors},null,2));
  }
-}catch(error){console.log('Journey failed',String(error));const diagnostic=await page.evaluate(()=>({url:location.href,saves:Object.keys(localStorage).filter(k=>k.startsWith('tm8:game')).map(k=>({key:k,value:JSON.parse(localStorage.getItem(k))})),reads:window.__gameLive?.reads?.slice(-10),events:window.__gameLive?.events?.slice(-10)}));await writeFile(`${output}/report.json`,JSON.stringify({passed:false,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,sceneAtFailure:fallback?null:await scene(),errors,responses,failure:String(error),expectedNavigation,diagnostic,text:await page.locator('body').innerText()},null,2));await page.screenshot({path:`${output}/failure.png`,timeout:10000}).catch(()=>{});throw error;}
-finally{await browser.close();}
+}catch(error){console.log('Journey failed',String(error));const diagnostic=await page.evaluate(()=>({url:location.href,saves:Object.keys(localStorage).filter(k=>k.startsWith('tm8:game')).map(k=>({key:k,value:JSON.parse(localStorage.getItem(k))})),reads:window.__gameLive?.reads?.slice(-10),events:window.__gameLive?.events?.slice(-10)}));await writeFile(`${output}/report.json`,JSON.stringify({passed:false,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,handoffs,sceneAtFailure:fallback?null:await scene(),errors,responses,failure:String(error),expectedNavigation,diagnostic,text:await page.locator('body').innerText()},null,2));await page.screenshot({path:`${output}/failure.png`,timeout:10000}).catch(()=>{});throw error;}
+finally{await page.evaluate(()=>window.__gameLive?.stopWorkerFrameAudit?.()).catch(()=>{});await browser.close();}

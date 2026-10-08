@@ -7,7 +7,7 @@ import { createGameMapLoader } from '../src/data/game-maps';
 import { resetNav } from '../src/stores/navStore';
 import { writeLastSpace } from '../src/views/last-place';
 import { nodeKeyOf } from '../src/data/launch-cache';
-import { _roots } from '@react-three/fiber';
+import { _roots, addEffect, addAfterEffect } from '@react-three/fiber';
 import { DefaultLoadingManager } from 'three';
 import { createRealSeam } from '../src/data/real/seam-real';
 import { browserWebSocketFactory } from '../src/data/real/socket';
@@ -56,6 +56,45 @@ const sceneSnapshot=()=>{
  });
  return {sceneId:state.scene.uuid,cameraId:state.camera.uuid,cameraPose:{position:state.camera.position.toArray(),quaternion:state.camera.quaternion.toArray(),zoom:state.camera.zoom},player,frames:state.gl.info.render.frame,calls:state.gl.info.render.calls,width:canvas!.width,height:canvas!.height,assets:{...assetLoads},workers};
 };
+// Passive observation of the same bundled R3F loop. Copy existing transforms only:
+// getWorldPosition/updateMatrixWorld would change matrices and are deliberately absent.
+const workerFrameRecords:any[]=[],workerFrameByUuid=new Map<string,any>();
+const workerFrameCounts={before:0,after:0,firstGlFrame:null as number|null,lastGlFrame:null as number|null};
+const workerFrameScenes:Record<string,{before:number;after:number;firstGlFrame:number;lastGlFrame:number}>={};
+const observeWorkerFrame=(phase:'before'|'after')=>{
+ const canvas=document.querySelector<HTMLCanvasElement>('.sgm-stage canvas[data-engine]');
+ const root=canvas?_roots.get(canvas):undefined,state=root?.store.getState();if(!state)return;
+ const frame=state.gl.info.render.frame,at=performance.now();workerFrameCounts[phase]++;
+ workerFrameCounts.firstGlFrame??=frame;workerFrameCounts.lastGlFrame=frame;
+ const sceneCounts=workerFrameScenes[state.scene.uuid]??={before:0,after:0,firstGlFrame:frame,lastGlFrame:frame};sceneCounts[phase]++;sceneCounts.lastGlFrame=frame;
+ const present=new Set<string>();
+ state.scene.traverse(object=>{
+  if(!object.name.startsWith('robot:'))return;
+  present.add(object.uuid);
+  const sample={phase,frame,at,sceneId:state.scene.uuid,parentUuid:object.parent?.uuid??null,
+   localPosition:object.position.toArray(),localQuaternion:object.quaternion.toArray(),
+   matrixWorld:object.matrixWorld.toArray(),worldTranslation:object.matrixWorld.elements.slice(12,15)};
+  let record=workerFrameByUuid.get(object.uuid);
+  if(!record){
+   if(phase!=='before')return; // A late after-frame sighting cannot establish initial attachment.
+   let motion:any=null;const stack=[(root as any).fiber.current];
+   while(stack.length){const fiber=stack.pop();if(!fiber)continue;const props=fiber.memoizedProps;
+    if(props?.motion?.robot?.id===object.name)motion={target:{...props.motion.target},reduced:props.reduced,returning:props.motion.returning};
+    if(fiber.child)stack.push(fiber.child);if(fiber.sibling)stack.push(fiber.sibling);
+   }
+   record={id:object.name,uuid:object.uuid,sessionId:object.userData.sessionId,claimId:object.userData.claimId,motion,firstAttached:sample};
+   workerFrameByUuid.set(object.uuid,record);workerFrameRecords.push(record);
+   if(workerFrameRecords.length>128){const removed=workerFrameRecords.shift();workerFrameByUuid.delete(removed.uuid);}
+  }
+  if(phase==='before')record.lastAttached=sample;
+  else{record.firstDrawn??=sample;record.lastDrawn=sample;}
+ });
+ if(phase==='before')for(const record of workerFrameRecords)if(record.firstAttached.sceneId===state.scene.uuid&&!present.has(record.uuid)&&!record.detached)record.detached={frame,at,phase};
+};
+const removeBeforeWorkerFrame=addEffect(()=>observeWorkerFrame('before'));
+const removeAfterWorkerFrame=addAfterEffect(()=>observeWorkerFrame('after'));
+const stopWorkerFrameAudit=()=>{removeBeforeWorkerFrame();removeAfterWorkerFrame();};
+const workerFrameAudit=()=>structuredClone({counts:workerFrameCounts,scenes:workerFrameScenes,records:workerFrameRecords});
 let delayed=false;
 seam.onEvent(event=>{events.push(structuredClone(event));eventCounts[event.type]=(eventCounts[event.type]??0)+1;});
 for(const name of ['query','entity','graph'] as const){
@@ -66,7 +105,7 @@ for(const name of ['query','entity','graph'] as const){
   reads.push({name,args,start,end:performance.now()});return result;
  };
 }
-Object.assign(window,{__gameLive:{events,eventCounts,reads,seam,head:__GAME_VERIFIER_HEAD__,sceneSnapshot,spawn:async(input:any)=>createdIdOf(await seam.commands.spawn(input)),
+Object.assign(window,{__gameLive:{events,eventCounts,reads,seam,head:__GAME_VERIFIER_HEAD__,sceneSnapshot,workerFrameAudit,stopWorkerFrameAudit,spawn:async(input:any)=>createdIdOf(await seam.commands.spawn(input)),
  delayReads:()=>{delayed=true;},releaseReads:()=>{delayed=false;pending.splice(0).forEach(resolve=>resolve());},pending:()=>pending.length}});
 if(!location.hash)location.hash=`#/s/${setup.spaceId}/work`;
 const route=()=>resetNav((location.hash.match(/^#\/s\/([^/]+)/)?.[1]??setup.spaceId) as any,{view:'workspace'});
