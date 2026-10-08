@@ -262,12 +262,3 @@
   font: inherit;
   padding: 0;
 }
-
-/* Spec D1 §5.6 — "Completed, process open": the banner above a still-usable terminal. */
-.pn-terminal-outcome {
-  font-size: var(--pn-fs-micro);
-  padding: 5px 10px;
-  color: var(--pn-run);
-  background: var(--pn-run-soft);
-  border-bottom: 1px solid var(--pn-line-2);
-}
