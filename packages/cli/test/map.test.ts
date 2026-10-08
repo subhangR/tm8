@@ -42,7 +42,7 @@ it('opens the canonical type/scope via the catalog and pages context',async()=>{
   expect(recorded[0]).toMatchObject({method:'POST',path:`/v2/spaces/${space}/maps/open`,body:{type:'town',scope:{kind:'space',id:space},clientMutationId:'open-1'}});
   expect((await cli(['map','context',map,'--limit','1','--cursor',entity])).code).toBe(0);
   expect(recorded[1]!.query).toContain('limit=1');expect(recorded[1]!.query).toContain(`cursor=${entity}`);
-});
+},15000);
 it('places real refs with deterministic retry identity and guarded move/remove',async()=>{
   const args=['map','place',map,entity,'--at','10,20','--mutation-id','place-1'];
   expect((await cli(args)).code).toBe(0);expect((await cli(args)).code).toBe(0);

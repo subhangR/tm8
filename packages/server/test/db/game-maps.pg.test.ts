@@ -204,13 +204,13 @@ describe('durable map schema and real authorization', () => {
     const loaded=await as(q=>q.rpc<GameNavigationView>('game_navigation_get',[space])); expect(loaded.save!.current).toEqual(hub); expect(loaded.save!.maps).toEqual({});
     expect(loaded.repairs).toEqual({routeTruncated:true,droppedMemories:1});
   });
-  it('stores only bounded replay hashes and prunes them with the command ledger', async () => {
+  it('stores bounded replay hashes with independent 24h pruning matching the command ledger', async () => {
     const [row]=await scratch.query<{input_hash:string;created_at:Date}>('select input_hash,created_at from map.command_inputs limit 1');
     expect(row!.input_hash).toMatch(/^[0-9a-f]{64}$/);
     const cols=await scratch.query<{column_name:string}>("select column_name from information_schema.columns where table_schema='map' and table_name='command_inputs'");
     expect(cols.some(c=>c.column_name==='input')).toBe(false);
     await scratch.query("insert into map.command_inputs values('expired-map-input','maps.open',repeat('0',64),now()-interval '25 hours')");
-    await scratch.query('select internal.prune_command_ledger()');
+    await scratch.query('select map.prune_command_inputs()');
     expect(await scratch.query("select * from map.command_inputs where client_mutation_id='expired-map-input'")).toEqual([]);
   });
   it('bounds direct SQL memory inputs and navigation save frequency without changing revision', async () => {
