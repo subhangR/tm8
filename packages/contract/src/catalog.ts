@@ -59,6 +59,18 @@ export interface OperationBinding {
 export const BASE_PATH = '/v2';
 
 export const OPERATIONS = [
+  { name: 'maps.open', method: 'POST', path: '/v2/spaces/:spaceId/maps/open', kind: 'command', status: 'v1' },
+  { name: 'maps.context', method: 'GET', path: '/v2/maps/:mapId', kind: 'read', status: 'v1' },
+  { name: 'maps.place', method: 'PUT', path: '/v2/maps/:mapId/placements', kind: 'command', status: 'v1' },
+  { name: 'maps.move', method: 'PATCH', path: '/v2/maps/:mapId/placements/:itemId', kind: 'command', status: 'v1' },
+  { name: 'maps.remove', method: 'DELETE', path: '/v2/maps/:mapId/placements/:itemId', kind: 'command', status: 'v1' },
+  { name: 'maps.paint', method: 'PUT', path: '/v2/maps/:mapId/terrain', kind: 'command', status: 'v1' },
+  { name: 'maps.undo', method: 'POST', path: '/v2/maps/:mapId/undo', kind: 'command', status: 'v1' },
+  { name: 'maps.revert', method: 'POST', path: '/v2/maps/:mapId/revert', kind: 'command', status: 'v1' },
+  { name: 'maps.activity.append', method: 'POST', path: '/v2/maps/:mapId/activity', kind: 'command', status: 'v1' },
+  { name: 'maps.activity.list', method: 'GET', path: '/v2/maps/:mapId/activity', kind: 'read', status: 'v1' },
+  { name: 'maps.navigation.get', method: 'GET', path: '/v2/spaces/:spaceId/maps/navigation', kind: 'read', status: 'v1', humanOnly: true },
+  { name: 'maps.navigation.save', method: 'PUT', path: '/v2/spaces/:spaceId/maps/navigation', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
   { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },
@@ -110,6 +122,8 @@ export const OPERATIONS = [
   { name: 'spaces.get',              method: 'GET',    path: '/v2/spaces/:spaceId',                         kind: 'read',    status: 'v1' },
   { name: 'spaces.update',           method: 'PATCH',  path: '/v2/spaces/:spaceId',                         kind: 'command', status: 'v1' },
   { name: 'spaces.navigation',       method: 'GET',    path: '/v2/spaces/:spaceId/navigation',              kind: 'read',    status: 'v1' },
+  { name: 'spaces.unreadCounts',     method: 'GET',    path: '/v2/spaces/:spaceId/unread-counts',           kind: 'read',    status: 'v1' },
+  { name: 'tasks.cancellationObservations', method: 'POST', path: '/v2/spaces/:spaceId/tasks/cancellation-observations', kind: 'read', status: 'v1' },
   { name: 'spaces.home',             method: 'GET',    path: '/v2/spaces/:spaceId/home',                    kind: 'read',    status: 'v1' },
   { name: 'spaces.counts',           method: 'GET',    path: '/v2/spaces/:spaceId/counts',                  kind: 'read',    status: 'v1' },
   { name: 'spaces.settings',         method: 'GET',    path: '/v2/spaces/:spaceId/settings',                kind: 'read',    status: 'v1' },

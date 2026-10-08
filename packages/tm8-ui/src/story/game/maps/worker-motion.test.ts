@@ -1,0 +1,70 @@
+import { describe, expect, it } from 'vitest';
+import { buildMapModel } from '../map-model';
+import type { MapRobot } from '../map-model';
+import { advanceWorker, advanceWorkerAtSite, reconcileWorkers, sessionColor, workerHome } from './worker-motion';
+import { emptyTasklandMotion, reconcileTasklandMotion, sampleTasklandPlace } from '../taskland-motion';
+
+const scope = { kind: 'space', id: 'space' } as const;
+const base = buildMapModel({ scope, entities: [{ id: 'task', kind: 'task', title: 'Build', status: 'working' }], edges: [] }, { scope, type: 'taskland' });
+const robot: MapRobot = { id: 'robot:claim', claimId: 'claim', sessionId: 'session', taskId: 'task', label: 'Juniper', assetKey: 'worker.robot', x: 10, z: 10, pose: 'working' };
+describe('shared walking worker movement', () => {
+  it('spawns one independent worker per claim, walks to target and retains location during moves', () => {
+    const model = { ...base, robots: [robot, { ...robot, id: 'robot:second', claimId: 'second', x: 15 }] };
+    const workers = reconcileWorkers(new Map(), model);
+    expect(workers.size).toBe(2);
+    const first = workers.get(robot.id)!;
+    expect(first.position).toEqual(workerHome(model));
+    advanceWorker(first, .1, false);
+    expect(first.position).not.toEqual(workerHome(model));
+    expect(first.position).not.toEqual(first.target);
+    const atMove = { ...first.position };
+    const changed = reconcileWorkers(workers, { ...model, robots: [{ ...robot, x: -15, taskId: 'other' }] });
+    expect(changed.get(robot.id)!.position).toEqual(atMove);
+    expect(changed.size).toBe(1);
+    for (let frame = 0; frame < 100; frame++) advanceWorker(changed.get(robot.id)!, .1, false);
+    expect(changed.get(robot.id)!.position).toEqual({ x: -15, z: 10 });
+    expect(changed.get(robot.id)!.arrived).toBe(true);
+  });
+  it('completed workers return from actual position to Office and stopped workers disappear', () => {
+    const model = { ...base, robots: [robot], portals: [{ id: 'office', x: -20, z: 4, label: 'Office', target: { type: 'office' as const, scope }, radius: 1, assetKey: 'gate' }] };
+    const workers = reconcileWorkers(new Map(), model);
+    advanceWorker(workers.get(robot.id)!, .1, false);
+    const atStop = { ...workers.get(robot.id)!.position };
+    const returning = reconcileWorkers(workers, { ...model, robots: [] }, [robot]);
+    expect(returning.get(robot.id)).toMatchObject({ returning: true, position: atStop, target: { x: -20, z: 4 } });
+    for (let frame = 0; frame < 100; frame++) advanceWorker(returning.get(robot.id)!, .1, false);
+    expect(returning.get(robot.id)!.arrived).toBe(true);
+    expect(reconcileWorkers(workers, { ...model, robots: [] }).size).toBe(0);
+  });
+  it('reduced motion lands directly at the authoritative pose and color follows session across claims/maps', () => {
+    const motion = reconcileWorkers(new Map(), { ...base, robots: [robot] }).get(robot.id)!;
+    advanceWorker(motion, 0, true);
+    expect(motion.position).toEqual({ x: robot.x, z: robot.z });
+    expect(motion.arrived).toBe(true);
+    expect(sessionColor(robot.sessionId)).toBe(sessionColor({ ...robot, claimId: 'other' }.sessionId));
+    expect(sessionColor('different')).not.toBe(sessionColor(robot.sessionId));
+  });
+  it('carries an arrived worker continuously with its moving task and leaves departing workers on their own path', () => {
+    const site = base.places[0]!;
+    const before = { ...base, robots: [{ ...robot, x: site.x + 1, z: site.z + 1 }] };
+    const afterSite = { ...site, x: site.x + 20, status: 'blocked' };
+    const after = { ...before, places: [afterSite], robots: [{ ...before.robots[0]!, x: afterSite.x + 1 }] };
+    const input = { model: after, previousModel: before, effect: { id: 1, taskEvents: [{ type: 'task.status_changed' as const, taskId: 'task', from: 'working', to: 'blocked' }] } };
+    const transitions = reconcileTasklandMotion(emptyTasklandMotion(input), input, 100).transitions;
+    expect(transitions[0]!.kind).toBe('move');
+    const workers = reconcileWorkers(new Map(), before); advanceWorker(workers.get(robot.id)!, 0, true);
+    const carried = reconcileWorkers(workers, after, [], new Set(['task'])).get(robot.id)!;
+    const halfway = sampleTasklandPlace(transitions, 'task', 100 + transitions[0]!.duration / 2)!;
+    advanceWorkerAtSite(carried, .016, false, halfway, afterSite);
+    expect(carried.position).toEqual({ x: halfway.x + 1, z: halfway.z + 1 });
+    expect(carried).toMatchObject({ arrived: true, robot: { id: robot.id, claimId: 'claim' } });
+    const end = sampleTasklandPlace(transitions, 'task', 100 + transitions[0]!.duration)!;
+    advanceWorkerAtSite(carried, .016, false, end, afterSite);
+    expect(carried.position).toEqual({ x: afterSite.x + 1, z: afterSite.z + 1 });
+    const departing = reconcileWorkers(new Map([[robot.id, carried]]), { ...after, robots: [] }, [carried.robot]).get(robot.id)!;
+    const departureTarget = { ...departing.target };
+    advanceWorkerAtSite(departing, .016, false, halfway, afterSite);
+    expect(departing.target).toEqual(departureTarget);
+    expect(departing.returning).toBe(true);
+  });
+});

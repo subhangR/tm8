@@ -1,11 +1,14 @@
 /** Authenticated read adapter for Game. No fixture substitution or map mutations. */
 import type { CollectionQuery, Cursor, EntitySummary, GraphEdgeView, Page } from '@tm8/contract';
-import { fromProjection, type MapEdge, type MapEntity, type MapType } from '../story/game/map-model';
+import { fromProjection, type MapEdge, type MapEntity, type MapInput, type MapType } from '../story/game/map-model';
 import type { Seam } from './seam';
+import { applyGameMailboxCounts, createGameMailboxReader } from './game-mailboxes';
+import { loadGameCancellationObservations } from './game-lifecycles';
 
 import type { GameMapLoader } from '../game/types';
+import { openGameMapIdentity, readGamePlacementRows, selectTownPlacements } from '../game/placement-read';
 export type { GameMapLoader, GameMapResult } from '../game/types';
-type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness'>;
+type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness' | 'game' | 'unreadCounts' | 'taskCancellationObservations'>;
 
 const MAP_KINDS: CollectionQuery['kinds'] = [
   'story', 'task', 'work_session', 'member', 'team_member', 'skill',
@@ -66,8 +69,14 @@ function summaryOf(row: EntitySummary, seam: GameReadPort): MapEntity {
   return {
     ...mapped,
     statusCategory: row.category ?? null,
+    ...(row.state.kind === 'task' ? {
+      acceptance: { ...row.state.acceptance },
+      estimateTent: row.state.progress?.tent,
+      ownProgress: row.state.progress?.own ?? null,
+    } : {}),
     pendingAttention: row.badges.attention?.pendingCount ?? 0,
-    mailbox: { count: row.counters.messages },
+    // The read port has message totals, not a viewer-specific unread cursor.
+    mailbox: { count: row.counters.messages, basis: 'messages' },
     ...(liveness ? { live: liveness === 'live' } : {}),
   };
 }
@@ -75,12 +84,14 @@ function summaryOf(row: EntitySummary, seam: GameReadPort): MapEntity {
 function edgeOf(row: GraphEdgeView): MapEdge {
   return {
     id: row.id, type: row.type, fromId: row.sourceId, toId: row.targetId,
+    updatedAt: row.updatedAt ?? null,
     endedAt: typeof row.props.endedAt === 'string' ? row.props.endedAt : null,
     status: typeof row.props.status === 'string' ? row.props.status : null,
   };
 }
 
 export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMapLoader {
+  const readMailboxes = createGameMailboxReader(seam, spaceId);
   const query = async (shape: Omit<CollectionQuery, 'spaceId' | 'cursor' | 'limit'>, signal?: AbortSignal) => {
     const rows = await pages((cursor) => seam.query({ spaceId, ...shape, cursor, limit: PAGE_LIMIT }).then(r => r.page), signal);
     rows.forEach(row => assertSpace(row, spaceId));
@@ -91,6 +102,12 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
     checkCancelled(signal);
     if (!spaceId || (scope.kind !== 'space' && scope.kind !== 'story') || !scope.id ||
       (scope.kind === 'space' && scope.id !== spaceId)) throw new Error('Map scope does not belong to the active space');
+
+    // Identity and Town placement I/O overlap the graph read; admission comes from the graph.
+    const persistedRead = seam.game && type ? (type === 'town'
+      ? readGamePlacementRows(seam.game, spaceId, { scope, type }, signal)
+      : openGameMapIdentity(seam.game, spaceId, { scope, type }, signal).then(result => ({ rows: [], warnings: result.warnings }))) : null;
+    void persistedRead?.catch(() => {});
 
     const kinds = type ? KINDS_BY_TYPE[type] : MAP_KINDS!;
     const entities = new Map<string, MapEntity>();
@@ -151,6 +168,14 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       }
     }
 
+    // Trail nodes may contain sessions absent from StoryPage.sessions' bounded
+    // preview. Apply the same liveness authority to every admitted session.
+    for (const entity of entities.values()) if (entity.kind === 'work_session' && entity.live === undefined) {
+      const state = entity.processState ?? entity.status;
+      const recorded = state === 'spawning' || state === 'running' || state === 'idle' || state === 'exited' || state === 'failed' ? state : null;
+      entity.live = seam.liveness.statusOf({ id: entity.id, status: recorded }) === 'live';
+    }
+
     // The bounded graph contributes relations only. Cursor-paged primary rows
     // and authoritative StoryPage membership decide which entities are admitted.
     if ((!type || type === 'taskland' || type === 'town') && entities.size) {
@@ -173,11 +198,20 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
         warnings = [...warnings, 'Map relations could not be loaded; places and their hierarchy remain available'];
       }
     }
+    const persisted = await persistedRead ?? { rows: [], warnings: [] };
+    checkCancelled(signal);
+    const input: MapInput = { scope: { ...scope }, entities: [...entities.values()], taskHierarchyComplete: scope.kind === 'space',
+      edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)),
+      ...(type === 'town' ? { townPlacements: selectTownPlacements(persisted.rows, new Set(entities.keys())) } : {}),
+      warnings: [...warnings, ...persisted.warnings] };
+    const hasMailboxes = input.entities.some(entity => entity.kind === 'task' || entity.kind === 'work_session' || entity.kind === 'story');
+    const snapshot = hasMailboxes ? await readMailboxes(signal) : null;
+    const withMailboxes = hasMailboxes ? applyGameMailboxCounts(input, snapshot, spaceId) : input;
+    const withLifecycles = await loadGameCancellationObservations(withMailboxes, seam, spaceId, (get) => read(get, signal));
     checkCancelled(signal);
     return {
       title,
-      input: { scope: { ...scope }, entities: [...entities.values()],
-        edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)), warnings },
+      input: withLifecycles,
     };
   };
 }

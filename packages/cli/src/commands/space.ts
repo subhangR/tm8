@@ -731,7 +731,7 @@ async function spaceUpdate(cmd: CommandContext): Promise<ExitCode> {
 function spaceProjection(
   command: string,
   operation:
-    | 'spaces.navigation' | 'spaces.home' | 'spaces.settings' | 'spaces.counts' | 'spaces.configs'
+    | 'spaces.navigation' | 'spaces.unreadCounts' | 'spaces.home' | 'spaces.settings' | 'spaces.counts' | 'spaces.configs'
     | 'spaces.chatDefaults.get' | 'credentials.space.readiness',
   render: (dto: unknown) => string,
 ): (cmd: CommandContext) => Promise<ExitCode> {
@@ -1344,6 +1344,7 @@ export const SPACE_COMMANDS: CommandModule[] = [
   },
   { path: ['space', 'home', 'get'], run: spaceProjection('space home get', 'spaces.home', renderHome) },
   { path: ['space', 'counts', 'get'], run: spaceProjection('space counts get', 'spaces.counts', renderCounts) },
+  { path: ['space', 'unread', 'get'], run: spaceProjection('space unread get', 'spaces.unreadCounts', fallback) },
   {
     path: ['space', 'settings', 'get'],
     run: spaceProjection('space settings get', 'spaces.settings', renderSettings),

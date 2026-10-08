@@ -1,4 +1,5 @@
 import type { FormsPendingForSessionsResult } from '@tm8/contract';
+import type { TaskCancellationObservations } from '@tm8/contract';
 import type { SkillPort } from '../skills/port';
 import type { ManagedPort } from '../managed/port';
 import type { JevPort } from '../jev/port';
@@ -289,6 +290,7 @@ import type {
   StartChatResult,
   SpaceId,
   SpaceKindCounts,
+  SpaceUnreadCounts,
   SpaceSettingsView,
   SpaceConfigsView,
   AuthSessionsListResult,
@@ -639,6 +641,8 @@ export interface AttentionV2Ops {
 }
 
 export interface Seam {
+  /** Durable Game maps and per-member resume. Fixtures may keep browser-only saves. */
+  game?: import('../game/port').GamePort;
   mcp?: (spaceId: string) => import("../mcp/port").McpPort;
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
@@ -759,6 +763,12 @@ export interface Seam {
    * page length is not a total.
    */
   counts(spaceId: SpaceId): Promise<SpaceKindCounts>;
+  /** Lazy viewer mailbox counts. Optional for older backends and fixture seams. */
+  unreadCounts?(spaceId: SpaceId): Promise<SpaceUnreadCounts>;
+  /** Bounded proven legacy facts; missing or unavailable facts remain unknown. */
+  taskCancellationObservations?(spaceId: SpaceId, taskIds: readonly string[]): Promise<TaskCancellationObservations>;
+  /** Same-client successful mailbox read cursor writes; does not imply cross-client events. */
+  onReadMark?(listener: (anchorId: EntityId) => void): () => void;
   /** Full graph hydration; durable entity/edge events keep this lens current. */
   graph(input: GraphQuery): Promise<GraphResult>;
   /**
