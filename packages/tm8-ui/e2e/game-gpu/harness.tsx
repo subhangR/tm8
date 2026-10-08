@@ -20,17 +20,21 @@ const counts = { inputEntities: input.entities.length, inputEdges: input.edges.l
   roads: model.roads.length, robots: model.robots.length, groups: model.groups.length, portals: model.portals.length,
   decor: model.decor.length, paths: model.paths.length,
   byKind: Object.fromEntries([...new Set(input.entities.map(e => e.kind))].map(kind => [kind, input.entities.filter(e => e.kind === kind).length])) };
-const observations = { positions: [] as Array<{ x: number; z: number; at: number }>, cameras: [] as unknown[], inspections: 0, portalRequests: 0 };
+const start = walkingEntrance(model);
+const observations = { initialPosition: start, positions: [] as Array<{ x: number; z: number; at: number }>, cameras: [] as unknown[], inspections: 0, portalRequests: 0 };
 let assetReport: ReturnType<typeof useAssetReport> | null = null;
 Object.assign(window, { __gameGpuFixture: { selection, counts, buildMs, warnings: model.warnings, observations,
   snapshot: () => {
     const canvas = document.querySelector('canvas');
     // R3F's test registry exposes the actual mounted renderer; no production hook added.
-    const gl = canvas ? _roots.get(canvas)?.store.getState().gl : null;
+    const state = canvas ? _roots.get(canvas)?.store.getState() : null, gl = state?.gl;
     return { assets: assetReport, unresolvedImportedFallbacks: assetReport?.fallbacks.filter(id => getImportedAsset(id)) ?? [],
       shadows: gl ? { enabled: gl.shadowMap.enabled, type: gl.shadowMap.type, autoUpdate: gl.shadowMap.autoUpdate } : null,
       size: gl ? { width: gl.domElement.width, height: gl.domElement.height, pixelRatio: gl.getPixelRatio() } : null,
-      memory: gl ? { ...gl.info.memory } : null };
+      memory: gl ? { ...gl.info.memory } : null,
+      overview: document.querySelector('.walking-toolbar [aria-pressed]')?.getAttribute('aria-pressed') === 'true',
+      camera: state ? { position: state.camera.position.toArray(), zoom: 'zoom' in state.camera ? state.camera.zoom : null } : null,
+      frameLoop: state ? { mode: state.frameloop, active: state.internal.active, pendingFrames: state.internal.frames } : null };
   },
   source: 'synthetic MapInput -> production buildMapModel -> production WalkingMapView/MapScene',
   coverage: { measured: ['production player locomotion', 'overview camera', 'scroll zoom', 'rendered static worker poses and ambient animations'],
@@ -40,7 +44,7 @@ function App() {
   const assets = useAssetReport();
   useEffect(() => { assetReport = assets; }, [assets]);
   return <main className="cv2-root gpu-fixture"><header>Synthetic {selection.scope} / {selection.map} / {selection.workload} · {model.places.length} places, {model.robots.length} workers</header>
-    <WalkingMapView model={model} start={walkingEntrance(model)}
+    <WalkingMapView model={model} start={start}
       onPosition={(x, z) => { observations.positions.push({ x, z, at: performance.now() }); if (observations.positions.length > 256) observations.positions.shift(); }}
       onCamera={camera => { observations.cameras.push(camera); if (observations.cameras.length > 256) observations.cameras.shift(); }}
       onInspect={id => { observations.inspections++; inspect(id); }} onEnterPortal={() => observations.portalRequests++}/>

@@ -1,10 +1,10 @@
 /** Loaded before React/Three. Counts actual GL submissions, including shadow passes. */
-import { recordFrame, summarize } from './core.mjs';
+import { distribution, recordFrame, summarize } from './core.mjs';
 const nativeRaf = window.requestAnimationFrame.bind(window);
 const nativeGetContext = HTMLCanvasElement.prototype.getContext;
 const instrumented = new WeakSet();
 const probe = { frames: [], renderer: null, lastRenderAt: null, firstRenderAt: null, contexts: 0,
-  hidden: false, contextLost: false, window: null, counter: null, outsideRafDrawCalls: 0, detachedContextLosses: 0 };
+  hidden: false, contextLost: false, window: null, counter: null, outsideRafDrawCalls: 0, detachedContextLosses: 0, frameClockCalibration: null };
 document.addEventListener('visibilitychange', () => { if (probe.window && document.visibilityState !== 'visible') probe.hidden = true; });
 HTMLCanvasElement.prototype.getContext = function (...args) {
   const gl = nativeGetContext.apply(this, args);
@@ -50,13 +50,29 @@ window.requestAnimationFrame = callback => nativeRaf(at => {
   }
 });
 window.__gpuProbe = {
+  calibrateFrameClock: () => new Promise(resolve => {
+    const timestamps = []; let finished = false;
+    const finish = () => {
+      if (finished) return; finished = true; clearTimeout(timer);
+      const intervals = distribution(timestamps.slice(1).map((at, i) => at - timestamps[i]));
+      probe.frameClockCalibration = { intervals, estimatedHz: intervals.median > 0 ? 1000 / intervals.median : null,
+        source: 'pre-scene rAF pacing estimate; headless uses a synthetic clock; not physical refresh-rate proof' };
+      resolve(probe.frameClockCalibration);
+    };
+    const timer = setTimeout(finish, 5000);
+    const collect = at => { if (finished) return; timestamps.push(at); if (timestamps.length >= 40) finish(); else nativeRaf(collect); };
+    nativeRaf(collect);
+  }),
   state: () => ({ renderer: probe.renderer, firstRenderAt: probe.firstRenderAt, lastRenderAt: probe.lastRenderAt,
+    frameClockCalibration: probe.frameClockCalibration,
     contexts: probe.contexts, visibility: document.visibilityState, contextLost: probe.contextLost, detachedContextLosses: probe.detachedContextLosses, outsideRafDrawCalls: probe.outsideRafDrawCalls }),
-  begin: () => { probe.frames = []; probe.hidden = document.visibilityState !== 'visible'; probe.window = { start: performance.now(), outsideRafDrawCalls: probe.outsideRafDrawCalls }; return probe.window.start; },
+  begin: () => { probe.frames = []; probe.hidden = document.visibilityState !== 'visible'; probe.window = { start: performance.now(), lastRenderAt: probe.lastRenderAt, outsideRafDrawCalls: probe.outsideRafDrawCalls }; return probe.window.start; },
   end: minimumSamples => {
     const end = performance.now(), start = probe.window.start;
     const result = { ...summarize(probe.frames, { start, end, minimumSamples, hidden: probe.hidden, contextLost: probe.contextLost }),
       start, end, outsideRafDrawCalls: probe.outsideRafDrawCalls - probe.window.outsideRafDrawCalls, visibilityAtEnd: document.visibilityState, rawFrames: probe.frames };
+    result.renderLoopCondition = probe.lastRenderAt === probe.window.lastRenderAt ? 'render_loop_stalled' : result.sampledFrames < 2 ? 'frame_interval_exceeds_window' : 'rendering';
+    result.longestObservedIntervalMs = distribution(probe.frames.filter(f => f.previous != null).map(f => f.at - f.previous)).max;
     probe.window = null;
     return result;
   },

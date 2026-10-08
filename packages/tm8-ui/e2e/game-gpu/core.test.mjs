@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture, matrix, distribution, summarize, classify, recordFrame, hardwareVendor } from './core.mjs';
+import { fixture, matrix, distribution, summarize, classify, recordFrame, hardwareVendor, interactionEffect } from './core.mjs';
 const native = { renderer: { unmaskedRenderer: 'ANGLE (Intel, Intel GPU)', context: 'webgl2' },
   headed: true, actualHead: 'a'.repeat(40), expectedHead: 'a'.repeat(40),
+  windowEndEpochMs: 100,
   audit: { devices: [{ name: 'Intel GPU', hardware: true, accessible: true, vendorId: 0x8086, deviceId: 42 }] },
-  browserGpu: { devices: [{ deviceString: 'Intel GPU', vendorId: 0x8086, deviceId: 42, driverVersion: '1.2' }], featureStatus: { webgl: 'enabled', webgl2: 'enabled' } } };
+  browserGpu: { glRenderer: 'ANGLE (Intel, Intel GPU)', stableContext: true, startedAtEpochMs: 150, collectedAtEpochMs: 200,
+    devices: [{ deviceString: 'Intel GPU', vendorId: 0x8086, deviceId: 42, driverVersion: '1.2' }], featureStatus: { webgl: 'enabled', webgl2: 'enabled' } } };
 test('24 deterministic workload cases and map-specific input counts', () => {
   assert.equal(matrix().length, 24);
   for (const config of matrix()) {
@@ -36,9 +38,16 @@ test('quantiles and FPS use complete in-window rendered intervals', () => {
 test('native requires matched physical device, driver, hardware features and valid clean samples', () => {
   assert.equal(classify(native).nativeEligible, true);
   for (const change of [ { audit: { devices: [] } }, { browserGpu: {} }, { renderer: {} },
-    { softwareRequested: true }, { samplesValid: false }, { dirty: true }, { headed: false }, { expectedHead: undefined }, { expectedHead: 'b'.repeat(40) },
+    { softwareRequested: true }, { samplesValid: false }, { dirty: true }, { headed: false }, { singleProcess: true }, { expectedHead: undefined }, { expectedHead: 'b'.repeat(40) },
     { browserGpu: { ...native.browserGpu, devices: [{ ...native.browserGpu.devices[0], driverVersion: '' }] } },
     { browserGpu: { ...native.browserGpu, devices: [{ ...native.browserGpu.devices[0], deviceId: 99 }] } },
+    { browserGpu: { ...native.browserGpu, auditError: 'timeout' } },
+    { browserGpu: { ...native.browserGpu, collectedAtEpochMs: 99 } },
+    { browserGpu: { ...native.browserGpu, startedAtEpochMs: 99 } },
+    { browserGpu: { ...native.browserGpu, stableContext: false } },
+    { browserGpu: { ...native.browserGpu, gpuProcessCrashCount: 1 } },
+    { browserGpu: { ...native.browserGpu, glRenderer: 'ANGLE (NVIDIA, Other GPU)' } },
+    { browserGpu: { ...native.browserGpu, devices: [{ ...native.browserGpu.devices[0], active: false }, { vendorId: 0x10de, deviceId: 99, driverVersion: '1.2', active: true }] } },
     { browserGpu: { ...native.browserGpu, featureStatus: { webgl: 'unavailable_software', webgl2: 'enabled' } } } ]) {
     assert.equal(classify({ ...native, ...change }).nativeEligible, false, JSON.stringify(change));
   }
@@ -54,6 +63,14 @@ test('same timestamp rendering callbacks keep all submitted draws', () => {
   assert.equal(frames.length, 1); assert.equal(frames[0].previous, 10); assert.equal(frames[0].callbacks, 2);
   assert.equal(summarize(frames, { start: 5, end: 35, minimumSamples: 1 }).drawCalls.median, 10);
 });
+test('interaction validation rejects idle, unfocused and unmoved input windows', () => {
+  const before = { observations: { initialPosition: { x: 0, z: 0 }, positions: [] }, snapshot: { overview: false, camera: { zoom: 1 } } };
+  const during = { observations: { positions: [{ x: 1, z: 0 }] } };
+  const after = { snapshot: { overview: true, camera: { zoom: 1 } } };
+  assert.equal(interactionEffect(before, during, after).valid, true);
+  assert.equal(interactionEffect(before, { observations: { positions: [{ x: 0, z: 0 }] } }, after).valid, false);
+  assert.equal(interactionEffect(before, during, before).valid, false);
+});
 test('real hardware identities pass only with matching host/browser proof; QXL never hardware', () => {
   for (const [vendorId, name, renderer] of [
     [0x8086, 'Intel GPU', 'ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)'],
@@ -61,7 +78,7 @@ test('real hardware identities pass only with matching host/browser proof; QXL n
     [0x106b, 'Apple M2', 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)'],
   ]) {
     const data = { ...native, renderer: { unmaskedRenderer: renderer, context: 'webgl2' }, audit: { devices: [{ name, hardware: true, accessible: true, vendorId, deviceId: vendorId === 0x106b ? null : 42 }] },
-      browserGpu: { ...native.browserGpu, devices: [{ vendorId, deviceId: vendorId === 0x106b ? 0 : 42, driverVersion: '1.2', deviceString: '' }] } };
+      browserGpu: { ...native.browserGpu, glRenderer: renderer, devices: [{ vendorId, deviceId: vendorId === 0x106b ? 0 : 42, driverVersion: '1.2', deviceString: '' }] } };
     assert.equal(classify(data).nativeEligible, true, renderer);
   }
   assert.equal(hardwareVendor('0x1b36'), false); assert.equal(hardwareVendor('0x10de'), true);

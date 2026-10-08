@@ -41,8 +41,9 @@ export async function auditEnvironment() {
 export function browserGpuSummary(info) {
   const gpu = info?.gpu;
   return { devices: (gpu?.devices ?? []).map(d => ({ vendorId: d.vendorId, deviceId: d.deviceId,
-    vendorString: d.vendorString, deviceString: d.deviceString, driverVendor: d.driverVendor, driverVersion: d.driverVersion })),
+    vendorString: d.vendorString, deviceString: d.deviceString, driverVendor: d.driverVendor, driverVersion: d.driverVersion, active: d.active })),
     glRenderer: gpu?.auxAttributes?.glRenderer ?? null, glVendor: gpu?.auxAttributes?.glVendor ?? null,
     glVersion: gpu?.auxAttributes?.glVersion ?? null, displayType: gpu?.auxAttributes?.displayType ?? null,
+    gpuProcessCrashCount: gpu?.auxAttributes?.gpuProcessCrashCount ?? null,
     featureStatus: gpu?.featureStatus ?? {}, workarounds: gpu?.driverBugWorkarounds ?? [] };
 }

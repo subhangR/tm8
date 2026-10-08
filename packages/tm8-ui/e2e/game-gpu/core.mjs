@@ -53,6 +53,13 @@ export function recordFrame(frames, sample) {
   } else frames.push({ ...sample, callbacks: 1 });
 }
 
+export function interactionEffect(before, during, after) {
+  const origin = before.observations.positions.at(-1) ?? before.observations.initialPosition;
+  const playerMoved = Boolean(origin && during.observations.positions.some(p => Math.hypot(p.x - origin.x, p.z - origin.z) > .001));
+  const cameraOrOverviewChanged = before.snapshot.overview !== after.snapshot.overview || JSON.stringify(before.snapshot.camera) !== JSON.stringify(after.snapshot.camera);
+  return { playerMoved, cameraOrOverviewChanged, valid: playerMoved && cameraOrOverviewChanged };
+}
+
 export function summarize(frames, { start, end, minimumSamples = 30, hidden = false, contextLost = false }) {
   // Include only complete intervals whose two rendered endpoints fall in the window.
   const sampled = frames.filter(f => f.previous >= start && f.at <= end && f.at > f.previous && f.drawCalls > 0);
@@ -73,7 +80,7 @@ export function summarize(frames, { start, end, minimumSamples = 30, hidden = fa
 
 const SOFTWARE = /swiftshader|llvmpipe|softpipe|lavapipe|software|warp|virgl|qxl|vmware|virtualbox|microsoft basic|parallels/i;
 export const hardwareVendor = id => [0x1002, 0x10de, 0x8086, 0x106b, 0x5143, 0x13b5, 0x1010].includes(Number(id));
-export function classify({ renderer, browserGpu, audit, softwareRequested = false, samplesValid = true, dirty = false, headed = false, actualHead, expectedHead }) {
+export function classify({ renderer, browserGpu, audit, softwareRequested = false, samplesValid = true, dirty = false, headed = false, singleProcess = false, actualHead, expectedHead, windowEndEpochMs }) {
   const identity = [renderer?.unmaskedRenderer, renderer?.unmaskedVendor, browserGpu?.glRenderer,
     ...(browserGpu?.devices ?? []).map(d => d.deviceString)].filter(Boolean).join(' ');
   const software = softwareRequested || SOFTWARE.test(identity);
@@ -82,9 +89,15 @@ export function classify({ renderer, browserGpu, audit, softwareRequested = fals
   if (!renderer?.unmaskedRenderer) reasons.push('unmasked_renderer_missing');
   if (!/nvidia|amd|ati\b|intel|apple|adreno|mali|powervr/i.test(renderer?.unmaskedRenderer ?? '')) reasons.push('positive_hardware_renderer_missing');
   if (!browserGpu?.devices?.length) reasons.push('browser_gpu_device_missing');
+  if (browserGpu?.auditError || !browserGpu?.glRenderer || browserGpu?.stableContext !== true) reasons.push('gpu_audit_unavailable');
+  if (renderer?.unmaskedRenderer !== browserGpu?.glRenderer) reasons.push('sample_and_audit_renderer_mismatch');
+  if (!(browserGpu?.startedAtEpochMs >= windowEndEpochMs && browserGpu?.collectedAtEpochMs >= browserGpu.startedAtEpochMs)) reasons.push('gpu_audit_not_bound_to_window');
+  if (Number(browserGpu?.gpuProcessCrashCount) > 0) reasons.push('gpu_process_restart_observed');
   const physical = (audit?.devices ?? []).filter(d => d.accessible && d.hardware === true && hardwareVendor(d.vendorId) && !SOFTWARE.test(d.name ?? ''));
   if (!physical.length) reasons.push('physical_device_access_not_proven');
-  const browserDevices = browserGpu?.devices ?? [];
+  const devices = browserGpu?.devices ?? [];
+  const activeDevice = devices.find(d => d.active === true) ?? devices[0];
+  const browserDevices = activeDevice ? [activeDevice] : [];
   const matched = physical.some(p => browserDevices.some(b => {
     if (p.vendorId !== Number(b.vendorId)) return false;
     if (p.deviceId != null && Number(b.deviceId)) return p.deviceId === Number(b.deviceId);
@@ -99,6 +112,7 @@ export function classify({ renderer, browserGpu, audit, softwareRequested = fals
   if (!samplesValid) reasons.push('sample_window_invalid');
   if (dirty) reasons.push('uncommitted_checkout');
   if (!headed) reasons.push('headless_synthetic_frame_clock');
+  if (singleProcess) reasons.push('single_process_browser');
   if (!/^[a-f\d]{40}$/i.test(expectedHead ?? '')) reasons.push('expected_head_missing_or_not_full_sha');
   else if (expectedHead !== actualHead) reasons.push('expected_head_mismatch');
   return { classification: software ? 'software-diagnostic' : reasons.length ? 'unverified' : 'native-hardware',
