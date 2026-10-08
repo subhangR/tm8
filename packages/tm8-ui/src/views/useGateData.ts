@@ -556,6 +556,8 @@ export interface GateData {
    * entities), so the event stream cannot do this on its own.
    */
   refreshTaskAxes: () => void;
+  /** Re-read the space menu after a successful admin edit. */
+  refreshMenu: () => void;
   /**
    * THE TWO TRIGGER SUBJECTS every rich input in this shell picks from.
    *
@@ -3234,6 +3236,17 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     [members],
   );
 
+  const menuScope = useRef({ seam, spaceId });
+  menuScope.current = { seam, spaceId };
+  const refreshMenu = useCallback(() => {
+    const current = () => menuScope.current.seam === seam && menuScope.current.spaceId === spaceId;
+    if (!spaceId || !current()) return;
+    const generation = spaceGeneration.current;
+    void seam.spaceSettings(spaceId).then((settings) => {
+      if (current() && generation === spaceGeneration.current) setMenu(resolveMenu(settings.menu ?? null));
+    }).catch(() => undefined);
+  }, [seam, spaceId]);
+
   /** See `GateData.refreshTaskAxes` — axis writes emit no workspace event. */
   const refreshTaskAxes = useCallback(() => {
     if (!spaceId) return;
@@ -3259,6 +3272,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       taskAxes,
       taskWorkflows,
       refreshTaskAxes,
+      refreshMenu,
       mentionOptions,
       skillOptions,
       viewerActor,
@@ -3297,7 +3311,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, forgetSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, refreshMenu, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, forgetSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
   );
 
   return data;

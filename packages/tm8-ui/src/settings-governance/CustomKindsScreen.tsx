@@ -337,9 +337,7 @@ function NewKindCard({
             the verdict that gates it, which put the answer below the button
             asking the question. */}
         <div className="set-kinds__submit">
-          {/* Refused for ONE reason and it is not the form's: the seam has no
-              write. When it gains one, this becomes a live submit and the
-              validation above already gates it. */}
+          {/* A read-only host omits the authorized create callback. */}
           {onCreate ? <button type="button" disabled={!hasPayload || pending} onClick={() => { void onCreate(); }}>{pending ? 'Creating…' : 'Create kind'}</button> :
             <RefusedControl reason={GOVERNANCE_REASONS.createKind} emphasis="primary">Create kind</RefusedControl>}
           <p className="gov-prose gov-prose--quiet" data-testid="draft-verdict">

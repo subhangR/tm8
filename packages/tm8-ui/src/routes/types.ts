@@ -17,8 +17,13 @@ import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain
  */
 export const SETTINGS_ROUTE_SECTIONS = [
   'projects', 'menu', 'connectors', 'credentials', 'configs', 'space-credentials', 'space-links',
+  'profile', 'account', 'my-sessions', 'members', 'invites', 'sessions', 'sharing',
+  'axes', 'workflows', 'models', 'chat-defaults', 'kinds', 'danger',
+  'node-credentials', 'filesystem-access',
 ] as const;
 export type SettingsRouteSection = (typeof SETTINGS_ROUTE_SECTIONS)[number];
+export const NODE_ADMIN_ROUTE_SECTIONS = ['credentials', 'filesystem', 'accounts', 'configuration'] as const;
+export type NodeAdminRouteSection = (typeof NODE_ADMIN_ROUTE_SECTIONS)[number];
 
 /**
  * The three outer panel tabs, fixed order — the vocabulary of `t=`.
@@ -213,7 +218,8 @@ export type NavView =
     }
   | { view: 'channels' }
   | { view: 'channel'; channelId: EntityId; msg: EntityId | null }
-  | { view: 'settings'; section: SettingsRouteSection | null }
+  | { view: 'settings'; section: SettingsRouteSection | null; scope?: 'space' }
+  | { view: 'settings'; section: NodeAdminRouteSection | null; scope: 'node' }
   /*
    * The four screens that rendered from the rail with NO route line, added by
    * the 2026-08-14 amendment to WLT §2.1/§2.2.

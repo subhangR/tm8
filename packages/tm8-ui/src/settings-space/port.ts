@@ -191,9 +191,10 @@ export function defaultInviteRole(): string {
   return roles.length > 0 ? roles[roles.length - 1] : 'unknown';
 }
 
-/** The narrow surface the settings components consume. Reads only — see above. */
+/** The profile fields exposed by space administration. */
 export type SpaceProfilePatch = Pick<UpdateSpaceInput, 'name' | 'description' | 'githubRepo' | 'sessionAutoCloseMinutes'>;
 
+/** Bound-space reads and supported, server-authorized settings writes. */
 export interface SettingsPort {
   saveMenu?(payload: MenuConfigPayload, expectedRevision: number): Promise<ResolvedMenu>;
   /** Updates only the bound space, with server authorization. */

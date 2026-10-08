@@ -58,6 +58,8 @@ export const RESERVED_SLUGS: readonly string[] = [
   'inbox',
   'workspace',
   'settings',
+  'space-admin',
+  'node-admin',
   'channel',
   'e',
   'k',

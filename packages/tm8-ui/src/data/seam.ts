@@ -1252,10 +1252,11 @@ export interface Seam {
      * changes one sharing default cannot reset the other. The admin rule and
      * the vocabulary live in `w2_update_space`; this seam checks neither.
      */
-    /** Revision-checked space navigation writes, backed by spaces.menu.update. */
-    createEntityKind?(spaceId: SpaceId, input: EntityKindCreateInput): Promise<EntityKindDef>;
-    updateMenu?(spaceId: SpaceId, input: UpdateMenuInput): Promise<MenuConfig>;
     updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary>;
+    /** Create a custom kind through the server-authorized entityKinds.create operation. */
+    createEntityKind?(spaceId: SpaceId, input: EntityKindCreateInput): Promise<EntityKindDef>;
+    /** Revision-checked space navigation writes, backed by spaces.menu.update. */
+    updateMenu?(spaceId: SpaceId, input: UpdateMenuInput): Promise<MenuConfig>;
     /**
      * Mint a join code. `role` is what redemption confers and may be `admin` or
      * `member` — never `owner`: a code travels out of band, and a bearer
