@@ -102,7 +102,7 @@ export function GameScreen({ data, memberId, loadMap, overlayOpen, reasons, serv
     <div className="game-screen" data-testid="game-screen">
       <div className="game-screen__map" ref={mapRegion} tabIndex={-1} aria-label="Game map">
         <GameMode spaceId={data.spaceId} memberId={memberId} spaceTitle={data.spaces.find(space => space.id === data.spaceId)?.name}
-          loadMap={loadMap} onInspect={inspect} />
+          loadMap={loadMap} events={data.seam} onInspect={inspect} />
       </div>
       {selectedId ? (
         <aside className="game-screen__inspection" aria-label="Entity details" data-testid="game-inspection">
