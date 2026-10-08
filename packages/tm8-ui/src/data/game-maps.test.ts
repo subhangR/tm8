@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { CollectionQuery, EdgeView, EntityDetail, EntitySummary, StoryPage } from '@tm8/contract';
-import type { ConnectionOpts, Seam } from './seam';
+import type { CollectionQuery, GraphEdgeView, EntityDetail, EntitySummary, StoryPage } from '@tm8/contract';
+import type { Seam } from './seam';
 import { createGameMapLoader } from './game-maps';
+import type { MapScope, MapType } from '../story/game/map-model';
 
 const SPACE = 'space-a';
 const row = (id: string, kind = 'task', parentId: string | null = null): EntitySummary => ({
@@ -9,20 +10,21 @@ const row = (id: string, kind = 'task', parentId: string | null = null): EntityS
   state: { kind, status: 'working', progress: { percent: 40, size: 5 } },
   counters: { messages: 3 }, badges: { attention: { pendingCount: 2 } },
 } as unknown as EntitySummary);
-const edge = (id: string, source: EntitySummary, target: EntitySummary, props = {}): EdgeView => ({
-  id, type: 'depends_on', source, target, props,
-} as EdgeView);
+const edge = (id: string, source: EntitySummary, target: EntitySummary, props = {}): GraphEdgeView => ({
+  id, type: 'depends_on', sourceId: source.id, targetId: target.id, props,
+} as GraphEdgeView);
 const page = (items: EntitySummary[], nextCursor: string | null = null) => ({ items, nextCursor });
 function port() {
   return {
     spaces: vi.fn(async () => [{ id: SPACE, name: 'Real space' }]),
     query: vi.fn(async (_input: CollectionQuery) => ({ page: page([]) })),
     entity: vi.fn(async (_id: string): Promise<EntityDetail> => { throw new Error('not found'); }),
-    connections: vi.fn(async (_id: string, _opts?: ConnectionOpts) => ({ items: [] as EdgeView[], nextCursor: null as string | null })),
+    graph: vi.fn(async (_input: unknown) => ({ nodes: [] as EntitySummary[], edges: [] as GraphEdgeView[], clusters: [] })),
+    connections: vi.fn(),
     liveness: { statusOf: vi.fn(() => 'unknown' as const) },
   };
 }
-const load = (seam: ReturnType<typeof port>) => createGameMapLoader(seam as unknown as Seam, SPACE);
+const load = (seam: ReturnType<typeof port>): ((scope: MapScope, signal?: AbortSignal, type?: MapType) => ReturnType<ReturnType<typeof createGameMapLoader>>) => createGameMapLoader(seam as unknown as Seam, SPACE);
 const story = (overrides: Partial<StoryPage> = {}): EntityDetail => ({
   ...row('story-a', 'story'),
   content: { kind: 'story', page: {
@@ -33,16 +35,12 @@ const story = (overrides: Partial<StoryPage> = {}): EntityDetail => ({
 } as unknown as EntityDetail);
 
 describe('real Game map reads', () => {
-  it('pages space entities and connections, preserves progress/counts, and admits only scoped endpoints', async () => {
+  it('pages primary entities, reads one bounded graph, preserves progress/counts and admits only scoped endpoints', async () => {
     const seam = port(), a = row('a'), b = row('b'), unrelated = row('unrelated');
     seam.query.mockImplementation(async (input?: unknown) => ({ page: (input as { cursor?: string }).cursor ? page([b]) : page([a], 'entities-2') }));
-    seam.connections.mockImplementation(async (id?: unknown, input?: unknown) => {
-      if (id !== 'a') return { items: [], nextCursor: null };
-      return (input as { cursor?: string }).cursor
-        ? { items: [edge('ended', a, b, { endedAt: '2026-10-08' })], nextCursor: null }
-        : { items: [edge('road', a, b), edge('outside', a, unrelated),
-          edge('foreign', a, { ...b, spaceId: 'space-b' })], nextCursor: 'edges-2' };
-    });
+    const foreign = { ...unrelated, spaceId: 'space-b' };
+    seam.graph.mockResolvedValue({ nodes: [a, b, foreign], edges: [edge('road', a, b), edge('outside', a, unrelated),
+      edge('foreign', a, foreign), edge('ended', a, b, { endedAt: '2026-10-08' })], clusters: [] });
     const result = await load(seam)({ kind: 'space', id: SPACE });
     expect(result.title).toBe('Real space');
     expect(result.input.scope).toEqual({ kind: 'space', id: SPACE });
@@ -52,7 +50,9 @@ describe('real Game map reads', () => {
     expect(result.input.edges.map(e => e.id)).toEqual(['road', 'ended']);
     expect(result.input.edges[1]?.endedAt).toBe('2026-10-08');
     expect(seam.query.mock.calls[1]?.[0]).toMatchObject({ spaceId: SPACE, cursor: 'entities-2', limit: 200 });
-    expect(seam.connections.mock.calls[0]?.[1]).toMatchObject({ limit: 200, direction: 'outgoing' });
+    expect(seam.graph).toHaveBeenCalledTimes(1);
+    expect(seam.graph.mock.calls[0]?.[0]).toMatchObject({ spaceId: SPACE, limit: 200 });
+    expect(seam.connections).not.toHaveBeenCalled();
   });
 
   it('keeps authoritative story membership and completes only its root hierarchy and direct child-story pages', async () => {
@@ -88,10 +88,12 @@ describe('real Game map reads', () => {
     const deep = Array.from({ length: 32 }, (_, index) => row(`deep-${index + 1}`, 'task', index ? `deep-${index}` : 'root'));
     seam.query.mockImplementation(async input => ({ page: page(input.subtreeOf ? deep : []) }));
     expect((await load(seam)({ kind: 'story', id: 'story-a' })).input.warnings).toContain('Contained hierarchy reaches depth 32; deeper descendants may be absent');
-    seam.connections.mockClear();
+    seam.graph.mockClear();
     seam.query.mockResolvedValue({ page: page([row('story', 'story'), row('doc', 'doc'), row('project', 'project')]) });
-    const result = await load(seam)({ kind: 'space', id: SPACE });
+    const result = await load(seam)({ kind: 'space', id: SPACE }, undefined, 'hub');
     expect(result.input.entities).toHaveLength(3);
+    await load(seam)({ kind: 'space', id: SPACE }, undefined, 'hub');
+    expect(seam.graph).not.toHaveBeenCalled();
     expect(seam.connections).not.toHaveBeenCalled();
   });
 
@@ -132,29 +134,51 @@ describe('real Game map reads', () => {
     expect(seam.query).toHaveBeenCalledTimes(100);
   });
 
-  it('bounds concurrent connection reads and stops admitting work after a failure', async () => {
+  it('keeps a 3,000-record load to paged primary queries and one relation read, with an explicit graph budget warning', async () => {
     const seam = port();
-    seam.query.mockResolvedValue({ page: page(Array.from({ length: 9 }, (_, index) => row(`row-${index}`))) });
-    let active = 0, peak = 0;
-    seam.connections.mockImplementation(async () => {
-      active++; peak = Math.max(active, peak);
-      await Promise.resolve();
-      active--;
-      return { items: [], nextCursor: null };
+    const records = Array.from({ length: 3000 }, (_, index) => row(`row-${index}`));
+    seam.query.mockImplementation(async input => {
+      const offset = Number(input.cursor ?? 0);
+      return { page: page(records.slice(offset, offset + 200), offset + 200 < records.length ? String(offset + 200) : null) };
     });
-    await load(seam)({ kind: 'space', id: SPACE });
-    expect(peak).toBe(4);
-    seam.connections.mockClear();
-    const pending: (() => void)[] = [];
-    seam.connections.mockImplementation(async (id) => {
-      if (id === 'row-0') throw new Error('Read failed');
-      await new Promise<void>(resolve => pending.push(resolve));
-      return { items: [], nextCursor: null };
-    });
-    await expect(load(seam)({ kind: 'space', id: SPACE })).rejects.toThrow('Read failed');
-    pending.forEach(resolve => resolve());
-    await new Promise(resolve => setTimeout(resolve, 0));
-    expect(seam.connections).toHaveBeenCalledTimes(4);
+    seam.graph.mockResolvedValue({ nodes: records.slice(0, 200), edges: [], clusters: [] });
+    const result = await load(seam)({ kind: 'space', id: SPACE }, undefined, 'taskland');
+    expect(result.input.entities).toHaveLength(3000);
+    expect(seam.query).toHaveBeenCalledTimes(15);
+    expect(seam.graph).toHaveBeenCalledTimes(1);
+    expect(seam.connections).not.toHaveBeenCalled();
+    expect(result.input.warnings).toContain('Map relations reached their read budget; some roads, workers or deliverables may be absent');
+  });
+
+  it('uses relevant primary kinds and makes no relation reads for space/story hubs and non-relational maps', async () => {
+    const seam = port();
+    await load(seam)({ kind: 'space', id: SPACE }, undefined, 'hub');
+    expect(seam.query.mock.calls[0]?.[0].kinds).toEqual(['story']);
+    seam.entity.mockResolvedValue(story() as never);
+    await load(seam)({ kind: 'story', id: 'story-a' }, undefined, 'hub');
+    expect(seam.query.mock.calls[1]?.[0]).toMatchObject({ kinds: ['story'], parentId: 'story-a' });
+    for (const type of ['office', 'library', 'factory'] as const) await load(seam)({ kind: 'space', id: SPACE }, undefined, type);
+    expect(seam.query.mock.calls.map(([query]) => query.kinds)).toEqual([
+      ['story'], ['story'], ['member', 'team_member', 'work_session', 'skill'],
+      ['doc', 'drawing', 'artifact', 'file'], ['project', 'pull_request', 'commit', 'worktree'],
+    ]);
+    expect(seam.graph).not.toHaveBeenCalled();
+    expect(seam.connections).not.toHaveBeenCalled();
+  });
+
+  it('retains primary places with a warning if relations fail and cancels a pending graph read', async () => {
+    const seam = port();
+    seam.query.mockResolvedValue({ page: page([row('task')]) });
+    seam.graph.mockRejectedValue(new Error('Graph unavailable'));
+    const result = await load(seam)({ kind: 'space', id: SPACE }, undefined, 'taskland');
+    expect(result.input.entities[0]?.id).toBe('task');
+    expect(result.input.warnings).toContain('Map relations could not be loaded; places and their hierarchy remain available');
+    const abort = new AbortController();
+    seam.graph.mockImplementation(() => new Promise(() => {}));
+    const pending = load(seam)({ kind: 'space', id: SPACE }, abort.signal, 'taskland');
+    await vi.waitFor(() => expect(seam.graph).toHaveBeenCalledTimes(2));
+    abort.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 
   it('aborts immediately while a Seam read is pending and ignores its late response', async () => {

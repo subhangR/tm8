@@ -1,11 +1,11 @@
 /** Authenticated read adapter for Game. No fixture substitution or map mutations. */
-import type { CollectionQuery, Cursor, EdgeView, EntitySummary, Page } from '@tm8/contract';
-import { fromProjection, type MapEdge, type MapEntity, type MapScope } from '../story/game/map-model';
+import type { CollectionQuery, Cursor, EntitySummary, GraphEdgeView, Page } from '@tm8/contract';
+import { fromProjection, type MapEdge, type MapEntity, type MapType } from '../story/game/map-model';
 import type { Seam } from './seam';
 
 import type { GameMapLoader } from '../game/types';
 export type { GameMapLoader, GameMapResult } from '../game/types';
-type GameReadPort = Pick<Seam, 'query' | 'entity' | 'connections' | 'spaces' | 'liveness'>;
+type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness'>;
 
 const MAP_KINDS: CollectionQuery['kinds'] = [
   'story', 'task', 'work_session', 'member', 'team_member', 'skill',
@@ -15,7 +15,14 @@ const MAP_EDGE_TYPES = ['depends_on', 'working_on', 'produces'];
 const PAGE_LIMIT = 200;
 // Fail explicitly instead of returning a silently partial map on runaway paging.
 const MAX_PAGES = 100;
-const READ_CONCURRENCY = 4;
+const GRAPH_NODE_LIMIT = 200;
+const GRAPH_EDGE_LIMIT = 1000;
+const KINDS_BY_TYPE: Record<MapType, NonNullable<CollectionQuery['kinds']>> = {
+  hub: ['story'], taskland: ['task', 'work_session'],
+  office: ['member', 'team_member', 'work_session', 'skill'],
+  library: ['doc', 'drawing', 'artifact', 'file'],
+  factory: ['project', 'pull_request', 'commit', 'worktree'], town: MAP_KINDS!,
+};
 
 function checkCancelled(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('Map loading cancelled', 'AbortError');
@@ -65,9 +72,9 @@ function summaryOf(row: EntitySummary, seam: GameReadPort): MapEntity {
   };
 }
 
-function edgeOf(row: EdgeView): MapEdge {
+function edgeOf(row: GraphEdgeView): MapEdge {
   return {
-    id: row.id, type: row.type, fromId: row.source.id, toId: row.target.id,
+    id: row.id, type: row.type, fromId: row.sourceId, toId: row.targetId,
     endedAt: typeof row.props.endedAt === 'string' ? row.props.endedAt : null,
     status: typeof row.props.status === 'string' ? row.props.status : null,
   };
@@ -80,11 +87,12 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
     return rows;
   };
 
-  return async (scope, signal) => {
+  return async (scope, signal, type?: MapType) => {
     checkCancelled(signal);
     if (!spaceId || (scope.kind !== 'space' && scope.kind !== 'story') || !scope.id ||
       (scope.kind === 'space' && scope.id !== spaceId)) throw new Error('Map scope does not belong to the active space');
 
+    const kinds = type ? KINDS_BY_TYPE[type] : MAP_KINDS!;
     const entities = new Map<string, MapEntity>();
     const edges = new Map<string, MapEdge>();
     let title: string;
@@ -94,7 +102,7 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       const space = spaces.find(s => s.id === spaceId);
       if (!space) throw Object.assign(new Error('Game space is unavailable'), { code: 'not_found' });
       title = space.name;
-      for (const row of await query({ kinds: MAP_KINDS }, signal)) {
+      for (const row of await query({ kinds }, signal)) {
         entities.set(row.id, summaryOf(row, seam));
       }
     } else {
@@ -107,22 +115,22 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       const page = story.content.page;
       const snapshot = fromProjection({ id: story.id, kind: 'story', page }, scope);
       warnings = snapshot.warnings ?? [];
-      for (const row of snapshot.entities) entities.set(row.id, { ...row, spaceId });
+      for (const row of snapshot.entities) if (kinds.some(kind => kind === row.kind)) entities.set(row.id, { ...row, spaceId });
       for (const session of page.sessions) {
         const mapped = entities.get(session.id);
         const status = session.runtimeStatus;
         const recorded = status === 'spawning' || status === 'running' || status === 'idle' || status === 'exited' || status === 'failed' ? status : null;
         if (mapped) mapped.live = seam.liveness.statusOf({ id: session.id, status: recorded }) === 'live';
       }
-      for (const edge of snapshot.edges) edges.set(edge.id, edge);
+      if (!type || type === 'taskland' || type === 'town') for (const edge of snapshot.edges) edges.set(edge.id, edge);
       // StoryPage's child-story preview is bounded separately from its trail.
-      for (const row of await query({ kinds: ['story'], parentId: story.id }, signal)) {
+      if (!type || type === 'hub') for (const row of await query({ kinds: ['story'], parentId: story.id }, signal)) {
         entities.set(row.id, summaryOf(row, seam));
       }
       // Fill contained hierarchy beyond the trail preview, using the server's
       // same-kind subtree read. Followed sideways trail rows stay authoritative.
       for (const root of page.roots) {
-        const kind = MAP_KINDS!.find(kind => kind === root.kind);
+        const kind = kinds.find(kind => kind === root.kind);
         if (!kind) continue;
         const descendants = await query({ subtreeOf: root.id, kinds: [kind] }, signal);
         const byId = new Map(descendants.map(row => [row.id, row]));
@@ -143,26 +151,26 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       }
     }
 
-    // Dependencies/deliverables originate from tasks; walking robots use session
-    // claims. Library and factory records need no outgoing connection reads.
-    const ids = [...entities.values()].filter(row => row.kind === 'task' || row.kind === 'work_session').map(row => row.id);
-    let next = 0;
-    let failed = false;
-    await Promise.all(Array.from({ length: Math.min(READ_CONCURRENCY, ids.length) }, async () => {
+    // The bounded graph contributes relations only. Cursor-paged primary rows
+    // and authoritative StoryPage membership decide which entities are admitted.
+    if ((!type || type === 'taskland' || type === 'town') && entities.size) {
       try {
-        while (!failed && next < ids.length) {
-          const id = ids[next++]!;
-          const rows = await pages(cursor => seam.connections(id, {
-            types: MAP_EDGE_TYPES, direction: 'outgoing', cursor, limit: PAGE_LIMIT,
-          }), signal);
-          for (const row of rows) {
-            // A connection must never pull an unrelated or hidden peer into scope.
-            if (row.source.spaceId !== spaceId || row.target.spaceId !== spaceId) continue;
-            if (entities.has(row.source.id) && entities.has(row.target.id)) edges.set(row.id, edgeOf(row));
-          }
+        const graph = await read(() => seam.graph({ spaceId, kinds, edgeTypes: MAP_EDGE_TYPES,
+          limit: GRAPH_NODE_LIMIT }), signal);
+        const peers = new Map(graph.nodes.filter(row => row.spaceId === spaceId).map(row => [row.id, row]));
+        for (const row of graph.edges) {
+          if (peers.has(row.sourceId) && peers.has(row.targetId) &&
+            entities.has(row.sourceId) && entities.has(row.targetId)) edges.set(row.id, edgeOf(row));
         }
-      } catch (error) { failed = true; throw error; }
-    }));
+        if (graph.nodes.length >= GRAPH_NODE_LIMIT || graph.edges.length >= GRAPH_EDGE_LIMIT) {
+          warnings = [...warnings, 'Map relations reached their read budget; some roads, workers or deliverables may be absent'];
+        }
+      } catch (error) {
+        checkCancelled(signal);
+        if (error instanceof Error && error.name === 'AbortError') throw error;
+        warnings = [...warnings, 'Map relations could not be loaded; places and their hierarchy remain available'];
+      }
+    }
     checkCancelled(signal);
     return {
       title,
