@@ -7,7 +7,7 @@ import {
   WorkspaceSwitchInputSchema,
   WorkspaceUpdateInputSchema,
 } from '@tm8/contract';
-import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema } from '@tm8/contract';
+import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProviderConnectInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema } from '@tm8/contract';
 import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
 /**
@@ -259,6 +259,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'mcp.credentials.share': McpCredentialShareInputSchema,
   'mcp.credentials.unshare': McpCredentialCommandInputSchema,
   'mcp.oauth.begin': McpOAuthBeginInputSchema,
+  'mcp.providers.connect': McpProviderConnectInputSchema,
   'mcp.oauth.callback': McpOAuthCallbackInputSchema,
   'mcp.proxy.request': McpProxyRequestInputSchema,
 

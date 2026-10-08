@@ -48,6 +48,36 @@ async function provider() {
 }
 
 describe('independent OAuth binding and lifecycle', () => {
+  it('discovers a path-based Jira issuer and registers a public PKCE client automatically', async () => {
+    const p = await provider(); const issuer = `${p.origin}/jira-client-family`;
+    p.state.resource.authorization_servers = [issuer]; p.state.metadata.issuer = issuer;
+    const auth = await p.begin({ issuer: undefined, clientId: undefined });
+    expect(p.calls.map(call => call.path)).toEqual(['/mcp','/resource','/.well-known/oauth-authorization-server/jira-client-family','/register']);
+    const registration = JSON.parse(p.calls.at(-1)!.body);
+    expect(registration).toMatchObject({ client_name:'tm8', redirect_uris:['https://tm8.test/callback'],token_endpoint_auth_method:'none' });
+    expect(auth.searchParams.get('client_id')).toBe('registered-client');
+    expect(auth.searchParams.get('code_challenge_method')).toBe('S256');
+    const result = await p.oauth.callback('human',{state:auth.searchParams.get('state')!,code:'code',issuer});
+    expect(result.secret).toMatchObject({issuer,clientId:'registered-client',resource:p.input.resource});
+  });
+  it('starts Jira login through the managed provider handler without caller-supplied setup', async () => {
+    const spaceId = '00000000-0000-4000-8000-000000000002', serverId = '00000000-0000-4000-8000-000000000001';
+    const begin = vi.spyOn(McpOAuth.prototype,'begin').mockResolvedValue({authorizationUrl:'https://auth.atlassian.com/authorize?state=fixture',expiresAt:new Date(Date.now()+600000).toISOString()});
+    const rpc = vi.fn(async()=>({entity:{id:serverId}})); const registry = new HandlerRegistry();
+    registerMcpRuntimeHandlers(registry,{db:{rpc},owner:async()=>({identityId:'human',isNodeAdmin:false})} as unknown as FacadeDeps,{
+      dataDir:'/unused-jira-fixture',callbackUrl:'https://tm8.test/callback',
+      definition:async()=>({id:serverId,spaceId,version:1,securityRevision:1,definition:{name:'jira',transport:'http',url:'https://mcp.atlassian.com/v2/mcp',envKeys:[],headerKeys:[],auth:{type:'oauth2',scopes:['read:jira:agent-interface']},approved:true},allowed:{register:false,approve:false,manage:false,attach:false}}),
+      authorize:async()=>{throw new Error('unused');},
+    });
+    const ctx = (authKind:string,body:unknown={clientMutationId:'connect'})=>({body,params:{spaceId,providerId:'jira'},identity:{kind:'bearer',identityId:'human',authKind},requestId:'fixture'}) as RequestContext;
+    const handler = registry.get('mcp.providers.connect')!;
+    await expect(handler(ctx('browser'))).resolves.toMatchObject({serverId,authorizationUrl:'https://auth.atlassian.com/authorize?state=fixture'});
+    expect(rpc).toHaveBeenCalledWith(expect.objectContaining({identityId:'human',authKind:'browser'}),'ensure_mcp_provider_server',[spaceId,'jira',null,'connect']);
+    expect(begin).toHaveBeenCalledWith(expect.objectContaining({identityId:'human',spaceId,serverId,resource:'https://mcp.atlassian.com/v2/mcp',label:'Jira account'}));
+    await expect(handler(ctx('agent'))).rejects.toThrow();
+    await expect(handler(ctx('browser',{clientMutationId:'other',url:'https://attacker.test/mcp'}))).rejects.toThrow();
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
   it('proves PKCE hash and exact redirect/client/resource binding through token exchange', async () => {
     const p = await provider(); const auth = await p.begin();
     const result = await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code', issuer: p.origin });

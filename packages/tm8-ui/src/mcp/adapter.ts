@@ -29,7 +29,7 @@ export function definitionFor(input: McpDefinition, previous?: McpServerDefiniti
 }
 export function viewOf(server: McpServerView, accounts: McpCredentialView[]): McpServer {
   const d = server.definition;
-  return { id: server.id, version: server.version, title: d.name, description: d.provenance ?? '', source: d,
+  return { id: server.id, version: server.version, providerId: server.providerId, title: server.providerId === 'jira' ? 'Jira' : d.name, description: d.provenance ?? '', source: d,
     transport: d.transport, url: d.url, command: d.command, args: d.args, auth: d.auth.type === 'oauth2' ? 'oauth' : d.auth.type,
     approved: d.approved, enabled: d.enabled !== false, canApprove: server.allowed.approve,
     canManage: server.allowed.manage, canAttach: server.allowed.attach, health: server.health,
@@ -84,7 +84,7 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
       return { servers, attachedServerIds: targetId ? (await attachments(targetId)).map(e => e.serverId) : [], defaults: resolved.selections.map(s => ({ serverId: s.server.id, ...(s.credentialId ? { credentialId: s.credentialId } : {}) })), canRegister: allowed.register, canAttach: allowed.attach };
     },
     async register(input) { await http.call('mcp.servers.create', { params: { spaceId }, body: { ...command(), spaceId, definition: definitionFor(input) } }); },
-    async update(server, input) { await http.call('mcp.servers.update', { params: { serverId: server.id }, body: { ...command(), serverId: server.id, expectedVersion: server.version, definition: definitionFor(input, server.source) } }); },
+    async update(server, input) { await http.call('mcp.servers.update', { params: { serverId: server.id }, body: { ...command(), serverId: server.id, expectedVersion: server.version, definition: server.providerId && server.source ? { ...server.source, approved: input.approved ?? server.approved, enabled: input.enabled } : definitionFor(input, server.source) } }); },
     async remove(server) { await http.call('mcp.servers.delete', { params: { serverId: server.id }, body: { ...command(), serverId: server.id, expectedVersion: server.version } }); },
     async importConfig(json, trustedCode) { await http.call('mcp.servers.import', { params: { spaceId }, body: { ...command(), spaceId, definitions: importDefinitions(json, trustedCode) } }); },
     async attach(targetId, serverId) { await seam.commands.createEdge({ ...command(), srcId: targetId, dstId: serverId, type: 'equips', props: {} }); },
@@ -96,6 +96,7 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     async createKey(serverId, label, secret) { await http.call('mcp.credentials.create', { params: { serverId }, body: { ...command(), serverId, label, secret } }); },
     async rotateKey(_serverId, credentialId, secret) { await http.call('mcp.credentials.rotate', { params: { credentialId }, body: { ...command(), credentialId, secret } }); },
     async startOAuth(serverId, label) { const result = await http.call<{authorizationUrl:string}>('mcp.oauth.begin', { params: { serverId }, body: { ...command(), serverId, label } }); rememberMcpOAuth(result.authorizationUrl, spaceId); return result; },
+    async connectProvider(providerId) { const result = await http.call<{authorizationUrl:string}>('mcp.providers.connect', { params: { spaceId, providerId }, body: { ...command(), spaceId, providerId } }); const url = new URL(result.authorizationUrl); if (url.protocol !== 'https:' || url.hostname !== 'auth.atlassian.com' || url.username || url.password) throw new McpUiError('Jira login could not be started. Try connecting again.'); rememberMcpOAuth(result.authorizationUrl, spaceId); return result; },
     async share(_serverId, credentialId, sharing, memberIds) { await http.call('mcp.credentials.share', { params: { credentialId }, body: { ...command(), credentialId, visibility: sharing === 'members' ? 'selected' : sharing, memberIds } }); },
     async revoke(_serverId, credentialId) { await http.call('mcp.credentials.revoke', { params: { credentialId }, body: { ...command(), credentialId } }); },
     async members() {

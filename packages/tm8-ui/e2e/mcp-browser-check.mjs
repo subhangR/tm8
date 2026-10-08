@@ -11,6 +11,14 @@ try {
   page.setDefaultTimeout(10000);
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto(`${base}/e2e/mcp-harness.html`);
+  const jira=page.getByRole('article',{name:'Jira connector'});
+  await expect(jira.getByRole('button',{name:'Connect Jira',exact:true})).toBeEnabled();
+  await expect(jira.getByRole('textbox')).toHaveCount(0);
+  await page.route('https://auth.atlassian.com/authorize?state=jira-fixture',route=>route.fulfill({contentType:'text/html',body:'<h1>Atlassian login fixture</h1>'}));
+  await jira.getByRole('button',{name:'Connect Jira',exact:true}).click();
+  await page.getByRole('heading',{name:'Atlassian login fixture'}).waitFor();
+  await expect(page).toHaveURL('https://auth.atlassian.com/authorize?state=jira-fixture');
+  await page.goto(`${base}/e2e/mcp-harness.html`);
   await page.getByRole('button',{name:'Manage Calendar'}).click();
   await page.getByRole('combobox',{name:'Test with account'}).selectOption('work');
   await page.getByRole('button',{name:'Test and discover tools'}).click();
@@ -45,7 +53,7 @@ try {
   const violations=axe.violations.map(v=>({id:v.id,nodes:v.nodes.length,description:v.description}));
   if(violations.length)throw Error(JSON.stringify({width,violations}));
   if(errors.length)throw Error(JSON.stringify(errors));
-  results.push({width,passed:true,checks:['account test/tools','selected-member sharing and reopen','immediate revocation readiness','HTML name validation','explicit account readiness','attachment','no horizontal overflow','axe WCAG A/AA','no page errors']});
+  results.push({width,passed:true,checks:['Jira card without setup fields','Connect Jira directly opens Atlassian login (fixture)','account test/tools','selected-member sharing and reopen','immediate revocation readiness','HTML name validation','explicit account readiness','attachment','no horizontal overflow','axe WCAG A/AA','no page errors']});
 
  }
  console.log(JSON.stringify({results},null,2));

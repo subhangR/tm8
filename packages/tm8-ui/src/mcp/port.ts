@@ -1,4 +1,4 @@
-import type { McpServerDefinition, McpTestResult } from '@tm8/contract';
+import type { McpProviderId, McpServerDefinition, McpTestResult } from '@tm8/contract';
 /** UI-only values. Account metadata never contains provider credentials. */
 export interface McpSelection { serverId: string; credentialId?: string }
 export interface McpAccount {
@@ -7,6 +7,7 @@ export interface McpAccount {
 }
 export interface McpServer {
   id: string; version: number; title: string; description: string;
+  providerId?: McpProviderId;
   transport: 'http' | 'stdio'; url?: string; command?: string; args?: string[];
   auth: 'none' | 'api_key' | 'oauth'; approved: boolean; enabled: boolean;
   source?: McpServerDefinition; health?: McpTestResult; canApprove?: boolean;
@@ -36,6 +37,7 @@ export interface McpPort {
   createKey(serverId: string, label: string, secret: string): Promise<void>;
   rotateKey(serverId: string, credentialId: string, secret: string): Promise<void>;
   startOAuth(serverId: string, label: string): Promise<{ authorizationUrl: string }>;
+  connectProvider(providerId: McpProviderId): Promise<{ authorizationUrl: string }>;
   share(serverId: string, credentialId: string, sharing: 'private' | 'members' | 'space', memberIds: string[]): Promise<void>;
   revoke(serverId: string, credentialId: string): Promise<void>;
   members(): Promise<{ id: string; label: string }[]>;

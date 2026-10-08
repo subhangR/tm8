@@ -13,6 +13,7 @@ const port: McpPort = {
  test: async () => ({ok:true,message:'ready',tools:[{name:'list_events',description:'List upcoming meetings'}]}),
  createKey: async (_server,label) => { data.servers[0]!.accounts.push({id:'personal',label,canUse:true,canManage:true,status:'connected',sharing:'private'}); }, rotateKey: async () => {},
  startOAuth: async () => ({authorizationUrl:'https://identity.example/authorize'}),
+ connectProvider: async () => ({authorizationUrl:'https://auth.atlassian.com/authorize?state=jira-fixture'}),
  share: async (_server,id,sharing,memberIds) => { Object.assign(data.servers[0]!.accounts.find(a=>a.id===id)!,{sharing,memberIds}); },
  revoke: async (_server,id) => { Object.assign(data.servers[0]!.accounts.find(a=>a.id===id)!,{status:'revoked',canUse:false}); }, members: async () => [{id:'ada',label:'Ada'}],
 };

@@ -66,8 +66,11 @@ export type McpCredentialView = z.infer<typeof McpCredentialViewSchema>;
 export const McpToolSchema = z.object({ name: z.string(), description: z.string().optional(), inputSchema: z.record(z.unknown()) }).strict();
 export const McpTestResultSchema = z.object({ ready: z.boolean(), reason: McpReadinessReasonSchema, tools: z.array(McpToolSchema), checkedAt: z.string() }).strict();
 export type McpTestResult = z.infer<typeof McpTestResultSchema>;
+export const McpProviderIdSchema = z.enum(['jira']);
+export type McpProviderId = z.infer<typeof McpProviderIdSchema>;
 export const McpServerViewSchema = z.object({
   id: Id, spaceId: Id, version: z.number().int(), definition: McpServerDefinitionSchema,
+  providerId: McpProviderIdSchema.optional(),
   health: McpTestResultSchema.optional(),
   allowed: z.object({ register: z.boolean(), approve: z.boolean(), manage: z.boolean(), attach: z.boolean() }).strict(),
 }).strict();
@@ -90,6 +93,7 @@ export const McpCredentialCreateInputSchema = z.object({ ...Command, serverId: I
 export const McpCredentialCommandInputSchema = z.object({ ...Command, credentialId: Id }).strict();
 export const McpCredentialShareInputSchema = z.object({ ...Command, credentialId: Id, visibility: z.enum(['private', 'selected', 'space']), memberIds: z.array(Id).max(100) }).strict();
 export const McpOAuthBeginInputSchema = z.object({ ...Command, serverId: Id, label: z.string().min(1).max(120) }).strict();
+export const McpProviderConnectInputSchema = z.object({ ...Command, spaceId: Id, providerId: McpProviderIdSchema }).strict();
 export const McpOAuthCallbackInputSchema = z.object({ state: z.string().min(1).max(2048), code: z.string().min(1).max(8192).optional(), error: z.string().min(1).max(128).optional(), issuer: PublicUrl.optional() }).strict().refine(value => Boolean(value.code) !== Boolean(value.error), 'OAuth callback requires exactly one of code or error');
 export const McpProxyRequestInputSchema = z.object({ sessionId: Id, serverId: Id, message: z.record(z.unknown()) }).strict();
 

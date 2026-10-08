@@ -2,12 +2,19 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeAll, afterAll, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, afterEach, expect, it, vi } from 'vitest';
 import { createDb } from '../../src/db/index.js';
 import type { Db, DbClaims } from '../../src/db/types.js';
 import { McpCredentialStore } from '../../src/mcp/credential-store.js';
 import { DbSpaceCredentialStore } from '../../src/credentials/space-credential-store.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
+import { loadMcpServer } from '../../src/mcp/definitions.js';
+import { HandlerRegistry } from '../../src/facade/registry.js';
+import { registerMcpRuntimeHandlers } from '../../src/mcp/handlers.js';
+import { McpOAuth } from '../../src/mcp/oauth.js';
+import type { FacadeDeps } from '../../src/facade/deps.js';
+import type { RequestContext } from '../../src/http/types.js';
+import type { McpCredentialView } from '@tm8/contract';
 vi.setConfig({testTimeout:60000,hookTimeout:300000});
 let database:W1ScratchDatabase;let db:Db;let dir:string;let store:McpCredentialStore;let common:DbSpaceCredentialStore;
 const space=randomUUID(),server=randomUUID(),otherServer=randomUUID(),ownerMember=randomUUID(),peerMember=randomUUID();
@@ -30,6 +37,25 @@ beforeAll(async()=>{
  });
 });
 afterAll(async()=>{await db?.end();await database?.destroy();if(dir)await rm(dir,{recursive:true,force:true});});
+afterEach(()=>vi.restoreAllMocks());
+it('stores a successful Jira OAuth callback as an ordinary member\'s private account and returns metadata only',async()=>{
+ const connected=await db.rpc<{entity:{id:string}}>(auth('mcp-peer'),'ensure_mcp_provider_server',[space,'jira',null,randomUUID()]);
+ const jira=await db.tx(auth('mcp-peer'),q=>loadMcpServer(q,connected.entity.id));
+ vi.spyOn(McpOAuth.prototype,'pendingFor').mockReturnValue({serverId:jira.id,definitionVersion:jira.securityRevision});
+ // Provider exchange is a fixture; account creation, sealing and visibility use the real database.
+ vi.spyOn(McpOAuth.prototype,'callback').mockResolvedValue({spaceId:space,serverId:jira.id,label:'Jira account',secret:{kind:'oauth',accessToken:'jira-access-canary',refreshToken:'jira-refresh-canary',issuer:'https://auth.atlassian.com/jira-family',tokenEndpoint:'https://auth.atlassian.com/oauth/token',resource:jira.definition.url!,clientId:'fixture'}});
+ const registry=new HandlerRegistry();
+ registerMcpRuntimeHandlers(registry,{db,owner:async()=>({identityId:'mcp-owner',memberId:ownerMember,spaceId:space})} as unknown as FacadeDeps,{
+  dataDir:dir,callbackUrl:'https://tm8.test/callback',definition:(claims,id)=>db.tx(claims,q=>loadMcpServer(q,id)),authorize:async()=>{throw new Error('unused');},
+ });
+ const account=await registry.get('mcp.oauth.callback')!({body:{state:'fixture',code:'fixture-code'},params:{},identity:{kind:'bearer',identityId:'mcp-peer',authKind:'browser'},requestId:randomUUID()} as RequestContext) as McpCredentialView;
+ const [peerAccount]=await database.query<{id:string}>('select id from public.accounts where identity_id=$1',['mcp-peer']);
+ expect(account).toMatchObject({serverId:jira.id,visibility:'private',ownerId:peerAccount!.id,authType:'oauth2',manageable:true,usable:true,reason:'ready'});
+ expect(JSON.stringify(account)).not.toMatch(/jira-access-canary|jira-refresh-canary|fixture-code/);
+ const binding={spaceId:space,serverId:jira.id,credentialId:account.id};
+ expect((await store.read(auth('mcp-peer'),binding)).secret).toMatchObject({accessToken:'jira-access-canary'});
+ await expect(store.read(auth(),binding)).rejects.toThrow();
+});
 it('seals private by default; shares explicitly; rejects wrong binding; revocation preserves definition',async()=>{
  const created=await store.create(auth(),{spaceId:space,serverId:server,label:'Fixture account',secret:{kind:'api_key',value:'sealed-secret-canary'}}) as {id:string;visibility:string};
  expect(created.visibility).toBe('private');expect(JSON.stringify(created)).not.toContain('sealed-secret-canary');

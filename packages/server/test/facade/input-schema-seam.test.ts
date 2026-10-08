@@ -272,6 +272,7 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'commands.undo',
   'edges.delete',
   'entities.delete',
+  'entities.markSeen',
   'entities.restore',
   'projects.unlink',
   'readMarks.upsert',
@@ -291,6 +292,7 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
 
 /** Contract-owned schemas whose runtime identity is checked below. */
 const MCP_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
+  'mcp.providers.connect',
   'mcp.credentials.create',
   'mcp.credentials.revoke',
   'mcp.credentials.rotate',
@@ -411,6 +413,7 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
 
   it('binds every MCP input operation to its exported contract schema by identity', () => {
     const contractSchemas: Record<string, unknown> = {
+      'mcp.providers.connect': contract.McpProviderConnectInputSchema,
       'mcp.servers.create': contract.McpServerCreateInputSchema,
       'mcp.servers.update': contract.McpServerUpdateInputSchema,
       'mcp.servers.delete': contract.McpServerDeleteInputSchema,
