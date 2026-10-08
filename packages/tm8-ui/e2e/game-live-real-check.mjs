@@ -64,7 +64,13 @@ try{
  await waitMap('hub','space',fixture.spaceId);await enter('Taskland');await waitMap('taskland','space',fixture.spaceId);
  record(`Shipping ${process.env.GAME_NARROW==='1'?'GameScreen/useGateData':'GateApp/GameScreen'}/GameMode space Taskland loaded through real seam`);
  await shot('initial-space');
- if(!fallback){driver=await page.evaluate(()=>{const canvas=document.querySelector('.sgm-stage canvas[data-engine]');const gl=canvas?.getContext('webgl2')??canvas?.getContext('webgl');if(!gl)throw new Error('Ready production canvas has no existing WebGL context');const ext=gl.getExtension('WEBGL_debug_renderer_info');return {renderer:String(gl.getParameter(ext?ext.UNMASKED_RENDERER_WEBGL:gl.RENDERER)),vendor:String(gl.getParameter(ext?ext.UNMASKED_VENDOR_WEBGL:gl.VENDOR)),version:String(gl.getParameter(gl.VERSION)),shadingLanguageVersion:String(gl.getParameter(gl.SHADING_LANGUAGE_VERSION)),unmasked:!!ext,measuredOn:'ready connected production scene canvas'};});console.log('Actual GL driver',JSON.stringify(driver));}
+ if(!fallback){driver=await page.evaluate(()=>{
+  const canvas=document.querySelector('.sgm-stage canvas[data-engine]'),gl=canvas?.getContext('webgl2');
+  const measuredOn='ready connected production scene canvas';
+  if(!gl)return {renderer:null,vendor:null,rawRenderer:null,rawVendor:null,version:null,shadingLanguageVersion:null,debugExtension:false,reason:'Existing WebGL2 scene context unavailable',measuredOn};
+  const ext=gl.getExtension('WEBGL_debug_renderer_info');
+  return {renderer:ext?String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)):null,vendor:ext?String(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)):null,rawRenderer:String(gl.getParameter(gl.RENDERER)),rawVendor:String(gl.getParameter(gl.VENDOR)),version:String(gl.getParameter(gl.VERSION)),shadingLanguageVersion:String(gl.getParameter(gl.SHADING_LANGUAGE_VERSION)),debugExtension:!!ext,reason:ext?null:'WEBGL_debug_renderer_info unavailable',measuredOn};
+ });console.log('Actual GL driver',JSON.stringify(driver));}
  await writeFile(`${output}/probe.json`,JSON.stringify({checks,errors,responses,text:await page.locator('body').innerText()},null,2));
  if(process.env.GAME_PROBE_ONLY!=='1'){
   for(const scope of ['space','story']){
