@@ -38,7 +38,7 @@ function entityOf(value: unknown): MapEntity | null {
     acceptance: acceptanceOf(n), ownProgress: num(n.ownProgress) ?? num(weighted.own) ?? null,
     estimateTent: bool(n.estimateTent) ?? bool(weighted.tent),
     cancelledAt,
-    cancelledNotAfter: kind === 'task' && status === 'cancelled' && !cancelledAt ? str(n.cancelledNotAfter) ?? str(n.updatedAt) ?? null : null,
+    cancelledNotAfter: kind === 'task' && status === 'cancelled' && !cancelledAt ? str(n.cancelledNotAfter) ?? null : null,
     terminalFromStatus: str(n.terminalFromStatus) ?? null,
     pendingAttention: num(n.pendingAttention) ?? num(counts.pendingAttention) ?? 0,
     mailbox: count === undefined ? undefined : { count, approx: bool(mailbox.approx) ?? false, basis: mailbox.basis === 'unread' ? 'unread' : 'messages' },
