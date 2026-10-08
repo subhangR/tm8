@@ -49,7 +49,7 @@ export const MapPlacementSpecSchema = z.object({ asset: z.string().min(1).max(10
 export const MapsPlaceInputSchema = z.object({ ...command, itemId: z.string().uuid(), entityId: z.string().uuid().optional(),
   kind: z.enum(['ref', 'decor', 'path', 'portal', 'landmark']), x: coordinate, z: coordinate,
   rotation: z.number().finite().min(-360).max(360).default(0), spec: MapPlacementSpecSchema.default({}),
-  expectedVersion: z.number().int().nonnegative(), ttlSeconds: z.number().int().min(1).max(86400).optional(),
+  expectedVersion: z.number().int().nonnegative().default(0), ttlSeconds: z.number().int().min(1).max(86400).optional(),
 }).strict().superRefine((p, ctx) => {
   if (p.kind === 'ref' && !p.entityId) ctx.addIssue({ code: 'custom', message: 'a building requires a real entityId' });
   if (p.kind !== 'ref' && p.entityId) ctx.addIssue({ code: 'custom', message: 'entityId is only valid on a ref' });
@@ -60,7 +60,7 @@ export const MapsRemoveInputSchema = z.object({ ...command, expectedVersion: z.n
 export const MapsPaintInputSchema = z.object({ ...command, chunkX: z.number().int().min(-10000).max(10000), chunkZ: z.number().int().min(-10000).max(10000),
   tiles: z.array(z.number().int().min(0).max(65535)).max(4096), expectedVersion: z.number().int().nonnegative() }).strict();
 export const MapsUndoInputSchema = z.object({ ...command, editSeq: z.number().int().positive().safe() }).strict();
-export const MapsRevertInputSchema = z.object({ ...command, byActor: z.string().uuid(), since: z.string().datetime() }).strict();
+export const MapsRevertInputSchema = z.object({ ...command, byActor: z.string().uuid(), since: z.string().datetime(), beforeSeq: z.number().int().positive().safe().optional() }).strict();
 export const MapsActivityInputSchema = z.object({ ...command, kind: z.enum(['marker', 'narration', 'celebration', 'spotlight']),
   targetEntityId: z.string().uuid().optional(), text: z.string().max(1000), audience: z.string().uuid().optional(), ttlSeconds: z.number().int().min(1).max(86400).optional(),
 }).strict().superRefine((p, ctx) => {
