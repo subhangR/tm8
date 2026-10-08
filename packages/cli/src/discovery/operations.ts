@@ -161,6 +161,18 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
+  'maps.open': { cmd: ['map', 'open'], syn: 'tm8 map open [--space <id>] --type <type> [--story <id>] [--mutation-id <id>]', sum: 'Open the unique durable map for a type and scope', authz: 'space', input: 'bound' },
+  'maps.context': { cmd: ['map', 'context'], syn: 'tm8 map context <map-id> [--limit <count>] [--cursor <cursor>]', sum: 'Read bounded live map placements and terrain', authz: 'entity', input: 'none' },
+  'maps.place': { cmd: ['map', 'place'], syn: 'tm8 map place <map-id> <entity-id> --at <x,z> [--item <id>] [--expect-version <n>] [--mutation-id <id>]', sum: 'Place a real entity with actor attribution', authz: 'entity', input: 'bound', ver: 'expectedVersion' },
+  'maps.move': { cmd: ['map', 'move'], syn: 'tm8 map move <map-id> <item-id> --at <x,z> --expect-version <n> [--mutation-id <id>]', sum: 'Move a placement under a version guard', authz: 'entity', input: 'bound', ver: 'expectedVersion' },
+  'maps.remove': { cmd: ['map', 'remove'], syn: 'tm8 map remove <map-id> <item-id> --expect-version <n> [--mutation-id <id>]', sum: 'Remove a placement under a version guard', authz: 'entity', input: 'bound', ver: 'expectedVersion' },
+  'maps.paint': { cmd: ['map', 'paint'], syn: 'tm8 map paint <map-id> --input <json-source> --expect-version <n> [--mutation-id <id>]', sum: 'Paint a terrain chunk as a human editor', authz: 'entity', input: 'bound', ver: 'expectedVersion' },
+  'maps.undo': { cmd: ['map', 'undo'], syn: 'tm8 map undo <map-id> --input <json-source> [--mutation-id <id>]', sum: 'Undo one attributed edit if its row has not changed', authz: 'entity', input: 'bound' },
+  'maps.revert': { cmd: ['map', 'revert'], syn: 'tm8 map revert <map-id> --input <json-source> [--mutation-id <id>]', sum: 'Revert actor edits and report conflicts', authz: 'entity', input: 'bound' },
+  'maps.activity.append': { cmd: ['map', 'activity', 'append'], syn: 'tm8 map activity append <map-id> --input <json-source> [--mutation-id <id>]', sum: 'Append a bounded expiring map annotation', authz: 'entity', input: 'bound' },
+  'maps.activity.list': { cmd: ['map', 'activity', 'list'], syn: 'tm8 map activity list <map-id> [--since <seq>] [--limit <count>]', sum: 'Read map activity without workspace events', authz: 'entity', input: 'none' },
+  'maps.navigation.get': { cmd: ['map', 'navigation', 'get'], syn: 'tm8 map navigation get [--space <id>]', sum: 'Read the signed-in member resume state', authz: 'space', input: 'none' },
+  'maps.navigation.save': { cmd: ['map', 'navigation', 'save'], syn: 'tm8 map navigation save [--space <id>] --input <json-source> --expect-revision <n> [--mutation-id <id>]', sum: 'Save member navigation with optimistic revision', authz: 'space', input: 'bound', ver: 'expectedVersion' },
   'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
   'mcp.servers.get': {cmd: ['mcp','server','get'], syn: 'tm8 mcp server get [<id>]', sum: 'Get MCP server', authz: 'entity', input: 'none'},
   'mcp.servers.create': {cmd: ['mcp','server','create'], syn: 'tm8 mcp server create [<id>] --input <@file|->', sum: 'Create MCP server', authz: 'space', input: 'bound'},
@@ -4149,6 +4161,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   inbox: 'inbox',
   readMarks: 'read-mark',
   savedViews: 'saved-view',
+  maps: 'map',
   actions: 'action',
   events: 'event',
   presence: 'presence',
