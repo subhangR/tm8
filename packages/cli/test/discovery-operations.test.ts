@@ -327,6 +327,7 @@ const COMMANDLESS_OPERATIONS = [
       'spaces.members.spacePassword.lock',
       'spaces.members.spacePassword.reset',
       'spaces.spacePassword.setRequired',
+      'tasks.cancellationObservations', // Optional bounded lifecycle read, without CLI command.
 ];
 
 describe('the CLI command projection', () => {

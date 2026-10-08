@@ -49,11 +49,11 @@ export function taskCancellationObservations(deps: FacadeDeps): OperationHandler
     const claims = claimsFor(await deps.owner(), ctx);
     if (!claims.identityId) throw new CollabError('unauthenticated', 'authentication is required');
     return deps.db.tx(claims, async (q) => {
-      const members = await q.query<{ entity_id: string }>(
-        `select entity_id from public.members where space_id = $1 and identity_id = $2`,
-        [spaceId, claims.identityId],
+      const members = await q.query<{ permitted: boolean }>(
+        `select internal.is_space_member($1) permitted`,
+        [spaceId],
       );
-      if (!members.length) throw new CollabError('forbidden', 'not a member of this space');
+      if (!members[0]?.permitted) throw new CollabError('forbidden', 'not a member of this space');
       return loadTaskCancellationObservations(q, spaceId, input.data.taskIds);
     });
   };

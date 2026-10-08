@@ -199,6 +199,7 @@ function nounForOperation(operation: OperationName): string {
     case 'auth': return 'auth';
     case 'serverConnections': return 'server';
     case 'spaces': return 'space';
+    case 'tasks': return 'task';
     case 'entities': return 'entity';
     case 'attentionRequests': return 'attention';
     // Attention v2 S6 (`cmd: null`, the worktree conflict rail): `attention`, as NOUN_BY_FAMILY says.

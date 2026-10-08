@@ -272,6 +272,7 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'commands.undo',
   'edges.delete',
   'entities.delete',
+  'entities.markSeen', // Inline local seen-state schema has no contract type annotation.
   'entities.restore',
   'entities.markSeen',
   'projects.unlink',

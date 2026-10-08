@@ -1361,6 +1361,14 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     notes: ['lazy read; missing anchors mean zero only when complete=true; overflow preserves the consumer fallback'],
   },
+  'tasks.cancellationObservations': {
+    cmd: null,
+    sum: 'Read bounded proven observation dates for readable legacy cancelled tasks',
+    authz: 'space',
+    input: 'bound',
+    reason: 'UI lifecycle read; no public CLI command',
+    notes: ['POST read with at most 500 taskIds; missing facts stay unknown; observation bounds are never exact cancellation timestamps'],
+  },
   'spaces.home': {
     cmd: ['space', 'home', 'get'],
     syn: 'tm8 space home get [<space-id>]',
@@ -4142,6 +4150,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   auth: 'auth',
   serverConnections: 'server',
   spaces: 'space',
+  tasks: 'task',
   entities: 'entity',
   attentionRequests: 'attention',
   attentionSignals: 'attention',

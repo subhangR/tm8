@@ -1103,6 +1103,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     unreadCounts(spaceId: SpaceId): Promise<SpaceUnreadCounts> {
       return http.call<SpaceUnreadCounts>('spaces.unreadCounts', { params: { spaceId } });
     },
+    taskCancellationObservations(spaceId: SpaceId, taskIds: readonly string[]): Promise<TaskCancellationObservations> {
+      return http.call<TaskCancellationObservations>('tasks.cancellationObservations', {
+        params: { spaceId }, body: { taskIds },
+      });
+    },
 
     /** `cursor`/`limit` are BODY fields on this op, carried inside the query object. */
     query(input: CollectionQuery): Promise<CollectionResult> {
@@ -1950,3 +1955,4 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
   };
 }
+import type { TaskCancellationObservations } from '@tm8/contract';

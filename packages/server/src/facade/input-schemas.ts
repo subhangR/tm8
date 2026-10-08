@@ -1,5 +1,6 @@
 import { MapsOpenInputSchema, MapsPlaceInputSchema, MapsMoveInputSchema, MapsRemoveInputSchema, MapsPaintInputSchema, MapsUndoInputSchema, MapsRevertInputSchema, MapsActivityInputSchema, MapsNavigationSaveInputSchema } from '@tm8/contract';
 import {
+  TaskCancellationObservationsInputSchema,
   WorkspaceCommandInputSchema,
   WorkspaceCreateInputSchema,
   WorkspaceDraftPatchInputSchema,
@@ -248,6 +249,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'maps.revert': MapsRevertInputSchema,
   'maps.activity.append': MapsActivityInputSchema,
   'maps.navigation.save': MapsNavigationSaveInputSchema,
+  'tasks.cancellationObservations': TaskCancellationObservationsInputSchema,
   // Workspace remote bridge (Spec C): the window validates `args` itself.
   'workspace.command': WorkspaceCommandInputSchema,
   'workspace.drafts.patch': WorkspaceDraftPatchInputSchema,

@@ -36,13 +36,17 @@ end $$;
 -- establishment, including tasks created already cancelled. Bulk restore/import
 -- MUST set tm8.bulk_load=on to preserve unknown historical timestamps; an
 -- imported cancellation did not happen at restore time. Preserve imported exact
--- timestamps as well. Ordinary creates supply NULL and get the insertion clock.
+-- timestamps as well. Only an owner-role bulk load without authenticated request
+-- claims can preserve supplied values. Application RPCs run as the owner too,
+-- but carry identity claims; an app-set custom GUC cannot fabricate an exact time.
 create function internal.stamp_task_initial_status()
 returns trigger language plpgsql
 set search_path = pg_catalog, public, internal, pg_temp as $$
 begin
-  if new.status_changed_at is null
-     and coalesce(current_setting('tm8.bulk_load', true), '') <> 'on' then
+  if not (coalesce(current_setting('tm8.bulk_load', true), '') = 'on'
+          and current_user = 'tm8_graph_owner'
+          and current_setting('role') not in ('tm8_app', 'tm8_delivery_worker')
+          and nullif(current_setting('tm8.identity_id', true), '') is null) then
     new.status_changed_at := clock_timestamp();
   end if;
   return new;

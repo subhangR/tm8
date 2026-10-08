@@ -579,6 +579,13 @@
         "source": "server-router"
       },
       {
+        "operation": "tasks.cancellationObservations",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/tasks/cancellation-observations",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "spaces.home",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/home",
@@ -4060,6 +4067,23 @@
           "spaces",
           "unread",
           "counts"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tasks.cancellationObservations",
+        "noun": "task",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tasks.cancellationObservations",
+        "intentTags": [
+          "tasks",
+          "cancellation",
+          "observations"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

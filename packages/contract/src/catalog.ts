@@ -123,6 +123,7 @@ export const OPERATIONS = [
   { name: 'spaces.update',           method: 'PATCH',  path: '/v2/spaces/:spaceId',                         kind: 'command', status: 'v1' },
   { name: 'spaces.navigation',       method: 'GET',    path: '/v2/spaces/:spaceId/navigation',              kind: 'read',    status: 'v1' },
   { name: 'spaces.unreadCounts',     method: 'GET',    path: '/v2/spaces/:spaceId/unread-counts',           kind: 'read',    status: 'v1' },
+  { name: 'tasks.cancellationObservations', method: 'POST', path: '/v2/spaces/:spaceId/tasks/cancellation-observations', kind: 'read', status: 'v1' },
   { name: 'spaces.home',             method: 'GET',    path: '/v2/spaces/:spaceId/home',                    kind: 'read',    status: 'v1' },
   { name: 'spaces.counts',           method: 'GET',    path: '/v2/spaces/:spaceId/counts',                  kind: 'read',    status: 'v1' },
   { name: 'spaces.settings',         method: 'GET',    path: '/v2/spaces/:spaceId/settings',                kind: 'read',    status: 'v1' },

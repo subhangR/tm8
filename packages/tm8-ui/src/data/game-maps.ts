@@ -3,11 +3,12 @@ import type { CollectionQuery, Cursor, EntitySummary, GraphEdgeView, Page } from
 import { fromProjection, type MapEdge, type MapEntity, type MapInput, type MapType } from '../story/game/map-model';
 import type { Seam } from './seam';
 import { applyGameMailboxCounts, createGameMailboxReader } from './game-mailboxes';
+import { loadGameCancellationObservations } from './game-lifecycles';
 
 import type { GameMapLoader } from '../game/types';
 import { openGameMapIdentity, readGamePlacementRows, selectTownPlacements } from '../game/placement-read';
 export type { GameMapLoader, GameMapResult } from '../game/types';
-type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness' | 'game' | 'unreadCounts'>;
+type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness' | 'game' | 'unreadCounts' | 'taskCancellationObservations'>;
 
 const MAP_KINDS: CollectionQuery['kinds'] = [
   'story', 'task', 'work_session', 'member', 'team_member', 'skill',
@@ -205,10 +206,12 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       warnings: [...warnings, ...persisted.warnings] };
     const hasMailboxes = input.entities.some(entity => entity.kind === 'task' || entity.kind === 'work_session' || entity.kind === 'story');
     const snapshot = hasMailboxes ? await readMailboxes(signal) : null;
+    const withMailboxes = hasMailboxes ? applyGameMailboxCounts(input, snapshot, spaceId) : input;
+    const withLifecycles = await loadGameCancellationObservations(withMailboxes, seam, spaceId, (get) => read(get, signal));
     checkCancelled(signal);
     return {
       title,
-      input: hasMailboxes ? applyGameMailboxCounts(input, snapshot, spaceId) : input,
+      input: withLifecycles,
     };
   };
 }
