@@ -1,0 +1,47 @@
+[
+  {
+    "pr": 1146,
+    "file": "packages/tm8-ui/e2e/game-storage-harness.html",
+    "byteEqual": true
+  },
+  {
+    "pr": 1146,
+    "file": "packages/tm8-ui/e2e/game-storage-harness.tsx",
+    "byteEqual": true
+  },
+  {
+    "pr": 1146,
+    "file": "packages/tm8-ui/e2e/game-storage-vite.config.ts",
+    "byteEqual": true
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-camera-audit.md",
+    "byteEqual": true
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-camera-audit.ts",
+    "byteEqual": true
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-real-check.mjs",
+    "byteEqual": true
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-real-harness.html",
+    "byteEqual": true
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-real-harness.tsx",
+    "byteEqual": true
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/vite.game-live.config.ts",
+    "byteEqual": true
+  }
+]

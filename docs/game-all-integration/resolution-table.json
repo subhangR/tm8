@@ -1,0 +1,5426 @@
+[
+  {
+    "file": "db/migrations/314_seen_entities_ci.sql",
+    "acceptedBasePR": 1131,
+    "acceptedBaseBlob": "3e5ba8f2b9be5ce93706144a05a69451d439c8f0",
+    "aggregateBlob": "3e5ba8f2b9be5ce93706144a05a69451d439c8f0",
+    "mergedInputPRs": [
+      1131
+    ],
+    "exactContentPRs": [
+      1131
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "db/migrations/315_game_maps.sql",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "a05b13b24007e60aa3e7a0c97f1ee54e4defc614",
+    "aggregateBlob": "a05b13b24007e60aa3e7a0c97f1ee54e4defc614",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "db/migrations/316_task_game_events.sql",
+    "acceptedBasePR": 1132,
+    "acceptedBaseBlob": "5e416094cbe535b1e807e6e38c1f5e7de49a9f1b",
+    "aggregateBlob": "5e416094cbe535b1e807e6e38c1f5e7de49a9f1b",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133,
+      1132
+    ],
+    "exactContentPRs": [
+      1132,
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "db/migrations/317_task_cancellation_observations.sql",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "ab9cf2a7d0198c39601de89c164ac484ce2204dc",
+    "aggregateBlob": "ab9cf2a7d0198c39601de89c164ac484ce2204dc",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "docs/task-cancellation-observations-verification.md",
+    "acceptedBasePR": 1145,
+    "acceptedBaseBlob": "bfa0ae09fb0988b094c28a27855590146e271c97",
+    "aggregateBlob": "bfa0ae09fb0988b094c28a27855590146e271c97",
+    "mergedInputPRs": [
+      1145
+    ],
+    "exactContentPRs": [
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "docs/task-cancellation-observations.md",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "b1f9347ba6b462cae17b6034ae804959a3c588e6",
+    "aggregateBlob": "b1f9347ba6b462cae17b6034ae804959a3c588e6",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/src/commands/map.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "ae232e5ea6e63d3051103a6c7245b99cc3f3c495",
+    "aggregateBlob": "ae232e5ea6e63d3051103a6c7245b99cc3f3c495",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/src/commands/registry.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "19d1743910de46730a18cf6fb094dd8aea36385f",
+    "aggregateBlob": "19d1743910de46730a18cf6fb094dd8aea36385f",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/src/commands/space.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "e197869950320562d62623d7875081f964030dc6",
+    "aggregateBlob": "e197869950320562d62623d7875081f964030dc6",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1142,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/src/discovery/operations.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "a99752d50b87b896132e1fa31835131ba6c103e3",
+    "aggregateBlob": "a99752d50b87b896132e1fa31835131ba6c103e3",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1142,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/catalog-exhaustiveness.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "1eb8e63d8023d920a180c19a137cccce78ec45ae",
+    "aggregateBlob": "1eb8e63d8023d920a180c19a137cccce78ec45ae",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/discovery-availability.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "6bab5035752c2793731ef781da63119f9fde946c",
+    "aggregateBlob": "6bab5035752c2793731ef781da63119f9fde946c",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/discovery-commands.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "f836303013f67a1a73a8701f89b768dc2e5e119f",
+    "aggregateBlob": "f836303013f67a1a73a8701f89b768dc2e5e119f",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/discovery-operations.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "099b602c3e5341f26f73c4b087dfbe1bf34ff40e",
+    "aggregateBlob": "099b602c3e5341f26f73c4b087dfbe1bf34ff40e",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/doctor.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "e60595979e8714ce48877000cdf3da94722f1a84",
+    "aggregateBlob": "e60595979e8714ce48877000cdf3da94722f1a84",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/help.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "bf419a6651ffada4ac8ff5ed59d5b64358172479",
+    "aggregateBlob": "bf419a6651ffada4ac8ff5ed59d5b64358172479",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/integration/event.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "fc1ee193eb1de02b5bbabd1d47a2f1794c8bfe0d",
+    "aggregateBlob": "fc1ee193eb1de02b5bbabd1d47a2f1794c8bfe0d",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/integration/harness.smoke.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "6d18ae40fa65e674ac4c3fada59ec2a0b488b7fa",
+    "aggregateBlob": "6d18ae40fa65e674ac4c3fada59ec2a0b488b7fa",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/integration/message.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "717a2fce00ece38bc0b92ca0fa9adcf2be001083",
+    "aggregateBlob": "717a2fce00ece38bc0b92ca0fa9adcf2be001083",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/integration/project.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "f9406327d1cf877f3961349e766f9e459c0d2aca",
+    "aggregateBlob": "f9406327d1cf877f3961349e766f9e459c0d2aca",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/integration/space.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "687953669ca057e0861ab8636f92a3418e5f2e0b",
+    "aggregateBlob": "687953669ca057e0861ab8636f92a3418e5f2e0b",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/kernel-global-collision.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "138196863f762ff7c789ac93ae6c4e7467f81c32",
+    "aggregateBlob": "138196863f762ff7c789ac93ae6c4e7467f81c32",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/map.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "f9280ea8a0176270c0872bae8e70da1086e5c5d9",
+    "aggregateBlob": "f9280ea8a0176270c0872bae8e70da1086e5c5d9",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/cli/test/w5/f/discovery-honesty.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "a34f5af2fae14e86248ef19699acd09b5da8d93a",
+    "aggregateBlob": "a34f5af2fae14e86248ef19699acd09b5da8d93a",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/src/catalog.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "f9839026da3ae0cc1baba08feb63f7779480097c",
+    "aggregateBlob": "f9839026da3ae0cc1baba08feb63f7779480097c",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1142,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/src/contract.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "663bcacda41bc0f1c68f6c8ee2f1f353eddf27e7",
+    "aggregateBlob": "663bcacda41bc0f1c68f6c8ee2f1f353eddf27e7",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1142,
+      1140,
+      1136,
+      1133,
+      1132
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/src/index.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "d4cb07ab76422b44869dc171cae810c593f04618",
+    "aggregateBlob": "d4cb07ab76422b44869dc171cae810c593f04618",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/src/maps.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "e8a59946d03ef21153b385b19149e12bf7d8693a",
+    "aggregateBlob": "e8a59946d03ef21153b385b19149e12bf7d8693a",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/src/schemas.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "27da546c0d784f85b4f69389e5f52c18a5481c69",
+    "aggregateBlob": "27da546c0d784f85b4f69389e5f52c18a5481c69",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1142,
+      1140,
+      1136,
+      1133,
+      1132
+    ],
+    "exactContentPRs": [
+      1140,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/src/story.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "aa0d5d14d68a147a36bf916cf9c8e8e464b62779",
+    "aggregateBlob": "aa0d5d14d68a147a36bf916cf9c8e8e464b62779",
+    "mergedInputPRs": [
+      1147,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1147
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/src/task-cancellation-observations.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "49d226ab58179d7f4f8a1a678ac5c6bd7a3e8fd0",
+    "aggregateBlob": "49d226ab58179d7f4f8a1a678ac5c6bd7a3e8fd0",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/test/game-task-events.test.ts",
+    "acceptedBasePR": 1132,
+    "acceptedBaseBlob": "8adbfa88f9991adb488adda6375f4b672ace0a59",
+    "aggregateBlob": "8adbfa88f9991adb488adda6375f4b672ace0a59",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133,
+      1132
+    ],
+    "exactContentPRs": [
+      1132,
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/test/task-cancellation-observations.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "7f31d903bb4eb2a27e1995c50eebef3935d7bbca",
+    "aggregateBlob": "7f31d903bb4eb2a27e1995c50eebef3935d7bbca",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/contract/test/w1-amendment.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "f8a0d1647f8087f741316c2849c9864edcd82f9d",
+    "aggregateBlob": "f8a0d1647f8087f741316c2849c9864edcd82f9d",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/events/mapper.ts",
+    "acceptedBasePR": 1132,
+    "acceptedBaseBlob": "9a7fa5bcd112e0a0619187b62571777662970c3c",
+    "aggregateBlob": "9a7fa5bcd112e0a0619187b62571777662970c3c",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133,
+      1132
+    ],
+    "exactContentPRs": [
+      1132,
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/events/projector.ts",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "38821fe5a2e7aab24ee88145462df48aaddcfceb",
+    "aggregateBlob": "38821fe5a2e7aab24ee88145462df48aaddcfceb",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/events/subject-set.ts",
+    "acceptedBasePR": 1132,
+    "acceptedBaseBlob": "874b54b668298fb915ca53a4fce954f09018831b",
+    "aggregateBlob": "874b54b668298fb915ca53a4fce954f09018831b",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133,
+      1132
+    ],
+    "exactContentPRs": [
+      1132,
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/facade/entity-read.ts",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "2083d85ef0160e599d9a1185f5f1ef8c272cb330",
+    "aggregateBlob": "2083d85ef0160e599d9a1185f5f1ef8c272cb330",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/facade/handlers/space-unread.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "2253cccbe0f1c24ec3041bbb6780daabc2ff71a6",
+    "aggregateBlob": "2253cccbe0f1c24ec3041bbb6780daabc2ff71a6",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1142,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/facade/handlers/w2/identity-spaces.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "d484857ca8a11a353849d24494908057e8487138",
+    "aggregateBlob": "d484857ca8a11a353849d24494908057e8487138",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1142,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/facade/handlers/w2/maps.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "b2e29390170932df7bccdbf8ac946e74a2c13322",
+    "aggregateBlob": "b2e29390170932df7bccdbf8ac946e74a2c13322",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/facade/index.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "7949dfaa9e24975fc6da7ea2a03cbcf8a2010393",
+    "aggregateBlob": "7949dfaa9e24975fc6da7ea2a03cbcf8a2010393",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/facade/input-schemas.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "55aaae93926465f28140a65d667f994e27da6848",
+    "aggregateBlob": "55aaae93926465f28140a65d667f994e27da6848",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/facade/services/w2/maps.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "fca146d32dc7d6232314fa1a7350b25f8e9539d1",
+    "aggregateBlob": "fca146d32dc7d6232314fa1a7350b25f8e9539d1",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/facade/story-page.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "3cb3fb366395bbedcd258494d36c72e64317963b",
+    "aggregateBlob": "3cb3fb366395bbedcd258494d36c72e64317963b",
+    "mergedInputPRs": [
+      1147,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1147
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/facade/task-cancellation-observations.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "436f91b9a85079eafad694c8733d285c4ffb3bca",
+    "aggregateBlob": "436f91b9a85079eafad694c8733d285c4ffb3bca",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/src/http/errors.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "288cade2e6a14eb3788d92df264ff1e5ad32680a",
+    "aggregateBlob": "288cade2e6a14eb3788d92df264ff1e5ad32680a",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/db/game-maps.pg.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "2da364d94eb5e64b23ec6d2bc25a4a06899d27cf",
+    "aggregateBlob": "2da364d94eb5e64b23ec6d2bc25a4a06899d27cf",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/db/seen-entities.pg.test.ts",
+    "acceptedBasePR": 1131,
+    "acceptedBaseBlob": "80fc09b53230e171f1005cd9f566c4e3bcb3185e",
+    "aggregateBlob": "80fc09b53230e171f1005cd9f566c4e3bcb3185e",
+    "mergedInputPRs": [
+      1131
+    ],
+    "exactContentPRs": [
+      1131
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/db/space-links.pg.test.ts",
+    "acceptedBasePR": 1131,
+    "acceptedBaseBlob": "e4549cf3f35dc4b4b8cd17682290ef42af21da1b",
+    "aggregateBlob": "e4549cf3f35dc4b4b8cd17682290ef42af21da1b",
+    "mergedInputPRs": [
+      1131
+    ],
+    "exactContentPRs": [
+      1131
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/db/space-unread.pg.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "317a946db09f15ee5938f14ec5103ee41f7df685",
+    "aggregateBlob": "317a946db09f15ee5938f14ec5103ee41f7df685",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1142,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/db/story-root-facts.pg.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "edeacf4b025d10a034b1d48808c6ca8aea8dd769",
+    "aggregateBlob": "edeacf4b025d10a034b1d48808c6ca8aea8dd769",
+    "mergedInputPRs": [
+      1147,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1147
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/db/task-cancellation-observations.pg.test.ts",
+    "acceptedBasePR": 1145,
+    "acceptedBaseBlob": "3b6875e0cbc0f1a70d2a7587a064f858e65bfb61",
+    "aggregateBlob": "3b6875e0cbc0f1a70d2a7587a064f858e65bfb61",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/events/mapper-passthrough.test.ts",
+    "acceptedBasePR": 1131,
+    "acceptedBaseBlob": "c7201c61c237ee4a5290229360889b7cf42a9159",
+    "aggregateBlob": "c7201c61c237ee4a5290229360889b7cf42a9159",
+    "mergedInputPRs": [
+      1131
+    ],
+    "exactContentPRs": [
+      1131
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/events/mapper.test.ts",
+    "acceptedBasePR": 1132,
+    "acceptedBaseBlob": "a2eafca9118d2bf96e8172aaf4d4b40ae9eb4803",
+    "aggregateBlob": "a2eafca9118d2bf96e8172aaf4d4b40ae9eb4803",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133,
+      1132
+    ],
+    "exactContentPRs": [
+      1132,
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/events/subject-set.pg.test.ts",
+    "acceptedBasePR": 1132,
+    "acceptedBaseBlob": "8f96770ef9fc9f5d97803e555cfbcd12f80d75fd",
+    "aggregateBlob": "8f96770ef9fc9f5d97803e555cfbcd12f80d75fd",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133,
+      1132
+    ],
+    "exactContentPRs": [
+      1132,
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/events/task-status-time-projection.pg.test.ts",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "1a636b98918c458c29ef9acb952c1ce212634047",
+    "aggregateBlob": "1a636b98918c458c29ef9acb952c1ce212634047",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/events/task-status-time-projection.test.ts",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "7ad33fd598bca0e531074c317e297d7934e1dc5e",
+    "aggregateBlob": "7ad33fd598bca0e531074c317e297d7934e1dc5e",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1136,
+      1140,
+      1143,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/events/ws-e2e-multi-identity.pg.test.ts",
+    "acceptedBasePR": 1131,
+    "acceptedBaseBlob": "7668262eab9bcc5cb24ca0683893c31fca59a0e6",
+    "aggregateBlob": "7668262eab9bcc5cb24ca0683893c31fca59a0e6",
+    "mergedInputPRs": [
+      1131
+    ],
+    "exactContentPRs": [
+      1131
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/facade/input-schema-seam.test.ts",
+    "acceptedBasePR": 1131,
+    "acceptedBaseBlob": "59eefccd7f07c1f1779252165f1cae09e0bafa58",
+    "aggregateBlob": "4704644a61a2956c6b534963499f368777737ad4",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1140,
+      1131
+    ],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 15,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+  },
+  {
+    "file": "packages/server/test/human-auth-kinds.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "39eda692a15e1c9208be1590bf1be20cefff29a2",
+    "aggregateBlob": "39eda692a15e1c9208be1590bf1be20cefff29a2",
+    "mergedInputPRs": [
+      1144
+    ],
+    "exactContentPRs": [
+      1144
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w2/reserved-honesty.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "e3aa7a30c4ff78e773322c9aa7adfbf7d349d3ca",
+    "aggregateBlob": "e3aa7a30c4ff78e773322c9aa7adfbf7d349d3ca",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w2/rolling-public.integration.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "11c344566e329e4220fa9eb8761a07d96be11c33",
+    "aggregateBlob": "0644752f7138f8ecd38e32c0fda6dc41a1ce2f2a",
+    "mergedInputPRs": [
+      1146,
+      1144,
+      1131
+    ],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 3,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+  },
+  {
+    "file": "packages/server/test/w2/space-unread.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "7f8129ab25fbdf7ec49c27190985c648277ca4c0",
+    "aggregateBlob": "7f8129ab25fbdf7ec49c27190985c648277ca4c0",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1142,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w2/tick-criteria.pg.test.ts",
+    "acceptedBasePR": 1132,
+    "acceptedBaseBlob": "3f86c02f8b3f4cc4e3328dd9561a2ae22c08ade3",
+    "aggregateBlob": "3f86c02f8b3f4cc4e3328dd9561a2ae22c08ade3",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1143,
+      1140,
+      1136,
+      1133,
+      1132
+    ],
+    "exactContentPRs": [
+      1132,
+      1133,
+      1136,
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w3/agentic/g15-agentic.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "de09ac2f3eaf8889bd0b2963d916720b70702174",
+    "aggregateBlob": "de09ac2f3eaf8889bd0b2963d916720b70702174",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w3/discovery-adapter.test.ts",
+    "acceptedBasePR": 1131,
+    "acceptedBaseBlob": "5a6e7e0bd2a72471b7891f838f490a6960bf2c8a",
+    "aggregateBlob": "5a6e7e0bd2a72471b7891f838f490a6960bf2c8a",
+    "mergedInputPRs": [
+      1131
+    ],
+    "exactContentPRs": [
+      1131
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w3/g15-public.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "c60d9cd026a284414b57b77d7d863390e0821c26",
+    "aggregateBlob": "c60d9cd026a284414b57b77d7d863390e0821c26",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w3/public-harness.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "a862fa773ff7f6fe9dcf4f531bd67699edc7e625",
+    "aggregateBlob": "a862fa773ff7f6fe9dcf4f531bd67699edc7e625",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1144,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w5/agentic/composition-honesty.test.ts",
+    "acceptedBasePR": 1131,
+    "acceptedBaseBlob": "f4b87e08f8ce3a3cf33f2d2fc9a3de259364d785",
+    "aggregateBlob": "f4b87e08f8ce3a3cf33f2d2fc9a3de259364d785",
+    "mergedInputPRs": [
+      1131
+    ],
+    "exactContentPRs": [
+      1131
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w5/surface/generator-proof.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "3ceef5ef70a65319fb7ae6bcf2573bb99ef042eb",
+    "aggregateBlob": "3ceef5ef70a65319fb7ae6bcf2573bb99ef042eb",
+    "mergedInputPRs": [
+      1144
+    ],
+    "exactContentPRs": [
+      1144
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/server/test/w5/surface/sweep.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "407623a7ea997c6c6e6dcd137bd241525f48e8d9",
+    "aggregateBlob": "80a0b730e1cee7411f090bac691321177a6e7a56",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1144,
+      1140,
+      1131
+    ],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-gpu/README.md",
+    "acceptedBasePR": 1137,
+    "acceptedBaseBlob": "10da8e93c295a370619e45e6a8e0a3867753f38f",
+    "aggregateBlob": "10da8e93c295a370619e45e6a8e0a3867753f38f",
+    "mergedInputPRs": [
+      1137
+    ],
+    "exactContentPRs": [
+      1137
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-gpu/core.mjs",
+    "acceptedBasePR": 1137,
+    "acceptedBaseBlob": "7a43c030b9ce95140b5b64361bec17626d35dccf",
+    "aggregateBlob": "7a43c030b9ce95140b5b64361bec17626d35dccf",
+    "mergedInputPRs": [
+      1137
+    ],
+    "exactContentPRs": [
+      1137
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-gpu/core.test.mjs",
+    "acceptedBasePR": 1137,
+    "acceptedBaseBlob": "3a4e60a79649854b86476a961ef174d83f51b9bf",
+    "aggregateBlob": "3a4e60a79649854b86476a961ef174d83f51b9bf",
+    "mergedInputPRs": [
+      1137
+    ],
+    "exactContentPRs": [
+      1137
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-gpu/environment.mjs",
+    "acceptedBasePR": 1137,
+    "acceptedBaseBlob": "92038d0f3e3ed8c453b8f31a81e59cf8d5306855",
+    "aggregateBlob": "92038d0f3e3ed8c453b8f31a81e59cf8d5306855",
+    "mergedInputPRs": [
+      1137
+    ],
+    "exactContentPRs": [
+      1137
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-gpu/harness.html",
+    "acceptedBasePR": 1137,
+    "acceptedBaseBlob": "da287770c69548fff6276446a8e171c77d0423fa",
+    "aggregateBlob": "da287770c69548fff6276446a8e171c77d0423fa",
+    "mergedInputPRs": [
+      1137
+    ],
+    "exactContentPRs": [
+      1137
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-gpu/harness.tsx",
+    "acceptedBasePR": 1137,
+    "acceptedBaseBlob": "66385b71c10640b7a69875f9f2824aabe945eb4f",
+    "aggregateBlob": "66385b71c10640b7a69875f9f2824aabe945eb4f",
+    "mergedInputPRs": [
+      1137
+    ],
+    "exactContentPRs": [
+      1137
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-gpu/probe.mjs",
+    "acceptedBasePR": 1137,
+    "acceptedBaseBlob": "8ad8a826e325604f61e8b961f490f2e8a65a976b",
+    "aggregateBlob": "8ad8a826e325604f61e8b961f490f2e8a65a976b",
+    "mergedInputPRs": [
+      1137
+    ],
+    "exactContentPRs": [
+      1137
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-gpu/report.mjs",
+    "acceptedBasePR": 1137,
+    "acceptedBaseBlob": "b74095c27bfba32b392d1d406e6a5b3208f19847",
+    "aggregateBlob": "b74095c27bfba32b392d1d406e6a5b3208f19847",
+    "mergedInputPRs": [
+      1137
+    ],
+    "exactContentPRs": [
+      1137
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-gpu/run.mjs",
+    "acceptedBasePR": 1137,
+    "acceptedBaseBlob": "5c9bf9fbddddfe6bc0e2cad4187688fb358f18ae",
+    "aggregateBlob": "5c9bf9fbddddfe6bc0e2cad4187688fb358f18ae",
+    "mergedInputPRs": [
+      1137
+    ],
+    "exactContentPRs": [
+      1137
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-live-camera-audit.md",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "581e71e674627cc26a286a19bd8e148fa7b7dc03",
+    "aggregateBlob": "581e71e674627cc26a286a19bd8e148fa7b7dc03",
+    "mergedInputPRs": [
+      1133
+    ],
+    "exactContentPRs": [
+      1133
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-live-camera-audit.ts",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "c42bd57b5e44e2b85e94983715f72e4455fb5bd0",
+    "aggregateBlob": "c42bd57b5e44e2b85e94983715f72e4455fb5bd0",
+    "mergedInputPRs": [
+      1133
+    ],
+    "exactContentPRs": [
+      1133
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-live-real-check.mjs",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "561abc46b26f31992037369159aee45c932bda55",
+    "aggregateBlob": "561abc46b26f31992037369159aee45c932bda55",
+    "mergedInputPRs": [
+      1133
+    ],
+    "exactContentPRs": [
+      1133
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-live-real-harness.html",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "7439d71cb4cc88a2609a2c05093a0ac0f297d902",
+    "aggregateBlob": "7439d71cb4cc88a2609a2c05093a0ac0f297d902",
+    "mergedInputPRs": [
+      1133
+    ],
+    "exactContentPRs": [
+      1133
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-live-real-harness.tsx",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "fc7827befe5a0230079a2d5deded7b759b8eeaae",
+    "aggregateBlob": "fc7827befe5a0230079a2d5deded7b759b8eeaae",
+    "mergedInputPRs": [
+      1133
+    ],
+    "exactContentPRs": [
+      1133
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-phase1-check.mjs",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "804a7184a849c7a415ae0715478d546139e94385",
+    "aggregateBlob": "804a7184a849c7a415ae0715478d546139e94385",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-phase1-harness.html",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "d62fe6b6e3cbfde79876c12ac9e26a00b1fed3b8",
+    "aggregateBlob": "d62fe6b6e3cbfde79876c12ac9e26a00b1fed3b8",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-phase1-harness.md",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "54d201634cb26d40b539d31c5e09e56c9513feab",
+    "aggregateBlob": "54d201634cb26d40b539d31c5e09e56c9513feab",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-phase1-harness.tsx",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "842adbeb8a8c374bbc6cc204b3ae3a4b77f7465f",
+    "aggregateBlob": "842adbeb8a8c374bbc6cc204b3ae3a4b77f7465f",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-storage-harness.html",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "b0e2d361d6ed99efb925b9b5239b918cc91a4d7b",
+    "aggregateBlob": "b0e2d361d6ed99efb925b9b5239b918cc91a4d7b",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-storage-harness.tsx",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "118bd426b55b206f417c590e9a25382a2cfbeaf6",
+    "aggregateBlob": "118bd426b55b206f417c590e9a25382a2cfbeaf6",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/game-storage-vite.config.ts",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "d8a84b725e4940e5b44864b04d5ace2c7c41c02f",
+    "aggregateBlob": "d8a84b725e4940e5b44864b04d5ace2c7c41c02f",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/live-notice-layout.mjs",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "c528602b9b18c2818b9e928e7b583975180dbb84",
+    "aggregateBlob": "c528602b9b18c2818b9e928e7b583975180dbb84",
+    "mergedInputPRs": [
+      1149,
+      1143,
+      1140,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1140,
+      1143,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/pointer-hud-check.mjs",
+    "acceptedBasePR": 1150,
+    "acceptedBaseBlob": "e09f3ed82e650fe6a63e3741ceebec7c7c99b609",
+    "aggregateBlob": "e09f3ed82e650fe6a63e3741ceebec7c7c99b609",
+    "mergedInputPRs": [
+      1150
+    ],
+    "exactContentPRs": [
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/pointer-hud.html",
+    "acceptedBasePR": 1150,
+    "acceptedBaseBlob": "b6852770fd215ef96e4f7bb6764b47957ea7c374",
+    "aggregateBlob": "b6852770fd215ef96e4f7bb6764b47957ea7c374",
+    "mergedInputPRs": [
+      1150
+    ],
+    "exactContentPRs": [
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/pointer-hud.tsx",
+    "acceptedBasePR": 1150,
+    "acceptedBaseBlob": "4ee2006f17f0f9f3a5a98184316c9d288582407b",
+    "aggregateBlob": "4ee2006f17f0f9f3a5a98184316c9d288582407b",
+    "mergedInputPRs": [
+      1150
+    ],
+    "exactContentPRs": [
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-check.mjs",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "c773682a47ecde9d9b920c8658dc47b8bbad1e77",
+    "aggregateBlob": "c773682a47ecde9d9b920c8658dc47b8bbad1e77",
+    "mergedInputPRs": [
+      1140,
+      1130
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-harness.html",
+    "acceptedBasePR": 1130,
+    "acceptedBaseBlob": "46f185d7f1d1b69873a087932a2c61639f91aea5",
+    "aggregateBlob": "46f185d7f1d1b69873a087932a2c61639f91aea5",
+    "mergedInputPRs": [
+      1140,
+      1130
+    ],
+    "exactContentPRs": [
+      1130,
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-harness.md",
+    "acceptedBasePR": 1130,
+    "acceptedBaseBlob": "745efe02a0e7fb429cd3217fe54248134aab2438",
+    "aggregateBlob": "745efe02a0e7fb429cd3217fe54248134aab2438",
+    "mergedInputPRs": [
+      1140,
+      1130
+    ],
+    "exactContentPRs": [
+      1130,
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-harness.tsx",
+    "acceptedBasePR": 1130,
+    "acceptedBaseBlob": "c4d5bf257526d170d9f2459ae5a65b002dd101c5",
+    "aggregateBlob": "c4d5bf257526d170d9f2459ae5a65b002dd101c5",
+    "mergedInputPRs": [
+      1140,
+      1130
+    ],
+    "exactContentPRs": [
+      1130,
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-readiness.mjs",
+    "acceptedBasePR": 1130,
+    "acceptedBaseBlob": "4a2e52d7b8bcf3fb13a31f52984aa70d30642e50",
+    "aggregateBlob": "4a2e52d7b8bcf3fb13a31f52984aa70d30642e50",
+    "mergedInputPRs": [
+      1140,
+      1130
+    ],
+    "exactContentPRs": [
+      1130,
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server-fixture.mjs",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "59cb65efd6f2c5f769334b2f0b6e7634e5bac17d",
+    "aggregateBlob": "59cb65efd6f2c5f769334b2f0b6e7634e5bac17d",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server-harness.html",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "2b8fd811631354a95451ab9fe103d065133c48a8",
+    "aggregateBlob": "2b8fd811631354a95451ab9fe103d065133c48a8",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server-harness.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "90b19e258d79bd0b786e32411b4729ad25b5e190",
+    "aggregateBlob": "90b19e258d79bd0b786e32411b4729ad25b5e190",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server-node.mjs",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "1a9f499c7f022590d7ea808b0ff2c3a6a4efcaa0",
+    "aggregateBlob": "1a9f499c7f022590d7ea808b0ff2c3a6a4efcaa0",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server-report.mjs",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "72f2fe4b7a03e2bd7e18b8ad2393898f14eb7fda",
+    "aggregateBlob": "72f2fe4b7a03e2bd7e18b8ad2393898f14eb7fda",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server-run.mjs",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "37f8cb391d0892db632a593dd057b6e572bd1254",
+    "aggregateBlob": "37f8cb391d0892db632a593dd057b6e572bd1254",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server-unread-benchmark.mjs",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "b74d38be2542048906e4a4d1ccca4f842c207726",
+    "aggregateBlob": "b74d38be2542048906e4a4d1ccca4f842c207726",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server.md",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "50f9fe20fc7af527e3acbe8990163d417ebfe769",
+    "aggregateBlob": "50f9fe20fc7af527e3acbe8990163d417ebfe769",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server.tsconfig.json",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "70478b3f9080bfcd1a303c1f3fc3da537fa5751f",
+    "aggregateBlob": "70478b3f9080bfcd1a303c1f3fc3da537fa5751f",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland-server.vite.config.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "008f5e8ee9eeeee09be3d5b3555451f505d54f3e",
+    "aggregateBlob": "008f5e8ee9eeeee09be3d5b3555451f505d54f3e",
+    "mergedInputPRs": [
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland.tsconfig.json",
+    "acceptedBasePR": 1130,
+    "acceptedBaseBlob": "c1b4df9eb614a3df5ab153573e1481f84fb7619f",
+    "aggregateBlob": "c1b4df9eb614a3df5ab153573e1481f84fb7619f",
+    "mergedInputPRs": [
+      1130
+    ],
+    "exactContentPRs": [
+      1130
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/taskland.vite.config.ts",
+    "acceptedBasePR": 1130,
+    "acceptedBaseBlob": "c7419771d8b98030c30c01c567665e3030bb16e4",
+    "aggregateBlob": "c7419771d8b98030c30c01c567665e3030bb16e4",
+    "mergedInputPRs": [
+      1140,
+      1130
+    ],
+    "exactContentPRs": [
+      1130,
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/vite.game-live.config.ts",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "cbf26d32cb7fd86cd7833b336ed187415db43336",
+    "aggregateBlob": "cbf26d32cb7fd86cd7833b336ed187415db43336",
+    "mergedInputPRs": [
+      1133
+    ],
+    "exactContentPRs": [
+      1133
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/e2e/vite.pointer-hud.config.ts",
+    "acceptedBasePR": 1150,
+    "acceptedBaseBlob": "3ccbaa84e30745c07c16dbdb047ea16f47466988",
+    "aggregateBlob": "3ccbaa84e30745c07c16dbdb047ea16f47466988",
+    "mergedInputPRs": [
+      1150
+    ],
+    "exactContentPRs": [
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/fixtures/seam-fixture.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "fa0ddd6fec08e5e8a48e6f4234bb4b9dbb054c22",
+    "aggregateBlob": "fa0ddd6fec08e5e8a48e6f4234bb4b9dbb054c22",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/game-lifecycles.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "7ff88963431d01a9883a8d23c1e6385c941faa27",
+    "aggregateBlob": "7ff88963431d01a9883a8d23c1e6385c941faa27",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/game-lifecycles.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "ebef212aa0f0dd7ce1a81da47dbae457e6884cb7",
+    "aggregateBlob": "ebef212aa0f0dd7ce1a81da47dbae457e6884cb7",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/game-mailboxes.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "11a3900737994522320e7b4ed8f67d2824b2da19",
+    "aggregateBlob": "11a3900737994522320e7b4ed8f67d2824b2da19",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1142,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/game-mailboxes.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "daddf30ff6eb2984c4051f334cc07e8b26a5bb52",
+    "aggregateBlob": "daddf30ff6eb2984c4051f334cc07e8b26a5bb52",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1142,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/game-maps.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "43df9e02c3aa81d0d91446634d5ecd3c394f0a17",
+    "aggregateBlob": "25d242ad0500cb170e43a371e95c8bc7993ca36f",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 32,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+  },
+  {
+    "file": "packages/tm8-ui/src/data/game-maps.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "9f8f7826c8a93c23071060cd7121081ef36315f5",
+    "aggregateBlob": "9f8f7826c8a93c23071060cd7121081ef36315f5",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/game-story-root-facts.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "91cea2667bba6e6ab1af430f849d2e406ac3f005",
+    "aggregateBlob": "91cea2667bba6e6ab1af430f849d2e406ac3f005",
+    "mergedInputPRs": [
+      1147,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1147
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/real/cancellation-observations-real.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "b7f478b36bb38bcc8ed51e0a91385125e2bb1818",
+    "aggregateBlob": "b7f478b36bb38bcc8ed51e0a91385125e2bb1818",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/real/http.test.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "0a7269b7be16e43effde34689784df301c372116",
+    "aggregateBlob": "0a7269b7be16e43effde34689784df301c372116",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/real/http.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "b87bc9a48c30e4885d1e5277475093aeb7be5e8a",
+    "aggregateBlob": "b87bc9a48c30e4885d1e5277475093aeb7be5e8a",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/real/ops.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "3246dfcfa0f2e0e15b91a1f426cbdf80e8564eb8",
+    "aggregateBlob": "3246dfcfa0f2e0e15b91a1f426cbdf80e8564eb8",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/real/seam-real.test.ts",
+    "acceptedBasePR": 1129,
+    "acceptedBaseBlob": "611f9c2f748990288fdd4b9bba21685ca57704a3",
+    "aggregateBlob": "611f9c2f748990288fdd4b9bba21685ca57704a3",
+    "mergedInputPRs": [
+      1129
+    ],
+    "exactContentPRs": [
+      1129
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/real/seam-real.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "e367d9fb409482917c3237073d99366e94eb1703",
+    "aggregateBlob": "e367d9fb409482917c3237073d99366e94eb1703",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1142,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/real/unread-real.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "60d9328f74c3d750cbadccf0e6ad32c3826f3880",
+    "aggregateBlob": "60d9328f74c3d750cbadccf0e6ad32c3826f3880",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1145,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1142,
+      1145,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/data/seam.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "900efbadd69bf23e7aebb313672ac0442fe34d37",
+    "aggregateBlob": "900efbadd69bf23e7aebb313672ac0442fe34d37",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1142,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/domain/nav-targets.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "97055d369bbb1cfe846a8d5918f9deb845c9d183",
+    "aggregateBlob": "97055d369bbb1cfe846a8d5918f9deb845c9d183",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/GameMode.live.test.tsx",
+    "acceptedBasePR": 1149,
+    "acceptedBaseBlob": "2f6361ee1cc54eeee58180cdd375dad811fa1713",
+    "aggregateBlob": "2f6361ee1cc54eeee58180cdd375dad811fa1713",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1143,
+      1140,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1140,
+      1143,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/GameMode.test.tsx",
+    "acceptedBasePR": 1149,
+    "acceptedBaseBlob": "fdf06d8e89b52c71190c782e1233a9928b7ee29c",
+    "aggregateBlob": "fdf06d8e89b52c71190c782e1233a9928b7ee29c",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1140,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/GameMode.tsx",
+    "acceptedBasePR": 1149,
+    "acceptedBaseBlob": "2572deee7f6e96a96318b4b00b44ff1124474d4e",
+    "aggregateBlob": "2572deee7f6e96a96318b4b00b44ff1124474d4e",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1140,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/GameMode.walking.test.tsx",
+    "acceptedBasePR": 1149,
+    "acceptedBaseBlob": "8876e8dc2dc1a761cc3098414fd8f9679e96df70",
+    "aggregateBlob": "8876e8dc2dc1a761cc3098414fd8f9679e96df70",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/durable-save.test.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "fcccb90a94bbc018a277a8834a72dcb8da6386c6",
+    "aggregateBlob": "fcccb90a94bbc018a277a8834a72dcb8da6386c6",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/durable-save.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "d56e6e63d74a9ad5820765072d23f651a43630de",
+    "aggregateBlob": "d56e6e63d74a9ad5820765072d23f651a43630de",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/game-mode.css",
+    "acceptedBasePR": 1149,
+    "acceptedBaseBlob": "1d18c1f5ddc4314b8dc7c6d00afe7b97004feae6",
+    "aggregateBlob": "1d18c1f5ddc4314b8dc7c6d00afe7b97004feae6",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1133,
+      1140,
+      1143,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/http-port.test.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "2ebff8ae6fcc7ca911cd023f03cbb53351642ba0",
+    "aggregateBlob": "2ebff8ae6fcc7ca911cd023f03cbb53351642ba0",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/http-port.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "d8661098c95e2bd474828d33dce357eceafeaae2",
+    "aggregateBlob": "d8661098c95e2bd474828d33dce357eceafeaae2",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/identity-lifetime.test.tsx",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "26f27eb858abc84dca7d703a39cff75af4cb90c8",
+    "aggregateBlob": "26f27eb858abc84dca7d703a39cff75af4cb90c8",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/identity-lifetime.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "faffe44c01500202697f44df359a394995a81018",
+    "aggregateBlob": "faffe44c01500202697f44df359a394995a81018",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/live-map-controller.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "9b292859e37f5da6471bd77384481a44913d62a0",
+    "aggregateBlob": "9b292859e37f5da6471bd77384481a44913d62a0",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1143,
+      1140,
+      1134,
+      1133
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/live-map-controller.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "d811948c8369080f92b76f11a906e022d767e83d",
+    "aggregateBlob": "d811948c8369080f92b76f11a906e022d767e83d",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1143,
+      1140,
+      1134,
+      1133
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/live-map-events.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "759d73fce7a79323f28e4366f651aca4da8d4c47",
+    "aggregateBlob": "759d73fce7a79323f28e4366f651aca4da8d4c47",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1143,
+      1140,
+      1134,
+      1133
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/live-map-mailboxes.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "5c6853a385045afe26bc8ab0878cba43627be876",
+    "aggregateBlob": "5c6853a385045afe26bc8ab0878cba43627be876",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/live-map-mailboxes.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "23b22a202e9270d8b693a4ff8f5adc986d9bf4ed",
+    "aggregateBlob": "23b22a202e9270d8b693a4ff8f5adc986d9bf4ed",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/local-save.test.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "474a554e6dfd7b7977942f0c868ff56cfd63fe3f",
+    "aggregateBlob": "474a554e6dfd7b7977942f0c868ff56cfd63fe3f",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/local-save.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "5a263941eb6b1917618f91ec9f8a2e4cb0572110",
+    "aggregateBlob": "5a263941eb6b1917618f91ec9f8a2e4cb0572110",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/map-admission.ts",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "6090d12e26f851a8b8dc2e9a93e9428dc32fed92",
+    "aggregateBlob": "6090d12e26f851a8b8dc2e9a93e9428dc32fed92",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1143,
+      1140,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1140,
+      1143,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/placement-read.test.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "9f3f8353e2ce96cfb41bb3f278f5f7a06148224c",
+    "aggregateBlob": "9f3f8353e2ce96cfb41bb3f278f5f7a06148224c",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/placement-read.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "27d6f55da86fce9e9a2b95e844c0a61a57596d49",
+    "aggregateBlob": "27d6f55da86fce9e9a2b95e844c0a61a57596d49",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/port.ts",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "46591567cd437dbe2d3bad8659332816593dd02e",
+    "aggregateBlob": "46591567cd437dbe2d3bad8659332816593dd02e",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1140,
+      1134
+    ],
+    "exactContentPRs": [
+      1134,
+      1140,
+      1146,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/game/types.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "6dc7154cb69e92f7b2d257c6af5ed0f7220f5f1a",
+    "aggregateBlob": "6dc7154cb69e92f7b2d257c6af5ed0f7220f5f1a",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/panels/session-tabs.test.tsx",
+    "acceptedBasePR": 1129,
+    "acceptedBaseBlob": "bcc942c1ee8ad1bf2c7caa2b1ae9936ec8a4090a",
+    "aggregateBlob": "bcc942c1ee8ad1bf2c7caa2b1ae9936ec8a4090a",
+    "mergedInputPRs": [
+      1129
+    ],
+    "exactContentPRs": [
+      1129
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/routes/codec.test.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "fbad11159fe1e545aa99573cae4f0636d7eb5288",
+    "aggregateBlob": "fbad11159fe1e545aa99573cae4f0636d7eb5288",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/routes/codec.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "b12fdb164bc22da027b3c9b006592b62e72435d2",
+    "aggregateBlob": "b12fdb164bc22da027b3c9b006592b62e72435d2",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/routes/types.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "bee73bf9d899c2b6877a48a70dcb8cf103a6bde8",
+    "aggregateBlob": "bee73bf9d899c2b6877a48a70dcb8cf103a6bde8",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/seen-entities/EntitySeen.test.tsx",
+    "acceptedBasePR": 1129,
+    "acceptedBaseBlob": "185eb827a157ba2a747f3622e9556a491d3a8696",
+    "aggregateBlob": "185eb827a157ba2a747f3622e9556a491d3a8696",
+    "mergedInputPRs": [
+      1129
+    ],
+    "exactContentPRs": [
+      1129
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/seen-entities/EntitySeen.tsx",
+    "acceptedBasePR": 1129,
+    "acceptedBaseBlob": "1318bdc0ccca7e57f3af8364f5c37b599d35175c",
+    "aggregateBlob": "1318bdc0ccca7e57f3af8364f5c37b599d35175c",
+    "mergedInputPRs": [
+      1129
+    ],
+    "exactContentPRs": [
+      1129
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/shell/desktop-modes.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "3149e9413f4dc748f208b6592abf844051db2b22",
+    "aggregateBlob": "3149e9413f4dc748f208b6592abf844051db2b22",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/Minimap.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "6bb6a59c0137133154c489c4c013db459412cdb8",
+    "aggregateBlob": "6bb6a59c0137133154c489c4c013db459412cdb8",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/StoryGame.drill.test.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "894716689cdd583180db6784c62374f19100374d",
+    "aggregateBlob": "894716689cdd583180db6784c62374f19100374d",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/StoryGame.duel.test.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "3dfacc3c7f391f1f43fd0176092c0825283de9f3",
+    "aggregateBlob": "3dfacc3c7f391f1f43fd0176092c0825283de9f3",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/StoryGame.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "0267ec40ddf2c88c2e0010517c73b768e735deff",
+    "aggregateBlob": "0267ec40ddf2c88c2e0010517c73b768e735deff",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/README.md",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "0911ada06de37fe6e3f384be6179b574c451b639",
+    "aggregateBlob": "0911ada06de37fe6e3f384be6179b574c451b639",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1142,
+      1140,
+      1135
+    ],
+    "exactContentPRs": [
+      1135,
+      1140,
+      1142,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/adapters.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "92b1d39f7fab59334faaf205812b85d5e3d599b7",
+    "aggregateBlob": "92b1d39f7fab59334faaf205812b85d5e3d599b7",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1143,
+      1142,
+      1140,
+      1135,
+      1133
+    ],
+    "exactContentPRs": [
+      1140,
+      1147
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/build.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "cdfc62fc9691c179e428ad938a40751031c70230",
+    "aggregateBlob": "cdfc62fc9691c179e428ad938a40751031c70230",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1143,
+      1142,
+      1140,
+      1135,
+      1133
+    ],
+    "exactContentPRs": [
+      1135,
+      1140,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/index.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "af6cbbbce6d67077dd53e3b0d8cd551379bea1b2",
+    "aggregateBlob": "af6cbbbce6d67077dd53e3b0d8cd551379bea1b2",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1133,
+      1135,
+      1140,
+      1142,
+      1143,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/lifecycle.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "2900da9fc76c0f2c6e11822f3fd7ea3246fdea6e",
+    "aggregateBlob": "2900da9fc76c0f2c6e11822f3fd7ea3246fdea6e",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1143,
+      1142,
+      1140,
+      1135,
+      1133
+    ],
+    "exactContentPRs": [
+      1135,
+      1140,
+      1142,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/lifecycle.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "134b5f75eb5dcc5db3c40b4963e974b88bb42256",
+    "aggregateBlob": "134b5f75eb5dcc5db3c40b4963e974b88bb42256",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1143,
+      1142,
+      1140,
+      1135,
+      1133
+    ],
+    "exactContentPRs": [
+      1135,
+      1140,
+      1142,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/model.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "c638c1fb52563df8dd9c73b79bde5b4bdc30ac46",
+    "aggregateBlob": "c638c1fb52563df8dd9c73b79bde5b4bdc30ac46",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1143,
+      1142,
+      1140,
+      1135,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1135,
+      1140,
+      1142,
+      1143,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/progress.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "2b36f2303136926d0728a5a770c117d11cf6f5ba",
+    "aggregateBlob": "2b36f2303136926d0728a5a770c117d11cf6f5ba",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1143,
+      1142,
+      1140,
+      1135,
+      1133
+    ],
+    "exactContentPRs": [
+      1135,
+      1140,
+      1142,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/progress.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "322079753f92488921505573a30cb2cdfb445bfd",
+    "aggregateBlob": "322079753f92488921505573a30cb2cdfb445bfd",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1143,
+      1142,
+      1140,
+      1135,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1135,
+      1140,
+      1142,
+      1143,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/shipping.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "2729e9c2e55bcf6a16da21866ad5df6c4930f2b1",
+    "aggregateBlob": "2729e9c2e55bcf6a16da21866ad5df6c4930f2b1",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1143,
+      1142,
+      1140,
+      1135,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1135,
+      1140,
+      1142,
+      1143,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/shipping.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "d454ea88a5cff5e16c72bde287ab040dc4945fbc",
+    "aggregateBlob": "d454ea88a5cff5e16c72bde287ab040dc4945fbc",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1143,
+      1142,
+      1140,
+      1135,
+      1133
+    ],
+    "exactContentPRs": [
+      1133,
+      1135,
+      1140,
+      1142,
+      1143,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/types.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "4aed8152236bee53d380d7bc7eb7e74e5f90a71c",
+    "aggregateBlob": "4aed8152236bee53d380d7bc7eb7e74e5f90a71c",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1135,
+      1140,
+      1142,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/walking-world.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "1f0ff4cd2b192dee82fee7a313d2213c178e9a8f",
+    "aggregateBlob": "1f0ff4cd2b192dee82fee7a313d2213c178e9a8f",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/walking-world.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "1204a84c0ca6a7d29bb677188366d25c5afed5b8",
+    "aggregateBlob": "1204a84c0ca6a7d29bb677188366d25c5afed5b8",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/walking.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "7755ccceb0b0753e92dba7c8a417502039490d72",
+    "aggregateBlob": "7755ccceb0b0753e92dba7c8a417502039490d72",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/walking.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "b46987bdae28576df1610bff003da305f8c69917",
+    "aggregateBlob": "b46987bdae28576df1610bff003da305f8c69917",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/MapScene.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "c39febb52d9c119129fa138624ff67369b2e4c8b",
+    "aggregateBlob": "c39febb52d9c119129fa138624ff67369b2e4c8b",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/README.md",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "33598fe9df484a542d17a2fee3e78ee93b5d8470",
+    "aggregateBlob": "33598fe9df484a542d17a2fee3e78ee93b5d8470",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "ac2caf44f8f6624f7c060fb8997e4858a9e88c57",
+    "aggregateBlob": "ac2caf44f8f6624f7c060fb8997e4858a9e88c57",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1141,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1141,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "02d3a3301b8449cfb4b4f87c5fb83ed2b49521bd",
+    "aggregateBlob": "02d3a3301b8449cfb4b4f87c5fb83ed2b49521bd",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1141,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1141,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "e5e7761c3186dcc346686b9a1ce3b80f67de1cf1",
+    "aggregateBlob": "e5e7761c3186dcc346686b9a1ce3b80f67de1cf1",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1143,
+      1140,
+      1133,
+      1130
+    ],
+    "exactContentPRs": [
+      1130,
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "aa5d30bf8653b0888fb5e682800cb49736d244ca",
+    "aggregateBlob": "aa5d30bf8653b0888fb5e682800cb49736d244ca",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1143,
+      1140,
+      1133,
+      1130
+    ],
+    "exactContentPRs": [
+      1130,
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/WalkingMapView.test.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "d87ee892049264f29902550b0876021e57823227",
+    "aggregateBlob": "d87ee892049264f29902550b0876021e57823227",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/WalkingMapView.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "154ef36e85df1e1479685086ce4d425e4f31c6f0",
+    "aggregateBlob": "355692f2cf084e52ed686abd4c0635c6d4db2f71",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 6,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/WalkingSceneAdapter.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "d533d906154249019af4678b2b65050bcb322f9d",
+    "aggregateBlob": "d533d906154249019af4678b2b65050bcb322f9d",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/WorkerLayer.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "9a896321682d91b4133a183972fa1b88ed2a3018",
+    "aggregateBlob": "9a896321682d91b4133a183972fa1b88ed2a3018",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1143,
+      1140,
+      1133
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/capture-walking.mjs",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "4195267c3828d6b23f6b0f41d63d1e6f71f713a5",
+    "aggregateBlob": "4195267c3828d6b23f6b0f41d63d1e6f71f713a5",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/index.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "f595e176083c0e0468f3e24b35eb1bf6f72a3dac",
+    "aggregateBlob": "f595e176083c0e0468f3e24b35eb1bf6f72a3dac",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/walking-dev.html",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "fe103bc07b2316ae56097ce797daf668caa1e5cc",
+    "aggregateBlob": "fe103bc07b2316ae56097ce797daf668caa1e5cc",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/walking-dev.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "bd827eab315e1ac81f51c8ef93190841c0cbfb9c",
+    "aggregateBlob": "bd827eab315e1ac81f51c8ef93190841c0cbfb9c",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/walking.css",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "36653ed9240ab3bf137c761ea0d5c51bbadc52c6",
+    "aggregateBlob": "0b83bf017c8237ed0ca6e3d40ffa8b74a0a91b35",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 13,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/walking.vite.config.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "66e970aa8430eec97f6645b1541aa19cc0f960a2",
+    "aggregateBlob": "66e970aa8430eec97f6645b1541aa19cc0f960a2",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/worker-motion.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "6919890cf860270717f28388d7b7cab80a1b698e",
+    "aggregateBlob": "6919890cf860270717f28388d7b7cab80a1b698e",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1143,
+      1140,
+      1133
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/maps/worker-motion.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "b28cbc9c0d32897b2e61f9e86040592e5324ee60",
+    "aggregateBlob": "b28cbc9c0d32897b2e61f9e86040592e5324ee60",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1143,
+      1140,
+      1133
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/scene.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "389fd553512b6884e42e5a818e63e0f035d3fff6",
+    "aggregateBlob": "389fd553512b6884e42e5a818e63e0f035d3fff6",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/taskland-motion.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "8f1d53e2e13ca18387c4ff713c6017c7239c6c3e",
+    "aggregateBlob": "8f1d53e2e13ca18387c4ff713c6017c7239c6c3e",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1141,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1141,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/taskland-motion.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "974e615eaca878c3571e77b25f487a7e2bf0c5c8",
+    "aggregateBlob": "974e615eaca878c3571e77b25f487a7e2bf0c5c8",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1141,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1141,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/views/GameScreen.tsx",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "9a29fb981bdb108bb4c194563ba60cc492c99502",
+    "aggregateBlob": "9a29fb981bdb108bb4c194563ba60cc492c99502",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1140,
+      1148,
+      1149
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/views/GateApp.tsx",
+    "acceptedBasePR": 1134,
+    "acceptedBaseBlob": "e04203f86cdf1997cf816c116aa17951b2fdcafa",
+    "aggregateBlob": "6be947fa76ea5926dd388763a15a1c272095788b",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1129,
+      1127
+    ],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 4,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+  },
+  {
+    "file": "packages/tm8-ui/src/views/entity-seen-hydration.test.tsx",
+    "acceptedBasePR": 1129,
+    "acceptedBaseBlob": "fedb0a3ef324fee448fb216ab9bfe88a275bd808",
+    "aggregateBlob": "fedb0a3ef324fee448fb216ab9bfe88a275bd808",
+    "mergedInputPRs": [
+      1129
+    ],
+    "exactContentPRs": [
+      1129
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/views/game-inspection.test.tsx",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "fef5367f20ce0d71f3bcc32d652505bf201a713c",
+    "aggregateBlob": "fef5367f20ce0d71f3bcc32d652505bf201a713c",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/views/game-screen.css",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "7dbf88b9b026575c293c40d0ee2579ef26809de7",
+    "aggregateBlob": "7dbf88b9b026575c293c40d0ee2579ef26809de7",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/views/game-shell.test.tsx",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "49dc5d5deb7cfd1c08d9298f129a8db9f9620af8",
+    "aggregateBlob": "49dc5d5deb7cfd1c08d9298f129a8db9f9620af8",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/views/last-place.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "b7adb39a1ee2e0ae9e60e979e3ea8543dd506906",
+    "aggregateBlob": "b7adb39a1ee2e0ae9e60e979e3ea8543dd506906",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/views/three-modes.test.tsx",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "1ce656754d5a69c91ffba97dcc35e84ab0d7a78f",
+    "aggregateBlob": "1ce656754d5a69c91ffba97dcc35e84ab0d7a78f",
+    "mergedInputPRs": [
+      1150,
+      1149,
+      1148,
+      1147,
+      1146,
+      1145,
+      1144,
+      1143,
+      1142,
+      1141,
+      1140,
+      1137,
+      1135,
+      1134,
+      1133,
+      1130,
+      1127
+    ],
+    "exactContentPRs": [
+      1127,
+      1130,
+      1133,
+      1134,
+      1135,
+      1137,
+      1140,
+      1141,
+      1142,
+      1143,
+      1144,
+      1145,
+      1146,
+      1147,
+      1148,
+      1149,
+      1150
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/ci/identity-id-allowlist.txt",
+    "acceptedBasePR": 1131,
+    "acceptedBaseBlob": "38f5a094a9e55e81c5a8094521bfe40a7ed42895",
+    "aggregateBlob": "e289b3518ec40a46fa17e20f00aa84f1a686b61d",
+    "mergedInputPRs": [
+      1145,
+      1140,
+      1131
+    ],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 1,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+  },
+  {
+    "file": "tools/ci/migrations-check.sh",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "86b4b8a8142076d015df5acef3f0386ffd016da8",
+    "aggregateBlob": "86b4b8a8142076d015df5acef3f0386ffd016da8",
+    "mergedInputPRs": [
+      1145,
+      1140
+    ],
+    "exactContentPRs": [
+      1140,
+      1145
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/conformance/generated/w1-conformance-manifest.json",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "d14a77e4684aebb72b04a1e8f33c6f5b5cd794a9",
+    "aggregateBlob": "d14a77e4684aebb72b04a1e8f33c6f5b5cd794a9",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/conformance/src/foundations/generator.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "8f218dcdef514160bf2bd2420081f6502b137f3e",
+    "aggregateBlob": "8f218dcdef514160bf2bd2420081f6502b137f3e",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/conformance/test/foundation/stub-honesty.test.ts",
+    "acceptedBasePR": 1144,
+    "acceptedBaseBlob": "2f5b89eb128186d58c73878dc7512862851cd61b",
+    "aggregateBlob": "2f5b89eb128186d58c73878dc7512862851cd61b",
+    "mergedInputPRs": [
+      1146,
+      1144
+    ],
+    "exactContentPRs": [
+      1144,
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/conformance/test/foundation/w1-foundations.test.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "459d8e950737678983e3a4e813e5f87aa337c768",
+    "aggregateBlob": "459d8e950737678983e3a4e813e5f87aa337c768",
+    "mergedInputPRs": [
+      1149,
+      1148,
+      1146,
+      1145,
+      1144,
+      1142,
+      1140
+    ],
+    "exactContentPRs": [
+      1140
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-live-server.mjs",
+    "acceptedBasePR": 1133,
+    "acceptedBaseBlob": "7ac9b649427ccbd8c1ff70d88bd6d70c61d2826c",
+    "aggregateBlob": "7ac9b649427ccbd8c1ff70d88bd6d70c61d2826c",
+    "mergedInputPRs": [
+      1133
+    ],
+    "exactContentPRs": [
+      1133
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-api.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "8a7505e904f219ae362b21a12a2cb57ffa094430",
+    "aggregateBlob": "8a7505e904f219ae362b21a12a2cb57ffa094430",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-browser-lifecycle.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "6c549af992437a01a4723b9aa6895ae09786a250",
+    "aggregateBlob": "6c549af992437a01a4723b9aa6895ae09786a250",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-browser-lifecycle.test.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "946e40bf15f00039133d7d2cf788e457d86b2252",
+    "aggregateBlob": "946e40bf15f00039133d7d2cf788e457d86b2252",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-browser-probe.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "1e396811dca2fe80d5cdbe1eca2ab1e73cdaafb9",
+    "aggregateBlob": "1e396811dca2fe80d5cdbe1eca2ab1e73cdaafb9",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-browser.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "0a376a046e5f25221f77030c986a28db2219f318",
+    "aggregateBlob": "0a376a046e5f25221f77030c986a28db2219f318",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-check.md",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "5351c06210823b16434c127a37565e6e2c7b58b5",
+    "aggregateBlob": "5351c06210823b16434c127a37565e6e2c7b58b5",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-check.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "e21541f4ff16dc6d61faadc8dd395cd287736040",
+    "aggregateBlob": "e21541f4ff16dc6d61faadc8dd395cd287736040",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-cost.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "9fd8bf681fee464edb25d17d25f0681ed0cf911a",
+    "aggregateBlob": "9fd8bf681fee464edb25d17d25f0681ed0cf911a",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-dependencies.json",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "51f429e3a5a46b0f9ff35fb80b25d33793664cc3",
+    "aggregateBlob": "51f429e3a5a46b0f9ff35fb80b25d33793664cc3",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-fixture.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "e91a631a4113beeeab4a4af0d989d5b16faae284",
+    "aggregateBlob": "e91a631a4113beeeab4a4af0d989d5b16faae284",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-host-diagnostics.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "d7b8b19c56b975943153a0171aac4101ee112e2f",
+    "aggregateBlob": "d7b8b19c56b975943153a0171aac4101ee112e2f",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-node.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "42571e91340d6bfa8b2690e4b5041d13ee617f35",
+    "aggregateBlob": "42571e91340d6bfa8b2690e4b5041d13ee617f35",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-window.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "dbaa9046b3f3a9a41c436dd329779763a1c003ee",
+    "aggregateBlob": "dbaa9046b3f3a9a41c436dd329779763a1c003ee",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  },
+  {
+    "file": "tools/rigs/game-storage-window.test.mjs",
+    "acceptedBasePR": 1146,
+    "acceptedBaseBlob": "e54c32960f74dd76c848eddff0101412ddc233fe",
+    "aggregateBlob": "e54c32960f74dd76c848eddff0101412ddc233fe",
+    "mergedInputPRs": [
+      1146
+    ],
+    "exactContentPRs": [
+      1146
+    ],
+    "deltaFromBaseLines": 0,
+    "reason": "Exact accepted content"
+  }
+]

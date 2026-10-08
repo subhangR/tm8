@@ -1,0 +1,29 @@
+{
+  "command": "bun run --cwd tools/conformance generate",
+  "outputSha256": "436f5c0c85f8a5776135a9b4835065d994a61bcda1a0fea66f7a08dfe56be266",
+  "catalogDigest": "sha256:7861a703e4203dc934e3c7289fb17a2a7f240067ce98a181ca4e71d57b5f2ed2",
+  "catalog": {
+    "total": 373,
+    "v1": 371,
+    "reserved": 2,
+    "http": 371,
+    "ws": 1,
+    "registerableV1Http": 369,
+    "methods": {
+      "GET": 121,
+      "POST": 181,
+      "PATCH": 21,
+      "DELETE": 24,
+      "PUT": 24,
+      "WS": 2
+    },
+    "kinds": {
+      "read": 128,
+      "command": 243,
+      "stream": 2
+    },
+    "uniqueNames": 373,
+    "uniqueBindings": 372
+  },
+  "note": "CLI operation inventory is authored, not generated; its digest must equal regenerated catalogDigest. Exact human-guard/accounting tests run on combined tree; no tolerance changes."
+}
