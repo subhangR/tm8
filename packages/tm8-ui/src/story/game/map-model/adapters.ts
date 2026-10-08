@@ -70,7 +70,18 @@ export function fromProjection(snapshot: unknown, scope?: MapScope): MapInput {
   for (const value of rows(source.roots)) {
     const raw = record(value), n = entityOf(value); if (!n) continue;
     const existing = entities.get(n.id);
-    entities.set(n.id, existing ? { ...existing, progress: raw.weighted !== undefined || typeof raw.progress === 'number' ? progressOf(raw) : existing.progress, subtreeWeight: n.subtreeWeight ?? existing.subtreeWeight } : n);
+    entities.set(n.id, existing ? {
+      ...existing,
+      progress: raw.weighted !== undefined || typeof raw.progress === 'number' ? progressOf(raw) : existing.progress,
+      subtreeWeight: n.subtreeWeight ?? existing.subtreeWeight,
+      // Roots also appear as sparse graph nodes. Carry only supplied canonical
+      // root facts; preserve node hierarchy, counts and older page projections.
+      ...(raw.pointsEstimate !== undefined ? { pointsEstimate: n.pointsEstimate } : {}),
+      ...(raw.acceptance !== undefined || raw.acceptanceCriteria !== undefined ? { acceptance: n.acceptance } : {}),
+      ...(raw.version !== undefined ? { version: n.version } : {}),
+      ...(raw.updatedAt !== undefined ? { updatedAt: n.updatedAt } : {}),
+      ...(raw.statusChangedAt !== undefined ? { cancelledAt: n.cancelledAt } : {}),
+    } : n);
   }
   for (const value of rows(source.sessions)) {
     const raw = record(value), n = entityOf({ ...raw, kind: 'work_session', status: raw.runtimeStatus, parentId: raw.dispatchedById });
