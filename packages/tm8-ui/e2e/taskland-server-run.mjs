@@ -10,6 +10,7 @@ import { startTasklandNode, repoRoot } from './taskland-server-node.mjs';
 import { seedTasklandFixture, mutateEntity, rotateFixtureToken } from './taskland-server-fixture.mjs';
 import { waitForRenderedTaskland, projectedTasklandCues } from './taskland-readiness.mjs';
 import { measureSyntheticUnread } from './taskland-server-unread-benchmark.mjs';
+import { writeTasklandReport } from './taskland-server-report.mjs';
 
 const output = resolve(process.env.TASKLAND_EVIDENCE_DIR ?? '/tmp/taskland-server-evidence');
 await mkdir(output, { recursive: true });
@@ -363,5 +364,6 @@ try {
   evidence.ownedDatabaseDropped = true;
   evidence.milliseconds = Date.now() - started;
   await writeFile(resolve(output, 'checks.json'), JSON.stringify(evidence, null, 2));
+  await writeTasklandReport(output, evidence);
   console.log(`Synthetic evidence: ${output}; owned processes and DB cleaned up`);
 }
