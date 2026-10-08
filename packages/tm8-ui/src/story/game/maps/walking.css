@@ -1,8 +1,14 @@
 .cv2-root .walking-map { min-height: 420px; }
 .walking-toolbar { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; }
 .walking-places { position: absolute; top: 12px; right: 12px; max-width: min(300px, 45%); max-height: 60%; overflow: auto; padding: 8px 12px; border-radius: 8px; background: var(--pn-card); color: var(--pn-ink); border: 1px solid var(--pn-line); font-size: 12px; }
+/* The Places list scrolls above the open minimap instead of covering it. */
+.cv2-root .walking-map .walking-map-tools { position: absolute; top: 12px; right: 12px; bottom: 74px; width: min(300px, 45%); display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
+.walking-map .walking-map-tools .walking-places { position: static; width: 100%; max-width: 100%; max-height: none; min-height: 0; flex: 0 1 auto; box-sizing: border-box; overflow: auto; pointer-events: auto; }
+.cv2-root .walking-map .walking-map-tools .sgm-minimap { position: static; flex-shrink: 0; margin-top: auto; margin-right: 12px; }
+.cv2-root .walking-map:not(.sgm--duel) .walking-map-tools .sgm-minimap__toggle { pointer-events: auto; }
 .walking-places ul, .walking-fallback ul { list-style: none; padding: 0; margin: 8px 0; }
 .walking-places li, .walking-fallback li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--pn-line); }
 .walking-fallback { height: 100%; box-sizing: border-box; overflow: auto; padding: 60px 20px 200px; color: var(--pn-ink); background: var(--pn-surface); font-size: 14px; }
 .walking-empty { position: absolute; top: 45%; width: 100%; text-align: center; color: var(--pn-ink-3); pointer-events: none; }
-@media (max-width: 600px) { .walking-places { top: 54px; } .walking-fallback li { flex-wrap: wrap; } .walking-map .sgm-hint span:nth-child(2) { display: none; } }
+@media (max-width: 600px) { .cv2-root .walking-map .walking-map-tools { top: 54px; } .walking-fallback li { flex-wrap: wrap; } .walking-map .sgm-hint span:nth-child(2) { display: none; } }
+@container (max-width: 700px) { .cv2-root .walking-map .walking-map-tools { bottom: 136px; } .cv2-root .walking-map .walking-map-tools .sgm-minimap { margin-right: 0; } }

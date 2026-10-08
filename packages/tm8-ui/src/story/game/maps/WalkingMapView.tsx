@@ -146,9 +146,11 @@ function WalkingMapBody(props: WalkingMapViewProps) {
     </div>
     <div className="sgm-hud">
       <div className="walking-toolbar">{props.onBack && <button className="sgm-btn" onClick={props.onBack}>Back <kbd>Esc</kbd></button>}<button className="sgm-btn" onClick={toggleOverview} aria-pressed={overview}>{overview ? 'Back to explorer' : 'Map overview'} <kbd>M</kbd></button></div>
-      {webgl && <details className="walking-places"><summary>Places ({world.places.length})</summary><ul>{world.places.map(p => <li key={p.id}><button className="sgm-btn" onClick={() => go(p)} title={`Walk to ${p.title}`}>{p.title}</button><button className="sgm-btn" aria-label={`${p.portal ? 'Enter' : 'Inspect'} ${p.title}`} onClick={() => act(p.id)}>{p.portal ? 'Enter' : 'Inspect'}</button></li>)}</ul></details>}
+      <div className="walking-map-tools">
+        {webgl && <details className="walking-places"><summary>Places ({world.places.length})</summary><ul>{world.places.map(p => <li key={p.id}><button className="sgm-btn" onClick={() => go(p)} title={`Walk to ${p.title}`}>{p.title}</button><button className="sgm-btn" aria-label={`${p.portal ? 'Enter' : 'Inspect'} ${p.title}`} onClick={() => act(p.id)}>{p.portal ? 'Enter' : 'Inspect'}</button></li>)}</ul></details>}
+        <WorldMinimap world={world} revealed={revealed} palette={palette} control={control} player={position} open={minimap} onToggle={toggleMinimap} onTravel={() => { setOverview(false); focus(); }}/>
+      </div>
       {near && <div className="sgm-approach" role="region" aria-label="Nearby place"><div className="sgm-approach__text"><div className="sgm-approach__title">{near.title}</div><div className="sgm-approach__sub">{near.portal ? 'Portal to another map' : [near.kind.replaceAll('_', ' '), near.status?.replaceAll('_', ' '), near.progress === null ? null : `${Math.round(near.progress * 100)}% complete`].filter(Boolean).join(' · ')}</div></div><button className="sgm-btn sgm-btn--primary" onClick={() => act(near.id)}>{near.portal ? 'Enter' : 'Inspect'} <kbd>E</kbd></button></div>}
-      <WorldMinimap world={world} revealed={revealed} palette={palette} control={control} player={position} open={minimap} onToggle={toggleMinimap} onTravel={() => { setOverview(false); focus(); }}/>
       <div className="sgm-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows to walk</span><span>Click to travel · scroll to zoom</span><span><kbd>E</kbd> inspect / enter</span></div>
     </div>
     {world.places.length === 0 && <div className="walking-empty" role="status">No entities in this map yet.</div>}
