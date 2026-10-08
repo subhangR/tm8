@@ -60,13 +60,15 @@ const sceneSnapshot=()=>{
 // getWorldPosition/updateMatrixWorld would change matrices and are deliberately absent.
 const workerFrameRecords:any[]=[],workerFrameByUuid=new Map<string,any>();
 const workerFrameCounts={before:0,after:0,firstGlFrame:null as number|null,lastGlFrame:null as number|null};
-const workerFrameScenes:Record<string,{before:number;after:number;firstGlFrame:number;lastGlFrame:number}>={};
+const workerFrameScenes:Record<string,{before:number;after:number;firstGlFrame:number;lastGlFrame:number;afterFrames:{index:number;frame:number;at:number}[]}>={};
 const observeWorkerFrame=(phase:'before'|'after')=>{
  const canvas=document.querySelector<HTMLCanvasElement>('.sgm-stage canvas[data-engine]');
  const root=canvas?_roots.get(canvas):undefined,state=root?.store.getState();if(!state)return;
  const frame=state.gl.info.render.frame,at=performance.now();workerFrameCounts[phase]++;
  workerFrameCounts.firstGlFrame??=frame;workerFrameCounts.lastGlFrame=frame;
- const sceneCounts=workerFrameScenes[state.scene.uuid]??={before:0,after:0,firstGlFrame:frame,lastGlFrame:frame};sceneCounts[phase]++;sceneCounts.lastGlFrame=frame;
+ const sceneCounts=workerFrameScenes[state.scene.uuid]??={before:0,after:0,firstGlFrame:frame,lastGlFrame:frame,afterFrames:[]};sceneCounts[phase]++;sceneCounts.lastGlFrame=frame;
+ if(phase==='after'){sceneCounts.afterFrames.push({index:sceneCounts.after,frame,at});if(sceneCounts.afterFrames.length>2048)sceneCounts.afterFrames.shift();}
+ const sceneIds=Object.keys(workerFrameScenes);if(sceneIds.length>8)delete workerFrameScenes[sceneIds[0]];
  const present=new Set<string>();
  state.scene.traverse(object=>{
   if(!object.name.startsWith('robot:'))return;
