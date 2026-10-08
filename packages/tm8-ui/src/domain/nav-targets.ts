@@ -250,6 +250,7 @@ export function landingOfRoute(view: NavView): Landing | null {
       return { target: null, openEntity: null };
 
     case 'tabs':
+    case 'game':
       /* Workspace tabs — route-only and client-added like boardV2. */
       return { target: null, openEntity: null };
 

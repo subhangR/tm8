@@ -36,6 +36,7 @@ describe('grammar (WLT §2.2 verbatim)', () => {
     [`#/s/${SPACE}/feed`, { view: 'feed' }],
     [`#/s/${SPACE}/inbox`, { view: 'inbox' }],
     [`#/s/${SPACE}/workspace`, { view: 'workspace' }],
+    [`#/s/${SPACE}/game`, { view: 'game' }],
     [`#/s/${SPACE}/k/tasks`, { view: 'kind', slug: 'tasks', mode: null, q: null }],
     [`#/s/${SPACE}/k/tasks?mode=board`, { view: 'kind', slug: 'tasks', mode: 'board', q: null }],
     [`#/s/${SPACE}/e/${id(1)}`, { view: 'entity', entityId: id(1), origin: null }],
