@@ -1622,6 +1622,18 @@ export function GateApp(props: GateAppProps = {}) {
    */
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
+  // Consume the top overlay before the focused walking renderer handles Esc.
+  useEffect(() => {
+    if (!paletteOpen || navView.view !== 'game') return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPaletteOpen(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [paletteOpen, navView.view]);
   /* The `?` overlay: every shortcut, read from the keyboard contract. */
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const keyboardRef = useRef<KeyboardController | null>(null);
@@ -2865,6 +2877,7 @@ export function GateApp(props: GateAppProps = {}) {
               data={data}
               memberId={viewerMemberId}
               loadMap={gameMapLoader}
+              overlayOpen={paletteOpen}
               reasons={reasons}
               serverBaseUrl={activeServer.routeBaseUrl}
               onNotice={notices.push}

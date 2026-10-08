@@ -106,7 +106,7 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       title = story.title;
       const page = story.content.page;
       const snapshot = fromProjection({ id: story.id, kind: 'story', page }, scope);
-      warnings = [...(snapshot.warnings ?? []), 'Contained hierarchy follows at most depth 32; deeper descendants may be absent'];
+      warnings = snapshot.warnings ?? [];
       for (const row of snapshot.entities) entities.set(row.id, { ...row, spaceId });
       for (const session of page.sessions) {
         const mapped = entities.get(session.id);
@@ -124,27 +124,44 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       for (const root of page.roots) {
         const kind = MAP_KINDS!.find(kind => kind === root.kind);
         if (!kind) continue;
-        for (const row of await query({ subtreeOf: root.id, kinds: [kind] }, signal)) {
+        const descendants = await query({ subtreeOf: root.id, kinds: [kind] }, signal);
+        const byId = new Map(descendants.map(row => [row.id, row]));
+        const reachesLimit = descendants.some(row => {
+          let parent = row.parentId, depth = 1;
+          const seen = new Set([row.id]);
+          while (parent && parent !== root.id && !seen.has(parent)) {
+            seen.add(parent); parent = byId.get(parent)?.parentId ?? null; depth++;
+          }
+          return parent === root.id && depth >= 32;
+        });
+        if (reachesLimit && !warnings.some(warning => warning.includes('depth 32'))) {
+          warnings = [...warnings, 'Contained hierarchy reaches depth 32; deeper descendants may be absent'];
+        }
+        for (const row of descendants) {
           entities.set(row.id, summaryOf(row, seam));
         }
       }
     }
 
-    const ids = [...entities.keys()];
+    // Dependencies/deliverables originate from tasks; walking robots use session
+    // claims. Library and factory records need no outgoing connection reads.
+    const ids = [...entities.values()].filter(row => row.kind === 'task' || row.kind === 'work_session').map(row => row.id);
     let next = 0;
+    let failed = false;
     await Promise.all(Array.from({ length: Math.min(READ_CONCURRENCY, ids.length) }, async () => {
-      while (next < ids.length) {
-        const id = ids[next++]!;
-        const rows = await pages(cursor => seam.connections(id, {
-          types: MAP_EDGE_TYPES, direction: 'outgoing', cursor, limit: PAGE_LIMIT,
-        }), signal);
-        for (const row of rows) {
-          // A connection must never pull an unrelated or hidden peer into scope.
-          assertSpace(row.source, spaceId);
-          assertSpace(row.target, spaceId);
-          if (entities.has(row.source.id) && entities.has(row.target.id)) edges.set(row.id, edgeOf(row));
+      try {
+        while (!failed && next < ids.length) {
+          const id = ids[next++]!;
+          const rows = await pages(cursor => seam.connections(id, {
+            types: MAP_EDGE_TYPES, direction: 'outgoing', cursor, limit: PAGE_LIMIT,
+          }), signal);
+          for (const row of rows) {
+            // A connection must never pull an unrelated or hidden peer into scope.
+            if (row.source.spaceId !== spaceId || row.target.spaceId !== spaceId) continue;
+            if (entities.has(row.source.id) && entities.has(row.target.id)) edges.set(row.id, edgeOf(row));
+          }
         }
-      }
+      } catch (error) { failed = true; throw error; }
     }));
     checkCancelled(signal);
     return {

@@ -40,7 +40,8 @@ describe('real Game map reads', () => {
       if (id !== 'a') return { items: [], nextCursor: null };
       return (input as { cursor?: string }).cursor
         ? { items: [edge('ended', a, b, { endedAt: '2026-10-08' })], nextCursor: null }
-        : { items: [edge('road', a, b), edge('outside', a, unrelated)], nextCursor: 'edges-2' };
+        : { items: [edge('road', a, b), edge('outside', a, unrelated),
+          edge('foreign', a, { ...b, spaceId: 'space-b' })], nextCursor: 'edges-2' };
     });
     const result = await load(seam)({ kind: 'space', id: SPACE });
     expect(result.title).toBe('Real space');
@@ -69,6 +70,7 @@ describe('real Game map reads', () => {
     expect(result.input.entities.find(e => e.id === 'child-a')?.parentId).toBe('story-a');
     expect(seam.spaces).not.toHaveBeenCalled();
     expect(seam.query.mock.calls.every(([q]) => (q as { parentId?: string; subtreeOf?: string }).parentId || (q as { subtreeOf?: string }).subtreeOf)).toBe(true);
+    expect(result.input.warnings?.some(w => w.includes('depth 32'))).toBe(false);
   });
 
   it('retains explicit story follow and truncation warnings', async () => {
@@ -76,8 +78,21 @@ describe('real Game map reads', () => {
     seam.entity.mockResolvedValue(story({ follow: { depth: 3, limit: 500, truncated: true, edgeTypes: [] } }) as never);
     const { input } = await load(seam)({ kind: 'story', id: 'story-a' });
     expect(input.warnings).toEqual(expect.arrayContaining([
-      expect.stringContaining('depth 3'), expect.stringContaining('truncated'), expect.stringContaining('depth 32'),
+      expect.stringContaining('depth 3'), expect.stringContaining('truncated'),
     ]));
+  });
+
+  it('warns at the hierarchy boundary and skips connection reads for records without map edges', async () => {
+    const seam = port();
+    seam.entity.mockResolvedValue(story() as never);
+    const deep = Array.from({ length: 32 }, (_, index) => row(`deep-${index + 1}`, 'task', index ? `deep-${index}` : 'root'));
+    seam.query.mockImplementation(async input => ({ page: page(input.subtreeOf ? deep : []) }));
+    expect((await load(seam)({ kind: 'story', id: 'story-a' })).input.warnings).toContain('Contained hierarchy reaches depth 32; deeper descendants may be absent');
+    seam.connections.mockClear();
+    seam.query.mockResolvedValue({ page: page([row('story', 'story'), row('doc', 'doc'), row('project', 'project')]) });
+    const result = await load(seam)({ kind: 'space', id: SPACE });
+    expect(result.input.entities).toHaveLength(3);
+    expect(seam.connections).not.toHaveBeenCalled();
   });
 
   it('rejects a mismatched space before reading and a foreign/non-story detail before querying', async () => {
@@ -115,6 +130,31 @@ describe('real Game map reads', () => {
     seam.query.mockImplementation(async () => ({ page: page([], `cursor-${seam.query.mock.calls.length}`) }));
     await expect(load(seam)({ kind: 'space', id: SPACE })).rejects.toThrow('pagination limit');
     expect(seam.query).toHaveBeenCalledTimes(100);
+  });
+
+  it('bounds concurrent connection reads and stops admitting work after a failure', async () => {
+    const seam = port();
+    seam.query.mockResolvedValue({ page: page(Array.from({ length: 9 }, (_, index) => row(`row-${index}`))) });
+    let active = 0, peak = 0;
+    seam.connections.mockImplementation(async () => {
+      active++; peak = Math.max(active, peak);
+      await Promise.resolve();
+      active--;
+      return { items: [], nextCursor: null };
+    });
+    await load(seam)({ kind: 'space', id: SPACE });
+    expect(peak).toBe(4);
+    seam.connections.mockClear();
+    const pending: (() => void)[] = [];
+    seam.connections.mockImplementation(async (id) => {
+      if (id === 'row-0') throw new Error('Read failed');
+      await new Promise<void>(resolve => pending.push(resolve));
+      return { items: [], nextCursor: null };
+    });
+    await expect(load(seam)({ kind: 'space', id: SPACE })).rejects.toThrow('Read failed');
+    pending.forEach(resolve => resolve());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(seam.connections).toHaveBeenCalledTimes(4);
   });
 
   it('aborts immediately while a Seam read is pending and ignores its late response', async () => {
