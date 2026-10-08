@@ -78,7 +78,7 @@ export function buildMapModel(input: MapInput, options: BuildMapOptions): MapMod
   const nextLifecycleAt = type === 'taskland' && deadlines.length ? Math.min(...deadlines) : null;
   if (type === 'taskland') {
     const unknown = [...rubble.values()].filter(n => !n.expired && n.expiresAt === null).length;
-    if (unknown) warnings.push(`${unknown} cancelled task(s) lack an authoritative cancellation timestamp; exact rubble expiry is unknown (last-update upper bounds are used when available)`);
+    if (unknown) warnings.push(`${unknown} cancelled task(s) lack an authoritative cancellation timestamp; exact rubble expiry is unknown (proven upper bounds are used when available)`);
   }
   const shipped = new Set(all.filter(n => done(n) || completedSession(n)).map(n => n.id));
   for (const edge of input.edges) if (edge.type === 'produces' && isActiveMapEdge(edge) &&
