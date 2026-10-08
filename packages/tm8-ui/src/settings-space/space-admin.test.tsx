@@ -110,3 +110,14 @@ describe('space profile writes', () => {
     expect(draw.queryByText('Protected')).toBeNull();
     await draw.findByText('Protected');
   });
+
+it('does not write an absent auto-close setting when editing an older-node profile', async () => {
+  const { space } = await fixture();
+  const { sessionAutoCloseMinutes: _minutes, ...legacySpace } = space;
+  const save = vi.fn(async (_patch: unknown) => undefined);
+  const draw = render(<ProfileSection space={legacySpace} heading="Profile" onSave={save} />);
+  fireEvent.change(draw.getByLabelText('Name'), { target: { value: 'Renamed' } });
+  fireEvent.click(draw.getByRole('button', { name: 'Save space details' }));
+  await draw.findByText('Space details saved.');
+  expect(save.mock.calls[0]?.[0]).not.toHaveProperty('sessionAutoCloseMinutes');
+});

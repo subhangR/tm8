@@ -28,14 +28,7 @@ function reason(cause: string, remedy: string): UnavailableReason {
 // T2-3 — the menu editor
 // ---------------------------------------------------------------------------
 
-/**
- * The single biggest gap in this half. `data/seam.ts`'s own header records the
- * ruling verbatim: "spaces.menu.update stays OUT of this seam until their
- * phase; adding either is a deferred amendment requiring dual re-consensus".
- * The CONTRACT has `UpdateMenuInput` with `expectedRevision` — so the conflict
- * and version-lock states this editor draws are contract-real and merely
- * unreachable, which is exactly why they are built rather than skipped.
- */
+/** Used by legacy mounts without an authorized save callback. */
 export const MENU_SAVE_UNAVAILABLE = reason(
   'Menu editing is unavailable in this view',
   'An owner or admin with menu write access can save from Space admin. This view has no authorized save action.',

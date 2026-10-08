@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { EntityKindCreateInputSchema } from '@tm8/contract';
 import { draftToCreateInput } from '../settings-governance/governance-model';
@@ -19,12 +19,17 @@ async function fixture() {
 }
 
 it('persists menu changes and rejects stale revisions', async () => {
-  const { port } = await fixture();
+  const { port, seam, space } = await fixture();
+  const events: unknown[] = [];
+  seam.onEvent((event) => events.push(event));
+  await seam.openSpace(space.id);
   const base = await port.loadMenu();
   const payload = { schemaVersion: base.config.schemaVersion, groups: base.config.groups };
   const saved = await port.saveMenu!(payload, 0);
   expect(saved.config.revision).toBe(1);
   expect(await port.loadMenu()).toEqual(saved);
+  expect((await seam.spaceSettings(space.id)).menu).toEqual(saved.config);
+  await waitFor(() => expect(events).toContainEqual(expect.objectContaining({ type: 'menu.updated', menu: saved.config })));
   await expect(port.saveMenu!(payload, 0)).rejects.toThrow('Menu changed');
   expect((await port.saveMenu!(payload, 1)).config.revision).toBe(2);
 });

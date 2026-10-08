@@ -2734,7 +2734,7 @@ export function createFixtureSeam(): FixtureSeam {
            row nobody designed. `menu()` resolves null here by C-4 and the UI
            substitutes its shipped default, so the shipped default is exactly
            what a consistent settings payload has to carry. */
-        menu: SHIPPED_DEFAULT_MENU,
+        menu: savedMenu ?? SHIPPED_DEFAULT_MENU,
         defaultChannelId: null,
         defaultInteractionProfileId: 'ip-house-style',
         settingsRevision: 1,
@@ -4116,6 +4116,7 @@ export function createFixtureSeam(): FixtureSeam {
         if (!parsed.success) throw new CollabError('invalid_input', parsed.error.issues[0]?.message ?? 'Invalid menu');
         if (input.expectedRevision !== (savedMenu?.revision ?? 0)) throw new CollabError('conflict', 'Menu changed; reload before saving.');
         savedMenu = { ...clone(input.payload), revision: (savedMenu?.revision ?? 0) + 1 };
+        emit(spaceId, { type: 'menu.updated', menu: clone(savedMenu) }, input);
         return clone(savedMenu);
       },
       async updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary> {

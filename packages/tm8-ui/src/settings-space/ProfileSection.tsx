@@ -1,6 +1,6 @@
 /** Space profile and server-backed editing. Without an authorized onSave callback,
  * the same section remains read-only for legacy/member settings. */
-import { useState, type ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import type { SpaceProfilePatch } from './port';
 import type { SpaceSummary } from '@tm8/contract';
 import { DisabledAction } from '../panels';
@@ -128,34 +128,77 @@ function SpaceProfileForm({ space, onSave }: { space: SpaceSummary; onSave: (pat
   const [description, setDescription] = useState(space.description ?? '');
   const [repo, setRepo] = useState(space.githubRepo ?? '');
   const [minutes, setMinutes] = useState(String(space.sessionAutoCloseMinutes ?? 30));
+  const [minutesChanged, setMinutesChanged] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  return <form className="set-space-profile__form" onSubmit={async (event) => {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
-    setError(null); setSaved(false);
+    setError(null);
+    setSaved(false);
     const autoClose = Number(minutes);
     if (!name.trim() || !minutes.trim() || !Number.isInteger(autoClose) || autoClose < 0 || autoClose > 10080) {
-      setError('Enter a name and whole auto-close minutes between 0 and 10080.'); return;
+      setError('Enter a name and whole auto-close minutes between 0 and 10080.');
+      return;
     }
     setPending(true);
     try {
-      await onSave({ name: name.trim(), description: description.trim(), githubRepo: repo.trim() || null, sessionAutoCloseMinutes: autoClose });
+      await onSave({
+        name: name.trim(),
+        description: description.trim(),
+        githubRepo: repo.trim() || null,
+        ...(space.sessionAutoCloseMinutes !== undefined || minutesChanged
+          ? { sessionAutoCloseMinutes: autoClose }
+          : {}),
+      });
       setSaved(true);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setPending(false); }
-  }}>
-    <fieldset disabled={pending}>
-      <legend>Space details</legend>
-      <label>Name<input value={name} onChange={(e) => { setName(e.target.value); setSaved(false); }} required /></label>
-      <label>Description<textarea value={description} onChange={(e) => { setDescription(e.target.value); setSaved(false); }} /></label>
-      <label>GitHub repository<input value={repo} onChange={(e) => { setRepo(e.target.value); setSaved(false); }} placeholder="owner/repository" /></label>
-      <label>Session auto-close minutes<input type="number" min="0" max="10080" step="1" required value={minutes} onChange={(e) => { setMinutes(e.target.value); setSaved(false); }} /></label>
-      <p>Close completed sessions after this many idle minutes. Set 0 to never close them automatically.</p>
-      <button type="submit">{pending ? 'Saving…' : 'Save space details'}</button>
-    </fieldset>
-    {error && <p role="alert">{error}</p>}
-    {saved && <p role="status">Space details saved.</p>}
-  </form>;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form className="set-space-profile__form" onSubmit={submit}>
+      <fieldset disabled={pending}>
+        <legend>Space details</legend>
+        <label>
+          Name
+          <input required value={name} onChange={(event) => {
+            setName(event.target.value);
+            setSaved(false);
+          }} />
+        </label>
+        <label>
+          Description
+          <textarea value={description} onChange={(event) => {
+            setDescription(event.target.value);
+            setSaved(false);
+          }} />
+        </label>
+        <label>
+          GitHub repository
+          <input value={repo} placeholder="owner/repository" onChange={(event) => {
+            setRepo(event.target.value);
+            setSaved(false);
+          }} />
+        </label>
+        <label>
+          Session auto-close minutes
+          <input type="number" min="0" max="10080" step="1" required value={minutes}
+            onChange={(event) => {
+              setMinutes(event.target.value);
+              setMinutesChanged(true);
+              setSaved(false);
+            }} />
+        </label>
+        <p>Close completed sessions after this many idle minutes. Set 0 to never close them automatically.</p>
+        <button type="submit">{pending ? 'Saving…' : 'Save space details'}</button>
+      </fieldset>
+      {error && <p role="alert">{error}</p>}
+      {saved && <p role="status">Space details saved.</p>}
+    </form>
+  );
 }
