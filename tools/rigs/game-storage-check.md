@@ -26,20 +26,25 @@ browser checks, or `GAME_STORAGE_COST=1` to add the 100-placement context and
 reports request counts and `pg_column_size` row growth, rather than WAL or disk
 allocation. Linux Chromium may require `LD_LIBRARY_PATH` pointing to a local
 dependency bundle; no system libraries are installed by this runner.
+`GAME_STORAGE_COST_ONLY=1 GAME_STORAGE_BROWSER_ONLY=1 GAME_STORAGE_COST=1`
+uses a separate fresh fixture for just the cost probes and rendered walk.
 
 The runner launches a fresh Chromium process for each restored visit, with
 empty browser storage. This also avoids single-process Chromium context reuse
 crashes on the shared software-rendering host. Screenshots have a 90-second
 readback deadline; renderer readiness still requires actual drawn frames.
-The browser uses its standard reduced-motion preference so idle camera easing
-does not change the sampled final pose during screenshot readback. Exact scene
+The software browser viewport is 800×600. Most visits use the standard
+reduced-motion preference. A separate fresh visit uses default motion and
+checks the independently observed restored scene immediately and after three
+idle seconds. Exact scene
 player/camera and stored current/stack/memory assertions remain unconditional.
 Traffic separates the 60-second regular-send window (budget at most 20) from
 pagehide flushes; this walk performs no route or visibility changes.
 The runner stops its owned API/Vite
 children, including on failure; the caller owns cluster startup/teardown.
 
-`acceptance.json` contains exact head, migration digest, check names, counts,
+`acceptance.json` contains the exact head, active checkout, backend and adapter
+heads, official map migration SHA256, full migration-chain SHA256, check names, counts,
 booleans, and timings. Screenshots show only synthetic records. Auth tokens and
 saves remain in memory; lifecycle logs stay local and are not published. A new
 fixture is seeded per run, so reusing this isolated database is safe. Other lanes
@@ -52,3 +57,9 @@ live channel in the storage slice. Opening an implicit deleted map restores its
 identity. A final pose during account switch remains browser-only because the
 old identity's requests are aborted. Fingerprint retention follows the core
 ledger cleanup window and removes eligible fingerprints on the next mutation.
+A timed-out save that committed server-side currently halts and requires the
+explicit Save action to read the revision and replace this visit. The failed
+software-browser attempt committed on the server in 82 ms, while a starved
+browser main thread caught the 15-second timeout after 26.1 seconds. It is
+retained as failed evidence. Viewport changes are test-environment mitigations;
+the production timeout, queue, and exact scene comparisons are unchanged.

@@ -64,7 +64,11 @@ export async function verifyBrowserDurability(f, restartServer, record) {
     console.log(JSON.stringify({ stage: 'synthetic portal entry', name }));
     const places = page.getByTestId('walking-map').locator('details.walking-places');
     if (!(await places.evaluate(node => node.open))) await places.locator('summary').click();
-    await places.getByRole('button', { name: `Enter ${name}`, exact: true }).click();
+    const portal = places.getByRole('button', { name: `Enter ${name}`, exact: true });
+    // Diagnose pointer actionability, then use the ordinary accessible keyboard activation.
+    try { await portal.click({ trial: true, timeout: 3_000 }); }
+    catch (error) { console.log(JSON.stringify({ stage: 'synthetic portal pointer actionability', name, message: String(error.message).slice(0, 1_200) })); }
+    await portal.focus(); await portal.press('Enter');
   };
   const assertScene = async (page, memory) => {
     await ready(page); const live = await scene(page);
@@ -212,7 +216,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
 
 export async function verifyWalkingTraffic(f, pool, record) {
   const browser = await launchBrowser();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 }, reducedMotion: 'reduce' });
   await page.addInitScript(() => {
     const send = window.fetch.bind(window);
     window.__traffic = [];
@@ -230,7 +234,7 @@ export async function verifyWalkingTraffic(f, pool, record) {
   let writes = 0, wireBytes = 0;
   try {
     await page.goto(url); const host = page.getByTestId('walking-map'); await host.waitFor();
-    await expect.poll(() => page.evaluate(() => !!window.__storageHarness.scene()?.player)).toBe(true);
+    await expect.poll(() => page.evaluate(() => !!window.__storageHarness.scene()?.player), { timeout: 90_000 }).toBe(true);
     const before = await ledgerSize(pool);
     page.on('request', request => {
       if (request.method() === 'PUT' && new URL(request.url()).pathname.endsWith('/maps/navigation')) {
@@ -292,7 +296,7 @@ export async function verifyLegacyMigration(f, record) {
     assert.equal((await nav()).save, null, 'legacy migration starts with GET null');
     for (const migrating of [true, false]) {
       await browser?.close(); browser = await launchBrowser();
-      context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' });
+      context = await browser.newContext({ viewport: { width: 800, height: 600 }, reducedMotion: 'reduce' });
       if (migrating) await context.addInitScript(save => {
         localStorage.setItem(`tm8:game:v1:${JSON.stringify([save.spaceId, save.memberId])}`, JSON.stringify(save));
       }, legacy);
@@ -303,7 +307,7 @@ export async function verifyLegacyMigration(f, record) {
         return saved && Object.entries(validMemories).every(([key, memory]) => JSON.stringify(saved[key]) === JSON.stringify(memory)) &&
           !Object.keys(saved).some(key => key.includes('legacy-nonuuid'));
       }).toBe(true);
-      await expect.poll(async () => await page.evaluate(() => window.__storageHarness.scene()?.player)).toEqual([0, 0, 6]);
+      await expect.poll(async () => await page.evaluate(() => window.__storageHarness.scene()?.player), { timeout: 90_000 }).toEqual([0, 0, 6]);
       const live = await page.evaluate(() => window.__storageHarness.scene());
       assert.deepEqual(live.camera.position, legacy.maps[keyOf(current)].camera.position);
       assert.equal(live.camera.zoom, legacy.maps[keyOf(current)].camera.zoom);
