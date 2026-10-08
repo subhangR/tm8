@@ -157,6 +157,7 @@ export function WorkspaceRail() {
       current={config.kind === browserKind}
       expanded={expanded}
       count={isRailCountKind(config.kind) ? counts[config.kind] : undefined}
+      unseen={gate.data?.countsFor?.(config.kind)?.unseen}
       onSelect={selectKind}
       onTogglePin={togglePin}
     />
@@ -438,11 +439,12 @@ interface KindButtonProps {
   expanded: boolean;
   /** The live count (R42); undefined on every kind but the four. */
   count: number | undefined;
+  unseen: number | undefined;
   onSelect(kind: string): void;
   onTogglePin(config: KindConfig): boolean;
 }
 
-function KindButton({ config, placement, isPinned, current, expanded, count, onSelect, onTogglePin }: KindButtonProps) {
+function KindButton({ config, placement, isPinned, current, expanded, count, unseen, onSelect, onTogglePin }: KindButtonProps) {
   const [flash, setFlash] = useState<string | null>(null);
   const flashTimer = useRef<number | null>(null);
   useEffect(() => () => {
@@ -461,10 +463,12 @@ function KindButton({ config, placement, isPinned, current, expanded, count, onS
     () => onSelect(config.kind),
   );
   const verb = isPinned ? 'hold to unpin' : 'hold to pin';
-  /* Expanded rails suppress tooltips except the hold hint. */
-  const label = railKindLabel(config.kind, config.labelPlural, count);
+  /* Tooltips and accessible labels carry the full unseen count at either width. */
+  const activityLabel = railKindLabel(config.kind, config.labelPlural, count);
+  const unseenShown = railCountLabel(unseen);
+  const label = unseenShown ? `${activityLabel} · ${unseen} unseen` : activityLabel;
   const shown = railCountLabel(count);
-  const tip = expanded ? verb.charAt(0).toUpperCase() + verb.slice(1) : `${label} · ${verb}`;
+  const tip = `${label} · ${verb}`;
   return (
     <RailTip label={tip} flash={flash}>
       <button
@@ -488,6 +492,11 @@ function KindButton({ config, placement, isPinned, current, expanded, count, onS
               pathLength={100}
             />
           </svg>
+          {unseenShown ? (
+            <sup className="tws-rail-unseen-badge" data-testid="tws-rail-unseen" aria-hidden>
+              {unseenShown}
+            </sup>
+          ) : null}
           {shown && !expanded ? (
             <span className="tws-rail-count-badge" data-testid="tws-rail-count" aria-hidden>
               {shown}

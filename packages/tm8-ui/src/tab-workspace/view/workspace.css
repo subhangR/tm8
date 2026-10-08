@@ -448,6 +448,25 @@
   text-align: center;
   pointer-events: none;
 }
+/* Unseen entities sit above the LEFT of the icon in either rail width. */
+.tws-rail-unseen-badge {
+  position: absolute;
+  top: -2px;
+  left: -6px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 1px;
+  box-sizing: border-box;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
 .tws-rail-count {
   flex: none;
   margin-left: auto;

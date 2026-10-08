@@ -1311,6 +1311,8 @@ export interface Seam {
     redeemInvite(input: RedeemInviteInput): Promise<InviteRedemption>;
     markRead(notificationId: string): Promise<void>;
     upsertReadMark(anchorId: EntityId, lastReadAt: string): Promise<void>;
+    /** Permanent personal seen state; call only on entity-list activation. */
+    markSeen?(entityId: EntityId): Promise<void>;
     /**
      * Mint a short-lived, viewer-bound preview capability (Amendment 2).
      * `previewUrl` is present only when the node runs the second-origin

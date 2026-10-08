@@ -61,6 +61,7 @@ describe('HUMAN_AUTH_KINDS', () => {
 describe('catalog humanOnly ⇔ registered through a human guard', () => {
   const FILES = [
     'packages/server/src/facade/handlers/w2/credentials.ts',
+    'packages/server/src/facade/handlers/w2/inbox-read-marks.ts',
     'packages/server/src/facade/handlers/w2/space-links.ts',
     'packages/server/src/facade/handlers/w2/servers.ts',
     'packages/server/src/facade/handlers/w2/op-requests.ts',

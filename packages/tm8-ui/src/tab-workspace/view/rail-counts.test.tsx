@@ -95,14 +95,14 @@ const FIXTURE: Row[] = [
   { id: 'c4', kind: 'chat', parentId: 'w1', turnState: 'running' },
 ];
 
-function mount(seam: Seam | undefined) {
+function mount(seam: Seam | undefined, unseen: Record<string, number> = {}) {
   const store = createWorkspaceStore('viewer-1', SPACE);
   const gate = {
     shellTabs: [],
     openPalette: vi.fn(),
     onSelectViewTab: vi.fn(),
     accountSlot: undefined,
-    data: seam ? { seam, spaceId: SPACE } : undefined,
+    data: seam ? { seam, spaceId: SPACE, countsFor: (kind: string) => ({ total: 200, unseen: unseen[kind] ?? 0 }) } : undefined,
   } as unknown as WorkspaceGateHandles;
   const value = { runtime: {} as never, store, dispatch: vi.fn(), viewerId: 'viewer-1', spaceId: SPACE, gate } as WorkspaceContextValue;
   return render(
@@ -232,5 +232,24 @@ describe('the rail', () => {
   it('draws nothing without a seam', () => {
     mount(undefined);
     expect(document.querySelectorAll('[data-testid="tws-rail-count"]')).toHaveLength(0);
+  });
+});
+
+
+describe('unseen counts on the left', () => {
+  it('coexists with activity counts, supports every kind, hides zero and caps the visual count', async () => {
+    const fake = fakeSeam(FIXTURE);
+    mount(fake.seam, { task: 5, doc: 120 });
+    await waitFor(() => expect(countOf(kindButtons('task')[0]!)).toBe('2'));
+    const task = kindButtons('task')[0]!;
+    expect(task.querySelector('[data-testid="tws-rail-unseen"]')?.textContent).toBe('5');
+    expect(task.getAttribute('aria-label')).toBe('Tasks · 2 in progress (top-level) · 5 unseen');
+    const doc = kindButtons('doc')[0]!;
+    expect(doc.querySelector('[data-testid="tws-rail-unseen"]')?.textContent).toBe('99+');
+    expect(doc.getAttribute('aria-label')).toContain('120 unseen');
+    expect(kindButtons('story')[0]!.querySelector('[data-testid="tws-rail-unseen"]')).toBeNull();
+    act(() => getRailStore(SPACE).getState().setExpanded(true));
+    expect(task.querySelector('[data-testid="tws-rail-unseen"]')?.parentElement?.className).toBe('tws-rail-icon');
+    expect(countOf(task)).toBe('2');
   });
 });

@@ -2091,8 +2091,8 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
 
   /**
    * Counters follow the DURABLE STREAM, which is what makes them live: any
-   * entity event can change a total (a create, a delete) or flip a row back to
-   * unseen (an update to something you had already read).
+   * create/archive can change a total, and a personal entity.seen event
+   * refreshes unseen counts across this member's browsers. Edits never reset seen.
    *
    * Debounced with a TRAILING timer rather than issuing one read per event. A
    * burst is the normal case here — a spawn, a bulk import, or an agent
@@ -2102,16 +2102,21 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    */
   useEffect(() => {
     if (!spaceId) return undefined;
+    const generation = spaceGeneration.current;
+    let active = true;
     const trigger = createCoalescedTrigger({
       quietMs: EVENT_REFRESH_QUIET_MS,
       maxWaitMs: EVENT_REFRESH_MAX_WAIT_MS,
       run: () => Promise.resolve()
         .then(() => seam.counts(spaceId))
-        .then(setKindCounts)
+        .then((counts) => {
+          if (active && generation === spaceGeneration.current) setKindCounts(counts);
+        })
         .catch(() => undefined),
     });
     const unsubscribe = seam.onEvent(() => trigger.note());
     return () => {
+      active = false;
       trigger.dispose();
       unsubscribe();
     };
@@ -3185,9 +3190,12 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
 
   const refreshCounts = useCallback(() => {
     if (!spaceId) return;
+    const generation = spaceGeneration.current;
     void Promise.resolve()
       .then(() => seam.counts(spaceId))
-      .then(setKindCounts)
+      .then((counts) => {
+        if (generation === spaceGeneration.current) setKindCounts(counts);
+      })
       .catch(() => undefined);
   }, [seam, spaceId]);
 

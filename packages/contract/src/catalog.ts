@@ -343,6 +343,7 @@ export const OPERATIONS = [
   // per-member read state
   { name: 'inbox.list',              method: 'GET',    path: '/v2/inbox',                                   kind: 'read',    status: 'v1' },
   { name: 'inbox.markRead',          method: 'PUT',    path: '/v2/inbox/:notificationId/read',              kind: 'command', status: 'v1' },
+  { name: 'entities.markSeen', method: 'PUT', path: '/v2/entities/:id/seen', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'readMarks.upsert',        method: 'PUT',    path: '/v2/read-marks/:anchorId',                    kind: 'command', status: 'v1' },
 
   // saved views

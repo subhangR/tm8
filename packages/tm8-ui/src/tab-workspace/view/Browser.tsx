@@ -21,6 +21,7 @@ import { useLaunchPort } from '../../views/useLaunchPort';
 import { usePanelPrimaries } from '../../views/usePanelPrimaries';
 import { useRowLifecycle } from '../../views/useRowLifecycle';
 import { useSessionStart } from '../../views/useSessionStart';
+import { useMarkEntitySeen } from '../../seen-entities/EntitySeen';
 import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../../panels/EntityListPanel';
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
 import { useStore } from 'zustand';
@@ -188,9 +189,13 @@ function EntityBrowser() {
   const listRef = useRef<HTMLDivElement>(null);
   useTierRowEdges(listRef);
   /* The keyboard row cursor (`l l`, then j/k, Enter, r, Esc). */
+  const markSeen = useMarkEntitySeen();
   const openRowByKey = useCallback(
-    (entityId: string) => dispatch({ command: 'workspace.tabs.open', args: { kind, entityId }, source: 'keyboard' }),
-    [dispatch, kind],
+    (entityId: string) => {
+      dispatch({ command: 'workspace.tabs.open', args: { kind, entityId }, source: 'keyboard' });
+      markSeen(entityId);
+    },
+    [dispatch, kind, markSeen],
   );
   const { onNotice } = gate;
   const notify = useCallback(

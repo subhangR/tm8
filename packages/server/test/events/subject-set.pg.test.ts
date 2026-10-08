@@ -174,17 +174,23 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
         pushed_at timestamptz not null default now());
       grant select on public.styles to tm8_app;
       reset role;`);
+    // The current projector also joins MCP definitions (293); this old-chain
+    // fixture needs their read shape, just like styles above.
+    await database.query(`set role tm8_graph_owner;
+      create table public.mcp_servers (entity_id uuid primary key, definition jsonb not null);
+      grant select on public.mcp_servers to tm8_app;
+      reset role;`);
     // 304 (design kind): `entity-read.ts` and the projector left-join
     // `public.designs` and select `internal.design_summary(e.id)`, the 283
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
-    // 302 (Spec D1): the classifier for the three new event types, taken
-    // verbatim from the migration (302 itself cannot apply on this partial
+    // 313 (seen entities): the current classifier, taken
+    // verbatim from the migration (313 itself cannot apply on this partial
     // chain), and the outcome column shapes the session reads select. No
     // assertion here reads the columns. DELETE this shim if this suite ever
-    // applies the chain through 302.
-    const d1 = readFileSync(new URL('../../../../db/migrations/302_session_outcome_and_claims.sql', import.meta.url), 'utf8');
+    // applies the chain through 313.
+    const d1 = readFileSync(new URL('../../../../db/migrations/313_seen_entities.sql', import.meta.url), 'utf8');
     const d1Start = d1.indexOf('create or replace function internal.event_subject_ids');
     await database.query(d1.slice(d1Start, d1.indexOf('$$;', d1.indexOf('as $$', d1Start) + 5) + 3));
     await database.query(`alter table public.work_sessions

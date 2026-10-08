@@ -1,3 +1,4 @@
+import { useEntityListSelection } from '../seen-entities/EntitySeen';
 import { AttentionChipView, useAttentionOptional, useEntityChip } from '../attention';
 import { Fragment, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
@@ -709,7 +710,9 @@ function placeHoverBar(event: ReactPointerEvent<HTMLElement>): void {
   tile.setAttribute('data-hoverbar', room < HOVERBAR_RISE_PX ? 'inside' : 'above');
 }
 
-export function EntityListPanel(props: EntityListPanelProps) {
+export function EntityListPanel(input: EntityListPanelProps) {
+  const onSelect = useEntityListSelection(input.onSelect);
+  const props = { ...input, ...(onSelect ? { onSelect } : {}) };
   const config = getKind(props.kind);
   const list = config.list;
   const listAttentionApi = useAttentionOptional();
