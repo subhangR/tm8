@@ -70,6 +70,9 @@ test('interaction validation rejects idle, unfocused and unmoved input windows',
   assert.equal(interactionEffect(before, during, after).valid, true);
   assert.equal(interactionEffect(before, { observations: { positions: [{ x: 0, z: 0 }] } }, after).valid, false);
   assert.equal(interactionEffect(before, during, before).valid, false);
+  const previouslyMoved = { ...before, observations: { positions: [{ x: 1, z: 0, at: 1 }, { x: 0, z: 0, at: 2 }] } };
+  assert.equal(interactionEffect(previouslyMoved, { observations: previouslyMoved.observations }, after).valid, false);
+  assert.equal(interactionEffect(previouslyMoved, { observations: { positions: [...previouslyMoved.observations.positions, { x: 2, z: 0, at: 3 }] } }, after).valid, true);
 });
 test('real hardware identities pass only with matching host/browser proof; QXL never hardware', () => {
   for (const [vendorId, name, renderer] of [

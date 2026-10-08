@@ -55,7 +55,8 @@ export function recordFrame(frames, sample) {
 
 export function interactionEffect(before, during, after) {
   const origin = before.observations.positions.at(-1) ?? before.observations.initialPosition;
-  const playerMoved = Boolean(origin && during.observations.positions.some(p => Math.hypot(p.x - origin.x, p.z - origin.z) > .001));
+  const since = before.observations.positions.at(-1)?.at ?? -Infinity;
+  const playerMoved = Boolean(origin && during.observations.positions.some(p => (since === -Infinity || p.at > since) && Math.hypot(p.x - origin.x, p.z - origin.z) > .001));
   const cameraOrOverviewChanged = before.snapshot.overview !== after.snapshot.overview || JSON.stringify(before.snapshot.camera) !== JSON.stringify(after.snapshot.camera);
   return { playerMoved, cameraOrOverviewChanged, valid: playerMoved && cameraOrOverviewChanged };
 }

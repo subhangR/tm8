@@ -56,7 +56,7 @@ const report = { schema: 'tm8.game-gpu-benchmark.v1', createdAt: new Date().toIS
     supported: ['static six map types at both scopes, 64/512 content rows', 'production renderer, model and player', 'idle and scripted walking/overview/zoom'],
     unsupported: ['live server event replay', 'criteria/subtree-weight construction new contract (baseline builder unavailable)', 'construction/status/shipping transitions', '24h rubble lifecycle', 'worker arrival/departure routes', 'production authenticated graph adapter', 'nested navigation and reload persistence'],
     noApprovedPerformanceBudget: true, smokeOnly: smoke } };
-await writeFile(join(output, 'reproduce.md'), await readFile(join(here, 'README.md'), 'utf8'));
+await writeFile(join(output, 'reproduce.txt'), await readFile(join(here, 'README.md'), 'utf8'));
 let browser, browserServer, server, temporary;
 const closeBrowser = async () => {
   if (!browserServer) return;
