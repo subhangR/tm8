@@ -4,14 +4,13 @@ import type { MapEntity, MapInput, MapScope, MapType } from '../story/game/map-m
 import type { GameMapEvents } from './types';
 import { admitsMapKind } from './map-admission';
 
-type Versioned = { version?: number; updatedAt?: string | null };
+type Versioned = { version?: number };
 // Mirrors the ruled mapping in domain/registry.ts TASK_STATE_CONTROL and the server.
 const workCategories: Record<WorkStatus, StatusCategory> = { open: 'to_do', pulled: 'to_do', working: 'in_progress',
   in_review: 'in_progress', blocked: 'in_progress', done: 'done', cancelled: 'cancelled' };
 function older(candidate: Versioned, current?: Versioned): boolean {
   if (!current) return false;
-  if (candidate.version !== undefined && current.version !== undefined && candidate.version !== current.version) return candidate.version < current.version;
-  return !!candidate.updatedAt && !!current.updatedAt && Date.parse(candidate.updatedAt) < Date.parse(current.updatedAt);
+  return candidate.version !== undefined && current.version !== undefined && candidate.version < current.version;
 }
 export function sessionLiveness(row: MapEntity, events?: GameMapEvents): MapEntity {
   if (!events || row.kind !== 'work_session') return row;
@@ -37,7 +36,7 @@ export function liveMapEntity(row: EntitySummary, events?: GameMapEvents): MapEn
   };
 }
 
-export interface MapEventResult { input: MapInput; changed: boolean; refresh: boolean; touched: string[]; completed: string[] }
+export interface MapEventResult { input: MapInput; changed: boolean; refresh: boolean; staleEndpoints?: boolean; touched: string[]; completed: string[] }
 /** Full event payloads are authoritative. Story membership is only inferred for contained children and claims. */
 export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEvent, events?: GameMapEvents, type: MapType = 'town', canAdd = true): MapEventResult {
   const entities = new Map(input.entities.map(row => [row.id, row]));
@@ -49,8 +48,6 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
     for (const [key, edge] of edges) if (edge.fromId === id || edge.toId === id) edges.delete(key);
     result.changed = true; result.touched.push(id);
   };
-  const semanticId = 'taskId' in event ? event.taskId : 'sessionId' in event ? event.sessionId : undefined;
-  if (semanticId && older({ updatedAt: event.occurredAt }, entities.get(semanticId) as Versioned | undefined)) return result;
   switch (event.type) {
     case 'task.criterion_changed': {
       const row = entities.get(event.taskId);
@@ -97,10 +94,10 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
       const edge = event.edge, source = edge.source, target = edge.target;
       if (source.spaceId !== event.spaceId || target.spaceId !== event.spaceId) break;
       const known = edges.has(edge.id);
-      if (older(edge, edges.get(edge.id) as Versioned | undefined)) break;
       const touches = scope.kind === 'space' || known || entities.has(source.id) || entities.has(target.id) || source.id === scope.id || target.id === scope.id;
       if (!touches) break;
       if (!admitsMapKind(type, source.kind) || !admitsMapKind(type, target.kind)) break;
+      result.staleEndpoints = older(source, entities.get(source.id)) || older(target, entities.get(target.id));
       if (event.type === 'edge.upsert' && ((!known && edges.size >= 1_000) || (!canAdd && (!entities.has(source.id) || !entities.has(target.id))))) { result.refresh = true; break; }
       if (event.type === 'edge.deleted') {
         result.changed = edges.delete(edge.id);
@@ -128,7 +125,6 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
     }
     case 'edge.ended': {
       const edge = edges.get(event.edgeId);
-      if (older({ updatedAt: event.occurredAt }, edge as Versioned | undefined)) break;
       if (edge) {
         edges.set(edge.id, { ...edge, endedAt: event.endedAt }); result.changed = true;
         result.touched.push(event.sourceId, event.targetId);

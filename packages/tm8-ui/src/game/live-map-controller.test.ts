@@ -207,7 +207,6 @@ describe('authoritative live map controller', () => {
     const loaded = result(); loaded.input = { ...loaded.input, entities: [...loaded.input.entities, ...Array.from({ length: 198 }, (_, id) => ({ id: `task-${id}`, kind: 'task', title: `Task ${id}`, status: 'working' }))] };
     const h = harness(scope, vi.fn(async () => loaded)); await h.boot();
     const before = h.controller.getSnapshot()!.model, count = h.snapshots.length;
-    const started = performance.now();
     for (let id = 0; id < 50; id++) h.emit({ type: 'entity.upsert', entity: { ...row(`task-${id}`), title: `Updated ${id}` } });
     expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task-49')!.title).toBe('Updated 49');
     expect(h.snapshots).toHaveLength(count);
@@ -216,7 +215,6 @@ describe('authoritative live map controller', () => {
     for (const place of before.places) expect(h.controller.getSnapshot()!.model.places.find(row => row.id === place.id)).toMatchObject({ x: place.x, z: place.z });
     expect(h.controller.getSnapshot()!.model.places).toHaveLength(200);
     expect(h.loadMap).toHaveBeenCalledTimes(1);
-    console.info(`200-task/50-event batch reduced+built in ${(performance.now() - started).toFixed(1)}ms`);
     h.controller.dispose();
   });
   it('keeps cold unknown liveness consistent with the first session process event', async () => {
@@ -266,6 +264,53 @@ describe('authoritative live map controller', () => {
     expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.terminalFromStatus).toBe('working');
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1_000);
     expect(h.controller.getSnapshot()!.model.places.some(place => place.id === 'task')).toBe(false);
+    expect(h.loadMap).toHaveBeenCalledTimes(1); h.controller.dispose();
+  });
+  it('applies live edge/session deltas by seq even when transaction timestamps precede loaded updatedAt', async () => {
+    const data = result(); data.input = { ...data.input,
+      entities: data.input.entities.map(row => ({ ...row, updatedAt: '2026-10-09T00:00:00Z', version: 3 })),
+      edges: data.input.edges.map(edge => ({ ...edge, updatedAt: '2026-10-09T00:00:00Z' })) };
+    const h = harness(scope, vi.fn(async () => data)); await h.boot();
+    h.emit({ type: 'session.process_changed', sessionId: 'session', from: 'running', to: 'idle' }, { occurredAt: '2026-10-08T00:00:00Z' });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.model.robots[0]!.pose).toBe('idle');
+    h.emit({ type: 'edge.ended', edgeId: 'claim', edgeType: 'working_on', sourceId: 'session', targetId: 'task', endedAt: '2026-10-08T00:00:00Z', endReason: 'released' }, { occurredAt: '2026-10-08T00:00:00Z' });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.model.robots).toHaveLength(0);
+    expect(h.loadMap).toHaveBeenCalledTimes(1); h.controller.dispose();
+  });
+  it('repairs ambiguous read replay once and bounds concurrent-write recovery without a requery loop', async () => {
+    const resolvers: ((value: GameMapResult) => void)[] = [];
+    const loader = vi.fn<GameMapLoader>(() => new Promise(resolve => resolvers.push(resolve)));
+    const h = harness(scope, loader); h.controller.attach();
+    h.emit({ type: 'session.process_changed', sessionId: 'session', from: 'running', to: 'idle' });
+    resolvers.shift()!(result()); await vi.advanceTimersByTimeAsync(0);
+    expect(h.controller.getSnapshot()!.model.robots[0]!.pose).toBe('working');
+    await vi.advanceTimersByTimeAsync(250); expect(loader).toHaveBeenCalledTimes(2);
+    h.emit({ type: 'session.process_changed', sessionId: 'session', from: 'running', to: 'idle' });
+    resolvers.shift()!(result()); await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.model.robots[0]!.pose).toBe('idle');
+    await vi.advanceTimersByTimeAsync(1_000); expect(loader).toHaveBeenCalledTimes(2);
+    h.controller.dispose(); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('retains newer endpoint versions while applying live edge changes and requesting scoped repair', async () => {
+    const data = result(); data.input = { ...data.input, entities: data.input.entities.map(row => ({ ...row, version: 3 })) };
+    const h = harness(scope, vi.fn(async () => data)); await h.boot();
+    h.emit({ type: 'edge.upsert', edge: { id: 'claim', type: 'working_on', source: { ...row('session', 'work_session', { outcome: 'completed' }), version: 2 },
+      target: { ...row('other'), version: 2, title: 'Old endpoint' }, props: { status: 'blocked' } } });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.model.robots[0]).toMatchObject({ taskId: 'other', pose: 'blocked' });
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'session')!.outcome).toBe('open');
+    expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'other')!.title).toBe('Other');
+    await vi.advanceTimersByTimeAsync(170); expect(h.loadMap).toHaveBeenCalledTimes(2);
+    h.controller.dispose();
+  });
+  it('does not use timestamps when an entity version is absent', async () => {
+    const data = result(); data.input = { ...data.input, entities: data.input.entities.map(row => ({ ...row, version: 3, updatedAt: '2026-10-09T00:00:00Z' })) };
+    const h = harness(scope, vi.fn(async () => data)); await h.boot();
+    h.emit({ type: 'entity.upsert', entity: { ...row('task'), title: 'Sequence update', updatedAt: '2026-10-08T00:00:00Z' } });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'task')!.title).toBe('Sequence update');
     expect(h.loadMap).toHaveBeenCalledTimes(1); h.controller.dispose();
   });
 });
