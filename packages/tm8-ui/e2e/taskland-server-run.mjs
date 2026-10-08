@@ -75,7 +75,7 @@ try {
         const current = window.tasklandServer.state().save.current;
         return current.type === target.type && current.scope.kind === target.scope.kind && current.scope.id === target.scope.id;
       }, portal.target);
-      await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
+      await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas[data-engine^="three.js"]').waitFor();
       (evidence.portalRoutes ??= []).push({ label: portal.label, target: portal.target });
     } catch (error) {
       evidence.portalDiagnostics = await page.evaluate(() => {
@@ -371,14 +371,14 @@ try {
     memory = { position: { x: root.x, z: root.z }, camera: { zoom: 10,
       position: [root.x + 20, 30, root.z + 20], target: [root.x, 0, root.z] } };
     await page.evaluate(args => window.tasklandServer.mount(...args), [scopes[0], 'taskland', memory, true]);
-    await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
+    await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas[data-engine^="three.js"]').waitFor();
     await waitForRenderedTaskland(page, () => page.evaluate(() => window.tasklandServer.scene()), { cue: 'mailbox' });
     await page.waitForFunction(() => [...document.querySelectorAll('.ms-label')].some(label => {
       const parent = label.parentElement;
       return parent?.style.display === 'block' && /translate\([^N]*px/.test(parent.style.transform);
     }));
     evidence.webglRenderer = await page.evaluate(() => {
-      const canvas = document.querySelector('canvas');
+      const canvas = document.querySelector('[data-testid="walking-map"][data-renderer="webgl"] canvas[data-engine^="three.js"]');
       const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
       const ext = gl.getExtension('WEBGL_debug_renderer_info');
       return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'Unavailable debug renderer';
@@ -388,14 +388,14 @@ try {
     await page.screenshot({ path: resolve(output, 'taskland-space.png'), timeout: 90_000 }); evidence.screenshots.push('taskland-space.png');
   });
   await check('Twenty real criteria events update the same scene and preserve pose and camera', async () => {
-    await page.evaluate(() => { window.tasklandEventCanvas = document.querySelector('[data-testid="walking-map"] canvas'); });
+    await page.evaluate(() => { window.tasklandEventCanvas = document.querySelector('[data-testid="walking-map"][data-renderer="webgl"] canvas[data-engine^="three.js"]'); });
     const before = await page.evaluate(() => window.tasklandServer.scene());
     for (let index = 0; index < 20; index++) {
       const done = index % 2 === 0;
       await mutateEntity(node, ids.root, 'tick', { criterionIds: ['ac2'], done });
       await page.waitForFunction(percent => [...document.querySelectorAll('.ms-label')].some(label =>
         label.textContent.includes('Harbour construction') && label.textContent.includes(`${percent}%`)), done ? 75 : 50);
-      assert.equal(await page.evaluate(() => window.tasklandEventCanvas === document.querySelector('[data-testid="walking-map"] canvas')), true);
+      assert.equal(await page.evaluate(() => window.tasklandEventCanvas === document.querySelector('[data-testid="walking-map"][data-renderer="webgl"] canvas[data-engine^="three.js"]')), true);
     }
     const after = await page.evaluate(() => window.tasklandServer.scene());
     closeNumbers(after.player, before.player, 'player preserved across events');
@@ -431,7 +431,7 @@ try {
     await page.waitForFunction(() => !!window.tasklandServer);
     await page.evaluate(config => window.tasklandServer.initialize(config), { spaceId: f.spaceId, storyId: f.storyId, memberId: f.memberId });
     await page.evaluate(() => window.tasklandServer.resume());
-    await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
+    await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas[data-engine^="three.js"]').waitFor();
     await waitForRenderedTaskland(page, () => page.evaluate(() => window.tasklandServer.scene()), { cue: 'mailbox' });
     const after = await page.evaluate(() => window.tasklandServer.scene());
     closeNumbers(after.player, expectedPlayer, 'restored footprint player');
