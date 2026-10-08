@@ -5,6 +5,7 @@
 .cv2-root .walking-map .walking-map-tools { position: absolute; top: 12px; right: 12px; bottom: 74px; width: min(300px, 45%); display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
 .walking-map .walking-map-tools .walking-places { position: static; width: 100%; max-width: 100%; max-height: none; min-height: 0; flex: 0 1 auto; box-sizing: border-box; overflow: auto; pointer-events: auto; }
 .cv2-root .walking-map .walking-map-tools .sgm-minimap { position: static; flex-shrink: 0; margin-top: auto; margin-right: 12px; }
+.cv2-root .walking-map:not(.sgm--duel) .walking-map-tools .sgm-minimap__toggle { pointer-events: auto; }
 .walking-places ul, .walking-fallback ul { list-style: none; padding: 0; margin: 8px 0; }
 .walking-places li, .walking-fallback li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--pn-line); }
 .walking-fallback { height: 100%; box-sizing: border-box; overflow: auto; padding: 60px 20px 200px; color: var(--pn-ink); background: var(--pn-surface); font-size: 14px; }
