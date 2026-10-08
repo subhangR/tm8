@@ -109,6 +109,7 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.memories, 0) as memories,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
+  t.status_changed_at as task_status_changed_at,
   t.start_date,
   t.completion_gate,
   sk.name as skill_name, sk.description as skill_description, sk.content as skill_content,
@@ -501,6 +502,8 @@ export interface EntityRow {
   task_description: string | null;
   task_axes: Record<string, string> | null;
   work_status: string | null;
+  /** 316: null means the current status transition time is unknown. */
+  task_status_changed_at?: Date | string | null;
   priority: string | null;
   completion_gate: string | null;
   acceptance_criteria: AcceptanceCriterion[] | null;
@@ -1857,6 +1860,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // disagreeing about a drifted status is worse than either posture, and
         // the loud one is the ruled direction: see `facade/status.ts`.
         status: narrowWorkStatus(row.work_status, row.id),
+        statusChangedAt: isoOrNull(row.task_status_changed_at ?? null),
         priority: (row.priority ?? 'medium') as 'low' | 'medium' | 'high' | 'urgent',
         axes: row.task_axes ?? {},
         dueDate: dateOnly(row.due_date),

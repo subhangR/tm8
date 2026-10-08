@@ -147,6 +147,7 @@ export const CAPTURED_EVENT_TYPES: readonly string[] = Object.freeze([
   // 299 (Spec D1 §4.6). Not the capture trigger's, but bespoke arms below like
   // its types: the payload is hydrated, so RLS decides who sees them.
   'session.outcome_changed', 'session.process_changed', 'edge.ended',
+  'task.criterion_changed', 'task.status_changed',
   'message.created', 'message.updated', 'message.deleted',
   'counter.changed',
   'activity.created',
@@ -228,6 +229,8 @@ function referencedEntityIds(row: WorkspaceEventRow): string[] {
     case 'entity.activity_touched':
     case 'session.outcome_changed':
     case 'session.process_changed':
+    case 'task.criterion_changed':
+    case 'task.status_changed':
       return [str(p['id'])].filter((v): v is string => v !== null);
     case 'edge.ended':
       return [str(p['src_id']), str(p['dst_id'])].filter((v): v is string => v !== null);
@@ -570,6 +573,23 @@ export class WorkspaceEventMapper {
           throw new UnprojectableEventError(seq, 'activity_at is missing from the captured payload');
         }
         return { type: row.event_type, id: summary.id, kind: summary.kind, activityAt };
+      }
+
+      // Game P0c. Hydration checks readability, but the captured transaction's
+      // facts must not be replaced by the task's CURRENT status/counts.
+      case 'task.criterion_changed':
+      case 'task.status_changed': {
+        const task = this.need(entities, str(p['id']), seq, 'task');
+        if (task.kind !== 'task') {
+          throw new UnprojectableEventError(seq, `entity ${task.id} is not a task`);
+        }
+        return row.event_type === 'task.status_changed'
+          ? { type: row.event_type, taskId: task.id, from: p['from'], to: p['to'] }
+          : {
+            type: row.event_type, taskId: task.id,
+            criterionId: p['criterionId'], criterionText: p['criterionText'],
+            isDone: p['isDone'], done: p['done'], total: p['total'],
+          };
       }
 
       // Spec D1 §4.6 (299). `need` is the readability check, as for the touch.
