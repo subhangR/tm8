@@ -114,7 +114,7 @@ export function identityFromSession(
     identityId: session.identityId,
     // K6 (W3): a space-pinned session never carries node-admin power; node
     // admin is gate admin. Migration 233 refuses it in SQL as well.
-    nodeAdmin: sessionSpaceId ? false : session.isNodeAdmin,
+    nodeAdmin: sessionSpaceId ? false : session.isNodeAdmin || session.isOwner,
     accountId: session.accountId,
     sessionId: session.sessionId,
     ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),

@@ -28,14 +28,16 @@ import {
 import './credentials.css';
 import './space-credentials.css';
 
-export const NODE_POLICY_ADMIN_ONLY = 'Only a node admin changes node fallback.';
+export const NODE_POLICY_ADMIN_ONLY = 'Only a node admin or owner changes node fallback.';
 
 export interface NodeCredentialsSectionProps {
   port: SpaceCredentialsPort;
   heading?: string;
+  /** Dedicated node page: no space-policy read or space-role dependency. */
+  nodeOnly?: boolean;
 }
 
-export function NodeCredentialsSection({ port, heading = 'Node credentials' }: NodeCredentialsSectionProps) {
+export function NodeCredentialsSection({ port, heading = 'Node credentials', nodeOnly = false }: NodeCredentialsSectionProps) {
   const [viewer, setViewer] = useState<SpaceCredentialsViewer | null>(null);
   const [policy, setPolicy] = useState<CredentialsSpacePolicyView | null>(null);
   const [status, setStatus] = useState<NodeCredentialsStatusView | null>(null);
@@ -44,7 +46,12 @@ export function NodeCredentialsSection({ port, heading = 'Node credentials' }: N
 
   useEffect(() => {
     let live = true;
-    void port.policy().then(
+    setViewer(null);
+    setPolicy(null);
+    setStatus(null);
+    setLoadError(null);
+    setStatusError(null);
+    if (!nodeOnly) void port.policy().then(
       (next) => { if (live) setPolicy(next); },
       (err: unknown) => { if (live) setLoadError(failureOf(err).text); },
     );
@@ -58,10 +65,10 @@ export function NodeCredentialsSection({ port, heading = 'Node credentials' }: N
           (err: unknown) => { if (live) setStatusError(failureOf(err).text); },
         );
       },
-      () => {},
+      (err: unknown) => { if (live) setLoadError(failureOf(err).text); },
     );
     return () => { live = false; };
-  }, [port]);
+  }, [port, nodeOnly]);
 
   if (loadError) {
     return (
@@ -72,6 +79,8 @@ export function NodeCredentialsSection({ port, heading = 'Node credentials' }: N
   }
 
   const admin = viewer?.isNodeAdmin === true;
+  if (nodeOnly && statusError) return <SectionFrame title={heading}><p role="alert">{statusError}</p></SectionFrame>;
+  if (nodeOnly && !status && !statusError) return <SectionFrame title={heading}><p role="status">Reading node credentials…</p></SectionFrame>;
 
   return (
     <SectionFrame title={heading}>
@@ -93,7 +102,7 @@ export function NodeCredentialsSection({ port, heading = 'Node credentials' }: N
                 ? status.providers.find((p) => p.provider === provider)?.allowNode !== false
                 : nodeAllowedOf(policy, provider)}
               envKeyPresent={status?.providers.find((p) => p.provider === provider)?.envKeyPresent ?? null}
-              admin={admin}
+              admin={admin && status !== null}
               port={port}
               onSet={(allowNode) => {
                 setStatus((prev) => prev && {
@@ -166,7 +175,7 @@ function NodeProviderRow({
           aria-label={`Allow node fallback for ${name}`}
           aria-disabled={admin ? undefined : 'true'}
           title={admin ? undefined : NODE_POLICY_ADMIN_ONLY}
-          disabled={busy}
+          disabled={busy || !admin}
           onChange={() => { if (admin) void flip(); }}
         />
         Allow launches to fall back to the node&apos;s key

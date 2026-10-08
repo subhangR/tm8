@@ -144,7 +144,7 @@ export function spaceCredentialsPortFromSeam(
       return {
         accountId: identity.accountId ?? null,
         isSpaceAdmin: isSpaceAdminRole(membership?.role, ownerWord),
-        isNodeAdmin: identity.isNodeAdmin === true,
+        isNodeAdmin: identity.isNodeAdmin === true || identity.isOwner === true,
         sharedServer: isSharedServer(mode),
       };
     },
