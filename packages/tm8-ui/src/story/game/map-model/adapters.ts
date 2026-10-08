@@ -12,22 +12,37 @@ function progressOf(n: Record<string, unknown>): number | null {
   const progress = num(n.progress);
   return progress === undefined ? null : Math.max(0, Math.min(1, progress));
 }
+function acceptanceOf(n: Record<string, unknown>): MapEntity['acceptance'] {
+  const counts = record(n.acceptance);
+  const total = num(counts.total), completed = num(counts.completed);
+  if (total !== undefined && completed !== undefined) return { total: Math.max(0, total), completed: Math.max(0, completed) };
+  const criteria = n.acceptanceCriteria ?? (Array.isArray(n.acceptance) ? n.acceptance : undefined);
+  return Array.isArray(criteria) ? { total: criteria.length, completed: criteria.filter(value => record(value).done === true).length } : undefined;
+}
 function entityOf(value: unknown): MapEntity | null {
   const raw = record(value), n = { ...record(raw.content), ...record(raw.props), ...record(raw.state), ...raw };
   const id = str(n.id), kind = str(n.kind);
   if (!id || !kind) return null;
   const weighted = record(n.weighted ?? n.taskProgress ?? n.progress), counts = record(n.counts), mailbox = record(n.mailbox);
   const count = num(mailbox.count) ?? num(counts.messages);
+  const status = str(n.status) ?? str(n.workStatus) ?? str(record(n.status).key) ?? null;
+  const cancelledAt = str(n.cancelledAt) ?? (kind === 'task' && status === 'cancelled' ? str(n.statusChangedAt) : undefined) ?? null;
   return {
     id, kind, title: str(n.title) ?? str(n.name) ?? id,
+    version: num(n.version), updatedAt: str(n.updatedAt) ?? null,
     parentId: str(n.parentId) ?? str(n.parent_id) ?? null,
-    status: str(n.status) ?? str(record(n.status).key) ?? null,
+    status,
     statusCategory: str(n.statusCategory) ?? null, createdAt: str(n.createdAt) ?? null,
     progress: progressOf(n), pointsEstimate: num(n.pointsEstimate) ?? null,
     subtreeWeight: num(n.subtreeWeight) ?? num(weighted.size) ?? null,
+    acceptance: acceptanceOf(n), ownProgress: num(n.ownProgress) ?? num(weighted.own) ?? null,
+    estimateTent: bool(n.estimateTent) ?? bool(weighted.tent),
+    cancelledAt,
+    cancelledNotAfter: kind === 'task' && status === 'cancelled' && !cancelledAt ? str(n.cancelledNotAfter) ?? null : null,
+    terminalFromStatus: str(n.terminalFromStatus) ?? null,
     pendingAttention: num(n.pendingAttention) ?? num(counts.pendingAttention) ?? 0,
-    mailbox: count === undefined ? undefined : { count, approx: bool(mailbox.approx) ?? false },
-    processState: str(n.processState) ?? str(n.runtimeStatus) ?? null,
+    mailbox: count === undefined ? undefined : { count, approx: bool(mailbox.approx) ?? false, basis: mailbox.basis === 'unread' ? 'unread' : 'messages' },
+    processState: str(n.processState) ?? str(n.runtimeStatus) ?? (kind === 'work_session' ? str(n.status) : undefined) ?? null,
     outcome: str(n.outcome) ?? null, endedKind: str(n.endedKind) ?? null, live: bool(n.live),
     storyIds: rows(n.storyIds).filter((v): v is string => typeof v === 'string'), spaceId: str(n.spaceId),
   };
@@ -36,7 +51,7 @@ function edgeOf(value: unknown): MapEdge | null {
   const raw = record(value), n = { ...record(raw.props), ...raw };
   const type = str(n.type), fromId = str(n.fromId), toId = str(n.toId);
   if (!type || !fromId || !toId) return null;
-  return { id: str(n.id) ?? `${type}:${fromId}:${toId}`, type, fromId, toId, endedAt: str(n.endedAt) ?? null, status: str(n.status) ?? null };
+  return { id: str(n.id) ?? `${type}:${fromId}:${toId}`, type, fromId, toId, endedAt: str(n.endedAt) ?? null, status: str(n.status) ?? null, updatedAt: str(n.updatedAt) ?? null };
 }
 
 /** Accepts MapInput, a graph projection {nodes,edges}, or {id,kind:'story',page:StoryPage}. */
@@ -81,7 +96,8 @@ export function fromProjection(snapshot: unknown, scope?: MapScope): MapInput {
   if (num(follow.depth) !== undefined) warnings.push(`Snapshot follows at most depth ${follow.depth}; deeper descendants may be absent`);
   if (follow.truncated === true) warnings.push('Snapshot was truncated; counts and map contents are incomplete');
   if (scope && inferred && (scope.kind !== inferred.kind || scope.id !== inferred.id)) warnings.push(`Snapshot contains only ${inferred.kind} ${inferred.id}; requested scope ${scope.kind} ${scope.id} is not a complete projection`);
-  return { entities: [...entities.values()], edges, scope: inferred ?? scope, warnings };
+  return { entities: [...entities.values()], edges, scope: inferred ?? scope, warnings,
+    taskHierarchyComplete: bool(root.taskHierarchyComplete) };
 }
 
 export function fromStoryView(view: StoryView): MapInput {
