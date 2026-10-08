@@ -1,6 +1,6 @@
 import { layoutForest, unionBounds } from './layout';
 import { isCancelledTask, isDoneTask as done, taskConstructionProgress } from './progress';
-import { isActiveMapEdge, isCompletedSession as completedSession, rubbleLifetime, shippingAncestors } from './lifecycle';
+import { isActiveMapEdge, isCompletedSession as completedSession, rubbleLifetime, yardAncestors } from './lifecycle';
 import { placeShippedEntities } from './shipping';
 import type { BuildMapOptions, ConstructionStage, MapEntity, MapGroup, MapInput, MapModel, MapPlace, MapRobot, MapType } from './types';
 export const MAP_LABELS: Record<MapType, string> = { hub: 'Hub', taskland: 'Taskland', office: 'Office', library: 'Library', factory: 'Code Factory', town: 'Completed Town' };
@@ -73,11 +73,11 @@ export function buildMapModel(input: MapInput, options: BuildMapOptions): MapMod
   const previousPlaces = new Map(previous?.places.map(n => [n.id, n]) ?? []);
   const rubble = new Map(all.filter(isCancelledTask).map(n => [n.id, rubbleLifetime(n, now, previousPlaces.get(n.id))]));
   const retained = new Set(all.filter(n => n.kind === 'task' && !done(n) && !rubble.get(n.id)?.expired).map(n => n.id));
-  const liveAncestors = shippingAncestors(all, retained);
+  const liveAncestors = yardAncestors(all, retained);
   const deadlines = [...rubble.values()].filter(n => !n.expired && (n.expiresAt ?? n.removalNotAfter) !== null).map(n => (n.expiresAt ?? n.removalNotAfter)!);
   const nextLifecycleAt = type === 'taskland' && deadlines.length ? Math.min(...deadlines) : null;
   if (type === 'taskland') {
-    const unknown = [...rubble.values()].filter(n => n.expiresAt === null).length;
+    const unknown = [...rubble.values()].filter(n => !n.expired && n.expiresAt === null).length;
     if (unknown) warnings.push(`${unknown} cancelled task(s) lack an authoritative cancellation timestamp; exact rubble expiry is unknown (last-update upper bounds are used when available)`);
   }
   const shipped = new Set(all.filter(n => done(n) || completedSession(n)).map(n => n.id));
@@ -103,7 +103,9 @@ export function buildMapModel(input: MapInput, options: BuildMapOptions): MapMod
       group, title: n.title, order: n.createdAt ?? '' };
   }), { previous: previous?.layout, groups: type === 'taskland' ? TASK_GROUPS : type === 'office' ? OFFICE_GROUPS : undefined });
   const places: MapPlace[] = layout.nodes.map(n => {
-    const entity = byId.get(n.id)!, marker = type === 'taskland' && done(entity), constructionStage = stage(entity, marker);
+    const entity = byId.get(n.id)!, marker = type === 'taskland' && done(entity);
+    const hierarchyMarker = type === 'taskland' && isCancelledTask(entity) && rubble.get(n.id)?.expired === true;
+    const constructionStage = hierarchyMarker ? 'foundation' : stage(entity, marker);
     const isRoot = !n.parentId;
     return {
       id: n.id, entityId: n.id, kind: entity.kind, title: entity.title, parentId: n.parentId, depth: n.depth,
@@ -112,11 +114,11 @@ export function buildMapModel(input: MapInput, options: BuildMapOptions): MapMod
       ...(entity.kind === 'task' ? {
         subtreeWeight: entity.subtreeWeight, sizeBucket: construction.byId.get(n.id)!.sizeBucket,
         estimateMissing: construction.byId.get(n.id)!.estimateMissing,
-        cancelledAt: rubble.get(n.id)?.cancelledAt ?? null, rubbleExpiresAt: rubble.get(n.id)?.expiresAt ?? null,
-        rubbleRemovalNotAfter: rubble.get(n.id)?.removalNotAfter ?? null,
+        cancelledAt: rubble.get(n.id)?.cancelledAt ?? null, rubbleExpiresAt: hierarchyMarker ? null : rubble.get(n.id)?.expiresAt ?? null,
+        rubbleRemovalNotAfter: hierarchyMarker ? null : rubble.get(n.id)?.removalNotAfter ?? null,
       } : {}),
-      role: marker ? 'shipped-marker' : 'entity', assetKey: assetOf(entity, constructionStage), label: entity.title,
-      badges: [...(entity.kind === 'task' && construction.byId.get(n.id)!.estimateMissing ? ['estimate-missing'] : []), ...(marker ? ['shipped', 'children-open'] : []), ...(isCancelledTask(entity) && !rubble.get(n.id)?.expiresAt ? ['cancellation-time-unknown'] : [])],
+      role: hierarchyMarker ? 'hierarchy-marker' : marker ? 'shipped-marker' : 'entity', assetKey: hierarchyMarker ? 'task.hierarchy-marker' : assetOf(entity, constructionStage), label: entity.title,
+      badges: [...(entity.kind === 'task' && construction.byId.get(n.id)!.estimateMissing ? ['estimate-missing'] : []), ...(marker ? ['shipped', 'children-open'] : []), ...(hierarchyMarker ? ['yard-anchor', 'rubble-cleared', 'children-open'] : []), ...(isCancelledTask(entity) && !hierarchyMarker && !rubble.get(n.id)?.expiresAt ? ['cancellation-time-unknown'] : [])],
       mailbox: isRoot ? entity.mailbox ?? null : null, attention: entity.pendingAttention ?? 0,
     };
   });
