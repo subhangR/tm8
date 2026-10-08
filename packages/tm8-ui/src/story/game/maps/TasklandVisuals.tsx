@@ -40,7 +40,7 @@ export function shippingYardCount(model: VisualModel): number {
   return model.places.filter(p => waiting.has(p.id) && p.role !== 'shipped-marker' && p.constructionStage !== 'rubble' && p.status !== 'cancelled').length;
 }
 export function shippingYardPosition(model: VisualModel): { x: number; z: number } {
-  return model.shippingYard?.position ?? { x: -8, z: -8 };
+  return model.shippingYard?.position ?? { x: 0, z: -12 };
 }
 export function tasklandLabels(model: MapModel): TasklandLabel[] {
   if (model.type === 'town') {

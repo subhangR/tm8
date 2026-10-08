@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildMapModel, type MapInput, type MapScope } from '../map-model';
-import { shippingYardCount, tasklandLabels, tasklandPlotDetail } from './TasklandVisuals';
+import { shippingYardCount, shippingYardPosition, tasklandLabels, tasklandPlotDetail } from './TasklandVisuals';
 
 const scopes: MapScope[] = [{ kind: 'story', id: 'story' }, { kind: 'space', id: 'space' }];
 function input(scope: MapScope): MapInput {
@@ -44,6 +44,25 @@ describe.each(scopes)('Taskland cues at $kind scope', scope => {
     const town = buildMapModel(snapshot, { scope, type: 'town' });
     expect(shippingYardCount(town)).toBe(3);
     expect(town.places.some(p => p.entityId === 'cancelled')).toBe(false);
+  });
+  it('uses durable placement input for waiting counts and keeps the gate stable through reopening', () => {
+    const snapshot = { ...input(scope), townPlacements: [{ entityId: 'done-child', x: 100, z: 100 }] };
+    snapshot.entities = [...snapshot.entities, { id: 'other-done', kind: 'task', title: 'Other done', status: 'done' }];
+    const town = buildMapModel(snapshot, { scope, type: 'town' });
+    expect(shippingYardCount(town)).toBe(2);
+    expect(town.places.find(p => p.entityId === 'done-child')).toMatchObject({ x: 100, z: 100 });
+    const gate = shippingYardPosition(town);
+    snapshot.entities = snapshot.entities.map(e => e.id === 'done-child' ? { ...e, status: 'working' } : e);
+    const reopened = buildMapModel(snapshot, { scope, type: 'town', previous: town });
+    expect(reopened.places.map(p => p.entityId)).toEqual(['other-done']);
+    expect(shippingYardCount(reopened)).toBe(1);
+    expect(snapshot.townPlacements).toEqual([{ entityId: 'done-child', x: 100, z: 100 }]);
+    expect(shippingYardPosition(reopened)).toEqual(gate);
+    snapshot.entities = snapshot.entities.map(e => e.id === 'done-child' ? { ...e, status: 'done' } : e);
+    const reshipped = buildMapModel(snapshot, { scope, type: 'town', previous: reopened });
+    expect(reshipped.places.find(p => p.entityId === 'done-child')).toMatchObject({ x: 100, z: 100 });
+    expect(shippingYardCount(reshipped)).toBe(2);
+    expect(shippingYardPosition(reshipped)).toEqual(gate);
   });
 });
 it('does not introduce construction labels on the other maps, and labels empty shipping explicitly', () => {
