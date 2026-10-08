@@ -1,3 +1,4 @@
+import { registerMapsHandlers } from './handlers/w2/maps.js';
 import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
 import { registerMcpDefinitionHandlers } from '../mcp/definitions.js';
 import { installedPluginsFor, registerSkillHandlers } from '../skills/handlers.js';
@@ -279,6 +280,7 @@ export function registerFacadeHandlers(
   registerW2FormHandlers(registry, facade, deps.formDelivery ?? {});
   registerW2InboxReadMarksHandlers(registry, facade);
   registerW2SavedViewsActionsHandlers(registry, deps);
+  registerMapsHandlers(registry, deps);
 
   /**
    * G04 is the second seam to REPLACE rather than only add. It owns
