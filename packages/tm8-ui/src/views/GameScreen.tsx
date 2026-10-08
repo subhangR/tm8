@@ -18,12 +18,13 @@ interface GameScreenProps {
   data: GateData & { pull(id: string): void };
   memberId: string;
   loadMap: GameMapLoader;
+  overlayOpen?: boolean;
   reasons: DetailReasons;
   serverBaseUrl?: string;
   onNotice(notice: Notice): void;
 }
 
-export function GameScreen({ data, memberId, loadMap, reasons, serverBaseUrl, onNotice }: GameScreenProps) {
+export function GameScreen({ data, memberId, loadMap, overlayOpen, reasons, serverBaseUrl, onNotice }: GameScreenProps) {
   const [selectedId, setSelectedId] = useState<EntityId | null>(null);
   const mapRegion = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -37,7 +38,10 @@ export function GameScreen({ data, memberId, loadMap, reasons, serverBaseUrl, on
     if (!selectedId && wasInspecting.current) {
       const target = returnFocus.current;
       if (target?.isConnected) target.focus();
-      else mapRegion.current?.focus();
+      else {
+        const renderer = mapRegion.current?.querySelector<HTMLElement>('[tabindex], button:not([disabled])');
+        (renderer ?? mapRegion.current)?.focus();
+      }
       returnFocus.current = null;
     }
     wasInspecting.current = !!selectedId;
@@ -49,7 +53,7 @@ export function GameScreen({ data, memberId, loadMap, reasons, serverBaseUrl, on
 
   // Dismissing an inspection consumes Esc before GameMode can pop a map.
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId || overlayOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
@@ -60,7 +64,7 @@ export function GameScreen({ data, memberId, loadMap, reasons, serverBaseUrl, on
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [selectedId]);
+  }, [selectedId, overlayOpen]);
 
   const ctx = useMemo(() => ({ spaceId: data.spaceId }), [data.spaceId]);
   const launchPort = useLaunchPort(data);

@@ -42,7 +42,12 @@ describe('Game inspection in the real shell', () => {
     expect(readEntity).toHaveBeenCalledWith(TASK);
     expect(router.getHash()).toBe(`#/s/${FIXTURE_SPACE_ID}/game`);
     expect(view.getByTestId('walking-map-boundary').textContent).toContain('Taskland');
-    fireEvent.keyDown(inspect, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: '/' });
+    await view.findByTestId('command-palette');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => expect(view.queryByTestId('command-palette')).toBeNull());
+    expect(view.getByTestId('game-inspection')).toBe(aside);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     await waitFor(() => expect(view.queryByTestId('game-inspection')).toBeNull());
     expect(view.getByTestId('walking-map-boundary').textContent).toContain('Taskland');
     expect(document.activeElement).toBe(inspect);
@@ -58,6 +63,11 @@ describe('Game inspection in the real shell', () => {
     fireEvent.keyDown(window, { key: '/' });
     const palette = await view.findByTestId('command-palette');
     fireEvent.keyDown(palette.querySelector('input')!, { key: 'Escape' });
+    await waitFor(() => expect(view.queryByTestId('command-palette')).toBeNull());
+    expect(view.getByTestId('walking-map-boundary').textContent).toContain('Taskland');
+    fireEvent.keyDown(window, { key: '/' });
+    await view.findByTestId('command-palette');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     await waitFor(() => expect(view.queryByTestId('command-palette')).toBeNull());
     expect(view.getByTestId('walking-map-boundary').textContent).toContain('Taskland');
     expect(router.getHash()).toBe(`#/s/${FIXTURE_SPACE_ID}/game`);
