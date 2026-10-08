@@ -162,7 +162,9 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
           if (peers.has(row.sourceId) && peers.has(row.targetId) &&
             entities.has(row.sourceId) && entities.has(row.targetId)) edges.set(row.id, edgeOf(row));
         }
-        if (graph.nodes.length >= GRAPH_NODE_LIMIT || graph.edges.length >= GRAPH_EDGE_LIMIT) {
+        const missingAdmittedPeer = [...entities.keys()].some(id => !peers.has(id));
+        if ((graph.nodes.length >= GRAPH_NODE_LIMIT && (scope.kind === 'space' || missingAdmittedPeer)) ||
+          graph.edges.length >= GRAPH_EDGE_LIMIT) {
           warnings = [...warnings, 'Map relations reached their read budget; some roads, workers or deliverables may be absent'];
         }
       } catch (error) {

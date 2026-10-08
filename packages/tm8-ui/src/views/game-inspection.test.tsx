@@ -72,4 +72,39 @@ describe('Game inspection in the real shell', () => {
     expect(view.getByTestId('walking-map-boundary').textContent).toContain('Taskland');
     expect(router.getHash()).toBe(`#/s/${FIXTURE_SPACE_ID}/game`);
   });
+
+  it('contains a detail render fault while keeping the map mounted and Escape usable', async () => {
+    const seam = createFixtureSeam();
+    const detail = await seam.entity(TASK);
+    // Reproduce the required-capabilities contract fault caught by the browser
+    // journey. Product controls still require a valid EntityDetail.
+    const malformed = { ...detail };
+    Reflect.deleteProperty(malformed, 'capabilities');
+    const read = seam.entity.bind(seam);
+    vi.spyOn(seam, 'entity').mockImplementation(id => id === TASK ? Promise.resolve(malformed) : read(id));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const router = createMemoryTarget(`#/s/${FIXTURE_SPACE_ID}/game`);
+      const view = render(<GateApp seam={seam} routerTarget={router} />);
+      const inspect = await view.findByRole('button', { name: 'Inspect map entity' });
+      const map = view.getByTestId('walking-map-boundary');
+      inspect.focus();
+      fireEvent.click(inspect);
+      const aside = await view.findByTestId('game-inspection');
+      const error = await within(aside).findByTestId('panel-error');
+      expect(error.textContent).toContain('Game inspection crashed');
+      expect(error.textContent).toContain('canEdit');
+      expect(view.getByTestId('walking-map-boundary')).toBe(map);
+      expect(map.textContent).toContain('Taskland');
+      fireEvent.keyDown(inspect, { key: 'Escape' });
+      await waitFor(() => expect(view.queryByTestId('game-inspection')).toBeNull());
+      expect(document.activeElement).toBe(inspect);
+      expect(map.textContent).toContain('Taskland');
+      fireEvent.keyDown(inspect, { key: 'Escape' });
+      await waitFor(() => expect(map.textContent).toContain('Space hub'));
+      expect(router.getHash()).toBe(`#/s/${FIXTURE_SPACE_ID}/game`);
+    } finally {
+      errors.mockRestore();
+    }
+  });
 });
