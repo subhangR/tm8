@@ -23,7 +23,7 @@ describe('Taskland scene motion hook', () => {
     const {result,rerender}=renderHook(p=>useTasklandMotion(p),{initialProps:props});
     expect(result.current.transitions).toHaveLength(1);
     expect([...result.current.suppressedPlaceIds]).toEqual(['root']);
-    act(()=>result.current.finishTransition('1:root'));
+    act(()=>result.current.finishTransition(result.current.transitions[0]!.key));
     expect(result.current.transitions).toEqual([]);
     expect(result.current.suppressedPlaceIds.size).toBe(0);
     rerender({...props});
@@ -41,11 +41,11 @@ describe('Taskland scene motion hook', () => {
   it('cannot let a stale completion callback remove replacement cargo', () => {
     const props=input();
     const {result,rerender}=renderHook(p=>useTasklandMotion(p),{initialProps:props});
-    const oldFinish=result.current.finishTransition;
+    const oldFinish=result.current.finishTransition, oldKey=result.current.transitions[0]!.key;
     rerender({previousModel:props.model,model:{...props.model,places:[{...props.model.places[0]!,x:20,status:'in_review',groupId:'in_review'}]},
       effect:{id:2,taskEvents:[{type:'task.status_changed',taskId:'root',from:'blocked',to:'in_review'}]}});
-    act(()=>oldFinish('1:root'));
-    expect(result.current.transitions[0]!.key).toBe('2:root');
+    act(()=>oldFinish(oldKey));
+    expect(result.current.transitions[0]!.key).toBe('2:2:root');
     expect(result.current.suppressedPlaceIds.has('root')).toBe(true);
   });
   it('clears on a recovery snapshot and does not replay its repeated effect', () => {
@@ -60,6 +60,18 @@ describe('Taskland scene motion hook', () => {
     const props={...input(),now:()=>2000};
     const {result}=renderHook(p=>useTasklandMotion(p),{initialProps:props});
     expect(result.current.transitions[0]!.startedAt).toBe(2000);
+  });
+  it('retargets combined same-id updates and ignores completion callbacks from their earlier revision', () => {
+    const props=input();props.effect!.taskEvents=[{type:'task.status_changed',taskId:'root',from:'working',to:'blocked',seq:10}];
+    const {result,rerender}=renderHook(p=>useTasklandMotion(p),{initialProps:props});
+    const oldKey=result.current.transitions[0]!.key,finish=result.current.finishTransition;
+    rerender({previousModel:props.model,model:{...props.model,places:[{...props.model.places[0]!,x:20,status:'in_review',groupId:'in_review'}]},
+      effect:{id:1,combined:true,count:7,taskEvents:[...props.effect!.taskEvents,{type:'task.status_changed',taskId:'root',from:'blocked',to:'in_review',seq:11}]}});
+    const nextKey=result.current.transitions[0]!.key;
+    expect(nextKey).not.toBe(oldKey);
+    act(()=>finish(oldKey));
+    expect(result.current.transitions[0]!.key).toBe(nextKey);
+    expect(result.current.suppressedPlaceIds.has('root')).toBe(true);
   });
 });
 describe('Taskland Three frame application', () => {

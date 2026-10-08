@@ -149,4 +149,77 @@ describe('Taskland authoritative motion planner', () => {
     expect(suppressedTasklandPlaces(state.transitions).has('marker')).toBe(false);
     expect(plan(model([], 'town'),model([marker], 'town'),effect(21,['root','working','done'])).transitions).toEqual([]);
   });
+  it('keeps a criterion stage and size update on the existing cart route', () => {
+    const previous=model([place('root',0)]),current=model([place('root',10,0,null,'blocked')]);
+    const active=plan(previous,current,effect(22,['root','working','blocked']));
+    const transition=active.transitions[0]!, instant=transition.duration/2;
+    const newer=model([{...current.places[0]!,constructionStage:'topped-out',progress:.8,radius:2,footprint:2}]);
+    const updated=reconcileTasklandMotion(active,{previousModel:current,model:newer,effect:{id:23,taskEvents:[
+      {type:'task.criterion_changed',taskId:'root',criterionId:'ac1',criterionText:'Ready',isDone:true,done:8,total:10}]}},instant);
+    expect(updated.transitions).toHaveLength(1);
+    expect(updated.transitions[0]!.key).toBe(transition.key);
+    expect(updated.transitions[0]!.startedAt).toBe(0);
+    expect(updated.transitions[0]!.members[0]!.place).toBe(newer.places[0]);
+    expect(sampleTasklandTransition(updated.transitions[0]!,instant).members[0]!.position).toEqual({x:5,z:0});
+    expect(suppressedTasklandPlaces(updated.transitions).has('root')).toBe(true);
+    const repeated=reconcileTasklandMotion(active,{previousModel:previous,model:newer,effect:effect(22)},instant);
+    expect(repeated.transitions[0]!.members[0]!.place.constructionStage).toBe('topped-out');
+  });
+  it('moves a child under a stationary hierarchy foundation and accepts that foundation after departure', () => {
+    const marker={...place('parent',0,0,null,'cancelled'),role:'hierarchy-marker',constructionStage:'foundation'} as unknown as MapPlace;
+    const previous=model([marker,place('child',3,2,'parent'),place('grand',4,4,'child')]);
+    const current=model([marker,place('child',8,2,'parent','blocked'),place('grand',9,4,'child')]);
+    const state=plan(previous,current,effect(24,['child','working','blocked']));
+    expect(state.transitions[0]!.members.map(m=>m.place.id)).toEqual(['child','grand']);
+    expect(suppressedTasklandPlaces(state.transitions).has('parent')).toBe(false);
+    const old=model([place('parent',0)]),next=model([marker]);
+    const departing=plan(old,next,effect(25,['parent','working','done']));
+    expect(departing.transitions[0]!.kind).toBe('ship-out');
+    const retained=reconcileTasklandMotion(departing,{previousModel:old,model:next,effect:effect(25)},500);
+    expect(retained.transitions).toHaveLength(1);
+    expect(retained.transitions[0]!.suppressedPlaceIds).toEqual([]);
+  });
+  it('uses immediate snapshots for rubble expiry and Town admissions without completion facts', () => {
+    const previous=model([{...place('root',0,0,null,'cancelled'),constructionStage:'rubble'}]);
+    expect(plan(previous,model([]),{id:26,taskEvents:[]}).transitions).toEqual([]);
+    expect(plan(model([],'town'),model([{...place('session',0),kind:'work_session'}],'town'),{id:27,taskEvents:[]}).transitions).toEqual([]);
+  });
+  it('retargets new status facts within a reused combined effect id without replaying earlier routes', () => {
+    const previous=model([place('root',0)]),middle=model([place('root',10,0,null,'blocked')]),next=model([place('root',20,0,null,'in_review')]);
+    const first={id:30,combined:true,count:6,taskEvents:[{type:'task.status_changed' as const,taskId:'root',from:'working',to:'blocked',seq:100}]};
+    const active=plan(previous,middle,first),instant=active.transitions[0]!.duration/2;
+    const second={...first,count:7,taskEvents:[...first.taskEvents,{type:'task.status_changed' as const,taskId:'root',from:'blocked',to:'in_review',seq:101}]};
+    const interrupted=reconcileTasklandMotion(active,{previousModel:middle,model:next,effect:second},instant);
+    expect(interrupted.transitions).toHaveLength(1);
+    expect(interrupted.transitions[0]!.from).toEqual({x:5,z:0});
+    expect(interrupted.transitions[0]!.to).toEqual({x:20,z:0});
+    expect(interrupted.transitions[0]!.key).not.toBe(active.transitions[0]!.key);
+    expect(reconcileTasklandMotion(interrupted,{previousModel:middle,model:next,effect:second},instant+100).transitions[0]!.startedAt).toBe(instant);
+    const finished={...interrupted,transitions:[]};
+    expect(reconcileTasklandMotion(finished,{previousModel:middle,model:next,effect:second},instant+200).transitions).toEqual([]);
+  });
+  it('handles six-plus status changes in the same minute when the controller reuses its burst identity', () => {
+    let previous=model([place('root',0)]),state=emptyTasklandMotion({model:previous});
+    const events: TasklandMotionEffect['taskEvents'][number][]=[];
+    for(let i=1;i<=8;i++) {
+      const status=i%2?'blocked':'working',current=model([place('root',i*10,0,null,status)]);
+      events.push({type:'task.status_changed',taskId:'root',from:previous.places[0]!.status!,to:status,seq:i});
+      state=reconcileTasklandMotion(state,{previousModel:previous,model:current,effect:{id:Math.min(i,5),count:i,combined:i>5,taskEvents:[...events]}},i*300);
+      expect(state.transitions).toHaveLength(1);
+      expect(state.transitions[0]!.to.x).toBe(i*10);
+      expect(state.transitions[0]!.startedAt).toBe(i*300);
+      previous=current;
+    }
+    expect(state.lastTaskSeq).toBe(8);
+    expect(state.lastEffectId).toBe(5);
+  });
+  it('does not replay an old completion fact as a new Town arrival in a combined effect', () => {
+    const previous=model([],'town'),current=model([place('root',3,0,null,'done')],'town');
+    const completion={type:'task.status_changed' as const,taskId:'root',from:'working',to:'done',seq:200};
+    const active=plan(previous,current,{id:31,taskEvents:[completion]});
+    const later=model([...current.places,{...place('session',20),kind:'work_session'}],'town');
+    const refreshed=reconcileTasklandMotion(active,{previousModel:current,model:later,effect:{id:31,taskEvents:[completion,
+      {type:'task.criterion_changed',taskId:'other',criterionId:'ac1',criterionText:'Ready',isDone:true,done:1,total:1,seq:201}]}},300);
+    expect(refreshed.transitions.map(t=>t.entityId)).toEqual(['root']);
+  });
 });
