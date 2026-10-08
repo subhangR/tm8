@@ -55,10 +55,25 @@ describe.sequential('per-member permanent seen entities (Postgres)', () => {
         values ($1, $2, 'doc', $3, now() - interval '1 day')`, [old, space, member]);
     });
     db.apply([migration]);
+    // Reproduce 313's catalog regressions before applying the corrective tip.
+    const [before] = await db.query<{ qual: string; reltuples: number }>(
+      `select p.qual, c.reltuples from pg_policies p
+        join pg_class c on c.oid = 'public.entity_seen'::regclass
+       where p.tablename = 'entity_seen' and p.policyname = 'entity_seen_select'`);
+    expect(before!.qual).toContain('is_space_member(');
+    expect(before!.reltuples).toBe(-1);
+    db.apply(files.slice(files.indexOf(migration) + 1));
   }, 180_000);
   afterAll(async () => { await db?.destroy(); }, 30_000);
 
   it('starts pre-rollout entities seen and counts new roots and children across the space', async () => {
+    const [after] = await db.query<{ qual: string; reltuples: number }>(
+      `select p.qual, c.reltuples from pg_policies p
+        join pg_class c on c.oid = 'public.entity_seen'::regclass
+       where p.tablename = 'entity_seen' and p.policyname = 'entity_seen_select'`);
+    expect(after!.qual).toContain('member_space_ids()');
+    expect(after!.qual).not.toContain('is_space_member(');
+    expect(after!.reltuples).toBe(0);
     expect(await docs()).toEqual({ total: 1, unseen: 0 });
     const parent = await add();
     await add({ parent });
@@ -109,6 +124,7 @@ describe.sequential('per-member permanent seen entities (Postgres)', () => {
     await expect(mark(archived)).rejects.toMatchObject({ code: 'P0002' });
     await expect(mark(old, 'outsider')).rejects.toMatchObject({ code: 'P0002' });
     await expect(mark(old, A, randomUUID(), 'agent')).rejects.toMatchObject({ code: '42501' });
+    await expect(mark(old, A, randomUUID(), 'space_link')).rejects.toMatchObject({ code: '42501' });
     expect(await as('outsider', 'select * from public.space_kind_counts($1)', [space])).toEqual([]);
     expect(await as(A, 'select * from public.space_kind_counts($1)', [otherSpace], 'browser', space)).toEqual([]);
     await expect(as(A, 'select public.mark_entity_seen($1, $2)', [old, randomUUID()], 'browser', otherSpace))
@@ -126,5 +142,24 @@ describe.sequential('per-member permanent seen entities (Postgres)', () => {
     await expect(mark(id, B, mutation)).rejects.toMatchObject({ code: '23514' });
     expect(await db.query("select internal.event_subject_ids('entity.seen', jsonb_build_object('entityId', $1::text)) ids", [id]))
       .toEqual([{ ids: [id] }]);
+  });
+
+  it('keeps marker reads personal, active-member-only and within the session space pin', async () => {
+    const here = await add();
+    const there = await add({ space: otherSpace });
+    await mark(here);
+    await mark(there);
+    const sql = 'select entity_id from public.entity_seen where entity_id = any($1::uuid[]) order by entity_id';
+    const ids = [here, there];
+    expect(await as(A, sql, [ids], 'browser', space)).toEqual([{ entity_id: here }]);
+    expect(await as(A, sql, [ids], 'browser', otherSpace)).toEqual([{ entity_id: there }]);
+    expect(await as(B, sql, [ids], 'browser', space)).toEqual([]);
+    expect(await as('outsider', sql, [ids])).toEqual([]);
+    await db.query("update public.members set status = 'removed', left_at = now() where entity_id = $1", [member]);
+    try {
+      expect(await as(A, sql, [ids], 'browser', space)).toEqual([]);
+    } finally {
+      await db.query("update public.members set status = 'active', left_at = null where entity_id = $1", [member]);
+    }
   });
 });
