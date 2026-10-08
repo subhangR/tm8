@@ -318,7 +318,7 @@ const DURABLE_MEMBER = '00000000-0000-4000-8000-000000000002';
 const DURABLE_STORY = '00000000-0000-4000-8000-000000000003';
 const durableInitial = () => freshGameSave(DURABLE_SPACE, DURABLE_MEMBER);
 const durableView = (save: GameNavigationView['save'] = null, revision = 0): GameNavigationView =>
-  ({ spaceId: DURABLE_SPACE, memberId: DURABLE_MEMBER, save, revision });
+  ({ spaceId: DURABLE_SPACE, memberId: DURABLE_MEMBER, save, revision, repairs: { routeTruncated: false, droppedMemories: 0 } });
 function durablePort() {
   return { load: vi.fn<GamePersistencePort['load']>(async () => durableView()),
     save: vi.fn<GamePersistencePort['save']>(async (_space, save, revision) => durableView(save, revision + 1)) };
@@ -330,6 +330,29 @@ const durableLoader = () => vi.fn<GameMapLoader>(async scope => ({ title: 'Durab
 const durableDefaults = { spaceId: DURABLE_SPACE, memberId: DURABLE_MEMBER, onInspect: vi.fn() };
 
 describe('GameMode durable resume integration', () => {
+  it('retains poses reported inside the browser debounce when a server ACK repairs an older memory', async () => {
+    const persistence = durablePort();
+    const screen = render(<GameMode {...durableDefaults} loadMap={durableLoader()} persistence={persistence} />);
+    await screen.findByText(`${DURABLE_SPACE}:hub`);
+    await waitFor(() => expect(persistence.save).toHaveBeenCalledTimes(1));
+    const pending = deferred<GameNavigationView>(); persistence.save.mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByText('Walk and zoom')); fireEvent(window, new Event('pagehide'));
+    await waitFor(() => expect(persistence.save).toHaveBeenCalledTimes(2));
+    act(() => ports.props!.onPosition(44, 55));
+    await act(async () => pending.resolve({ ...durableView(durableInitial(), 2), repairs: { routeTruncated: false, droppedMemories: 1 } }));
+    fireEvent(window, new Event('pagehide'));
+    await waitFor(() => expect(persistence.save.mock.calls.at(-1)?.[1].maps[mapKey(durableInitial().current)]?.position).toEqual({ x: 44, z: 55 }));
+  });
+  it('treats a first-time healthy member as ready without an unavailable notice and saves revision0', async () => {
+    const persistence = durablePort();
+    const screen = render(<GameMode {...durableDefaults} loadMap={durableLoader()} persistence={persistence} />);
+    await screen.findByText(`${DURABLE_SPACE}:hub`);
+    expect(screen.queryByText(/save is unavailable/)).toBeNull();
+    expect(persistence.save.mock.calls[0]?.[2]).toBe(0);
+    fireEvent.click(screen.getByText('Walk and zoom')); fireEvent(window, new Event('pagehide'));
+    await waitFor(() => expect(persistence.save.mock.calls.at(-1)?.[1].maps[mapKey(durableInitial().current)]?.position).toEqual({ x: 7, z: 9 }));
+    expect(screen.queryByText(/save is unavailable/)).toBeNull();
+  });
   it('gates map reads until hydration and restores a server-only route with an exact pose/camera inside a footprint', async () => {
     const loadMap = durableLoader(), persistence = durablePort();
     const story = { type: 'hub' as const, scope: { kind: 'story' as const, id: DURABLE_STORY } };

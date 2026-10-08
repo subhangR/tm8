@@ -27,7 +27,7 @@ describe('authenticated catalog Game port', () => {
           expect(Object.keys(body.save.maps).every(key => visited.has(key))).toBe(true);
           stored = body.save; revision++;
         }
-        data = { spaceId: SPACE, memberId: MEMBER, save: stored, revision };
+        data = { spaceId: SPACE, memberId: MEMBER, save: stored, revision, repairs: { routeTruncated: false, droppedMemories: 0 } };
       }
       return new Response(JSON.stringify({ data }), { status: 200 });
     });
@@ -38,13 +38,15 @@ describe('authenticated catalog Game port', () => {
     const camera = { zoom: 3.25, position: [1, 20, 3] as [number, number, number], target: [7, 0, 9] as [number, number, number] };
     const legacy = rememberGameMap(rememberGameMap(nested, rootKey, { position: { x: 7, z: 9 }, camera }),
       mapKey(nested.current), { position: { x: -4.5, z: 8.25 }, camera });
-    writeGameSave(legacy);
+    const malformed = rememberGameMap(legacy, JSON.stringify(['story', 'legacy-nonuuid', 'taskland']), { position: { x: 99, z: 99 } });
+    writeGameSave(malformed);
     const queue = new DurableGameSave(SPACE, MEMBER, game, vi.fn());
     const restored = await queue.hydrate(new AbortController().signal);
     expect(restored).toEqual(legacy);
     expect(visited.size).toBe(3);
     await queue.enqueue(restored, true);
     expect(stored).toEqual(legacy);
+    expect(requests.some(({ init }) => String(init?.body).includes('legacy-nonuuid'))).toBe(false);
     const last = requests.at(-1)!;
     expect(last.url).toBe(`/v2/spaces/${SPACE}/maps/navigation`);
     expect(last.init?.method).toBe('PUT'); expect(last.init?.keepalive).toBe(true);

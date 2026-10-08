@@ -4,7 +4,7 @@ import { fromProjection, type MapEdge, type MapEntity, type MapType } from '../s
 import type { Seam } from './seam';
 
 import type { GameMapLoader } from '../game/types';
-import { readGamePlacements } from '../game/placement-read';
+import { openGameMapIdentity, readGamePlacementRows, selectTownPlacements } from '../game/placement-read';
 export type { GameMapLoader, GameMapResult } from '../game/types';
 type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness' | 'game'>;
 
@@ -93,6 +93,12 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
     if (!spaceId || (scope.kind !== 'space' && scope.kind !== 'story') || !scope.id ||
       (scope.kind === 'space' && scope.id !== spaceId)) throw new Error('Map scope does not belong to the active space');
 
+    // Identity and Town placement I/O overlap the graph read; admission comes from the graph.
+    const persistedRead = seam.game && type ? (type === 'town'
+      ? readGamePlacementRows(seam.game, spaceId, { scope, type }, signal)
+      : openGameMapIdentity(seam.game, spaceId, { scope, type }, signal).then(result => ({ rows: [], warnings: result.warnings }))) : null;
+    void persistedRead?.catch(() => {});
+
     const kinds = type ? KINDS_BY_TYPE[type] : MAP_KINDS!;
     const entities = new Map<string, MapEntity>();
     const edges = new Map<string, MapEdge>();
@@ -174,15 +180,14 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
         warnings = [...warnings, 'Map relations could not be loaded; places and their hierarchy remain available'];
       }
     }
-    const persisted = seam.game && type
-      ? await readGamePlacements(seam.game, spaceId, { scope, type }, new Set(entities.keys()), signal)
-      : { townPlacements: [], warnings: [] };
+    const persisted = await persistedRead ?? { rows: [], warnings: [] };
     checkCancelled(signal);
     return {
       title,
       input: { scope: { ...scope }, entities: [...entities.values()],
         edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)),
-        ...(type === 'town' ? { townPlacements: persisted.townPlacements } : {}), warnings: [...warnings, ...persisted.warnings] },
+        ...(type === 'town' ? { townPlacements: selectTownPlacements(persisted.rows, new Set(entities.keys())) } : {}),
+        warnings: [...warnings, ...persisted.warnings] },
     };
   };
 }

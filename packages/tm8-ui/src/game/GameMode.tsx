@@ -8,7 +8,7 @@ import { backGameMap, enterGameMap, freshGameSave, mapKey, readGameSave, remembe
 import type { GameSave } from './local-save';
 import type { GameMapSelection, GameModeProps } from './types';
 import { createLiveMapController, type LiveMapSnapshot } from './live-map-controller';
-import { DurableGameSave, type GameSaveStatus } from './durable-save';
+import { DurableGameSave, mergeGameSaveRepairs, type GameSaveStatus } from './durable-save';
 import './game-mode.css';
 export type { GameMapLoader, GameMapResult, GameModeProps } from './types';
 
@@ -48,12 +48,13 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, events, persisten
   const [saveStatus, setSaveStatus] = useState<GameSaveStatus>(persistence ? 'loading' : 'local');
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
   const durable = useMemo(() => persistence ? new DurableGameSave(spaceId, memberId, persistence,
-    status => { if (!closing.current) setSaveStatus(status); }, identitySignal, normalized => {
+    status => { if (!closing.current) setSaveStatus(status); }, identitySignal, (normalized, sent) => {
       if (closing.current) return;
+      const next = mergeGameSaveRepairs(save.current, sent, normalized);
       const routeChanged = JSON.stringify([...save.current.stack, save.current.current].map(mapKey)) !==
-        JSON.stringify([...normalized.stack, normalized.current].map(mapKey));
-      save.current = { ...normalized, current: mapKey(save.current.current) === mapKey(normalized.current)
-        ? save.current.current : normalized.current };
+        JSON.stringify([...next.stack, next.current].map(mapKey));
+      save.current = next;
+      writeGameSave(save.current);
       if (routeChanged) {
         cancelLive.current?.(); loadEpoch.current++; navigationEpoch.current++;
         setRecoveryNotice('An unavailable map was removed from your saved route.');
@@ -61,15 +62,15 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, events, persisten
       setNavigation(save.current);
     }) : null, [persistence, spaceId, memberId, identitySignal]);
 
-  const flush = useCallback((keepalive = false) => {
+  const flush = useCallback((keepalive = false, immediate = true) => {
     clearTimeout(pendingSave.current);
     pendingSave.current = undefined;
     const persisted = writeGameSave(save.current);
-    if (durable) void durable.enqueue(save.current, keepalive);
+    if (durable) void durable.enqueue(save.current, keepalive, immediate);
     if (!closing.current) setSaveFailed(!persisted);
   }, [durable]);
   const scheduleSave = useCallback(() => {
-    if (pendingSave.current === undefined) pendingSave.current = setTimeout(flush, 250);
+    if (pendingSave.current === undefined) pendingSave.current = setTimeout(() => flush(false, false), 250);
   }, [flush]);
   useEffect(() => {
     closing.current = false;
@@ -214,6 +215,7 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, events, persisten
     {durable && hydrated && (saveStatus === 'local' || saveStatus === 'conflict') && <p className="game-mode__notice" role="status">
       {saveStatus === 'conflict' ? 'Your place changed on another device. This visit has not been saved to the server.'
         : saveFailed ? 'Game save is unavailable. Your place is kept for this visit.' : 'Server save is unavailable. Your place is saved in this browser.'}
+      {saveStatus === 'conflict' && ' Saving this visit will replace the other device’s place.'}
       {' '}<button type="button" onClick={() => { void durable.retry(); }}>Save this visit to server</button>
     </p>}
     {recoveryNotice && <p className="game-mode__notice" role="status">{recoveryNotice}</p>}

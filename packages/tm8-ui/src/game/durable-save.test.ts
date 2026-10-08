@@ -8,7 +8,8 @@ const SPACE = '00000000-0000-4000-8000-000000000001';
 const MEMBER = '00000000-0000-4000-8000-000000000002';
 const STORY = '00000000-0000-4000-8000-000000000003';
 const initial = () => freshGameSave(SPACE, MEMBER);
-const view = (save: GameNavigationView['save'] = null, revision = 0): GameNavigationView => ({ spaceId: SPACE, memberId: MEMBER, save, revision });
+const view = (save: GameNavigationView['save'] = null, revision = 0): GameNavigationView => ({ spaceId: SPACE, memberId: MEMBER, save, revision,
+  repairs: { routeTruncated: false, droppedMemories: 0 } });
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 function port(): GamePersistencePort & { load: ReturnType<typeof vi.fn<GamePersistencePort['load']>>; save: ReturnType<typeof vi.fn<GamePersistencePort['save']>> } {
   return { load: vi.fn(async () => view()), save: vi.fn(async (_space, save, revision) => view(save, revision + 1)) };
@@ -22,9 +23,43 @@ describe('durable Game save queue', () => {
       const adapter = port(); adapter.load.mockReturnValue(new Promise(() => {}));
       const queue = new DurableGameSave(SPACE, MEMBER, adapter, vi.fn());
       const loading = queue.hydrate(new AbortController().signal);
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(8_000);
       expect(await loading).toEqual(initial());
       await queue.enqueue(initial()); expect(adapter.save).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('throttles steady walking to20 server writes per minute, keeps latest poses, and flushes explicit navigation immediately', async () => {
+    vi.useFakeTimers();
+    try {
+      const adapter = port(), queue = new DurableGameSave(SPACE, MEMBER, adapter, vi.fn());
+      await queue.hydrate(new AbortController().signal);
+      await queue.enqueue(initial()); adapter.save.mockClear();
+      for (let x = 1; x <= 240; x++) {
+        await queue.enqueue(rememberGameMap(initial(), mapKey(initial().current), { position: { x, z: 9 } }), false, false);
+        await vi.advanceTimersByTimeAsync(250);
+      }
+      expect(adapter.save).toHaveBeenCalledTimes(20);
+      expect(adapter.save.mock.calls.at(-1)?.[1].maps[mapKey(initial().current)]?.position).toEqual({ x: 240, z: 9 });
+      await queue.enqueue(enterGameMap(initial(), { type: 'office', scope: { kind: 'space', id: SPACE } }));
+      expect(adapter.save).toHaveBeenCalledTimes(21);
+      expect(adapter.save.mock.calls.at(-1)?.[1].current.type).toBe('office');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('flushes keepalive snapshots ahead of the server cadence and cancels pending timers on account change', async () => {
+    vi.useFakeTimers();
+    try {
+      const adapter = port(), identity = new AbortController(), queue = new DurableGameSave(SPACE, MEMBER, adapter, vi.fn(), identity.signal);
+      await queue.hydrate(new AbortController().signal); await queue.enqueue(initial());
+      await queue.enqueue(rememberGameMap(initial(), mapKey(initial().current), { position: { x: 2, z: 3 } }), false, false);
+      expect(adapter.save).toHaveBeenCalledTimes(1);
+      await queue.enqueue(rememberGameMap(initial(), mapKey(initial().current), { position: { x: 4, z: 5 } }), true);
+      expect(adapter.save).toHaveBeenCalledTimes(2);
+      expect(adapter.save.mock.calls.at(-1)?.[3]?.keepalive).toBe(true);
+      await queue.enqueue(initial(), false, false); identity.abort();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(adapter.save).toHaveBeenCalledTimes(2);
     } finally { vi.useRealTimers(); }
   });
 
@@ -40,7 +75,7 @@ describe('durable Game save queue', () => {
     void queue.enqueue({ ...next, maps: { ...old.maps, ...next.maps } });
     first.resolve(view(initial(), 1)); await saving;
     expect(adapter.save.mock.calls[1]?.[1]).toEqual(next);
-    expect(repaired).toHaveBeenCalledWith(next);
+    expect(repaired).toHaveBeenCalledWith(next, old);
   });
   it('uses the server save before any write and restores its route, exact poses and camera without local state', async () => {
     const remote = rememberGameMap(enterGameMap(initial(), { type: 'hub', scope: { kind: 'story', id: STORY } }),
