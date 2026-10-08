@@ -15,7 +15,7 @@ export function sessionColor(sessionId: string): string {
   return `hsl(${(hash >>> 0) % 360}, 70%, 60%)`;
 }
 /** Reconcile by claim, retaining the actual interpolated position during a task move. */
-export function reconcileWorkers(previous: ReadonlyMap<string, WorkerMotion>, model: MapModel, departures: readonly MapRobot[] = []): Map<string, WorkerMotion> {
+export function reconcileWorkers(previous: ReadonlyMap<string, WorkerMotion>, model: MapModel, departures: readonly MapRobot[] = [], movingTaskIds: ReadonlySet<string> = new Set()): Map<string, WorkerMotion> {
   const result = new Map<string, WorkerMotion>(), home = workerHome(model);
   for (const [robot, returning] of [...model.robots.map(robot => [robot, false] as const), ...departures.filter(robot => !model.robots.some(active => active.id === robot.id)).map(robot => [robot, true] as const)]) {
     const old = previous.get(robot.id);
@@ -23,9 +23,18 @@ export function reconcileWorkers(previous: ReadonlyMap<string, WorkerMotion>, mo
     const target = returning ? home : { x: robot.x, z: robot.z };
     result.set(robot.id, { robot, position: old?.position ?? (moved ? { ...moved.position } : returning ? { x: robot.x, z: robot.z } : { ...home }),
       target, heading: old?.heading ?? moved?.heading ?? 0, returning,
-      arrived: !!old?.arrived && old.target.x === target.x && old.target.z === target.z });
+      arrived: !!old?.arrived && ((old.target.x === target.x && old.target.z === target.z) ||
+        (!returning && old.robot.taskId === robot.taskId && movingTaskIds.has(robot.taskId))) });
   }
   return result;
+}
+/** Carry an arrived worker with its site; arriving workers walk toward the sampled site. */
+export function advanceWorkerAtSite(worker: WorkerMotion, seconds: number, reduced: boolean, sampledSite: Point | null, currentSite?: Point): void {
+  if (!worker.returning && sampledSite && currentSite) {
+    worker.target = { x: worker.robot.x + sampledSite.x - currentSite.x, z: worker.robot.z + sampledSite.z - currentSite.z };
+    if (worker.arrived) { worker.position.x = worker.target.x; worker.position.z = worker.target.z; return; }
+  }
+  advanceWorker(worker, seconds, reduced);
 }
 export function advanceWorker(worker: WorkerMotion, seconds: number, reduced: boolean): void {
   const dx = worker.target.x - worker.position.x, dz = worker.target.z - worker.position.z;

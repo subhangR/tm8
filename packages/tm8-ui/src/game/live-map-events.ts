@@ -62,7 +62,8 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
         if (!category) result.refresh = true;
         put({ ...row, status: event.to, statusCategory: category ?? null,
           terminalFromStatus: ['done', 'cancelled'].includes(event.to) ? row.terminalFromStatus ?? event.from : null,
-          cancelledAt: event.to === 'cancelled' ? (row.status === 'cancelled' && row.cancelledAt ? row.cancelledAt : event.occurredAt) : null });
+          cancelledAt: event.to === 'cancelled' ? (row.status === 'cancelled' && row.cancelledAt ? row.cancelledAt : event.occurredAt) : null,
+          cancelledNotAfter: event.to === 'cancelled' && row.status === 'cancelled' ? row.cancelledNotAfter : null });
       }
       break;
     }
@@ -82,7 +83,9 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
         let mapped = liveMapEntity(row, events);
         if (mapped.kind === 'task' && mapped.status === known?.status) mapped = { ...mapped,
           terminalFromStatus: known?.terminalFromStatus ?? mapped.terminalFromStatus,
-          cancelledAt: mapped.status === 'cancelled' ? mapped.cancelledAt ?? known?.cancelledAt : null };
+          cancelledAt: mapped.status === 'cancelled' ? mapped.cancelledAt ?? known?.cancelledAt : null,
+          cancelledNotAfter: mapped.status === 'cancelled' && !mapped.cancelledAt ? mapped.cancelledNotAfter ?? known?.cancelledNotAfter : null };
+        if (known?.mailbox?.basis === 'unread') mapped = { ...mapped, mailbox: known.mailbox };
         if (mapped.kind === 'work_session' && mapped.outcome === 'completed' && known?.outcome !== 'completed') result.completed.push(row.id);
         put(mapped);
         if (scope.kind === 'story' && known && known.parentId !== mapped.parentId) result.refresh = true;
