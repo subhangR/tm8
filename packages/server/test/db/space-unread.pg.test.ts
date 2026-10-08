@@ -149,9 +149,17 @@ describe('per-viewer root mailboxes through real HTTP', () => {
   });
 
   it('refuses nonmembers and foreign-space pinned sessions, with a positive same-token control', async () => {
+    // The viewer belongs to B, but the A pin makes the exact RPC gate false.
+    const gate = await db.tx({ identityId: viewer.identityId, authKind: 'cli' }, q =>
+      q.query<{ allowed: boolean }>('select internal.is_space_member($1) as allowed', [foreignSpace]));
+    const pinned = await db.tx({ identityId: viewer.identityId, authKind: 'cli', sessionSpaceId: space }, q =>
+      q.query<{ allowed: boolean }>('select internal.is_space_member($1) as allowed', [foreignSpace]));
+    expect(gate).toEqual([{ allowed: true }]);
+    expect(pinned).toEqual([{ allowed: false }]);
     for (const [token, spaceId] of [[outsiderToken, space], [pinnedToken, foreignSpace]]) {
       const response = await fetch(`${base}/v2/spaces/${spaceId}/unread-counts`, { headers: { authorization: `Bearer ${token}` } });
       expect(response.status).toBe(403);
+      expect(JSON.stringify(await response.json())).not.toContain('"complete":true');
     }
     expect((await unread(pinnedToken)).complete).toBe(true);
     expect((await unread(viewerToken, foreignSpace)).counts).toEqual([]);
