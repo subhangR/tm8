@@ -2,6 +2,7 @@
 import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildMapModel, smallFixture, type MapType } from '../map-model';
+import { walkingEntrance } from '../map-model/walking-world';
 import { WalkingMapView, type WalkingMapViewProps } from './WalkingMapView';
 const scene = vi.hoisted(() => ({ webgl: false, last: null as any, failed: false }));
 vi.mock('../palette', async original => ({ ...await original<typeof import('../palette')>(), hasWebGL: () => scene.webgl }));
@@ -77,14 +78,33 @@ describe('walking map boundary', () => {
     expect(scene.last.walking.control).not.toBe(first.control);
     expect(input.onPosition).toHaveBeenLastCalledWith(8, 9);
   });
-  it('replaces an occupied/outside resume with a free entrance and drops its stale camera', async () => {
+  it.each(['inside', 'near'] as const)('keeps an exact saved position and camera %s a footprint across remounts', async where => {
     scene.webgl = true;
     const input = props(), occupied = input.model.places[0]!;
-    input.start = { x: occupied.x, z: occupied.z };
+    input.start = { x: occupied.x + (where === 'near' ? occupied.radius + 0.2 : 0), z: occupied.z };
     input.camera = { zoom: 20, position: [80, 30, 40], target: [occupied.x, 0, occupied.z] };
     const view = render(<WalkingMapView {...input}/>);
     await view.findByTestId('mock-scene');
-    expect(scene.last.initial.x).toBeLessThan(input.model.bounds.minX);
+    expect(scene.last.initial).toEqual(input.start);
+    expect(scene.last.walking.cameraState).toEqual(input.camera);
+    act(() => { scene.last.walking.onPosition(input.start.x, input.start.z); scene.last.walking.onCamera(input.camera); });
+    view.unmount();
+    const saved = vi.mocked(input.onPosition).mock.calls.at(-1)!;
+    const camera = vi.mocked(input.onCamera).mock.calls.at(-1)![0];
+    expect(saved).toEqual([input.start.x, input.start.z]);
+    const reloaded = render(<WalkingMapView {...input} start={{ x: saved[0], z: saved[1] }} camera={camera}/>);
+    await reloaded.findByTestId('mock-scene');
+    expect(scene.last.initial).toEqual(input.start);
+    expect(scene.last.walking.cameraState).toEqual(input.camera);
+  });
+  it.each([{ x: NaN, z: 0 }, { x: 0, z: Infinity }, { x: 1e7, z: -1e7 }])('repairs invalid or outside start %j and drops its stale camera', async start => {
+    scene.webgl = true;
+    const input = props();
+    input.start = start;
+    input.camera = { zoom: 20, position: [80, 30, 40], target: [0, 0, 0] };
+    const view = render(<WalkingMapView {...input}/>);
+    await view.findByTestId('mock-scene');
+    expect(scene.last.initial).toEqual(walkingEntrance(input.model));
     expect(scene.last.walking.cameraState).toBeUndefined();
   });
   it('WebGL click issues a walk order; arrival alone never enters a map', async () => {
