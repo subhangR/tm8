@@ -138,4 +138,15 @@ describe('Taskland authoritative motion planner', () => {
     const shipment=plan(previous,model([]),effect(19,['root','working','done']));
     expect(sampleTasklandPlace(shipment.transitions,'root',500)).toBeNull();
   });
+  it('keeps neutral hierarchy markers stationary and outside cart suppression', () => {
+    // The additive model checkpoint introduces this role; older snapshots lack it.
+    const marker={...place('marker',3,2,'root','cancelled'),role:'hierarchy-marker',constructionStage:'foundation'} as unknown as MapPlace;
+    const previous=model([place('root',0),marker]);
+    const current=model([place('root',10,0,null,'blocked'),marker]);
+    const state=plan(previous,current,effect(20,['root','working','blocked'],['marker','cancelled','done']));
+    expect(state.transitions[0]!.members.map(m=>m.place.id)).toEqual(['root']);
+    expect(state.transitions).toHaveLength(1);
+    expect(suppressedTasklandPlaces(state.transitions).has('marker')).toBe(false);
+    expect(plan(model([], 'town'),model([marker], 'town'),effect(21,['root','working','done'])).transitions).toEqual([]);
+  });
 });
