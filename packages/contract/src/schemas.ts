@@ -1661,6 +1661,26 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     edge: EdgeViewSchema,
     clientMutationId: z.string().optional(),
   }).strict(),
+  // Game P0c: committed criterion deltas and task status transitions.
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('task.criterion_changed'),
+    taskId: EntityIdSchema,
+    criterionId: z.string(),
+    criterionText: z.string(),
+    isDone: z.boolean(),
+    done: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('task.status_changed'),
+    taskId: EntityIdSchema,
+    from: WorkStatusSchema,
+    to: WorkStatusSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
   // Spec D1 §4.6 (299).
   z.object({
     ...workspaceEventEnvelopeShape,
