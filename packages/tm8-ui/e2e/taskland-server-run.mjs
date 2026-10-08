@@ -54,6 +54,41 @@ try {
     assert.equal(actual.length, expected.length, note);
     actual.forEach((value, index) => assert.ok(Math.abs(value - expected[index]) < 1e-7, `${note}: ${value} vs ${expected[index]}`));
   };
+  const enterRenderedPortal = async portal => {
+    try {
+      const menu = page.locator('.walking-places');
+      await menu.getByRole('button', { name: `Enter ${portal.label}`, exact: true, includeHidden: true }).waitFor({ state: 'attached' });
+      await page.waitForFunction(() => {
+        const scene = window.tasklandServer.scene();
+        return scene?.stats.triangles > 0 && scene.stats.calls > 0
+          && scene.assets?.used.length > 0 && !scene.assets.loading;
+      }, undefined, { timeout: 45_000 });
+      const button = page.getByRole('button', { name: `Enter ${portal.label}`, exact: true });
+      const until = Date.now() + 10_000;
+      while (!await button.isVisible() && Date.now() < until) {
+        if (!await menu.evaluate(node => node.open)) await menu.locator('summary').click({ timeout: 2_000 });
+        await button.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => {});
+      }
+      assert.ok(await button.isVisible(), 'The rendered hub portal control must be visible');
+      await button.click();
+      await page.waitForFunction(target => {
+        const current = window.tasklandServer.state().save.current;
+        return current.type === target.type && current.scope.kind === target.scope.kind && current.scope.id === target.scope.id;
+      }, portal.target);
+      await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
+      (evidence.portalRoutes ??= []).push({ label: portal.label, target: portal.target });
+    } catch (error) {
+      evidence.portalDiagnostics = await page.evaluate(() => {
+        const state = window.tasklandServer.state();
+        return { current: state.save.current, stack: state.save.stack, loadCount: state.loadCount,
+          detailsOpen: document.querySelector('.walking-places')?.open,
+          visibleButtons: [...document.querySelectorAll('button')].filter(node => node.checkVisibility())
+            .map(node => node.getAttribute('aria-label') ?? node.textContent), scene: window.tasklandServer.scene() };
+      }).catch(() => ({ unavailable: true }));
+      await page.screenshot({ path: resolve(output, 'portal-failure.png'), timeout: 10_000 }).catch(() => {});
+      throw error;
+    }
+  };
   const snapshots = async (label, type = 'taskland', now, cold = false) => {
     const models = await Promise.all(scopes.map(scope => project(scope, type, now, cold)));
     evidence.snapshots.push({ label, models: models.map(model => ({
@@ -418,23 +453,29 @@ try {
     await page.getByRole('button', { name: 'Inspect Harbour construction', exact: true }).click();
     assert.equal(await page.evaluate(() => window.tasklandServer.state().inspected), ids.root);
     // Destination portals live on the hub; the return route uses GameMode's stack.
-    await page.evaluate(scope => window.tasklandServer.mount(scope, 'hub'), scopes[0]);
-    const portal = (await project(scopes[0], 'hub')).portals.find(row => row.target.type === 'taskland');
-    assert.ok(portal, 'The hub must expose its Taskland portal');
-    await page.locator('.walking-places summary').click();
-    await page.getByRole('button', { name: `Enter ${portal.label}`, exact: true }).click();
-    await page.waitForFunction(() => window.tasklandServer.state().save.current.type === 'taskland');
-    await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
+    const stack = await page.evaluate(() => window.tasklandServer.state().save.stack);
+    assert.equal(stack.at(-1).type, 'hub', 'Cold resume must retain its real hub return route');
+    assert.deepEqual(stack.at(-1).scope, scopes[0]);
     await page.getByRole('button', { name: 'Back one map', exact: true }).click();
     await page.waitForFunction(() => window.tasklandServer.state().save.current.type === 'hub');
+    const portal = (await project(scopes[0], 'hub')).portals.find(row => row.target.type === 'taskland');
+    assert.ok(portal, 'The hub must expose its Taskland portal');
+    await enterRenderedPortal(portal);
+    await page.getByRole('button', { name: 'Back one map', exact: true }).click();
+    await page.waitForFunction(() => window.tasklandServer.state().save.current.type === 'hub');
+    assert.deepEqual(await page.evaluate(() => window.tasklandServer.state().save.current.scope), scopes[0]);
   });
   await check('Story scope actual scene renders after durable navigation', async () => {
-    const model = await project(scopes[1], 'taskland', undefined, true);
-    const root = place(model, 'root');
-    const memory = { position: { x: root.x, z: root.z }, camera: { zoom: 10,
-      position: [root.x + 20, 30, root.z + 20], target: [root.x, 0, root.z] } };
-    await page.evaluate(args => window.tasklandServer.mount(...args), [scopes[1], 'taskland', memory]);
-    await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
+    const storyPortal = (await project(scopes[0], 'hub')).portals.find(row => row.target.type === 'hub'
+      && row.target.scope.kind === 'story' && row.target.scope.id === f.storyId);
+    assert.ok(storyPortal, 'The space hub must expose the admitted story portal');
+    await enterRenderedPortal(storyPortal);
+    const tasklandPortal = (await project(scopes[1], 'hub')).portals.find(row => row.target.type === 'taskland');
+    assert.ok(tasklandPortal, 'The story hub must expose its Taskland portal');
+    await enterRenderedPortal(tasklandPortal);
+    const selected = await page.evaluate(() => window.tasklandServer.state().save.current);
+    assert.deepEqual({ scope: selected.scope, type: selected.type }, { scope: scopes[1], type: 'taskland' });
+    await page.getByRole('button', { name: /Map overview/ }).click();
     await waitForRenderedTaskland(page, () => page.evaluate(() => window.tasklandServer.scene()), { cue: 'mailbox' });
     await page.waitForFunction(() => [...document.querySelectorAll('.ms-label')].some(label => label.parentElement?.style.display === 'block'));
     await page.screenshot({ path: resolve(output, 'taskland-story.png'), timeout: 90_000 }); evidence.screenshots.push('taskland-story.png');
