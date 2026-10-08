@@ -108,17 +108,22 @@ describe.each(scopes)('Taskland real transitions at $kind scope', scope => {
 
 describe('construction fraction thresholds and worker lifecycle', () => {
   const scope = scopes[0]!;
-  it('uses last-update bounds conservatively on cold reload, without presenting them as exact dates', () => {
+  it('uses only explicitly supplied proven bounds, without presenting them as exact dates', () => {
     const editAt = at + 2 * 60 * 60 * 1000;
-    const input = fromProjection({ entities: [{ id: 'root', kind: 'task', status: 'cancelled', updatedAt: new Date(editAt).toISOString() }], edges: [] }, scope);
+    const input = fromProjection({ entities: [{ id: 'root', kind: 'task', status: 'cancelled', cancelledNotAfter: new Date(editAt).toISOString(), updatedAt: new Date(editAt).toISOString() }], edges: [] }, scope);
     const before = buildMapModel(input, { type: 'taskland', scope, now: at + RUBBLE_TTL_MS });
     expect(place(before, 'root')).toMatchObject({ cancelledAt: null, rubbleExpiresAt: null, rubbleRemovalNotAfter: editAt + RUBBLE_TTL_MS });
     expect(before.nextLifecycleAt).toBe(editAt + RUBBLE_TTL_MS);
     expect(before.warnings.join(' ')).toContain('exact rubble expiry is unknown');
     expect(buildMapModel(input, { type: 'taskland', scope, now: editAt + RUBBLE_TTL_MS - 1 }).places).toHaveLength(1);
     expect(buildMapModel(input, { type: 'taskland', scope, now: editAt + RUBBLE_TTL_MS }).places).toEqual([]);
-    const old = fromProjection({ entities: [{ id: 'root', kind: 'task', status: 'cancelled', updatedAt: '2026-10-01T00:00:00Z' }], edges: [] }, scope);
+    const old = fromProjection({ entities: [{ id: 'root', kind: 'task', status: 'cancelled', cancelledNotAfter: '2026-10-01T00:00:00Z' }], edges: [] }, scope);
     expect(buildMapModel(old, { type: 'taskland', scope, now: at }).places).toEqual([]);
+    const unproven = fromProjection({ entities: [{ id: 'root', kind: 'task', status: 'cancelled', updatedAt: '2026-10-01T00:00:00Z' }], edges: [] }, scope);
+    expect(unproven.entities[0]?.cancelledNotAfter).toBeNull();
+    const legacy = buildMapModel(unproven, { type: 'taskland', scope, now: at });
+    expect(legacy.places).toHaveLength(1);
+    expect(legacy.nextLifecycleAt).toBeNull();
   });
   it('exact cancellation ignores later edits, and reopening clears upper-bound removal state', () => {
     const input = fromProjection({ entities: [{ id: 'root', kind: 'task', state: { workStatus: 'cancelled', statusChangedAt: stamp }, updatedAt: new Date(at + 2 * 60 * 60 * 1000).toISOString() }], edges: [] }, scope);
