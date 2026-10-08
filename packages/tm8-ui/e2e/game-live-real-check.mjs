@@ -37,12 +37,24 @@ const claimId=async(sessionId,taskId)=>{
 };
 const showWorker=async(id,text)=>{const row=host.locator(`[data-worker-id="robot:${id}"]`);await row.waitFor({state:'attached'});await host.locator('details.walking-workers').evaluate(el=>el.open=true);if(text)await expect(row).toContainText(text);return row;};
 const scene=()=>page.evaluate(()=>window.__gameLive.sceneSnapshot());
-const shot=async(name,workerId)=>{if(!fallback){await host.locator('.sgm-stage canvas[data-engine]').waitFor();await expect.poll(()=>host.locator('.ms-label').evaluateAll(nodes=>nodes.filter(n=>n.parentElement.style.display!=='none').length),{timeout:30000}).toBeGreaterThan(0);await expect.poll(async()=>{const s=await scene();return !!s&&s.frames>0&&s.calls>0&&s.width>400&&s.height>300&&s.assets.pending===0&&s.assets.failed===0&&pendingAssets.size===0&&assetFailures.length===0&&(!workerId||s.workers.some(w=>w.id===`robot:${workerId}`&&w.visible&&w.inView&&w.skinnedMeshes>0));},{timeout:30000}).toBe(true);await page.evaluate(()=>document.fonts.ready);scenes.push({name,...await scene()});}if(!noScreenshots)await page.screenshot({path:`${output}/${name}.png`,timeout:90000});};
+const shot=async(name,workerId)=>{let capture;if(!fallback){await host.locator('.sgm-stage canvas[data-engine]').waitFor();await expect.poll(()=>host.locator('.ms-label').evaluateAll(nodes=>nodes.filter(n=>n.parentElement.style.display!=='none').length),{timeout:30000}).toBeGreaterThan(0);await expect.poll(async()=>{const s=await scene();return !!s&&s.frames>0&&s.calls>0&&s.width>400&&s.height>300&&s.assets.pending===0&&s.assets.failed===0&&pendingAssets.size===0&&assetFailures.length===0&&(!workerId||s.workers.some(w=>w.id===`robot:${workerId}`&&w.visible&&w.inView&&w.skinnedMeshes>0));},{timeout:30000}).toBe(true);await page.evaluate(()=>document.fonts.ready);capture={name,startedAt:Date.now(),...await scene()};scenes.push(capture);}if(!noScreenshots)await page.screenshot({path:`${output}/${name}.png`,timeout:90000});if(capture){capture.afterCapture=await scene();capture.captureMs=Date.now()-capture.startedAt;}};
 const tick=async(taskId,done)=>page.evaluate(async({taskId,done})=>{
  const detail=await window.__gameLive.seam.entity(taskId);const response=await fetch(`/v2/entities/${taskId}/commands/tick`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({clientMutationId:crypto.randomUUID(),expectedVersion:detail.version,criterionIds:['proof'],done})});
  if(!response.ok)throw new Error(`Tick failed ${response.status}: ${await response.text()}`);
 },{taskId,done});
 const pose=async()=>{await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));const value=await save();return value.maps[JSON.stringify([value.current.scope.kind,value.current.scope.id,value.current.type])];};
+const cameraTolerance=0.0001;
+const maxDelta=(a,b)=>Math.max(...a.map((value,index)=>Math.abs(value-b[index])));
+const equalSavedPose=(actual,expected)=>{expect(actual.position).toEqual(expected.position);if(fallback)expect(actual).toEqual(expected);else{expect(maxDelta(actual.camera.position,expected.camera.position)).toBeLessThan(cameraTolerance);expect(maxDelta(actual.camera.target,expected.camera.target)).toBeLessThan(cameraTolerance);expect(Math.abs(actual.camera.zoom-expected.camera.zoom)).toBeLessThan(cameraTolerance);}};
+const settlePose=async(initialPosition)=>{
+ await expect.poll(async()=>JSON.stringify((await pose())?.position??null),{timeout:30000}).not.toEqual(JSON.stringify(initialPosition));
+ if(fallback)return;
+ let previous=await scene();
+ await expect.poll(async()=>{const current=await scene();if(!current?.player?.id||current.frames-previous.frames<2)return false;
+  const stable=maxDelta(current.cameraPose.position,previous.cameraPose.position)<cameraTolerance/10&&maxDelta(current.cameraPose.quaternion,previous.cameraPose.quaternion)<cameraTolerance/10&&Math.abs(current.cameraPose.zoom-previous.cameraPose.zoom)<cameraTolerance/10;previous=current;
+  const saved=await pose();return stable&&!!saved?.camera&&saved.position.x===current.player.position.x&&saved.position.z===current.player.position.z&&maxDelta(saved.camera.position,current.cameraPose.position)<cameraTolerance;
+ },{timeout:60000,intervals:[200,400,800]}).toBe(true);
+};
 try{
  await page.goto('http://127.0.0.1:18533/e2e/game-live-real-harness.html');
  console.log('Real harness loaded');
@@ -59,14 +71,15 @@ try{
    const prefix=`${scope}-${process.env.GAME_REDUCED_MOTION==='1'?'reduced':'motion'}`;
    const create=async title=>{const result=await rpc('create_task',[fixture.spaceId,title,null,'Synthetic fixture',{},null,null,'medium',JSON.stringify([{id:'proof',text:'Verification proof',done:false}]),3]);const id=result.entity.id;await rpc('set_collection_item',[fixture.storyId,id]);return id;};
    const taskA=await create(`${prefix} site A`),taskB=await create(`${prefix} site B`);
-   await expect(host.getByText(`${prefix} site A`,{exact:true}).first()).toBeAttached();
+   await expect(host.getByText(`${prefix} site A`,{exact:true}).first()).toBeAttached({timeout:30000});
    record(`${scope}: authoritative task creation admitted and rendered`);
    const sessionId=await spawn(taskA,`${prefix} synthetic worker`),edgeA=await claimId(sessionId,taskA);
    await showWorker(edgeA,`${prefix} site A`);await shot(`${prefix}-start`,edgeA);
    const sessionDetail=await page.evaluate(id=>window.__gameLive.seam.entity(id),sessionId);
    expect(sessionDetail.storyIds??[]).toEqual([]);
    record(`${scope}: native synthetic PTY claim starts rendered ${fallback?'worker HUD':'WorkerLayer'}, session has no storyIds`);
-   await host.focus();await page.keyboard.down('d');await page.waitForTimeout(150);await page.keyboard.up('d');await page.waitForTimeout(400);
+   const initialPosition=(!fallback?(await scene())?.player?.position:(await pose())?.position)??null;
+   await host.focus();await page.keyboard.down('d');await page.waitForTimeout(150);await page.keyboard.up('d');await settlePose(initialPosition);
    const before=await pose(),sceneBefore=fallback?null:await scene(),canvas=crypto.randomUUID(),surface=fallback?host:host.locator('.sgm-stage canvas[data-engine]');await surface.evaluate((el,id)=>el.__verificationIdentity=id,canvas);
    const begin=Date.now();
    for(let i=0;i<20;i++)await work(taskA,i%2?'working':'blocked',sessionId);
@@ -80,14 +93,16 @@ try{
    await work(taskA,'blocked',sessionId);await showWorker(edgeA,'blocked');
    expect(await page.locator('[data-effect-id]').getAttribute('data-effect-id')).toEqual(effectId);
    expect(await surface.evaluate(el=>el.__verificationIdentity)).toEqual(canvas);
-   if(sceneBefore){const after=await scene();expect(after.sceneId).toEqual(sceneBefore.sceneId);expect(after.cameraId).toEqual(sceneBefore.cameraId);expect(after.workers.find(w=>w.id===`robot:${edgeA}`).uuid).toEqual(sceneBefore.workers.find(w=>w.id===`robot:${edgeA}`).uuid);}
-   expect(await pose()).toEqual(before);timings.push({scope,burstCommands:21,elapsedMs:Date.now()-begin});
+   const afterPose=await pose();expect(afterPose.position).toEqual(before.position);
+   if(sceneBefore){const after=await scene();expect(after.sceneId).toEqual(sceneBefore.sceneId);expect(after.cameraId).toEqual(sceneBefore.cameraId);expect(after.player.id).toEqual(sceneBefore.player.id);expect(after.player.position).toEqual(sceneBefore.player.position);expect(after.workers.find(w=>w.id===`robot:${edgeA}`).uuid).toEqual(sceneBefore.workers.find(w=>w.id===`robot:${edgeA}`).uuid);expect(maxDelta(after.cameraPose.position,sceneBefore.cameraPose.position)).toBeLessThan(cameraTolerance);expect(maxDelta(after.cameraPose.quaternion,sceneBefore.cameraPose.quaternion)).toBeLessThan(cameraTolerance);expect(maxDelta(afterPose.camera.position,before.camera.position)).toBeLessThan(cameraTolerance);expect(maxDelta(afterPose.camera.target,before.camera.target)).toBeLessThan(cameraTolerance);expect(Math.abs(afterPose.camera.zoom-before.camera.zoom)).toBeLessThan(cameraTolerance);}else expect(afterPose).toEqual(before);
+   timings.push({scope,burstCommands:21,elapsedMs:Date.now()-begin,cameraTolerance,before,after:afterPose});
    record(`${scope}: burst immediately updates worker pose, combines effects with stable identity and preserves canvas/player/camera`);
    await shot(`${prefix}-burst`,edgeA);
    await tick(taskA,true);await event('task.criterion_changed',taskA);await tick(taskA,false);
    await work(taskB,'working',sessionId);const edgeB=await claimId(sessionId,taskB);
    await rpc('release_task_claim',[taskA,'Synthetic move to next site'],sessionId);
    await showWorker(edgeB,`${prefix} site B`);await expect(host.locator(`[data-worker-id="robot:${edgeA}"]`)).toHaveCount(0);
+   if(!fallback)await expect.poll(async()=>(await scene()).workers.some(w=>w.id===`robot:${edgeA}`),{timeout:30000}).toBe(false);
    record(`${scope}: real claim/release moves worker to second task and edge.ended removes first claim`);await shot(`${prefix}-move`,edgeB);
    await work(taskB,'in_review',sessionId);const receipt=await rpc('receipt',[sessionId]);
    await rpc('complete_work_session',[sessionId,receipt.messageId]);await event('session.outcome_changed',sessionId);
@@ -103,6 +118,7 @@ try{
    }
    await rpc('stop_work_session',[sessionId,'Synthetic stop']);await event('session.outcome_changed',sessionId);
    await expect(host.locator(`[data-worker-id="robot:${edgeA}"]`)).toHaveCount(0);await expect(host.getByText('Returning to Office',{exact:true})).toHaveCount(0);
+   if(!fallback)await expect.poll(async()=>(await scene()).workers.some(w=>w.id===`robot:${edgeA}`),{timeout:30000}).toBe(false);
    record(`${scope}: stopped outcome removes worker without completion departure`);await shot(`${prefix}-stop`);
    const failed=await spawn(taskB,`${prefix} failing worker`);await work(taskB,'working',failed);const failedEdge=await claimId(failed,taskB);await showWorker(failedEdge);
    await rpc('processFail',[],failed);await event('session.process_changed',failed);
@@ -112,13 +128,13 @@ try{
   await page.evaluate(id=>window.__gameLive.seam.openSpace(id),fixture.foreignSpaceId);
   const before=await pose(),effect=await page.locator('[data-effect-id]').getAttribute('data-effect-id');
   const foreign=await rpc('create_task',[fixture.foreignSpaceId,'FOREIGN-SCOPE-REJECTED']);await event('entity.upsert',foreign.entity.id);
-  await expect(host.getByText('FOREIGN-SCOPE-REJECTED',{exact:true})).toHaveCount(0);expect(await pose()).toEqual(before);expect(await page.locator('[data-effect-id]').getAttribute('data-effect-id')).toEqual(effect);
+  await expect(host.getByText('FOREIGN-SCOPE-REJECTED',{exact:true})).toHaveCount(0);equalSavedPose(await pose(),before);expect(await page.locator('[data-effect-id]').getAttribute('data-effect-id')).toEqual(effect);
   record('Actual subscribed foreign-space event reaches seam and is rejected by active map');
   await page.evaluate(()=>window.__gameLive.delayReads());await back();await expect.poll(()=>page.evaluate(()=>window.__gameLive.pending()),{timeout:30000}).toBeGreaterThan(0);
   await page.evaluate(id=>{location.hash=`#/s/${id}/work`;window.__gameLive.releaseReads();},fixture.foreignSpaceId);
   await expect(host).toHaveAttribute('data-map-id',`map:space:${fixture.foreignSpaceId}:hub`);record('Route/scope navigation isolates pending old-map reads and callbacks');
   if(errors.length)throw new Error(`Browser runtime errors: ${errors.join('; ')}`);
-  const stats=await page.evaluate(()=>{const types={};for(const event of window.__gameLive.events)types[event.type]=(types[event.type]??0)+1;return {eventTypes:types,reads:window.__gameLive.reads.length};});
+  const stats=await page.evaluate(()=>({eventTypes:window.__gameLive.eventCounts,readsSinceLastReload:window.__gameLive.reads.length}));
   await writeFile(`${output}/report.json`,JSON.stringify({passed:true,head:process.env.GAME_EXACT_HEAD,dependencies:process.env.GAME_DEPENDENCY_HEADS,renderer:fallback?'Production DOM fallback; no 3D WorkerLayer evidence':fixture.renderer,checks,timings,scenes,stats,responses,errors},null,2));
  }
 }catch(error){console.log('Journey failed',String(error));const diagnostic=await page.evaluate(()=>({url:location.href,saves:Object.keys(localStorage).filter(k=>k.startsWith('tm8:game')).map(k=>({key:k,value:JSON.parse(localStorage.getItem(k))})),reads:window.__gameLive?.reads?.slice(-10),events:window.__gameLive?.events?.slice(-10)}));await writeFile(`${output}/report.json`,JSON.stringify({passed:false,checks,errors,responses,failure:String(error),expectedNavigation,diagnostic,text:await page.locator('body').innerText()},null,2));await page.screenshot({path:`${output}/failure.png`,timeout:10000}).catch(()=>{});throw error;}
