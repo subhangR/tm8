@@ -26,6 +26,7 @@ function entityOf(value: unknown): MapEntity | null {
   const weighted = record(n.weighted ?? n.taskProgress ?? n.progress), counts = record(n.counts), mailbox = record(n.mailbox);
   const count = num(mailbox.count) ?? num(counts.messages);
   const status = str(n.status) ?? str(n.workStatus) ?? str(record(n.status).key) ?? null;
+  const cancelledAt = str(n.cancelledAt) ?? (kind === 'task' && status === 'cancelled' ? str(n.statusChangedAt) : undefined) ?? null;
   return {
     id, kind, title: str(n.title) ?? str(n.name) ?? id,
     version: num(n.version), updatedAt: str(n.updatedAt) ?? null,
@@ -36,7 +37,8 @@ function entityOf(value: unknown): MapEntity | null {
     subtreeWeight: num(n.subtreeWeight) ?? num(weighted.size) ?? null,
     acceptance: acceptanceOf(n), ownProgress: num(n.ownProgress) ?? num(weighted.own) ?? null,
     estimateTent: bool(n.estimateTent) ?? bool(weighted.tent),
-    cancelledAt: str(n.cancelledAt) ?? (kind === 'task' && status === 'cancelled' ? str(n.statusChangedAt) : undefined) ?? null,
+    cancelledAt,
+    cancelledNotAfter: kind === 'task' && status === 'cancelled' && !cancelledAt ? str(n.cancelledNotAfter) ?? str(n.updatedAt) ?? null : null,
     terminalFromStatus: str(n.terminalFromStatus) ?? null,
     pendingAttention: num(n.pendingAttention) ?? num(counts.pendingAttention) ?? 0,
     mailbox: count === undefined ? undefined : { count, approx: bool(mailbox.approx) ?? false, basis: mailbox.basis === 'unread' ? 'unread' : 'messages' },
@@ -49,7 +51,7 @@ function edgeOf(value: unknown): MapEdge | null {
   const raw = record(value), n = { ...record(raw.props), ...raw };
   const type = str(n.type), fromId = str(n.fromId), toId = str(n.toId);
   if (!type || !fromId || !toId) return null;
-  return { id: str(n.id) ?? `${type}:${fromId}:${toId}`, type, fromId, toId, endedAt: str(n.endedAt) ?? null, status: str(n.status) ?? null };
+  return { id: str(n.id) ?? `${type}:${fromId}:${toId}`, type, fromId, toId, endedAt: str(n.endedAt) ?? null, status: str(n.status) ?? null, updatedAt: str(n.updatedAt) ?? null };
 }
 
 /** Accepts MapInput, a graph projection {nodes,edges}, or {id,kind:'story',page:StoryPage}. */

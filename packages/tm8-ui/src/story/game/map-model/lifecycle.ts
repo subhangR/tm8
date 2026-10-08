@@ -10,11 +10,15 @@ export const isActiveMapEdge = (edge: { endedAt?: string | null; status?: string
 
 /** Unknown evidence has no expiry, rather than a fabricated reload-time TTL. */
 export function rubbleLifetime(entity: MapEntity, now: number, previous?: MapPlace) {
-  if (!isCancelledTask(entity)) return { cancelledAt: null, expiresAt: null, expired: false };
+  if (!isCancelledTask(entity)) return { cancelledAt: null, expiresAt: null, removalNotAfter: null, expired: false };
   const cancelledAt = entity.cancelledAt ?? (previous?.constructionStage === 'rubble' ? previous.cancelledAt : null) ?? null;
   const at = cancelledAt && /T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(cancelledAt) ? Date.parse(cancelledAt) : NaN;
   const expiresAt = Number.isFinite(at) ? at + RUBBLE_TTL_MS : null;
-  return { cancelledAt: expiresAt === null ? null : cancelledAt, expiresAt, expired: expiresAt !== null && now >= expiresAt };
+  const bound = entity.cancelledNotAfter && /T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(entity.cancelledNotAfter) ? Date.parse(entity.cancelledNotAfter) : NaN;
+  const removalNotAfter = expiresAt === null && Number.isFinite(bound) ? bound + RUBBLE_TTL_MS : null;
+  const deadline = expiresAt ?? removalNotAfter;
+  return { cancelledAt: expiresAt === null ? null : cancelledAt, expiresAt, removalNotAfter,
+    expired: deadline !== null && now >= deadline };
 }
 
 /** Foundation anchors stay while an unshipped yard (including rubble) remains. */
