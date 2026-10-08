@@ -1,5 +1,7 @@
 import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import type { MapModel, MapPortal, MapRenderer, MapRendererProps } from '../map-model';
+import type { MapModel, MapPortal, MapRenderer, MapRendererProps, MapRobot } from '../map-model';
+import { sessionColor } from './worker-motion';
+import type { MapUpdateEffect } from '../../../game/live-map-controller';
 import { mapWalkingWorld, walkingBounds, walkingEntrance } from '../map-model/walking-world';
 import { createControl, keyDirection, WALK_KEYS, walkTo } from '../control';
 import { WorldMinimap } from '../Minimap';
@@ -23,6 +25,9 @@ export interface WalkingMapViewProps extends MapRendererProps {
   onInspect: (entityId: string) => void;
   onEnterPortal: (portal: MapPortal) => void;
   onBack?: () => void;
+  departures?: readonly MapRobot[];
+  previousModel?: MapModel | null;
+  effect?: MapUpdateEffect | null;
 }
 class RenderBoundary extends Component<{ children: ReactNode; onUnavailable: () => void }, { failed: boolean }> {
   state = { failed: false };
@@ -138,13 +143,18 @@ function WalkingMapBody(props: WalkingMapViewProps) {
     onKeyDown={keyDown} onKeyUp={event => control.keys.delete(event.key.toLowerCase())} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) control.keys.clear(); }}>
     <div className="sgm-stage">
       {webgl && palette ? <RenderBoundary onUnavailable={unavailable}><Suspense fallback={<div className="sgm-loading" role="status">Opening the map…</div>}><WalkingSceneAdapter
-        model={model} walking={walking} initial={initial.start} onUnavailable={unavailable}
+        model={model} previousModel={props.previousModel} effect={props.effect} departures={props.departures} walking={walking} initial={initial.start} onUnavailable={unavailable}
         onGround={(x, z) => { walkTo(control, x, z, null); setOverview(false); focus(); }}
         onSelectEntity={id => { const p = model.places.find(p => p.entityId === id); if (p) go(world.byId.get(p.id)!); }}
         onEnterPortal={p => go(world.byId.get(p.id)!)}/></Suspense></RenderBoundary> : null}
       {!webgl && <div className="walking-fallback" role="region" aria-label="Map places"><p>Explore the places below. Choose a place to travel, then inspect it or enter its map.</p><ul>{world.places.map(p => <li key={p.id}><span>{p.title}</span><button className="sgm-btn" onClick={() => go(p)}>Walk to {p.title}</button><button className="sgm-btn" onClick={() => act(p.id)}>{p.portal ? 'Enter' : 'Inspect'} {p.title}</button></li>)}</ul></div>}
     </div>
     <div className="sgm-hud">
+      {(model.robots.length > 0 || !!props.departures?.length) && <details className="walking-workers" open={!webgl}><summary>Workers ({model.robots.length})</summary><ul>{[...model.robots, ...(props.departures ?? [])].map(worker => <li key={worker.id} data-worker-id={worker.id}>
+        <span className="walking-worker-color" style={{ backgroundColor: sessionColor(worker.sessionId) }} aria-hidden="true"/>
+        <button className="sgm-btn" onClick={() => props.onInspect(worker.sessionId)}>{worker.label}</button>
+        <span>{props.departures?.some(row => row.id === worker.id) ? 'Returning to Office' : `${worker.pose} · ${model.places.find(place => place.entityId === worker.taskId)?.title ?? worker.taskId}`}</span>
+      </li>)}</ul></details>}
       <div className="walking-toolbar">{props.onBack && <button className="sgm-btn" onClick={props.onBack}>Back <kbd>Esc</kbd></button>}<button className="sgm-btn" onClick={toggleOverview} aria-pressed={overview}>{overview ? 'Back to explorer' : 'Map overview'} <kbd>M</kbd></button></div>
       {webgl && <details className="walking-places"><summary>Places ({world.places.length})</summary><ul>{world.places.map(p => <li key={p.id}><button className="sgm-btn" onClick={() => go(p)} title={`Walk to ${p.title}`}>{p.title}</button><button className="sgm-btn" aria-label={`${p.portal ? 'Enter' : 'Inspect'} ${p.title}`} onClick={() => act(p.id)}>{p.portal ? 'Enter' : 'Inspect'}</button></li>)}</ul></details>}
       {near && <div className="sgm-approach" role="region" aria-label="Nearby place"><div className="sgm-approach__text"><div className="sgm-approach__title">{near.title}</div><div className="sgm-approach__sub">{near.portal ? 'Portal to another map' : [near.kind.replaceAll('_', ' '), near.status?.replaceAll('_', ' '), near.progress === null ? null : `${Math.round(near.progress * 100)}% complete`].filter(Boolean).join(' · ')}</div></div><button className="sgm-btn sgm-btn--primary" onClick={() => act(near.id)}>{near.portal ? 'Enter' : 'Inspect'} <kbd>E</kbd></button></div>}
