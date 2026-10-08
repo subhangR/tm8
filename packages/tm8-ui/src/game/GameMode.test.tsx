@@ -49,7 +49,29 @@ describe('GameMode navigation', () => {
     await screen.findByText('story-b:hub');
     fireEvent.keyDown(window, { key: 'Escape' });
     await screen.findByText('story-a:hub');
-    expect(loadMap).toHaveBeenLastCalledWith({ kind: 'story', id: 'story-a' }, expect.any(AbortSignal));
+    expect(loadMap).toHaveBeenLastCalledWith({ kind: 'story', id: 'story-a' }, expect.any(AbortSignal), 'hub');
+  });
+  it('passes the selected type to the loader on portal travel, back and saved-map restore', async () => {
+    const loadMap = loader(); const screen = render(<GameMode {...defaults} loadMap={loadMap} />);
+    await screen.findByText('space:hub');
+    expect(loadMap).toHaveBeenLastCalledWith({ kind: 'space', id: 'space' }, expect.any(AbortSignal), 'hub');
+    for (const [label, type] of [['Taskland', 'taskland'], ['Office', 'office'], ['Library', 'library'], ['Code Factory', 'factory'], ['Completed Town', 'town']] as const) {
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      await screen.findByText(`space:${type}`);
+      expect(loadMap).toHaveBeenLastCalledWith({ kind: 'space', id: 'space' }, expect.any(AbortSignal), type);
+      fireEvent.click(screen.getByRole('button', { name: 'Back one map' }));
+      await screen.findByText('space:hub');
+      expect(loadMap).toHaveBeenLastCalledWith({ kind: 'space', id: 'space' }, expect.any(AbortSignal), 'hub');
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Story A' }));
+    await screen.findByText('story-a:hub');
+    expect(loadMap).toHaveBeenLastCalledWith({ kind: 'story', id: 'story-a' }, expect.any(AbortSignal), 'hub');
+    fireEvent.click(screen.getByRole('button', { name: 'Taskland' }));
+    await screen.findByText('story-a:taskland');
+    screen.unmount();
+    const reloaded = render(<GameMode {...defaults} loadMap={loadMap} />);
+    await reloaded.findByText('story-a:taskland');
+    expect(loadMap).toHaveBeenLastCalledWith({ kind: 'story', id: 'story-a' }, expect.any(AbortSignal), 'taskland');
   });
   it('inspects real entities within the map and Esc pops exactly once even when the renderer also handles it', async () => {
     const inspect = vi.fn(); const screen = render(<GameMode {...defaults} onInspect={inspect} loadMap={loader()} />);
