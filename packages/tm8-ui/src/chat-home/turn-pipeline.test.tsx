@@ -269,7 +269,9 @@ describe('review of #875', () => {
         return snapshot;
       },
     };
-    const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} />);
+    // The sidebar can say streaming before the initial detail read commits.
+    // This scenario injects a gap into an already loaded conversation.
+    const view = await openThread(port);
     await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
     const before = reads;
 

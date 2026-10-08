@@ -409,6 +409,10 @@ describe.sequential('147 — entities.status_category', () => {
         language sql stable as 'select null::jsonb';
       grant execute on function internal.task_progress(uuid) to tm8_app;
       reset role;`);
+    // Current collection reads join many kind tables. Seed statistics for this
+    // tiny historical fixture so empty projection tables do not look like
+    // thousands of rows and trigger seconds of JIT work for each category.
+    await database.query('analyze');
   }, 180_000);
 
   afterAll(async () => {
