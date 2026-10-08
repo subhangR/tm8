@@ -338,23 +338,49 @@ describe('task status transition time', () => {
     // recancellation, then perform its write after that transaction commits.
     await call('entities.commands.work', { id: F.B }, { body: { status: 'open' } });
     const older = await database.pool.connect();
-    let committed = false;
+    const newer = await database.pool.connect();
+    let olderCommitted = false;
+    let newerCommitted = false;
+    let pending: Promise<{ rows?: { status_changed_at: Date }[]; error?: unknown }> | undefined;
     try {
       await older.query('begin');
       await older.query('set local role tm8_graph_owner');
-      const started = (await older.query<{ at: Date }>('select now() at')).rows[0]!.at;
-      const since = await cursor();
-      await call('entities.commands.work', { id: F.B }, { body: { status: 'cancelled' } });
-      const cancelled = (await database.query<{ status_changed_at: Date }>(
-        'select status_changed_at from public.tasks where entity_id=$1', [F.B],
-      ))[0]!.status_changed_at;
-      expect(cancelled.getTime()).toBeGreaterThan(started.getTime());
       await older.query(`select set_config('tm8.identity_id',$1,true)`, [IDENTITY]);
-      const reopened = (await older.query<{ status_changed_at: Date }>(
-        `update public.tasks set work_status='open' where entity_id=$1 returning status_changed_at`, [F.B],
+      const started = (await older.query<{ at: Date; pid: number }>('select now() at, pg_backend_pid() pid')).rows[0]!;
+      const since = await cursor();
+      await newer.query('begin');
+      await newer.query('set local role tm8_graph_owner');
+      await newer.query(`select set_config('tm8.identity_id',$1,true)`, [IDENTITY]);
+      const newerPid = (await newer.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid;
+      const cancelled = (await newer.query<{ status_changed_at: Date }>(
+        `update public.tasks set work_status='cancelled' where entity_id=$1 returning status_changed_at`, [F.B],
       )).rows[0]!.status_changed_at;
+      expect(cancelled.getTime()).toBeGreaterThan(started.at.getTime());
+      // The older transaction now waits on the row held by the newer one.
+      // Observe the actual PostgreSQL wait instead of guessing with a sleep.
+      let settled = false;
+      pending = older.query<{ status_changed_at: Date }>(
+        `update public.tasks set work_status='open' where entity_id=$1 returning status_changed_at`, [F.B],
+      ).then((result) => { settled = true; return { rows: result.rows }; },
+        (error: unknown) => { settled = true; return { error }; });
+      let waited = false;
+      const deadline = Date.now() + 15_000;
+      for (let attempt = 0; attempt < 200 && Date.now() < deadline; attempt++) {
+        const activity = await database.query<{ waiting: boolean }>(
+          `select wait_event_type='Lock' and $2 = any(pg_blocking_pids(pid)) waiting
+             from pg_stat_activity where pid=$1`, [started.pid, newerPid],
+        );
+        if (activity[0]?.waiting === true) { waited = true; break; }
+        if (settled) break;
+      }
+      expect(waited, 'older writer must be observed waiting for the newer row lock').toBe(true);
+      await newer.query('commit');
+      newerCommitted = true;
+      const result = await pending;
+      if (result.error) throw result.error;
+      const reopened = result.rows![0]!.status_changed_at;
       await older.query('commit');
-      committed = true;
+      olderCommitted = true;
       expect(reopened.getTime()).toBeGreaterThanOrEqual(cancelled.getTime());
       expect(await gameEvents(since, F.B)).toEqual([
         expect.objectContaining({ type: 'task.status_changed', from: 'open', to: 'cancelled', occurredAt: cancelled.toISOString() }),
@@ -373,7 +399,12 @@ describe('task status transition time', () => {
         'select status_changed_at from public.tasks where entity_id=$1', [F.B],
       ))[0]!.status_changed_at.toISOString()).toBe(recancelled.toISOString());
     } finally {
-      if (!committed) await older.query('rollback');
+      // Release the blocker first so even a failed wait assertion cannot leak
+      // a row-lock waiter or hang the suite's scratch-database teardown.
+      if (!newerCommitted) await newer.query('rollback');
+      await pending;
+      if (!olderCommitted) await older.query('rollback');
+      newer.release();
       older.release();
     }
   });
