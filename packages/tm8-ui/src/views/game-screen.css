@@ -1,0 +1,6 @@
+.game-screen { display: flex; width: 100%; height: 100%; min-height: 0; position: relative; }
+.game-screen__map { flex: 1; min-width: 0; min-height: 0; }
+.game-screen__inspection { width: min(440px, 50%); min-height: 0; overflow: auto; border-left: 1px solid var(--pn-line); background: var(--pn-surface); }
+@media (max-width: 720px) {
+  .game-screen__inspection { position: absolute; inset: 0 0 0 auto; width: min(440px, 100%); z-index: 1; }
+}

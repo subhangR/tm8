@@ -4,8 +4,12 @@ import { Suspense, useEffect, useMemo, useRef, type ReactNode, type ComponentRef
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, OrbitControls } from '@react-three/drei';
 import { BufferGeometry, Float32BufferAttribute, OrthographicCamera, Vector3 } from 'three';
-import type { MapModel, MapPlace, MapRendererProps, MapType } from '../map-model';
+import type { MapModel, MapPlace, MapRenderer, MapRendererProps, MapRobot, MapType } from '../map-model';
+import { WorkerLayer } from './WorkerLayer';
+import type { MapUpdateEffect } from '../../../game/live-map-controller';
+import { TasklandPlotCues, TasklandDistrictCues, ShippingYardGate, tasklandLabels, tasklandPlotDetail } from './TasklandVisuals';
 import { MapAsset } from './MapAsset';
+import { ContextGuard, Player, type PlayerProps } from '../scene';
 
 export const MAP_META: Record<MapType, { title: string; subtitle: string; color: string; ground: string }> = {
   hub: { title: 'The living atlas', subtitle: 'One world. Every place connected.', color: colors.hubAccent, ground: colors.hubGround },
@@ -18,12 +22,16 @@ export const MAP_META: Record<MapType, { title: string; subtitle: string; color:
 export const STATUS_COLORS: Record<string, string> = { working: colors.working, blocked: colors.blocked, done: colors.done, complete: colors.done, to_do: colors.todo, in_review: colors.review };
 export interface RenderStats { calls: number; triangles: number; frameMs: number; geometries: number; textures: number; medianMs: number; p95Ms: number; samples: number }
 export interface MapSceneProps extends MapRendererProps {
+  departures?: readonly MapRobot[];
+  previousModel?: MapModel | null;
+  effect?: MapUpdateEffect | null;
+  walking?: PlayerProps; onGround?: (x: number, z: number) => void; onUnavailable?: () => void;
   lighting?: 'morning' | 'noon' | 'evening'; hierarchy?: boolean; footprints?: boolean;
   fitToken?: number; focus?: MapPlace | null; gallery?: boolean;
   onHover?: (id: string | null) => void; onStats?: (stats: RenderStats) => void;
 }
-function Box({ position, size, color, children }: { position: [number, number, number]; size: [number, number, number]; color: string; children?: ReactNode }) {
-  return <mesh position={position} castShadow receiveShadow><boxGeometry args={size}/><meshStandardMaterial color={color} roughness={.85}/>{children}</mesh>;
+function Box({ position, size, color, children, onClick }: { position: [number, number, number]; size: [number, number, number]; color: string; children?: ReactNode; onClick?: (x: number, z: number) => void }) {
+  return <mesh position={position} castShadow receiveShadow onClick={onClick ? e => { e.stopPropagation(); onClick(e.point.x, e.point.z); } : undefined}><boxGeometry args={size}/><meshStandardMaterial color={color} roughness={.85}/>{children}</mesh>;
 }
 function CameraRig({ model, fitToken, focus, gallery }: Pick<MapSceneProps, 'model'|'fitToken'|'focus'|'gallery'>) {
   const control = useRef<ComponentRef<typeof OrbitControls>>(null);
@@ -57,7 +65,7 @@ function Plot({ p, model, selected, hierarchy, footprints, onSelect, onHover }: 
     <mesh position-y={-.02} receiveShadow><cylinderGeometry args={[size*.72,size*.72,.13,6]}/><meshStandardMaterial color={selected?colors.selectedPlot:colors.plot}/></mesh>
     <Box position={[0,.07,size*.64]} size={[size*1.1,.12,.13]} color={color}/>
     {footprints && <Line points={[[-p.footprint,0,-p.footprint],[p.footprint,0,-p.footprint],[p.footprint,0,p.footprint],[-p.footprint,0,p.footprint],[-p.footprint,0,-p.footprint]]} color={color} lineWidth={1} dashed dashSize={.3} gapSize={.3}/>}
-    <mesh rotation-x={-Math.PI/2} position-y={.025}><circleGeometry args={[size*.6,24]}/><meshBasicMaterial color={colors.contactShadow} transparent opacity={.12} depthWrite={false}/></mesh><MapAsset assetKey={p.assetKey} stage={p.constructionStage} status={p.status} size={size} />
+    <mesh rotation-x={-Math.PI/2} position-y={.025}><circleGeometry args={[size*.6,24]}/><meshBasicMaterial color={colors.contactShadow} transparent opacity={.12} depthWrite={false}/></mesh><MapAsset assetKey={p.assetKey} stage={p.constructionStage} status={p.status} size={size} />{model.type==='taskland'&&<TasklandPlotCues place={p} size={size}/>}
 
     {hierarchy && children && <Line points={boundary} color={colors.compoundBoundary} lineWidth={2}/>}
     {p.status==='blocked' && <group position={[size*.58,.7,0]}><Box position={[0,0,0]} size={[.1,1.2,.1]} color={colors.flagPost}/><Box position={[.15,.38,0]} size={[.5,.35,.08]} color={colors.flag}/></group>}
@@ -68,11 +76,11 @@ function HexGrid({width,depth,x,z}:{width:number;depth:number;x:number;z:number}
   useEffect(()=>()=>geometry.dispose(),[geometry]);
   return <lineSegments geometry={geometry}><lineBasicMaterial color={colors.hexGrid} transparent opacity={.16}/></lineSegments>;
 }
-function Landscape({ model, gallery }: {model:MapModel;gallery?:boolean}) {
+function Landscape({ model, gallery, onGround }: {model:MapModel;gallery?:boolean;onGround?: (x:number,z:number)=>void}) {
   const b=model.bounds, w=b.maxX-b.minX+13,d=b.maxZ-b.minZ+13,cx=(b.minX+b.maxX)/2,cz=(b.minZ+b.maxZ)/2;
   return <group>
     <Box position={[cx,-.62,cz]} size={[w,1.15,d]} color={colors.islandSide}/>
-    <Box position={[cx,-.08,cz]} size={[w,.2,d]} color={MAP_META[model.type].ground}/><HexGrid width={w} depth={d} x={cx} z={cz}/>
+    <Box position={[cx,-.08,cz]} size={[w,.2,d]} color={MAP_META[model.type].ground} onClick={onGround}/><HexGrid width={w} depth={d} x={cx} z={cz}/>
     <Box position={[cx,-.72,cz]} size={[w+2,.2,d+2]} color={colors.islandRim}/>
     <mesh rotation-x={-Math.PI/2} position={[cx,-1.03,cz]} receiveShadow><planeGeometry args={[w*10,d*10]}/><meshStandardMaterial color={colors.water} roughness={.65}/></mesh>
     {!gallery&&Array.from({length:16},(_,i)=>{const horizontal=i<8;const n=i%8; const x=horizontal?cx-w*.43+n*w*.12:(i%2?b.minX-4:b.maxX+4);const z=horizontal?(i%2?b.minZ-4:b.maxZ+4):cz-d*.43+n*d*.12;return <group key={i} position={[x,0,z]}><MapAsset assetKey={i%3?(i%2?'tree-pine':'decor.tree'):'decor.rock'} size={i%3?2.1:1.2}/></group>;})}
@@ -89,7 +97,8 @@ function SceneContent(props:MapSceneProps & {labels:WorldLabel[];nodes:MutableRe
   return <>
     <color attach="background" args={[colors.sky]}/><hemisphereLight args={[colors.hemisphereSky,colors.hemisphereGround,1.4]}/>
     <directionalLight position={[cx-span*.5,span,cz+span*.3]} color={warmth} intensity={2.5} castShadow shadow-mapSize={[1024,1024]} shadow-camera-left={-span} shadow-camera-right={span} shadow-camera-top={span} shadow-camera-bottom={-span} shadow-camera-far={span*4} shadow-normalBias={.05}/>
-    <Landscape model={model} gallery={props.gallery}/>{model.type!=='hub'&&!props.gallery&&<group position={[model.bounds.minX+3,.15,model.bounds.minZ-3]}><MapAsset assetKey={model.type==='town'?'shipping-yard':model.type==='taskland'?'cart':model.type==='factory'?'code-factory':model.type} size={model.type==='taskland'?3:6}/></group>}
+    <Landscape model={props.walking?.bounds ? { ...model, bounds: props.walking.bounds } : model} gallery={props.gallery} onGround={props.onGround}/>{model.type!=='hub'&&model.type!=='town'&&!props.gallery&&<group position={[model.bounds.minX+3,.15,model.bounds.minZ-3]}><MapAsset assetKey={model.type==='taskland'?'cart':model.type==='factory'?'code-factory':model.type} size={model.type==='taskland'?3:6}/></group>}
+    <TasklandDistrictCues model={model}/><ShippingYardGate model={model}/>
     {props.hierarchy && model.groups.map(g=><group key={g.id}><Line points={[[g.bounds.minX,.08,g.bounds.minZ],[g.bounds.maxX,.08,g.bounds.minZ],[g.bounds.maxX,.08,g.bounds.maxZ],[g.bounds.minX,.08,g.bounds.maxZ],[g.bounds.minX,.08,g.bounds.minZ]]} color={g.depth?colors.childBoundary:colors.rootBoundary} lineWidth={g.depth?1:3}/></group>)}
     {model.paths.map(p=><Route key={p.id} points={p.points}/>)}
     {!props.gallery&&model.places.filter(p=>p.parentId).map(p=>{const parent=model.places.find(q=>q.entityId===p.parentId);return parent?<Route key={`walk:${p.id}`} points={[{x:parent.x,z:parent.z+parent.radius},{x:p.x,z:p.z-p.radius}]}/>:null;})}
@@ -97,25 +106,27 @@ function SceneContent(props:MapSceneProps & {labels:WorldLabel[];nodes:MutableRe
     {model.places.map(p=><Plot key={p.id} p={p} model={model} selected={props.selectedEntityId===p.entityId} hierarchy={props.hierarchy} footprints={props.footprints} onSelect={props.onSelectEntity} onHover={props.onHover}/>)}
     {model.portals.map(p=><group key={p.id} position={[p.x,.12,p.z]} onClick={e=>{e.stopPropagation();props.onEnterPortal?.(p);}} onPointerOver={()=>{document.body.style.cursor='pointer';}} onPointerOut={()=>{document.body.style.cursor='';}}><Box position={[0,0,0]} size={[p.radius*2,.25,p.radius*2]} color={colors.portalPad}/><MapAsset assetKey={p.assetKey} size={p.radius*1.5}/></group>)}
     {model.decor.filter(p=>!model.portals.some(q=>q.x===p.x&&q.z===p.z)).map(p=><group key={p.id} position={[p.x,.12,p.z]}><MapAsset assetKey={p.assetKey} size={p.radius*1.5}/></group>)}
-    {model.robots.map(p=><group key={p.id} position={[p.x,.2,p.z]}><MapAsset assetKey={p.assetKey} size={1.2} status={p.pose}/></group>)}
+    <WorkerLayer model={model} departures={props.departures} reduced={props.walking?.reduced}/>
 
-    <LabelProjector labels={props.labels} nodes={props.nodes}/><CameraRig model={model} fitToken={props.fitToken} focus={props.focus} gallery={props.gallery}/><Metrics model={model} onStats={props.onStats}/>
+    <LabelProjector labels={props.labels} nodes={props.nodes}/>{props.walking ? <Player {...props.walking}/> : <CameraRig model={model} fitToken={props.fitToken} focus={props.focus} gallery={props.gallery}/>}
+    {props.onUnavailable && <ContextGuard onUnavailable={props.onUnavailable}/> }<Metrics model={model} onStats={props.onStats}/>
   </>;
 }
-interface WorldLabel {id:string;title:string;detail:string;x:number;y:number;z:number;selected?:boolean;priority:number}
+interface WorldLabel {id:string;title:string;detail:string;x:number;y:number;z:number;selected?:boolean;priority:number;cue?:string;entityId?:string}
 function LabelProjector({labels,nodes}:{labels:WorldLabel[];nodes:MutableRefObject<Map<string,HTMLDivElement>>}){
   const point=useRef(new Vector3());
   useFrame(({camera,size})=>{const occupied:{x:number;y:number;width:number}[]=[];for(const label of labels){const node=nodes.current.get(label.id);if(!node)continue;point.current.set(label.x,label.y,label.z).project(camera);const x=(point.current.x*.5+.5)*size.width,y=(-point.current.y*.5+.5)*size.height;const width=label.detail==='Imported CC0'?110:158;const hidden=point.current.z>1||x<30||x>size.width-30||y<100||y>size.height-65||(!label.selected&&occupied.some(p=>Math.abs(p.x-x)<(p.width+width)/2+5&&Math.abs(p.y-y)<43));node.style.display=hidden?'none':'block';if(!hidden){occupied.push({x,y,width});node.style.transform=`translate(${x}px,${y}px) translate(-50%,0)`;}}});
   return null;
 }
-export function MapScene(props:MapSceneProps) {
+export const MapScene: MapRenderer<ReactNode, MapSceneProps> = (props) => {
   const nodes=useRef(new Map<string,HTMLDivElement>());
   useEffect(()=>()=>{document.body.style.cursor='';},[props.model]);
   const labels=useMemo(()=>{
-    const result:WorldLabel[]=props.model.places.filter(p=>p.depth<2||props.focus||p.entityId===props.selectedEntityId).map(p=>({id:p.id,title:p.title,detail:p.kind==='asset'?'Imported CC0':`${p.parentId?'Nested · ':''}${p.progress===null?'Progress unknown':`${Math.round(p.progress*100)}%`}${p.status?` · ${p.status.replaceAll('_',' ')}`:''}`,x:p.x,y:.7,z:p.z+p.radius*1.2+1.3,selected:p.entityId===props.selectedEntityId,priority:p.entityId===props.selectedEntityId?-1:p.depth}));
+    const result:WorldLabel[]=props.model.places.filter(p=>p.depth<2||props.focus||p.entityId===props.selectedEntityId).map(p=>({id:p.id,title:p.title,detail:props.model.type==='taskland'?tasklandPlotDetail(p):p.kind==='asset'?'Imported CC0':`${p.parentId?'Nested · ':''}${p.progress===null?'Progress unknown':`${Math.round(p.progress*100)}%`}${p.status?` · ${p.status.replaceAll('_',' ')}`:''}`,x:p.x,y:.7,z:p.z+p.radius*1.2+1.3,selected:p.entityId===props.selectedEntityId,priority:p.entityId===props.selectedEntityId?-1:p.depth}));
+    result.push(...tasklandLabels(props.model));
     result.push(...props.model.portals.map(p=>({id:p.id,title:p.label,detail:'Enter map ↗',x:p.x,y:.5,z:p.z+p.radius+1.4,priority:0})));
     if(props.hierarchy)result.push(...props.model.groups.filter(g=>g.depth===0&&g.placeIds.length>1).map(g=>({id:g.id,title:g.label,detail:'Compound district',x:g.bounds.minX,y:.4,z:g.bounds.maxZ+2,priority:10})));
     return result.sort((a,b)=>a.priority-b.priority);
   },[props.model,props.selectedEntityId,props.hierarchy,props.focus]);
-  return <><Canvas shadows onCreated={({gl})=>{const context=gl.getContext(),ext=context.getExtension('WEBGL_debug_renderer_info');if(ext&&/swiftshader/i.test(String(context.getParameter(ext.UNMASKED_RENDERER_WEBGL))))gl.shadowMap.enabled=false;}} orthographic camera={{position:[40,50,40],zoom:10,far:3000}} dpr={1} gl={{antialias:true,alpha:false,powerPreference:'high-performance'}}><Suspense fallback={null}><SceneContent {...props} labels={labels} nodes={nodes}/></Suspense></Canvas><div style={{position:'absolute',inset:0,pointerEvents:'none',overflow:'hidden'}}>{labels.map(l=><div key={l.id} ref={node=>{if(node)nodes.current.set(l.id,node);else nodes.current.delete(l.id);}} style={{position:'absolute',left:0,top:0,display:'none'}}><div className="ms-label" style={l.detail==='Imported CC0'?{maxWidth:110,fontSize:10}:undefined} data-selected={l.selected}>{l.title}<small>{l.detail}</small></div></div>)}</div>{props.model.places.length===0&&props.model.portals.length===0&&<div className="ms-loading">No entities in this map’s scope.</div>}</>;
+  return <><Canvas shadows onCreated={({gl})=>{const context=gl.getContext(),ext=context.getExtension('WEBGL_debug_renderer_info');if(ext&&/swiftshader/i.test(String(context.getParameter(ext.UNMASKED_RENDERER_WEBGL))))gl.shadowMap.enabled=false;}} orthographic camera={{position:[40,50,40],zoom:10,far:3000}} dpr={1} gl={{antialias:true,alpha:false,powerPreference:'high-performance'}}><Suspense fallback={null}><SceneContent {...props} labels={labels} nodes={nodes}/></Suspense></Canvas><div style={{position:'absolute',inset:0,pointerEvents:'none',overflow:'hidden'}}>{labels.map(l=><div key={l.id} ref={node=>{if(node)nodes.current.set(l.id,node);else nodes.current.delete(l.id);}} style={{position:'absolute',left:0,top:0,display:'none'}}><div className="ms-label" style={l.detail==='Imported CC0'?{maxWidth:110,fontSize:10}:undefined} data-selected={l.selected} data-map-cue={l.cue}>{l.title}<small>{l.detail}</small></div></div>)}</div>{props.model.places.length===0&&props.model.portals.length===0&&<div className="ms-loading">No entities in this map’s scope.</div>}</>;
 }

@@ -6,10 +6,18 @@ export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number
 export type ConstructionStage = 'lot' | 'foundation' | 'scaffolding' | 'walls' | 'topped-out' | 'complete' | 'rubble' | 'shipped-marker';
 export interface MapEntity {
   id: string; kind: string; title: string; parentId?: string | null;
+  version?: number; updatedAt?: string | null;
   status?: string | null; statusCategory?: string | null; createdAt?: string | null;
   /** Authoritative weighted fraction, 0..1. Null means unknown, not zero. */
   progress?: number | null; pointsEstimate?: number | null; subtreeWeight?: number | null;
-  pendingAttention?: number; mailbox?: { count: number; approx?: boolean };
+  /** Summary counts or detail criteria, normalized at the projection boundary. */
+  acceptance?: { total: number; completed: number };
+  ownProgress?: number | null; estimateTent?: boolean;
+  /** Authoritative cancellation transition time, never entity updatedAt or load time. */
+  cancelledAt?: string | null;
+  /** Event evidence for cold-load terminal-lot placement; never inferred from timestamps. */
+  terminalFromStatus?: string | null;
+  pendingAttention?: number; mailbox?: { count: number; approx?: boolean; basis?: 'messages' | 'unread' };
   processState?: string | null; outcome?: string | null; endedKind?: string | null; live?: boolean;
   storyIds?: readonly string[]; spaceId?: string;
 }
@@ -22,10 +30,15 @@ export interface MapInput {
   /** A pre-filtered snapshot must identify its scope. Otherwise memberships filter it. */
   scope?: MapScope;
   warnings?: readonly string[];
+  /** True only when the primary read completed the admitted task hierarchy. */
+  taskHierarchyComplete?: boolean;
+  /** Authoritative persisted town locations; storage/UI own expiry and permission filtering. */
+  townPlacements?: readonly TownPlacement[];
 }
+export interface TownPlacement extends Point { entityId: string; actorId?: string; layer?: string }
 export interface PlaceEnrichment {
   assetKey: string; label: string; badges: string[];
-  mailbox: { count: number; approx?: boolean } | null;
+  mailbox: { count: number; approx?: boolean; basis?: 'messages' | 'unread' } | null;
   attention: number;
 }
 export type KindAdapter = (entity: Readonly<MapEntity>, context: { type: MapType; isRoot: boolean }) => Partial<PlaceEnrichment>;
@@ -35,6 +48,8 @@ export interface MapPlace extends Point, PlaceEnrichment {
   /** Building radius and diagnostic root-centred bounding-circle radius. Collision uses compoundBounds. */
   radius: number; footprint: number; compoundBounds: Bounds;
   status: string | null; progress: number | null; constructionStage: ConstructionStage;
+  subtreeWeight?: number | null; sizeBucket?: number; estimateMissing?: boolean;
+  cancelledAt?: string | null; rubbleExpiresAt?: number | null;
   workStatus: string | null; processState?: string | null; outcome?: string | null; endedKind?: string | null; role: 'entity' | 'shipped-marker';
 }
 export interface MapGroup {
@@ -70,10 +85,16 @@ export interface MapModel {
   places: MapPlace[]; groups: MapGroup[]; roads: MapRoad[]; paths: MapPath[];
   robots: MapRobot[]; decor: MapDecor[]; portals: MapPortal[];
   bounds: Bounds; layout: LayoutCache; warnings: string[];
+  /** Earliest authoritative rubble expiry. Event owner schedules a rebuild at this epoch-ms. */
+  nextLifecycleAt?: number | null;
+  /** Stable Town gate anchor and the single source of truth for waiting shipped entities. */
+  shippingYard?: { position: Point; waitingIds: readonly string[] };
 }
 export interface BuildMapOptions {
   type: MapType; scope: MapScope; previous?: MapModel;
   adapters?: Readonly<Record<string, KindAdapter>>;
+  /** Epoch-ms sampled once per build. Inject a clock value for replay and expiry tests. */
+  now?: number;
 }
 /** React implementations can satisfy MapRenderer<ReactNode> without coupling the model to React. */
 export interface MapRendererProps {
@@ -81,4 +102,4 @@ export interface MapRendererProps {
   onSelectEntity?: (entityId: string) => void;
   onEnterPortal?: (portal: MapPortal) => void;
 }
-export type MapRenderer<Result = unknown> = (props: MapRendererProps) => Result;
+export type MapRenderer<Result = unknown, Props extends MapRendererProps = MapRendererProps> = (props: Props) => Result;

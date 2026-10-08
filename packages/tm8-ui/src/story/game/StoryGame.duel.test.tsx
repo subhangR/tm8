@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import { StoryGame } from './StoryGame';
 import { STORY_FIXTURE } from '../fixture';
 import { storyGameStore } from './store';
 import type { SceneProps } from './scene';
+import { walkingWorld } from './map-model/walking';
 
 vi.mock('./palette', async (original) => ({ ...await original<typeof import('./palette')>(), hasWebGL: () => true }));
-vi.mock('./scene', () => ({ default: ({ world, onNear }: SceneProps) => {
+vi.mock('./scene', () => ({ default: ({ model, navigation, onNear }: SceneProps) => {
+  const world = useMemo(() => walkingWorld(model, navigation), [model, navigation]);
   useEffect(() => { onNear(world.places.find((p) => p.root && p.encounters.some((e) => e.phase === 'active'))!.id); }, [world, onNear]);
   return <div data-testid="mock-world" />;
 } }));
