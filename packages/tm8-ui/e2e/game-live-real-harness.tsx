@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { GateApp } from '../src/views/GateApp';
 import { createRealSeam } from '../src/data/real/seam-real';
 import { browserWebSocketFactory } from '../src/data/real/socket';
+import { createdIdOf } from '../src/authoring/commands';
 import '../src/styles/tokens.css';
 import '../src/styles/canvas-extra.css';
 import '../src/styles/app.css';
@@ -24,7 +25,7 @@ for(const name of ['query','entity','graph'] as const){
   reads.push({name,args,start,end:performance.now()});return result;
  };
 }
-Object.assign(window,{__gameLive:{events,reads,seam,
+Object.assign(window,{__gameLive:{events,reads,seam,spawn:async(input:any)=>createdIdOf(await seam.commands.spawn(input)),
  delayReads:()=>{delayed=true;},releaseReads:()=>{delayed=false;pending.splice(0).forEach(resolve=>resolve());},pending:()=>pending.length}});
 if(!location.hash)location.hash=`#/s/${setup.spaceId}/work`;
 createRoot(document.getElementById('root')!).render(<GateApp seam={seam}/>);

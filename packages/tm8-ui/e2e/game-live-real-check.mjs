@@ -2,26 +2,113 @@ import {chromium,expect} from '@playwright/test';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 const fixture=JSON.parse(await readFile(process.env.GAME_FIXTURE_FILE??'/tmp/tm8-live-verifier-infra-01a11c29/fixture.json','utf8'));
 const output=process.env.GAME_EVIDENCE_DIR??'/tmp/tm8-live-verifier-evidence-01a11c29';await mkdir(output,{recursive:true});
-const checks=[],errors=[],responses=[];
-const browser=await chromium.launch({headless:true,args:['--no-sandbox','--no-zygote','--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-dev-shm-usage']});
+const checks=[],errors=[],responses=[],timings=[],sessions=[];
+console.log('Launching isolated Chromium');
+const browser=await chromium.launch({headless:true,args:['--no-sandbox','--no-zygote','--single-process','--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-dev-shm-usage']});
+console.log('Chromium launched');
+process.on('SIGTERM',()=>browser.close().finally(()=>process.exit(143)));
 const page=await browser.newPage({viewport:{width:1440,height:960},reducedMotion:process.env.GAME_REDUCED_MOTION==='1'?'reduce':'no-preference'});
-page.setDefaultTimeout(30000);page.on('pageerror',e=>errors.push(e.message));
+console.log('Page created');page.setDefaultTimeout(60000);page.on('pageerror',e=>{errors.push(e.message);console.log('Browser error',e.message);});
 page.on('response',r=>{if(new URL(r.url()).pathname.startsWith('/v2/'))responses.push({url:new URL(r.url()).pathname,status:r.status()});});
 await page.addInitScript(setup=>window.__GAME_LIVE_SETUP__=setup,fixture);
 const record=text=>{checks.push(text);console.log(text);};
 const rpc=async(op,args,sessionId)=>{const response=await fetch(fixture.controlUrl,{method:'POST',body:JSON.stringify({op,args,sessionId})});const body=await response.json();if(!response.ok)throw new Error(`${op}: ${JSON.stringify(body)}`);return body;};
-const save=()=>page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('tm8:game:v1:'));return key?JSON.parse(localStorage.getItem(key)):null;});
+const save=()=>page.evaluate(spaceId=>{for(const key of Object.keys(localStorage)){if(!key.startsWith('tm8:game:v1:'))continue;const value=JSON.parse(localStorage.getItem(key));if(value.spaceId===spaceId)return value;}return null;},fixture.spaceId);
 const host=page.getByTestId('walking-map');
-const enter=async title=>{const details=host.locator('details.walking-places');if(await details.count()&&!await details.evaluate(el=>el.open))await details.locator('summary').click();await host.getByRole('button',{name:`Enter ${title}`,exact:true}).click();};
-const waitMap=async(type,kind,id)=>{await expect.poll(async()=>{const v=await save();return v?.current;}).toMatchObject({type,scope:{kind,id}});await expect(host).toHaveAttribute('data-map-id',`map:${kind}:${id}:${type}`);await host.locator('canvas[data-engine]').waitFor();};
+const enter=async title=>{const details=host.locator('details.walking-places');if(await details.count())await details.evaluate(el=>el.open=true);await host.getByRole('button',{name:`Enter ${title}`,exact:true}).evaluate(el=>setTimeout(()=>el.click(),0));};
+let expectedNavigation;
+const waitMap=async(type,kind,id)=>{expectedNavigation={type,scope:{kind,id}};console.log('Waiting for map',expectedNavigation);await expect.poll(async()=>{const v=await save();return v?.current;},{timeout:60000}).toMatchObject(expectedNavigation);await expect(host).toHaveAttribute('data-map-id',`map:${kind}:${id}:${type}`);await host.locator('canvas').first().waitFor();await expect.poll(()=>host.locator('.ms-label').evaluateAll(nodes=>nodes.filter(n=>n.parentElement.style.display!=='none').length),{timeout:60000}).toBeGreaterThan(0);};
+const back=()=>host.getByRole('button',{name:/^Back/}).first().evaluate(el=>setTimeout(()=>el.click(),0));
+const event=async(type,id)=>expect.poll(()=>page.evaluate(({type,id})=>window.__gameLive.events.some(e=>e.type===type&&(!id||[e.taskId,e.sessionId,e.entity?.id,e.edge?.source?.id,e.sourceId].includes(id))),{type,id}),{timeout:30000}).toBe(true);
+const work=(id,status,sessionId)=>rpc('set_work_state',[id,status,null,null,'Synthetic journey',crypto.randomUUID(),false,true],sessionId);
+const spawn=async(taskId,title)=>{
+ const sessionId=await page.evaluate(async input=>window.__gameLive.spawn(input),{clientMutationId:crypto.randomUUID(),spaceId:fixture.spaceId,teamMemberId:fixture.teamMemberId,
+  taskIds:[taskId],workdir:{mode:'scratch'},mode:'worker',model:'claude-sonnet-4-5',agentTool:'claude-code',accessMode:'fullAccess',credentialSources:{anthropic:'node',github:'node'},title,harnessSurface:'minimal',cols:80,rows:24});
+ if(!sessionId)throw new Error('No native synthetic session created');sessions.push(sessionId);await event('session.process_changed',sessionId);return sessionId;
+};
+const claimId=async(sessionId,taskId)=>{
+ await expect.poll(()=>page.evaluate(({sessionId,taskId})=>window.__gameLive.events.filter(e=>e.type==='edge.upsert'&&e.edge.type==='working_on'&&e.edge.source.id===sessionId&&e.edge.target.id===taskId).at(-1)?.edge.id,{sessionId,taskId}),{timeout:30000}).toBeTruthy();
+ return page.evaluate(({sessionId,taskId})=>window.__gameLive.events.filter(e=>e.type==='edge.upsert'&&e.edge.type==='working_on'&&e.edge.source.id===sessionId&&e.edge.target.id===taskId).at(-1).edge.id,{sessionId,taskId});
+};
+const showWorker=async(id,text)=>{const row=host.locator(`[data-worker-id="robot:${id}"]`);await row.waitFor({state:'attached'});await host.locator('details.walking-workers').evaluate(el=>el.open=true);if(text)await expect(row).toContainText(text);return row;};
+const shot=async(name)=>{await host.locator('canvas').first().waitFor();await expect.poll(()=>host.locator('.ms-label').evaluateAll(nodes=>nodes.filter(n=>n.parentElement.style.display!=='none').length),{timeout:30000}).toBeGreaterThan(0);await page.screenshot({path:`${output}/${name}.png`,timeout:30000});};
+const tick=async(taskId,done)=>page.evaluate(async({taskId,done})=>{
+ const detail=await window.__gameLive.seam.entity(taskId);const response=await fetch(`/v2/entities/${taskId}/commands/tick`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({clientMutationId:crypto.randomUUID(),expectedVersion:detail.version,criterionIds:['proof'],done})});
+ if(!response.ok)throw new Error(`Tick failed ${response.status}: ${await response.text()}`);
+},{taskId,done});
+const pose=async()=>{await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));const value=await save();return value.maps[JSON.stringify([value.current.scope.kind,value.current.scope.id,value.current.type])];};
 try{
  await page.goto('http://127.0.0.1:18533/e2e/game-live-real-harness.html');
+ console.log('Real harness loaded');
+ console.log('Initial body', (await page.locator('body').innerText()).slice(0,1000));
  await page.getByTestId('tws-view-select').click();await page.getByRole('menuitemradio',{name:'Game',exact:true}).click();
  await waitMap('hub','space',fixture.spaceId);await enter('Taskland');await waitMap('taskland','space',fixture.spaceId);
  record('Shipping GateApp/GameScreen/GameMode space Taskland loaded through real seam');
  await page.screenshot({path:`${output}/initial-space.png`});
  await writeFile(`${output}/probe.json`,JSON.stringify({checks,errors,responses,text:await page.locator('body').innerText()},null,2));
- if(process.env.GAME_PROBE_ONLY==='1')process.exitCode=0;
- else throw new Error('Full journey pending owner heads');
-}catch(error){await page.screenshot({path:`${output}/failure.png`});await writeFile(`${output}/report.json`,JSON.stringify({passed:false,checks,errors,responses,failure:String(error),text:await page.locator('body').innerText()},null,2));throw error;}
+ if(process.env.GAME_PROBE_ONLY!=='1'){
+  for(const scope of ['space','story']){
+   if(scope==='story'){await back();await waitMap('hub','space',fixture.spaceId);await enter('Synthetic live-worker story');await waitMap('hub','story',fixture.storyId);await enter('Taskland');await waitMap('taskland','story',fixture.storyId);}
+   const prefix=`${scope}-${process.env.GAME_REDUCED_MOTION==='1'?'reduced':'motion'}`;
+   const create=async title=>{const result=await rpc('create_task',[fixture.spaceId,title,null,'Synthetic fixture',{},null,null,'medium',JSON.stringify([{id:'proof',text:'Verification proof',done:false}]),3]);const id=result.entity.id;await rpc('set_collection_item',[fixture.storyId,id]);return id;};
+   const taskA=await create(`${prefix} site A`),taskB=await create(`${prefix} site B`);
+   await expect(host.getByText(`${prefix} site A`,{exact:true}).first()).toBeAttached();
+   record(`${scope}: authoritative task creation admitted and rendered`);
+   const sessionId=await spawn(taskA,`${prefix} synthetic worker`),edgeA=await claimId(sessionId,taskA);
+   await showWorker(edgeA,`${prefix} site A`);await shot(`${prefix}-start`);
+   const sessionDetail=await page.evaluate(id=>window.__gameLive.seam.entity(id),sessionId);
+   expect(sessionDetail.storyIds??[]).toEqual([]);
+   record(`${scope}: native synthetic PTY claim starts rendered WorkerLayer, session has no storyIds`);
+   await host.focus();await page.keyboard.down('d');await page.waitForTimeout(150);await page.keyboard.up('d');await page.waitForTimeout(400);
+   const before=await pose(),canvas=crypto.randomUUID();await host.locator('canvas').first().evaluate((el,id)=>el.__verificationIdentity=id,canvas);
+   const begin=Date.now();
+   for(let i=0;i<20;i++)await work(taskA,i%2?'working':'blocked',sessionId);
+   await event('task.status_changed',taskA);await showWorker(edgeA,'working');
+   await expect(host.locator('[data-worker-id]')).toHaveCount(1);
+   await expect(page.locator('[data-effect-id]')).toContainText('map updates in the last minute');
+   const effectId=await page.locator('[data-effect-id]').getAttribute('data-effect-id');
+   await work(taskA,'blocked',sessionId);await showWorker(edgeA,'blocked');
+   expect(await page.locator('[data-effect-id]').getAttribute('data-effect-id')).toEqual(effectId);
+   expect(await host.locator('canvas').first().evaluate(el=>el.__verificationIdentity)).toEqual(canvas);
+   expect(await pose()).toEqual(before);timings.push({scope,burstCommands:21,elapsedMs:Date.now()-begin});
+   record(`${scope}: burst immediately updates worker pose, combines effects with stable identity and preserves canvas/player/camera`);
+   await shot(`${prefix}-burst`);
+   await tick(taskA,true);await event('task.criterion_changed',taskA);await tick(taskA,false);
+   await work(taskB,'working',sessionId);const edgeB=await claimId(sessionId,taskB);
+   await rpc('release_task_claim',[taskA,'Synthetic move to next site'],sessionId);
+   await showWorker(edgeB,`${prefix} site B`);await expect(host.locator(`[data-worker-id="robot:${edgeA}"]`)).toHaveCount(0);
+   record(`${scope}: real claim/release moves worker to second task and edge.ended removes first claim`);await shot(`${prefix}-move`);
+   await work(taskB,'in_review',sessionId);const receipt=await rpc('receipt',[sessionId]);
+   await rpc('complete_work_session',[sessionId,receipt.messageId]);await event('session.outcome_changed',sessionId);
+   await showWorker(edgeB,'Returning to Office');await shot(`${prefix}-complete`);
+   const completed=await page.evaluate(id=>window.__gameLive.seam.entity(id),sessionId);
+   expect(completed.state.outcome).toEqual('completed');expect(completed.state.status).toEqual('running');
+   await work(taskA,'working',sessionId);await showWorker(edgeA,`${prefix} site A`);
+   expect((await page.evaluate(id=>window.__gameLive.seam.entity(id),sessionId)).state.outcome).toEqual('open');
+   record(`${scope}: completion ends claims while process remains running; new claim reopens same session and stable claim ID`);
+   if(scope==='story'){
+    await page.reload();await host.waitFor();await waitMap('taskland','story',fixture.storyId);await showWorker(edgeA,`${prefix} site A`);
+    record('story: cold loader admits session through authoritative working_on without storyIds');
+   }
+   await rpc('stop_work_session',[sessionId,'Synthetic stop']);await event('session.outcome_changed',sessionId);
+   await expect(host.locator(`[data-worker-id="robot:${edgeA}"]`)).toHaveCount(0);await expect(host.getByText('Returning to Office',{exact:true})).toHaveCount(0);
+   record(`${scope}: stopped outcome removes worker without completion departure`);await shot(`${prefix}-stop`);
+   const failed=await spawn(taskB,`${prefix} failing worker`),failedEdge=await claimId(failed,taskB);await showWorker(failedEdge);
+   await rpc('processFail',[],failed);await event('session.process_changed',failed);
+   await expect.poll(()=>page.evaluate(async id=>(await window.__gameLive.seam.entity(id)).state.status,failed),{timeout:30000}).toEqual('failed');
+   await expect(host.locator(`[data-worker-id="robot:${failedEdge}"]`)).toHaveCount(0);record(`${scope}: actual synthetic process exit7 removes worker without completion departure`);
+  }
+  await page.evaluate(id=>window.__gameLive.seam.openSpace(id),fixture.foreignSpaceId);
+  const before=await pose(),effect=await page.locator('[data-effect-id]').getAttribute('data-effect-id');
+  const foreign=await rpc('create_task',[fixture.foreignSpaceId,'FOREIGN-SCOPE-REJECTED']);await event('entity.upsert',foreign.entity.id);
+  await expect(host.getByText('FOREIGN-SCOPE-REJECTED',{exact:true})).toHaveCount(0);expect(await pose()).toEqual(before);expect(await page.locator('[data-effect-id]').getAttribute('data-effect-id')).toEqual(effect);
+  record('Actual subscribed foreign-space event reaches seam and is rejected by active map');
+  await page.evaluate(()=>window.__gameLive.delayReads());await back();await expect.poll(()=>page.evaluate(()=>window.__gameLive.pending()),{timeout:30000}).toBeGreaterThan(0);
+  await page.evaluate(id=>{location.hash=`#/s/${id}/work`;window.__gameLive.releaseReads();},fixture.foreignSpaceId);
+  await expect(host).toHaveAttribute('data-map-id',`map:space:${fixture.foreignSpaceId}:hub`);record('Route/scope navigation isolates pending old-map reads and callbacks');
+  if(errors.length)throw new Error(`Browser runtime errors: ${errors.join('; ')}`);
+  const stats=await page.evaluate(()=>{const types={};for(const event of window.__gameLive.events)types[event.type]=(types[event.type]??0)+1;return {eventTypes:types,reads:window.__gameLive.reads.length};});
+  await writeFile(`${output}/report.json`,JSON.stringify({passed:true,head:process.env.GAME_EXACT_HEAD,dependencies:process.env.GAME_DEPENDENCY_HEADS,renderer:fixture.renderer,checks,timings,stats,responses,errors},null,2));
+ }
+}catch(error){console.log('Journey failed',String(error));const diagnostic=await page.evaluate(()=>({url:location.href,saves:Object.keys(localStorage).filter(k=>k.startsWith('tm8:game')).map(k=>({key:k,value:JSON.parse(localStorage.getItem(k))})),reads:window.__gameLive?.reads?.slice(-10),events:window.__gameLive?.events?.slice(-10)}));await writeFile(`${output}/report.json`,JSON.stringify({passed:false,checks,errors,responses,failure:String(error),expectedNavigation,diagnostic,text:await page.locator('body').innerText()},null,2));await page.screenshot({path:`${output}/failure.png`,timeout:10000}).catch(()=>{});throw error;}
 finally{await browser.close();}
