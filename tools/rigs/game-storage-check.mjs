@@ -27,7 +27,7 @@ const report = { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoo
   browserMotionPreference: 'reduce (except explicitly named default-motion restore check)',
   browserViewport: { width: 800, height: 600 }, rendererReadinessTimeoutMs: 90_000,
   concurrentOwnedUnitRuns: process.env.GAME_STORAGE_CONCURRENT_OWNED_UNIT_RUNS ?? 'not recorded',
-  browserRuntime: 'SwiftShader multi-process software functional diagnostics', checks };
+  browserRuntime: 'SwiftShader single-process software functional diagnostics', checks };
 const record = result => { checks.push({ ...result, ...(result.reason ? { reason: result.reason.split('\n')[0] } : {}) });
   console.log(JSON.stringify(checks.at(-1))); };
 let server, ui; const pool = fixturePool();

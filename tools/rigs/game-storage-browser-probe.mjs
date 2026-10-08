@@ -10,11 +10,14 @@ import { createBrowserLifecycle, gameStorageLaunchOptions } from './game-storage
 const require = createRequire(`${repoRoot}/packages/tm8-ui/package.json`);
 const { chromium } = require('@playwright/test');
 const options = gameStorageLaunchOptions();
-const lifecycle = createBrowserLifecycle(chromium, { launchOptions: options });
 const report = { kind: 'startup diagnosis only; not acceptance',
   head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim(),
-  launchOptions: options, executable: options.executablePath ?? chromium.executablePath(),
+  launchOptions: options, defaultExecutableHint: chromium.executablePath(),
   dataPagePassed: false, harnessWebGlPassed: false };
+const lifecycle = createBrowserLifecycle(chromium, { launchOptions: options, checkpoint: event => {
+  if (event.label === 'browser ownership') report.executedBinary = event.executable;
+  console.log(JSON.stringify(event));
+} });
 let browser, context, server, ui, pool;
 await captureHostDiagnostics(runRoot, 'before');
 try {

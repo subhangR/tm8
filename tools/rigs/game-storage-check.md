@@ -30,9 +30,9 @@ dependency bundle; no system libraries are installed by this runner.
 uses a separate fresh fixture for just the cost probes and rendered walk.
 
 The runner launches a fresh Chromium process for each restored visit, with
-empty browser storage. Chromium uses separate renderer processes with
-SwiftShader and `--no-zygote`; the previous single-process runtime stalled in
-an idle lock wait after a footprint scene became ready. That interrupted run
+empty browser storage. Chromium uses single-process SwiftShader and
+`--no-zygote`; an earlier run stalled in an idle lock wait after a footprint
+scene became ready without the current teardown guard. That interrupted run
 retains its two completed checks and incomplete overall result. Browser launch,
 evaluation and teardown have labelled before/after checkpoints. Context and
 browser teardown are bounded at 15 seconds, then the rig kills only its own
@@ -89,6 +89,17 @@ exclusive `browser-stderr.log` under the run directory. With
 `GAME_STORAGE_BROWSER_DIAGNOSTICS=1`, the ordinary acceptance entry also captures
 that local stderr and before/after service cgroup counters. Browser lifecycle
 checkpoints identify page crashes, browser disconnections, and the registered
-owned process's actual exit code/signal. Host snapshots retain a bounded kernel
+owned process's actual binary and exit code/signal. The public owned process's
+stderr pipe is tapped before navigation because Playwright's `launchServer`
+internal progress controller omits those lines from DEBUG output. The tap leaves
+Playwright's existing pipe reader intact. Host snapshots retain a bounded kernel
 tail or the permission-denied result. These raw diagnostic files remain local;
 only selected synthetic failure details and counts belong in published evidence.
+
+The host's headless-shell 1208 crashes during multi-process startup even on a
+data page. The advisor reproduced the GPU-process sandbox error and SIGSEGV.
+The shared launch options therefore use the same single-process SwiftShader
+arguments as the earlier successful nested restart. Fresh owned BrowserServer
+processes, bounded registered-only teardown and the external deadline guard
+remain in use. A forced browser close is disclosed as an environment limit;
+only checks that asserted their results before teardown can count as passes.

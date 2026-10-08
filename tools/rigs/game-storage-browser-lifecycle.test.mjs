@@ -9,12 +9,12 @@ async function stop(process, signal = 'SIGTERM') {
   if (process.exitCode !== null || process.signalCode !== null) return;
   const exited = once(process, 'exit'); process.kill(signal); await exited;
 }
-function fixture(process, events) {
+function fixture(process, events, options = {}) {
   const browser = Object.assign(new EventEmitter(), { isConnected: () => true, close: async () => {} });
   const server = { process: () => process, wsEndpoint: () => 'owned-test-endpoint',
     close: () => stop(process), kill: () => stop(process, 'SIGKILL') };
   const lifecycle = createBrowserLifecycle({ launchServer: async () => server, connect: async () => browser },
-    { closeTimeoutMs: 20, checkpoint: event => events.push(event) });
+    { closeTimeoutMs: 20, checkpoint: event => events.push(event), ...options });
   return { browser, lifecycle };
 }
 
@@ -69,5 +69,22 @@ test('crash, disconnection and owned process exit diagnostics retain their actua
     assert.ok(observed.every(event => event.ownedBrowserPid === owned.pid));
     assert.equal(observed[2].exitCode, null);
     assert.equal(observed[2].exitSignal, 'SIGTERM');
+  } finally { await stop(owned); }
+});
+
+test('raw owned stderr is captured before navigation without replacing the existing pipe reader', async () => {
+  const owned = spawn(process.execPath, ['-e',
+    "process.stdin.on('data', () => process.stderr.write('synthetic renderer fault\\n'))"],
+  { stdio: ['pipe', 'ignore', 'pipe'] });
+  const events = [], chunks = [], existingReader = [];
+  owned.stderr.on('data', chunk => existingReader.push(chunk.toString()));
+  const { lifecycle } = fixture(owned, events, { browserStderr: (pid, chunk) => chunks.push({ pid, text: chunk.toString() }) });
+  try {
+    const browser = await lifecycle.launch();
+    const arrived = once(owned.stderr, 'data'); owned.stdin.write('emit'); await arrived;
+    assert.deepEqual(chunks, [{ pid: owned.pid, text: 'synthetic renderer fault\n' }]);
+    assert.deepEqual(existingReader, ['synthetic renderer fault\n']);
+    assert.equal(events.find(event => event.label === 'browser ownership').executable, process.execPath);
+    await lifecycle.closeBrowser(browser);
   } finally { await stop(owned); }
 });

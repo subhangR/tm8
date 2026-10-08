@@ -2,13 +2,15 @@
 export function gameStorageLaunchOptions() {
   return { headless: true,
     ...(process.env.GAME_CHROMIUM ? { executablePath: process.env.GAME_CHROMIUM } : {}),
-    args: ['--no-sandbox', '--no-zygote', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+    args: ['--no-sandbox', '--no-zygote', '--single-process', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   };
 }
 
 export function createBrowserLifecycle(chromium, {
   launchOptions = {}, closeTimeoutMs = 15_000,
   checkpoint = event => console.log(JSON.stringify(event)),
+  browserStderr = process.env.GAME_STORAGE_BROWSER_DIAGNOSTICS === '1'
+    ? (pid, chunk) => process.stderr.write(`[owned chromium pid=${pid}][err] ${chunk}`) : undefined,
 } = {}) {
   const owned = new WeakMap();
   const observedPages = new WeakSet();
@@ -54,6 +56,9 @@ export function createBrowserLifecycle(chromium, {
       }));
       const process = server.process();
       const pid = process.pid; // Supported API; never discover or target peer PIDs.
+      // launchServer uses an Internal progress controller, so DEBUG omits its browser stderr.
+      // Add a read-only listener to the supported owned ChildProcess pipe before any page starts.
+      if (browserStderr) process.stderr?.on('data', chunk => browserStderr(pid, chunk));
       process.once('exit', (exitCode, exitSignal) => mark('browser process exit', 'observed', {
         ownedBrowserPid: pid, exitCode, exitSignal,
       }));
@@ -61,7 +66,7 @@ export function createBrowserLifecycle(chromium, {
         const browser = await step('connect browser', () => chromium.connect(server.wsEndpoint()));
         owned.set(browser, { server, pid, closed: false });
         browser.on('disconnected', () => mark('browser disconnected', 'observed', { ownedBrowserPid: pid }));
-        mark('browser ownership', 'registered', { ownedBrowserPid: pid });
+        mark('browser ownership', 'registered', { ownedBrowserPid: pid, executable: process.spawnfile });
         return browser;
       } catch (error) { await server.kill(); throw error; }
     },
