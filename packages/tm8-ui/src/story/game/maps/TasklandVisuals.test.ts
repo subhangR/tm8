@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildMapModel, type MapInput, type MapScope } from '../map-model';
-import { shippingYardCount, tasklandLabels, tasklandPlotDetail } from './TasklandVisuals';
+import { shippingYardCount, shippingYardPosition, tasklandLabels, tasklandPlotDetail } from './TasklandVisuals';
 
 const scopes: MapScope[] = [{ kind: 'story', id: 'story' }, { kind: 'space', id: 'space' }];
 function input(scope: MapScope): MapInput {
@@ -45,6 +45,25 @@ describe.each(scopes)('Taskland cues at $kind scope', scope => {
     expect(shippingYardCount(town)).toBe(3);
     expect(town.places.some(p => p.entityId === 'cancelled')).toBe(false);
   });
+  it('uses durable placement input for waiting counts and keeps the gate stable through reopening', () => {
+    const snapshot = { ...input(scope), townPlacements: [{ entityId: 'done-child', x: 100, z: 100 }] };
+    snapshot.entities = [...snapshot.entities, { id: 'other-done', kind: 'task', title: 'Other done', status: 'done' }];
+    const town = buildMapModel(snapshot, { scope, type: 'town' });
+    expect(shippingYardCount(town)).toBe(2);
+    expect(town.places.find(p => p.entityId === 'done-child')).toMatchObject({ x: 100, z: 100 });
+    const gate = shippingYardPosition(town);
+    snapshot.entities = snapshot.entities.map(e => e.id === 'done-child' ? { ...e, status: 'working' } : e);
+    const reopened = buildMapModel(snapshot, { scope, type: 'town', previous: town });
+    expect(reopened.places.map(p => p.entityId)).toEqual(['other-done']);
+    expect(shippingYardCount(reopened)).toBe(1);
+    expect(snapshot.townPlacements).toEqual([{ entityId: 'done-child', x: 100, z: 100 }]);
+    expect(shippingYardPosition(reopened)).toEqual(gate);
+    snapshot.entities = snapshot.entities.map(e => e.id === 'done-child' ? { ...e, status: 'done' } : e);
+    const reshipped = buildMapModel(snapshot, { scope, type: 'town', previous: reopened });
+    expect(reshipped.places.find(p => p.entityId === 'done-child')).toMatchObject({ x: 100, z: 100 });
+    expect(shippingYardCount(reshipped)).toBe(2);
+    expect(shippingYardPosition(reshipped)).toEqual(gate);
+  });
 });
 it('does not introduce construction labels on the other maps, and labels empty shipping explicitly', () => {
   const scope = scopes[0]!;
@@ -65,6 +84,7 @@ it('labels unknown cancellation time honestly and names a known expiry', () => {
   const place = buildMapModel(input(scope), { scope, type: 'taskland' }).places.find(p => p.entityId === 'cancelled')!;
   expect(tasklandPlotDetail({ ...place, rubbleExpiresAt: null })).toBe('Cancelled · cancellation time unknown');
   expect(tasklandPlotDetail({ ...place, rubbleExpiresAt: Date.parse('2026-10-09T12:00:00Z') })).toBe('Cancelled · rubble clears 2026-10-09 12:00:00 UTC');
+  expect(tasklandPlotDetail({ ...place, constructionStage: 'foundation', badges: ['yard-anchor', 'children-open'] })).toBe('Yard anchor · open children remain');
 });
 it('uses computed estimate flags and mailbox count basis when the projection supplies them', () => {
   const scope = scopes[0]!;
