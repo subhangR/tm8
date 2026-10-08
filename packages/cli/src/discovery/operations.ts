@@ -1341,6 +1341,14 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'none',
   },
+  'spaces.unreadCounts': {
+    cmd: ['space', 'unread', 'get'],
+    syn: 'tm8 space unread get [<space-id>]',
+    sum: 'Read bounded per-viewer unread counts for readable Space anchors',
+    authz: 'space',
+    input: 'none',
+    notes: ['lazy read; missing anchors mean zero only when complete=true; overflow preserves the consumer fallback'],
+  },
   'spaces.home': {
     cmd: ['space', 'home', 'get'],
     syn: 'tm8 space home get [<space-id>]',
@@ -4307,7 +4315,7 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
-  'sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d';
+  'sha256:7faabb7f1e6767b4a13819d58761dbe21e12a3e02f5249dd872ae1f8b4444f9d';
 
 export const GRAMMAR_VERSION = '2';
 

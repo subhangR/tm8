@@ -164,7 +164,7 @@ import type {
   MarkAttentionSeenInput, UnresolveAttentionBatchInput, WithdrawAttentionRequestInput,
   RaiseAttentionSignalInput, ClearAttentionSignalInput, AttentionSignal,
   KindCounts, SpaceKindCounts,
-  SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
+  SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation, SpaceUnreadCounts,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
   SessionLaunchRecord,
@@ -5196,6 +5196,15 @@ export const SpaceNavigationSchema: z.ZodType<SpaceNavigation> = z.lazy(() => z.
   unreadTotal: z.number().int().nonnegative(),
   channels: z.array(NavChannelNodeSchema),
 }).strict());
+
+export const SpaceUnreadCountsSchema: z.ZodType<SpaceUnreadCounts> = z.object({
+  spaceId: SpaceIdSchema,
+  counts: z.array(z.object({
+    anchorId: EntityIdSchema,
+    unread: z.number().int().nonnegative(),
+  }).strict()).max(20_000),
+  complete: z.boolean(),
+}).strict();
 
 export const KindCountsSchema: z.ZodType<KindCounts> = z.object({
   total: z.number().int().nonnegative(),
