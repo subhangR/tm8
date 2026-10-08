@@ -30,7 +30,7 @@ export function createGamePort(http: HttpClient, mutationId: (prefix: string) =>
           catch (error) {
             const code = error && typeof error === 'object' && 'code' in error ? error.code : null;
             // Live scope repair is performed by the server. A transport failure must retain local memories.
-            if (code !== 'not_found' && code !== 'forbidden') { failed = true; throw error; }
+            if (!['not_found', 'forbidden', 'invalid_input', 'validation_error'].includes(String(code))) { failed = true; throw error; }
           }
         }
       }));
