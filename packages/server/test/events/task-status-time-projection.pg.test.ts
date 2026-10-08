@@ -48,13 +48,27 @@ async function state(id: string) {
 
 describe('task status time through the real transition trigger and both projections', () => {
   it('cancel, redundant cancel, unrelated edit, reopen and recancel preserve the current episode', async () => {
+    const beforeCreate = (await fixture.db.asOwner(q => q.query<{ at: Date }>(
+      'select clock_timestamp() as at')))[0]!.at;
     const id = await fixture.createTask('Cancellation lifecycle');
-    expect((await state(id)).statusChangedAt).toBeNull();
+    const afterCreate = (await fixture.db.asOwner(q => q.query<{ at: Date }>(
+      'select clock_timestamp() as at')))[0]!.at;
+    const created = await state(id);
+    // 317 tasks_stamp_initial_status stamps INSERT (lines42-57), without inventing
+    // a status-transition delta. state() also checks exact DB/read/event equality.
+    expect(created.statusChangedAt).not.toBeNull();
+    expect(Date.parse(created.statusChangedAt!)).toBeGreaterThanOrEqual(beforeCreate.getTime());
+    expect(Date.parse(created.statusChangedAt!)).toBeLessThanOrEqual(afterCreate.getTime());
+    const creationDeltas = await fixture.db.asOwner(q => q.query(
+      `select seq from public.workspace_events
+       where event_type='task.status_changed' and payload->>'id'=$1`, [id]));
+    expect(creationDeltas).toEqual([]);
 
     await fixture.setStatus(id, 'cancelled');
     const cancelled = await state(id);
     expect(cancelled.status).toBe('cancelled');
     expect(cancelled.statusChangedAt).not.toBeNull();
+    expect(Date.parse(cancelled.statusChangedAt!)).toBeGreaterThan(Date.parse(created.statusChangedAt!));
 
     await fixture.setStatus(id, 'cancelled');
     expect((await state(id)).statusChangedAt).toBe(cancelled.statusChangedAt);

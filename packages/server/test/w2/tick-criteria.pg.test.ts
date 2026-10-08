@@ -49,10 +49,10 @@ let mutation = 0;
 beforeAll(async () => {
   database = await createW1ScratchDatabase('tick');
   const chain = migrationFiles();
-  database.apply(chain.filter((file) => file !== '316_task_game_events.sql'));
+  database.apply(chain.filter((file) => file !== '316_task_game_events.sql' && file !== '317_task_cancellation_observations.sql'));
   await seedContextV2Fixtures(database);
   // Apply to existing tasks: the migration must not invent their status time.
-  database.apply(['316_task_game_events.sql']);
+  database.apply(['316_task_game_events.sql', '317_task_cancellation_observations.sql']);
   // The older context fixture stores skills as [], predating EffectiveSkills.
   // Polling its claim edge must use a contract-shaped session summary.
   await database.query(`update public.work_sessions set skills =

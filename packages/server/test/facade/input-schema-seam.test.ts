@@ -293,7 +293,6 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   // just like readMarks.upsert; the contract names its result, not an input type.
   'entities.markSeen',
   'entities.restore',
-  'entities.markSeen',
   'projects.unlink',
   'readMarks.upsert',
   'savedViews.delete',

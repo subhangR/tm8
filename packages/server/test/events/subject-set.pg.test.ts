@@ -113,6 +113,9 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // 231 (chat context): the entity reads now select `cht.context`. An
     // a-la-carte suite must apply every migration adding a column they select.
     database.apply(['231_chat_context.sql']);
+    // The current event projector reads the authoritative task status clock.
+    // Retain the historical208 backfill scenario while supplying its current read column.
+    database.apply(['316_task_game_events.sql']);
     // 206 is already in this suite's pre-208 chain. A SHIM of the two
     // read-path columns the W10a credential migration (239_credential_entities.sql) adds:
     // `entity-read.ts` and the projector left-join `public.space_credentials scr`
