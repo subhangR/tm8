@@ -93,7 +93,7 @@ describe('authoritative live map controller', () => {
     h.emit({ type: 'task.criterion_changed', taskId: 'task', criterionId: 'ac1', criterionText: 'Built', isDone: true, done: 1, total: 3 });
     await vi.advanceTimersByTimeAsync(80);
     expect(h.controller.getSnapshot()!.effect).toMatchObject({ id: effect.id, combined: true, count: 9, taskEvents: [expect.objectContaining({ criterionId: 'ac1', done: 1, total: 3 })] });
-    expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'task')!.progress).toBeNull(); // full upsert has no weighted progress
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.progress).toBeNull(); // Full upsert omits source weighted progress; construction progress is computed separately.
     await vi.advanceTimersByTimeAsync(60_000);
     h.emit({ type: 'task.status_changed', taskId: 'task', from: 'working', to: 'blocked' });
     expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'task')!.status).toBe('blocked');
