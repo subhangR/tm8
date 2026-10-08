@@ -97,7 +97,7 @@ describe('§5.1 words, tones and icons', () => {
     const w = sessionRowWord(s, 'live', ctx)!;
     expect([w.word, w.tone, w.icon, w.dot, w.attention]).toEqual(['Finished, still open', 'done', 'check', 'grey', false]);
     expect(sessionTabOf(s)).toBe('running');
-    expect(sessionLineTwo(s, 'live', ctx)).toBe('Completed 12m ago · receipt');
+    expect(sessionLineTwo(s, 'live', ctx)).toBeNull();
   });
 
   it('row 5 — Completed, process closed: Completed, no dot, Completed tab', () => {
@@ -105,7 +105,7 @@ describe('§5.1 words, tones and icons', () => {
     const w = sessionRowWord(s, 'not-running', ctx)!;
     expect([w.word, w.tone, w.icon, w.dot]).toEqual(['Completed', 'done', 'check', null]);
     expect(sessionTabOf(s)).toBe('completed');
-    expect(sessionLineTwo(s, 'not-running', ctx)).toBe('Completed 12m ago · receipt');
+    expect(sessionLineTwo(s, 'not-running', ctx)).toBeNull();
   });
 
   it('row 6 — Stopped before completing: Stopped, filled square, "Stopped by <name> 3h ago"', () => {

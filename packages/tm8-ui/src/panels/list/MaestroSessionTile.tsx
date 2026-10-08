@@ -94,7 +94,7 @@ export function MaestroSessionTile({
    * avatar's process dot. Absent ⇒ the pre-D1 rendering (record status only).
    */
   word?: SessionWord | null;
-  /** §5.2 line 2: "Completed 12m ago · receipt", "Crashed 5m ago: out of memory". */
+  /** §5.2 line 2: reason and age, such as "Crashed 5m ago: out of memory". */
   lineTwo?: string | null;
   /** §5.3.1 case 7: "↳ under Coordinator X (Completed)". */
   crumb?: string | null;

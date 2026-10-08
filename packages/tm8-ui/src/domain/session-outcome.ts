@@ -431,7 +431,6 @@ export function claimTally(claims: readonly SessionClaim[] | undefined, offered 
 
 /**
  * LINE 2 — reason and age (§5.2):
- *   "Completed 12m ago · receipt"
  *   "Stopped by Subhang 3h ago"
  *   "Crashed 5m ago: out of memory"
  *   "Working · 2 tasks · 1 done · 1 offered"
@@ -453,7 +452,7 @@ export function sessionLineTwo(
   switch (w.case) {
     case 'completed':
     case 'finished_open':
-      return `Completed${since(rec.outcomeAt)}${rec.receiptMessageId ? ' · receipt' : ''}`;
+      return null;
     case 'stopped':
     case 'stopped_closing': {
       const who = rec.outcomeSource === 'backfill'
