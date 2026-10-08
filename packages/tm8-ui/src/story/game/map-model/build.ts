@@ -74,11 +74,11 @@ export function buildMapModel(input: MapInput, options: BuildMapOptions): MapMod
   const rubble = new Map(all.filter(isCancelledTask).map(n => [n.id, rubbleLifetime(n, now, previousPlaces.get(n.id))]));
   const retained = new Set(all.filter(n => n.kind === 'task' && !done(n) && !rubble.get(n.id)?.expired).map(n => n.id));
   const liveAncestors = shippingAncestors(all, retained);
-  const deadlines = [...rubble.values()].filter(n => !n.expired && n.expiresAt !== null).map(n => n.expiresAt!);
+  const deadlines = [...rubble.values()].filter(n => !n.expired && (n.expiresAt ?? n.removalNotAfter) !== null).map(n => (n.expiresAt ?? n.removalNotAfter)!);
   const nextLifecycleAt = type === 'taskland' && deadlines.length ? Math.min(...deadlines) : null;
   if (type === 'taskland') {
     const unknown = [...rubble.values()].filter(n => n.expiresAt === null).length;
-    if (unknown) warnings.push(`${unknown} cancelled task(s) lack an authoritative cancellation timestamp; rubble expiry is unknown`);
+    if (unknown) warnings.push(`${unknown} cancelled task(s) lack an authoritative cancellation timestamp; exact rubble expiry is unknown (last-update upper bounds are used when available)`);
   }
   const shipped = new Set(all.filter(n => done(n) || completedSession(n)).map(n => n.id));
   for (const edge of input.edges) if (edge.type === 'produces' && isActiveMapEdge(edge) &&
@@ -113,6 +113,7 @@ export function buildMapModel(input: MapInput, options: BuildMapOptions): MapMod
         subtreeWeight: entity.subtreeWeight, sizeBucket: construction.byId.get(n.id)!.sizeBucket,
         estimateMissing: construction.byId.get(n.id)!.estimateMissing,
         cancelledAt: rubble.get(n.id)?.cancelledAt ?? null, rubbleExpiresAt: rubble.get(n.id)?.expiresAt ?? null,
+        rubbleRemovalNotAfter: rubble.get(n.id)?.removalNotAfter ?? null,
       } : {}),
       role: marker ? 'shipped-marker' : 'entity', assetKey: assetOf(entity, constructionStage), label: entity.title,
       badges: [...(entity.kind === 'task' && construction.byId.get(n.id)!.estimateMissing ? ['estimate-missing'] : []), ...(marker ? ['shipped', 'children-open'] : []), ...(isCancelledTask(entity) && !rubble.get(n.id)?.expiresAt ? ['cancellation-time-unknown'] : [])],
