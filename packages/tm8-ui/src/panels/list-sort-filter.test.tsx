@@ -81,7 +81,7 @@ describe('the sort chip reaches the seam', () => {
     // Before: the only ordered query is the kind's default. The `undefined`
     // alongside it is the tier-count read, which is deliberately unsorted —
     // see the next test.
-    expect(new Set(seam.sorts())).toEqual(new Set([undefined, 'activityAt_desc']));
+    expect(new Set(seam.sorts())).toEqual(new Set([undefined, 'position']));
 
     fireEvent.click(getByTestId('sort-trigger'));
     fireEvent.click(getByRole('menuitemradio', { name: /Priority/ }));
@@ -183,6 +183,7 @@ describe('a contradiction is STATED, and costs no query', () => {
     const { getByTestId, getByRole, container } = render(
       <EntityListPanel kind="task" rowsFor={seam.rowsFor} ctx={ctx} />,
     );
+    fireEvent.click(getByRole('tab', { name: /^To Do/ }));
     fireEvent.click(getByTestId('filter-trigger'));
     fireEvent.click(getByRole('menuitemcheckbox', { name: /^Done$/ }));
 
@@ -233,9 +234,8 @@ describe('counts stop lying at the page boundary', () => {
         ctx={ctx}
       />,
     );
-    // The footer is the same source as the tabs and the selector total, so
-    // one assertion here covers all three surfaces.
-    expect(getByTestId('list-footer').textContent).toMatch(/\d\+ to do/);
+    // All is an overlapping tab; use its total without adding status counts.
+    expect(getByTestId('kind-total').textContent).toMatch(/\d\+/);
     expect(getByTestId('kind-total').textContent).toMatch(/\+$/);
   });
 
@@ -244,7 +244,6 @@ describe('counts stop lying at the page boundary', () => {
     const { getByTestId } = render(
       <EntityListPanel kind="task" rowsFor={seam.rowsFor} pageStateOf={complete} ctx={ctx} />,
     );
-    expect(getByTestId('list-footer').textContent).not.toContain('+');
     expect(getByTestId('kind-total').textContent).not.toContain('+');
   });
 
@@ -266,7 +265,7 @@ describe('counts stop lying at the page boundary', () => {
         ctx={ctx}
       />,
     );
-    expect(getByTestId('list-footer').textContent).toContain('601 to do');
+    expect(getByTestId('kind-total').textContent).toBe('601');
   });
 });
 
@@ -308,6 +307,7 @@ describe('paging asks for the next page of THIS question', () => {
         ctx={ctx}
       />,
     );
+    fireEvent.click(getByRole('tab', { name: /^To Do/ }));
     fireEvent.click(getByTestId('sort-trigger'));
     fireEvent.click(getByRole('menuitemradio', { name: /Priority/ }));
     fireEvent.click(getByRole('button', { name: 'Load more' }));

@@ -718,3 +718,7 @@
   outline-offset: -2px;
   border-radius: 6px;
 }
+
+.tws-inline-draft { display: flex; gap: 5px; padding: 8px 0; }
+.tws-inline-draft input { min-width: 0; flex: 1; }
+.tws-inline-draft input, .tws-inline-draft button { font: inherit; color: inherit; border: 1px solid var(--pn-rule, GrayText); background: var(--pn-paper, Canvas); border-radius: 4px; padding: 5px; }

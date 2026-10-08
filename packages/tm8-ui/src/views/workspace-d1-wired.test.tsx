@@ -38,10 +38,11 @@ function mounts(tag: string): string[] {
 }
 
 describe('Spec D1 is reachable on the workspace page', () => {
-  it('the session list there gets the four session tabs (config-driven, default Running)', () => {
+  it('the session list defaults to positioned All and retains the four status tabs', () => {
     const config = getKind('work_session').list;
-    expect(config?.categories?.map((t) => t.id)).toEqual(SESSION_TABS.map((t) => t.id));
-    expect(config?.defaultCategory).toBe('running');
+    expect(config?.categories?.map((t) => t.id)).toEqual(['all', ...SESSION_TABS.map((t) => t.id)]);
+    expect(config?.defaultCategory).toBe('all');
+    expect(config?.sort.find((s) => s.default)?.key).toBe('position');
     expect(SESSION_TABS.map((t) => t.label)).toEqual(['Running', 'Interrupted', 'Completed', 'Stopped']);
   });
 

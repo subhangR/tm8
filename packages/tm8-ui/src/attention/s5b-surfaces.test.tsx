@@ -554,7 +554,7 @@ describe('"Needs me" = the queue (tab 8)', () => {
     loadMore: vi.fn((_f?: unknown) => {}),
   });
 
-  it('with needs-me active, rows are queue(mine) roots in queue order, never the server page', () => {
+  it('with needs-me active, membership comes from queue(mine), never just the server page', () => {
     const src0 = base();
     const src = needsMeListSource(fakeApi([request({ id: 'r1' })]), 'task', { detailOf: (id) => (id === TASK ? summary : undefined) }, src0);
     expect(src.rowsFor({ needsActorId: 'me' })).toEqual([summary]);
@@ -564,6 +564,22 @@ describe('"Needs me" = the queue (tab 8)', () => {
     expect(src0.loadMore).not.toHaveBeenCalled();
     src.rowsFor({ status: ['open'] });
     expect(src0.rowsFor).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps positioned order when attention priority changes, and follows shared placement updates', () => {
+    const first = { ...summary, id: 'positioned-first', position: -1024 } as EntitySummary;
+    const second = { ...summary, id: 'positioned-second', position: 0 } as EntitySummary;
+    const queueRow = fakeApi([request({ id: 'r1' })]).queue('mine')[0]!;
+    let queue = [second, first].map((row) => ({ ...queueRow, rootId: row.id }));
+    const api = fakeApi([], { queue: () => queue });
+    const data = { detailOf: (id: string) => [first, second].find((row) => row.id === id) };
+    const source = needsMeListSource(api, 'task', data, base());
+    const rows = () => source.rowsFor({ needsActorId: 'me' }).map((row) => row.id);
+    expect(rows()).toEqual([first.id, second.id]);
+    queue = [...queue].reverse();
+    expect(rows()).toEqual([first.id, second.id]);
+    second.position = -2048;
+    expect(rows()).toEqual([second.id, first.id]);
   });
 
   it('a root off the loaded page is pulled by id once, and the list says LOADING until it lands', async () => {

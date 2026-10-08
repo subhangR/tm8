@@ -1,3 +1,4 @@
+import { reloadListPrefix } from './reload-list-prefix';
 import { createRealFormsPort } from '../forms/real-port';
 import { setDefaultFormsPort } from '../forms/seam';
 import type { SkillPort } from '../skills/port';
@@ -259,6 +260,7 @@ function stableKey(value: unknown): string {
  * as the whole collection.
  */
 interface RowPage {
+  error?: string;
   ids: readonly EntityId[];
   nextCursor: Cursor | null;
   loading: boolean;
@@ -2648,6 +2650,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         return {
           hasMore: page.nextCursor !== null,
           loading: page.loading,
+          ...(page.error ? { error: page.error } : {}),
           ...(page.total === undefined ? {} : { total: page.total }),
         };
       },
@@ -2679,15 +2682,21 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
         void seam
           .query(queryFor(spaceId, { kind, filter, sort }, cursor))
           .then((result) => absorb(key, result.page, true, generation))
+          .catch(async (error: unknown) => {
+            if ((error as { code?: string })?.code !== 'invalid_cursor') throw error;
+            const fresh = await reloadListPrefix((input) => seam.query(input),
+              queryFor(spaceId, { kind, filter, sort }), page.ids.length + 1);
+            absorb(key, fresh, false, generation);
+          })
           // The rows already fetched stay; only the attempt to extend them
-          // failed. Clearing `nextCursor` stops an endless retry at the
-          // sentinel and lets the count stop claiming there is more.
-          .catch(() => {
+          // failed. Keep the cursor and expose the failure so the user can
+          // retry without silently truncating the collection.
+          .catch((error: unknown) => {
             if (generation !== spaceGeneration.current) return;
             setRows((current) => {
               const live = current[key];
               return live
-                ? { ...current, [key]: { ...live, loading: false, nextCursor: null } }
+                ? { ...current, [key]: { ...live, loading: false, error: String((error as Error)?.message ?? error) } }
                 : current;
             });
           })

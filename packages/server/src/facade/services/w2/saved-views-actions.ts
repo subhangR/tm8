@@ -239,8 +239,8 @@ const EDITABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'team_me
 // `assertGenericLifecycle`, which refuses the kind, because re-parenting a
 // container would move a running runtime between owners without the runtime
 // hearing about it.
-const HIERARCHICAL_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'container']);
-const MOVABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection']);
+const HIERARCHICAL_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'container', 'work_session', 'artifact', 'file', 'story', 'design']);
+const IMMUTABLE_PLACEMENT_KINDS = new Set(['member','message','project','interaction_profile','credential','server','space_link','container','style','op_request']);
 const PULLABLE_KINDS = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
 function operationParams(operation: OperationName): string[] {
@@ -280,7 +280,7 @@ function structurallyAvailable(operation: OperationName, row: ActionContextRow):
     case 'entities.header.clear':
       return live && headerAuthorable(row.kind);
     case 'entities.move':
-      return live && MOVABLE_KINDS.has(row.kind);
+      return live && !IMMUTABLE_PLACEMENT_KINDS.has(row.kind);
     case 'entities.delete':
       // `container` joins the refusals: it is DESTROYED, not deleted, and
       // `containers.destroy` stops the runtime before soft-deleting the
@@ -461,7 +461,7 @@ function anchoredOn(operation: OperationName, row: ActionContextRow): boolean {
       return true;
     case 'entities.create':
     case 'collections.query':
-      return MOVABLE_KINDS.has(row.kind);
+      return !IMMUTABLE_PLACEMENT_KINDS.has(row.kind);
     case 'tracking.refresh':
       return row.kind === 'task' || row.kind === 'pull_request' || row.kind === 'commit';
     case 'execution.spawn':

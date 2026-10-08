@@ -27,13 +27,14 @@ import { useStore } from 'zustand';
 import { getBrowserSource } from '../adapters/browserSources';
 import { getKindAdapter } from '../adapters/registry';
 import { getBrowserSourceStore } from '../runtime/browserSourceStore';
-import { activeEntityId } from '../runtime/selectors';
+import { activeEntityId, activeTab as selectedTab } from '../runtime/selectors';
 import { workspaceCommands } from '@tm8/contract/workspace';
 
 const { EMPTY_BROWSER_KIND_STATE } = workspaceCommands.browser;
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import { useListCursor } from './listCursor';
+import { InlineDraftTitle } from './InlineDraftTitle';
 import './browser.css';
 
 const BROWSER_ID = 'main';
@@ -125,11 +126,12 @@ export function Browser() {
 }
 
 function EntityBrowser() {
-  const { dispatch, gate } = useWorkspace();
+  const { dispatch, gate, runtime } = useWorkspace();
   const { data } = gate;
   const kind = useWorkspaceState((s) => s.browsers.main.kind);
   const kindState = useWorkspaceState((s) => s.browsers.main.perKind[kind]) ?? EMPTY_BROWSER_KIND_STATE;
   const selectedId = useWorkspaceState(activeEntityId);
+  const activeTab = useWorkspaceState(selectedTab);
   const narrow = useWorkspaceState((s) => s.layout.browserWidth < NARROW_BELOW_PX);
   const attentionApi = useAttentionOptional();
 
@@ -282,6 +284,15 @@ function EntityBrowser() {
               }
             />
           }
+          inlineCreateSlot={activeTab?.type === 'draft' && activeTab.kind === kind && !adapter.draftBody
+            ? <InlineDraftTitle key={activeTab.id} tab={activeTab} /> : undefined}
+          onCreateChild={adapter.creatable === true && !adapter.draftBody ? (parent) => {
+            const result = dispatch({ command: 'workspace.drafts.open', args: { kind }, source: 'click' });
+            if (result.status !== 'applied' && result.status !== 'no_op') return;
+            const state = runtime.store.getState();
+            const tab = selectedTab(state);
+            if (tab?.type === 'draft') runtime.drafts.set(tab.draftId, { ...runtime.drafts.get(tab.draftId), parentId: parent.id });
+          } : undefined}
           {...source}
           members={data.members}
           ctx={ctx}
@@ -291,6 +302,13 @@ function EntityBrowser() {
           messagePulses={data.messagePulses}
           {...(data.linkedPullRequestsOf ? { linkedPullRequestsOf: data.linkedPullRequestsOf } : {})}
           capabilitiesOf={data.capabilitiesOf}
+          onMoveEntity={async (row, placement) => {
+            const result = await data.seam.commands.moveEntity(row.id, {
+              parentId: row.parentId, placement, expectedVersion: row.version,
+              clientMutationId: crypto.randomUUID(),
+            });
+            data.reconcileCommand(result);
+          }}
           connectionsOf={data.connectionsOf}
           /* The row verbs (hover bar, expanded strip) — Home's executors. */
           onSetState={verbs.rowLifecycle.setState}

@@ -1204,6 +1204,7 @@ export const EntityCapabilitiesSchema: z.ZodType<EntityCapabilities> = z.object(
   canReact: z.boolean(),
   canGrantPoints: z.boolean(),
   canComplete: z.boolean(),
+  canMove: z.boolean().optional(),
   allowedTransitions: z.array(z.string()).optional(),
   // The six container verbs (177). PRESENT HERE BECAUSE THE OBJECT IS
   // `.strict()`: the server computes all six on every container read, so
@@ -3048,9 +3049,14 @@ export const AttentionRequestMutationResultSchema: z.ZodType<AttentionRequestMut
 export const MoveEntityInputSchema: z.ZodType<MoveEntityInput> = z.object({
   ...commandContextShape,
   parentId: EntityIdSchema.nullable(),
-  position: z.number().finite(),
-  expectedVersion: z.number().finite(),
-}).strict();
+  position: z.number().finite().optional(),
+  placement: z.object({
+    targetId: EntityIdSchema.nullable(),
+    relation: z.enum(['before', 'after', 'inside']),
+  }).strict().optional(),
+  expectedVersion: z.number().int().positive(),
+}).strict().refine((input) => (input.position !== undefined) !== (input.placement !== undefined),
+  'Supply either position or placement');
 
 export const CreateEdgeInputSchema: z.ZodType<CreateEdgeInput> = z.object({
   ...commandContextShape,

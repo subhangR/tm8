@@ -12,12 +12,14 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type DragEvent,
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { subscribeDrafts } from '../runtime/draftStore';
 import { useLiveTitle } from '../../doc-edit';
 import { getKind, KindIcon, type ActionContext } from '../../domain';
 import { NOTICE_TTL_MS } from '../../shell';
@@ -82,7 +84,10 @@ export function useTabFacts(tab: TabRecord): {
   /** The hover text when it says more than `title — noun` (a file's project and path). */
   tooltip?: string;
 } {
-  const { gate } = useWorkspace();
+  const { gate, runtime } = useWorkspace();
+  useSyncExternalStore(subscribeDrafts, () => tab.type === 'draft'
+    ? runtime.drafts.revisionOf(tab.draftId) + runtime.drafts.remoteVersionOf(tab.draftId) : 0);
+  const draftName = tab.type === 'draft' ? runtime.drafts.get(tab.draftId)?.title : null;
   const file = useFileTabFacts(tab);
   const data = gate.data as typeof gate.data & { pull?: (id: string) => void };
   const entityId = tab.type === 'entity' ? tab.entityId : null;
@@ -135,6 +140,7 @@ export function useTabFacts(tab: TabRecord): {
   let state: TabState = null;
   let shownTitle = tabTitle(tab, title);
   if (tab.type === 'draft') {
+    if (typeof draftName === 'string' && draftName.trim()) shownTitle = draftName.trim();
     state = tab.dirty ? 'unsaved' : null;
   } else if (entityId) {
     const gone = deleted ? 'deleted' : known ? undefined : probe;

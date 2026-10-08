@@ -286,6 +286,8 @@ export interface SortSpec {
  * the panel must not import from `views/` — the dependency runs the other way.
  */
 export interface ListPageState {
+  /** The last page extension failed; already-loaded rows and retry stay available. */
+  error?: string;
   /** The server left a cursor: there are rows beyond the ones delivered. */
   hasMore: boolean;
   /** A page is in flight (including the first, before anything has arrived). */

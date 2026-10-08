@@ -469,7 +469,7 @@ export interface RowProjection {
 // ---------------------------------------------------------------------------
 
 /** The server's default when a query carries no sort (`collections.ts`). */
-const DEFAULT_SORT: NonNullable<CollectionQuery['sort']> = 'activityAt_desc';
+const DEFAULT_SORT: NonNullable<CollectionQuery['sort']> = 'position';
 
 /**
  * `coalesce(t.<col>, '9999-12-31')` — the sentinel that sorts nulls last.
@@ -613,6 +613,9 @@ export function projectRows(input: RowProjection): EntitySummary[] {
   }
 
   const compare = compareBySort(sort);
+  // An upsert may change a loaded row's placement. IDs from the original page
+  // are membership evidence, not an immutable copy of the order.
+  base.sort(compare);
   const arrived = Object.values(entities)
     .filter(
       (e) =>

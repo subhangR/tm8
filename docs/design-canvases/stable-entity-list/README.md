@@ -1,8 +1,8 @@
 # Stable entity list — interactive design study
 
-Reviewable prototype for the entity panel redesign. This PR changes only the
-study under `docs/design-canvases/stable-entity-list`; it does not integrate the
-behavior into the production app or launch real sessions. The cards in this
+Reviewable prototype for the entity panel behavior. This directory remains a
+local demo; the production implementation, database migration, validation and
+two-user review steps are documented in [PRODUCTION.md](PRODUCTION.md). The cards in this
 study are layout placeholders: existing production card components, contents,
 controls, and styling must remain unchanged during integration.
 

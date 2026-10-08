@@ -129,6 +129,7 @@ describe('the category tab and the archive chip compose, never contradict', () =
     // the premise is asserted rather than assumed.
     const config = getKind('task');
     expect(config.list.categories?.map((t) => t.id)).toEqual([
+      'all',
       'to_do',
       'in_progress',
       'done',
@@ -143,7 +144,9 @@ describe('the category tab and the archive chip compose, never contradict', () =
     const view = list();
     const { container, getByRole } = view;
 
-    // The default tab is the first: To Do.
+    // All is the stable default; lifecycle tabs narrow it.
+    expect(titles(container)).toEqual(['Open one', 'Open two', 'Ship the thing', 'Abandoned idea']);
+    tab(getByRole, 'To Do');
     expect(titles(container)).toEqual(['Open one']);
 
     tab(getByRole, 'In Progress');
@@ -233,13 +236,13 @@ describe('the category tab and the archive chip compose, never contradict', () =
         .find((t) => t.getAttribute('aria-selected') === 'true')
         ?.textContent?.replace(/\s*\d+\+?$/, '');
 
-    expect(openTab()).toBe('To Do');
+    expect(openTab()).toBe('All');
     tab(view.getByRole, 'Cancelled');
     expect(openTab()).toBe('Cancelled');
 
     // The host answers `onKindChange` by re-rendering with a different kind.
     view.rerender(<EntityListPanel kind="doc" rowsFor={rowsFor} ctx={ctx} />);
-    expect(openTab(), 'a kind never inherits another kind’s tab').toBe('To Do');
+    expect(openTab(), 'a kind never inherits another kind’s tab').toBe('All');
 
     // …and coming back lands where this kind was left, not on its default.
     view.rerender(<EntityListPanel kind="task" rowsFor={rowsFor} ctx={ctx} />);
@@ -279,8 +282,8 @@ describe('the category tab and the archive chip compose, never contradict', () =
         .getAllByRole('tab')
         .find((t) => t.getAttribute('aria-selected') === 'true')
         ?.textContent?.replace(/\s*\d+\+?$/, ''),
-    ).toBe('To Do');
-    expect(titles(view.container)).toEqual(['Open one']);
+    ).toBe('All');
+    expect(titles(view.container)).toEqual(['Open one', 'Open two', 'Ship the thing', 'Abandoned idea']);
   });
 
   it('an archived task is REACHABLE — the way back is not a dead end', () => {

@@ -1,0 +1,10 @@
+.lp-placement-toolbar { display: flex; gap: 8px; align-items: center; font-size: 11px; margin: 4px 0; }
+.lp-placement-toolbar button, .lp-placement-menu button, .lp-placement-menu select { font: inherit; color: inherit; background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: 4px; padding: 4px 7px; }
+.lp-placement-toolbar button:disabled, .lp-placement-menu button:disabled { opacity: .45; }
+.lp-placement-scrim { position: fixed; inset: 0; z-index: 1000; }
+.lp-placement-menu { position: fixed; width: 260px; max-height: 350px; overflow: auto; display: flex; flex-direction: column; gap: 7px; padding: 12px; border: 1px solid var(--pn-line); background: var(--pn-card); color: var(--pn-ink-1); border-radius: 6px; box-shadow: var(--pn-sh-pop); font-size: 12px; }
+.lp-placement-menu label { display: flex; flex-direction: column; gap: 4px; }
+[data-placement-dragging] { user-select: none; cursor: grabbing; }
+[data-placement-preview='before'] > :first-child { box-shadow: 0 -2px 0 var(--pn-brand); }
+[data-placement-preview='after'] > :first-child { box-shadow: 0 2px 0 var(--pn-brand); }
+[data-placement-preview='inside'] > :first-child { outline: 2px solid var(--pn-brand); outline-offset: -2px; }

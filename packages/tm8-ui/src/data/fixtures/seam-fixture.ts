@@ -436,7 +436,7 @@ const FIXTURE_FILE_BLAME_HUNKS: ProjectFileBlame['hunks'] = [
 ];
 
 const CAPS_FULL: EntityDetail['capabilities'] = {
-  canEdit: true, canDelete: true, canAddChild: true, canLink: true,
+  canEdit: true, canDelete: true, canAddChild: true, canLink: true, canMove: true,
   canPull: true, canReact: true, canGrantPoints: true, canComplete: true,
 };
 
@@ -2551,7 +2551,10 @@ export function createFixtureSeam(): FixtureSeam {
     const s: EntitySummary = {
       spaceId: FIXTURE_SPACE_ID,
       parentId: null,
-      position: partial.parentId ? childrenOf(partial.parentId).length : 0,
+      position: Math.min(1024, ...[...summaries.values()]
+        .filter((row) => row.spaceId === (partial.spaceId ?? FIXTURE_SPACE_ID)
+          && row.kind === partial.kind && row.parentId === (partial.parentId ?? null) && !row.deletedAt)
+        .map((row) => row.position)) - 1024,
       visibility: 'space',
       version: 1,
       activityAt: at,
@@ -2937,10 +2940,10 @@ export function createFixtureSeam(): FixtureSeam {
         }
         return true;
       });
-      const sort = input.sort ?? 'activityAt_desc';
+      const sort = input.sort ?? 'position';
       rows = rows.sort((a, b) => {
         switch (sort) {
-          case 'position': return a.position - b.position;
+          case 'position': return a.position - b.position || a.id.localeCompare(b.id);
           case 'createdAt_desc': return b.createdAt.localeCompare(a.createdAt);
           case 'dueDate': {
             const da = a.state.kind === 'task' ? a.state.dueDate ?? '9999' : '9999';
@@ -4479,9 +4482,30 @@ export function createFixtureSeam(): FixtureSeam {
       async moveEntity(id, input: MoveEntityInput) {
         const s = requireSummary(id);
         requireVersion(s, input.expectedVersion);
-        if (input.parentId !== null) requireSummary(input.parentId);
-        s.parentId = input.parentId;
-        s.position = input.position;
+        let parentId = input.parentId;
+        let position = input.position;
+        if (input.placement) {
+          const { targetId, relation } = input.placement;
+          const target = targetId ? requireSummary(targetId) : null;
+          if (target && (target.kind !== s.kind || target.spaceId !== s.spaceId || target.id === id || pathOf(target).some((r) => r.id === id))) {
+            throw new CollabError('invariant_violation', 'Invalid placement target');
+          }
+          parentId = relation === 'inside' ? targetId : target?.parentId ?? null;
+          const siblings = [...summaries.values()].filter((r) => r.id !== id && r.kind === s.kind && r.spaceId === s.spaceId && r.parentId === parentId && !r.deletedAt)
+            .sort((a,b) => a.position - b.position || a.id.localeCompare(b.id));
+          const at = relation === 'inside' ? 0 : siblings.findIndex((r) => r.id === targetId) + (relation === 'after' ? 1 : 0);
+          const lo = siblings[at - 1]?.position; const hi = siblings[at]?.position;
+          position = lo === undefined ? (hi ?? 1024) - 1024 : hi === undefined ? lo + 1024 : (lo + hi) / 2;
+        }
+        if (position === undefined) throw new CollabError('invalid_input', 'Missing placement');
+        if (parentId !== null) {
+          const parent = requireSummary(parentId);
+          if (parent.kind !== s.kind || parent.spaceId !== s.spaceId || parent.id === id || pathOf(parent).some((r) => r.id === id)) {
+            throw new CollabError('invariant_violation', 'Invalid parent');
+          }
+        }
+        s.parentId = parentId;
+        s.position = position;
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);

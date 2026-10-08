@@ -398,7 +398,7 @@ const taskAttentionFilter: FilterSpec = {
 const BY_ACTIVITY: SortSpec = { key: 'activityAt_desc', label: 'Recent activity', default: true };
 const BY_UPDATED: SortSpec = { key: 'updatedAt_desc', label: 'Recently modified', default: true };
 const BY_CREATED: SortSpec = { key: 'createdAt_desc', label: 'Newest' };
-const BY_POSITION: SortSpec = { key: 'position', label: 'Manual order' };
+const BY_POSITION: SortSpec = { key: 'position', label: 'Manual order', default: true };
 const BY_DUE: SortSpec = { key: 'dueDate', label: 'Due date' };
 const BY_START: SortSpec = { key: 'startDate', label: 'Start date' };
 const BY_PRIORITY: SortSpec = { key: 'priority', label: 'Priority' };
@@ -475,11 +475,16 @@ function baseList(
 ): ListConfig {
   return {
     quickCreate: true,
-    sort: DEFAULT_SORT,
     // Universal for the same reason: `contains` accepts every dst kind, so
     // every list can be lensed by a collection and every row added to one.
     membership: COLLECTION_MEMBERSHIP,
     ...overrides,
+    // Every default view shares the database order. Other sorts remain explicit
+    // projections; choosing filters never changes this order.
+    sort: [BY_POSITION, ...(overrides.sort ?? DEFAULT_SORT).filter((s) => s.key !== 'position').map(also)],
+    tree: overrides.tree ?? { by: 'hierarchy', guideLines: true },
+    defaultCategory: 'all',
+    tabTotal: 'all',
     /* APPENDED AFTER THE OVERRIDES, DELIBERATELY. `filters` is a whole-array
        override — task and work_session both replace it — so a default entry
        is not a default at all, it is a suggestion two kinds ignore. The
@@ -512,7 +517,7 @@ function baseList(
        already degrades correctly — `CategoryTabs` returns null for empty tabs,
        and `EntityTree` falls back to the unfiltered `{deleted:'exclude'}`. */
     categories:
-      overrides.categories === null ? undefined : (overrides.categories ?? CATEGORY_TABS),
+      overrides.categories === null ? undefined : [{ id: 'all', label: 'All', filter: { deleted: 'exclude' } }, ...(overrides.categories ?? CATEGORY_TABS).filter((tab) => tab.id !== 'all')],
   };
 }
 

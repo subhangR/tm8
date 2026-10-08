@@ -130,6 +130,8 @@ import { isNeedsMeFilter, needsMeCount, needsMeRecheckAt } from '../attention/ne
 import { SettingsHomeLink } from './SettingsHomeLink';
 import { useFreshGlow, useRetainLeaving } from '../domain/useFreshGlow';
 
+import { useEntityPlacement, type MoveEntity } from './list/useEntityPlacement';
+
 const rowId = (row: EntitySummary): string => row.id;
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
@@ -467,6 +469,10 @@ export interface EntityListPanelProps {
   /** The row's sharing slot (187) — see `ControlHost.onShareSession`. */
   onShareSession?: (entityId: string, patch: SessionSharingPatch) => void;
   onCreate?: () => void;
+  placementDisabledReason?: string;
+  onMoveEntity?: MoveEntity;
+  onCreateChild?: (parent: EntitySummary) => void;
+  inlineCreateSlot?: ReactNode;
   /** Authoring 7a: the host's REAL create control (NewTaskControl). */
   createSlot?: React.ReactNode;
   onKindChange?: (kind: string) => void;
@@ -1109,18 +1115,20 @@ export function EntityListPanel(props: EntityListPanelProps) {
       ) : null}
 
       <div className="lp__body" ref={props.bodyRef} onPointerOver={placeHoverBar}>
+        {props.inlineCreateSlot}
         {needsMeActive ? (
           /* ATTENTION v2 — "Needs me" is the attention QUEUE, one flat list in
-             queue order (needs-me.ts). Tabs, sections, people chips and the
+             entity order (needs-me.ts). Tabs, sections, people chips and the
              lens partition entities, not the queue, so none of them narrow it:
              the band reads the needs-me clause alone, and the note says so. */
           <>
             <p className="att-needs-me-note" data-testid="needs-me-note">
-              Needs me lists what is waiting on you, in queue order — tabs and sections don’t apply.
+              Needs me lists what is waiting on you in the selected order; tabs and sections don’t apply.
             </p>
             <Band
               label={null}
               filter={selectedFilter}
+              sort={sortKey}
               props={props}
               config={config}
               query={query}
@@ -3208,6 +3216,8 @@ function Band({
   query?: string;
 }) {
   const bandAttention = useAttentionOptional();
+  const placedProps = { ...props, placementDisabledReason: sort !== 'position'
+    ? 'Choose Manual order to move cards.' : query?.trim() ? 'Clear search to move cards.' : undefined };
   /* A row deleted live stays for its exit (R41) — see `useRetainLeaving`. */
   const rows = useRetainLeaving(filter === null ? NO_ROWS : props.rowsFor(filter, sort), rowId);
   const page = filter === null ? undefined : props.pageStateOf?.(filter, sort);
@@ -3230,7 +3240,7 @@ function Band({
   const visible = matching(graced, query ?? '');
   const sessionRows = visible.length > 0 && visible.every((r) => isSessionState(r.state));
   const attentionIds = attentionIdsOf(visible, props, config);
-  const groups = sessionRows
+  const groups = sessionRows && sort !== 'position'
     ? groupSessionRows(tabId, visible, (r) => r.state, (r) => ({ claims: props.linkedClaimsOf?.(r.id) }))
     : null;
 
@@ -3327,17 +3337,18 @@ function Band({
               />
             ) : null}
             {group.rows.length > 0 ? (
-              <TreeRows rows={group.rows} props={props} config={config} attentionIds={attentionIds} />
+              <TreeRows rows={group.rows} props={placedProps} config={config} attentionIds={attentionIds} />
             ) : null}
           </Fragment>
         ))
       ) : (
-        <TreeRows rows={visible} props={props} config={config} attentionIds={attentionIds} />
+        <TreeRows rows={visible} props={placedProps} config={config} attentionIds={attentionIds} />
       )}
 
       {/* PAGING IS THE BAND'S, because the query is the band's. Rendered after
           the rows so the observer sits at the true bottom of this band's
           content, and only when the server actually left a cursor. */}
+      {page?.error ? <p role="alert">Could not load more: {page.error}. Use Load more to retry.</p> : null}
       {filter !== null && page?.hasMore && props.loadMore ? (
         <LoadMoreSentinel
           loading={page.loading}
@@ -3530,6 +3541,14 @@ function TreeRows({
   );
 
   const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
+  const placement = useEntityPlacement({
+    rows, selectedId: props.selectedId,
+    canMove: (id) => props.capabilitiesOf?.(id)?.canMove === true,
+    move: props.onMoveEntity,
+    createChild: props.selectedId && props.capabilitiesOf?.(props.selectedId)?.canAddChild
+      ? props.onCreateChild : undefined,
+    disabledReason: props.placementDisabledReason,
+  });
 
   /**
    * Live session traffic — delegation, completion and messages — resolved
@@ -3580,7 +3599,9 @@ function TreeRows({
         role={config.list.tree ? 'treeitem' : 'listitem'}
         aria-expanded={config.list.tree && hasChildren ? !isCollapsed : undefined}
         aria-selected={config.list.tree ? props.selectedId === node.row.id : undefined}
-        tabIndex={onTreeKey ? -1 : undefined}
+        tabIndex={props.onMoveEntity ? 0 : onTreeKey ? -1 : undefined}
+        data-placement-row={node.row.id}
+        data-placement-preview={placement.preview?.id === node.row.id ? placement.preview.relation : undefined}
         onKeyDown={onTreeKey}
         /* Presentation only. The underlying event is already represented by
            the rows it changes; narrating the same transition from a decorative
@@ -3621,13 +3642,16 @@ function TreeRows({
   };
 
   return (
-    <div className={treeClass(config)} role={config.list.tree ? 'tree' : 'list'}>
+    <div ref={placement.root}>
+      {placement.controls}
+      <div className={treeClass(config)} role={config.list.tree ? 'tree' : 'list'}>
       {roots.map(renderNode)}
       {/* LAST, and out of flow. The layer measures against this container, so
           it must be a child of it; rendering it after the rows keeps it above
           them without a stacking context that would trap the row menus.
  */}
       {pulse.flights.length > 0 ? <TileFlightLayer flights={pulse.flights} /> : null}
+      </div>
     </div>
   );
 }

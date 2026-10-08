@@ -63,7 +63,7 @@ interface SortSpec {
    * `timestamptz` carries MICROSECONDS and a `Date` keeps only milliseconds, so
    * the encoded key lands strictly before the row it came from; both temporal
    * sorts here are DESC, where that does not loop but SILENTLY SKIPS every row
-   * sharing the lost millisecond — and `activityAt_desc` is the DEFAULT sort.
+   * sharing the lost millisecond — when the caller explicitly requests `activityAt_desc`.
    * `date` is worse in a quieter way: node-pg parses it at LOCAL midnight, so
    * `toISOString()` can move a due date to the previous day west of UTC.
    * Rendering in SQL removes both hazards; numeric sorts need no rendering.
@@ -127,7 +127,7 @@ const SORTS: Record<SortName, SortSpec> = {
   },
 };
 
-const DEFAULT_SORT: SortName = 'activityAt_desc';
+const DEFAULT_SORT: SortName = 'position';
 
 /**
  * Bind an opaque keyset to the complete semantic query that minted it.
@@ -732,7 +732,16 @@ export async function queryCollection(
   }
 
   const limit = limitOf(query.limit);
-  const fingerprint = cursorFingerprint(query, sortName, cursorScope);
+  // A rank rebalance or move invalidates an old page boundary. Hold the same
+  // lock as placement writers through this read so epoch and rows agree.
+  let placementRevision = '';
+  if (sortName === 'position') {
+    await q.query("select pg_advisory_xact_lock_shared(hashtextextended('entity-placement:' || $1::text, 0))", [query.spaceId]);
+    const revisions = await q.query<{ revision: string }>(
+      'select revision::text from public.entity_placement_revisions where space_id = $1', [query.spaceId]);
+    placementRevision = `:placement:${revisions[0]?.revision ?? '0'}`;
+  }
+  const fingerprint = cursorFingerprint(query, sortName, cursorScope + placementRevision);
   const p = new Params();
   const where = buildWhere(query, p);
   // The cursor clause below narrows to "after this row" — a PAGE fact. Group

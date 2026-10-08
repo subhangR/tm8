@@ -3,7 +3,7 @@
  * S5b, msg 01a0dede-3172).
  *
  * The list filter keeps its place in the filter bar, but with an attention
- * module mounted its ROW SOURCE is `queue('mine')`'s roots, in queue order,
+ * module mounted its ROW SOURCE is `queue('mine')`'s roots, in entity position order,
  * for this list's kind — never the server's old in-review-OR-mentions
  * predicate (G1, Q17), and never an intersection with the loaded page: the
  * list is paged on the server, so a root off the current page would silently
@@ -18,7 +18,8 @@
  * Outside a provider, or for any other filter, the host's source passes
  * through untouched.
  */
-import type { EntitySummary } from '@tm8/contract';
+import type { CollectionQuery, EntitySummary } from '@tm8/contract';
+import { compareBySort } from '../data/project/domain-store';
 import type { ListPageState } from '../domain/types';
 import type { AttentionApi, AttentionQueueRow } from './index';
 
@@ -83,12 +84,13 @@ function mineOfKind(api: AttentionApi, kind: string): AttentionQueueRow[] {
   return api.queue('mine').filter((row) => row.kind === null || row.kind === kind);
 }
 
-/** The queue's roots of `kind`, in queue order, as the summaries the host holds. */
+/** Queue membership narrows the positioned list; attention priority never moves a row. */
 export function needsMeRows(
   api: AttentionApi,
   kind: string,
   data: NeedsMeData,
   now = Date.now(),
+  sort?: CollectionQuery['sort'],
 ): readonly EntitySummary[] {
   const out: EntitySummary[] = [];
   for (const row of mineOfKind(api, kind)) {
@@ -100,7 +102,7 @@ export function needsMeRows(
       requestPull(data, row.rootId, now);
     }
   }
-  return out;
+  return out.sort(compareBySort(sort));
 }
 
 /**
@@ -139,7 +141,7 @@ export function needsMeListSource<RowsFn extends Read<readonly EntitySummary[]>,
 ): { rowsFor: RowsFn; pageStateOf: PageFn; loadMore: MoreFn } {
   if (!api) return source;
   const rowsFor = ((filter?: unknown, sort?: never) =>
-    isNeedsMeFilter(filter) ? needsMeRows(api, kind, data) : source.rowsFor(filter, sort)) as RowsFn;
+    isNeedsMeFilter(filter) ? needsMeRows(api, kind, data, Date.now(), sort) : source.rowsFor(filter, sort)) as RowsFn;
   const pageStateOf = ((filter?: unknown, sort?: never) =>
     isNeedsMeFilter(filter)
       ? { hasMore: false, loading: needsMeLoading(api, kind, data) }

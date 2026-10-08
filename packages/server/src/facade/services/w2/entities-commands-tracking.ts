@@ -1566,7 +1566,7 @@ export class W2EntitiesCommandsTrackingService {
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
         const kind = await kindFor(q, id);
-        // `work_session` stays in RESTRICTED_LIFECYCLE_KINDS — create, move,
+        // `work_session` stays in RESTRICTED_LIFECYCLE_KINDS — create,
         // delete and restore are owned by the execution block and must keep
         // refusing. A rename is not lifecycle: it renames the LABEL a person
         // reads in a list of live agents, so this one door is opened by name
@@ -1907,9 +1907,14 @@ export class W2EntitiesCommandsTrackingService {
     const envelope = commandEnvelope(ctx);
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
-        assertGenericLifecycle(await kindFor(q, id), 'entities.move');
-        const raw = await q.rpc<RpcCommandResult>('move_entity', [id, input.parentId, input.position,
-          input.expectedVersion, envelope.actorId ?? null, envelope.clientMutationId ?? null]);
+        const kind = await kindFor(q, id);
+        // Session/artifact placement is shared presentation, not execution or publication.
+        if (kind !== 'work_session' && kind !== 'artifact') assertGenericLifecycle(kind, 'entities.move');
+        const raw = input.placement
+          ? await q.rpc<RpcCommandResult>('move_entity_relative', [id, input.placement.targetId, input.placement.relation,
+              input.expectedVersion, envelope.actorId ?? null, envelope.clientMutationId ?? null])
+          : await q.rpc<RpcCommandResult>('move_entity', [id, input.parentId, input.position,
+              input.expectedVersion, envelope.actorId ?? null, envelope.clientMutationId ?? null]);
         return commandResult(q, raw, owner.identityId);
       });
     } catch (error) {

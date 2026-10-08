@@ -278,9 +278,9 @@ describe('login terminals are filtered out of session lists', () => {
       spaceId,
       filter: undefined,
     });
-    expect(out.map((r) => r.id)).toEqual([
+    expect(new Set(out.map((r) => r.id))).toEqual(new Set([
       sessionLive.id, sessionStale.id, sessionExited.id, sessionFailed.id,
-    ]);
+    ]));
   });
 
   it('keeps an EXPLICIT agent session', () => {

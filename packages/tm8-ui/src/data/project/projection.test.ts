@@ -113,11 +113,11 @@ describe('projectRows — a server-ordered read kept current by the stream', () 
     expect(out.map((r) => r.id)).toEqual(['b']);
   });
 
-  it('adds an arrival at the HEAD — the server’s own activityAt_desc order', () => {
+  it('adds a newly positioned arrival at the head of the default list', () => {
     const entities = table([
       summary('a'),
       summary('b'),
-      summary('new', { activityAt: '2026-07-29T11:00:00.000Z' }),
+      summary('new', { position: -1024, activityAt: '2026-07-29T11:00:00.000Z' }),
     ]);
     const out = projectRows({ ordered, entities, kind: 'task', spaceId: SPACE, filter: { status: ['open'] } });
     expect(out.map((r) => r.id)).toEqual(['new', 'a', 'b']);

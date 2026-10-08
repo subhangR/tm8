@@ -414,7 +414,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
        than whatever ran before it. */
     beforeEach(() => window.localStorage.clear());
 
-    it('draws the RUNNING session with no tab click, and not the ended one', () => {
+    it('draws running and ended sessions together in stable default order', () => {
       const { container } = render(
         <EntityListPanel
           kind="work_session"
@@ -428,35 +428,34 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
          band predicate kept neither row, and the surface rendered nothing —
          the reported symptom, exactly. */
       expect(container.textContent).toContain(running.title);
-      expect(container.textContent).not.toContain(exited.title);
+      expect(container.textContent).toContain(exited.title);
     });
 
-    it('opens on In Progress because the REGISTRY says so, not because the panel knows about sessions', () => {
+    it('opens on All because the registry declares the default', () => {
       /* The panel must not have learned a kind name. `defaultCategory` is
          registry DATA (§15.2: a kind literal outside `domain/` is a build
          failure), and this is the assertion that keeps the fix declarative — a
          later edit that hardcodes `work_session` inside EntityListPanel passes
          the test above and fails this one. */
-      // Spec D1 §5.3: sessions have their own tabs and open on Running.
-      expect(getKind('work_session').list.defaultCategory).toBe('running');
+      // Sessions retain status tabs, with positioned All as the default.
+      expect(getKind('work_session').list.defaultCategory).toBe('all');
 
       const { getByRole } = render(
         <EntityListPanel kind="work_session" rowsFor={bandedRowsFor([running])} ctx={ctx} />,
       );
-      expect(getByRole('tab', { selected: true }).textContent).toContain('Running');
+      expect(getByRole('tab', { selected: true }).textContent).toContain('All');
     });
 
-    it('leaves every AUTHORED kind on To Do — the shared tab array is untouched', () => {
+    it('uses the same All default for authored kinds', () => {
       /* The blast-radius guard. `CATEGORY_TABS` is one array shared by twenty
-         kinds; this fix changes WHERE ONE KIND OPENS, not what the four bands
-         mean. A task is born `open` → To Do, so landing there is landing on the
-         backlog and must stay that way. */
-      expect(getKind('task').list.defaultCategory).toBeUndefined();
+         kinds. All keeps status changes visible without moving rows between
+         default views; status tabs still narrow the same positioned list. */
+      expect(getKind('task').list.defaultCategory).toBe('all');
 
       const { getByRole } = render(
         <EntityListPanel kind="task" rowsFor={bandedRowsFor([taskGuideLines])} ctx={ctx} />,
       );
-      expect(getByRole('tab', { selected: true }).textContent).toContain('To Do');
+      expect(getByRole('tab', { selected: true }).textContent).toContain('All');
     });
   });
 
@@ -654,7 +653,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       expect(
         panel.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\s*\d+\+?$/, '')),
         `${kind} tabs`,
-      ).toEqual(['To Do', 'In Progress', 'Done', 'Cancelled']);
+      ).toEqual(['All', 'To Do', 'In Progress', 'Done', 'Cancelled']);
       panel.unmount();
     }
     // Spec D1 §5.3 (owner decision, 6 Oct): sessions have their OWN row,
@@ -662,7 +661,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const sessions = render(<EntityListPanel kind="work_session" rowsFor={rowsFor([])} ctx={ctx} />);
     expect(
       sessions.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\s*\d+\+?$/, '')),
-    ).toEqual(['Running', 'Interrupted', 'Completed', 'Stopped']);
+    ).toEqual(['All', 'Running', 'Interrupted', 'Completed', 'Stopped']);
     sessions.unmount();
     // The sections that used to fight the tabs on the same axis are GONE.
     expect(getKind('task').list.sections).toBeUndefined();
@@ -686,7 +685,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const { getByTestId, getAllByRole } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
     );
-    expect(getAllByRole('tab')).toHaveLength(4);
+    expect(getAllByRole('tab')).toHaveLength(5);
     expect(getByTestId('filter-trigger')).toBeTruthy();
   });
 
@@ -701,7 +700,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const { container, getAllByRole } = render(
       <EntityListPanel kind={stateless!.kind} rowsFor={rowsFor([])} ctx={ctx} />,
     );
-    expect(getAllByRole('tab')).toHaveLength(4);
+    expect(getAllByRole('tab')).toHaveLength(5);
     expect(container.querySelector('[data-unsupported]'), 'no tab may be dimmed').toBeNull();
     for (const tab of getAllByRole('tab')) {
       expect(tab.getAttribute('title'), 'a live tab carries no refusal reason').toBeNull();
@@ -716,15 +715,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const total = Number(getByTestId('kind-total').textContent);
     // The total is the sum of the tabs — not a second source that could
     // disagree with the tabs it claims to summarise.
-    expect(total).toBe(tabCounts.reduce((a, b) => a + b, 0));
-    const footer = getByTestId('list-footer').textContent ?? '';
-    // The tab's LABEL lowercased, never its `StatusCategory` id: `to_do` and
-    // `in_progress` are contract literals and must not reach a user.
-    for (const word of ['to do', 'in progress', 'done', 'cancelled']) {
-      expect(footer).toContain(word);
-    }
-    expect(footer).not.toContain('to_do');
-    expect(footer).not.toContain('in_progress');
+    expect(total).toBe(tabCounts[0]);
+    // Overlapping All and lifecycle tabs share All's total; no summed footer.
+    expect(total).toBeGreaterThan(0);
   });
 
   it('marks a generic attention request IN PLACE — the flagged parent keeps its children', () => {
@@ -1165,7 +1158,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       for (const [testId, name] of [
         ['filter-trigger', 'Filter'],
         ['row-view-trigger', 'View'],
-        ['sort-trigger', 'Sort: Recent activity'],
+        ['sort-trigger', 'Sort: Manual order'],
       ] as const) {
         const chip = getByTestId(testId);
         expect(chip.textContent).toBe('');
