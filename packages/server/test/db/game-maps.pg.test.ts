@@ -136,6 +136,15 @@ describe('durable map schema and real authorization', () => {
     const first=await write(map.id,'place',input,undefined,cmid);
     expect(await write(map.id,'place',input,undefined,cmid)).toEqual(first);
     await expect(write(map.id,'place',{...input,x:2},undefined,cmid)).rejects.toMatchObject({code:'invariant_violation'});
+    // Lazy hash cleanup cannot weaken replay while core retention still holds the ledger.
+    await scratch.query("update map.command_inputs set created_at=now()-interval '25 hours' where client_mutation_id=$1",[cmid]);
+    await scratch.query("update public.command_ledger set created_at=now()-interval '25 hours' where client_mutation_id=$1",[cmid]);
+    expect(await write(map.id,'place',input,undefined,cmid)).toEqual(first);
+    await expect(write(map.id,'place',{...input,x:3},undefined,cmid)).rejects.toMatchObject({code:'invariant_violation'});
+    await scratch.query('select internal.prune_command_ledger()');
+    await scratch.query('select map.prune_command_inputs()');
+    expect(await scratch.query('select * from map.command_inputs where client_mutation_id=$1',[cmid])).toEqual([]);
+    expect(await scratch.query('select * from public.command_ledger where client_mutation_id=$1',[cmid])).toEqual([]);
   });
   it('restores a deleted map identity through standard restore without duplicating it', async () => {
     const map=await open('office');

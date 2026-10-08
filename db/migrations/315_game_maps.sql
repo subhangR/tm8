@@ -164,7 +164,8 @@ create index map_command_inputs_expiry on map.command_inputs(created_at);
 create function map.prune_command_inputs() returns bigint language plpgsql as $$
 declare removed bigint;
 begin
-  delete from map.command_inputs where created_at<clock_timestamp()-interval '24 hours';
+  delete from map.command_inputs i where i.created_at<clock_timestamp()-interval '24 hours'
+    and not exists(select 1 from public.command_ledger l where l.client_mutation_id=i.client_mutation_id);
   get diagnostics removed=row_count;
   return removed;
 end $$;
