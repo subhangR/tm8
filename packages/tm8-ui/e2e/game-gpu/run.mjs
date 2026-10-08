@@ -62,7 +62,7 @@ const closeBrowser = async () => {
   if (!browserServer) return;
   try { await bounded(browserServer.close(), 5000); }
   catch (error) {
-    (report.cleanup ??= []).push({ forcedBrowserKill: true, reason: String(error) });
+    (report.cleanup ??= []).push({ key: report.runs.at(-1)?.key ?? null, repeat: report.runs.at(-1)?.repeat ?? null, forcedBrowserKill: true, reason: String(error) });
     try { await bounded(browserServer.kill(), 5000); } catch {}
   } finally {
     const process = browserServer.process();
