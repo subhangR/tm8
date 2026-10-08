@@ -11,10 +11,15 @@ const scene = vi.hoisted(() => ({ props: null as WalkingMapViewProps | null, mou
 vi.mock('../story/game/maps/WalkingMapView', () => ({ WalkingMapView: (props: WalkingMapViewProps) => {
   scene.props = props;
   useEffect(() => { scene.mounts++; }, []);
-  return <div>{props.model.scope.id}:{props.model.type}
+  return <div className="sgm walking-map"><div className="sgm-stage"><canvas aria-label="Map canvas"/></div><div className="sgm-hud">
+    <div className="walking-toolbar"><button>Back</button><button>Map overview</button></div>
+    <details className="walking-places" open><summary>Places</summary><p>Inspect a place</p></details>
+    <details className="walking-workers" open><summary>Workers</summary><p>Juniper · working</p></details>
+    <div className="sgm-minimap"><button>Hide minimap</button><canvas style={{ width: 180, height: 180 }}/></div>
+  </div><div>{props.model.scope.id}:{props.model.type}
     {props.model.portals.map(portal => <button key={portal.id} onClick={() => props.onEnterPortal(portal)}>{portal.label}</button>)}
     <button onClick={() => { props.onPosition(7, 8); props.onCamera({ zoom: 3, position: [1, 2, 3], target: [7, 0, 8] }); }}>Move player</button>
-  </div>;
+  </div></div>;
 } }));
 function harness() {
   const subs = new Set<(event: DurableWorkspaceEvent) => void>();
@@ -34,6 +39,44 @@ function harness() {
 beforeEach(() => { localStorage.clear(); scene.mounts = 0; scene.props = null; });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 describe('GameMode live event wiring', () => {
+  it('keeps the announcement inside the map through below/above burst threshold and back', async () => {
+    let now = Date.now(); vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const h = harness(); const screen = render(<GameMode spaceId="space" memberId="member" loadMap={h.loadMap} events={h.events} onInspect={vi.fn()}/>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Taskland' }));
+    await screen.findByText('space:taskland');
+    const phases: { name: string; html: string }[] = [];
+    const capture = (name: string) => {
+      const map = screen.container.querySelector('.game-mode__map')!;
+      expect(map.querySelector('[aria-live="polite"]')?.getAttribute('aria-atomic')).toBe('true');
+      phases.push({ name, html: screen.container.innerHTML });
+    };
+    capture('empty');
+    act(() => h.emit({ type: 'counter.changed', entityId: 'task', counters: { messages: 1 } }));
+    await screen.findByText('1 map update'); capture('below');
+    act(() => { for (let n = 2; n <= 6; n++) h.emit({ type: 'counter.changed', entityId: 'task', counters: { messages: n } }); });
+    await screen.findByText('6 map updates in the last minute'); capture('above');
+    now += 60_001;
+    act(() => h.emit({ type: 'counter.changed', entityId: 'task', counters: { messages: 7 } }));
+    await screen.findByText('1 map update'); capture('below-again');
+    // Estimate visibility is authoritative row data, so its warning can appear
+    // and disappear during a live update as well as during the initial read.
+    const row = (version: number, state: object) => ({ id: 'task', kind: 'task', spaceId: 'space', title: 'Build', version,
+      parentId: null, category: 'in_progress', counters: {}, badges: {}, state: { kind: 'task', status: 'working', ...state } });
+    act(() => h.emit({ type: 'entity.upsert', entity: row(1, { weighted: { tent: false, size: 3, progress: .5 } }) }));
+    await screen.findByText(/hide their estimate in an incomplete hierarchy/);
+    expect(screen.container.querySelector('.game-mode__map details.game-mode__notice')).not.toBeNull();
+    capture('warnings-added');
+    act(() => h.emit({ type: 'entity.upsert', entity: row(2, { pointsEstimate: 3 }) }));
+    await waitFor(() => expect(screen.queryByText('Map notices')).toBeNull());
+    capture('warnings-cleared');
+    // The DOM-only browser height regression consumes these actual component
+    // snapshots with the production stylesheet, rather than JSDOM's zero rects.
+    if (process.env.TM8_LIVE_NOTICE_LAYOUT_SNAPSHOTS) {
+      const { writeFile } = await import('node:fs/promises');
+      await writeFile(process.env.TM8_LIVE_NOTICE_LAYOUT_SNAPSHOTS, JSON.stringify(phases));
+    }
+    expect(h.loadMap).toHaveBeenCalledTimes(2);
+  });
   it('updates workers without remounting the walking player or reapplying camera/save values', async () => {
     const h = harness(); const screen = render(<GameMode spaceId="space" memberId="member" loadMap={h.loadMap} events={h.events} onInspect={vi.fn()}/>);
     fireEvent.click(await screen.findByRole('button', { name: 'Taskland' }));

@@ -6,3 +6,8 @@
 .game-mode__status { padding: 1rem; }
 .game-mode__status button + button { margin-left: .5rem; }
 .game-mode__notice { margin: 0; padding: .5rem .75rem; font-size: .875rem; }
+.game-mode__notices { position: absolute; z-index: 30; top: .75rem; left: 50%; transform: translateX(-50%); width: min(28rem, 40%); max-height: 28%; overflow: auto; pointer-events: none; }
+.game-mode__notices .game-mode__notice { background: var(--pn-card, white); color: var(--pn-ink, #222); border-radius: .5rem; }
+.game-mode__notices details, .game-mode__notices button { pointer-events: auto; }
+.game-mode__live-notice { pointer-events: none; }
+.game-mode__live-notice:empty { display: none; }
