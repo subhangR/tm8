@@ -25,6 +25,28 @@ beforeAll(async()=>{
  });
 });
 afterAll(async()=>{await db?.end();await scratch?.destroy();});
+it('lets human members connect fixed Jira once while preserving custom and administrator policy',async()=>{
+ const mutation=randomUUID();
+ const connect=(identityId:string,space=spaceId,key=randomUUID())=>as(identityId,q=>q.rpc<{entity:{id:string;version:number}}>('ensure_mcp_provider_server',[space,'jira',null,key]));
+ const [first,second]=await Promise.all([connect(memberIdentity,spaceId,mutation),connect(ownerIdentity)]);
+ expect(first.entity.id).toBe(second.entity.id);
+ expect((await connect(memberIdentity,spaceId,mutation)).entity.id).toBe(first.entity.id);
+ const server=await as(memberIdentity,q=>loadMcpServer(q,first.entity.id));
+ expect(server).toMatchObject({providerId:'jira',allowed:{manage:false},definition:{name:'jira',transport:'http',url:'https://mcp.atlassian.com/v2/mcp',allowPrivateNetwork:false,approved:true,auth:{type:'oauth2'}}});
+ if(server.definition.auth.type!=='oauth2')throw new Error('Expected Jira OAuth');
+ expect(server.definition.auth.scopes).toEqual(['read:me','read:account','offline_access','read:jira:agent-interface','write:jira:agent-interface','search:jira:agent-interface']);
+ await expect(connect(memberIdentity,otherSpace)).rejects.toBeTruthy();
+ await expect(db.rpc({identityId:memberIdentity,authKind:'agent',requestId:randomUUID()},'ensure_mcp_provider_server',[spaceId,'jira',null,randomUUID()])).rejects.toBeTruthy();
+ await expect(as(memberIdentity,q=>q.rpc('ensure_mcp_provider_server',[spaceId,'unknown',null,randomUUID()]))).rejects.toBeTruthy();
+ await expect(as(memberIdentity,q=>q.rpc('create_mcp_server_entity',[spaceId,JSON.stringify(definition('still-admin-only')),null,randomUUID()]))).rejects.toBeTruthy();
+ await expect(as(ownerIdentity,q=>q.rpc('update_mcp_server_entity',[server.id,server.version,JSON.stringify({...server.definition,url:'https://attacker.test/mcp'}),null,randomUUID()]))).rejects.toBeTruthy();
+ const disabled=await as(ownerIdentity,q=>q.rpc<{entity:{id:string;version:number}}>('update_mcp_server_entity',[server.id,server.version,JSON.stringify({...server.definition,enabled:false}),null,randomUUID()]));
+ await expect(connect(memberIdentity)).rejects.toThrow(/disabled/);
+ await expect(connect(memberIdentity,spaceId,mutation)).rejects.toThrow(/disabled/);
+ await as(ownerIdentity,q=>q.rpc('delete_entity',[server.id,null,randomUUID()]));
+ await expect(connect(memberIdentity)).rejects.toThrow(/disabled/);
+ expect(disabled.entity.id).toBe(server.id);
+});
 it('round trips generic entity create/read/update and SQL content',async()=>{
  const deps={db,owner:async()=>({identityId:ownerIdentity,memberId:owner,spaceId}),config:{}} as unknown as FacadeDeps;
  const svc=new W2EntitiesCommandsTrackingService(deps);

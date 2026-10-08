@@ -3,7 +3,8 @@ import { StrictMode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { captureMcpCallback, rememberMcpOAuth, type McpCallback } from './oauth-callback';
-import { McpOAuthCallback } from './McpOAuthCallback';
+import { completeMcpConnection, McpOAuthCallback } from './McpOAuthCallback';
+import type { HttpClient } from '../data/real/http';
 afterEach(()=>{cleanup();sessionStorage.clear();localStorage.clear();});
 it('captures callback fields then removes them from history without persisting the code',()=>{
   rememberMcpOAuth('https://fixture.example/authorize?state=one','space');
@@ -32,4 +33,18 @@ it('offers recovery without showing provider error text',async()=>{
   render(<McpOAuthCallback callback={callback} complete={complete}/>);
   await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('start a new connection'));
   expect(document.body.textContent).not.toContain('provider-token-secret');
+});
+it('checks MCP tools with the private account returned by the callback before claiming success',async()=>{
+  const call=vi.fn().mockResolvedValueOnce({id:'private-account',serverId:'jira-server'}).mockResolvedValueOnce({ready:true});
+  expect(await completeMcpConnection({call} as unknown as HttpClient,callback.input)).toBe(true);
+  expect(call).toHaveBeenNthCalledWith(2,'mcp.servers.test',{params:{serverId:'jira-server'},body:{clientMutationId:expect.any(String),serverId:'jira-server',credentialId:'private-account'}});
+});
+it('distinguishes authorization from unavailable MCP tools',async()=>{
+  render(<McpOAuthCallback callback={callback} complete={async()=>false}/>);
+  expect((await screen.findByRole('alert')).textContent).toContain('account was authorized');
+  expect(screen.queryByText(/Your private account is connected/)).toBeNull();
+});
+it('retains successful authorization when the connection test request fails',async()=>{
+ const call=vi.fn().mockResolvedValueOnce({id:'private-account',serverId:'jira-server'}).mockRejectedValueOnce(new Error('upstream-unavailable'));
+ expect(await completeMcpConnection({call} as unknown as HttpClient,callback.input)).toBe(false);
 });

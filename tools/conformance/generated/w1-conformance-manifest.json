@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d",
+  "catalogDigest": "sha256:5527b6dcb2f4bdea2e03a8c10048aeb729c28f00d245b0c56b385fb06e8d3a1c",
   "catalog": {
-    "total": 359,
-    "v1": 357,
+    "total": 360,
+    "v1": 358,
     "reserved": 2,
-    "http": 357,
+    "http": 358,
     "ws": 1,
-    "registerableV1Http": 355,
+    "registerableV1Http": 356,
     "methods": {
       "GET": 117,
-      "POST": 176,
+      "POST": 177,
       "PATCH": 20,
       "DELETE": 23,
       "PUT": 21,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 123,
-      "command": 234,
+      "command": 235,
       "stream": 2
     },
-    "uniqueNames": 359,
-    "uniqueBindings": 358
+    "uniqueNames": 360,
+    "uniqueBindings": 359
   },
   "reservedOperations": [
     "search.query",
@@ -200,6 +200,13 @@
   ],
   "routes": {
     "http": [
+      {
+        "operation": "mcp.providers.connect",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/mcp/providers/:providerId/connect",
+        "status": "registered",
+        "source": "server-router"
+      },
       {
         "operation": "mcp.credentials.rotate",
         "method": "POST",
@@ -2917,7 +2924,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 327
+    "unimplementedV1Http": 328
   },
   "schemas": {
     "additive": {
@@ -3083,6 +3090,23 @@
   },
   "help": {
     "operations": [
+      {
+        "operation": "mcp.providers.connect",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.providers.connect",
+        "intentTags": [
+          "mcp",
+          "providers",
+          "connect"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
       {
         "operation": "mcp.credentials.rotate",
         "noun": "mcp",

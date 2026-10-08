@@ -1,6 +1,6 @@
 import {
  CollabError, McpCredentialRotateInputSchema, McpCredentialCreateInputSchema, McpCredentialCommandInputSchema,
- McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema,
+ McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProviderConnectInputSchema,
  McpServerTestInputSchema, McpProxyRequestInputSchema, type McpCredentialView, type McpServerView,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
@@ -31,7 +31,19 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
  const views=(auth:DbClaims,serverId:string|null,id:string|null=null)=>deps.db.rpc<McpCredentialView[]>(auth,'list_mcp_credentials',[serverId,id]);
  const view=async(auth:DbClaims,id:string)=>{const row=(await views(auth,null,id))[0];if(!row)throw new CollabError('not_found','MCP account unavailable');return row;};
  const approved=async(auth:DbClaims,id:string)=>{const server=await options.definition(auth,id);if(!server.definition.approved)throw new CollabError('forbidden','MCP connector is not approved');return server;};
+ const beginOAuth=async(auth:DbClaims,serverId:string,label:string)=>{
+  const server=await approved(auth,serverId);const config=server.definition.auth;
+  if(server.definition.enabled===false)throw new CollabError('forbidden','MCP connector is disabled');
+  if(config.type!=='oauth2' || !server.definition.url || !auth.identityId)throw new CollabError('invalid_input','OAuth connector required');
+  return oauth.begin({identityId:auth.identityId,spaceId:server.spaceId,serverId:server.id,definitionVersion:server.securityRevision ?? server.version,resource:server.definition.url,...(config.issuer?{issuer:config.issuer}:config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),label,...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
+ };
  registry.registerAll({
+  'mcp.providers.connect':requireHumanSession(async ctx=>{
+   const input=McpProviderConnectInputSchema.parse({...ctx.body as object,spaceId:path(ctx,'spaceId'),providerId:path(ctx,'providerId')});
+   const auth=await claims(ctx);
+   const result=await deps.db.rpc<{entity:{id:string}}>(auth,'ensure_mcp_provider_server',[input.spaceId,input.providerId,input.actorId??null,input.clientMutationId]);
+   return {serverId:result.entity.id,...await beginOAuth(auth,result.entity.id,'Jira account')};
+  }),
   'mcp.credentials.create':requireHumanSession(async ctx=>{
    const input=McpCredentialCreateInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);
    if(server.definition.auth.type!=='api_key')throw new CollabError('invalid_input','Connector requires OAuth');
@@ -65,9 +77,8 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    await store.setVisibility(auth,input.credentialId,'private');for(const share of await store.listShares(auth,input.credentialId))await store.unshare(auth,input.credentialId,share.granteeAccountId);return view(auth,input.credentialId);
   }),
   'mcp.oauth.begin':requireHumanSession(async ctx=>{
-   const input=McpOAuthBeginInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);const config=server.definition.auth;
-   if(config.type!=='oauth2' || !server.definition.url || !auth.identityId)throw new CollabError('invalid_input','OAuth connector required');
-   return oauth.begin({identityId:auth.identityId,spaceId:server.spaceId,serverId:server.id,definitionVersion:server.securityRevision ?? server.version,resource:server.definition.url,...(config.issuer?{issuer:config.issuer}:config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),label:input.label,...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
+   const input=McpOAuthBeginInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});
+   return beginOAuth(await claims(ctx),input.serverId,input.label);
   }),
   'mcp.oauth.callback':requireHumanSession(async ctx=>{const input=McpOAuthCallbackInputSchema.parse(ctx.body);const auth=await claims(ctx);if(!auth.identityId)throw new CollabError('unauthenticated','Human session required');const pending=oauth.pendingFor(auth.identityId,input.state);if(!pending)throw new CollabError('invalid_input','OAuth state invalid or expired');const current=await options.definition(auth,pending.serverId);if(pending.definitionVersion!==undefined && (current.securityRevision ?? current.version)!==pending.definitionVersion)throw new CollabError('conflict','MCP connector changed; restart authorization');const result=await oauth.callback(auth.identityId,input);await approved(auth,result.serverId);const created=await credentials.create(auth,{...result,expectedRevision:pending.definitionVersion}) as {id:string};return view(auth,created.id);}),
   'mcp.servers.test':requireHumanSession(async ctx=>{

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { createHttpClient } from '../data/real/http';
 import { createMcpPort, definitionFor, importDefinitions } from './adapter';
@@ -9,7 +10,8 @@ function harness() {
   const calls: { url: string; body: Record<string, unknown> | undefined }[] = [];
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined; calls.push({ url, body });
-    const data = url.includes('/resolve') ? { ready: false, selections: [{ server, ready: false, reason: 'credential_required' }] }
+    const data = url.endsWith('/providers/jira/connect') ? { serverId: 'jira-server', authorizationUrl: 'https://auth.atlassian.com/authorize?state=jira-fixture' }
+      : url.includes('/resolve') ? { ready: false, selections: [{ server, ready: false, reason: 'credential_required' }] }
       : url.endsWith('/credentials') && init?.method === 'GET' ? [{ id: 'account', serverId: 'server', label: 'Work account', authType: 'api_key', visibility: 'private', ownerId: 'owner', sharedMemberIds: [], usable: true, manageable: false, revoked: false, reason: 'ready' }]
       : init?.method === 'GET' ? { items: [server], nextCursor: null, allowed: { register: true, attach: true } } : {};
     return new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -19,6 +21,12 @@ function harness() {
   return { port, calls, seam };
 }
 describe('MCP real operation adapter', () => {
+  it('starts a managed Jira connection with only the provider and space and retains public correlation', async () => {
+    sessionStorage.clear(); const { port, calls } = harness(); await port.connectProvider('jira');
+    expect(calls[0]?.url).toContain('/v2/spaces/space/mcp/providers/jira/connect');
+    expect(calls[0]?.body).toEqual({ clientMutationId: expect.any(String), spaceId: 'space', providerId: 'jira' });
+    expect(JSON.parse(sessionStorage.getItem('tm8:mcp:oauth:jira-fixture')!)).toMatchObject({ spaceId: 'space', serverId: 'local' });
+  });
   it('joins only server metadata and never invents a default account', async () => {
     const { port, calls } = harness(); const catalog = await port.catalog('task', 'teammate');
     expect(catalog.defaults).toEqual([{ serverId: 'server' }]);

@@ -80,7 +80,8 @@ function AccountCard({ account, server, port, run, busy }: { account: McpAccount
   </div>;
 }
 
-export function McpSettings() {
+const openAuthorization = (url: string) => window.location.assign(url);
+export function McpSettings({ navigate = openAuthorization }: { navigate?: (url: string) => void } = {}) {
   const { catalog, port, error, loading, refresh } = useMcpCatalog();
   const [active, setActive] = useState<string | null>(null);
   const [mode, setMode] = useState<'list' | 'add' | 'import'>('list');
@@ -101,6 +102,10 @@ export function McpSettings() {
   }
   if (!port) return <p role="status">Connectors are unavailable on this connection.</p>;
   const server = catalog?.servers.find(s => s.id === active);
+  const jira = catalog?.servers.find(s => s.providerId === 'jira');
+  const jiraAccount = jira?.accounts.find(a => a.canManage && a.canUse && a.status === 'connected');
+  const jiraDisabled = !!jira && (!jira.approved || !jira.enabled);
+  const connectJira = () => run(async () => { const result = await port.connectProvider('jira'); navigate(result.authorizationUrl); }, 'Opening Jira login…');
   return <section className="mcp-settings" aria-label="Connectors" aria-busy={busy}>
     <h2>Connectors</h2><p>Add tools to chats and tasks. Select the account to use each time you launch.</p>
     {error && <p role="alert">{error} <button onClick={refresh}>Retry</button></p>}
@@ -118,13 +123,19 @@ export function McpSettings() {
       <label><span><input type="checkbox" name="trusted" /> I trust any local commands in this configuration.</span></label>
       <button disabled={busy}>Import connectors</button>
     </form>}
-    {mode === 'list' && !active && catalog && <>{catalog.servers.length === 0 && <p>No connectors yet.</p>}{catalog.servers.map(s => <article className="mcp-card" key={s.id}><h3>{s.title}</h3><p>{s.description}</p><p>{s.transport === 'http' ? s.url : s.command} · {!s.approved ? 'Awaiting approval' : s.enabled ? 'Enabled' : 'Disabled'}</p><button onClick={() => { setActive(s.id); setCredentialId(''); setTools(null); setOauthUrl(null); setEditing(false); setRemoving(false); }}>Manage {s.title}</button></article>)}</>}
+    {mode === 'list' && !active && catalog && <>
+      <article className="mcp-card" aria-label="Jira connector"><h3>Jira</h3><p>Search Jira and create or update work using your Atlassian account.</p>
+        <p>{jiraDisabled ? 'Disabled by an administrator' : jiraAccount ? jira?.health && !jira.health.ready ? 'Needs attention' : 'Connected' : 'Not connected'}</p>
+        {jiraAccount ? <><p>{jiraAccount.label} · {jiraAccount.sharing === 'private' ? 'Only you' : 'Shared'}</p><button onClick={() => { setActive(jira!.id); setCredentialId(jiraAccount.id); setTools(null); setEditing(false); setRemoving(false); }}>Manage Jira</button></> : <><p>Sign in to Atlassian. You can use Google if it is available for your account.</p><button disabled={busy || jiraDisabled} onClick={() => void connectJira()}>Connect Jira</button></>}
+      </article>
+      {catalog.servers.filter(s => !s.providerId).map(s => <article className="mcp-card" key={s.id}><h3>{s.title}</h3><p>{s.description}</p><p>{s.transport === 'http' ? s.url : s.command} · {!s.approved ? 'Awaiting approval' : s.enabled ? 'Enabled' : 'Disabled'}</p><button onClick={() => { setActive(s.id); setCredentialId(''); setTools(null); setOauthUrl(null); setEditing(false); setRemoving(false); }}>Manage {s.title}</button></article>)}
+    </>}
     {server && <article className="mcp-card">
       <h3>{server.title}</h3><p>{server.description}</p>
       <p>{server.approved ? 'Approved' : 'Awaiting approval'} · {server.enabled ? 'Enabled' : 'Disabled'}</p>
       {server.health && <p>Last checked {new Date(server.health.checkedAt).toLocaleString()} · {server.health.ready ? 'Connected' : 'Needs attention'} · {server.health.tools.length} tools</p>}
       {server.canApprove && <button disabled={busy} onClick={() => void run(() => port.update(server, { ...server, approved: !server.approved }), 'Approval updated.')}>{server.approved ? 'Withdraw approval' : 'Approve connector'}</button>}<p>{server.transport === 'http' ? server.url : server.command}</p>
-      {server.canManage && <div className="mcp-actions"><button onClick={() => setEditing(!editing)}>Edit configuration</button><button disabled={busy} onClick={() => void run(() => port.update(server, { ...server, enabled: !server.enabled }), 'Connector updated.')}>{server.enabled ? 'Disable connector' : 'Enable connector'}</button></div>}
+      {server.canManage && <div className="mcp-actions">{!server.providerId && <button onClick={() => setEditing(!editing)}>Edit configuration</button>}<button disabled={busy} onClick={() => void run(() => port.update(server, { ...server, enabled: !server.enabled }), 'Connector updated.')}>{server.enabled ? 'Disable connector' : 'Enable connector'}</button></div>}
       {editing && server.canManage && <DefinitionForm server={server} busy={busy} onSave={input => run(async () => { await port.update(server, { ...input, enabled: server.enabled }); setEditing(false); }, 'Connector saved.')} />}
       {server.canManage && <div className="mcp-actions">{removing ? <><p>Remove this connector from the catalog?</p><button disabled={busy} onClick={() => void run(async () => { await port.remove(server); setActive(null); }, 'Connector removed.')}>Confirm removal</button><button onClick={() => setRemoving(false)}>Cancel</button></> : <button onClick={() => setRemoving(true)}>Remove connector</button>}</div>}
       <h4>Test connection and tools</h4>
@@ -133,11 +144,11 @@ export function McpSettings() {
       {tools && <><p>{tools.length} tools available</p><ul className="mcp-tools">{tools.map(tool => <li key={tool.name}><strong>{tool.name}</strong>{tool.description && <p>{tool.description}</p>}</li>)}</ul></>}
       {server.auth !== 'none' && <><h4>Accounts</h4><p>New accounts are private. Sharing a connector does not share an account.</p>
         {server.accounts.map(a => <AccountCard key={a.id} account={a} server={server} port={port} run={run} busy={busy} />)}
-        <form className="mcp-form" onSubmit={e => { e.preventDefault(); const form = e.currentTarget; const data = new FormData(form); const label = String(data.get('label')); const secret = String(data.get('secret') ?? ''); form.reset(); void run(async () => { if (server.auth === 'api_key') await port.createKey(server.id, label, secret); else { const response = await port.startOAuth(server.id, label); const url = new URL(response.authorizationUrl); if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error(); setOauthUrl(url.href); } }, server.auth === 'api_key' ? 'Private account added.' : 'Authorization is ready.'); }}>
+        {server.providerId === 'jira' ? <button disabled={busy || !server.approved || !server.enabled} onClick={() => void connectJira()}>Connect Jira account</button> : <form className="mcp-form" onSubmit={e => { e.preventDefault(); const form = e.currentTarget; const data = new FormData(form); const label = String(data.get('label')); const secret = String(data.get('secret') ?? ''); form.reset(); void run(async () => { if (server.auth === 'api_key') await port.createKey(server.id, label, secret); else { const response = await port.startOAuth(server.id, label); const url = new URL(response.authorizationUrl); if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error(); setOauthUrl(url.href); } }, server.auth === 'api_key' ? 'Private account added.' : 'Authorization is ready.'); }}>
           <label>Account label<input name="label" required autoComplete="off" /></label>
           {server.auth === 'api_key' && <label>API key<input name="secret" type="password" required autoComplete="off" /></label>}
           <button disabled={busy || !server.approved || !server.enabled}>{server.auth === 'api_key' ? 'Add private account' : 'Connect with OAuth'}</button>
-        </form>
+        </form>}
         {oauthUrl && <div className="mcp-actions"><a href={oauthUrl} rel="noreferrer">Continue authorization</a><button onClick={refresh}>Refresh account status</button></div>}
       </>}
     </article>}

@@ -17,9 +17,49 @@ function fixture(data = catalog()): McpPort {
   return { catalog: vi.fn(async () => data), register: vi.fn(), update: vi.fn(), remove: vi.fn(), importConfig: vi.fn(), attach: vi.fn(), detach: vi.fn(),
     test: vi.fn(async () => ({ ok: true, message: 'Connected', tools: [{ name: 'list_events' }] })),
     createKey: vi.fn(), rotateKey: vi.fn(), startOAuth: vi.fn(async () => ({ authorizationUrl: 'https://identity.example/authorize' })),
+    connectProvider: vi.fn(async () => ({ authorizationUrl: 'https://auth.atlassian.com/authorize?state=jira-fixture' })),
     share: vi.fn(), revoke: vi.fn(), members: vi.fn(async () => [{ id: 'member', label: 'Ada' }]),
   };
 }
+describe('Jira connector onboarding', () => {
+  it('connects from an empty catalog for an ordinary member without configuration fields', async () => {
+    const port = fixture({ canRegister: false, canAttach: false, defaults: [], servers: [] });
+    const navigate = vi.fn(); render(<McpProvider port={port}><McpSettings navigate={navigate} /></McpProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect Jira' }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('https://auth.atlassian.com/authorize?state=jira-fixture'));
+    expect(port.connectProvider).toHaveBeenCalledWith('jira');
+    expect(port.register).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add connector' })).toBeNull();
+  });
+  it('shows connected only for the member\'s usable account', async () => {
+    const data = catalog(); data.servers[0] = { ...data.servers[0]!, title: 'Jira', providerId: 'jira', auth: 'oauth' };
+    render(<McpProvider port={fixture(data)}><McpSettings /></McpProvider>);
+    await screen.findByRole('button', { name: 'Manage Jira' });
+    expect(screen.getByText('Connected')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect Jira' })).toBeNull();
+  });
+  it('offers login when only a shared Jira account is available', async () => {
+    const data = catalog(); data.servers[0] = { ...data.servers[0]!, providerId: 'jira' }; data.servers[0]!.accounts[0]!.canManage = false;
+    render(<McpProvider port={fixture(data)}><McpSettings /></McpProvider>);
+    await screen.findByRole('button', { name: 'Connect Jira' });
+    expect(screen.getByText('Not connected')).toBeTruthy();
+  });
+  it('respects administrator disabling and offers retry after a failed start', async () => {
+    const data = catalog(); data.servers[0] = { ...data.servers[0]!, providerId: 'jira', enabled: false, accounts: [] };
+    const port = fixture(data); const navigate = vi.fn();
+    const view = render(<McpProvider port={port}><McpSettings navigate={navigate} /></McpProvider>);
+    expect((await screen.findByRole('button', { name: 'Connect Jira' }) as HTMLButtonElement).disabled).toBe(true);
+    view.unmount();
+    const failing = fixture({ canRegister: false, canAttach: false, defaults: [], servers: [] });
+    vi.mocked(failing.connectProvider).mockRejectedValueOnce(new Error('provider-token-secret'));
+    render(<McpProvider port={failing}><McpSettings navigate={navigate} /></McpProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect Jira' }));
+    await screen.findByRole('alert'); expect(document.body.textContent).not.toContain('provider-token-secret');
+    fireEvent.click(screen.getByRole('button', { name: 'Connect Jira' }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+  });
+});
 function Picker({ port, onReady = vi.fn(), onChange = vi.fn() }: { port: McpPort; onReady?: (value: boolean) => void; onChange?: (value: McpSelection[] | undefined) => void }) {
   const [value, setValue] = useState<McpSelection[] | undefined>();
   return <McpProvider port={port}><McpPicker value={value} onChange={next => { onChange(next); setValue(next); }} onReady={onReady} /></McpProvider>;

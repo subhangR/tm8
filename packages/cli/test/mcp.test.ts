@@ -27,6 +27,10 @@ it('routes catalog target permissions and versioned definition updates',async()=
  await invoke(['mcp','server','update',ID,'--expected-version','2','--input','{"definition":{"name":"fixture"}}']);
  expect(requests.at(-1)).toMatchObject({method:'PATCH',path:`/v2/mcp/servers/${ID}`,body:{expectedVersion:2,definition:{name:'fixture'}}});
 });
+it('connects a managed Jira provider without an input file',async()=>{
+ await invoke(['mcp','provider','connect','jira']);
+ expect(requests.at(-1)).toMatchObject({method:'POST',path:`/v2/spaces/${SPACE}/mcp/providers/jira/connect`,body:{clientMutationId:expect.any(String),spaceId:SPACE,providerId:'jira'}});
+});
 it('requires credential file/stdin sources and redacts malformed secret JSON errors',async()=>{
  const before=requests.length;
  await expect(invoke(['mcp','credential','create',ID,'--input','{"secret":"fixture-secret"}'])).rejects.toThrow('never pass secrets');

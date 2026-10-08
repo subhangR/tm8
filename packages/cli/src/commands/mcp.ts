@@ -15,6 +15,7 @@ export async function mcpSelectionFlag(cmd:CommandContext) {
   return parsed.data;
 }
 const commands: Array<{path:string[];op:OperationName;param?:string;read?:boolean;space?:boolean;secret?:boolean}> = [
+  {path:['provider','connect'],op:'mcp.providers.connect',space:true,param:'providerId'},
   {path:['server','list'],op:'mcp.servers.list',read:true,space:true},
   {path:['server','get'],op:'mcp.servers.get',read:true,param:'serverId'},
   {path:['server','create'],op:'mcp.servers.create',space:true},
@@ -47,6 +48,7 @@ export const MCP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...sp
   }
   if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new CliError('--input must contain an object',EXIT_USAGE);
   const body:Record<string,unknown>={...parsed};
+  if(spec.op==='mcp.providers.connect'){body.spaceId=params.spaceId;body.providerId=params.providerId;}
   if(!spec.read && spec.op!=='mcp.resolve'&&spec.op!=='mcp.oauth.callback'){
     body.clientMutationId=resolveMutationId(cmd.options.value('mutation-id'));
     if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;

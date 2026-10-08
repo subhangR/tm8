@@ -161,6 +161,7 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
+  'mcp.providers.connect': {cmd: ['mcp','provider','connect'], syn: 'tm8 mcp provider connect <provider-id>', sum: 'Connect a built-in MCP provider account', authz: 'space', input: 'bound'},
   'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
   'mcp.servers.get': {cmd: ['mcp','server','get'], syn: 'tm8 mcp server get [<id>]', sum: 'Get MCP server', authz: 'entity', input: 'none'},
   'mcp.servers.create': {cmd: ['mcp','server','create'], syn: 'tm8 mcp server create [<id>] --input <@file|->', sum: 'Create MCP server', authz: 'space', input: 'bound'},
@@ -4307,7 +4308,7 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
-  'sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d';
+  'sha256:5527b6dcb2f4bdea2e03a8c10048aeb729c28f00d245b0c56b385fb06e8d3a1c';
 
 export const GRAMMAR_VERSION = '2';
 

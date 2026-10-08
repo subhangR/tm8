@@ -8,8 +8,8 @@ import type { HandlerRegistry } from '../facade/registry.js';
 import { claimsFor, commandEnvelope, requireUuidParam, limitOf } from '../facade/context.js';
 import { encodeCursor, decodeCursor } from '@tm8/contract';
 
-type DefinitionRow = { id: string; space_id: string; version: number; security_revision?: number; definition: unknown; admin: boolean; health?: unknown };
-const SELECT = `select e.id,e.space_id,e.version,m.mcp_security_revision as security_revision,m.definition,internal.is_space_admin(e.space_id) as admin,
+type DefinitionRow = { id: string; space_id: string; version: number; security_revision?: number; builtin_provider?: 'jira' | null; definition: unknown; admin: boolean; health?: unknown };
+const SELECT = `select e.id,e.space_id,e.version,m.mcp_security_revision as security_revision,m.builtin_provider,m.definition,internal.is_space_admin(e.space_id) as admin,
   (select h.result from public.mcp_server_health h where h.server_id=e.id and h.member_id=internal.current_member_id(e.space_id) and h.definition_version=e.version) as health
   from public.entities e join public.mcp_servers m on m.entity_id=e.id
   where e.kind='mcp_server' and e.deleted_at is null`;
@@ -22,7 +22,7 @@ export async function canAttachMcp(q: Querier, spaceId: string, targetId?: strin
 }
 function view(row: DefinitionRow, attach: boolean): McpServerView & {securityRevision?:number} {
   const definition=McpServerDefinitionSchema.parse(row.definition);
-  return { id:row.id, spaceId:row.space_id, version:row.version, ...(row.security_revision !== undefined ? {securityRevision:Number(row.security_revision)} : {}), definition, ...(row.health ? {health:McpTestResultSchema.parse(row.health)} : {}),
+  return { id:row.id, spaceId:row.space_id, version:row.version, ...(row.builtin_provider ? {providerId:row.builtin_provider} : {}), ...(row.security_revision !== undefined ? {securityRevision:Number(row.security_revision)} : {}), definition, ...(row.health ? {health:McpTestResultSchema.parse(row.health)} : {}),
     allowed:{register:row.admin,approve:row.admin,manage:row.admin,attach:attach && definition.approved && definition.enabled !== false} };
 }
 function publicView(server: McpServerView & {securityRevision?:number}): McpServerView {
