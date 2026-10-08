@@ -123,6 +123,14 @@ export const LAUNCH_MODEL_CATALOG = [
     efforts: CODEX_ULTRA_EFFORTS,
   },
   {
+    model: 'gpt-6.1-sol',
+    label: 'OpenAI GPT 6.1 Sol',
+    provider: 'openai',
+    agentTool: 'codex',
+    note: 'Near-Astra coding model via Codex CLI',
+    efforts: CODEX_EFFORTS,
+  },
+  {
     model: 'gpt-5.6-sol',
     label: 'OpenAI GPT 5.6',
     provider: 'openai',
@@ -155,11 +163,27 @@ export const LAUNCH_MODEL_CATALOG = [
     efforts: CLAUDE_CODE_EFFORTS,
   },
   {
+    model: 'claude-sonnet-5-5',
+    label: 'Claude Sonnet 5.5',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    note: '1M-context Anthropic model via Claude Code',
+    efforts: CLAUDE_CODE_EFFORTS,
+  },
+  {
     model: 'claude-haiku-4-5-20251001',
     label: 'Claude Haiku 4.5',
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: 'Version-pinned fast Anthropic model via Claude Code',
+    efforts: CLAUDE_CODE_EFFORTS,
+  },
+  {
+    model: 'claude-haiku-5-5',
+    label: 'Claude Haiku 5.5',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    note: 'Fast 1M-context Anthropic model via Claude Code',
     efforts: CLAUDE_CODE_EFFORTS,
   },
 
