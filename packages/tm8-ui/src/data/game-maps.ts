@@ -209,6 +209,13 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
     const withMailboxes = hasMailboxes ? applyGameMailboxCounts(input, snapshot, spaceId) : input;
     const withLifecycles = await loadGameCancellationObservations(withMailboxes, seam, spaceId, (get) => read(get, signal));
     checkCancelled(signal);
+    const input: MapInput = { scope: { ...scope }, entities: [...entities.values()], taskHierarchyComplete: scope.kind === 'space',
+      edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)), warnings };
+    const hasMailboxes = input.entities.some(entity => entity.kind === 'task' || entity.kind === 'work_session' || entity.kind === 'story');
+    const snapshot = hasMailboxes ? await readMailboxes(signal) : null;
+    const withMailboxes = hasMailboxes ? applyGameMailboxCounts(input, snapshot, spaceId) : input;
+    const withLifecycles = await loadGameCancellationObservations(withMailboxes, seam, spaceId, (get) => read(get, signal));
+    checkCancelled(signal);
     return {
       title,
       input: withLifecycles,
