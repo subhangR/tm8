@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { CollectionQuery, GraphEdgeView, EntityDetail, EntitySummary, StoryPage } from '@tm8/contract';
+import type { CollectionQuery, GraphEdgeView, EntityDetail, EntitySummary, SpaceUnreadCounts, StoryPage } from '@tm8/contract';
 import type { Seam } from './seam';
 import { createGameMapLoader } from './game-maps';
 import { buildMapModel } from '../story/game/map-model';
@@ -36,6 +36,43 @@ const story = (overrides: Partial<StoryPage> = {}): EntityDetail => ({
 } as unknown as EntityDetail);
 
 describe('real Game map reads', () => {
+  it('reads unread once for the full paged hierarchy, including shipped children, without admitting graph-only anchors', async () => {
+    const seam = port(), root = row('root'), child = row('shipped', 'task', 'root'), graphOnly = row('graph-only');
+    child.state = { ...child.state, status: 'done' } as EntitySummary['state'];
+    child.category = 'done';
+    seam.query.mockImplementation(async query => ({ page: query.cursor ? page([child]) : page([root], 'second') }));
+    const updatedAt = '2026-10-08T16:00:00.000Z';
+    seam.graph.mockResolvedValue({ nodes: [root, child, graphOnly], edges: [{ ...edge('road', root, child), updatedAt }], clusters: [] });
+    const unreadCounts = vi.fn(async (): Promise<SpaceUnreadCounts> => ({ spaceId: SPACE, complete: true,
+      counts: [{ anchorId: 'root', unread: 2 }, { anchorId: 'shipped', unread: 3 }, { anchorId: 'graph-only', unread: 99 }],
+    }));
+    const result = await createGameMapLoader({ ...seam, unreadCounts }, SPACE)({ kind: 'space', id: SPACE }, undefined, 'taskland');
+    expect(unreadCounts).toHaveBeenCalledExactlyOnceWith(SPACE);
+    expect(result.input.entities.map(entity => entity.id)).toEqual(['root', 'shipped']);
+    expect(result.input.entities[1]?.mailbox).toEqual({ count: 3, basis: 'unread' });
+    expect(result.input.edges[0]?.updatedAt).toBe(updatedAt);
+    expect(result.input.taskHierarchyComplete).toBe(true);
+    const map = buildMapModel(result.input, { type: 'taskland', scope: { kind: 'space', id: SPACE } });
+    expect(map.places.find(place => place.entityId === 'root')?.mailbox).toMatchObject({ count: 5, basis: 'unread' });
+    expect(result.input.warnings).toEqual([]);
+  });
+
+  it('labels unavailable and bounded-incomplete unread as message fallback, never as complete unread', async () => {
+    const seam = port(); seam.query.mockResolvedValue({ page: page([row('root')]) });
+    for (const unreadCounts of [undefined, async () => ({ spaceId: SPACE, counts: [], complete: false })]) {
+      const result = await createGameMapLoader({ ...seam, unreadCounts }, SPACE)({ kind: 'space', id: SPACE }, undefined, 'taskland');
+      expect(result.input.entities[0]?.mailbox).toEqual({ count: 3, basis: 'messages' });
+      expect(result.input.warnings?.some(warning => warning.startsWith('Unread mailbox counts'))).toBe(true);
+    }
+  });
+
+  it('does not pay for unread when the selected map has no mailbox-admitted anchors', async () => {
+    const seam = port(); seam.query.mockResolvedValue({ page: page([row('project', 'project')]) });
+    const unreadCounts = vi.fn();
+    await createGameMapLoader({ ...seam, unreadCounts }, SPACE)({ kind: 'space', id: SPACE }, undefined, 'factory');
+    expect(unreadCounts).not.toHaveBeenCalled();
+  });
+
   it('projects task criteria/tent truth and status-changed cancellation evidence without treating row updates as cancellation', async () => {
     const seam = port();
     const current = { ...row('cancelled'), version: 8, updatedAt: '2026-10-08T12:00:00Z',
