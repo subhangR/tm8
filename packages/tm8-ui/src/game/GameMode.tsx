@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildMapModel, MAP_LABELS } from '../story/game/map-model';
 import type { MapModel, MapPortal } from '../story/game/map-model';
-import { walkingBounds } from '../story/game/map-model/walking-world';
+import { walkingBounds, walkingEntrance } from '../story/game/map-model/walking-world';
 import { WalkingMapView } from '../story/game/maps/WalkingMapView';
 import type { MapCameraState } from '../story/game/maps/WalkingMapView';
 import { backGameMap, enterGameMap, freshGameSave, mapKey, readGameSave, rememberGameMap, validCamera, validPosition, writeGameSave } from './local-save';
@@ -168,7 +168,7 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, onInspect }: Game
     {recoveryNotice && <p className="game-mode__notice" role="status">{recoveryNotice}</p>}
     {!!ready?.model.warnings.length && <details className="game-mode__notice" open><summary>Map notices</summary><ul>{[...new Set(ready.model.warnings)].map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
     <div className="game-mode__map" aria-busy={!ready && !failure}>
-      {ready ? <WalkingMapView key={ready.model.id} model={ready.model} start={memory?.position ?? { x: 0, z: 0 }} camera={memory?.camera}
+      {ready ? <WalkingMapView key={ready.model.id} model={ready.model} start={memory?.position ?? walkingEntrance(ready.model)} camera={memory?.camera}
         onPosition={position} onCamera={camera} onInspect={id => { if (navigationEpoch.current === epoch && mapKey(save.current.current) === key) onInspect(id); }} onEnterPortal={enter}
         onBack={navigation.stack.length ? () => back() : undefined} />
         : failure ? <div className="game-mode__status" role="alert"><p>{failure.message}</p>
