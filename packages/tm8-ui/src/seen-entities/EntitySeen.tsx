@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 
@@ -16,7 +16,9 @@ export function EntitySeenProvider({ commands, refreshCounts, scopeKey, children
     seen: new Set<string>(),
     live: false,
   }), [commands, scopeKey]);
-  useEffect(() => {
+  // Retire the old scope and activate the new one during commit, before a
+  // post-commit activation can queue a seen write against an inactive cache.
+  useLayoutEffect(() => {
     cache.live = true;
     return () => { cache.live = false; };
   }, [cache]);
