@@ -6,6 +6,8 @@ export interface ImportedAsset {
   id: ImportedAssetId;
   label: string;
   url: string;
+  /** Optional artifact payload. Decoded directly, never passed to fetch or diagnostic URLs. */
+  embeddedData?: string;
   /** Default footprint width 1; characters default to height 1. Caller scale multiplies this. */
   scale: number;
   /** Translation in source units, applied BEFORE scale: centers X/Z and grounds minimum Y. */
@@ -23,7 +25,7 @@ export interface ImportedAsset {
 const base = import.meta.env.BASE_URL ?? './';
 // Static tm8 artifacts can embed GLBs when their file allowlist excludes binary model files.
 const inlineAssets = (globalThis as typeof globalThis & { __TM8_GAME_ASSETS__?: Record<string, string> }).__TM8_GAME_ASSETS__;
-export const IMPORTED_ASSETS: readonly ImportedAsset[] = (manifest as Array<Omit<ImportedAsset, 'url'> & { file: string }>).map((asset) => ({ ...asset, url: inlineAssets?.[asset.file] ?? `${base}game/cc0/${asset.file}` }));
+export const IMPORTED_ASSETS: readonly ImportedAsset[] = (manifest as Array<Omit<ImportedAsset, 'url'> & { file: string }>).map((asset) => ({ ...asset, url: `${base}game/cc0/${asset.file}`, ...(inlineAssets?.[asset.file] ? { embeddedData: inlineAssets[asset.file] } : {}) }));
 export function getImportedAsset(id: string): ImportedAsset | undefined { return IMPORTED_ASSETS.find((asset) => asset.id === id); }
 /** Input is 0..1. Progress alone never means done; completed status selects construction-done.
  * Prefer the authoritative model constructionStage when rendering. */

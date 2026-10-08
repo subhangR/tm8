@@ -1,6 +1,6 @@
 import { Component, Suspense, useEffect, useMemo, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { useGLTF } from '@react-three/drei';
+import { readGameAsset } from './asset-loader';
 import { AnimationMixer, Mesh, SkinnedMesh } from 'three';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { getImportedAsset, type ImportedAsset, type ImportedAssetId } from './registry';
@@ -19,7 +19,7 @@ class AssetBoundary extends Component<{ children: ReactNode; fallback: ReactNode
   render() { return this.state.failed ? this.props.fallback : this.props.children; }
 }
 function Model({ asset, clip, reducedMotion }: { asset: ImportedAsset; clip?: string; reducedMotion?: boolean }) {
-  const gltf = useGLTF(asset.url);
+  const gltf = readGameAsset(asset);
   const object = useMemo(() => {
     const instance = clone(gltf.scene);
     instance.traverse((node) => { if (node instanceof Mesh) { node.castShadow = true; node.receiveShadow = true; } });

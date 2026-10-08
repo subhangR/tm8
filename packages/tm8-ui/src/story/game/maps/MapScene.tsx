@@ -1,3 +1,5 @@
+import { readStudioPalette } from '../studioPalette';
+const colors = readStudioPalette();
 import { Suspense, useEffect, useMemo, useRef, type ReactNode, type ComponentRef, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, OrbitControls } from '@react-three/drei';
@@ -6,14 +8,14 @@ import type { MapModel, MapPlace, MapRendererProps, MapType } from '../map-model
 import { MapAsset } from './MapAsset';
 
 export const MAP_META: Record<MapType, { title: string; subtitle: string; color: string; ground: string }> = {
-  hub: { title: 'The living atlas', subtitle: 'One world. Every place connected.', color: '#4f8c80', ground: '#adc6a0' },
-  taskland: { title: 'Taskland', subtitle: 'Small steps, growing neighbourhoods.', color: '#d3a05e', ground: '#b9c69b' },
-  office: { title: 'The Office', subtitle: 'A campus for the people doing the work.', color: '#719fa9', ground: '#b0c9b6' },
-  library: { title: 'The Library', subtitle: 'Ideas collected. Knowledge made visible.', color: '#ab826b', ground: '#bac6a2' },
-  factory: { title: 'Code Factory', subtitle: 'From workshop to working software.', color: '#7795ac', ground: '#b2c0ae' },
-  town: { title: 'Completed Town', subtitle: 'A home for everything brought to life.', color: '#b9917b', ground: '#b2cba1' },
+  hub: { title: 'The living atlas', subtitle: 'One world. Every place connected.', color: colors.hubAccent, ground: colors.hubGround },
+  taskland: { title: 'Taskland', subtitle: 'Small steps, growing neighbourhoods.', color: colors.tasklandAccent, ground: colors.tasklandGround },
+  office: { title: 'The Office', subtitle: 'A campus for the people doing the work.', color: colors.officeAccent, ground: colors.officeGround },
+  library: { title: 'The Library', subtitle: 'Ideas collected. Knowledge made visible.', color: colors.libraryAccent, ground: colors.libraryGround },
+  factory: { title: 'Code Factory', subtitle: 'From workshop to working software.', color: colors.factoryAccent, ground: colors.factoryGround },
+  town: { title: 'Completed Town', subtitle: 'A home for everything brought to life.', color: colors.townAccent, ground: colors.townGround },
 };
-export const STATUS_COLORS: Record<string, string> = { working: '#5f9d99', blocked: '#ce825d', done: '#6e9c63', complete: '#6e9c63', to_do: '#b8aa86', in_review: '#9a8db6' };
+export const STATUS_COLORS: Record<string, string> = { working: colors.working, blocked: colors.blocked, done: colors.done, complete: colors.done, to_do: colors.todo, in_review: colors.review };
 export interface RenderStats { calls: number; triangles: number; frameMs: number; geometries: number; textures: number; medianMs: number; p95Ms: number; samples: number }
 export interface MapSceneProps extends MapRendererProps {
   lighting?: 'morning' | 'noon' | 'evening'; hierarchy?: boolean; footprints?: boolean;
@@ -52,48 +54,48 @@ function Plot({ p, model, selected, hierarchy, footprints, onSelect, onHover }: 
   const children = model.places.some(q=>q.parentId===p.entityId);
   const size=Math.max(1.6,p.radius*1.9), y=.18+p.depth*.07;
   return <group position={[p.x,y,p.z]} onClick={e=>{e.stopPropagation();onSelect?.(p.entityId);}} onPointerOver={e=>{e.stopPropagation();onHover?.(p.entityId);document.body.style.cursor='pointer';}} onPointerOut={()=>{onHover?.(null);document.body.style.cursor='';}}>
-    <mesh position-y={-.02} receiveShadow><cylinderGeometry args={[size*.72,size*.72,.13,6]}/><meshStandardMaterial color={selected?'#f6d991':'#e5ddc1'}/></mesh>
+    <mesh position-y={-.02} receiveShadow><cylinderGeometry args={[size*.72,size*.72,.13,6]}/><meshStandardMaterial color={selected?colors.selectedPlot:colors.plot}/></mesh>
     <Box position={[0,.07,size*.64]} size={[size*1.1,.12,.13]} color={color}/>
     {footprints && <Line points={[[-p.footprint,0,-p.footprint],[p.footprint,0,-p.footprint],[p.footprint,0,p.footprint],[-p.footprint,0,p.footprint],[-p.footprint,0,-p.footprint]]} color={color} lineWidth={1} dashed dashSize={.3} gapSize={.3}/>}
-    <mesh rotation-x={-Math.PI/2} position-y={.025}><circleGeometry args={[size*.6,24]}/><meshBasicMaterial color="#304b38" transparent opacity={.12} depthWrite={false}/></mesh><MapAsset assetKey={p.assetKey} stage={p.constructionStage} status={p.status} size={size} />
+    <mesh rotation-x={-Math.PI/2} position-y={.025}><circleGeometry args={[size*.6,24]}/><meshBasicMaterial color={colors.contactShadow} transparent opacity={.12} depthWrite={false}/></mesh><MapAsset assetKey={p.assetKey} stage={p.constructionStage} status={p.status} size={size} />
 
-    {hierarchy && children && <Line points={boundary} color="#688e69" lineWidth={2}/>}
-    {p.status==='blocked' && <group position={[size*.58,.7,0]}><Box position={[0,0,0]} size={[.1,1.2,.1]} color="#765947"/><Box position={[.15,.38,0]} size={[.5,.35,.08]} color="#d98759"/></group>}
+    {hierarchy && children && <Line points={boundary} color={colors.compoundBoundary} lineWidth={2}/>}
+    {p.status==='blocked' && <group position={[size*.58,.7,0]}><Box position={[0,0,0]} size={[.1,1.2,.1]} color={colors.flagPost}/><Box position={[.15,.38,0]} size={[.5,.35,.08]} color={colors.flag}/></group>}
   </group>;
 }
 function HexGrid({width,depth,x,z}:{width:number;depth:number;x:number;z:number}){
   const geometry=useMemo(()=>{const points:number[]=[];const radius=Math.max(2.3,width/38,depth/38);const dx=radius*1.5,dz=radius*Math.sqrt(3);for(let c=0;c<width/dx;c++)for(let r=0;r<depth/dz;r++){const cx=x-width/2+c*dx,cz=z-depth/2+r*dz+(c%2)*dz/2;for(let i=0;i<6;i++){const a=i*Math.PI/3,b=(i+1)*Math.PI/3;points.push(cx+Math.cos(a)*radius,.045,cz+Math.sin(a)*radius,cx+Math.cos(b)*radius,.045,cz+Math.sin(b)*radius);}}const g=new BufferGeometry();g.setAttribute('position',new Float32BufferAttribute(points,3));return g;},[width,depth,x,z]);
   useEffect(()=>()=>geometry.dispose(),[geometry]);
-  return <lineSegments geometry={geometry}><lineBasicMaterial color="#799b78" transparent opacity={.16}/></lineSegments>;
+  return <lineSegments geometry={geometry}><lineBasicMaterial color={colors.hexGrid} transparent opacity={.16}/></lineSegments>;
 }
 function Landscape({ model, gallery }: {model:MapModel;gallery?:boolean}) {
   const b=model.bounds, w=b.maxX-b.minX+13,d=b.maxZ-b.minZ+13,cx=(b.minX+b.maxX)/2,cz=(b.minZ+b.maxZ)/2;
   return <group>
-    <Box position={[cx,-.62,cz]} size={[w,1.15,d]} color="#8eaaa0"/>
+    <Box position={[cx,-.62,cz]} size={[w,1.15,d]} color={colors.islandSide}/>
     <Box position={[cx,-.08,cz]} size={[w,.2,d]} color={MAP_META[model.type].ground}/><HexGrid width={w} depth={d} x={cx} z={cz}/>
-    <Box position={[cx,-.72,cz]} size={[w+2,.2,d+2]} color="#789f9c"/>
-    <mesh rotation-x={-Math.PI/2} position={[cx,-1.03,cz]} receiveShadow><planeGeometry args={[w*10,d*10]}/><meshStandardMaterial color="#b5d1cc" roughness={.65}/></mesh>
+    <Box position={[cx,-.72,cz]} size={[w+2,.2,d+2]} color={colors.islandRim}/>
+    <mesh rotation-x={-Math.PI/2} position={[cx,-1.03,cz]} receiveShadow><planeGeometry args={[w*10,d*10]}/><meshStandardMaterial color={colors.water} roughness={.65}/></mesh>
     {!gallery&&Array.from({length:16},(_,i)=>{const horizontal=i<8;const n=i%8; const x=horizontal?cx-w*.43+n*w*.12:(i%2?b.minX-4:b.maxX+4);const z=horizontal?(i%2?b.minZ-4:b.maxZ+4):cz-d*.43+n*d*.12;return <group key={i} position={[x,0,z]}><MapAsset assetKey={i%3?(i%2?'tree-pine':'decor.tree'):'decor.rock'} size={i%3?2.1:1.2}/></group>;})}
   </group>;
 }
 function Route({ points, dependency }: {points:{x:number;z:number}[];dependency?:boolean}) {
-  return <Line points={points.map(p=>[p.x,dependency ? .42 : .13,p.z] as [number,number,number])} color={dependency?'#6685ae':'#e9dfc1'} lineWidth={dependency?2:7} dashed={dependency} dashSize={.7} gapSize={.4}/>;
+  return <Line points={points.map(p=>[p.x,dependency ? .42 : .13,p.z] as [number,number,number])} color={dependency?colors.dependency:colors.path} lineWidth={dependency?2:7} dashed={dependency} dashSize={.7} gapSize={.4}/>;
 }
 function SceneContent(props:MapSceneProps & {labels:WorldLabel[];nodes:MutableRefObject<Map<string,HTMLDivElement>>}) {
   const {model}=props;
   const span=Math.max(model.bounds.maxX-model.bounds.minX,model.bounds.maxZ-model.bounds.minZ,30);
   const cx=(model.bounds.minX+model.bounds.maxX)/2,cz=(model.bounds.minZ+model.bounds.maxZ)/2;
-  const warmth=props.lighting==='evening'?'#ffd3a1':props.lighting==='noon'?'#fff8e9':'#ffebc8';
+  const warmth=props.lighting==='evening'?colors.eveningLight:props.lighting==='noon'?colors.noonLight:colors.morningLight;
   return <>
-    <color attach="background" args={['#c8ddd4']}/><hemisphereLight args={['#fff6df','#698a82',1.4]}/>
+    <color attach="background" args={[colors.sky]}/><hemisphereLight args={[colors.hemisphereSky,colors.hemisphereGround,1.4]}/>
     <directionalLight position={[cx-span*.5,span,cz+span*.3]} color={warmth} intensity={2.5} castShadow shadow-mapSize={[1024,1024]} shadow-camera-left={-span} shadow-camera-right={span} shadow-camera-top={span} shadow-camera-bottom={-span} shadow-camera-far={span*4} shadow-normalBias={.05}/>
     <Landscape model={model} gallery={props.gallery}/>{model.type!=='hub'&&!props.gallery&&<group position={[model.bounds.minX+3,.15,model.bounds.minZ-3]}><MapAsset assetKey={model.type==='town'?'shipping-yard':model.type==='taskland'?'cart':model.type==='factory'?'code-factory':model.type} size={model.type==='taskland'?3:6}/></group>}
-    {props.hierarchy && model.groups.map(g=><group key={g.id}><Line points={[[g.bounds.minX,.08,g.bounds.minZ],[g.bounds.maxX,.08,g.bounds.minZ],[g.bounds.maxX,.08,g.bounds.maxZ],[g.bounds.minX,.08,g.bounds.maxZ],[g.bounds.minX,.08,g.bounds.minZ]]} color={g.depth?'#819d75':'#f4eacd'} lineWidth={g.depth?1:3}/></group>)}
+    {props.hierarchy && model.groups.map(g=><group key={g.id}><Line points={[[g.bounds.minX,.08,g.bounds.minZ],[g.bounds.maxX,.08,g.bounds.minZ],[g.bounds.maxX,.08,g.bounds.maxZ],[g.bounds.minX,.08,g.bounds.maxZ],[g.bounds.minX,.08,g.bounds.minZ]]} color={g.depth?colors.childBoundary:colors.rootBoundary} lineWidth={g.depth?1:3}/></group>)}
     {model.paths.map(p=><Route key={p.id} points={p.points}/>)}
     {!props.gallery&&model.places.filter(p=>p.parentId).map(p=>{const parent=model.places.find(q=>q.entityId===p.parentId);return parent?<Route key={`walk:${p.id}`} points={[{x:parent.x,z:parent.z+parent.radius},{x:p.x,z:p.z-p.radius}]}/>:null;})}
     {model.roads.map(p=><Route key={p.id} points={p.points} dependency/>)}
     {model.places.map(p=><Plot key={p.id} p={p} model={model} selected={props.selectedEntityId===p.entityId} hierarchy={props.hierarchy} footprints={props.footprints} onSelect={props.onSelectEntity} onHover={props.onHover}/>)}
-    {model.portals.map(p=><group key={p.id} position={[p.x,.12,p.z]} onClick={e=>{e.stopPropagation();props.onEnterPortal?.(p);}} onPointerOver={()=>{document.body.style.cursor='pointer';}} onPointerOut={()=>{document.body.style.cursor='';}}><Box position={[0,0,0]} size={[p.radius*2,.25,p.radius*2]} color="#e6ddbf"/><MapAsset assetKey={p.assetKey} size={p.radius*1.5}/></group>)}
+    {model.portals.map(p=><group key={p.id} position={[p.x,.12,p.z]} onClick={e=>{e.stopPropagation();props.onEnterPortal?.(p);}} onPointerOver={()=>{document.body.style.cursor='pointer';}} onPointerOut={()=>{document.body.style.cursor='';}}><Box position={[0,0,0]} size={[p.radius*2,.25,p.radius*2]} color={colors.portalPad}/><MapAsset assetKey={p.assetKey} size={p.radius*1.5}/></group>)}
     {model.decor.filter(p=>!model.portals.some(q=>q.x===p.x&&q.z===p.z)).map(p=><group key={p.id} position={[p.x,.12,p.z]}><MapAsset assetKey={p.assetKey} size={p.radius*1.5}/></group>)}
     {model.robots.map(p=><group key={p.id} position={[p.x,.2,p.z]}><MapAsset assetKey={p.assetKey} size={1.2} status={p.pose}/></group>)}
 

@@ -1,10 +1,12 @@
+import { readStudioPalette } from '../studioPalette';
+const colors = readStudioPalette();
 /** Existing production asset kit, explicitly labelled as procedural by MapAsset. */
 import { useEffect, useMemo } from 'react';
 import { buildAsset } from '../assets/prototypes';
 import { KIT_GEOMETRIES } from '../assets/geometry';
 import type { AssetType } from '../assets/registry';
 import type { Palette } from '../palette';
-const PALETTE:Palette={ink:'#354b47',ink3:'#718077',surface:'#ecead7',card:'#fff7dc',line:'#d4ceb7',line2:'#aaa891',brand:'#a5784f',run:'#608954',info:'#6b939e',block:'#c47b55',wait:'#bd9950',merged:'#9384a5'};
+const PALETTE:Palette={ink:colors.propInk,ink3:colors.propMuted,surface:colors.propSurface,card:colors.propCard,line:colors.propLine,line2:colors.propLineStrong,brand:colors.propBrand,run:colors.propRun,info:colors.propInfo,block:colors.propBlock,wait:colors.propWait,merged:colors.propMerged};
 const TYPES:Record<string,AssetType>={plaque:'session-stele',mailbox:'task-mailbox','library.book':'doc-lectern','library.drawing':'drawing-easel','library.artifact':'artifact-vitrine','library.file':'file-crate','factory.pull-request':'pr-tollgate','factory.commit':'commit-milestone','factory.worktree':'worktree-branch'};
 export function ProceduralProp({id}:{id:string}){
   const asset=useMemo(()=>buildAsset(TYPES[id]??'unknown-cairn',PALETTE,{state:'done'}),[id]);
