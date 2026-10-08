@@ -21,7 +21,15 @@ const record=text=>{checks.push(text);console.log(text);};
 const rpc=async(op,args,sessionId)=>{const response=await fetch(fixture.controlUrl,{method:'POST',body:JSON.stringify({op,args,sessionId})});const body=await response.json();if(!response.ok)throw new Error(`${op}: ${JSON.stringify(body)}`);return body;};
 const save=()=>page.evaluate(spaceId=>{for(const key of Object.keys(localStorage)){if(!key.startsWith('tm8:game:v1:'))continue;const value=JSON.parse(localStorage.getItem(key));if(value.spaceId===spaceId)return value;}return null;},fixture.spaceId);
 const host=page.getByTestId('walking-map');
-const enter=async title=>{const details=host.locator('details.walking-places');if(await details.count())await details.evaluate(el=>el.open=true);await host.getByRole('button',{name:`Enter ${title}`,exact:true}).evaluate(el=>setTimeout(()=>el.click(),0));};
+let navigationSave=null;
+const navigateButton=async(button,input)=>{
+ navigationSave=await button.evaluate((el,{spaceId,input})=>new Promise(resolve=>setTimeout(()=>{
+  let value=null;for(const key of Object.keys(localStorage)){if(!key.startsWith('tm8:game:v1:'))continue;const candidate=JSON.parse(localStorage.getItem(key));if(candidate.spaceId===spaceId){value=candidate;break;}}
+  const snapshot={input,value,capturedAt:performance.now(),capturedDate:Date.now(),source:'Production localStorage save copied immediately before the actual button click'};
+  el.click();resolve(snapshot);
+ },0)),{spaceId:fixture.spaceId,input});
+};
+const enter=async title=>{const details=host.locator('details.walking-places');if(await details.count())await details.evaluate(el=>el.open=true);await navigateButton(host.getByRole('button',{name:`Enter ${title}`,exact:true}),`Enter ${title}`);};
 let expectedNavigation,driver;
 const waitMap=async(type,kind,id)=>{
  expectedNavigation={type,scope:{kind,id}};console.log('Waiting for map',expectedNavigation);
@@ -30,7 +38,7 @@ const waitMap=async(type,kind,id)=>{
  await expect(host).toHaveAttribute('data-renderer',fallback?'dom':'webgl');
  if(!fallback){
   await host.locator('canvas').first().waitFor();
-  const readiness={mapId,expectedNavigation,rule:'Attached labels and two advancing actual frames on the expected map, with drawn calls, loaded assets and observed Player; visibility remains a screenshot gate'};mapReadiness.push(readiness);
+  const readiness={mapId,expectedNavigation,navigationSave,rule:'Attached labels and two advancing actual frames on the expected map, with drawn calls, loaded assets and observed Player; visibility remains a screenshot gate'};mapReadiness.push(readiness);
   await expect.poll(async()=>{
    const actual=await scene();readiness.actual=actual;
    if(!actual?.proximity.observed||actual.proximity.modelId!==mapId||!actual.player?.id)return false;
@@ -39,16 +47,24 @@ const waitMap=async(type,kind,id)=>{
    if(actual.frames<readiness.baseline.frames+2||actual.calls<=0||actual.assets.pending!==0||actual.assets.failed!==0||readiness.attachedLabels<=0)return false;
    const audit=await cameraAudit();readiness.firstObservedFrame=audit.frames.find(frame=>frame.after.sceneUuid===actual.sceneId&&audit.publications[frame.after.publicationId]?.current.id===mapId);
    expect(readiness.firstObservedFrame).toBeTruthy();
+   readiness.passedAuditIndex=audit.index;expect(readiness.firstObservedFrame.index).toBeLessThanOrEqual(readiness.passedAuditIndex);
    if(process.env.GAME_REDUCED_MOTION==='1'){
-    expect(readiness.firstObservedFrame.after.reduced).toBe(true);
-    expect(readiness.firstObservedFrame.after.cameraZoom).toEqual(readiness.firstObservedFrame.desiredZoom);
-    expect(readiness.firstObservedFrame.zoomEquationError).toEqual(0);
+    const first=readiness.firstObservedFrame,savedMapKey=JSON.stringify([kind,id,type]);
+    readiness.reducedCheck={restored:first.after.restored,reduced:first.after.reduced,cameraZoom:first.after.cameraZoom,desiredZoom:first.desiredZoom,zoomEquationError:first.zoomEquationError,firstFrameIndex:first.index,savedMapKey,savedZoom:navigationSave?.value?.maps?.[savedMapKey]?.camera?.zoom};
+    expect(first.after.reduced).toBe(true);
+    if(first.after.restored){
+     expect(readiness.reducedCheck.savedZoom).toEqual(expect.any(Number));
+     expect(first.after.cameraZoom).toEqual(readiness.reducedCheck.savedZoom);
+    }else{
+     expect(first.after.cameraZoom).toEqual(first.desiredZoom);
+     expect(first.zoomEquationError).toEqual(0);
+    }
    }
    return true;
   },{timeout:60000}).toBe(true);
  }
 };
-const back=()=>host.getByRole('button',{name:/^Back/}).first().evaluate(el=>setTimeout(()=>el.click(),0));
+const back=()=>navigateButton(host.getByRole('button',{name:/^Back/}).first(),'Back');
 const event=async(type,id)=>expect.poll(()=>page.evaluate(({type,id})=>window.__gameLive.events.some(e=>e.type===type&&(!id||[e.taskId,e.sessionId,e.entity?.id,e.edge?.source?.id,e.sourceId].includes(id))),{type,id}),{timeout:30000}).toBe(true);
 const work=(id,status,sessionId)=>rpc('set_work_state',[id,status,null,null,'Synthetic journey',crypto.randomUUID(),false,true],sessionId);
 const spawn=async(taskId,title)=>{
@@ -238,6 +254,7 @@ try{
    expect((await page.evaluate(id=>window.__gameLive.seam.entity(id),sessionId)).state.outcome).toEqual('open');
    record(`${scope}: completion ends claims while process remains running; new claim reopens same session and stable claim ID`);
    if(scope==='story'){
+    navigationSave={input:'Cold reload',value:await save(),capturedAt:await page.evaluate(()=>performance.now()),capturedDate:Date.now(),source:'Production localStorage save copied before page.reload'};
     await page.reload();await host.waitFor();await waitMap('taskland','story',fixture.storyId);await showWorker(edgeA,`${prefix} site A`);
     record('story: cold loader admits session through authoritative working_on without storyIds');
    }
