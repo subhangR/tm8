@@ -68,6 +68,23 @@ function gate(opName: string): ZodTypeAny {
   return schema as ZodTypeAny;
 }
 
+describe('entities.markSeen THROUGH the INPUT_SCHEMAS gate', () => {
+  it('accepts the local command envelope for a path-addressed seen marker', () => {
+    expect(validateLikeServer(gate('entities.markSeen'), {
+      clientMutationId: 'seen-click',
+      actorId: '00000000-0000-4000-8000-000000000001',
+    }).ok).toBe(true);
+  });
+
+  it('rejects missing mutation IDs and fields outside that envelope', () => {
+    for (const body of [{}, { clientMutationId: '' }, {
+      clientMutationId: 'seen-click', entityId: '00000000-0000-4000-8000-000000000001',
+    }]) {
+      expect(validateLikeServer(gate('entities.markSeen'), body).ok).toBe(false);
+    }
+  });
+});
+
 describe('execution.gitStage THROUGH the INPUT_SCHEMAS gate', () => {
   /**
    * THE REGRESSION. Red before the schema was extended, with the message a
@@ -272,6 +289,9 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'commands.undo',
   'edges.delete',
   'entities.delete',
+  // 313: path-addressed personal marker uses the local required command envelope,
+  // just like readMarks.upsert; the contract names its result, not an input type.
+  'entities.markSeen',
   'entities.restore',
   'projects.unlink',
   'readMarks.upsert',
