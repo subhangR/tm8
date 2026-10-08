@@ -31,6 +31,8 @@ export const EVENT_SUBJECT_KEYS: Readonly<Record<string, readonly string[]>> = O
   'session.outcome_changed': ['id'],
   'session.process_changed': ['id'],
   'edge.ended': ['src_id', 'dst_id'],
+  'task.criterion_changed': ['id'],
+  'task.status_changed': ['id'],
   'message.created': ['entity_id', 'anchor_id'],
   'message.updated': ['entity_id', 'anchor_id'],
   'message.deleted': ['entity_id', 'anchor_id'],
