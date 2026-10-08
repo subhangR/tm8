@@ -37,7 +37,7 @@ describe('renderer-agnostic entity maps', () => {
     }
     const land = build(input), town = build(input, 'town');
     expect(land.places.find(p => p.id === 'task-done')?.role).toBe('shipped-marker');
-    expect(land.places.find(p => p.id === 'task-done')?.progress).toBe(0.61);
+    expect(land.places.find(p => p.id === 'task-done')?.progress).toBe(1);
     expect(town.places.map(p => p.id)).toEqual(expect.arrayContaining(['task-done', 'session-done', 'artifact-square']));
     expect(town.places.some(p => p.id === 'task-cancelled')).toBe(false);
     expect(land.places.find(p => p.id === 'task-cancelled')?.constructionStage).toBe('rubble');
@@ -107,7 +107,7 @@ describe('renderer-agnostic entity maps', () => {
     expect(build(input).robots.map(r => r.sessionId)).toEqual(['running']);
     expect(build(input, 'town').places.map(p => p.id)).toEqual(['completed']);
   });
-  it('preserves authoritative weighted percent and parent direction from a StoryPage snapshot', () => {
+  it('preserves source weighted percent and parent direction but derives done construction as complete', () => {
     const input = fromProjection({ id: 'story-real', kind: 'story', page: {
       nodes: [{ id: 'p', kind: 'task', title: 'Done root', status: 'done' }, { id: 'c', kind: 'task', title: 'Open child', status: 'open' }],
       roots: [{ id: 'p', kind: 'task', title: 'Done root', status: 'done', weighted: { percent: 37, size: 13 } }],
@@ -115,8 +115,9 @@ describe('renderer-agnostic entity maps', () => {
     } });
     const model = build(input);
     expect(input.entities.find(e => e.id === 'c')!.parentId).toBe('p');
-    expect(model.places.find(e => e.id === 'p')!.progress).toBe(0.37);
-    expect(model.places.find(e => e.id === 'c')!.progress).toBeNull();
+    expect(input.entities.find(e => e.id === 'p')!.progress).toBe(0.37);
+    expect(model.places.find(e => e.id === 'p')!.progress).toBe(1);
+    expect(model.places.find(e => e.id === 'c')!.progress).toBe(0);
   });
   it('reads normalized query row state/content and preserves scope provenance', () => {
     const input = fromProjection({ scope: FIXTURE_SCOPE, entities: [

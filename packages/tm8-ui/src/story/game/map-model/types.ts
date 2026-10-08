@@ -6,6 +6,7 @@ export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number
 export type ConstructionStage = 'lot' | 'foundation' | 'scaffolding' | 'walls' | 'topped-out' | 'complete' | 'rubble' | 'shipped-marker';
 export interface MapEntity {
   id: string; kind: string; title: string; parentId?: string | null;
+  version?: number; updatedAt?: string | null;
   status?: string | null; statusCategory?: string | null; createdAt?: string | null;
   /** Authoritative weighted fraction, 0..1. Null means unknown, not zero. */
   progress?: number | null; pointsEstimate?: number | null; subtreeWeight?: number | null;
@@ -86,6 +87,8 @@ export interface MapModel {
   bounds: Bounds; layout: LayoutCache; warnings: string[];
   /** Earliest authoritative rubble expiry. Event owner schedules a rebuild at this epoch-ms. */
   nextLifecycleAt?: number | null;
+  /** Stable Town gate anchor and the single source of truth for waiting shipped entities. */
+  shippingYard?: { position: Point; waitingIds: readonly string[] };
 }
 export interface BuildMapOptions {
   type: MapType; scope: MapScope; previous?: MapModel;
