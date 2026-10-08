@@ -17,6 +17,7 @@ ${evidence.failure ? `<p><strong>Open failure:</strong> ${escape(evidence.failur
 <table><tbody>${checks}</tbody></table>
 ${evidence.unreadLatency ? `<p>Unread HTTP measurement: ${evidence.unreadLatency.anchors} synthetic anchors, ${evidence.unreadLatency.messages} messages, ${evidence.unreadLatency.requests} requests. Median ${evidence.unreadLatency.median.toFixed(1)} ms; maximum ${evidence.unreadLatency.maximum.toFixed(1)} ms.</p>` : ''}
 <p><a href="checks.json">Aggregate checks and selected synthetic before/after models</a></p>
+${evidence.syntheticReport ? `<p><a href="${escape(evidence.syntheticReport)}">Both-scope synthetic motion frames and actual worker readback</a></p>` : ''}
 ${pictures}<ul>${evidence.limitations.map(note => `<li>${escape(note)}</li>`).join('')}</ul>
 <small>No provider credentials, tokens, private records or raw runtime logs are included.</small></html>`);
 }

@@ -50,6 +50,7 @@ export async function seedTasklandFixture(node) {
     agentTool: 'claude-code', model: 'claude-sonnet-4-5',
     clientMutationId: randomUUID() });
   const agentId = teammate.id, sessionId = spawned.entity.id;
+  node.ownSession(sessionId);
   const providerDeadline = Date.now() + 5000;
   let syntheticProvider = false;
   while (Date.now() < providerDeadline && !syntheticProvider) {
@@ -63,6 +64,21 @@ export async function seedTasklandFixture(node) {
   const token = await rotateFixtureToken(node, sessionId);
   await mutateEntity(node, tree.id, 'release', { note: 'Synthetic fixture baseline ready' }, { token });
   await mutateEntity(node, tree.id, 'work', { status: 'open' });
+  // A historical import with genuinely absent status evidence, before 317.
+  const { rows: [{ id: legacyId }] } = await pool.query('select internal.new_id()::text id');
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query('set local role tm8_graph_owner');
+    await client.query(`insert into public.entities(id,space_id,kind,created_by) values($1,$2,'task',$3)`, [legacyId, space.id, owner.memberId]);
+    await client.query(`insert into public.tasks(entity_id,title,work_status,points_estimate,status_changed_at)
+      values($1,'Historical cancelled pier','cancelled',3,null)`, [legacyId]);
+    await client.query('commit');
+  } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  tasks.legacy = { id: legacyId, parentId: null };
+  await request(`/v2/actions?contextEntityId=${story.id}&schema=v2&limit=100`);
+  await request(`/v2/collections/${story.id}/items`, { entityId: legacyId, clientMutationId: randomUUID() });
+  await node.finishMigrations();
   return { spaceId: space.id, storyId: story.id, memberId: owner.memberId, agentId, sessionId, token, tasks };
 }
 

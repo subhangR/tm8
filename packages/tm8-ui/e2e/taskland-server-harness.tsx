@@ -8,6 +8,7 @@ import GameMode from '../src/game/GameMode';
 import { createRealSeam } from '../src/data/real/seam-real';
 import { browserWebSocketFactory } from '../src/data/real/socket';
 import { createGameMapLoader } from '../src/data/game-maps';
+import { createGameMailboxReader, type GameMailboxReader } from '../src/data/game-mailboxes';
 import { buildMapModel, type MapModel, type MapScope, type MapType } from '../src/story/game/map-model';
 import { freshGameSave, gameSaveKey, mapKey } from '../src/game/local-save';
 import type { MapCameraState } from '../src/story/game/maps/WalkingMapView';
@@ -20,6 +21,7 @@ const seam = createRealSeam({ fetch: window.fetch.bind(window), webSocketFactory
 const models = new Map<string, MapModel>();
 let config: { spaceId: string; storyId: string; memberId: string };
 let loader: ReturnType<typeof createGameMapLoader>;
+let mailboxes: GameMailboxReader;
 let inspected: string | null = null;
 let loadCount = 0;
 let mounting = 0;
@@ -58,11 +60,13 @@ async function project(scope: MapScope, type: MapType, now?: number, cold = fals
   models.set(key, model);
   return { ...record(model), inputFields: data.input.entities.map(entity => ({ id: entity.id,
     pointsEstimate: entity.pointsEstimate, acceptance: entity.acceptance,
-    estimateTent: entity.estimateTent, ownProgress: entity.ownProgress })) };
+    estimateTent: entity.estimateTent, ownProgress: entity.ownProgress, subtreeWeight: entity.subtreeWeight,
+    version: entity.version, updatedAt: entity.updatedAt, cancelledAt: entity.cancelledAt })) };
 }
 
 async function initialize(value: typeof config) {
   config = value; loader = createGameMapLoader(seam, config.spaceId);
+  mailboxes = createGameMailboxReader(seam, config.spaceId);
   await seam.openSpace(config.spaceId);
 }
 
@@ -105,7 +109,7 @@ function renderGame(durable: boolean) {
   root.render(<div className="cv2-root" style={{ height: '100%', zoom: 1 }}>
     <AssetEvidence/>
     <GameMode key={++mounting} spaceId={config.spaceId} memberId={config.memberId} spaceTitle="Synthetic Taskland world"
-      loadMap={observingLoader} events={seam} {...(durable ? { persistence: seam.game } : {})} onInspect={id => { inspected = id; }}/>
+      loadMap={observingLoader} events={seam} mailboxes={mailboxes} {...(durable ? { persistence: seam.game } : {})} onInspect={id => { inspected = id; }}/>
   </div>);
 }
 
@@ -114,12 +118,14 @@ declare global {
     initialize: typeof initialize; project: typeof project; mount: typeof mount; resume: typeof resume;
     current: (scope: MapScope, type: MapType) => ReturnType<typeof record> | null;
     scene: typeof scene;
+    markRead: (id: string) => ReturnType<typeof seam.commands.upsertReadMark>;
     state: () => { inspected: string | null; loadCount: number; save: unknown; buildHead: string };
   } }
 }
 window.tasklandServer = {
   initialize, project, mount, resume,
   scene,
+  markRead: id => seam.commands.upsertReadMark(id, ''),
   current: (scope, type) => { const model = models.get(mapKey({ scope, type })); return model ? record(model) : null; },
   state: () => ({ inspected, loadCount, buildHead: __TASKLAND_VALIDATION_HEAD__, save: JSON.parse(localStorage.getItem(gameSaveKey(config.spaceId, config.memberId)) ?? 'null') }),
 };

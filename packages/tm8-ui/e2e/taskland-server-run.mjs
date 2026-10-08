@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /** Real durable transitions -> production loader -> pure model -> actual WebGL canvas. */
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdir, open, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium } from '@playwright/test';
-import { startTasklandNode, repoRoot } from './taskland-server-node.mjs';
+import { startTasklandNode, repoRoot, isolatedEnv, stopChild } from './taskland-server-node.mjs';
 import { seedTasklandFixture, mutateEntity, rotateFixtureToken } from './taskland-server-fixture.mjs';
 import { waitForRenderedTaskland, projectedTasklandCues } from './taskland-readiness.mjs';
 import { measureSyntheticUnread } from './taskland-server-unread-benchmark.mjs';
@@ -20,20 +20,22 @@ const evidence = { schema: 'tm8.taskland-server-evidence.v1', head, dirty: !!dir
   gpuProof: 'Software WebGL browser acceptance; this is not native GPU evidence', checks: [], snapshots: [], screenshots: [], browserErrors: [],
   limitations: ['Historical cancellations without an authoritative timestamp retain an unknown expiry warning',
     'The local echo provider verifies tm8 runtime lifecycle, not a provider conversation'] };
-let node, browser;
+let node, browser, syntheticProcess;
 const started = Date.now();
 async function check(name, fn) {
   const at = Date.now();
-  try { await fn(); evidence.checks.push({ name, passed: true, milliseconds: Date.now() - at }); console.log(`PASS ${name}`); }
+  try {
+    await fn(); evidence.checks.push({ name, passed: true, milliseconds: Date.now() - at });
+    await writeFile(resolve(output, 'checks.json'), JSON.stringify(evidence, null, 2));
+    console.log(`PASS ${name}`);
+  }
   catch (error) { evidence.checks.push({ name, passed: false, milliseconds: Date.now() - at, error: error.message }); throw error; }
 }
 try {
-  node = await startTasklandNode({ beforeClose: async () => { await browser?.close(); } });
+  assert.equal(dirty, '', 'Acceptance requires a clean, committed source tree');
+  node = await startTasklandNode({ beforeClose: async () => { await browser?.close(); await stopChild(syntheticProcess); } });
   console.log(`Owned fixture ready: ${node.databaseName}; logs ${node.runRoot}`);
   const f = await seedTasklandFixture(node);
-  await check('Real unread route latency at realistic isolated synthetic volume', async () => {
-    evidence.unreadLatency = await measureSyntheticUnread(node);
-  });
   const ids = Object.fromEntries(Object.entries(f.tasks).map(([name, row]) => [name, row.id]));
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--no-zygote', '--single-process', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
@@ -57,11 +59,13 @@ try {
         name: Object.keys(ids).find(name => ids[name] === row.entityId), x: row.x, z: row.z, group: row.groupId,
         stage: row.constructionStage, progress: row.progress, role: row.role, estimateMissing: row.estimateMissing,
         sizeBucket: row.sizeBucket, cancelledAt: row.cancelledAt, mailbox: row.mailbox,
+        subtreeWeight: row.subtreeWeight,
       })), robots: model.robots.length, roads: model.roads.length, shippingWaiting: model.shippingYard?.waitingIds?.length,
       nextLifecycleAt: model.nextLifecycleAt, warnings: model.warnings,
       inputFields: model.inputFields.filter(row => Object.values(ids).includes(row.id)).map(row => ({
         name: Object.keys(ids).find(name => ids[name] === row.id), pointsEstimate: row.pointsEstimate,
         acceptance: row.acceptance, estimateTent: row.estimateTent, ownProgress: row.ownProgress,
+        subtreeWeight: row.subtreeWeight, version: row.version, updatedAt: row.updatedAt, cancelledAt: row.cancelledAt,
       })),
     })) });
     return models;
@@ -83,11 +87,22 @@ try {
     for (let index = 0; index < models.length; index++) {
       assert.equal(place(models[index], 'root').progress, 0.25);
       assert.equal(place(models[index], 'root').constructionStage, 'foundation');
+      assert.equal(place(models[index], 'root').subtreeWeight, 4);
+      assert.equal(place(models[index], 'root').sizeBucket, 5);
+      assert.equal(place(models[index], 'root').estimateMissing, false);
+      const dto = await node.request(`/v2/entities/${ids.root}`);
+      const rootInput = models[index].inputFields.find(row => row.id === ids.root);
+      assert.deepEqual(rootInput.acceptance, { total: 3, completed: 0 });
+      assert.equal(rootInput.version, dto.version);
+      assert.equal(rootInput.updatedAt, dto.updatedAt);
       assert.deepEqual(coordinate(place(models[index], 'root')), coordinate(place(baseline[index], 'root')));
       assert.equal(place(models[index], 'child'), undefined);
       assert.ok(place(towns[index], 'child'));
       assert.ok(towns[index].shippingYard.waitingIds.includes(ids.child));
     }
+  });
+  await check('Real unread route latency at realistic isolated synthetic volume', async () => {
+    evidence.unreadLatency = await measureSyntheticUnread(node);
   });
   await check('Criteria tick advances weighted construction and stable neighbours', async () => {
     await mutateEntity(node, ids.root, 'tick', { criterionIds: ['ac1'] });
@@ -153,14 +168,16 @@ try {
   });
   await check('True viewer unread includes shipped subtree and mark-read clears it', async () => {
     await node.request('/v2/messages', { anchorIds: [ids.root], body: 'Synthetic own message is already read', clientMutationId: randomUUID() });
-    await node.request('/v2/messages', { anchorIds: [ids.child], body: 'Synthetic shipped child message', clientMutationId: randomUUID() }, { token: f.token });
+    for (const anchorId of [ids.root, ids.root, ids.child, ids.child, ids.child]) {
+      await node.request('/v2/messages', { anchorIds: [anchorId], body: 'Synthetic other-author message', clientMutationId: randomUUID() }, { token: f.token });
+    }
     const unread = await node.request(`/v2/spaces/${f.spaceId}/unread-counts`);
     assert.equal(unread.complete, true);
-    assert.ok(unread.counts.some(row => row.anchorId === ids.child && row.unread === 1));
+    assert.ok(unread.counts.some(row => row.anchorId === ids.child && row.unread === 3));
     let models = await snapshots('shipped-child-unread');
     for (const model of models) {
       assert.equal(place(model, 'root').mailbox.basis, 'unread');
-      assert.equal(place(model, 'root').mailbox.count, 1);
+      assert.equal(place(model, 'root').mailbox.count, 5);
       assert.equal(place(model, 'child'), undefined);
     }
     await node.request(`/v2/actions?contextEntityId=${ids.child}&schema=v2&limit=100`);
@@ -168,8 +185,39 @@ try {
     models = await snapshots('shipped-child-marked-read');
     for (const model of models) {
       assert.equal(place(model, 'root').mailbox.basis, 'unread');
-      assert.equal(place(model, 'root').mailbox.count, 0);
+      assert.equal(place(model, 'root').mailbox.count, 2);
     }
+  });
+  await check('Authorized legacy observation stays truthful and expires on a cold reload', async () => {
+    const dto = await node.request(`/v2/entities/${ids.legacy}`);
+    assert.equal(dto.state.statusChangedAt, null);
+    const observations = await node.request(`/v2/spaces/${f.spaceId}/tasks/cancellation-observations`, { taskIds: [ids.legacy] });
+    const bound = observations.facts.find(fact => fact.taskId === ids.legacy)?.statusChangedNotAfter;
+    assert.ok(bound, 'Official317 must observe the genuinely legacy NULL task');
+    const deadline = Date.parse(bound) + 86_400_000;
+    let models = await snapshots('legacy-before-bound', 'taskland', deadline - 1, true);
+    for (const model of models) {
+      const legacy = place(model, 'legacy');
+      assert.equal(legacy.constructionStage, 'rubble');
+      assert.equal(legacy.cancelledAt, null);
+      assert.equal(legacy.rubbleExpiresAt, null);
+      assert.equal(legacy.rubbleRemovalNotAfter, deadline);
+      assert.equal(model.nextLifecycleAt, deadline);
+    }
+    models = await snapshots('legacy-at-bound-cold', 'taskland', deadline, true);
+    for (const model of models) assert.equal(place(model, 'legacy'), undefined);
+    await mutateEntity(node, ids.legacy, 'work', { status: 'open' });
+    await mutateEntity(node, ids.legacy, 'work', { status: 'cancelled' });
+    const exactAt = (await node.request(`/v2/entities/${ids.legacy}`)).state.statusChangedAt;
+    assert.ok(exactAt, 'Re-cancel must establish exact timestamp');
+    models = await snapshots('legacy-recancel-exact-wins', 'taskland', Date.parse(exactAt) + 86_400_000 - 1, true);
+    for (const model of models) {
+      assert.equal(place(model, 'legacy').cancelledAt, exactAt);
+      assert.equal(place(model, 'legacy').rubbleExpiresAt, Date.parse(exactAt) + 86_400_000);
+    }
+    const cleared = await node.request(`/v2/spaces/${f.spaceId}/tasks/cancellation-observations`, { taskIds: [ids.legacy] });
+    assert.equal(cleared.facts.length, 0);
+    evidence.legacyClock = { observedNotAfter: bound, exactAfterReopen: exactAt, deadline };
   });
   await check('Dependency road follows durable edge lifecycle', async () => {
     const edge = (await node.request('/v2/edges', { type: 'depends_on', srcId: ids.tree, dstId: ids.neighbour, clientMutationId: randomUUID() })).edge;
@@ -227,8 +275,10 @@ try {
     let models = await snapshots('cancelled');
     for (let index = 0; index < models.length; index++) {
       assert.equal(place(models[index], 'cancel').constructionStage, 'rubble');
+      assert.equal(place(models[index], 'cancel').cancelledAt, firstAt);
       assert.deepEqual(coordinate(place(models[index], 'cancel')), coordinate(place(before[index], 'cancel')));
-      assert.equal(models[index].nextLifecycleAt, at + 86_400_000);
+      assert.equal(place(models[index], 'cancel').rubbleExpiresAt, at + 86_400_000);
+      assert.ok(models[index].nextLifecycleAt <= at + 86_400_000);
     }
     await mutateEntity(node, ids.cancel, 'work', { status: 'cancelled' });
     assert.equal((await node.request(`/v2/entities/${ids.cancel}`)).state.statusChangedAt, firstAt);
@@ -302,6 +352,21 @@ try {
     assert.equal(after.camera.zoom, before.camera.zoom);
     evidence.eventPose = { before, after, events: 20 };
   });
+  await check('Rendered unread mailbox includes shipped child and same-client read drops five to two', async () => {
+    const loadCount = await page.evaluate(() => window.tasklandServer.state().loadCount);
+    for (let index = 0; index < 3; index++) await node.request('/v2/messages', {
+      anchorIds: [ids.child], body: 'Synthetic rendered mailbox event', clientMutationId: randomUUID(),
+    }, { token: f.token });
+    const rootMailbox = page.locator('[data-map-cue="mailbox"]').filter({ hasText: '5 subtree unread' });
+    await rootMailbox.waitFor({ state: 'visible', timeout: 30_000 });
+    const at = Date.now();
+    await page.evaluate(id => window.tasklandServer.markRead(id), ids.child);
+    await page.locator('[data-map-cue="mailbox"]').filter({ hasText: '2 subtree unread' }).waitFor({ state: 'visible', timeout: 5000 });
+    evidence.renderedReadMark = { before: 5, after: 2, milliseconds: Date.now() - at,
+      loaderCallsBefore: loadCount, loaderCallsAfter: await page.evaluate(() => window.tasklandServer.state().loadCount) };
+    assert.equal(evidence.renderedReadMark.loaderCallsAfter, loadCount, 'Unread invalidation must not reload map geometry');
+    await page.screenshot({ path: resolve(output, 'taskland-read-mark.png'), timeout: 90_000 }); evidence.screenshots.push('taskland-read-mark.png');
+  });
   await check('Cold production hydration restores exact durable pose inside a plot footprint', async () => {
     const expectedPlayer = [memory.position.x, 0, memory.position.z];
     const before = await page.evaluate(() => window.tasklandServer.scene());
@@ -352,6 +417,25 @@ try {
     await page.screenshot({ path: resolve(output, 'taskland-story.png'), timeout: 90_000 }); evidence.screenshots.push('taskland-story.png');
     assert.deepEqual(evidence.browserErrors, []);
   });
+  await check('Existing synthetic checker renders both scopes at the same integrated head', async () => {
+    await browser.close(); browser = undefined;
+    const log = await open(resolve(output, 'synthetic-checker.log'), 'w', 0o600);
+    try {
+      syntheticProcess = spawn(process.execPath, ['e2e/taskland-check.mjs'], {
+        cwd: resolve(repoRoot, 'packages/tm8-ui'),
+        env: isolatedEnv({ TASKLAND_ORIGIN: node.uiOrigin, TASKLAND_EVIDENCE: resolve(output, 'synthetic'),
+          TASKLAND_UNREAD_RECEIPT: '../checks.json' }),
+        stdio: ['ignore', log.fd, log.fd],
+      });
+      const code = await new Promise((resolveExit, reject) => {
+        syntheticProcess.once('error', reject); syntheticProcess.once('exit', resolveExit);
+      });
+      assert.equal(code, 0, 'The supplied synthetic checker must finish all assertions');
+      const report = JSON.parse(await readFile(resolve(output, 'synthetic/report.json'), 'utf8'));
+      assert.equal(report.sourceHead, head, 'Synthetic frames must use the real proof head');
+      evidence.syntheticReport = 'synthetic/index.html';
+    } finally { await log.close(); await stopChild(syntheticProcess); }
+  });
   }
 } catch (error) {
   evidence.failure = error.message;
@@ -359,9 +443,15 @@ try {
   process.exitCode = 1;
 } finally {
   await browser?.close();
-  await node?.close();
+  const cleanup = await node?.close();
+  if (cleanup) evidence.cleanup = cleanup;
   evidence.ownedProcessesStopped = true;
   evidence.ownedDatabaseDropped = true;
+  if (cleanup?.sessionStopErrors.length) {
+    evidence.failure = 'Synthetic runtime termination failed during cleanup';
+    evidence.ownedProcessesStopped = false;
+    process.exitCode = 1;
+  }
   evidence.milliseconds = Date.now() - started;
   await writeFile(resolve(output, 'checks.json'), JSON.stringify(evidence, null, 2));
   await writeTasklandReport(output, evidence);
