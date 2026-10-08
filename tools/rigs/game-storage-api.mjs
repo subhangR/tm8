@@ -33,11 +33,12 @@ export async function verifyStorageApi(f, pool, record) {
     denied(await request(path, undefined, { token: f.stranger.token }));
   });
   await check('concurrent mixed-case first opens create one durable identity', async () => {
-    const s = { type: 'office', scope: { kind: 'story', id: f.nestedStoryId } };
+    // Keep Office absent for the browser's first-visit identity/resume regression.
+    const s = { type: 'factory', scope: { kind: 'story', id: f.nestedStoryId } };
     const results = await Promise.all(Array.from({ length: 8 }, (_, index) => open({ ...s, scope: { ...s.scope, id: index % 2 ? s.scope.id.toUpperCase() : s.scope.id } })));
     const ids = results.map(result => dataOf(result, 'concurrent open').id); assert.equal(new Set(ids).size, 1);
     const { rows: [count] } = await pool.query(`select count(*)::integer as n from public.graphs g join public.entities e on e.id=g.entity_id
-      where e.space_id=$1 and g.graph_type='tm8-map' and lower(g.layout->'scope'->>'id')=lower($2) and g.layout->>'type'='office' and e.deleted_at is null`, [f.spaceId, f.nestedStoryId]);
+      where e.space_id=$1 and g.graph_type='tm8-map' and lower(g.layout->'scope'->>'id')=lower($2) and g.layout->>'type'='factory' and e.deleted_at is null`, [f.spaceId, f.nestedStoryId]);
     assert.equal(count.n, 1);
   });
   await check('scope authorization rejects foreign space story and non-story refs', async () => {
@@ -132,6 +133,29 @@ export async function verifyStorageApi(f, pool, record) {
     const first = dataOf(await request(`${path}/placements`, body, { method: 'PUT' }), 'first replayable placement');
     assert.deepEqual(dataOf(await request(`${path}/placements`, body, { method: 'PUT' }), 'placement replay'), first);
     denied(await request(`${path}/placements`, { ...body, x: 4 }, { method: 'PUT' }));
+  });
+  await check('map replay stores only a fingerprint and retains replay protection until ledger cleanup', async () => {
+    const { rows: columns } = await pool.query("select column_name from information_schema.columns where table_schema='map' and table_name='command_inputs'");
+    assert.ok(columns.some(row => row.column_name === 'input_hash'));
+    assert.ok(columns.some(row => row.column_name === 'created_at'));
+    assert.ok(!columns.some(row => row.column_name === 'input'), 'full input JSON is not retained');
+    const expired = mutation();
+    await pool.query("insert into map.command_inputs(client_mutation_id,op,input_hash,created_at) values($1,'maps.acceptance',$2,clock_timestamp()-interval '25 hours')", [expired, '0'.repeat(64)]);
+    const clientMutationId = mutation();
+    const body = { itemId: randomUUID(), kind: 'decor', x: 1, z: 2, expectedVersion: 0, clientMutationId };
+    const first = dataOf(await request(`${path}/placements`, body, { method: 'PUT' }), 'fingerprint mutation');
+    const { rows: fingerprints } = await pool.query('select input_hash from map.command_inputs where client_mutation_id=$1', [clientMutationId]);
+    assert.match(fingerprints[0].input_hash, /^[a-f0-9]{64}$/);
+    const { rows: expiredRows } = await pool.query('select 1 from map.command_inputs where client_mutation_id=$1', [expired]);
+    assert.equal(expiredRows.length, 0, 'orphaned expired fingerprint pruned on real mutation');
+    await pool.query("update map.command_inputs set created_at=clock_timestamp()-interval '25 hours' where client_mutation_id=$1", [clientMutationId]);
+    await pool.query("update public.command_ledger set created_at=clock_timestamp()-interval '25 hours' where client_mutation_id=$1", [clientMutationId]);
+    assert.deepEqual(dataOf(await request(`${path}/placements`, body, { method: 'PUT' }), 'aged original replay'), first);
+    denied(await request(`${path}/placements`, { ...body, x: 4 }, { method: 'PUT' }));
+    await pool.query('select internal.prune_command_ledger()');
+    await pool.query('select map.prune_command_inputs()');
+    const { rows: retained } = await pool.query('select 1 from map.command_inputs where client_mutation_id=$1', [clientMutationId]);
+    assert.equal(retained.length, 0, 'fingerprint removed after ordinary ledger housekeeping');
   });
   await check('two device CAS race keeps the winner and reports conflict', async () => {
     const initial = await nav();
