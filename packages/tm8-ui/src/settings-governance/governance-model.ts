@@ -14,6 +14,7 @@ import type {
   CustomEntityKind,
   CustomFieldType,
   EntityKindDef,
+  EntityKindCreateInput,
   EntitySummary,
   ProjectTrustLevel,
 } from '@tm8/contract';
@@ -472,14 +473,14 @@ export function draftToCreateInput(
   draft: KindDraft,
   clientMutationId: string,
   existingKinds: readonly EntityKindDef[] = [],
-): { kind: CustomEntityKind; icon: string; fieldSchema: DraftField[]; clientMutationId: string } | null {
+): EntityKindCreateInput | null {
   if (validateKindDraft(draft, existingKinds).length > 0) return null;
   const kind = draftKindId(draft);
   if (!kind) return null;
   return {
     kind,
     icon: draft.glyph,
-    fieldSchema: draft.fields.map((f) => ({ ...f, values: [...f.values] })),
+    fieldSchema: draft.fields.map((f) => ({ name: f.name, type: f.type, required: f.required, ...(f.type === 'enum' ? { values: [...f.values] } : {}) })),
     clientMutationId,
   };
 }

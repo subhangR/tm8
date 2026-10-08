@@ -148,6 +148,10 @@ export interface SettingsData {
 }
 
 export interface SettingsShellProps {
+  onOpenSpaceAdmin?: () => void;
+  onOpenNodeAdmin?: () => void;
+  /** Explicit navigation scope; omitted preserves legacy mixed settings. */
+  sectionIds?: readonly SettingsSectionId[];
   /** The one seam adapter. Construct with `settingsPortFromSeam(seam, spaceId)`. */
   port: SettingsPort;
   /**

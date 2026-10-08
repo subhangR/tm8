@@ -99,4 +99,17 @@ describe('the task list draws it (control card)', () => {
     const bar = container.querySelector('[data-testid="tile-progress"]');
     expect(bar?.textContent).toBe('11%subtasks open');
   });
+
+  it('the bar leads the edge chips, so it starts at the same x on every task', async () => {
+    const { EntityListPanel } = await import('../panels/index');
+    const { FIXTURE_SPACE_ID } = await import('../fixtures');
+    const base = task({ percent: 40, earned: 2, total: 5 });
+    const row = { ...base, id: 'lead', title: 'Leads', counters: { ...base.counters, messages: 3, docs: 2 } };
+    const { container } = render(<EntityListPanel kind="task" rowsFor={() => [row]} ctx={{ spaceId: FIXTURE_SPACE_ID }} />);
+    const bar = container.querySelector('[data-testid="tile-progress"]');
+    const chips = container.querySelector('[data-testid="tile-count-badges"]');
+    expect(bar).not.toBeNull();
+    expect(chips).not.toBeNull();
+    expect(bar!.compareDocumentPosition(chips!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

@@ -833,3 +833,6 @@
   text-transform: uppercase;
 }
 .set-board__frame { border: 1px solid var(--pn-line); border-radius: var(--pn-r-lg); padding: 16px; background: var(--pn-paper); }
+
+.set-space-admin { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.set-space-admin > h1 { margin: 0; padding: 16px; font-size: 20px; }

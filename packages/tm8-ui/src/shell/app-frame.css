@@ -11,6 +11,8 @@
     'rail browser content strip';
 }
 .tws-root.app-frame[data-panel='none'] {
+  /* Without a side panel, its header track must shrink on narrow screens. */
+  grid-template-columns: var(--tws-rail-w) minmax(0, var(--tws-browser-w, 320px)) minmax(0, 1fr) auto;
   grid-template-areas:
     'header header top top'
     'rail content content strip';

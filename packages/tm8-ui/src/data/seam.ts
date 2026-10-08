@@ -20,8 +20,9 @@ import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
  * the task vocabulary cannot express the session 'running' literal the R-UI-5
  * predicate compares against. Additive, zero caller churn.
  * Recorded seam-scope ruling (same exchange): handoffs.send and
- * spaces.menu.update stay OUT of this seam until their phase; adding either is
- * a deferred amendment requiring dual re-consensus.
+ * spaces.menu.update originally stayed OUT until their phase. Space admin
+ * now exposes optional updateMenu and createEntityKind commands backed by
+ * existing contract operations; handoffs.send remains outside this scope.
  *
  * Amendment 2 (2026-07-31, artifacts preview): commands gains
  * `previewArtifact` — the user RATIFIED the two decisions that gated artifact
@@ -126,6 +127,8 @@ import type {
   SpaceInviteView,
   UpdateMemberRoleInput,
   UpdateSpaceInput,
+  UpdateMenuInput,
+  EntityKindCreateInput,
   MembershipEndResult,
   ActivityItem,
   ArtifactPreviewSession,
@@ -1250,6 +1253,10 @@ export interface Seam {
      * the vocabulary live in `w2_update_space`; this seam checks neither.
      */
     updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary>;
+    /** Create a custom kind through the server-authorized entityKinds.create operation. */
+    createEntityKind?(spaceId: SpaceId, input: EntityKindCreateInput): Promise<EntityKindDef>;
+    /** Revision-checked space navigation writes, backed by spaces.menu.update. */
+    updateMenu?(spaceId: SpaceId, input: UpdateMenuInput): Promise<MenuConfig>;
     /**
      * Mint a join code. `role` is what redemption confers and may be `admin` or
      * `member` — never `owner`: a code travels out of band, and a bearer

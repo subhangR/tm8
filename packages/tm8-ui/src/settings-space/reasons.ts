@@ -28,17 +28,10 @@ function reason(cause: string, remedy: string): UnavailableReason {
 // T2-3 — the menu editor
 // ---------------------------------------------------------------------------
 
-/**
- * The single biggest gap in this half. `data/seam.ts`'s own header records the
- * ruling verbatim: "spaces.menu.update stays OUT of this seam until their
- * phase; adding either is a deferred amendment requiring dual re-consensus".
- * The CONTRACT has `UpdateMenuInput` with `expectedRevision` — so the conflict
- * and version-lock states this editor draws are contract-real and merely
- * unreachable, which is exactly why they are built rather than skipped.
- */
+/** Used by legacy mounts without an authorized save callback. */
 export const MENU_SAVE_UNAVAILABLE = reason(
-  'Saving a menu has no executor in this build',
-  'seam.commands carries no spaces.menu.update — a deferred seam amendment (data/seam.ts, Amendment 1 note). Your edits live in this editor and the preview only.',
+  'Menu editing is unavailable in this view',
+  'An owner or admin with menu write access can save from Space admin. This view has no authorized save action.',
 );
 
 export const MENU_SAVE_VERSION_LOCKED = reason(
@@ -206,8 +199,8 @@ export const INVITE_REDEEM_NOT_HERE = reason(
 // ---------------------------------------------------------------------------
 
 export const SPACE_EDIT_UNAVAILABLE = reason(
-  'Editing space details has no form in this build',
-  'seam.commands.updateSpace exists (Session sharing writes through it); the name/description form has not been built.',
+  'Space details are read-only in this view',
+  'An owner or admin with space write access can edit these details from Space admin.',
 );
 
 /** The sharing defaults are `w2_update_space`'s, which requires a space admin. */
