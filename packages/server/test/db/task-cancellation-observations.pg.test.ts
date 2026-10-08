@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import type { PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -10,7 +12,7 @@ import {
   loadTaskCancellationObservations,
   taskCancellationObservations,
 } from '../../src/facade/task-cancellation-observations.js';
-import { createW1ScratchDatabase, migrationFiles, MIGRATIONS_DIR, type W1ScratchDatabase } from './w1-pg.js';
+import { createW1ScratchDatabase, migrationFiles, MIGRATIONS_DIR, REPO_ROOT, type W1ScratchDatabase } from './w1-pg.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 const VIEWER = 'cancellation-viewer';
@@ -31,6 +33,20 @@ let writerXid: string;
 let writeClock: string;
 let regression: { olderStart: string; cancelClock: string; updatedAt: string };
 let sawMigrationWaiting = false;
+const CI_APPLICATION = `task-cancellation-ci-${process.pid}`;
+
+/** The same per-file psql command used by the CI migration apply loop. */
+function ciMigration(file: string): Promise<{ code: number; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.env['TM8_PSQL'] ?? 'psql',
+      [db.url, '-v', 'ON_ERROR_STOP=1', '-1', '-q', '-f', file],
+      { env: { ...process.env, PGAPPNAME: CI_APPLICATION }, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code: code ?? -1, stderr }));
+  });
+}
 
 function querier(client: PoolClient): Querier {
   return {
@@ -143,22 +159,22 @@ beforeAll(async () => {
   // Start the migration while an older task writer is uncommitted. Observe the
   // lock wait itself; a timer without pg_locks evidence would prove nothing.
   const writer = await db.pool.connect();
-  const migration = await db.pool.connect();
   try {
     await writer.query('begin');
     await writer.query('set local role tm8_graph_owner');
     await writer.query(`update public.tasks set title='pending writer' where entity_id=$1`, [legacy]);
     const write = (await writer.query<{ xid: string; stamp: Date }>('select txid_current()::text xid,clock_timestamp() stamp')).rows[0]!;
     writerXid = write.xid; writeClock = write.stamp.toISOString();
-    const pid = (await migration.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid;
-    const sql = readFileSync(join(MIGRATIONS_DIR, '317_task_cancellation_observations.sql'), 'utf8');
-    const pending = migration.query(`begin;\n${sql}\ncommit;`);
+    expect(readFileSync(join(REPO_ROOT, 'tools/ci/migrations-check.sh'), 'utf8'))
+      .toContain('psql "$SCRATCH_URL" -v ON_ERROR_STOP=1 -1 -q -f "$path"');
+    const pending = ciMigration(join(MIGRATIONS_DIR, '317_task_cancellation_observations.sql'));
     // Attach immediately so a migration error cannot become an unhandled rejection.
-    const completion = pending.then(() => ({ error: undefined }), (error: unknown) => ({ error }));
+    const completion = pending.then((result) => ({ result, error: undefined }), (error: unknown) => ({ result: undefined, error }));
     for (let tries = 0; tries < 100; tries += 1) {
       const locks = await db.query<{ waiting: boolean }>(
-        `select exists(select 1 from pg_locks where pid=$1 and relation='public.tasks'::regclass
-          and mode='ShareRowExclusiveLock' and not granted) waiting`, [pid],
+        `select exists(select 1 from pg_locks l join pg_stat_activity a on a.pid=l.pid
+          where a.datname=$1 and a.application_name=$2 and l.relation='public.tasks'::regclass
+            and l.mode='ShareRowExclusiveLock' and not l.granted) waiting`, [db.name, CI_APPLICATION],
       );
       if (locks[0]!.waiting) { sawMigrationWaiting = true; break; }
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -166,9 +182,9 @@ beforeAll(async () => {
     await writer.query('commit');
     const completed = await completion;
     if (completed.error) throw completed.error;
+    if (!completed.result || completed.result.code !== 0) throw new Error(completed.result?.stderr ?? 'psql migration did not complete');
   } finally {
     await writer.query('rollback'); writer.release();
-    await migration.query('rollback'); migration.release();
   }
   observed = (await facts([legacy])).facts[0]!.statusChangedNotAfter;
 });
@@ -176,6 +192,26 @@ beforeAll(async () => {
 afterAll(async () => { if (db) await db.destroy(); });
 
 describe('317 cancellation observation proof on real PostgreSQL', () => {
+  it('the CI psql transaction rolls back writes after the 317 task lock when a later statement fails', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tm8-cancellation-rollback-'));
+    const file = join(dir, '001_intentional_failure.sql');
+    try {
+      const migration = readFileSync(join(MIGRATIONS_DIR, '317_task_cancellation_observations.sql'), 'utf8');
+      const lockPrefix = migration.slice(0, migration.indexOf('create table internal.task_cancellation_observations'));
+      expect(lockPrefix).toContain('lock table public.tasks in share row exclusive mode;');
+      writeFileSync(file, `${lockPrefix}
+        create table public.cancellation_rollback_probe(value integer);
+        insert into public.cancellation_rollback_probe values(1);
+        select 1 / 0;`);
+      const result = await ciMigration(file);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain('division by zero');
+      expect((await db.query<{ table: string | null }>(
+        `select to_regclass('public.cancellation_rollback_probe')::text as table`,
+      ))[0]!.table).toBeNull();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('reproduces reverse transaction-start ordering and records a separate post-lock bound', async () => {
     expect(regression.updatedAt).toBe(regression.olderStart);
     expect(Date.parse(regression.updatedAt)).toBeLessThan(Date.parse(regression.cancelClock));
