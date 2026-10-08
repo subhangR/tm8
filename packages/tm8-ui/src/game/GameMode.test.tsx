@@ -398,11 +398,30 @@ describe('GameMode durable resume integration', () => {
     await screen.findByText(`${DURABLE_SPACE}:hub`);
     fireEvent.click(screen.getByText('Walk and zoom')); fireEvent(window, new Event('pagehide'));
     expect(persistence.save).not.toHaveBeenCalled(); expect(screen.getByText(/Server save is unavailable/)).toBeTruthy();
+    const retry = screen.getByRole('button', { name: 'Save this visit to server' });
+    expect(retry.closest('.game-mode__notices')?.parentElement).toBe(screen.container.querySelector('.game-mode__map'));
+    expect(screen.getByText(/Server save is unavailable/).closest('.game-mode__notices')).not.toBeNull();
     expect(screen.queryByText('Private account payload')).toBeNull();
     persistence.load.mockResolvedValue(durableView(null, 11));
     fireEvent.click(screen.getByRole('button', { name: 'Save this visit to server' }));
     await waitFor(() => expect(persistence.save).toHaveBeenCalledTimes(1));
     expect(persistence.save.mock.calls[0]?.[2]).toBe(11);
+  });
+
+  it('keeps the conflict warning and explicit server retry inside the map overlay', async () => {
+    const persistence = durablePort();
+    persistence.save.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { code: 'version_conflict' }));
+    const screen = render(<GameMode {...durableDefaults} loadMap={durableLoader()} persistence={persistence} />);
+    await screen.findByText(/Your place changed on another device/);
+    const retry = screen.getByRole('button', { name: 'Save this visit to server' });
+    expect(retry.closest('.game-mode__notices')?.parentElement).toBe(screen.container.querySelector('.game-mode__map'));
+    expect(screen.getByText(/Saving this visit will replace/)).toBeTruthy();
+    expect(persistence.save).toHaveBeenCalledTimes(1);
+    persistence.load.mockResolvedValue(durableView(null, 7));
+    fireEvent.click(retry);
+    await waitFor(() => expect(persistence.save).toHaveBeenCalledTimes(2));
+    expect(persistence.save.mock.calls[1]?.[2]).toBe(7);
+    await waitFor(() => expect(screen.queryByText(/Your place changed on another device/)).toBeNull());
   });
 
   it('keeps pagehide and final renderer cleanup snapshots latest and uses best effort keepalive', async () => {
