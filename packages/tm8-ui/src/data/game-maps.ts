@@ -66,8 +66,14 @@ function summaryOf(row: EntitySummary, seam: GameReadPort): MapEntity {
   return {
     ...mapped,
     statusCategory: row.category ?? null,
+    ...(row.state.kind === 'task' ? {
+      acceptance: { ...row.state.acceptance },
+      estimateTent: row.state.progress?.tent,
+      ownProgress: row.state.progress?.own ?? null,
+    } : {}),
     pendingAttention: row.badges.attention?.pendingCount ?? 0,
-    mailbox: { count: row.counters.messages },
+    // The read port has message totals, not a viewer-specific unread cursor.
+    mailbox: { count: row.counters.messages, basis: 'messages' },
     ...(liveness ? { live: liveness === 'live' } : {}),
   };
 }
@@ -151,6 +157,14 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       }
     }
 
+    // Trail nodes may contain sessions absent from StoryPage.sessions' bounded
+    // preview. Apply the same liveness authority to every admitted session.
+    for (const entity of entities.values()) if (entity.kind === 'work_session' && entity.live === undefined) {
+      const state = entity.processState ?? entity.status;
+      const recorded = state === 'spawning' || state === 'running' || state === 'idle' || state === 'exited' || state === 'failed' ? state : null;
+      entity.live = seam.liveness.statusOf({ id: entity.id, status: recorded }) === 'live';
+    }
+
     // The bounded graph contributes relations only. Cursor-paged primary rows
     // and authoritative StoryPage membership decide which entities are admitted.
     if ((!type || type === 'taskland' || type === 'town') && entities.size) {
@@ -176,7 +190,7 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
     checkCancelled(signal);
     return {
       title,
-      input: { scope: { ...scope }, entities: [...entities.values()],
+      input: { scope: { ...scope }, entities: [...entities.values()], taskHierarchyComplete: scope.kind === 'space',
         edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)), warnings },
     };
   };
