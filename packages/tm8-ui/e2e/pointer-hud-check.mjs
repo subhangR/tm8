@@ -112,6 +112,8 @@ try {
   const distance = p => Math.hypot(p.x - before.target.x, p.z - before.target.z);
   expect(distance(after.position)).toBeLessThan(distance(before.position) - .2);
   report.checks.push({ action: 'actual minimap click moves pose toward target without entering', before, after });
+  // Near is cleared while waypoints remain: wait for arrival before testing a new ground click.
+  await expect(host.getByRole('region', { name: 'Nearby place' })).toContainText('Pointer mountain story');
   const gap = await page.evaluate(() => {
     const r = document.querySelector('.walking-map-tools').getBoundingClientRect();
     const point = { x: r.x - 24, y: r.y + r.height / 2 }, hit = document.elementFromPoint(point.x, point.y);
