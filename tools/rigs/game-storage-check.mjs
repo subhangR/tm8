@@ -7,7 +7,7 @@ import { migrationChainDigest } from '../../db/scratch-template.mjs';
 import { startServer, startUi, stopChild, runRoot, repoRoot } from './game-storage-node.mjs';
 import { fixturePool, seedStorageFixture } from './game-storage-fixture.mjs';
 import { verifyStorageApi } from './game-storage-api.mjs';
-import { verifyBrowserDurability, verifyLegacyMigration, verifyWalkingTraffic } from './game-storage-browser.mjs';
+import { verifyBrowserDurability, verifyLegacyMigration, verifyWalkingTraffic, browserDiagnostics } from './game-storage-browser.mjs';
 import { verifyPersistenceCost } from './game-storage-cost.mjs';
 
 await mkdir(runRoot, { recursive: true });
@@ -26,7 +26,7 @@ const report = { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoo
   browserMotionPreference: 'reduce (except explicitly named default-motion restore check)',
   browserViewport: { width: 800, height: 600 }, rendererReadinessTimeoutMs: 90_000,
   concurrentOwnedUnitRuns: process.env.GAME_STORAGE_CONCURRENT_OWNED_UNIT_RUNS ?? 'not recorded',
-  browserRuntime: 'SwiftShader single-process software functional diagnostics', checks };
+  browserRuntime: 'SwiftShader multi-process software functional diagnostics', checks };
 const record = result => { checks.push({ ...result, ...(result.reason ? { reason: result.reason.split('\n')[0] } : {}) });
   console.log(JSON.stringify(checks.at(-1))); };
 let server, ui; const pool = fixturePool();
@@ -56,6 +56,7 @@ try {
   report.failed = checks.filter(check => !check.passed).length;
   report.success = !report.runnerError && report.failed === 0;
   report.ownedProcessesStopped = true;
+  Object.assign(report, browserDiagnostics());
   if (report.failed) process.exitCode = 1;
   await writeFile(`${runRoot}/acceptance.json`, JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ head: report.head, passed: report.passed, failed: report.failed, runnerError: report.runnerError,

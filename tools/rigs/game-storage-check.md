@@ -30,8 +30,13 @@ dependency bundle; no system libraries are installed by this runner.
 uses a separate fresh fixture for just the cost probes and rendered walk.
 
 The runner launches a fresh Chromium process for each restored visit, with
-empty browser storage. This also avoids single-process Chromium context reuse
-crashes on the shared software-rendering host. Screenshots have a 90-second
+empty browser storage. Chromium uses separate renderer processes with
+SwiftShader and `--no-zygote`; the previous single-process runtime stalled in
+an idle lock wait after a footprint scene became ready. That interrupted run
+retains its two completed checks and incomplete overall result. Browser launch,
+evaluation and teardown have labelled before/after checkpoints. Context and
+browser teardown are bounded at 15 seconds, then the rig kills only its own
+BrowserServer process and records `browserCloseForced`. Screenshots have a 90-second
 readback deadline; renderer readiness still requires actual drawn frames.
 The software browser viewport is 800×600. Most visits use the standard
 reduced-motion preference. A separate fresh visit uses default motion and
@@ -40,12 +45,20 @@ idle seconds. Exact scene
 player/camera and stored current/stack/memory assertions remain unconditional.
 Traffic separates the 60-second regular-send window (budget at most 20) from
 pagehide flushes; this walk performs no route or visibility changes.
-The runner stops its owned API/Vite
-children, including on failure; the caller owns cluster startup/teardown.
+For a reserved shared-host window, set `GAME_STORAGE_WINDOW_END` to its
+agreed ISO timestamp and launch `node tools/rigs/game-storage-window.mjs`.
+This external watchdog starts owned-process cleanup five seconds before the
+window ends, escalates after three seconds, and writes `window-closure.json`.
+It captures only descendants of the runner it spawned and checks each PID
+start time before signalling, including in the forced-stop path. Missing or
+already-expired reservations are refused before launching. This guard covers
+an unresponsive browser or runner; it does not change product timeouts or
+functional assertions. The check runner stops its owned API/Vite children
+on ordinary completion or failure; the caller owns cluster startup/teardown.
 
 `acceptance.json` contains the exact head, active checkout, backend and adapter
 heads, official map migration SHA256, full migration-chain SHA256, check names, counts,
-booleans, and timings. Screenshots show only synthetic records. Auth tokens and
+booleans, timings and forced browser teardown count. Screenshots show only synthetic records. Auth tokens and
 saves remain in memory; lifecycle logs stay local and are not published. A new
 fixture is seeded per run, so reusing this isolated database is safe. Other lanes
 must use separate named databases and listener ports in a shared test cluster.

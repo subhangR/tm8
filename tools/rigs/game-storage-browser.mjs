@@ -5,13 +5,19 @@ import { randomUUID } from 'node:crypto';
 import { request, repoRoot, runRoot, uiPort } from './game-storage-node.mjs';
 import { dataOf } from './game-storage-fixture.mjs';
 import { ledgerSize } from './game-storage-cost.mjs';
+import { createBrowserLifecycle } from './game-storage-browser-lifecycle.mjs';
 const require = createRequire(`${repoRoot}/packages/tm8-ui/package.json`);
 const { chromium, expect } = require('@playwright/test');
 const keyOf = value => JSON.stringify([value.scope.kind, value.scope.id, value.type]);
-const launchBrowser = () => chromium.launch({ headless: true,
+const lifecycle = createBrowserLifecycle(chromium, { launchOptions: { headless: true,
   ...(process.env.GAME_CHROMIUM ? { executablePath: process.env.GAME_CHROMIUM } : {}),
-  args: ['--no-sandbox', '--no-zygote', '--single-process', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-});
+  args: ['--no-sandbox', '--no-zygote', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+} });
+const launchBrowser = () => lifecycle.launch();
+const closeBrowser = browser => lifecycle.closeBrowser(browser);
+const closeContext = (context, browser) => lifecycle.closeContext(context, browser);
+const evaluate = (page, label, expression, argument) => lifecycle.evaluate(page, label, expression, argument);
+export const browserDiagnostics = () => lifecycle.diagnostics();
 
 export async function verifyBrowserDurability(f, restartServer, record) {
   let browser;
@@ -29,8 +35,8 @@ export async function verifyBrowserDurability(f, restartServer, record) {
   };
   let context;
   const newPage = async (motion = 'reduce') => {
-    // A separate browser process also avoids Chromium single-process context reuse crashes.
-    await browser?.close(); browser = await launchBrowser();
+    // Every restored visit owns a fresh browser process and an isolated renderer.
+    await closeBrowser(browser); browser = await launchBrowser();
     context = await browser.newContext({ viewport: { width: 800, height: 600 }, reducedMotion: motion });
     await context.addInitScript(() => { window.__storageInitiallyEmpty = localStorage.length === 0; });
     const page = await context.newPage(); page.setDefaultTimeout(90_000);
@@ -46,12 +52,12 @@ export async function verifyBrowserDurability(f, restartServer, record) {
     catch (error) { console.log(JSON.stringify({ stage: 'synthetic browser DOM', text: (await page.locator('body').innerText()).slice(0, 500) })); throw error; }
     return page;
   };
-  const local = page => page.evaluate(() => {
+  const local = page => evaluate(page, 'local navigation memory', () => {
     const key = Object.keys(localStorage).find(key => key.startsWith('tm8:game:v1:'));
     return key ? JSON.parse(localStorage.getItem(key)) : null;
   });
-  const scene = page => page.evaluate(() => window.__storageHarness.scene());
-  const model = (page, key) => page.evaluate(key => window.__storageHarness.model(key), key);
+  const scene = page => evaluate(page, 'visible scene', () => window.__storageHarness.scene());
+  const model = (page, key) => evaluate(page, 'plain model geometry', key => window.__storageHarness.model(key), key);
   const ready = async page => {
     const host = page.getByTestId('walking-map'); await expect(host).toHaveAttribute('data-renderer', 'webgl');
     await expect.poll(async () => { const current = await scene(page); return !!current?.player && current.drawCalls > 0; }, { timeout: 90_000 }).toBe(true);
@@ -90,7 +96,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       const initial = await nav(); assert.equal(initial.save, null); assert.equal(initial.revision, 0);
       const page = await newPage();
       await waitCurrent(page, 'hub', 'space', f.spaceId);
-      assert.equal(await page.evaluate(() => window.__storageInitiallyEmpty), true);
+      assert.equal(await evaluate(page, 'page state', () => window.__storageInitiallyEmpty), true);
       await expect(page.getByText('Server save is unavailable.', { exact: false })).toHaveCount(0);
       await enter(page, 'Synthetic harbour story'); await waitCurrent(page, 'hub', 'story', f.storyId);
       await enter(page, 'Synthetic mountain story'); await waitCurrent(page, 'hub', 'story', f.nestedStoryId);
@@ -101,7 +107,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       await host.locator('.sgm-stage canvas').hover(); await page.mouse.wheel(0, 160);
       await expect.poll(async () => (await scene(page)).player[0]).toBeGreaterThan(atEntrance[0]);
       await page.waitForTimeout(1_300);
-      await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+      await evaluate(page, 'page state', () => window.dispatchEvent(new Event('pagehide')));
       const browserSave = await local(page); currentKey = keyOf(browserSave.current);
       try { await expect.poll(async () => (await nav()).save.maps[currentKey], { timeout: 10_000 }).toEqual(browserSave.maps[currentKey]); }
       catch (error) {
@@ -109,7 +115,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
         console.log(JSON.stringify({ stage: 'synthetic forced-save mismatch', revision: server.revision,
           requestedRevisions, repairs: server.repairs, expected, actual,
           notice: await page.locator('.game-mode__notice').allTextContents(),
-          saveObservations: await page.evaluate(() => window.__storageHarness.saveObservations) }));
+          saveObservations: await evaluate(page, 'page state', () => window.__storageHarness.saveObservations) }));
         throw error;
       }
       before = (await nav()).save;
@@ -121,7 +127,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       const { bounds } = await model(page, currentKey);
       assert.ok(memory.position.x >= bounds.minX && memory.position.x <= bounds.maxX && memory.position.z >= bounds.minZ && memory.position.z <= bounds.maxZ);
       await page.screenshot({ path: `${runRoot}/synthetic-before-restart.png` });
-      await context.close();
+      await closeContext(context, browser);
       // Camera easing can produce a later idle/unload flush during screenshot readback.
       // The final durable server snapshot is the restart's authoritative expectation.
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -134,31 +140,31 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       const restored = await local(fresh); assert.deepEqual(restored.current, before.current); assert.deepEqual(restored.stack, before.stack);
       assert.deepEqual(restored.maps[currentKey], memory);
       await fresh.screenshot({ path: `${runRoot}/synthetic-after-restart.png` });
-      await context.close();
+      await closeContext(context, browser);
     });
     await check('finite saved pose inside a building footprint restores in the visible scene', async () => {
       const page = await newPage(); await waitCurrent(page, 'taskland', 'story', f.nestedStoryId);
       const geometry = await model(page, currentKey); assert.ok(geometry.places.length);
-      const place = geometry.places[0]; await context.close();
+      const place = geometry.places[0]; await closeContext(context, browser);
       const state = structuredClone(before); state.maps[currentKey] = { position: { x: place.x, z: place.z },
         camera: { zoom: 23, position: [place.x + 12, 18, place.z + 11], target: [place.x, 0.3, place.z] } };
       await write(state); const fresh = await newPage(); await waitCurrent(fresh, 'taskland', 'story', f.nestedStoryId);
       await assertScene(fresh, state.maps[currentKey]);
       assert.deepEqual((await local(fresh)).maps[currentKey], state.maps[currentKey]);
-      await context.close();
+      await closeContext(context, browser);
     });
     await check('default motion restores exact scene immediately and after three idle seconds', async () => {
       const durable = (await nav()).save;
       const memory = durable.maps[keyOf(durable.current)];
       assert.ok(memory?.position && memory?.camera, 'default-motion probe requires durable pose and camera');
       const page = await newPage('no-preference');
-      assert.equal(await page.evaluate(() => window.__storageInitiallyEmpty), true);
+      assert.equal(await evaluate(page, 'page state', () => window.__storageInitiallyEmpty), true);
       await waitCurrent(page, durable.current.type, durable.current.scope.kind, durable.current.scope.id);
       await assertScene(page, memory);
       await page.waitForTimeout(3_000);
       await assertScene(page, memory);
       record({ name: 'default-motion scene observation controls', passed: true, browserMotionPreference: 'no-preference', initialExact: true, idleThreeSecondsExact: true });
-      await context.close();
+      await closeContext(context, browser);
     });
     await check('bounds repair clamps actual player and discards the stale camera', async () => {
       const state = structuredClone(before); state.maps[currentKey] = { position: { x: 999_999, z: -999_999 },
@@ -169,7 +175,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       assert.equal(repaired.maps[currentKey].camera, undefined, 'repaired memory discarded old camera');
       const live = await scene(fresh); assert.deepEqual(live.player, [geometry.bounds.maxX, 0, geometry.bounds.minZ]);
       assert.notDeepEqual(live.camera.position, state.maps[currentKey].camera.position);
-      await context.close();
+      await closeContext(context, browser);
     });
     await check('unvisited Office entrance exact pose camera resume and restored story hub Back', async () => {
       const page = await newPage(); await waitCurrent(page, 'taskland', 'story', f.nestedStoryId);
@@ -180,10 +186,10 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       assert.deepEqual((await scene(page)).player, [geometry.entrance.x, 0, geometry.entrance.z]);
       await host.focus(); await page.keyboard.down('d'); await page.waitForTimeout(200); await page.keyboard.up('d');
       await host.locator('.sgm-stage canvas').hover(); await page.mouse.wheel(0, 100); await page.waitForTimeout(1_300);
-      await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+      await evaluate(page, 'page state', () => window.dispatchEvent(new Event('pagehide')));
       const office = await local(page), officeKey = keyOf(office.current);
       await expect.poll(async () => (await nav()).save?.maps[officeKey]).toEqual(office.maps[officeKey]);
-      await context.close();
+      await closeContext(context, browser);
       const fresh = await newPage(); await waitCurrent(fresh, 'office', 'story', f.nestedStoryId);
       await assertScene(fresh, office.maps[officeKey]);
       const freshHost = fresh.getByTestId('walking-map');
@@ -192,7 +198,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       assert.ok(office.maps[hubKey]?.camera && office.maps[hubKey]?.position, 'story hub pose and camera memory exist');
       await assertScene(fresh, office.maps[hubKey]);
       await freshHost.focus(); await fresh.keyboard.press('Escape'); await waitCurrent(fresh, 'hub', 'story', f.storyId);
-      await context.close(); assert.equal(errors.length, 0, 'browser page errors');
+      await closeContext(context, browser); assert.equal(errors.length, 0, 'browser page errors');
     });
     await check('real human Town placement appears at persisted coordinates in actual Three geometry', async () => {
       const entity = dataOf(await request('/v2/entities', { kind: 'task', title: 'Synthetic shipped building',
@@ -211,9 +217,9 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       assert.ok(geometry.places.some(place => place.entityId === entity.id && place.x === 7 && place.z === 8));
       assert.ok((await scene(page)).plots.some(position => position[0] === 7 && position[2] === 8), 'actual clickable building group moved to stored coordinates');
       await page.screenshot({ path: `${runRoot}/synthetic-town-placement.png` });
-      await context.close();
+      await closeContext(context, browser);
     });
-  } finally { await context?.close().catch(() => {}); await browser?.close(); }
+  } finally { await closeContext(context, browser).catch(() => {}); await closeBrowser(browser); }
 }
 
 export async function verifyWalkingTraffic(f, pool, record) {
@@ -236,7 +242,7 @@ export async function verifyWalkingTraffic(f, pool, record) {
   let writes = 0, wireBytes = 0;
   try {
     await page.goto(url); const host = page.getByTestId('walking-map'); await host.waitFor();
-    await expect.poll(() => page.evaluate(() => !!window.__storageHarness.scene()?.player), { timeout: 90_000 }).toBe(true);
+    await expect.poll(() => evaluate(page, 'page state', () => !!window.__storageHarness.scene()?.player), { timeout: 90_000 }).toBe(true);
     const before = await ledgerSize(pool);
     page.on('request', request => {
       if (request.method() === 'PUT' && new URL(request.url()).pathname.endsWith('/maps/navigation')) {
@@ -251,14 +257,14 @@ export async function verifyWalkingTraffic(f, pool, record) {
       await page.keyboard.up(direction);
       if (index === 5) console.log(JSON.stringify({ stage: 'synthetic walking traffic', seconds: 30, writes }));
     }
-    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await evaluate(page, 'page state', () => window.dispatchEvent(new Event('pagehide')));
     await expect.poll(async () => {
       const view = dataOf(await request(`/v2/spaces/${f.spaceId}/maps/navigation`), 'walk final save');
-      const local = await page.evaluate(() => { const key = Object.keys(localStorage).find(key => key.startsWith('tm8:game:v1:')); return JSON.parse(localStorage.getItem(key)); });
+      const local = await evaluate(page, 'page state', () => { const key = Object.keys(localStorage).find(key => key.startsWith('tm8:game:v1:')); return JSON.parse(localStorage.getItem(key)); });
       try { assert.deepEqual(view.save.maps, local.maps); return true; } catch { return false; }
     }).toBe(true);
     const after = await ledgerSize(pool), elapsedMs = Date.now() - started;
-    const traffic = await page.evaluate(() => window.__traffic);
+    const traffic = await evaluate(page, 'page state', () => window.__traffic);
     const regular = traffic.filter(send => !send.keepalive && send.at >= started && send.at < started + 60_000).length;
     const additionalRegular = traffic.filter(send => !send.keepalive && send.at >= started + 60_000).length;
     const pagehideFlushes = traffic.filter(send => send.keepalive && send.at >= started).length;
@@ -269,7 +275,7 @@ export async function verifyWalkingTraffic(f, pool, record) {
       memoryCount: Object.keys(dataOf(await request(`/v2/spaces/${f.spaceId}/maps/navigation`), 'walk save').save.maps).length,
       inputRowsGrowth: after.inputRows - before.inputRows, inputBytesGrowth: after.inputBytes - before.inputBytes,
       ledgerRowsGrowth: after.ledgerRows - before.ledgerRows, ledgerBytesGrowth: after.ledgerBytes - before.ledgerBytes });
-  } finally { await browser.close(); }
+  } finally { await closeBrowser(browser); }
 }
 
 export async function verifyLegacyMigration(f, record) {
@@ -297,7 +303,7 @@ export async function verifyLegacyMigration(f, record) {
   try {
     assert.equal((await nav()).save, null, 'legacy migration starts with GET null');
     for (const migrating of [true, false]) {
-      await browser?.close(); browser = await launchBrowser();
+      await closeBrowser(browser); browser = await launchBrowser();
       context = await browser.newContext({ viewport: { width: 800, height: 600 }, reducedMotion: 'reduce' });
       if (migrating) await context.addInitScript(save => {
         localStorage.setItem(`tm8:game:v1:${JSON.stringify([save.spaceId, save.memberId])}`, JSON.stringify(save));
@@ -309,16 +315,16 @@ export async function verifyLegacyMigration(f, record) {
         return saved && Object.entries(validMemories).every(([key, memory]) => JSON.stringify(saved[key]) === JSON.stringify(memory)) &&
           !Object.keys(saved).some(key => key.includes('legacy-nonuuid'));
       }).toBe(true);
-      await expect.poll(async () => await page.evaluate(() => window.__storageHarness.scene()?.player), { timeout: 90_000 }).toEqual([0, 0, 6]);
-      const live = await page.evaluate(() => window.__storageHarness.scene());
+      await expect.poll(async () => await evaluate(page, 'page state', () => window.__storageHarness.scene()?.player), { timeout: 90_000 }).toEqual([0, 0, 6]);
+      const live = await evaluate(page, 'page state', () => window.__storageHarness.scene());
       assert.deepEqual(live.camera.position, legacy.maps[keyOf(current)].camera.position);
       assert.equal(live.camera.zoom, legacy.maps[keyOf(current)].camera.zoom);
       const persisted = (await nav()).save;
       assert.deepEqual(persisted.current, legacy.current); assert.deepEqual(persisted.stack, legacy.stack);
-      await context.close();
+      await closeContext(context, browser);
     }
     record({ name: 'legacy browser v1 valid current and prior memories migrate despite malformed key then fresh browser', passed: true, elapsedMs: Date.now() - started });
   } catch (error) { record({ name: 'legacy browser v1 valid current and prior memories migrate despite malformed key then fresh browser', passed: false,
     elapsedMs: Date.now() - started, reason: String(error.message).split('\n')[0] }); throw error; }
-  finally { await context?.close().catch(() => {}); await browser?.close(); }
+  finally { await closeContext(context, browser).catch(() => {}); await closeBrowser(browser); }
 }
