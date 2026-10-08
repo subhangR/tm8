@@ -1,4 +1,5 @@
 import {
+  TaskCancellationObservationsInputSchema,
   WorkspaceCommandInputSchema,
   WorkspaceCreateInputSchema,
   WorkspaceDraftPatchInputSchema,
@@ -238,6 +239,7 @@ const UndoCommandInputSchema = z.object({
 }).strict();
 
 export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
+  'tasks.cancellationObservations': TaskCancellationObservationsInputSchema,
   // Workspace remote bridge (Spec C): the window validates `args` itself.
   'workspace.command': WorkspaceCommandInputSchema,
   'workspace.drafts.patch': WorkspaceDraftPatchInputSchema,

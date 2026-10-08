@@ -387,6 +387,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     previewInvite: (code: string): Promise<InvitePreview> => ops.previewInvite(code),
     counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),
     unreadCounts: (spaceId: SpaceId) => ops.unreadCounts(spaceId),
+    taskCancellationObservations: (spaceId, taskIds) => ops.taskCancellationObservations(spaceId, taskIds),
     onReadMark(listener) {
       readMarkListeners.add(listener);
       return () => { readMarkListeners.delete(listener); };

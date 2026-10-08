@@ -1349,6 +1349,14 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     notes: ['lazy read; missing anchors mean zero only when complete=true; overflow preserves the consumer fallback'],
   },
+  'tasks.cancellationObservations': {
+    cmd: null,
+    sum: 'Read bounded proven observation dates for readable legacy cancelled tasks',
+    authz: 'space',
+    input: 'bound',
+    reason: 'UI lifecycle read; no public CLI command',
+    notes: ['POST read with at most 500 taskIds; missing facts stay unknown; observation bounds are never exact cancellation timestamps'],
+  },
   'spaces.home': {
     cmd: ['space', 'home', 'get'],
     syn: 'tm8 space home get [<space-id>]',
@@ -4130,6 +4138,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   auth: 'auth',
   serverConnections: 'server',
   spaces: 'space',
+  tasks: 'task',
   entities: 'entity',
   attentionRequests: 'attention',
   attentionSignals: 'attention',
@@ -4315,7 +4324,7 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
-  'sha256:7faabb7f1e6767b4a13819d58761dbe21e12a3e02f5249dd872ae1f8b4444f9d';
+  'sha256:9accc38b7fe916cd16e9bda1fb03b442f8cc77827598ec129db47ac012a94d2a';
 
 export const GRAMMAR_VERSION = '2';
 
