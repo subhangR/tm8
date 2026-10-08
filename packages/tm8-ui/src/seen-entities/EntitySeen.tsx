@@ -1,33 +1,39 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 
 const SeenContext = createContext<(id: string) => void>(() => undefined);
 
-/** Mounted once per signed-in member/space, above desktop and mobile lists. */
-export function EntitySeenProvider({ commands, refreshCounts, children }: {
+/** Reset personal caches per member/space without remounting the lists. */
+export function EntitySeenProvider({ commands, refreshCounts, scopeKey, children }: {
   commands: Seam['commands'];
   refreshCounts: () => void;
+  scopeKey?: string;
   children: ReactNode;
 }) {
-  const pending = useMemo(() => new Set<string>(), [commands]);
-  const seen = useMemo(() => new Set<string>(), [commands]);
-  const live = useRef(true);
-  useEffect(() => {
-    live.current = true;
-    return () => { live.current = false; };
-  }, []);
+  const cache = useMemo(() => ({
+    pending: new Set<string>(),
+    seen: new Set<string>(),
+    live: false,
+  }), [commands, scopeKey]);
+  // Retire the old scope and activate the new one during commit, before a
+  // post-commit activation can queue a seen write against an inactive cache.
+  useLayoutEffect(() => {
+    cache.live = true;
+    return () => { cache.live = false; };
+  }, [cache]);
   const mark = useCallback((id: string) => {
-    if (!commands.markSeen || pending.has(id) || seen.has(id)) return;
-    pending.add(id);
-    void Promise.resolve().then(() => commands.markSeen!(id as EntityId)).then(() => {
-      seen.add(id);
-      if (live.current) refreshCounts();
+    if (!commands.markSeen || cache.pending.has(id) || cache.seen.has(id)) return;
+    cache.pending.add(id);
+    void Promise.resolve().then(() => cache.live ? commands.markSeen!(id as EntityId) : undefined).then(() => {
+      if (!cache.live) return;
+      cache.seen.add(id);
+      refreshCounts();
     }).catch(() => {
       // Navigation still succeeds. Leave the count unchanged and allow the
       // next activation to retry; never claim a failed write was persisted.
-    }).finally(() => pending.delete(id));
-  }, [commands, pending, seen, refreshCounts]);
+    }).finally(() => cache.pending.delete(id));
+  }, [commands, cache, refreshCounts]);
   return <SeenContext.Provider value={mark}>{children}</SeenContext.Provider>;
 }
 
