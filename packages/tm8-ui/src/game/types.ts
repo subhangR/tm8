@@ -1,4 +1,8 @@
 import type { MapInput, MapScope, MapType } from '../story/game/map-model';
+import type { Seam } from '../data/seam';
+
+/** The host already owns the authorized space socket and its liveness cadence. */
+export type GameMapEvents = Pick<Seam, 'onEvent' | 'onResync' | 'liveness'>;
 
 export interface GameMapResult { input: MapInput; title: string }
 export type GameMapLoader = (scope: MapScope, signal?: AbortSignal, type?: MapType) => Promise<GameMapResult>;
@@ -9,5 +13,6 @@ export interface GameModeProps {
   memberId: string;
   spaceTitle?: string;
   loadMap: GameMapLoader;
+  events?: GameMapEvents;
   onInspect: (entityId: string) => void;
 }
