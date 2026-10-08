@@ -1,8 +1,8 @@
 /**
  * THE DESKTOP MODES SWITCH (D31, 2026-10-06).
  *
- * `three` (the default): the desktop has three modes — Work · Design ·
- * Observe — lands on Work, and redirects Home, the old Work and Board into
+ * `three` (the historical default key): the desktop has Work · Design ·
+ * Observe · Game — lands on Work, and redirects Home, the old Work and Board into
  * Work. `legacy`: the pre-D31 desktop (Home landing, Home · Workspace · Work ·
  * Board · Graph selector, no redirects).
  *
