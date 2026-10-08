@@ -1353,6 +1353,14 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'none',
   },
+  'spaces.unreadCounts': {
+    cmd: ['space', 'unread', 'get'],
+    syn: 'tm8 space unread get [<space-id>]',
+    sum: 'Read bounded per-viewer unread counts for readable Space anchors',
+    authz: 'space',
+    input: 'none',
+    notes: ['lazy read; missing anchors mean zero only when complete=true; overflow preserves the consumer fallback'],
+  },
   'spaces.home': {
     cmd: ['space', 'home', 'get'],
     syn: 'tm8 space home get [<space-id>]',

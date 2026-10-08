@@ -18,9 +18,12 @@ export function spacesUnreadCounts(deps: FacadeDeps): OperationHandler {
       // One call to the existing SECURITY DEFINER RPC, under the same viewer
       // claims as navigation. Bound the wire result in SQL; fetching one extra
       // row makes truncation explicit without a second unread scan.
+      // The entity join reapplies current canonical RLS before the bound; the
+      // RPC's inlined visibility predicate must not replace current anchor authorization.
       const rows = await q.query<{ anchor_id: string; unread: number }>(
-        `select anchor_id, unread from public.unread_counts($1)
-         order by anchor_id limit $2`,
+        `select counts.anchor_id, counts.unread from public.unread_counts($1) counts
+         join public.entities anchor on anchor.id = counts.anchor_id and anchor.space_id = $1
+         order by counts.anchor_id limit $2`,
         [spaceId, SPACE_UNREAD_COUNTS_LIMIT + 1],
       );
       return {

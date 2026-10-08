@@ -1,12 +1,13 @@
 /** Authenticated read adapter for Game. No fixture substitution or map mutations. */
 import type { CollectionQuery, Cursor, EntitySummary, GraphEdgeView, Page } from '@tm8/contract';
-import { fromProjection, type MapEdge, type MapEntity, type MapType } from '../story/game/map-model';
+import { fromProjection, type MapEdge, type MapEntity, type MapInput, type MapType } from '../story/game/map-model';
 import type { Seam } from './seam';
+import { applyGameMailboxCounts, createGameMailboxReader } from './game-mailboxes';
 
 import type { GameMapLoader } from '../game/types';
 import { openGameMapIdentity, readGamePlacementRows, selectTownPlacements } from '../game/placement-read';
 export type { GameMapLoader, GameMapResult } from '../game/types';
-type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness' | 'game'>;
+type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness' | 'game' | 'unreadCounts'>;
 
 const MAP_KINDS: CollectionQuery['kinds'] = [
   'story', 'task', 'work_session', 'member', 'team_member', 'skill',
@@ -82,12 +83,14 @@ function summaryOf(row: EntitySummary, seam: GameReadPort): MapEntity {
 function edgeOf(row: GraphEdgeView): MapEdge {
   return {
     id: row.id, type: row.type, fromId: row.sourceId, toId: row.targetId,
+    updatedAt: row.updatedAt ?? null,
     endedAt: typeof row.props.endedAt === 'string' ? row.props.endedAt : null,
     status: typeof row.props.status === 'string' ? row.props.status : null,
   };
 }
 
 export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMapLoader {
+  const readMailboxes = createGameMailboxReader(seam, spaceId);
   const query = async (shape: Omit<CollectionQuery, 'spaceId' | 'cursor' | 'limit'>, signal?: AbortSignal) => {
     const rows = await pages((cursor) => seam.query({ spaceId, ...shape, cursor, limit: PAGE_LIMIT }).then(r => r.page), signal);
     rows.forEach(row => assertSpace(row, spaceId));
@@ -196,12 +199,16 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
     }
     const persisted = await persistedRead ?? { rows: [], warnings: [] };
     checkCancelled(signal);
+    const input: MapInput = { scope: { ...scope }, entities: [...entities.values()], taskHierarchyComplete: scope.kind === 'space',
+      edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)),
+      ...(type === 'town' ? { townPlacements: selectTownPlacements(persisted.rows, new Set(entities.keys())) } : {}),
+      warnings: [...warnings, ...persisted.warnings] };
+    const hasMailboxes = input.entities.some(entity => entity.kind === 'task' || entity.kind === 'work_session' || entity.kind === 'story');
+    const snapshot = hasMailboxes ? await readMailboxes(signal) : null;
+    checkCancelled(signal);
     return {
       title,
-      input: { scope: { ...scope }, entities: [...entities.values()], taskHierarchyComplete: scope.kind === 'space',
-        edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)),
-        ...(type === 'town' ? { townPlacements: selectTownPlacements(persisted.rows, new Set(entities.keys())) } : {}),
-        warnings: [...warnings, ...persisted.warnings] },
+      input: hasMailboxes ? applyGameMailboxCounts(input, snapshot, spaceId) : input,
     };
   };
 }
