@@ -125,7 +125,9 @@ export function NodeAdminPage({
       ) : current.error ? (
         <div role="alert">
           <p>Node access could not be checked: {current.error}</p>
-          <button onClick={retry}>Retry</button>
+          <button className="node-admin__access-action" onClick={retry}>
+            Retry
+          </button>
         </div>
       ) : !current.allowed ? (
         <div>
@@ -133,7 +135,9 @@ export function NodeAdminPage({
             Node admin access is required. Only node admins and node owners can
             open this page.
           </p>
-          <button onClick={retry}>Check access again</button>
+          <button className="node-admin__access-action" onClick={retry}>
+            Check access again
+          </button>
         </div>
       ) : (
         <>
