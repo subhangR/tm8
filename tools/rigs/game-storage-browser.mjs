@@ -101,7 +101,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       const host = page.getByTestId('walking-map'); await host.focus();
       const atEntrance = (await scene(page)).player;
       await page.keyboard.down('d'); await page.waitForTimeout(240); await page.keyboard.up('d');
-      await host.locator('.sgm-stage canvas').hover(); await page.mouse.wheel(0, 160);
+      await host.locator('.sgm-stage canvas').hover({ position: { x: 40, y: 120 } }); await page.mouse.wheel(0, 160);
       await expect.poll(async () => (await scene(page)).player[0]).toBeGreaterThan(atEntrance[0]);
       await page.waitForTimeout(1_300);
       await evaluate(page, 'page state', () => window.dispatchEvent(new Event('pagehide')));
@@ -182,7 +182,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       const state = await local(page), geometry = await model(page, keyOf(state.current));
       assert.deepEqual((await scene(page)).player, [geometry.entrance.x, 0, geometry.entrance.z]);
       await host.focus(); await page.keyboard.down('d'); await page.waitForTimeout(200); await page.keyboard.up('d');
-      await host.locator('.sgm-stage canvas').hover(); await page.mouse.wheel(0, 100); await page.waitForTimeout(1_300);
+      await host.locator('.sgm-stage canvas').hover({ position: { x: 40, y: 120 } }); await page.mouse.wheel(0, 100); await page.waitForTimeout(1_300);
       await evaluate(page, 'page state', () => window.dispatchEvent(new Event('pagehide')));
       const office = await local(page), officeKey = keyOf(office.current);
       await expect.poll(async () => (await nav()).save?.maps[officeKey]).toEqual(office.maps[officeKey]);
