@@ -7,6 +7,8 @@ import { createGameMapLoader } from '../src/data/game-maps';
 import { resetNav } from '../src/stores/navStore';
 import { writeLastSpace } from '../src/views/last-place';
 import { nodeKeyOf } from '../src/data/launch-cache';
+import { _roots } from '@react-three/fiber';
+import { DefaultLoadingManager } from 'three';
 import { createRealSeam } from '../src/data/real/seam-real';
 import { browserWebSocketFactory } from '../src/data/real/socket';
 import { createdIdOf } from '../src/authoring/commands';
@@ -22,6 +24,24 @@ if(!setup)throw new Error('Disposable fixture setup required');
 const seam=createRealSeam({fetch:globalThis.fetch,origin:location.origin,
  webSocketFactory:browserWebSocketFactory(WebSocket),getAuthToken:()=>setup.token});
 const events:unknown[]=[],reads:unknown[]=[],pending:Function[]=[];
+const assetLoads={pending:0,started:0,failed:0};
+for(const method of ['itemStart','itemEnd','itemError'] as const){
+ const original=DefaultLoadingManager[method].bind(DefaultLoadingManager);
+ DefaultLoadingManager[method]=(url:string)=>{if(method==='itemStart'){assetLoads.pending++;assetLoads.started++;}else if(method==='itemEnd')assetLoads.pending--;else assetLoads.failed++;original(url);};
+}
+const sceneSnapshot=()=>{
+ const canvas=document.querySelector<HTMLCanvasElement>('.sgm-stage canvas[data-engine]');
+ const state=canvas?_roots.get(canvas)?.store.getState():undefined;
+ if(!state)return null;
+ const workers:any[]=[];
+ state.scene.traverse(object=>{
+  if(!object.name.startsWith('robot:'))return;
+  const point=object.getWorldPosition(object.position.clone()),projected=point.clone().project(state.camera);
+  let skinnedMeshes=0;object.traverse(node=>{if((node as any).isSkinnedMesh)skinnedMeshes++;});
+  workers.push({id:object.name,uuid:object.uuid,sessionId:object.userData.sessionId,claimId:object.userData.claimId,position:{x:point.x,z:point.z},visible:object.visible,inView:Math.abs(projected.x)<1&&Math.abs(projected.y)<1&&projected.z<1,skinnedMeshes});
+ });
+ return {sceneId:state.scene.uuid,cameraId:state.camera.uuid,frames:state.gl.info.render.frame,calls:state.gl.info.render.calls,width:canvas!.width,height:canvas!.height,assets:{...assetLoads},workers};
+};
 let delayed=false;
 seam.onEvent(event=>events.push(structuredClone(event)));
 for(const name of ['query','entity','graph'] as const){
@@ -32,7 +52,7 @@ for(const name of ['query','entity','graph'] as const){
   reads.push({name,args,start,end:performance.now()});return result;
  };
 }
-Object.assign(window,{__gameLive:{events,reads,seam,head:__GAME_VERIFIER_HEAD__,spawn:async(input:any)=>createdIdOf(await seam.commands.spawn(input)),
+Object.assign(window,{__gameLive:{events,reads,seam,head:__GAME_VERIFIER_HEAD__,sceneSnapshot,spawn:async(input:any)=>createdIdOf(await seam.commands.spawn(input)),
  delayReads:()=>{delayed=true;},releaseReads:()=>{delayed=false;pending.splice(0).forEach(resolve=>resolve());},pending:()=>pending.length}});
 if(!location.hash)location.hash=`#/s/${setup.spaceId}/work`;
 const route=()=>resetNav((location.hash.match(/^#\/s\/([^/]+)/)?.[1]??setup.spaceId) as any,{view:'workspace'});
