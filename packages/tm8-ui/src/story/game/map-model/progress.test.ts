@@ -69,4 +69,8 @@ describe('Design Rules points-weighted construction', () => {
     expect(input.entities[4]).toMatchObject({ status: 'cancelled', cancelledAt: '2026-10-08T11:00:00Z', version: 9, updatedAt: '2026-10-08T12:00:00Z' });
     expect(input.entities[5]?.cancelledAt).toBeNull();
   });
+  it('preserves edge update evidence for event hydration guards', () => {
+    const input = fromProjection({ entities: [], edges: [{ id: 'claim', type: 'working_on', fromId: 'session', toId: 'task', updatedAt: '2026-10-08T12:00:00Z' }] });
+    expect(input.edges[0]?.updatedAt).toBe('2026-10-08T12:00:00Z');
+  });
 });
