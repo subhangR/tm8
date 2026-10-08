@@ -91,12 +91,14 @@ describe('GameMode navigation', () => {
   });
   it('clamps an old saved pose to the current walking area while retaining the entrance area', async () => {
     const save = freshGameSave('space', 'member');
-    writeGameSave(rememberGameMap(save, mapKey(save.current), { position: { x: 100_000, z: -100_000 } }));
+    writeGameSave(rememberGameMap(save, mapKey(save.current), { position: { x: 100_000, z: -100_000 }, camera: { zoom: 21, position: [3, 4, 5], target: [100_000, 0, -100_000] } }));
     const screen = render(<GameMode {...defaults} loadMap={loader()} />);
     await screen.findByText('space:hub');
     const bounds = walkingBounds(ports.props!.model);
     expect(ports.props!.start).toEqual({ x: bounds.maxX, z: bounds.minZ });
     expect(Object.values(readGameSave('space', 'member').maps)[0]?.position).toEqual(ports.props!.start);
+    expect(ports.props!.camera).toBeUndefined();
+    expect(Object.values(readGameSave('space', 'member').maps)[0]?.camera).toBeUndefined();
   });
   it('persists the renderer final cleanup callback immediately on Game mode unmount', async () => {
     const screen = render(<GameMode {...defaults} loadMap={loader()} />);
@@ -241,6 +243,24 @@ describe('GameMode navigation', () => {
     const event = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }); event.preventDefault();
     fireEvent(window, event);
     expect(screen.getByText('story-a:hub')).toBeTruthy();
+  });
+  it('yields body-focused Escape to a panel capture handler before popping a map', async () => {
+    let panelOpen = false;
+    const panelEscape = (event: KeyboardEvent) => {
+      if (panelOpen && event.key === 'Escape') { event.preventDefault(); panelOpen = false; }
+    };
+    window.addEventListener('keydown', panelEscape, true);
+    try {
+      const screen = render(<GameMode {...defaults} onInspect={() => { panelOpen = true; }} loadMap={loader()} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Taskland' }));
+      await screen.findByText('space:taskland');
+      fireEvent.click(screen.getByText('Inspect entity'));
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(panelOpen).toBe(false);
+      expect(screen.getByText('space:taskland')).toBeTruthy();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      await screen.findByText('space:hub');
+    } finally { window.removeEventListener('keydown', panelEscape, true); }
   });
   it('opens the space hub from a corrupted local save', async () => {
     window.localStorage.setItem(gameSaveKey('space', 'member'), '{bad');

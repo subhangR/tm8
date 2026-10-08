@@ -83,7 +83,8 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, onInspect }: Game
         if (position) {
           const bounds = walkingBounds(model);
           const clamped = { x: Math.max(bounds.minX, Math.min(bounds.maxX, position.x)), z: Math.max(bounds.minZ, Math.min(bounds.maxZ, position.z)) };
-          save.current = rememberGameMap(save.current, key, { position: clamped });
+          const moved = clamped.x !== position.x || clamped.z !== position.z;
+          save.current = rememberGameMap(save.current, key, { position: clamped, ...(moved ? { camera: undefined } : {}) });
         }
         save.current = { ...save.current, current: { ...selected, title: result.title } };
         setNavigation(save.current);
