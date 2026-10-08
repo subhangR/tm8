@@ -124,7 +124,7 @@ export function reconcileTasklandMotion(state: TasklandMotionState, input: Taskl
     const moving = [...statuses.keys()].map(id => prior.get(id)).filter((p): p is MapPlace => !!p).sort((a,b) => a.depth-b.depth);
     for (const before of moving) {
       const after = current.get(before.entityId), event = statuses.get(before.entityId)!;
-      if (claimed.has(before.entityId) || before.kind !== 'task' || before.role !== 'entity' || !after || after.role !== 'entity' ||
+      if (claimed.has(before.entityId) || before.kind !== 'task' || before.role !== 'entity' || before.constructionStage === 'rubble' || !after || after.role !== 'entity' ||
           after.constructionStage === 'rubble' || done(event.to) || event.to === 'cancelled' || before.status === after.status || after.status !== event.to) continue;
       const ids = family(before, previous.places);
       const members = previous.places.filter(p => ids.has(p.entityId) && !claimed.has(p.entityId)).flatMap(p => {
@@ -145,4 +145,9 @@ export function reconcileTasklandMotion(state: TasklandMotionState, input: Taskl
 }
 export function suppressedTasklandPlaces(transitions: readonly TasklandTransition[]): ReadonlySet<string> {
   return new Set(transitions.flatMap(t => [...t.suppressedPlaceIds]));
+}
+/** Worker layer samples the same site route while retaining its own robot pose/identity. */
+export function sampleTasklandPlace(transitions: readonly TasklandTransition[], entityId: string, now: number): Point | null {
+  const transition = transitions.find(t => t.kind === 'move' && t.members.some(m => m.place.entityId === entityId));
+  return transition ? sampleTasklandTransition(transition, now).members.find(m => m.entityId === entityId)?.position ?? null : null;
 }

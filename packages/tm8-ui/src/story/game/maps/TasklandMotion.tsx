@@ -7,12 +7,12 @@ import { emptyTasklandMotion, reconcileTasklandMotion, sampleTasklandTransition,
 
 const motionNow = () => performance.now();
 /** No private model snapshot: the event controller supplies both authoritative builds. */
-export function useTasklandMotion(input: TasklandMotionInput) {
-  const [record, setRecord] = useState(() => ({ input, state: reconcileTasklandMotion(emptyTasklandMotion(input), input, motionNow()) }));
+export function useTasklandMotion(input: TasklandMotionInput & { now?: () => number }) {
+  const [record, setRecord] = useState(() => ({ input, state: reconcileTasklandMotion(emptyTasklandMotion(input), input, (input.now ?? motionNow)()) }));
   let current = record;
   if (record.input.model !== input.model || record.input.previousModel !== input.previousModel || record.input.effect !== input.effect ||
-      record.input.reducedMotion !== input.reducedMotion || record.input.resetKey !== input.resetKey) {
-    current = { input, state: reconcileTasklandMotion(record.state, input, motionNow()) };
+      record.input.reducedMotion !== input.reducedMotion || record.input.resetKey !== input.resetKey || record.input.now !== input.now) {
+    current = { input, state: reconcileTasklandMotion(record.state, input, (input.now ?? motionNow)()) };
     // Reconcile before commit so suppression and cargo appear in the same frame.
     setRecord(current);
   }
