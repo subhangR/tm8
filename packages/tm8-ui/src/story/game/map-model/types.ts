@@ -81,4 +81,4 @@ export interface MapRendererProps {
   onSelectEntity?: (entityId: string) => void;
   onEnterPortal?: (portal: MapPortal) => void;
 }
-export type MapRenderer<Result = unknown> = (props: MapRendererProps) => Result;
+export type MapRenderer<Result = unknown, Props extends MapRendererProps = MapRendererProps> = (props: Props) => Result;
