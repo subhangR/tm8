@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture, matrix, distribution, summarize, classify, recordFrame, hardwareVendor, rendererIdentityMatches, interactionEffect } from './core.mjs';
+import { fixture, matrix, matrixOrder, distribution, summarize, classify, recordFrame, hardwareVendor, rendererIdentityMatches, interactionEffect } from './core.mjs';
 const native = { renderer: { unmaskedRenderer: 'ANGLE (Intel, Intel GPU)', context: 'webgl2' },
   headed: true, actualHead: 'a'.repeat(40), expectedHead: 'a'.repeat(40),
   windowEndEpochMs: 100,
@@ -95,4 +95,37 @@ test('audit renderer matching removes only terminal driver-version suffix', () =
   assert.equal(rendererIdentityMatches(sampled, audited.replace('0x0000C0DE', '0x0000BEEF')), false);
   assert.equal(rendererIdentityMatches(sampled, audited.replace('Vulkan 1.3.0', 'OpenGL 4.6')), false);
   assert.equal(rendererIdentityMatches(null, audited), false);
+});
+
+test('repeat-major schedule covers all24 cases before duplicates, with72 unique rows', () => {
+  const cases = matrix(), rows = matrixOrder(cases, 3);
+  assert.equal(rows.length, 72);
+  assert.equal(new Set(rows.map(({ config: c, repeat }) => `${c.scope}/${c.map}/${c.workload}/${repeat}`)).size, 72);
+  for (let repeat = 1; repeat <= 3; repeat++) {
+    const batch = rows.slice((repeat - 1) * 24, repeat * 24);
+    assert(batch.every(row => row.repeat === repeat)); assert.deepEqual(batch.map(row => row.config), cases);
+  }
+});
+
+test('published partial coverage and repeat spreads use actual completed valid rows', async () => {
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { writeReport } = await import('./report.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'tm8-gpu-report-test-'));
+  try {
+    const window = interaction => ({ interaction, valid: true, fps: 60, frameMs: { median: 16, p95: 20 } });
+    const row = { key: 'space/hub/representative', repeat: 1, completedAt: '2026-01-01T00:00:00Z', windows: [window('idle'), window('walk-overview-zoom')] };
+    const report = { settings: { repeats: 3 }, workloadMatrix: matrix(), coverage: { fullMatrixRequested: true }, runs: [row] };
+    await writeReport(dir, report);
+    const saved = JSON.parse(await readFile(join(dir, 'report.json'), 'utf8'));
+    assert.equal(saved.coverage.completeMatrix, false); assert.equal(saved.coverage.expectedRows, 72);
+    assert.equal(saved.coverage.distinctAttemptedCases, 1); assert.equal(saved.coverage.completedRows, 1);
+    assert.equal(saved.coverage.cases[0].validRepeats, 1); assert.equal(saved.repeatSummaries[0].fpsSpread, null);
+    report.runs.push({ ...row, repeat: 2 }); await writeReport(dir, report);
+    assert.equal(report.repeatSummaries[0].fpsSpread.count, 2);
+    report.runs.push({ ...row, repeat: 3, completedAt: null }); await writeReport(dir, report);
+    assert.equal(report.coverage.completedRows, 2); assert.equal(report.coverage.completeMatrix, false);
+    assert.equal(report.repeatSummaries[0].validRepeats, 2); assert.equal(report.repeatSummaries[0].fpsSpread.count, 2);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { auditEnvironment, browserGpuSummary } from './environment.mjs';
-import { classify, fixture, interactionEffect, INTERACTIONS, matrix } from './core.mjs';
+import { classify, fixture, interactionEffect, INTERACTIONS, matrix, matrixOrder } from './core.mjs';
 import { writeReport } from './report.mjs';
 const here = dirname(fileURLToPath(import.meta.url)), ui = resolve(here, '../..'), repo = resolve(ui, '../..');
 const argv = process.argv.slice(2), flag = name => argv.includes(name);
@@ -27,7 +27,7 @@ const settings = { warmupMs: number('--warmup-ms', smoke ? 200 : 2000, smoke ? 0
   viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1, reducedMotion: 'no-preference',
   mode: smoke ? 'tool-smoke-only' : 'production-build-synthetic-benchmark', headed: flag('--headed'),
   softwareRequested: flag('--software'), nativeOnly: flag('--native-only'), singleProcess: flag('--single-process'), processModel: flag('--single-process') ? 'single-process-software-diagnostic' : 'multiprocess', httpCache: 'fresh browser/context per case/repeat',
-  interactions: INTERACTIONS, windowOrder: 'idle then walk-overview-zoom', fixtureIsolation: 'new browser/context/page for each repeat/case',
+  interactions: INTERACTIONS, iterationOrder: 'repeat-major: all distinct cases before next repeat', windowOrder: 'idle then walk-overview-zoom', fixtureIsolation: 'new browser/context/page for each repeat/case',
   gpuAuditTiming: 'same browser after both sampled windows and before close; GPU inspection excluded from sampling',
   readiness: 'actual scene draw + all known imported assets resolved + fonts ready + canvas visible + 500ms HTTP quiet + no errors',
   frameTiming: 'rAF timestamps of callbacks with real WebGL draw submissions; complete intervals inside window',
@@ -52,7 +52,7 @@ const report = { schema: 'tm8.game-gpu-benchmark.v1', createdAt: new Date().toIS
     environment: { LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH ?? null, LIBGL_ALWAYS_SOFTWARE: process.env.LIBGL_ALWAYS_SOFTWARE ?? null,
       MESA_LOADER_DRIVER_OVERRIDE: process.env.MESA_LOADER_DRIVER_OVERRIDE ?? null, buildMode: 'production', exclusiveResourcesReserved: false },
     fixtureHashes: Object.fromEntries(allCases.map(c => [`${c.scope}/${c.map}/${c.workload}`, hash(JSON.stringify(fixture(c)))])) },
-  audit, workloadMatrix: allCases, runs: [], cleanup: [], nativeEligible: false, coverage: { completeMatrix: !selection && !smoke,
+  audit, workloadMatrix: allCases, runs: [], cleanup: [], nativeEligible: false, coverage: { completeMatrix: false, fullMatrixRequested: !selection && !smoke,
     supported: ['static six map types at both scopes, 64/512 content rows', 'production renderer, model and player', 'idle and scripted walking/overview/zoom'],
     unsupported: ['live server event replay', 'criteria/subtree-weight construction new contract (baseline builder unavailable)', 'construction/status/shipping transitions', '24h rubble lifecycle', 'worker arrival/departure routes', 'production authenticated graph adapter', 'nested navigation and reload persistence'],
     noApprovedPerformanceBudget: true, smokeOnly: smoke } };
@@ -97,13 +97,13 @@ try {
   try { report.browser.commandLine = (await bounded(browserSession.send('Browser.getBrowserCommandLine'))).arguments.map(a => a.startsWith('--user-data-dir=') ? '--user-data-dir=[temporary]' : a); } catch { report.browser.commandLine = null; }
   const gpu = async () => { try { return browserGpuSummary(await bounded(browserSession.send('SystemInfo.getInfo'))); } catch (error) { return { auditError: String(error) }; } };
   console.log(JSON.stringify({ stage: 'browser-commandline-recorded', gpuAudit: 'deferred-until-after-windows' }));
-  for (const config of cases) for (let repeat = 1; repeat <= settings.repeats; repeat++) {
+  for (const { config, repeat } of matrixOrder(cases, settings.repeats)) {
     if (report.runs.length) {
       await openBrowser();
       browserSession = await bounded(browser.newBrowserCDPSession());
     }
     const key = `${config.scope}/${config.map}/${config.workload}`;
-    const row = { key, repeat, selection: config, fixtureHash: report.provenance.fixtureHashes[key], windows: [] };
+    const row = { key, repeat, ordinal: report.runs.length + 1, startedAt: new Date().toISOString(), selection: config, fixtureHash: report.provenance.fixtureHashes[key], windows: [] };
     report.runs.push(row);
     let context, page;
     const failures = [], pending = new Set();
@@ -192,7 +192,7 @@ try {
         canvases: [...document.querySelectorAll('canvas')].map(c => ({ width: c.width, height: c.height, cssWidth: c.getBoundingClientRect().width, cssHeight: c.getBoundingClientRect().height })) })), 3000).catch(() => null) : null;
       console.error(JSON.stringify({ key, repeat, error: row.error, errors: failures, failureState: row.failureState })); if (settings.nativeOnly) throw error;
     }
-    finally { await closeBrowser(); await persist(); }
+    finally { await closeBrowser(); row.completedAt = new Date().toISOString(); await persist(); }
   }
   report.completedAt = new Date().toISOString();
   report.provenance.headAtEnd = git(['rev-parse', 'HEAD']);

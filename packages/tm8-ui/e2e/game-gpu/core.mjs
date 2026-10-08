@@ -6,6 +6,8 @@ export const INTERACTIONS = ['idle', 'walk-overview-zoom'];
 export const matrix = () => SCOPES.flatMap(scope => MAPS.flatMap(map =>
   Object.keys(WORKLOADS).map(workload => ({ scope, map, workload }))));
 
+export const matrixOrder = (cases, repeats) => Array.from({ length: repeats }, (_, i) => cases.map(config => ({ config, repeat: i + 1 }))).flat();
+
 export function fixture({ scope: kind, map, workload }) {
   if (!SCOPES.includes(kind) || !MAPS.includes(map) || !(workload in WORKLOADS)) throw new Error('Invalid workload');
   const scope = { kind, id: `synthetic-${kind}` };
