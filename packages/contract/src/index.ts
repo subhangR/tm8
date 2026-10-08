@@ -30,6 +30,7 @@ export * from './forms.js';
 export * from './story.js';
 export * from './design.js';
 export * from './progress.js';
+export * from './task-cancellation-observations.js';
 export * from './edges.js';
 export * from './kind-info.js';
 export * from './orchestration.js';
