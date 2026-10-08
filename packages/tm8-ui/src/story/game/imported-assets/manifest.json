@@ -1,0 +1,846 @@
+[
+  {
+    "id": "terrain-grass",
+    "label": "terrain grass",
+    "file": "terrain-grass.glb",
+    "bytes": 18856,
+    "sha256": "f2da051a260c447e25ae90846aa5b31b8dc0fa7ce8e3001788d9ebb701c6e6c6",
+    "bounds": {
+      "min": [
+        -1.0000681313014022,
+        -1.0000164457886322,
+        -1.1547000408172607
+      ],
+      "max": [
+        1.0000681313014022,
+        0.00001644578863224666,
+        1.1547000408172607
+      ]
+    },
+    "scale": 0.43301288847804625,
+    "groundOffset": [
+      0,
+      1.0000164457886322,
+      0
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/tiles/base/hex_grass.gltf"
+  },
+  {
+    "id": "path-straight",
+    "label": "path straight",
+    "file": "path-straight.glb",
+    "bytes": 19232,
+    "sha256": "1f57fed0b57aaacff98a648a8e7e2f93af08d1f8395224d0f374a7a05476f76a",
+    "bounds": {
+      "min": [
+        -1.0000681313014022,
+        -1.000016442063342,
+        -1.1547000408172607
+      ],
+      "max": [
+        1.0000681313014022,
+        0.000016449513922545123,
+        1.1547000408172607
+      ]
+    },
+    "scale": 0.43301288847804625,
+    "groundOffset": [
+      0,
+      1.000016442063342,
+      0
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/tiles/roads/hex_road_A.gltf"
+  },
+  {
+    "id": "path-crossing",
+    "label": "path crossing",
+    "file": "path-crossing.glb",
+    "bytes": 19700,
+    "sha256": "aaa5a7a706191c5dec6c4b4b9da77648c11792e00a58a556e0fbe44fc24a7d90",
+    "bounds": {
+      "min": [
+        -1.0000681313014022,
+        -1.0000164416558883,
+        -1.1547000408172607
+      ],
+      "max": [
+        1.0000681313014022,
+        0.000016449921376171517,
+        1.1547000408172607
+      ]
+    },
+    "scale": 0.43301288847804625,
+    "groundOffset": [
+      0,
+      1.0000164416558883,
+      0
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/tiles/roads/hex_road_M.gltf"
+  },
+  {
+    "id": "tree",
+    "label": "tree",
+    "file": "tree.glb",
+    "bytes": 19384,
+    "sha256": "264594f64a8639c25a8248cab2bf7e0246663f8212c92a3f7fc74e043ecbd164",
+    "bounds": {
+      "min": [
+        -0.2874906992640209,
+        -0.10260728746652603,
+        -0.3017184643470683
+      ],
+      "max": [
+        0.28639719245097156,
+        1.0938414335250854,
+        0.24529524728888652
+      ]
+    },
+    "scale": 1.7425006075866571,
+    "groundOffset": [
+      0.0005467534065246582,
+      0.10260728746652603,
+      0.02821160852909088
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/decoration/nature/tree_single_A.gltf"
+  },
+  {
+    "id": "tree-pine",
+    "label": "tree pine",
+    "file": "tree-pine.glb",
+    "bytes": 20852,
+    "sha256": "68ea8300bbd5caff4a158270a372efd1a9c791156499aed9af45765d291e3107",
+    "bounds": {
+      "min": [
+        -0.34244428048630055,
+        -0.09999983757734299,
+        -0.36006161210309906
+      ],
+      "max": [
+        0.34244618783493336,
+        1.1126774549484253,
+        0.3600615226961319
+      ]
+    },
+    "scale": 1.3886514009563076,
+    "groundOffset": [
+      -9.5367431640625e-7,
+      0.09999983757734299,
+      4.470348358154297e-8
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/decoration/nature/tree_single_B.gltf"
+  },
+  {
+    "id": "rock",
+    "label": "rock",
+    "file": "rock.glb",
+    "bytes": 18452,
+    "sha256": "16e5e95ec21ecb0f0d0e8cfced50f9f3dada0fc791cafb6558bc9cfbed1fff51",
+    "bounds": {
+      "min": [
+        -0.5274375309279693,
+        0.00002531568448216337,
+        -0.7847656607627869
+      ],
+      "max": [
+        0.4709787000945342,
+        1.0199746652420312,
+        0.541504442691803
+      ]
+    },
+    "scale": 0.7539942259086284,
+    "groundOffset": [
+      0.028229415416717557,
+      -0.00002531568448216337,
+      0.12163060903549194
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kenney.nl/assets/fantasy-town-kit",
+    "sourceFile": "kenney/Models/GLB format/rock-small.glb"
+  },
+  {
+    "id": "gate",
+    "label": "gate",
+    "file": "gate.glb",
+    "bytes": 35740,
+    "sha256": "b84da8bd67eafb3e365b5d8bee5e6dfacdc1e233b10f57d225456ba73ff20387",
+    "bounds": {
+      "min": [
+        -1,
+        -0.049977308797642395,
+        -0.39998608962427645
+      ],
+      "max": [
+        1,
+        1.3640062722442594,
+        0.4956100894583371
+      ]
+    },
+    "scale": 0.5,
+    "groundOffset": [
+      0,
+      0.049977308797642395,
+      -0.047811999917030334
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/wall_straight_gate.gltf"
+  },
+  {
+    "id": "hub",
+    "label": "hub",
+    "file": "hub.glb",
+    "bytes": 105448,
+    "sha256": "dc17e49b8cc251898362ce132f2855063f3f940d46661469050c8649327f9a35",
+    "bounds": {
+      "min": [
+        -0.9876061460183967,
+        0,
+        -1.128050810148308
+      ],
+      "max": [
+        0.9876060864137519,
+        3.97920560836792,
+        1.128050810148308
+      ]
+    },
+    "scale": 0.4432424457319113,
+    "groundOffset": [
+      2.9802322387695312e-8,
+      0,
+      0
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/green/building_castle_green.gltf"
+  },
+  {
+    "id": "office",
+    "label": "office",
+    "file": "office.glb",
+    "bytes": 73448,
+    "sha256": "8c357a8c3c622feb0ca145c0d3b19352bb8baed41fc454d972ce5d676faff9bd",
+    "bounds": {
+      "min": [
+        -0.5949986005569932,
+        -0.0000030875205538904993,
+        -0.7023448634928525
+      ],
+      "max": [
+        0.5767689371849534,
+        1.3966469764709473,
+        0.630028693754083
+      ]
+    },
+    "scale": 0.7505402629471916,
+    "groundOffset": [
+      0.009114831686019897,
+      0.0000030875205538904993,
+      0.036158084869384766
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/blue/building_tavern_blue.gltf",
+    "adaptation": "Fantasy tavern reused as team office."
+  },
+  {
+    "id": "library",
+    "label": "library",
+    "file": "library.glb",
+    "bytes": 44268,
+    "sha256": "e6c5f0fc257c4a3a559e9b1c5e9b4cb84104917221fb5c90f3b0a5dad5f5b831",
+    "bounds": {
+      "min": [
+        -0.5145413422785958,
+        -0.000005382299150369363,
+        -0.559993959905062
+      ],
+      "max": [
+        0.514541282673951,
+        1.6450307369232178,
+        0.5950004234327414
+      ]
+    },
+    "scale": 0.8658050761338881,
+    "groundOffset": [
+      2.9802322387695312e-8,
+      0.000005382299150369363,
+      -0.01750323176383972
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/blue/building_church_blue.gltf",
+    "adaptation": "Tall reading-hall silhouette reused for Library; labels identify domain role."
+  },
+  {
+    "id": "code-factory",
+    "label": "code factory",
+    "file": "code-factory.glb",
+    "bytes": 57816,
+    "sha256": "becfb0847c62871928a233eedd13467775cc0c8f05c9b97007ef165c2d95a72d",
+    "bounds": {
+      "min": [
+        -0.6300048232078552,
+        -0.005140871075135611,
+        -0.5600053496768173
+      ],
+      "max": [
+        0.6575961709022522,
+        0.9800406995091261,
+        0.6851563282420333
+      ]
+    },
+    "scale": 0.7766381080585639,
+    "groundOffset": [
+      -0.013795673847198486,
+      0.005140871075135611,
+      -0.06257548928260803
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/red/building_blacksmith_red.gltf",
+    "adaptation": "Blacksmith reused as fantasy Code Factory."
+  },
+  {
+    "id": "task-building",
+    "label": "task building",
+    "file": "task-building.glb",
+    "bytes": 35496,
+    "sha256": "74a12d66e71dbd514586f60c15a7a0b1cabe6ae2f41f58e6aabde6f725ad929f",
+    "bounds": {
+      "min": [
+        -0.3959745484945523,
+        -2.086162709247219e-8,
+        -0.46868011373831625
+      ],
+      "max": [
+        0.39597448888990755,
+        0.9300001263618469,
+        0.3850286306793868
+      ]
+    },
+    "scale": 1.1713596780387663,
+    "groundOffset": [
+      2.9802322387695312e-8,
+      2.086162709247219e-8,
+      0.04182574152946472
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/green/building_home_A_green.gltf"
+  },
+  {
+    "id": "task-building-blue",
+    "label": "task building blue",
+    "file": "task-building-blue.glb",
+    "bytes": 42384,
+    "sha256": "6d015c044556427b0baaf601363c58e826df97d273e413c84dd2c98ceb185296",
+    "bounds": {
+      "min": [
+        -0.4387630194134541,
+        -2.086162709247219e-8,
+        -0.5386981546626428
+      ],
+      "max": [
+        0.4361857145733662,
+        1.2800002098083496,
+        0.5600465118632654
+      ]
+    },
+    "scale": 0.9101295600932232,
+    "groundOffset": [
+      0.0012886524200439453,
+      2.086162709247219e-8,
+      -0.01067417860031128
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/blue/building_home_B_blue.gltf"
+  },
+  {
+    "id": "task-building-yellow",
+    "label": "task building yellow",
+    "file": "task-building-yellow.glb",
+    "bytes": 35496,
+    "sha256": "49f40d194b9b427bf1e32a3fb1a7cbae7310b8ae5249ca84c27b6f723c24a85d",
+    "bounds": {
+      "min": [
+        -0.3959745484945523,
+        -2.086162709247219e-8,
+        -0.46868011373831625
+      ],
+      "max": [
+        0.39597448888990755,
+        0.9300001263618469,
+        0.3850286306793868
+      ]
+    },
+    "scale": 1.1713596780387663,
+    "groundOffset": [
+      2.9802322387695312e-8,
+      2.086162709247219e-8,
+      0.04182574152946472
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/yellow/building_home_A_yellow.gltf"
+  },
+  {
+    "id": "construction-lot",
+    "label": "construction lot",
+    "file": "construction-lot.glb",
+    "bytes": 21036,
+    "sha256": "c790881e0a982a5759a2ea806852b91c3dd4a506a3403452cf57ae3da36f5c26",
+    "bounds": {
+      "min": [
+        -0.897450320866269,
+        -0.019941611671825114,
+        -1.0034037828445435
+      ],
+      "max": [
+        0.897450320866269,
+        0.06653601163067407,
+        1.0034037828445435
+      ]
+    },
+    "scale": 0.4983038817957741,
+    "groundOffset": [
+      0,
+      0.019941611671825114,
+      0
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_dirt.gltf"
+  },
+  {
+    "id": "construction-foundation",
+    "label": "construction foundation",
+    "file": "construction-foundation.glb",
+    "bytes": 33708,
+    "sha256": "554daa5a5f218400e3c487c3fb9ccbcf84f61e38190b0eacb5db2c0b1fe77d23",
+    "bounds": {
+      "min": [
+        -0.4806442856788635,
+        -0.005880994234572556,
+        -0.3422981951289441
+      ],
+      "max": [
+        0.5660538077354431,
+        0.27998286995698085,
+        0.5326707515769269
+      ]
+    },
+    "scale": 0.9553853267641116,
+    "groundOffset": [
+      -0.042704761028289795,
+      0.005880994234572556,
+      -0.0951862782239914
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_stage_A.gltf"
+  },
+  {
+    "id": "construction-scaffolding",
+    "label": "construction scaffolding",
+    "file": "construction-scaffolding.glb",
+    "bytes": 70040,
+    "sha256": "42ba08b8c435e0f838099e9e8def1b9cbf8f57796d59e39cbba7399c23aedec5",
+    "bounds": {
+      "min": [
+        -0.9284760898461358,
+        -0.0026452594258240536,
+        -1.0868645906448364
+      ],
+      "max": [
+        0.9719988054146783,
+        1.2960093670346193,
+        1.0224353075027466
+      ]
+    },
+    "scale": 0.47409095353307235,
+    "groundOffset": [
+      -0.02176135778427124,
+      0.0026452594258240536,
+      0.03221464157104492
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_scaffolding.gltf"
+  },
+  {
+    "id": "construction-walls-up",
+    "label": "construction walls up",
+    "file": "construction-walls-up.glb",
+    "bytes": 35468,
+    "sha256": "08d72f85213eebc98922a84732df2b708cf6f860b73dd881824c197474541c1f",
+    "bounds": {
+      "min": [
+        -0.49630341315526316,
+        -0.005899282028560882,
+        -0.5751025080680847
+      ],
+      "max": [
+        0.5242760517622883,
+        0.6300004961394121,
+        0.5554741621017456
+      ]
+    },
+    "scale": 0.8845043652367108,
+    "groundOffset": [
+      -0.013986319303512573,
+      0.005899282028560882,
+      0.009814172983169556
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_stage_B.gltf"
+  },
+  {
+    "id": "construction-topped-out",
+    "label": "construction topped out",
+    "file": "construction-topped-out.glb",
+    "bytes": 40120,
+    "sha256": "1361f73c7dcadde455dd7b3d8b5de717c28dc6c1bd90223013fc00171e9c338b",
+    "bounds": {
+      "min": [
+        -0.49995243549346924,
+        -0.005934310834440459,
+        -0.5736816257895972
+      ],
+      "max": [
+        0.6600566506385803,
+        0.9800397807169288,
+        0.5534746379317786
+      ]
+    },
+    "scale": 0.8620622130938767,
+    "groundOffset": [
+      -0.08005210757255554,
+      0.005934310834440459,
+      0.010103493928909302
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_stage_C.gltf"
+  },
+  {
+    "id": "construction-done",
+    "label": "construction done",
+    "file": "task-building.glb",
+    "bytes": 35496,
+    "sha256": "74a12d66e71dbd514586f60c15a7a0b1cabe6ae2f41f58e6aabde6f725ad929f",
+    "bounds": {
+      "min": [
+        -0.3959745484945523,
+        -2.086162709247219e-8,
+        -0.46868011373831625
+      ],
+      "max": [
+        0.39597448888990755,
+        0.9300001263618469,
+        0.3850286306793868
+      ]
+    },
+    "scale": 1.1713596780387663,
+    "groundOffset": [
+      2.9802322387695312e-8,
+      2.086162709247219e-8,
+      0.04182574152946472
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/green/building_home_A_green.gltf"
+  },
+  {
+    "id": "rubble",
+    "label": "rubble",
+    "file": "rubble.glb",
+    "bytes": 36800,
+    "sha256": "46478455513aaaa4b0c56a62d480edc5f78ae4469c92fe1463f7bd438d7666b5",
+    "bounds": {
+      "min": [
+        -0.7188624143600464,
+        -0.01391839005297929,
+        -0.7134251309853832
+      ],
+      "max": [
+        0.82041335105896,
+        0.9800083241636208,
+        0.5924718691331188
+      ]
+    },
+    "scale": 0.6496561710810733,
+    "groundOffset": [
+      -0.05077546834945679,
+      0.01391839005297929,
+      0.0604766309261322
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_destroyed.gltf",
+    "adaptation": "Cancelled only. Never select this for blocked or waiting."
+  },
+  {
+    "id": "robot",
+    "label": "robot",
+    "file": "robot.glb",
+    "bytes": 220840,
+    "sha256": "7797a07b01a82ac7bbfc271b942799abc7592f12413c5e8a3298df3314a82ada",
+    "bounds": {
+      "min": [
+        -1.6210728088536306,
+        -0.020315644377525408,
+        -1.5995032079413987
+      ],
+      "max": [
+        1.578776121792215,
+        4.771082931741535,
+        1.5958895841360081
+      ]
+    },
+    "scale": 0.20870732920949783,
+    "groundOffset": [
+      0.021148343530707825,
+      0.020315644377525408,
+      0.0018068119026952711
+    ],
+    "clips": [
+      "Dance",
+      "Death",
+      "Idle",
+      "Jump",
+      "No",
+      "Punch",
+      "Running",
+      "Sitting",
+      "Standing",
+      "ThumbsUp",
+      "Walking",
+      "WalkJump",
+      "Wave",
+      "Yes"
+    ],
+    "licence": "CC0-1.0",
+    "source": "https://quaternius.com/packs/animatedrobot.html",
+    "sourceFile": "RobotExpressive.glb",
+    "adaptation": "Fallback robot only; preferred worker is the KayKit recoloured humanoid. No hammer/carry animation supplied."
+  },
+  {
+    "id": "worker",
+    "label": "worker",
+    "file": "worker.glb",
+    "bytes": 352064,
+    "sha256": "5043e0f2b8dc144bda03b719ff43750e2a51bc29b8a3b388781c1184efb87c10",
+    "bounds": {
+      "min": [
+        -0.9712541563929096,
+        -0.00002674800310407579,
+        -0.5421698888169939
+      ],
+      "max": [
+        0.9712541607630657,
+        2.46655226098515,
+        0.7114203984322043
+      ]
+    },
+    "scale": 0.40541981276739314,
+    "groundOffset": [
+      -2.185078062932888e-9,
+      0.00002674800310407579,
+      -0.08462525480760519
+    ],
+    "clips": [
+      "Cheer",
+      "Hit_A",
+      "Idle",
+      "Interact",
+      "PickUp",
+      "Sit_Chair_Idle",
+      "Use_Item",
+      "Walking_A"
+    ],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-adventurers",
+    "sourceFile": "kaykit-characters/addons/kaykit_character_pack_adventures/Characters/gltf/Knight.glb",
+    "adaptation": "Knight recoloured blue-grey for workshop crew; sword/shield/cape meshes removed. Retains original skin and 8 useful clips; Interact/Use_Item stand in for work, no dedicated hammer clip."
+  },
+  {
+    "id": "desk",
+    "label": "desk",
+    "file": "desk.glb",
+    "bytes": 18300,
+    "sha256": "38a68ececee8ef40f95055bd0a94f5addba55117525d364a6b0ed33eeb489f87",
+    "bounds": {
+      "min": [
+        -0.130025635218167,
+        0.000009231636579273839,
+        -0.4699999988079071
+      ],
+      "max": [
+        0.130025635218167,
+        0.2254921864771292,
+        0.4699999988079071
+      ]
+    },
+    "scale": 1.0638297899323061,
+    "groundOffset": [
+      0,
+      -0.000009231636579273839,
+      0
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kenney.nl/assets/fantasy-town-kit",
+    "sourceFile": "kenney/Models/GLB format/stall-bench.glb",
+    "adaptation": "Wooden market workbench reused as a desk."
+  },
+  {
+    "id": "cart",
+    "label": "cart",
+    "file": "cart.glb",
+    "bytes": 23748,
+    "sha256": "d6d1243f8c6abe3cf1f15b0380cf124db3e2e949108633c47176b252ba815be4",
+    "bounds": {
+      "min": [
+        -0.44651910503420966,
+        0,
+        -0.6449999809265137
+      ],
+      "max": [
+        0.446518884625564,
+        0.535468501068324,
+        0.6949999928474426
+      ]
+    },
+    "scale": 0.7462686713221454,
+    "groundOffset": [
+      1.1020432283403991e-7,
+      0,
+      -0.025000005960464478
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kenney.nl/assets/fantasy-town-kit",
+    "sourceFile": "kenney/Models/GLB format/cart.glb"
+  },
+  {
+    "id": "shipping-yard",
+    "label": "shipping yard",
+    "file": "shipping-yard.glb",
+    "bytes": 65468,
+    "sha256": "7350f368eb0bc51e99c46e23c1b1b9bbd9738a14fa1bebe6519fcb698d823e2c",
+    "bounds": {
+      "min": [
+        -0.9013807773590088,
+        -0.005698675586197632,
+        -0.7150185844306816
+      ],
+      "max": [
+        0.8980000615119934,
+        0.9760613463058212,
+        0.6006211182479728
+      ]
+    },
+    "scale": 0.555746720426031,
+    "groundOffset": [
+      0.0016903579235076904,
+      0.005698675586197632,
+      0.05719873309135437
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/yellow/building_market_yellow.gltf",
+    "adaptation": "Market loading stand reused as Shipping Yard; add cart/crate instances."
+  },
+  {
+    "id": "crate",
+    "label": "crate",
+    "file": "crate.glb",
+    "bytes": 20324,
+    "sha256": "da2c2ee9e26d71b0fe582cf8e8340e317961eb5dea3145a61fc7e4dfd9857e64",
+    "bounds": {
+      "min": [
+        -0.10500000417232513,
+        0.0000010609625746837992,
+        -0.10500000417232513
+      ],
+      "max": [
+        0.10500000417232513,
+        0.21000106930722495,
+        0.10500000417232513
+      ]
+    },
+    "scale": 4.761904572683675,
+    "groundOffset": [
+      0,
+      -0.0000010609625746837992,
+      0
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/decoration/props/crate_A_big.gltf"
+  },
+  {
+    "id": "fence",
+    "label": "fence",
+    "file": "fence.glb",
+    "bytes": 22988,
+    "sha256": "e13934b91fcc6197af9216c29c1420a1ad05b47587ec4afc35faff57d0f0e98a",
+    "bounds": {
+      "min": [
+        -1.049969552865117,
+        -0.05003500803493327,
+        -0.5773505568504333
+      ],
+      "max": [
+        -0.9500296126698562,
+        0.5000223003246671,
+        0.5773504376411438
+      ]
+    },
+    "scale": 0.8660250617003296,
+    "groundOffset": [
+      0.9999995827674866,
+      0.05003500803493327,
+      5.960464477539063e-8
+    ],
+    "clips": [],
+    "licence": "CC0-1.0",
+    "source": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+    "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/fence_wood_straight.gltf"
+  }
+]
