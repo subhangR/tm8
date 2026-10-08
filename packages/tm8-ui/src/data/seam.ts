@@ -289,6 +289,7 @@ import type {
   StartChatResult,
   SpaceId,
   SpaceKindCounts,
+  SpaceUnreadCounts,
   SpaceSettingsView,
   SpaceConfigsView,
   AuthSessionsListResult,
@@ -761,6 +762,10 @@ export interface Seam {
    * page length is not a total.
    */
   counts(spaceId: SpaceId): Promise<SpaceKindCounts>;
+  /** Lazy viewer mailbox counts. Optional for older backends and fixture seams. */
+  unreadCounts?(spaceId: SpaceId): Promise<SpaceUnreadCounts>;
+  /** Same-client successful mailbox read cursor writes; does not imply cross-client events. */
+  onReadMark?(listener: (anchorId: EntityId) => void): () => void;
   /** Full graph hydration; durable entity/edge events keep this lens current. */
   graph(input: GraphQuery): Promise<GraphResult>;
   /**

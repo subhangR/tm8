@@ -4638,6 +4638,21 @@ export interface SpaceNavigation {
 }
 export interface NavChannelNode { entity: EntitySummary; childCount: number; children: NavChannelNode[] }
 
+export const SPACE_UNREAD_COUNTS_LIMIT = 20_000;
+/**
+ * GET /v2/spaces/:spaceId/unread-counts — lazy, sparse counts for this viewer.
+ * Only readable anchors/messages contribute; own messages and read messages
+ * are excluded. No other member's identity or read cursor is returned.
+ * Missing anchors mean zero ONLY when complete is true. An overflow returns
+ * at most SPACE_UNREAD_COUNTS_LIMIT rows with complete=false; consumers must
+ * retain their fallback rather than manufacture zeroes for omitted anchors.
+ */
+export interface SpaceUnreadCounts {
+  spaceId: SpaceId;
+  counts: Array<{ anchorId: EntityId; unread: number }>;
+  complete: boolean;
+}
+
 export interface EntitySeenResult { entityId: EntityId; seenAt: string }
 
 /**

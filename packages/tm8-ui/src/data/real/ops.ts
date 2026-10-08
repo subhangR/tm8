@@ -203,6 +203,7 @@ import {
   type StartChatInput,
   type StartChatResult,
   type SpaceKindCounts,
+  type SpaceUnreadCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
   type AuthSessionsListResult,
@@ -1097,6 +1098,10 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
      */
     counts(spaceId: SpaceId): Promise<SpaceKindCounts> {
       return http.call<SpaceKindCounts>('spaces.counts', { params: { spaceId } });
+    },
+
+    unreadCounts(spaceId: SpaceId): Promise<SpaceUnreadCounts> {
+      return http.call<SpaceUnreadCounts>('spaces.unreadCounts', { params: { spaceId } });
     },
 
     /** `cursor`/`limit` are BODY fields on this op, carried inside the query object. */
