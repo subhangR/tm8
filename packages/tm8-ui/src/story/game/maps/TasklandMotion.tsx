@@ -38,6 +38,23 @@ export interface TasklandMotionProps {
   /** Inject only in a synthetic frame harness. Uses the planner's monotonic ms origin. */
   now?: () => number;
 }
+export interface TasklandFrameObjects {
+  root: Group; cargo: Group | null; dust: Group | null; members: ReadonlyMap<string, Group>;
+}
+/** Apply one frame to Three objects; shared by the renderer and deterministic frame tests. */
+export function applyTasklandFrame(transition: TasklandTransition, now: number, objects: TasklandFrameObjects): boolean {
+  const sample = sampleTasklandTransition(transition, now);
+  objects.root.position.set(sample.anchor.x, 0, sample.anchor.z);
+  if (objects.cargo) objects.cargo.scale.y = sample.height;
+  sample.members.forEach(member => objects.members.get(member.entityId)?.position.set(member.position.x-sample.anchor.x,
+    transition.kind === 'collapse' ? .18 : .44, member.position.z-sample.anchor.z));
+  if (objects.dust) {
+    objects.dust.visible = sample.progress > .25 && sample.progress < 1;
+    objects.dust.scale.setScalar(.5+sample.progress*1.5);
+  }
+  objects.root.visible = sample.progress < 1;
+  return sample.progress === 1;
+}
 function MotionCompound({ transition, onComplete, now = motionNow }: { transition: TasklandTransition } & Pick<TasklandMotionProps, 'onComplete' | 'now'>) {
   const root = useRef<Group>(null), cargo = useRef<Group>(null), dust = useRef<Group>(null);
   const members = useRef(new Map<string, Group>()), finished = useRef(false);
@@ -48,17 +65,8 @@ function MotionCompound({ transition, onComplete, now = motionNow }: { transitio
   const maxZ = Math.max(...transition.members.map(m => m.from.z-transition.from.z+m.place.radius));
   useFrame(() => {
     if (!root.current || finished.current) return;
-    const sample = sampleTasklandTransition(transition, now());
-    root.current.position.set(sample.anchor.x, 0, sample.anchor.z);
-    if (cargo.current) cargo.current.scale.y = sample.height;
-    sample.members.forEach(member => members.current.get(member.entityId)?.position.set(member.position.x-sample.anchor.x,
-      transition.kind === 'collapse' ? .18 : .44, member.position.z-sample.anchor.z));
-    if (dust.current) {
-      dust.current.visible = sample.progress > .25 && sample.progress < 1;
-      dust.current.scale.setScalar(.5+sample.progress*1.5);
-    }
-    if (sample.progress === 1) {
-      root.current.visible = false; finished.current = true; onComplete(transition.key);
+    if (applyTasklandFrame(transition, now(), { root:root.current, cargo:cargo.current, dust:dust.current, members:members.current })) {
+      finished.current = true; onComplete(transition.key);
     }
   });
   return <group ref={root} name={`taskland-motion:${transition.kind}:${transition.entityId}`} position={[frame.anchor.x,0,frame.anchor.z]}>
