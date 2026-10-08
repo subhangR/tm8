@@ -84,6 +84,7 @@ import {
 } from '@tm8/contract';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike, type SpaceSessionPort } from './http';
+import { createGamePort } from '../../game/http-port';
 import { chatTurnFrameFromWire, type WireChatTurnFrame } from '../../chat-home/wire';
 import { createOps } from './ops';
 import {
@@ -236,6 +237,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   const stopCookieWatch = options.spaceSession?.onCookieChanged?.(() => connection.reconnect());
 
   const seam: RealSeam = {
+    game: createGamePort(http, options.newClientMutationId),
     mcp: (spaceId) => createMcpPort(http, seam, spaceId),
     // -- lifecycle -----------------------------------------------------------
 

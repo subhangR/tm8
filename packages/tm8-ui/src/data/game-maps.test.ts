@@ -3,6 +3,7 @@ import type { CollectionQuery, GraphEdgeView, EntityDetail, EntitySummary, Story
 import type { Seam } from './seam';
 import { createGameMapLoader } from './game-maps';
 import { buildMapModel } from '../story/game/map-model';
+import type { GamePort } from '../game/port';
 
 const SPACE = 'space-a';
 const row = (id: string, kind = 'task', parentId: string | null = null): EntitySummary => ({
@@ -35,6 +36,63 @@ const story = (overrides: Partial<StoryPage> = {}): EntityDetail => ({
 } as unknown as EntityDetail);
 
 describe('real Game map reads', () => {
+  it('overlaps Town placement storage with the primary read and filters only after the admitted graph is ready', async () => {
+    const seam = port();
+    let finish!: (value: Awaited<ReturnType<typeof seam.query>>) => void;
+    seam.query.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const map = { id: 'durable-town', spaceId: SPACE, title: 'Town', type: 'town' as const, scope: { kind: 'space' as const, id: SPACE } };
+    const game = { open: vi.fn(async () => map), context: vi.fn(async () => ({ map, nextCursor: null, terrain: [], terrainTruncated: false,
+      placements: [{ itemId: 'item', entityId: 'late-task', kind: 'ref', x: 3, z: 4, rotation: 0, spec: {}, layer: 'human', byActor: 'member', version: 1, expiresAt: null }] })) } as unknown as GamePort;
+    const loading = createGameMapLoader({ ...seam, game } as unknown as Seam, SPACE)({ kind: 'space', id: SPACE }, undefined, 'town');
+    await vi.waitFor(() => expect(game.context).toHaveBeenCalledTimes(1));
+    finish({ page: page([row('late-task')]) });
+    expect((await loading).input.townPlacements).toEqual([{ entityId: 'late-task', x: 3, z: 4, actorId: 'member', layer: 'human' }]);
+  });
+
+  it('ensures fresh Office and story hub identities without placement context reads', async () => {
+    const seam = port(); seam.entity.mockResolvedValue(story());
+    const game = { open: vi.fn(async (spaceId, selection) => ({ ...selection, id: 'map-id', spaceId, title: 'Map' })), context: vi.fn() } as unknown as GamePort;
+    const loading = createGameMapLoader({ ...seam, game } as unknown as Seam, SPACE);
+    await loading({ kind: 'space', id: SPACE }, undefined, 'office');
+    await loading({ kind: 'story', id: 'story-a' }, undefined, 'hub');
+    expect(game.open).toHaveBeenNthCalledWith(1, SPACE, { type: 'office', scope: { kind: 'space', id: SPACE } }, undefined);
+    expect(game.open).toHaveBeenNthCalledWith(2, SPACE, { type: 'hub', scope: { kind: 'story', id: 'story-a' } }, undefined);
+    expect(game.context).not.toHaveBeenCalled();
+  });
+  it('joins persisted Town coordinates without changing graph status/progress or admitting ghost buildings', async () => {
+    const seam = port(), task = row('shipped');
+    task.state = { ...task.state, status: 'done' } as EntitySummary['state'];
+    seam.query.mockResolvedValue({ page: page([task]) });
+    const map = { id: 'durable-town', spaceId: SPACE, title: 'Town', type: 'town' as const, scope: { kind: 'space' as const, id: SPACE } };
+    const game = { open: vi.fn(async () => map), context: vi.fn(async () => ({ map, nextCursor: null, terrain: [], terrainTruncated: false,
+      placements: ['shipped', 'ghost'].map((entityId, index) => ({ itemId: `item-${index}`, entityId, kind: 'ref' as const,
+        x: 30 + index, z: 50, rotation: 0, spec: {}, layer: 'human' as const, byActor: 'member', version: 1, expiresAt: null })) })) } as unknown as GamePort;
+    const result = await createGameMapLoader({ ...seam, game } as unknown as Seam, SPACE)({ kind: 'space', id: SPACE }, undefined, 'town');
+    expect(result.input.townPlacements).toEqual([{ entityId: 'shipped', x: 30, z: 50, actorId: 'member', layer: 'human' }]);
+    expect(result.input.entities).toHaveLength(1);
+    expect(result.input.entities[0]).toMatchObject({ id: 'shipped', status: 'done', progress: .4 });
+    expect(game.open).toHaveBeenCalledWith(SPACE, { scope: { kind: 'space', id: SPACE }, type: 'town' }, undefined);
+  });
+
+  it('keeps the derived Town readable when placement storage fails, with a generic notice', async () => {
+    const seam = port(); seam.query.mockResolvedValue({ page: page([row('live-task')]) });
+    const game = { open: vi.fn(async () => { throw new Error('Private placement payload'); }) } as unknown as GamePort;
+    const result = await createGameMapLoader({ ...seam, game } as unknown as Seam, SPACE)({ kind: 'space', id: SPACE }, undefined, 'town');
+    expect(result.input.entities[0]?.id).toBe('live-task');
+    expect(result.input.warnings).toContain('Saved placements could not be loaded. Showing the derived layout.');
+    expect(JSON.stringify(result.input)).not.toContain('Private placement payload');
+  });
+
+  it('opens persisted hub identity without relation reads or map identity graph admission', async () => {
+    const seam = port(); seam.query.mockResolvedValue({ page: page([row('real-story', 'story')]) });
+    const map = { id: 'durable-hub', spaceId: SPACE, title: 'Hub', type: 'hub' as const, scope: { kind: 'space' as const, id: SPACE } };
+    const game = { open: vi.fn(async () => map), context: vi.fn(async () => ({ map, placements: [], nextCursor: null, terrain: [], terrainTruncated: false })) } as unknown as GamePort;
+    await createGameMapLoader({ ...seam, game } as unknown as Seam, SPACE)({ kind: 'space', id: SPACE }, undefined, 'hub');
+    expect(seam.graph).not.toHaveBeenCalled();
+    expect(seam.query.mock.calls[0]?.[0].kinds).toEqual(['story']);
+    expect(game.open).toHaveBeenCalledWith(SPACE, { type: 'hub', scope: { kind: 'space', id: SPACE } }, undefined);
+    expect(game.context).not.toHaveBeenCalled();
+  });
   it('pages primary entities, reads one bounded graph, preserves progress/counts and admits only scoped endpoints', async () => {
     const seam = port(), a = row('a'), b = row('b'), unrelated = row('unrelated');
     seam.query.mockImplementation(async (input?: unknown) => ({ page: (input as { cursor?: string }).cursor ? page([b]) : page([a], 'entities-2') }));

@@ -163,6 +163,18 @@ describe('http: server-granted raw upload', () => {
 });
 
 describe('http: error mapping — the server owns the code', () => {
+  it('preserves Retry-After delays for bounded caller retries', async () => {
+    const now = Date.now();
+    for (const [header, delay] of [['5', 5_000], [new Date(now + 10_000).toUTCString(), 10_000 - now % 1_000]] as const) {
+      const http = createHttpClient({ fetch: async () => new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'Try later' } }),
+        { status: 429, headers: { 'retry-after': header } }) });
+      const error = await http.call('identity.get').catch(error => error) as CollabError;
+      expect(error.code).toBe('rate_limited');
+      expect(error.details?.httpStatus).toBe(429);
+      expect(error.details?.retryAfterMs).toBeLessThanOrEqual(delay);
+      expect(error.details?.retryAfterMs).toBeGreaterThan(delay - 1_000);
+    }
+  });
   it('passes a contract code through VERBATIM (no second vocabulary)', async () => {
     const f = fakeFetch(() => ({
       status: 409,
