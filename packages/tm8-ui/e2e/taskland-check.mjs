@@ -77,10 +77,18 @@ try {
     await expect(page.getByText('Surveyor tent', { exact: true })).toHaveCount(1);
     await action('survey view'); await capture(scope, 'surveyor-tent', 'surveyor');
     await action('survey view'); await ready();
+    const beforeFamily = await state();
+    const beforeRoot = place(beforeFamily, 'root'), beforeChildMove = place(beforeFamily, 'child');
+    const childOffset = { x: beforeChildMove.x - beforeRoot.x, z: beforeChildMove.z - beforeRoot.z };
+    const unrelated = place(beforeFamily, 'review');
     await action('root-blocked');
     const rootMove = await midpoint(scope, 'root-family-move', 'move', 'root', ['root', 'child', 'paused']);
     expect(rootMove.snapshot.motion.suppressedPlaceIds.sort()).toEqual(rootMove.transition.members.map(m => m.target.id).sort());
     await settle();
+    const afterFamily = await state(), afterRoot = place(afterFamily, 'root'), afterChildMove = place(afterFamily, 'child');
+    expect(afterChildMove.x - afterRoot.x).toBeCloseTo(childOffset.x, 9);
+    expect(afterChildMove.z - afterRoot.z).toBeCloseTo(childOffset.z, 9);
+    expect(place(afterFamily, 'review')).toMatchObject({ x: unrelated.x, z: unrelated.z });
     await action('working'); await midpoint(scope, 'child-yard-move', 'move', 'child', ['child']); await settle();
     expect(place(await state(), 'child').status).toBe('working');
     await action('progress'); await capture(scope, 'construction', 'mailbox');
@@ -150,6 +158,10 @@ try {
   const report = { source: 'Synthetic MapInput and typed task effects, production model/MapScene/imported assets', sourceHead,
     renderer, softwareWebGL: /swiftshader|llvmpipe|software/i.test(renderer), nativeGPUProof: false,
     checks: 'Both scopes: projected mailbox/yard/tent cues; progress stages; rendered worker; root-family versus child carts; independent child and root shipping; mounted-Town arrival; cancellation collapse and exact 24h expiry; stationary neutral ancestor with open children; reduced motion direct state; cancelled work never ships',
+    unitReferences: [{ path: 'src/story/game/taskland-motion.test.ts',
+      test: 'retargets interrupted carts from their displayed positions rather than replaying the old route',
+      covers: 'Interruption continuity; rendered retarget capture is optional' }],
+    unreadEvidence: process.env.TASKLAND_UNREAD_RECEIPT ?? 'Pending real-HTTP verifier receipt; this fixture uses totals/approx',
     errors, assetFailures, transitions };
   await writeFile(`${evidence}/report.json`, JSON.stringify(report, null, 2));
   const images = transitions.map(t => `<figure><img src="${t.scope}-${t.name}.png" alt="Synthetic ${t.scope} ${t.name}"/><figcaption>${t.scope} · ${t.name}</figcaption></figure>`).join('');
