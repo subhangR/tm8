@@ -417,9 +417,15 @@ try {
     await page.locator('.walking-places summary').click();
     await page.getByRole('button', { name: 'Inspect Harbour construction', exact: true }).click();
     assert.equal(await page.evaluate(() => window.tasklandServer.state().inspected), ids.root);
-    const portal = (await project(scopes[0])).portals.find(row => row.target.type === 'hub');
-    assert.ok(portal, 'Taskland must expose its hub portal');
+    // Destination portals live on the hub; the return route uses GameMode's stack.
+    await page.evaluate(scope => window.tasklandServer.mount(scope, 'hub'), scopes[0]);
+    const portal = (await project(scopes[0], 'hub')).portals.find(row => row.target.type === 'taskland');
+    assert.ok(portal, 'The hub must expose its Taskland portal');
+    await page.locator('.walking-places summary').click();
     await page.getByRole('button', { name: `Enter ${portal.label}`, exact: true }).click();
+    await page.waitForFunction(() => window.tasklandServer.state().save.current.type === 'taskland');
+    await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
+    await page.getByRole('button', { name: 'Back one map', exact: true }).click();
     await page.waitForFunction(() => window.tasklandServer.state().save.current.type === 'hub');
   });
   await check('Story scope actual scene renders after durable navigation', async () => {
