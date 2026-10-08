@@ -103,7 +103,8 @@ describe('authoritative live map controller', () => {
     h.emit({ type: 'task.criterion_changed', taskId: 'task', criterionId: 'ac1', criterionText: 'Built', isDone: true, done: 1, total: 3 });
     await vi.advanceTimersByTimeAsync(80);
     expect(h.controller.getSnapshot()!.effect).toMatchObject({ id: effect.id, combined: true, count: 9, taskEvents: [expect.objectContaining({ criterionId: 'ac1', done: 1, total: 3 })] });
-    expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'task')!.progress).toBeNull(); // full upsert has no weighted progress
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.progress).toBeNull(); // full upsert has no weighted progress
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.acceptance).toEqual({ completed: 1, total: 3 });
     await vi.advanceTimersByTimeAsync(60_000);
     h.emit({ type: 'task.status_changed', taskId: 'task', from: 'working', to: 'blocked' });
     await vi.advanceTimersByTimeAsync(80);
@@ -237,5 +238,34 @@ describe('authoritative live map controller', () => {
     expect(h.loadMap).toHaveBeenCalledTimes(2);
     expect(h.controller.getSnapshot()!.model.places).toHaveLength(302);
     h.controller.dispose();
+  });
+  it.each(['semantic-first', 'summary-first'])('updates criterion construction and count edits in %s order', async order => {
+    const h = harness(); await h.boot();
+    const semantic = { type: 'task.criterion_changed', taskId: 'task', criterionId: 'ac2', criterionText: 'Two done', isDone: true, done: 2, total: 3 };
+    const summary = { type: 'entity.upsert', entity: row('task', 'task', { acceptance: { completed: 2, total: 3 } }) };
+    for (const body of order === 'semantic-first' ? [semantic, summary] : [summary, semantic]) h.emit(body);
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.acceptance).toEqual({ completed: 2, total: 3 });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'task')!.progress).toBeCloseTo(2 / 3);
+    h.emit({ type: 'entity.upsert', entity: row('task', 'task', { acceptance: { completed: 1, total: 2 } }) });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'task')!.progress).toBe(.5);
+    expect(h.loadMap).toHaveBeenCalledTimes(1); h.controller.dispose();
+  });
+  it('uses committed cancellation time, preserves exact DTO time and expires rubble without another event/read', async () => {
+    const h = harness(); await h.boot();
+    const committed = new Date(Date.now()).toISOString();
+    h.emit({ type: 'task.status_changed', taskId: 'task', from: 'working', to: 'cancelled' }, { occurredAt: committed });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'task')).toMatchObject({ constructionStage: 'rubble', cancelledAt: committed });
+    const exact = new Date(Date.now() - 20).toISOString();
+    h.emit({ type: 'entity.upsert', entity: row('task', 'task', { status: 'cancelled', statusChangedAt: exact }) });
+    h.emit({ type: 'task.status_changed', taskId: 'task', from: 'working', to: 'cancelled' }, { occurredAt: committed });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.cancelledAt).toBe(exact);
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.terminalFromStatus).toBe('working');
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1_000);
+    expect(h.controller.getSnapshot()!.model.places.some(place => place.id === 'task')).toBe(false);
+    expect(h.loadMap).toHaveBeenCalledTimes(1); h.controller.dispose();
   });
 });

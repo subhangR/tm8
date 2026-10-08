@@ -45,6 +45,9 @@ describe('GameMode live event wiring', () => {
     expect(scene.props!.start).toEqual(initial);
     expect(scene.props!.camera).toBeUndefined(); expect(scene.mounts).toBe(mounts);
     expect(h.loadMap).toHaveBeenCalledTimes(2);
+    act(() => { for (let n = 0; n < 20; n++) h.emit({ type: 'counter.changed', entityId: 'task', counters: { messages: n } }); });
+    await waitFor(() => expect(scene.props!.model.places.find(place => place.id === 'task')?.mailbox?.count).toBe(19));
+    expect(scene.mounts).toBe(mounts); expect(scene.props!.start).toEqual(initial); expect(scene.props!.camera).toBeUndefined();
     act(() => h.emit({ type: 'session.outcome_changed', sessionId: 'session', from: 'open', to: 'completed' }));
     await waitFor(() => expect(scene.props!.model.robots).toHaveLength(0));
     expect(scene.props!.departures).toHaveLength(1);

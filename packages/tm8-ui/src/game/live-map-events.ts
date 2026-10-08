@@ -1,10 +1,13 @@
-import type { DurableWorkspaceEvent, EntitySummary } from '@tm8/contract';
+import type { DurableWorkspaceEvent, EntitySummary, StatusCategory, WorkStatus } from '@tm8/contract';
 import { fromProjection } from '../story/game/map-model';
 import type { MapEntity, MapInput, MapScope, MapType } from '../story/game/map-model';
 import type { GameMapEvents } from './types';
 import { admitsMapKind } from './map-admission';
 
-type Versioned = { version?: number; updatedAt?: string };
+type Versioned = { version?: number; updatedAt?: string | null };
+// Mirrors the ruled mapping in domain/registry.ts TASK_STATE_CONTROL and the server.
+const workCategories: Record<WorkStatus, StatusCategory> = { open: 'to_do', pulled: 'to_do', working: 'in_progress',
+  in_review: 'in_progress', blocked: 'in_progress', done: 'done', cancelled: 'cancelled' };
 function older(candidate: Versioned, current?: Versioned): boolean {
   if (!current) return false;
   if (candidate.version !== undefined && current.version !== undefined && candidate.version !== current.version) return candidate.version < current.version;
@@ -49,13 +52,21 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
   const semanticId = 'taskId' in event ? event.taskId : 'sessionId' in event ? event.sessionId : undefined;
   if (semanticId && older({ updatedAt: event.occurredAt }, entities.get(semanticId) as Versioned | undefined)) return result;
   switch (event.type) {
-    case 'task.criterion_changed':
-      // Counts are criterion facts, not the task's weighted subtree progress.
-      if (entities.get(event.taskId)?.kind === 'task') { result.changed = true; result.touched.push(event.taskId); }
+    case 'task.criterion_changed': {
+      const row = entities.get(event.taskId);
+      // Criteria counts are kept distinct from an authoritative weighted subtree fraction.
+      if (row?.kind === 'task') put({ ...row, acceptance: { total: event.total, completed: event.done } });
       break;
+    }
     case 'task.status_changed': {
       const row = entities.get(event.taskId);
-      if (row?.kind === 'task') put({ ...row, status: event.to, statusCategory: null });
+      if (row?.kind === 'task') {
+        const category = workCategories[event.to as WorkStatus];
+        if (!category) result.refresh = true;
+        put({ ...row, status: event.to, statusCategory: category ?? null,
+          terminalFromStatus: ['done', 'cancelled'].includes(event.to) ? row.terminalFromStatus ?? event.from : null,
+          cancelledAt: event.to === 'cancelled' ? (row.status === 'cancelled' && row.cancelledAt ? row.cancelledAt : event.occurredAt) : null });
+      }
       break;
     }
     case 'entity.upsert':
@@ -71,7 +82,10 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
       if (!known && !canAdd) { result.refresh = true; break; }
       if (event.type === 'entity.deleted') remove(row.id);
       else {
-        const mapped = liveMapEntity(row, events);
+        let mapped = liveMapEntity(row, events);
+        if (mapped.kind === 'task' && mapped.status === known?.status) mapped = { ...mapped,
+          terminalFromStatus: known?.terminalFromStatus ?? mapped.terminalFromStatus,
+          cancelledAt: mapped.status === 'cancelled' ? mapped.cancelledAt ?? known?.cancelledAt : null };
         if (mapped.kind === 'work_session' && mapped.outcome === 'completed' && known?.outcome !== 'completed') result.completed.push(row.id);
         put(mapped);
         if (scope.kind === 'story' && known && known.parentId !== mapped.parentId) result.refresh = true;
@@ -136,7 +150,7 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
     }
     case 'counter.changed': {
       const row = entities.get(event.entityId);
-      if (row) put({ ...row, mailbox: { count: event.counters.messages } });
+      if (row && row.mailbox?.basis !== 'unread') put({ ...row, mailbox: { count: event.counters.messages, basis: 'messages' } });
       break;
     }
     default: break;
