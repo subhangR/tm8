@@ -70,7 +70,7 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, onInspect }: Game
     setView({ key, status: 'loading' });
     void (async () => {
       try {
-        const result = await loadMap(selected.scope, controller.signal);
+        const result = await loadMap(selected.scope, controller.signal, selected.type);
         if (controller.signal.aborted || request !== loadEpoch.current || mapKey(save.current.current) !== key) return;
         if (result.input.scope && (result.input.scope.kind !== selected.scope.kind || result.input.scope.id !== selected.scope.id)) {
           throw new Error('The map data does not match the selected scope.');
