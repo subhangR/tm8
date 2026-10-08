@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { request, repoRoot, runRoot, uiPort } from './game-storage-node.mjs';
 import { dataOf } from './game-storage-fixture.mjs';
 import { ledgerSize } from './game-storage-cost.mjs';
@@ -309,7 +310,7 @@ export async function verifyLegacyMigration(f, record) {
       await page.goto(url); await page.getByTestId('walking-map').waitFor();
       await expect.poll(async () => {
         const saved = (await nav()).save?.maps;
-        return saved && Object.entries(validMemories).every(([key, memory]) => JSON.stringify(saved[key]) === JSON.stringify(memory)) &&
+        return saved && Object.entries(validMemories).every(([key, memory]) => isDeepStrictEqual(saved[key], memory)) &&
           !Object.keys(saved).some(key => key.includes('legacy-nonuuid'));
       }).toBe(true);
       await expect.poll(async () => await evaluate(page, 'page state', () => window.__storageHarness.scene()?.player), { timeout: 90_000 }).toEqual([0, 0, 6]);
