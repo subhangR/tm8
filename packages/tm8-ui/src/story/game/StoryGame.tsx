@@ -27,6 +27,7 @@ import { enterStory, isRoutedStory, leaveStory } from './enter';
 import { hasWebGL, readPalette, type Palette } from './palette';
 import { HOME, storyGameStore, useStoryGameSave, type StoryViewMode } from './store';
 import { buildWorld, type Place, type World } from './world';
+import { walkingMapModel, walkingWorld } from './map-model/walking';
 import './story-game.css';
 import './story-game-drill.css';
 
@@ -86,7 +87,9 @@ export function StoryGame(props: StoryGameProps) {
 
 function WalkingStoryGame({ view, live, open, mode, onMode, showModeSwitch = true }: StoryGameProps) {
   const storyId = view.id;
-  const world = useMemo(() => buildWorld(view), [view]);
+  const navigation = useMemo(() => buildWorld(view), [view]);
+  const model = useMemo(() => walkingMapModel(navigation), [navigation]);
+  const world = useMemo(() => walkingWorld(model, navigation), [model, navigation]);
   const save = useStoryGameSave(storyId);
   /* The hub is always known; everything else is earned by walking. */
   const revealed = useMemo(() => new Set([world.hubId, ...save.revealed]), [world.hubId, save.revealed]);
@@ -234,7 +237,8 @@ function WalkingStoryGame({ view, live, open, mode, onMode, showModeSwitch = tru
               reduced={reduced}
               duel={duel}
               view={view}
-              world={world}
+              model={model}
+              navigation={navigation}
               palette={palette}
               control={control}
               revealed={revealed}

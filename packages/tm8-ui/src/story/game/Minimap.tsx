@@ -13,7 +13,7 @@
  * step unless the host passes `heading`. A live feed needs scene.tsx (follow-up).
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
-import { walkTo, type GameControl } from './control';
+import { walkTo, type GameControl, type PlayerPose } from './control';
 import type { Palette } from './palette';
 import { useStoryGameSave } from './store';
 import type { World } from './world';
@@ -52,6 +52,13 @@ export function Minimap({ world, storyId, revealed, palette, control, open, onTo
   }, [save.x, save.z]);
 
   const player = { x: save.x, z: save.z, heading: heading ?? stepHeading };
+  return <WorldMinimap {...{ world, revealed, palette, control, open, onToggle, onTravel, size, player }} />;
+}
+
+export interface WorldMinimapProps extends Omit<MinimapProps, 'storyId' | 'heading'> { player: PlayerPose }
+
+/** Controlled minimap for space/story maps; it never reads or writes the story save. */
+export function WorldMinimap({ world, revealed, palette, control, open, onToggle, onTravel, player, size = MINIMAP_SIZE }: WorldMinimapProps) {
   const dpr = typeof window === 'undefined' ? 1 : Math.min(2, Math.max(1, window.devicePixelRatio || 1));
   const canvas = useRef<HTMLCanvasElement>(null);
   const inputs = useRef({ world, revealed, palette, player, dpr, open, size });
