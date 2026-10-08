@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import type { ComponentProps } from 'react';
+import { buildMapModel } from '../story/game/map-model';
 import type { MapScope } from '../story/game/map-model';
-import { walkingBounds } from '../story/game/map-model/walking-world';
+import { walkingBounds, walkingEntrance } from '../story/game/map-model/walking-world';
 import type { GameMapLoader, GameMapResult } from './types';
 import { enterGameMap, freshGameSave, gameSaveKey, mapKey, readGameSave, rememberGameMap, writeGameSave } from './local-save';
 import GameMode from './GameMode';
@@ -68,7 +69,8 @@ describe('GameMode navigation', () => {
     fireEvent.click(screen.getByText('Walk and zoom'));
     fireEvent.click(screen.getByRole('button', { name: 'Story A' }));
     await screen.findByText('story-a:hub');
-    expect(screen.getByTestId('start').textContent).toBe('0,0:default');
+    expect(ports.props!.start).toEqual(walkingEntrance(ports.props!.model));
+    expect(ports.props!.camera).toBeUndefined();
     fireEvent.click(screen.getByRole('button', { name: 'Back one map' }));
     await screen.findByText('space:hub');
     expect(screen.getByTestId('start').textContent).toBe('7,9:3');
@@ -87,7 +89,8 @@ describe('GameMode navigation', () => {
     fireEvent.click(screen.getByText('Walk and zoom'));
     fireEvent(window, new Event('pagehide'));
     expect(Object.values(readGameSave('space', 'member').maps)[0]?.position).toEqual({ x: 7, z: 9 });
-    expect(screen.getByTestId('start').textContent).toBe('0,0:default');
+    expect(ports.props!.start).toEqual(walkingEntrance(ports.props!.model));
+    expect(ports.props!.camera).toBeUndefined();
   });
   it('clamps an old saved pose to the current walking area while retaining the entrance area', async () => {
     const save = freshGameSave('space', 'member');
@@ -99,6 +102,22 @@ describe('GameMode navigation', () => {
     expect(Object.values(readGameSave('space', 'member').maps)[0]?.position).toEqual(ports.props!.start);
     expect(ports.props!.camera).toBeUndefined();
     expect(Object.values(readGameSave('space', 'member').maps)[0]?.camera).toBeUndefined();
+  });
+  it('reloads an exact in-bounds occupied pose and camera without relocating it', async () => {
+    const scope = { kind: 'space' as const, id: 'space' }, map = { type: 'taskland' as const, scope };
+    const model = buildMapModel(result(scope).input, map), place = model.places[0]!;
+    const position = { x: place.x, z: place.z };
+    const camera = { zoom: 21, position: [3, 4, 5] as [number, number, number], target: [place.x, 0, place.z] as [number, number, number] };
+    writeGameSave(rememberGameMap(enterGameMap(freshGameSave('space', 'member'), map), mapKey(map), { position, camera }));
+    const loadMap = loader(); const screen = render(<GameMode {...defaults} loadMap={loadMap} />);
+    await screen.findByText('space:taskland');
+    expect(ports.props!.start).toEqual(position);
+    expect(ports.props!.camera).toEqual(camera);
+    screen.unmount();
+    const reloaded = render(<GameMode {...defaults} loadMap={loadMap} />);
+    await reloaded.findByText('space:taskland');
+    expect(ports.props!.start).toEqual(position);
+    expect(ports.props!.camera).toEqual(camera);
   });
   it('persists the renderer final cleanup callback immediately on Game mode unmount', async () => {
     const screen = render(<GameMode {...defaults} loadMap={loader()} />);
@@ -228,11 +247,11 @@ describe('GameMode navigation', () => {
     const outgoing = ports.props!;
     fireEvent.click(screen.getByRole('button', { name: 'Story A' }));
     await screen.findByText('story-a:hub');
-    act(() => { outgoing.onPosition(12, 15); outgoing.onCamera({ zoom: 4, position: [1, 2, 3], target: [12, 0, 15] }); outgoing.onBack?.(); });
+    act(() => { outgoing.onPosition(12, 5); outgoing.onCamera({ zoom: 4, position: [1, 2, 3], target: [12, 0, 5] }); outgoing.onBack?.(); });
     expect(readGameSave('space', 'member').current.scope.id).toBe('story-a');
     fireEvent.click(screen.getByRole('button', { name: 'Back one map' }));
     await screen.findByText('space:hub');
-    expect(screen.getByTestId('start').textContent).toBe('12,15:4');
+    expect(screen.getByTestId('start').textContent).toBe('12,5:4');
   });
   it('ignores Escape in editors, dialogs and events already consumed by detail panels', async () => {
     const screen = render(<GameMode {...defaults} loadMap={loader()} />);

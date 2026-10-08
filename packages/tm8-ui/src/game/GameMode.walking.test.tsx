@@ -33,16 +33,38 @@ describe('GameMode with the real walking DOM renderer', () => {
     expect(readGameSave('space', 'member').current).toMatchObject({ type: 'hub', scope: { kind: 'story', id: 'child' } });
     expect(readGameSave('space', 'member').stack).toHaveLength(1);
   });
-  it('restores a saved pose in a building and lets the first keyboard step escape it', async () => {
+  it('lets a panel capture Escape before the focused real renderer pops its map', async () => {
+    let panelOpen = false;
+    const panelEscape = (event: KeyboardEvent) => {
+      if (panelOpen && event.key === 'Escape') { event.preventDefault(); panelOpen = false; }
+    };
+    window.addEventListener('keydown', panelEscape, true);
+    try {
+      const screen = render(<GameMode {...props} onInspect={() => { panelOpen = true; }} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Enter Taskland' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Inspect Task' }));
+      const host = screen.getByRole('application'); host.focus();
+      expect(document.activeElement).toBe(host);
+      fireEvent.keyDown(host, { key: 'Escape' });
+      expect(panelOpen).toBe(false);
+      expect(readGameSave('space', 'member').current.type).toBe('taskland');
+      fireEvent.keyDown(host, { key: 'Escape' });
+      await screen.findByRole('button', { name: 'Enter Taskland' });
+      expect(readGameSave('space', 'member').current.type).toBe('hub');
+    } finally { window.removeEventListener('keydown', panelEscape, true); }
+  });
+  it('preserves an in-bounds occupied saved pose and camera, then lets keyboard movement escape it', async () => {
     const scope = { kind: 'space' as const, id: 'space' };
     const map = { type: 'taskland' as const, scope };
     const model = buildMapModel(result(scope).input, map);
     const place = model.places[0]!;
     const initial = { x: place.x, z: place.z };
     const save = enterGameMap(freshGameSave('space', 'member'), map);
-    writeGameSave(rememberGameMap(save, mapKey(map), { position: initial }));
+    writeGameSave(rememberGameMap(save, mapKey(map), { position: initial, camera: { zoom: 21, position: [3, 4, 5], target: [initial.x, 0, initial.z] } }));
     const screen = render(<GameMode {...props} />);
     await screen.findByRole('button', { name: 'Inspect Task' });
+    expect(readGameSave('space', 'member').maps[mapKey(map)]!.position).toEqual(initial);
+    expect(readGameSave('space', 'member').maps[mapKey(map)]!.camera?.zoom).toBe(21);
     fireEvent.keyDown(screen.getByRole('application'), { key: 'd' });
     fireEvent.keyUp(screen.getByRole('application'), { key: 'd' });
     fireEvent(window, new Event('pagehide'));
