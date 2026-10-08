@@ -72,7 +72,7 @@ create table map.terrain_chunks(map_id uuid not null, chunk_x integer not null, 
   primary key(map_id,chunk_x,chunk_z));
 create table map.edits(map_id uuid not null, seq bigserial primary key, actor_id uuid not null,
   op text not null, item_key text not null, before_state jsonb, after_state jsonb,
-  at timestamptz not null default clock_timestamp(), undone_by bigint);
+  at timestamptz not null default clock_timestamp(), undone_by bigint, source_edit_seq bigint);
 create index map_edits_actor on map.edits(map_id,actor_id,at,seq);
 create table map.activity(map_id uuid not null, seq bigserial primary key, actor_id uuid not null,
   kind text not null check(kind in ('marker','narration','celebration','spotlight')),
@@ -127,13 +127,15 @@ do $$ declare t text; begin
 end $$;
 drop policy map_read on map.player_states;
 create policy player_self on map.player_states for select to tm8_app using
-  (internal.is_space_member(space_id) and map.readable(map_id) and member_id=internal.current_member_id((map.identity(map_id)->>'spaceId')::uuid));
+  (internal.is_space_member(space_id) and map.readable(map_id) and internal.claim_text('tm8.auth_kind') in ('browser','cli')
+    and member_id=internal.current_member_id(space_id) and (internal.actor_id() is null or internal.actor_id()=member_id));
 drop policy map_read on map.activity;
 create policy activity_audience on map.activity for select to tm8_app using
-  (internal.is_space_member(space_id) and map.readable(map_id) and (audience is null or audience=internal.current_member_id((map.identity(map_id)->>'spaceId')::uuid)));
+  (internal.is_space_member(space_id) and map.readable(map_id) and (audience is null or audience=internal.current_member_id(space_id)));
 alter table map.navigation_states enable row level security;
 create policy navigation_self on map.navigation_states for select to tm8_app using
-  (internal.is_space_member(space_id) and member_id=internal.current_member_id(space_id));
+  (internal.is_space_member(space_id) and internal.claim_text('tm8.auth_kind') in ('browser','cli')
+    and member_id=internal.current_member_id(space_id) and (internal.actor_id() is null or internal.actor_id()=member_id));
 grant select on map.navigation_states to tm8_app;
 
 create function map.ensure_identity(p_space uuid,p_selection jsonb,p_actor uuid) returns uuid
@@ -156,17 +158,30 @@ begin
   return map_id;
 end $$;
 
-create table map.command_inputs(client_mutation_id text primary key, op text not null, input jsonb not null);
+create table map.command_inputs(client_mutation_id text primary key, op text not null, input_hash text not null, created_at timestamptz not null default clock_timestamp());
+create index map_command_inputs_expiry on map.command_inputs(created_at);
+-- Hash retention follows the ledger replay window; retain its existing return contract.
+create or replace function internal.prune_command_ledger(retain interval default interval '24 hours')
+returns bigint language plpgsql set search_path = public, internal, pg_temp as $$
+declare removed bigint;
+begin
+  delete from public.command_ledger where created_at<now()-retain;
+  get diagnostics removed=row_count;
+  delete from map.command_inputs where created_at<now()-retain;
+  return removed;
+end $$;
 create function map.require_mutation(p_cmid text) returns void language plpgsql as $$
 begin
   if p_cmid is null or length(btrim(p_cmid)) not between 1 and 200 then raise exception 'clientMutationId is required' using errcode='22023'; end if;
   perform internal.require_replay_principal(p_cmid);
 end $$;
 create function map.check_payload(p_cmid text,p_op text,p_input jsonb) returns void language plpgsql as $$
+declare request_hash text:=encode(sha256(convert_to(p_input::text,'UTF8')),'hex');
 begin
-  if exists(select 1 from map.command_inputs where client_mutation_id=p_cmid and (op<>p_op or input<>p_input)) then
+  delete from map.command_inputs where created_at<clock_timestamp()-interval '24 hours';
+  if exists(select 1 from map.command_inputs where client_mutation_id=p_cmid and (op<>p_op or map.command_inputs.input_hash<>request_hash)) then
     raise exception 'mutation id reused with different input' using errcode='23514'; end if;
-  insert into map.command_inputs values(p_cmid,p_op,p_input) on conflict do nothing;
+  insert into map.command_inputs(client_mutation_id,op,input_hash) values(p_cmid,p_op,request_hash) on conflict do nothing;
 end $$;
 
 create function public.game_map_open(p_space uuid,p_selection jsonb,p_cmid text) returns jsonb
@@ -272,8 +287,8 @@ begin
     select to_jsonb(p) into restored from map.placements p where map_id=p_map and item_id=edit.item_key::uuid;
   end if;
   -- Store inverse writes as ordinary edits; terrain keeps its resource kind.
-  insert into map.edits(map_id,actor_id,op,item_key,before_state,after_state)
-    values(p_map,p_actor,case when edit.op='paint' then 'paint' else 'undo' end,edit.item_key,current_state,restored) returning seq into new_seq;
+  insert into map.edits(map_id,actor_id,op,item_key,before_state,after_state,source_edit_seq)
+    values(p_map,p_actor,case when edit.op='paint' then 'paint' else 'undo' end,edit.item_key,current_state,restored,p_seq) returning seq into new_seq;
   update map.edits set undone_by=new_seq where seq=p_seq;
   return new_seq;
 end $$;
@@ -282,7 +297,7 @@ create function public.game_map_write(p_map uuid,p_op text,p_input jsonb,p_cmid 
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare identity jsonb:=map.identity(p_map); actor uuid; agent boolean; replay jsonb; result jsonb;
   item uuid; before_state jsonb; after_state jsonb; edit_seq bigint; placement_layer text; ver integer; ttl integer;
-  cx integer; cz integer; original record; undone jsonb:='[]'; conflicts jsonb:='[]'; chains jsonb:='{}'; resource_key text;
+  cx integer; cz integer; original record; undone jsonb:='[]'; conflicts jsonb:='[]'; chains jsonb:='{}'; resource_key text; last_selected bigint;
 begin
   perform map.require_mutation(p_cmid);
   replay:=internal.ledger_replay(p_cmid,'maps.'||p_op);
@@ -357,15 +372,17 @@ begin
     -- Reverse chronological order; a compensation may continue the same
     -- actor's chain only against the exact row returned by this batch.
     for original in select e.seq,e.op,e.item_key from map.edits e where e.map_id=p_map and e.actor_id=(p_input->>'byActor')::uuid
-      and e.at>=(p_input->>'since')::timestamptz and e.undone_by is null order by e.seq desc limit 200 loop
+      and e.at>=(p_input->>'since')::timestamptz and e.undone_by is null and e.source_edit_seq is null
+      and (p_input->>'beforeSeq' is null or e.seq<(p_input->>'beforeSeq')::bigint) order by e.seq desc limit 200 loop
       begin
+        last_selected:=original.seq;
         resource_key:=case when original.op='paint' then 'terrain:' else 'placement:' end||original.item_key;
         edit_seq:=map.undo_edit(p_map,original.seq,actor,chains->resource_key); undone:=undone||jsonb_build_array(original.seq);
         select e.after_state into after_state from map.edits e where e.seq=edit_seq;
         chains:=jsonb_set(chains,array[resource_key],after_state);
       exception when serialization_failure then conflicts:=conflicts||jsonb_build_array(original.seq); end;
     end loop;
-    result:=jsonb_build_object('mapId',p_map,'undone',undone,'conflicts',conflicts,'hasMore',(select count(*)>200 from map.edits e where e.map_id=p_map and e.actor_id=(p_input->>'byActor')::uuid and e.at>=(p_input->>'since')::timestamptz and e.undone_by is null));
+    result:=jsonb_build_object('mapId',p_map,'undone',undone,'conflicts',conflicts,'nextBefore',last_selected,'hasMore',exists(select 1 from map.edits e where e.map_id=p_map and e.actor_id=(p_input->>'byActor')::uuid and e.at>=(p_input->>'since')::timestamptz and e.undone_by is null and e.source_edit_seq is null and e.seq<last_selected));
   elsif p_op='activity.append' then
     if p_input->>'kind'<>'narration' or p_input->>'targetEntityId' is not null then perform map.require_ref(p_map,(p_input->>'targetEntityId')::uuid); end if;
     if p_input->>'kind'='narration' and p_input->>'audience' is not null then raise exception 'narration is shared' using errcode='22023'; end if;
@@ -385,6 +402,32 @@ begin
   return internal.ledger_record(p_cmid,'maps.'||p_op,result);
 end $$;
 
+create table map.navigation_limits(space_id uuid not null,member_id uuid not null,window_start timestamptz not null,writes integer not null,primary key(space_id,member_id));
+alter table map.navigation_limits enable row level security;
+create function map.validate_memory(p_state jsonb) returns void language plpgsql as $$
+declare vector jsonb; value jsonb;
+begin
+  if jsonb_typeof(p_state)<>'object' or p_state-array['position','camera']<>'{}' then raise exception 'invalid map memory' using errcode='22023'; end if;
+  if p_state ? 'position' then
+    if jsonb_typeof(p_state->'position')<>'object' or (p_state->'position')-array['x','z']<>'{}' then raise exception 'invalid position' using errcode='22023'; end if;
+    foreach vector in array array[p_state#>'{position,x}',p_state#>'{position,z}'] loop
+      if vector is null or jsonb_typeof(vector)<>'number' then raise exception 'invalid coordinate' using errcode='22023'; end if;
+      if (vector#>>'{}')::numeric not between -1000000 and 1000000 then raise exception 'coordinate out of bounds' using errcode='22023'; end if;
+    end loop;
+  end if;
+  if p_state ? 'camera' then
+    if jsonb_typeof(p_state->'camera')<>'object' or (p_state->'camera')-array['zoom','position','target']<>'{}' or jsonb_typeof(p_state#>'{camera,zoom}') is distinct from 'number' then raise exception 'invalid camera' using errcode='22023'; end if;
+    if (p_state#>>'{camera,zoom}')::numeric not between 0.1 and 1000 then raise exception 'invalid zoom' using errcode='22023'; end if;
+    foreach vector in array array[p_state#>'{camera,position}',p_state#>'{camera,target}'] loop
+      if vector is null or jsonb_typeof(vector)<>'array' or jsonb_array_length(vector)<>3 then raise exception 'invalid camera vector' using errcode='22023'; end if;
+      for value in select jsonb_array_elements(vector) loop
+        if jsonb_typeof(value)<>'number' then raise exception 'invalid camera coordinate' using errcode='22023'; end if;
+        if (value#>>'{}')::numeric not between -1000000 and 1000000 then raise exception 'camera coordinate out of bounds' using errcode='22023'; end if;
+      end loop;
+    end loop;
+  end if;
+end $$;
+
 create function map.normalize_navigation(p_space uuid,p_save jsonb) returns jsonb
 language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
 declare route jsonb:=(p_save->'stack')||jsonb_build_array(p_save->'current');
@@ -393,6 +436,9 @@ declare route jsonb:=(p_save->'stack')||jsonb_build_array(p_save->'current');
 begin
   for selection in select value from jsonb_array_elements(route) loop
     begin
+      if previous is not null and (previous->>'type'<>'hub' or (selection->>'type'<>'hub' and selection->'scope'<>previous->'scope')
+        or (selection->>'type'='hub' and (selection#>>'{scope,kind}'<>'story' or selection#>>'{scope,id}'=previous#>>'{scope,id}'))) then
+        raise exception 'malformed navigation route' using errcode='22023'; end if;
       perform map.validate_selection(p_space,selection);
       if previous is not null and selection->>'type'='hub' and previous#>>'{scope,kind}'='story'
         and not exists(select 1 from public.entities where id=(selection#>>'{scope,id}')::uuid and parent_id=(previous#>>'{scope,id}')::uuid) then
@@ -420,7 +466,7 @@ language plpgsql stable security definer set search_path = public, internal, pg_
 declare member uuid; saved map.navigation_states; memories jsonb;
 begin
   perform internal.require_human_auth_kind(); perform internal.require_space_member(p_space); member:=internal.current_member_id(p_space);
-  if member is null then raise exception 'member required' using errcode='42501'; end if;
+  if member is null or (internal.actor_id() is not null and internal.actor_id()<>member) then raise exception 'member required' using errcode='42501'; end if;
   select * into saved from map.navigation_states where space_id=p_space and member_id=member;
   if not found then return jsonb_build_object('spaceId',p_space,'memberId',member,'save',null,'revision',0,'repairs',jsonb_build_object('routeTruncated',false,'droppedMemories',0)); end if;
   select coalesce(jsonb_object_agg('['||to_jsonb(g.layout#>>'{scope,kind}')::text||','||
@@ -433,7 +479,7 @@ end $$;
 
 create function public.game_navigation_save(p_space uuid,p_save jsonb,p_revision bigint,p_cmid text) returns jsonb
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare member uuid; actor uuid; replay jsonb; rev bigint; entry record; selection jsonb; mid uuid; route jsonb; previous jsonb; story uuid; result jsonb; repairs jsonb;
+declare member uuid; actor uuid; replay jsonb; rev bigint; entry record; selection jsonb; mid uuid; route jsonb; previous jsonb; story uuid; result jsonb; repairs jsonb; writes integer;
 begin
   perform internal.require_human_auth_kind(); perform map.require_mutation(p_cmid); perform internal.require_space_member(p_space);
   member:=internal.current_member_id(p_space); actor:=internal.resolve_actor(internal.actor_id(),p_space);
@@ -444,16 +490,23 @@ begin
   if replay is not null then
     if replay#>>'{save,spaceId}'<>p_space::text then raise exception 'mutation belongs to another space' using errcode='23514'; end if; return replay; end if;
   perform internal.bind_actor(actor);
-  if p_save->>'version'<>'1' or jsonb_typeof(p_save->'stack')<>'array' or jsonb_array_length(p_save->'stack')>64
+  if octet_length(p_save::text)>65536 or p_save-array['version','spaceId','memberId','current','stack','maps']<>'{}' or p_save->>'version'<>'1' or jsonb_typeof(p_save->'stack')<>'array' or jsonb_array_length(p_save->'stack')>64
     or jsonb_typeof(p_save->'maps')<>'object' or (select count(*) from jsonb_object_keys(p_save->'maps'))>128 then
     raise exception 'invalid navigation save' using errcode='22023'; end if;
   result:=map.normalize_navigation(p_space,p_save);
   p_save:=result->'save'; repairs:=result->'repairs';
   perform pg_advisory_xact_lock(hashtextextended('map-navigation:'||p_space::text||member::text,0));
   select revision into rev from map.navigation_states where space_id=p_space and member_id=member;
-  if coalesce(rev,0) is distinct from p_revision then raise exception 'navigation revision conflict' using errcode='40001'; end if;
+  if coalesce(rev,0) is distinct from p_revision then raise exception 'navigation revision conflict' using errcode='40001',detail=public.game_navigation_get(p_space)::text; end if;
+  insert into map.navigation_limits values(p_space,member,clock_timestamp(),1)
+    on conflict(space_id,member_id) do update set
+      writes=case when map.navigation_limits.window_start<clock_timestamp()-interval '1 minute' then 1 else map.navigation_limits.writes+1 end,
+      window_start=case when map.navigation_limits.window_start<clock_timestamp()-interval '1 minute' then clock_timestamp() else map.navigation_limits.window_start end
+    returning map.navigation_limits.writes into writes;
+  if writes>120 then raise exception 'navigation rate limit exceeded' using errcode='TM429'; end if;
   -- Canonical keys are verified before storage, with each referenced scope live.
   for entry in select key,value from jsonb_each(p_save->'maps') loop
+    perform map.validate_memory(entry.value);
     route:=entry.key::jsonb;
     selection:=jsonb_build_object('type',route->2,'scope',jsonb_build_object('kind',route->0,'id',route->1));
     if entry.key<>'['||to_jsonb(selection#>>'{scope,kind}')::text||','||to_jsonb(selection#>>'{scope,id}')::text||','||to_jsonb(selection->>'type')::text||']' then
@@ -475,6 +528,19 @@ begin
     on conflict(space_id,member_id) do update set state=excluded.state,revision=excluded.revision,updated_at=excluded.updated_at;
   return internal.ledger_record(p_cmid,'maps.navigation.save',public.game_navigation_get(p_space)||jsonb_build_object('repairs',repairs));
 end $$;
+
+drop policy map_read on map.placements;
+create policy placement_visible on map.placements for select to tm8_app using
+  (internal.is_space_member(space_id) and map.readable(map_id) and (entity_id is null or map.ref_readable(map_id,entity_id))
+    and (spec->>'targetMapId' is null or map.readable((spec->>'targetMapId')::uuid)));
+drop policy map_read on map.edits;
+create policy edit_visible on map.edits for select to tm8_app using
+  (internal.is_space_member(space_id) and map.readable(map_id) and
+    (coalesce(after_state,before_state)->>'entity_id' is null or map.ref_readable(map_id,(coalesce(after_state,before_state)->>'entity_id')::uuid)));
+drop policy activity_audience on map.activity;
+create policy activity_visible on map.activity for select to tm8_app using
+  (internal.is_space_member(space_id) and map.readable(map_id) and (audience is null or audience=internal.current_member_id(space_id))
+    and (target_entity_id is null or map.ref_readable(map_id,target_entity_id)));
 
 -- Private helpers are not an alternate write surface. Only these three doors
 -- are executable by app callers; all writes enforce claims inside the door.

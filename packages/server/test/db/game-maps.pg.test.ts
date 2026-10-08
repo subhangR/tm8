@@ -108,6 +108,19 @@ describe('durable map schema and real authorization', () => {
     const [row]=await as(q=>q.query<{x:number;version:number;by_actor:string}>('select x,version,by_actor from map.placements where map_id=$1 and item_id=$2',[map.id,placed.itemId]));
     expect(row).toEqual({x:30,version:4,by_actor:owner});
   });
+  it('revert follows an actor edit chain and reports a newer human intervention as conflict', async () => {
+    const map=await open(), since=new Date().toISOString();
+    const proposed=await place(map.id,randomUUID(),agent);
+    const moved=await write(map.id,'move',{itemId:proposed.itemId,x:30,z:40,expectedVersion:1},agent);
+    const protectedItem=await place(map.id,randomUUID(),agent);
+    await write(map.id,'move',{itemId:protectedItem.itemId,x:77,z:88,expectedVersion:1});
+    const result=await write(map.id,'revert',{byActor:agent,since});
+    expect(result.undone).toEqual([moved.editSeq,proposed.editSeq]);
+    expect(result.conflicts).toEqual([protectedItem.editSeq]);
+    const rows=await as(q=>q.query<{item_id:string;x:number;layer:string;deleted_at:Date|null}>('select item_id,x,layer,deleted_at from map.placements where map_id=$1 and item_id=any($2::uuid[])',[map.id,[proposed.itemId,protectedItem.itemId]]));
+    expect(rows.find(r=>r.item_id===proposed.itemId)!.deleted_at).not.toBeNull();
+    expect(rows.find(r=>r.item_id===protectedItem.itemId)).toMatchObject({x:77,layer:'human',deleted_at:null});
+  });
   it('human member town edits/undo work; terrain remains editor/admin only and agent forbidden', async () => {
     const map=await open(), placed=await place(map.id);
     expect((await write(map.id,'move',{itemId:placed.itemId,x:9,z:9,expectedVersion:1},undefined,randomUUID(),peerIdentity)).version).toBe(2);
@@ -172,6 +185,8 @@ describe('durable map schema and real authorization', () => {
     await expect(saveNav(state,1,identity,agent)).rejects.toMatchObject({code:'forbidden'});
     await expect(as(q=>q.rpc('game_navigation_get',[space]),identity,agent,'agent')).rejects.toMatchObject({code:'forbidden'});
     expect(await as(q=>q.query('select * from map.player_states'),peerIdentity)).toEqual([]);
+    expect(await as(q=>q.query('select * from map.player_states'),identity,agent,'agent')).toEqual([]);
+    expect(await as(q=>q.query('select * from map.navigation_states'),identity,agent,'agent')).toEqual([]);
     await expect(as(q=>q.query('insert into map.navigation_states values($1,$2,\'{}\',1,now())',[space,peer]),peerIdentity)).rejects.toMatchObject({code:'forbidden'});
   });
   it('normalizes inaccessible route and memories, accepts non-root first story, enforces deeper lineage', async () => {
@@ -188,6 +203,23 @@ describe('durable map schema and real authorization', () => {
     await admin('update public.entities set deleted_at=clock_timestamp() where id=$1',[child]);
     const loaded=await as(q=>q.rpc<GameNavigationView>('game_navigation_get',[space])); expect(loaded.save!.current).toEqual(hub); expect(loaded.save!.maps).toEqual({});
     expect(loaded.repairs).toEqual({routeTruncated:true,droppedMemories:1});
+  });
+  it('stores only bounded replay hashes and prunes them with the command ledger', async () => {
+    const [row]=await scratch.query<{input_hash:string;created_at:Date}>('select input_hash,created_at from map.command_inputs limit 1');
+    expect(row!.input_hash).toMatch(/^[0-9a-f]{64}$/);
+    const cols=await scratch.query<{column_name:string}>("select column_name from information_schema.columns where table_schema='map' and table_name='command_inputs'");
+    expect(cols.some(c=>c.column_name==='input')).toBe(false);
+    await scratch.query("insert into map.command_inputs values('expired-map-input','maps.open',repeat('0',64),now()-interval '25 hours')");
+    await scratch.query('select internal.prune_command_ledger()');
+    expect(await scratch.query("select * from map.command_inputs where client_mutation_id='expired-map-input'")).toEqual([]);
+  });
+  it('bounds direct SQL memory inputs and navigation save frequency without changing revision', async () => {
+    const prior=await as(q=>q.rpc<GameNavigationView>('game_navigation_get',[space]));
+    await expect(saveNav({...save(),maps:{[gameMapKey(save().current)]:{position:{x:1000001,z:0}}}},prior.revision)).rejects.toMatchObject({code:'invalid_input'});
+    await scratch.query('update map.navigation_limits set writes=120,window_start=clock_timestamp() where space_id=$1 and member_id=$2',[space,owner]);
+    await expect(saveNav(save(),prior.revision)).rejects.toMatchObject({code:'rate_limited'});
+    const after=await as(q=>q.rpc<GameNavigationView>('game_navigation_get',[space]));expect(after.revision).toBe(prior.revision);
+    await scratch.query('update map.navigation_limits set writes=0 where space_id=$1 and member_id=$2',[space,owner]);
   });
   it('handler schemas refuse non-finite positions and forged member saves before SQL', async () => {
     const registry=new HandlerRegistry(); registerMapsHandlers(registry,deps);
