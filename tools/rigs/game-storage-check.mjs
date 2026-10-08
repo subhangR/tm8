@@ -24,6 +24,8 @@ const report = { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoo
   officialMapMigrationSha256: createHash('sha256').update(readFileSync(`${repoRoot}/db/migrations/315_game_maps.sql`)).digest('hex'),
   fullMigrationChainSha256: chain.digest('hex'), migrationDigest: migrationChainDigest(), syntheticOnly: true,
   browserMotionPreference: 'reduce (except explicitly named default-motion restore check)',
+  browserViewport: { width: 800, height: 600 }, rendererReadinessTimeoutMs: 90_000,
+  concurrentOwnedUnitRuns: process.env.GAME_STORAGE_CONCURRENT_OWNED_UNIT_RUNS ?? 'not recorded',
   browserRuntime: 'SwiftShader single-process software functional diagnostics', checks };
 const record = result => { checks.push({ ...result, ...(result.reason ? { reason: result.reason.split('\n')[0] } : {}) });
   console.log(JSON.stringify(checks.at(-1))); };

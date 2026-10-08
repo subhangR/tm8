@@ -17,6 +17,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
   let browser;
   const errors = [];
   const requestedRevisions = [];
+  const pointerTrials = [];
   const url = `http://127.0.0.1:${uiPort}/e2e/game-storage-harness.html?${new URLSearchParams({
     space: f.spaceId, member: f.owner.memberId, story: f.storyId, nested: f.nestedStoryId, task: f.taskId,
   })}`;
@@ -66,8 +67,8 @@ export async function verifyBrowserDurability(f, restartServer, record) {
     if (!(await places.evaluate(node => node.open))) await places.locator('summary').click();
     const portal = places.getByRole('button', { name: `Enter ${name}`, exact: true });
     // Diagnose pointer actionability, then use the ordinary accessible keyboard activation.
-    try { await portal.click({ trial: true, timeout: 3_000 }); }
-    catch (error) { console.log(JSON.stringify({ stage: 'synthetic portal pointer actionability', name, message: String(error.message).slice(0, 1_200) })); }
+    try { await portal.click({ trial: true, timeout: 3_000 }); pointerTrials.push(true); console.log(JSON.stringify({ stage: 'synthetic portal pointer actionability', name, actionable: true })); }
+    catch (error) { pointerTrials.push(false); console.log(JSON.stringify({ stage: 'synthetic portal pointer actionability', name, actionable: false, message: String(error.message).slice(0, 1_200) })); }
     await portal.focus(); await portal.press('Enter');
   };
   const assertScene = async (page, memory) => {
@@ -79,7 +80,8 @@ export async function verifyBrowserDurability(f, restartServer, record) {
     const length = Math.hypot(...direction);
     direction.forEach((value, index) => assert.ok(Math.abs(value / length - live.camera.forward[index]) < 1e-12, 'actual camera points at saved target'));
   };
-  const check = async (name, fn) => { const started = Date.now(); try { await fn(); record({ name, passed: true, elapsedMs: Date.now() - started }); }
+  const check = async (name, fn) => { const started = Date.now(); try { await fn(); record({ name, passed: true, elapsedMs: Date.now() - started,
+    portalActivation: 'accessible keyboard focus and Enter', pointerTrials: { count: pointerTrials.length, actionable: pointerTrials.filter(Boolean).length, rejected: pointerTrials.filter(value => !value).length } }); }
     catch (error) { console.log(JSON.stringify({ stage: 'synthetic journey failure detail', name, message: String(error.message).slice(0, 2_000), stack: String(error.stack).split('\n').slice(0, 5) })); record({ name, passed: false, elapsedMs: Date.now() - started, reason: String(error.message).slice(0, 250) }); throw error; } };
 
   try {
