@@ -1,9 +1,10 @@
 /** Authenticated read adapter for Game. No fixture substitution or map mutations. */
 import type { CollectionQuery, Cursor, EdgeView, EntitySummary, Page } from '@tm8/contract';
-import { fromProjection, type MapEdge, type MapEntity, type MapInput, type MapScope } from '../story/game/map-model';
+import { fromProjection, type MapEdge, type MapEntity, type MapScope } from '../story/game/map-model';
 import type { Seam } from './seam';
 
-export type GameMapLoader = (scope: MapScope, signal?: AbortSignal) => Promise<{ input: MapInput; title: string }>;
+import type { GameMapLoader } from '../game/types';
+export type { GameMapLoader, GameMapResult } from '../game/types';
 type GameReadPort = Pick<Seam, 'query' | 'entity' | 'connections' | 'spaces' | 'liveness'>;
 
 const MAP_KINDS: CollectionQuery['kinds'] = [

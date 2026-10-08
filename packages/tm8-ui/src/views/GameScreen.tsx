@@ -1,5 +1,5 @@
 /** The Game shell owns inspection; GameMode owns walking and browser resume. */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import GameMode from '../game/GameMode';
 import type { GameMapLoader } from '../data/game-maps';
@@ -25,6 +25,23 @@ interface GameScreenProps {
 
 export function GameScreen({ data, memberId, loadMap, reasons, serverBaseUrl, onNotice }: GameScreenProps) {
   const [selectedId, setSelectedId] = useState<EntityId | null>(null);
+  const mapRegion = useRef<HTMLDivElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const wasInspecting = useRef(false);
+  const inspect = useCallback((id: string) => {
+    const active = document.activeElement;
+    if (!wasInspecting.current) returnFocus.current = active instanceof HTMLElement && mapRegion.current?.contains(active) ? active : null;
+    setSelectedId(id as EntityId);
+  }, []);
+  useEffect(() => {
+    if (!selectedId && wasInspecting.current) {
+      const target = returnFocus.current;
+      if (target?.isConnected) target.focus();
+      else mapRegion.current?.focus();
+      returnFocus.current = null;
+    }
+    wasInspecting.current = !!selectedId;
+  }, [selectedId]);
   const detail = selectedId ? data.detailOf(selectedId) : undefined;
   useEffect(() => {
     if (selectedId && !detail) data.pull(selectedId);
@@ -78,9 +95,9 @@ export function GameScreen({ data, memberId, loadMap, reasons, serverBaseUrl, on
 
   return (
     <div className="game-screen" data-testid="game-screen">
-      <div className="game-screen__map">
+      <div className="game-screen__map" ref={mapRegion} tabIndex={-1} aria-label="Game map">
         <GameMode spaceId={data.spaceId} memberId={memberId} spaceTitle={data.spaces.find(space => space.id === data.spaceId)?.name}
-          loadMap={loadMap} onInspect={(id: string) => setSelectedId(id as EntityId)} />
+          loadMap={loadMap} onInspect={inspect} />
       </div>
       {selectedId ? (
         <aside className="game-screen__inspection" aria-label="Entity details" data-testid="game-inspection">
