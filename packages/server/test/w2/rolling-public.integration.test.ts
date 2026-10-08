@@ -552,6 +552,7 @@ const MCP_NET_NEW_OPERATIONS = [
 ] as const;
 
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
+  'entities.markSeen', // 313: mounted by the inbox/read-marks registration.
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
   ...CONSOLIDATION_NET_NEW_OPERATIONS,
@@ -725,7 +726,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // The frozen tranche baseline is 253. MCP handlers add only when the
     // runtime bridge is mounted in this fixture.
     // Spec D1 (301): +1 entities.commands.release. MEASURED.
-    expect(registry.size).toBe(254 + mountedMcpOperations);
+    expect(registry.size).toBe(255 + mountedMcpOperations); // +1 entities.markSeen (313).
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
   });
