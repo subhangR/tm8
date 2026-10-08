@@ -2102,6 +2102,8 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    */
   useEffect(() => {
     if (!spaceId) return undefined;
+    // A same-space resync advances the hydration generation. Recreate this
+    // subscription with bootRevision so future reads use the new generation.
     const generation = spaceGeneration.current;
     let active = true;
     const trigger = createCoalescedTrigger({
@@ -2120,7 +2122,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       trigger.dispose();
       unsubscribe();
     };
-  }, [seam, spaceId]);
+  }, [seam, spaceId, bootRevision]);
 
   /**
    * KEEP THE CACHE CURRENT FROM THE DURABLE STREAM.

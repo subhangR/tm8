@@ -626,6 +626,40 @@ describe('liveness stays the seam’s verdict', () => {
 });
 
 describe('rail counters are live, and honest when absent', () => {
+  it('keeps creation and personal seen counts live after same-space resync', async () => {
+    const seeded = [task('ent-before-resync')];
+    const h = harness(seeded);
+    const { result, unmount } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    try {
+      await waitFor(() => expect(result.current.countsFor('task')).toEqual({ total: 1, unseen: 1 }));
+      const before = h.countsCalls();
+      act(() => h.resync());
+      await waitFor(() => expect(h.countsCalls()).toBeGreaterThan(before));
+      await waitFor(() => expect(result.current.ready).toBe(true));
+      await waitFor(() => expect(result.current.countsFor('task')).toEqual({ total: 1, unseen: 1 }));
+
+      const created = task('ent-after-resync');
+      seeded.push(created);
+      act(() => h.emit({
+        type: 'entity.upsert', spaceId: SPACE, seq: 1,
+        entity: created, occurredAt: created.createdAt, schemaVersion: 1,
+      } as DurableWorkspaceEvent));
+      await waitFor(() => expect(result.current.countsFor('task')).toEqual({ total: 2, unseen: 2 }));
+
+      // A list activation in another browser only emits this private event.
+      vi.spyOn(h.seam, 'counts').mockResolvedValue({ task: { total: 2, unseen: 1 } });
+      act(() => h.emit({
+        type: 'entity.seen', spaceId: SPACE, seq: 2, entityId: created.id,
+        seenAt: created.createdAt, occurredAt: created.createdAt, schemaVersion: 1,
+      } as DurableWorkspaceEvent));
+      await waitFor(() => expect(result.current.countsFor('task')).toEqual({ total: 2, unseen: 1 }));
+    } finally {
+      unmount();
+    }
+  });
+
   it('exposes the per-kind total and unseen count after hydration', async () => {
     const h = harness([task('ent-task-seeded'), task('ent-task-2')]);
     const { result } = renderHook(() =>
