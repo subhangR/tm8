@@ -453,6 +453,8 @@ function parseTarget(
        params every route already carries. */
     case 'graph':
       return { view: 'graph' };
+    case 'game':
+      return { view: 'game' };
     case 'files':
       return { view: 'files' };
     case 'git':
@@ -608,6 +610,8 @@ function pathOf(route: Route): string {
       return `${base}/channels`;
     case 'graph':
       return `${base}/graph`;
+    case 'game':
+      return `${base}/game`;
     case 'files':
       return `${base}/files`;
     case 'git':

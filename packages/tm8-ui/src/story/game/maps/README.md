@@ -48,3 +48,15 @@ node packages/tm8-ui/node_modules/vitest/vitest.mjs run --root packages/tm8-ui s
 ```
 
 The navigation checks cover original entity IDs, story scope, child-story routing and the existing walking-view interactions. Model and imported-asset suites are owned alongside their modules.
+
+## Shared walking renderer
+
+`WalkingMapView` accepts `model`, `start`, optional `camera`, `onPosition`, `onCamera`, `onInspect`, `onEnterPortal` and optional `onBack`. `MapCameraState` contains orthographic zoom, position and target tuples. Map selection and browser persistence belong to the host. The renderer has no route or store coupling; a map id change remounts its player, while save callbacks never reapply the initial pose.
+
+Walking uses the retained player, controls and controlled minimap with the imported `MapScene` assets. Clicking a portal walks to it; Enter/E or its accessible Enter button performs travel. Inspection passes the original entity id. WebGL context loss exposes an accessible list with equivalent entity and portal actions. Back/Escape pop one map through the host callback; editable and dialog content retain their Escape handling.
+
+Use the pure helpers in `map-model/walking-world.ts`: `walkingBounds(model)` includes the origin, entrance zone and four-unit margin; `walkingEntrance(model)` chooses a fresh-map start, preferring the open hub centre or conventional (0,6) entrance, with clear ground left of the footprint as fallback. `isWalkingPositionSafe(model, point)` checks occupied footprints with player clearance for that fresh entrance. Compound bounds contain walkable streets, so they are not colliders. Explicit saved positions and cameras are preserved exactly whenever the coordinates are finite and inside playable bounds, including positions near or inside a footprint: walking can leave those positions. Only non-finite or out-of-bounds starts fall back to the entrance and discard their stale camera. Position and camera saves are throttled to once a second and flushed when the player unmounts.
+
+The existing story scene now implements `MapRenderer<ReactNode, SceneProps>` and gets its unchanged geometry from `walkingMapModel`/`walkingWorld`. Its navigation metadata, discovery, encounters and child-story actions stay intact. Geometry equality and override tests cover that boundary.
+
+For synthetic browser checks, run the Vite config `maps/walking.vite.config.ts`, then `node packages/tm8-ui/src/story/game/maps/capture-walking.mjs /absolute/evidence-dir`. `WALKING_URL` can target a built harness; optional `BASELINE_URL` captures an isolated main story scene for visual comparison. The harness contains synthetic fixtures only and is not included in the production app. Software WebGL screenshots verify rendering and behavior; they do not establish native GPU frame rates.

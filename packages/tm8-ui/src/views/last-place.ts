@@ -33,9 +33,11 @@ export interface WorkPlace {
   type: 'work';
 }
 export const WORK_PLACE: WorkPlace = { type: 'work' };
+export interface GamePlace { type: 'game' }
+export const GAME_PLACE: GamePlace = { type: 'game' };
 
-/** A remembered place: a menu target, or Work. */
-export type LastTarget = MenuTarget | WorkPlace;
+/** A remembered place: a menu target, Work or Game. */
+export type LastTarget = MenuTarget | WorkPlace | GamePlace;
 
 interface LastPlace {
   spaceId: string | null;
@@ -60,7 +62,7 @@ function storage(): Storage | null {
 function isTarget(value: unknown): value is LastTarget {
   if (typeof value !== 'object' || value === null) return false;
   const { type, ref, kind } = value as Record<string, unknown>;
-  if (type === 'work') return true;
+  if (type === 'work' || type === 'game') return true;
   if (typeof ref !== 'string') return false;
   if (type === 'view' || type === 'kind') return true;
   return type === 'entity' && typeof kind === 'string';

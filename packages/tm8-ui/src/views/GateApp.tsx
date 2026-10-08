@@ -79,7 +79,7 @@ import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
 import { ShortcutsOverlay } from '../shell/ShortcutsOverlay';
-import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
+import { allKinds, KindIcon, KIND_ART, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { Landing } from '../domain/nav-targets';
 import type { NavView } from '../routes';
 import { emptyPanels, workRedirectOf, type WorkRedirect } from '../routes';
@@ -115,6 +115,8 @@ import { HomeView } from './HomeView';
 import { rememberHomeRoot } from '../stores/homeRegionStore';
 import { kindBySlug, slugOfKind } from '../domain';
 import { GraphScreen } from '../graph';
+import { GameScreen } from './GameScreen';
+import { createGameMapLoader } from '../data/game-maps';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { channelFeedPortFromGateData } from './channel-feed-port';
@@ -147,7 +149,7 @@ import {
   writeSetupDismissed,
 } from '../settings-credentials';
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
-import { readLastSpace, readLastTarget, WORK_PLACE, writeLastTarget } from './last-place';
+import { readLastSpace, readLastTarget, WORK_PLACE, GAME_PLACE, writeLastTarget } from './last-place';
 import { desktopModes } from '../shell/desktop-modes';
 import { AppFrame, useFrameSlots, type AppFrameProps } from '../shell/AppFrame';
 import { FullViewScreen, hasFullView } from './entity-full/FullViewScreen';
@@ -212,24 +214,28 @@ const HOME_TARGET: MenuTarget = { type: 'view', ref: 'dashboard' };
 const BOARD_V2_TAB_ID = 'board-v2';
 /** Work's (the tabs view's) client-appended seat — same pattern as Board v2. */
 const WORKSPACE_TABS_TAB_ID = 'workspace-tabs';
+/** Game owns a client-side seat, without requiring a persisted menu revision. */
+const GAME_TAB_ID = 'game';
 
 /**
- * THE THREE DESKTOP MODES (D31, 2026-10-06): Work · Design · Observe, in that
- * order, and nothing else in the selector. Keyed by GROUP id, not view ref:
+ * THE DESKTOP MODES: Work · Design · Observe · Game, in that order.
+ * Keyed by GROUP id, not view ref:
  * Work is the client-added tabs seat, Design is the `craft` group, Observe is
  * the `graph` group. The labels are the modes' own, whatever the menu calls
  * the groups. Glyphs: Design Advisor R39 (existing art, 14px).
  */
-const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'graph'];
+const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'graph', GAME_TAB_ID];
 const VIEW_GROUP_LABEL: Record<string, string> = {
   [WORKSPACE_TABS_TAB_ID]: 'Work',
   craft: 'Design',
   graph: 'Observe',
+  [GAME_TAB_ID]: 'Game',
 };
 const VIEW_GROUP_ART: Record<string, readonly string[]> = {
   [WORKSPACE_TABS_TAB_ID]: VIEW_ART.workspace,
   craft: VIEW_ART.craft,
   graph: VIEW_ART.graph,
+  [GAME_TAB_ID]: KIND_ART.story,
 };
 /** The frame's top-band title for a screen no menu group claims (Inbox, Messages…). */
 const FRAME_VIEW_TITLE: Partial<Record<string, string>> = {
@@ -1182,8 +1188,8 @@ export function GateApp(props: GateAppProps = {}) {
       navStore.setState((s) => ({ view: WORK_VIEW, history: 'replace', revision: s.revision + 1 }));
       return;
     }
-    const remembered = !stored || stored.type === 'work' ? HOME_TARGET : stored;
-    const view = stored?.type === 'work' ? WORK_VIEW : routeViewOf(remembered);
+    const remembered = !stored || stored.type === 'work' || stored.type === 'game' ? HOME_TARGET : stored;
+    const view: NavView | null = stored?.type === 'game' ? { view: 'game' } : stored?.type === 'work' ? WORK_VIEW : routeViewOf(remembered);
     if (!view) {
       /* Unroutable: SAY SO rather than substituting the workspace. Storage is
          the only place these come from, and a stale record must not quietly
@@ -1341,6 +1347,10 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
+  const gameMapLoader = useMemo(
+    () => createGameMapLoader(data.seam, data.spaceId),
+    [data.seam, data.spaceId],
+  );
   /* Multiple workspaces (API doc 01a115c4 §10): the switcher's list, fed by
      the bridge. Nothing shows until the node has proved it knows workspaces. */
   const workspaceSpaceId = data.ready && data.spaceId ? data.spaceId : null;
@@ -1614,6 +1624,18 @@ export function GateApp(props: GateAppProps = {}) {
    */
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
+  // Consume the top overlay before the focused walking renderer handles Esc.
+  useEffect(() => {
+    if (!paletteOpen || navView.view !== 'game') return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPaletteOpen(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [paletteOpen, navView.view]);
   /* The `?` overlay: every shortcut, read from the keyboard contract. */
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const keyboardRef = useRef<KeyboardController | null>(null);
@@ -2052,6 +2074,7 @@ export function GateApp(props: GateAppProps = {}) {
             { id: 'view:workspace', label: 'Work', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
             { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
           ]),
+      { id: 'route:game', label: 'Game', glyph: <VectorIcon paths={KIND_ART.story} /> },
       { id: 'view:channels', label: 'Channels', glyph: <VectorIcon paths={VIEW_ART.channels} /> },
       // Both rows are now MOUNTED views, so the palette offers them as live
       // destinations. A palette row for a ref that falls through to the
@@ -2079,6 +2102,8 @@ export function GateApp(props: GateAppProps = {}) {
     const [scope, ref] = id.split(':', 2) as [string, string];
     if (scope === 'route' && ref === 'work') {
       navStore.getState().navigate(WORK_VIEW);
+    } else if (scope === 'route' && ref === 'game') {
+      navStore.getState().navigate({ view: 'game' });
     } else if (scope === 'view' && ref === 'channels' && channelEntities[0]) {
       navigateTo({ type: 'entity', ref: channelEntities[0].id, kind: channelEntities[0].kind });
     } else if (scope === 'view') {
@@ -2119,6 +2144,7 @@ export function GateApp(props: GateAppProps = {}) {
         .map((group) => ({ id: group.id, label: group.label }));
       /* WORK (tabs view, Spec A §2) — the route-only seat, client-added. */
       tabs.unshift({ id: WORKSPACE_TABS_TAB_ID, label: VIEW_GROUP_LABEL[WORKSPACE_TABS_TAB_ID]! });
+      tabs.push({ id: GAME_TAB_ID, label: 'Game' });
       const views = VIEW_GROUP_ORDER.flatMap((id) => {
         const tab = tabs.find((t) => t.id === id);
         return tab
@@ -2147,6 +2173,7 @@ export function GateApp(props: GateAppProps = {}) {
        is claimed off the ROUTE, exactly as its screen mount is. */
     if (navView.view === 'boardV2') return BOARD_V2_TAB_ID;
     if (navView.view === 'tabs') return WORKSPACE_TABS_TAB_ID;
+    if (navView.view === 'game') return GAME_TAB_ID;
     const direct = groupIdOfTarget(data.menu.config, activeTarget ?? null);
     if (direct) return direct;
     if (activeTarget?.type === 'entity' && voiceEntities.some((e) => e.id === activeTarget.ref)) {
@@ -2174,6 +2201,10 @@ export function GateApp(props: GateAppProps = {}) {
            route). The store write IS the navigation; the router serializes
            `#/s/{s}/board-v2` from it. */
         navStore.getState().navigate({ view: 'boardV2' });
+        return;
+      }
+      if (id === GAME_TAB_ID) {
+        navStore.getState().navigate({ view: 'game' });
         return;
       }
       if (id === WORKSPACE_TABS_TAB_ID) {
@@ -2296,6 +2327,7 @@ export function GateApp(props: GateAppProps = {}) {
      never came back to it. Every way into Work passes through this route. */
   useEffect(() => {
     if (navView.view === 'tabs' && data.spaceId) writeLastTarget(nodeKey, data.spaceId, WORK_PLACE);
+    if (navView.view === 'game' && data.spaceId) writeLastTarget(nodeKey, data.spaceId, GAME_PLACE);
   }, [navView.view, nodeKey, data.spaceId]);
 
   /*
@@ -2840,6 +2872,17 @@ export function GateApp(props: GateAppProps = {}) {
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
               }}
+            />
+          ) : data.ready && navView.view === 'game' && viewerMemberId ? (
+            <GameScreen
+              key={`${data.spaceId}:${viewerMemberId}`}
+              data={data}
+              memberId={viewerMemberId}
+              loadMap={gameMapLoader}
+              overlayOpen={paletteOpen}
+              reasons={reasons}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              onNotice={notices.push}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'graph' ? (
             /* ◉ Graph follows the D65 pattern exactly:

@@ -282,6 +282,8 @@ export type NavView =
    * migration and this member migrates into `MenuViewRef`.
    */
   | { view: 'boardV2' }
+  /** Browser-local map navigation; entity inspection uses the shared panel state. */
+  | { view: 'game' }
   /*
    * WORKSPACE TABS (2026-10-06, Spec A/B): the tabbed entity workspace.
    * Route-only and client-added exactly like `boardV2`. `tab` is the entity
