@@ -315,6 +315,19 @@ try {
   });
   evidence.renderSkipped = process.env.TASKLAND_RENDER === '0';
   if (!evidence.renderSkipped) {
+  if (process.env.TASKLAND_RENDER_GATE) await check('Serialized software browser window explicitly released', async () => {
+    const deadline = Date.now() + 30 * 60_000;
+    while (Date.now() < deadline) {
+      let receipt;
+      try { receipt = JSON.parse(await readFile(process.env.TASKLAND_RENDER_GATE, 'utf8')); } catch {}
+      if (receipt) {
+        assert.equal(receipt.head, head, 'Browser release must name this frozen head');
+        evidence.browserWindow = receipt; return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    throw new Error('No explicit browser-window release receipt arrived');
+  });
   let memory;
   await check('Actual production WalkingMapView canvas and projected scene ready', async () => {
     const model = await project(scopes[0], 'taskland', undefined, true);
