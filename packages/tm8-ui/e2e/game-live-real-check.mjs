@@ -37,7 +37,21 @@ const claimId=async(sessionId,taskId)=>{
 };
 const showWorker=async(id,text)=>{const row=host.locator(`[data-worker-id="robot:${id}"]`);await row.waitFor({state:'attached'});await host.locator('details.walking-workers').evaluate(el=>el.open=true);if(text)await expect(row).toContainText(text);return row;};
 const scene=()=>page.evaluate(()=>window.__gameLive.sceneSnapshot());
-const shot=async(name,workerId)=>{let capture,viewAdjustment;if(!fallback&&workerId){const before=await scene();if(before?.workers.some(worker=>worker.id===`robot:${workerId}`&&!worker.inView)){if(await host.getByRole('button',{name:/^Map overview/}).count()){await host.focus();await page.keyboard.press('m');viewAdjustment='Production Map overview key after behavioral assertions';}else{await expect(host.getByRole('button',{name:/^Back to explorer/})).toHaveAttribute('aria-pressed','true');viewAdjustment='Production Map overview already active';}}}if(!fallback){await host.locator('.sgm-stage canvas[data-engine]').waitFor();await expect.poll(()=>host.locator('.ms-label').evaluateAll(nodes=>nodes.filter(n=>n.parentElement.style.display!=='none').length),{timeout:30000}).toBeGreaterThan(0);await expect.poll(async()=>{const s=await scene();return !!s&&s.frames>0&&s.calls>0&&s.width>400&&s.height>300&&s.assets.pending===0&&s.assets.failed===0&&pendingAssets.size===0&&assetFailures.length===0&&(!workerId||s.workers.some(w=>w.id===`robot:${workerId}`&&w.visible&&w.inView&&w.skinnedMeshes>0));},{timeout:30000}).toBe(true);await page.evaluate(()=>document.fonts.ready);capture={name,viewAdjustment,startedAt:Date.now(),...await scene()};scenes.push(capture);}if(!noScreenshots)await page.screenshot({path:`${output}/${name}.png`,timeout:90000});if(capture){capture.afterCapture=await scene();capture.captureMs=Date.now()-capture.startedAt;}};
+const closeWorker=async(workerId,taskTitle)=>{
+ if(fallback)return null;
+ const before=await scene(),workerBefore=before.workers.find(worker=>worker.id===`robot:${workerId}`);expect(workerBefore).toBeTruthy();
+ const details=host.locator('details.walking-places');await details.evaluate(el=>el.open=true);
+ await host.getByTitle(`Walk to ${taskTitle}`,{exact:true}).evaluate(el=>setTimeout(()=>el.click(),0));await details.evaluate(el=>el.open=false);
+ let previous=await scene(),stationary=0;
+ await expect.poll(async()=>{const current=await scene();if(current.frames<=previous.frames)return false;
+  const worker=current.workers.find(item=>item.id===`robot:${workerId}`);expect(worker?.uuid).toEqual(workerBefore.uuid);
+  const ready=worker?.visible&&worker.inView&&worker.skinnedMeshes>0&&Math.hypot(current.player.position.x-worker.position.x,current.player.position.z-worker.position.z)<12&&current.cameraPose.zoom>20;
+  stationary=ready&&JSON.stringify(current.player.position)===JSON.stringify(previous.player.position)?stationary+1:0;previous=current;return stationary>=3;
+ },{timeout:60000,intervals:[200,400,800]}).toBe(true);
+ const after=await scene();expect(after.sceneId).toEqual(before.sceneId);expect(after.cameraId).toEqual(before.cameraId);expect(after.player.id).toEqual(before.player.id);expect(after.workers.find(worker=>worker.id===`robot:${workerId}`).uuid).toEqual(workerBefore.uuid);
+ return {input:'Production Places Walk-to after behavioral assertions',taskTitle,workerId:`robot:${workerId}`,workerUuid:workerBefore.uuid,before,after};
+};
+const shot=async(name,workerId,closeFrame)=>{let capture,viewAdjustment;if(!fallback&&workerId){const before=await scene();if(before?.workers.some(worker=>worker.id===`robot:${workerId}`&&!worker.inView)){if(await host.getByRole('button',{name:/^Map overview/}).count()){await host.focus();await page.keyboard.press('m');viewAdjustment='Production Map overview key after behavioral assertions';}else{await expect(host.getByRole('button',{name:/^Back to explorer/})).toHaveAttribute('aria-pressed','true');viewAdjustment='Production Map overview already active';}}}if(!fallback){await host.locator('.sgm-stage canvas[data-engine]').waitFor();await expect.poll(()=>host.locator('.ms-label').evaluateAll(nodes=>nodes.filter(n=>n.parentElement.style.display!=='none').length),{timeout:30000}).toBeGreaterThan(0);await expect.poll(async()=>{const s=await scene();return !!s&&s.frames>0&&s.calls>0&&s.width>400&&s.height>300&&s.assets.pending===0&&s.assets.failed===0&&pendingAssets.size===0&&assetFailures.length===0&&(!workerId||s.workers.some(w=>w.id===`robot:${workerId}`&&w.visible&&w.inView&&w.skinnedMeshes>0));},{timeout:30000}).toBe(true);await page.evaluate(()=>document.fonts.ready);capture={name,viewAdjustment,closeFrame,startedAt:Date.now(),...await scene()};scenes.push(capture);}if(!noScreenshots)await page.screenshot({path:`${output}/${name}.png`,timeout:90000});if(capture){capture.afterCapture=await scene();capture.captureMs=Date.now()-capture.startedAt;}};
 const tick=async(taskId,done)=>page.evaluate(async({taskId,done})=>{
  const detail=await window.__gameLive.seam.entity(taskId);const response=await fetch(`/v2/entities/${taskId}/commands/tick`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({clientMutationId:crypto.randomUUID(),expectedVersion:detail.version,criterionIds:['proof'],done})});
  if(!response.ok)throw new Error(`Tick failed ${response.status}: ${await response.text()}`);
@@ -49,10 +63,10 @@ const equalSavedPose=(actual,expected)=>{expect(actual.position).toEqual(expecte
 const settlePose=async(initialPosition)=>{
  await expect.poll(async()=>JSON.stringify((await pose())?.position??null),{timeout:30000}).not.toEqual(JSON.stringify(initialPosition));
  if(fallback)return;
- let previous=await scene();
+ let previous=await scene(),stationary=0;
  await expect.poll(async()=>{const current=await scene();if(!current?.player?.id||current.frames-previous.frames<2)return false;
   const stable=maxDelta(current.cameraPose.position,previous.cameraPose.position)<cameraTolerance/10&&maxDelta(current.cameraPose.quaternion,previous.cameraPose.quaternion)<cameraTolerance/10&&Math.abs(current.cameraPose.zoom-previous.cameraPose.zoom)<cameraTolerance/10;previous=current;
-  const saved=await pose();return stable&&!!saved?.camera&&saved.position.x===current.player.position.x&&saved.position.z===current.player.position.z&&maxDelta(saved.camera.position,current.cameraPose.position)<cameraTolerance;
+  const saved=await pose();stationary=stable&&!!saved?.camera&&saved.position.x===current.player.position.x&&saved.position.z===current.player.position.z&&maxDelta(saved.camera.position,current.cameraPose.position)<cameraTolerance?stationary+1:0;return stationary>=3;
  },{timeout:60000,intervals:[200,400,800]}).toBe(true);
 };
 try{
@@ -81,14 +95,14 @@ try{
    await expect(host.getByText(`${prefix} site A`,{exact:true}).first()).toBeAttached({timeout:30000});
    record(`${scope}: authoritative task creation admitted and rendered`);
    const sessionId=await spawn(taskA,`${prefix} synthetic worker`),edgeA=await claimId(sessionId,taskA);
-   await showWorker(edgeA,`${prefix} site A`);await shot(`${prefix}-start`,edgeA);
+   await showWorker(edgeA,`${prefix} site A`);const startFrame=scope==='story'||process.env.GAME_REDUCED_MOTION==='1'?await closeWorker(edgeA,`${prefix} site A`):null;await shot(`${prefix}-start`,edgeA,startFrame);
    const sessionDetail=await page.evaluate(id=>window.__gameLive.seam.entity(id),sessionId);
    expect(sessionDetail.storyIds??[]).toEqual([]);
    record(`${scope}: native synthetic PTY claim starts rendered ${fallback?'worker HUD':'WorkerLayer'}, session has no storyIds`);
    const initialPosition=(!fallback?(await scene())?.player?.position:(await pose())?.position)??null;
    await host.focus();await page.keyboard.down('d');try{await expect.poll(async()=>JSON.stringify((fallback?(await pose())?.position:(await scene())?.player?.position)??null),{timeout:30000}).not.toEqual(JSON.stringify(initialPosition));}finally{await page.keyboard.up('d');}await settlePose(initialPosition);
    const before=await pose(),sceneBefore=fallback?null:await scene(),canvas=crypto.randomUUID(),surface=fallback?host:host.locator('.sgm-stage canvas[data-engine]');await surface.evaluate((el,id)=>el.__verificationIdentity=id,canvas);
-   const begin=Date.now();
+   const begin=Date.now(),burstSample={scope,burstCommands:21,cameraTolerance,before,beforeScene:sceneBefore};timings.push(burstSample);
    for(let i=0;i<20;i++)await work(taskA,i%2?'working':'blocked',sessionId);
    await event('task.status_changed',taskA);const activeWorker=await showWorker(edgeA);await expect(activeWorker).not.toContainText('blocked');
    expect((await page.evaluate(id=>window.__gameLive.seam.entity(id),taskA)).state.status).toEqual('working');
@@ -100,9 +114,8 @@ try{
    await work(taskA,'blocked',sessionId);await showWorker(edgeA,'blocked');
    expect(await page.locator('[data-effect-id]').getAttribute('data-effect-id')).toEqual(effectId);
    expect(await surface.evaluate(el=>el.__verificationIdentity)).toEqual(canvas);
-   const afterPose=await pose();expect(afterPose.position).toEqual(before.position);
+   const afterPose=await pose();Object.assign(burstSample,{elapsedMs:Date.now()-begin,after:afterPose,afterScene:fallback?null:await scene()});expect(afterPose.position).toEqual(before.position);
    if(sceneBefore){const after=await scene();expect(after.sceneId).toEqual(sceneBefore.sceneId);expect(after.cameraId).toEqual(sceneBefore.cameraId);expect(after.player.id).toEqual(sceneBefore.player.id);expect(after.player.position).toEqual(sceneBefore.player.position);expect(after.workers.find(w=>w.id===`robot:${edgeA}`).uuid).toEqual(sceneBefore.workers.find(w=>w.id===`robot:${edgeA}`).uuid);expect(maxDelta(after.cameraPose.position,sceneBefore.cameraPose.position)).toBeLessThan(cameraTolerance);expect(maxDelta(after.cameraPose.quaternion,sceneBefore.cameraPose.quaternion)).toBeLessThan(cameraTolerance);expect(maxDelta(afterPose.camera.position,before.camera.position)).toBeLessThan(cameraTolerance);expect(maxDelta(afterPose.camera.target,before.camera.target)).toBeLessThan(cameraTolerance);expect(Math.abs(afterPose.camera.zoom-before.camera.zoom)).toBeLessThan(cameraTolerance);}else expect(afterPose).toEqual(before);
-   timings.push({scope,burstCommands:21,elapsedMs:Date.now()-begin,cameraTolerance,before,after:afterPose});
    record(`${scope}: burst immediately updates worker pose, combines effects with stable identity and preserves canvas/player/camera`);
    await shot(`${prefix}-burst`,edgeA);
    await tick(taskA,true);await event('task.criterion_changed',taskA);await tick(taskA,false);
@@ -110,7 +123,7 @@ try{
    await rpc('release_task_claim',[taskA,'Synthetic move to next site'],sessionId);
    await showWorker(edgeB,`${prefix} site B`);await expect(host.locator(`[data-worker-id="robot:${edgeA}"]`)).toHaveCount(0);
    if(!fallback)await expect.poll(async()=>(await scene()).workers.some(w=>w.id===`robot:${edgeA}`),{timeout:30000}).toBe(false);
-   record(`${scope}: real claim/release moves worker to second task and edge.ended removes first claim`);await shot(`${prefix}-move`,edgeB);
+   record(`${scope}: real claim/release moves worker to second task and edge.ended removes first claim`);await shot(`${prefix}-move`,edgeB,await closeWorker(edgeB,`${prefix} site B`));
    await work(taskB,'in_review',sessionId);const receipt=await rpc('receipt',[sessionId]);
    await rpc('complete_work_session',[sessionId,receipt.messageId]);await event('session.outcome_changed',sessionId);
    await showWorker(edgeB,'Returning to Office');await shot(`${prefix}-complete`);
@@ -123,9 +136,10 @@ try{
     await page.reload();await host.waitFor();await waitMap('taskland','story',fixture.storyId);await showWorker(edgeA,`${prefix} site A`);
     record('story: cold loader admits session through authoritative working_on without storyIds');
    }
+   await shot(`${prefix}-reopened-close`,edgeA,await closeWorker(edgeA,`${prefix} site A`));
    await rpc('stop_work_session',[sessionId,'Synthetic stop']);await event('session.outcome_changed',sessionId);
    await expect(host.locator(`[data-worker-id="robot:${edgeA}"]`)).toHaveCount(0);await expect(host.getByText('Returning to Office',{exact:true})).toHaveCount(0);
-   if(!fallback)await expect.poll(async()=>(await scene()).workers.some(w=>w.id===`robot:${edgeA}`),{timeout:30000}).toBe(false);
+   if(!fallback)await expect.poll(async()=>(await scene()).workers.some(w=>w.id===`robot:${edgeA}`||w.id===`robot:${edgeB}`),{timeout:30000}).toBe(false);
    record(`${scope}: stopped outcome removes worker without completion departure`);await shot(`${prefix}-stop`);
    const failed=await spawn(taskB,`${prefix} failing worker`);await work(taskB,'working',failed);const failedEdge=await claimId(failed,taskB);await showWorker(failedEdge);
    await rpc('processFail',[],failed);await event('session.process_changed',failed);
