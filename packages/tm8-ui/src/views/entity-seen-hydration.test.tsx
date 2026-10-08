@@ -51,8 +51,10 @@ it('still remounts the shell and closes its list menu when the space changes', a
   const target = createMemoryTarget(`#/s/${FIXTURE_SPACE_ID}/workspace`);
   const seam = {
     ...fixture,
-    spaces: async () => [settings.space, { ...settings.space, id: otherSpace }],
-    spaceSettings: async (spaceId: SpaceId) => ({ ...settings, space: { ...settings.space, id: spaceId } }),
+    spaces: async () => [settings.space, { ...settings.space, id: otherSpace, name: 'Other space' }],
+    spaceSettings: async (spaceId: SpaceId) => ({ ...settings, space: {
+      ...settings.space, id: spaceId, name: spaceId === otherSpace ? 'Other space' : settings.space.name,
+    } }),
     identity: async () => ({ ...identity, memberships: [
       ...identity.memberships,
       { ...identity.memberships[0]!, spaceId: otherSpace },
@@ -65,7 +67,9 @@ it('still remounts the shell and closes its list menu when the space changes', a
   fireEvent.click(within(left).getByLabelText('Choose which list to show'));
   expect(within(left).getByRole('menu', { name: 'Entity lists' })).toBeTruthy();
 
-  act(() => target.setHash(`#/s/${otherSpace}/workspace`));
+  fireEvent.click(within(view.getByTestId('space-switcher')).getByRole('button'));
+  fireEvent.click(within(view.getByRole('dialog', { name: 'Switch server or space' }))
+    .getByRole('button', { name: 'Other space' }));
 
   // The existing McpProvider space key still resets the shell for a new
   // space; removing the actor key must preserve this older boundary.
