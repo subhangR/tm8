@@ -55,7 +55,7 @@ export function createCameraAudit(currentRoot:()=>any, publishedMap:(props:any)=
    overview:props.control.overview,duel:props.duel?{placeId:props.duel.placeId}:null,arena:!!(props.duel&&world.byId.get(props.duel.placeId)),reduced:props.reduced,
    waypointsLength:ref(waypointSlots[0]).current.length,order:props.control.order?{...props.control.order}:null,keys:[...props.control.keys],
    saveTick:ref(known+2).current,revealTick:ref(known+3).current,savedCamera:ref(motion+11).current?structuredClone(ref(motion+11).current):null,
-   alertDisplay:props.alertNode.current?.style.display??null};
+   alertMounted:!!props.alertNode.current,alertDisplay:props.alertNode.current?.style.display??null};
  };
  const before=()=>{const sample=read();if(sample?.observed)pending.set(sample.sceneUuid,sample);else if(sample)invalidSample({phase:"before",sample,at:performance.now()});};
  const after=()=>{const sample=read();if(!sample?.observed){if(sample)invalidSample({phase:'after',sample,at:performance.now()});return;}const before=pending.get(sample.sceneUuid);if(!before)return;
@@ -66,7 +66,7 @@ export function createCameraAudit(currentRoot:()=>any, publishedMap:(props:any)=
   const desired=before.overview&&!before.duel?Math.min(sample.viewport.width,sample.viewport.height)/(world.extent*2.5):baseZoom*before.zoomControl*factors.arenaMultiplier*factors.nearMultiplier*factors.enteringMultiplier;
   const expected=sample.restored?null:before.reduced?desired:desired+(before.cameraZoom-desired)*Math.exp(-3*dt);
   frames.push({index:++index,before,after:sample,delta,dt,desiredFactors:factors,desiredZoom:desired,expectedZoom:expected,zoomEquationError:expected===null?null:Math.abs(sample.cameraZoom-expected),
-   alertMatchesPreviousNear:sample.alertDisplay===(before.nearId&&before.nearId!==before.hubId&&!before.duel?'grid':'none')});
+   alertMatchesPreviousNear:sample.alertMounted===before.alertMounted&&(sample.alertMounted?sample.alertDisplay===(before.nearId&&before.nearId!==before.hubId&&!before.duel?'grid':'none'):sample.alertDisplay===null)});
   if(frames.length>4096)frames.shift();pending.delete(sample.sceneUuid);
   if(Object.keys(publications).length>512){const used=new Set(frames.flatMap(f=>[f.before.publicationId,f.after.publicationId]));for(const key of Object.keys(publications))if(!used.has(key))delete publications[key];}
   if(Object.keys(worlds).length>512){const used=new Set(frames.flatMap(f=>[f.before.worldId,f.after.worldId]));for(const key of Object.keys(worlds))if(!used.has(key))delete worlds[key];}
