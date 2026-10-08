@@ -1659,6 +1659,11 @@ export interface WorkspaceEventEnvelope {
   spaceId: SpaceId;
   /** Per-space monotonic; gaps allowed, order is authoritative. */
   seq: number;
+  /**
+   * UTC event time. Task status deltas use the actual row transition time;
+   * other arms may use transaction start time. Order by seq, not occurredAt:
+   * timestamps across tasks/event arms are not a global ordering guarantee.
+   */
   occurredAt: string;
   schemaVersion: number;
 }
