@@ -1,8 +1,8 @@
 /** Browser-only synthetic records. Mounts the shipping GateApp and read adapter. */
 import { createRoot } from 'react-dom/client';
-import type { CollectionQuery, EntityDetail, EntityKind, EntitySummary, StoryPage } from '@tm8/contract';
+import type { CollectionQuery, GraphQuery, EntityDetail, EntityKind, EntitySummary, StoryPage } from '@tm8/contract';
 import { createFixtureSeam, FIXTURE_SPACE_ID } from '../src/data/fixtures/seam-fixture';
-import { fixtureDetails, fixtureSummaries } from '../src/fixtures';
+import { fixtureSummaries } from '../src/fixtures';
 import { GateApp } from '../src/views/GateApp';
 import { STORY_FIXTURE } from '../src/story/fixture';
 import '../src/styles/tokens.css';
@@ -13,16 +13,20 @@ import '../src/shell/shell.css';
 import '../src/panels/panels.css';
 
 const seam = createFixtureSeam();
+const templates = new Map<EntityKind, EntityDetail>();
+for (const kind of ['story', 'task', 'work_session', 'doc', 'project'] as const) {
+  const row = fixtureSummaries.find(row => row.kind === kind)!;
+  templates.set(kind, await seam.entity(row.id));
+}
 const records = new Map<string, EntityDetail>();
 let sequence = 0;
 function make(kind: EntityKind, title: string, parentId: string | null = null) {
-  const template = fixtureSummaries.find(row => row.kind === kind)!;
-  const extra = fixtureDetails[template.id]!;
+  const template = templates.get(kind)!;
   const detail: EntityDetail = {
-    ...structuredClone(extra), ...structuredClone(template),
+    ...structuredClone(template),
     id: `00000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`,
     title, parentId, position: sequence, spaceId: FIXTURE_SPACE_ID,
-    connections: { incoming: [], outgoing: [] },
+    connections: { incoming: [], outgoing: [], unresolvedHardDependencyCount: 0 },
   };
   records.set(detail.id, detail);
   return detail;
@@ -64,6 +68,7 @@ for (const scope of [parent, nested]) {
 }
 
 const queries: CollectionQuery[] = [];
+const graphQueries: GraphQuery[] = [];
 function descendants(id: string): Set<string> {
   const found = new Set<string>(), pending = [id];
   while (pending.length) {
@@ -85,6 +90,11 @@ seam.query = async input => {
   return { query: input, page: { items: rows.slice(offset, offset + limit),
     nextCursor: offset + limit < rows.length ? String(offset + limit) : null, total: rows.length } };
 };
+seam.graph = async input => {
+  graphQueries.push(structuredClone(input));
+  return { nodes: [...records.values()].filter(row => !input.kinds?.length || input.kinds.includes(row.kind)).slice(0, input.limit ?? 200),
+    edges: [], clusters: [] };
+};
 const originalEntity = seam.entity.bind(seam);
 seam.entity = async id => records.has(id) ? structuredClone(records.get(id)!) : originalEntity(id);
 const originalChildren = seam.children.bind(seam);
@@ -96,7 +106,7 @@ seam.connections = async (id, options) => records.has(id) ? { items: [], nextCur
 const originalMessages = seam.messages.bind(seam);
 seam.messages = async (id, options) => records.has(id) ? { items: [], nextCursor: null } : originalMessages(id, options);
 
-Object.assign(window, { __phase1GameHarness: { queries, storyId: parent.id, nestedStoryId: nested.id,
+Object.assign(window, { __phase1GameHarness: { queries, graphQueries, storyId: parent.id, nestedStoryId: nested.id,
   entities: [...records.values()].map(({ id, title, kind }) => ({ id, title, kind })) } });
 if (!window.location.hash) window.location.hash = `#/s/${FIXTURE_SPACE_ID}/work`;
 createRoot(document.getElementById('root')!).render(<GateApp seam={seam} />);
