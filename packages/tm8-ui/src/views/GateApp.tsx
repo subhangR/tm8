@@ -117,6 +117,7 @@ import { kindBySlug, slugOfKind } from '../domain';
 import { GraphScreen } from '../graph';
 import { GameScreen } from './GameScreen';
 import { createGameMapLoader } from '../data/game-maps';
+import { useGameIdentitySignal } from '../game/identity-lifetime';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { channelFeedPortFromGateData } from './channel-feed-port';
@@ -1345,8 +1346,7 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
-  const gameIdentity = useMemo(() => new AbortController(), [data.seam, data.spaceId, viewerMemberId, accountId]);
-  useEffect(() => () => gameIdentity.abort(), [gameIdentity]);
+  const gameIdentitySignal = useGameIdentitySignal(data.seam, data.spaceId, viewerMemberId, accountId);
   const gameMapLoader = useMemo(
     () => createGameMapLoader(data.seam, data.spaceId),
     [data.seam, data.spaceId],
@@ -2879,7 +2879,7 @@ export function GateApp(props: GateAppProps = {}) {
               data={data}
               memberId={viewerMemberId}
               loadMap={gameMapLoader}
-              identitySignal={gameIdentity.signal}
+              identitySignal={gameIdentitySignal}
               overlayOpen={paletteOpen}
               reasons={reasons}
               serverBaseUrl={activeServer.routeBaseUrl}
