@@ -1,11 +1,12 @@
 import { buildMapModel } from '../story/game/map-model';
 import type { MapModel, MapRobot, MapScope, MapType } from '../story/game/map-model';
-import { applyMapEvent, type GameMapEvent, type GameTaskEvent } from './live-map-events';
+import { workerHome } from '../story/game/maps/worker-motion';
+import { applyMapEvent, sessionLiveness, type GameMapEvent, type GameTaskEvent } from './live-map-events';
 import type { GameMapEvents, GameMapLoader, GameMapResult } from './types';
 
 export interface MapUpdateEffect { id: number; count: number; combined: boolean; entityIds: string[]; taskEvents: GameTaskEvent[] }
 export interface LiveMapSnapshot {
-  result: GameMapResult; model: MapModel; departures: MapRobot[]; effect: MapUpdateEffect | null; error: Error | null;
+  result: GameMapResult; model: MapModel; previousModel: MapModel | null; departures: MapRobot[]; effect: MapUpdateEffect | null; error: Error | null;
 }
 interface Options {
   spaceId: string; scope: MapScope; type: MapType; loadMap: GameMapLoader; events?: GameMapEvents;
@@ -18,6 +19,8 @@ export function createLiveMapController(options: Options) {
   const now = options.now ?? Date.now;
   let closed = false, request = 0, lastSeq = -1;
   let snapshot: LiveMapSnapshot | null = null;
+  let dirty = false;
+  let additions = 0;
   let previous = options.previous;
   let abort: AbortController | null = null;
   let replay: GameMapEvent[] | null = null;
@@ -35,6 +38,14 @@ export function createLiveMapController(options: Options) {
   const publish = () => {
     publishTimer = undefined;
     if (closed || !snapshot) return;
+    if (dirty) {
+      const model = buildMapModel(snapshot.result.input, { scope, type, previous: snapshot.model });
+      previous = model; dirty = false;
+      const activeSessions = new Set(model.robots.map(robot => robot.sessionId));
+      for (const [id, row] of departing) if (activeSessions.has(row.robot.sessionId)) departing.delete(id);
+      for (const robot of model.robots) { departing.delete(robot.id); lastWorkers.set(robot.id, { robot, at: now() }); }
+      snapshot = { ...snapshot, previousModel: snapshot.model, model };
+    }
     const time = now();
     recent = recent.filter(at => time - at < 60_000);
     if (effectTimes.length) {
@@ -59,14 +70,18 @@ export function createLiveMapController(options: Options) {
   };
   const apply = (event: GameMapEvent, animate = true) => {
     if (!snapshot) return;
-    const result = applyMapEvent(snapshot.result.input, scope, event, events);
+    const result = applyMapEvent(snapshot.result.input, scope, event, events, type, additions < 200);
     if (result.refresh) scheduleRefresh();
     if (!result.changed) return;
+    additions += Math.max(0, result.input.entities.length - snapshot.result.input.entities.length);
     if (animate) {
       for (const robot of snapshot.model.robots) lastWorkers.set(robot.id, { robot, at: now() });
       for (const [id, row] of lastWorkers) {
         if (now() - row.at > 60_000) { lastWorkers.delete(id); continue; }
-        if (result.completed.includes(row.robot.sessionId)) departing.set(id, { robot: row.robot, until: now() + 8_000 });
+        if (result.completed.includes(row.robot.sessionId)) {
+          const home = workerHome(snapshot.model), distance = Math.hypot(row.robot.x - home.x, row.robot.z - home.z);
+          departing.set(id, { robot: row.robot, until: now() + Math.max(8_000, distance / 7 * 1_000 + 2_000) });
+        }
       }
       for (const [id, row] of departing) {
         const session = result.input.entities.find(entity => entity.id === row.robot.sessionId);
@@ -75,12 +90,9 @@ export function createLiveMapController(options: Options) {
       recent.push(now()); effectTimes.push(now()); result.touched.forEach(id => touched.add(id));
       if (event.type === 'task.criterion_changed' || event.type === 'task.status_changed') taskEvents.push(event);
     }
-    const model = buildMapModel(result.input, { scope, type, previous: snapshot.model });
-    for (const robot of model.robots) { departing.delete(robot.id); lastWorkers.set(robot.id, { robot, at: now() }); }
-    previous = model;
-    snapshot = { ...snapshot, model, departures: [...departing.values()].map(row => row.robot), result: { ...snapshot.result, input: result.input } };
+    dirty = true;
+    snapshot = { ...snapshot, departures: [...departing.values()].map(row => row.robot), result: { ...snapshot.result, input: result.input } };
     expireDepartures();
-    if (animate) options.onSnapshot(snapshot);
     schedulePublish();
   };
   const receive = (event: GameMapEvent) => {
@@ -96,14 +108,16 @@ export function createLiveMapController(options: Options) {
     const controller = new AbortController(), epoch = ++request;
     abort = controller; replay = [];
     try {
-      const result = await options.loadMap(scope, controller.signal, type);
+      const loaded = await options.loadMap(scope, controller.signal, type);
       if (closed || controller.signal.aborted || epoch !== request) return;
+      const result = { ...loaded, input: { ...loaded.input, entities: loaded.input.entities.map(row => sessionLiveness(row, events)) } };
       if (result.input.scope && (result.input.scope.kind !== scope.kind || result.input.scope.id !== scope.id)) throw new Error('The map data does not match the selected scope.');
       const model = buildMapModel(result.input, { scope, type, previous });
       model.robots.forEach(robot => lastWorkers.set(robot.id, { robot, at: now() }));
       previous = model;
       const queued = replay ?? []; replay = null;
-      snapshot = { result, model, departures: [], effect: snapshot?.effect ?? null, error: null };
+      snapshot = { result, model, previousModel: null, departures: [], effect: snapshot?.effect ?? null, error: null };
+      dirty = false; additions = 0;
       queued.forEach(event => apply(event, false));
       publish();
     } catch (error) {
@@ -121,14 +135,8 @@ export function createLiveMapController(options: Options) {
       subscriptions.push(events.onEvent(receive), events.onResync(id => { if (id === spaceId) scheduleRefresh(); }),
         events.liveness.onChange(() => {
           if (closed || !snapshot) return;
-          const input = { ...snapshot.result.input, entities: snapshot.result.input.entities.map(row => {
-            if (row.kind !== 'work_session') return row;
-            const status = row.processState ?? row.status;
-            const recorded = status === 'spawning' || status === 'running' || status === 'idle' || status === 'failed' || status === 'exited' ? status : null;
-            return { ...row, live: events.liveness.statusOf({ id: row.id, status: recorded }) === 'live' };
-          }) };
-          const model = buildMapModel(input, { scope, type, previous: snapshot.model });
-          snapshot = { ...snapshot, model, result: { ...snapshot.result, input } }; previous = model; schedulePublish();
+          const input = { ...snapshot.result.input, entities: snapshot.result.input.entities.map(row => sessionLiveness(row, events)) };
+          snapshot = { ...snapshot, result: { ...snapshot.result, input } }; dirty = true; schedulePublish();
         }));
     }
     void refresh();

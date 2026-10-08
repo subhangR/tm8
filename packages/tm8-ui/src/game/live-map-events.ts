@@ -1,28 +1,42 @@
-import type { DurableWorkspaceEvent, EntitySummary, WorkspaceEventEnvelope } from '@tm8/contract';
+import type { DurableWorkspaceEvent, EntitySummary } from '@tm8/contract';
 import { fromProjection } from '../story/game/map-model';
-import type { MapEntity, MapInput, MapScope } from '../story/game/map-model';
+import type { MapEntity, MapInput, MapScope, MapType } from '../story/game/map-model';
 import type { GameMapEvents } from './types';
+import { admitsMapKind } from './map-admission';
 
-/** Additive P0c payloads; remove this bridge after the contract candidate lands. */
-export type GameTaskEvent = WorkspaceEventEnvelope & (
-  { type: 'task.criterion_changed'; taskId: string; criterionId: string; criterionText: string; isDone: boolean; done: number; total: number }
-  | { type: 'task.status_changed'; taskId: string; from: string; to: string });
-export type GameMapEvent = DurableWorkspaceEvent | GameTaskEvent;
+type Versioned = { version?: number; updatedAt?: string };
+function older(candidate: Versioned, current?: Versioned): boolean {
+  if (!current) return false;
+  if (candidate.version !== undefined && current.version !== undefined && candidate.version !== current.version) return candidate.version < current.version;
+  return !!candidate.updatedAt && !!current.updatedAt && Date.parse(candidate.updatedAt) < Date.parse(current.updatedAt);
+}
+export function sessionLiveness(row: MapEntity, events?: GameMapEvents): MapEntity {
+  if (!events || row.kind !== 'work_session') return row;
+  const status = row.processState ?? row.status;
+  const recorded = status === 'spawning' || status === 'running' || status === 'idle' || status === 'failed' || status === 'exited' ? status : null;
+  const state = events.liveness.statusOf({ id: row.id, status: recorded });
+  return { ...row, live: state === 'unknown' ? undefined : state === 'live' };
+}
+
+export type GameTaskEvent = Extract<DurableWorkspaceEvent, { type: 'task.criterion_changed' | 'task.status_changed' }>;
+export type GameMapEvent = DurableWorkspaceEvent;
 
 export function liveMapEntity(row: EntitySummary, events?: GameMapEvents): MapEntity {
   const mapped = fromProjection({ entities: [row], edges: [] }).entities[0]!;
   const session = row.state.kind === 'work_session' ? row.state : null;
-  return { ...mapped, statusCategory: row.category ?? null,
+  const liveness = session && events ? events.liveness.statusOf({ id: row.id, status: session.status }) : null;
+  const metadata = { version: row.version, updatedAt: row.updatedAt };
+  return { ...mapped, ...metadata, statusCategory: row.category ?? null,
     pendingAttention: row.badges.attention?.pendingCount ?? 0,
     mailbox: { count: row.counters.messages },
     ...(session ? { processState: session.status, outcome: session.outcome ?? null,
-      live: events ? events.liveness.statusOf({ id: row.id, status: session.status }) === 'live' : mapped.live } : {}),
+      live: liveness === 'unknown' ? undefined : liveness ? liveness === 'live' : mapped.live } : {}),
   };
 }
 
 export interface MapEventResult { input: MapInput; changed: boolean; refresh: boolean; touched: string[]; completed: string[] }
 /** Full event payloads are authoritative. Story membership is only inferred for contained children and claims. */
-export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEvent, events?: GameMapEvents): MapEventResult {
+export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEvent, events?: GameMapEvents, type: MapType = 'town', canAdd = true): MapEventResult {
   const entities = new Map(input.entities.map(row => [row.id, row]));
   const edges = new Map(input.edges.map(row => [row.id, row]));
   const result: MapEventResult = { input, changed: false, refresh: false, touched: [], completed: [] };
@@ -32,6 +46,8 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
     for (const [key, edge] of edges) if (edge.fromId === id || edge.toId === id) edges.delete(key);
     result.changed = true; result.touched.push(id);
   };
+  const semanticId = 'taskId' in event ? event.taskId : 'sessionId' in event ? event.sessionId : undefined;
+  if (semanticId && older({ updatedAt: event.occurredAt }, entities.get(semanticId) as Versioned | undefined)) return result;
   switch (event.type) {
     case 'task.criterion_changed':
       // Counts are criterion facts, not the task's weighted subtree progress.
@@ -45,11 +61,14 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
     case 'entity.upsert':
     case 'entity.deleted': {
       const row = event.entity;
+      if (row.spaceId !== event.spaceId) break;
       if (scope.kind === 'story' && row.id === scope.id) result.refresh = true;
       const known = entities.get(row.id);
+      if (older(row, known as Versioned | undefined)) break;
       const parent = row.parentId ? entities.get(row.parentId) : null;
       const admitted = scope.kind === 'space' || !!known || parent?.kind === row.kind;
-      if (!admitted) break;
+      if (!admitted || !admitsMapKind(type, row.kind)) break;
+      if (!known && !canAdd) { result.refresh = true; break; }
       if (event.type === 'entity.deleted') remove(row.id);
       else {
         const mapped = liveMapEntity(row, events);
@@ -62,18 +81,32 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
     case 'edge.upsert':
     case 'edge.deleted': {
       const edge = event.edge, source = edge.source, target = edge.target;
+      if (source.spaceId !== event.spaceId || target.spaceId !== event.spaceId) break;
       const known = edges.has(edge.id);
+      if (older(edge, edges.get(edge.id) as Versioned | undefined)) break;
       const touches = scope.kind === 'space' || known || entities.has(source.id) || entities.has(target.id) || source.id === scope.id || target.id === scope.id;
       if (!touches) break;
-      if (event.type === 'edge.deleted') { result.changed = edges.delete(edge.id); }
+      if (!admitsMapKind(type, source.kind) || !admitsMapKind(type, target.kind)) break;
+      if (event.type === 'edge.upsert' && ((!known && edges.size >= 1_000) || (!canAdd && (!entities.has(source.id) || !entities.has(target.id))))) { result.refresh = true; break; }
+      if (event.type === 'edge.deleted') {
+        result.changed = edges.delete(edge.id);
+        if (edge.type === 'working_on' && (edge.props.endReason === 'session_completed' || (source.state.kind === 'work_session' && source.state.outcome === 'completed'))) result.completed.push(source.id);
+      }
       else if (edge.type === 'working_on' && source.kind === 'work_session' && entities.get(target.id)?.kind === 'task') {
-        put(liveMapEntity(source, events)); put(liveMapEntity(target, events));
+        if (!older(source, entities.get(source.id) as Versioned | undefined)) put(liveMapEntity(source, events));
+        if (!older(target, entities.get(target.id) as Versioned | undefined)) put(liveMapEntity(target, events));
+        const metadata = { updatedAt: edge.updatedAt };
         edges.set(edge.id, { id: edge.id, type: edge.type, fromId: source.id, toId: target.id,
+          ...metadata,
           endedAt: typeof edge.props.endedAt === 'string' ? edge.props.endedAt : null,
           status: typeof edge.props.status === 'string' ? edge.props.status : null });
         result.changed = true;
       } else if (entities.has(source.id) && entities.has(target.id)) {
-        edges.set(edge.id, { id: edge.id, type: edge.type, fromId: source.id, toId: target.id }); result.changed = true;
+        const metadata = { updatedAt: edge.updatedAt };
+        edges.set(edge.id, { id: edge.id, type: edge.type, fromId: source.id, toId: target.id,
+          ...metadata,
+          endedAt: typeof edge.props.endedAt === 'string' ? edge.props.endedAt : null,
+          status: typeof edge.props.status === 'string' ? edge.props.status : null }); result.changed = true;
       } else result.refresh = true;
       if (scope.kind === 'story' && !['working_on', 'depends_on'].includes(edge.type)) result.refresh = true;
       result.touched.push(source.id, target.id);
@@ -81,6 +114,7 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
     }
     case 'edge.ended': {
       const edge = edges.get(event.edgeId);
+      if (older({ updatedAt: event.occurredAt }, edge as Versioned | undefined)) break;
       if (edge) {
         edges.set(edge.id, { ...edge, endedAt: event.endedAt }); result.changed = true;
         result.touched.push(event.sourceId, event.targetId);
@@ -95,8 +129,9 @@ export function applyMapEvent(input: MapInput, scope: MapScope, event: GameMapEv
     }
     case 'session.process_changed': {
       const row = entities.get(event.sessionId);
+      const state = events?.liveness.statusOf({ id: event.sessionId, status: event.to });
       if (row) put({ ...row, processState: event.to, status: event.to,
-        live: ['spawning', 'running', 'idle'].includes(event.to) });
+        live: state === 'unknown' ? undefined : state ? state === 'live' : row.live });
       break;
     }
     case 'counter.changed': {

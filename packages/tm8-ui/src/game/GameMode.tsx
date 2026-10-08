@@ -167,11 +167,11 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, events, onInspect
     </nav>
     {saveFailed && <p className="game-mode__notice" role="status">Browser save is unavailable. Your place is kept for this visit.</p>}
     {recoveryNotice && <p className="game-mode__notice" role="status">{recoveryNotice}</p>}
-    {ready?.live.effect && <p className="game-mode__notice" role="status" data-effect-id={ready.live.effect.id}>{ready.live.effect.combined ? `${ready.live.effect.count} map updates in the last minute` : 'Map updated'}</p>}
+    {ready?.live.effect && <p className="game-mode__notice" aria-live="polite" aria-atomic="true" data-effect-id={ready.live.effect.id}>{ready.live.effect.combined ? `${ready.live.effect.count} map updates in the last minute` : `${ready.live.effect.count} map ${ready.live.effect.count === 1 ? 'update' : 'updates'}`}</p>}
     {ready?.live.error && <p className="game-mode__notice" role="status">Live map refresh failed. <button type="button" onClick={() => setRetry(n => n + 1)}>Retry map</button></p>}
     {!!ready?.model.warnings.length && <details className="game-mode__notice" open><summary>Map notices</summary><ul>{[...new Set(ready.model.warnings)].map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
     <div className="game-mode__map" aria-busy={!ready && !failure}>
-      {ready ? <WalkingMapView key={ready.model.id} model={ready.model} start={memory?.position ?? walkingEntrance(ready.model)} camera={memory?.camera}
+      {ready ? <WalkingMapView key={ready.model.id} model={ready.model} previousModel={ready.live.previousModel} effect={ready.live.effect} departures={ready.live.departures} start={memory?.position ?? walkingEntrance(ready.model)} camera={memory?.camera}
         onPosition={position} onCamera={camera} onInspect={id => { if (navigationEpoch.current === epoch && mapKey(save.current.current) === key) onInspect(id); }} onEnterPortal={enter}
         onBack={navigation.stack.length ? () => back() : undefined} />
         : failure ? <div className="game-mode__status" role="alert"><p>{failure.message}</p>
