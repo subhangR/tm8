@@ -4,8 +4,9 @@ import { fromProjection, type MapEdge, type MapEntity, type MapType } from '../s
 import type { Seam } from './seam';
 
 import type { GameMapLoader } from '../game/types';
+import { readGamePlacements } from '../game/placement-read';
 export type { GameMapLoader, GameMapResult } from '../game/types';
-type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness'>;
+type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness' | 'game'>;
 
 const MAP_KINDS: CollectionQuery['kinds'] = [
   'story', 'task', 'work_session', 'member', 'team_member', 'skill',
@@ -173,11 +174,15 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
         warnings = [...warnings, 'Map relations could not be loaded; places and their hierarchy remain available'];
       }
     }
+    const persisted = seam.game && type
+      ? await readGamePlacements(seam.game, spaceId, { scope, type }, new Set(entities.keys()), signal)
+      : { townPlacements: [], warnings: [] };
     checkCancelled(signal);
     return {
       title,
       input: { scope: { ...scope }, entities: [...entities.values()],
-        edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)), warnings },
+        edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)),
+        ...(type === 'town' ? { townPlacements: persisted.townPlacements } : {}), warnings: [...warnings, ...persisted.warnings] },
     };
   };
 }

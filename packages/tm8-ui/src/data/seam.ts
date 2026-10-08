@@ -639,6 +639,8 @@ export interface AttentionV2Ops {
 }
 
 export interface Seam {
+  /** Durable Game maps and per-member resume. Fixtures may keep browser-only saves. */
+  game?: import('../game/port').GamePort;
   mcp?: (spaceId: string) => import("../mcp/port").McpPort;
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */

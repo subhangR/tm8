@@ -18,6 +18,7 @@ import './game-screen.css';
 interface GameScreenProps {
   data: GateData & { pull(id: string): void };
   memberId: string;
+  identitySignal?: AbortSignal;
   loadMap: GameMapLoader;
   overlayOpen?: boolean;
   reasons: DetailReasons;
@@ -25,7 +26,7 @@ interface GameScreenProps {
   onNotice(notice: Notice): void;
 }
 
-export function GameScreen({ data, memberId, loadMap, overlayOpen, reasons, serverBaseUrl, onNotice }: GameScreenProps) {
+export function GameScreen({ data, memberId, loadMap, identitySignal, overlayOpen, reasons, serverBaseUrl, onNotice }: GameScreenProps) {
   const [selectedId, setSelectedId] = useState<EntityId | null>(null);
   const mapRegion = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -102,7 +103,7 @@ export function GameScreen({ data, memberId, loadMap, overlayOpen, reasons, serv
     <div className="game-screen" data-testid="game-screen">
       <div className="game-screen__map" ref={mapRegion} tabIndex={-1} aria-label="Game map">
         <GameMode spaceId={data.spaceId} memberId={memberId} spaceTitle={data.spaces.find(space => space.id === data.spaceId)?.name}
-          loadMap={loadMap} events={data.seam} onInspect={inspect} />
+          loadMap={loadMap} events={data.seam} persistence={data.seam.game} identitySignal={identitySignal} onInspect={inspect} />
       </div>
       {selectedId ? (
         <aside className="game-screen__inspection" aria-label="Entity details" data-testid="game-inspection">

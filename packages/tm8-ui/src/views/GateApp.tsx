@@ -1345,6 +1345,8 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
+  const gameIdentity = useMemo(() => new AbortController(), [data.seam, data.spaceId, viewerMemberId, accountId]);
+  useEffect(() => () => gameIdentity.abort(), [gameIdentity]);
   const gameMapLoader = useMemo(
     () => createGameMapLoader(data.seam, data.spaceId),
     [data.seam, data.spaceId],
@@ -2877,6 +2879,7 @@ export function GateApp(props: GateAppProps = {}) {
               data={data}
               memberId={viewerMemberId}
               loadMap={gameMapLoader}
+              identitySignal={gameIdentity.signal}
               overlayOpen={paletteOpen}
               reasons={reasons}
               serverBaseUrl={activeServer.routeBaseUrl}
