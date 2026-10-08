@@ -23,6 +23,7 @@ export interface TasklandLabel {
 }
 /** The model owns progress, status districts and subtree counts. This only names the cues. */
 export function tasklandPlotDetail(place: VisualPlace): string {
+  if (place.badges.includes('yard-anchor')) return 'Yard anchor · open children remain';
   if (place.role === 'shipped-marker') return 'Shipped · children still building';
   if (place.constructionStage === 'rubble') return place.rubbleExpiresAt == null
     ? 'Cancelled · cancellation time unknown'
@@ -53,7 +54,7 @@ export function tasklandLabels(model: MapModel): TasklandLabel[] {
   for (const p of model.places as VisualPlace[]) {
     if (p.kind !== 'task') continue;
     const size = Math.max(1.6, p.radius * 1.9);
-    if ((p.estimateMissing ?? p.badges.includes('estimate-missing')) && p.constructionStage !== 'rubble' && p.role !== 'shipped-marker') {
+    if ((p.estimateMissing ?? p.badges.includes('estimate-missing')) && p.constructionStage !== 'rubble' && p.role === 'entity') {
       labels.push({ id: `${p.id}:surveyor`, title: 'Surveyor tent', detail: 'Estimate needed · size defaults to 1',
         x: p.x - size * .48, y: .8, z: p.z + size * .62, priority: 3 + p.depth, cue: 'surveyor', entityId: p.entityId });
     }
@@ -100,10 +101,10 @@ function RootMailbox({ attention }: { attention: number }) {
 export function TasklandPlotCues({ place, size }: { place: VisualPlace; size: number }) {
   if (place.kind !== 'task') return null;
   return <group name={`taskland-cues:${place.entityId}`}>
-    {(place.estimateMissing ?? place.badges.includes('estimate-missing')) && place.constructionStage !== 'rubble' && place.role !== 'shipped-marker' &&
+    {(place.estimateMissing ?? place.badges.includes('estimate-missing')) && place.constructionStage !== 'rubble' && place.role === 'entity' &&
       <group position={[-size*.48,0,size*.28]}><SurveyorTent/></group>}
     {!place.parentId && <group position={[size*.67,0,size*.15]}><RootMailbox attention={place.attention}/></group>}
-    {place.progress !== null && place.constructionStage !== 'rubble' && place.role !== 'shipped-marker' && <group position={[0,.15,size*.65]}>
+    {place.progress !== null && place.constructionStage !== 'rubble' && place.role === 'entity' && <group position={[0,.15,size*.65]}>
       <Beam position={[0,0,0]} size={[size*.9,.09,.11]} color={colors.propMuted}/>
       {place.progress > 0 && <Beam position={[-size*.45*(1-place.progress),.01,0]} size={[size*.9*place.progress,.11,.13]} color={colors.done}/>}
     </group>}

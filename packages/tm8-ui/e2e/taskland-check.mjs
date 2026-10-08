@@ -9,7 +9,7 @@ await mkdir(evidence, { recursive: true });
 const browser = await chromium.launch({ headless: true,
   ...(process.env.TASKLAND_CHROMIUM ? { executablePath: process.env.TASKLAND_CHROMIUM } : {}),
   args: ['--no-zygote', '--single-process', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const page = await browser.newPage({ viewport: { width: 1600, height: 1050 }, reducedMotion: 'reduce' });
+const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' });
 const errors = [], assetFailures = [], transitions = [];
 page.on('pageerror', error => errors.push(error.message));
 page.on('response', response => { if (/\.(glb|gltf)(\?|$)/.test(response.url()) && !response.ok()) assetFailures.push({ status: response.status(), path: new URL(response.url()).pathname }); });
@@ -20,7 +20,7 @@ async function ready(cue = 'mailbox') {
 async function capture(scope, name, cue) {
   await ready(cue);
   const snapshot = await state();
-  await page.screenshot({ path: `${evidence}/${scope}-${name}.png` });
+  await page.screenshot({ path: `${evidence}/${scope}-${name}.png`, timeout: 90000 });
   const visibleCues = await projectedTasklandCues(page);
   transitions.push({ scope, name, type: snapshot.type, revision: snapshot.revision,
     places: snapshot.model.places.map(({ entityId, status, progress, constructionStage, role, mailbox, attention, badges, subtreeWeight, rubbleExpiresAt }) =>
@@ -98,7 +98,7 @@ try {
   await writeFile(`${evidence}/index.html`, `<!doctype html><html lang="en"><meta charset="utf-8"><title>Synthetic Taskland evidence</title><style>body{font:16px system-ui;background:#101c24;color:#e8eef3;max-width:1200px;margin:30px auto}img{width:100%}figure{margin:24px 0}a{color:#a8d5fb}</style><h1>Synthetic Taskland construction evidence</h1><p>Production scene and model with synthetic in-memory records. Renderer: ${renderer.replaceAll('<','&lt;')}. Software WebGL; no native GPU or live Space proof.</p><p>Each capture waited for assets, rendered triangles and a projected world label. <a href="report.json">Aggregate assertions and frame metrics</a>.</p>${images}</html>`);
   console.log(JSON.stringify({ passed: true, renderer, scopes: 2, captures: transitions.length, evidence }));
 } catch (error) {
-  await page.screenshot({ path: `${evidence}/failure.png` }).catch(() => {});
+  await page.screenshot({ path: `${evidence}/failure.png`, timeout: 10000 }).catch(() => {});
   const capturedState = await state().catch(cause => ({ unavailable: String(cause) }));
   await writeFile(`${evidence}/failure.json`, JSON.stringify({ error: String(error), errors, assetFailures, transitions, state: capturedState }, null, 2));
   throw error;

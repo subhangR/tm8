@@ -84,6 +84,7 @@ it('labels unknown cancellation time honestly and names a known expiry', () => {
   const place = buildMapModel(input(scope), { scope, type: 'taskland' }).places.find(p => p.entityId === 'cancelled')!;
   expect(tasklandPlotDetail({ ...place, rubbleExpiresAt: null })).toBe('Cancelled · cancellation time unknown');
   expect(tasklandPlotDetail({ ...place, rubbleExpiresAt: Date.parse('2026-10-09T12:00:00Z') })).toBe('Cancelled · rubble clears 2026-10-09 12:00:00 UTC');
+  expect(tasklandPlotDetail({ ...place, constructionStage: 'foundation', badges: ['yard-anchor', 'children-open'] })).toBe('Yard anchor · open children remain');
 });
 it('uses computed estimate flags and mailbox count basis when the projection supplies them', () => {
   const scope = scopes[0]!;
