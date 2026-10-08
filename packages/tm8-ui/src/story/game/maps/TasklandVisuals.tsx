@@ -4,6 +4,10 @@ import { readStudioPalette } from '../studioPalette';
 import { MapAsset } from './MapAsset';
 
 const colors = readStudioPalette();
+// Optional projection fields let the helper also render older saved models.
+type VisualPlace = MapPlace & { estimateMissing?: boolean; rubbleExpiresAt?: number | null;
+  mailbox: (NonNullable<MapPlace['mailbox']> & { basis?: 'unread' | 'messages' }) | null };
+type VisualModel = MapModel & { shippingYard?: { position: { x: number; z: number }; waitingIds: readonly string[] } };
 const YARDS: Record<string, { title: string; color: string }> = {
   to_do: { title: 'Planning yard', color: colors.todo },
   in_progress: { title: 'Construction yard', color: colors.working },
@@ -18,21 +22,25 @@ export interface TasklandLabel {
   priority: number; cue: 'surveyor' | 'mailbox' | 'yard' | 'shipping'; entityId?: string;
 }
 /** The model owns progress, status districts and subtree counts. This only names the cues. */
-export function tasklandPlotDetail(place: MapPlace): string {
+export function tasklandPlotDetail(place: VisualPlace): string {
   if (place.role === 'shipped-marker') return 'Shipped · children still building';
-  if (place.constructionStage === 'rubble') return 'Cancelled · rubble clears after 24h';
-  const progress = place.progress === null ? 'Progress unknown' : `${Math.floor(place.progress * 100)}%`;
+  if (place.constructionStage === 'rubble') return place.rubbleExpiresAt == null
+    ? 'Cancelled · cancellation time unknown'
+    : `Cancelled · rubble clears ${new Date(place.rubbleExpiresAt).toISOString().replace('T', ' ').replace('.000Z', ' UTC')}`;
+  const progress = place.progress === null ? 'Progress unknown' : `${Math.floor(place.progress * 100 + 1e-9)}%`;
   const stage = place.constructionStage.replaceAll('-', ' ');
   const status = place.status?.replaceAll('_', ' ');
   return `${place.parentId ? 'Nested yard · ' : ''}${progress} · ${stage}${status ? ` · ${status}` : ''}`;
 }
-export function shippingYardCount(model: MapModel): number {
+export function shippingYardCount(model: VisualModel): number {
   if (model.type !== 'town') return 0;
+  if (model.shippingYard) return model.shippingYard.waitingIds.length;
+  // Compatibility for snapshots saved before the placement projection existed.
   const waiting = new Set(model.groups.filter(g => g.key === 'shipping-yard').flatMap(g => g.placeIds));
   return model.places.filter(p => waiting.has(p.id) && p.role !== 'shipped-marker' && p.constructionStage !== 'rubble' && p.status !== 'cancelled').length;
 }
-export function shippingYardPosition(model: MapModel): { x: number; z: number } {
-  return { x: model.bounds.minX + 3, z: model.bounds.minZ - 3 };
+export function shippingYardPosition(model: VisualModel): { x: number; z: number } {
+  return model.shippingYard?.position ?? { x: -8, z: -8 };
 }
 export function tasklandLabels(model: MapModel): TasklandLabel[] {
   if (model.type === 'town') {
@@ -42,21 +50,22 @@ export function tasklandLabels(model: MapModel): TasklandLabel[] {
   }
   if (model.type !== 'taskland') return [];
   const labels: TasklandLabel[] = [];
-  for (const p of model.places) {
+  for (const p of model.places as VisualPlace[]) {
     if (p.kind !== 'task') continue;
     const size = Math.max(1.6, p.radius * 1.9);
-    if (p.badges.includes('estimate-missing') && p.constructionStage !== 'rubble' && p.role !== 'shipped-marker') {
+    if ((p.estimateMissing ?? p.badges.includes('estimate-missing')) && p.constructionStage !== 'rubble' && p.role !== 'shipped-marker') {
       labels.push({ id: `${p.id}:surveyor`, title: 'Surveyor tent', detail: 'Estimate needed · size defaults to 1',
         x: p.x - size * .48, y: .8, z: p.z + size * .62, priority: 3 + p.depth, cue: 'surveyor', entityId: p.entityId });
     }
     if (!p.parentId) {
       const count = p.mailbox === null ? '?' : `${p.mailbox.approx ? '≈' : ''}${p.mailbox.count}`;
-      labels.push({ id: `${p.id}:mailbox`, title: 'ROOT mailbox', detail: `${count} subtree messages · ${p.attention} attention`,
+      labels.push({ id: `${p.id}:mailbox`, title: 'ROOT mailbox', detail: `${count} subtree ${p.mailbox?.basis === 'unread' ? 'unread' : 'messages'} · ${p.attention} attention`,
         x: p.x + size * .67, y: 1.1, z: p.z + size * .42, priority: -2, cue: 'mailbox', entityId: p.entityId });
     }
   }
   for (const group of model.groups) {
-    labels.push({ id: `${group.id}:yard`, title: `${group.depth ? 'Mini yard' : 'District'} · ${yardStyle(group).title}`,
+    const location = group.key === 'cancelled' || group.key === 'shipped' ? 'Plot markers' : group.depth ? 'Mini yard' : 'District';
+    labels.push({ id: `${group.id}:yard`, title: `${location} · ${yardStyle(group).title}`,
       detail: `${group.placeIds.length} ${group.depth ? 'nested plots' : 'root compounds'}`,
       x: group.bounds.minX, y: .5, z: group.bounds.maxZ + 1.5, priority: 8 + group.depth, cue: 'yard' });
   }
@@ -88,10 +97,10 @@ function RootMailbox({ attention }: { attention: number }) {
     {attention > 0 && <Beam position={[.44,1.37,0]} size={[.26,.15,.06]} color={colors.flag}/>}
   </group>;
 }
-export function TasklandPlotCues({ place, size }: { place: MapPlace; size: number }) {
+export function TasklandPlotCues({ place, size }: { place: VisualPlace; size: number }) {
   if (place.kind !== 'task') return null;
   return <group name={`taskland-cues:${place.entityId}`}>
-    {place.badges.includes('estimate-missing') && place.constructionStage !== 'rubble' && place.role !== 'shipped-marker' &&
+    {(place.estimateMissing ?? place.badges.includes('estimate-missing')) && place.constructionStage !== 'rubble' && place.role !== 'shipped-marker' &&
       <group position={[-size*.48,0,size*.28]}><SurveyorTent/></group>}
     {!place.parentId && <group position={[size*.67,0,size*.15]}><RootMailbox attention={place.attention}/></group>}
     {place.progress !== null && place.constructionStage !== 'rubble' && place.role !== 'shipped-marker' && <group position={[0,.15,size*.65]}>
