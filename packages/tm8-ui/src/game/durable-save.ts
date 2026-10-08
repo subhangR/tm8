@@ -8,7 +8,17 @@ export interface GamePersistencePort {
   save(spaceId: string, save: GameNavigationSave, expectedRevision: number, options?: { keepalive?: boolean; signal?: AbortSignal }): Promise<GameNavigationView>;
 }
 export type GameSaveStatus = 'loading' | 'ready' | 'saving' | 'saved' | 'local' | 'conflict';
+const REMOTE_SAVE_INTERVAL_MS = 3_000;
 const routeKey = (save: GameSave) => JSON.stringify([...save.stack, save.current].map(mapKey));
+
+function rateLimitDelay(error: unknown): number | null {
+  if (!error || typeof error !== 'object') return null;
+  const failure = error as { code?: unknown; status?: unknown; details?: Record<string, unknown> };
+  if (failure.code !== 'rate_limited' && failure.code !== 'TM429' && failure.status !== 429 && failure.details?.httpStatus !== 429) return null;
+  const retryAfter = failure.details?.retryAfterMs;
+  return typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0
+    ? Math.max(REMOTE_SAVE_INTERVAL_MS, Math.min(retryAfter, 2_147_483_647)) : REMOTE_SAVE_INTERVAL_MS;
+}
 
 /** Applies server removals only to the snapshot they acknowledge, retaining newer unsent intent too. */
 export function mergeGameSaveRepairs(latest: GameSave, sent: GameSave, normalized: GameSave): GameSave {
@@ -55,6 +65,8 @@ export class DurableGameSave {
   private readonly lifetime = new AbortController();
   private throttle: ReturnType<typeof setTimeout> | undefined;
   private lastStarted = -Infinity;
+  private rateRetryUsed = false;
+  private rateRetryUntil = 0;
 
   constructor(private readonly spaceId: string, private readonly memberId: string,
     private readonly port: GamePersistencePort, private readonly report: (status: GameSaveStatus) => void, identitySignal?: AbortSignal,
@@ -129,8 +141,8 @@ export class DurableGameSave {
     this.throttle = undefined;
     this.running = (async () => {
       while (this.pending && !this.halted && !this.lifetime.signal.aborted && this.revision !== null) {
-        const remaining = this.lastStarted + 3_000 - Date.now();
-        if (!this.pending.immediate && remaining > 0) {
+        const remaining = Math.max(this.rateRetryUntil - Date.now(), this.pending.immediate ? 0 : this.lastStarted + REMOTE_SAVE_INTERVAL_MS - Date.now());
+        if (remaining > 0) {
           this.throttle = setTimeout(() => { this.throttle = undefined; void this.drain(); }, remaining);
           break;
         }
@@ -143,11 +155,20 @@ export class DurableGameSave {
           if (this.lifetime.signal.aborted) return;
           const normalized = this.accept(acknowledged);
           if (!normalized) throw new Error('Game save was not acknowledged');
+          this.rateRetryUsed = false;
+          this.rateRetryUntil = 0;
           this.applyRepairs(next.save, normalized);
           if (!this.pending) this.report('saved');
         } catch (error) {
+          if (this.lifetime.signal.aborted) return;
           // Preserve the newest local snapshot. A CAS conflict never silently overwrites a second device.
           this.pending ??= next;
+          const delay = rateLimitDelay(error);
+          if (delay !== null && !this.rateRetryUsed) {
+            this.rateRetryUsed = true;
+            this.rateRetryUntil = Date.now() + delay;
+            continue;
+          }
           this.halted = true;
           this.report(error && typeof error === 'object' && 'code' in error && error.code === 'version_conflict' ? 'conflict' : 'local');
         }
@@ -177,12 +198,13 @@ export class DurableGameSave {
         if (this.running) await this.running;
         const view = await this.port.load(this.spaceId, this.lifetime.signal);
         this.accept(view);
-        if (view.save === null) {
-          this.latest = repairLegacySave(this.latest);
-          if (this.port.prepareMigration) await this.port.prepareMigration(this.spaceId, this.latest, this.lifetime.signal);
-        }
+        // An explicit replacement can carry a browser-only legacy visit even when another device has a server save.
+        this.latest = repairLegacySave(this.latest);
+        if (this.port.prepareMigration) await this.port.prepareMigration(this.spaceId, this.latest, this.lifetime.signal);
         if (this.lifetime.signal.aborted) return;
         this.halted = false;
+        this.rateRetryUsed = false;
+        this.rateRetryUntil = 0;
         await this.enqueue(this.latest);
       } catch { this.halted = true; this.report('local'); }
     })().finally(() => { this.retrying = null; });
