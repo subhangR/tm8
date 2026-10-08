@@ -13,6 +13,7 @@ import { freshGameSave, gameSaveKey, mapKey } from '../src/game/local-save';
 import type { MapCameraState } from '../src/story/game/maps/WalkingMapView';
 import '../src/styles/tokens.css';
 import '../src/styles/app.css';
+declare const __TASKLAND_VALIDATION_HEAD__: string;
 
 const root = createRoot(document.getElementById('root')!);
 const seam = createRealSeam({ fetch: window.fetch.bind(window), webSocketFactory: browserWebSocketFactory(WebSocket), origin: location.origin });
@@ -55,7 +56,9 @@ async function project(scope: MapScope, type: MapType, now?: number, cold = fals
   const key = mapKey({ scope, type });
   const model = buildMapModel(data.input, { scope, type, ...(cold ? {} : { previous: models.get(key) }), ...(now === undefined ? {} : { now }) });
   models.set(key, model);
-  return record(model);
+  return { ...record(model), inputFields: data.input.entities.map(entity => ({ id: entity.id,
+    pointsEstimate: entity.pointsEstimate, acceptance: entity.acceptance,
+    estimateTent: entity.estimateTent, ownProgress: entity.ownProgress })) };
 }
 
 async function initialize(value: typeof config) {
@@ -111,12 +114,12 @@ declare global {
     initialize: typeof initialize; project: typeof project; mount: typeof mount; resume: typeof resume;
     current: (scope: MapScope, type: MapType) => ReturnType<typeof record> | null;
     scene: typeof scene;
-    state: () => { inspected: string | null; loadCount: number; save: unknown };
+    state: () => { inspected: string | null; loadCount: number; save: unknown; buildHead: string };
   } }
 }
 window.tasklandServer = {
   initialize, project, mount, resume,
   scene,
   current: (scope, type) => { const model = models.get(mapKey({ scope, type })); return model ? record(model) : null; },
-  state: () => ({ inspected, loadCount, save: JSON.parse(localStorage.getItem(gameSaveKey(config.spaceId, config.memberId)) ?? 'null') }),
+  state: () => ({ inspected, loadCount, buildHead: __TASKLAND_VALIDATION_HEAD__, save: JSON.parse(localStorage.getItem(gameSaveKey(config.spaceId, config.memberId)) ?? 'null') }),
 };

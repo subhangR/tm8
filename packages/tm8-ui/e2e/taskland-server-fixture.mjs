@@ -1,5 +1,7 @@
 /** Every entity and credential here is synthetic and confined to the owned DB. */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 export async function seedTasklandFixture(node) {
   const { request, pool } = node;
@@ -45,8 +47,17 @@ export async function seedTasklandFixture(node) {
   await request(`/v2/spaces/${space.id}/projects`, { projectId: project.id, clientMutationId: randomUUID() });
   const spawned = await request('/v2/execution/spawn', { spaceId: space.id, teamMemberId: teammate.id,
     projectId: project.id, taskIds: [tree.id], workdir: { mode: 'project' }, mode: 'worker', cols: 120, rows: 30,
+    agentTool: 'claude-code', model: 'claude-sonnet-4-5',
     clientMutationId: randomUUID() });
   const agentId = teammate.id, sessionId = spawned.entity.id;
+  const providerDeadline = Date.now() + 5000;
+  let syntheticProvider = false;
+  while (Date.now() < providerDeadline && !syntheticProvider) {
+    try { syntheticProvider = (await readFile(resolve(node.runRoot, 'provider-invocations.jsonl'), 'utf8')).trim()
+      .split('\n').some(row => JSON.parse(row).tool === 'claude'); } catch {}
+    if (!syntheticProvider) await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (!syntheticProvider) throw new Error('Synthetic Claude executable did not run; refusing lifecycle proof');
   // A local credential bound to the REAL echo-agent runtime. Only this fixture
   // knows it; no private runtime files or token values are published.
   const token = await rotateFixtureToken(node, sessionId);

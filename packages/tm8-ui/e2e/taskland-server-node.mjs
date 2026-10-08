@@ -51,7 +51,7 @@ async function assertFree(port) {
 }
 
 /** Refuses ordinary/prod ports and creates its own DB, never resets an existing DB. */
-export async function startTasklandNode() {
+export async function startTasklandNode({ beforeClose } = {}) {
   const raw = process.env.TASKLAND_TEST_ADMIN_URL;
   if (!raw) throw new Error('Set TASKLAND_TEST_ADMIN_URL to the approved isolated PostgreSQL cluster');
   const adminUrl = new URL(raw);
@@ -77,6 +77,7 @@ export async function startTasklandNode() {
     if (closed) return; closed = true;
     process.removeListener('SIGTERM', interrupted);
     process.removeListener('SIGINT', interrupted);
+    await beforeClose?.();
     await stopChild(migration);
     await stopChild(uiBuild);
     await stopChild(ui);
@@ -100,8 +101,10 @@ export async function startTasklandNode() {
     // Production Claude launch/resume argv and server-issued native id, with a
     // synthetic local executable replacing only the provider process. No model,
     // provider credentials or claims about a real provider conversation.
-    await writeFile(resolve(bin, 'claude'), `#!${process.execPath}\n` +
+    for (const tool of ['claude', 'codex']) await writeFile(resolve(bin, tool), `#!${process.execPath}\n` +
       `if (process.argv.includes('--version')) { console.log('2.0.0 (synthetic Taskland provider)'); process.exit(0); }\n` +
+      `const {appendFile}=await import('node:fs/promises');\n` +
+      `await appendFile(${JSON.stringify(resolve(runRoot, 'provider-invocations.jsonl'))}, ${JSON.stringify(JSON.stringify({ tool }) + '\n')});\n` +
       `await import(${JSON.stringify(pathToFileURL(resolve(repoRoot, 'packages/execution/harness/echo-agent.mjs')).href)});\n`, { mode: 0o700 });
     api = await launch('node', ['--enable-source-maps', 'packages/server/dist/index.js'], isolatedEnv({
       TM8_DATABASE_URL: dbUrl.href, TM8_DATA_DIR: resolve(runRoot, 'server-data'),

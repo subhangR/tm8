@@ -9,6 +9,7 @@ import { chromium } from '@playwright/test';
 import { startTasklandNode, repoRoot } from './taskland-server-node.mjs';
 import { seedTasklandFixture, mutateEntity, rotateFixtureToken } from './taskland-server-fixture.mjs';
 import { waitForRenderedTaskland, projectedTasklandCues } from './taskland-readiness.mjs';
+import { measureSyntheticUnread } from './taskland-server-unread-benchmark.mjs';
 
 const output = resolve(process.env.TASKLAND_EVIDENCE_DIR ?? '/tmp/taskland-server-evidence');
 await mkdir(output, { recursive: true });
@@ -26,9 +27,12 @@ async function check(name, fn) {
   catch (error) { evidence.checks.push({ name, passed: false, milliseconds: Date.now() - at, error: error.message }); throw error; }
 }
 try {
-  node = await startTasklandNode();
+  node = await startTasklandNode({ beforeClose: async () => { await browser?.close(); } });
   console.log(`Owned fixture ready: ${node.databaseName}; logs ${node.runRoot}`);
   const f = await seedTasklandFixture(node);
+  await check('Real unread route latency at realistic isolated synthetic volume', async () => {
+    evidence.unreadLatency = await measureSyntheticUnread(node);
+  });
   const ids = Object.fromEntries(Object.entries(f.tasks).map(([name, row]) => [name, row.id]));
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--no-zygote', '--single-process', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
@@ -36,6 +40,7 @@ try {
   await page.goto(`${node.uiOrigin}/e2e/taskland-server-harness.html`);
   await page.waitForFunction(() => !!window.tasklandServer);
   await page.evaluate(config => window.tasklandServer.initialize(config), { spaceId: f.spaceId, storyId: f.storyId, memberId: f.memberId });
+  assert.equal(await page.evaluate(() => window.tasklandServer.state().buildHead), head, 'Immutable browser build must match recorded head');
   const scopes = [{ kind: 'space', id: f.spaceId }, { kind: 'story', id: f.storyId }];
   const project = (scope, type = 'taskland', now, cold = false) => page.evaluate(args => window.tasklandServer.project(...args), [scope, type, now, cold]);
   const place = (model, name) => model.places.find(row => row.entityId === ids[name]);
@@ -53,6 +58,10 @@ try {
         sizeBucket: row.sizeBucket, cancelledAt: row.cancelledAt, mailbox: row.mailbox,
       })), robots: model.robots.length, roads: model.roads.length, shippingWaiting: model.shippingYard?.waitingIds?.length,
       nextLifecycleAt: model.nextLifecycleAt, warnings: model.warnings,
+      inputFields: model.inputFields.filter(row => Object.values(ids).includes(row.id)).map(row => ({
+        name: Object.keys(ids).find(name => ids[name] === row.id), pointsEstimate: row.pointsEstimate,
+        acceptance: row.acceptance, estimateTent: row.estimateTent, ownProgress: row.ownProgress,
+      })),
     })) });
     return models;
   };
