@@ -23,11 +23,16 @@ const save=()=>page.evaluate(spaceId=>{for(const key of Object.keys(localStorage
 const host=page.getByTestId('walking-map');
 let navigationSave=null;
 const navigateButton=async(button,input)=>{
- navigationSave=await button.evaluate((el,{spaceId,input})=>new Promise(resolve=>setTimeout(()=>{
-  let value=null;for(const key of Object.keys(localStorage)){if(!key.startsWith('tm8:game:v1:'))continue;const candidate=JSON.parse(localStorage.getItem(key));if(candidate.spaceId===spaceId){value=candidate;break;}}
-  const snapshot={input,value,capturedAt:performance.now(),capturedDate:Date.now(),source:'Production localStorage save copied immediately before the actual button click'};
-  el.click();resolve(snapshot);
- },0)),{spaceId:fixture.spaceId,input});
+ await button.evaluate((el,{spaceId,input})=>{
+  window.__navSave=null;
+  setTimeout(()=>{
+   let value=null;for(const key of Object.keys(localStorage)){if(!key.startsWith('tm8:game:v1:'))continue;const candidate=JSON.parse(localStorage.getItem(key));if(candidate.spaceId===spaceId){value=candidate;break;}}
+   window.__navSave={input,value,capturedAt:performance.now(),capturedDate:Date.now(),source:'Production localStorage save copied immediately before the actual button click'};
+   el.click();
+  },0);
+ },{spaceId:fixture.spaceId,input});
+ navigationSave=await page.evaluate(()=>window.__navSave);
+ expect(navigationSave).toBeTruthy();
 };
 const enter=async title=>{const details=host.locator('details.walking-places');if(await details.count())await details.evaluate(el=>el.open=true);await navigateButton(host.getByRole('button',{name:`Enter ${title}`,exact:true}),`Enter ${title}`);};
 let expectedNavigation,driver;
