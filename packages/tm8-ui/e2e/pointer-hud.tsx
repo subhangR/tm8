@@ -14,8 +14,9 @@ const target = rootModel.portals.find(p => p.entityId === 'pointer-story-15')!;
 if (!target) throw new Error('Missing story portal fixture');
 const world = mapWalkingWorld(rootModel);
 declare const __POINTER_HUD_BUILD_SHA__: string;
+declare const __POINTER_HUD_BUILD_PROVENANCE__: { head: string; sourceDiffExitCode: number; statusPorcelain: string };
 const start = { x: target.x + 3, z: target.z + target.radius + 1.1 };
-const state = { sourceHead: __POINTER_HUD_BUILD_SHA__, navigate: false, entered: [] as MapPortal[],
+const state = { sourceHead: __POINTER_HUD_BUILD_SHA__, provenance: __POINTER_HUD_BUILD_PROVENANCE__, navigate: false, entered: [] as MapPortal[],
   actions: [] as { type: string; id: string }[], positions: [] as { mapId: string; x: number; z: number }[],
   target, start, places: world.places.map(p => ({ title: p.title, type: p.portal ? 'Enter' : 'Inspect',
     id: p.portal ? p.id : rootModel.places.find(q => q.id === p.id)!.entityId })),
