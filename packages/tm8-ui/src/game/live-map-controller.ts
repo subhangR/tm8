@@ -21,6 +21,7 @@ export function createLiveMapController(options: Options) {
   let snapshot: LiveMapSnapshot | null = null;
   let dirty = false;
   let additions = 0;
+  let replayAmbiguityUsed = false;
   let previous = options.previous;
   let abort: AbortController | null = null;
   let replay: GameMapEvent[] | null = null;
@@ -79,7 +80,7 @@ export function createLiveMapController(options: Options) {
   const apply = (event: GameMapEvent, animate = true) => {
     if (!snapshot) return;
     const result = applyMapEvent(snapshot.result.input, scope, event, events, type, additions < 200);
-    if (result.refresh) scheduleRefresh();
+    if (result.refresh || (animate && result.staleEndpoints)) scheduleRefresh();
     if (!result.changed) return;
     additions += Math.max(0, result.input.entities.length - snapshot.result.input.entities.length);
     if (animate) {
@@ -126,7 +127,23 @@ export function createLiveMapController(options: Options) {
       const queued = replay ?? []; replay = null;
       snapshot = { result, model, previousModel: null, departures: [], effect: snapshot?.effect ?? null, error: null };
       dirty = false; additions = 0;
-      queued.forEach(event => apply(event, false));
+      const loadedIds = new Set(result.input.entities.map(row => row.id));
+      const ambiguous = (event: GameMapEvent) => {
+        switch (event.type) {
+          case 'edge.upsert': case 'edge.deleted': return loadedIds.has(event.edge.source.id) || loadedIds.has(event.edge.target.id);
+          case 'edge.ended': return loadedIds.has(event.sourceId) || loadedIds.has(event.targetId);
+          case 'session.outcome_changed': case 'session.process_changed': return loadedIds.has(event.sessionId);
+          case 'task.status_changed': case 'task.criterion_changed': return loadedIds.has(event.taskId);
+          case 'counter.changed': return loadedIds.has(event.entityId);
+          default: return false;
+        }
+      };
+      // Reads have no seq watermark. Resolve ambiguous deltas with one extra read.
+      // After that bound, replay follows stream seq; sustained concurrent writes
+      // cannot be proven atomic without a server snapshot watermark.
+      const repair = !replayAmbiguityUsed && queued.some(ambiguous);
+      if (repair) { replayAmbiguityUsed = true; scheduleRefresh(); }
+      queued.forEach(event => { if (!repair || !ambiguous(event)) apply(event, false); });
       publish();
     } catch (error) {
       if (closed || controller.signal.aborted || epoch !== request) return;
