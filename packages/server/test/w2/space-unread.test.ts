@@ -17,8 +17,9 @@ class RecordingDb implements Db {
     return fn({
       query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
         this.calls.push({ claims, sql, params });
-        if (sql.includes('from public.members')) {
-          return (claims.identityId === 'viewer' && params[0] === SPACE ? [{ entity_id: ROOT }] : []) as R[];
+        if (sql.includes('internal.is_space_member')) {
+          return [{ allowed: claims.identityId === 'viewer' && params[0] === SPACE &&
+            (!claims.sessionSpaceId || claims.sessionSpaceId === params[0]) }] as R[];
         }
         if (sql.includes('public.unread_counts')) return this.unreadRows as R[];
         throw new Error(`Unexpected read: ${sql}`);
@@ -44,7 +45,9 @@ describe('spaces.unreadCounts HTTP reader contract', () => {
     registerW2IdentitySpacesHandlers(registry, deps);
     server = createFacadeServer({ config, registry, authRateLimiter: null,
       identityResolver: headers => headers.authorization ? {
-        kind: 'bearer', identityId: headers.authorization.slice(7), nodeAdmin: false, authKind: 'cli',
+        kind: 'bearer', identityId: headers.authorization === 'Bearer pinned-viewer' ? 'viewer' : headers.authorization.slice(7),
+        ...(headers.authorization === 'Bearer pinned-viewer' ? { sessionSpaceId: FOREIGN_SPACE } : {}),
+        nodeAdmin: false, authKind: 'cli',
       } : { kind: 'anonymous' },
     });
     url = (await server.listen()).url;
@@ -65,7 +68,8 @@ describe('spaces.unreadCounts HTTP reader contract', () => {
     expect(db.calls.filter(call => call.sql.includes('public.unread_counts'))).toHaveLength(1);
     expect(db.calls[1]?.params).toEqual([SPACE, SPACE_UNREAD_COUNTS_LIMIT + 1]);
     for (const call of db.calls) expect(call.claims).toMatchObject({ identityId: 'viewer', nodeAdmin: false });
-    expect(db.calls[0]?.params).toEqual([SPACE, 'viewer']);
+    expect(db.calls[0]?.sql).toBe('select internal.is_space_member($1) as allowed');
+    expect(db.calls[0]?.params).toEqual([SPACE]);
     expect(JSON.stringify(data)).not.toMatch(/lastReadAt|memberId|authorId|identityId/);
   });
 
@@ -88,5 +92,19 @@ describe('spaces.unreadCounts HTTP reader contract', () => {
     expect(data.complete).toBe(false);
     expect(data.counts).toHaveLength(SPACE_UNREAD_COUNTS_LIMIT);
     expect(SpaceUnreadCountsSchema.safeParse(data).success).toBe(true);
+  });
+
+  it('refuses an existing member whose session pin fails the RPC gate, instead of a complete zero', async () => {
+    db.calls = [];
+    const response = await fetch(`${url}/v2/spaces/${SPACE}/unread-counts`, {
+      headers: { authorization: 'Bearer pinned-viewer' },
+    });
+    expect(response.status).toBe(403);
+    expect(db.calls).toHaveLength(1);
+    expect(db.calls[0]).toMatchObject({
+      sql: 'select internal.is_space_member($1) as allowed', params: [SPACE],
+      claims: { identityId: 'viewer', sessionSpaceId: FOREIGN_SPACE, nodeAdmin: false },
+    });
+    expect(JSON.stringify(await response.json())).not.toContain('"complete":true');
   });
 });

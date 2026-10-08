@@ -10,11 +10,13 @@ export function spacesUnreadCounts(deps: FacadeDeps): OperationHandler {
     const claims = claimsFor(await deps.owner(), ctx);
     if (!claims.identityId) throw new CollabError('unauthenticated', 'authentication is required');
     return deps.db.tx(claims, async (q) => {
-      const members = await q.query<{ entity_id: string }>(
-        'select entity_id from public.members where space_id = $1 and identity_id = $2',
-        [spaceId, claims.identityId],
+      // Match the RPC's membership and session-space pin gate. A denied RPC
+      // returns no rows, which must never be mistaken for a complete zero.
+      const membership = await q.query<{ allowed: boolean }>(
+        'select internal.is_space_member($1) as allowed',
+        [spaceId],
       );
-      if (!members[0]) throw new CollabError('forbidden', 'not a member of this space');
+      if (membership[0]?.allowed !== true) throw new CollabError('forbidden', 'not a member of this space');
       // One call to the existing SECURITY DEFINER RPC, under the same viewer
       // claims as navigation. Bound the wire result in SQL; fetching one extra
       // row makes truncation explicit without a second unread scan.
