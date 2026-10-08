@@ -238,6 +238,43 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  /**
+   * THE SESSION CANVAS'S CONTROLS — Resume, its in-flight guard, Mark lost and
+   * the outcome verbs. Only WorkspaceView passed them, by hand, so the same
+   * exited session opened from a kind screen, the aux column, a channel or the
+   * graph drew "Resume is not wired on this surface yet." The helper is the
+   * only accepted shape: four props hand-copied per host is how four of five
+   * hosts came to have none.
+   */
+  it.each(hosts)('%s spreads panelSessionControlsFor at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('{...panelSessionControlsFor('),
+        `an <EntityDetailPanel> in ${file} does not spread panelSessionControlsFor(), so an ` +
+          'exited, failed or stale session opened there renders Resume, Mark lost, Complete and ' +
+          'Stop for good DISABLED with "not wired on this surface"',
+      ).toBe(true);
+      for (const prop of ['onResumeSession=', 'resumingSession=', 'onMarkSessionExited=', 'onSessionVerb=']) {
+        expect(
+          block.includes(prop),
+          `${file} hand-wires ${prop.slice(0, -1)}; spread panelSessionControlsFor() so every host stays identical`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('wires the session controls on ALL FIVE named hosts — none may drop out of the scan', () => {
+    // The per-host case above iterates whatever the scan found; this pins the
+    // five hosts the resume outage was reported on, so a host whose mount the
+    // scan stops matching fails here instead of silently passing.
+    const wired = new Set(
+      mounts.filter((m) => m.block.includes('{...panelSessionControlsFor(')).map((m) => basename(m.file)),
+    );
+    for (const host of ['WorkspaceView.tsx', 'EntityView.tsx', 'auxPanel.tsx', 'ChannelView.tsx', 'GraphScreen.tsx']) {
+      expect(wired.has(host), `${host} mounts EntityDetailPanel without panelSessionControlsFor()`).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes attachments at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(

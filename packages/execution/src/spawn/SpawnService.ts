@@ -2213,7 +2213,7 @@ export class SpawnService {
    *   6. transition to `running`
    */
   async resume(auth: GraphAuth, request: ResumeRequest): Promise<SpawnResult> {
-    const info = await this.graph.loadWorkSessionForResume(auth, request.sessionId);
+    let info = await this.graph.loadWorkSessionForResume(auth, request.sessionId);
     const sessionId = info.sessionId;
     let bootExit: PtyExitInfo | undefined;
     // Cleanup owns only a child THIS invocation created. `spawnIfAbsent` can
@@ -2231,9 +2231,28 @@ export class SpawnService {
         { sessionId },
       );
     }
+    // A STALE session — the record says running/idle, this node owns it and
+    // holds no PTY for it (checked just above) — is a ghost the reaper would
+    // mark lost after `staleAfterMs`. Resuming it is the user asking for that
+    // verdict now, so record it first (`failed / lost`, the same process fact
+    // "Mark lost" writes) and carry on as for any failed session. A session
+    // another node owns is NOT ours to call lost: its PTY may be live there.
+    // `spawning` is excluded too — that is a launch between its row and its
+    // first PTY, and calling it lost would race the very spawn in flight.
+    if (
+      (info.status === 'running' || info.status === 'idle')
+      && (info.nodeId == null || this.nodeId == null || info.nodeId === this.nodeId)
+    ) {
+      await this.markLost(auth, sessionId);
+      this.ghostFirstSeen.delete(sessionId);
+      info = { ...info, status: 'failed' };
+    }
     if (info.status !== 'exited' && info.status !== 'failed') {
       throw new SpawnError(
-        `work session ${sessionId} is '${info.status}' — only exited or failed sessions can be resumed`,
+        `work session ${sessionId} is '${info.status}' — only exited, failed or stale sessions can be resumed`
+          + (info.status === 'running' || info.status === 'idle'
+            ? ` (it is owned by node ${String(info.nodeId)}, not this one)`
+            : ''),
         'conflict',
         { sessionId, status: info.status },
       );

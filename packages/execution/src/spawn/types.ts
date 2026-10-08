@@ -960,6 +960,12 @@ export interface WorkSessionResumeInfo {
   nativeSessionId: string | null;
   /** Exact CLAUDE_CONFIG_DIR/CODEX_HOME used for the original run. */
   agentConfigDir: string | null;
+  /**
+   * The node that owns the row (`work_sessions.node_id`). Resume marks a
+   * stale running/idle session lost only when it is THIS node's — another
+   * node's session may have a live PTY there. Absent/null ⇒ unowned.
+   */
+  nodeId?: string | null;
 }
 
 export interface ResumeWorkSessionResult {

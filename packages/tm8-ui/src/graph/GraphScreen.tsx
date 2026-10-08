@@ -25,7 +25,7 @@ import type {
 import { EntityDetailPanel, type DetailReasons, type LaunchSources } from '../panels';
 import type { ActionContext, ActionRef } from '../domain/types';
 import type { Notice } from '../shell/notices';
-import { usePanelPrimaries } from '../views/usePanelPrimaries';
+import { panelSessionControlsFor, usePanelPrimaries } from '../views/usePanelPrimaries';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphFrameHosts, type GraphTimelineStep } from './GraphView';
 import { debugSurfaceFor } from '../views/debugSurface';
@@ -185,11 +185,17 @@ export function GraphScreen(props: GraphScreenProps) {
     ...(data.reconcileCommand ? { reconcileCommand: data.reconcileCommand } : {}),
     ...(props.onNotice
       ? {
-          onError: (_verb: ActionRef, _entityId: string, error: unknown) =>
+          onError: (verb: ActionRef, _entityId: string, error: unknown) =>
             props.onNotice?.({
               id: 'session-terminate-failed',
               tone: 'error',
-              title: 'Session could not be terminated',
+              /* The same hook now fires Resume and Mark lost from this panel's
+                 canvas too, so the title names the verb that was refused. */
+              title: verb === 'resume'
+                ? 'Session could not be resumed'
+                : verb === 'mark-lost'
+                  ? 'Session could not be marked lost'
+                  : 'Session could not be terminated',
               body: String((error as { message?: string })?.message ?? error),
               ttlMs: 6_000,
             }),
@@ -234,6 +240,8 @@ export function GraphScreen(props: GraphScreenProps) {
       ctx={{ ...ctx, entityId: selectedId }}
       onAction={primaries.forEntity(selectedId)}
       wiredActions={primaries.wiredActions}
+      /* Resume, its guard, Mark lost and the outcome verbs on the session canvas. */
+      {...panelSessionControlsFor(primaries, selectedId)}
       membershipAuthoring={membership.authoringFor(detail)}
       launch={props.launch}
       // `data.seam` is optional on this narrow port, so the helper answers

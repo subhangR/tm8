@@ -1310,10 +1310,11 @@ export class DbGraphPort implements GraphPort {
         status: string;
         native_session_id: string | null;
         agent_config_dir: string | null;
+        node_id: string | null;
       }>(
         `select ws.entity_id, e.space_id, e.parent_id, ws.project_id, ws.workdir_mode,
                 ws.workdir_path, ws.mode, ws.model, ws.agent_tool, ws.title,
-                ws.status, ws.native_session_id, ws.agent_config_dir
+                ws.status, ws.native_session_id, ws.agent_config_dir, ws.node_id
            from public.work_sessions ws
            join public.entities e on e.id = ws.entity_id
           where ws.entity_id = $1 and e.deleted_at is null`,
@@ -1350,6 +1351,7 @@ export class DbGraphPort implements GraphPort {
         status: row.status as WorkSessionStatus,
         nativeSessionId: row.native_session_id,
         agentConfigDir: row.agent_config_dir,
+        nodeId: row.node_id,
       };
     });
   }

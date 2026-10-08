@@ -110,14 +110,54 @@ describe('SpawnService.resume — guards and orchestration', () => {
     return error as SpawnError;
   }
 
-  it('refuses a session that is not in a terminal status', async () => {
-    graph.resumeInfo = { ...RESUME_INFO, status: 'running' };
+  it('refuses a session that is still spawning', async () => {
+    graph.resumeInfo = { ...RESUME_INFO, status: 'spawning' };
     const error = await expectRefusal(
       serviceWith().resume(AUTH, { sessionId: SESSION_ID }),
       'conflict',
     );
-    expect(error.message).toContain("is 'running'");
+    expect(error.message).toContain("is 'spawning'");
     // Nothing was written: a refused resume must not touch the row.
+    expect(graph.resumes).toHaveLength(0);
+    expect(graph.transitions).toHaveLength(0);
+  });
+
+  // --- stale sessions: resume without waiting for the reaper -----------------
+
+  it.each(['running', 'idle'] as const)(
+    'marks a STALE %s session lost, then resumes it — no wait for the reaper',
+    async (status) => {
+      graph.resumeInfo = { ...RESUME_INFO, status, nodeId: NODE_ID };
+      graph.resumeReplayed = true;
+      const result = await serviceWith().resume(AUTH, { sessionId: SESSION_ID, clientMutationId: 'cmid-stale' });
+
+      expect(result.reused).toBe(true);
+      // The lost verdict is recorded BEFORE the resurrection RPC runs.
+      const lost = graph.transitions.filter((t) => t.sessionId === SESSION_ID);
+      expect(lost.map((t) => t.status)).toEqual(['failed']);
+      expect(lost[0]).toMatchObject({ endedKind: 'lost' });
+      expect(graph.resumes).toEqual([
+        { sessionId: SESSION_ID, clientMutationId: 'cmid-stale', nodeId: NODE_ID },
+      ]);
+    },
+  );
+
+  it('treats an unowned running row as this node\'s ghost', async () => {
+    graph.resumeInfo = { ...RESUME_INFO, status: 'running', nodeId: null };
+    graph.resumeReplayed = true;
+    await serviceWith().resume(AUTH, { sessionId: SESSION_ID });
+    expect(graph.transitions.map((t) => t.status)).toEqual(['failed']);
+    expect(graph.resumes).toHaveLength(1);
+  });
+
+  it('refuses a running session ANOTHER node owns — its PTY may be live there', async () => {
+    graph.resumeInfo = { ...RESUME_INFO, status: 'running', nodeId: 'node-elsewhere' };
+    const error = await expectRefusal(
+      serviceWith().resume(AUTH, { sessionId: SESSION_ID }),
+      'conflict',
+    );
+    expect(error.message).toContain('node-elsewhere');
+    expect(graph.transitions).toHaveLength(0);
     expect(graph.resumes).toHaveLength(0);
   });
 

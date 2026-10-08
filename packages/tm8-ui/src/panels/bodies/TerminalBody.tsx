@@ -420,6 +420,8 @@ function SessionCanvas({
           label={livenessLabel}
           reason={livenessReason}
           {...(onMarkExited ? { onMarkExited } : {})}
+          {...(onResume ? { onResume } : {})}
+          {...(resuming ? { resuming } : {})}
         />
       );
 

@@ -80,7 +80,7 @@ import { openEntityAndMarkRead } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
-import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { composePanelActions, panelSessionControlsFor, usePanelPrimaries } from './usePanelPrimaries';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { useNewContainerSheet } from './useNewContainerSheet';
@@ -782,6 +782,8 @@ export function EntityView(props: EntityViewProps) {
          see `composePanelActions` for why neither can be passed alone. */
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
+      /* Resume, its guard, Mark lost and the outcome verbs on the session canvas. */
+      {...panelSessionControlsFor(primaries, selectedId)}
       primaryCounts={chatCounts}
       memoryAuthoring={memoryWorkingSet.authoring}
       membershipAuthoring={membership.authoringFor(detail)}

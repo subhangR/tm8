@@ -15,7 +15,7 @@ import { KindIcon, getKind } from '../domain';
 import type { ActionRef } from '../domain';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
-import { usePanelPrimaries } from './usePanelPrimaries';
+import { panelSessionControlsFor, usePanelPrimaries } from './usePanelPrimaries';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
@@ -248,6 +248,8 @@ export function ChannelView({
       ctx={{ spaceId: data.spaceId, entityId: selectedId }}
       onAction={primaries.forEntity(selectedId)}
       wiredActions={primaries.wiredActions}
+      /* Resume, its guard, Mark lost and the outcome verbs on the session canvas. */
+      {...panelSessionControlsFor(primaries, selectedId)}
       membershipAuthoring={membership.authoringFor(selectedDetail)}
       launch={launchPort}
       mergePr={mergePrPortFor(data.seam)}

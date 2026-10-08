@@ -37,6 +37,7 @@ import {
   type GroupBulk,
 } from '../domain';
 import type { SessionSharingPatch } from '../panels/controls/EntityControls';
+import type { EntityDetailPanelProps as DetailPanelProps } from '../panels/EntityDetailPanel';
 import {
   SessionCompleteDialog,
   SessionReopenDialog,
@@ -598,6 +599,35 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
     }),
     [forEntity, wiredActions, terminate, resume, resumingId, shareSession, completeSession, sessionVerb, sessionBulk, dialogNode],
   );
+}
+
+/**
+ * THE SESSION CANVAS'S CONTROLS, for one panel — Resume, its in-flight guard,
+ * Mark lost and the outcome verbs (Complete, Stop for good, Reopen).
+ *
+ * WHY A HELPER. Only WorkspaceView passed these four props, by hand, so the
+ * same exited session opened from a kind screen, the aux column, a channel or
+ * the graph drew "Resume is not wired on this surface yet." — the
+ * `debugSurface`/`attachments` outage again, on the one button a user reaches
+ * for after their work died. Every `EntityDetailPanel` host spreads this, and
+ * `panel-host-wiring.test.ts` refuses a mount that does not.
+ *
+ * A host whose primaries cannot perform (no seam — `forEntity` answers
+ * `undefined`) gets nothing, so the canvas renders its honest refusals rather
+ * than buttons that would throw.
+ */
+export function panelSessionControlsFor(
+  primaries: Pick<PanelPrimaries, 'forEntity' | 'resume' | 'resumingId' | 'sessionVerb'>,
+  entityId: string,
+): Pick<DetailPanelProps, 'onResumeSession' | 'resumingSession' | 'onMarkSessionExited' | 'onSessionVerb'> {
+  if (!primaries.forEntity(entityId)) return {};
+  return {
+    onResumeSession: () => primaries.resume(entityId),
+    resumingSession: primaries.resumingId === entityId,
+    /* Spec D1 §5.6 "Mark lost": the ghost reaper, now, for this session. */
+    onMarkSessionExited: () => primaries.sessionVerb('mark-lost', entityId),
+    onSessionVerb: (ref) => primaries.sessionVerb(ref, entityId),
+  };
 }
 
 /**
