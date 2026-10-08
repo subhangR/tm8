@@ -3,6 +3,8 @@ import type { MapModel, MapRobot, MapScope, MapType } from '../story/game/map-mo
 import { workerHome } from '../story/game/maps/worker-motion';
 import { applyMapEvent, sessionLiveness, type GameMapEvent, type GameTaskEvent } from './live-map-events';
 import type { GameMapEvents, GameMapLoader, GameMapResult } from './types';
+import type { GameMailboxReader } from '../data/game-mailboxes';
+import { createLiveMailboxController } from './live-map-mailboxes';
 
 export interface MapUpdateEffect { id: number; count: number; combined: boolean; entityIds: string[]; taskEvents: GameTaskEvent[] }
 export interface LiveMapSnapshot {
@@ -12,6 +14,7 @@ interface Options {
   spaceId: string; scope: MapScope; type: MapType; loadMap: GameMapLoader; events?: GameMapEvents;
   previous?: MapModel; onSnapshot(snapshot: LiveMapSnapshot): void; onError(error: unknown): void;
   now?: () => number;
+  mailboxes?: GameMailboxReader;
 }
 /** One controller belongs to one navigation epoch. Dispose aborts reads and every queued callback. */
 export function createLiveMapController(options: Options) {
@@ -36,6 +39,10 @@ export function createLiveMapController(options: Options) {
   const touched = new Set<string>();
   let taskEvents: GameTaskEvent[] = [];
   const subscriptions: (() => void)[] = [];
+  const mailboxes = options.mailboxes ? createLiveMailboxController({ spaceId, reader: options.mailboxes, events,
+    current: () => snapshot?.result.input ?? null,
+    update: input => { if (closed || !snapshot) return; snapshot = { ...snapshot, result: { ...snapshot.result, input } }; dirty = true; schedulePublish(); },
+  }) : undefined;
   const scheduleLifecycle = () => {
     clearTimeout(lifecycleTimer); lifecycleTimer = undefined;
     const deadline = snapshot?.model.nextLifecycleAt;
@@ -66,6 +73,7 @@ export function createLiveMapController(options: Options) {
     snapshot = { ...snapshot, departures: [...departing.values()].filter(row => row.until > time).map(row => row.robot) };
     scheduleLifecycle();
     options.onSnapshot(snapshot);
+    mailboxes?.sync();
   };
   const schedulePublish = () => { if (!closed && publishTimer === undefined) publishTimer = setTimeout(publish, 80); };
   const expireDepartures = () => {
@@ -122,10 +130,14 @@ export function createLiveMapController(options: Options) {
       const result = { ...loaded, input: { ...loaded.input, entities: loaded.input.entities.map(row => sessionLiveness(row, events)) } };
       if (result.input.scope && (result.input.scope.kind !== scope.kind || result.input.scope.id !== scope.id)) throw new Error('The map data does not match the selected scope.');
       const model = buildMapModel(result.input, { scope, type, previous, now: now() });
+      // A scoped read replaces the visual handoff. Pending live facts must not be
+      // delivered alongside a read snapshot that may predate them.
+      clearTimeout(publishTimer); publishTimer = undefined;
+      effectTimes = []; touched.clear(); taskEvents = [];
       model.robots.forEach(robot => lastWorkers.set(robot.id, { robot, at: now() }));
       previous = model;
       const queued = replay ?? []; replay = null;
-      snapshot = { result, model, previousModel: null, departures: [], effect: snapshot?.effect ?? null, error: null };
+      snapshot = { result, model, previousModel: null, departures: [], effect: null, error: null };
       dirty = false; additions = 0;
       const loadedIds = new Set(result.input.entities.map(row => row.id));
       const ambiguous = (event: GameMapEvent) => {
@@ -164,11 +176,13 @@ export function createLiveMapController(options: Options) {
           snapshot = { ...snapshot, result: { ...snapshot.result, input } }; dirty = true; schedulePublish();
         }));
     }
+    mailboxes?.attach();
     void refresh();
   };
   const dispose = () => {
     if (closed) return;
     closed = true; request++; abort?.abort(); replay = null;
+    mailboxes?.dispose();
     clearTimeout(refreshTimer); clearTimeout(publishTimer); clearTimeout(departureTimer); clearTimeout(lifecycleTimer);
     subscriptions.splice(0).forEach(unsubscribe => unsubscribe());
   };

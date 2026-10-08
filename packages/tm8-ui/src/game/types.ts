@@ -1,5 +1,6 @@
 import type { MapInput, MapScope, MapType } from '../story/game/map-model';
 import type { Seam } from '../data/seam';
+import type { GameMailboxReader } from '../data/game-mailboxes';
 
 /** The host already owns the authorized space socket and its liveness cadence. */
 export type GameMapEvents = Pick<Seam, 'onEvent' | 'onResync' | 'liveness'>;
@@ -15,6 +16,7 @@ export interface GameModeProps {
   spaceTitle?: string;
   loadMap: GameMapLoader;
   events?: GameMapEvents;
+  mailboxes?: GameMailboxReader;
   persistence?: GamePersistencePort;
   /** Host aborts this when the authenticated member, space or server changes. */
   identitySignal?: AbortSignal;
