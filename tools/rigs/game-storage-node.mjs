@@ -64,7 +64,7 @@ export async function startServer() {
 }
 
 export async function startUi() {
-  const child = await launch('bun', ['run', 'dev', '--', '--port', String(uiPort)], isolatedEnv({
+  const child = await launch('bun', ['run', 'dev', '--', '--port', String(uiPort), '--config', 'e2e/game-storage-vite.config.ts'], isolatedEnv({
     TM8_SERVER_ORIGIN: origin,
   }), 'vite', resolve(repoRoot, 'packages/tm8-ui'));
   try { await waitReady(`http://127.0.0.1:${uiPort}/e2e/game-storage-harness.html`, child); return child; }
