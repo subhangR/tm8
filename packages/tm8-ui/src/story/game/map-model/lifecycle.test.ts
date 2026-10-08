@@ -104,6 +104,26 @@ describe.each(scopes)('Taskland real transitions at $kind scope', scope => {
     const shipped = build(edit(input, 'child', { status: 'done' }), grown);
     expect(point(shipped, 'neighbour')).toEqual(point(before, 'neighbour'));
   });
+  it.each(['root', 'nested'])('replaces expired %s ancestor rubble with a neutral yard anchor until its last descendant leaves', location => {
+    let input = snapshot(scope, [task('outer'), task('cancelled', { parentId: location === 'nested' ? 'outer' : null, status: 'working' }),
+      task('child', { parentId: 'cancelled' }), task('grandchild', { parentId: 'child' }), task('neighbour')]);
+    const before = build(input);
+    input = edit(input, 'cancelled', { status: 'cancelled', cancelledAt: stamp });
+    const rubble = build(input, before, at + RUBBLE_TTL_MS - 1);
+    expect(place(rubble, 'cancelled').constructionStage).toBe('rubble');
+    const cleared = build(input, rubble, at + RUBBLE_TTL_MS);
+    expect(place(cleared, 'cancelled')).toMatchObject({ role: 'hierarchy-marker', constructionStage: 'foundation',
+      assetKey: 'task.hierarchy-marker', progress: null, rubbleExpiresAt: null, rubbleRemovalNotAfter: null });
+    for (const id of ['outer', 'cancelled', 'child', 'grandchild', 'neighbour']) expect(point(cleared, id)).toEqual(point(rubble, id));
+    expect(place(cleared, 'child').parentId).toBe('cancelled');
+    expect(place(build(edit(input, 'cancelled', { cancelledAt: null }), cleared, at + RUBBLE_TTL_MS + 1), 'cancelled').role).toBe('hierarchy-marker');
+    expect(cleared.nextLifecycleAt).toBeNull();
+    expect(buildMapModel(input, { type: 'town', scope }).places).toEqual([]);
+    const lastLeaves = edit(edit(input, 'child', { status: 'done' }), 'grandchild', { status: 'done' });
+    const done = build(lastLeaves, cleared, at + RUBBLE_TTL_MS + 1);
+    expect(done.places.some(p => p.id === 'cancelled')).toBe(false);
+    expect(point(done, 'neighbour')).toEqual(point(before, 'neighbour'));
+  });
 });
 
 describe('construction fraction thresholds and worker lifecycle', () => {
