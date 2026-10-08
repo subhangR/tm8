@@ -166,7 +166,9 @@ fi
 SCRATCH_URL="${ADMIN_URL%/*}/$SCRATCH_DB"
 for path in "${MIGRATIONS[@]}"; do
   note "  apply $(basename "$path")"
-  if ! psql "$SCRATCH_URL" -v ON_ERROR_STOP=1 -q -f "$path"; then
+  # Match db/migrate.mjs: lock-based migrations and their observations must
+  # execute in a single transaction, with SET LOCAL effective throughout.
+  if ! psql "$SCRATCH_URL" -v ON_ERROR_STOP=1 -1 -q -f "$path"; then
     err "migration failed: $path"
     FAILED=1
     break

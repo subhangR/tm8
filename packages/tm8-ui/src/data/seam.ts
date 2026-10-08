@@ -1,4 +1,5 @@
 import type { FormsPendingForSessionsResult } from '@tm8/contract';
+import type { TaskCancellationObservations } from '@tm8/contract';
 import type { SkillPort } from '../skills/port';
 import type { ManagedPort } from '../managed/port';
 import type { JevPort } from '../jev/port';
@@ -762,6 +763,8 @@ export interface Seam {
   counts(spaceId: SpaceId): Promise<SpaceKindCounts>;
   /** Lazy viewer mailbox counts. Optional for older backends and fixture seams. */
   unreadCounts?(spaceId: SpaceId): Promise<SpaceUnreadCounts>;
+  /** Bounded proven legacy facts; missing or unavailable facts remain unknown. */
+  taskCancellationObservations?(spaceId: SpaceId, taskIds: readonly string[]): Promise<TaskCancellationObservations>;
   /** Same-client successful mailbox read cursor writes; does not imply cross-client events. */
   onReadMark?(listener: (anchorId: EntityId) => void): () => void;
   /** Full graph hydration; durable entity/edge events keep this lens current. */

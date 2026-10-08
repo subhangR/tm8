@@ -2860,6 +2860,11 @@ export function createFixtureSeam(): FixtureSeam {
       }
       return counts;
     },
+    async taskCancellationObservations(spaceId) {
+      if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+      // The fixture carries no durable migration observations. Missing is unknown.
+      return { schemaVersion: 'tm8.task-cancellation-observations.v1', spaceId, complete: true, facts: [] };
+    },
     /** C-4: the dataset ships no menu row — resolve null, UI uses its default. */
     async menu(_spaceId): Promise<MenuConfig | null> {
       return savedMenu ? clone(savedMenu) : null;

@@ -60,13 +60,22 @@ async function viewer<T>(claims: DbClaims, fn: (q: Querier) => Promise<T>): Prom
   });
 }
 
-async function newTask(client: PoolClient, targetSpace: string, actor: string, status = 'cancelled', visibility = 'space'): Promise<string> {
+async function newTask(client: PoolClient, targetSpace: string, actor: string, status = 'cancelled', visibility = 'space', suppliedStamp: string | null = null): Promise<string> {
   const id = (await client.query<{ id: string }>('select internal.new_id() id')).rows[0]!.id;
   await client.query(
     `insert into public.entities(id,space_id,kind,position,created_by,visibility) values ($1,$2,'task',0,$3,$4)`,
     [id, targetSpace, actor, visibility],
   );
-  await client.query(`insert into public.tasks(entity_id,title,work_status) values ($1,'Secret task title',$2)`, [id, status]);
+  const hasClock = (await client.query<{ found: boolean }>(
+    `select exists(select 1 from information_schema.columns where table_schema='public'
+      and table_name='tasks' and column_name='status_changed_at') found`,
+  )).rows[0]!.found;
+  if (hasClock) {
+    await client.query(`insert into public.tasks(entity_id,title,work_status,status_changed_at)
+      values ($1,'Secret task title',$2,$3)`, [id, status, suppliedStamp]);
+  } else {
+    await client.query(`insert into public.tasks(entity_id,title,work_status) values ($1,'Secret task title',$2)`, [id, status]);
+  }
   return id;
 }
 
@@ -236,13 +245,54 @@ describe('317 cancellation observation proof on real PostgreSQL', () => {
     await owner(async (client) => {
       await client.query(`set local tm8.bulk_load='on'`);
       unknown = await newTask(client, spaceId, memberId);
-      historical = await newTask(client, spaceId, memberId);
-      await client.query(`update public.tasks set status_changed_at='2000-01-01T00:00:00Z' where entity_id=$1`, [historical]);
+      historical = await newTask(client, spaceId, memberId, 'cancelled', 'space', '2000-01-01T00:00:00Z');
     });
     expect((await db.query<{ stamp: Date | null }>('select status_changed_at stamp from public.tasks where entity_id=$1', [unknown]))[0]!.stamp).toBeNull();
     expect((await facts([unknown, historical])).facts).toEqual([]);
+    expect((await db.query<{ stamp: Date }>('select status_changed_at stamp from public.tasks where entity_id=$1', [historical]))[0]!.stamp.toISOString()).toBe('2000-01-01T00:00:00.000Z');
     await owner((client) => client.query(`update public.tasks set work_status='cancelled' where entity_id=$1`, [unknown]));
     expect((await db.query<{ stamp: Date | null }>('select status_changed_at stamp from public.tasks where entity_id=$1', [unknown]))[0]!.stamp).toBeNull();
+  });
+
+  it('ignores fabricated INSERT/transition stamps and denies the bulk guard to authenticated application paths', async () => {
+    let ordinary = ''; let authenticated = '';
+    await owner(async (client) => {
+      ordinary = await newTask(client, spaceId, memberId, 'open', 'space', '1900-01-01T00:00:00Z');
+      await client.query(`set local tm8.bulk_load='on'`);
+      await client.query(`select set_config('tm8.identity_id',$1,true)`, [VIEWER]);
+      authenticated = await newTask(client, spaceId, memberId, 'cancelled', 'space', '1900-01-01T00:00:00Z');
+    });
+    for (const id of [ordinary, authenticated]) {
+      const stamp = (await db.query<{ stamp: Date }>('select status_changed_at stamp from public.tasks where entity_id=$1', [id]))[0]!.stamp;
+      expect(stamp.getTime()).toBeGreaterThanOrEqual(Date.parse(observed));
+    }
+    await owner((client) => client.query(`update public.tasks set work_status='cancelled',status_changed_at='1900-01-01T00:00:00Z' where entity_id=$1`, [ordinary]));
+    const final = (await db.query<{ stamp: Date }>('select status_changed_at stamp from public.tasks where entity_id=$1', [ordinary]))[0]!.stamp;
+    expect(final.getTime()).toBeGreaterThanOrEqual(Date.parse(observed));
+  });
+
+  it('an app role without identity cannot use bulk mode through an owner SECURITY DEFINER insert', async () => {
+    await owner((client) => client.query(`
+      create function internal.test_cancellation_insert()
+      returns uuid language plpgsql security definer set search_path=public,internal,pg_temp as $fn$
+      declare id uuid := internal.new_id(); begin
+        insert into public.entities(id,space_id,kind,position,created_by)
+          values(id,'${spaceId}','task',0,'${memberId}');
+        insert into public.tasks(entity_id,title,work_status,status_changed_at)
+          values(id,'bulk guard probe','cancelled','1900-01-01T00:00:00Z');
+        return id;
+      end $fn$;
+      grant execute on function internal.test_cancellation_insert() to tm8_app;
+    `));
+    const id = await db.transaction(async (client) => {
+      await client.query('set local role tm8_app');
+      await client.query(`set local tm8.bulk_load='on'`);
+      await client.query(`select set_config('tm8.identity_id','',true)`);
+      return (await client.query<{ id: string }>('select internal.test_cancellation_insert() id')).rows[0]!.id;
+    });
+    const stamp = (await db.query<{ stamp: Date }>('select status_changed_at stamp from public.tasks where entity_id=$1', [id]))[0]!.stamp;
+    expect(stamp.getTime()).toBeGreaterThanOrEqual(Date.parse(observed));
+    await owner((client) => client.query('drop function internal.test_cancellation_insert()'));
   });
 
   it('reapplies entity RLS and space scope, and exposes no titles or reasons for missing ids', async () => {
