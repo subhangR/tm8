@@ -2,11 +2,12 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
-import { mkdir, open, mkdtemp } from 'node:fs/promises';
+import { mkdir, open, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:net';
 
 export const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const require = createRequire(resolve(repoRoot, 'packages/server/package.json'));
@@ -19,7 +20,7 @@ export function isolatedEnv(extra = {}) {
 }
 
 export async function stopChild(child) {
-  if (!child || child.exitCode !== null) return;
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
   const exited = once(child, 'exit');
   child.kill('SIGTERM');
   const timeout = setTimeout(() => child.kill('SIGKILL'), 5000);
@@ -43,6 +44,12 @@ async function ready(url, child) {
   throw new Error(`Owned listener did not become ready: ${url}`);
 }
 
+async function assertFree(port) {
+  const probe = createServer();
+  await new Promise((resolve, reject) => { probe.once('error', reject); probe.listen(port, '127.0.0.1', resolve); });
+  await new Promise(resolve => probe.close(resolve));
+}
+
 /** Refuses ordinary/prod ports and creates its own DB, never resets an existing DB. */
 export async function startTasklandNode() {
   const raw = process.env.TASKLAND_TEST_ADMIN_URL;
@@ -57,36 +64,57 @@ export async function startTasklandNode() {
   if (!Number.isInteger(apiPort) || !Number.isInteger(uiPort) || apiPort === uiPort || Math.min(apiPort, uiPort) < 1024) {
     throw new Error('Independent unprivileged API and Vite ports required');
   }
+  await assertFree(apiPort);
+  await assertFree(uiPort);
   const runRoot = await mkdtemp(resolve(tmpdir(), 'tm8-taskland-run-'));
   const databaseName = `tm8_taskland_${randomUUID().replaceAll('-', '')}`;
   const dbUrl = new URL(adminUrl); dbUrl.pathname = `/${databaseName}`;
   const admin = new Pool({ connectionString: adminUrl.href, max: 1 });
-  let api, ui, pool, created = false, closed = false;
+  let api, ui, uiBuild, migration, pool, created = false, closed = false;
   const origin = `http://127.0.0.1:${apiPort}`;
   const uiOrigin = `http://127.0.0.1:${uiPort}`;
   const close = async () => {
     if (closed) return; closed = true;
+    process.removeListener('SIGTERM', interrupted);
+    process.removeListener('SIGINT', interrupted);
+    await stopChild(migration);
+    await stopChild(uiBuild);
     await stopChild(ui);
     await stopChild(api);
     await pool?.end();
     if (created) await admin.query(`drop database ${databaseName} with (force)`);
     await admin.end();
   };
+  const interrupted = () => { void close().finally(() => process.exit(130)); };
+  process.once('SIGTERM', interrupted);
+  process.once('SIGINT', interrupted);
   try {
     await admin.query(`create database ${databaseName}`); created = true;
-    const migration = await launch('node', ['db/migrate.mjs', 'up'], isolatedEnv({ TM8_DATABASE_URL: dbUrl.href }), resolve(runRoot, 'migration.log'));
+    migration = await launch('node', ['db/migrate.mjs', 'up'], isolatedEnv({ TM8_DATABASE_URL: dbUrl.href }), resolve(runRoot, 'migration.log'));
     const [code] = await once(migration, 'exit');
     if (code !== 0) throw new Error(`Official migrations failed; inspect ${runRoot}/migration.log`);
     pool = new Pool({ connectionString: dbUrl.href, max: 4 });
     await mkdir(resolve(runRoot, 'server-data'));
+    const bin = resolve(runRoot, 'bin');
+    await mkdir(bin);
+    // Production Claude launch/resume argv and server-issued native id, with a
+    // synthetic local executable replacing only the provider process. No model,
+    // provider credentials or claims about a real provider conversation.
+    await writeFile(resolve(bin, 'claude'), `#!${process.execPath}\n` +
+      `if (process.argv.includes('--version')) { console.log('2.0.0 (synthetic Taskland provider)'); process.exit(0); }\n` +
+      `await import(${JSON.stringify(pathToFileURL(resolve(repoRoot, 'packages/execution/harness/echo-agent.mjs')).href)});\n`, { mode: 0o700 });
     api = await launch('node', ['--enable-source-maps', 'packages/server/dist/index.js'], isolatedEnv({
       TM8_DATABASE_URL: dbUrl.href, TM8_DATA_DIR: resolve(runRoot, 'server-data'),
       TM8_BIND: '127.0.0.1', TM8_PORT: String(apiPort), TM8_PREVIEW_PORT: '0',
-      TM8_AGENT_CMD: 'echo-agent', TM8_ENV: 'dev', TM8_LAUNCH_BOOTSTRAP: '0',
+      PATH: `${bin}:${process.env.PATH ?? ''}`, TM8_ENV: 'dev', TM8_LAUNCH_BOOTSTRAP: '0',
       TM8_ALLOWED_ORIGINS: `${origin},${uiOrigin}`,
     }), resolve(runRoot, 'server.log'));
     await ready(`${origin}/health`, api);
-    ui = await launch('node', ['node_modules/vite/bin/vite.js', '--config', 'e2e/taskland-server.vite.config.ts', '--port', String(uiPort)],
+    uiBuild = await launch('node', ['node_modules/vite/bin/vite.js', 'build', '--config', 'e2e/taskland-server.vite.config.ts'],
+      isolatedEnv({ TM8_SERVER_ORIGIN: origin }), resolve(runRoot, 'harness-build.log'), resolve(repoRoot, 'packages/tm8-ui'));
+    const [built] = await once(uiBuild, 'exit');
+    if (built !== 0) throw new Error(`Immutable harness build failed; inspect ${runRoot}/harness-build.log`);
+    ui = await launch('node', ['node_modules/vite/bin/vite.js', 'preview', '--config', 'e2e/taskland-server.vite.config.ts', '--port', String(uiPort)],
       isolatedEnv({ TM8_SERVER_ORIGIN: origin }), resolve(runRoot, 'vite.log'), resolve(repoRoot, 'packages/tm8-ui'));
     await ready(`${uiOrigin}/e2e/taskland-server-harness.html`, ui);
     const request = async (path, body, { token, method = body === undefined ? 'GET' : 'POST' } = {}) => {

@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:1e680a9c6bd8350b3f05ff3f34b3f59bfc7c5d60dfb6803583f5efc06172d95d",
+  "catalogDigest": "sha256:39ac5bb04bc28ff3c810b445050cbafe6101470751b6ef3fe1d54a90f81dbaed",
   "catalog": {
-    "total": 371,
-    "v1": 369,
+    "total": 372,
+    "v1": 370,
     "reserved": 2,
-    "http": 369,
+    "http": 370,
     "ws": 1,
-    "registerableV1Http": 367,
+    "registerableV1Http": 368,
     "methods": {
-      "GET": 120,
+      "GET": 121,
       "POST": 180,
       "PATCH": 21,
       "DELETE": 24,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 126,
+      "read": 127,
       "command": 243,
       "stream": 2
     },
-    "uniqueNames": 371,
-    "uniqueBindings": 370
+    "uniqueNames": 372,
+    "uniqueBindings": 371
   },
   "reservedOperations": [
     "search.query",
@@ -568,6 +568,13 @@
         "operation": "spaces.navigation",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/navigation",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.unreadCounts",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/unread-counts",
         "status": "registered",
         "source": "server-router"
       },
@@ -3001,7 +3008,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 339
+    "unimplementedV1Http": 340
   },
   "schemas": {
     "additive": {
@@ -4036,6 +4043,23 @@
         "intentTags": [
           "spaces",
           "navigation"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.unreadCounts",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.unreadCounts",
+        "intentTags": [
+          "spaces",
+          "unread",
+          "counts"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

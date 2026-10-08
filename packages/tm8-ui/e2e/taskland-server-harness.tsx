@@ -1,5 +1,6 @@
 /** Real read/event ports and production GameMode; no fixture DTO substitution. */
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { _roots } from '@react-three/fiber';
 import { useAssetReport } from '../src/story/game/maps/MapAsset';
 import { Vector3 } from 'three';
@@ -62,7 +63,8 @@ async function initialize(value: typeof config) {
   await seam.openSpace(config.spaceId);
 }
 
-function mount(scope: MapScope, type: MapType, memory?: { position: { x: number; z: number }; camera: MapCameraState }) {
+async function mount(scope: MapScope, type: MapType, memory?: { position: { x: number; z: number }; camera: MapCameraState }, durable = false) {
+  flushSync(() => root.render(null));
   const save = freshGameSave(config.spaceId, config.memberId);
   const spaceHub = { scope: { kind: 'space' as const, id: config.spaceId }, type: 'hub' as const };
   const storyHub = { scope, type: 'hub' as const };
@@ -70,31 +72,50 @@ function mount(scope: MapScope, type: MapType, memory?: { position: { x: number;
   save.stack = scope.kind === 'story' ? type === 'hub' ? [spaceHub] : [spaceHub, storyHub] : type === 'hub' ? [] : [spaceHub];
   if (memory) save.maps[mapKey(save.current)] = memory;
   localStorage.setItem(gameSaveKey(config.spaceId, config.memberId), JSON.stringify(save));
+  if (durable) {
+    const port = seam.game;
+    if (!port) throw new Error('Durable Game port unavailable');
+    await port.prepareMigration?.(config.spaceId, save);
+    const view = await port.load(config.spaceId);
+    await port.save(config.spaceId, save, view.revision);
+  }
+  renderGame(durable);
+}
+
+/** Starts the production hydration path with no local navigation fallback. */
+function resume() {
+  localStorage.removeItem(gameSaveKey(config.spaceId, config.memberId));
+  renderGame(true);
+}
+
+function renderGame(durable: boolean) {
   inspected = null;
+  const observingModels = new Map<string, MapModel>();
   const observingLoader: typeof loader = async (scope, signal, type = 'hub') => {
     const result = await loader(scope, signal, type);
     const key = mapKey({ scope, type });
-    models.set(key, buildMapModel(result.input, { scope, type, previous: models.get(key) }));
+    const model = buildMapModel(result.input, { scope, type, previous: observingModels.get(key) });
+    observingModels.set(key, model); models.set(key, model);
     loadCount++;
     return result;
   };
   root.render(<div className="cv2-root" style={{ height: '100%', zoom: 1 }}>
     <AssetEvidence/>
     <GameMode key={++mounting} spaceId={config.spaceId} memberId={config.memberId} spaceTitle="Synthetic Taskland world"
-      loadMap={observingLoader} onInspect={id => { inspected = id; }}/>
+      loadMap={observingLoader} events={seam} {...(durable ? { persistence: seam.game } : {})} onInspect={id => { inspected = id; }}/>
   </div>);
 }
 
 declare global {
   interface Window { tasklandServer: {
-    initialize: typeof initialize; project: typeof project; mount: typeof mount;
+    initialize: typeof initialize; project: typeof project; mount: typeof mount; resume: typeof resume;
     current: (scope: MapScope, type: MapType) => ReturnType<typeof record> | null;
     scene: typeof scene;
     state: () => { inspected: string | null; loadCount: number; save: unknown };
   } }
 }
 window.tasklandServer = {
-  initialize, project, mount,
+  initialize, project, mount, resume,
   scene,
   current: (scope, type) => { const model = models.get(mapKey({ scope, type })); return model ? record(model) : null; },
   state: () => ({ inspected, loadCount, save: JSON.parse(localStorage.getItem(gameSaveKey(config.spaceId, config.memberId)) ?? 'null') }),

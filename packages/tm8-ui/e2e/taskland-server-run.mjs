@@ -15,7 +15,9 @@ await mkdir(output, { recursive: true });
 const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
 const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: repoRoot, encoding: 'utf8' }).trim();
 const evidence = { schema: 'tm8.taskland-server-evidence.v1', head, dirty: !!dirty, syntheticOnly: true,
-  gpuProof: 'Software WebGL browser acceptance; this is not native GPU evidence', checks: [], snapshots: [], screenshots: [], limitations: [] };
+  gpuProof: 'Software WebGL browser acceptance; this is not native GPU evidence', checks: [], snapshots: [], screenshots: [], browserErrors: [],
+  limitations: ['Historical cancellations without an authoritative timestamp retain an unknown expiry warning',
+    'The local echo provider verifies tm8 runtime lifecycle, not a provider conversation'] };
 let node, browser;
 const started = Date.now();
 async function check(name, fn) {
@@ -28,9 +30,9 @@ try {
   console.log(`Owned fixture ready: ${node.databaseName}; logs ${node.runRoot}`);
   const f = await seedTasklandFixture(node);
   const ids = Object.fromEntries(Object.entries(f.tasks).map(([name, row]) => [name, row.id]));
-  browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1 });
-  page.on('pageerror', error => console.error(`Browser error: ${error.message}`));
+  browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--no-zygote', '--single-process', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+  page.on('pageerror', error => { evidence.browserErrors.push(error.message); console.error(`Browser error: ${error.message}`); });
   await page.goto(`${node.uiOrigin}/e2e/taskland-server-harness.html`);
   await page.waitForFunction(() => !!window.tasklandServer);
   await page.evaluate(config => window.tasklandServer.initialize(config), { spaceId: f.spaceId, storyId: f.storyId, memberId: f.memberId });
@@ -38,6 +40,10 @@ try {
   const project = (scope, type = 'taskland', now, cold = false) => page.evaluate(args => window.tasklandServer.project(...args), [scope, type, now, cold]);
   const place = (model, name) => model.places.find(row => row.entityId === ids[name]);
   const coordinate = row => row && [row.x, row.z];
+  const closeNumbers = (actual, expected, note) => {
+    assert.equal(actual.length, expected.length, note);
+    actual.forEach((value, index) => assert.ok(Math.abs(value - expected[index]) < 1e-7, `${note}: ${value} vs ${expected[index]}`));
+  };
   const snapshots = async (label, type = 'taskland', now, cold = false) => {
     const models = await Promise.all(scopes.map(scope => project(scope, type, now, cold)));
     evidence.snapshots.push({ label, models: models.map(model => ({
@@ -89,9 +95,9 @@ try {
       const rootMoved = await snapshots(`root-${status}`);
       for (let index = 0; index < before.length; index++) {
         assert.deepEqual(coordinate(place(rootMoved[index], 'neighbour')), coordinate(place(before[index], 'neighbour')));
-        assert.deepEqual([place(rootMoved[index], 'branch').x - place(rootMoved[index], 'tree').x,
+        closeNumbers([place(rootMoved[index], 'branch').x - place(rootMoved[index], 'tree').x,
           place(rootMoved[index], 'branch').z - place(rootMoved[index], 'tree').z],
-        [place(before[index], 'branch').x - place(before[index], 'tree').x, place(before[index], 'branch').z - place(before[index], 'tree').z]);
+        [place(before[index], 'branch').x - place(before[index], 'tree').x, place(before[index], 'branch').z - place(before[index], 'tree').z], 'root compound offset');
       }
       await mutateEntity(node, ids.branch, 'work', { status });
       const childMoved = await snapshots(`child-${status}`);
@@ -171,6 +177,36 @@ try {
     models = await snapshots('last-child-shipped');
     for (const model of models) assert.equal(place(model, 'shipRoot'), undefined);
   });
+  await check('Human Town placements survive done, reopen and reshipping unchanged', async () => {
+    const saved = [];
+    for (let index = 0; index < scopes.length; index++) {
+      const identity = await node.request(`/v2/spaces/${f.spaceId}/maps/open`, { scope: scopes[index], type: 'town', clientMutationId: randomUUID() });
+      await node.request(`/v2/actions?contextEntityId=${identity.id}&schema=v2&limit=100`);
+      await node.request(`/v2/maps/${identity.id}/placements`, { itemId: randomUUID(), entityId: ids.child, kind: 'ref',
+        x: 40 + index * 10, z: 20 + index * 10, rotation: 0, spec: {}, expectedVersion: 0, clientMutationId: randomUUID() }, { method: 'PUT' });
+      const context = await node.request(`/v2/maps/${identity.id}`);
+      const row = context.placements.find(row => row.entityId === ids.child);
+      assert.equal(row.layer, 'human');
+      assert.equal(row.byActor, f.memberId);
+      saved.push({ mapId: identity.id, row });
+    }
+    let towns = await snapshots('human-town-placement', 'town', undefined, true);
+    for (let index = 0; index < towns.length; index++) {
+      assert.deepEqual(coordinate(place(towns[index], 'child')), [saved[index].row.x, saved[index].row.z]);
+      assert.equal(towns[index].shippingYard.waitingIds.includes(ids.child), false);
+      assert.ok(towns[index].shippingYard.waitingIds.includes(ids.shipRoot));
+    }
+    await mutateEntity(node, ids.child, 'work', { status: 'open' });
+    towns = await snapshots('reopened-town-placement-hidden', 'town', undefined, true);
+    for (let index = 0; index < towns.length; index++) {
+      assert.equal(place(towns[index], 'child'), undefined);
+      const context = await node.request(`/v2/maps/${saved[index].mapId}`);
+      assert.deepEqual(context.placements.find(row => row.entityId === ids.child), saved[index].row);
+    }
+    await mutateEntity(node, ids.child, 'complete', { completerIds: [f.memberId] });
+    towns = await snapshots('reshipped-human-placement', 'town', undefined, true);
+    for (let index = 0; index < towns.length; index++) assert.deepEqual(coordinate(place(towns[index], 'child')), [saved[index].row.x, saved[index].row.z]);
+  });
   await check('Cancellation clock uses real transition, no-op retains it, reopen clears it', async () => {
     const before = await snapshots('before-cancel');
     await mutateEntity(node, ids.cancel, 'work', { status: 'cancelled' });
@@ -198,8 +234,31 @@ try {
     assert.ok(Date.parse(nextAt) > at);
     await snapshots('recancelled-cold', 'taskland', undefined, true);
   });
+  await check('Expired cancelled ancestor becomes neutral stable yard until descendants leave', async () => {
+    const before = await snapshots('before-ancestor-cancel');
+    await mutateEntity(node, ids.tree, 'work', { status: 'cancelled' });
+    const at = Date.parse((await node.request(`/v2/entities/${ids.tree}`)).state.statusChangedAt);
+    await snapshots('ancestor-rubble');
+    const models = await snapshots('ancestor-neutral-marker', 'taskland', at + 86_400_000);
+    for (let index = 0; index < models.length; index++) {
+      assert.equal(place(models[index], 'tree').role, 'hierarchy-marker');
+      assert.equal(place(models[index], 'tree').constructionStage, 'foundation');
+      assert.deepEqual(coordinate(place(models[index], 'tree')), coordinate(place(before[index], 'tree')));
+      assert.deepEqual(coordinate(place(models[index], 'sibling')), coordinate(place(before[index], 'sibling')));
+      assert.equal(models[index].robots.some(robot => robot.taskId === ids.tree), false);
+    }
+    const towns = await snapshots('cancelled-ancestor-never-ships', 'town', at + 86_400_000, true);
+    for (const model of towns) assert.equal(place(model, 'tree'), undefined);
+  });
+  evidence.renderSkipped = process.env.TASKLAND_RENDER === '0';
+  if (!evidence.renderSkipped) {
+  let memory;
   await check('Actual production WalkingMapView canvas and projected scene ready', async () => {
-    await page.evaluate(scope => window.tasklandServer.mount(scope, 'taskland'), scopes[0]);
+    const model = await project(scopes[0], 'taskland', undefined, true);
+    const root = place(model, 'root');
+    memory = { position: { x: root.x, z: root.z }, camera: { zoom: 10,
+      position: [root.x + 20, 30, root.z + 20], target: [root.x, 0, root.z] } };
+    await page.evaluate(args => window.tasklandServer.mount(...args), [scopes[0], 'taskland', memory, true]);
     await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
     await waitForRenderedTaskland(page, () => page.evaluate(() => window.tasklandServer.scene()), { cue: 'mailbox' });
     await page.waitForFunction(() => [...document.querySelectorAll('.ms-label')].some(label => {
@@ -214,13 +273,76 @@ try {
     });
     evidence.renderedScene = await page.evaluate(() => window.tasklandServer.scene());
     evidence.visibleCues = await projectedTasklandCues(page);
-    await page.screenshot({ path: resolve(output, 'taskland-space.png') }); evidence.screenshots.push('taskland-space.png');
-    await page.evaluate(scope => window.tasklandServer.mount(scope, 'taskland'), scopes[1]);
+    await page.screenshot({ path: resolve(output, 'taskland-space.png'), timeout: 90_000 }); evidence.screenshots.push('taskland-space.png');
+  });
+  await check('Twenty real criteria events update the same scene and preserve pose and camera', async () => {
+    await page.evaluate(() => { window.tasklandEventCanvas = document.querySelector('[data-testid="walking-map"] canvas'); });
+    const before = await page.evaluate(() => window.tasklandServer.scene());
+    for (let index = 0; index < 20; index++) {
+      const done = index % 2 === 0;
+      await mutateEntity(node, ids.root, 'tick', { criterionIds: ['ac2'], done });
+      await page.waitForFunction(percent => [...document.querySelectorAll('.ms-label')].some(label =>
+        label.textContent.includes('Harbour construction') && label.textContent.includes(`${percent}%`)), done ? 75 : 50);
+      assert.equal(await page.evaluate(() => window.tasklandEventCanvas === document.querySelector('[data-testid="walking-map"] canvas')), true);
+    }
+    const after = await page.evaluate(() => window.tasklandServer.scene());
+    closeNumbers(after.player, before.player, 'player preserved across events');
+    closeNumbers(after.camera.position, before.camera.position, 'camera position preserved across events');
+    closeNumbers(after.camera.forward, before.camera.forward, 'camera direction preserved across events');
+    assert.equal(after.camera.zoom, before.camera.zoom);
+    evidence.eventPose = { before, after, events: 20 };
+  });
+  await check('Cold production hydration restores exact durable pose inside a plot footprint', async () => {
+    const expectedPlayer = [memory.position.x, 0, memory.position.z];
+    const before = await page.evaluate(() => window.tasklandServer.scene());
+    closeNumbers(before.player, expectedPlayer, 'saved footprint player');
+    closeNumbers(before.camera.position, memory.camera.position, 'saved camera');
+    const durable = await node.request(`/v2/spaces/${f.spaceId}/maps/navigation`);
+    assert.equal(durable.save.current.scope.kind, 'space');
+    assert.equal(durable.save.current.type, 'taskland');
+    await page.reload();
+    await page.waitForFunction(() => !!window.tasklandServer);
+    await page.evaluate(config => window.tasklandServer.initialize(config), { spaceId: f.spaceId, storyId: f.storyId, memberId: f.memberId });
+    await page.evaluate(() => window.tasklandServer.resume());
+    await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
+    await waitForRenderedTaskland(page, () => page.evaluate(() => window.tasklandServer.scene()), { cue: 'mailbox' });
+    const after = await page.evaluate(() => window.tasklandServer.scene());
+    closeNumbers(after.player, expectedPlayer, 'restored footprint player');
+    closeNumbers(after.camera.position, before.camera.position, 'restored camera position');
+    closeNumbers(after.camera.forward, before.camera.forward, 'restored camera direction');
+    assert.equal(after.camera.zoom, before.camera.zoom);
+    evidence.durableResume = { revision: durable.revision, before, after };
+    await page.screenshot({ path: resolve(output, 'taskland-durable-resume.png'), timeout: 90_000 }); evidence.screenshots.push('taskland-durable-resume.png');
+  });
+  await check('Actual walking, plot inspection and portal navigation remain usable', async () => {
+    const before = await page.evaluate(() => window.tasklandServer.scene().player);
+    await page.locator('[data-testid="walking-map"]').focus();
+    await page.keyboard.down('ArrowRight');
+    try { await page.waitForFunction(before => {
+      const player = window.tasklandServer.scene()?.player;
+      return player && Math.hypot(player[0] - before[0], player[2] - before[2]) > .05;
+    }, before); } finally { await page.keyboard.up('ArrowRight'); }
+    await page.locator('.walking-places summary').click();
+    await page.getByRole('button', { name: 'Inspect Harbour construction', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.tasklandServer.state().inspected), ids.root);
+    const portal = (await project(scopes[0])).portals.find(row => row.target.type === 'hub');
+    assert.ok(portal, 'Taskland must expose its hub portal');
+    await page.getByRole('button', { name: `Enter ${portal.label}`, exact: true }).click();
+    await page.waitForFunction(() => window.tasklandServer.state().save.current.type === 'hub');
+  });
+  await check('Story scope actual scene renders after durable navigation', async () => {
+    const model = await project(scopes[1], 'taskland', undefined, true);
+    const root = place(model, 'root');
+    const memory = { position: { x: root.x, z: root.z }, camera: { zoom: 10,
+      position: [root.x + 20, 30, root.z + 20], target: [root.x, 0, root.z] } };
+    await page.evaluate(args => window.tasklandServer.mount(...args), [scopes[1], 'taskland', memory]);
     await page.locator('[data-testid="walking-map"][data-renderer="webgl"] canvas').waitFor();
     await waitForRenderedTaskland(page, () => page.evaluate(() => window.tasklandServer.scene()), { cue: 'mailbox' });
     await page.waitForFunction(() => [...document.querySelectorAll('.ms-label')].some(label => label.parentElement?.style.display === 'block'));
-    await page.screenshot({ path: resolve(output, 'taskland-story.png') }); evidence.screenshots.push('taskland-story.png');
+    await page.screenshot({ path: resolve(output, 'taskland-story.png'), timeout: 90_000 }); evidence.screenshots.push('taskland-story.png');
+    assert.deepEqual(evidence.browserErrors, []);
   });
+  }
 } catch (error) {
   evidence.failure = error.message;
   console.error(error.stack);

@@ -4328,7 +4328,7 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
-  'sha256:1e680a9c6bd8350b3f05ff3f34b3f59bfc7c5d60dfb6803583f5efc06172d95d';
+  'sha256:39ac5bb04bc28ff3c810b445050cbafe6101470751b6ef3fe1d54a90f81dbaed';
 
 export const GRAMMAR_VERSION = '2';
 
