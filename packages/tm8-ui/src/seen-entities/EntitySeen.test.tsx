@@ -69,6 +69,52 @@ describe('entity-list seen markers', () => {
     await waitFor(() => expect(next.markSeen).toHaveBeenCalledTimes(1));
   });
 
+  it('preserves an unsent draft while resetting seen markers for a new member or space', async () => {
+    const markSeen = vi.fn(async () => undefined);
+    const commands = { markSeen } as unknown as Seam['commands'];
+    const refresh = vi.fn();
+    const open = vi.fn();
+    const shell = (scopeKey: string) => <EntitySeenProvider commands={commands} refreshCounts={refresh} scopeKey={scopeKey}>
+      <input aria-label="Draft" defaultValue="" />
+      <Activation open={open} />
+    </EntitySeenProvider>;
+    const view = render(shell('space:'));
+    const draft = view.getByRole('textbox', { name: 'Draft' });
+    fireEvent.change(draft, { target: { value: 'Unsent notes' } });
+    fireEvent.click(view.getByText('List row'));
+    await waitFor(() => expect(markSeen).toHaveBeenCalledTimes(1));
+
+    for (const [index, scope] of ['space:member', 'other-space:member'].entries()) {
+      view.rerender(shell(scope));
+      expect(view.getByRole('textbox', { name: 'Draft' })).toBe(draft);
+      expect((draft as HTMLInputElement).value).toBe('Unsent notes');
+      fireEvent.click(view.getByText('List row'));
+      await waitFor(() => expect(markSeen).toHaveBeenCalledTimes(index + 2));
+    }
+  });
+
+  it('ignores a previous scope’s pending completion and allows the new scope to mark the same entity', async () => {
+    const finishes: Array<() => void> = [];
+    const markSeen = vi.fn(() => new Promise<void>((resolve) => { finishes.push(resolve); }));
+    const commands = { markSeen } as unknown as Seam['commands'];
+    const refresh = vi.fn();
+    const open = vi.fn();
+    const shell = (scopeKey: string) => <EntitySeenProvider commands={commands} refreshCounts={refresh} scopeKey={scopeKey}>
+      <Activation open={open} />
+    </EntitySeenProvider>;
+    const view = render(shell('space:first-member'));
+    fireEvent.click(view.getByText('List row'));
+    await act(async () => undefined);
+    view.rerender(shell('space:second-member'));
+    fireEvent.click(view.getByText('List row'));
+    await act(async () => undefined);
+    expect(markSeen).toHaveBeenCalledTimes(2);
+    await act(async () => finishes[0]!());
+    expect(refresh).not.toHaveBeenCalled();
+    await act(async () => finishes[1]!());
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('wires the actual shared list panel, without marking rows while rendering', async () => {
     const markSeen = vi.fn(async () => undefined);
     const open = vi.fn();
