@@ -54,11 +54,24 @@ function record(model: MapModel) {
 }
 
 async function project(scope: MapScope, type: MapType, now?: number, cold = false) {
+  // Static before/after receipts use the node's current PTY live set. The app
+  // starts this cadence in useGateData; this standalone host must do so too.
+  const liveness = await seam.liveness.refresh(config.spaceId);
   const data = await loader(scope, undefined, type);
   const key = mapKey({ scope, type });
   const model = buildMapModel(data.input, { scope, type, ...(cold ? {} : { previous: models.get(key) }), ...(now === undefined ? {} : { now }) });
   models.set(key, model);
-  return { ...record(model), inputFields: data.input.entities.map(entity => ({ id: entity.id,
+  return { ...record(model), liveness,
+    claimFacts: data.input.edges.filter(edge => edge.type === 'working_on'),
+    sessionFacts: data.input.entities.filter(entity => entity.kind === 'work_session')
+    .map(({ id, live, status, processState, outcome, endedKind }) => {
+      const recorded = processState ?? status;
+      const sessionStatus = recorded === 'spawning' || recorded === 'running' || recorded === 'idle'
+        || recorded === 'exited' || recorded === 'failed' ? recorded : null;
+      return { id, live, status, processState, outcome, endedKind,
+        livenessStatus: seam.liveness.statusOf({ id, status: sessionStatus }) };
+    }),
+    inputFields: data.input.entities.map(entity => ({ id: entity.id,
     pointsEstimate: entity.pointsEstimate, acceptance: entity.acceptance,
     estimateTent: entity.estimateTent, ownProgress: entity.ownProgress, subtreeWeight: entity.subtreeWeight,
     version: entity.version, updatedAt: entity.updatedAt, cancelledAt: entity.cancelledAt })) };
@@ -68,6 +81,7 @@ async function initialize(value: typeof config) {
   config = value; loader = createGameMapLoader(seam, config.spaceId);
   mailboxes = createGameMailboxReader(seam, config.spaceId);
   await seam.openSpace(config.spaceId);
+  seam.realControls.setSessionSurfaceVisible(true);
 }
 
 async function mount(scope: MapScope, type: MapType, memory?: { position: { x: number; z: number }; camera: MapCameraState }, durable = false) {

@@ -17,6 +17,8 @@ await mkdir(output, { recursive: true });
 const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
 const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: repoRoot, encoding: 'utf8' }).trim();
 const evidence = { schema: 'tm8.taskland-server-evidence.v1', head, dirty: !!dirty, syntheticOnly: true,
+  dataSource: 'Isolated synthetic records mutated over real tm8 HTTP; production Seam, loader and model',
+  runtimeSource: 'Provider-free local echo executable under the production tm8 runtime lifecycle',
   gpuProof: 'Software WebGL browser acceptance; this is not native GPU evidence', checks: [], snapshots: [], screenshots: [], browserErrors: [],
   limitations: ['Historical cancellations without an authoritative timestamp retain an unknown expiry warning',
     'The local echo provider verifies tm8 runtime lifecycle, not a provider conversation'] };
@@ -61,7 +63,8 @@ try {
         sizeBucket: row.sizeBucket, cancelledAt: row.cancelledAt, mailbox: row.mailbox,
         subtreeWeight: row.subtreeWeight,
       })), robots: model.robots.length, roads: model.roads.length, shippingWaiting: model.shippingYard?.waitingIds?.length,
-      nextLifecycleAt: model.nextLifecycleAt, warnings: model.warnings,
+      nextLifecycleAt: model.nextLifecycleAt, warnings: model.warnings, sessionFacts: model.sessionFacts,
+      claimFacts: model.claimFacts, liveness: model.liveness,
       inputFields: model.inputFields.filter(row => Object.values(ids).includes(row.id)).map(row => ({
         name: Object.keys(ids).find(name => ids[name] === row.id), pointsEstimate: row.pointsEstimate,
         acceptance: row.acceptance, estimateTent: row.estimateTent, ownProgress: row.ownProgress,

@@ -11,7 +11,8 @@ export async function writeTasklandReport(directory, evidence) {
   await writeFile(resolve(directory, 'index.html'), `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>Synthetic Taskland acceptance</title><style>body{font:16px system-ui;color:#18251d;background:#edf2ea;margin:2rem auto;padding:0 1rem;max-width:1100px}code{overflow-wrap:anywhere}table{border-collapse:collapse;width:100%;background:white}td{padding:.6rem;border-bottom:1px solid #d0d9cb}td:first-child{font-weight:700}img{max-width:100%;height:auto}figure{margin:2rem 0}small{color:#40533e}</style>
 <h1>Synthetic Taskland acceptance: ${passed ? 'passed checks' : 'incomplete'}</h1>
-<p>Exact source head <code>${escape(evidence.head)}</code>. Synthetic records only. ${escape(evidence.gpuProof)}.</p>
+<p>Exact source head <code>${escape(evidence.head)}</code>. ${escape(evidence.dataSource)}. ${escape(evidence.runtimeSource)}.</p>
+<p>${escape(evidence.gpuProof)}. The linked frame sequence uses synthetic MapInput with the production scene.</p>
 <p>Tracked source modified: ${evidence.dirty ? 'yes' : 'no'}. Rendered checks skipped: ${evidence.renderSkipped ? 'yes' : 'no'}. Owned processes stopped: ${evidence.ownedProcessesStopped ? 'yes' : 'no'}. Owned database dropped: ${evidence.ownedDatabaseDropped ? 'yes' : 'no'}.</p>
 ${evidence.failure ? `<p><strong>Open failure:</strong> ${escape(evidence.failure)}</p>` : ''}
 <table><tbody>${checks}</tbody></table>
