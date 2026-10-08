@@ -1,11 +1,12 @@
 /** Authenticated read adapter for Game. No fixture substitution or map mutations. */
 import type { CollectionQuery, Cursor, EntitySummary, GraphEdgeView, Page } from '@tm8/contract';
-import { fromProjection, type MapEdge, type MapEntity, type MapType } from '../story/game/map-model';
+import { fromProjection, type MapEdge, type MapEntity, type MapInput, type MapType } from '../story/game/map-model';
 import type { Seam } from './seam';
+import { applyGameMailboxCounts, createGameMailboxReader } from './game-mailboxes';
 
 import type { GameMapLoader } from '../game/types';
 export type { GameMapLoader, GameMapResult } from '../game/types';
-type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness'>;
+type GameReadPort = Pick<Seam, 'query' | 'entity' | 'graph' | 'spaces' | 'liveness' | 'unreadCounts'>;
 
 const MAP_KINDS: CollectionQuery['kinds'] = [
   'story', 'task', 'work_session', 'member', 'team_member', 'skill',
@@ -66,8 +67,14 @@ function summaryOf(row: EntitySummary, seam: GameReadPort): MapEntity {
   return {
     ...mapped,
     statusCategory: row.category ?? null,
+    ...(row.state.kind === 'task' ? {
+      acceptance: { ...row.state.acceptance },
+      estimateTent: row.state.progress?.tent,
+      ownProgress: row.state.progress?.own ?? null,
+    } : {}),
     pendingAttention: row.badges.attention?.pendingCount ?? 0,
-    mailbox: { count: row.counters.messages },
+    // The read port has message totals, not a viewer-specific unread cursor.
+    mailbox: { count: row.counters.messages, basis: 'messages' },
     ...(liveness ? { live: liveness === 'live' } : {}),
   };
 }
@@ -75,12 +82,14 @@ function summaryOf(row: EntitySummary, seam: GameReadPort): MapEntity {
 function edgeOf(row: GraphEdgeView): MapEdge {
   return {
     id: row.id, type: row.type, fromId: row.sourceId, toId: row.targetId,
+    updatedAt: row.updatedAt ?? null,
     endedAt: typeof row.props.endedAt === 'string' ? row.props.endedAt : null,
     status: typeof row.props.status === 'string' ? row.props.status : null,
   };
 }
 
 export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMapLoader {
+  const readMailboxes = createGameMailboxReader(seam, spaceId);
   const query = async (shape: Omit<CollectionQuery, 'spaceId' | 'cursor' | 'limit'>, signal?: AbortSignal) => {
     const rows = await pages((cursor) => seam.query({ spaceId, ...shape, cursor, limit: PAGE_LIMIT }).then(r => r.page), signal);
     rows.forEach(row => assertSpace(row, spaceId));
@@ -151,6 +160,14 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       }
     }
 
+    // Trail nodes may contain sessions absent from StoryPage.sessions' bounded
+    // preview. Apply the same liveness authority to every admitted session.
+    for (const entity of entities.values()) if (entity.kind === 'work_session' && entity.live === undefined) {
+      const state = entity.processState ?? entity.status;
+      const recorded = state === 'spawning' || state === 'running' || state === 'idle' || state === 'exited' || state === 'failed' ? state : null;
+      entity.live = seam.liveness.statusOf({ id: entity.id, status: recorded }) === 'live';
+    }
+
     // The bounded graph contributes relations only. Cursor-paged primary rows
     // and authoritative StoryPage membership decide which entities are admitted.
     if ((!type || type === 'taskland' || type === 'town') && entities.size) {
@@ -174,10 +191,14 @@ export function createGameMapLoader(seam: GameReadPort, spaceId: string): GameMa
       }
     }
     checkCancelled(signal);
+    const input: MapInput = { scope: { ...scope }, entities: [...entities.values()], taskHierarchyComplete: scope.kind === 'space',
+      edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)), warnings };
+    const hasMailboxes = input.entities.some(entity => entity.kind === 'task' || entity.kind === 'work_session' || entity.kind === 'story');
+    const snapshot = hasMailboxes ? await readMailboxes(signal) : null;
+    checkCancelled(signal);
     return {
       title,
-      input: { scope: { ...scope }, entities: [...entities.values()],
-        edges: [...edges.values()].filter(e => entities.has(e.fromId) && entities.has(e.toId)), warnings },
+      input: hasMailboxes ? applyGameMailboxCounts(input, snapshot, spaceId) : input,
     };
   };
 }
