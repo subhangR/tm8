@@ -76,7 +76,8 @@ try {
     await expect.poll(async () => Object.values((await state()).workerFrames).some(frame => frame.taskId === 'child' && frame.visible && frame.arrived), {
       timeout: 120000, message: 'Wait for the production worker to arrive before moving its site',
     }).toBe(true);
-    await expect(page.getByText('Surveyor tent', { exact: true })).toHaveCount(1);
+    await expect(page.locator('.ms-label[data-map-cue="surveyor"]')).toHaveCount(1);
+    await expect(page.locator('.ms-label[data-map-cue="surveyor"]')).toHaveText('Surveyor tentEstimate needed · size defaults to 1');
     await action('survey view'); await capture(scope, 'surveyor-tent', 'surveyor');
     await action('survey view'); await ready();
     const beforeFamily = await state();
@@ -113,7 +114,7 @@ try {
     expect(place(await state(), 'child').status).toBe('blocked');
     await action('estimate'); await ready();
     expect(place(await state(), 'child').badges).not.toContain('estimate-missing');
-    await expect(page.getByText('Surveyor tent', { exact: true })).toHaveCount(0);
+    await expect(page.locator('.ms-label[data-map-cue="surveyor"]')).toHaveCount(0);
     await action('ship'); await midpoint(scope, 'child-shipping-cart', 'ship-out', 'child', ['child']); await settle();
     snapshot = await state();
     expect(place(snapshot, 'child')).toBeUndefined();
