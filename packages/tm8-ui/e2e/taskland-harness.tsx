@@ -37,6 +37,7 @@ function Harness() {
   const [revision, setRevision] = useState(0);
   const [stats, setStats] = useState<RenderStats | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [focusSurvey, setFocusSurvey] = useState(false);
   const models = useRef(new Map<string, MapModel>());
   const model = useMemo(() => {
     const key = `${scope.kind}:${type}`;
@@ -76,11 +77,13 @@ function Harness() {
       <select aria-label="Map" value={type} onChange={e => { setType(e.target.value as typeof type); setStats(null); setRevision(value => value + 1); }}>
         <option value="taskland">Taskland</option><option value="town">Completed Town</option>
       </select>
+      <button onClick={() => { setFocusSurvey(value => !value); setStats(null); setRevision(value => value + 1); }}>survey view</button>
       {['working','progress','review','blocked','estimate','ship','root-done','cancel','expire'].map(action =>
         <button key={action} onClick={() => change(action)}>{action}</button>)}
     </header>
     <main data-testid="taskland-scene" style={{ position: 'relative', height: 'calc(100vh - 100px)' }}>
-      <MapScene model={model} selectedEntityId={selected} onSelectEntity={setSelected} onStats={onStats} hierarchy/>
+      <MapScene model={model} selectedEntityId={selected} onSelectEntity={setSelected} onStats={onStats}
+        focus={focusSurvey ? model.places.find(p => p.entityId === 'child') : null} hierarchy/>
     </main>
     <footer style={{ padding: '4px 20px' }}>Synthetic records · imported production assets · aggregate mailbox totals · no native GPU claim</footer>
   </div>;

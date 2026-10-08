@@ -43,6 +43,8 @@ try {
     expect(snapshot.model.groups.some(g => g.depth > 0)).toBe(true);
     expect(snapshot.model.robots.some(r => r.taskId === 'child')).toBe(true);
     await expect(page.getByText('Surveyor tent', { exact: true })).toHaveCount(1);
+    await action('survey view'); await capture(scope, 'surveyor-tent', 'surveyor');
+    await action('survey view'); await ready();
     await action('working'); await ready();
     expect(place(await state(), 'child').status).toBe('working');
     await action('progress'); await capture(scope, 'construction', 'mailbox');
@@ -96,7 +98,8 @@ try {
   await writeFile(`${evidence}/index.html`, `<!doctype html><html lang="en"><meta charset="utf-8"><title>Synthetic Taskland evidence</title><style>body{font:16px system-ui;background:#101c24;color:#e8eef3;max-width:1200px;margin:30px auto}img{width:100%}figure{margin:24px 0}a{color:#a8d5fb}</style><h1>Synthetic Taskland construction evidence</h1><p>Production scene and model with synthetic in-memory records. Renderer: ${renderer.replaceAll('<','&lt;')}. Software WebGL; no native GPU or live Space proof.</p><p>Each capture waited for assets, rendered triangles and a projected world label. <a href="report.json">Aggregate assertions and frame metrics</a>.</p>${images}</html>`);
   console.log(JSON.stringify({ passed: true, renderer, scopes: 2, captures: transitions.length, evidence }));
 } catch (error) {
-  await page.screenshot({ path: `${evidence}/failure.png` });
-  await writeFile(`${evidence}/failure.json`, JSON.stringify({ error: String(error), errors, assetFailures, transitions, state: await state() }, null, 2));
+  await page.screenshot({ path: `${evidence}/failure.png` }).catch(() => {});
+  const capturedState = await state().catch(cause => ({ unavailable: String(cause) }));
+  await writeFile(`${evidence}/failure.json`, JSON.stringify({ error: String(error), errors, assetFailures, transitions, state: capturedState }, null, 2));
   throw error;
 } finally { await browser.close(); }
