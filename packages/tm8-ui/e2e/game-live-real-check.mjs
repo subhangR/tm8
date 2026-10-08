@@ -31,8 +31,7 @@ const navigateButton=async(button,input)=>{
    el.click();
   },0);
  },{spaceId:fixture.spaceId,input});
- navigationSave=await page.evaluate(()=>window.__navSave);
- expect(navigationSave).toBeTruthy();
+ await expect.poll(async()=>{navigationSave=await page.evaluate(()=>window.__navSave);return navigationSave;},{timeout:30000}).toBeTruthy();
 };
 const enter=async title=>{const details=host.locator('details.walking-places');if(await details.count())await details.evaluate(el=>el.open=true);await navigateButton(host.getByRole('button',{name:`Enter ${title}`,exact:true}),`Enter ${title}`);};
 let expectedNavigation,driver;
