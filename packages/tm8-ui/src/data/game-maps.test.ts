@@ -8,7 +8,8 @@ import type { GamePort } from '../game/port';
 const SPACE = 'space-a';
 const row = (id: string, kind = 'task', parentId: string | null = null): EntitySummary => ({
   id, kind, parentId, spaceId: SPACE, title: `Real ${id}`, category: 'in_progress',
-  state: { kind, status: 'working', progress: { percent: 40, size: 5 } },
+  state: { kind, status: 'working', acceptance: { total: 5, completed: 2 },
+    progress: { percent: 40, size: 5, own: .4, tent: false } },
   counters: { messages: 3 }, badges: { attention: { pendingCount: 2 } },
 } as unknown as EntitySummary);
 const edge = (id: string, source: EntitySummary, target: EntitySummary, props = {}): GraphEdgeView => ({
@@ -92,6 +93,38 @@ describe('real Game map reads', () => {
     expect(seam.query.mock.calls[0]?.[0].kinds).toEqual(['story']);
     expect(game.open).toHaveBeenCalledWith(SPACE, { type: 'hub', scope: { kind: 'space', id: SPACE } }, undefined);
     expect(game.context).not.toHaveBeenCalled();
+  });
+  it('projects task criteria/tent truth and status-changed cancellation evidence without treating row updates as cancellation', async () => {
+    const seam = port();
+    const current = { ...row('cancelled'), version: 8, updatedAt: '2026-10-08T12:00:00Z',
+      state: { ...row('cancelled').state, status: 'cancelled', statusChangedAt: '2026-10-08T10:00:00Z' } } as EntitySummary;
+    const legacy = { ...row('legacy'), state: { ...row('legacy').state, status: 'cancelled' } } as EntitySummary;
+    seam.query.mockResolvedValue({ page: page([current, legacy]) });
+    const { input } = await load(seam)({ kind: 'space', id: SPACE }, undefined, 'taskland');
+    expect(input.taskHierarchyComplete).toBe(true);
+    expect(input.entities[0]).toMatchObject({ acceptance: { total: 5, completed: 2 }, estimateTent: false,
+      ownProgress: .4, cancelledAt: '2026-10-08T10:00:00Z', version: 8, updatedAt: '2026-10-08T12:00:00Z', mailbox: { basis: 'messages' } });
+    expect(input.entities[1]?.cancelledAt).toBeNull();
+  });
+  it('shows a real story claim from admitted session rows, and resumes it after completion', async () => {
+    const seam = port(), root = row('root');
+    const session = { ...row('session', 'work_session'), state: { kind: 'work_session', status: 'running', outcome: 'open', endedKind: 'completed' } } as EntitySummary;
+    seam.entity.mockResolvedValue(story({ nodes: [root, session] } as unknown as Partial<StoryPage>));
+    seam.liveness.statusOf.mockReturnValue('live' as never);
+    seam.graph.mockResolvedValue({ nodes: [root, session], edges: [{ ...edge('claim', session, root), type: 'working_on', props: { status: 'working' } }], clusters: [] });
+    const scope = { kind: 'story' as const, id: 'story-a' };
+    const { input } = await load(seam)(scope, undefined, 'taskland');
+    expect(input.taskHierarchyComplete).toBe(false);
+    expect(input.entities.find(n => n.id === 'session')).toMatchObject({ processState: 'running', outcome: 'open', live: true });
+    const before = buildMapModel(input, { type: 'taskland', scope });
+    expect(before.robots).toHaveLength(1);
+    expect(before.robots[0]).toMatchObject({ id: 'robot:claim', taskId: 'root', sessionId: 'session' });
+    const completed = { ...input, entities: input.entities.map(n => n.id === 'session' ? { ...n, outcome: 'completed' } : n) };
+    expect(buildMapModel(completed, { type: 'taskland', scope, previous: before }).robots).toEqual([]);
+    expect(buildMapModel(input, { type: 'taskland', scope }).robots[0]?.id).toBe('robot:claim');
+    seam.liveness.statusOf.mockReturnValue('unknown' as never);
+    const ghost = await load(seam)(scope, undefined, 'taskland');
+    expect(buildMapModel(ghost.input, { type: 'taskland', scope }).robots).toEqual([]);
   });
   it('pages primary entities, reads one bounded graph, preserves progress/counts and admits only scoped endpoints', async () => {
     const seam = port(), a = row('a'), b = row('b'), unrelated = row('unrelated');
@@ -241,6 +274,7 @@ describe('real Game map reads', () => {
   it('includes output kinds in the town graph so produced documents become shipped places', async () => {
     const seam = port(), task = row('done-task'), doc = row('delivered-doc', 'doc');
     task.category = 'done';
+    if (task.state.kind === 'task') task.state.status = 'done';
     seam.query.mockResolvedValue({ page: page([task, doc]) });
     seam.graph.mockImplementation(async input => {
       expect((input as CollectionQuery).kinds).toEqual(expect.arrayContaining(['task', 'doc', 'artifact', 'drawing', 'file']));
