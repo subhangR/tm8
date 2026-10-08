@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const GAME_MAP_TYPES = ['hub', 'taskland', 'office', 'library', 'factory', 'town'] as const;
 export const GameMapTypeSchema = z.enum(GAME_MAP_TYPES);
-export const GameMapScopeSchema = z.object({ kind: z.enum(['space', 'story']), id: z.string().uuid() }).strict();
+export const GameMapScopeSchema = z.object({ kind: z.enum(['space', 'story']), id: z.string().uuid().transform(v => v.toLowerCase()) }).strict();
 export const GameMapSelectionSchema = z.object({ type: GameMapTypeSchema, scope: GameMapScopeSchema }).strict();
 export type GameMapSelection = z.infer<typeof GameMapSelectionSchema>;
 export function gameMapKey(map: GameMapSelection): string { return JSON.stringify([map.scope.kind, map.scope.id, map.type]); }
@@ -39,12 +39,12 @@ export const GameNavigationSaveSchema = z.object({
   }
 });
 export type GameNavigationSave = z.infer<typeof GameNavigationSaveSchema>;
-export interface GameNavigationView { spaceId: string; memberId: string; save: GameNavigationSave | null; revision: number }
+export interface GameNavigationView { spaceId: string; memberId: string; save: GameNavigationSave | null; revision: number; repairs: { routeTruncated: boolean; droppedMemories: number } }
 export interface GameMapIdentity extends GameMapSelection { id: string; spaceId: string; title: string }
 
 const command = { clientMutationId: z.string().min(1).max(200), actorId: z.string().uuid().optional(), workSessionId: z.string().uuid().optional() };
 export const MapsOpenInputSchema = GameMapSelectionSchema.extend(command);
-export const MapsNavigationSaveInputSchema = z.object({ ...command, save: GameNavigationSaveSchema, expectedRevision: z.number().int().nonnegative() }).strict();
+export const MapsNavigationSaveInputSchema = z.object({ ...command, save: GameNavigationSaveSchema, expectedRevision: z.number().int().nonnegative().safe() }).strict();
 export const MapPlacementSpecSchema = z.object({ asset: z.string().min(1).max(100).optional(), text: z.string().max(500).optional(), targetMapId: z.string().uuid().optional() }).strict();
 export const MapsPlaceInputSchema = z.object({ ...command, itemId: z.string().uuid(), entityId: z.string().uuid().optional(),
   kind: z.enum(['ref', 'decor', 'path', 'portal', 'landmark']), x: coordinate, z: coordinate,
