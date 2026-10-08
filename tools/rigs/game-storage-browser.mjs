@@ -27,10 +27,10 @@ export async function verifyBrowserDurability(f, restartServer, record) {
     return dataOf(await request(navPath, { save: state, expectedRevision: initial.revision, clientMutationId: randomUUID() }, { method: 'PUT' }), 'browser fixture save');
   };
   let context;
-  const newPage = async () => {
+  const newPage = async (motion = 'reduce') => {
     // A separate browser process also avoids Chromium single-process context reuse crashes.
     await browser?.close(); browser = await launchBrowser();
-    context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' });
+    context = await browser.newContext({ viewport: { width: 800, height: 600 }, reducedMotion: motion });
     await context.addInitScript(() => { window.__storageInitiallyEmpty = localStorage.length === 0; });
     const page = await context.newPage(); page.setDefaultTimeout(90_000);
     page.on('request', request => {
@@ -96,7 +96,15 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       await page.waitForTimeout(1_300);
       await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
       const browserSave = await local(page); currentKey = keyOf(browserSave.current);
-      await expect.poll(async () => (await nav()).save.maps[currentKey]).toEqual(browserSave.maps[currentKey]);
+      try { await expect.poll(async () => (await nav()).save.maps[currentKey], { timeout: 10_000 }).toEqual(browserSave.maps[currentKey]); }
+      catch (error) {
+        const server = await nav(), expected = browserSave.maps[currentKey], actual = server.save?.maps[currentKey];
+        console.log(JSON.stringify({ stage: 'synthetic forced-save mismatch', revision: server.revision,
+          requestedRevisions, repairs: server.repairs, expected, actual,
+          notice: await page.locator('.game-mode__notice').allTextContents(),
+          saveObservations: await page.evaluate(() => window.__storageHarness.saveObservations) }));
+        throw error;
+      }
       before = (await nav()).save;
       assert.equal(requestedRevisions[0], 0, 'healthy first visit first write expects revision zero');
       record({ name: 'healthy first GET null has no unavailable notice and first write expects revision zero', passed: true });
@@ -130,6 +138,19 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       await write(state); const fresh = await newPage(); await waitCurrent(fresh, 'taskland', 'story', f.nestedStoryId);
       await assertScene(fresh, state.maps[currentKey]);
       assert.deepEqual((await local(fresh)).maps[currentKey], state.maps[currentKey]);
+      await context.close();
+    });
+    await check('default motion restores exact scene immediately and after three idle seconds', async () => {
+      const durable = (await nav()).save;
+      const memory = durable.maps[keyOf(durable.current)];
+      assert.ok(memory?.position && memory?.camera, 'default-motion probe requires durable pose and camera');
+      const page = await newPage('no-preference');
+      assert.equal(await page.evaluate(() => window.__storageInitiallyEmpty), true);
+      await waitCurrent(page, durable.current.type, durable.current.scope.kind, durable.current.scope.id);
+      await assertScene(page, memory);
+      await page.waitForTimeout(3_000);
+      await assertScene(page, memory);
+      record({ name: 'default-motion scene observation controls', passed: true, browserMotionPreference: 'no-preference', initialExact: true, idleThreeSecondsExact: true });
       await context.close();
     });
     await check('bounds repair clamps actual player and discards the stale camera', async () => {

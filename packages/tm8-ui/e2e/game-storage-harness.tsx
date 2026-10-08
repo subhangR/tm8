@@ -2,6 +2,8 @@
 import { createRoot } from 'react-dom/client';
 import { _roots } from '@react-three/fiber';
 import { Vector3 } from 'three';
+import { GameNavigationSaveSchema } from '@tm8/contract';
+import { parseGameSave } from '../src/game/local-save';
 import GameMode from '../src/game/GameMode';
 import { createRealSeam } from '../src/data/real/seam-real';
 import { browserWebSocketFactory } from '../src/data/real/socket';
@@ -21,6 +23,26 @@ const required = (key: string) => { const value = params.get(key); if (!value) t
 const spaceId = required('space'), memberId = required('member'), storyId = required('story'), nestedStoryId = required('nested'), taskId = required('task');
 const seam = createRealSeam({ origin: location.origin, fetch: window.fetch.bind(window), webSocketFactory: browserWebSocketFactory(WebSocket),
   getAuthToken: () => (window as unknown as { __storageToken?: string }).__storageToken ?? null });
+const saveObservations: unknown[] = [];
+const persistence: typeof seam.game = { ...seam.game!, save: async (...args) => {
+  const began = Date.now();
+  const sent = args[1];
+  try {
+    const ack = await seam.game!.save(...args);
+    const checked = GameNavigationSaveSchema.safeParse(ack.save);
+    saveObservations.push({ began, ended: Date.now(), expectedRevision: args[2], sentType: sent.current.type,
+      sentMemoryCount: Object.keys(sent.maps).length, revision: ack.revision, repairs: ack.repairs,
+      identityMatch: ack.spaceId === spaceId && ack.memberId === memberId,
+      sharedValid: checked.success, issues: checked.success ? [] : checked.error.issues.map(issue => ({ code: issue.code, path: issue.path })),
+      localValid: !!parseGameSave(ack.save, spaceId, memberId) });
+    return ack;
+  } catch (error) {
+    const failure = error as { name?: string; code?: string; message?: string };
+    saveObservations.push({ began, ended: Date.now(), expectedRevision: args[2], sentType: sent.current.type,
+      failed: true, name: failure.name, code: failure.code, message: failure.message?.split('\n')[0].slice(0, 300) });
+    throw error;
+  }
+} };
 const productionLoader = createGameMapLoader(seam, spaceId);
 const models = new Map<string, MapModel>();
 const loads: { kind: string; type: string }[] = [];
@@ -35,6 +57,7 @@ const loadMap: GameMapLoader = async (scope, signal, type = 'hub') => {
 
 Object.assign(window, { __storageHarness: {
   loads,
+  saveObservations,
   model: (key: string) => { const model = models.get(key)!; return { bounds: walkingBounds(model), entrance: walkingEntrance(model),
     places: model.places.map(p => ({ entityId: p.entityId, x: p.x, z: p.z, radius: p.radius })), id: model.id }; },
   // Observe the real renderer's camera and player, independently of persisted DTOs.
@@ -57,5 +80,5 @@ Object.assign(window, { __storageHarness: {
   },
 } });
 createRoot(document.getElementById('root')!).render(<div className="cv2-root" data-theme="dark" style={{ height: '100vh' }}>
-  <GameMode spaceId={spaceId} memberId={memberId} spaceTitle="Synthetic storage world" loadMap={loadMap} persistence={seam.game} onInspect={() => {}} />
+  <GameMode spaceId={spaceId} memberId={memberId} spaceTitle="Synthetic storage world" loadMap={loadMap} persistence={persistence} onInspect={() => {}} />
 </div>);

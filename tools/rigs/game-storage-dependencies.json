@@ -2,9 +2,11 @@
   "version": 1,
   "candidate": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
   "namedBaseBranch": "tm8/game-storage-validation-base",
-  "namedBaseHead": "ef08ef1e59aa0ddb859c96653d41cca6ad59e4d3",
+  "namedBaseHead": "fee507c2905ddb26ad87e5ddfcf480fdfecff014",
   "backend": {
-    "sourceHead": "5c714f3f3bfefbb721f6c2bd1020e94bbe2b4a93",
+    "sourceHead": "7a98b7a0713c275e0a700e80716147e823a9b194",
+    "productionEquivalentHead": "5c714f3f3bfefbb721f6c2bd1020e94bbe2b4a93",
+    "testsOnlyFollowup": "7a98b7a updates exact inventory assertions; production and migration are byte-identical",
     "pullRequest": 1144,
     "migration": "315_game_maps.sql",
     "migrationSha256": "9bef87f804c7d734d92e9d461b04eb64ae085b30c846682a82f62f2667b38618"
