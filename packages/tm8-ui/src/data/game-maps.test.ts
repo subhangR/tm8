@@ -166,6 +166,20 @@ describe('real Game map reads', () => {
     expect(seam.connections).not.toHaveBeenCalled();
   });
 
+  it('warns a story about a full graph window only when it omits an admitted peer, or reaches the edge cap', async () => {
+    const seam = port();
+    seam.entity.mockResolvedValue(story());
+    const peers = [row('root'), ...Array.from({ length: 199 }, (_, index) => row(`other-${index}`))];
+    seam.graph.mockResolvedValue({ nodes: peers, edges: [], clusters: [] });
+    const readStory = () => load(seam)({ kind: 'story', id: 'story-a' }, undefined, 'taskland');
+    expect((await readStory()).input.warnings?.some(w => w.includes('read budget'))).toBe(false);
+    seam.query.mockResolvedValue({ page: page([row('missing', 'task', 'root')]) });
+    expect((await readStory()).input.warnings?.some(w => w.includes('read budget'))).toBe(true);
+    seam.query.mockResolvedValue({ page: page([]) });
+    seam.graph.mockResolvedValue({ nodes: peers, edges: Array.from({ length: 1000 }, (_, index) => edge(`edge-${index}`, peers[0]!, peers[0]!)), clusters: [] });
+    expect((await readStory()).input.warnings?.some(w => w.includes('read budget'))).toBe(true);
+  });
+
   it('includes output kinds in the town graph so produced documents become shipped places', async () => {
     const seam = port(), task = row('done-task'), doc = row('delivered-doc', 'doc');
     task.category = 'done';

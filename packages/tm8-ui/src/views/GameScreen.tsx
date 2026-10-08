@@ -7,6 +7,7 @@ import type { ControlHost, DetailReasons } from '../panels';
 import type { Notice } from '../shell';
 import { attachmentsFor } from '../files/port';
 import { AuxEntityPanel, type AuxPanelHost } from './auxPanel';
+import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import { useLaunchPort } from './useLaunchPort';
 import { useMembershipSurface } from './membershipSurface';
 import { usePanelPrimaries } from './usePanelPrimaries';
@@ -105,8 +106,10 @@ export function GameScreen({ data, memberId, loadMap, overlayOpen, reasons, serv
       </div>
       {selectedId ? (
         <aside className="game-screen__inspection" aria-label="Entity details" data-testid="game-inspection">
-          <AuxEntityPanel host={host} entityId={selectedId} onOpenEntity={setSelectedId}
-            onClose={() => setSelectedId(null)} />
+          <CatchBoundary key={selectedId} label="Game inspection">
+            <AuxEntityPanel host={host} entityId={selectedId} onOpenEntity={setSelectedId}
+              onClose={() => setSelectedId(null)} />
+          </CatchBoundary>
         </aside>
       ) : null}
       {primaries.dialog}
