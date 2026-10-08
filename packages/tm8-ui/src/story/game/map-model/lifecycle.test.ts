@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMapModel, RUBBLE_TTL_MS } from './index';
+import { buildMapModel, fromProjection, RUBBLE_TTL_MS } from './index';
 import type { MapEntity, MapInput, MapModel, MapScope } from './types';
 const at = Date.parse('2026-10-08T12:00:00Z');
 const stamp = new Date(at).toISOString();
@@ -108,6 +108,28 @@ describe.each(scopes)('Taskland real transitions at $kind scope', scope => {
 
 describe('construction fraction thresholds and worker lifecycle', () => {
   const scope = scopes[0]!;
+  it('uses last-update bounds conservatively on cold reload, without presenting them as exact dates', () => {
+    const editAt = at + 2 * 60 * 60 * 1000;
+    const input = fromProjection({ entities: [{ id: 'root', kind: 'task', status: 'cancelled', updatedAt: new Date(editAt).toISOString() }], edges: [] }, scope);
+    const before = buildMapModel(input, { type: 'taskland', scope, now: at + RUBBLE_TTL_MS });
+    expect(place(before, 'root')).toMatchObject({ cancelledAt: null, rubbleExpiresAt: null, rubbleRemovalNotAfter: editAt + RUBBLE_TTL_MS });
+    expect(before.nextLifecycleAt).toBe(editAt + RUBBLE_TTL_MS);
+    expect(before.warnings.join(' ')).toContain('exact rubble expiry is unknown');
+    expect(buildMapModel(input, { type: 'taskland', scope, now: editAt + RUBBLE_TTL_MS - 1 }).places).toHaveLength(1);
+    expect(buildMapModel(input, { type: 'taskland', scope, now: editAt + RUBBLE_TTL_MS }).places).toEqual([]);
+    const old = fromProjection({ entities: [{ id: 'root', kind: 'task', status: 'cancelled', updatedAt: '2026-10-01T00:00:00Z' }], edges: [] }, scope);
+    expect(buildMapModel(old, { type: 'taskland', scope, now: at }).places).toEqual([]);
+  });
+  it('exact cancellation ignores later edits, and reopening clears upper-bound removal state', () => {
+    const input = fromProjection({ entities: [{ id: 'root', kind: 'task', state: { workStatus: 'cancelled', statusChangedAt: stamp }, updatedAt: new Date(at + 2 * 60 * 60 * 1000).toISOString() }], edges: [] }, scope);
+    expect(input.entities[0]?.cancelledNotAfter).toBeNull();
+    const before = buildMapModel(input, { type: 'taskland', scope, now: at });
+    expect(place(before, 'root')).toMatchObject({ cancelledAt: stamp, rubbleExpiresAt: at + RUBBLE_TTL_MS, rubbleRemovalNotAfter: null });
+    expect(buildMapModel(input, { type: 'taskland', scope, now: at + RUBBLE_TTL_MS }).places).toEqual([]);
+    const reopened = fromProjection({ entities: [{ id: 'root', kind: 'task', state: { workStatus: 'working' }, updatedAt: stamp }], edges: [] }, scope);
+    expect(reopened.entities[0]?.cancelledNotAfter).toBeNull();
+    expect(place(buildMapModel(reopened, { type: 'taskland', scope, previous: before, now: at + 1 }), 'root')).toMatchObject({ cancelledAt: null, rubbleExpiresAt: null, rubbleRemovalNotAfter: null });
+  });
   it.each([[0, 3, 'lot'], [1, 3, 'foundation'], [2, 3, 'scaffolding'], [67, 100, 'walls'], [999, 1000, 'walls'], [3, 3, 'topped-out']])('uses exact %s/%s fraction for stage %s', (completed, total, constructionStage) => {
     const model = buildMapModel(snapshot(scope, [task('root', { acceptance: { completed: Number(completed), total: Number(total) } })]), { type: 'taskland', scope });
     expect(place(model, 'root').constructionStage).toBe(constructionStage);

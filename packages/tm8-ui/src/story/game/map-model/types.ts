@@ -15,6 +15,8 @@ export interface MapEntity {
   ownProgress?: number | null; estimateTent?: boolean;
   /** Authoritative cancellation transition time, never entity updatedAt or load time. */
   cancelledAt?: string | null;
+  /** Proven upper bound from the status writer's updatedAt, never a cancellation date. */
+  cancelledNotAfter?: string | null;
   /** Event evidence for cold-load terminal-lot placement; never inferred from timestamps. */
   terminalFromStatus?: string | null;
   pendingAttention?: number; mailbox?: { count: number; approx?: boolean; basis?: 'messages' | 'unread' };
@@ -24,6 +26,7 @@ export interface MapEntity {
 export interface MapEdge {
   id: string; type: string; fromId: string; toId: string;
   endedAt?: string | null; status?: string | null;
+  updatedAt?: string | null;
 }
 export interface MapInput {
   entities: readonly MapEntity[]; edges: readonly MapEdge[];
@@ -50,6 +53,8 @@ export interface MapPlace extends Point, PlaceEnrichment {
   status: string | null; progress: number | null; constructionStage: ConstructionStage;
   subtreeWeight?: number | null; sizeBucket?: number; estimateMissing?: boolean;
   cancelledAt?: string | null; rubbleExpiresAt?: number | null;
+  /** Conservative removal deadline when the exact cancellation instant is unknown. */
+  rubbleRemovalNotAfter?: number | null;
   workStatus: string | null; processState?: string | null; outcome?: string | null; endedKind?: string | null; role: 'entity' | 'shipped-marker';
 }
 export interface MapGroup {
