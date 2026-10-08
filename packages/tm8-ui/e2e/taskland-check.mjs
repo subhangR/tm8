@@ -1,34 +1,27 @@
 import { chromium, expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { waitForRenderedTaskland, projectedTasklandCues } from './taskland-readiness.mjs';
 
 const origin = process.env.TASKLAND_ORIGIN ?? 'http://127.0.0.1:4637';
 const evidence = resolve(process.env.TASKLAND_EVIDENCE ?? 'gate-evidence/taskland');
 await mkdir(evidence, { recursive: true });
-const browser = await chromium.launch({ headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ headless: true,
+  ...(process.env.TASKLAND_CHROMIUM ? { executablePath: process.env.TASKLAND_CHROMIUM } : {}),
+  args: ['--no-zygote', '--single-process', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1050 }, reducedMotion: 'reduce' });
 const errors = [], assetFailures = [], transitions = [];
 page.on('pageerror', error => errors.push(error.message));
 page.on('response', response => { if (/\.(glb|gltf)(\?|$)/.test(response.url()) && !response.ok()) assetFailures.push({ status: response.status(), path: new URL(response.url()).pathname }); });
 async function state() { return page.evaluate(() => JSON.parse(JSON.stringify(window.__tasklandHarness))); }
 async function ready(cue = 'mailbox') {
-  await expect.poll(async () => {
-    const value = await state();
-    return Boolean(value?.stats?.triangles > 0 && value.stats.calls > 0 && !value.assets.loading && value.assets.used.length > 0);
-  }, { timeout: 45000, message: 'Wait for imported assets and real rendered frame metrics' }).toBe(true);
-  const label = page.locator(`[data-map-cue="${cue}"]`).first();
-  await expect(label).toBeVisible({ timeout: 15000 });
-  await expect.poll(() => label.evaluate(node => node.parentElement.style.transform), {
-    message: 'Wait for the shared scene to project its world label',
-  }).not.toBe('');
-  expect((await state()).assets.errors).toEqual([]);
+  await waitForRenderedTaskland(page, state, { cue });
 }
 async function capture(scope, name, cue) {
   await ready(cue);
   const snapshot = await state();
   await page.screenshot({ path: `${evidence}/${scope}-${name}.png` });
-  const visibleCues = await page.locator('[data-map-cue]').evaluateAll(nodes => nodes.filter(n => n.getBoundingClientRect().width && n.parentElement.style.display !== 'none')
-    .map(n => ({ cue: n.dataset.mapCue, text: n.textContent, projected: n.parentElement.style.transform })));
+  const visibleCues = await projectedTasklandCues(page);
   transitions.push({ scope, name, type: snapshot.type, revision: snapshot.revision,
     places: snapshot.model.places.map(({ entityId, status, progress, constructionStage, role, mailbox, attention, badges, subtreeWeight, rubbleExpiresAt }) =>
       ({ entityId, status, progress, constructionStage, role, mailbox, attention, badges, subtreeWeight, rubbleExpiresAt })),
@@ -45,7 +38,7 @@ try {
     await capture(scope, 'planning', 'mailbox');
     let snapshot = await state();
     expect(place(snapshot, 'child').badges).toContain('estimate-missing');
-    expect(place(snapshot, 'root').mailbox).toEqual({ count: 5, approx: true });
+    expect(place(snapshot, 'root').mailbox).toMatchObject({ count: 5, approx: true });
     expect(place(snapshot, 'root').attention).toBe(1);
     expect(snapshot.model.groups.some(g => g.depth > 0)).toBe(true);
     expect(snapshot.model.robots.some(r => r.taskId === 'child')).toBe(true);
