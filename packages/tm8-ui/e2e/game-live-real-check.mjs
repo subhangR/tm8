@@ -123,7 +123,11 @@ try{
    const handoff={scope,expectation:'B earliest attached local x/z equals A last drawn local x/z within1e-4, same live-workers parent; normal first draw advances at most0.7; reduced first draw equals real motion target',releaseStartedAt:await page.evaluate(()=>performance.now()),beforeRelease:fallback?null:await scene(),auditBefore:fallback?null:await frameAudit()};handoffs.push(handoff);
    await rpc('release_task_claim',[taskA,'Synthetic move to next site'],sessionId);
    await expect(host.locator(`[data-worker-id="robot:${edgeA}"]`)).toHaveCount(0);
-   if(!fallback)await expect.poll(async()=>(await scene()).workers.some(w=>w.id===`robot:${edgeA}`),{timeout:30000}).toBe(false);
+   if(!fallback){
+    await expect.poll(async()=>(await scene()).workers.some(w=>w.id===`robot:${edgeA}`),{timeout:30000}).toBe(false);
+    const aUuid=handoff.beforeRelease.workers.find(worker=>worker.id===`robot:${edgeA}`).uuid;
+    await expect.poll(async()=>{const audit=await frameAudit(),current=await scene();return !!audit.records.find(record=>record.uuid===aUuid)?.detached&&current.frames>handoff.beforeRelease.frames;},{timeout:30000}).toBe(true);
+   }
    handoff.absentAt=await page.evaluate(()=>performance.now());handoff.intermediateScene=fallback?null:await scene();
    await work(taskB,'working',sessionId);const edgeB=await claimId(sessionId,taskB);
    await showWorker(edgeB,`${prefix} site B`);handoff.claimObservedAt=await page.evaluate(()=>performance.now());
