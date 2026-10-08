@@ -37,7 +37,7 @@ describe('forms and attention overlays in Work', () => {
     expect(pop.position).toBe('fixed');
     expect(z(pop)).toBeGreaterThan(titlebar);
     expect(z(pop)).toBeGreaterThan(dock);
-    expect(pop['overflow-y']).toBe('auto');
+    expect(pop.overflow).toBe('hidden');
     expect(pop['white-space']).toBe('normal');
   });
 

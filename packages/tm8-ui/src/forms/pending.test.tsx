@@ -267,6 +267,7 @@ describe('the action strip chip (Work)', () => {
      under the tab's title bar whose icon-button styles squeezed the form. Its
      popover is a fixed dialog portalled to the outermost themed root. */
   function mountChip() {
+    const onStripKeyDown = vi.fn();
     const port = createFixtureFormsPort({ responses: FORM_FIXTURE_RESPONSES });
     const formId = FORM_FIXTURE_IDS.migration;
     const { source } = fakeSource((id) => (id === 'ws-1' ? pending('ws-1', [item(formId, 'Pick the migration strategy')]) : null));
@@ -275,14 +276,14 @@ describe('the action strip chip (Work)', () => {
       <FormsPortProvider port={port}>
         <PendingFormsProvider store={store}>
           <div className="cv2-root" data-testid="shell-root">
-            <div className="cv2-root tws-astrip" data-testid="strip">
+            <div className="cv2-root tws-astrip" data-testid="strip" onKeyDown={onStripKeyDown}>
               <PendingFormsBanner variant="chip" sessionId="ws-1" />
             </div>
           </div>
         </PendingFormsProvider>
       </FormsPortProvider>,
     );
-    return { view, store };
+    return { view, store, onStripKeyDown };
   }
 
   it('opens the form as a fixed dialog outside the strip, and it can be answered there', async () => {
@@ -319,6 +320,15 @@ describe('the action strip chip (Work)', () => {
     expect(screen.getByTestId('pending-forms-popover')).toBeTruthy();
     fireEvent.pointerDown(document.body);
     expect(screen.queryByTestId('pending-forms-popover')).toBeNull();
+    store.dispose();
+  });
+
+  it('keeps form navigation keys out of the portalling toolbar', async () => {
+    const { store, onStripKeyDown } = mountChip();
+    fireEvent.click(await screen.findByTestId('pending-forms-chip'));
+    const pop = screen.getByTestId('pending-forms-popover');
+    for (const key of ['Home', 'End', 'ArrowUp', 'ArrowDown']) fireEvent.keyDown(pop, { key });
+    expect(onStripKeyDown).not.toHaveBeenCalled();
     store.dispose();
   });
 });

@@ -129,10 +129,11 @@ function PendingFormsChip({
     pop,
     { side: 'left', align: 'start', gap: 14 },
   );
-  /* The dialog takes focus when it opens, so the keyboard lands in the form. */
+  /* Placement starts hidden. Focusing before that first measurement is
+     ignored by browsers, leaving keyboard focus behind in the strip. */
   useEffect(() => {
-    if (open) pop.current?.focus();
-  }, [open]);
+    if (open && style.visibility !== 'hidden') pop.current?.focus();
+  }, [open, style.visibility]);
   return (
     <div className="pf-chip" ref={ref}>
       <button
@@ -159,6 +160,9 @@ function PendingFormsChip({
           tabIndex={-1}
           style={style}
           data-testid="pending-forms-popover"
+          // React portal events still bubble through the strip's toolbar.
+          // Keep Home/End and arrow keys with the form and its scroll region.
+          onKeyDown={(event) => event.stopPropagation()}
         >
           {children}
         </div>,
