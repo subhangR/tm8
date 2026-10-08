@@ -1,3 +1,4 @@
+import { MAP_COMMANDS } from './map.js';
 import { MCP_COMMANDS } from './mcp.js';
 /**
  * THE COMMAND REGISTRY — the one composition point.
@@ -115,6 +116,7 @@ const SEARCH_COMMANDS: CommandModule[] = [
 ];
 
 export const COMMANDS: CommandModule[] = [
+  ...MAP_COMMANDS,
   ...DISCOVERY_COMMANDS,
   ...HARNESS_COMMANDS,
   ...SEARCH_COMMANDS,
