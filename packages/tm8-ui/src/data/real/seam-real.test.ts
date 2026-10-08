@@ -428,7 +428,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // namespace. Always present; its METHODS are feature-detected against
       // the catalog, so S4 adding the rows does not move this list.
       'attentionV2',
-      'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
+      'complete', 'createEdge', 'createEntity', 'createEntityKind', 'createTask', 'deleteEdge', 'deleteEntity',
       // 2026-08-09: `dispatch` — `execution.dispatch` (Dreamer & Dispatcher
       // D5). It sorts next to `deleteEntity` and reads nothing like it, which
       // is precisely why this list is hand-maintained: the seam cannot gain a
@@ -601,7 +601,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // 187 follow-through: `updateSpace` — `spaces.update`, a PATCH. The
       // Session sharing settings section writes the two space-wide defaults
       // through it, one key per click; absent keys are left alone.
-      'updateSpace',
+      'updateMenu', 'updateSpace',
       'upsertReadMark', 'work',
       // Spec D1 §4.1 / §6.3 R4: `execution.complete` and the task release
       // ("Hand off") behind the Complete dialog.
