@@ -466,6 +466,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('task'),
     status: WorkStatusSchema,
+    statusChangedAt: IsoTimestamp.nullable().optional(),
     priority: PrioritySchema,
     axes: z.record(z.string()),
     dueDate: z.string().nullable().optional(),
