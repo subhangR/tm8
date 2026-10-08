@@ -30,6 +30,7 @@ try {
         controls: ['.walking-toolbar', '.walking-places', '.walking-workers', '.sgm-minimap'].map(selector => ({ selector, ...bounds(map.querySelector(selector)) })),
         warnings: map.querySelector('details.game-mode__notice')?.textContent ?? '',
         announcement: notice.textContent, position: getComputedStyle(deck).position, pointerEvents: getComputedStyle(notice).pointerEvents,
+        display: getComputedStyle(notice).display, visibility: getComputedStyle(notice).visibility,
         polite: notice.getAttribute('aria-live'), atomic: notice.getAttribute('aria-atomic') };
     }, phase.name));
   }
@@ -42,6 +43,7 @@ try {
     assert.ok(frame.canvasClientHeight > 600, 'The canvas has a real nonzero layout box without WebGL');
     assert.equal(frame.position, 'absolute');
     assert.equal(frame.pointerEvents, 'none');
+    assert.notEqual(frame.display, 'none'); assert.notEqual(frame.visibility, 'hidden');
     assert.equal(frame.polite, 'polite'); assert.equal(frame.atomic, 'true');
     for (const control of frame.controls) {
       const a = frame.deck, b = control;

@@ -6,6 +6,7 @@ import type { DurableWorkspaceEvent, EntitySummary } from '@tm8/contract';
 import type { WalkingMapViewProps } from '../story/game/maps/WalkingMapView';
 import type { GameMapEvents, GameMapLoader } from './types';
 import GameMode from './GameMode';
+import noticeCss from './game-mode.css?raw';
 
 const scene = vi.hoisted(() => ({ props: null as WalkingMapViewProps | null, mounts: 0 }));
 vi.mock('../story/game/maps/WalkingMapView', () => ({ WalkingMapView: (props: WalkingMapViewProps) => {
@@ -36,8 +37,12 @@ function harness() {
   const event = (body: object) => ({ spaceId: 'space', seq: ++seq, occurredAt: '2026-10-08T00:00:00Z', schemaVersion: 1, ...body }) as DurableWorkspaceEvent;
   return { events, loadMap, subs, unsubscribed, event, emit: (body: object) => { const payload = event(body); subs.forEach(cb => cb(payload)); } };
 }
-beforeEach(() => { localStorage.clear(); scene.mounts = 0; scene.props = null; });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+let stylesheet: HTMLStyleElement;
+beforeEach(() => {
+  localStorage.clear(); scene.mounts = 0; scene.props = null;
+  stylesheet = document.createElement('style'); stylesheet.textContent = noticeCss; document.head.append(stylesheet);
+});
+afterEach(() => { cleanup(); stylesheet.remove(); vi.restoreAllMocks(); });
 describe('GameMode live event wiring', () => {
   it('keeps the announcement inside the map through below/above burst threshold and back', async () => {
     let now = Date.now(); vi.spyOn(Date, 'now').mockImplementation(() => now);
@@ -47,7 +52,11 @@ describe('GameMode live event wiring', () => {
     const phases: { name: string; html: string }[] = [];
     const capture = (name: string) => {
       const map = screen.container.querySelector('.game-mode__map')!;
-      expect(map.querySelector('[aria-live="polite"]')?.getAttribute('aria-atomic')).toBe('true');
+      const liveRegion = map.querySelector('[aria-live="polite"]')!;
+      expect(liveRegion.getAttribute('aria-atomic')).toBe('true');
+      expect(getComputedStyle(liveRegion).display).not.toBe('none');
+      expect(getComputedStyle(liveRegion).visibility).not.toBe('hidden');
+      expect(screen.container.querySelectorAll('.game-mode__notice').length).toBe(map.querySelectorAll('.game-mode__notice').length);
       phases.push({ name, html: screen.container.innerHTML });
     };
     capture('empty');
