@@ -141,7 +141,7 @@ export function reconcileTasklandMotion(state: TasklandMotionState, input: Taskl
         const from = source(before);
         const to = { x: Math.max(model.bounds.maxX, previous.bounds.maxX)+before.radius+10, z: from.z };
         add('ship-out', before, [{ place: visual(before), from, to, target: null }], from, to);
-      } else if (event.to === 'cancelled' && after?.role === 'entity' && after.constructionStage === 'rubble' && before.constructionStage !== 'rubble') {
+      } else if (event.to === 'cancelled' && after?.role === 'entity' && after.constructionStage === 'rubble') {
         const from = source(before);
         add('collapse', before, [{ place: visual(before), from, to: point(after), target: after }], from, point(after));
       }
