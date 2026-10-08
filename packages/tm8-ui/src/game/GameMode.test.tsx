@@ -10,6 +10,8 @@ import type { GameMapLoader, GameMapResult } from './types';
 import { enterGameMap, freshGameSave, gameSaveKey, mapKey, readGameSave, rememberGameMap, writeGameSave } from './local-save';
 import GameMode from './GameMode';
 import type { WalkingMapView } from '../story/game/maps/WalkingMapView';
+import type { GameNavigationView } from '@tm8/contract';
+import type { GamePersistencePort } from './durable-save';
 type WalkingMapViewProps = ComponentProps<typeof WalkingMapView>;
 
 const ports = vi.hoisted(() => ({ props: null as WalkingMapViewProps | null, finalPosition: null as { x: number; z: number } | null }));
@@ -308,5 +310,101 @@ describe('GameMode navigation', () => {
     const screen = render(<GameMode {...defaults} loadMap={loader()} />);
     await screen.findByText('space:hub');
     expect(screen.getByRole('button', { name: 'Back one map' }).hasAttribute('disabled')).toBe(true);
+  });
+});
+
+const DURABLE_SPACE = '00000000-0000-4000-8000-000000000001';
+const DURABLE_MEMBER = '00000000-0000-4000-8000-000000000002';
+const DURABLE_STORY = '00000000-0000-4000-8000-000000000003';
+const durableInitial = () => freshGameSave(DURABLE_SPACE, DURABLE_MEMBER);
+const durableView = (save: GameNavigationView['save'] = null, revision = 0): GameNavigationView =>
+  ({ spaceId: DURABLE_SPACE, memberId: DURABLE_MEMBER, save, revision });
+function durablePort() {
+  return { load: vi.fn<GamePersistencePort['load']>(async () => durableView()),
+    save: vi.fn<GamePersistencePort['save']>(async (_space, save, revision) => durableView(save, revision + 1)) };
+}
+const durableLoader = () => vi.fn<GameMapLoader>(async scope => ({ title: 'Durable map', input: { scope, edges: [], entities: [
+  { id: 'real-task', kind: 'task', title: 'Real task', status: 'working' },
+  { id: DURABLE_STORY, kind: 'story', title: 'Durable story' },
+] } }));
+const durableDefaults = { spaceId: DURABLE_SPACE, memberId: DURABLE_MEMBER, onInspect: vi.fn() };
+
+describe('GameMode durable resume integration', () => {
+  it('gates map reads until hydration and restores a server-only route with an exact pose/camera inside a footprint', async () => {
+    const loadMap = durableLoader(), persistence = durablePort();
+    const story = { type: 'hub' as const, scope: { kind: 'story' as const, id: DURABLE_STORY } };
+    const taskland = { ...story, type: 'taskland' as const };
+    const model = buildMapModel((await loadMap(taskland.scope)).input, taskland), place = model.places[0]!;
+    const position = { x: place.x, z: place.z };
+    const camera = { zoom: 3, position: [1, 40, 2] as [number, number, number], target: [place.x, 0, place.z] as [number, number, number] };
+    const saved = rememberGameMap(enterGameMap(enterGameMap(durableInitial(), story), taskland), mapKey(taskland), { position, camera });
+    loadMap.mockClear();
+    const pending = deferred<GameNavigationView>(); persistence.load.mockReturnValueOnce(pending.promise);
+    const screen = render(<GameMode {...durableDefaults} loadMap={loadMap} persistence={persistence} />);
+    expect(screen.getByText('Restoring your place…')).toBeTruthy();
+    expect(loadMap).not.toHaveBeenCalled(); expect(persistence.save).not.toHaveBeenCalled();
+    await act(async () => pending.resolve(durableView(saved, 12)));
+    await screen.findByText(`${DURABLE_STORY}:taskland`);
+    expect(loadMap).toHaveBeenCalledTimes(1);
+    expect(ports.props!.start).toEqual(position); expect(ports.props!.camera).toEqual(camera);
+    expect(readGameSave(DURABLE_SPACE, DURABLE_MEMBER).stack).toHaveLength(2);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await screen.findByText(`${DURABLE_STORY}:hub`);
+    expect(readGameSave(DURABLE_SPACE, DURABLE_MEMBER).stack).toHaveLength(1);
+  });
+
+  it('repairs only out-of-bounds server poses, dropping their camera, while fresh maps use the entrance', async () => {
+    const persistence = durablePort(), loadMap = durableLoader();
+    const taskland = { type: 'taskland' as const, scope: { kind: 'space' as const, id: DURABLE_SPACE } };
+    const state = rememberGameMap(enterGameMap(durableInitial(), taskland), mapKey(taskland), {
+      position: { x: 999_999, z: -999_999 }, camera: { zoom: 2, position: [1, 2, 3], target: [999_999, 0, -999_999] },
+    });
+    persistence.load.mockResolvedValue(durableView(state, 3));
+    const screen = render(<GameMode {...durableDefaults} loadMap={loadMap} persistence={persistence} />);
+    await screen.findByText(`${DURABLE_SPACE}:taskland`);
+    const bounds = walkingBounds(ports.props!.model);
+    expect(ports.props!.start).toEqual({ x: bounds.maxX, z: bounds.minZ }); expect(ports.props!.camera).toBeUndefined();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await screen.findByText(`${DURABLE_SPACE}:hub`);
+    expect(ports.props!.start).toEqual(walkingEntrance(ports.props!.model));
+  });
+
+  it('keeps failed hydration local and retries only after an explicit successful revision read', async () => {
+    const persistence = durablePort(); persistence.load.mockRejectedValueOnce(new Error('Private account payload'));
+    const screen = render(<GameMode {...durableDefaults} loadMap={durableLoader()} persistence={persistence} />);
+    await screen.findByText(`${DURABLE_SPACE}:hub`);
+    fireEvent.click(screen.getByText('Walk and zoom')); fireEvent(window, new Event('pagehide'));
+    expect(persistence.save).not.toHaveBeenCalled(); expect(screen.getByText(/Server save is unavailable/)).toBeTruthy();
+    expect(screen.queryByText('Private account payload')).toBeNull();
+    persistence.load.mockResolvedValue(durableView(null, 11));
+    fireEvent.click(screen.getByRole('button', { name: 'Save this visit to server' }));
+    await waitFor(() => expect(persistence.save).toHaveBeenCalledTimes(1));
+    expect(persistence.save.mock.calls[0]?.[2]).toBe(11);
+  });
+
+  it('keeps pagehide and final renderer cleanup snapshots latest and uses best effort keepalive', async () => {
+    const persistence = durablePort();
+    const screen = render(<GameMode {...durableDefaults} loadMap={durableLoader()} persistence={persistence} />);
+    await screen.findByText(`${DURABLE_SPACE}:hub`);
+    fireEvent.click(screen.getByText('Walk and zoom')); fireEvent(window, new Event('pagehide'));
+    await waitFor(() => expect(persistence.save.mock.calls.at(-1)?.[3]?.keepalive).toBe(true));
+    ports.finalPosition = { x: 20, z: 30 }; screen.unmount();
+    await waitFor(() => expect(persistence.save.mock.calls.at(-1)?.[1].maps[mapKey(durableInitial().current)]?.position).toEqual({ x: 20, z: 30 }));
+    expect(persistence.save.mock.calls.at(-1)?.[3]?.keepalive).toBe(true);
+  });
+
+  it('cancels old hydration on member change and ignores its late response', async () => {
+    const persistence = durablePort(), pending = deferred<GameNavigationView>(); persistence.load.mockReturnValueOnce(pending.promise);
+    const identity = new AbortController();
+    const screen = render(<GameMode {...durableDefaults} loadMap={durableLoader()} persistence={persistence} identitySignal={identity.signal} />);
+    const oldSignal = persistence.load.mock.calls[0]![1]!;
+    const next = durablePort(); next.load.mockResolvedValue({ ...durableView(), memberId: DURABLE_STORY });
+    next.save.mockImplementation(async (_space, save, revision) => ({ ...durableView(save, revision + 1), memberId: DURABLE_STORY }));
+    identity.abort();
+    screen.rerender(<GameMode {...durableDefaults} memberId={DURABLE_STORY} loadMap={durableLoader()} persistence={next} identitySignal={new AbortController().signal} />);
+    await screen.findByText(`${DURABLE_SPACE}:hub`); expect(oldSignal.aborted).toBe(true);
+    await act(async () => pending.resolve(durableView(enterGameMap(durableInitial(), { type: 'office', scope: { kind: 'space', id: DURABLE_SPACE } }), 10)));
+    expect(screen.queryByText(`${DURABLE_SPACE}:office`)).toBeNull(); expect(persistence.save).not.toHaveBeenCalled();
+    expect(readGameSave(DURABLE_SPACE, DURABLE_STORY).current.type).toBe('hub');
   });
 });
