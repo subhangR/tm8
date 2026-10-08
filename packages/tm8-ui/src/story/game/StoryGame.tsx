@@ -38,6 +38,7 @@ class SceneBoundary extends Component<{ children: ReactNode; onUnavailable: () =
 }
 
 const Scene = lazy(() => import('./scene'));
+const StoryMapView = lazy(() => import('./maps/StoryMapView'));
 
 export interface StoryGameProps {
   view: StoryView;
@@ -77,7 +78,13 @@ function actionOf(place: Place, storyId: string): PlaceAction {
 }
 const ACTION_LABEL = { enter: 'Enter', inspect: 'Inspect' } as const;
 
-export function StoryGame({ view, live, open, mode, onMode, showModeSwitch = true }: StoryGameProps) {
+export function StoryGame(props: StoryGameProps) {
+  const [atlas, setAtlas] = useState(false);
+  if (atlas) return <div className="ms-production"><button className="ms-map-switch" onClick={() => setAtlas(false)}>Return to walking view</button><Suspense fallback={<div className="sgm-loading">Opening the atlas…</div>}><StoryMapView view={props.view} open={props.open}/></Suspense></div>;
+  return <div style={{ position: 'relative', height: '100%', minHeight: 420 }}><button style={{ position: 'absolute', top: 12, right: 12, zIndex: 20, padding: '8px 12px', borderRadius: 6 }} onClick={() => setAtlas(true)}>Explore map atlas</button><WalkingStoryGame {...props}/></div>;
+}
+
+function WalkingStoryGame({ view, live, open, mode, onMode, showModeSwitch = true }: StoryGameProps) {
   const storyId = view.id;
   const world = useMemo(() => buildWorld(view), [view]);
   const save = useStoryGameSave(storyId);
