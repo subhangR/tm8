@@ -22,6 +22,7 @@ export async function seedStorageFixture(pool) {
   const story = await make('story', 'Synthetic harbour story');
   const nested = await make('story', 'Synthetic mountain story', { parentId: story.id });
   const task = await make('task', 'Synthetic task');
+  dataOf(await request(`/v2/collections/${nested.id}/items`, { entityId: task.id, clientMutationId: mutation() }), 'nested task membership');
   const doc = await make('doc', 'Synthetic document');
   const foreignStory = dataOf(await request('/v2/entities', {
     kind: 'story', title: 'Synthetic foreign story', spaceId: otherSpace.id, clientMutationId: mutation(),
