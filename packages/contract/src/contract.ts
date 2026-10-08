@@ -290,6 +290,8 @@ export interface TaskAssignment {
 export type CoreEntityState =
   | McpServerEntity
   | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
+      /** Authoritative current status transition time; null when unknown, absent on older nodes. */
+      statusChangedAt?: string | null;
       axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
       assignees: ActorSummary[];
       /** Additive: absent on payloads produced before assignment provenance shipped. */

@@ -222,6 +222,8 @@ interface SummaryRow {
   task_title: string | null;
   task_description: string | null;
   work_status: string | null;
+  /** 316: mirrors the facade join; no envelope timestamp fallback. */
+  task_status_changed_at?: Date | string | null;
   priority: string | null;
   completion_gate: string | null;
   axes: Record<string, unknown> | null;
@@ -423,6 +425,7 @@ select
   t.title            as task_title,
   t.description      as task_description,
   t.work_status, t.priority, t.axes, t.due_date, t.start_date,
+  t.status_changed_at as task_status_changed_at,
   t.acceptance_criteria, t.completion_gate,
   d.title            as doc_title,
   d.body             as doc_body,
@@ -1293,6 +1296,7 @@ export class PgEntityProjector implements EntityProjector {
           kind: 'task',
           // Raises rather than coercing: see WorkStatusDriftError.
           status: narrowWorkStatus(r.work_status, r.id),
+          statusChangedAt: iso(r.task_status_changed_at),
           priority: oneOf(r.priority, PRIORITIES, 'medium'),
           axes: asStringRecord(r.axes),
           dueDate: iso(r.due_date),
