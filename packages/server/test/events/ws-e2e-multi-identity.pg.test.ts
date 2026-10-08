@@ -332,6 +332,46 @@ describe('two-socket fan-out across real identities', () => {
       spine(items).filter(([, t]) => !t.startsWith('notification.'));
     expect(spaceOnly(forA.items)).toEqual(spaceOnly(forB.items));
   });
+
+  it('personal entity.seen reaches only its member on live sockets and the durable feed, both directions', async () => {
+    const a = await liveSocket(memberA.identityId);
+    const b = await liveSocket(memberB.identityId);
+    const log = new PgDurableEventLog(db);
+    for (const [sender, own, other, otherIdentity] of [
+      [memberA, a, b, memberB.identityId],
+      [memberB, b, a, memberA.identityId],
+    ] as const) {
+      const entityId = await createTaskAsA(`personal-seen-${randomUUID()}`);
+      const mutation = `seen_${randomUUID()}`;
+      const ownMark = own.frames.all.length;
+      const otherMark = other.frames.all.length;
+      await db.tx(claimsFor(sender.identityId), async (q) => {
+        // This event harness binds identity/actor claims; the personal RPC also
+        // requires the real human auth kind within the same transaction.
+        await q.query("select set_config('tm8.auth_kind', 'browser', true)");
+        await q.rpc('public.mark_entity_seen', [entityId, mutation]);
+      });
+      await ticks(8);
+      const isSeen = (event: unknown): boolean => {
+        const body = event as { type?: string; entityId?: string };
+        return body.type === 'entity.seen' && body.entityId === entityId;
+      };
+      const delivered = own.frames.since(ownMark).filter(isSeen);
+      expect(delivered).toHaveLength(1);
+      expect(WorkspaceEventSchema.safeParse(delivered[0]).success).toBe(true);
+      expect(other.frames.since(otherMark).filter(isSeen)).toEqual([]);
+      const truth = await database.query<{ seq: string; recipient_member_id: string }>(
+        `select seq, recipient_member_id from public.workspace_events
+          where event_type = 'entity.seen' and client_mutation_id = $1`, [mutation]);
+      expect(truth).toHaveLength(1);
+      expect(truth[0]!.recipient_member_id).toBe(sender.memberId);
+      const after = Number(truth[0]!.seq) - 1;
+      const personalFeed = await log.since(spaceId, after, 500, claimsFor(sender.identityId));
+      const otherFeed = await log.since(spaceId, after, 500, claimsFor(otherIdentity));
+      expect(personalFeed.items.filter(isSeen)).toHaveLength(1);
+      expect(otherFeed.items.filter(isSeen)).toEqual([]);
+    }
+  });
 });
 
 describe('the REAL DbSubscriptionAuthorizer, under test at last', () => {

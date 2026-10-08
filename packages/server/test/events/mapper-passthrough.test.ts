@@ -92,6 +92,24 @@ describe('WorkspaceEventMapper passthrough arm', () => {
 
   // (a) each membership type projects VERBATIM under the row envelope.
 
+  it('projects the personal entity.seen body without requiring an entity projection', () => {
+    const event = mapper.mapRow(row({
+      event_type: 'entity.seen', recipient_member_id: MEMBER,
+      payload: { type: 'entity.seen', entityId: TASK, seenAt: '2026-07-25T00:00:00.000Z' },
+    }), new Map());
+    expect(event).toMatchObject({
+      type: 'entity.seen', entityId: TASK, seenAt: '2026-07-25T00:00:00.000Z', spaceId: SPACE,
+    });
+    expect(WorkspaceEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  it('refuses an entity.seen payload that omits its seen timestamp', () => {
+    expect(() => mapper.mapRow(row({
+      event_type: 'entity.seen', recipient_member_id: MEMBER,
+      payload: { type: 'entity.seen', entityId: TASK },
+    }), new Map())).toThrow(UnprojectableEventError);
+  });
+
   it('projects menu.updated verbatim: stored payload is the event body', () => {
     const event = mapper.mapRow(
       row({ seq: '7', payload: { type: 'menu.updated', menu: MENU, clientMutationId: 'cmid_menu' }, client_mutation_id: 'cmid_menu' }),
@@ -208,6 +226,8 @@ describe('WorkspaceEventMapper passthrough arm', () => {
       expect(RPC_AUTHORED_PASSTHROUGH.has(type)).toBe(false);
     }
     expect([...RPC_AUTHORED_PASSTHROUGH].sort()).toEqual([
+      // 313: mark_entity_seen writes a personal, contract-shaped event itself.
+      'entity.seen',
       'git.commit_recorded',
       'git.pr_state_changed',
       'git.worktree_status_changed',
