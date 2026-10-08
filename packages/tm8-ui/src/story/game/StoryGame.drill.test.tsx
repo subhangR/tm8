@@ -7,7 +7,7 @@
  * the parent, whose map starts from its own save. The flat (no-WebGL) world
  * makes the same split.
  */
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, within } from '@testing-library/react';
 import type { EntityId } from '@tm8/contract';
@@ -18,6 +18,7 @@ import type { StoryView } from '../model';
 import { StoryGame } from './StoryGame';
 import { resetEntry } from './enter';
 import type { SceneProps } from './scene';
+import { walkingWorld } from './map-model/walking';
 import { storyGameStore } from './store';
 import type { Place } from './world';
 
@@ -25,7 +26,8 @@ const scene = vi.hoisted(() => ({ webgl: true, near: (_places: readonly Place[])
 const members = vi.hoisted(() => ({ on: null as ((places: readonly Place[]) => Place) | null, list: [] as { id: string; kind: string; title: string }[] }));
 
 vi.mock('./palette', async (original) => ({ ...await original<typeof import('./palette')>(), hasWebGL: () => scene.webgl }));
-vi.mock('./scene', () => ({ default: ({ world, onNear, start }: SceneProps) => {
+vi.mock('./scene', () => ({ default: ({ model, navigation, onNear, start }: SceneProps) => {
+  const world = useMemo(() => walkingWorld(model, navigation), [model, navigation]);
   scene.start = start;
   useEffect(() => { onNear(scene.near(world.places)); }, [world, onNear]);
   return <div data-testid="mock-world" />;
