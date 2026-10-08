@@ -1,7 +1,7 @@
 /** Movement/minimap metadata for any typed map. Model geometry stays authoritative. */
 import type { StoryTone } from '../../model';
 import type { Place, PlaceShape, Road, World } from '../world';
-import type { Bounds, MapModel, MapPlace, MapPortal } from './types';
+import type { Bounds, MapModel, MapPlace, MapPortal, Point } from './types';
 import { pathLength, routeRoad } from '../roads';
 import { doorstep, roadObstacles } from '../world';
 
@@ -39,6 +39,16 @@ export function walkingBounds(model: MapModel): Bounds {
   const b = model.bounds;
   return { minX: Math.min(0, b.minX) - 4, maxX: Math.max(0, b.maxX) + 4,
     minZ: Math.min(0, b.minZ) - 4, maxZ: Math.max(6, b.maxZ) + 4 };
+}
+/** A free entrance left of every model footprint, on the rendered playable ground. */
+export function walkingEntrance(model: MapModel): Point {
+  return { x: Math.min(0, model.bounds.minX) - 2, z: 0 };
+}
+/** Compounds include walkable streets; only occupied footprints block a saved pose. */
+export function isWalkingPositionSafe(model: MapModel, point: Point): boolean {
+  const b = walkingBounds(model);
+  return Number.isFinite(point.x) && Number.isFinite(point.z) && point.x >= b.minX && point.x <= b.maxX && point.z >= b.minZ && point.z <= b.maxZ
+    && [...model.places, ...model.portals, ...model.decor].every(p => Math.hypot(p.x - point.x, p.z - point.z) >= p.radius + .6);
 }
 export function mapWalkingWorld(model: MapModel): World {
   const places = [...model.places, ...model.portals].map(place);

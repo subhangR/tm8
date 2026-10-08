@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildMapModel } from './build';
 import { smallFixture, nestedFixture } from './fixtures';
-import { mapWalkingWorld, walkingBounds } from './walking-world';
+import { mapWalkingWorld, walkingBounds, walkingEntrance, isWalkingPositionSafe } from './walking-world';
 import { doorstep, roadObstacles } from '../world';
 import { pathClear } from '../roads';
 
@@ -30,6 +30,13 @@ describe('typed map walking metadata', () => {
     expect(b.minX).toBeLessThanOrEqual(-4); expect(b.minZ).toBeLessThanOrEqual(-4);
     expect(b.maxZ).toBeGreaterThanOrEqual(10);
     expect(b.maxX).toBeGreaterThanOrEqual(model.bounds.maxX + 4);
+  });
+  it.each(['hub', 'taskland', 'office', 'library', 'factory', 'town'] as const)('offers a free %s entrance and validates occupied/stale poses', type => {
+    const model = buildMapModel(nestedFixture(), { type, scope: nestedFixture().scope! });
+    expect(isWalkingPositionSafe(model, walkingEntrance(model))).toBe(true);
+    expect(isWalkingPositionSafe(model, { x: 1e8, z: 1e8 })).toBe(false);
+    const occupied = [...model.places, ...model.portals][0];
+    if (occupied) expect(isWalkingPositionSafe(model, occupied)).toBe(false);
   });
   it('keeps hub paths decorative without inventing connections between unrelated portals', () => {
     const model = buildMapModel(smallFixture(), { type: 'hub', scope: smallFixture().scope! });

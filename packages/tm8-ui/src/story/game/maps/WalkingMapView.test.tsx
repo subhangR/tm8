@@ -77,6 +77,16 @@ describe('walking map boundary', () => {
     expect(scene.last.walking.control).not.toBe(first.control);
     expect(input.onPosition).toHaveBeenLastCalledWith(8, 9);
   });
+  it('replaces an occupied/outside resume with a free entrance and drops its stale camera', async () => {
+    scene.webgl = true;
+    const input = props(), occupied = input.model.places[0]!;
+    input.start = { x: occupied.x, z: occupied.z };
+    input.camera = { zoom: 20, position: [80, 30, 40], target: [occupied.x, 0, occupied.z] };
+    const view = render(<WalkingMapView {...input}/>);
+    await view.findByTestId('mock-scene');
+    expect(scene.last.initial.x).toBeLessThan(input.model.bounds.minX);
+    expect(scene.last.walking.cameraState).toBeUndefined();
+  });
   it('WebGL click issues a walk order; arrival alone never enters a map', async () => {
     scene.webgl = true;
     const input = props('hub'), view = render(<WalkingMapView {...input}/>);
