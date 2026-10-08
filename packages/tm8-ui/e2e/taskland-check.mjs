@@ -28,7 +28,7 @@ async function capture(scope, name, cue) {
     places: snapshot.model.places.map(({ entityId, status, progress, constructionStage, role, mailbox, attention, badges, subtreeWeight, rubbleExpiresAt }) =>
       ({ entityId, status, progress, constructionStage, role, mailbox, attention, badges, subtreeWeight, rubbleExpiresAt })),
     robots: snapshot.model.robots.map(({ taskId, pose }) => ({ taskId, pose })),
-    workerIds: await page.locator('[data-worker-id]').evaluateAll(nodes => nodes.map(n => n.dataset.workerId)),
+    renderedWorkers: Object.values(snapshot.workerFrames).filter(frame => frame.now === snapshot.motionTime && frame.visible),
     motion: snapshot.motion, motionTime: snapshot.motionTime, reducedMotion: snapshot.reducedMotion,
     nextLifecycleAt: snapshot.model.nextLifecycleAt, stats: snapshot.stats, assets: snapshot.assets, visibleCues });
 }
@@ -73,7 +73,9 @@ try {
     expect(place(snapshot, 'root').attention).toBe(1);
     expect(snapshot.model.groups.some(g => g.depth > 0)).toBe(true);
     expect(snapshot.model.robots.some(r => r.taskId === 'child')).toBe(true);
-    await expect(page.locator('[data-worker-id]')).not.toHaveCount(0);
+    await expect.poll(async () => Object.values((await state()).workerFrames).some(frame => frame.taskId === 'child' && frame.visible && frame.arrived), {
+      timeout: 120000, message: 'Wait for the production worker to arrive before moving its site',
+    }).toBe(true);
     await expect(page.getByText('Surveyor tent', { exact: true })).toHaveCount(1);
     await action('survey view'); await capture(scope, 'surveyor-tent', 'surveyor');
     await action('survey view'); await ready();
@@ -84,6 +86,16 @@ try {
     await action('root-blocked');
     const rootMove = await midpoint(scope, 'root-family-move', 'move', 'root', ['root', 'child', 'paused']);
     expect(rootMove.snapshot.motion.suppressedPlaceIds.sort()).toEqual(rootMove.transition.members.map(m => m.target.id).sort());
+    const site = await page.evaluate(() => window.__tasklandHarness.sampleWorkerSite('child'));
+    const currentChild = place(rootMove.snapshot, 'child');
+    const robot = rootMove.snapshot.model.robots.find(r => r.taskId === 'child');
+    const expectedWorker = { x: site.x + robot.x - currentChild.x, z: site.z + robot.z - currentChild.z };
+    await expect.poll(async () => {
+      const value = await state();
+      const frame = value.workerFrames[robot.id];
+      return frame?.visible && frame.now === value.motionTime
+        ? Math.hypot(frame.x - expectedWorker.x, frame.z - expectedWorker.z) : Infinity;
+    }, { timeout: 15000, message: 'Read the actual Three worker position at the frozen moving-site midpoint' }).toBeLessThan(1e-8);
     await settle();
     const afterFamily = await state(), afterRoot = place(afterFamily, 'root'), afterChildMove = place(afterFamily, 'child');
     expect(afterChildMove.x - afterRoot.x).toBeCloseTo(childOffset.x, 9);
@@ -158,7 +170,16 @@ try {
   const report = { source: 'Synthetic MapInput and typed task effects, production model/MapScene/imported assets', sourceHead,
     renderer, softwareWebGL: /swiftshader|llvmpipe|software/i.test(renderer), nativeGPUProof: false,
     checks: 'Both scopes: projected mailbox/yard/tent cues; progress stages; rendered worker; root-family versus child carts; independent child and root shipping; mounted-Town arrival; cancellation collapse and exact 24h expiry; stationary neutral ancestor with open children; reduced motion direct state; cancelled work never ships',
-    unitReferences: [{ path: 'src/story/game/taskland-motion.test.ts',
+    unitReferences: [{ path: 'src/game/live-map-controller.test.ts', head: sourceHead,
+      test: 'applies state immediately while combining >5 relevant events in 60 seconds',
+      covers: 'Controller combines 8 then 9 updates under one effect id while updating authoritative state' },
+    { path: 'src/story/game/taskland-motion.test.ts', head: sourceHead,
+      test: 'handles six-plus status changes in the same minute when the controller reuses its burst identity',
+      covers: 'Final status motion replaces earlier routes under a reused combined id' },
+    { path: 'src/story/game/maps/TasklandMotion.test.tsx', head: sourceHead,
+      test: 'retargets combined same-id updates and ignores completion callbacks from their earlier revision',
+      covers: 'Committed hook state rejects stale completion of replaced cargo' },
+    { path: 'src/story/game/taskland-motion.test.ts', head: sourceHead,
       test: 'retargets interrupted carts from their displayed positions rather than replaying the old route',
       covers: 'Interruption continuity; rendered retarget capture is optional' }],
     unreadEvidence: process.env.TASKLAND_UNREAD_RECEIPT ?? 'Pending real-HTTP verifier receipt; this fixture uses totals/approx',

@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import type { WorkStatus } from '@tm8/contract';
 import type { MapUpdateEffect } from '../src/game/live-map-controller';
 import type { GameTaskEvent } from '../src/game/live-map-events';
-import type { TasklandTransition } from '../src/story/game/taskland-motion';
+import { sampleTasklandPlace, type TasklandTransition } from '../src/story/game/taskland-motion';
 import { buildMapModel, type MapEntity, type MapInput, type MapModel, type MapScope } from '../src/story/game/map-model';
 import { MapScene, type RenderStats } from '../src/story/game/maps/MapScene';
 import { useAssetReport } from '../src/story/game/maps/MapAsset';
@@ -13,6 +13,7 @@ import '../src/story/game/maps/studio.css';
 
 type FixtureEntity = MapEntity & { acceptance?: { total: number; completed: number }; cancelledAt?: string };
 declare const __TASKLAND_BUILD_HEAD__: string;
+type WorkerFrame = { id: string; taskId: string; x: number; z: number; visible: boolean; now: number; arrived: boolean };
 const EPOCH = Date.parse('2026-10-08T12:00:00Z');
 function fixture(scope: MapScope): MapInput {
   const entities: FixtureEntity[] = [
@@ -46,6 +47,8 @@ function Harness() {
   const [reducedMotion, setReducedMotion] = useState(false);
   const [effect, setEffect] = useState<MapUpdateEffect | null>(null);
   const [motion, setMotion] = useState<{ transitions: readonly TasklandTransition[]; suppressedPlaceIds: readonly string[] } | null>(null);
+  const workerFrames = useRef<Record<string, WorkerFrame>>({});
+  const onWorkerFrame = useCallback((value: WorkerFrame) => { workerFrames.current[value.id] = value; }, []);
   const motionClock = useRef(0);
   const motionNow = useCallback(() => motionClock.current, []);
   const models = useRef(new Map<string, MapModel>());
@@ -61,6 +64,7 @@ function Harness() {
   const onStats = useCallback((value: RenderStats) => setStats(value), [revision]);
   function reset(next = scope) {
     models.current.clear(); motionClock.current += 10000;
+    workerFrames.current = {};
     setScope(next); setInput(fixture(next)); setNow(EPOCH); setStats(null); setType('taskland');
     setEffect(null); setMotion(null); setSelected(null); setFocusSurvey(false); setRevision(value => value + 1);
   }
@@ -95,7 +99,9 @@ function Harness() {
       }
     }) }));
   }
-  const exposed = { buildHead: __TASKLAND_BUILD_HEAD__, model, previousModel, effect, motion, reducedMotion, motionTime: motionClock.current, revision, stats, assets, now, type, scope };
+  const exposed = { buildHead: __TASKLAND_BUILD_HEAD__, model, previousModel, effect, motion, reducedMotion,
+    workerFrames: workerFrames.current, motionTime: motionClock.current, revision, stats, assets, now, type, scope,
+    sampleWorkerSite: (entityId: string) => sampleTasklandPlace(motion?.transitions ?? [], entityId, motionClock.current) };
   Object.assign(window, { __tasklandHarness: exposed });
   return <div style={{ height: '100vh', background: '#101c24', color: '#e8eef3', fontFamily: 'system-ui' }}>
     <header style={{ padding: '12px 20px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -117,7 +123,7 @@ function Harness() {
     <main data-testid="taskland-scene" style={{ position: 'relative', height: 'calc(100vh - 100px)' }}>
       <MapScene model={model} selectedEntityId={selected} onSelectEntity={setSelected} onStats={onStats}
         focus={focusSurvey ? model.places.find(p => p.entityId === 'child') : null} hierarchy
-        {...{ previousModel, effect, motionNow, reducedMotion, onTasklandMotion: setMotion }}/>
+        {...{ previousModel, effect, motionNow, reducedMotion, onTasklandMotion: setMotion, onWorkerFrame }}/>
     </main>
     <footer style={{ padding: '4px 20px' }}>Synthetic records · imported production assets · aggregate mailbox totals · no native GPU claim</footer>
   </div>;
