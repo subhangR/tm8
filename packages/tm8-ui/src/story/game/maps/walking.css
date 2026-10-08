@@ -10,9 +10,10 @@
 .walking-places li, .walking-fallback li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--pn-line); }
 .walking-fallback { height: 100%; box-sizing: border-box; overflow: auto; padding: 60px 20px 200px; color: var(--pn-ink); background: var(--pn-surface); font-size: 14px; }
 .walking-empty { position: absolute; top: 45%; width: 100%; text-align: center; color: var(--pn-ink-3); pointer-events: none; }
-.walking-workers { position: absolute; bottom: 64px; left: 12px; max-width: min(420px, 70%); max-height: 25%; overflow: auto; padding: 8px 12px; border-radius: 8px; background: var(--pn-card); color: var(--pn-ink); border: 1px solid var(--pn-line); font-size: 12px; }
+.walking-workers { position: absolute; bottom: 64px; left: 12px; max-width: min(420px, calc(55% - 36px)); box-sizing: border-box; max-height: 25%; overflow: auto; padding: 8px 12px; border-radius: 8px; background: var(--pn-card); color: var(--pn-ink); border: 1px solid var(--pn-line); font-size: 12px; }
 .walking-workers ul { list-style: none; padding: 0; margin: 8px 0; }
-.walking-workers li { display: flex; align-items: center; gap: 8px; }
+.walking-workers li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.walking-workers .sgm-btn { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 .walking-worker-color { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 @media (max-width: 600px) { .cv2-root .walking-map .walking-map-tools { top: 54px; } .walking-fallback li { flex-wrap: wrap; } .walking-map .sgm-hint span:nth-child(2) { display: none; } }
 @container (max-width: 700px) { .cv2-root .walking-map .walking-map-tools { bottom: 136px; } .cv2-root .walking-map .walking-map-tools .sgm-minimap { margin-right: 0; } }
