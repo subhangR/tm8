@@ -107,6 +107,7 @@ class FakeSpawner implements FormSpawnPort {
   byMutation = new Map<string, string>();
   spawnError: Error | null = null;
   resumeError: Error | null = null;
+  beforeResume: (() => Promise<void>) | null = null;
   taskTurn = TASK_TURN;
   /** Held open this long, so concurrent drains really overlap a spawn. */
   spawnDelayMs = 0;
@@ -133,6 +134,7 @@ class FakeSpawner implements FormSpawnPort {
   async resume(_auth: unknown, request: { sessionId: string }): Promise<unknown> {
     this.resumes.push(request.sessionId);
     if (this.resumeError) throw this.resumeError;
+    await this.beforeResume?.();
     await setStatus(request.sessionId, 'running');
     // Fire-and-forget, as notifySessionLive does.
     if (this.onLive) void this.onLive(request.sessionId).catch(() => {});
@@ -337,6 +339,30 @@ describe('onSessionNotLive = resume', () => {
     expect(terminal.reserves.filter((r) => r.messageId === view.messageId)).toHaveLength(1);
     expect(terminal.for(view.messageId!)).toHaveLength(1);
     expect(terminal.for(view.messageId!)[0]!.target).toBe(session);
+  });
+
+  it('holds the delivery lease until resume makes the session live', async () => {
+    const { terminal, spawner, drain, openForm, submit } = world();
+    const session = await newSession();
+    const form = await openForm(session);
+    await setStatus(session, 'exited');
+    let entered!: () => void;
+    let releaseResume!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const held = new Promise<void>((resolve) => { releaseResume = resolve; });
+    spawner.beforeResume = () => { entered(); return held; };
+    const view = await submit(form, { pick: { value: 'x' } });
+    try {
+      await started;
+      expect((await delivery(view.id)).claimed_at).not.toBeNull();
+      await Promise.all([drain.drain(), drain.drain({ workSessionId: session })]);
+      expect(spawner.resumes).toEqual([session]);
+    } finally {
+      releaseResume();
+    }
+    const row = await until(() => delivery(view.id), (r) => r.status === 'delivered');
+    expect(row.status).toBe('delivered');
+    expect(terminal.for(view.messageId!)).toHaveLength(1);
   });
 
   it('deleted: cancelled, never resumed', async () => {
