@@ -87,13 +87,12 @@ describe('the governance port reaches real data through a real seam', () => {
     expect(verdict).not.toBe('live');
   });
 
-  it('does not expose a write for anything this surface draws', () => {
+  it('exposes custom-kind creation alongside existing reads', () => {
     const seam = createFixtureSeam();
     const port = governancePortFromSeam(seam, 'space-1');
-    // The control on the boundary: the port's whole surface is four members,
-    // all reads. A future component cannot quietly acquire a write, because
-    // there is nothing here to call.
+    // Custom-kind creation is the only write this governance adapter exposes.
     expect(Object.keys(port).sort()).toEqual([
+      'createKind',
       'entityKinds',
       'linkedProjects',
       'profiles',

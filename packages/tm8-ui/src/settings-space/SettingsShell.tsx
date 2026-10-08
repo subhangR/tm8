@@ -1,29 +1,5 @@
-/**
- * T2-1a — THE SETTINGS SHELL: the section nav and the one-section-at-a-time
- * body (oracle L28–L45, plus the header line at L24: "a full view (menu ›
- * Settings) — section nav left, one section at a time").
- *
- * THE THING THIS FILE EXISTS TO PREVENT: the oracle's nav names EIGHT
- * destinations and draws exactly ONE body. Building only what is drawn would
- * ship seven nav rows that lead nowhere — seven silent voids on a screen whose
- * whole job is to tell you the truth about your space. So every row leads
- * somewhere honest:
- *
- *   profile  — REAL, read-only: name / description / members / created, off
- *              `SpaceSummary`. Editing is disabled-with-reason.
- *   members  — REAL rows, refused writes (MembersSection).
- *   invites  — no capability at all; the absence is stated (InviteFrames).
- *   axes     — REAL rows + CRUD over the ops that existed all along (W2;
-              the old AXES_UNREADABLE refusal was measured false).
- *   projects — HALF B's body, injected. Unmounted ⇒ says so.
- *   menu     — REAL editor, refused save (MenuEditor).
- *   kinds    — HALF B's body, injected. Unmounted ⇒ says so.
- *   danger   — the two acts that must never be faked; both refused.
- *
- * SECTION SLOTS ARE HOW TWO LANES MEET WITHOUT EDITING EACH OTHER'S FILES.
- * Half B builds `Linked projects` and `Custom kinds` in its own module; the
- * host passes them through `sections`. Neither lane imports the other.
- */
+/** Shared settings layout. Optional sectionIds narrows navigation and mounted content;
+ * omitted preserves legacy settings. SpaceAdminPage applies the authorization boundary. */
 import { useEffect, useState } from 'react';
 import type { SpaceSummary } from '@tm8/contract';
 import { MembersSection, viewerRoleIn } from './MembersSection';
@@ -52,6 +28,9 @@ export function SettingsShell({
   nodeKey = 'local',
   onAxesChanged,
   onLeftSpace,
+  sectionIds,
+  onOpenSpaceAdmin,
+  onOpenNodeAdmin,
 }: SettingsShellProps) {
   const [active, setActive] = useState<SettingsSectionId>(initialSection);
   const [data, setData] = useState<SettingsData>({
@@ -183,31 +162,36 @@ export function SettingsShell({
     onAxesChanged?.();
   }
 
+  const visibleSections = SETTINGS_SECTIONS.filter((s) => !sectionIds || sectionIds.includes(s.id));
+  const visibleActive = visibleSections.some((s) => s.id === active) ? active : visibleSections[0]?.id;
+
   const spaceLabel = data.space?.name ?? '—';
 
   return (
     <div className="set-root cv2-root">
       <div className="set-card">
         <nav className="set-nav" aria-label="Space settings sections">
+          {onOpenSpaceAdmin && <button type="button" className="set-nav__row" onClick={onOpenSpaceAdmin}>Space admin</button>}
+          {onOpenNodeAdmin && <button type="button" className="set-nav__row" onClick={onOpenNodeAdmin}>Node admin</button>}
           <span className="set-nav__eyebrow">Space · {spaceLabel}</span>
-          {SETTINGS_SECTIONS.filter((s) => !s.danger).map((s) => (
+          {visibleSections.filter((s) => !s.danger).map((s) => (
             <button
               key={s.id}
               type="button"
               className="set-nav__row"
-              aria-current={active === s.id ? 'true' : undefined}
+              aria-current={visibleActive === s.id ? 'true' : undefined}
               onClick={() => go(s.id)}
             >
               {s.label}
             </button>
           ))}
           <div className="set-nav__spacer" />
-          {SETTINGS_SECTIONS.filter((s) => s.danger).map((s) => (
+          {visibleSections.filter((s) => s.danger).map((s) => (
             <button
               key={s.id}
               type="button"
               className="set-nav__row set-nav__row--danger"
-              aria-current={active === s.id ? 'true' : undefined}
+              aria-current={visibleActive === s.id ? 'true' : undefined}
               onClick={() => go(s.id)}
             >
               {s.label}
@@ -224,8 +208,8 @@ export function SettingsShell({
               </span>
             </div>
           ) : null}
-          <SectionBody
-            id={active}
+          {visibleActive && <SectionBody
+            id={visibleActive}
             data={data}
             sections={sections}
             onGo={go}
@@ -234,11 +218,12 @@ export function SettingsShell({
             onMembersChanged={refreshMembers}
             {...(onLeftSpace ? { onLeftSpace } : {})}
             onInvitesChanged={refreshInvites}
+            onMenuWritten={(menu) => setData((d) => ({ ...d, menu }))}
             onSpaceWritten={spaceWritten}
             onAxesChanged={refreshAxes}
             onWorkflowsChanged={refreshWorkflows}
             nodeKey={nodeKey}
-          />
+          />}
         </div>
       </div>
     </div>
@@ -256,6 +241,7 @@ function SectionBody({
   onLeftSpace,
   onInvitesChanged,
   onSpaceWritten,
+  onMenuWritten,
   onAxesChanged,
   onWorkflowsChanged,
   nodeKey,
@@ -269,6 +255,7 @@ function SectionBody({
   onMembersChanged: () => void;
   onLeftSpace?: SettingsShellProps['onLeftSpace'];
   onInvitesChanged: () => void;
+  onMenuWritten: (menu: NonNullable<SettingsData['menu']>) => void;
   onSpaceWritten: (space: SpaceSummary) => void;
   onAxesChanged: () => void;
   onWorkflowsChanged: () => void;
@@ -345,7 +332,11 @@ function SectionBody({
       return (
         <SectionFrame title={def.heading} measure={false} bodyTestId="menu-body">
           {data.menu ? (
-            <MenuEditor menu={data.menu} spaceName={data.space?.name} />
+            <MenuEditor menu={data.menu} spaceName={data.space?.name}
+              {...(port.saveMenu && data.identity?.memberships.some((m) => m.spaceId === data.space?.id && (m.role === ownerRoleRef() || m.role === 'admin')) ? {
+                onSave: async (payload, revision) => { onMenuWritten(await port.saveMenu!(payload, revision)); },
+                onReload: async () => { onMenuWritten(await port.loadMenu()); },
+              } : {})} />
           ) : (
             <SectionAbsent
               head="The menu could not be read."
@@ -355,7 +346,9 @@ function SectionBody({
         </SectionFrame>
       );
     case 'profile':
-      return <ProfileSection space={data.space} heading={def.heading} />;
+      return <ProfileSection space={data.space} heading={def.heading}
+        {...(data.identity?.memberships.some((m) => m.spaceId === data.space?.id && (m.role === ownerRoleRef() || m.role === 'admin')) && port.updateSpace
+          ? { onSave: async (patch) => { onSpaceWritten(await port.updateSpace!(patch)); } } : {})} />;
     case 'account':
       return (
         <IdentityProfileSection

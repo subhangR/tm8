@@ -59,6 +59,9 @@ export interface AccountMenuProps {
   compactName?: boolean;
   /** Open the full T3-3 screen. Omitted ⇒ the row is not offered. */
   onOpenAccountScreen?: () => void;
+  /** Admin destinations are supplied only after the host resolves authority. */
+  onOpenSpaceAdmin?: () => void;
+  onOpenNodeAdmin?: () => void;
   /**
    * Re-open the guided credential setup flow. Omitted ⇒ the row is not
    * offered, the same rule every other optional row here follows: a menu item
@@ -108,6 +111,8 @@ export function AccountMenu({
   compact = false,
   compactName = false,
   onOpenAccountScreen,
+  onOpenSpaceAdmin,
+  onOpenNodeAdmin,
   onOpenAgentTools,
   agentToolsNudge,
   theme: controlledTheme,
@@ -259,6 +264,20 @@ export function AccountMenu({
               </button>
             ) : null}
 
+            {onOpenSpaceAdmin ? (
+              <button type="button" className="auth-menu__row auth-menu__row--live"
+                onClick={() => { close(); onOpenSpaceAdmin(); }}>
+                <span className="auth-menu__glyph" aria-hidden>⛭</span>
+                Space admin
+              </button>
+            ) : null}
+            {onOpenNodeAdmin ? (
+              <button type="button" className="auth-menu__row auth-menu__row--live"
+                onClick={() => { close(); onOpenNodeAdmin(); }}>
+                <span className="auth-menu__glyph" aria-hidden>⛭</span>
+                Node admin
+              </button>
+            ) : null}
             {utilityRows ?? null}
           </div>
 

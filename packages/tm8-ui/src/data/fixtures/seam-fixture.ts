@@ -38,6 +38,8 @@ import {
   type TaskWorkflowInput,
   type UpdateMemberRoleInput,
   type UpdateSpaceInput,
+  UpdateMenuInputSchema,
+  EntityKindCreateInputSchema,
   type MembershipEndResult,
   type MembershipEndStatus,
   bindPath,
@@ -2584,6 +2586,8 @@ export function createFixtureSeam(): FixtureSeam {
     memberships: [{ spaceId: FIXTURE_SPACE_ID, memberId: viewerActor.id, role: 'owner' }],
   };
 
+  const createdKinds = new Map<string, EntityKindDef>();
+  let savedMenu: MenuConfig | null = null;
   const spaceSummary: SpaceSummary = {
     id: FIXTURE_SPACE_ID,
     name: 'atelier',
@@ -2730,7 +2734,7 @@ export function createFixtureSeam(): FixtureSeam {
            row nobody designed. `menu()` resolves null here by C-4 and the UI
            substitutes its shipped default, so the shipped default is exactly
            what a consistent settings payload has to carry. */
-        menu: SHIPPED_DEFAULT_MENU,
+        menu: savedMenu ?? SHIPPED_DEFAULT_MENU,
         defaultChannelId: null,
         defaultInteractionProfileId: 'ip-house-style',
         settingsRevision: 1,
@@ -2859,7 +2863,7 @@ export function createFixtureSeam(): FixtureSeam {
     },
     /** C-4: the dataset ships no menu row — resolve null, UI uses its default. */
     async menu(_spaceId): Promise<MenuConfig | null> {
-      return null;
+      return savedMenu ? clone(savedMenu) : null;
     },
     async query(input: CollectionQuery): Promise<CollectionResult> {
       const deleted = input.filters?.deleted ?? 'exclude';
@@ -3014,7 +3018,7 @@ export function createFixtureSeam(): FixtureSeam {
       for (const s of summaries.values()) {
         if (s.kind.startsWith('c:') && !custom.has(s.kind)) custom.set(s.kind, s);
       }
-      return clone([...custom.entries()].map(([kind, sample]): EntityKindDef => {
+      return clone([...createdKinds.values(), ...[...custom.entries()].filter(([kind]) => !createdKinds.has(kind)).map(([kind, sample]): EntityKindDef => {
         const fields = isCustomState(sample.state) ? sample.state.fields : {};
         const fieldSchema: CustomFieldDef[] = Object.entries(fields).map(([name, v]) => ({
           name,
@@ -3024,7 +3028,7 @@ export function createFixtureSeam(): FixtureSeam {
           id: `kind-${kind}`, kind: kind as `c:${string}`, origin: 'custom', spaceId,
           icon: null, fieldSchema, capabilities: {}, createdBy: null, createdAt: FIXTURE_NOW,
         };
-      }));
+      })]);
     },
     async projects(): Promise<ProjectResource[]> {
       return clone([...FIXTURE_PROJECTS]);
@@ -4090,6 +4094,31 @@ export function createFixtureSeam(): FixtureSeam {
        * left alone. Only the space summary moves; no session is touched,
        * because a default applies at spawn and never reaches backwards.
        */
+      async createEntityKind(spaceId, input) {
+        if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+        const viewer = membersOfSpace(spaceId).find((m) => m.id === viewerActor.id)
+          ?? membersOfSpace(spaceId).find((m) => roleOfSummary(m) === 'owner');
+        if (!viewer || !['owner', 'admin'].includes(roleOfSummary(viewer) ?? '')) throw new CollabError('forbidden', 'space admin required');
+        const parsed = EntityKindCreateInputSchema.safeParse(input);
+        if (!parsed.success) throw new CollabError('invalid_input', parsed.error.issues[0]?.message ?? 'Invalid kind');
+        if (createdKinds.has(input.kind) || [...summaries.values()].some((s) => s.kind === input.kind)) throw new CollabError('conflict', 'Kind already exists');
+        const kind: EntityKindDef = { id: crypto.randomUUID(), kind: input.kind, origin: 'custom', spaceId,
+          icon: input.icon ?? null, fieldSchema: clone(input.fieldSchema), capabilities: clone(input.capabilities ?? {}), createdAt: FIXTURE_NOW };
+        createdKinds.set(kind.kind, kind);
+        return clone(kind);
+      },
+      async updateMenu(spaceId, input) {
+        if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+        const viewer = membersOfSpace(spaceId).find((m) => m.id === viewerActor.id)
+          ?? membersOfSpace(spaceId).find((m) => roleOfSummary(m) === 'owner');
+        if (!viewer || !['owner', 'admin'].includes(roleOfSummary(viewer) ?? '')) throw new CollabError('forbidden', 'space admin required');
+        const parsed = UpdateMenuInputSchema.safeParse(input);
+        if (!parsed.success) throw new CollabError('invalid_input', parsed.error.issues[0]?.message ?? 'Invalid menu');
+        if (input.expectedRevision !== (savedMenu?.revision ?? 0)) throw new CollabError('conflict', 'Menu changed; reload before saving.');
+        savedMenu = { ...clone(input.payload), revision: (savedMenu?.revision ?? 0) + 1 };
+        emit(spaceId, { type: 'menu.updated', menu: clone(savedMenu) }, input);
+        return clone(savedMenu);
+      },
       async updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary> {
         if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
         const viewer = membersOfSpace(spaceId).find((m) => m.id === viewerActor.id)
@@ -4106,6 +4135,10 @@ export function createFixtureSeam(): FixtureSeam {
           && input.sessionDriveDefault !== 'owner' && input.sessionDriveDefault !== 'space') {
           throw new CollabError('invalid_input', 'sessionDriveDefault must be owner or space');
         }
+        if (input.sessionAutoCloseMinutes !== undefined && (!Number.isInteger(input.sessionAutoCloseMinutes) || input.sessionAutoCloseMinutes < 0 || input.sessionAutoCloseMinutes > 10080)) {
+          throw new CollabError('invalid_input', 'sessionAutoCloseMinutes must be an integer between 0 and 10080');
+        }
+        if (input.sessionAutoCloseMinutes !== undefined) spaceSummary.sessionAutoCloseMinutes = input.sessionAutoCloseMinutes;
         if (input.name !== undefined) spaceSummary.name = input.name;
         if (input.description !== undefined) spaceSummary.description = input.description;
         if (input.githubRepo !== undefined) spaceSummary.githubRepo = input.githubRepo;

@@ -93,7 +93,8 @@ import {
   homeActivityLoadEarlierReason,
   presenceHollowReason,
 } from '../fixtures';
-import type { Seam } from '../data/seam';
+import type { IdentityView, Seam } from '../data/seam';
+import { adminAccessFor } from './admin-access';
 import { JoinScreen, arriveInSpace, clearPendingJoin, newJoinMutationId } from '../join';
 import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
@@ -116,7 +117,11 @@ import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { channelFeedPortFromGateData } from './channel-feed-port';
-import { SettingsShell, ownerRoleRef, settingsPortFromSeam } from '../settings-space';
+import { SettingsShell, SpaceAdminPage, SETTINGS_SECTIONS, ownerRoleRef, settingsPortFromSeam } from '../settings-space';
+import { NodeAdminPage } from '../settings-node/NodeAdminPage';
+import type { SettingsShellProps } from '../settings-space';
+import { governancePortFromSeam } from '../settings-governance';
+import { CustomKindsSettings } from './CustomKindsSettings';
 import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { InboxView } from './InboxView';
 import { StatusStrip } from '../status-strip';
@@ -472,6 +477,16 @@ export function screenKeyOfTarget(target: MenuTarget | null): ScreenKey | null {
   if (target.type === 'kind') return screenKeyOf.kind(target.ref);
   if (target.type === 'view') return screenKeyOf.view(target.ref);
   return null;
+}
+
+const PERSONAL_SETTINGS_SECTIONS = SETTINGS_SECTIONS
+  .filter(({ id }) => id !== 'node-credentials' && id !== 'filesystem-access')
+  .map(({ id }) => id);
+
+function SettingsPage({ admin, identity, ...props }: SettingsShellProps & { admin: boolean; identity: IdentityView | null }) {
+  return admin
+    ? <SpaceAdminPage {...props} identity={identity} />
+    : <SettingsShell {...props} sectionIds={PERSONAL_SETTINGS_SECTIONS} />;
 }
 
 export function GateApp(props: GateAppProps = {}) {
@@ -1293,18 +1308,25 @@ export function GateApp(props: GateAppProps = {}) {
   // `null` is unknown (read failed or in flight) and never treated as a
   // denial. Promise.resolve() so a seam whose identity read throws
   // synchronously degrades to unknown instead of taking down the shell.
-  const [viewerIsNodeAdmin, setViewerIsNodeAdmin] = useState<boolean | null>(null);
+  const accountId = authAccount?.accountId ?? null;
+  const [viewerAuthority, setViewerAuthority] = useState<{
+    seam: Seam; accountId: string | null; identity: IdentityView;
+  } | null>(null);
+  const viewerIdentity = viewerAuthority?.seam === data.seam && viewerAuthority.accountId === accountId
+    ? viewerAuthority.identity : null;
+  const adminAccess = adminAccessFor(viewerIdentity, data.spaceId);
+  const viewerIsNodeAdmin = viewerIdentity ? adminAccess.node : null;
   useEffect(() => {
     let alive = true;
-    setViewerIsNodeAdmin(null);
+    setViewerAuthority(null);
     Promise.resolve()
       .then(() => data.seam.identity())
-      .then((viewer) => alive && setViewerIsNodeAdmin(viewer.isNodeAdmin))
-      .catch(() => alive && setViewerIsNodeAdmin(null));
+      .then((identity) => alive && setViewerAuthority({ seam: data.seam, accountId, identity }))
+      .catch(() => alive && setViewerAuthority(null));
     return () => {
       alive = false;
     };
-  }, [data.seam]);
+  }, [data.seam, accountId]);
 
   const stack = useNavStore((s) => s.stack);
   const pinned = useNavStore((s) => s.pinned);
@@ -1855,8 +1877,26 @@ export function GateApp(props: GateAppProps = {}) {
   );
 
   const settingsPort = useMemo(
-    () => (data.spaceId ? settingsPortFromSeam(data.seam, data.spaceId, { signOut: signOutHere }) : null),
-    [data.seam, data.spaceId, signOutHere],
+    () => {
+      if (!data.spaceId) return null;
+      const port = settingsPortFromSeam(data.seam, data.spaceId, { signOut: signOutHere });
+      const saveMenu = port.saveMenu;
+      return {
+        ...port,
+        ...(saveMenu ? {
+          saveMenu: async (...args: Parameters<typeof saveMenu>) => {
+            const saved = await saveMenu(...args);
+            data.refreshMenu();
+            return saved;
+          },
+        } : {}),
+      };
+    },
+    [data.seam, data.spaceId, data.refreshMenu, signOutHere],
+  );
+  const governancePort = useMemo(
+    () => data.spaceId ? governancePortFromSeam(data.seam, data.spaceId) : null,
+    [data.seam, data.spaceId],
   );
 
   // The credentials section's own adapter, built the same way and on the same
@@ -2474,6 +2514,8 @@ export function GateApp(props: GateAppProps = {}) {
     authAccount && data.viewerActor ? (
       <AccountMenu
         actor={data.viewerActor}
+        onOpenSpaceAdmin={adminAccess.space ? () => navigateRouteView({ view: 'settings', scope: 'space', section: null }) : undefined}
+        onOpenNodeAdmin={adminAccess.node ? () => navigateRouteView({ view: 'settings', scope: 'node', section: null }) : undefined}
         theme={theme}
         onThemeChange={setTheme}
         stylePicker={
@@ -2532,7 +2574,8 @@ export function GateApp(props: GateAppProps = {}) {
      (the rollback) and a boot that never became ready keep the top bar. */
   const framed = threeModes && !LEGACY_BAR && data.ready && !!data.spaceId;
   const observing = activeTarget?.type === 'view' && activeTarget.ref === 'graph' && navView.view !== 'newSession' && navView.view !== 'boardV2';
-  const frameTitle =
+  const frameTitle = navView.view === 'settings' && navView.scope
+    ? (navView.scope === 'space' ? 'Space admin' : 'Node admin') :
     (activeGroupId ? VIEW_GROUP_LABEL[activeGroupId] ?? activeGroup?.label : undefined) ??
     (activeTarget?.type === 'view' ? FRAME_VIEW_TITLE[activeTarget.ref] : undefined) ??
     (navView.view === 'newSession' ? 'New session' : navView.view === 'boardV2' ? 'Board' : 'tm8');
@@ -3178,17 +3221,34 @@ export function GateApp(props: GateAppProps = {}) {
             /* ⛭ Settings — the T2 shell, mounted at last (identity-display
                lane, 2026-08-01): this ref rendered the unbuilt-view card while
                the whole module sat built and unmounted in settings-space/.
-               Sections another module owns (projects/kinds) keep their honest
-               not-mounted state inside the shell itself. */
-            <SettingsShell
+               Sections owned by other modules are injected below. Scoped
+               admin pages resolve authority before mounting their content. */
+            navView.view === 'settings' && navView.scope === 'node' ? (
+              <NodeAdminPage
+                key={`${data.spaceId}:${accountId}:node:${navView.section ?? 'default'}`}
+                seam={data.seam}
+                spaceId={data.spaceId}
+                identity={viewerIdentity}
+                nodeName={activeServer.label}
+                initialSection={navView.section ?? undefined}
+                onSectionChange={(section) => navigateRouteView({ view: 'settings', scope: 'node', section })}
+              />
+            ) : <SettingsPage
               /* `/settings/<section>` opens on that section — e.g. the Jev
                  launch surface's "add your TypeSafe key" link lands on
                  credentials. Keyed so arriving by a new address re-opens. */
-              key={navView.view === 'settings' ? navView.section ?? 'default' : 'default'}
+              key={`${data.spaceId}:${accountId}:${navView.view === 'settings' ? `${navView.scope ?? 'personal'}:${navView.section ?? 'default'}` : 'default'}`}
               {...(navView.view === 'settings' && navView.section
                 ? { initialSection: navView.section }
                 : {})}
               port={settingsPort}
+              admin={navView.view === 'settings' && navView.scope === 'space'}
+              identity={viewerIdentity}
+              onSectionChange={(section) => navigateRouteView({ view: 'settings', section,
+                ...(navView.view === 'settings' && navView.scope === 'space' ? { scope: 'space' as const } : {}),
+              })}
+              onOpenSpaceAdmin={adminAccess.space ? () => navigateRouteView({ view: 'settings', scope: 'space', section: null }) : undefined}
+              onOpenNodeAdmin={adminAccess.node ? () => navigateRouteView({ view: 'settings', scope: 'node', section: null }) : undefined}
               nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
               /* W2 -> W1/W3: an axis write must reach the workspace's own
                  pickers and board options; axis rows are not entities, so no
@@ -3202,9 +3262,14 @@ export function GateApp(props: GateAppProps = {}) {
                 data.forgetSpace(spaceId);
               }}
               sections={
-                credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort
+                credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort || governancePort
                   ? {
                       connectors: <McpSettings />,
+                      ...(governancePort ? { kinds: <CustomKindsSettings
+                        port={governancePort}
+                        spaceName={data.spaces.find((space) => space.id === data.spaceId)?.name ?? 'Space'}
+                        canCreate={adminAccess.space}
+                      /> } : {}),
                       ...(spaceLinksPort
                         ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} onOpen={openFromSettings} /> }
                         : {}),

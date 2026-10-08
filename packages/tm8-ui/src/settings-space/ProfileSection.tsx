@@ -1,42 +1,7 @@
-/**
- * Profile — the SPACE's profile: what this space is, and the record behind it.
- *
- * STILL EVERYTHING `SpaceSummary` CARRIES AND NOTHING ELSE. The original note
- * here said inventing an avatar picker or a timezone field would be designing
- * rather than transcribing, and that still holds — nothing below reads a field
- * the DTO does not have. What changed is the ARRANGEMENT of the fields it does
- * have, which was five identical `.set-kv` rows in a flat stack: a dump of the
- * DTO's shape rather than a profile. The name of the space and the sentence
- * describing it are what the section is ABOUT; `memberCount`, `githubRepo` and
- * `createdAt` are the record behind them. Two groups, not one list.
- *
- * `unreadTotal` is the one carried field still not drawn, and deliberately: it
- * is a live per-viewer counter, not a fact about the space. It belongs on a
- * rail badge and would go stale the moment this pane opened. `id` IS drawn —
- * it is the string a person pastes into `tm8`, and it was the only genuinely
- * useful field the old stack left out.
- *
- * THREE THINGS MEASURED WRONG HERE, all fixed below (numbers in
- * `space-profile.css`, taken in Chrome per SECTION-CONTRACT.md §8):
- *
- *   1. `.set-stack` pads itself by the section gutter INSIDE `SectionFrame`'s
- *      `.set-section__pad`, which pads by the same gutter. The body's first
- *      label sat 18px right of the section's own title. The stack here owns no
- *      padding at all; the frame's gutter is the only one.
- *   2. `Created` rendered `space.createdAt` raw — `2026-01-04T09:00:00.000Z`
- *      shown to a human. `kit/time.ts` is the app's one formatter and its
- *      header already forbids exactly this ("never a raw ISO string leaked
- *      into the UI"); this section simply was not going through it.
- *   3. `About` and `Repo` rendered `—` when null. An em dash is a legal
- *      character in both, so an absent field was drawn identically to a
- *      present one. Absence is now said in words.
- *
- * EXTRACTED FROM `SettingsShell.tsx` 2026-08-16. It was an inline function
- * there, which meant this section was the one nobody could work on without
- * editing the file all eleven other sections route through. Its own file is
- * its own seat.
- */
-import type { ReactNode } from 'react';
+/** Space profile and server-backed editing. Without an authorized onSave callback,
+ * the same section remains read-only for legacy/member settings. */
+import { useState, type FormEvent, type ReactNode } from 'react';
+import type { SpaceProfilePatch } from './port';
 import type { SpaceSummary } from '@tm8/contract';
 import { DisabledAction } from '../panels';
 import { absTime, shortDate } from '../kit';
@@ -98,7 +63,7 @@ function Field({
   );
 }
 
-export function ProfileSection({ space, heading }: { space: SpaceSummary | null; heading: string }) {
+export function ProfileSection({ space, heading, onSave }: { space: SpaceSummary | null; heading: string; onSave?: (patch: SpaceProfilePatch) => Promise<void> }) {
   if (space === null) {
     return (
       <SectionFrame title={heading} bodyTestId="profile-body">
@@ -150,11 +115,90 @@ export function ProfileSection({ space, heading }: { space: SpaceSummary | null;
         </dl>
 
         <div className="set-space-profile__actions">
-          <DisabledAction reason={SPACE_EDIT_UNAVAILABLE} label="edit space details">
-            Edit space details
-          </DisabledAction>
+          {onSave ? <SpaceProfileForm key={space.id} space={space} onSave={onSave} /> :
+            <DisabledAction reason={SPACE_EDIT_UNAVAILABLE} label="edit space details">Edit space details</DisabledAction>}
         </div>
       </div>
     </SectionFrame>
+  );
+}
+
+function SpaceProfileForm({ space, onSave }: { space: SpaceSummary; onSave: (patch: SpaceProfilePatch) => Promise<void> }) {
+  const [name, setName] = useState(space.name);
+  const [description, setDescription] = useState(space.description ?? '');
+  const [repo, setRepo] = useState(space.githubRepo ?? '');
+  const [minutes, setMinutes] = useState(String(space.sessionAutoCloseMinutes ?? 30));
+  const [minutesChanged, setMinutesChanged] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    setError(null);
+    setSaved(false);
+    const autoClose = Number(minutes);
+    if (!name.trim() || !minutes.trim() || !Number.isInteger(autoClose) || autoClose < 0 || autoClose > 10080) {
+      setError('Enter a name and whole auto-close minutes between 0 and 10080.');
+      return;
+    }
+    setPending(true);
+    try {
+      await onSave({
+        name: name.trim(),
+        description: description.trim(),
+        githubRepo: repo.trim() || null,
+        ...(space.sessionAutoCloseMinutes !== undefined || minutesChanged
+          ? { sessionAutoCloseMinutes: autoClose }
+          : {}),
+      });
+      setSaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form className="set-space-profile__form" onSubmit={submit}>
+      <fieldset disabled={pending}>
+        <legend>Space details</legend>
+        <label>
+          Name
+          <input required value={name} onChange={(event) => {
+            setName(event.target.value);
+            setSaved(false);
+          }} />
+        </label>
+        <label>
+          Description
+          <textarea value={description} onChange={(event) => {
+            setDescription(event.target.value);
+            setSaved(false);
+          }} />
+        </label>
+        <label>
+          GitHub repository
+          <input value={repo} placeholder="owner/repository" onChange={(event) => {
+            setRepo(event.target.value);
+            setSaved(false);
+          }} />
+        </label>
+        <label>
+          Session auto-close minutes
+          <input type="number" min="0" max="10080" step="1" required value={minutes}
+            onChange={(event) => {
+              setMinutes(event.target.value);
+              setMinutesChanged(true);
+              setSaved(false);
+            }} />
+        </label>
+        <p>Close completed sessions after this many idle minutes. Set 0 to never close them automatically.</p>
+        <button type="submit">{pending ? 'Saving…' : 'Save space details'}</button>
+      </fieldset>
+      {error && <p role="alert">{error}</p>}
+      {saved && <p role="status">Space details saved.</p>}
+    </form>
   );
 }

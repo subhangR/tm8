@@ -15,12 +15,9 @@
  * cap stated on its own disabled control, discard, and a live preview that
  * re-renders every keystroke in the rail's own grammar.
  *
- * WHAT CANNOT: Save. `data/seam.ts` records the ruling verbatim —
- * `spaces.menu.update` "stays OUT of this seam until their phase". So Save is
- * disabled-with-reason, ALWAYS, and under a version lock the same control
- * simply carries a different reason. The oracle draws a second disabled Save
- * inside the lock panel (L383); this does not, because two refusals of one verb
- * on one screen read as two verbs.
+ * Save is enabled when an authorized callback is supplied, the draft is valid,
+ * and its base revision can be saved safely. Version locks and unknown fallback
+ * origins stay read-only; conflicts preserve the draft until explicit reload.
  *
  * DRAG: implemented with HTML5 dnd AND with keyboard (alt+↑/↓ on the grip),
  * because a reorder that only exists under a mouse is a control a keyboard
@@ -50,7 +47,7 @@
  *     that overflow; a second scroller nested in it clips instead of scrolls.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { MenuGroup, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
+import type { MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import './menu-editor.css';
 import { CUSTOM_KIND_FALLBACK, KindIcon, getKind } from '../domain';
 import { VectorIcon } from '../kit';
@@ -90,6 +87,8 @@ import {
 import { SectionAbsent } from './SectionFrame';
 
 export interface MenuEditorProps {
+  onSave?: (payload: MenuConfigPayload, expectedRevision: number) => Promise<void>;
+  onReload?: () => Promise<void>;
   /** What the port loaded — config plus WHY it is that config. */
   menu: ResolvedMenu;
   /** Space label for the header's `space · atelier · v12` line (oracle L288). */
@@ -114,11 +113,16 @@ type RowKind = 'group' | 'item' | 'child';
 
 export function MenuEditor({
   menu,
+  onSave,
+  onReload,
   spaceName,
   conflictRevision = null,
   conflictBy = null,
   versionLocked = false,
 }: MenuEditorProps) {
+  const [pending, setPending] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const [draft, setDraft] = useState<MenuDraft>(() => startDraft(menu.config));
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
@@ -148,7 +152,36 @@ export function MenuEditor({
     setRenaming(null);
   }, [renaming, renameText]);
 
-  const editable = !versionLocked;
+  async function saveMenu() {
+    if (!onSave || pending) return;
+    setPending(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      await onSave(draft.payload, isSavedMenu(menu.origin) ? menu.origin.revision : 0);
+      setSaved(true);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function reloadMenu() {
+    if (!onReload || pending) return;
+    setPending(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      await onReload();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const editable = !versionLocked && !pending;
   const conflicted = conflictRevision !== null && conflictRevision > config.revision;
   const rowCount = config.groups.reduce((n, g) => n + g.items.length, 0);
 
@@ -179,12 +212,14 @@ export function MenuEditor({
                     Reload to edit — your unsaved reorder will be lost.
                   </span>
                 </div>
-                <DisabledIconControl
-                  label={`reload v${conflictRevision}`}
-                  reason={MENU_RELOAD_UNAVAILABLE}
-                >
-                  <span className="set-state__action">Reload v{conflictRevision}</span>
-                </DisabledIconControl>
+                {onReload ? (
+                  <button type="button" disabled={pending} onClick={reloadMenu}
+                    aria-label={`reload v${conflictRevision}`}>Reload v{conflictRevision}</button>
+                ) : (
+                  <DisabledIconControl label={`reload v${conflictRevision}`} reason={MENU_RELOAD_UNAVAILABLE}>
+                    <span className="set-state__action">Reload v{conflictRevision}</span>
+                  </DisabledIconControl>
+                )}
               </div>
               <span className="set-state__foot">
                 last-write-wins everywhere else; the editor is the one surface that warns before
@@ -244,7 +279,7 @@ export function MenuEditor({
           type="button"
           className="set-ghost"
           onClick={() => setDraft(startDraft(menu.config))}
-          disabled={!dirty}
+          disabled={!dirty || pending}
           title={dirty ? 'discard your unsaved edits' : 'nothing to discard'}
         >
           discard
@@ -255,12 +290,26 @@ export function MenuEditor({
           `discard` and the card edge, and drove the header to ~120px tall. A
           caption gets its own line, and a measure. */}
       <div className="set-menu__save">
-        <DisabledAction
-          reason={versionLocked ? MENU_SAVE_VERSION_LOCKED : MENU_SAVE_UNAVAILABLE}
-          label="save menu"
-        >
-          Save menu
-        </DisabledAction>
+        {onSave ? (
+          <>
+            <button type="button" onClick={saveMenu}
+              disabled={pending || !dirty || !!issue || versionLocked || conflicted
+                || (!isSavedMenu(menu.origin) && menu.origin.because !== 'absent')}>
+              {pending ? 'Saving…' : 'Save menu'}
+            </button>
+            {onReload && (
+              <button type="button" disabled={pending} onClick={reloadMenu}>Reload menu</button>
+            )}
+            {saveError && <p role="alert">{saveError}</p>}
+            {saved && <p role="status">Menu saved.</p>}
+          </>
+        ) : (
+          <DisabledAction
+            reason={versionLocked ? MENU_SAVE_VERSION_LOCKED : MENU_SAVE_UNAVAILABLE}
+            label="save menu">
+            Save menu
+          </DisabledAction>
+        )}
       </div>
 
       <div className="set-menu__cols">

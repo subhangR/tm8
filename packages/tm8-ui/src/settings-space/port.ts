@@ -45,6 +45,7 @@ import type {
   IdentityProfileUpdateInput,
   IdentityProfileView,
   MenuConfig,
+  MenuConfigPayload,
   SpaceConfigsView,
   AuthSessionsListResult,
   AuthSessionsRevokeResult,
@@ -190,8 +191,14 @@ export function defaultInviteRole(): string {
   return roles.length > 0 ? roles[roles.length - 1] : 'unknown';
 }
 
-/** The narrow surface the settings components consume. Reads only — see above. */
+/** The profile fields exposed by space administration. */
+export type SpaceProfilePatch = Pick<UpdateSpaceInput, 'name' | 'description' | 'githubRepo' | 'sessionAutoCloseMinutes'>;
+
+/** Bound-space reads and supported, server-authorized settings writes. */
 export interface SettingsPort {
+  saveMenu?(payload: MenuConfigPayload, expectedRevision: number): Promise<ResolvedMenu>;
+  /** Updates only the bound space, with server authorization. */
+  updateSpace?(patch: SpaceProfilePatch): Promise<SpaceSummary>;
   /** The space this settings view is about; `null` when the id is not in `spaces()`. */
   loadSpace(): Promise<SpaceSummary | null>;
   /** Human members as entities. The role is on `state`, not on a separate DTO. */
@@ -402,6 +409,15 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId, opts: Setting
     async loadInvites() {
       const settings = await seam.spaceSettings(spaceId);
       return settings.invites;
+    },
+
+    ...(seam.commands.updateMenu ? { saveMenu: async (payload: MenuConfigPayload, expectedRevision: number) => {
+      const menu = await seam.commands.updateMenu!(spaceId, { payload, expectedRevision, clientMutationId: newMutationId('menu') });
+      return resolveMenu(menu);
+    } } : {}),
+
+    updateSpace(patch) {
+      return seam.commands.updateSpace(spaceId, { ...patch, clientMutationId: newMutationId('space_profile') });
     },
 
     updateSharingDefaults(patch) {

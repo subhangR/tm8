@@ -50,6 +50,8 @@ import {
   type SpaceInviteView,
   type UpdateMemberRoleInput,
   type UpdateSpaceInput,
+  type UpdateMenuInput,
+  type EntityKindCreateInput,
   bindPath,
   type ActivityItem,
   type ArtifactPreviewSession,
@@ -473,6 +475,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { accountId },
         body: { clientMutationId: newId('acctdisable') },
       });
+    },
+
+    createEntityKind(spaceId: SpaceId, input: EntityKindCreateInput): Promise<EntityKindDef> {
+      return http.call<EntityKindDef>('entityKinds.create', { params: { spaceId }, body: input });
+    },
+
+    updateMenu(spaceId: SpaceId, input: UpdateMenuInput): Promise<MenuConfig> {
+      return http.call<MenuConfig>('spaces.menu.update', { params: { spaceId }, body: input });
     },
 
     updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary> {

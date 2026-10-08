@@ -42,6 +42,7 @@ import {
   MAX_HASH_LENGTH,
   PANEL_TABS,
   SETTINGS_ROUTE_SECTIONS,
+  NODE_ADMIN_ROUTE_SECTIONS,
   emptyPanels,
 } from './types';
 
@@ -511,11 +512,18 @@ function parseTarget(
       if (!voiceChannelId) return { view: 'home' };
       return { view: 'voice', voiceChannelId };
     }
+    case 'node-admin':
+      return { view: 'settings', scope: 'node', section: NODE_ADMIN_ROUTE_SECTIONS.find((s) => s === rest[1]) ?? null };
+    case 'space-admin':
     case 'settings': {
       const section = rest[1];
+      // Older links to node controls now go through the node page's guard.
+      if (rest[0] === 'settings' && (section === 'node-credentials' || section === 'filesystem-access')) {
+        return { view: 'settings', scope: 'node', section: section === 'node-credentials' ? 'credentials' : 'filesystem' };
+      }
       const known = SETTINGS_ROUTE_SECTIONS.find((candidate) => candidate === section);
-      if (known) return { view: 'settings', section: known };
-      return { view: 'settings', section: null };
+      const scope = rest[0] === 'space-admin' ? 'space' : undefined;
+      return { view: 'settings', section: known ?? null, ...(scope ? { scope } : {}) };
     }
     case 'channel': {
       const channelId = rest[1];
@@ -628,8 +636,10 @@ function pathOf(route: Route): string {
       return `${base}/k/${enc(t.slug)}`;
     case 'entity':
       return `${base}/e/${enc(t.entityId)}`;
-    case 'settings':
-      return t.section ? `${base}/settings/${t.section}` : `${base}/settings`;
+    case 'settings': {
+      const page = t.scope === 'space' ? 'space-admin' : t.scope === 'node' ? 'node-admin' : 'settings';
+      return t.section ? `${base}/${page}/${t.section}` : `${base}/${page}`;
+    }
   }
 }
 

@@ -513,6 +513,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
       leaveSpace: (spaceId) => ops.leaveSpace(spaceId),
       removeMember: (spaceId, memberId) => ops.removeMember(spaceId, memberId),
+      createEntityKind: (spaceId, input) => ops.createEntityKind(spaceId, input),
+      updateMenu: (spaceId, input) => ops.updateMenu(spaceId, input),
       updateSpace: (spaceId, input) => ops.updateSpace(spaceId, input),
       createInvite: (spaceId, input) => ops.createInvite(spaceId, input),
       // `ctx` defaults to `{}` rather than being forwarded as `undefined`: the
