@@ -1,7 +1,7 @@
 /** External resource deadline; only descendants of the runner spawned here are eligible. */
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -17,14 +17,20 @@ async function signalOwned(entry, signal) {
   try { process.kill(entry.pid, signal); return true; }
   catch (error) { if (error.code === 'ESRCH') return false; throw error; }
 }
-async function captureStoppedTree(pid) {
+async function captureStoppedTree(pid, seen = new Set()) {
+  if (seen.has(pid)) return [];
+  seen.add(pid);
   const entry = await identity(pid); if (!entry || entry.state === 'Z') return [];
   await signalOwned(entry, 'SIGSTOP'); // Prevent another descendant being created while capturing ownership.
-  let children;
-  try { children = await readFile(`/proc/${pid}/task/${pid}/children`, 'utf8'); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; children = ''; }
-  return [entry, ...(await Promise.all(children.trim().split(/\s+/).filter(Boolean)
-    .map(child => captureStoppedTree(Number(child))))).flat()];
+  let threads;
+  try { threads = await readdir(`/proc/${pid}/task`); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; threads = []; }
+  const lists = await Promise.all(threads.map(async tid => {
+    try { return await readFile(`/proc/${pid}/task/${tid}/children`, 'utf8'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; return ''; }
+  }));
+  const children = new Set(lists.flatMap(list => list.trim().split(/\s+/).filter(Boolean).map(Number)));
+  return [entry, ...(await Promise.all([...children].map(child => captureStoppedTree(child, seen)))).flat()];
 }
 export async function runOwnedWindow(command, args, {
   deadlineEpochMs, reserveMs = 5_000, graceMs = 3_000, cwd, env = process.env, stdio = 'inherit',
