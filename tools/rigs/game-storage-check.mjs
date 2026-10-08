@@ -45,12 +45,14 @@ try {
   }
 } catch (error) {
   report.runnerError = String(error.message).split('\n')[0].slice(0, 300);
+  if (!checks.some(check => !check.passed)) record({ name: 'all requested acceptance stages completed', passed: false, reason: report.runnerError });
   process.exitCode = 1;
 } finally {
   await stopChild(ui); await stopChild(server); await pool.end();
   report.elapsedMs = Date.now() - began;
   report.passed = checks.filter(check => check.passed).length;
   report.failed = checks.filter(check => !check.passed).length;
+  report.success = !report.runnerError && report.failed === 0;
   report.ownedProcessesStopped = true;
   if (report.failed) process.exitCode = 1;
   await writeFile(`${runRoot}/acceptance.json`, JSON.stringify(report, null, 2));

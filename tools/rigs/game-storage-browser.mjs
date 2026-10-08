@@ -61,6 +61,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
     await ready(page);
   };
   const enter = async (page, name) => {
+    console.log(JSON.stringify({ stage: 'synthetic portal entry', name }));
     const places = page.getByTestId('walking-map').locator('details.walking-places');
     if (!(await places.evaluate(node => node.open))) await places.locator('summary').click();
     await places.getByRole('button', { name: `Enter ${name}`, exact: true }).click();
@@ -75,7 +76,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
     direction.forEach((value, index) => assert.ok(Math.abs(value / length - live.camera.forward[index]) < 1e-12, 'actual camera points at saved target'));
   };
   const check = async (name, fn) => { const started = Date.now(); try { await fn(); record({ name, passed: true, elapsedMs: Date.now() - started }); }
-    catch (error) { record({ name, passed: false, elapsedMs: Date.now() - started, reason: String(error.message).slice(0, 250) }); throw error; } };
+    catch (error) { console.log(JSON.stringify({ stage: 'synthetic journey failure detail', name, message: String(error.message).slice(0, 2_000), stack: String(error.stack).split('\n').slice(0, 5) })); record({ name, passed: false, elapsedMs: Date.now() - started, reason: String(error.message).slice(0, 250) }); throw error; } };
 
   try {
     let before, currentKey;

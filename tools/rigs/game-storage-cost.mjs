@@ -17,8 +17,15 @@ export async function verifyPersistenceCost(f, pool, record) {
   const started = Date.now(), types = ['hub', 'taskland', 'office', 'library', 'factory', 'town'];
   const open = async selection => dataOf(await request(`/v2/spaces/${f.spaceId}/maps/open`, { ...selection, clientMutationId: randomUUID() }), 'cost map open');
   const town = await open({ type: 'town', scope: { kind: 'space', id: f.spaceId } });
-  await pool.query(`insert into map.placements(map_id,item_id,entity_id,kind,x,z,rotation,spec,layer,by_actor,version)
-    select $1,gen_random_uuid(),null,'decor',i,0,0,'{}','human',$2,1 from generate_series(1,100) i`, [town.id, f.owner.memberId]);
+  const fixture = await pool.connect();
+  try {
+    await fixture.query('begin');
+    await fixture.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.node_admin','false',true)", [f.owner.identityId]);
+    await fixture.query(`insert into map.placements(map_id,item_id,entity_id,kind,x,z,rotation,spec,layer,by_actor,version)
+      select $1,gen_random_uuid(),null,'decor',i,0,0,'{}','human',$2,1 from generate_series(1,100) i`, [town.id, f.owner.memberId]);
+    await fixture.query('commit');
+  } catch (error) { await fixture.query('rollback'); throw error; }
+  finally { fixture.release(); }
   const contextTimes = [];
   for (let index = 0; index < 10; index++) {
     const start = performance.now();
