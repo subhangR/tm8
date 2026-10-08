@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { Group, Vector3 } from 'three';
 import type { MapModel, MapPlace } from '../map-model';
-import type { TasklandMotionInput } from '../taskland-motion';
-import { useTasklandMotion } from './TasklandMotion';
+import { emptyTasklandMotion, reconcileTasklandMotion, type TasklandMotionInput } from '../taskland-motion';
+import { applyTasklandFrame, useTasklandMotion } from './TasklandMotion';
 
 vi.mock('@react-three/fiber', () => ({ useFrame: vi.fn() }));
 vi.mock('./MapAsset', () => ({ MapAsset: () => null }));
@@ -54,5 +55,42 @@ describe('Taskland scene motion hook', () => {
     expect(result.current.transitions).toEqual([]);
     rerender(props);
     expect(result.current.transitions).toEqual([]);
+  });
+  it('uses a shared injected clock for deterministic synthetic frames', () => {
+    const props={...input(),now:()=>2000};
+    const {result}=renderHook(p=>useTasklandMotion(p),{initialProps:props});
+    expect(result.current.transitions[0]!.startedAt).toBe(2000);
+  });
+});
+describe('Taskland Three frame application', () => {
+  it('moves root and relative cargo in world space and hides the transient on arrival', () => {
+    const props=input();
+    const state=reconcileTasklandMotion(emptyTasklandMotion(props),props,100);
+    const transition=state.transitions[0]!;
+    const root=new Group(),cargo=new Group(),member=new Group();
+    root.add(cargo);cargo.add(member);
+    const objects={root,cargo,dust:null,members:new Map([['root',member]])};
+    expect(applyTasklandFrame(transition,100+transition.duration/2,objects)).toBe(false);
+    root.updateMatrixWorld(true);
+    expect(member.getWorldPosition(new Vector3()).toArray()).toEqual([5,.44,0]);
+    expect(root.visible).toBe(true);
+    expect(applyTasklandFrame(transition,100+transition.duration,objects)).toBe(true);
+    expect(root.visible).toBe(false);
+  });
+  it('collapses old cargo vertically and expands dust while current rubble stays separate', () => {
+    const props=input();
+    props.model={...props.model,places:[{...props.previousModel!.places[0]!,status:'cancelled',constructionStage:'rubble'}]};
+    props.effect={id:2,taskEvents:[{type:'task.status_changed',taskId:'root',from:'working',to:'cancelled'}]};
+    const transition=reconcileTasklandMotion(emptyTasklandMotion(props),props,0).transitions[0]!;
+    const root=new Group(),cargo=new Group(),dust=new Group(),member=new Group();
+    const objects={root,cargo,dust,members:new Map([['root',member]])};
+    applyTasklandFrame(transition,450,objects);
+    expect(cargo.scale.toArray()).toEqual([1,.5,1]);
+    expect(dust.visible).toBe(true);
+    expect(dust.scale.x).toBe(1.25);
+    expect(transition.suppressedPlaceIds).toEqual([]);
+    applyTasklandFrame(transition,900,objects);
+    expect(root.visible).toBe(false);
+    expect(dust.visible).toBe(false);
   });
 });
