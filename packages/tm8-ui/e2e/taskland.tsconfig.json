@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["taskland-harness.tsx", "taskland.vite.config.ts"],
+  "exclude": []
+}

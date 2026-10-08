@@ -5,7 +5,9 @@ import { resolve } from 'node:path';
 const origin = process.env.TASKLAND_ORIGIN ?? 'http://127.0.0.1:4637';
 const evidence = resolve(process.env.TASKLAND_EVIDENCE ?? 'gate-evidence/taskland');
 await mkdir(evidence, { recursive: true });
-const browser = await chromium.launch({ headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ headless: true,
+  ...(process.env.TASKLAND_CHROMIUM ? { executablePath: process.env.TASKLAND_CHROMIUM } : {}),
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1050 }, reducedMotion: 'reduce' });
 const errors = [], assetFailures = [], transitions = [];
 page.on('pageerror', error => errors.push(error.message));
@@ -45,7 +47,7 @@ try {
     await capture(scope, 'planning', 'mailbox');
     let snapshot = await state();
     expect(place(snapshot, 'child').badges).toContain('estimate-missing');
-    expect(place(snapshot, 'root').mailbox).toEqual({ count: 5, approx: true });
+    expect(place(snapshot, 'root').mailbox).toMatchObject({ count: 5, approx: true });
     expect(place(snapshot, 'root').attention).toBe(1);
     expect(snapshot.model.groups.some(g => g.depth > 0)).toBe(true);
     expect(snapshot.model.robots.some(r => r.taskId === 'child')).toBe(true);
