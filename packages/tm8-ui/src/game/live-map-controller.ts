@@ -27,6 +27,7 @@ export function createLiveMapController(options: Options) {
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
   let publishTimer: ReturnType<typeof setTimeout> | undefined;
   let departureTimer: ReturnType<typeof setTimeout> | undefined;
+  let lifecycleTimer: ReturnType<typeof setTimeout> | undefined;
   let effectId = 0, recent: number[] = [], effectTimes: number[] = [];
   const departing = new Map<string, { robot: MapRobot; until: number }>();
   // An edge upsert can remove the active row before the semantic completion arrives.
@@ -34,12 +35,18 @@ export function createLiveMapController(options: Options) {
   const touched = new Set<string>();
   let taskEvents: GameTaskEvent[] = [];
   const subscriptions: (() => void)[] = [];
+  const scheduleLifecycle = () => {
+    clearTimeout(lifecycleTimer); lifecycleTimer = undefined;
+    const deadline = snapshot?.model.nextLifecycleAt;
+    if (closed || deadline == null) return;
+    lifecycleTimer = setTimeout(() => { if (!closed && snapshot) { dirty = true; publish(); } }, Math.min(2_147_483_647, Math.max(1, deadline - now())));
+  };
 
   const publish = () => {
     publishTimer = undefined;
     if (closed || !snapshot) return;
     if (dirty) {
-      const model = buildMapModel(snapshot.result.input, { scope, type, previous: snapshot.model });
+      const model = buildMapModel(snapshot.result.input, { scope, type, previous: snapshot.model, now: now() });
       previous = model; dirty = false;
       const activeSessions = new Set(model.robots.map(robot => robot.sessionId));
       for (const [id, row] of departing) if (activeSessions.has(row.robot.sessionId)) departing.delete(id);
@@ -56,6 +63,7 @@ export function createLiveMapController(options: Options) {
       effectTimes = []; touched.clear(); taskEvents = [];
     }
     snapshot = { ...snapshot, departures: [...departing.values()].filter(row => row.until > time).map(row => row.robot) };
+    scheduleLifecycle();
     options.onSnapshot(snapshot);
   };
   const schedulePublish = () => { if (!closed && publishTimer === undefined) publishTimer = setTimeout(publish, 80); };
@@ -112,7 +120,7 @@ export function createLiveMapController(options: Options) {
       if (closed || controller.signal.aborted || epoch !== request) return;
       const result = { ...loaded, input: { ...loaded.input, entities: loaded.input.entities.map(row => sessionLiveness(row, events)) } };
       if (result.input.scope && (result.input.scope.kind !== scope.kind || result.input.scope.id !== scope.id)) throw new Error('The map data does not match the selected scope.');
-      const model = buildMapModel(result.input, { scope, type, previous });
+      const model = buildMapModel(result.input, { scope, type, previous, now: now() });
       model.robots.forEach(robot => lastWorkers.set(robot.id, { robot, at: now() }));
       previous = model;
       const queued = replay ?? []; replay = null;
@@ -144,7 +152,7 @@ export function createLiveMapController(options: Options) {
   const dispose = () => {
     if (closed) return;
     closed = true; request++; abort?.abort(); replay = null;
-    clearTimeout(refreshTimer); clearTimeout(publishTimer); clearTimeout(departureTimer);
+    clearTimeout(refreshTimer); clearTimeout(publishTimer); clearTimeout(departureTimer); clearTimeout(lifecycleTimer);
     subscriptions.splice(0).forEach(unsubscribe => unsubscribe());
   };
   return { attach, dispose, refresh, getSnapshot: () => snapshot };
