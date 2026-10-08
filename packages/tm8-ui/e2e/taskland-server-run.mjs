@@ -227,7 +227,7 @@ try {
     let models = await snapshots('dependency');
     for (const model of models) assert.ok(model.roads.some(road => road.edgeId === edge.id));
     await node.request(`/v2/actions?contextEntityId=${ids.tree}&schema=v2&limit=100`);
-    await node.request(`/v2/edges/${edge.id}`, { expectedVersion: edge.version, clientMutationId: randomUUID() }, { method: 'DELETE' });
+    await node.request(`/v2/edges/${edge.id}`, { clientMutationId: randomUUID() }, { method: 'DELETE' });
     models = await snapshots('dependency-removed');
     for (const model of models) assert.equal(model.roads.some(road => road.edgeId === edge.id), false);
   });
