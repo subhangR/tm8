@@ -466,6 +466,8 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // unknown. Inserted at its sorted position.
       'launchDefaults',
       'markRead',
+      // Personal seen markers (#1122): entity-list activation's write port.
+      'markSeen',
       // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
       // the counterpart to `gitMerge`'s deliberate exclusion from the tracking
       // side. It sorts between `markRead` and `moveEntity`, beside nothing it
