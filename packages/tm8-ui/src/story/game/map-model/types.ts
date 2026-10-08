@@ -15,7 +15,7 @@ export interface MapEntity {
   ownProgress?: number | null; estimateTent?: boolean;
   /** Authoritative cancellation transition time, never entity updatedAt or load time. */
   cancelledAt?: string | null;
-  /** Proven upper bound from the status writer's updatedAt, never a cancellation date. */
+  /** Caller-supplied proven upper bound, never inferred from entity updatedAt. */
   cancelledNotAfter?: string | null;
   /** Event evidence for cold-load terminal-lot placement; never inferred from timestamps. */
   terminalFromStatus?: string | null;
