@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CollectionQuery, GraphEdgeView, EntityDetail, EntitySummary, StoryPage } from '@tm8/contract';
 import type { Seam } from './seam';
 import { createGameMapLoader } from './game-maps';
+import { buildMapModel } from '../story/game/map-model';
 
 const SPACE = 'space-a';
 const row = (id: string, kind = 'task', parentId: string | null = null): EntitySummary => ({
@@ -163,6 +164,19 @@ describe('real Game map reads', () => {
     ]);
     expect(seam.graph).not.toHaveBeenCalled();
     expect(seam.connections).not.toHaveBeenCalled();
+  });
+
+  it('includes output kinds in the town graph so produced documents become shipped places', async () => {
+    const seam = port(), task = row('done-task'), doc = row('delivered-doc', 'doc');
+    task.category = 'done';
+    seam.query.mockResolvedValue({ page: page([task, doc]) });
+    seam.graph.mockImplementation(async input => {
+      expect((input as CollectionQuery).kinds).toEqual(expect.arrayContaining(['task', 'doc', 'artifact', 'drawing', 'file']));
+      return { nodes: [task, doc], edges: [{ ...edge('delivery', task, doc), type: 'produces' }], clusters: [] };
+    });
+    const scope = { kind: 'space' as const, id: SPACE };
+    const { input } = await load(seam)(scope, undefined, 'town');
+    expect(buildMapModel(input, { scope, type: 'town' }).places.map(place => place.entityId)).toContain(doc.id);
   });
 
   it('retains primary places with a warning if relations fail and cancels a pending graph read', async () => {
