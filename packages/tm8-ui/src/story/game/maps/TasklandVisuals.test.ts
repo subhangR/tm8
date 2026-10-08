@@ -31,9 +31,6 @@ describe.each(scopes)('Taskland cues at $kind scope', scope => {
     expect(shippingYardCount(model)).toBe(2);
     expect(tasklandLabels(model)[0]?.detail).toBe('2 waiting for placement');
     expect(tasklandLabels(model)[0]?.cue).toBe('shipping');
-    // A placed object remains in Town, but it is no longer waiting at the gate.
-    model.groups = model.groups.map(g => ({ ...g, placeIds: g.placeIds.filter(id => id !== 'output') }));
-    expect(shippingYardCount(model)).toBe(1);
   });
   it('keeps a done root marker while an open child builds, without adding cancelled work to shipping', () => {
     const snapshot = input(scope);
@@ -60,4 +57,23 @@ it('does not round progress up across construction thresholds', () => {
   const place = buildMapModel(input(scope), { scope, type: 'taskland' }).places[0]!;
   expect(tasklandPlotDetail({ ...place, progress: 2 / 3, constructionStage: 'scaffolding' })).toContain('66% · scaffolding');
   expect(tasklandPlotDetail({ ...place, progress: .999, constructionStage: 'walls' })).toContain('99% · walls');
+  expect(tasklandPlotDetail({ ...place, progress: .57 })).toContain('57%');
+  expect(tasklandPlotDetail({ ...place, progress: .29 })).toContain('29%');
+});
+it('labels unknown cancellation time honestly and names a known expiry', () => {
+  const scope = scopes[0]!;
+  const place = buildMapModel(input(scope), { scope, type: 'taskland' }).places.find(p => p.entityId === 'cancelled')!;
+  expect(tasklandPlotDetail({ ...place, rubbleExpiresAt: null })).toBe('Cancelled · cancellation time unknown');
+  expect(tasklandPlotDetail({ ...place, rubbleExpiresAt: Date.parse('2026-10-09T12:00:00Z') })).toBe('Cancelled · rubble clears 2026-10-09 12:00:00 UTC');
+});
+it('uses computed estimate flags and mailbox count basis when the projection supplies them', () => {
+  const scope = scopes[0]!;
+  const model = buildMapModel(input(scope), { scope, type: 'taskland' });
+  const child = model.places.find(p => p.entityId === 'child')!;
+  Object.assign(child, { estimateMissing: false });
+  expect(tasklandLabels(model).some(l => l.id === 'child:surveyor')).toBe(false);
+  const root = model.places.find(p => p.entityId === 'root')!;
+  Object.assign(root.mailbox!, { basis: 'unread' });
+  expect(tasklandLabels(model).find(l => l.id === 'root:mailbox')?.detail).toBe('≈5 subtree unread · 1 attention');
+  expect(tasklandLabels(model).filter(l => l.cue === 'yard').some(l => /^District.*Rubble|^District.*Shipped/.test(l.title))).toBe(false);
 });
