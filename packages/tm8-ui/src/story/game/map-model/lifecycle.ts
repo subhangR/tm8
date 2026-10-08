@@ -11,7 +11,7 @@ export const isActiveMapEdge = (edge: { endedAt?: string | null; status?: string
 /** Unknown evidence has no expiry, rather than a fabricated reload-time TTL. */
 export function rubbleLifetime(entity: MapEntity, now: number, previous?: MapPlace) {
   if (!isCancelledTask(entity)) return { cancelledAt: null, expiresAt: null, removalNotAfter: null, expired: false };
-  const cancelledAt = entity.cancelledAt ?? (previous?.constructionStage === 'rubble' ? previous.cancelledAt : null) ?? null;
+  const cancelledAt = entity.cancelledAt ?? (previous?.constructionStage === 'rubble' || previous?.role === 'hierarchy-marker' ? previous.cancelledAt : null) ?? null;
   const at = cancelledAt && /T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(cancelledAt) ? Date.parse(cancelledAt) : NaN;
   const expiresAt = Number.isFinite(at) ? at + RUBBLE_TTL_MS : null;
   const bound = entity.cancelledNotAfter && /T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(entity.cancelledNotAfter) ? Date.parse(entity.cancelledNotAfter) : NaN;
@@ -21,8 +21,8 @@ export function rubbleLifetime(entity: MapEntity, now: number, previous?: MapPla
     expired: deadline !== null && now >= deadline };
 }
 
-/** Foundation anchors stay while an unshipped yard (including rubble) remains. */
-export function shippingAncestors(entities: readonly MapEntity[], retained: ReadonlySet<string>): Set<string> {
+/** Ancestor lots anchor retained yards even after shipping or rubble removal. */
+export function yardAncestors(entities: readonly MapEntity[], retained: ReadonlySet<string>): Set<string> {
   const byId = new Map(entities.filter(n => n.kind === 'task').map(n => [n.id, n]));
   const ancestors = new Set<string>();
   for (const id of retained) {
@@ -30,7 +30,7 @@ export function shippingAncestors(entities: readonly MapEntity[], retained: Read
     const seen = new Set([id]);
     while (parent && byId.has(parent) && !seen.has(parent)) {
       seen.add(parent);
-      if (isDoneTask(byId.get(parent)!)) ancestors.add(parent);
+      if (isDoneTask(byId.get(parent)!) || isCancelledTask(byId.get(parent)!)) ancestors.add(parent);
       parent = byId.get(parent)!.parentId;
     }
   }

@@ -55,7 +55,7 @@ export interface MapPlace extends Point, PlaceEnrichment {
   cancelledAt?: string | null; rubbleExpiresAt?: number | null;
   /** Conservative removal deadline when the exact cancellation instant is unknown. */
   rubbleRemovalNotAfter?: number | null;
-  workStatus: string | null; processState?: string | null; outcome?: string | null; endedKind?: string | null; role: 'entity' | 'shipped-marker';
+  workStatus: string | null; processState?: string | null; outcome?: string | null; endedKind?: string | null; role: 'entity' | 'shipped-marker' | 'hierarchy-marker';
 }
 export interface MapGroup {
   id: string; key: string; label: string; parentId: string | null; depth: number;
