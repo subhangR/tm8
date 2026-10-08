@@ -264,6 +264,7 @@ export function ConnectionsTab({
       data-view={shownView}
     >
       {toolbar}
+      {launchContext}
       {empty ? (
         <EmptyBody
           glyph="⊕"
@@ -384,7 +385,6 @@ export function ConnectionsTab({
       ) : null}
 
       {crossSpaceRefs}
-      {launchContext}
       {header}
     </div>
   );

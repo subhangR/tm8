@@ -50,7 +50,7 @@ beforeAll(async()=>{
   await c.query("insert into public.team_members(entity_id,owner_member_id,name,role,model,agent_tool) values($1,$2,'MCP worker','helper','claude-sonnet-4-5','claude-code')",[teammate,member]);
  });
  const made=await db.rpc<{entity:{id:string}}>(auth,'create_mcp_server_entity',[space,JSON.stringify(definition),null,randomUUID()]);server=made.entity.id;
- credential=randomUUID();await db.rpc(auth,'create_mcp_credential',[credential,space,server,'Fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key']);
+ credential=randomUUID();await db.rpc(auth,'create_mcp_credential',[credential,space,server,'Fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
 });
 afterAll(async()=>{await db?.end();await scratch?.destroy();});
 it('binds launcher authority independently of runtime identity, denies sibling tokens and unselected servers',async()=>{
@@ -87,7 +87,7 @@ it('generic database writers have no table grant',async()=>{
 
 it('delegation derives the human from the live parent binding and reauthorizes current credentials',async()=>{
  const selected=randomUUID();
- await db.rpc(auth,'create_mcp_credential',[selected,space,server,'Child fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key']);
+ await db.rpc(auth,'create_mcp_credential',[selected,space,server,'Child fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
  const parent=await runtime(otherIdentity),child=await runtime(otherIdentity);
  await bindings.bind(auth,{sessionId:parent.sessionId,spaceId:space,teamMemberId:teammate,agentToken:parent.token,mcpSelections:[]});
  const source={...parent.claims,mcpSource:{sessionId:parent.sessionId,authSessionId:parent.authSessionId}};
@@ -99,7 +99,7 @@ it('delegation derives the human from the live parent binding and reauthorizes c
 });
 it('withdrawn sharing denies an already running grantee session',async()=>{
  const selected=randomUUID();
- await db.rpc(auth,'create_mcp_credential',[selected,space,server,'Shared fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key']);
+ await db.rpc(auth,'create_mcp_credential',[selected,space,server,'Shared fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
  await db.rpc(auth,'share_space_credential',[selected,otherAccount]);
  const r=await runtime(otherIdentity);
  await bindings.bind({...auth,identityId:otherIdentity},{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server,credentialId:selected}]});
@@ -202,7 +202,7 @@ it('chat about-task defaults honor omission and a new sender cannot inherit the 
  const input={sessionId:chatId,spaceId:space,teamMemberId:teammate,agentToken:minted.token,resume:true};
  expect(await bindings.bind(auth,input)).toEqual([{serverId:made.entity.id}]);
  const selected=randomUUID();
- await db.rpc(auth,'create_mcp_credential',[selected,space,server,'Chat private fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key']);
+ await db.rpc(auth,'create_mcp_credential',[selected,space,server,'Chat private fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
  await bindings.bind(auth,{...input,resume:false,mcpSelections:[{serverId:server,credentialId:selected}]});
  await expect(bindings.bind({...auth,identityId:otherIdentity},input)).rejects.toBeTruthy();
  await bindings.bind(auth,{...input,resume:false,mcpSelections:[]});

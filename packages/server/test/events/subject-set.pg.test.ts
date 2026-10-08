@@ -174,6 +174,12 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
         pushed_at timestamptz not null default now());
       grant select on public.styles to tm8_app;
       reset role;`);
+    // 296 adds an unconditional read join. Mirror its unused projection shape
+    // on this historical schema, as for styles above; no MCP rows are tested.
+    await database.query(`set role tm8_graph_owner;
+      create table public.mcp_servers (entity_id uuid primary key, title text not null, definition jsonb not null);
+      grant select on public.mcp_servers to tm8_app;
+      reset role;`);
     // 304 (design kind): `entity-read.ts` and the projector left-join
     // `public.designs` and select `internal.design_summary(e.id)`, the 283
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its

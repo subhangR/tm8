@@ -381,11 +381,23 @@ describe.sequential('147 — entities.status_category', () => {
         pushed_at timestamptz not null default now());
       grant select on public.styles to tm8_app;
       reset role;`);
+    // 296 adds an unconditional read join. Mirror its unused projection shape
+    // on this historical schema, as for styles above; no MCP rows are tested.
+    await database.query(`set role tm8_graph_owner;
+      create table public.mcp_servers (entity_id uuid primary key, title text not null, definition jsonb not null);
+      grant select on public.mcp_servers to tm8_app;
+      reset role;`);
     // 304 (design kind): `entity-read.ts` and the projector left-join
     // `public.designs` and select `internal.design_summary(e.id)`, the 283
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
+    // 302 adds session outcome fields selected by current entity readers.
+    // This task-category fixture needs their shape, not the later backfill.
+    await database.query(`alter table public.work_sessions
+      add column outcome text not null default 'open', add column outcome_at timestamptz,
+      add column outcome_by uuid, add column receipt_message_id uuid,
+      add column outcome_source text, add column outcome_note text`);
     // 307 (task progress): `entity-read.ts` and the projector select
     // `internal.task_progress(e.id)` on task rows. 307 itself rewrites
     // story_summary over 289/295 and adds triggers this partial chain does not
