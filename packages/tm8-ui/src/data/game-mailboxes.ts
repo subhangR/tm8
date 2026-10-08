@@ -46,7 +46,10 @@ export function createGameMailboxReader(seam: Pick<Seam, 'unreadCounts' | 'onRea
   return reader;
 }
 
-/** Only primary-admitted anchors get counts. A sparse incomplete read never supplies zeroes. */
+/**
+ * Only primary-admitted anchors get counts. Incomplete snapshots are discarded
+ * as a whole, including returned rows, so a partial subtree never supplies zeroes.
+ */
 export function applyGameMailboxCounts(input: MapInput, snapshot: SpaceUnreadCounts | null, spaceId: string): MapInput {
   const valid = snapshot?.spaceId === spaceId;
   const complete = valid && snapshot.complete;
