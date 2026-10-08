@@ -2,7 +2,7 @@ import {chromium,expect} from '@playwright/test';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 const fixture=JSON.parse(await readFile(process.env.GAME_FIXTURE_FILE??'/tmp/tm8-live-verifier-infra-01a11c29/fixture.json','utf8'));
 const output=process.env.GAME_EVIDENCE_DIR??'/tmp/tm8-live-verifier-evidence-01a11c29';await mkdir(output,{recursive:true});
-const checks=[],errors=[],responses=[],timings=[],sessions=[],scenes=[],handoffs=[];
+const checks=[],errors=[],responses=[],timings=[],sessions=[],scenes=[],handoffs=[],mapReadiness=[];
 const observerOverhead='Read-only worker traversals plus actual Player and DOM React-state traversals before/after each bundled R3F loop, with copied transforms, model/input geometry and bounded frame series. These instrumented timings are behavioral evidence, not performance evidence.';
 const pendingAssets=new Set(),assetFailures=[];
 const fallback=process.env.GAME_FALLBACK==='1',noScreenshots=process.env.GAME_NO_SCREENSHOTS==='1';
@@ -23,7 +23,31 @@ const save=()=>page.evaluate(spaceId=>{for(const key of Object.keys(localStorage
 const host=page.getByTestId('walking-map');
 const enter=async title=>{const details=host.locator('details.walking-places');if(await details.count())await details.evaluate(el=>el.open=true);await host.getByRole('button',{name:`Enter ${title}`,exact:true}).evaluate(el=>setTimeout(()=>el.click(),0));};
 let expectedNavigation,driver;
-const waitMap=async(type,kind,id)=>{expectedNavigation={type,scope:{kind,id}};console.log('Waiting for map',expectedNavigation);await expect.poll(async()=>{const v=await save();return v?.current;},{timeout:60000}).toMatchObject(expectedNavigation);await expect(host).toHaveAttribute('data-map-id',`map:${kind}:${id}:${type}`);await expect(host).toHaveAttribute('data-renderer',fallback?'dom':'webgl');if(!fallback){await host.locator('canvas').first().waitFor();await expect.poll(()=>host.locator('.ms-label').evaluateAll(nodes=>nodes.filter(n=>n.parentElement.style.display!=='none').length),{timeout:60000}).toBeGreaterThan(0);}};
+const waitMap=async(type,kind,id)=>{
+ expectedNavigation={type,scope:{kind,id}};console.log('Waiting for map',expectedNavigation);
+ await expect.poll(async()=>{const v=await save();return v?.current;},{timeout:60000}).toMatchObject(expectedNavigation);
+ const mapId=`map:${kind}:${id}:${type}`;await expect(host).toHaveAttribute('data-map-id',mapId);
+ await expect(host).toHaveAttribute('data-renderer',fallback?'dom':'webgl');
+ if(!fallback){
+  await host.locator('canvas').first().waitFor();
+  const readiness={mapId,expectedNavigation,rule:'Attached labels and two advancing actual frames on the expected map, with drawn calls, loaded assets and observed Player; visibility remains a screenshot gate'};mapReadiness.push(readiness);
+  await expect.poll(async()=>{
+   const actual=await scene();readiness.actual=actual;
+   if(!actual?.proximity.observed||actual.proximity.modelId!==mapId||!actual.player?.id)return false;
+   if(!readiness.baseline||readiness.baseline.sceneId!==actual.sceneId)readiness.baseline={sceneId:actual.sceneId,frames:actual.frames};
+   readiness.attachedLabels=await host.locator('.ms-label').count();
+   if(actual.frames<readiness.baseline.frames+2||actual.calls<=0||actual.assets.pending!==0||actual.assets.failed!==0||readiness.attachedLabels<=0)return false;
+   const audit=await cameraAudit();readiness.firstObservedFrame=audit.frames.find(frame=>frame.after.sceneUuid===actual.sceneId&&audit.publications[frame.after.publicationId]?.current.id===mapId);
+   expect(readiness.firstObservedFrame).toBeTruthy();
+   if(process.env.GAME_REDUCED_MOTION==='1'){
+    expect(readiness.firstObservedFrame.after.reduced).toBe(true);
+    expect(readiness.firstObservedFrame.after.cameraZoom).toEqual(readiness.firstObservedFrame.desiredZoom);
+    expect(readiness.firstObservedFrame.zoomEquationError).toEqual(0);
+   }
+   return true;
+  },{timeout:60000}).toBe(true);
+ }
+};
 const back=()=>host.getByRole('button',{name:/^Back/}).first().evaluate(el=>setTimeout(()=>el.click(),0));
 const event=async(type,id)=>expect.poll(()=>page.evaluate(({type,id})=>window.__gameLive.events.some(e=>e.type===type&&(!id||[e.taskId,e.sessionId,e.entity?.id,e.edge?.source?.id,e.sourceId].includes(id))),{type,id}),{timeout:30000}).toBe(true);
 const work=(id,status,sessionId)=>rpc('set_work_state',[id,status,null,null,'Synthetic journey',crypto.randomUUID(),false,true],sessionId);
@@ -237,7 +261,7 @@ try{
   await expect(host).toHaveAttribute('data-map-id',`map:space:${fixture.foreignSpaceId}:hub`);record('Route/scope navigation isolates pending old-map reads and callbacks');
   if(errors.length)throw new Error(`Browser runtime errors: ${errors.join('; ')}`);
   const stats=await page.evaluate(()=>({eventTypes:window.__gameLive.eventCounts,readsSinceLastReload:window.__gameLive.reads.length}));
-  await writeFile(`${output}/report.json`,JSON.stringify({passed:true,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,dependencies:process.env.GAME_DEPENDENCY_HEADS,renderer:fallback?'Production DOM fallback; no 3D WorkerLayer evidence':fixture.renderer,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,handoffs,observerOverhead,stats,responses,errors},null,2));
+  await writeFile(`${output}/report.json`,JSON.stringify({passed:true,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,dependencies:process.env.GAME_DEPENDENCY_HEADS,renderer:fallback?'Production DOM fallback; no 3D WorkerLayer evidence':fixture.renderer,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,handoffs,mapReadiness,observerOverhead,stats,responses,errors},null,2));
  }
-}catch(error){console.log('Journey failed',String(error));const diagnostic=await page.evaluate(()=>({url:location.href,saves:Object.keys(localStorage).filter(k=>k.startsWith('tm8:game')).map(k=>({key:k,value:JSON.parse(localStorage.getItem(k))})),reads:window.__gameLive?.reads?.slice(-10),events:window.__gameLive?.events?.slice(-10)}));await writeFile(`${output}/report.json`,JSON.stringify({passed:false,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,handoffs,observerOverhead,sceneAtFailure:fallback?null:await scene(),errors,responses,failure:String(error),expectedNavigation,diagnostic,text:await page.locator('body').innerText()},null,2));await page.screenshot({path:`${output}/failure.png`,timeout:10000}).catch(()=>{});throw error;}
+}catch(error){console.log('Journey failed',String(error));const diagnostic=await page.evaluate(()=>({url:location.href,saves:Object.keys(localStorage).filter(k=>k.startsWith('tm8:game')).map(k=>({key:k,value:JSON.parse(localStorage.getItem(k))})),reads:window.__gameLive?.reads?.slice(-10),events:window.__gameLive?.events?.slice(-10)}));await writeFile(`${output}/report.json`,JSON.stringify({passed:false,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,handoffs,mapReadiness,observerOverhead,sceneAtFailure:fallback?null:await scene(),errors,responses,failure:String(error),expectedNavigation,diagnostic,text:await page.locator('body').innerText()},null,2));await page.screenshot({path:`${output}/failure.png`,timeout:10000}).catch(()=>{});throw error;}
 finally{if(!fallback)await writeFile(`${output}/camera-audit.json`,JSON.stringify(await cameraAudit(),null,2)).catch(()=>{});await page.evaluate(()=>window.__gameLive?.stopWorkerFrameAudit?.()).catch(()=>{});await browser.close();}
