@@ -1,6 +1,6 @@
 import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { MapModel, MapPortal, MapRenderer, MapRendererProps } from '../map-model';
-import { mapWalkingWorld, walkingBounds } from '../map-model/walking-world';
+import { mapWalkingWorld, walkingBounds, walkingEntrance, isWalkingPositionSafe } from '../map-model/walking-world';
 import { createControl, keyDirection, WALK_KEYS, walkTo } from '../control';
 import { WorldMinimap } from '../Minimap';
 import { hasWebGL, readPalette, type Palette } from '../palette';
@@ -39,7 +39,10 @@ function WalkingMapBody(props: WalkingMapViewProps) {
   const bounds = useMemo(() => walkingBounds(model), [model]);
   const world = useMemo(() => mapWalkingWorld(model), [model]);
   // Saving must never reapply the initial pose to a player who is already moving.
-  const [initial] = useState(() => ({ start: { ...props.start }, camera: props.camera ? { ...props.camera, position: [...props.camera.position] as [number, number, number], target: [...props.camera.target] as [number, number, number] } : undefined }));
+  const [initial] = useState(() => {
+    const safe = isWalkingPositionSafe(model, props.start);
+    return { start: safe ? { ...props.start } : walkingEntrance(model), camera: safe && props.camera ? { ...props.camera, position: [...props.camera.position] as [number, number, number], target: [...props.camera.target] as [number, number, number] } : undefined };
+  });
   const [control] = useState(createControl);
   const latest = useRef(props);
   latest.current = props;

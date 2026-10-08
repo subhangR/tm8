@@ -5,4 +5,4 @@ export { layoutForest, repairForest } from './layout';
 export type { LayoutNode, LaidOutNode, ForestLayout } from './layout';
 export { SpatialIndex } from './spatial-index';
 export { FIXTURE_SCOPE, MAP_FIXTURES, smallFixture, nestedFixture, denseFixture, pathologicalFixture } from './fixtures';
-export { walkingBounds } from './walking-world';
+export { walkingBounds, walkingEntrance, isWalkingPositionSafe } from './walking-world';

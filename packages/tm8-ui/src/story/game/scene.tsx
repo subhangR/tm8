@@ -218,6 +218,7 @@ export function Player({ world, palette, control, revealed, playerPos, onReveal,
   const alertPosition = useRef(new THREE.Vector3());
   const dust = useRef<THREE.Mesh>(null), dustAt = useRef(-100), dustPos = useRef(new THREE.Vector3());
   const restored = useRef(!!cameraState);
+  const appliedCamera = useRef(false);
   const savedCamera = useRef<MapCameraState | null>(cameraState ?? null);
   const callbacks = useRef({ onPosition, onCamera });
   callbacks.current = { onPosition, onCamera };
@@ -247,6 +248,8 @@ export function Player({ world, palette, control, revealed, playerPos, onReveal,
 
   useEffect(() => {
     if (cameraState) {
+      if (appliedCamera.current) return;
+      appliedCamera.current = true;
       camera.position.fromArray(cameraState.position);
       camera.zoom = cameraState.zoom;
       camera.lookAt(...cameraState.target);
