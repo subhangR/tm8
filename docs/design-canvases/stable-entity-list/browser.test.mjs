@@ -42,18 +42,18 @@ try {
   assert.equal((await stored()).find(r => r.id === 'task-5').parent,null);
   // Pointer nesting and keyboard cancellation.
   await page.locator('#reset').click();
-  let handle = await page.locator('[data-id="task-5"] .grip').boundingBox();
+  let handle = await page.locator('[data-id="task-5"] .row-title').boundingBox();
   let target = await page.locator('[data-id="task-0"]').boundingBox();
-  await page.mouse.move(handle.x+5,handle.y+5); await page.mouse.down();
+  await page.mouse.move(handle.x+5,handle.y+5); await page.mouse.down(); await page.waitForTimeout(500);
   await page.mouse.move(target.x+90,target.y+target.height/2,{steps:12});
   assert.equal(await page.locator('.drop-child').count(),1);
   await page.mouse.up();
   assert.equal((await stored()).find(r => r.id === 'task-5').parent,'task-0');
   await page.locator('#undo').click();
   const beforeCancel = await ids();
-  handle = await page.locator('[data-id="task-5"] .grip').boundingBox();
+  handle = await page.locator('[data-id="task-5"] .row-title').boundingBox();
   target = await page.locator('[data-id="task-0"]').boundingBox();
-  await page.mouse.move(handle.x+5,handle.y+5); await page.mouse.down();
+  await page.mouse.move(handle.x+5,handle.y+5); await page.mouse.down(); await page.waitForTimeout(500);
   await page.mouse.move(target.x+90,target.y+2,{steps:12});
   assert.equal(await page.locator('.drop-gap').count(),1);
   await page.keyboard.press('Escape'); await page.mouse.up();
@@ -70,7 +70,7 @@ try {
   assert.equal((await stored()).find(r => r.title === 'Design rationale').kind,'doc');
   await page.locator('#search').fill('Placement');
   assert.equal(await page.locator('#tree .row').count(),2); // match + its ancestor
-  assert.equal(await page.locator('#tree .grip:disabled').count(),2);
+  assert.equal(await page.locator('#tree .grip').count(),0);
   await page.locator('#search').fill('');
   await page.locator('#reset').click();
   await page.screenshot({path:process.env.SCREENSHOT_DIR ? `${process.env.SCREENSHOT_DIR}/stable-panel-light.png` : '/tmp/stable-panel-light.png',fullPage:true});

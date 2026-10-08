@@ -44,7 +44,24 @@ test('prototype controls synchronize titles, preserve order, move, undo, and can
   click('[data-kind="doc"]'); click('#new'); input('.inline-title','Doc title'); key('.inline-title','Enter');
   assert.equal(stored().find(r => r.title==='Doc title').kind,'doc');
   input('#search','Placement'); assert.equal(ids().length,2);
-  assert.equal(document.querySelectorAll('#tree .grip:disabled').length,2);
+  assert.equal(document.querySelectorAll('#tree .grip').length,0);
   click('#reset'); assert.equal(ids().length,6);
+  const pointer = (el,type,x=50,y=50) => el.dispatchEvent(new window.MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y}));
+  const wait = ms => new Promise(resolve => setTimeout(resolve,ms));
+  const title = $('[data-id="task-5"] .row-title');
+  pointer(title,'pointerdown'); pointer(title,'pointerup');
+  await wait(480); assert.equal($('.drag-ghost'),null); // quick press never lifts
+  pointer(title,'pointerdown'); pointer(document,'pointermove',70,50);
+  await wait(480); assert.equal($('.drag-ghost'),null); // swipe cancels pickup
+  pointer(title,'pointerdown'); await wait(480);
+  assert.ok($('.drag-ghost')); assert.ok(document.body.classList.contains('is-dragging'));
+  key('#tree','Escape'); assert.equal($('.drag-ghost'),null);
+  assert.equal(document.body.classList.contains('is-dragging'),false);
+  const selectedBefore = $('#detail-title').value;
+  title.click(); assert.equal($('#detail-title').value,selectedBefore); // no release click
+  pointer($('[data-id="task-5"] .row-menu'),'pointerdown');
+  await wait(480); assert.equal($('.drag-ghost'),null); // controls are excluded
+  pointer(title,'pointerdown'); await wait(480); assert.ok($('.drag-ghost'));
+  pointer(document,'pointercancel'); assert.equal($('.drag-ghost'),null);
   dom.window.close();
 });

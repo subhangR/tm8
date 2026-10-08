@@ -2,7 +2,9 @@
 
 Reviewable prototype for the entity panel redesign. This PR changes only the
 study under `docs/design-canvases/stable-entity-list`; it does not integrate the
-behavior into the production app or launch real sessions.
+behavior into the production app or launch real sessions. The cards in this
+study are layout placeholders: existing production card components, contents,
+controls, and styling must remain unchanged during integration.
 
 ## Run and test
 
@@ -49,7 +51,12 @@ The browser test accepts `PROTOTYPE_URL`, `SCREENSHOT_DIR`, `PLAYWRIGHT_MODULE`
 
 1. New → type a title → watch its tab and title field update → Enter.
 2. Add subtask → create several children → collapse and expand their parent.
-3. Grab a handle. The upper/lower edges place a row before/after a sibling;
+3. Press and hold the non-interactive area of a card for 450 ms, then drag.
+   There is no separate drag handle. A quick click still opens the card. Moving
+   more than 8 px before the hold completes cancels pickup, preserving scrolling.
+   Buttons and text inputs never start a drag. Releasing, Escape, losing window
+   focus, or pointer cancellation clears the drag; a completed hold does not
+   accidentally open the card on release. The upper/lower edges place a row before/after a sibling;
    the center highlights a prospective parent. Release to move; Escape cancels.
    The hit-test geometry stays fixed during the preview so the moving gap does
    not oscillate. Surrounding rows slide for 200 ms; reduced motion skips it.

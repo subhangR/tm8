@@ -4,7 +4,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const storageKey = 'tm8-stable-panel-design-v1';
 let rows = initialState();
 try { const saved = JSON.parse(localStorage.getItem(storageKey)); if (Array.isArray(saved) && saved.length && saved.every(r => kinds[r.kind] && typeof r.title === 'string')) rows = saved; } catch {}
-let kind = 'task', selected = 'task-0', tabs = [selected], collapsed = new Set(), draft = null, history = [], query = '', menu = null, moveId = null, drag = null, toastTimer;
+let kind = 'task', selected = 'task-0', tabs = [selected], collapsed = new Set(), draft = null, history = [], query = '', menu = null, moveId = null, drag = null, suppressClickUntil = 0, toastTimer;
 const rowOf = id => rows.find(r => r.id === id);
 const tree = $('#tree');
 function persist() { try { localStorage.setItem(storageKey, JSON.stringify(rows.filter(r => r.id !== draft))); } catch { notify('Browser storage unavailable; changes last for this visit.'); } }
@@ -30,7 +30,6 @@ function renderTree() {
   tree.innerHTML = visible.map(row => {
     const children = siblings(rows, kind, row.id), isDraft = draft === row.id;
     return `<div class="row ${selected === row.id ? 'selected' : ''}" data-id="${row.id}" data-depth="${row.depth}" style="margin-left:${row.depth*20}px" role="treeitem" aria-level="${row.depth+1}" aria-selected="${selected === row.id}" ${children.length ? `aria-expanded="${!collapsed.has(row.id)}"` : ''} tabindex="0" aria-label="${esc(row.title || 'New '+kinds[kind].singular)}">
-      <button class="grip" data-action="drag" aria-label="Drag ${esc(row.title)}" ${query || draft ? 'disabled' : ''} title="Drag to move">⠿</button>
       <button class="chevron" data-action="toggle" aria-label="${collapsed.has(row.id) ? 'Expand' : 'Collapse'} ${esc(row.title)}" ${!children.length ? 'disabled' : ''}>${children.length ? collapsed.has(row.id) ? '›' : '⌄' : ''}</button>
       <span class="row-icon">${kinds[kind].icon}</span><div class="row-content">${isDraft ? '<input class="inline-title" aria-label="New entity title" placeholder="Name this '+kinds[kind].singular+'…"><div class="draft-hint">Enter to save · Esc to cancel</div>' : `<span class="row-title">${esc(row.title)}</span><div class="row-meta ${statusClass(row)}"><span class="state-dot"></span>${esc(row.status)}${children.length ? `<span>· ${children.length} children</span>` : ''}${row.unread ? `<span class="unread">${row.unread} unread</span>` : ''}</div>`}</div>
       <button class="row-menu" data-action="menu" aria-label="Actions for ${esc(row.title || 'new entity')}" ${isDraft ? 'disabled' : ''}>···</button></div>`;
@@ -108,11 +107,11 @@ function openMove(id) {
 }
 $('#confirm-move').onclick = () => { const parent = $('#destination').value || null; collapsed.delete(parent); applyMove(moveId,parent,siblings(rows,kind,parent).filter(r => r.id !== moveId)[0]?.id ?? null); $('#move-dialog').close(); };
 tree.addEventListener('click', e => {
-  const el = e.target.closest('.row'); if (!el || drag) return;
+  const el = e.target.closest('.row'); if (!el || drag || Date.now() < suppressClickUntil) return;
   const id = el.dataset.id, cmd = e.target.closest('[data-action]')?.dataset.action;
   if (cmd === 'toggle') { collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id); renderTree(); }
   else if (cmd === 'menu') showMenu(id,e.target);
-  else if (!['INPUT','BUTTON'].includes(e.target.tagName) && cmd !== 'drag') open(id);
+  else if (!['INPUT','BUTTON'].includes(e.target.tagName)) open(id);
 });
 tree.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
@@ -135,15 +134,34 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMenu(
 // Pointer drag uses the starting layout for hit tests: an animated gap cannot
 // change its own target and oscillate between neighboring rows.
 tree.addEventListener('pointerdown', e => {
-  const handle = e.target.closest('.grip'); if (!handle || handle.disabled || e.button !== 0) return;
-  e.preventDefault(); closeMenu(); const el = handle.closest('.row'), id = el.dataset.id, forbidden = descendants(rows,id);
+  if (drag) { endDrag(false); return; }
+  const el = e.target.closest('.row');
+  if (!el || query || draft || e.button !== 0 || e.target.closest('button,input,textarea,select,a')) return;
+  closeMenu(); const id = el.dataset.id, forbidden = descendants(rows,id);
   const ghost = el.cloneNode(true); ghost.classList.add('drag-ghost'); ghost.removeAttribute('role'); ghost.removeAttribute('tabindex'); ghost.setAttribute('aria-hidden','true'); ghost.style.marginLeft='0';
-  drag = {id, ghost, startX:e.clientX, startY:e.clientY, active:false, target:null, scroll:tree.scrollTop, rects:[...tree.querySelectorAll('.row')].filter(r => !forbidden.has(r.dataset.id)).map(r => ({id:r.dataset.id,rect:r.getBoundingClientRect()}))};
+  const pending = {id, ghost, element:el, pointerId:e.pointerId, startX:e.clientX, startY:e.clientY, active:false, target:null, scroll:tree.scrollTop, rects:[...tree.querySelectorAll('.row')].filter(r => !forbidden.has(r.dataset.id)).map(r => ({id:r.dataset.id,rect:r.getBoundingClientRect()}))};
+  drag = pending;
+  pending.timer = setTimeout(() => {
+    if (drag !== pending || !el.isConnected) return;
+    pending.active = true;
+    ghost.style.left = pending.startX+14+'px'; ghost.style.top = pending.startY-22+'px';
+    document.body.append(ghost); el.classList.add('drag-source');
+    document.body.classList.add('is-dragging');
+    if (el.setPointerCapture && pending.pointerId !== undefined) el.setPointerCapture(pending.pointerId);
+  }, 450);
 });
+// A normal swipe starts scrolling. Once a stationary hold has lifted the card,
+// consume touch moves so the browser does not turn that drag into page scrolling.
+document.addEventListener('touchmove', e => { if (drag?.active) e.preventDefault(); }, {passive:false});
+tree.addEventListener('contextmenu', e => { if (drag) e.preventDefault(); });
+tree.addEventListener('selectstart', e => { if (drag) e.preventDefault(); });
 document.addEventListener('pointermove', e => {
-  if (!drag) return;
-  if (!drag.active && Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY) < 5) return;
-  if (!drag.active) { drag.active = true; document.body.append(drag.ghost); tree.querySelector(`[data-id="${drag.id}"]`).classList.add('drag-source'); }
+  if (!drag || (drag.pointerId !== undefined && e.pointerId !== drag.pointerId)) return;
+  if (!drag.active) {
+    if (Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY) > 8) endDrag(false);
+    return;
+  }
+  e.preventDefault();
   drag.ghost.style.left = e.clientX+14+'px'; drag.ghost.style.top = e.clientY-22+'px';
   const bounds = tree.getBoundingClientRect(); if (e.clientY < bounds.top+25) tree.scrollTop -= 8; else if (e.clientY > bounds.bottom-25) tree.scrollTop += 8;
   const y = e.clientY + tree.scrollTop-drag.scroll;
@@ -160,12 +178,16 @@ document.addEventListener('pointermove', e => {
 });
 function clearPreview() { tree.querySelector('.drop-gap')?.remove(); tree.querySelector('.drop-child')?.classList.remove('drop-child'); }
 function endDrag(commit) {
-  if (!drag) return; const current = drag; drag = null; current.ghost.remove(); clearPreview(); tree.querySelector('.drag-source')?.classList.remove('drag-source');
+  if (!drag) return; const current = drag; drag = null; clearTimeout(current.timer);
+  if (current.active) suppressClickUntil = Date.now()+400;
+  if (current.element.hasPointerCapture?.(current.pointerId)) current.element.releasePointerCapture(current.pointerId);
+  document.body.classList.remove('is-dragging'); current.ghost.remove(); clearPreview(); tree.querySelector('.drag-source')?.classList.remove('drag-source');
   if (!commit || !current.active || !current.target) return;
   const {id,mode} = current.target, target = rowOf(id);
   if (mode === 'child') { collapsed.delete(id); applyMove(current.id,id,siblings(rows,kind,id).filter(r => r.id !== current.id)[0]?.id ?? null); }
   else { const peers = siblings(rows,kind,target.parent).filter(r => r.id !== current.id), i = peers.findIndex(r => r.id === id); applyMove(current.id,target.parent,mode === 'before' ? id : peers[i+1]?.id ?? null); }
 }
-document.addEventListener('pointerup', () => endDrag(true));
+document.addEventListener('pointerup', e => { if (drag && (drag.pointerId === undefined || e.pointerId === drag.pointerId)) endDrag(true); });
 document.addEventListener('pointercancel', () => endDrag(false));
+window.addEventListener('blur', () => endDrag(false));
 render();
