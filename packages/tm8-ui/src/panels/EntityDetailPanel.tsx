@@ -1,6 +1,7 @@
 import { McpEquipment } from '../mcp/McpEquipment';
 import { PendingFormsBanner } from '../forms/PendingFormsBanner';
 import { AttentionBlock } from '../attention/AttentionBlock';
+import { EntityAttentionControl } from '../attention/EntityAttentionControl';
 import { SkillBody } from '../skills/SkillBody';
 import { SkillEquipment } from '../skills/SkillEquipment';
 import type { SkillPort } from '../skills/port';
@@ -1532,15 +1533,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         />
       )}
 
-      {/* ATTENTION v2 — the requests on this entity, for every kind (chapter 4,
-          tab 3). It FLOATS: a zero-height dock under the tabs holds a pill at the
-          top-right that opens into a card OVER the body, so the entity is never
-          pushed down (Subhang, 2026-10-02). It renders nothing when no request is
-          open or when no attention module is mounted. On a session or chat the
-          requests it RAISED are the banner's ("waiting on you", chapter 4
-          "Session"), so the block lists only the rest; opening still marks all
-          of them seen. */}
-      <div className="att-block-dock">
+      {/* Session attention belongs only to its right strip, including requests
+          raised on other roots. Other archetypes keep their existing dock. */}
+      {isTerminal ? (isTombstone ? null : embedded ? (
+        embedded.kindSlot ? createPortal(
+          <EntityAttentionControl key={detail.id} entityId={detail.id} onOpenEntity={props.onOpenEntity} />,
+          embedded.kindSlot,
+        ) : null
+      ) : (
+        <div className="att-session-strip" role="toolbar" aria-label="Session attention" aria-orientation="vertical">
+          <EntityAttentionControl key={detail.id} entityId={detail.id} onOpenEntity={props.onOpenEntity} />
+        </div>
+      )) : <div className="att-block-dock">
         {isTombstone ? null : (
           <AttentionBlock
             excludeRaisedBy={isTerminal || config.panel.archetype === 'conversation' ? detail.id : null}
@@ -1551,7 +1555,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
             onOpenEntity={props.onOpenEntity}
           />
         )}
-      </div>
+      </div>}
 
       {/* The band is gated on the strip alone: a kind with no controls (a doc
           declares none) would otherwise draw an empty padded row with a

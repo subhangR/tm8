@@ -2,7 +2,6 @@ import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
-import { SessionWaitingBanner } from '../../attention/SessionWaitingBanner';
 import { isProcessRecordedLive, sessionLineTwo, sessionRecordOf, type ActionRef } from '../../domain';
 import '../session/session-outcome.css';
 import {
@@ -252,10 +251,6 @@ export function TerminalBody({
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
-      {/* ATTENTION v2 (chapter 4 "Session"): the banner carries the REAL
-          reason this session raised; PTY silence alone no longer draws one
-          (G1). */}
-      <SessionWaitingBanner sessionId={detail.id} tone="dark" />
       {completedLive ? (
         <div className="pn-terminal-outcome" data-testid="session-completed-banner">
           {sessionLineTwo(detail.state, liveness)} · claims ended. Claiming a new task reopens it.
@@ -457,4 +452,3 @@ function SessionCanvas({
       );
   }
 }
-
