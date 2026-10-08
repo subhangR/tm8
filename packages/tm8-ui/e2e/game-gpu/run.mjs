@@ -52,7 +52,7 @@ const report = { schema: 'tm8.game-gpu-benchmark.v1', createdAt: new Date().toIS
     environment: { LD_LIBRARY_PATH: process.env.LD_LIBRARY_PATH ?? null, LIBGL_ALWAYS_SOFTWARE: process.env.LIBGL_ALWAYS_SOFTWARE ?? null,
       MESA_LOADER_DRIVER_OVERRIDE: process.env.MESA_LOADER_DRIVER_OVERRIDE ?? null, buildMode: 'production', exclusiveResourcesReserved: false },
     fixtureHashes: Object.fromEntries(allCases.map(c => [`${c.scope}/${c.map}/${c.workload}`, hash(JSON.stringify(fixture(c)))])) },
-  audit, workloadMatrix: allCases, runs: [], nativeEligible: false, coverage: { completeMatrix: !selection && !smoke,
+  audit, workloadMatrix: allCases, runs: [], cleanup: [], nativeEligible: false, coverage: { completeMatrix: !selection && !smoke,
     supported: ['static six map types at both scopes, 64/512 content rows', 'production renderer, model and player', 'idle and scripted walking/overview/zoom'],
     unsupported: ['live server event replay', 'criteria/subtree-weight construction new contract (baseline builder unavailable)', 'construction/status/shipping transitions', '24h rubble lifecycle', 'worker arrival/departure routes', 'production authenticated graph adapter', 'nested navigation and reload persistence'],
     noApprovedPerformanceBudget: true, smokeOnly: smoke } };
@@ -60,7 +60,7 @@ await writeFile(join(output, 'reproduce.txt'), await readFile(join(here, 'README
 let browser, browserServer, server, temporary;
 const closeBrowser = async () => {
   if (!browserServer) return;
-  try { await bounded(browserServer.close(), 5000); }
+  try { await bounded(browserServer.close(), 5000); report.cleanup.push({ key: report.runs.at(-1)?.key ?? null, repeat: report.runs.at(-1)?.repeat ?? null, forcedBrowserKill: false }); }
   catch (error) {
     (report.cleanup ??= []).push({ key: report.runs.at(-1)?.key ?? null, repeat: report.runs.at(-1)?.repeat ?? null, forcedBrowserKill: true, reason: String(error) });
     try { await bounded(browserServer.kill(), 5000); } catch {}

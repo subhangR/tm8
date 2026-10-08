@@ -81,6 +81,12 @@ export function summarize(frames, { start, end, minimumSamples = 30, hidden = fa
 
 const SOFTWARE = /swiftshader|llvmpipe|softpipe|lavapipe|software|warp|virgl|qxl|vmware|virtualbox|microsoft basic|parallels/i;
 export const hardwareVendor = id => [0x1002, 0x10de, 0x8086, 0x106b, 0x5143, 0x13b5, 0x1010].includes(Number(id));
+// SystemInfo may append its driver version to the final driver segment.
+// Preserve vendor, device and backend; remove only this demonstrated suffix.
+export const normalizeRendererIdentity = value => typeof value === 'string' ? value.replace(/(\bdriver)-\d+(?:\.\d+)*(?=\)$)/, '$1') : null;
+export function rendererIdentityMatches(sampled, audited) {
+  return Boolean(sampled && audited && normalizeRendererIdentity(sampled) === normalizeRendererIdentity(audited));
+}
 export function classify({ renderer, browserGpu, audit, softwareRequested = false, samplesValid = true, dirty = false, headed = false, singleProcess = false, actualHead, expectedHead, windowEndEpochMs }) {
   const identity = [renderer?.unmaskedRenderer, renderer?.unmaskedVendor, browserGpu?.glRenderer,
     ...(browserGpu?.devices ?? []).map(d => d.deviceString)].filter(Boolean).join(' ');
@@ -91,7 +97,7 @@ export function classify({ renderer, browserGpu, audit, softwareRequested = fals
   if (!/nvidia|amd|ati\b|intel|apple|adreno|mali|powervr/i.test(renderer?.unmaskedRenderer ?? '')) reasons.push('positive_hardware_renderer_missing');
   if (!browserGpu?.devices?.length) reasons.push('browser_gpu_device_missing');
   if (browserGpu?.auditError || !browserGpu?.glRenderer || browserGpu?.stableContext !== true) reasons.push('gpu_audit_unavailable');
-  if (renderer?.unmaskedRenderer !== browserGpu?.glRenderer) reasons.push('sample_and_audit_renderer_mismatch');
+  if (!rendererIdentityMatches(renderer?.unmaskedRenderer, browserGpu?.glRenderer)) reasons.push('sample_and_audit_renderer_mismatch');
   if (!(browserGpu?.startedAtEpochMs >= windowEndEpochMs && browserGpu?.collectedAtEpochMs >= browserGpu.startedAtEpochMs)) reasons.push('gpu_audit_not_bound_to_window');
   if (Number(browserGpu?.gpuProcessCrashCount) > 0) reasons.push('gpu_process_restart_observed');
   const physical = (audit?.devices ?? []).filter(d => d.accessible && d.hardware === true && hardwareVendor(d.vendorId) && !SOFTWARE.test(d.name ?? ''));
@@ -117,5 +123,5 @@ export function classify({ renderer, browserGpu, audit, softwareRequested = fals
   if (!/^[a-f\d]{40}$/i.test(expectedHead ?? '')) reasons.push('expected_head_missing_or_not_full_sha');
   else if (expectedHead !== actualHead) reasons.push('expected_head_mismatch');
   return { classification: software ? 'software-diagnostic' : reasons.length ? 'unverified' : 'native-hardware',
-    nativeEligible: reasons.length === 0, reasons };
+    nativeEligible: reasons.length === 0, reasons, rendererComparison: { sampled: renderer?.unmaskedRenderer ?? null, audited: browserGpu?.glRenderer ?? null, normalizedSampled: normalizeRendererIdentity(renderer?.unmaskedRenderer), normalizedAudited: normalizeRendererIdentity(browserGpu?.glRenderer) } };
 }

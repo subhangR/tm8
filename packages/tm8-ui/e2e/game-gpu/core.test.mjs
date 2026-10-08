@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture, matrix, distribution, summarize, classify, recordFrame, hardwareVendor, interactionEffect } from './core.mjs';
+import { fixture, matrix, distribution, summarize, classify, recordFrame, hardwareVendor, rendererIdentityMatches, interactionEffect } from './core.mjs';
 const native = { renderer: { unmaskedRenderer: 'ANGLE (Intel, Intel GPU)', context: 'webgl2' },
   headed: true, actualHead: 'a'.repeat(40), expectedHead: 'a'.repeat(40),
   windowEndEpochMs: 100,
@@ -86,4 +86,13 @@ test('real hardware identities pass only with matching host/browser proof; QXL n
   }
   assert.equal(hardwareVendor('0x1b36'), false); assert.equal(hardwareVendor('0x10de'), true);
   assert.equal(classify({ ...native, audit: { devices: [{ vendorId: 0x1b36, deviceId: 42, name: 'QXL', hardware: true, accessible: true }] } }).nativeEligible, false);
+});
+
+test('audit renderer matching removes only terminal driver-version suffix', () => {
+  const sampled = 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)';
+  const audited = 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver-5.0.0)';
+  assert.equal(rendererIdentityMatches(sampled, audited), true);
+  assert.equal(rendererIdentityMatches(sampled, audited.replace('0x0000C0DE', '0x0000BEEF')), false);
+  assert.equal(rendererIdentityMatches(sampled, audited.replace('Vulkan 1.3.0', 'OpenGL 4.6')), false);
+  assert.equal(rendererIdentityMatches(null, audited), false);
 });
