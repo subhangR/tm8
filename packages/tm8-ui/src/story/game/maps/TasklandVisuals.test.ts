@@ -64,6 +64,23 @@ describe.each(scopes)('Taskland cues at $kind scope', scope => {
     expect(shippingYardCount(reshipped)).toBe(2);
     expect(shippingYardPosition(reshipped)).toEqual(gate);
   });
+  it('labels an expired cancelled ancestor as a neutral anchor while its child stays in place', () => {
+    const now = Date.parse('2026-10-08T12:00:00Z');
+    const snapshot = input(scope);
+    snapshot.entities = snapshot.entities.map(e => e.id === 'root'
+      ? { ...e, status: 'cancelled', cancelledAt: new Date(now).toISOString() } : e);
+    const before = buildMapModel(snapshot, { scope, type: 'taskland', now });
+    const child = before.places.find(p => p.entityId === 'child')!;
+    const cleared = buildMapModel(snapshot, { scope, type: 'taskland', now: now + 86400000, previous: before });
+    const anchor = cleared.places.find(p => p.entityId === 'root')!;
+    expect(anchor).toMatchObject({ role: 'hierarchy-marker', constructionStage: 'foundation', rubbleExpiresAt: null });
+    expect(tasklandPlotDetail(anchor)).toBe('Yard anchor · open children remain');
+    expect(tasklandLabels(cleared).some(l => l.entityId === 'root' && l.cue === 'surveyor')).toBe(false);
+    expect(cleared.places.find(p => p.entityId === 'child')).toMatchObject({ parentId: 'root', x: child.x, z: child.z });
+    const town = buildMapModel(snapshot, { scope, type: 'town', now: now + 86400000 });
+    expect(town.places.some(p => p.entityId === 'root')).toBe(false);
+    expect(shippingYardCount(town)).toBe(2);
+  });
 });
 it('does not introduce construction labels on the other maps, and labels empty shipping explicitly', () => {
   const scope = scopes[0]!;
