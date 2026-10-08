@@ -63,6 +63,57 @@ describe('durable Game save queue', () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it('retries a rate limit once after Retry-After with the newest pose, without urgent flushes bypassing the delay', async () => {
+    vi.useFakeTimers();
+    try {
+      const adapter = port(), status = vi.fn(), queue = new DurableGameSave(SPACE, MEMBER, adapter, status);
+      adapter.save.mockRejectedValueOnce(Object.assign(new Error('Rate limit'), { code: 'rate_limited', details: { retryAfterMs: 5_000 } }));
+      await queue.hydrate(new AbortController().signal); await queue.enqueue(initial());
+      const latest = rememberGameMap(initial(), mapKey(initial().current), { position: { x: 7.5, z: 8.25 } });
+      await queue.enqueue(latest, true);
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(adapter.save).toHaveBeenCalledTimes(1);
+      expect(status).not.toHaveBeenCalledWith('local');
+      await vi.advanceTimersByTimeAsync(1);
+      expect(adapter.save).toHaveBeenCalledTimes(2);
+      expect(adapter.save.mock.calls[1]?.[1]).toEqual(latest);
+      expect(adapter.save.mock.calls[1]?.[2]).toBe(0);
+      expect(adapter.save.mock.calls[1]?.[3]?.keepalive).toBe(true);
+      expect(status).toHaveBeenLastCalledWith('saved');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('halts a repeated rate limit without a loop and retains pending intent for explicit recovery', async () => {
+    vi.useFakeTimers();
+    try {
+      const adapter = port(), status = vi.fn(), queue = new DurableGameSave(SPACE, MEMBER, adapter, status);
+      adapter.save.mockRejectedValueOnce(Object.assign(new Error('Rate limit'), { status: 429 }));
+      adapter.save.mockRejectedValueOnce(Object.assign(new Error('Rate limit'), { details: { httpStatus: 429 } }));
+      await queue.hydrate(new AbortController().signal); await queue.enqueue(initial());
+      const latest = rememberGameMap(initial(), mapKey(initial().current), { position: { x: 4, z: 5 } });
+      await queue.enqueue(latest, true); await vi.advanceTimersByTimeAsync(60_000);
+      expect(adapter.save).toHaveBeenCalledTimes(2);
+      expect(status).toHaveBeenLastCalledWith('local');
+      adapter.load.mockResolvedValue(view(initial(), 7)); await queue.retry();
+      expect(adapter.save).toHaveBeenCalledTimes(3);
+      expect(adapter.save.mock.calls[2]?.[1]).toEqual(latest);
+      expect(adapter.save.mock.calls[2]?.[2]).toBe(7);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('cancels a delayed rate-limit retry on an identity change', async () => {
+    vi.useFakeTimers();
+    try {
+      const adapter = port(), identity = new AbortController();
+      adapter.save.mockRejectedValueOnce(Object.assign(new Error('Rate limit'), { code: 'TM429' }));
+      const queue = new DurableGameSave(SPACE, MEMBER, adapter, vi.fn(), identity.signal);
+      await queue.hydrate(new AbortController().signal); await queue.enqueue(initial());
+      await queue.enqueue(rememberGameMap(initial(), mapKey(initial().current), { position: { x: 4, z: 5 } }));
+      identity.abort(); await vi.advanceTimersByTimeAsync(60_000);
+      expect(adapter.save).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('adopts normalized route/memory repairs but preserves navigation and pose intent created during the write', async () => {
     const adapter = port(), first = deferred<GameNavigationView>(), repaired = vi.fn();
     adapter.save.mockReturnValueOnce(first.promise);
@@ -132,6 +183,19 @@ describe('durable Game save queue', () => {
     await queue.retry();
     expect(adapter.save.mock.calls[0]?.[2]).toBe(9);
     expect(status).toHaveBeenLastCalledWith('saved');
+  });
+
+  it('repairs malformed legacy memories on an explicit replacement even if another device already has a save', async () => {
+    const malformedKey = JSON.stringify(['story', 'legacy-nonuuid', 'taskland']);
+    const valid = rememberGameMap(initial(), mapKey(initial().current), { position: { x: 7.5, z: 8.25 } });
+    writeGameSave(rememberGameMap(valid, malformedKey, { position: { x: 99, z: 99 } }));
+    const adapter = port(); adapter.load.mockRejectedValueOnce(new Error('Offline')).mockResolvedValue(view(initial(), 8));
+    adapter.prepareMigration = vi.fn(async () => {});
+    const queue = new DurableGameSave(SPACE, MEMBER, adapter, vi.fn());
+    await queue.hydrate(new AbortController().signal); await queue.retry();
+    expect(adapter.prepareMigration).toHaveBeenCalledWith(SPACE, valid, expect.any(AbortSignal));
+    expect(adapter.save.mock.calls[0]?.[1]).toEqual(valid);
+    expect(adapter.save.mock.calls[0]?.[2]).toBe(8);
   });
 
   it('halts conflicts without a retry loop and preserves newer intent for an explicit save', async () => {
