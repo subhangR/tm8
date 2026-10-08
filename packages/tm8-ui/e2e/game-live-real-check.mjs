@@ -140,7 +140,8 @@ try{
     expect(maxDelta([b.firstAttached.localPosition[0],b.firstAttached.localPosition[2]],[a.lastDrawn.localPosition[0],a.lastDrawn.localPosition[2]])).toBeLessThan(cameraTolerance);
     expect(b.firstAttached.localPosition[1]).toEqual(.2);
     const loop=handoff.auditAfter.scenes[b.firstAttached.sceneId],beforeLoop=handoff.auditBefore.scenes[b.firstAttached.sceneId];
-    expect(loop.before-beforeLoop.before).toBeGreaterThan(0);expect(loop.after-beforeLoop.after).toBeGreaterThan(0);expect(loop.lastGlFrame-beforeLoop.lastGlFrame).toBeGreaterThan(0);
+    handoff.loopProof={beforeEffects:loop.before-beforeLoop.before,afterEffects:loop.after-beforeLoop.after,actualGlFrames:loop.lastGlFrame-beforeLoop.lastGlFrame,relationship:'Same active automatic-render R3F scene: one before-effect, one renderer.render and one after-effect per frame'};
+    expect(handoff.loopProof.actualGlFrames).toBeGreaterThan(0);expect(handoff.loopProof.beforeEffects).toEqual(handoff.loopProof.actualGlFrames);expect(handoff.loopProof.afterEffects).toEqual(handoff.loopProof.actualGlFrames);
     if(process.env.GAME_REDUCED_MOTION==='1')expect([b.firstDrawn.localPosition[0],b.firstDrawn.localPosition[2]]).toEqual([b.motion.target.x,b.motion.target.z]);
     else{expect(Math.hypot(b.firstDrawn.localPosition[0]-b.firstAttached.localPosition[0],b.firstDrawn.localPosition[2]-b.firstAttached.localPosition[2])).toBeLessThanOrEqual(.700001);expect(handoff.worldDrawnDisplacement).toBeLessThanOrEqual(.700001);}
     const ended=handoff.events.find(e=>e.type==='edge.ended'),claimed=handoff.events.find(e=>e.type==='edge.upsert');expect(ended).toBeTruthy();expect(claimed).toBeTruthy();expect(claimed.seq).toBeGreaterThan(ended.seq);
