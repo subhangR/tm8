@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MapModel, MapPlace } from './map-model';
-import { emptyTasklandMotion, reconcileTasklandMotion, sampleTasklandTransition, suppressedTasklandPlaces,
+import { emptyTasklandMotion, reconcileTasklandMotion, sampleTasklandPlace, sampleTasklandTransition, suppressedTasklandPlaces,
   type TasklandMotionInput, type TasklandMotionEffect } from './taskland-motion';
 
 function place(id: string, x: number, z = 0, parentId: string | null = null, status = 'working'): MapPlace {
@@ -121,5 +121,21 @@ describe('Taskland authoritative motion planner', () => {
     const previous=model([place('root',0)]),current=model([{...place('root',0),progress:.8,constructionStage:'topped-out'}]);
     const state=plan(previous,current,{id:16,taskEvents:[{type:'task.criterion_changed',taskId:'root',criterionId:'ac1',criterionText:'Ready',isDone:true,done:8,total:10}]});
     expect(state.transitions).toEqual([]);
+  });
+  it('shows reopened markers and cancelled buildings directly from the current snapshot', () => {
+    for (const before of [{...place('root',0,0,null,'done'),role:'shipped-marker' as const,constructionStage:'shipped-marker' as const},
+      {...place('root',0,0,null,'cancelled'),constructionStage:'rubble' as const}]) {
+      const previous=model([before]),current=model([place('root',10)]);
+      expect(plan(previous,current,effect(17,['root',before.status!,'working'])).transitions).toEqual([]);
+    }
+  });
+  it('samples moving worker sites by entity id and excludes shipment robot routes', () => {
+    const previous=model([place('root',0)]),current=model([place('root',10,0,null,'blocked')]);
+    const state=plan(previous,current,effect(18,['root','working','blocked']));
+    const transition=state.transitions[0]!;
+    expect(sampleTasklandPlace(state.transitions,'root',transition.duration/2)).toEqual({x:5,z:0});
+    expect(sampleTasklandPlace(state.transitions,'claim-id',500)).toBeNull();
+    const shipment=plan(previous,model([]),effect(19,['root','working','done']));
+    expect(sampleTasklandPlace(shipment.transitions,'root',500)).toBeNull();
   });
 });
