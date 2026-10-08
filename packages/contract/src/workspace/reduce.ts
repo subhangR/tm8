@@ -45,12 +45,14 @@ export const PLANNERS: Record<CommandName, Planner> = {
  * Never from remote. `interactions.resolve` is the human's answer (UI sources
  * only, below); `drafts.bind` is the draft host's own completion (system
  * only); `drafts.markDirty` would let a caller mark a draft clean so a later
- * close discards it without asking.
+ * close discards it without asking; `rail.set` is the human's own icon-rail
+ * preferences.
  */
 export const REMOTE_FORBIDDEN: ReadonlySet<CommandName> = new Set([
   'workspace.interactions.resolve',
   'workspace.drafts.bind',
   'workspace.drafts.markDirty',
+  'workspace.rail.set',
 ]);
 
 /** Commands that act on the mounted Workspace view; in a window elsewhere they are refused, never queued. */

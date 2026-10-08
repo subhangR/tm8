@@ -498,6 +498,19 @@ describeIfPg('workspace safety over real Postgres (pins, D7, batch, prompts)', (
       .resolves.toMatchObject({ status: 'rejected', reason: 'invalid_arguments' });
   });
 
+  it('an agent files.open keeps a file tab in the stored workspace and asks a live window to show it, like tabs.open', async () => {
+    const file = { projectId: randomUUID(), path: 'src/remote-open.ts' };
+    const opened = await command('workspace.files.open', { ...file, preview: false });
+    // The test window doesn't answer the forward.
+    expect(opened).toMatchObject({ status: 'applied', outcome: 'created', activation: 'no_window', workspace: { id: main } });
+    const tabId = opened['tabId'] as string;
+    expect((await stored(main)).tabs[tabId]).toMatchObject({ type: 'file', ...file, preview: false });
+    // Already open, kept and active: focused, nothing to write.
+    expect(await command('workspace.files.open', { ...file, preview: false })).toMatchObject({ status: 'no_op', tabId, outcome: 'focused' });
+    expect(await command('workspace.files.open', { projectId: file.projectId, path: 'src/other.ts', activate: false }))
+      .toMatchObject({ status: 'applied', outcome: 'created', activation: 'not_requested' });
+  });
+
   it('an agent switch raises Switch/Stay (newest supersedes); a human switch applies and supersedes; agents cannot answer', async () => {
     capable.frames.length = 0;
     const first = await switchTo(second, asAgent);
