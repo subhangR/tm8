@@ -290,6 +290,8 @@ export interface TaskAssignment {
 export type CoreEntityState =
   | McpServerEntity
   | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
+      /** Authoritative current status transition time; null when unknown, absent on older nodes. */
+      statusChangedAt?: string | null;
       axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
       assignees: ActorSummary[];
       /** Additive: absent on payloads produced before assignment provenance shipped. */
@@ -1691,6 +1693,17 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'entity.activity_touched'; id: EntityId; kind: EntityKind; activityAt: string;
      clientMutationId?: string }
  | { type: 'edge.upsert'|'edge.deleted'; edge: EdgeView; clientMutationId?: string }
+ /**
+  * Committed task changes (Game P0c). One event per criterion whose done state
+  * changed, including unticks. `done`/`total` are the counts after the whole
+  * update; `isDone` is this criterion's state. Repeated ticks emit nothing.
+  * These supplement the task's entity.upsert and preserve the transaction's
+  * facts even when that summary has since advanced to a newer version.
+  */
+ | { type: 'task.criterion_changed'; taskId: EntityId; criterionId: string; criterionText: string;
+     isDone: boolean; done: number; total: number; clientMutationId?: string }
+ | { type: 'task.status_changed'; taskId: EntityId; from: WorkStatus; to: WorkStatus;
+     clientMutationId?: string }
  /**
   * Spec D1 §4.6 (299). The two halves of a session's state move separately and
   * say so separately: the OUTCOME of the work, and the PROCESS. Both come from

@@ -1,5 +1,8 @@
 export * from './types';
 export { buildMapModel, MAP_LABELS } from './build';
+export { taskConstructionProgress, isDoneTask, isCancelledTask } from './progress';
+export type { TaskConstructionProgress } from './progress';
+export { RUBBLE_TTL_MS, rubbleLifetime, isCompletedSession, isActiveMapEdge } from './lifecycle';
 export { fromProjection, fromStoryView } from './adapters';
 export { layoutForest, repairForest } from './layout';
 export type { LayoutNode, LaidOutNode, ForestLayout } from './layout';

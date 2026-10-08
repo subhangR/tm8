@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { buildMapModel, MAP_LABELS } from '../story/game/map-model';
+import { MAP_LABELS } from '../story/game/map-model';
 import type { MapModel, MapPortal } from '../story/game/map-model';
 import { walkingBounds, walkingEntrance } from '../story/game/map-model/walking-world';
 import { WalkingMapView } from '../story/game/maps/WalkingMapView';
@@ -7,11 +7,12 @@ import type { MapCameraState } from '../story/game/maps/WalkingMapView';
 import { backGameMap, enterGameMap, freshGameSave, mapKey, readGameSave, rememberGameMap, validCamera, validPosition, writeGameSave } from './local-save';
 import type { GameSave } from './local-save';
 import type { GameMapSelection, GameModeProps } from './types';
+import { createLiveMapController, type LiveMapSnapshot } from './live-map-controller';
 import './game-mode.css';
 export type { GameMapLoader, GameMapResult, GameModeProps } from './types';
 
 type View = { key: string; status: 'loading' } | { key: string; status: 'error'; message: string }
-  | { key: string; status: 'ready'; model: MapModel };
+  | { key: string; status: 'ready'; model: MapModel; live: LiveMapSnapshot };
 function unavailableScope(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const e = error as { code?: unknown; status?: unknown; statusCode?: unknown };
@@ -22,12 +23,12 @@ function unavailableScope(error: unknown): boolean {
 export default function GameMode(props: GameModeProps) {
   return <GameSession key={JSON.stringify([props.spaceId, props.memberId])} {...props} />;
 }
-function GameSession({ spaceId, memberId, spaceTitle, loadMap, onInspect }: GameModeProps) {
+function GameSession({ spaceId, memberId, spaceTitle, loadMap, events, onInspect }: GameModeProps) {
   const [navigation, setNavigation] = useState(() => readGameSave(spaceId, memberId));
   const save = useRef(navigation);
   const models = useRef(new Map<string, MapModel>());
   const pendingSave = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const abort = useRef<AbortController | null>(null);
+  const cancelLive = useRef<(() => void) | null>(null);
   const closing = useRef(false);
   const navigationEpoch = useRef(0);
   const loadEpoch = useRef(0);
@@ -63,57 +64,57 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, onInspect }: Game
   }, [flush]);
 
   useEffect(() => {
-    const controller = new AbortController();
     const request = ++loadEpoch.current;
-    abort.current = controller;
     const selected = save.current.current;
+    let initialized = false;
+    const current = () => request === loadEpoch.current && mapKey(save.current.current) === key;
     setView({ key, status: 'loading' });
-    void (async () => {
-      try {
-        const result = await loadMap(selected.scope, controller.signal, selected.type);
-        if (controller.signal.aborted || request !== loadEpoch.current || mapKey(save.current.current) !== key) return;
-        if (result.input.scope && (result.input.scope.kind !== selected.scope.kind || result.input.scope.id !== selected.scope.id)) {
-          throw new Error('The map data does not match the selected scope.');
-        }
-        const model = buildMapModel(result.input, { type: selected.type, scope: selected.scope, previous: models.current.get(key) });
+    const live = createLiveMapController({ spaceId, scope: selected.scope, type: selected.type, loadMap, events,
+      previous: models.current.get(key),
+      onSnapshot(snapshot) {
+        if (!current()) return;
+        const { result, model } = snapshot;
         models.current.set(key, model);
-        // Keep a bounded cache of stable layouts; snapshots are always loaded afresh.
         if (models.current.size > 128) models.current.delete(models.current.keys().next().value!);
-        const position = save.current.maps[key]?.position;
-        if (position) {
-          const bounds = walkingBounds(model);
-          const clamped = { x: Math.max(bounds.minX, Math.min(bounds.maxX, position.x)), z: Math.max(bounds.minZ, Math.min(bounds.maxZ, position.z)) };
-          const moved = clamped.x !== position.x || clamped.z !== position.z;
-          save.current = rememberGameMap(save.current, key, { position: clamped, ...(moved ? { camera: undefined } : {}) });
-        }
-        save.current = { ...save.current, current: { ...selected, title: result.title } };
-        setNavigation(save.current);
-        flush();
-        setView({ key, status: 'ready', model });
-      } catch (error) {
-        if (!controller.signal.aborted && request === loadEpoch.current && mapKey(save.current.current) === key) {
-          if (selected.scope.kind === 'story' && unavailableScope(error)) {
-            // Skip typed maps and the hub of the unavailable story, then try its parent.
-            let index = save.current.stack.length - 1;
-            while (index >= 0 && save.current.stack[index]!.scope.id === selected.scope.id && save.current.stack[index]!.scope.kind === 'story') index--;
-            const next = index >= 0 ? backGameMap(save.current, index) : { ...freshGameSave(spaceId, memberId), maps: save.current.maps };
-            navigationEpoch.current++;
-            save.current = next;
-            flush();
-            setRecoveryNotice('That story is no longer available. Returned to an available hub.');
-            setNavigation(next);
-            return;
+        if (!initialized) {
+          initialized = true;
+          const position = save.current.maps[key]?.position;
+          if (position) {
+            const bounds = walkingBounds(model);
+            const clamped = { x: Math.max(bounds.minX, Math.min(bounds.maxX, position.x)), z: Math.max(bounds.minZ, Math.min(bounds.maxZ, position.z)) };
+            const moved = clamped.x !== position.x || clamped.z !== position.z;
+            save.current = rememberGameMap(save.current, key, { position: clamped, ...(moved ? { camera: undefined } : {}) });
           }
-          setView({ key, status: 'error', message: error instanceof Error ? error.message : 'The map could not be loaded.' });
+          save.current = { ...save.current, current: { ...selected, title: result.title } };
+          setNavigation(save.current);
+          flush();
         }
-      }
-    })();
-    return () => { controller.abort(); loadEpoch.current++; };
-  }, [key, loadMap, retry, flush]);
+        setView({ key, status: 'ready', model, live: snapshot });
+      },
+      onError(error) {
+        if (!current()) return;
+        if (selected.scope.kind === 'story' && unavailableScope(error)) {
+          let index = save.current.stack.length - 1;
+          while (index >= 0 && save.current.stack[index]!.scope.id === selected.scope.id && save.current.stack[index]!.scope.kind === 'story') index--;
+          const next = index >= 0 ? backGameMap(save.current, index) : { ...freshGameSave(spaceId, memberId), maps: save.current.maps };
+          navigationEpoch.current++;
+          save.current = next;
+          flush();
+          setRecoveryNotice('That story is no longer available. Returned to an available hub.');
+          setNavigation(next);
+          return;
+        }
+        setView({ key, status: 'error', message: error instanceof Error ? error.message : 'The map could not be loaded.' });
+      },
+    });
+    cancelLive.current = live.dispose;
+    live.attach();
+    return () => { live.dispose(); loadEpoch.current++; };
+  }, [key, loadMap, events, retry, flush]);
 
   const navigate = useCallback((next: GameSave) => {
     if (next === save.current) return;
-    abort.current?.abort();
+    cancelLive.current?.();
     loadEpoch.current++;
     navigationEpoch.current++;
     save.current = next;
@@ -164,11 +165,15 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, onInspect }: Game
       <ol>{navigation.stack.map((map, index) => <li key={`${mapKey(map)}:${index}`}><button type="button" onClick={() => back(index)}>{label(map)}</button></li>)}
         <li aria-current="location">{label(navigation.current)}</li></ol>
     </nav>
-    {saveFailed && <p className="game-mode__notice" role="status">Browser save is unavailable. Your place is kept for this visit.</p>}
-    {recoveryNotice && <p className="game-mode__notice" role="status">{recoveryNotice}</p>}
-    {!!ready?.model.warnings.length && <details className="game-mode__notice" open><summary>Map notices</summary><ul>{[...new Set(ready.model.warnings)].map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
     <div className="game-mode__map" aria-busy={!ready && !failure}>
-      {ready ? <WalkingMapView key={ready.model.id} model={ready.model} start={memory?.position ?? walkingEntrance(ready.model)} camera={memory?.camera}
+      <div className="game-mode__notices">
+        <p className="game-mode__notice game-mode__live-notice" aria-live="polite" aria-atomic="true" data-effect-id={ready?.live.effect?.id}>{ready?.live.effect ? ready.live.effect.combined ? `${ready.live.effect.count} map updates in the last minute` : `${ready.live.effect.count} map ${ready.live.effect.count === 1 ? 'update' : 'updates'}` : null}</p>
+        {saveFailed && <p className="game-mode__notice" role="status">Browser save is unavailable. Your place is kept for this visit.</p>}
+        {recoveryNotice && <p className="game-mode__notice" role="status">{recoveryNotice}</p>}
+        {ready?.live.error && <p className="game-mode__notice" role="status">Live map refresh failed. <button type="button" onClick={() => setRetry(n => n + 1)}>Retry map</button></p>}
+        {!!ready?.model.warnings.length && <details className="game-mode__notice" open><summary>Map notices</summary><ul>{[...new Set(ready.model.warnings)].map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
+      </div>
+      {ready ? <WalkingMapView key={ready.model.id} model={ready.model} previousModel={ready.live.previousModel} effect={ready.live.effect} departures={ready.live.departures} start={memory?.position ?? walkingEntrance(ready.model)} camera={memory?.camera}
         onPosition={position} onCamera={camera} onInspect={id => { if (navigationEpoch.current === epoch && mapKey(save.current.current) === key) onInspect(id); }} onEnterPortal={enter}
         onBack={navigation.stack.length ? () => back() : undefined} />
         : failure ? <div className="game-mode__status" role="alert"><p>{failure.message}</p>
