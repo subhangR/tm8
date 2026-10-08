@@ -160,14 +160,12 @@ end $$;
 
 create table map.command_inputs(client_mutation_id text primary key, op text not null, input_hash text not null, created_at timestamptz not null default clock_timestamp());
 create index map_command_inputs_expiry on map.command_inputs(created_at);
--- Hash retention follows the ledger replay window; retain its existing return contract.
-create or replace function internal.prune_command_ledger(retain interval default interval '24 hours')
-returns bigint language plpgsql set search_path = public, internal, pg_temp as $$
+-- Keep feature cleanup independent of core ledger housekeeping. Both use 24h.
+create function map.prune_command_inputs() returns bigint language plpgsql as $$
 declare removed bigint;
 begin
-  delete from public.command_ledger where created_at<now()-retain;
+  delete from map.command_inputs where created_at<clock_timestamp()-interval '24 hours';
   get diagnostics removed=row_count;
-  delete from map.command_inputs where created_at<now()-retain;
   return removed;
 end $$;
 create function map.require_mutation(p_cmid text) returns void language plpgsql as $$
@@ -178,7 +176,7 @@ end $$;
 create function map.check_payload(p_cmid text,p_op text,p_input jsonb) returns void language plpgsql as $$
 declare request_hash text:=encode(sha256(convert_to(p_input::text,'UTF8')),'hex');
 begin
-  delete from map.command_inputs where created_at<clock_timestamp()-interval '24 hours';
+  perform map.prune_command_inputs();
   if exists(select 1 from map.command_inputs where client_mutation_id=p_cmid and (op<>p_op or map.command_inputs.input_hash<>request_hash)) then
     raise exception 'mutation id reused with different input' using errcode='23514'; end if;
   insert into map.command_inputs(client_mutation_id,op,input_hash) values(p_cmid,p_op,request_hash) on conflict do nothing;
