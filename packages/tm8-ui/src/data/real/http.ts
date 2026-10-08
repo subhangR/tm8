@@ -182,7 +182,7 @@ function isCommandErrorCode(code: string): code is CommandErrorCode {
  * mints its own client-side id and would otherwise drop the server's — the id
  * you need to grep the node log is the server's.
  */
-function toCollabError(status: number, body: unknown): CollabError {
+function toCollabError(status: number, body: unknown, retryAfter: string | null = null): CollabError {
   const err = (body as { error?: Record<string, unknown> } | null | undefined)?.error;
   const rawCode = typeof err?.code === 'string' ? err.code : undefined;
   const message = typeof err?.message === 'string'
@@ -204,6 +204,11 @@ function toCollabError(status: number, body: unknown): CollabError {
   // backoff on that difference: an overloaded node is answering, and every
   // fast retry against it is added load.
   details.httpStatus = status;
+  if (retryAfter !== null) {
+    const seconds = Number(retryAfter);
+    const delay = retryAfter.trim() !== '' && Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(retryAfter) - Date.now();
+    if (Number.isFinite(delay) && delay > 0) details.retryAfterMs = delay;
+  }
 
   let code: CommandErrorCode;
   if (rawCode !== undefined && isCommandErrorCode(rawCode)) {
@@ -388,7 +393,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
         });
       }
 
-      if (!res.ok) throw toCollabError(res.status, parsed);
+      if (!res.ok) throw toCollabError(res.status, parsed, res.headers?.get('retry-after') ?? null);
 
       return (parsed as { data?: T } | undefined)?.data as T;
     } finally {
