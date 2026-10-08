@@ -3,7 +3,7 @@ import {readFile,mkdir,writeFile} from 'node:fs/promises';
 const fixture=JSON.parse(await readFile(process.env.GAME_FIXTURE_FILE??'/tmp/tm8-live-verifier-infra-01a11c29/fixture.json','utf8'));
 const output=process.env.GAME_EVIDENCE_DIR??'/tmp/tm8-live-verifier-evidence-01a11c29';await mkdir(output,{recursive:true});
 const checks=[],errors=[],responses=[],timings=[],sessions=[],scenes=[],handoffs=[];
-const observerOverhead='Two passive scene traversals per R3F loop, plus copied worker transforms and bounded after-frame series. These instrumented timings are behavioral evidence, not performance evidence.';
+const observerOverhead='Read-only worker traversals plus actual Player and DOM React-state traversals before/after each bundled R3F loop, with copied transforms, model/input geometry and bounded frame series. These instrumented timings are behavioral evidence, not performance evidence.';
 const pendingAssets=new Set(),assetFailures=[];
 const fallback=process.env.GAME_FALLBACK==='1',noScreenshots=process.env.GAME_NO_SCREENSHOTS==='1';
 console.log('Launching isolated Chromium');
@@ -39,6 +39,8 @@ const claimId=async(sessionId,taskId)=>{
 const showWorker=async(id,text)=>{const row=host.locator(`[data-worker-id="robot:${id}"]`);await row.waitFor({state:'attached'});await host.locator('details.walking-workers').evaluate(el=>el.open=true);if(text)await expect(row).toContainText(text);return row;};
 const scene=()=>page.evaluate(()=>window.__gameLive.sceneSnapshot());
 const frameAudit=()=>page.evaluate(()=>window.__gameLive.workerFrameAudit());
+const cameraState=()=>page.evaluate(()=>window.__gameLive.playerCameraState());
+const cameraAudit=()=>page.evaluate(()=>window.__gameLive.cameraAudit());
 const closeWorker=async(workerId,taskTitle)=>{
  if(fallback)return null;
  const before=await scene(),workerBefore=before.workers.find(worker=>worker.id===`robot:${workerId}`);expect(workerBefore).toBeTruthy();
@@ -66,11 +68,20 @@ const equalSavedPose=(actual,expected)=>{expect(actual.position).toEqual(expecte
 const settlePose=async(initialPosition)=>{
  await expect.poll(async()=>JSON.stringify((await pose())?.position??null),{timeout:30000}).not.toEqual(JSON.stringify(initialPosition));
  if(fallback)return;
- let previous=await scene(),stationary=0;
+ let previous=await scene(),stationary=0,baseline=null;
  await expect.poll(async()=>{const current=await scene();if(!current?.player?.id||current.frames-previous.frames<2)return false;
+  const actual=await cameraState();expect(actual?.observed).toBe(true);expect(actual.nearIdValid).toBe(true);
   const stable=maxDelta(current.cameraPose.position,previous.cameraPose.position)<cameraTolerance/10&&maxDelta(current.cameraPose.quaternion,previous.cameraPose.quaternion)<cameraTolerance/10&&Math.abs(current.cameraPose.zoom-previous.cameraPose.zoom)<cameraTolerance/10;previous=current;
-  const saved=await pose();stationary=stable&&!!saved?.camera&&saved.position.x===current.player.position.x&&saved.position.z===current.player.position.z&&maxDelta(saved.camera.position,current.cameraPose.position)<cameraTolerance?stationary+1:0;return stationary>=3;
+  const saved=await pose(),quiet=stable&&actual.nearId===actual.publishedNearId&&actual.waypointsLength===0&&actual.keys.length===0&&actual.intro>=2.8&&!!saved?.camera&&saved.position.x===current.player.position.x&&saved.position.z===current.player.position.z&&maxDelta(saved.camera.position,current.cameraPose.position)<cameraTolerance&&Math.abs(saved.camera.zoom-current.cameraPose.zoom)<cameraTolerance;
+  if(!quiet){stationary=0;baseline=null;return false;}
+  stationary++;baseline??={startIndex:(await cameraAudit()).index,invalidCount:(await cameraAudit()).invalidCount,at:actual.at,nearId:actual.nearId,sceneUuid:actual.sceneUuid};
+  if(actual.nearId!==baseline.nearId||actual.sceneUuid!==baseline.sceneUuid){stationary=0;baseline=null;return false;}
+  return stationary>=3&&actual.at-baseline.at>=1000;
  },{timeout:60000,intervals:[200,400,800]}).toBe(true);
+ const audit=await cameraAudit(),samples=audit.frames.filter(frame=>frame.index>baseline.startIndex);
+ expect(samples).toHaveLength(audit.index-baseline.startIndex);expect(samples.length).toBeGreaterThanOrEqual(2);
+ for(const frame of samples){expect(frame.after.nearId).toEqual(baseline.nearId);expect(frame.after.nearIdValid).toBe(true);expect(frame.alertMatchesPreviousNear).toBe(true);}
+ return {...baseline,endIndex:audit.index,frames:samples,saved:await pose(),actual:await cameraState()};
 };
 try{
  await page.goto('http://127.0.0.1:18533/e2e/game-live-real-harness.html');
@@ -103,9 +114,9 @@ try{
    expect(sessionDetail.storyIds??[]).toEqual([]);
    record(`${scope}: native synthetic PTY claim starts rendered ${fallback?'worker HUD':'WorkerLayer'}, session has no storyIds`);
    const initialPosition=(!fallback?(await scene())?.player?.position:(await pose())?.position)??null;
-   await host.focus();await page.keyboard.down('d');try{await expect.poll(async()=>JSON.stringify((fallback?(await pose())?.position:(await scene())?.player?.position)??null),{timeout:30000}).not.toEqual(JSON.stringify(initialPosition));}finally{await page.keyboard.up('d');}await settlePose(initialPosition);
+   await host.focus();await page.keyboard.down('d');try{await expect.poll(async()=>JSON.stringify((fallback?(await pose())?.position:(await scene())?.player?.position)??null),{timeout:30000}).not.toEqual(JSON.stringify(initialPosition));}finally{await page.keyboard.up('d');}const baseline=await settlePose(initialPosition);
    const before=await pose(),sceneBefore=fallback?null:await scene(),canvas=crypto.randomUUID(),surface=fallback?host:host.locator('.sgm-stage canvas[data-engine]');await surface.evaluate((el,id)=>el.__verificationIdentity=id,canvas);
-   const begin=Date.now(),burstSample={scope,burstCommands:21,cameraTolerance,before,beforeScene:sceneBefore};timings.push(burstSample);
+   const begin=Date.now(),burstSample={scope,burstCommands:21,cameraTolerance,baseline,before,beforeScene:sceneBefore,beforeCamera:fallback?null:await cameraState(),eventStartIndex:await page.evaluate(()=>window.__gameLive.events.length)};timings.push(burstSample);
    for(let i=0;i<20;i++)await work(taskA,i%2?'working':'blocked',sessionId);
    await event('task.status_changed',taskA);const activeWorker=await showWorker(edgeA);await expect(activeWorker).not.toContainText('blocked');
    expect((await page.evaluate(id=>window.__gameLive.seam.entity(id),taskA)).state.status).toEqual('working');
@@ -117,7 +128,18 @@ try{
    await work(taskA,'blocked',sessionId);await showWorker(edgeA,'blocked');
    expect(await page.locator('[data-effect-id]').getAttribute('data-effect-id')).toEqual(effectId);
    expect(await surface.evaluate(el=>el.__verificationIdentity)).toEqual(canvas);
-   const afterPose=await pose();Object.assign(burstSample,{elapsedMs:Date.now()-begin,after:afterPose,afterScene:fallback?null:await scene()});expect(afterPose.position).toEqual(before.position);
+   if(!fallback){const postAt=await page.evaluate(()=>performance.now()),postFrame=(await scene()).frames;
+    await expect.poll(async()=>{const audit=await cameraAudit(),samples=audit.frames.filter(frame=>frame.after.at>=postAt);return samples.length>=3&&samples.at(-1).after.at-postAt>=1000&&samples.at(-1).after.frame>postFrame;},{timeout:30000}).toBe(true);
+   }
+   const afterPose=await pose();Object.assign(burstSample,{elapsedMs:Date.now()-begin,after:afterPose,afterScene:fallback?null:await scene(),afterCamera:fallback?null:await cameraState()});
+   burstSample.events=await page.evaluate(({start,taskId})=>window.__gameLive.events.slice(start).filter(e=>e.taskId===taskId||e.entity?.id===taskId).map(e=>({type:e.type,seq:e.seq,occurredAt:e.occurredAt,taskId:e.taskId,from:e.from,to:e.to,total:e.total,done:e.done,entity:e.entity?{id:e.entity.id,version:e.entity.version,category:e.entity.category,state:e.entity.state,pointsEstimate:e.entity.pointsEstimate,acceptance:e.entity.acceptance,counters:e.entity.counters}:null})),{start:burstSample.eventStartIndex,taskId:taskA});
+   if(!fallback){const audit=await cameraAudit();burstSample.cameraInterval={startIndex:baseline.startIndex,endIndex:audit.index,frames:audit.frames.filter(frame=>frame.index>baseline.startIndex),publications:audit.publications,worlds:audit.worlds,invalid:audit.invalid.filter(row=>row.at>=baseline.at)};
+    expect(burstSample.cameraInterval.frames).toHaveLength(audit.index-baseline.startIndex);expect(burstSample.cameraInterval.invalid).toEqual([]);expect(audit.invalidCount).toEqual(baseline.invalidCount);
+    expect(burstSample.afterCamera.nearId).toEqual(burstSample.beforeCamera.nearId);
+    expect(burstSample.afterCamera.publishedNearId).toEqual(burstSample.afterCamera.nearId);
+    for(const frame of burstSample.cameraInterval.frames){if(frame.zoomEquationError!==null)expect(frame.zoomEquationError).toBeLessThan(cameraTolerance);}
+   }
+   expect(afterPose.position).toEqual(before.position);
    if(sceneBefore){const after=await scene();expect(after.width).toEqual(sceneBefore.width);expect(after.height).toEqual(sceneBefore.height);expect(after.sceneId).toEqual(sceneBefore.sceneId);expect(after.cameraId).toEqual(sceneBefore.cameraId);expect(after.player.id).toEqual(sceneBefore.player.id);expect(after.player.position).toEqual(sceneBefore.player.position);expect(after.workers.find(w=>w.id===`robot:${edgeA}`).uuid).toEqual(sceneBefore.workers.find(w=>w.id===`robot:${edgeA}`).uuid);expect(maxDelta(after.cameraPose.position,sceneBefore.cameraPose.position)).toBeLessThan(cameraTolerance);expect(maxDelta(after.cameraPose.quaternion,sceneBefore.cameraPose.quaternion)).toBeLessThan(cameraTolerance);expect(maxDelta(afterPose.camera.position,before.camera.position)).toBeLessThan(cameraTolerance);expect(maxDelta(afterPose.camera.target,before.camera.target)).toBeLessThan(cameraTolerance);expect(Math.abs(afterPose.camera.zoom-before.camera.zoom)).toBeLessThan(cameraTolerance);}else expect(afterPose).toEqual(before);
    record(`${scope}: burst immediately updates worker pose, combines effects with stable identity and preserves canvas/player/camera`);
    await shot(`${prefix}-burst`,edgeA);
@@ -190,4 +212,4 @@ try{
   await writeFile(`${output}/report.json`,JSON.stringify({passed:true,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,dependencies:process.env.GAME_DEPENDENCY_HEADS,renderer:fallback?'Production DOM fallback; no 3D WorkerLayer evidence':fixture.renderer,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,handoffs,observerOverhead,stats,responses,errors},null,2));
  }
 }catch(error){console.log('Journey failed',String(error));const diagnostic=await page.evaluate(()=>({url:location.href,saves:Object.keys(localStorage).filter(k=>k.startsWith('tm8:game')).map(k=>({key:k,value:JSON.parse(localStorage.getItem(k))})),reads:window.__gameLive?.reads?.slice(-10),events:window.__gameLive?.events?.slice(-10)}));await writeFile(`${output}/report.json`,JSON.stringify({passed:false,bundleHead:process.env.GAME_EXACT_HEAD,runnerHead:process.env.GAME_RUNNER_HEAD,driver,headless:true,softwareRequested:true,nativeEligible:false,checks,timings,scenes,handoffs,observerOverhead,sceneAtFailure:fallback?null:await scene(),errors,responses,failure:String(error),expectedNavigation,diagnostic,text:await page.locator('body').innerText()},null,2));await page.screenshot({path:`${output}/failure.png`,timeout:10000}).catch(()=>{});throw error;}
-finally{await page.evaluate(()=>window.__gameLive?.stopWorkerFrameAudit?.()).catch(()=>{});await browser.close();}
+finally{if(!fallback)await writeFile(`${output}/camera-audit.json`,JSON.stringify(await cameraAudit(),null,2)).catch(()=>{});await page.evaluate(()=>window.__gameLive?.stopWorkerFrameAudit?.()).catch(()=>{});await browser.close();}

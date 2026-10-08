@@ -8,6 +8,7 @@ import { resetNav } from '../src/stores/navStore';
 import { writeLastSpace } from '../src/views/last-place';
 import { nodeKeyOf } from '../src/data/launch-cache';
 import { _roots, addEffect, addAfterEffect } from '@react-three/fiber';
+import { createCameraAudit } from './game-live-camera-audit';
 import { DefaultLoadingManager } from 'three';
 import { createRealSeam } from '../src/data/real/seam-real';
 import { browserWebSocketFactory } from '../src/data/real/socket';
@@ -31,12 +32,35 @@ for(const method of ['itemStart','itemEnd','itemError'] as const){
  const original=DefaultLoadingManager[method].bind(DefaultLoadingManager);
  DefaultLoadingManager[method]=(url:string)=>{if(method==='itemStart'){assetLoads.pending++;assetLoads.started++;}else if(method==='itemEnd')assetLoads.pending--;else assetLoads.failed++;original(url);};
 }
+// Read current React-owned state by model and exact setter identity, never by a
+// guessed DOM hook index. These are the actual snapshot/input handed to the map.
+const productionMapSnapshot=(playerProps:any)=>{
+ const host=document.querySelector<HTMLElement>('[data-testid="walking-map"]');
+ const fiberKey=host?Object.keys(host).find(key=>key.startsWith('__reactFiber$')):undefined;
+ let hostFiber=host&&fiberKey?(host as any)[fiberKey]:null;
+ while(hostFiber?.return)hostFiber=hostFiber.return;
+ const stack=[hostFiber?.stateNode?.current];let walkingModel:any=null,nearState:any=null,live:any=null;
+ while(stack.length){const fiber=stack.pop();if(!fiber)continue;
+  if(fiber.memoizedProps?.model?.id===host?.dataset.mapId&&playerProps){
+   for(let hook=fiber.memoizedState;hook;hook=hook.next)if(hook.queue?.dispatch===playerProps.onNear){walkingModel=fiber.memoizedProps.model;nearState=hook.memoizedState;}
+  }
+  for(let hook=fiber.memoizedState;hook;hook=hook.next){const value=hook.memoizedState;
+   if(value?.status==='ready'&&value.live?.model?.id===host?.dataset.mapId&&value.live.result?.input?.entities)live=value.live;
+  }
+  if(fiber.child)stack.push(fiber.child);if(fiber.sibling)stack.push(fiber.sibling);
+ }
+ if(!walkingModel||!live||walkingModel!==live.model)return {observed:false,reason:'Current GameSession snapshot and WalkingMapView model/setter identity could not be matched'};
+ return {observed:true,source:'Current GameSession ready.live.result.input and previousModel; current WalkingMapView near useState dispatch === actual Player.onNear',
+  model:walkingModel,previous:live.previousModel,input:live.result.input,live,nearId:nearState};
+};
+const currentSceneRoot=()=>{const canvas=document.querySelector<HTMLCanvasElement>('.sgm-stage canvas[data-engine]');return canvas?_roots.get(canvas):undefined;};
+const cameraAudit=createCameraAudit(currentSceneRoot,productionMapSnapshot);
 const sceneSnapshot=()=>{
  const canvas=document.querySelector<HTMLCanvasElement>('.sgm-stage canvas[data-engine]');
  const root=canvas?_roots.get(canvas):undefined;
  const state=root?.store.getState();
  if(!state)return null;
- let player:any=null;
+ let player:any=null,playerProps:any=null;
  const stack=[(root as any).fiber.current];
  while(stack.length){
   const fiber=stack.pop();if(!fiber)continue;
@@ -44,9 +68,12 @@ const sceneSnapshot=()=>{
   if(props?.control?.player&&props.playerPos?.current&&props.onPosition&&props.onCamera){
    const group=fiber.child?.stateNode?.object;
    player={id:group?.uuid??null,position:{x:props.control.player.x,z:props.control.player.z}};
+   playerProps=props;
   }
   if(fiber.child)stack.push(fiber.child);if(fiber.sibling)stack.push(fiber.sibling);
  }
+ const published=productionMapSnapshot(playerProps);
+ const proximity=published.observed?{observed:true,source:published.source,id:published.nearId,modelId:published.model.id}:published;
  const workers:any[]=[];
  state.scene.traverse(object=>{
   if(!object.name.startsWith('robot:'))return;
@@ -54,7 +81,7 @@ const sceneSnapshot=()=>{
   let skinnedMeshes=0;object.traverse(node=>{if((node as any).isSkinnedMesh)skinnedMeshes++;});
   workers.push({id:object.name,uuid:object.uuid,sessionId:object.userData.sessionId,claimId:object.userData.claimId,position:{x:point.x,z:point.z},visible:object.visible,inView:Math.abs(projected.x)<1&&Math.abs(projected.y)<1&&projected.z<1,skinnedMeshes});
  });
- return {sceneId:state.scene.uuid,cameraId:state.camera.uuid,cameraPose:{position:state.camera.position.toArray(),quaternion:state.camera.quaternion.toArray(),zoom:state.camera.zoom},player,frames:state.gl.info.render.frame,calls:state.gl.info.render.calls,width:canvas!.width,height:canvas!.height,assets:{...assetLoads},workers};
+ return {sceneId:state.scene.uuid,cameraId:state.camera.uuid,cameraPose:{position:state.camera.position.toArray(),quaternion:state.camera.quaternion.toArray(),zoom:state.camera.zoom},player,proximity,frames:state.gl.info.render.frame,calls:state.gl.info.render.calls,width:canvas!.width,height:canvas!.height,assets:{...assetLoads},workers};
 };
 // Passive observation of the same bundled R3F loop. Copy existing transforms only:
 // getWorldPosition/updateMatrixWorld would change matrices and are deliberately absent.
@@ -93,8 +120,8 @@ const observeWorkerFrame=(phase:'before'|'after')=>{
  });
  if(phase==='before')for(const record of workerFrameRecords)if(record.firstAttached.sceneId===state.scene.uuid&&!present.has(record.uuid)&&!record.detached)record.detached={frame,at,phase};
 };
-const removeBeforeWorkerFrame=addEffect(()=>observeWorkerFrame('before'));
-const removeAfterWorkerFrame=addAfterEffect(()=>observeWorkerFrame('after'));
+const removeBeforeWorkerFrame=addEffect(()=>{cameraAudit.before();observeWorkerFrame('before');});
+const removeAfterWorkerFrame=addAfterEffect(()=>{cameraAudit.after();observeWorkerFrame('after');});
 const stopWorkerFrameAudit=()=>{removeBeforeWorkerFrame();removeAfterWorkerFrame();};
 const workerFrameAudit=()=>structuredClone({counts:workerFrameCounts,scenes:workerFrameScenes,records:workerFrameRecords});
 let delayed=false;
@@ -107,7 +134,7 @@ for(const name of ['query','entity','graph'] as const){
   reads.push({name,args,start,end:performance.now()});return result;
  };
 }
-Object.assign(window,{__gameLive:{events,eventCounts,reads,seam,head:__GAME_VERIFIER_HEAD__,sceneSnapshot,workerFrameAudit,stopWorkerFrameAudit,spawn:async(input:any)=>createdIdOf(await seam.commands.spawn(input)),
+Object.assign(window,{__gameLive:{events,eventCounts,reads,seam,head:__GAME_VERIFIER_HEAD__,sceneSnapshot,cameraAudit:cameraAudit.snapshot,playerCameraState:cameraAudit.read,workerFrameAudit,stopWorkerFrameAudit,spawn:async(input:any)=>createdIdOf(await seam.commands.spawn(input)),
  delayReads:()=>{delayed=true;},releaseReads:()=>{delayed=false;pending.splice(0).forEach(resolve=>resolve());},pending:()=>pending.length}});
 if(!location.hash)location.hash=`#/s/${setup.spaceId}/work`;
 const route=()=>resetNav((location.hash.match(/^#\/s\/([^/]+)/)?.[1]??setup.spaceId) as any,{view:'workspace'});
