@@ -41,6 +41,25 @@ const scene=()=>page.evaluate(()=>window.__gameLive.sceneSnapshot());
 const frameAudit=()=>page.evaluate(()=>window.__gameLive.workerFrameAudit());
 const cameraState=()=>page.evaluate(()=>window.__gameLive.playerCameraState());
 const cameraAudit=()=>page.evaluate(()=>window.__gameLive.cameraAudit());
+const clearStoryBaseline=async(taskId)=>{
+ const audit=await cameraAudit(),actual=await cameraState(),publication=audit.publications[actual.publicationId],world=audit.worlds[actual.worldId];
+ const task=publication.current.places.find(place=>place.id===taskId),container=publication.current.layout.containers['@roots'],slot=container.slots[taskId];
+ expect(task.parentId).toBeNull();expect(publication.current.places.some(place=>place.parentId===taskId)).toBe(false);
+ // Prospective safety envelope only: layout.ts uses 6-unit district offsets;
+ // build.ts caps task buckets at 13 and radius at 1.8 + sqrt(bucket)*.4.
+ // These points are never substituted for actual model/world observations.
+ const grownFootprint=Math.max(task.footprint,1.8+Math.sqrt(13)*.4),groupIndex=container.groupKeys.indexOf(slot.group);
+ expect(groupIndex).toBeGreaterThanOrEqual(0);
+ const possibleSlots=container.groupKeys.map((group,index)=>({group,x:slot.x+6*(index-groupIndex),z:slot.z,footprint:grownFootprint}));
+ const obstacles=[...world.places,...possibleSlots],clearance=position=>Math.min(...obstacles.map(place=>Math.hypot(position.x-place.x,position.z-place.z)-place.footprint));
+ const required=1.6+.5,releaseMargin=9*.25,candidates=[];
+ for(let z=publication.current.bounds.minZ;z<=publication.current.bounds.maxZ;z+=.5){const point={x:actual.player.x,z};if(clearance(point)>required+releaseMargin)candidates.push(point);}
+ candidates.sort((a,b)=>Math.abs(a.z-actual.player.z)-Math.abs(b.z-actual.player.z));expect(candidates.length).toBeGreaterThan(0);
+ const goal=candidates[0],keys=goal.z<actual.player.z?['w','d']:['a','s'];
+ await host.focus();try{for(const key of keys)await page.keyboard.down(key);await expect.poll(async()=>{const state=await cameraState();expect(state.observed).toBe(true);return goal.z<actual.player.z?state.player.z<=goal.z:state.player.z>=goal.z;},{timeout:30000,intervals:[100,200]}).toBe(true);}finally{for(const key of keys)await page.keyboard.up(key);}
+ const after=await cameraState();expect(clearance(after.player)).toBeGreaterThan(required);
+ return {input:'Real paired walking keys; no state or model writes',before:actual,world,publication,prospectiveSafetyEnvelope:{source:'map-model/layout.ts group offset 6; build.ts radius and maximum bucket 13',possibleSlots,grownFootprint,required,releaseMargin},goal,keys,after,minimumClearance:clearance(after.player)};
+};
 const closeWorker=async(workerId,taskTitle)=>{
  if(fallback)return null;
  const before=await scene(),workerBefore=before.workers.find(worker=>worker.id===`robot:${workerId}`);expect(workerBefore).toBeTruthy();
@@ -114,9 +133,13 @@ try{
    expect(sessionDetail.storyIds??[]).toEqual([]);
    record(`${scope}: native synthetic PTY claim starts rendered ${fallback?'worker HUD':'WorkerLayer'}, session has no storyIds`);
    const initialPosition=(!fallback?(await scene())?.player?.position:(await pose())?.position)??null;
-   await host.focus();await page.keyboard.down('d');try{await expect.poll(async()=>JSON.stringify((fallback?(await pose())?.position:(await scene())?.player?.position)??null),{timeout:30000}).not.toEqual(JSON.stringify(initialPosition));}finally{await page.keyboard.up('d');}const baseline=await settlePose(initialPosition);
+   let baselineWalk;
+   if(scope==='story'&&!fallback)baselineWalk=await clearStoryBaseline(taskA);
+   else{await host.focus();await page.keyboard.down('d');try{await expect.poll(async()=>JSON.stringify((fallback?(await pose())?.position:(await scene())?.player?.position)??null),{timeout:30000}).not.toEqual(JSON.stringify(initialPosition));}finally{await page.keyboard.up('d');}}
+   const baseline=await settlePose(initialPosition);
+   if(!fallback){expect(baseline.actual.nearId).not.toEqual(taskA);if(scope==='story'){expect(baseline.actual.nearId).toBeNull();const audit=await cameraAudit(),world=audit.worlds[baseline.actual.worldId];baseline.clearances=world.places.map(place=>({id:place.id,clearance:Math.hypot(baseline.actual.player.x-place.x,baseline.actual.player.z-place.z)-place.footprint}));expect(Math.min(...baseline.clearances.map(place=>place.clearance))).toBeGreaterThan(1.6+.5);}}
    const before=await pose(),sceneBefore=fallback?null:await scene(),canvas=crypto.randomUUID(),surface=fallback?host:host.locator('.sgm-stage canvas[data-engine]');await surface.evaluate((el,id)=>el.__verificationIdentity=id,canvas);
-   const begin=Date.now(),burstSample={scope,burstCommands:21,cameraTolerance,baseline,before,beforeScene:sceneBefore,beforeCamera:fallback?null:await cameraState(),eventStartIndex:await page.evaluate(()=>window.__gameLive.events.length)};timings.push(burstSample);
+   const begin=Date.now(),burstSample={scope,burstCommands:21,cameraTolerance,baseline,baselineWalk,before,beforeScene:sceneBefore,beforeCamera:fallback?null:await cameraState(),eventStartIndex:await page.evaluate(()=>window.__gameLive.events.length)};timings.push(burstSample);
    for(let i=0;i<20;i++)await work(taskA,i%2?'working':'blocked',sessionId);
    await event('task.status_changed',taskA);const activeWorker=await showWorker(edgeA);await expect(activeWorker).not.toContainText('blocked');
    expect((await page.evaluate(id=>window.__gameLive.seam.entity(id),taskA)).state.status).toEqual('working');
@@ -134,6 +157,11 @@ try{
    const afterPose=await pose();Object.assign(burstSample,{elapsedMs:Date.now()-begin,after:afterPose,afterScene:fallback?null:await scene(),afterCamera:fallback?null:await cameraState()});
    burstSample.events=await page.evaluate(({start,taskId})=>window.__gameLive.events.slice(start).map(e=>({type:e.type,seq:e.seq,occurredAt:e.occurredAt,taskId:e.taskId,from:e.from,to:e.to,total:e.total,done:e.done,entity:e.entity?{id:e.entity.id,version:e.entity.version,category:e.entity.category,state:e.entity.state,pointsEstimate:e.entity.pointsEstimate,acceptance:e.entity.acceptance,counters:e.entity.counters}:null})),{start:burstSample.eventStartIndex,taskId:taskA});
    if(!fallback){const audit=await cameraAudit();burstSample.cameraInterval={startIndex:baseline.startIndex,endIndex:audit.index,frames:audit.frames.filter(frame=>frame.index>baseline.startIndex),publications:audit.publications,worlds:audit.worlds,invalid:audit.invalid.filter(row=>row.at>=baseline.at)};
+    const publicationIds=[...new Set(burstSample.cameraInterval.frames.flatMap(frame=>[frame.before.publicationId,frame.after.publicationId]))];
+    burstSample.relocations=publicationIds.map(id=>{const publication=audit.publications[id];return {publicationId:id,before:publication.previous?.places.find(place=>place.id===taskA),after:publication.current.places.find(place=>place.id===taskA),layout:publication.current.layout};}).filter(row=>row.before&&row.after&&row.before.groupId!==row.after.groupId&&row.before.x!==row.after.x);
+    expect(burstSample.relocations.length).toBeGreaterThan(0);
+    for(const row of burstSample.relocations){const keys=row.layout.containers['@roots'].groupKeys,from=keys.indexOf(row.before.groupId.replace('group:@roots:','')),to=keys.indexOf(row.after.groupId.replace('group:@roots:',''));expect(from).toBeGreaterThanOrEqual(0);expect(to).toBeGreaterThanOrEqual(0);row.expectedDistrictShift=6*(to-from);expect(Math.abs(row.after.x-row.before.x-row.expectedDistrictShift)).toBeLessThan(cameraTolerance);expect(Math.abs(row.after.z-row.before.z)).toBeLessThan(cameraTolerance);}
+    if(scope==='story'){const current=burstSample.afterCamera,world=audit.worlds[current.worldId],clearances=world.places.map(place=>({id:place.id,clearance:Math.hypot(current.player.x-place.x,current.player.z-place.z)-place.footprint}));burstSample.afterClearances=clearances;expect(Math.min(...clearances.map(place=>place.clearance))).toBeGreaterThan(1.6+.5);}
     expect(burstSample.cameraInterval.frames).toHaveLength(audit.index-baseline.startIndex);expect(burstSample.cameraInterval.invalid).toEqual([]);expect(audit.invalidCount).toEqual(baseline.invalidCount);
     expect(burstSample.afterCamera.nearId).toEqual(burstSample.beforeCamera.nearId);
     expect(burstSample.afterCamera.publishedNearId).toEqual(burstSample.afterCamera.nearId);
