@@ -30,7 +30,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
   const newPage = async () => {
     // A separate browser process also avoids Chromium single-process context reuse crashes.
     await browser?.close(); browser = await launchBrowser();
-    context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+    context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' });
     await context.addInitScript(() => { window.__storageInitiallyEmpty = localStorage.length === 0; });
     const page = await context.newPage(); page.setDefaultTimeout(90_000);
     page.on('request', request => {
@@ -161,7 +161,8 @@ export async function verifyBrowserDurability(f, restartServer, record) {
       const freshHost = fresh.getByTestId('walking-map');
       await freshHost.focus(); await fresh.keyboard.press('Escape'); await waitCurrent(fresh, 'hub', 'story', f.nestedStoryId);
       const hubKey = keyOf((await local(fresh)).current);
-      if (office.maps[hubKey]?.camera && office.maps[hubKey]?.position) await assertScene(fresh, office.maps[hubKey]);
+      assert.ok(office.maps[hubKey]?.camera && office.maps[hubKey]?.position, 'story hub pose and camera memory exist');
+      await assertScene(fresh, office.maps[hubKey]);
       await freshHost.focus(); await fresh.keyboard.press('Escape'); await waitCurrent(fresh, 'hub', 'story', f.storyId);
       await context.close(); assert.equal(errors.length, 0, 'browser page errors');
     });
@@ -189,7 +190,18 @@ export async function verifyBrowserDurability(f, restartServer, record) {
 
 export async function verifyWalkingTraffic(f, pool, record) {
   const browser = await launchBrowser();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    const send = window.fetch.bind(window);
+    window.__traffic = [];
+    window.fetch = (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input.url ?? String(input), location.href);
+      if (init?.method === 'PUT' && url.pathname.endsWith('/maps/navigation')) {
+        window.__traffic.push({ at: Date.now(), keepalive: init.keepalive === true });
+      }
+      return send(input, init);
+    };
+  });
   const url = `http://127.0.0.1:${uiPort}/e2e/game-storage-harness.html?${new URLSearchParams({
     space: f.spaceId, member: f.owner.memberId, story: f.storyId, nested: f.nestedStoryId, task: f.taskId,
   })}`;
@@ -206,7 +218,9 @@ export async function verifyWalkingTraffic(f, pool, record) {
     const started = Date.now();
     for (let index = 0; index < 12; index++) {
       const direction = index % 2 ? 'a' : 'd';
-      await host.focus(); await page.keyboard.down(direction); await page.waitForTimeout(5_000); await page.keyboard.up(direction);
+      await host.focus(); await page.keyboard.down(direction);
+      await page.waitForTimeout(Math.max(0, started + (index + 1) * 5_000 - Date.now()));
+      await page.keyboard.up(direction);
       if (index === 5) console.log(JSON.stringify({ stage: 'synthetic walking traffic', seconds: 30, writes }));
     }
     await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
@@ -216,8 +230,14 @@ export async function verifyWalkingTraffic(f, pool, record) {
       try { assert.deepEqual(view.save.maps, local.maps); return true; } catch { return false; }
     }).toBe(true);
     const after = await ledgerSize(pool), elapsedMs = Date.now() - started;
-    record({ name: '60 second scripted walk persistence request and ledger growth', passed: writes <= 24,
+    const traffic = await page.evaluate(() => window.__traffic);
+    const regular = traffic.filter(send => !send.keepalive && send.at >= started && send.at < started + 60_000).length;
+    const additionalRegular = traffic.filter(send => !send.keepalive && send.at >= started + 60_000).length;
+    const pagehideFlushes = traffic.filter(send => send.keepalive && send.at >= started).length;
+    record({ name: '60 second scripted walk persistence request and ledger growth', passed: regular <= 20,
       elapsedMs, navigationWrites: writes, savesPerMinute: writes * 60_000 / elapsedMs, requestBytes: wireBytes,
+      regularWritesIn60Seconds: regular, additionalRegularWrites: additionalRegular,
+      pagehideFlushes, routeFlushes: 0, visibilityFlushes: 0, renderer: 'SwiftShader software functional diagnostics',
       memoryCount: Object.keys(dataOf(await request(`/v2/spaces/${f.spaceId}/maps/navigation`), 'walk save').save.maps).length,
       inputRowsGrowth: after.inputRows - before.inputRows, inputBytesGrowth: after.inputBytes - before.inputBytes,
       ledgerRowsGrowth: after.ledgerRows - before.ledgerRows, ledgerBytesGrowth: after.ledgerBytes - before.ledgerBytes });
@@ -250,7 +270,7 @@ export async function verifyLegacyMigration(f, record) {
     assert.equal((await nav()).save, null, 'legacy migration starts with GET null');
     for (const migrating of [true, false]) {
       await browser?.close(); browser = await launchBrowser();
-      context = await browser.newContext({ viewport: { width: 1440, height: 960 } });
+      context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' });
       if (migrating) await context.addInitScript(save => {
         localStorage.setItem(`tm8:game:v1:${JSON.stringify([save.spaceId, save.memberId])}`, JSON.stringify(save));
       }, legacy);

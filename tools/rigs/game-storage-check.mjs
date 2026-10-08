@@ -11,7 +11,8 @@ import { verifyPersistenceCost } from './game-storage-cost.mjs';
 await mkdir(runRoot, { recursive: true });
 const checks = [], began = Date.now();
 const report = { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim(),
-  migrationDigest: migrationChainDigest(), syntheticOnly: true, checks };
+  migrationDigest: migrationChainDigest(), syntheticOnly: true,
+  browserRuntime: 'SwiftShader single-process software functional diagnostics', checks };
 const record = result => { checks.push({ ...result, ...(result.reason ? { reason: result.reason.split('\n')[0] } : {}) });
   console.log(JSON.stringify(checks.at(-1))); };
 let server, ui; const pool = fixturePool();

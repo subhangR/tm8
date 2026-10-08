@@ -31,6 +31,11 @@ The runner launches a fresh Chromium process for each restored visit, with
 empty browser storage. This also avoids single-process Chromium context reuse
 crashes on the shared software-rendering host. Screenshots have a 90-second
 readback deadline; renderer readiness still requires actual drawn frames.
+The browser uses its standard reduced-motion preference so idle camera easing
+does not change the sampled final pose during screenshot readback. Exact scene
+player/camera and stored current/stack/memory assertions remain unconditional.
+Traffic separates the 60-second regular-send window (budget at most 20) from
+pagehide flushes; this walk performs no route or visibility changes.
 The runner stops its owned API/Vite
 children, including on failure; the caller owns cluster startup/teardown.
 

@@ -5,7 +5,7 @@ import production from '../vite.config';
 // Isolate this rig's dependency scan from unrelated development HTML fixtures.
 // Prebundle lazy renderer imports before the browser's equality assertions.
 export default mergeConfig(production, {
-  cacheDir: resolve(process.env.GAME_STORAGE_RUN_DIR ?? '/tmp/tm8-storage-acceptance', 'vite-cache'),
+  cacheDir: resolve(process.env.GAME_STORAGE_RUN_DIR ?? '/tmp/tm8-storage-acceptance', 'node_modules/.vite-game-storage'),
   optimizeDeps: {
     entries: ['e2e/game-storage-harness.html'],
     include: [
