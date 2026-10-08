@@ -78,6 +78,80 @@ describe('WorkspaceEventMapper', () => {
   const mapper = new WorkspaceEventMapper(fixedProjector(new Map([[TASK, summary()]])));
   const entities = new Map([[TASK, summary()]]);
 
+  describe('Game deltas and reconciled session/claim contracts', () => {
+    const SESSION = '019f9896-928d-7a24-848b-4c8fdd82b762';
+    const session = summary({ id: SESSION, kind: 'work_session', state: {
+      kind: 'work_session', status: 'exited', agentTool: 'codex', model: 'gpt-6', shareMode: 'space',
+      startedAt: '2026-07-25T00:00:00.000Z', exitedAt: '2026-07-25T01:00:00.000Z', outcome: 'completed',
+    } });
+    const sessionEntities = new Map([[SESSION, session]]);
+    const criterionRow = row({
+      event_type: 'task.criterion_changed', client_mutation_id: 'tick-ac1',
+      payload: { id: TASK, criterionId: 'ac1', criterionText: 'Tests pass', isDone: true, done: 2, total: 3 },
+    });
+
+    it('keeps committed criterion counts and status values when the current summary has moved on', () => {
+      expect(mapper.mapRow(criterionRow, entities)).toMatchObject({
+        type: 'task.criterion_changed', taskId: TASK, criterionId: 'ac1', criterionText: 'Tests pass',
+        isDone: true, done: 2, total: 3, clientMutationId: 'tick-ac1',
+      });
+      expect(mapper.mapRow(row({ event_type: 'task.status_changed', payload: { id: TASK, from: 'working', to: 'cancelled' } }), entities))
+        .toMatchObject({ type: 'task.status_changed', taskId: TASK, from: 'working', to: 'cancelled', occurredAt: '2026-07-25T00:00:00.000Z' });
+    });
+
+    it.each(['task.criterion_changed', 'task.status_changed'])('hydrates the task for %s and skips it if unreadable', async (type) => {
+      const ids: string[][] = [];
+      const projector: EntityProjector = {
+        entitySummaries: async (_q, requested) => { ids.push(requested); return new Map(); },
+      };
+      const skips: string[] = [];
+      const result = await new WorkspaceEventMapper(projector).mapRows(NO_QUERIER,
+        [{ ...criterionRow, event_type: type }], (e) => skips.push(e.message));
+      expect(ids).toEqual([[TASK]]);
+      expect(result).toEqual([]);
+      expect(skips).toHaveLength(1);
+    });
+
+    it('refuses incomplete delta payloads instead of inventing counts or previous status', () => {
+      expect(() => mapper.mapRow({ ...criterionRow, payload: { ...criterionRow.payload, done: undefined } }, entities))
+        .toThrow(OffContractEventError);
+      expect(() => mapper.mapRow(row({ event_type: 'task.status_changed', payload: { id: TASK, to: 'working' } }), entities))
+        .toThrow(OffContractEventError);
+    });
+
+    it('projects process ending separately from work completion, with the captured receipt and reasons', () => {
+      expect(mapper.mapRow(row({ event_type: 'session.outcome_changed', payload: {
+        id: SESSION, from: 'open', to: 'completed', outcomeBy: MEMBER, receiptMessageId: TASK, outcomeSource: 'self',
+      } }), sessionEntities)).toMatchObject({
+        type: 'session.outcome_changed', sessionId: SESSION, from: 'open', to: 'completed',
+        outcomeBy: MEMBER, receiptMessageId: TASK, outcomeSource: 'self',
+      });
+      expect(mapper.mapRow(row({ event_type: 'session.process_changed', payload: {
+        id: SESSION, from: 'running', to: 'exited', endedKind: 'exited_clean', endedReason: 'Process exited',
+      } }), sessionEntities)).toMatchObject({
+        type: 'session.process_changed', sessionId: SESSION, from: 'running', to: 'exited',
+        endedKind: 'exited_clean', endedReason: 'Process exited',
+      });
+    });
+
+    it('keeps working_on add/update/end and deleted-edge type/endpoints in the wire contract', () => {
+      const endpoints = new Map([[TASK, summary()], [SESSION, session]]);
+      const actors = new Map([[MEMBER, summary().createdBy]]);
+      const payload = { id: 'claim-1', type: 'working_on', src_id: SESSION, dst_id: TASK,
+        created_by: MEMBER, created_at: '2026-07-25T00:00:00.000Z', updated_at: '2026-07-25T01:00:00.000Z' };
+      for (const props of [{ status: 'working' }, { status: 'blocked' }, { status: 'blocked', endedAt: '2026-07-25T01:00:00.000Z', endReason: 'released' }]) {
+        expect(mapper.mapRow(row({ event_type: 'edge.upsert', payload: { ...payload, props } }), endpoints, actors))
+          .toMatchObject({ type: 'edge.upsert', edge: { id: 'claim-1', type: 'working_on', source: { id: SESSION }, target: { id: TASK }, props } });
+      }
+      expect(mapper.mapRow(row({ event_type: 'edge.ended', payload: {
+        ...payload, endedAt: '2026-07-25T06:30:00+05:30', endReason: 'released',
+      } }), endpoints)).toMatchObject({ type: 'edge.ended', edgeId: 'claim-1', edgeType: 'working_on',
+        sourceId: SESSION, targetId: TASK, endReason: 'released', endedAt: '2026-07-25T01:00:00.000Z' });
+      expect(mapper.mapRow(row({ event_type: 'edge.deleted', payload: { ...payload, type: 'depends_on', props: {} } }), endpoints, actors))
+        .toMatchObject({ type: 'edge.deleted', edge: { type: 'depends_on', source: { id: SESSION }, target: { id: TASK } } });
+    });
+  });
+
   it('re-projects the AM-2 §3 envelope from the row, not from the clock', () => {
     const event = mapper.mapRow(
       row({ seq: '42', occurred_at: '2026-07-25T12:00:00.000Z', schema_version: 1 }),

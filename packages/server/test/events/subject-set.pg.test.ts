@@ -185,12 +185,12 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
-    // 313 (seen entities): the current classifier, taken
-    // verbatim from the migration (313 itself cannot apply on this partial
+    // 316 (task Game events): the current classifier, taken
+    // verbatim from the migration (316 itself cannot apply on this partial
     // chain), and the outcome column shapes the session reads select. No
     // assertion here reads the columns. DELETE this shim if this suite ever
-    // applies the chain through 313.
-    const d1 = readFileSync(new URL('../../../../db/migrations/313_seen_entities.sql', import.meta.url), 'utf8');
+    // applies the chain through 316.
+    const d1 = readFileSync(new URL('../../../../db/migrations/316_task_game_events.sql', import.meta.url), 'utf8');
     const d1Start = d1.indexOf('create or replace function internal.event_subject_ids');
     await database.query(d1.slice(d1Start, d1.indexOf('$$;', d1.indexOf('as $$', d1Start) + 5) + 3));
     await database.query(`alter table public.work_sessions
