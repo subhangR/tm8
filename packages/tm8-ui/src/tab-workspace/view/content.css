@@ -391,10 +391,10 @@
 .cv2-root .pf-chip__pop {
   position: fixed;
   z-index: 60;
+  display: flex;
+  flex-direction: column;
   width: 520px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   outline: none;
   /* `.pf-chip` is nowrap (a one-line chip) and the popover is its child: every
      question title inherited it and ran off the right edge. */
@@ -407,10 +407,36 @@
   box-sizing: border-box;
 }
 .cv2-root .pf-chip__pop .pf-banner {
+  /* The inline banner is a scroller with overscroll containment. Here its
+     unconstrained height swallowed wheel/touch gestures before they could
+     reach the capped popover. Only the list below owns scrolling here. */
+  max-height: none;
+  overflow: visible;
   margin: 0;
   padding: 0;
   border: 0;
   background: none;
+}
+.cv2-root .pf-chip__pop .pf-banner__list {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 40px 56px;
+}
+.cv2-root .pf-chip__pop .pf-banner__row {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: var(--pn-space-2);
+  background: var(--pn-card);
+}
+.cv2-root .pf-chip__pop .qn-bar--foot {
+  position: sticky;
+  bottom: 0;
+  padding-bottom: var(--pn-space-2);
+  background: var(--pn-card);
 }
 
 /* ⋯ menu */

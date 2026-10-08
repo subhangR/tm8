@@ -1455,7 +1455,7 @@
 
 /* COMPACT: one line per row — title, then its relations, status, stamp. */
 .cv2-root .pn-body--compact .pn-peers__row {
-  grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(120px, max-content) minmax(80px, 1fr) auto auto;
   grid-template-areas: 'chip meta status end';
   padding: 5px 14px;
 }

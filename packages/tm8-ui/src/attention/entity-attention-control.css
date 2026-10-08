@@ -1,0 +1,49 @@
+.cv2-root .att-entity-trigger {
+  position: relative;
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border: 1px solid var(--pn-wait);
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+  min-width: 28px;
+  min-height: 28px;
+}
+.cv2-root .att-entity-count {
+  font-size: 10px;
+  margin-left: 2px;
+}
+.cv2-root .att-entity-pop {
+  position: fixed;
+  z-index: 220;
+  width: 460px;
+  box-sizing: border-box;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  box-shadow: 0 14px 32px rgb(0 0 0 / 0.16);
+  padding-bottom: var(--pn-space-3);
+}
+.cv2-root .att-entity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--pn-space-3);
+}
+.cv2-root .att-entity-root {
+  padding: var(--pn-space-2) var(--pn-space-3) 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+/* Non-Workspace hosts have no action-strip portal. Give their session control
+   a right-side rail of its own, outside the terminal's vertical flow. */
+.cv2-root .att-session-strip {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}

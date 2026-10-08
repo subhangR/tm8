@@ -156,6 +156,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_PERMISSION_MODE', group: 'Lane launch', summary: 'Permission mode for every lane that does not request an access mode. Outranks the persona.', default: 'auto', definedIn: MANIFEST },
   { name: 'TM8_REQUIRE_CODEX_SANDBOX', group: 'Lane launch', summary: 'Refuses a Codex lane whose sandbox cannot be verified (1).', default: 'off', definedIn: SPAWN },
   { name: 'TM8_AUTO_TRUST_WORKSPACE', group: 'Lane launch', summary: 'Pre-trusts a lane\'s worktree in the agent config so it starts without a trust prompt (false turns it off).', default: 'true', definedIn: 'packages/execution/src/spawn/workspace-trust.ts' },
+  { name: 'TM8_LOST_SESSION_AFTER_MIN', group: 'Lane launch', summary: 'Minutes without a live process before an open session is marked lost.', default: '10', definedIn: 'packages/server/src/scheduler/jobs/lost-session-reaper.ts' },
   { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '64', definedIn: EXEC_HANDLERS },
   { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs.', default: '4', definedIn: EXEC_HANDLERS },
   { name: 'TM8_WORKTREE_CAP', group: 'Lane launch', summary: 'Concurrent worktree lanes (0 = unlimited).', default: '0', definedIn: EXEC_HANDLERS },
@@ -222,6 +223,7 @@ export const CLI_ENV: readonly EnvKnob[] = [
  * completeness test accepts a read of one of these without a registry entry.
  */
 export const NOT_CONFIG_ENV: Readonly<Record<string, string>> = {
+  TM8_CHAT_ID: 'set by tm8 on each chat thread for the connector bridge',
   TM8_SESSION_ID: 'set by tm8 on each spawned session',
   TM8_AGENT_TOKEN: 'set by tm8 on each spawned session',
   TM8_AGENT_RUNTIME_TOKEN: 'set by tm8 on each chat thread',
@@ -300,7 +302,7 @@ export const CODE_CONSTANTS: readonly CodeConstant[] = [
 export const TEAMMATE_KNOBS: readonly (SubjectKnob & { envName?: string })[] = [
   { name: 'capabilities.launch.harnessSurface', summary: 'Harness surface a Claude lane boots with.', default: 'minimal', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', envName: 'TM8_HARNESS_SURFACE' },
   { name: 'capabilities.launch.plugins', summary: 'Plugins a minimal lane keeps. Plugins with skill entities belong in equips instead (scripts/migrate-launch-plugins-to-equips.mjs, human-run).', default: 'none', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona' },
-  { name: 'capabilities.launch.mcpServers', summary: 'MCP servers a minimal lane loads (--mcp-config under --strict-mcp-config). Server names only; their configs can hold credentials.', default: 'none', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', display: (v) => (v && typeof v === 'object' ? Object.keys(v as object) : v) },
+  { name: 'capabilities.launch.mcpServers', summary: 'Legacy raw MCP configuration (disabled for launch). Names only; use registered connectors and account selections.', default: 'none', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', display: (v) => (v && typeof v === 'object' ? Object.keys(v as object) : v) },
   { name: 'capabilities.launch.readHints', summary: 'Large-read hint hook on a Claude lane.', default: 'false', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', envName: 'TM8_READ_HINTS' },
   { name: 'agent_tool', summary: 'Agent harness the teammate launches.', default: null, definedIn: EXEC_HANDLERS, anchor: 'tm.agent_tool', change: 'persona' },
   { name: 'model', summary: 'Model the teammate launches with.', default: null, definedIn: EXEC_HANDLERS, anchor: 'tm.model', change: 'persona' },

@@ -2,9 +2,7 @@ import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
-import { SessionWaitingBanner } from '../../attention/SessionWaitingBanner';
-import { isProcessRecordedLive, sessionLineTwo, sessionRecordOf, type ActionRef } from '../../domain';
-import '../session/session-outcome.css';
+import type { ActionRef } from '../../domain';
 import {
   ExitedFallback,
   LiveTerminal,
@@ -138,12 +136,6 @@ export function TerminalBody({
   actorName,
 }: TerminalBodyProps) {
   const row = toSessionRow(detail);
-  /* Spec D1 §5.6 "Completed, process open": the work is done and the terminal
-     stays usable, so a banner says so above it. Completion is a status marker,
-     not a gate (owner, 6 Oct): the session may keep working, and claiming a
-     new task reopens it server-side. */
-  const record = sessionRecordOf(detail.state);
-  const completedLive = record?.outcome === 'completed' && isProcessRecordedLive(record.status);
   const presentation = presentSession({
     liveness,
     recordedStatus: row.recordedStatus,
@@ -252,16 +244,6 @@ export function TerminalBody({
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
-      {/* ATTENTION v2 (chapter 4 "Session"): the banner carries the REAL
-          reason this session raised; PTY silence alone no longer draws one
-          (G1). */}
-      <SessionWaitingBanner sessionId={detail.id} tone="dark" />
-      {completedLive ? (
-        <div className="pn-terminal-outcome" data-testid="session-completed-banner">
-          {sessionLineTwo(detail.state, liveness)} · claims ended. Claiming a new task reopens it.
-        </div>
-      ) : null}
-
       <div className="pn-terminal-stage" data-testid="terminal-stage" ref={stageRef}>
         <SessionCanvas
           presentation={presentation}
@@ -457,4 +439,3 @@ function SessionCanvas({
       );
   }
 }
-

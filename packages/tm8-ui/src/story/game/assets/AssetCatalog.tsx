@@ -16,9 +16,10 @@ import { daylightColor, landscapeColors, type Part } from '../scenery';
 import { ASSET_SPECS, ENTITY_ASSET_TYPES, type AssetState, type AssetType } from './registry';
 import { KIT_BLOCKS, buildAsset, buildBlock, type BuiltAsset } from './prototypes';
 import './asset-catalog.css';
+import { ImportedAssetGallery } from '../imported-assets/ImportedAssetGallery';
 
-export type CatalogSheet = 'types' | 'states' | 'containers' | 'plot' | 'kit' | 'overview';
-export const CATALOG_SHEETS: readonly CatalogSheet[] = ['types', 'states', 'containers', 'plot', 'kit', 'overview'];
+export type CatalogSheet = 'types' | 'states' | 'containers' | 'plot' | 'kit' | 'overview' | 'imported';
+export const CATALOG_SHEETS: readonly CatalogSheet[] = ['types', 'states', 'containers', 'plot', 'kit', 'overview', 'imported'];
 
 interface Item { type: AssetType; state?: AssetState; count?: number; progress?: number; caption?: string }
 interface Label { x: number; z: number; title: string; sub: string; tag?: string; count?: number; y?: number; badge?: boolean }
@@ -126,6 +127,7 @@ function layoutOf(sheet: CatalogSheet, palette: Palette, flat: string | null): L
       return out;
     }
     case 'overview': return overview(palette, flat);
+    case 'imported': return overview(palette, flat);
   }
 }
 
@@ -195,7 +197,7 @@ export function AssetCatalog({ sheet, theme, silhouette, sockets, reduced }: { s
       <nav>{CATALOG_SHEETS.map((s) => <a key={s} className={s === sheet ? 'is-on' : ''} href={`?sheet=${s}${theme === 'dark' ? '&theme=dark' : ''}${silhouette ? '&silhouette=1' : ''}`}>{s}</a>)}</nav>
       <span>{theme} · {silhouette ? 'silhouette (ink only)' : 'palette'} · {sheet === 'overview' ? 'overview zoom' : 'gameplay camera'}</span>
     </header>
-    {palette && <Stage sheet={sheet} palette={palette} silhouette={silhouette} sockets={sockets} reduced={reduced} />}
+    {sheet === 'imported' ? <ImportedAssetGallery reduced={reduced} /> : palette && <Stage sheet={sheet} palette={palette} silhouette={silhouette} sockets={sockets} reduced={reduced} />}
   </div>;
 }
 

@@ -1,0 +1,357 @@
+{
+  "licence": "CC0-1.0",
+  "importedAt": "2026-10-08",
+  "sources": {
+    "kaykit": {
+      "creator": "Kay Lousberg",
+      "page": "https://kaylousberg.itch.io/kaykit-medieval-hexagon",
+      "download": "https://github.com/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0",
+      "revision": "84fa4e91af6a88989be7c99e0891cede11f2ca38",
+      "licenceFile": "kaykit/LICENSE.txt",
+      "evidence": "licences/kaykit.txt",
+      "evidenceSha256": "881e50d3629fba90629bedc65e9e6f47cfab3609598c296dcb7f70ea83174360"
+    },
+    "characters": {
+      "creator": "Kay Lousberg",
+      "page": "https://kaylousberg.itch.io/kaykit-adventurers",
+      "download": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+      "revision": "672074b73ba276876a19e8816ecdc5241817ab47",
+      "licenceFile": "kaykit-characters/LICENSE.txt",
+      "evidence": "licences/characters.txt",
+      "evidenceSha256": "ae322141814056dda0deea7540d74c41d87aee1da319977cd1bd84ee5a923629"
+    },
+    "kenney": {
+      "creator": "Kenney",
+      "page": "https://kenney.nl/assets/fantasy-town-kit",
+      "download": "https://kenney.nl/media/pages/assets/fantasy-town-kit/efe948d309-1754222374/kenney_fantasy-town-kit_2.0.zip",
+      "licenceFile": "kenney/License.txt",
+      "evidence": "licences/kenney.txt",
+      "evidenceSha256": "fb8e4817197ef9f62215e95b4451a0f09c769c8e03e416e3a2ce108dfa6117e4"
+    },
+    "quaternius": {
+      "creator": "Quaternius / Tomas Laulhe",
+      "page": "https://quaternius.com/packs/animatedrobot.html",
+      "download": "https://raw.githubusercontent.com/mrdoob/three.js/r180/examples/models/gltf/RobotExpressive/RobotExpressive.glb",
+      "revision": "three.js r180",
+      "licenceFile": "README.md",
+      "evidence": "licences/quaternius.txt",
+      "evidenceSha256": "14687ac4a51d5e013b0fbc5486dabc743f76c1e37b7ca872af74cfb93115b4b2"
+    }
+  },
+  "assets": [
+    {
+      "id": "terrain-grass",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/tiles/base/hex_grass.gltf",
+      "sourceSha256": "9197814431b5becf69b22bb7a20e340d63155c4aeddfb3a678c3f041ca585e41",
+      "sourceBytes": 2966,
+      "outputFile": "public/game/cc0/terrain-grass.glb",
+      "sha256": "f2da051a260c447e25ae90846aa5b31b8dc0fa7ce8e3001788d9ebb701c6e6c6",
+      "bytes": 18856,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "path-straight",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/tiles/roads/hex_road_A.gltf",
+      "sourceSha256": "ea21573bb6dee5bf3b23c3205738bce9601a91079b48be594501d2f9ed07d296",
+      "sourceBytes": 2995,
+      "outputFile": "public/game/cc0/path-straight.glb",
+      "sha256": "1f57fed0b57aaacff98a648a8e7e2f93af08d1f8395224d0f374a7a05476f76a",
+      "bytes": 19232,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "path-crossing",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/tiles/roads/hex_road_M.gltf",
+      "sourceSha256": "69a0731190b501401f03dad95dc5f647d602bf9edc5b1ffadafbc7c544df2cc0",
+      "sourceBytes": 2996,
+      "outputFile": "public/game/cc0/path-crossing.glb",
+      "sha256": "aaa5a7a706191c5dec6c4b4b9da77648c11792e00a58a556e0fbe44fc24a7d90",
+      "bytes": 19700,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "tree",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/decoration/nature/tree_single_A.gltf",
+      "sourceSha256": "ac913af6eaed6f15d26a2b75a877aa8dd10de90f26298f3f953abad86a4b4606",
+      "sourceBytes": 3053,
+      "outputFile": "public/game/cc0/tree.glb",
+      "sha256": "264594f64a8639c25a8248cab2bf7e0246663f8212c92a3f7fc74e043ecbd164",
+      "bytes": 19384,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "tree-pine",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/decoration/nature/tree_single_B.gltf",
+      "sourceSha256": "1c038591301947c485937e9fdbab182c813ef32df48c02fad3daeb2f1f0421e0",
+      "sourceBytes": 3056,
+      "outputFile": "public/game/cc0/tree-pine.glb",
+      "sha256": "68ea8300bbd5caff4a158270a372efd1a9c791156499aed9af45765d291e3107",
+      "bytes": 20852,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "rock",
+      "pack": "kenney",
+      "sourceFile": "kenney/Models/GLB format/rock-small.glb",
+      "sourceSha256": "2f2ca3e9970124b81bde77cec3b1a337410a5c76336ce5dec5760aff1b415316",
+      "sourceBytes": 12620,
+      "outputFile": "public/game/cc0/rock.glb",
+      "sha256": "16e5e95ec21ecb0f0d0e8cfced50f9f3dada0fc791cafb6558bc9cfbed1fff51",
+      "bytes": 18452,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "gate",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/wall_straight_gate.gltf",
+      "sourceSha256": "877f3e95f89c23741c38b9d2f8f307c1369042ec5c354d7858d72ab2b9666c3a",
+      "sourceBytes": 7198,
+      "outputFile": "public/game/cc0/gate.glb",
+      "sha256": "b84da8bd67eafb3e365b5d8bee5e6dfacdc1e233b10f57d225456ba73ff20387",
+      "bytes": 35740,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "hub",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/green/building_castle_green.gltf",
+      "sourceSha256": "6739f651daf33b406c0abb0b91af49315059a0e70012bd01b77b30695f4bd98c",
+      "sourceBytes": 3075,
+      "outputFile": "public/game/cc0/hub.glb",
+      "sha256": "dc17e49b8cc251898362ce132f2855063f3f940d46661469050c8649327f9a35",
+      "bytes": 105448,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "office",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/blue/building_tavern_blue.gltf",
+      "sourceSha256": "58a3573cf468f9c5f1d03a6da74fbc884f5f662ccddbfef2a10860abfe50109b",
+      "sourceBytes": 3093,
+      "outputFile": "public/game/cc0/office.glb",
+      "sha256": "8c357a8c3c622feb0ca145c0d3b19352bb8baed41fc454d972ce5d676faff9bd",
+      "bytes": 73448,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "library",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/blue/building_church_blue.gltf",
+      "sourceSha256": "ac2d9dfbdcffd1604e1522ddb26fe27c1feae2bc01bf90664c8044b22926867b",
+      "sourceBytes": 3089,
+      "outputFile": "public/game/cc0/library.glb",
+      "sha256": "e6c5f0fc257c4a3a559e9b1c5e9b4cb84104917221fb5c90f3b0a5dad5f5b831",
+      "bytes": 44268,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "code-factory",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/red/building_blacksmith_red.gltf",
+      "sourceSha256": "5689a8f37fa59a956927b4deaeb6d8ee48228fe29c2c61b71048bec04a7b086f",
+      "sourceBytes": 3100,
+      "outputFile": "public/game/cc0/code-factory.glb",
+      "sha256": "becfb0847c62871928a233eedd13467775cc0c8f05c9b97007ef165c2d95a72d",
+      "bytes": 57816,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "task-building",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/green/building_home_A_green.gltf",
+      "sourceSha256": "43eec5e22564befc0ad5d283d92a577e0271682501c348ae3b22067e5b43a59e",
+      "sourceBytes": 3093,
+      "outputFile": "public/game/cc0/task-building.glb",
+      "sha256": "74a12d66e71dbd514586f60c15a7a0b1cabe6ae2f41f58e6aabde6f725ad929f",
+      "bytes": 35496,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "task-building-blue",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/blue/building_home_B_blue.gltf",
+      "sourceSha256": "bf503f4edcd3a744a021ccdd5b9215f6c8934ef87fa44d95632cb653422797eb",
+      "sourceBytes": 3090,
+      "outputFile": "public/game/cc0/task-building-blue.glb",
+      "sha256": "6d015c044556427b0baaf601363c58e826df97d273e413c84dd2c98ceb185296",
+      "bytes": 42384,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "task-building-yellow",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/yellow/building_home_A_yellow.gltf",
+      "sourceSha256": "da777a7f28a34491df582f9ed00c652078b4386a0bbfd05695e42e6ae2b28a92",
+      "sourceBytes": 3096,
+      "outputFile": "public/game/cc0/task-building-yellow.glb",
+      "sha256": "49f40d194b9b427bf1e32a3fb1a7cbae7310b8ae5249ca84c27b6f723c24a85d",
+      "bytes": 35496,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "construction-lot",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_dirt.gltf",
+      "sourceSha256": "dd7d0f3e4740b0465615d69024a553f87314385998431c8555788bef354aed16",
+      "sourceBytes": 3056,
+      "outputFile": "public/game/cc0/construction-lot.glb",
+      "sha256": "c790881e0a982a5759a2ea806852b91c3dd4a506a3403452cf57ae3da36f5c26",
+      "bytes": 21036,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "construction-foundation",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_stage_A.gltf",
+      "sourceSha256": "43ef26645bfab5fc2ef1a66b27173857485f0392e0e96b2243ceed53fd9043d5",
+      "sourceBytes": 3077,
+      "outputFile": "public/game/cc0/construction-foundation.glb",
+      "sha256": "554daa5a5f218400e3c487c3fb9ccbcf84f61e38190b0eacb5db2c0b1fe77d23",
+      "bytes": 33708,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "construction-scaffolding",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_scaffolding.gltf",
+      "sourceSha256": "1c11a7545694863a7edc58780ee60510b55676b97d6c5eee7e0dc7c256185c7a",
+      "sourceBytes": 3092,
+      "outputFile": "public/game/cc0/construction-scaffolding.glb",
+      "sha256": "42ba08b8c435e0f838099e9e8def1b9cbf8f57796d59e39cbba7399c23aedec5",
+      "bytes": 70040,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "construction-walls-up",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_stage_B.gltf",
+      "sourceSha256": "c45eec59415c78576c8488711bf0120705d08e0b50834c88c90606f590671a1b",
+      "sourceBytes": 3076,
+      "outputFile": "public/game/cc0/construction-walls-up.glb",
+      "sha256": "08d72f85213eebc98922a84732df2b708cf6f860b73dd881824c197474541c1f",
+      "bytes": 35468,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "construction-topped-out",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_stage_C.gltf",
+      "sourceSha256": "9de7e1e3b336905b3eee72c7bc010b4fb803fa07b9adb91411d5aff0861e3446",
+      "sourceBytes": 3077,
+      "outputFile": "public/game/cc0/construction-topped-out.glb",
+      "sha256": "1361f73c7dcadde455dd7b3d8b5de717c28dc6c1bd90223013fc00171e9c338b",
+      "bytes": 40120,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "construction-done",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/green/building_home_A_green.gltf",
+      "sourceSha256": "43eec5e22564befc0ad5d283d92a577e0271682501c348ae3b22067e5b43a59e",
+      "sourceBytes": 3093,
+      "outputFile": "public/game/cc0/task-building.glb",
+      "sha256": "74a12d66e71dbd514586f60c15a7a0b1cabe6ae2f41f58e6aabde6f725ad929f",
+      "bytes": 35496,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "rubble",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_destroyed.gltf",
+      "sourceSha256": "e5cd1027e9c2f7981a29a7d9e036504f6b168680b017a0289313a8fdcbc634bc",
+      "sourceBytes": 3079,
+      "outputFile": "public/game/cc0/rubble.glb",
+      "sha256": "46478455513aaaa4b0c56a62d480edc5f78ae4469c92fe1463f7bd438d7666b5",
+      "bytes": 36800,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "robot",
+      "pack": "quaternius",
+      "sourceFile": "RobotExpressive.glb",
+      "sourceSha256": "047f5e5fb3bb6d378bd1df16ca6137f2a596c99b3a1b5690b4020c05aaf6f319",
+      "sourceBytes": 463988,
+      "outputFile": "public/game/cc0/robot.glb",
+      "sha256": "7797a07b01a82ac7bbfc271b942799abc7592f12413c5e8a3298df3314a82ada",
+      "bytes": 220840,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "worker",
+      "pack": "characters",
+      "sourceFile": "kaykit-characters/addons/kaykit_character_pack_adventures/Characters/gltf/Knight.glb",
+      "sourceSha256": "60428e3abc09ba83e595d256e3af8c5c976b46cdae599f0802fc82b4a3445168",
+      "sourceBytes": 3659532,
+      "outputFile": "public/game/cc0/worker.glb",
+      "sha256": "5043e0f2b8dc144bda03b719ff43750e2a51bc29b8a3b388781c1184efb87c10",
+      "bytes": 352064,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "desk",
+      "pack": "kenney",
+      "sourceFile": "kenney/Models/GLB format/stall-bench.glb",
+      "sourceSha256": "5a4b379488241394916991c4b482ec4863c05bb548ca8751f5c3935f1f6e5b9c",
+      "sourceBytes": 14168,
+      "outputFile": "public/game/cc0/desk.glb",
+      "sha256": "38a68ececee8ef40f95055bd0a94f5addba55117525d364a6b0ed33eeb489f87",
+      "bytes": 18300,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "cart",
+      "pack": "kenney",
+      "sourceFile": "kenney/Models/GLB format/cart.glb",
+      "sourceSha256": "63503cd0a7398310e01aabc8e3663f711a7517394d23d179d0695157fee99d40",
+      "sourceBytes": 52920,
+      "outputFile": "public/game/cc0/cart.glb",
+      "sha256": "d6d1243f8c6abe3cf1f15b0380cf124db3e2e949108633c47176b252ba815be4",
+      "bytes": 23748,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "shipping-yard",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/yellow/building_market_yellow.gltf",
+      "sourceSha256": "a3d5ede18799db7c46b0fa35cc1d22d5f71baed11331008ac4435f4d42c4e289",
+      "sourceBytes": 3097,
+      "outputFile": "public/game/cc0/shipping-yard.glb",
+      "sha256": "7350f368eb0bc51e99c46e23c1b1b9bbd9738a14fa1bebe6519fcb698d823e2c",
+      "bytes": 65468,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "crate",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/decoration/props/crate_A_big.gltf",
+      "sourceSha256": "a96ce5522e45104b5a04cf9605ca30b9572cc79c7633d41f3434b9843010a225",
+      "sourceBytes": 3055,
+      "outputFile": "public/game/cc0/crate.glb",
+      "sha256": "da2c2ee9e26d71b0fe582cf8e8340e317961eb5dea3145a61fc7e4dfd9857e64",
+      "bytes": 20324,
+      "licence": "CC0-1.0"
+    },
+    {
+      "id": "fence",
+      "pack": "kaykit",
+      "sourceFile": "kaykit/addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/fence_wood_straight.gltf",
+      "sourceSha256": "5a2af87c5a6b90875e3bc11f289a321a5d4b2459975dba52351edbc58b2132e3",
+      "sourceBytes": 3061,
+      "outputFile": "public/game/cc0/fence.glb",
+      "sha256": "e13934b91fcc6197af9216c29c1420a1ad05b47587ec4afc35faff57d0f0e98a",
+      "bytes": 22988,
+      "licence": "CC0-1.0"
+    }
+  ],
+  "proceduralGaps": {
+    "plaque": "Existing session-stele procedural fallback",
+    "mailbox": "Existing task-mailbox procedural fallback"
+  },
+  "totalUniqueBytes": 1507476,
+  "uniqueModels": 27
+}

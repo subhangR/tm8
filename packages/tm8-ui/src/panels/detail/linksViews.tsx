@@ -15,6 +15,7 @@
  * no rows, so the cursor never lands on something the reader cannot see.
  */
 import { Fragment, useState } from 'react';
+import { isPullRequest, messageCountLabel } from '../../domain/peer-state';
 import { Avatar, Chip } from '../../kit';
 import { absTime, clockTime, relTime } from '../../kit/time';
 import { EDGE_FAMILY_LABEL, EDGE_FAMILY_ORDER, KindIcon, getKind, type EdgeFamily } from '../../domain';
@@ -313,7 +314,7 @@ export function LinksGrouped({
 /** The tiles above the Links view: what is linked, counted the way a reader asks. */
 export function LinksStats({ peers, messages }: { peers: readonly PeerGroup[]; messages: number }) {
   const blocking = peers.filter((p) => p.unresolvedHard).length;
-  const prs = peers.filter((p) => p.peer.kind === 'pull_request');
+  const prs = peers.filter((p) => isPullRequest(p.peer));
   const openPrs = prs.filter((p) => peerStatus(p.peer)?.label === 'open').length;
   const files = peers.filter((p) => !p.unresolvedHard && p.primary.family === 'files').length;
   const tiles: { key: string; n: number; label: string; alert?: boolean }[] = [];
@@ -323,7 +324,7 @@ export function LinksStats({ peers, messages }: { peers: readonly PeerGroup[]; m
     tiles.push({ key: 'prs', n: prs.length, label: `${prs.length === 1 ? 'PR' : 'PRs'}${openPrs > 0 ? ` · ${openPrs} open` : ''}` });
   }
   if (files > 0) tiles.push({ key: 'files', n: files, label: 'files & docs' });
-  if (messages > 0) tiles.push({ key: 'messages', n: messages, label: messages === 1 ? 'message' : 'messages' });
+  if (messages > 0) tiles.push({ key: 'messages', n: messages, label: messageCountLabel(messages) });
   return (
     <div className="pn-linkstats" data-testid="pn-link-stats">
       {tiles.map((tile) => (
