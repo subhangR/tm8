@@ -38,6 +38,16 @@ describe('typed map walking metadata', () => {
     const occupied = [...model.places, ...model.portals][0];
     if (occupied) expect(isWalkingPositionSafe(model, occupied)).toBe(false);
   });
+  it('prefers the conventional entrance and falls back within bounds when it is occupied', () => {
+    const hub = buildMapModel(nestedFixture(), { type: 'hub', scope: nestedFixture().scope! });
+    expect(walkingEntrance(hub)).toEqual({ x: 0, z: 0 });
+    const map = buildMapModel(nestedFixture(), { type: 'taskland', scope: nestedFixture().scope! });
+    expect(walkingEntrance(map)).toEqual({ x: 0, z: 6 });
+    map.places = [{ ...map.places[0]!, x: 0, z: 6, radius: 10 }];
+    map.bounds = { minX: -10, maxX: 10, minZ: -4, maxZ: 16 };
+    expect(walkingEntrance(map)).toEqual({ x: -12, z: 0 });
+    expect(isWalkingPositionSafe(map, walkingEntrance(map))).toBe(true);
+  });
   it('keeps hub paths decorative without inventing connections between unrelated portals', () => {
     const model = buildMapModel(smallFixture(), { type: 'hub', scope: smallFixture().scope! });
     expect(mapWalkingWorld(model).roads).toHaveLength(0);
