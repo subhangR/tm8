@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
+import { once, EventEmitter } from 'node:events';
 import { test } from 'node:test';
 import { createBrowserLifecycle } from './game-storage-browser-lifecycle.mjs';
 
@@ -10,7 +10,7 @@ async function stop(process, signal = 'SIGTERM') {
   const exited = once(process, 'exit'); process.kill(signal); await exited;
 }
 function fixture(process, events) {
-  const browser = { isConnected: () => true, close: async () => {} };
+  const browser = Object.assign(new EventEmitter(), { isConnected: () => true, close: async () => {} });
   const server = { process: () => process, wsEndpoint: () => 'owned-test-endpoint',
     close: () => stop(process), kill: () => stop(process, 'SIGKILL') };
   const lifecycle = createBrowserLifecycle({ launchServer: async () => server, connect: async () => browser },
@@ -54,4 +54,20 @@ test('evaluation checkpoints identify the pending operation and preserve its err
     error => error === failure);
   assert.deepEqual(events.map(({ label, boundary }) => ({ label, boundary })),
     [{ label: 'evaluate: plain model geometry', boundary: 'before' }]);
+});
+
+test('crash, disconnection and owned process exit diagnostics retain their actual source', async () => {
+  const owned = child(), events = [];
+  const { lifecycle } = fixture(owned, events);
+  try {
+    const browser = await lifecycle.launch(), page = new EventEmitter();
+    lifecycle.observePage(page, browser); lifecycle.observePage(page, browser);
+    page.emit('crash'); browser.emit('disconnected');
+    await lifecycle.closeBrowser(browser);
+    const observed = events.filter(event => event.boundary === 'observed');
+    assert.deepEqual(observed.map(event => event.label), ['page crash', 'browser disconnected', 'browser process exit']);
+    assert.ok(observed.every(event => event.ownedBrowserPid === owned.pid));
+    assert.equal(observed[2].exitCode, null);
+    assert.equal(observed[2].exitSignal, 'SIGTERM');
+  } finally { await stop(owned); }
 });

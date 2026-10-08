@@ -1,7 +1,7 @@
 /** External resource deadline; only descendants of the runner spawned here are eligible. */
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, open } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -67,9 +67,21 @@ export async function runOwnedWindow(command, args, {
 
 if (import.meta.url === pathToFileURL(resolve(process.argv[1] ?? '')).href) {
   const { repoRoot, runRoot } = await import('./game-storage-node.mjs');
-  const receipt = await runOwnedWindow(process.execPath, [`${repoRoot}/tools/rigs/game-storage-check.mjs`], {
-    deadlineEpochMs: Date.parse(process.env.GAME_STORAGE_WINDOW_END ?? ''), cwd: repoRoot,
-  });
+  const probe = process.env.GAME_STORAGE_DIAGNOSTIC_PROBE === '1';
+  const diagnostics = probe || process.env.GAME_STORAGE_BROWSER_DIAGNOSTICS === '1';
+  let stderr, receipt;
+  try {
+    if (diagnostics) {
+      await mkdir(runRoot, { recursive: true });
+      stderr = await open(`${runRoot}/browser-stderr.log`, 'ax', 0o600);
+    }
+    receipt = await runOwnedWindow(process.execPath,
+      [`${repoRoot}/tools/rigs/game-storage-${probe ? 'browser-probe' : 'check'}.mjs`], {
+        deadlineEpochMs: Date.parse(process.env.GAME_STORAGE_WINDOW_END ?? ''), cwd: repoRoot,
+        ...(diagnostics ? { env: { ...process.env, DEBUG: 'pw:browser*', GAME_STORAGE_BROWSER_DIAGNOSTICS: '1' },
+          stdio: ['ignore', 'inherit', stderr.fd] } : {}),
+      });
+  } finally { await stderr?.close(); }
   await mkdir(runRoot, { recursive: true });
   await writeFile(`${runRoot}/window-closure.json`, JSON.stringify(receipt, null, 2));
   console.log(JSON.stringify({ stage: 'owned resource window closed', ...receipt }));

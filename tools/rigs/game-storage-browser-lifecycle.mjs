@@ -1,9 +1,17 @@
 /** Bound teardown using only browser processes created by this rig. */
+export function gameStorageLaunchOptions() {
+  return { headless: true,
+    ...(process.env.GAME_CHROMIUM ? { executablePath: process.env.GAME_CHROMIUM } : {}),
+    args: ['--no-sandbox', '--no-zygote', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  };
+}
+
 export function createBrowserLifecycle(chromium, {
   launchOptions = {}, closeTimeoutMs = 15_000,
   checkpoint = event => console.log(JSON.stringify(event)),
 } = {}) {
   const owned = new WeakMap();
+  const observedPages = new WeakSet();
   let sequence = 0, browserCloseForced = 0;
   const mark = (label, boundary, detail = {}) => checkpoint({
     stage: 'synthetic browser operation', sequence: ++sequence, label, boundary, ...detail,
@@ -44,13 +52,26 @@ export function createBrowserLifecycle(chromium, {
       const server = await step('launch browser process', () => chromium.launchServer({
         ...launchOptions, host: '127.0.0.1',
       }));
-      const pid = server.process().pid; // Supported API; never discover or target peer PIDs.
+      const process = server.process();
+      const pid = process.pid; // Supported API; never discover or target peer PIDs.
+      process.once('exit', (exitCode, exitSignal) => mark('browser process exit', 'observed', {
+        ownedBrowserPid: pid, exitCode, exitSignal,
+      }));
       try {
         const browser = await step('connect browser', () => chromium.connect(server.wsEndpoint()));
         owned.set(browser, { server, pid, closed: false });
+        browser.on('disconnected', () => mark('browser disconnected', 'observed', { ownedBrowserPid: pid }));
         mark('browser ownership', 'registered', { ownedBrowserPid: pid });
         return browser;
       } catch (error) { await server.kill(); throw error; }
+    },
+    observePage(page, browser) {
+      const entry = entryOf(browser);
+      if (!observedPages.has(page)) {
+        observedPages.add(page);
+        page.on('crash', () => mark('page crash', 'observed', { ownedBrowserPid: entry.pid }));
+      }
+      return page;
     },
     async closeContext(context, browser) {
       if (context) await close('context close', () => context.close(), entryOf(browser));

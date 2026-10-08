@@ -5,14 +5,11 @@ import { randomUUID } from 'node:crypto';
 import { request, repoRoot, runRoot, uiPort } from './game-storage-node.mjs';
 import { dataOf } from './game-storage-fixture.mjs';
 import { ledgerSize } from './game-storage-cost.mjs';
-import { createBrowserLifecycle } from './game-storage-browser-lifecycle.mjs';
+import { createBrowserLifecycle, gameStorageLaunchOptions } from './game-storage-browser-lifecycle.mjs';
 const require = createRequire(`${repoRoot}/packages/tm8-ui/package.json`);
 const { chromium, expect } = require('@playwright/test');
 const keyOf = value => JSON.stringify([value.scope.kind, value.scope.id, value.type]);
-const lifecycle = createBrowserLifecycle(chromium, { launchOptions: { headless: true,
-  ...(process.env.GAME_CHROMIUM ? { executablePath: process.env.GAME_CHROMIUM } : {}),
-  args: ['--no-sandbox', '--no-zygote', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-} });
+const lifecycle = createBrowserLifecycle(chromium, { launchOptions: gameStorageLaunchOptions() });
 const launchBrowser = () => lifecycle.launch();
 const closeBrowser = browser => lifecycle.closeBrowser(browser);
 const closeContext = (context, browser) => lifecycle.closeContext(context, browser);
@@ -39,7 +36,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
     await closeBrowser(browser); browser = await launchBrowser();
     context = await browser.newContext({ viewport: { width: 800, height: 600 }, reducedMotion: motion });
     await context.addInitScript(() => { window.__storageInitiallyEmpty = localStorage.length === 0; });
-    const page = await context.newPage(); page.setDefaultTimeout(90_000);
+    const page = lifecycle.observePage(await context.newPage(), browser); page.setDefaultTimeout(90_000);
     page.on('request', request => {
       if (request.method() === 'PUT' && new URL(request.url()).pathname === navPath) {
         requestedRevisions.push(request.postDataJSON().expectedRevision);
@@ -224,7 +221,7 @@ export async function verifyBrowserDurability(f, restartServer, record) {
 
 export async function verifyWalkingTraffic(f, pool, record) {
   const browser = await launchBrowser();
-  const page = await browser.newPage({ viewport: { width: 800, height: 600 }, reducedMotion: 'reduce' });
+  const page = lifecycle.observePage(await browser.newPage({ viewport: { width: 800, height: 600 }, reducedMotion: 'reduce' }), browser);
   await page.addInitScript(() => {
     const send = window.fetch.bind(window);
     window.__traffic = [];
@@ -308,7 +305,7 @@ export async function verifyLegacyMigration(f, record) {
       if (migrating) await context.addInitScript(save => {
         localStorage.setItem(`tm8:game:v1:${JSON.stringify([save.spaceId, save.memberId])}`, JSON.stringify(save));
       }, legacy);
-      const page = await context.newPage();
+      const page = lifecycle.observePage(await context.newPage(), browser);
       await page.goto(url); await page.getByTestId('walking-map').waitFor();
       await expect.poll(async () => {
         const saved = (await nav()).save?.maps;

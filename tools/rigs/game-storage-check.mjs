@@ -9,6 +9,7 @@ import { fixturePool, seedStorageFixture } from './game-storage-fixture.mjs';
 import { verifyStorageApi } from './game-storage-api.mjs';
 import { verifyBrowserDurability, verifyLegacyMigration, verifyWalkingTraffic, browserDiagnostics } from './game-storage-browser.mjs';
 import { verifyPersistenceCost } from './game-storage-cost.mjs';
+import { captureHostDiagnostics } from './game-storage-host-diagnostics.mjs';
 
 await mkdir(runRoot, { recursive: true });
 const checks = [], began = Date.now();
@@ -30,6 +31,7 @@ const report = { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoo
 const record = result => { checks.push({ ...result, ...(result.reason ? { reason: result.reason.split('\n')[0] } : {}) });
   console.log(JSON.stringify(checks.at(-1))); };
 let server, ui; const pool = fixturePool();
+if (process.env.GAME_STORAGE_BROWSER_DIAGNOSTICS === '1') await captureHostDiagnostics(runRoot, 'before');
 try {
   server = await startServer();
   let fixture = await seedStorageFixture(pool);
@@ -51,6 +53,7 @@ try {
   process.exitCode = 1;
 } finally {
   await stopChild(ui); await stopChild(server); await pool.end();
+  if (process.env.GAME_STORAGE_BROWSER_DIAGNOSTICS === '1') await captureHostDiagnostics(runRoot, 'after');
   report.elapsedMs = Date.now() - began;
   report.passed = checks.filter(check => check.passed).length;
   report.failed = checks.filter(check => !check.passed).length;

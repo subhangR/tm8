@@ -76,3 +76,19 @@ software-browser attempt committed on the server in 82 ms, while a starved
 browser main thread caught the 15-second timeout after 26.1 seconds. It is
 retained as failed evidence. Viewport changes are test-environment mitigations;
 the production timeout, queue, and exact scene comparisons are unchanged.
+
+For a separately authorized startup diagnosis, set
+`GAME_STORAGE_DIAGNOSTIC_PROBE=1` when running the same external window guard.
+The probe uses the exact acceptance binary and launch arguments, first loads
+a simple `data:text/html` page, and opens the actual harness with WebGL only
+after that succeeds. `startup-probe.json` is diagnosis and supplies no acceptance
+result. No alternative launch flags are tried.
+
+The guard enables `DEBUG=pw:browser*` and saves Chromium stderr to a new,
+exclusive `browser-stderr.log` under the run directory. With
+`GAME_STORAGE_BROWSER_DIAGNOSTICS=1`, the ordinary acceptance entry also captures
+that local stderr and before/after service cgroup counters. Browser lifecycle
+checkpoints identify page crashes, browser disconnections, and the registered
+owned process's actual exit code/signal. Host snapshots retain a bounded kernel
+tail or the permission-denied result. These raw diagnostic files remain local;
+only selected synthetic failure details and counts belong in published evidence.
