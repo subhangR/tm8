@@ -29,7 +29,7 @@ export default function GameMode(props: GameModeProps) {
   return <GameSession key={JSON.stringify([props.spaceId, props.memberId, props.persistence ? ports.get(props.persistence) : null,
     props.identitySignal ? ports.get(props.identitySignal) : null])} {...props} />;
 }
-function GameSession({ spaceId, memberId, spaceTitle, loadMap, events, persistence, identitySignal, onInspect }: GameModeProps) {
+function GameSession({ spaceId, memberId, spaceTitle, loadMap, events, mailboxes, persistence, identitySignal, onInspect }: GameModeProps) {
   const [navigation, setNavigation] = useState(() => readGameSave(spaceId, memberId));
   const save = useRef(navigation);
   const models = useRef(new Map<string, MapModel>());
@@ -109,7 +109,7 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, events, persisten
     let initialized = false;
     const current = () => request === loadEpoch.current && mapKey(save.current.current) === key;
     setView({ key, status: 'loading' });
-    const live = createLiveMapController({ spaceId, scope: selected.scope, type: selected.type, loadMap, events,
+    const live = createLiveMapController({ spaceId, scope: selected.scope, type: selected.type, loadMap, events, mailboxes,
       previous: models.current.get(key),
       onSnapshot(snapshot) {
         if (!current()) return;
@@ -150,7 +150,7 @@ function GameSession({ spaceId, memberId, spaceTitle, loadMap, events, persisten
     cancelLive.current = live.dispose;
     live.attach();
     return () => { live.dispose(); loadEpoch.current++; };
-  }, [key, loadMap, events, retry, flush, hydrated]);
+  }, [key, loadMap, events, mailboxes, retry, flush, hydrated]);
 
   const navigate = useCallback((next: GameSave) => {
     if (!hydrated || next === save.current) return;

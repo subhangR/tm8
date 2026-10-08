@@ -5,7 +5,9 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, OrbitControls } from '@react-three/drei';
 import { BufferGeometry, Float32BufferAttribute, OrthographicCamera, Vector3 } from 'three';
 import type { MapModel, MapPlace, MapRenderer, MapRendererProps, MapRobot, MapType } from '../map-model';
-import { WorkerLayer } from './WorkerLayer';
+import { WorkerLayer, type WorkerFrame } from './WorkerLayer';
+import { TasklandMotion, useTasklandMotion } from './TasklandMotion';
+import type { TasklandTransition } from '../taskland-motion';
 import type { MapUpdateEffect } from '../../../game/live-map-controller';
 import { TasklandPlotCues, TasklandDistrictCues, ShippingYardGate, tasklandLabels, tasklandPlotDetail } from './TasklandVisuals';
 import { MapAsset } from './MapAsset';
@@ -25,6 +27,11 @@ export interface MapSceneProps extends MapRendererProps {
   departures?: readonly MapRobot[];
   previousModel?: MapModel | null;
   effect?: MapUpdateEffect | null;
+  motionNow?: () => number;
+  reducedMotion?: boolean;
+  onTasklandMotion?: (snapshot: { transitions: readonly TasklandTransition[]; suppressedPlaceIds: readonly string[] }) => void;
+  /** Passive Three-object readback; observers must avoid React updates per frame. */
+  onWorkerFrame?: (frame: WorkerFrame) => void;
   walking?: PlayerProps; onGround?: (x: number, z: number) => void; onUnavailable?: () => void;
   lighting?: 'morning' | 'noon' | 'evening'; hierarchy?: boolean; footprints?: boolean;
   fitToken?: number; focus?: MapPlace | null; gallery?: boolean;
@@ -89,7 +96,7 @@ function Landscape({ model, gallery, onGround }: {model:MapModel;gallery?:boolea
 function Route({ points, dependency }: {points:{x:number;z:number}[];dependency?:boolean}) {
   return <Line points={points.map(p=>[p.x,dependency ? .42 : .13,p.z] as [number,number,number])} color={dependency?colors.dependency:colors.path} lineWidth={dependency?2:7} dashed={dependency} dashSize={.7} gapSize={.4}/>;
 }
-function SceneContent(props:MapSceneProps & {labels:WorldLabel[];nodes:MutableRefObject<Map<string,HTMLDivElement>>}) {
+function SceneContent(props:MapSceneProps & {labels:WorldLabel[];nodes:MutableRefObject<Map<string,HTMLDivElement>>;motion:ReturnType<typeof useTasklandMotion>}) {
   const {model}=props;
   const span=Math.max(model.bounds.maxX-model.bounds.minX,model.bounds.maxZ-model.bounds.minZ,30);
   const cx=(model.bounds.minX+model.bounds.maxX)/2,cz=(model.bounds.minZ+model.bounds.maxZ)/2;
@@ -103,10 +110,11 @@ function SceneContent(props:MapSceneProps & {labels:WorldLabel[];nodes:MutableRe
     {model.paths.map(p=><Route key={p.id} points={p.points}/>)}
     {!props.gallery&&model.places.filter(p=>p.parentId).map(p=>{const parent=model.places.find(q=>q.entityId===p.parentId);return parent?<Route key={`walk:${p.id}`} points={[{x:parent.x,z:parent.z+parent.radius},{x:p.x,z:p.z-p.radius}]}/>:null;})}
     {model.roads.map(p=><Route key={p.id} points={p.points} dependency/>)}
-    {model.places.map(p=><Plot key={p.id} p={p} model={model} selected={props.selectedEntityId===p.entityId} hierarchy={props.hierarchy} footprints={props.footprints} onSelect={props.onSelectEntity} onHover={props.onHover}/>)}
+    {model.places.filter(p=>!props.motion.suppressedPlaceIds.has(p.id)).map(p=><Plot key={p.id} p={p} model={model} selected={props.selectedEntityId===p.entityId} hierarchy={props.hierarchy} footprints={props.footprints} onSelect={props.onSelectEntity} onHover={props.onHover}/>)}
+    <TasklandMotion transitions={props.motion.transitions} onComplete={props.motion.finishTransition} now={props.motionNow}/>
     {model.portals.map(p=><group key={p.id} position={[p.x,.12,p.z]} onClick={e=>{e.stopPropagation();props.onEnterPortal?.(p);}} onPointerOver={()=>{document.body.style.cursor='pointer';}} onPointerOut={()=>{document.body.style.cursor='';}}><Box position={[0,0,0]} size={[p.radius*2,.25,p.radius*2]} color={colors.portalPad}/><MapAsset assetKey={p.assetKey} size={p.radius*1.5}/></group>)}
     {model.decor.filter(p=>!model.portals.some(q=>q.x===p.x&&q.z===p.z)).map(p=><group key={p.id} position={[p.x,.12,p.z]}><MapAsset assetKey={p.assetKey} size={p.radius*1.5}/></group>)}
-    <WorkerLayer model={model} departures={props.departures} reduced={props.walking?.reduced}/>
+    <WorkerLayer model={model} departures={props.departures} reduced={props.reducedMotion??props.walking?.reduced} transitions={props.motion.transitions} now={props.motionNow} onFrame={props.onWorkerFrame}/>
 
     <LabelProjector labels={props.labels} nodes={props.nodes}/>{props.walking ? <Player {...props.walking}/> : <CameraRig model={model} fitToken={props.fitToken} focus={props.focus} gallery={props.gallery}/>}
     {props.onUnavailable && <ContextGuard onUnavailable={props.onUnavailable}/> }<Metrics model={model} onStats={props.onStats}/>
@@ -120,13 +128,17 @@ function LabelProjector({labels,nodes}:{labels:WorldLabel[];nodes:MutableRefObje
 }
 export const MapScene: MapRenderer<ReactNode, MapSceneProps> = (props) => {
   const nodes=useRef(new Map<string,HTMLDivElement>());
+  const motion=useTasklandMotion({model:props.model,previousModel:props.previousModel,effect:props.effect,
+    reducedMotion:props.reducedMotion??props.walking?.reduced,resetKey:props.model.id,now:props.motionNow});
+  const suppressed=useMemo(()=>motion.suppressedPlaceIds,[motion.transitions]);
+  useEffect(()=>{props.onTasklandMotion?.({transitions:motion.transitions,suppressedPlaceIds:[...suppressed]});},[props.onTasklandMotion,motion.transitions,suppressed]);
   useEffect(()=>()=>{document.body.style.cursor='';},[props.model]);
   const labels=useMemo(()=>{
-    const result:WorldLabel[]=props.model.places.filter(p=>p.depth<2||props.focus||p.entityId===props.selectedEntityId).map(p=>({id:p.id,title:p.title,detail:props.model.type==='taskland'?tasklandPlotDetail(p):p.kind==='asset'?'Imported CC0':`${p.parentId?'Nested · ':''}${p.progress===null?'Progress unknown':`${Math.round(p.progress*100)}%`}${p.status?` · ${p.status.replaceAll('_',' ')}`:''}`,x:p.x,y:.7,z:p.z+p.radius*1.2+1.3,selected:p.entityId===props.selectedEntityId,priority:p.entityId===props.selectedEntityId?-1:p.depth}));
-    result.push(...tasklandLabels(props.model));
+    const result:WorldLabel[]=props.model.places.filter(p=>!suppressed.has(p.id)&&(p.depth<2||props.focus||p.entityId===props.selectedEntityId)).map(p=>({id:p.id,title:p.title,detail:props.model.type==='taskland'?tasklandPlotDetail(p):p.kind==='asset'?'Imported CC0':`${p.parentId?'Nested · ':''}${p.progress===null?'Progress unknown':`${Math.round(p.progress*100)}%`}${p.status?` · ${p.status.replaceAll('_',' ')}`:''}`,x:p.x,y:.7,z:p.z+p.radius*1.2+1.3,selected:p.entityId===props.selectedEntityId,priority:p.entityId===props.selectedEntityId?-1:p.depth}));
+    result.push(...tasklandLabels(props.model).filter(label=>!label.entityId||!suppressed.has(label.entityId)));
     result.push(...props.model.portals.map(p=>({id:p.id,title:p.label,detail:'Enter map ↗',x:p.x,y:.5,z:p.z+p.radius+1.4,priority:0})));
     if(props.hierarchy)result.push(...props.model.groups.filter(g=>g.depth===0&&g.placeIds.length>1).map(g=>({id:g.id,title:g.label,detail:'Compound district',x:g.bounds.minX,y:.4,z:g.bounds.maxZ+2,priority:10})));
     return result.sort((a,b)=>a.priority-b.priority);
-  },[props.model,props.selectedEntityId,props.hierarchy,props.focus]);
-  return <><Canvas shadows onCreated={({gl})=>{const context=gl.getContext(),ext=context.getExtension('WEBGL_debug_renderer_info');if(ext&&/swiftshader/i.test(String(context.getParameter(ext.UNMASKED_RENDERER_WEBGL))))gl.shadowMap.enabled=false;}} orthographic camera={{position:[40,50,40],zoom:10,far:3000}} dpr={1} gl={{antialias:true,alpha:false,powerPreference:'high-performance'}}><Suspense fallback={null}><SceneContent {...props} labels={labels} nodes={nodes}/></Suspense></Canvas><div style={{position:'absolute',inset:0,pointerEvents:'none',overflow:'hidden'}}>{labels.map(l=><div key={l.id} ref={node=>{if(node)nodes.current.set(l.id,node);else nodes.current.delete(l.id);}} style={{position:'absolute',left:0,top:0,display:'none'}}><div className="ms-label" style={l.detail==='Imported CC0'?{maxWidth:110,fontSize:10}:undefined} data-selected={l.selected} data-map-cue={l.cue}>{l.title}<small>{l.detail}</small></div></div>)}</div>{props.model.places.length===0&&props.model.portals.length===0&&<div className="ms-loading">No entities in this map’s scope.</div>}</>;
+  },[props.model,props.selectedEntityId,props.hierarchy,props.focus,suppressed]);
+  return <><Canvas shadows onCreated={({gl})=>{const context=gl.getContext(),ext=context.getExtension('WEBGL_debug_renderer_info');if(ext&&/swiftshader/i.test(String(context.getParameter(ext.UNMASKED_RENDERER_WEBGL))))gl.shadowMap.enabled=false;}} orthographic camera={{position:[40,50,40],zoom:10,far:3000}} dpr={1} gl={{antialias:true,alpha:false,powerPreference:'high-performance'}}><Suspense fallback={null}><SceneContent {...props} labels={labels} nodes={nodes} motion={motion}/></Suspense></Canvas><div style={{position:'absolute',inset:0,pointerEvents:'none',overflow:'hidden'}}>{labels.map(l=><div key={l.id} ref={node=>{if(node)nodes.current.set(l.id,node);else nodes.current.delete(l.id);}} style={{position:'absolute',left:0,top:0,display:'none'}}><div className="ms-label" style={l.detail==='Imported CC0'?{maxWidth:110,fontSize:10}:undefined} data-selected={l.selected} data-map-cue={l.cue}>{l.title}<small>{l.detail}</small></div></div>)}</div>{props.model.places.length===0&&props.model.portals.length===0&&<div className="ms-loading">No entities in this map’s scope.</div>}</>;
 }

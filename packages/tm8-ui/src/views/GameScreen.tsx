@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import GameMode from '../game/GameMode';
 import type { GameMapLoader } from '../data/game-maps';
+import { createGameMailboxReader } from '../data/game-mailboxes';
 import type { ControlHost, DetailReasons } from '../panels';
 import type { Notice } from '../shell';
 import { attachmentsFor } from '../files/port';
@@ -85,6 +86,7 @@ export function GameScreen({ data, memberId, loadMap, identitySignal, overlayOpe
     spaceId: data.spaceId, seam: data.seam, refetchDetail: data.refetchDetail, onNotice,
   });
   const attachments = useMemo(() => attachmentsFor(data.seam, data.spaceId), [data.seam, data.spaceId]);
+  const mailboxes = useMemo(() => createGameMailboxReader(data.seam, data.spaceId), [data.seam, data.spaceId]);
   const controls: ControlHost = {
     kind: detail?.kind ?? '', ctx, livenessOf: data.livenessOf,
     capabilitiesOf: data.capabilitiesOf, onNeedDetail: data.pull,
@@ -103,7 +105,7 @@ export function GameScreen({ data, memberId, loadMap, identitySignal, overlayOpe
     <div className="game-screen" data-testid="game-screen">
       <div className="game-screen__map" ref={mapRegion} tabIndex={-1} aria-label="Game map">
         <GameMode spaceId={data.spaceId} memberId={memberId} spaceTitle={data.spaces.find(space => space.id === data.spaceId)?.name}
-          loadMap={loadMap} events={data.seam} persistence={data.seam.game} identitySignal={identitySignal} onInspect={inspect} />
+          loadMap={loadMap} events={data.seam} mailboxes={mailboxes} persistence={data.seam.game} identitySignal={identitySignal} onInspect={inspect} />
       </div>
       {selectedId ? (
         <aside className="game-screen__inspection" aria-label="Entity details" data-testid="game-inspection">

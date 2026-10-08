@@ -4,6 +4,8 @@ import type { MapScope } from '../story/game/map-model';
 import { createLiveMapController, type LiveMapSnapshot } from './live-map-controller';
 import type { GameMapEvents, GameMapLoader, GameMapResult } from './types';
 import type { GameMapEvent } from './live-map-events';
+import type { GameMailboxReader } from '../data/game-mailboxes';
+import { emptyTasklandMotion, reconcileTasklandMotion } from '../story/game/taskland-motion';
 
 const scope: MapScope = { kind: 'space', id: 'space' };
 function result(selected = scope): GameMapResult {
@@ -17,7 +19,7 @@ function row(id: string, kind = 'task', state: Record<string, unknown> = {}): En
   return { id, kind, spaceId: 'space', title: id, parentId: null, category: 'in_progress', counters: { messages: 0 }, badges: {},
     state: { kind, status: kind === 'task' ? 'working' : 'running', ...state } } as unknown as EntitySummary;
 }
-function harness(selected = scope, loadMap: GameMapLoader = vi.fn(async () => result(selected))) {
+function harness(selected = scope, loadMap: GameMapLoader = vi.fn(async () => result(selected)), mailboxes?: GameMailboxReader) {
   const subs = new Set<(event: GameMapEvent) => void>();
   const resync = new Set<(id: string) => void>();
   const live = new Set<() => void>();
@@ -27,7 +29,7 @@ function harness(selected = scope, loadMap: GameMapLoader = vi.fn(async () => re
     liveness: { statusOf: () => alive === 'unknown' ? 'unknown' : alive ? 'live' : 'stale', onChange(cb: () => void) { live.add(cb); return () => { live.delete(cb); }; } },
   } as unknown as GameMapEvents;
   const snapshots: LiveMapSnapshot[] = [], errors: unknown[] = [];
-  const controller = createLiveMapController({ spaceId: 'space', scope: selected, type: 'taskland', loadMap, events: port,
+  const controller = createLiveMapController({ spaceId: 'space', scope: selected, type: 'taskland', loadMap, events: port, mailboxes,
     onSnapshot: snapshot => snapshots.push(snapshot), onError: error => errors.push(error) });
   const emit = (body: object, over: object = {}) => {
     const event = { spaceId: 'space', seq: ++seq, occurredAt: new Date().toISOString(), schemaVersion: 1, ...body, ...over } as GameMapEvent;
@@ -312,5 +314,94 @@ describe('authoritative live map controller', () => {
     await vi.advanceTimersByTimeAsync(80);
     expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'task')!.title).toBe('Sequence update');
     expect(h.loadMap).toHaveBeenCalledTimes(1); h.controller.dispose();
+  });
+  it('combines more than five status effects per minute while reducing every final status immediately', async () => {
+    const h = harness(); await h.boot();
+    for (let n = 0; n < 8; n++) h.emit({ type: 'task.status_changed', taskId: 'task', from: n % 2 ? 'blocked' : 'working', to: n % 2 ? 'working' : 'blocked' });
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.status).toBe('working');
+    await vi.advanceTimersByTimeAsync(80); const effect = h.controller.getSnapshot()!.effect!;
+    expect(effect).toMatchObject({ combined: true, count: 8 }); expect(effect.taskEvents).toHaveLength(8);
+    h.emit({ type: 'task.status_changed', taskId: 'task', from: 'working', to: 'blocked' });
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.status).toBe('blocked');
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.effect).toMatchObject({ id: effect.id, combined: true, count: 9 });
+    expect(h.controller.getSnapshot()!.model.places.find(place => place.id === 'task')!.status).toBe('blocked');
+    expect(h.loadMap).toHaveBeenCalledTimes(1); h.controller.dispose();
+  });
+  it('retains explicit legacy cancellation evidence through count/title edits, but clears it on reopen and exact recancellation', async () => {
+    const data = result(); data.input = { ...data.input, entities: data.input.entities.map(row => row.id === 'task' ? { ...row, status: 'cancelled', cancelledAt: null, cancelledNotAfter: '2026-10-08T00:00:00Z' } : row) };
+    const h = harness(scope, vi.fn(async () => data)); await h.boot();
+    h.emit({ type: 'entity.upsert', entity: { ...row('task', 'task', { status: 'cancelled' }), title: 'Edited', category: 'cancelled' } });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')).toMatchObject({ cancelledAt: null, cancelledNotAfter: '2026-10-08T00:00:00Z' });
+    h.emit({ type: 'task.criterion_changed', taskId: 'task', criterionId: 'ac1', criterionText: 'Changed', isDone: true, done: 1, total: 2 });
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')!.cancelledNotAfter).toBe('2026-10-08T00:00:00Z');
+    // A reconnect can hide reopen/recancel. Its exact stamped summary must clear
+    // the prior episode's bound even though both visible rows are cancelled.
+    h.emit({ type: 'entity.upsert', entity: { ...row('task', 'task', { status: 'cancelled', statusChangedAt: '2026-10-08T12:00:00Z' }), category: 'cancelled' } });
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')).toMatchObject({ cancelledAt: '2026-10-08T12:00:00Z', cancelledNotAfter: null });
+    h.emit({ type: 'task.status_changed', taskId: 'task', from: 'cancelled', to: 'working' });
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')).toMatchObject({ cancelledAt: null, cancelledNotAfter: null });
+    h.emit({ type: 'entity.upsert', entity: { ...row('task', 'task', { status: 'cancelled', statusChangedAt: '2026-10-09T01:00:00Z' }), category: 'cancelled' } });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.controller.getSnapshot()!.result.input.entities.find(row => row.id === 'task')).toMatchObject({ cancelledAt: '2026-10-09T01:00:00Z', cancelledNotAfter: null });
+    h.controller.dispose();
+  });
+  it('publishes motion facts atomically with post-fact geometry and resets the handoff on recovery', async () => {
+    let resolve!: (value: GameMapResult) => void;
+    const loader = vi.fn<GameMapLoader>(async () => result());
+    const h = harness(scope, loader); await h.boot();
+    const initial = h.snapshots.at(-1)!;
+    const event = h.emit({ type: 'task.status_changed', taskId: 'task', from: 'working', to: 'blocked' });
+    // Records reduce immediately; subscribers receive geometry and facts together.
+    expect(h.snapshots.at(-1)).toBe(initial);
+    await vi.advanceTimersByTimeAsync(80);
+    const moved = h.snapshots.at(-1)!;
+    expect(moved.previousModel).toBe(initial.model);
+    expect(moved.model.places.find(place => place.id === 'task')!.status).toBe('blocked');
+    expect(moved.effect!.taskEvents).toEqual([event]);
+    let motion = reconcileTasklandMotion(emptyTasklandMotion(initial), moved, 0);
+    expect(motion.transitions).toEqual([expect.objectContaining({ entityId: 'task', kind: 'move' })]);
+    for (let n = 0; n < 6; n++) h.emit({ type: 'task.status_changed', taskId: 'task', from: n % 2 ? 'working' : 'blocked', to: n % 2 ? 'blocked' : 'working' });
+    await vi.advanceTimersByTimeAsync(80);
+    const burst = h.snapshots.at(-1)!;
+    expect(burst.previousModel).toBe(moved.model);
+    expect(burst.model.places.find(place => place.id === 'task')!.status).toBe('blocked');
+    expect(burst.effect!.taskEvents.at(-1)).toMatchObject({ type: 'task.status_changed', to: 'blocked' });
+    expect(burst.effect).toMatchObject({ combined: true, count: 7 });
+    motion = reconcileTasklandMotion(motion, burst, 100);
+    expect(motion.lastTaskSeq).toBe(burst.effect!.taskEvents.at(-1)!.seq);
+    loader.mockImplementationOnce(() => new Promise(yes => { resolve = yes; }));
+    h.resync(); await vi.advanceTimersByTimeAsync(250);
+    h.emit({ type: 'task.status_changed', taskId: 'task', from: 'blocked', to: 'review' });
+    // Resolve before the live publish: the read can still contain the older status.
+    resolve(result()); await vi.advanceTimersByTimeAsync(0);
+    const recovery = h.snapshots.at(-1)!;
+    expect(recovery.previousModel).toBeNull(); expect(recovery.effect).toBeNull();
+    expect(reconcileTasklandMotion(motion, recovery, 200).transitions).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(80);
+    expect(h.snapshots.at(-1)!.effect).toBeNull();
+    // One authoritative repair is scheduled for the ambiguous replay, with no
+    // historical fact delivered against the recovered geometry.
+    await vi.advanceTimersByTimeAsync(170); expect(loader).toHaveBeenCalledTimes(3);
+    expect(h.snapshots.at(-1)!.effect).toBeNull();
+    h.controller.dispose(); expect(vi.getTimerCount()).toBe(0);
+  });
+  it('joins delayed unread counts through the live controller without rolling back status, worker, or layout', async () => {
+    let resolve!: (value: import('@tm8/contract').SpaceUnreadCounts) => void, invalidated!: (id: string) => void;
+    const read: GameMailboxReader = vi.fn(() => new Promise(yes => { resolve = yes; }));
+    read.onInvalidated = callback => { invalidated = callback; return () => {}; };
+    const data = result(); data.input = { ...data.input, entities: data.input.entities.map(row => ({ ...row, mailbox: { count: 5, basis: 'unread' as const } })) };
+    const h = harness(scope, vi.fn(async () => data), read); await h.boot(); const before = h.controller.getSnapshot()!.model;
+    invalidated('task'); await vi.advanceTimersByTimeAsync(0);
+    h.emit({ type: 'task.status_changed', taskId: 'task', from: 'working', to: 'blocked' }); await vi.advanceTimersByTimeAsync(80);
+    const changed = h.controller.getSnapshot()!.model;
+    resolve({ spaceId: 'space', complete: true, counts: [{ anchorId: 'task', unread: 2 }] } as import('@tm8/contract').SpaceUnreadCounts);
+    await vi.advanceTimersByTimeAsync(80);
+    const after = h.controller.getSnapshot()!.model;
+    expect(after.places.find(place => place.id === 'task')).toMatchObject({ status: 'blocked', mailbox: { count: 2, basis: 'unread' } });
+    expect(after.robots.map(worker => worker.id)).toEqual(before.robots.map(worker => worker.id));
+    expect(after.places.map(place => [place.id, place.x, place.z])).toEqual(changed.places.map(place => [place.id, place.x, place.z]));
+    expect(h.loadMap).toHaveBeenCalledTimes(1); h.controller.dispose(); expect(vi.getTimerCount()).toBe(0);
   });
 });
