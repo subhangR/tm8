@@ -214,7 +214,7 @@ export function Player({ world, palette, control, revealed, playerPos, onReveal,
   const camera = useThree((s) => s.camera) as THREE.OrthographicCamera;
   const { gl, size: viewportSize } = useThree();
   const motion = useRef<CharacterMotion>({ moving: false, heading: 0, arrival: -100 });
-  const zoom = useRef(cameraState ? cameraState.zoom / Math.max(22, Math.min(43, viewportSize.height / 18)) : 1), intro = useRef(0), target = useRef(new THREE.Vector3()), look = useRef(new THREE.Vector3());
+  const zoom = useRef(cameraState ? cameraState.zoom / Math.max(22, Math.min(43, viewportSize.height / 18)) : 1), intro = useRef(cameraState ? 2.8 : 0), target = useRef(new THREE.Vector3()), look = useRef(new THREE.Vector3());
   const alertPosition = useRef(new THREE.Vector3());
   const dust = useRef<THREE.Mesh>(null), dustAt = useRef(-100), dustPos = useRef(new THREE.Vector3());
   const restored = useRef(!!cameraState);

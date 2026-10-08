@@ -40,8 +40,10 @@ export function walkingBounds(model: MapModel): Bounds {
   return { minX: Math.min(0, b.minX) - 4, maxX: Math.max(0, b.maxX) + 4,
     minZ: Math.min(0, b.minZ) - 4, maxZ: Math.max(6, b.maxZ) + 4 };
 }
-/** A free entrance left of every model footprint, on the rendered playable ground. */
+/** Prefer the conventional entrance; otherwise use clear ground left of every footprint. */
 export function walkingEntrance(model: MapModel): Point {
+  const conventional = { x: 0, z: model.type === 'hub' ? 0 : 6 };
+  if (isWalkingPositionSafe(model, conventional)) return conventional;
   return { x: Math.min(0, model.bounds.minX) - 2, z: 0 };
 }
 /** Compounds include walkable streets; only occupied footprints block a saved pose. */
