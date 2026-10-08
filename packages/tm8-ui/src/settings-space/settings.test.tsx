@@ -691,11 +691,11 @@ describe('T2-3 — the menu editor', () => {
     ],
   } as never);
 
-  it('Save is ALWAYS refused, and the reason names the seam ruling', () => {
+  it('Save is refused without a write callback and explains admin access', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
     const save = screen.getByRole('button', { name: 'save menu' });
     expect(save.getAttribute('aria-disabled')).toBe('true');
-    expect(document.body.textContent).toMatch(/spaces\.menu\.update/);
+    expect(document.body.textContent).toMatch(/owner or admin/);
   });
 
   it('the preview mirrors the draft, and a keyboard reorder moves it', () => {

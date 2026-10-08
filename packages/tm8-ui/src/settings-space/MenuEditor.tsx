@@ -50,7 +50,7 @@
  *     that overflow; a second scroller nested in it clips instead of scrolls.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { MenuGroup, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
+import type { MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import './menu-editor.css';
 import { CUSTOM_KIND_FALLBACK, KindIcon, getKind } from '../domain';
 import { VectorIcon } from '../kit';
@@ -90,6 +90,8 @@ import {
 import { SectionAbsent } from './SectionFrame';
 
 export interface MenuEditorProps {
+  onSave?: (payload: MenuConfigPayload, expectedRevision: number) => Promise<void>;
+  onReload?: () => Promise<void>;
   /** What the port loaded — config plus WHY it is that config. */
   menu: ResolvedMenu;
   /** Space label for the header's `space · atelier · v12` line (oracle L288). */
@@ -114,11 +116,16 @@ type RowKind = 'group' | 'item' | 'child';
 
 export function MenuEditor({
   menu,
+  onSave,
+  onReload,
   spaceName,
   conflictRevision = null,
   conflictBy = null,
   versionLocked = false,
 }: MenuEditorProps) {
+  const [pending, setPending] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const [draft, setDraft] = useState<MenuDraft>(() => startDraft(menu.config));
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
@@ -148,7 +155,7 @@ export function MenuEditor({
     setRenaming(null);
   }, [renaming, renameText]);
 
-  const editable = !versionLocked;
+  const editable = !versionLocked && !pending;
   const conflicted = conflictRevision !== null && conflictRevision > config.revision;
   const rowCount = config.groups.reduce((n, g) => n + g.items.length, 0);
 
@@ -255,12 +262,22 @@ export function MenuEditor({
           `discard` and the card edge, and drove the header to ~120px tall. A
           caption gets its own line, and a measure. */}
       <div className="set-menu__save">
-        <DisabledAction
-          reason={versionLocked ? MENU_SAVE_VERSION_LOCKED : MENU_SAVE_UNAVAILABLE}
-          label="save menu"
-        >
-          Save menu
-        </DisabledAction>
+        {onSave ? <>
+          <button type="button" disabled={pending || !dirty || !!issue || versionLocked || !!conflictRevision || (!isSavedMenu(menu.origin) && menu.origin.because !== 'absent')}
+            onClick={async () => {
+              setPending(true); setSaveError(null); setSaved(false);
+              try { await onSave(draft.payload, isSavedMenu(menu.origin) ? menu.origin.revision : 0); setSaved(true); }
+              catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); }
+              finally { setPending(false); }
+            }}>{pending ? 'Saving…' : 'Save menu'}</button>
+          {onReload && <button type="button" disabled={pending} onClick={async () => {
+            setPending(true); setSaveError(null); setSaved(false);
+            try { await onReload(); } catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); }
+            finally { setPending(false); }
+          }}>Reload menu</button>}
+          {saveError && <p role="alert">{saveError}</p>}
+          {saved && <p role="status">Menu saved.</p>}
+        </> : <DisabledAction reason={versionLocked ? MENU_SAVE_VERSION_LOCKED : MENU_SAVE_UNAVAILABLE} label="save menu">Save menu</DisabledAction>}
       </div>
 
       <div className="set-menu__cols">

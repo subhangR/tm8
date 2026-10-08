@@ -163,3 +163,8 @@
     padding-top: 0;
   }
 }
+
+.set-space-profile__form { width: 100%; }
+.set-space-profile__form fieldset { display: grid; gap: 12px; border: 0; padding: 0; margin: 0; }
+.set-space-profile__form label { display: grid; gap: 4px; }
+.set-space-profile__form input, .set-space-profile__form textarea { width: 100%; box-sizing: border-box; font: inherit; }

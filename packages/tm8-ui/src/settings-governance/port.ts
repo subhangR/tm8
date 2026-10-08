@@ -1,27 +1,6 @@
-/**
- * THE GOVERNANCE PORT — the only place `settings-governance/` knows a seam
- * exists.
- *
- * Same shape as `settings-space/port.ts` (half A of T2) and for the same
- * reason, stated there: everything below the port receives plain values and
- * cannot tell a fixture from a real node. The coordinator wires
- * `governancePortFromSeam(seam, spaceId)`; nothing in this directory imports a
- * seam implementation.
- *
- * READS ONLY — and unlike half A, that is not even a choice here. Measured
- * against `src/data/seam.ts` (read in full, 2026-07-29): there is no
- * `projects.*` family, no interaction-profile command, and `entityKinds()` is
- * a read with no write beside it. The port exposes no method for any write
- * this surface draws, so a future component cannot quietly acquire one; each
- * refusal lives in `reasons.ts` with its mechanism named.
- *
- * WHY IT IS TESTED AGAINST A REAL FIXTURE SEAM (`port-seam.test.ts`): the
- * brief's four-links lesson. Declaration → data → implementation → CALL can
- * each be green while the feature is dead, because nobody asserted the caller
- * passes the argument. The port test drives an actual `createFixtureSeam()`
- * and asserts on what comes BACK.
- */
-import type { EntityKind, EntityKindDef, EntitySummary, SpaceId } from '@tm8/contract';
+/** Bound-space governance adapter. Reads remain available to legacy views;
+ * optional custom-kind creation uses the existing server-authorized command. */
+import type { EntityKind, EntityKindDef, EntityKindCreateInput, EntitySummary, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { kindBySlug } from '../domain/registry';
 
@@ -49,6 +28,7 @@ export const PROJECT_SLUG = 'projects';
 export const PROFILE_SLUG = 'interaction-profiles';
 
 export interface GovernancePort {
+  createKind?(input: Omit<EntityKindCreateInput, 'clientMutationId' | 'actorId'>): Promise<EntityKindDef>;
   /** Space-side linked projects — the materialized per-space projection. */
   linkedProjects(): Promise<readonly EntitySummary[]>;
   /** Every interaction profile in the space, all lifecycle states. */
@@ -66,6 +46,8 @@ export interface GovernancePort {
 
 export function governancePortFromSeam(seam: Seam, spaceId: SpaceId): GovernancePort {
   return {
+    ...(seam.commands.createEntityKind ? { createKind: (input: Omit<EntityKindCreateInput, 'clientMutationId' | 'actorId'>) =>
+      seam.commands.createEntityKind!(spaceId, { ...input, clientMutationId: crypto.randomUUID() }) } : {}),
     async linkedProjects() {
       const result = await seam.query({ spaceId, kinds: [kindOfSlugOrThrow(PROJECT_SLUG)] });
       return result.page.items;

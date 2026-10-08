@@ -19,10 +19,8 @@
  *    duplicate fields, empty enums. Every one of those is a real answer.
  *  · the composed `EntityKindCreateInput` is shown, exactly as it would be sent.
  *
- * WHAT IS NOT: the COMMIT. `seam.entityKinds()` is a read and there is no
- * write beside it (GG16), so "Create kind" is refused with the mechanism
- * named. A form that cannot submit can still tell the truth about whether what
- * you typed would work — and this one does, which is most of its value.
+ * An authorized onCreate callback commits the draft through entityKinds.create.
+ * Without that callback the same screen remains a read-only preview.
  *
  * ── 2026-08-16 · IT IS A SETTINGS SECTION, NOT A SCREEN ────────────────────
  *
@@ -72,7 +70,7 @@ import {
   type KindDraft,
 } from './governance-model';
 import { GOVERNANCE_REASONS } from './reasons';
-import type { LoadState } from './port';
+import type { GovernancePort, LoadState } from './port';
 import { EmptyRegion, GovCard, GovEyebrow, LoadRegion, RefusedControl } from './parts';
 import './governance.css';
 import './custom-kinds.css';
@@ -81,6 +79,7 @@ import './custom-kinds.css';
 export const CUSTOM_KINDS_HEADING = 'Custom kinds';
 
 export interface CustomKindsScreenProps {
+  onCreate?: GovernancePort['createKind'];
   spaceLabel: string;
   /** `seam.entityKinds(spaceId)` — a real read. */
   kinds: LoadState<readonly EntityKindDef[]>;
@@ -104,10 +103,16 @@ const newField = (): DraftField => ({
 export function CustomKindsScreen({
   spaceLabel,
   kinds,
+  onCreate,
   heading = CUSTOM_KINDS_HEADING,
 }: CustomKindsScreenProps) {
   const [draft, setDraft] = useState<KindDraft>(emptyKindDraft);
-  const existing = kinds.phase === 'ready' ? kinds.value : [];
+  const [created, setCreated] = useState<EntityKindDef[]>([]);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const loaded = kinds.phase === 'ready' ? kinds.value : [];
+  const existing = useMemo(() => [...loaded, ...created.filter((row) => !loaded.some((old) => old.kind === row.kind))], [loaded, created]);
   const issues = useMemo(() => validateKindDraft(draft, existing), [draft, existing]);
   const payload = useMemo(
     () => draftToCreateInput(draft, 'preview', existing),
@@ -120,15 +125,28 @@ export function CustomKindsScreen({
           review-board furniture and is gone; what is left is a stack whose
           width the frame's measure already caps. */}
       <div className="set-kinds" data-testid="custom-kinds-screen">
-        <ExistingKindsCard kinds={kinds} />
+        <ExistingKindsCard kinds={kinds.phase === 'ready' ? { phase: 'ready', value: existing } : kinds} />
         <NewKindCard
           spaceLabel={spaceLabel}
           draft={draft}
           setDraft={setDraft}
           issues={issues}
-          hasPayload={payload !== null}
+          hasPayload={payload !== null && kinds.phase === 'ready'}
+          pending={pending}
+          {...(onCreate ? { onCreate: async () => {
+            if (!payload || pending || kinds.phase !== 'ready') return;
+            setPending(true); setError(null); setSaved(false);
+            try {
+              const { clientMutationId: _previewId, ...input } = payload;
+              const result = await onCreate(input);
+              setCreated((rows) => [...rows, result]); setDraft(emptyKindDraft()); setSaved(true);
+            } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+            finally { setPending(false); }
+          } } : {})}
         />
-        <WhatYouGetCard draft={draft} payload={payload} issueCount={issues.length} />
+        {error && <p role="alert">{error}</p>}
+        {saved && <p role="status">Custom kind created.</p>}
+        <WhatYouGetCard draft={draft} payload={payload} issueCount={issues.length} writable={!!onCreate} />
       </div>
     </SectionFrame>
   );
@@ -177,12 +195,16 @@ function NewKindCard({
   setDraft,
   issues,
   hasPayload,
+  onCreate,
+  pending,
 }: {
   spaceLabel: string;
   draft: KindDraft;
   setDraft: (next: KindDraft) => void;
   issues: readonly { at: string; message: string }[];
   hasPayload: boolean;
+  pending: boolean;
+  onCreate?: () => Promise<void>;
 }) {
   const titleId = useId();
   const nameId = useId();
@@ -208,7 +230,7 @@ function NewKindCard({
 
   return (
     <GovCard labelledBy={titleId} title="New kind" subtitle={spaceLabel}>
-      <div className="gov-form set-kinds__form">
+      <fieldset aria-labelledby={titleId} disabled={pending} className="gov-form set-kinds__form" style={{ border: 0, padding: 0, margin: 0 }}>
         <KindGroup legend="Identity" hint="What it is called, and the mark it is filed under.">
           <div className="gov-form__pair">
             <label className="gov-field-block" htmlFor={nameId}>
@@ -318,9 +340,8 @@ function NewKindCard({
           {/* Refused for ONE reason and it is not the form's: the seam has no
               write. When it gains one, this becomes a live submit and the
               validation above already gates it. */}
-          <RefusedControl reason={GOVERNANCE_REASONS.createKind} emphasis="primary">
-            Create kind
-          </RefusedControl>
+          {onCreate ? <button type="button" disabled={!hasPayload || pending} onClick={() => { void onCreate(); }}>{pending ? 'Creating…' : 'Create kind'}</button> :
+            <RefusedControl reason={GOVERNANCE_REASONS.createKind} emphasis="primary">Create kind</RefusedControl>}
           <p className="gov-prose gov-prose--quiet" data-testid="draft-verdict">
             {hasPayload
               ? 'This draft is valid — the payload it would send is shown below.'
@@ -329,7 +350,7 @@ function NewKindCard({
                 : `${issues.length} thing${issues.length === 1 ? '' : 's'} to fix before this kind would be accepted.`}
           </p>
         </div>
-      </div>
+      </fieldset>
     </GovCard>
   );
 }
@@ -477,10 +498,12 @@ function WhatYouGetCard({
   draft,
   payload,
   issueCount,
+  writable,
 }: {
   draft: KindDraft;
   payload: ReturnType<typeof draftToCreateInput>;
   issueCount: number;
+  writable: boolean;
 }) {
   const titleId = useId();
   const fallback = getKind(draftKindId(draft) ?? 'c:unnamed');
@@ -571,7 +594,7 @@ function WhatYouGetCard({
               </span>
             )}
             <p className="gov-prose gov-prose--quiet">
-              {GOVERNANCE_REASONS.createKind.cause} — {GOVERNANCE_REASONS.createKind.remedy}.
+              {writable ? 'Create kind saves this schema to the space.' : `${GOVERNANCE_REASONS.createKind.cause} — ${GOVERNANCE_REASONS.createKind.remedy}.`}
             </p>
           </div>
         </KindGroup>

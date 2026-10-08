@@ -18,11 +18,8 @@
  * "nothing expressible in the editor can break T1-1's rendering rules". This
  * model can express nothing else, which is that note made structural.
  *
- * SAVE IS NOT HERE, and that is not an omission. `data/seam.ts` says verbatim
- * that `spaces.menu.update` "stays OUT of this seam until their phase; adding
- * it is a deferred amendment requiring dual re-consensus". Every function here
- * is client-side; the commit verb has no executor, and the editor renders it
- * disabled-with-reason (see `reasons.ts`).
+ * These functions edit drafts only. MenuEditor saves through its optional
+ * authorized callback, with the loaded server revision for conflict checks.
  */
 import type { MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import { collectionKinds, isMenuEligibleKind } from '../domain';
