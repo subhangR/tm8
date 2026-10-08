@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CollectionQuery, GraphEdgeView, EntityDetail, EntitySummary, StoryPage } from '@tm8/contract';
 import type { Seam } from './seam';
 import { createGameMapLoader } from './game-maps';
-import type { MapScope, MapType } from '../story/game/map-model';
 
 const SPACE = 'space-a';
 const row = (id: string, kind = 'task', parentId: string | null = null): EntitySummary => ({
@@ -24,7 +23,7 @@ function port() {
     liveness: { statusOf: vi.fn(() => 'unknown' as const) },
   };
 }
-const load = (seam: ReturnType<typeof port>): ((scope: MapScope, signal?: AbortSignal, type?: MapType) => ReturnType<ReturnType<typeof createGameMapLoader>>) => createGameMapLoader(seam as unknown as Seam, SPACE);
+const load = (seam: ReturnType<typeof port>) => createGameMapLoader(seam as unknown as Seam, SPACE);
 const story = (overrides: Partial<StoryPage> = {}): EntityDetail => ({
   ...row('story-a', 'story'),
   content: { kind: 'story', page: {
