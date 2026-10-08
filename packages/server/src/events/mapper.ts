@@ -116,6 +116,8 @@ export const WORKSPACE_EVENT_COLUMNS =
  * arm), so passthrough would validate-fail every row.
  */
 export const RPC_AUTHORED_PASSTHROUGH: ReadonlySet<string> = new Set([
+  // Personal seen markers route only to the member's own sessions.
+  'entity.seen',
   'menu.updated',
   'space.default_channel.updated',
   // Styles (284). `space.style_default.updated` is space-wide like the default

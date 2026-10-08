@@ -1242,6 +1242,8 @@ export function createFixtureSeam(): FixtureSeam {
   const openSpaces = new Set<SpaceId>();
   const seqBySpace = new Map<SpaceId, number>();
   const readMarks = new Map<EntityId, string>();
+  // Fixture entities, like pre-rollout entities, start seen.
+  const seenEntities = new Set(summaries.keys());
   const uploadSlots = new Map<string, { input: FileUploadInitInput; grant: FileUploadGrant; uploaded: boolean }>();
 
   const eventSubs = new Set<(e: DurableWorkspaceEvent) => void>();
@@ -2849,13 +2851,10 @@ export function createFixtureSeam(): FixtureSeam {
       if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
       const counts: SpaceKindCounts = {};
       for (const summary of summaries.values()) {
-        if (summary.deletedAt) continue;
+        if (summary.spaceId !== spaceId || summary.deletedAt) continue;
         const key = summary.kind as keyof SpaceKindCounts;
         const row = counts[key] ?? { total: 0, unseen: 0 };
-        const mark = readMarks.get(summary.id);
-        // Same predicate as the server RPC (063): never opened, or changed
-        // since it was last opened.
-        if (!mark || summary.activityAt > mark) row.unseen += 1;
+        if (!seenEntities.has(summary.id)) row.unseen += 1;
         row.total += 1;
         counts[key] = row;
       }
@@ -4882,6 +4881,12 @@ export function createFixtureSeam(): FixtureSeam {
         // The fixture inbox is honestly empty (no notification rows exist),
         // so every markRead is a not_found — exercising the rollback path.
         throw new CollabError('not_found', `notification ${notificationId} not found`);
+      },
+      async markSeen(entityId) {
+        const entity = requireSummary(entityId);
+        if (seenEntities.has(entityId)) return;
+        seenEntities.add(entityId);
+        emit(entity.spaceId, { type: 'entity.seen', entityId, seenAt: tick() });
       },
       async upsertReadMark(anchorId, lastReadAt) {
         requireSummary(anchorId);

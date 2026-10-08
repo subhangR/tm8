@@ -2539,6 +2539,14 @@ const ROWS: Record<OperationName, Row> = {
     input: 'unbound',
     notes: ['`inbox mark-read` owns notification state; `message mark-read` owns an anchor read cursor'],
   },
+  'entities.markSeen': {
+    cmd: null,
+    sum: 'Record the signed-in member activating an entity in a UI list',
+    authz: 'entity',
+    input: 'bound',
+    reason: 'ui_entity_list_only',
+    notes: ['Permanent personal seen state; invoked only by entity-list activation.'],
+  },
   'readMarks.upsert': {
     cmd: ['message', 'mark-read'],
     syn: 'tm8 message mark-read <anchor-entity-id> --through <message-id> [--mutation-id <id>]',
@@ -4299,7 +4307,7 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
-  'sha256:f5a78ce3c6d5a49f22949f38bb9e87ff1fc53368f9fb59f9fbfc91f9d99f8944';
+  'sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d';
 
 export const GRAMMAR_VERSION = '2';
 

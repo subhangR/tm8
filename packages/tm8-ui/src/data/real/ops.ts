@@ -1760,6 +1760,13 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       });
     },
 
+    async markSeen(entityId: EntityId): Promise<void> {
+      await http.call<unknown>('entities.markSeen', {
+        params: { id: entityId },
+        body: { clientMutationId: newId('seen') },
+      });
+    },
+
     previewArtifact(id: EntityId, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession> {
       return http.call<ArtifactPreviewSession>('artifacts.preview.start', {
         params: { artifactId: id },

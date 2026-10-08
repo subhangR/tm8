@@ -494,6 +494,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // inbox / read marks
   'inbox.markRead': InboxMarkReadInputSchema,
   'readMarks.upsert': RequiredCommandContextSchema,
+  'entities.markSeen': RequiredCommandContextSchema,
 
   // saved views
   'savedViews.create': SavedViewInputSchema,

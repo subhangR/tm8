@@ -1632,6 +1632,13 @@ const workspaceEventEnvelopeShape = {
 export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.union([
   z.object({
     ...workspaceEventEnvelopeShape,
+    type: z.literal('entity.seen'),
+    entityId: EntityIdSchema,
+    seenAt: IsoTimestamp,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.enum(['entity.upsert', 'entity.deleted']),
     entity: EntitySummarySchema,
     clientMutationId: z.string().optional(),

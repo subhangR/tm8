@@ -21,6 +21,7 @@
 
 /** Event type → the payload keys holding its subject entity ids. */
 export const EVENT_SUBJECT_KEYS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  'entity.seen': ['entityId'],
   'entity.upsert': ['id'],
   'entity.deleted': ['id'],
   'entity.activity_touched': ['id'],

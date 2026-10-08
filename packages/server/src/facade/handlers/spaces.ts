@@ -414,9 +414,8 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
  * doing its job. One grouped scan answers every kind before any list is
  * fetched.
  *
- * The RPC is `security definer` and re-checks membership plus per-entity
- * readability itself (063), so a counter can never disclose that a restricted
- * entity exists when the corresponding list would hide it. That is also why
+ * The RPC runs as the caller (313), with membership and entity/marker RLS,
+ * so a counter cannot disclose entities the corresponding list would hide. That is also why
  * this does NOT go through `queryCollection`: counting is not paging, and
  * running it as a capped page would either be wrong or read the whole table.
  */

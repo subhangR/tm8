@@ -9,6 +9,7 @@
  * The three lanes keep their authority: geometry sizes, navStore owns panel
  * state and the URL, the panels own anatomy. This file is composition only.
  */
+import { EntitySeenProvider } from '../seen-entities/EntitySeen';
 import { McpProvider } from '../mcp/context';
 import { McpSettings } from '../mcp/McpSettings';
 import { PendingFormsProvider, usePendingFormsStoreFor } from '../forms/pending';
@@ -533,7 +534,10 @@ export function GateApp(props: GateAppProps = {}) {
   const withPendingForms = (node: ReactNode) => (
     <PendingFormsProvider store={pendingFormsStore}>
       <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
-        <McpProvider key={data.spaceId} port={mcpPort}>{node}</McpProvider>
+        <EntitySeenProvider key={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
+          commands={data.seam.commands} refreshCounts={data.refreshCounts}>
+          <McpProvider key={data.spaceId} port={mcpPort}>{node}</McpProvider>
+        </EntitySeenProvider>
       </AttentionProvider>
     </PendingFormsProvider>
   );

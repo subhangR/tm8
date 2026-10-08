@@ -367,6 +367,14 @@ describe('ops: divergence 3 — the mutation ids the seam has no slot for', () =
     expect(f.last().body).toEqual({ clientMutationId: 'read_fixed' });
   });
 
+  it('records list-seen through its own operation without a caller-supplied member or timestamp', async () => {
+    const { ops, f } = harness();
+    await ops.markSeen('entity-1');
+    expect(f.last().method).toBe('PUT');
+    expect(f.last().url).toBe('/v2/entities/entity-1/seen');
+    expect(f.last().body).toEqual({ clientMutationId: 'seen_fixed' });
+  });
+
   it('upsertReadMark does NOT send lastReadAt — the schema is strict and the server stamps it', async () => {
     const { ops, f } = harness({});
     await ops.upsertReadMark('a-1');

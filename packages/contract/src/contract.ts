@@ -1671,6 +1671,7 @@ export interface WorkspaceEventEnvelope {
  * client-synthesized and never carry one.
  */
 export type WorkspaceEvent = WorkspaceEventEnvelope & (
+ | { type: 'entity.seen'; entityId: EntityId; seenAt: string; clientMutationId?: string }
  | { type: 'entity.upsert'|'entity.deleted'; entity: EntitySummary; clientMutationId?: string }
  /**
   * The entity's recency hint moved and NOTHING ELSE did — an edge was written
@@ -4619,19 +4620,13 @@ export interface SpaceNavigation {
 }
 export interface NavChannelNode { entity: EntitySummary; childCount: number; children: NavChannelNode[] }
 
+export interface EntitySeenResult { entityId: EntityId; seenAt: string }
+
 /**
- * One kind's pair of rail counters.
- *
- * `total` is every live entity of the kind the caller may read; `unseen` is the
- * subset they have never opened, or have not opened since it last changed.
- * They are separate numbers rather than one filtered number because the rail
- * draws them in different slots — a plain trailing total and a distinct unseen
- * mark — and collapsing them would lose the distinction it renders.
- *
- * `unseen` is derived from the caller's own read marks, so it is the one
- * genuinely PER-VIEWER field here, in the same sense as
- * `EntityCounters.viewerReaction` (DEV-10). It is deliberately NOT sourced from
- * `attention`, which is space-wide and therefore cannot express "new to me".
+ * Per-viewer rail counts. `total` counts all readable, non-archived entities.
+ * `unseen` counts entities created since this member's rollout/join baseline
+ * that they have never activated in an entity list. Seen is permanent; message
+ * read cursors, edits, and ordinary detail navigation do not affect it.
  */
 export interface KindCounts { total: number; unseen: number }
 

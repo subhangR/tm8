@@ -535,6 +535,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
        * time itself inside `mark_read` — sending the client's clock would be a
        * 400, and honouring it would let a skewed client mark the future read.
        */
+      markSeen: (entityId) => ops.markSeen(entityId),
       upsertReadMark: (anchorId, lastReadAt) => {
         void lastReadAt;
         return ops.upsertReadMark(anchorId);
