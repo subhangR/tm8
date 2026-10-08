@@ -164,7 +164,7 @@ import type {
   MarkAttentionSeenInput, UnresolveAttentionBatchInput, WithdrawAttentionRequestInput,
   RaiseAttentionSignalInput, ClearAttentionSignalInput, AttentionSignal,
   KindCounts, SpaceKindCounts,
-  SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
+  SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation, SpaceUnreadCounts,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
   SessionLaunchRecord,
@@ -466,6 +466,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('task'),
     status: WorkStatusSchema,
+    statusChangedAt: IsoTimestamp.nullable().optional(),
     priority: PrioritySchema,
     axes: z.record(z.string()),
     dueDate: z.string().nullable().optional(),
@@ -1659,6 +1660,26 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     ...workspaceEventEnvelopeShape,
     type: z.enum(['edge.upsert', 'edge.deleted']),
     edge: EdgeViewSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  // Game P0c: committed criterion deltas and task status transitions.
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('task.criterion_changed'),
+    taskId: EntityIdSchema,
+    criterionId: z.string(),
+    criterionText: z.string(),
+    isDone: z.boolean(),
+    done: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('task.status_changed'),
+    taskId: EntityIdSchema,
+    from: WorkStatusSchema,
+    to: WorkStatusSchema,
     clientMutationId: z.string().optional(),
   }).strict(),
   // Spec D1 §4.6 (299).
@@ -5196,6 +5217,15 @@ export const SpaceNavigationSchema: z.ZodType<SpaceNavigation> = z.lazy(() => z.
   unreadTotal: z.number().int().nonnegative(),
   channels: z.array(NavChannelNodeSchema),
 }).strict());
+
+export const SpaceUnreadCountsSchema: z.ZodType<SpaceUnreadCounts> = z.object({
+  spaceId: SpaceIdSchema,
+  counts: z.array(z.object({
+    anchorId: EntityIdSchema,
+    unread: z.number().int().nonnegative(),
+  }).strict()).max(20_000),
+  complete: z.boolean(),
+}).strict();
 
 export const KindCountsSchema: z.ZodType<KindCounts> = z.object({
   total: z.number().int().nonnegative(),

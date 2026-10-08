@@ -4,6 +4,7 @@ import type { OperationHandler } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { identityGet, identityProfileUpdate } from '../identity.js';
+import { spacesUnreadCounts } from '../space-unread.js';
 import {
   spacesCounts,
   spacesCreate,
@@ -54,6 +55,7 @@ export function registerW2IdentitySpacesHandlers(
     'spaces.get': spacesGet(deps),
     'spaces.update': service.spacesUpdate,
     'spaces.navigation': spacesNavigation(deps),
+    'spaces.unreadCounts': spacesUnreadCounts(deps),
     'spaces.home': spacesHome(deps),
     'spaces.counts': spacesCounts(deps),
     'spaces.settings': service.spacesSettings,

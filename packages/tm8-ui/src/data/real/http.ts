@@ -158,6 +158,9 @@ export interface RequestOptions {
   query?: QueryParams;
   /** Sent as JSON. `undefined` sends no body at all (not an empty `{}`). */
   body?: unknown;
+  signal?: AbortSignal;
+  /** Best effort delivery while leaving a page; a response is still required for success. */
+  keepalive?: boolean;
 }
 
 /**
@@ -179,7 +182,7 @@ function isCommandErrorCode(code: string): code is CommandErrorCode {
  * mints its own client-side id and would otherwise drop the server's — the id
  * you need to grep the node log is the server's.
  */
-function toCollabError(status: number, body: unknown): CollabError {
+function toCollabError(status: number, body: unknown, retryAfter: string | null = null): CollabError {
   const err = (body as { error?: Record<string, unknown> } | null | undefined)?.error;
   const rawCode = typeof err?.code === 'string' ? err.code : undefined;
   const message = typeof err?.message === 'string'
@@ -201,6 +204,11 @@ function toCollabError(status: number, body: unknown): CollabError {
   // backoff on that difference: an overloaded node is answering, and every
   // fast retry against it is added load.
   details.httpStatus = status;
+  if (retryAfter !== null) {
+    const seconds = Number(retryAfter);
+    const delay = retryAfter.trim() !== '' && Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(retryAfter) - Date.now();
+    if (Number.isFinite(delay) && delay > 0) details.retryAfterMs = delay;
+  }
 
   let code: CommandErrorCode;
   if (rawCode !== undefined && isCommandErrorCode(rawCode)) {
@@ -282,8 +290,11 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
    * one AbortController. Headers-then-stalled-body is the same wedge as
    * never-connected as far as a caller awaiting `data` is concerned.
    */
-  function armTimeout(ms: number): { signal: AbortSignal; timedOut: () => boolean; disarm: () => void } {
+  function armTimeout(ms: number, external?: AbortSignal): { signal: AbortSignal; timedOut: () => boolean; disarm: () => void } {
     const controller = new AbortController();
+    const cancel = () => controller.abort();
+    if (external?.aborted) cancel();
+    else external?.addEventListener('abort', cancel, { once: true });
     let fired = false;
     const timer = setTimeout(() => {
       fired = true;
@@ -292,7 +303,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     return {
       signal: controller.signal,
       timedOut: () => fired,
-      disarm: () => clearTimeout(timer),
+      disarm: () => { clearTimeout(timer); external?.removeEventListener('abort', cancel); },
     };
   }
 
@@ -314,7 +325,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     }
     const url = `${baseUrl}${path}${buildQuery(opts.query)}`;
     const hasBody = opts.body !== undefined;
-    const guard = armTimeout(timeoutMs);
+    const guard = armTimeout(timeoutMs, opts.signal);
     // Read per request (see the option's docblock): the pass can change
     // between calls, and a stale capture here would keep acting as a viewer
     // who already signed out.
@@ -338,8 +349,10 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
           },
           ...(hasBody ? { body: JSON.stringify(opts.body) } : {}),
           signal: guard.signal,
+          ...(opts.keepalive ? { keepalive: true } : {}),
         });
       } catch (cause) {
+        if (opts.signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
         // The node is unreachable — a transport fact, distinct from any refusal
         // the server might have expressed. A timeout is the same fact observed
         // more slowly: nothing answered.
@@ -360,6 +373,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
       try {
         text = await res.text();
       } catch (cause) {
+        if (opts.signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
         if (!guard.timedOut()) throw cause;
         onTransport?.(false);
         throw new CollabError('upstream_unavailable', `the tm8 node did not answer within ${timeoutMs}ms`, {
@@ -379,7 +393,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
         });
       }
 
-      if (!res.ok) throw toCollabError(res.status, parsed);
+      if (!res.ok) throw toCollabError(res.status, parsed, res.headers?.get('retry-after') ?? null);
 
       return (parsed as { data?: T } | undefined)?.data as T;
     } finally {

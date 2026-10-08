@@ -37,26 +37,24 @@ export function freshGameSave(spaceId: string, memberId: string): GameSave {
 function browserStorage(): SaveStorage | undefined {
   try { return typeof window === 'undefined' ? undefined : window.localStorage; } catch { return undefined; }
 }
-export function readGameSave(spaceId: string, memberId: string, storage: SaveStorage | undefined = browserStorage()): GameSave {
+/** Shared decoder for browser fallback and the durable read. Never accepts another identity. */
+export function parseGameSave(parsed: unknown, spaceId: string, memberId: string): GameSave | null {
   const fallback = freshGameSave(spaceId, memberId);
   try {
-    const raw = storage?.getItem(gameSaveKey(spaceId, memberId));
-    if (!raw || raw.length > 500_000) return fallback;
-    const parsed: unknown = JSON.parse(raw);
     if (!object(parsed) || parsed.version !== 1 || parsed.spaceId !== spaceId || parsed.memberId !== memberId
-      || !Array.isArray(parsed.stack) || parsed.stack.length > MAX_STACK) return fallback;
+      || !Array.isArray(parsed.stack) || parsed.stack.length > MAX_STACK) return null;
     const current = selection(parsed.current), stack = parsed.stack.map(selection);
-    if (!current || stack.some(s => !s)) return fallback;
+    if (!current || stack.some(s => !s)) return null;
     const route = [...stack as GameMapSelection[], current];
-    if (mapKey(route[0]!) !== mapKey(fallback.current)) return fallback;
+    if (mapKey(route[0]!) !== mapKey(fallback.current)) return null;
     for (let i = 0; i < route.length; i++) {
       const map = route[i]!;
-      if (map.scope.kind === 'space' && map.scope.id !== spaceId) return fallback;
+      if (map.scope.kind === 'space' && map.scope.id !== spaceId) return null;
       if (i > 0) {
         const parent = route[i - 1]!;
         // Typed maps descend from their hub; child stories descend from a hub.
         if (parent.type !== 'hub' || (map.type !== 'hub' && (map.scope.kind !== parent.scope.kind || map.scope.id !== parent.scope.id))
-          || (map.type === 'hub' && (map.scope.kind !== 'story' || map.scope.id === parent.scope.id))) return fallback;
+          || (map.type === 'hub' && (map.scope.kind !== 'story' || map.scope.id === parent.scope.id))) return null;
       }
     }
     const maps: GameSave['maps'] = Object.create(null);
@@ -72,7 +70,14 @@ export function readGameSave(spaceId: string, memberId: string, storage: SaveSto
       maps[key] = memory;
     }
     return { ...fallback, current, stack: stack as GameMapSelection[], maps };
-  } catch { return fallback; }
+  } catch { return null; }
+}
+export function readGameSave(spaceId: string, memberId: string, storage: SaveStorage | undefined = browserStorage()): GameSave {
+  try {
+    const raw = storage?.getItem(gameSaveKey(spaceId, memberId));
+    if (raw && raw.length <= 500_000) return parseGameSave(JSON.parse(raw), spaceId, memberId) ?? freshGameSave(spaceId, memberId);
+  } catch { /* Storage and malformed bytes both fall back to a fresh map. */ }
+  return freshGameSave(spaceId, memberId);
 }
 export function writeGameSave(save: GameSave, storage: SaveStorage | undefined = browserStorage()): boolean {
   try {

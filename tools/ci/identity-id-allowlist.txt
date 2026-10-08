@@ -302,3 +302,4 @@ require_identity public.read_space_tracking_token(p_space_id uuid)  # GUARDED: t
 require_identity public.record_tracking_poll(p_entity_id uuid, p_error text)  # GUARDED: require_tracking_space on the row's own space; writes poll bookkeeping only (306_tracking_worker_scope.sql)
 require_identity public.tracking_health(p_stale_after_seconds integer)  # GUARDED: scoped by tracking_space_ids(): every space for the tracking worker, else member_space_ids(), which is pinned (306_tracking_worker_scope.sql)
 require_identity public.tracking_sweep_staleness(p_stale_after_seconds integer)  # GUARDED: tracking worker only (42501 otherwise) (306_tracking_worker_scope.sql)
+setting internal.stamp_task_initial_status()  # RESTORE-GUARD: supplied/null clocks only for owner bulk imports outside app/delivery roles and without authenticated identity claims (317); ordinary inserts always stamp wall time

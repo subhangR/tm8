@@ -51,6 +51,7 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   '23505': 'invariant_violation',
   '40001': 'version_conflict',
   '53400': 'limit_exceeded',
+  'TM429': 'rate_limited', // Map per-actor rate/cap refusal (315).
   '54000': 'payload_too_large',
   '0A000': 'not_implemented',
   // Forms (migration 209). Custom class TF, one SQLSTATE per refusal, so the

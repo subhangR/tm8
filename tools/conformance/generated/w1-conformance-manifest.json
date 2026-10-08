@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d",
+  "catalogDigest": "sha256:7861a703e4203dc934e3c7289fb17a2a7f240067ce98a181ca4e71d57b5f2ed2",
   "catalog": {
-    "total": 359,
-    "v1": 357,
+    "total": 373,
+    "v1": 371,
     "reserved": 2,
-    "http": 357,
+    "http": 371,
     "ws": 1,
-    "registerableV1Http": 355,
+    "registerableV1Http": 369,
     "methods": {
-      "GET": 117,
-      "POST": 176,
-      "PATCH": 20,
-      "DELETE": 23,
-      "PUT": 21,
+      "GET": 121,
+      "POST": 181,
+      "PATCH": 21,
+      "DELETE": 24,
+      "PUT": 24,
       "WS": 2
     },
     "kinds": {
-      "read": 123,
-      "command": 234,
+      "read": 128,
+      "command": 243,
       "stream": 2
     },
-    "uniqueNames": 359,
-    "uniqueBindings": 358
+    "uniqueNames": 373,
+    "uniqueBindings": 372
   },
   "reservedOperations": [
     "search.query",
@@ -200,6 +200,90 @@
   ],
   "routes": {
     "http": [
+      {
+        "operation": "maps.open",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/maps/open",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.context",
+        "method": "GET",
+        "path": "/v2/maps/:mapId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.place",
+        "method": "PUT",
+        "path": "/v2/maps/:mapId/placements",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.move",
+        "method": "PATCH",
+        "path": "/v2/maps/:mapId/placements/:itemId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.remove",
+        "method": "DELETE",
+        "path": "/v2/maps/:mapId/placements/:itemId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.paint",
+        "method": "PUT",
+        "path": "/v2/maps/:mapId/terrain",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.undo",
+        "method": "POST",
+        "path": "/v2/maps/:mapId/undo",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.revert",
+        "method": "POST",
+        "path": "/v2/maps/:mapId/revert",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.activity.append",
+        "method": "POST",
+        "path": "/v2/maps/:mapId/activity",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.activity.list",
+        "method": "GET",
+        "path": "/v2/maps/:mapId/activity",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.navigation.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/maps/navigation",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "maps.navigation.save",
+        "method": "PUT",
+        "path": "/v2/spaces/:spaceId/maps/navigation",
+        "status": "registered",
+        "source": "server-router"
+      },
       {
         "operation": "mcp.credentials.rotate",
         "method": "POST",
@@ -484,6 +568,20 @@
         "operation": "spaces.navigation",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/navigation",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.unreadCounts",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/unread-counts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tasks.cancellationObservations",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/tasks/cancellation-observations",
         "status": "registered",
         "source": "server-router"
       },
@@ -2917,7 +3015,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 327
+    "unimplementedV1Http": 341
   },
   "schemas": {
     "additive": {
@@ -3083,6 +3181,202 @@
   },
   "help": {
     "operations": [
+      {
+        "operation": "maps.open",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.open",
+        "intentTags": [
+          "maps",
+          "open"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.context",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.context",
+        "intentTags": [
+          "maps",
+          "context"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.place",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.place",
+        "intentTags": [
+          "maps",
+          "place"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.move",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.move",
+        "intentTags": [
+          "maps",
+          "move"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.remove",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.remove",
+        "intentTags": [
+          "maps",
+          "remove"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.paint",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.paint",
+        "intentTags": [
+          "maps",
+          "paint"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.undo",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.undo",
+        "intentTags": [
+          "maps",
+          "undo"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.revert",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.revert",
+        "intentTags": [
+          "maps",
+          "revert"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.activity.append",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.activity.append",
+        "intentTags": [
+          "maps",
+          "activity",
+          "append"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.activity.list",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.activity.list",
+        "intentTags": [
+          "maps",
+          "activity",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.navigation.get",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.navigation.get",
+        "intentTags": [
+          "maps",
+          "navigation",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "maps.navigation.save",
+        "noun": "map",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/maps.navigation.save",
+        "intentTags": [
+          "maps",
+          "navigation",
+          "save"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
       {
         "operation": "mcp.credentials.rotate",
         "noun": "mcp",
@@ -3756,6 +4050,40 @@
         "intentTags": [
           "spaces",
           "navigation"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.unreadCounts",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.unreadCounts",
+        "intentTags": [
+          "spaces",
+          "unread",
+          "counts"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tasks.cancellationObservations",
+        "noun": "task",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tasks.cancellationObservations",
+        "intentTags": [
+          "tasks",
+          "cancellation",
+          "observations"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
