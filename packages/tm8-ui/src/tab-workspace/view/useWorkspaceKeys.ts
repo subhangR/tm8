@@ -14,6 +14,7 @@ import { getBrowserSourceStore } from '../runtime/browserSourceStore';
 import { getRailStore, workspacePinnedKinds } from '../runtime/railStore';
 import { activeTab, activeTabId, visibleTabs } from '../runtime/selectors';
 import { isWorkspaceKind, TAB_SUBVIEWS, type KindId, type TabSubview } from '../runtime/types';
+import { openSideSection, sidePatch, sideSectionOfSubview } from './sideSection';
 
 /** The launch verbs a panel draws as its primary (`panel-primary-{ref}`), in preference order. */
 const LAUNCH_PRIMARIES = ['run', 'launch-session', 'coordinate'];
@@ -33,7 +34,7 @@ export function focusWorkBrowser(): boolean {
 
 /** Focus the open tab's Links list; it puts its row cursor on the first row. */
 export function focusLinksList(): boolean {
-  const list = document.querySelector<HTMLElement>('[data-testid="tws-content"] [data-testid="pn-peers-list"]');
+  const list = document.querySelector<HTMLElement>('[data-testid="tws-content"] [data-testid="tws-side-links-list"]');
   if (!list) return false;
   list.focus();
   return true;
@@ -132,11 +133,16 @@ export function handleWorkKey(
       if (!entityTab) return true;
       const subview = key.ref as TabSubview;
       if (!TAB_SUBVIEWS.includes(subview)) return true;
-      dispatch({ command: 'workspace.tabs.setUi', args: { tabId: entityTab.id, patch: { subview } }, source: 'keyboard' });
+      /* Links and Messages open in the side column; the body stays the entity
+         (task 01a122b9). The entity's own key closes the column. */
+      const section = sideSectionOfSubview(subview);
+      const chatAvailable = getKindAdapter(entityTab.kind).supportsChat;
+      const patch = section ? sidePatch(entityTab, section, chatAvailable, false) : { chat: { open: false } };
+      dispatch({ command: 'workspace.tabs.setUi', args: { tabId: entityTab.id, patch }, source: 'keyboard' });
       // `t l` lands IN the links, not merely on them: the list takes focus so
       // j/k/Enter work at once (task 01a11567). Nothing linked ⇒ no list, and
-      // the section switch alone is the whole effect.
-      if (subview === 'connections') afterPaint(() => void focusLinksList());
+      // opening the section alone is the whole effect.
+      if (section === 'links') afterPaint(() => void focusLinksList());
       return true;
     }
     case 'work.tab.chat':
@@ -145,16 +151,16 @@ export function handleWorkKey(
         notify('This tab has no chat.');
         return true;
       }
-      const open = entityTab.ui.chat?.open ?? false;
+      const showing = openSideSection(entityTab, true) === 'chat';
       const toggle = key.command === 'work.tab.chat';
-      if (toggle || !open) {
+      if (toggle || !showing) {
         dispatch({
           command: 'workspace.tabs.setUi',
-          args: { tabId: entityTab.id, patch: { chat: { open: toggle ? !open : true } } },
+          args: { tabId: entityTab.id, patch: sidePatch(entityTab, 'chat', true, toggle) },
           source: 'keyboard',
         });
       }
-      if (!toggle || !open) {
+      if (!toggle || !showing) {
         afterPaint(() =>
           document
             .querySelector<HTMLElement>('[data-testid="tws-chat"] textarea, [data-testid="tws-chat"] [contenteditable="true"]')

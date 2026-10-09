@@ -25,6 +25,7 @@ import { useWorkspace, useWorkspaceState } from './context';
 import { ActionStrip } from './ActionStrip';
 import { mayTakeFocus, scrollContentForKey } from './contentScroll';
 import { LinkedTrail } from './LinkedTrail';
+import { sideSectionOfSubview } from './sideSection';
 import { StartSurface } from './StartSurface';
 import './content.css';
 
@@ -102,6 +103,22 @@ function EntityTab({
     [handleRef, tabId],
   );
 
+  /* THE BODY IS ALWAYS THE ENTITY (task 01a122b9). Links and Messages live in
+     the side column; a record still naming one as its subview — restored from
+     before, or set by the panel's own "open messages" — becomes that side
+     section, and the body never swaps. */
+  const { dispatch } = useWorkspace();
+  const legacySection = sideSectionOfSubview(tab.ui.subview);
+  useEffect(() => {
+    if (!legacySection) return;
+    dispatch({
+      command: 'workspace.tabs.setUi',
+      args: { tabId: tab.id, patch: { subview: 'entity', chat: { open: true, section: legacySection } } },
+      source: 'system',
+    });
+  }, [legacySection, dispatch, tab.id]);
+  const bodyTab: EntityTabRecord = legacySection ? { ...tab, ui: { ...tab.ui, subview: 'entity' } } : tab;
+
   return (
     <EntityChromeContext.Provider value={chrome}>
       <div className="tws-entity">
@@ -112,9 +129,9 @@ function EntityTab({
           <div className="tws-entity-row">
             <div ref={setMainEl} className="tws-entity-main tws-entity-host">
               <TitleBar tab={tab} host={mainEl} setSlot={chrome.setTitleSlot} />
-              <EntityTabBody tab={tab} adapter={getKindAdapter(tab.kind)} onHandle={onHandle} />
+              <EntityTabBody tab={bodyTab} adapter={getKindAdapter(tab.kind)} onHandle={onHandle} />
             </div>
-            {/* Right-hand slot: the per-tab chat dock (workstream G). */}
+            {/* Right-hand slot: the side column — Chat · Messages · Links. */}
             <ChatDock tab={tab} />
           </div>
           {/* The entity action strip, pinned to the far right in every state. */}

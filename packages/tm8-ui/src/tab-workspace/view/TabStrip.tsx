@@ -33,6 +33,7 @@ import type { Source, TabId, TabRecord } from '../runtime/types';
 import { ConfirmDiscard } from './ConfirmDiscard';
 import { useWorkspace, useWorkspaceState } from './context';
 import { ScopePicker } from './ScopePicker';
+import { openSideSection, sidePatch, sideSectionOfSubview } from './sideSection';
 import { entityMenuItems, readTranscriptText, type TabMenuItem } from './tabEntityMenu';
 import { usePanelPrimaries } from '../../views/usePanelPrimaries';
 import { useFreshGlow, type FreshGlowAttrs } from '../../domain/useFreshGlow';
@@ -831,6 +832,9 @@ export function TabStrip({ leading }: TabStripProps = {}) {
     if (tab.type === 'entity') {
       const id = tab.entityId;
       const row = menuDetail ?? menuSummary;
+      const chatAvailable = getKindAdapter(tab.kind).supportsChat;
+      const side = openSideSection(tab, chatAvailable);
+      const sideSubview = side === 'links' ? 'connections' : side === 'messages' ? 'messages' : 'entity';
       const ctx: ActionContext = {
         spaceId: spaceId as SpaceId,
         entityId: id as never,
@@ -846,7 +850,8 @@ export function TabStrip({ leading }: TabStripProps = {}) {
           kind: tab.kind,
           noun: getKindAdapter(tab.kind).noun,
           title: row?.title ?? lastKnownTitles.get(id) ?? '',
-          subview: tab.ui.subview,
+          /* The menu's sections now read the side column (task 01a122b9). */
+          subview: sideSubview,
           sections: getKind(tab.kind as never).panel.composition !== 'canvas',
           ctx,
           wired: primaries.wiredActions,
@@ -854,7 +859,9 @@ export function TabStrip({ leading }: TabStripProps = {}) {
         {
           showSubview: (subview) => {
             activateTab(tab.id, 'click');
-            dispatch({ command: 'workspace.tabs.setUi', args: { tabId: tab.id, patch: { subview } }, source: 'click' });
+            const section = sideSectionOfSubview(subview);
+            const patch = section ? sidePatch(tab, section, chatAvailable, false) : { chat: { open: false } };
+            dispatch({ command: 'workspace.tabs.setUi', args: { tabId: tab.id, patch }, source: 'click' });
           },
           runVerb: (ref) => primaries.forEntity(id)?.(ref),
           copy: (text, what) => void copyText(text, what),

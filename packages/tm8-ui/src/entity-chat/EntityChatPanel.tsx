@@ -43,7 +43,10 @@ export interface EntityChatPanelProps {
   onOpenSubject?: ((id: EntityId) => void) | undefined;
   /** A switcher pick or `+ New`. The host REPLACES the slot's thread (§3.1). */
   onSelectThread(thread: EntityId | 'new'): void;
-  onClose(): void;
+  /** Absent ⇒ no close button: a host whose column has its own close. */
+  onClose?: (() => void) | undefined;
+  /** Host controls drawn before `+ New` (the Workspace's list toggle). */
+  actions?: ReactNode;
   /** The conversation (or, for `new`, the composer and anything gating it). */
   children: ReactNode;
   /** For "now" in the switcher's last-turn column; injectable for tests. */
@@ -69,6 +72,7 @@ export function EntityChatPanel({
   onOpenSubject,
   onSelectThread,
   onClose,
+  actions,
   children,
   now,
 }: EntityChatPanelProps) {
@@ -153,6 +157,7 @@ export function EntityChatPanel({
             </ul>
           ) : null}
         </div>
+        {actions}
         <button
           type="button"
           className="ecp__new"
@@ -162,16 +167,18 @@ export function EntityChatPanel({
         >
           + New
         </button>
-        <button
-          type="button"
-          className="ecp__close"
-          aria-label="Close chat"
-          title="Close chat"
-          data-testid="entity-chat-close"
-          onClick={onClose}
-        >
-          ×
-        </button>
+        {onClose ? (
+          <button
+            type="button"
+            className="ecp__close"
+            aria-label="Close chat"
+            title="Close chat"
+            data-testid="entity-chat-close"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        ) : null}
       </header>
       <div className="ecp__body">{children}</div>
     </section>

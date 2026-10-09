@@ -3,7 +3,7 @@
  * move and setUi.
  */
 import { findEntityTab, isEligible, kindInScope, visibleTabIds } from '../selectors.js';
-import { isWorkspaceKind, TAB_SUBVIEWS, UI_SOURCES } from '../types.js';
+import { isWorkspaceKind, SIDE_SECTIONS, TAB_SUBVIEWS, UI_SOURCES } from '../types.js';
 import type { EntityTabRecord, Source, TabId, TabUi, TrailCrumb } from '../types.js';
 import {
   activate,
@@ -40,6 +40,7 @@ function isUiPatch(value: unknown): value is Partial<TabUi> {
     if (!isRecord(chat) || typeof chat.open !== 'boolean') return false;
     if (chat.width !== undefined && !isFiniteNumber(chat.width)) return false;
     if (chat.threadId !== undefined && typeof chat.threadId !== 'string') return false;
+    if (chat.section !== undefined && !(SIDE_SECTIONS as readonly unknown[]).includes(chat.section)) return false;
   }
   return true;
 }

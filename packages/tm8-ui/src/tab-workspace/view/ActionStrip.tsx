@@ -5,8 +5,9 @@
  *  - top, the kind's own actions: the body's controls (session surfaces, a
  *    frame's controls, a reader's Edit / Download, forms waiting), its own
  *    registry verbs (Edit, Terminate…, Transfer), Connectors and Attach;
- *  - bottom, the actions every kind shares: Entity · Links · Messages, Run ·
- *    Chat, Expand · More.
+ *  - bottom, the actions every kind shares: Chat · Messages · Links (each
+ *    opens the side column beside the body — task 01a122b9), Run, Expand ·
+ *    More. A split strip (Craft) keeps Entity · Links · Messages instead.
  * The panel's verbs and controls are its own components, portalled into the
  * slots here, so permissions, confirmations and flows are unchanged. One
  * component for every kind. Workstream E.
@@ -22,7 +23,8 @@ import { useAlwaysDarkTheme } from '../../theme/useAlwaysDarkTheme';
 import { build, emptyPanels, normalize } from '../../routes';
 import { useEntityChrome, type EntityChromeContextValue } from '../adapters/entity';
 import { getKindAdapter } from '../adapters/registry';
-import { TAB_SUBVIEWS, type EntityTabRecord, type TabSubview } from '../runtime/types';
+import { TAB_SUBVIEWS, type EntityTabRecord, type SideSection, type TabSubview } from '../runtime/types';
+import { openSideSection, sidePatch } from './sideSection';
 import { useWorkspace, useWorkspaceState } from './context';
 import './content.css';
 
@@ -244,7 +246,17 @@ export function ActionStrip({ tab, owner }: ActionStripProps) {
 
   const setSubview = (subview: TabSubview) =>
     dispatch({ command: 'workspace.tabs.setUi', args: { tabId: commonTab.id, patch: { subview } }, source: 'click' });
-  const chatOpen = tab.ui.chat?.open ?? false;
+  const chatAvailable = adapter.supportsChat;
+  /* The tab's side column (sideSection.ts). In a split the page's chat toggle
+     is the only side control, and it reads the page's own record. */
+  const sideOpen = openSideSection(tab, chatAvailable);
+  const chatOpen = owner ? (tab.ui.chat?.open ?? false) : sideOpen === 'chat';
+  const toggleSide = (section: SideSection) =>
+    dispatch({
+      command: 'workspace.tabs.setUi',
+      args: { tabId: tab.id, patch: sidePatch(tab, section, chatAvailable) },
+      source: 'click',
+    });
   const messages = commonDetail ? countMessages(commonDetail, gate.data.messagesOf(commonTab.entityId)) : 0;
 
   const copyLink = () => {
@@ -271,11 +283,13 @@ export function ActionStrip({ tab, owner }: ActionStripProps) {
         aria-pressed={chatOpen}
         data-testid="tws-chat-toggle"
         onClick={() =>
-          dispatch({
-            command: 'workspace.tabs.setUi',
-            args: { tabId: tab.id, patch: { chat: { open: !chatOpen } } },
-            source: 'click',
-          })
+          owner
+            ? dispatch({
+                command: 'workspace.tabs.setUi',
+                args: { tabId: tab.id, patch: { chat: { open: !chatOpen } } },
+                source: 'click',
+              })
+            : toggleSide('chat')
         }
       >
         <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
@@ -356,64 +370,118 @@ export function ActionStrip({ tab, owner }: ActionStripProps) {
 
       {/* BOTTOM — the actions every kind shares. */}
       <div className="tws-astrip-section tws-astrip-section--common">
-        {commonDetail && !canvas ? (
-          <div className="tws-astrip-cluster" role="radiogroup" aria-label="Section">
-            {TAB_SUBVIEWS.map((subview) => {
-              const label = sectionLabel(subview, commonAdapter.noun);
-              const selected = commonTab.ui.subview === subview;
-              return (
-                <button
-                  key={subview}
-                  type="button"
-                  role="radio"
-                  className="tws-astrip-btn tws-astrip-seg"
-                  aria-checked={selected}
-                  aria-label={subview === 'messages' && messages > 0 ? `${label}, ${messages}` : label}
-                  data-tip={label}
-                  {...(subview === 'entity' ? { 'data-tip-stats': '' } : {})}
-                  data-testid={`tws-section-${subview}`}
-                  onClick={() => setSubview(subview)}
-                >
-                  {subview === 'entity' ? (
-                    <KindIcon kind={commonTab.kind} size={14} />
-                  ) : subview === 'connections' ? (
-                    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                      <path
-                        d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                      <path
-                        d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z M5 6h6M5 8h4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                  {subview === 'messages' && messages > 0 ? (
-                    <span className="tws-astrip-badge" aria-hidden="true">
-                      {messages > 99 ? '99+' : messages}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
+        {/* THE SIDE COLUMN'S SECTIONS (task 01a122b9): Chat · Messages · Links
+            each open the column beside the body, and the lit one closes it.
+            The body never changes. A split strip (Craft) keeps the owner's
+            sections, whose body is the host's to swap. */}
+        {owner ? (
+          commonDetail && !canvas ? (
+            <div className="tws-astrip-cluster" role="radiogroup" aria-label="Section">
+              {TAB_SUBVIEWS.map((subview) => {
+                const label = sectionLabel(subview, commonAdapter.noun);
+                const selected = commonTab.ui.subview === subview;
+                return (
+                  <button
+                    key={subview}
+                    type="button"
+                    role="radio"
+                    className="tws-astrip-btn tws-astrip-seg"
+                    aria-checked={selected}
+                    aria-label={subview === 'messages' && messages > 0 ? `${label}, ${messages}` : label}
+                    data-tip={label}
+                    {...(subview === 'entity' ? { 'data-tip-stats': '' } : {})}
+                    data-testid={`tws-section-${subview}`}
+                    onClick={() => setSubview(subview)}
+                  >
+                    {subview === 'entity' ? (
+                      <KindIcon kind={commonTab.kind} size={14} />
+                    ) : subview === 'connections' ? (
+                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                        <path
+                          d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                        <path
+                          d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z M5 6h6M5 8h4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                    {subview === 'messages' && messages > 0 ? (
+                      <span className="tws-astrip-badge" aria-hidden="true">
+                        {messages > 99 ? '99+' : messages}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null
+        ) : (
+          <div className="tws-astrip-cluster" role="group" aria-label="Side panel" data-testid="tws-astrip-side">
+            {chatToggle}
+            {commonDetail && !canvas
+              ? (['messages', 'links'] as const).map((section) => {
+                  const label = section === 'messages' ? 'Messages' : 'Links';
+                  const pressed = sideOpen === section;
+                  return (
+                    <button
+                      key={section}
+                      type="button"
+                      className="tws-astrip-btn tws-astrip-seg"
+                      aria-pressed={pressed}
+                      aria-label={section === 'messages' && messages > 0 ? `${label}, ${messages}` : label}
+                      data-tip={label}
+                      data-testid={`tws-section-${section === 'links' ? 'connections' : 'messages'}`}
+                      onClick={() => toggleSide(section)}
+                    >
+                      {section === 'links' ? (
+                        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                          <path
+                            d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.3"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                          <path
+                            d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z M5 6h6M5 8h4"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                      {section === 'messages' && messages > 0 ? (
+                        <span className="tws-astrip-badge" aria-hidden="true">
+                          {messages > 99 ? '99+' : messages}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })
+              : null}
           </div>
-        ) : null}
+        )}
 
         <div className="tws-astrip-cluster">
           {/* Run, from the panel's own bar (flows and refusals unchanged). */}
           <div ref={commonChrome?.setCommonVerbsSlot} className="tws-astrip-verbs tws-astrip-common" data-testid="tws-astrip-common" />
-          {/* Split: the owner's chat is the host's own pane; the PAGE's chat is up top. */}
-          {owner ? null : chatToggle}
         </div>
 
         <div className="tws-astrip-cluster" ref={menuRef}>

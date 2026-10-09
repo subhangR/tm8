@@ -53,7 +53,7 @@ export const PANEL_TABS: readonly PanelTab[] = ['content', 'connections', 'discu
  * clamp — and the panel that reads it is one component either way.
  */
 export type ContentSurface =
-  | 'terminal' | 'transcript' | 'changes' | 'git' | 'debug' | 'graph'
+  | 'terminal' | 'transcript' | 'changes' | 'git' | 'debug' | 'graph' | 'context'
   | 'screen' | 'logs';
 export const CONTENT_SURFACES: readonly ContentSurface[] = [
   'terminal',
@@ -66,6 +66,10 @@ export const CONTENT_SURFACES: readonly ContentSurface[] = [
   'git',
   'debug',
   'graph',
+  // A session's LAUNCH CONTEXT — every selection that went into its launch.
+  // It was a section of the Links page; with Links moved to the side column it
+  // is one of the session's own surfaces (task 01a122b9).
+  'context',
   // container (Design §13.1: content surfaces `screen | terminal | logs`)
   'screen',
   'logs',

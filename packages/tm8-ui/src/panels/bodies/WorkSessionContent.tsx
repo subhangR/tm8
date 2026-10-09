@@ -65,6 +65,7 @@ const PHONE_SURFACES: readonly ContentSurface[] = ['transcript', 'terminal', 'ch
 const PHONE_REFUSED: Readonly<Partial<Record<ContentSurface, string>>> = {
   git: 'The worktree rail — status, diff, and the checkpoint, rollback, commit and merge verbs — has no phone arrangement. A diff read at this width is a diff misread. This session’s git facts are in the entity’s own detail.',
   debug: 'The session’s CLI journal is a wide monospace log for diagnosing an agent. It has no phone arrangement, and wrapping it to fit would not make it readable.',
+  context: 'The launch context is a long record of every selection that went into this session. It has no phone arrangement yet; open the session on a desktop to read it.',
   graph: 'The graph is refused on phones outright, at the route as well as here — so this is the same refusal you would meet by following a graph link, not a second opinion about it.',
 };
 
@@ -128,6 +129,11 @@ export interface WorkSessionContentProps {
    * for the same reason: unmounting is what stops its poll.
    */
   graph?: ReactNode;
+  /**
+   * The LAUNCH CONTEXT surface — every selection that went into this session's
+   * launch (task 01a122b9). Mounted only while selected, like Graph.
+   */
+  launchContext?: ReactNode;
   onSurfaceChange?: (surface: ContentSurface) => void;
   /**
    * USER RULING 2026-07-31 — the surface tabs belong "at the top row at the
@@ -177,6 +183,7 @@ export function WorkSessionContent({
   debug,
   git,
   graph,
+  launchContext,
   onSurfaceChange,
   switchSlot = null,
 }: WorkSessionContentProps) {
@@ -197,7 +204,7 @@ export function WorkSessionContent({
   // THE PHONE OFFERS THREE, TRANSCRIPT FIRST. See PHONE_SURFACES above for why
   // three are refused rather than narrowed, and PHONE_REFUSED for each reason.
   const surfaces = useMemo<ContentSurface[]>(
-    () => (oneSurface ? [...PHONE_SURFACES] : ['terminal', 'transcript', 'changes', 'git', 'debug', 'graph']),
+    () => (oneSurface ? [...PHONE_SURFACES] : ['terminal', 'transcript', 'changes', 'git', 'debug', 'graph', 'context']),
     [oneSurface],
   );
   const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
@@ -641,6 +648,17 @@ export function WorkSessionContent({
             {/* Mounted only while selected — same reason as Debug: unmounting is
                 what stops the connection poll. */}
             {surface === 'graph' ? graph : null}
+          </div>
+          <div
+            id={panelId('context')}
+            role="tabpanel"
+            aria-labelledby={tabId('context')}
+            aria-hidden={surface !== 'context'}
+            className="pn-work-session-content__surface pn-work-session-content__surface--scroll"
+            data-active={surface === 'context' ? 'true' : 'false'}
+            data-testid="work-session-context-surface"
+          >
+            {surface === 'context' ? launchContext : null}
           </div>
         </>
       )}

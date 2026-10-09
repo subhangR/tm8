@@ -44,6 +44,15 @@ export type TabScope =
 export type TabSubview = 'entity' | 'connections' | 'messages';
 export const TAB_SUBVIEWS: readonly TabSubview[] = ['entity', 'connections', 'messages'];
 
+/**
+ * ADDITIVE (task 01a122b9): which section the tab's side column shows. The
+ * column is the one the chat dock always was — `chat.open` and the shared
+ * `layout.chatWidth` — so Chat, Messages and Links share one open state and
+ * one width. Absent ⇒ `chat`, which is what every record before it meant.
+ */
+export type SideSection = 'chat' | 'messages' | 'links';
+export const SIDE_SECTIONS: readonly SideSection[] = ['chat', 'messages', 'links'];
+
 export interface TrailCrumb {
   entityId: string;
   kind: KindId;
@@ -55,7 +64,7 @@ export type TabUi = {
   subview: TabSubview;
   scrollTop?: number;
   trail?: TrailCrumb[];
-  chat?: { open: boolean; width?: number; threadId?: string | 'new' };
+  chat?: { open: boolean; width?: number; threadId?: string | 'new'; section?: SideSection };
 };
 
 export type EntityTabRecord = { id: TabId; type: 'entity'; kind: KindId; entityId: string; ui: TabUi };

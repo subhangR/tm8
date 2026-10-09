@@ -521,6 +521,13 @@ export const SURFACE_ART = {
   graph: VIEW_ART.graph,
 
   /**
+   * A SHEET WITH AN ARROW INTO IT — what was handed to the session when it
+   * launched: the selections, the prompt, the files. The arrow says "went in",
+   * which is the whole difference from `transcript` (what came out).
+   */
+  context: ['M5.4 2.8h6.2a1 1 0 0 1 1 1v8.4a1 1 0 0 1-1 1H5.4', 'M2.4 8h6.4', 'M6.4 5.6 8.8 8l-2.4 2.4'],
+
+  /**
    * A DISPLAY ON A STAND — the container's `screen` surface (§6.2), the RFB /
    * frame view onto a machine's desktop.
    *
@@ -562,6 +569,7 @@ export const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
   git: 'Git',
   debug: 'Debug',
   graph: 'Graph',
+  context: 'Launch context',
   screen: 'Screen',
   logs: 'Logs',
 };
