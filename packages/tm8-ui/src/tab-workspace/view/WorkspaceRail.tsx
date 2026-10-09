@@ -56,10 +56,10 @@ import { railCountLabel, railKindLabel, isRailCountKind, useRailCounts, type Rai
 import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART, RAIL_USER_ART } from './railArt';
 import { RailAttention, RailStatus } from './RailStatus';
 
-/* Settings left the rail in round 2 (R2-D2): it is a mode in the view selector. */
-const BOTTOM_GROUP_IDS = ['craft', 'help'] as const;
+const BOTTOM_GROUP_IDS = ['craft', 'settings', 'help'] as const;
 const BOTTOM_ART: Record<(typeof BOTTOM_GROUP_IDS)[number], readonly string[]> = {
   craft: VIEW_ART.craft,
+  settings: VIEW_ART.settings,
   help: VIEW_ART.help,
 };
 
