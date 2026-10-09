@@ -229,6 +229,13 @@ describe('the palette', () => {
       expect(rowLabels(palette)).not.toContain(retired);
     }
   });
+
+  it('lists Channels once (the view row, not the kind row too)', async () => {
+    const view = mount(at('/graph'));
+    await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
+    const palette = await openPalette(view);
+    expect(rowLabels(palette).filter((label) => label === 'Channels')).toHaveLength(1);
+  });
 });
 
 describe('Work is a remembered place', () => {
