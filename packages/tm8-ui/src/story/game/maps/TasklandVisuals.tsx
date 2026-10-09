@@ -79,7 +79,7 @@ function Beam({ position, size, color }: { position: [number, number, number]; s
 /** A triangular canvas shelter with ridge, open entrance, stakes and survey board. */
 function SurveyorTent() {
   return <group name="taskland-surveyor-tent">
-    <mesh position={[0, .35, 0]} rotation={[0, 0, Math.PI / 2]} castShadow><cylinderGeometry args={[.52, .52, .85, 3]}/><meshStandardMaterial color="#ead7aa" roughness={.95}/></mesh>
+    <mesh position={[0, .35, 0]} rotation={[0, 0, Math.PI / 2]} castShadow><cylinderGeometry args={[.52, .52, .85, 3]}/><meshStandardMaterial color={colors.surveyorCanvas} roughness={.95}/></mesh>
     <Beam position={[.44,.27,0]} size={[.025,.54,.025]} color={colors.flagPost}/>
     <Beam position={[-.44,.27,0]} size={[.025,.54,.025]} color={colors.flagPost}/>
     <Beam position={[.47,.22,0]} size={[.025,.32,.28]} color={colors.contactShadow}/>

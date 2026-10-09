@@ -174,10 +174,18 @@ describe('CLI help mode', () => {
   it('explains an empty noun instead of implying the commands do not exist', () => {
     render(<PromptsScreen />);
     toCli();
-    fireEvent.click(within(screen.getByLabelText('CLI nouns')).getByText('task'));
+    fireEvent.click(within(screen.getByLabelText('CLI nouns')).getByText('pr'));
     const empty = document.querySelector('.pr-list__empty')!;
-    expect(empty.textContent).toContain('entities.commands.complete');
+    expect(empty.textContent).toContain('tracking.pr.merge');
     expect(empty.textContent).not.toContain('No operation matches');
+  });
+
+  it('lists the Taskland cancellation read under the task noun', () => {
+    render(<PromptsScreen />);
+    toCli();
+    fireEvent.click(within(screen.getByLabelText('CLI nouns')).getByText('task'));
+    expect(within(screen.getByLabelText('Operations')).getByRole('button', { name: /tasks\.cancellationObservations/ })).toBeTruthy();
+    expect(document.querySelector('.pr-list__empty')).toBeNull();
   });
 
   it('carries the pinned catalog digest, so the UI and the CLI agree', () => {

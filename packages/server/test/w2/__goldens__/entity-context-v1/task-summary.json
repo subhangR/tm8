@@ -32,6 +32,7 @@
     "state": {
       "kind": "task",
       "status": "open",
+      "statusChangedAt": null,
       "priority": "medium",
       "axes": {},
       "dueDate": null,
@@ -73,6 +74,6 @@
     "eventSeq": 4211
   },
   "cursors": {},
-  "byteSize": 1281,
+  "byteSize": 1304,
   "truncated": false
 }

@@ -32,6 +32,7 @@
     "state": {
       "kind": "task",
       "status": "open",
+      "statusChangedAt": null,
       "priority": "medium",
       "axes": {},
       "dueDate": null,
@@ -91,6 +92,7 @@
       "state": {
         "kind": "task",
         "status": "open",
+        "statusChangedAt": null,
         "priority": "medium",
         "axes": {},
         "dueDate": null,
@@ -128,6 +130,6 @@
   "cursors": {
     "children": "eyJ2IjoyLCJrIjpbImF3Nkh5MTdhT0EzQ1E3ZDVkWkFWTlYiLDEsIjAwMDAwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMTQwMCJdfQ"
   },
-  "byteSize": 6269,
+  "byteSize": 6315,
   "truncated": true
 }

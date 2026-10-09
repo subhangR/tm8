@@ -32,6 +32,7 @@
     "state": {
       "kind": "task",
       "status": "open",
+      "statusChangedAt": null,
       "priority": "medium",
       "axes": {},
       "dueDate": null,
@@ -140,6 +141,6 @@
     "messages": null,
     "activity": "eyJ2IjoyLCJrIjpbIjY2OWU5M2FiM2FjOTg1YjdlMDc5YWY2YzhkYmM5NGJjMmEwZmQ0ZDBiZGRkNzg2NmEyZmE1MGUxZmUyNmExNWUiLG51bGwsIjAwMDAwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMGQwOCJdfQ"
   },
-  "byteSize": 2690,
+  "byteSize": 2713,
   "truncated": false
 }

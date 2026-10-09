@@ -194,6 +194,12 @@
 /* Game atlas: fixed toy-town art direction, shared by WebGL and studio UI.
    Exact measured colours retained from the reviewed visual foundation. */
 :root {
+  /* Existing Taskland art colours, centralized without changing their RGB values. */
+  --pn-game-cargo: #d6ad72;
+  --pn-game-cart: #b28b58;
+  --pn-game-cart-wheel: #4c514d;
+  --pn-game-collapse-dust: #b4a48a;
+  --pn-game-surveyor-canvas: #ead7aa;
   --pn-game-hub-accent: #4f8c80;
   --pn-game-hub-ground: #adc6a0;
   --pn-game-taskland-accent: #d3a05e;

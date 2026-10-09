@@ -1,10 +1,12 @@
 import { Suspense, useCallback, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Group } from 'three';
+import { readStudioPalette } from '../studioPalette';
 import { MapAsset } from './MapAsset';
 import { emptyTasklandMotion, reconcileTasklandMotion, sampleTasklandTransition, suppressedTasklandPlaces,
   type TasklandMotionInput, type TasklandTransition } from '../taskland-motion';
 
+const colors = readStudioPalette();
 const motionNow = () => performance.now();
 /** No private model snapshot: the event controller supplies both authoritative builds. */
 export function useTasklandMotion(input: TasklandMotionInput & { now?: () => number }) {
@@ -22,15 +24,15 @@ export function useTasklandMotion(input: TasklandMotionInput & { now?: () => num
 }
 
 function CargoFallback() {
-  return <mesh position-y={.45}><boxGeometry args={[.65,.9,.65]}/><meshStandardMaterial color="#d6ad72"/></mesh>;
+  return <mesh position-y={.45}><boxGeometry args={[.65,.9,.65]}/><meshStandardMaterial color={colors.cargo}/></mesh>;
 }
 function Cart({ width, depth }: { width: number; depth: number }) {
   return <group name="taskland-cart">
-    <mesh position-y={.27} castShadow receiveShadow><boxGeometry args={[width,.18,depth]}/><meshStandardMaterial color="#b28b58" roughness={.9}/></mesh>
+    <mesh position-y={.27} castShadow receiveShadow><boxGeometry args={[width,.18,depth]}/><meshStandardMaterial color={colors.cart} roughness={.9}/></mesh>
     {[-1,1].flatMap(x => [-1,1].map(z => <mesh key={`${x}:${z}`} position={[x*(width/2-.16),.16,z*(depth/2-.2)]} rotation-z={Math.PI/2} castShadow>
-      <cylinderGeometry args={[.18,.18,.15,10]}/><meshStandardMaterial color="#4c514d" roughness={.8}/>
+      <cylinderGeometry args={[.18,.18,.15,10]}/><meshStandardMaterial color={colors.cartWheel} roughness={.8}/>
     </mesh>))}
-    <mesh position={[width/2+.35,.26,0]} castShadow><boxGeometry args={[.7,.1,.12]}/><meshStandardMaterial color="#b28b58"/></mesh>
+    <mesh position={[width/2+.35,.26,0]} castShadow><boxGeometry args={[.7,.1,.12]}/><meshStandardMaterial color={colors.cart}/></mesh>
   </group>;
 }
 export interface TasklandMotionProps {
@@ -78,7 +80,7 @@ function MotionCompound({ transition, onComplete, now = motionNow }: { transitio
         status={member.place.status} size={Math.max(1.6,member.place.radius*1.9)}/></Suspense>
     </group>)}</group>
     {transition.kind === 'collapse' && <group ref={dust} visible={false} name="taskland-collapse-dust">{[-1,0,1].map(x =>
-      <mesh key={x} position={[x*.65,.2,.35]}><sphereGeometry args={[.38,8,5]}/><meshStandardMaterial color="#b4a48a" transparent opacity={.45} depthWrite={false}/></mesh>)}</group>}
+      <mesh key={x} position={[x*.65,.2,.35]}><sphereGeometry args={[.38,8,5]}/><meshStandardMaterial color={colors.collapseDust} transparent opacity={.45} depthWrite={false}/></mesh>)}</group>}
   </group>;
 }
 /** Frame positions are applied to Three objects; React updates only on transition boundaries. */
