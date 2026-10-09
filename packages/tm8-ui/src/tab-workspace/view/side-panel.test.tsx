@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * THE SIDE COLUMN (task 01a122b9): Chat · Messages · Links open beside the
+ * THE SIDE COLUMN (task 01a122b9): Links · Messages · Chat open beside the
  * entity body, the lit strip icon closes the column, and the lists read the
  * same peers and messages the old full-page views did.
  */
@@ -39,6 +39,13 @@ describe('side section state', () => {
     expect(sidePatch(tab({ open: true, section: 'links' }), 'links', true, false)).toEqual({
       chat: { open: true, section: 'links' },
     });
+  });
+
+  it('keeps the last section when a stored copy drops the field (an older node)', () => {
+    const t = { ...tab(), id: 'kept' };
+    sidePatch(t, 'links', true);
+    /* The node's normalised copy comes back without `section`. */
+    expect(openSideSection({ ...t, ui: { ...t.ui, chat: { open: true } } }, true)).toBe('links');
   });
 
   it('reads the old full-page subviews as side sections', () => {
