@@ -1,0 +1,56 @@
+[
+  {
+    "pr": 1146,
+    "file": "packages/tm8-ui/e2e/game-storage-harness.html",
+    "byteEqual": true,
+    "aggregateBlob": "b0e2d361d6ed99efb925b9b5239b918cc91a4d7b"
+  },
+  {
+    "pr": 1146,
+    "file": "packages/tm8-ui/e2e/game-storage-harness.tsx",
+    "byteEqual": true,
+    "aggregateBlob": "118bd426b55b206f417c590e9a25382a2cfbeaf6"
+  },
+  {
+    "pr": 1146,
+    "file": "packages/tm8-ui/e2e/game-storage-vite.config.ts",
+    "byteEqual": true,
+    "aggregateBlob": "d8a84b725e4940e5b44864b04d5ace2c7c41c02f"
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-camera-audit.md",
+    "byteEqual": true,
+    "aggregateBlob": "581e71e674627cc26a286a19bd8e148fa7b7dc03"
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-camera-audit.ts",
+    "byteEqual": true,
+    "aggregateBlob": "c42bd57b5e44e2b85e94983715f72e4455fb5bd0"
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-real-check.mjs",
+    "byteEqual": true,
+    "aggregateBlob": "561abc46b26f31992037369159aee45c932bda55"
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-real-harness.html",
+    "byteEqual": true,
+    "aggregateBlob": "7439d71cb4cc88a2609a2c05093a0ac0f297d902"
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/game-live-real-harness.tsx",
+    "byteEqual": true,
+    "aggregateBlob": "fc7827befe5a0230079a2d5deded7b759b8eeaae"
+  },
+  {
+    "pr": 1133,
+    "file": "packages/tm8-ui/e2e/vite.game-live.config.ts",
+    "byteEqual": true,
+    "aggregateBlob": "cbf26d32cb7fd86cd7833b336ed187415db43336"
+  }
+]

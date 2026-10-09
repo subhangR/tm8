@@ -1,0 +1,139 @@
+{
+  "head": "0bd5425479e80cf45c18a06d64486a70420073b0",
+  "software": true,
+  "passed": true,
+  "checks": [
+    {
+      "viewport": {
+        "width": 800,
+        "height": 600
+      },
+      "collapsedPlacesHeight": 472
+    },
+    {
+      "viewport": {
+        "width": 800,
+        "height": 600
+      },
+      "geometry": {
+        "workers": {
+          "left": 12,
+          "right": 388.09375,
+          "top": 454,
+          "bottom": 536
+        },
+        "tools": {
+          "left": 488,
+          "right": 788,
+          "top": 12,
+          "bottom": 526
+        },
+        "places": {
+          "left": 488,
+          "right": 788,
+          "top": 12,
+          "bottom": 298
+        },
+        "minimap": {
+          "left": 488,
+          "right": 776,
+          "top": 310,
+          "bottom": 526
+        }
+      },
+      "actions": [
+        "inspect:session",
+        "enter:portal:story:story-0",
+        "inspect:session"
+      ]
+    },
+    {
+      "viewport": {
+        "width": 560,
+        "height": 740
+      },
+      "collapsedPlacesHeight": 508
+    },
+    {
+      "viewport": {
+        "width": 560,
+        "height": 740
+      },
+      "geometry": {
+        "workers": {
+          "left": 12,
+          "right": 284,
+          "top": 532,
+          "bottom": 676
+        },
+        "tools": {
+          "left": 296,
+          "right": 548,
+          "top": 54,
+          "bottom": 604
+        },
+        "places": {
+          "left": 296,
+          "right": 548,
+          "top": 54,
+          "bottom": 436
+        },
+        "minimap": {
+          "left": 296,
+          "right": 548,
+          "top": 448,
+          "bottom": 604
+        }
+      },
+      "actions": [
+        "inspect:session",
+        "enter:portal:story:story-0",
+        "inspect:session"
+      ]
+    },
+    {
+      "viewport": {
+        "width": 560,
+        "height": 600
+      },
+      "collapsedPlacesHeight": 368
+    },
+    {
+      "viewport": {
+        "width": 560,
+        "height": 600
+      },
+      "geometry": {
+        "workers": {
+          "left": 12,
+          "right": 284,
+          "top": 392,
+          "bottom": 536
+        },
+        "tools": {
+          "left": 296,
+          "right": 548,
+          "top": 54,
+          "bottom": 464
+        },
+        "places": {
+          "left": 296,
+          "right": 548,
+          "top": 54,
+          "bottom": 296
+        },
+        "minimap": {
+          "left": 296,
+          "right": 548,
+          "top": 308,
+          "bottom": 464
+        }
+      },
+      "actions": [
+        "inspect:session",
+        "enter:portal:story:story-0",
+        "inspect:session"
+      ]
+    }
+  ]
+}

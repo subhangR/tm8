@@ -206,6 +206,10 @@ describe.sequential('task assignment provenance (129)', () => {
       return row.created_at;
     });
     database.apply([migration]);
+    // Current entity reads include the nullable 316 status-clock column. Keep
+    // this historical fixture's original status/event triggers by adding only
+    // the read seam, rather than applying 316 and retargeting the old assertions.
+    await database.query('alter table public.tasks add column status_changed_at timestamptz');
     // …plus EXACTLY 135_graph_kind, out of band. The reads below run CURRENT
     // code, and current code speaks the current schema — 135 joined
     // public.graphs into ENTITY_FROM, so `loadEntitySummariesByIds` refuses

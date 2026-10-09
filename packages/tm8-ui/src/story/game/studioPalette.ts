@@ -4,6 +4,11 @@ import '../../styles/canvas-extra.css';
  * Three needs concrete colours; unstyled tests use equivalent RGB fallbacks.
  */
 const TOKENS = {
+  cargo: ['--pn-game-cargo', 'rgb(214, 173, 114)'],
+  cart: ['--pn-game-cart', 'rgb(178, 139, 88)'],
+  cartWheel: ['--pn-game-cart-wheel', 'rgb(76, 81, 77)'],
+  collapseDust: ['--pn-game-collapse-dust', 'rgb(180, 164, 138)'],
+  surveyorCanvas: ['--pn-game-surveyor-canvas', 'rgb(234, 215, 170)'],
   hubAccent: ['--pn-game-hub-accent', 'rgb(79, 140, 128)'],
   hubGround: ['--pn-game-hub-ground', 'rgb(173, 198, 160)'],
   tasklandAccent: ['--pn-game-taskland-accent', 'rgb(211, 160, 94)'],

@@ -26,6 +26,7 @@ const G01_OPERATIONS = [
   // Landed by a separate lane (migration 063) without this list moving; the
   // group registered 20 while the list froze 19. Reconciled 2026-08-01.
   'spaces.counts',
+  'spaces.unreadCounts',
   'spaces.list',
   'spaces.create',
   'spaces.get',

@@ -68,6 +68,8 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     // 284: only `spaces.styleDefault.set` is human-only; the style reads and
     // personal writes stay open to agents (spec §7).
     'packages/server/src/facade/handlers/w2/styles.ts',
+    // Personal navigation reads and writes require the caller's human session.
+    'packages/server/src/facade/handlers/w2/maps.ts',
     'packages/server/src/mcp/handlers.ts',
   ];
 

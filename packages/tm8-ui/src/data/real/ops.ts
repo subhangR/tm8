@@ -203,6 +203,7 @@ import {
   type StartChatInput,
   type StartChatResult,
   type SpaceKindCounts,
+  type SpaceUnreadCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
   type AuthSessionsListResult,
@@ -1099,6 +1100,15 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SpaceKindCounts>('spaces.counts', { params: { spaceId } });
     },
 
+    unreadCounts(spaceId: SpaceId): Promise<SpaceUnreadCounts> {
+      return http.call<SpaceUnreadCounts>('spaces.unreadCounts', { params: { spaceId } });
+    },
+    taskCancellationObservations(spaceId: SpaceId, taskIds: readonly string[]): Promise<TaskCancellationObservations> {
+      return http.call<TaskCancellationObservations>('tasks.cancellationObservations', {
+        params: { spaceId }, body: { taskIds },
+      });
+    },
+
     /** `cursor`/`limit` are BODY fields on this op, carried inside the query object. */
     query(input: CollectionQuery): Promise<CollectionResult> {
       return http.call<CollectionResult>('collections.query', { body: input });
@@ -1945,3 +1955,4 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
   };
 }
+import type { TaskCancellationObservations } from '@tm8/contract';

@@ -1,5 +1,5 @@
 /** Lazy-loaded diorama. Palette-only colour; graph-kind decisions stay in world.ts. */
-import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { GameControl, WalkOrder } from './control';
@@ -16,11 +16,14 @@ import { routeRoad, pathLength, type Point } from './roads';
 import { Robots } from './scene-robots';
 import { Badges } from './badges';
 import type { StoryView } from '../model';
+import type { Bounds, MapRenderer, MapRendererProps } from './map-model';
+import { walkingWorld } from './map-model/walking';
+import type { MapCameraState } from './maps/WalkingMapView';
 
-export interface SceneProps {
+export interface SceneProps extends MapRendererProps {
   /** The page the world was built from; the robots read sessions and attention off it. */
   view: StoryView;
-  world: World; palette: Palette; control: GameControl;
+  navigation: World; palette: Palette; control: GameControl;
   revealed: ReadonlySet<string>; visited: ReadonlySet<string>; landed: ReadonlySet<string>;
   start: { x: number; z: number }; reduced: boolean;
   duel: { placeId: string; encounter: WorldEncounter } | null;
@@ -38,7 +41,9 @@ const WALK_SPEED = 9;
 const ARRIVE_EPS = .18;
 const CAMERA_OFFSET = new THREE.Vector3(24, 23, 24);
 
-export default function StoryGameScene(props: SceneProps) {
+const StoryGameScene: MapRenderer<ReactNode, SceneProps> = (input) => {
+  const world = useMemo(() => walkingWorld(input.model, input.navigation), [input.model, input.navigation]);
+  const props = { ...input, world };
   const playerPos = useRef(new THREE.Vector3(props.start.x, 0, props.start.z));
   const labelNodes = useRef(new Map<string, HTMLDivElement>());
   const alertNode = useRef<HTMLSpanElement>(null);
@@ -75,6 +80,8 @@ export default function StoryGameScene(props: SceneProps) {
   </>;
 }
 
+export default StoryGameScene;
+
 function Labels({ control, world, revealed, playerPos, hidden, nodes }: { control: GameControl; world: World; revealed: ReadonlySet<string>; visited: ReadonlySet<string>; playerPos: MutableRefObject<THREE.Vector3>; hidden: boolean; nodes: MutableRefObject<Map<string, HTMLDivElement>> }) {
   const projected = useRef(new THREE.Vector3());
   const { camera, gl } = useThree();
@@ -98,7 +105,7 @@ function Labels({ control, world, revealed, playerPos, hidden, nodes }: { contro
   return null;
 }
 
-function PlaceEffects(props: SceneProps) {
+function PlaceEffects(props: SceneProps & { world: World }) {
   return <group>{props.world.places.map((p) => <Discovery key={p.id} place={p} palette={props.palette} revealed={props.revealed.has(p.id)} visited={props.visited.has(p.id)} landed={props.landed.has(p.id)} reduced={props.reduced} />)}</group>;
 }
 function Discovery({ place, palette, revealed, visited, landed, reduced }: { place: Place; palette: Palette; revealed: boolean; visited: boolean; landed: boolean; reduced: boolean }) {
@@ -152,7 +159,7 @@ function FrameBudget() {
   });
   return null;
 }
-function ContextGuard({ onUnavailable }: { onUnavailable: () => void }) {
+export function ContextGuard({ onUnavailable }: { onUnavailable: () => void }) {
   const gl = useThree((s) => s.gl);
   useEffect(() => {
     const lost = (event: Event) => { event.preventDefault(); onUnavailable(); };
@@ -183,7 +190,7 @@ function DuelStage({ place, encounter, palette, reduced }: { place: Place; encou
 }
 
 /* ---- the player, the camera and the walk ---- */
-interface PlayerProps {
+export interface PlayerProps {
   world: World;
   palette: Palette;
   control: GameControl;
@@ -195,19 +202,32 @@ interface PlayerProps {
   onPosition: (x: number, z: number) => void;
   reduced: boolean;
   duel: SceneProps['duel'];
+  cameraState?: MapCameraState;
+  onCamera?: (state: MapCameraState) => void;
+  bounds?: Bounds;
+  approachFootprints?: boolean;
   alertNode: React.RefObject<HTMLSpanElement | null>;
 }
 
-function Player({ world, palette, control, revealed, playerPos, onReveal, onNear, onArrive, onPosition, reduced, duel, alertNode }: PlayerProps) {
+export function Player({ world, palette, control, revealed, playerPos, onReveal, onNear, onArrive, onPosition, reduced, duel, alertNode, cameraState, onCamera, bounds, approachFootprints }: PlayerProps) {
   const mesh = useRef<THREE.Group>(null);
   const camera = useThree((s) => s.camera) as THREE.OrthographicCamera;
   const { gl, size: viewportSize } = useThree();
   const motion = useRef<CharacterMotion>({ moving: false, heading: 0, arrival: -100 });
-  const zoom = useRef(1), intro = useRef(0), target = useRef(new THREE.Vector3()), look = useRef(new THREE.Vector3());
+  const zoom = useRef(cameraState ? cameraState.zoom / Math.max(22, Math.min(43, viewportSize.height / 18)) : 1), intro = useRef(cameraState ? 2.8 : 0), target = useRef(new THREE.Vector3()), look = useRef(new THREE.Vector3());
   const alertPosition = useRef(new THREE.Vector3());
   const dust = useRef<THREE.Mesh>(null), dustAt = useRef(-100), dustPos = useRef(new THREE.Vector3());
+  const restored = useRef(!!cameraState);
+  const appliedCamera = useRef(false);
+  const savedCamera = useRef<MapCameraState | null>(cameraState ?? null);
+  const callbacks = useRef({ onPosition, onCamera });
+  callbacks.current = { onPosition, onCamera };
+  useEffect(() => () => {
+    callbacks.current.onPosition(playerPos.current.x, playerPos.current.z);
+    if (savedCamera.current) callbacks.current.onCamera?.(savedCamera.current);
+  }, [playerPos]);
   useEffect(() => {
-    const wheel = (event: WheelEvent) => { event.preventDefault(); zoom.current = Math.max(.2, Math.min(1.7, zoom.current * Math.exp(-event.deltaY * .001))); };
+    const wheel = (event: WheelEvent) => { event.preventDefault(); restored.current = false; zoom.current = Math.max(.2, Math.min(1.7, zoom.current * Math.exp(-event.deltaY * .001))); };
     gl.domElement.addEventListener('wheel', wheel, { passive: false });
     return () => gl.domElement.removeEventListener('wheel', wheel);
   }, [gl]);
@@ -227,10 +247,21 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
   useEffect(() => { known.current = new Set(revealed); }, [revealed]);
 
   useEffect(() => {
+    if (cameraState) {
+      if (appliedCamera.current) return;
+      appliedCamera.current = true;
+      camera.position.fromArray(cameraState.position);
+      camera.zoom = cameraState.zoom;
+      camera.lookAt(...cameraState.target);
+      camera.updateProjectionMatrix();
+      look.current.fromArray(cameraState.target);
+      follow.current.fromArray(cameraState.target);
+      return;
+    }
     camera.position.copy(playerPos.current).add(CAMERA_OFFSET);
     if (!reduced) camera.position.y += 35;
     camera.lookAt(playerPos.current);
-  }, [camera, playerPos, reduced]);
+  }, [camera, playerPos, reduced, cameraState]);
 
   const plan = (order: WalkOrder): void => {
     const pos = playerPos.current;
@@ -250,7 +281,7 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
     else {
       // A ground click stays within the safe coast and outside occupied buildings.
       const r = Math.hypot(order.x, order.z), scale = Math.min(1, (world.extent * .959 - 1) / (r || 1));
-      const point = { x: order.x * scale, z: order.z * scale };
+      const point = bounds ? { x: Math.max(bounds.minX, Math.min(bounds.maxX, order.x)), z: Math.max(bounds.minZ, Math.min(bounds.maxZ, order.z)) } : { x: order.x * scale, z: order.z * scale };
       for (const o of obstacles) { const d = Math.hypot(point.x - o.x, point.z - o.z); if (d < o.radius + .1) { point.x = o.x; point.z = o.z + o.radius + .2; } }
       pts.push(point);
     }
@@ -303,9 +334,13 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
       }
       moving = true;
     }
-    // Stay on the island.
+    if (moving || control.overview || control.order) restored.current = false;
+    // Stay on the map. Typed maps use their rectangular landscape.
     const r = Math.hypot(pos.x, pos.z);
-    if (r > world.extent * .959 - 0.6) {
+    if (bounds) {
+      pos.x = Math.max(bounds.minX, Math.min(bounds.maxX, pos.x));
+      pos.z = Math.max(bounds.minZ, Math.min(bounds.maxZ, pos.z));
+    } else if (r > world.extent * .959 - 0.6) {
       pos.x *= (world.extent * .959 - 0.6) / r;
       pos.z *= (world.extent * .959 - 0.6) / r;
     }
@@ -324,26 +359,29 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
       alertPosition.current.set(pos.x, 2.1, pos.z).project(camera);
       alertNode.current.style.transform = `translate(${(alertPosition.current.x * .5 + .5) * gl.domElement.clientWidth}px, ${(-alertPosition.current.y * .5 + .5) * gl.domElement.clientHeight}px) translate(-50%, -100%)`;
     }
-    intro.current += dt;
-    const entering = reduced ? 0 : Math.max(0, 1 - intro.current / 2.8);
-    target.current.copy(pos);
-    if (moving) { target.current.x += Math.sin(heading.current) * 1.1; target.current.z += Math.cos(heading.current) * 1.1; }
-    const overview = control.overview && !duel;
-    if (overview) target.current.set(0, 0, 0);
-    const arena = duel ? world.byId.get(duel.placeId) : null;
-    if (arena) target.current.set(arena.x, 5.2, arena.z);
-    if (reduced) follow.current.copy(target.current);
-    else follow.current.lerp(target.current, 1 - Math.exp(-3.5 * dt));
-    target.current.copy(follow.current).addScaledVector(CAMERA_OFFSET, overview ? Math.max(1, world.extent / 20) : 1);
-    target.current.y += entering * entering * 35;
-    if (arena) { target.current.x += 8; target.current.y -= 10; target.current.z -= 9; }
-    camera.position.lerp(target.current, reduced ? 1 : 1 - Math.exp(-3.5 * dt));
-    look.current.copy(follow.current); look.current.y = arena ? 5.8 : .3;
-    camera.lookAt(look.current);
-    const baseZoom = Math.max(22, Math.min(43, viewportSize.height / 18));
-    const overviewZoom = Math.min(viewportSize.width, viewportSize.height) / (world.extent * 2.5);
-    const desired = overview ? overviewZoom : baseZoom * zoom.current * (arena ? 1.55 : nearId.current && nearId.current !== world.hubId ? 1.09 : 1) * (1 - entering * .35);
-    camera.zoom = reduced ? desired : THREE.MathUtils.damp(camera.zoom, desired, 3, dt); camera.updateProjectionMatrix();
+    if (!restored.current) {
+      intro.current += dt;
+      const entering = reduced ? 0 : Math.max(0, 1 - intro.current / 2.8);
+      target.current.copy(pos);
+      if (moving) { target.current.x += Math.sin(heading.current) * 1.1; target.current.z += Math.cos(heading.current) * 1.1; }
+      const overview = control.overview && !duel;
+      if (overview) target.current.set(0, 0, 0);
+      const arena = duel ? world.byId.get(duel.placeId) : null;
+      if (arena) target.current.set(arena.x, 5.2, arena.z);
+      if (reduced) follow.current.copy(target.current);
+      else follow.current.lerp(target.current, 1 - Math.exp(-3.5 * dt));
+      target.current.copy(follow.current).addScaledVector(CAMERA_OFFSET, overview ? Math.max(1, world.extent / 20) : 1);
+      target.current.y += entering * entering * 35;
+      if (arena) { target.current.x += 8; target.current.y -= 10; target.current.z -= 9; }
+      camera.position.lerp(target.current, reduced ? 1 : 1 - Math.exp(-3.5 * dt));
+      look.current.copy(follow.current); look.current.y = arena ? 5.8 : .3;
+      camera.lookAt(look.current);
+      const baseZoom = Math.max(22, Math.min(43, viewportSize.height / 18));
+      const overviewZoom = Math.min(viewportSize.width, viewportSize.height) / (world.extent * 2.5);
+      const desired = overview ? overviewZoom : baseZoom * zoom.current * (arena ? 1.55 : nearId.current && nearId.current !== world.hubId ? 1.09 : 1) * (1 - entering * .35);
+      camera.zoom = reduced ? desired : THREE.MathUtils.damp(camera.zoom, desired, 3, dt); camera.updateProjectionMatrix();
+    }
+    savedCamera.current = { zoom: camera.zoom, position: camera.position.toArray(), target: look.current.toArray() };
 
     // Reveal what is within reach (a few times a second, not every frame).
     revealTick.current += dt;
@@ -356,7 +394,10 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
       }
       if (fresh.length) onReveal(fresh);
       const ordered = control.order?.placeId ? world.byId.get(control.order.placeId) : null;
-      const near = waypoints.current.length ? null : ordered && Math.hypot(ordered.x - pos.x, ordered.z - pos.z) <= NEAR_RADIUS ? ordered : nearestPlace(world, pos.x, pos.z, NEAR_RADIUS);
+      const distance = (p: Place) => Math.hypot(p.x - pos.x, p.z - pos.z) - (approachFootprints ? p.footprint : 0);
+      const radius = approachFootprints ? 1.6 : NEAR_RADIUS;
+      const closest = approachFootprints ? world.places.reduce<Place | null>((best, p) => distance(p) <= radius && (!best || distance(p) < distance(best)) ? p : best, null) : nearestPlace(world, pos.x, pos.z, radius);
+      const near = waypoints.current.length ? null : ordered && distance(ordered) <= radius ? ordered : closest;
       const id = near?.id ?? null;
       if (id !== nearId.current) { nearId.current = id; onNear(id); }
     }
@@ -364,7 +405,7 @@ function Player({ world, palette, control, revealed, playerPos, onReveal, onNear
     const live = control.player ?? (control.player = { x: pos.x, z: pos.z, heading: heading.current });
     live.x = pos.x; live.z = pos.z; live.heading = heading.current;
     saveTick.current += delta;
-    if (saveTick.current > 1) { saveTick.current = 0; onPosition(pos.x, pos.z); }
+    if (saveTick.current > 1) { saveTick.current = 0; onPosition(pos.x, pos.z); if (savedCamera.current) onCamera?.(savedCamera.current); }
   });
 
   return <group>

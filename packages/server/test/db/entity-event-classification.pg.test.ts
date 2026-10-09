@@ -160,7 +160,13 @@ describe.sequential('entity event classification (migration 165)', () => {
     const events = await emitted(
       `update public.tasks set work_status = 'working' where entity_id = $1`, [fixture.taskId],
     );
-    expect(events.map((e) => e.type)).toEqual(['entity.upsert', 'entity.upsert']);
+    // 316 adds an authoritative status event; both pre-existing projections
+    // remain FULL upserts and neither may turn into a thin entity.touch.
+    expect(events.filter((e) => e.type !== 'task.status_changed').map((e) => e.type))
+      .toEqual(['entity.upsert', 'entity.upsert']);
+    const statusEvents = events.filter((e) => e.type === 'task.status_changed');
+    expect(statusEvents).toHaveLength(1);
+    expect(statusEvents[0]!.payload).toEqual({ id: fixture.taskId, from: 'open', to: 'working' });
   });
 
   it('a move (parent/position) stays a FULL entity.upsert', async () => {

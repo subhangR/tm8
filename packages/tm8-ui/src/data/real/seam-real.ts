@@ -84,6 +84,7 @@ import {
 } from '@tm8/contract';
 import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike, type SpaceSessionPort } from './http';
+import { createGamePort } from '../../game/http-port';
 import { chatTurnFrameFromWire, type WireChatTurnFrame } from '../../chat-home/wire';
 import { createOps } from './ops';
 import {
@@ -235,7 +236,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   // socket only ever speaks as the cookie it upgraded with.
   const stopCookieWatch = options.spaceSession?.onCookieChanged?.(() => connection.reconnect());
 
+  const readMarkListeners = new Set<(anchorId: string) => void>();
   const seam: RealSeam = {
+    game: createGamePort(http, options.newClientMutationId),
     mcp: (spaceId) => createMcpPort(http, seam, spaceId),
     // -- lifecycle -----------------------------------------------------------
 
@@ -309,6 +312,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
 
     dispose(): void {
+      readMarkListeners.clear();
       stopCookieWatch?.();
       connection.dispose();
       liveness.dispose();
@@ -384,6 +388,12 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     workflows: (spaceId: SpaceId): Promise<Workflow[]> => ops.workflows(spaceId),
     previewInvite: (code: string): Promise<InvitePreview> => ops.previewInvite(code),
     counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),
+    unreadCounts: (spaceId: SpaceId) => ops.unreadCounts(spaceId),
+    taskCancellationObservations: (spaceId, taskIds) => ops.taskCancellationObservations(spaceId, taskIds),
+    onReadMark(listener) {
+      readMarkListeners.add(listener);
+      return () => { readMarkListeners.delete(listener); };
+    },
 
     /**
      * LLD C-4, the ONE soft-fallback in the whole seam: `not_implemented` (501)
@@ -536,9 +546,13 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
        * 400, and honouring it would let a skewed client mark the future read.
        */
       markSeen: (entityId) => ops.markSeen(entityId),
-      upsertReadMark: (anchorId, lastReadAt) => {
+      upsertReadMark: async (anchorId, lastReadAt) => {
         void lastReadAt;
-        return ops.upsertReadMark(anchorId);
+        const result = await ops.upsertReadMark(anchorId);
+        for (const listener of readMarkListeners) {
+          try { listener(anchorId); } catch { /* Observers cannot fail a committed read cursor. */ }
+        }
+        return result;
       },
       previewArtifact: (id, input) => ops.previewArtifact(id, input),
       listArtifactRevisions: (id) => ops.listArtifactRevisions(id),

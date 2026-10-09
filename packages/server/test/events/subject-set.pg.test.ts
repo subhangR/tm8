@@ -113,6 +113,9 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // 231 (chat context): the entity reads now select `cht.context`. An
     // a-la-carte suite must apply every migration adding a column they select.
     database.apply(['231_chat_context.sql']);
+    // The current event projector reads the authoritative task status clock.
+    // Retain the historical208 backfill scenario while supplying its current read column.
+    database.apply(['316_task_game_events.sql']);
     // 206 is already in this suite's pre-208 chain. A SHIM of the two
     // read-path columns the W10a credential migration (239_credential_entities.sql) adds:
     // `entity-read.ts` and the projector left-join `public.space_credentials scr`
@@ -185,12 +188,12 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
-    // 313 (seen entities): the current classifier, taken
-    // verbatim from the migration (313 itself cannot apply on this partial
+    // 316 (task Game events): the current classifier, taken
+    // verbatim from the migration (316 itself cannot apply on this partial
     // chain), and the outcome column shapes the session reads select. No
     // assertion here reads the columns. DELETE this shim if this suite ever
-    // applies the chain through 313.
-    const d1 = readFileSync(new URL('../../../../db/migrations/313_seen_entities.sql', import.meta.url), 'utf8');
+    // applies the chain through 316.
+    const d1 = readFileSync(new URL('../../../../db/migrations/316_task_game_events.sql', import.meta.url), 'utf8');
     const d1Start = d1.indexOf('create or replace function internal.event_subject_ids');
     await database.query(d1.slice(d1Start, d1.indexOf('$$;', d1.indexOf('as $$', d1Start) + 5) + 3));
     await database.query(`alter table public.work_sessions

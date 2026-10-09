@@ -1,0 +1,4 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Synthetic Game GPU benchmark</title>
+<style>html,body,#root{margin:0;width:100%;height:100%}.gpu-fixture{height:100%;display:flex;flex-direction:column}.gpu-fixture>.walking-map{flex:1;min-height:0}.gpu-fixture>header{padding:8px;font:14px sans-serif}</style></head>
+<body><div id="root"></div><script type="module">import './probe.mjs'; window.__gpuProbe.calibrateFrameClock().then(() => import('./harness.tsx'));</script></body></html>

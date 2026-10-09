@@ -62,8 +62,14 @@ const SPACE_PASSWORD = 'space password, human-only (W5, 268): refuses link';
 const SERVERS = 'servers write or gate-token open, human-only by design (W8)';
 const PATH_GRANTS = 'node path-grant write, human gate admin only (282): refuses link';
 const OP_REQUESTS = 'op request decision, human-only by design (L5, 280): refuses link and agent';
+const PERSONAL_SEEN = 'personal seen marker, signed-in human member only (313): refuses link and agent';
+
+const PERSONAL_NAVIGATION = 'personal Game navigation, signed-in human member only (315): refuses link and agent';
 
 const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
+  'mark_entity_seen(uuid,text)': PERSONAL_SEEN,
+  'game_navigation_get(uuid)': PERSONAL_NAVIGATION,
+  'game_navigation_save(uuid,jsonb,bigint,text)': PERSONAL_NAVIGATION,
   // MCP connector consent and persisted chat selections are human-only writes.
   'create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamp with time zone,boolean,integer)': CREDENTIAL_MANAGEMENT,
   'save_chat_mcp_selections(uuid,jsonb)': CREDENTIAL_MANAGEMENT,
@@ -374,7 +380,9 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
     expect(labels.filter((l) => l === OP_REQUESTS)).toHaveLength(1);
-    expect(labels).toHaveLength(64); // +3 (992); +4 -2 W9c (301); +2 MCP (297/298)
+    expect(labels.filter((l) => l === PERSONAL_SEEN)).toHaveLength(1);
+    expect(labels.filter((l) => l === PERSONAL_NAVIGATION)).toHaveLength(2);
+    expect(labels).toHaveLength(67); // +1 personal seen marker (313); +3 (992); +4 -2 W9c (301); +2 MCP (297/298)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

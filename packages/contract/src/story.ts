@@ -264,6 +264,15 @@ export interface StoryRoot {
   status: string | null;
   statusCategory: StatusCategory | null;
   blocked: boolean;
+  /** Canonical facts about this admitted root; absent on older page projections. */
+  version?: number;
+  updatedAt?: string;
+  /** Task roots only: own estimate, never the aggregate `weighted.size`. */
+  pointsEstimate?: number | null;
+  /** Canonical own acceptance tally, matching task summary state. */
+  acceptance?: { total: number; completed: number };
+  /** Exact task transition clock when the canonical read supplies it. */
+  statusChangedAt?: string | null;
   /** The `contains` edge position, which orders the roots. */
   position: number | null;
   /**

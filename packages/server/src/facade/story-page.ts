@@ -324,11 +324,12 @@ export async function loadStoryPage(
   // Titles through the one title rule every surface uses (`titleOf`, kind-
   // correct, RLS-filtered), for the nodes and the personas behind the
   // sessions. Viewer-free, so `entities.context` can render the page too.
-  const titleRows = await q.query<EntityRow>(
+  const titleRows = await q.query<EntityRow & { task_status_changed_at?: Date | string | null }>(
     `select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = any($1::uuid[])`,
     [[...allIds, ...personaIds]],
   );
   const titleOf = new Map(titleRows.map((r) => [r.id, rowTitleOf(r)]));
+  const rowOf = new Map(titleRows.map((r) => [r.id, r]));
   const title = (id: string) => titleOf.get(id) ?? 'Untitled';
 
   const actorIds = [
@@ -384,6 +385,8 @@ export async function loadStoryPage(
 
   const rootsOut: StoryRoot[] = roots.map((r) => {
     const f = factOf.get(r.entity_id)!;
+    const row = rowOf.get(r.entity_id);
+    const criteria = Array.isArray(row?.acceptance_criteria) ? row.acceptance_criteria : [];
     const mine = visibleTrail.filter((t) => t.root_id === r.entity_id);
     const work = workOf.get(r.entity_id);
     const hierarchy = new Set<string>([r.entity_id]);
@@ -413,6 +416,15 @@ export async function loadStoryPage(
       status: f.status_name,
       statusCategory: storyCategory(f),
       blocked: f.blocked,
+      ...(row ? { version: row.version, updatedAt: iso(row.updated_at) } : {}),
+      // Reuse the canonical, RLS-filtered entity read already used for titles.
+      // These are the root's own facts, independent of subtree rollups.
+      ...(f.kind === 'task' && row ? {
+        pointsEstimate: row.points_estimate,
+        acceptance: { total: criteria.length, completed: criteria.filter(c => c?.done === true).length },
+        ...(row.task_status_changed_at !== undefined
+          ? { statusChangedAt: isoOrNull(row.task_status_changed_at) } : {}),
+      } : {}),
       position: r.root_position,
       progress: work?.progress ?? EMPTY_PROGRESS,
       taskProgress: work?.task_progress ?? EMPTY_PROGRESS,

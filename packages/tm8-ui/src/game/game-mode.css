@@ -1,0 +1,14 @@
+.game-mode { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.game-mode__navigation { display: flex; align-items: center; gap: .75rem; padding: .5rem .75rem; flex: 0 0 auto; }
+.game-mode__navigation ol { display: flex; align-items: center; flex-wrap: wrap; list-style: none; gap: .5rem; margin: 0; padding: 0; }
+.game-mode__navigation li + li::before { content: '/'; margin-right: .5rem; opacity: .5; }
+.game-mode__map { position: relative; flex: 1; min-height: 0; }
+.game-mode__status { padding: 1rem; }
+.game-mode__status button + button { margin-left: .5rem; }
+.game-mode__notice { margin: 0; padding: .5rem .75rem; font-size: .875rem; }
+.game-mode__notices { position: absolute; z-index: 30; top: .75rem; left: 50%; transform: translateX(-50%); width: min(28rem, 40%); max-height: 28%; overflow: auto; pointer-events: none; }
+.game-mode__notices .game-mode__notice { background: var(--pn-card, white); color: var(--pn-ink); border-radius: .5rem; }
+.game-mode__notices details, .game-mode__notices button { pointer-events: auto; }
+.game-mode__notices:has(details[open]) { pointer-events: auto; }
+.game-mode__live-notice { pointer-events: none; }
+.game-mode__live-notice:empty { padding: 0; background: none; }

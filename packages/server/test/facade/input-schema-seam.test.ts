@@ -68,6 +68,23 @@ function gate(opName: string): ZodTypeAny {
   return schema as ZodTypeAny;
 }
 
+describe('entities.markSeen THROUGH the INPUT_SCHEMAS gate', () => {
+  it('accepts the local command envelope for a path-addressed seen marker', () => {
+    expect(validateLikeServer(gate('entities.markSeen'), {
+      clientMutationId: 'seen-click',
+      actorId: '00000000-0000-4000-8000-000000000001',
+    }).ok).toBe(true);
+  });
+
+  it('rejects missing mutation IDs and fields outside that envelope', () => {
+    for (const body of [{}, { clientMutationId: '' }, {
+      clientMutationId: 'seen-click', entityId: '00000000-0000-4000-8000-000000000001',
+    }]) {
+      expect(validateLikeServer(gate('entities.markSeen'), body).ok).toBe(false);
+    }
+  });
+});
+
 describe('execution.gitStage THROUGH the INPUT_SCHEMAS gate', () => {
   /**
    * THE REGRESSION. Red before the schema was extended, with the message a
@@ -272,6 +289,9 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'commands.undo',
   'edges.delete',
   'entities.delete',
+  // 313: path-addressed personal marker uses the local required command envelope,
+  // just like readMarks.upsert; the contract names its result, not an input type.
+  'entities.markSeen',
   'entities.restore',
   'projects.unlink',
   'readMarks.upsert',
@@ -290,6 +310,10 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
 ];
 
 /** Contract-owned schemas whose runtime identity is checked below. */
+const MAP_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
+  'maps.open', 'maps.place', 'maps.move', 'maps.remove', 'maps.paint', 'maps.undo', 'maps.revert', 'maps.activity.append', 'maps.navigation.save',
+];
+
 const MCP_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'mcp.credentials.create',
   'mcp.credentials.revoke',
@@ -405,7 +429,7 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
   /** Exactly, for the reason in the comment on the constant. */
   it('the uncomparable set is exactly the local and identity-only operations', () => {
     expect([...scan.uncomparable].sort()).toEqual(
-      [...NO_CONTRACT_TYPE_TO_COMPARE, ...MCP_IDENTITY_ONLY_OPERATIONS].sort(),
+      [...NO_CONTRACT_TYPE_TO_COMPARE, ...MCP_IDENTITY_ONLY_OPERATIONS, ...MAP_IDENTITY_ONLY_OPERATIONS].sort(),
     );
   });
 
@@ -430,4 +454,12 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
       expect(INPUT_SCHEMAS[operation as keyof typeof INPUT_SCHEMAS], operation).toBe(schema);
     }
   });
+});
+
+// Map input types are inferred from the shared strict schemas. Their runtime
+// bindings must remain exactly those exports, as with MCP's inferred schemas.
+it('maps use the strict contract schema objects at the HTTP input seam', async () => {
+  const contract = await import('@tm8/contract');
+  const bindings = { 'maps.open': contract.MapsOpenInputSchema, 'maps.place': contract.MapsPlaceInputSchema, 'maps.move': contract.MapsMoveInputSchema, 'maps.remove': contract.MapsRemoveInputSchema, 'maps.paint': contract.MapsPaintInputSchema, 'maps.undo': contract.MapsUndoInputSchema, 'maps.revert': contract.MapsRevertInputSchema, 'maps.activity.append': contract.MapsActivityInputSchema, 'maps.navigation.save': contract.MapsNavigationSaveInputSchema };
+  for (const [op, schema] of Object.entries(bindings)) expect(INPUT_SCHEMAS[op as keyof typeof INPUT_SCHEMAS], op).toBe(schema);
 });

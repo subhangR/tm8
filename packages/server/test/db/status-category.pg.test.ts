@@ -316,6 +316,9 @@ describe.sequential('147 — entities.status_category', () => {
     // `set_chat_context`;
     // no assertion here reads it.
     database.apply(['231_chat_context.sql']);
+    // Current reads select 316's nullable clock; keep the historical 147
+    // status/event triggers and every original assertion at their pinned seam.
+    await database.query('alter table public.tasks add column status_changed_at timestamptz');
     // 206 (space credentials) plus a SHIM of the two read-path columns the W10a
     // credential migration (239_credential_entities.sql) adds:
     // `entity-read.ts` and the projector left-join `public.space_credentials scr`

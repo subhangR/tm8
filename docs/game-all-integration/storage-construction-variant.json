@@ -1,0 +1,132 @@
+[
+  {
+    "file": "packages/tm8-ui/src/data/game-maps.test.ts",
+    "variantPR": 1146,
+    "variantBlob": "954bbf79db0fef10b95da3d70d288aed12094d96",
+    "acceptedPR": 1140,
+    "acceptedBlob": "43df9e02c3aa81d0d91446634d5ecd3c394f0a17",
+    "aggregateBlob": "25d242ad0500cb170e43a371e95c8bc7993ca36f",
+    "difference": "70\t1\tpackages/tm8-ui/src/data/game-maps.test.ts",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/data/game-maps.ts",
+    "variantPR": 1146,
+    "variantBlob": "2193150deeb5de7956adebfea8238055b2a38712",
+    "acceptedPR": 1140,
+    "acceptedBlob": "9f8f7826c8a93c23071060cd7121081ef36315f5",
+    "aggregateBlob": "9f8f7826c8a93c23071060cd7121081ef36315f5",
+    "difference": "16\t6\tpackages/tm8-ui/src/data/game-maps.ts",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/adapters.ts",
+    "variantPR": 1146,
+    "variantBlob": "33aac34d98d76ef277b3aaeb6f0384d714dd1a33",
+    "acceptedPR": 1140,
+    "acceptedBlob": "92b1d39f7fab59334faaf205812b85d5e3d599b7",
+    "aggregateBlob": "92b1d39f7fab59334faaf205812b85d5e3d599b7",
+    "difference": "12\t1\tpackages/tm8-ui/src/story/game/map-model/adapters.ts",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/build.ts",
+    "variantPR": 1146,
+    "variantBlob": "16b9a091ff5dcffe0ffbe3b12686c0302ced156d",
+    "acceptedPR": 1140,
+    "acceptedBlob": "cdfc62fc9691c179e428ad938a40751031c70230",
+    "aggregateBlob": "cdfc62fc9691c179e428ad938a40751031c70230",
+    "difference": "1\t1\tpackages/tm8-ui/src/story/game/map-model/build.ts",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/index.ts",
+    "variantPR": 1146,
+    "variantBlob": "af6cbbbce6d67077dd53e3b0d8cd551379bea1b2",
+    "acceptedPR": 1140,
+    "acceptedBlob": "af6cbbbce6d67077dd53e3b0d8cd551379bea1b2",
+    "aggregateBlob": "af6cbbbce6d67077dd53e3b0d8cd551379bea1b2",
+    "difference": "",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/lifecycle.test.ts",
+    "variantPR": 1146,
+    "variantBlob": "2900da9fc76c0f2c6e11822f3fd7ea3246fdea6e",
+    "acceptedPR": 1140,
+    "acceptedBlob": "2900da9fc76c0f2c6e11822f3fd7ea3246fdea6e",
+    "aggregateBlob": "2900da9fc76c0f2c6e11822f3fd7ea3246fdea6e",
+    "difference": "",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/lifecycle.ts",
+    "variantPR": 1146,
+    "variantBlob": "134b5f75eb5dcc5db3c40b4963e974b88bb42256",
+    "acceptedPR": 1140,
+    "acceptedBlob": "134b5f75eb5dcc5db3c40b4963e974b88bb42256",
+    "aggregateBlob": "134b5f75eb5dcc5db3c40b4963e974b88bb42256",
+    "difference": "",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/model.test.ts",
+    "variantPR": 1146,
+    "variantBlob": "c638c1fb52563df8dd9c73b79bde5b4bdc30ac46",
+    "acceptedPR": 1140,
+    "acceptedBlob": "c638c1fb52563df8dd9c73b79bde5b4bdc30ac46",
+    "aggregateBlob": "c638c1fb52563df8dd9c73b79bde5b4bdc30ac46",
+    "difference": "",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/progress.test.ts",
+    "variantPR": 1146,
+    "variantBlob": "2b36f2303136926d0728a5a770c117d11cf6f5ba",
+    "acceptedPR": 1140,
+    "acceptedBlob": "2b36f2303136926d0728a5a770c117d11cf6f5ba",
+    "aggregateBlob": "2b36f2303136926d0728a5a770c117d11cf6f5ba",
+    "difference": "",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/progress.ts",
+    "variantPR": 1146,
+    "variantBlob": "322079753f92488921505573a30cb2cdfb445bfd",
+    "acceptedPR": 1140,
+    "acceptedBlob": "322079753f92488921505573a30cb2cdfb445bfd",
+    "aggregateBlob": "322079753f92488921505573a30cb2cdfb445bfd",
+    "difference": "",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/shipping.test.ts",
+    "variantPR": 1146,
+    "variantBlob": "2729e9c2e55bcf6a16da21866ad5df6c4930f2b1",
+    "acceptedPR": 1140,
+    "acceptedBlob": "2729e9c2e55bcf6a16da21866ad5df6c4930f2b1",
+    "aggregateBlob": "2729e9c2e55bcf6a16da21866ad5df6c4930f2b1",
+    "difference": "",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/shipping.ts",
+    "variantPR": 1146,
+    "variantBlob": "d454ea88a5cff5e16c72bde287ab040dc4945fbc",
+    "acceptedPR": 1140,
+    "acceptedBlob": "d454ea88a5cff5e16c72bde287ab040dc4945fbc",
+    "aggregateBlob": "d454ea88a5cff5e16c72bde287ab040dc4945fbc",
+    "difference": "",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  },
+  {
+    "file": "packages/tm8-ui/src/story/game/map-model/types.ts",
+    "variantPR": 1146,
+    "variantBlob": "4aed8152236bee53d380d7bc7eb7e74e5f90a71c",
+    "acceptedPR": 1140,
+    "acceptedBlob": "4aed8152236bee53d380d7bc7eb7e74e5f90a71c",
+    "aggregateBlob": "4aed8152236bee53d380d7bc7eb7e74e5f90a71c",
+    "difference": "",
+    "reason": "Superseded construction variant by accepted weighted construction with canonical own facts, conservative proven cancellation bounds, neutral cancelled-ancestor yards, independent shipping and latest Taskland motion; durable save/common notice integration retained."
+  }
+]
