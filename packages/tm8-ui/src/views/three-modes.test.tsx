@@ -181,17 +181,14 @@ describe('the selector is Work · Design · Observe', () => {
     for (const retired of ['Home', 'Workspace', 'Board', 'Craft', 'Graph']) expect(labels).not.toContain(retired);
   });
 
-  it("Work's rail keeps Needs you at the bottom, and Design, Settings and Help behind the user switch", async () => {
+  it("Work's rail keeps Needs you, you and expand at the bottom, and no tools face", async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
     const controls = view.getByRole('group', { name: 'Rail controls' });
     const bottom = [...controls.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
-    expect(bottom).toEqual(['Needs you', 'Settings & tools', 'Expand sidebar']);
-    fireEvent.click(view.getByTestId('tws-rail-switch'));
-    const tools = view.getByRole('group', { name: 'Settings and tools' });
-    const names = [...tools.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
-    expect(names[0]).toBe('Status');
-    for (const tool of ['Command palette', 'Design', 'Settings', 'Help']) expect(names).toContain(tool);
+    expect(bottom).toEqual(['Needs you', 'Account: Ada', 'Expand sidebar']);
+    expect(view.queryByTestId('tws-rail-switch')).toBeNull();
+    expect(view.queryByRole('group', { name: 'Settings and tools' })).toBeNull();
   });
 });
 

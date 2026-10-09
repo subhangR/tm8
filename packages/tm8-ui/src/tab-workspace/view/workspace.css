@@ -267,30 +267,10 @@
   flex-direction: column;
   gap: 12px;
 }
-/* D31 / R39: the tools face's clusters, 12px apart. */
-.tws-rail-cluster {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pn-space-1);
-}
 .tws-rail-bottom {
   flex: none;
   /* The three (Needs you · user · expand) sit as one cluster. */
   gap: var(--pn-space-1);
-}
-/* The tools face (Subhang, 2026-10-07): the same column on the darker
-   band colour, so the swap reads at a glance; R34's band hovers. */
-.tws-rail[data-rail-mode='tools'] {
-  background: var(--tws-band);
-}
-.tws-rail[data-rail-mode='tools'] .tws-rail-btn:hover {
-  background: var(--tws-band-hover);
-}
-.tws-rail[data-rail-mode='tools'] .tws-rail-btn:active {
-  background: var(--tws-band-press);
-}
-.tws-rail-switch[aria-pressed='true'] {
-  color: var(--pn-ink);
 }
 /* THE THREE wear discs (Subhang, 2026-10-07), so the bottom never reads as
    more kinds: Needs you on the attention yellow, the viewer's avatar in a
@@ -322,7 +302,7 @@
   flex: none;
   transform: scale(0.875);
 }
-.tws-rail-switch[aria-pressed='true'] .tws-rail-disc[data-disc='user'] {
+.tws-rail-btn[aria-expanded='true'] .tws-rail-disc[data-disc='user'] {
   box-shadow: 0 0 0 2px var(--pn-surface), 0 0 0 3px var(--pn-brand);
 }
 .tws-rail-bottom .tws-rail-btn:hover .tws-rail-disc {
@@ -374,8 +354,7 @@
   -webkit-touch-callout: none;
   user-select: none;
 }
-.tws-rail[data-rail-expanded] .tws-rail-btn,
-.tws-rail[data-rail-expanded] .tws-rail-account .auth-accountmenu__trigger {
+.tws-rail[data-rail-expanded] .tws-rail-btn {
   width: calc(100% - 12px);
 }
 .tws-rail-btn:hover {
@@ -543,50 +522,6 @@
   white-space: nowrap;
 }
 
-/* The account avatar: the existing AccountMenu, its trigger reduced to a
-   28px avatar in a 36×36 box; the name stays as the accessible name. */
-.tws-rail-account {
-  display: flex;
-}
-.tws-rail-account .auth-accountmenu {
-  flex: 1;
-  min-width: 0;
-}
-.tws-rail-account .auth-accountmenu__trigger {
-  width: 36px;
-  height: 36px;
-  max-width: none;
-  margin: 0 6px;
-  justify-content: flex-start;
-  /* 2 + 32 + 14 = the 36px icon cell + 12px gap the other labels sit after. */
-  gap: 14px;
-  /* The 32px avatar box (drawn at 28) centres on x = 24: 6 + 2 + 16. */
-  padding: 0 2px;
-  border: 0;
-  border-radius: var(--pn-r-sm);
-}
-.tws-rail-account .auth-accountmenu__trigger:hover {
-  border: 0;
-}
-/* R12: the compact trigger's 32px avatar drawn at 28px, initial or picture. */
-.tws-rail[data-rail-expanded] .tws-rail-account .auth-accountmenu__name {
-  min-width: 0;
-  color: var(--pn-ink-2);
-  font-size: var(--pn-fs-sm);
-  font-weight: 500;
-  animation: tws-label-in var(--pn-dur-fast) var(--pn-ease-out) var(--pn-dur-base) backwards;
-}
-.tws-rail-account .auth-avatar--compact {
-  flex: none;
-  transform: scale(0.875);
-}
-/* Opens up and to the right of the rail, bottom-aligned with the avatar. */
-.tws-rail-account .auth-menu--anchored {
-  top: auto;
-  right: auto;
-  bottom: 0;
-  left: calc(100% + var(--pn-space-2));
-}
 
 .tws-tip-anchor {
   display: flex;
@@ -913,6 +848,27 @@
   border-radius: var(--pn-r-sm);
   box-shadow: var(--pn-sh-pop);
   animation: tws-pop-in var(--pn-dur-fast) var(--pn-ease-out);
+}
+/* THE ACCOUNT CARD (RailUser): status on top, then the account menu inline,
+   which brings its own rows and padding. */
+.tws-rail-pop[data-pop='user'] {
+  width: auto;
+  padding: 0;
+}
+.tws-rail-user-status {
+  padding: var(--pn-space-3) var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+}
+.tws-rail-user-fallback {
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  padding: var(--pn-space-2);
+}
+.tws-rail-user-name {
+  padding: var(--pn-space-2);
+  color: var(--pn-ink);
+  font-weight: 500;
 }
 /* The status strip, stacked: one segment per row. */
 .cv2-root .tws-rail-status-strip .status-strip {

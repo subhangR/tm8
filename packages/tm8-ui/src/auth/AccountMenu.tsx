@@ -104,6 +104,14 @@ export interface AccountMenuProps {
    * sit on one grid; this component adds no chrome of its own around them.
    */
   utilityRows?: ReactNode;
+  /**
+   * INLINE (the Work rail, Subhang 2026-10-10): draw only the menu body, no
+   * trigger and no anchoring — the host owns the popover it sits in (the rail
+   * places it beside itself, where an absolutely-placed menu was clipped).
+   */
+  inline?: boolean;
+  /** With `inline`: a row that navigates away calls this so the host closes. */
+  onClose?: () => void;
 }
 
 export function AccountMenu({
@@ -121,6 +129,8 @@ export function AccountMenu({
   onOpenInbox,
   onOpenPrompts,
   utilityRows,
+  inline = false,
+  onClose,
 }: AccountMenuProps) {
   const actions = useAuthActions();
   const localTheme = useTheme();
@@ -129,7 +139,10 @@ export function AccountMenu({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    setOpen(false);
+    onClose?.();
+  }, [onClose]);
 
   // Click-away and Escape. Both, because a popover that only closes on one of
   // them is a popover people get stuck in — and Escape is the path a keyboard
@@ -159,40 +172,8 @@ export function AccountMenu({
   const account = actions.account;
   const name = actor.displayName;
 
-  return (
-    <div className="auth-accountmenu" ref={wrapRef}>
-      <button
-        type="button"
-        className="auth-accountmenu__trigger"
-        data-testid="account-menu-trigger"
-        data-compact={compact || undefined}
-        {...(compact ? { 'aria-label': `Account: ${name}` } : {})}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <Avatar
-          actorId={actor.id}
-          provenance={actor.isAgent ? 'agent' : 'human'}
-          label={name}
-          size={compact ? 32 : 20}
-          src={actor.avatar ?? null}
-          className={compact ? 'auth-avatar auth-avatar--compact' : 'auth-avatar auth-avatar--sm'}
-        />
-        {compact ? (
-          compactName ? <span className="auth-accountmenu__name">{name}</span> : null
-        ) : (
-          <>
-            <span className="auth-accountmenu__name">{name}</span>
-            <span className="auth-accountmenu__caret" aria-hidden>
-              ▾
-            </span>
-          </>
-        )}
-      </button>
-
-      {open ? (
-        <div className="auth-menu auth-menu--anchored" role="menu" data-testid="auth-account-menu">
+  const menu = (
+        <div className={`auth-menu ${inline ? 'auth-menu--inline' : 'auth-menu--anchored'}`} role="menu" data-testid="auth-account-menu">
           <div className="auth-menu__head">
             <Avatar
               actorId={actor.id}
@@ -376,7 +357,42 @@ export function AccountMenu({
             </button>
           </div>
         </div>
-      ) : null}
+  );
+  if (inline) return menu;
+
+  return (
+    <div className="auth-accountmenu" ref={wrapRef}>
+      <button
+        type="button"
+        className="auth-accountmenu__trigger"
+        data-testid="account-menu-trigger"
+        data-compact={compact || undefined}
+        {...(compact ? { 'aria-label': `Account: ${name}` } : {})}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Avatar
+          actorId={actor.id}
+          provenance={actor.isAgent ? 'agent' : 'human'}
+          label={name}
+          size={compact ? 32 : 20}
+          src={actor.avatar ?? null}
+          className={compact ? 'auth-avatar auth-avatar--compact' : 'auth-avatar auth-avatar--sm'}
+        />
+        {compact ? (
+          compactName ? <span className="auth-accountmenu__name">{name}</span> : null
+        ) : (
+          <>
+            <span className="auth-accountmenu__name">{name}</span>
+            <span className="auth-accountmenu__caret" aria-hidden>
+              ▾
+            </span>
+          </>
+        )}
+      </button>
+
+      {open ? menu : null}
     </div>
   );
 }

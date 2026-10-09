@@ -2056,6 +2056,11 @@ export function GateApp(props: GateAppProps = {}) {
       // unbuilt-view card would be discovery pointing at a placeholder.
       { id: 'view:messages', label: 'Messages', glyph: <VectorIcon paths={VIEW_ART.messages} /> },
       { id: 'view:inbox', label: 'Inbox', glyph: <VectorIcon paths={VIEW_ART.inbox} /> },
+      /* The rail's retired tools face was these screens' only door (task
+         01a122ea-b5d9); the palette carries them now. */
+      { id: 'view:files', label: 'Files', glyph: <VectorIcon paths={VIEW_ART.files} /> },
+      { id: 'view:git', label: 'Git', glyph: <VectorIcon paths={VIEW_ART.git} /> },
+      { id: 'view:help', label: 'Help', glyph: <VectorIcon paths={VIEW_ART.help} /> },
       ...allKinds()
         .filter((row) => !row.kind.startsWith('c:'))
         .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: <KindIcon kind={row.kind} /> })),

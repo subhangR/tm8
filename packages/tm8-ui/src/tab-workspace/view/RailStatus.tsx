@@ -2,29 +2,26 @@
  * Status and attention in Work (D31 audit gap G1; Design Advisor R39).
  *
  * Work hides the top bar (D4), which took the attention segment and the status
- * strip with it. They come back as the FIRST two buttons of the rail's bottom
- * group, reusing the top bar's own parts and data:
+ * strip with it. They come back in the rail's bottom group, reusing the top
+ * bar's own parts and data (task 01a122ea-b5d9 folded Status into [You]):
  *
  *   [Needs you] — a bell with the Personal count badge; the tooltip carries
  *                 both counts; a click opens the existing `AttentionList`
  *                 (mine) in a popover to the right of the rail.
- *   [Status]    — a run dot while any session runs; the tooltip carries the
- *                 readout; a click opens the existing `StatusStrip`, stacked.
- *                 In the expanded rail the row's label IS the readout.
+ *   [You]       — the viewer's avatar; a click opens one card: the existing
+ *                 `StatusStrip`, stacked, above the account menu.
  */
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../../data/seam';
 import { AttentionList, useAttentionOptional } from '../../attention';
-import { VIEW_ART } from '../../domain';
 import { useAnchoredPopover } from '../../kit/anchoredPopover';
+import { Avatar } from '../../kit/Avatar';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { useDismissable } from '../../panels/useDismissable';
 import { StatusStrip } from '../../status-strip/StatusStrip';
-import { formatCount, formatPercent } from '../../status-strip/format';
-import { useStatusStrip } from '../../status-strip/useStatusStrip';
 import { useShellFrame } from './context';
-import { RAIL_BELL_ART } from './railArt';
+import { RAIL_BELL_ART, RAIL_USER_ART } from './railArt';
 
 /** The popover's offset from the rail (R39). */
 const POP_OFFSET_PX = 8;
@@ -41,6 +38,8 @@ interface RailPopoverButtonProps {
   rowLabel?: ReactNode;
   testId: string;
   popoverLabel: string;
+  /** Styles one popover apart (`data-pop`), e.g. the account card's own padding. */
+  variant?: string;
   children(close: () => void): ReactNode;
 }
 
@@ -53,6 +52,7 @@ function RailPopoverButton({
   rowLabel,
   testId,
   popoverLabel,
+  variant,
   children,
 }: RailPopoverButtonProps) {
   const [open, setOpen] = useState(false);
@@ -101,6 +101,7 @@ function RailPopoverButton({
           className="tws-rail-pop"
           role="dialog"
           aria-label={popoverLabel}
+          data-pop={variant}
           style={style}
           data-testid={`${testId}-popover`}
         >
@@ -161,38 +162,74 @@ export function RailAttention({ expanded }: { expanded: boolean }) {
   );
 }
 
-/** [Status]: CPU, live sessions and chats, behind one rail button. Nothing without a data seam. */
-export function RailStatus({ expanded }: { expanded: boolean }) {
-  const { gate } = useShellFrame();
+/**
+ * [You]: the viewer's avatar (Subhang, 2026-10-10). A click opens ONE card
+ * beside the rail: the system status on top, then the account menu inline.
+ * It replaced the avatar switch that swapped the rail to a tools face. The
+ * menu used to sit inside that face's scrolling column, absolutely placed
+ * below a 56px-wide trigger, which clipped it out of sight.
+ *
+ * With no account (a node without sign-in) the card still opens: status,
+ * then the viewer's name and a Settings row.
+ */
+export function RailUser({ expanded }: { expanded: boolean }) {
+  const { gate, spaceId } = useShellFrame();
+  const viewer = gate.data?.viewerActor ?? null;
   const seam = gate.data?.seam;
-  return seam ? <RailStatusButton seam={seam} expanded={expanded} /> : null;
-}
-
-function RailStatusButton({ seam, expanded }: { seam: Seam; expanded: boolean }) {
-  const { spaceId } = useShellFrame();
-  const { host, hostAccess, liveness } = useStatusStrip(seam, spaceId as SpaceId);
-  const cpu = hostAccess === 'granted' && host && host.cpu.percent !== null ? host.cpu.percent / 100 : null;
-  const sessions = liveness?.liveSessionCount ?? null;
-  const chats = liveness?.liveChatCount ?? null;
-  const plural = (n: number | null, word: string) => `${formatCount(n)} ${word}${n === 1 ? '' : 's'}`;
-  const readout = [cpu === null ? null : `CPU ${formatPercent(cpu)}`, plural(sessions, 'session'), plural(chats, 'chat')]
-    .filter(Boolean)
-    .join(' · ');
+  const name = viewer?.displayName ?? 'You';
+  const settings = gate.shellTabs.find((tab) => tab.id === 'settings');
   return (
     <RailPopoverButton
-      label="Status"
-      tip={readout}
-      icon={<VectorIcon paths={VIEW_ART.feed} size={18} />}
-      mark={sessions && sessions > 0 ? <span className="tws-rail-run-dot" data-testid="tws-rail-status-running" /> : null}
+      label={`Account: ${name}`}
+      tip={name}
+      icon={
+        <span className="tws-rail-disc" data-disc="user">
+          {viewer ? (
+            <Avatar
+              actorId={viewer.id}
+              provenance={viewer.isAgent ? 'agent' : 'human'}
+              label={name}
+              size={32}
+              src={viewer.avatar ?? null}
+            />
+          ) : (
+            <VectorIcon paths={RAIL_USER_ART} size={16} />
+          )}
+        </span>
+      }
       expanded={expanded}
-      rowLabel={<span className="tws-rail-readout">{readout}</span>}
-      testId="tws-rail-status"
-      popoverLabel="System status"
+      rowLabel={name}
+      testId="tws-rail-user"
+      popoverLabel="Account"
+      variant="user"
     >
-      {() => (
-        <div className="tws-rail-status-strip">
-          <StatusStrip seam={seam} spaceId={spaceId as SpaceId} placement="row" />
-        </div>
+      {(close) => (
+        <>
+          {seam ? (
+            <div className="tws-rail-user-status tws-rail-status-strip" aria-label="System status">
+              <StatusStrip seam={seam} spaceId={spaceId as SpaceId} placement="row" />
+            </div>
+          ) : null}
+          {isValidElement<{ inline?: boolean; onClose?: () => void }>(gate.accountSlot) ? (
+            cloneElement(gate.accountSlot, { inline: true, onClose: close })
+          ) : (
+            <div className="tws-rail-user-fallback">
+              <div className="tws-rail-user-name">{name}</div>
+              {settings ? (
+                <button
+                  type="button"
+                  className="tws-menu-row"
+                  onClick={() => {
+                    close();
+                    gate.onSelectViewTab(settings.id);
+                  }}
+                >
+                  {settings.label}
+                </button>
+              ) : null}
+            </div>
+          )}
+        </>
       )}
     </RailPopoverButton>
   );
