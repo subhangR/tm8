@@ -253,11 +253,14 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
       'Git',
       'Debug',
       'Graph',
+      // A session's launch context (task 01a122b9): it left the Links page
+      // when Links moved to the side column.
+      'Launch context',
     ]);
     // And they really are marks — otherwise this test would keep passing on the
     // labelled arrangement that caused the crowding.
     expect(tabEls.every((t) => t.querySelector('svg.kit-vicon') !== null)).toBe(true);
-    expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '', '']);
+    expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '', '', '']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {
