@@ -402,8 +402,205 @@
     }
   ],
   "mainSha": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+  "finalRefresh": {
+    "dateUTC": "2026-10-09",
+    "mainSha": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+    "includedHeadsUnchanged": true,
+    "observedPRs": {
+      "p1150": {
+        "number": 1150,
+        "state": "OPEN",
+        "headRefOid": "049dc02c3c35aac0db97dde440c87f8fbc3edd56",
+        "baseRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefName": "feat/game-phase1-navigation-integration"
+      },
+      "p1149": {
+        "number": 1149,
+        "state": "OPEN",
+        "headRefOid": "94e8ca38cead299b8dfc6fc7b48b128a796c9edc",
+        "baseRefOid": "fa2f824e0c36662593136605160188ca95544ecb",
+        "baseRefName": "feat/game-taskland-live-integrations"
+      },
+      "p1148": {
+        "number": 1148,
+        "state": "OPEN",
+        "headRefOid": "fa2f824e0c36662593136605160188ca95544ecb",
+        "baseRefOid": "b008470263377a37d9086376d02c40ada9fbf02a",
+        "baseRefName": "feat/game-taskland-live-dependencies"
+      },
+      "p1147": {
+        "number": 1147,
+        "state": "OPEN",
+        "headRefOid": "0c4dfcdc77e4f21add90ba781d8ccf139c49297a",
+        "baseRefOid": "b16e5646b8373830735cb5e7db5bac4e08899ebc",
+        "baseRefName": "feat/taskland-construction-lifecycle"
+      },
+      "p1146": {
+        "number": 1146,
+        "state": "OPEN",
+        "headRefOid": "9838e87c4a0af5ec5fed6412d480ae57ec184826",
+        "baseRefOid": "fee507c2905ddb26ad87e5ddfcf480fdfecff014",
+        "baseRefName": "tm8/game-storage-validation-base"
+      },
+      "p1145": {
+        "number": 1145,
+        "state": "OPEN",
+        "headRefOid": "df132c008e641bde8fd4e5d45645b65fa6c87154",
+        "baseRefOid": "d3e7f0fef6f3a3324c59853a8e5f1b16ee14b791",
+        "baseRefName": "taskland-legacy-prerequisites-01a11c44"
+      },
+      "p1144": {
+        "number": 1144,
+        "state": "OPEN",
+        "headRefOid": "265793eddbd2edd0b9c7782d48d42a9047d0c196",
+        "baseRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefName": "feat/game-phase1-navigation-integration"
+      },
+      "p1143": {
+        "number": 1143,
+        "state": "OPEN",
+        "headRefOid": "6b7b6b3ccb98cf3172505e32235c3912c2145f90",
+        "baseRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefName": "feat/game-phase1-navigation-integration"
+      },
+      "p1142": {
+        "number": 1142,
+        "state": "OPEN",
+        "headRefOid": "81a00627d40fd72c401f4f8cd53f6e30da692834",
+        "baseRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefName": "feat/game-phase1-navigation-integration"
+      },
+      "p1141": {
+        "number": 1141,
+        "state": "OPEN",
+        "headRefOid": "1fd121ed815a4fcfd46a08c4280e0cabc6091190",
+        "baseRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefName": "feat/game-phase1-navigation-integration"
+      },
+      "p1140": {
+        "number": 1140,
+        "state": "OPEN",
+        "headRefOid": "b6789a531df433ddd2513affcb8bc2d2d066de3d",
+        "baseRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefName": "feat/game-phase1-navigation-integration"
+      },
+      "p1139": {
+        "number": 1139,
+        "state": "CLOSED",
+        "headRefOid": "708d53ae419779829d57dd00b10b4c1ebd2f2422",
+        "baseRefOid": "b4f4e3798dbe1115ca7a651ead7bb4284466aff5",
+        "baseRefName": "proof/game-ci-prerequisites-01a11c37"
+      },
+      "p1138": {
+        "number": 1138,
+        "state": "CLOSED",
+        "headRefOid": "b4f4e3798dbe1115ca7a651ead7bb4284466aff5",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      },
+      "p1137": {
+        "number": 1137,
+        "state": "OPEN",
+        "headRefOid": "64368c542e60815522bd1964a0b8f4265782ddc0",
+        "baseRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefName": "feat/game-phase1-navigation-integration"
+      },
+      "p1136": {
+        "number": 1136,
+        "state": "OPEN",
+        "headRefOid": "a1dcd971fa0490b610426e7b01f19b608060730f",
+        "baseRefOid": "5aafdb384f12735387cb55d7df10044cf569413b",
+        "baseRefName": "game/core-event-payloads"
+      },
+      "p1135": {
+        "number": 1135,
+        "state": "OPEN",
+        "headRefOid": "b16e5646b8373830735cb5e7db5bac4e08899ebc",
+        "baseRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefName": "feat/game-phase1-navigation-integration"
+      },
+      "p1134": {
+        "number": 1134,
+        "state": "OPEN",
+        "headRefOid": "3aa4fdd67daa891b406007fe706aa3ce3e00d3f8",
+        "baseRefOid": "6ae589b97f2e3d810dfd83a8f4989237c5a5de32",
+        "baseRefName": "feat/game-durable-resume-deps"
+      },
+      "p1133": {
+        "number": 1133,
+        "state": "OPEN",
+        "headRefOid": "8f970d488feb38d0fe588a1104e541a69743ef83",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      },
+      "p1132": {
+        "number": 1132,
+        "state": "OPEN",
+        "headRefOid": "5aafdb384f12735387cb55d7df10044cf569413b",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      },
+      "p1131": {
+        "number": 1131,
+        "state": "OPEN",
+        "headRefOid": "8d081dacd5e87c12226e8686b07d68107002b477",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      },
+      "p1130": {
+        "number": 1130,
+        "state": "OPEN",
+        "headRefOid": "aa49f419dee93023d118ee56fd2c9f87ebdf2c0b",
+        "baseRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefName": "feat/game-phase1-navigation-integration"
+      },
+      "p1129": {
+        "number": 1129,
+        "state": "OPEN",
+        "headRefOid": "8de6f2ab789e532a3e20d1e928a92f846ffa7977",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      },
+      "p1128": {
+        "number": 1128,
+        "state": "OPEN",
+        "headRefOid": "e5d4a58064397695ed2f4e1111e70540e6f87369",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      },
+      "p1127": {
+        "number": 1127,
+        "state": "OPEN",
+        "headRefOid": "bd7f4e5f68e1f3c6e4ac2b5c34bc2876d5903b4e",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      },
+      "p1126": {
+        "number": 1126,
+        "state": "OPEN",
+        "headRefOid": "a7744471f0d85a15e79c1534f95767fa1e39e66a",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      },
+      "p1125": {
+        "number": 1125,
+        "state": "OPEN",
+        "headRefOid": "449a59faa453ebe00bbe7398c67d4649004568f6",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      },
+      "p1124": {
+        "number": 1124,
+        "state": "OPEN",
+        "headRefOid": "2f41e9a40be7fce38ce192c1dee1ebfc74d8a23b",
+        "baseRefOid": "42cd170ced7967b44d4195fc8201c77b58e58f74",
+        "baseRefName": "main"
+      }
+    },
+    "note": "All21 included heads remain frozen. Unrelated excluded1128 moved to e5d4a58064397695ed2f4e1111e70540e6f87369; it remains excluded. Current PR base branches are recorded individually; aggregate itself targets main."
+  },
   "aggregateBranch": "feat/game-all-integration",
-  "integrationSourceHead": "b0228e3330c0abafc5df422af75a7939db40743e",
+  "integrationSourceHead": "0bd5425479e80cf45c18a06d64486a70420073b0",
   "mergeOrder": [
     1129,
     1131,

@@ -25,5 +25,16 @@
     "uniqueNames": 373,
     "uniqueBindings": 372
   },
-  "note": "CLI operation inventory is authored, not generated; its digest must equal regenerated catalogDigest. Exact human-guard/accounting tests run on combined tree; no tolerance changes."
+  "note": "CLI operation inventory is authored, not generated; its digest must equal regenerated catalogDigest. Exact human-guard/accounting tests run on combined tree; no tolerance changes.",
+  "finalSourceHead": "0bd5425479e80cf45c18a06d64486a70420073b0",
+  "finalRegenerationOutputSha256": "436f5c0c85f8a5776135a9b4835065d994a61bcda1a0fea66f7a08dfe56be266",
+  "otherMeasuredInventories": {
+    "boundInputSchemas": 236,
+    "commandPaths": 342,
+    "spaceCommandPaths": 37,
+    "publicCompositeDiscoveryRows": 370,
+    "unconditionalHttpWithPresence": 318,
+    "unconditionalHttpWithoutPresence": 317,
+    "migrations": 282
+  }
 }

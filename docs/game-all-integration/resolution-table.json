@@ -218,13 +218,13 @@
       1140
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/cli/test/discovery-availability.test.ts",
-    "acceptedBasePR": 1140,
-    "acceptedBaseBlob": "6bab5035752c2793731ef781da63119f9fde946c",
-    "aggregateBlob": "6bab5035752c2793731ef781da63119f9fde946c",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "3ff2a5825eb0a1987b5daa3ea745a43219d63345",
+    "aggregateBlob": "f88664f0cf61c7c8914efbd3561f5a6cf032b87d",
     "mergedInputPRs": [
       1149,
       1148,
@@ -232,31 +232,22 @@
       1144,
       1140
     ],
-    "exactContentPRs": [
-      1140,
-      1144,
-      1146,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 6,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/cli/test/discovery-commands.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "f836303013f67a1a73a8701f89b768dc2e5e119f",
-    "aggregateBlob": "f836303013f67a1a73a8701f89b768dc2e5e119f",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "2237bc7e13615aa124402f67b23192fa6cdd7464",
+    "aggregateBlob": "0009022c024172af6902a27f7a09a83d8929cc0f",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/cli/test/discovery-operations.test.ts",
@@ -276,29 +267,26 @@
       1140
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/cli/test/doctor.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "e60595979e8714ce48877000cdf3da94722f1a84",
-    "aggregateBlob": "e60595979e8714ce48877000cdf3da94722f1a84",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "1638714f5bb7f7427f07de1f5bf4462d31e1bf56",
+    "aggregateBlob": "4c0f6222b36ddc6cd99cc33ffd9ea93db080cfc7",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/cli/test/help.test.ts",
-    "acceptedBasePR": 1140,
-    "acceptedBaseBlob": "bf419a6651ffada4ac8ff5ed59d5b64358172479",
-    "aggregateBlob": "bf419a6651ffada4ac8ff5ed59d5b64358172479",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "4e9c5408def1c4a3777ee442b55a68549fa172e7",
+    "aggregateBlob": "82c135058e27dc625d0d6a8f81fe9128294da8bf",
     "mergedInputPRs": [
       1149,
       1148,
@@ -306,111 +294,87 @@
       1144,
       1140
     ],
-    "exactContentPRs": [
-      1140,
-      1144,
-      1146,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 6,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/cli/test/integration/event.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "fc1ee193eb1de02b5bbabd1d47a2f1794c8bfe0d",
-    "aggregateBlob": "fc1ee193eb1de02b5bbabd1d47a2f1794c8bfe0d",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "05037f75465c2c5dbbbeea674ea7c25a1f3c0190",
+    "aggregateBlob": "ac35651bacd2b1d166223661a179d9baf5889a04",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
     "file": "packages/cli/test/integration/harness.smoke.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "6d18ae40fa65e674ac4c3fada59ec2a0b488b7fa",
-    "aggregateBlob": "6d18ae40fa65e674ac4c3fada59ec2a0b488b7fa",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "7c4bab70762e16758e60411f177bb6e3bf63df26",
+    "aggregateBlob": "84ae20e713267a9d3b2185047921addc64c79059",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
     "file": "packages/cli/test/integration/message.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "717a2fce00ece38bc0b92ca0fa9adcf2be001083",
-    "aggregateBlob": "717a2fce00ece38bc0b92ca0fa9adcf2be001083",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "9d2930125ad9c56c5302e3affde73a8d1ec4c0ed",
+    "aggregateBlob": "c305711d5106300b1e64b999883e1b5c77b0e1f2",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/cli/test/integration/project.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "f9406327d1cf877f3961349e766f9e459c0d2aca",
-    "aggregateBlob": "f9406327d1cf877f3961349e766f9e459c0d2aca",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "871ba1211cab37e9752414c6db02ee5f41e1d761",
+    "aggregateBlob": "a29871745e2d0da469bad78cff6a537042555e0c",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/cli/test/integration/space.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "687953669ca057e0861ab8636f92a3418e5f2e0b",
-    "aggregateBlob": "687953669ca057e0861ab8636f92a3418e5f2e0b",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "ad7403946dfe87a84bd536678e2a3220a6657212",
+    "aggregateBlob": "6231d4c39aef8a22d1b9e3192c5abaaa30864779",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
     "file": "packages/cli/test/kernel-global-collision.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "138196863f762ff7c789ac93ae6c4e7467f81c32",
-    "aggregateBlob": "138196863f762ff7c789ac93ae6c4e7467f81c32",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "1e7d1b1a9f59c8ee528050cf5ad3e84b11ededae",
+    "aggregateBlob": "1d6403533432ba2075909b63d98e01e236962475",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
     "file": "packages/cli/test/map.test.ts",
@@ -433,23 +397,30 @@
       1149
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
+  },
+  {
+    "file": "packages/cli/test/space.test.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "770e21f83f513af9edf536a9dae506a64d925b7f",
+    "aggregateBlob": "79bbcacacee49d409d85f48626d94991ad5ea62b",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/cli/test/w5/f/discovery-honesty.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "a34f5af2fae14e86248ef19699acd09b5da8d93a",
-    "aggregateBlob": "a34f5af2fae14e86248ef19699acd09b5da8d93a",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "0f835094bc38c682c2d45b055e13d1e2e93e2937",
+    "aggregateBlob": "dfef5c343a7a20ddf14bf4b6f60962298c416707",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 4,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/contract/src/catalog.ts",
@@ -641,9 +612,9 @@
   },
   {
     "file": "packages/contract/test/w1-amendment.test.ts",
-    "acceptedBasePR": 1140,
-    "acceptedBaseBlob": "f8a0d1647f8087f741316c2849c9864edcd82f9d",
-    "aggregateBlob": "f8a0d1647f8087f741316c2849c9864edcd82f9d",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "cf71b0cafce74202843df922cf1b77da5aba0ba7",
+    "aggregateBlob": "442e757216b8ac7c746cc05b2b036d1c8c1cbb78",
     "mergedInputPRs": [
       1149,
       1148,
@@ -651,15 +622,9 @@
       1144,
       1140
     ],
-    "exactContentPRs": [
-      1140,
-      1144,
-      1146,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 8,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/src/events/mapper.ts",
@@ -957,6 +922,26 @@
     "reason": "Exact accepted content"
   },
   {
+    "file": "packages/server/test/db/assignment-provenance.pg.test.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "e0bc33b773e7b8b4757f93e7f6f93ce75dffda15",
+    "aggregateBlob": "04560f0ff239a69b14db37fa26d4406367173811",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 4,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Add only nullable status_changed_at to historical fixture; preserve old triggers and every assertion."
+  },
+  {
+    "file": "packages/server/test/db/entity-event-classification.pg.test.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "9d981fdb34c81239fcea5a7b22f873f74231ddf3",
+    "aggregateBlob": "a5580e8a1d51cfbecd6cb0e111b651ec857d2040",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 8,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Preserve exactly2 FULLupserts and assert exactly1 authoritative316 status event with exact id/from/to."
+  },
+  {
     "file": "packages/server/test/db/game-maps.pg.test.ts",
     "acceptedBasePR": 1140,
     "acceptedBaseBlob": "2da364d94eb5e64b23ec6d2bc25a4a06899d27cf",
@@ -977,7 +962,7 @@
       1149
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/db/seen-entities.pg.test.ts",
@@ -991,21 +976,19 @@
       1131
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/db/space-links.pg.test.ts",
     "acceptedBasePR": 1131,
     "acceptedBaseBlob": "e4549cf3f35dc4b4b8cd17682290ef42af21da1b",
-    "aggregateBlob": "e4549cf3f35dc4b4b8cd17682290ef42af21da1b",
+    "aggregateBlob": "dda22d9374c6b7d0456ccc40839f8b4e26ab94f0",
     "mergedInputPRs": [
       1131
     ],
-    "exactContentPRs": [
-      1131
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 7,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/db/space-unread.pg.test.ts",
@@ -1029,6 +1012,16 @@
     "reason": "Exact accepted content"
   },
   {
+    "file": "packages/server/test/db/status-category.pg.test.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "d1f9d9bb33505028c3844cd9ce1a053c55886f52",
+    "aggregateBlob": "35006f30af1738e517e9a158de530f1fad3bb12e",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 3,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Add only nullable status_changed_at to historical fixture; preserve old triggers and every assertion."
+  },
+  {
     "file": "packages/server/test/db/story-root-facts.pg.test.ts",
     "acceptedBasePR": 1140,
     "acceptedBaseBlob": "edeacf4b025d10a034b1d48808c6ca8aea8dd769",
@@ -1042,7 +1035,7 @@
       1147
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/db/task-cancellation-observations.pg.test.ts",
@@ -1057,7 +1050,7 @@
       1145
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/events/mapper-passthrough.test.ts",
@@ -1071,7 +1064,7 @@
       1131
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/events/mapper.test.ts",
@@ -1099,13 +1092,13 @@
       1149
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/events/subject-set.pg.test.ts",
     "acceptedBasePR": 1132,
     "acceptedBaseBlob": "8f96770ef9fc9f5d97803e555cfbcd12f80d75fd",
-    "aggregateBlob": "8f96770ef9fc9f5d97803e555cfbcd12f80d75fd",
+    "aggregateBlob": "246ede552b749103c23300a81158160a6123d501",
     "mergedInputPRs": [
       1149,
       1148,
@@ -1116,24 +1109,15 @@
       1133,
       1132
     ],
-    "exactContentPRs": [
-      1132,
-      1133,
-      1136,
-      1140,
-      1143,
-      1145,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 3,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
     "file": "packages/server/test/events/task-status-time-projection.pg.test.ts",
     "acceptedBasePR": 1133,
     "acceptedBaseBlob": "1a636b98918c458c29ef9acb952c1ce212634047",
-    "aggregateBlob": "1a636b98918c458c29ef9acb952c1ce212634047",
+    "aggregateBlob": "93c4f5ff66eda9abd9974621688746cbca4451ea",
     "mergedInputPRs": [
       1149,
       1148,
@@ -1143,17 +1127,9 @@
       1136,
       1133
     ],
-    "exactContentPRs": [
-      1133,
-      1136,
-      1140,
-      1143,
-      1145,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 16,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/events/task-status-time-projection.test.ts",
@@ -1179,7 +1155,7 @@
       1149
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/events/ws-e2e-multi-identity.pg.test.ts",
@@ -1193,13 +1169,13 @@
       1131
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/facade/input-schema-seam.test.ts",
     "acceptedBasePR": 1131,
     "acceptedBaseBlob": "59eefccd7f07c1f1779252165f1cae09e0bafa58",
-    "aggregateBlob": "4704644a61a2956c6b534963499f368777737ad4",
+    "aggregateBlob": "1cbe9d1da31b1d1ab5d3a64c2514da4d4de5aeb9",
     "mergedInputPRs": [
       1149,
       1148,
@@ -1210,7 +1186,7 @@
       1131
     ],
     "exactContentPRs": [],
-    "deltaFromBaseLines": 15,
+    "deltaFromBaseLines": 14,
     "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
@@ -1228,34 +1204,101 @@
     "reason": "Exact accepted content"
   },
   {
+    "file": "packages/server/test/w2/__goldens__/entity-context-v1/task-default.json",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "eebe95e981f91e4854cd2f9e55b7a21913852c09",
+    "aggregateBlob": "c1115fe7cb737da553b77e9a46dbfb0fe4ce1757",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 6,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Regenerated with vitest snapshot writer; only statusChangedAt:null and exact +23 bytes per occurrence."
+  },
+  {
+    "file": "packages/server/test/w2/__goldens__/entity-context-v1/task-hierarchy.json",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "1925fb9309164b8429b8f1aa44998393b2678544",
+    "aggregateBlob": "e76abdbee9c4beb9fa2a07c13ec4299262012a2f",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 4,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Regenerated with vitest snapshot writer; only statusChangedAt:null and exact +23 bytes per occurrence."
+  },
+  {
+    "file": "packages/server/test/w2/__goldens__/entity-context-v1/task-messages-activity.json",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "8b3b33848cdd3a1759de4c5d4d450fcb1900183d",
+    "aggregateBlob": "ed434aa1d58a3163c08462ef7b1e90d41f4145d1",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 3,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Regenerated with vitest snapshot writer; only statusChangedAt:null and exact +23 bytes per occurrence."
+  },
+  {
+    "file": "packages/server/test/w2/__goldens__/entity-context-v1/task-summary.json",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "f500836d5f9211b4655ecd0d12b04232d0e59b08",
+    "aggregateBlob": "9169f9cf998c15ee501f8742d218dc4024b4430f",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 3,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Regenerated with vitest snapshot writer; only statusChangedAt:null and exact +23 bytes per occurrence."
+  },
+  {
+    "file": "packages/server/test/w2/__goldens__/entity-context-v1/task-ten-children-default.json",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "b0978160a7850e5cb80b82c3a1dd8caa8c6310d5",
+    "aggregateBlob": "85bebf0db05a4183e0e8985f2e7c6683b0f7c697",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 3,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Regenerated with vitest snapshot writer; only statusChangedAt:null and exact +23 bytes per occurrence."
+  },
+  {
+    "file": "packages/server/test/w2/__goldens__/entity-context-v1/task-tight-budget.json",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "30434cbc1f6a944486ac1c9124d68f4ef9d48794",
+    "aggregateBlob": "3548c060b041c66715bc1dd18a8964ef0bd5409a",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 3,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Regenerated with vitest snapshot writer; only statusChangedAt:null and exact +23 bytes per occurrence."
+  },
+  {
+    "file": "packages/server/test/w2/identity-spaces.test.ts",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "d87ad7b16fddff3b2b4aa9ef253c25288b1eba22",
+    "aggregateBlob": "e96f0f1d27b51a2069b2b7e4fc81ccd3d615544a",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 1,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
+  },
+  {
     "file": "packages/server/test/w2/reserved-honesty.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "e3aa7a30c4ff78e773322c9aa7adfbf7d349d3ca",
-    "aggregateBlob": "e3aa7a30c4ff78e773322c9aa7adfbf7d349d3ca",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "e6a348cfb35dc59dc198b9bef3098c6633cf0555",
+    "aggregateBlob": "7efecf76cb663dc863e74d345c2aef6d2ea3eb29",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 8,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/w2/rolling-public.integration.test.ts",
     "acceptedBasePR": 1144,
     "acceptedBaseBlob": "11c344566e329e4220fa9eb8761a07d96be11c33",
-    "aggregateBlob": "0644752f7138f8ecd38e32c0fda6dc41a1ce2f2a",
+    "aggregateBlob": "050a5ca8a140c9c9ee339e3a3fd33d5189e85a29",
     "mergedInputPRs": [
       1146,
       1144,
       1131
     ],
     "exactContentPRs": [],
-    "deltaFromBaseLines": 3,
-    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+    "deltaFromBaseLines": 14,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/w2/space-unread.test.ts",
@@ -1276,13 +1319,13 @@
       1149
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/w2/tick-criteria.pg.test.ts",
     "acceptedBasePR": 1132,
     "acceptedBaseBlob": "3f86c02f8b3f4cc4e3328dd9561a2ae22c08ade3",
-    "aggregateBlob": "3f86c02f8b3f4cc4e3328dd9561a2ae22c08ade3",
+    "aggregateBlob": "fde120e058606149297760fd6e156fe4c9a5b470",
     "mergedInputPRs": [
       1149,
       1148,
@@ -1293,21 +1336,15 @@
       1133,
       1132
     ],
-    "exactContentPRs": [
-      1132,
-      1133,
-      1136,
-      1140,
-      1145
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 4,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
     "file": "packages/server/test/w3/agentic/g15-agentic.test.ts",
-    "acceptedBasePR": 1140,
-    "acceptedBaseBlob": "de09ac2f3eaf8889bd0b2963d916720b70702174",
-    "aggregateBlob": "de09ac2f3eaf8889bd0b2963d916720b70702174",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "480b49cd7bd97ad8437d451e036b3aa92fc73ac6",
+    "aggregateBlob": "af387bad58773de07eab5b97d350f4b422c642a0",
     "mergedInputPRs": [
       1149,
       1148,
@@ -1315,35 +1352,27 @@
       1144,
       1140
     ],
-    "exactContentPRs": [
-      1140,
-      1144,
-      1146,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 4,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
     "file": "packages/server/test/w3/discovery-adapter.test.ts",
     "acceptedBasePR": 1131,
     "acceptedBaseBlob": "5a6e7e0bd2a72471b7891f838f490a6960bf2c8a",
-    "aggregateBlob": "5a6e7e0bd2a72471b7891f838f490a6960bf2c8a",
+    "aggregateBlob": "1d9fc03e2c6feff43edb6ddfa6b6f66cf97ab1e6",
     "mergedInputPRs": [
       1131
     ],
-    "exactContentPRs": [
-      1131
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 10,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
     "file": "packages/server/test/w3/g15-public.test.ts",
-    "acceptedBasePR": 1140,
-    "acceptedBaseBlob": "c60d9cd026a284414b57b77d7d863390e0821c26",
-    "aggregateBlob": "c60d9cd026a284414b57b77d7d863390e0821c26",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "9874ad4fe224b7db70141c29eef450f612e8c1ae",
+    "aggregateBlob": "9764abfd5960883a9d00647411a02da71e9bc1da",
     "mergedInputPRs": [
       1149,
       1148,
@@ -1351,21 +1380,15 @@
       1144,
       1140
     ],
-    "exactContentPRs": [
-      1140,
-      1144,
-      1146,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 10,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/w3/public-harness.test.ts",
-    "acceptedBasePR": 1140,
-    "acceptedBaseBlob": "a862fa773ff7f6fe9dcf4f531bd67699edc7e625",
-    "aggregateBlob": "a862fa773ff7f6fe9dcf4f531bd67699edc7e625",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "af61150116ba75d446031a7495347246014f1d5e",
+    "aggregateBlob": "383b92c72fc3f85bc7ffb1749f1524395147afdc",
     "mergedInputPRs": [
       1149,
       1148,
@@ -1373,49 +1396,39 @@
       1144,
       1140
     ],
-    "exactContentPRs": [
-      1140,
-      1144,
-      1146,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 4,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
   },
   {
     "file": "packages/server/test/w5/agentic/composition-honesty.test.ts",
     "acceptedBasePR": 1131,
     "acceptedBaseBlob": "f4b87e08f8ce3a3cf33f2d2fc9a3de259364d785",
-    "aggregateBlob": "f4b87e08f8ce3a3cf33f2d2fc9a3de259364d785",
+    "aggregateBlob": "d3e8b999aead4dc7a8cec63e4c90350e65f65bee",
     "mergedInputPRs": [
       1131
     ],
-    "exactContentPRs": [
-      1131
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 12,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/w5/surface/generator-proof.test.ts",
     "acceptedBasePR": 1144,
     "acceptedBaseBlob": "3ceef5ef70a65319fb7ae6bcf2573bb99ef042eb",
-    "aggregateBlob": "3ceef5ef70a65319fb7ae6bcf2573bb99ef042eb",
+    "aggregateBlob": "d0a56096f0be93f16adba8f73120f729944f9c47",
     "mergedInputPRs": [
       1144
     ],
-    "exactContentPRs": [
-      1144
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/server/test/w5/surface/sweep.test.ts",
-    "acceptedBasePR": 1140,
-    "acceptedBaseBlob": "407623a7ea997c6c6e6dcd137bd241525f48e8d9",
-    "aggregateBlob": "80a0b730e1cee7411f090bac691321177a6e7a56",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "724a9c1c587ab75d30d7b8815c023fda0bcf7e62",
+    "aggregateBlob": "250aaf1eee63c6fff5d9b0561ca101c37f79af5d",
     "mergedInputPRs": [
       1149,
       1148,
@@ -1425,8 +1438,8 @@
       1131
     ],
     "exactContentPRs": [],
-    "deltaFromBaseLines": 2,
-    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts."
+    "deltaFromBaseLines": 8,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "packages/tm8-ui/e2e/game-gpu/README.md",
@@ -2732,7 +2745,7 @@
     "file": "packages/tm8-ui/src/game/game-mode.css",
     "acceptedBasePR": 1149,
     "acceptedBaseBlob": "1d18c1f5ddc4314b8dc7c6d00afe7b97004feae6",
-    "aggregateBlob": "1d18c1f5ddc4314b8dc7c6d00afe7b97004feae6",
+    "aggregateBlob": "eaf3ab30a395b18f178af29331af172d36174b86",
     "mergedInputPRs": [
       1150,
       1149,
@@ -2752,14 +2765,9 @@
       1130,
       1127
     ],
-    "exactContentPRs": [
-      1133,
-      1140,
-      1143,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Final reviewed palette correction centralizes five identical RGB values through existing tokens; CSS uses canonical --pn-ink. No rendering-value or hex-law exemption change."
   },
   {
     "file": "packages/tm8-ui/src/game/http-port.test.ts",
@@ -3164,6 +3172,16 @@
     ],
     "deltaFromBaseLines": 0,
     "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/prompts/prompts.test.tsx",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "edb1c947b996f473a49e3d85c43a1b426396f66c",
+    "aggregateBlob": "20c14df9edccea888d99f15bf0c3be4666770181",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 12,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Empty-noun proof moves task to pr because1145 adds the task read; positive task-row assertion added, task-complete search retained."
   },
   {
     "file": "packages/tm8-ui/src/routes/codec.test.ts",
@@ -4220,21 +4238,16 @@
     "file": "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx",
     "acceptedBasePR": 1140,
     "acceptedBaseBlob": "02d3a3301b8449cfb4b4f87c5fb83ed2b49521bd",
-    "aggregateBlob": "02d3a3301b8449cfb4b4f87c5fb83ed2b49521bd",
+    "aggregateBlob": "651a2c8dbb30ec0325e783d05241efd685e7494f",
     "mergedInputPRs": [
       1149,
       1148,
       1141,
       1140
     ],
-    "exactContentPRs": [
-      1140,
-      1141,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 12,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Final reviewed palette correction centralizes five identical RGB values through existing tokens; CSS uses canonical --pn-ink. No rendering-value or hex-law exemption change."
   },
   {
     "file": "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
@@ -4260,7 +4273,7 @@
     "file": "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx",
     "acceptedBasePR": 1140,
     "acceptedBaseBlob": "aa5d30bf8653b0888fb5e682800cb49736d244ca",
-    "aggregateBlob": "aa5d30bf8653b0888fb5e682800cb49736d244ca",
+    "aggregateBlob": "40e2c90f3bc2dce2da5cf3428d306be96674be49",
     "mergedInputPRs": [
       1149,
       1148,
@@ -4269,14 +4282,9 @@
       1133,
       1130
     ],
-    "exactContentPRs": [
-      1130,
-      1140,
-      1148,
-      1149
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Final reviewed palette correction centralizes five identical RGB values through existing tokens; CSS uses canonical --pn-ink. No rendering-value or hex-law exemption change."
   },
   {
     "file": "packages/tm8-ui/src/story/game/maps/WalkingMapView.test.tsx",
@@ -4763,6 +4771,16 @@
     "reason": "Exact accepted content"
   },
   {
+    "file": "packages/tm8-ui/src/story/game/studioPalette.ts",
+    "acceptedBasePR": 1140,
+    "acceptedBaseBlob": "0cb6a9dc936c8e93a3208effa7d2d23afad12ee7",
+    "aggregateBlob": "93704558ce4aed483d8295bdccb8bb8fd0d76340",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 5,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Final reviewed palette correction centralizes five identical RGB values through existing tokens; CSS uses canonical --pn-ink. No rendering-value or hex-law exemption change."
+  },
+  {
     "file": "packages/tm8-ui/src/story/game/taskland-motion.test.ts",
     "acceptedBasePR": 1140,
     "acceptedBaseBlob": "8f1d53e2e13ca18387c4ff713c6017c7239c6c3e",
@@ -4801,6 +4819,16 @@
     ],
     "deltaFromBaseLines": 0,
     "reason": "Exact accepted content"
+  },
+  {
+    "file": "packages/tm8-ui/src/styles/canvas-extra.css",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "847aabc582980c9392a92aa2057bd1c99047a1e8",
+    "aggregateBlob": "a8ebc0ba05e6b97441cd3a67b173fee613f741f8",
+    "mergedInputPRs": [],
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 6,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Final reviewed palette correction centralizes five identical RGB values through existing tokens; CSS uses canonical --pn-ink. No rendering-value or hex-law exemption change."
   },
   {
     "file": "packages/tm8-ui/src/views/GameScreen.tsx",
@@ -5179,19 +5207,16 @@
   },
   {
     "file": "tools/conformance/test/foundation/stub-honesty.test.ts",
-    "acceptedBasePR": 1144,
-    "acceptedBaseBlob": "2f5b89eb128186d58c73878dc7512862851cd61b",
-    "aggregateBlob": "2f5b89eb128186d58c73878dc7512862851cd61b",
+    "acceptedBasePR": 1127,
+    "acceptedBaseBlob": "e60be0f498a2afa20a8b06e976d91405da8b4c73",
+    "aggregateBlob": "32e61823e4a0de8e9eec3e4bc8edc4b1a7c80a93",
     "mergedInputPRs": [
       1146,
       1144
     ],
-    "exactContentPRs": [
-      1144,
-      1146
-    ],
-    "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "exactContentPRs": [],
+    "deltaFromBaseLines": 2,
+    "reason": "Compose accepted base with independently accepted lanes; see conflicts.md and source-differences/PR*.diff in worker evidence. Earlier shared snapshots intentionally superseded by accepted latest contracts. Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "tools/conformance/test/foundation/w1-foundations.test.ts",
@@ -5211,7 +5236,7 @@
       1140
     ],
     "deltaFromBaseLines": 0,
-    "reason": "Exact accepted content"
+    "reason": "Exact accepted content Any final inventory delta is exact measured combined373/371/369 or authored342commandpaths; see validation/conflicts for control-specific values."
   },
   {
     "file": "tools/rigs/game-live-server.mjs",

@@ -128,8 +128,7 @@
       "packages/tm8-ui/e2e/live-notice-layout.mjs",
       "packages/tm8-ui/src/game/GameMode.live.test.tsx",
       "packages/tm8-ui/src/game/GameMode.test.tsx",
-      "packages/tm8-ui/src/game/GameMode.tsx",
-      "packages/tm8-ui/src/game/game-mode.css"
+      "packages/tm8-ui/src/game/GameMode.tsx"
     ]
   },
   {
@@ -257,15 +256,9 @@
       "db/migrations/315_game_maps.sql",
       "packages/cli/src/discovery/operations.ts",
       "packages/cli/test/catalog-exhaustiveness.test.ts",
-      "packages/cli/test/discovery-availability.test.ts",
       "packages/cli/test/discovery-operations.test.ts",
-      "packages/cli/test/help.test.ts",
       "packages/cli/test/map.test.ts",
-      "packages/contract/test/w1-amendment.test.ts",
       "packages/server/test/db/game-maps.pg.test.ts",
-      "packages/server/test/w3/agentic/g15-agentic.test.ts",
-      "packages/server/test/w3/g15-public.test.ts",
-      "packages/server/test/w3/public-harness.test.ts",
       "tools/conformance/generated/w1-conformance-manifest.json",
       "tools/conformance/src/foundations/generator.ts",
       "tools/conformance/test/foundation/w1-foundations.test.ts"
@@ -609,8 +602,7 @@
     "ancestorOfAggregate": true,
     "coverage": "unique input commit preserved in merge ancestry; file content compared in resolution-table.json",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -655,8 +647,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx",
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx"
     ]
   },
   {
@@ -682,7 +673,6 @@
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx",
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx",
       "packages/tm8-ui/src/story/game/taskland-motion.test.ts",
       "packages/tm8-ui/src/story/game/taskland-motion.ts"
     ]
@@ -708,7 +698,6 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx",
       "packages/tm8-ui/src/story/game/taskland-motion.test.ts",
       "packages/tm8-ui/src/story/game/taskland-motion.ts"
     ]
@@ -1004,7 +993,6 @@
       "packages/contract/src/schemas.ts",
       "packages/server/src/events/projector.ts",
       "packages/server/src/facade/entity-read.ts",
-      "packages/server/test/events/task-status-time-projection.pg.test.ts",
       "packages/server/test/events/task-status-time-projection.test.ts"
     ]
   },
@@ -1030,8 +1018,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -1187,9 +1174,7 @@
       "packages/contract/test/game-task-events.test.ts",
       "packages/server/src/events/mapper.ts",
       "packages/server/src/events/subject-set.ts",
-      "packages/server/test/events/mapper.test.ts",
-      "packages/server/test/events/subject-set.pg.test.ts",
-      "packages/server/test/w2/tick-criteria.pg.test.ts"
+      "packages/server/test/events/mapper.test.ts"
     ]
   },
   {
@@ -1214,8 +1199,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -1765,19 +1749,7 @@
     ],
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
-    "finalFilesExactToAnInput": [
-      "packages/cli/test/discovery-commands.test.ts",
-      "packages/cli/test/doctor.test.ts",
-      "packages/cli/test/integration/event.test.ts",
-      "packages/cli/test/integration/harness.smoke.test.ts",
-      "packages/cli/test/integration/message.test.ts",
-      "packages/cli/test/integration/project.test.ts",
-      "packages/cli/test/integration/space.test.ts",
-      "packages/cli/test/kernel-global-collision.test.ts",
-      "packages/cli/test/w5/f/discovery-honesty.test.ts",
-      "packages/server/test/w2/reserved-honesty.test.ts",
-      "tools/conformance/test/foundation/stub-honesty.test.ts"
-    ]
+    "finalFilesExactToAnInput": []
   },
   {
     "sha": "837748ff98e9994c841b32fb3c251a36f8bd1461",
@@ -2205,15 +2177,9 @@
       "db/migrations/315_game_maps.sql",
       "packages/cli/src/discovery/operations.ts",
       "packages/cli/test/catalog-exhaustiveness.test.ts",
-      "packages/cli/test/discovery-availability.test.ts",
       "packages/cli/test/discovery-operations.test.ts",
-      "packages/cli/test/help.test.ts",
       "packages/cli/test/map.test.ts",
-      "packages/contract/test/w1-amendment.test.ts",
       "packages/server/test/db/game-maps.pg.test.ts",
-      "packages/server/test/w3/agentic/g15-agentic.test.ts",
-      "packages/server/test/w3/g15-public.test.ts",
-      "packages/server/test/w3/public-harness.test.ts",
       "tools/conformance/generated/w1-conformance-manifest.json",
       "tools/conformance/src/foundations/generator.ts",
       "tools/conformance/test/foundation/w1-foundations.test.ts"
@@ -2815,7 +2781,6 @@
       "packages/contract/src/schemas.ts",
       "packages/server/src/events/projector.ts",
       "packages/server/src/facade/entity-read.ts",
-      "packages/server/test/events/task-status-time-projection.pg.test.ts",
       "packages/server/test/events/task-status-time-projection.test.ts"
     ]
   },
@@ -2887,8 +2852,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/contract/src/contract.ts",
-      "packages/server/test/w2/tick-criteria.pg.test.ts"
+      "packages/contract/src/contract.ts"
     ]
   },
   {
@@ -2926,9 +2890,7 @@
       "packages/contract/test/game-task-events.test.ts",
       "packages/server/src/events/mapper.ts",
       "packages/server/src/events/subject-set.ts",
-      "packages/server/test/events/mapper.test.ts",
-      "packages/server/test/events/subject-set.pg.test.ts",
-      "packages/server/test/w2/tick-criteria.pg.test.ts"
+      "packages/server/test/events/mapper.test.ts"
     ]
   },
   {
@@ -2974,8 +2936,7 @@
     "ancestorOfAggregate": true,
     "coverage": "unique input commit preserved in merge ancestry; file content compared in resolution-table.json",
     "finalFilesExactToAnInput": [
-      "packages/server/test/human-auth-kinds.test.ts",
-      "packages/server/test/w5/surface/generator-proof.test.ts"
+      "packages/server/test/human-auth-kinds.test.ts"
     ]
   },
   {
@@ -3005,19 +2966,7 @@
     ],
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
-    "finalFilesExactToAnInput": [
-      "packages/cli/test/discovery-commands.test.ts",
-      "packages/cli/test/doctor.test.ts",
-      "packages/cli/test/integration/event.test.ts",
-      "packages/cli/test/integration/harness.smoke.test.ts",
-      "packages/cli/test/integration/message.test.ts",
-      "packages/cli/test/integration/project.test.ts",
-      "packages/cli/test/integration/space.test.ts",
-      "packages/cli/test/kernel-global-collision.test.ts",
-      "packages/cli/test/w5/f/discovery-honesty.test.ts",
-      "packages/server/test/w2/reserved-honesty.test.ts",
-      "tools/conformance/test/foundation/stub-honesty.test.ts"
-    ]
+    "finalFilesExactToAnInput": []
   },
   {
     "sha": "5c714f3f3bfefbb721f6c2bd1020e94bbe2b4a93",
@@ -3081,15 +3030,9 @@
       "db/migrations/315_game_maps.sql",
       "packages/cli/src/discovery/operations.ts",
       "packages/cli/test/catalog-exhaustiveness.test.ts",
-      "packages/cli/test/discovery-availability.test.ts",
       "packages/cli/test/discovery-operations.test.ts",
-      "packages/cli/test/help.test.ts",
       "packages/cli/test/map.test.ts",
-      "packages/contract/test/w1-amendment.test.ts",
       "packages/server/test/db/game-maps.pg.test.ts",
-      "packages/server/test/w3/agentic/g15-agentic.test.ts",
-      "packages/server/test/w3/g15-public.test.ts",
-      "packages/server/test/w3/public-harness.test.ts",
       "tools/conformance/generated/w1-conformance-manifest.json",
       "tools/conformance/src/foundations/generator.ts",
       "tools/conformance/test/foundation/w1-foundations.test.ts"
@@ -3213,8 +3156,7 @@
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/e2e/live-notice-layout.mjs",
-      "packages/tm8-ui/src/game/GameMode.live.test.tsx",
-      "packages/tm8-ui/src/game/game-mode.css"
+      "packages/tm8-ui/src/game/GameMode.live.test.tsx"
     ]
   },
   {
@@ -3239,8 +3181,7 @@
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/e2e/live-notice-layout.mjs",
       "packages/tm8-ui/src/game/GameMode.live.test.tsx",
-      "packages/tm8-ui/src/game/GameMode.tsx",
-      "packages/tm8-ui/src/game/game-mode.css"
+      "packages/tm8-ui/src/game/GameMode.tsx"
     ]
   },
   {
@@ -3356,8 +3297,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx",
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx"
     ]
   },
   {
@@ -3382,7 +3322,6 @@
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx",
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx",
       "packages/tm8-ui/src/story/game/taskland-motion.test.ts",
       "packages/tm8-ui/src/story/game/taskland-motion.ts"
     ]
@@ -3407,7 +3346,6 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx",
       "packages/tm8-ui/src/story/game/taskland-motion.test.ts",
       "packages/tm8-ui/src/story/game/taskland-motion.ts"
     ]
@@ -3474,8 +3412,7 @@
       "packages/tm8-ui/e2e/live-notice-layout.mjs",
       "packages/tm8-ui/src/game/GameMode.live.test.tsx",
       "packages/tm8-ui/src/game/GameMode.test.tsx",
-      "packages/tm8-ui/src/game/GameMode.tsx",
-      "packages/tm8-ui/src/game/game-mode.css"
+      "packages/tm8-ui/src/game/GameMode.tsx"
     ]
   },
   {
@@ -3798,8 +3735,7 @@
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/e2e/taskland-check.mjs",
       "packages/tm8-ui/e2e/taskland-harness.html",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -4027,8 +3963,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx",
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx"
     ]
   },
   {
@@ -4053,7 +3988,6 @@
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/src/story/game/maps/TasklandMotion.test.tsx",
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx",
       "packages/tm8-ui/src/story/game/taskland-motion.test.ts",
       "packages/tm8-ui/src/story/game/taskland-motion.ts"
     ]
@@ -4078,7 +4012,6 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandMotion.tsx",
       "packages/tm8-ui/src/story/game/taskland-motion.test.ts",
       "packages/tm8-ui/src/story/game/taskland-motion.ts"
     ]
@@ -4473,15 +4406,9 @@
       "db/migrations/315_game_maps.sql",
       "packages/cli/src/discovery/operations.ts",
       "packages/cli/test/catalog-exhaustiveness.test.ts",
-      "packages/cli/test/discovery-availability.test.ts",
       "packages/cli/test/discovery-operations.test.ts",
-      "packages/cli/test/help.test.ts",
       "packages/cli/test/map.test.ts",
-      "packages/contract/test/w1-amendment.test.ts",
       "packages/server/test/db/game-maps.pg.test.ts",
-      "packages/server/test/w3/agentic/g15-agentic.test.ts",
-      "packages/server/test/w3/g15-public.test.ts",
-      "packages/server/test/w3/public-harness.test.ts",
       "tools/conformance/generated/w1-conformance-manifest.json",
       "tools/conformance/src/foundations/generator.ts",
       "tools/conformance/test/foundation/w1-foundations.test.ts"
@@ -4857,7 +4784,6 @@
       "packages/contract/src/schemas.ts",
       "packages/server/src/events/projector.ts",
       "packages/server/src/facade/entity-read.ts",
-      "packages/server/test/events/task-status-time-projection.pg.test.ts",
       "packages/server/test/events/task-status-time-projection.test.ts"
     ]
   },
@@ -4880,8 +4806,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/contract/src/contract.ts",
-      "packages/server/test/w2/tick-criteria.pg.test.ts"
+      "packages/contract/src/contract.ts"
     ]
   },
   {
@@ -4917,9 +4842,7 @@
       "packages/contract/test/game-task-events.test.ts",
       "packages/server/src/events/mapper.ts",
       "packages/server/src/events/subject-set.ts",
-      "packages/server/test/events/mapper.test.ts",
-      "packages/server/test/events/subject-set.pg.test.ts",
-      "packages/server/test/w2/tick-criteria.pg.test.ts"
+      "packages/server/test/events/mapper.test.ts"
     ]
   },
   {
@@ -5038,8 +4961,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -5062,8 +4984,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -5114,8 +5035,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -5831,8 +5751,7 @@
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/e2e/live-notice-layout.mjs",
-      "packages/tm8-ui/src/game/GameMode.live.test.tsx",
-      "packages/tm8-ui/src/game/game-mode.css"
+      "packages/tm8-ui/src/game/GameMode.live.test.tsx"
     ]
   },
   {
@@ -5857,8 +5776,7 @@
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/e2e/live-notice-layout.mjs",
       "packages/tm8-ui/src/game/GameMode.live.test.tsx",
-      "packages/tm8-ui/src/game/GameMode.tsx",
-      "packages/tm8-ui/src/game/game-mode.css"
+      "packages/tm8-ui/src/game/GameMode.tsx"
     ]
   },
   {
@@ -6194,8 +6112,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -6297,7 +6214,6 @@
       "packages/contract/src/schemas.ts",
       "packages/server/src/events/projector.ts",
       "packages/server/src/facade/entity-read.ts",
-      "packages/server/test/events/task-status-time-projection.pg.test.ts",
       "packages/server/test/events/task-status-time-projection.test.ts"
     ]
   },
@@ -6320,8 +6236,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/contract/src/contract.ts",
-      "packages/server/test/w2/tick-criteria.pg.test.ts"
+      "packages/contract/src/contract.ts"
     ]
   },
   {
@@ -6398,9 +6313,7 @@
       "packages/contract/test/game-task-events.test.ts",
       "packages/server/src/events/mapper.ts",
       "packages/server/src/events/subject-set.ts",
-      "packages/server/test/events/mapper.test.ts",
-      "packages/server/test/events/subject-set.pg.test.ts",
-      "packages/server/test/w2/tick-criteria.pg.test.ts"
+      "packages/server/test/events/mapper.test.ts"
     ]
   },
   {
@@ -6450,8 +6363,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -6515,11 +6427,8 @@
     "finalFilesExactToAnInput": [
       "db/migrations/314_seen_entities_ci.sql",
       "packages/server/test/db/seen-entities.pg.test.ts",
-      "packages/server/test/db/space-links.pg.test.ts",
       "packages/server/test/events/mapper-passthrough.test.ts",
-      "packages/server/test/events/ws-e2e-multi-identity.pg.test.ts",
-      "packages/server/test/w3/discovery-adapter.test.ts",
-      "packages/server/test/w5/agentic/composition-honesty.test.ts"
+      "packages/server/test/events/ws-e2e-multi-identity.pg.test.ts"
     ]
   },
   {
@@ -6635,8 +6544,7 @@
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/e2e/taskland-check.mjs",
       "packages/tm8-ui/e2e/taskland-harness.html",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -6723,8 +6631,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -6747,8 +6654,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -6799,8 +6705,7 @@
     "ancestorOfAggregate": true,
     "coverage": "input commit preserved in merge ancestry; identical patches deduplicated by merge",
     "finalFilesExactToAnInput": [
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts",
-      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.tsx"
+      "packages/tm8-ui/src/story/game/maps/TasklandVisuals.test.ts"
     ]
   },
   {
@@ -7278,7 +7183,6 @@
     "finalFilesExactToAnInput": [
       "packages/tm8-ui/src/game/GameMode.test.tsx",
       "packages/tm8-ui/src/game/GameMode.tsx",
-      "packages/tm8-ui/src/game/game-mode.css",
       "packages/tm8-ui/src/game/local-save.test.ts",
       "packages/tm8-ui/src/game/local-save.ts",
       "packages/tm8-ui/src/game/types.ts"
