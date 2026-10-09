@@ -131,7 +131,7 @@ function EntityTab({
               <TitleBar tab={tab} host={mainEl} setSlot={chrome.setTitleSlot} />
               <EntityTabBody tab={bodyTab} adapter={getKindAdapter(tab.kind)} onHandle={onHandle} />
             </div>
-            {/* Right-hand slot: the side column — Chat · Messages · Links. */}
+            {/* Right-hand slot: the side column — Links · Messages · Chat. */}
             <ChatDock tab={tab} />
           </div>
           {/* The entity action strip, pinned to the far right in every state. */}

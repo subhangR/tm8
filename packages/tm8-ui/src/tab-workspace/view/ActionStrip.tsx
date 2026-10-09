@@ -5,7 +5,7 @@
  *  - top, the kind's own actions: the body's controls (session surfaces, a
  *    frame's controls, a reader's Edit / Download, forms waiting), its own
  *    registry verbs (Edit, Terminate…, Transfer), Connectors and Attach;
- *  - bottom, the actions every kind shares: Chat · Messages · Links (each
+ *  - bottom, the actions every kind shares: Links · Messages · Chat (each
  *    opens the side column beside the body — task 01a122b9), Run, Expand ·
  *    More. A split strip (Craft) keeps Entity · Links · Messages instead.
  * The panel's verbs and controls are its own components, portalled into the
@@ -370,7 +370,7 @@ export function ActionStrip({ tab, owner }: ActionStripProps) {
 
       {/* BOTTOM — the actions every kind shares. */}
       <div className="tws-astrip-section tws-astrip-section--common">
-        {/* THE SIDE COLUMN'S SECTIONS (task 01a122b9): Chat · Messages · Links
+        {/* THE SIDE COLUMN'S SECTIONS (task 01a122b9): Links · Messages · Chat
             each open the column beside the body, and the lit one closes it.
             The body never changes. A split strip (Craft) keeps the owner's
             sections, whose body is the host's to swap. */}
@@ -429,9 +429,8 @@ export function ActionStrip({ tab, owner }: ActionStripProps) {
           ) : null
         ) : (
           <div className="tws-astrip-cluster" role="group" aria-label="Side panel" data-testid="tws-astrip-side">
-            {chatToggle}
             {commonDetail && !canvas
-              ? (['messages', 'links'] as const).map((section) => {
+              ? (['links', 'messages'] as const).map((section) => {
                   const label = section === 'messages' ? 'Messages' : 'Links';
                   const pressed = sideOpen === section;
                   return (
@@ -476,6 +475,7 @@ export function ActionStrip({ tab, owner }: ActionStripProps) {
                   );
                 })
               : null}
+            {chatToggle}
           </div>
         )}
 

@@ -1,7 +1,7 @@
 /**
  * Per-tab side column (Spec A §10, D13; design log §12; task 01a122b9).
  * Workstream G. It began as the chat dock and now holds three sections —
- * Chat · Messages · Links — behind one header, so the entity body stays in
+ * Links · Messages · Chat — behind one header, so the entity body stays in
  * place while its conversation and links are read beside it. The section is
  * `ui.chat.section` (see `sideSection.ts`); the column, its width and its
  * open state are the dock's, unchanged.
@@ -66,7 +66,7 @@ const linkPeeks = new Map<TabId, readonly string[]>();
 /** Tabs whose Chat section shows the thread list rather than a thread (D11). */
 const chatListMode = new Set<TabId>();
 
-const SECTION_LABEL: Record<SideSection, string> = { chat: 'Chat', messages: 'Messages', links: 'Links' };
+const SECTION_LABEL: Record<SideSection, string> = { links: 'Links', messages: 'Messages', chat: 'Chat' };
 
 export function ChatDock({ tab, onOpenEntity }: ChatDockProps) {
   const chatAvailable = getKindAdapter(tab.kind).supportsChat;
@@ -134,7 +134,7 @@ function SideColumn({
     messages: detail ? countMessages(detail, data.messagesOf(tab.entityId)) : null,
     links: detail ? sideLinksOf(detail, data.connectionsOf(tab.entityId)).length : null,
   };
-  const sections: SideSection[] = chatAvailable ? ['chat', 'messages', 'links'] : ['messages', 'links'];
+  const sections: SideSection[] = chatAvailable ? ['links', 'messages', 'chat'] : ['links', 'messages'];
 
   let body: ReactNode;
   if (section === 'chat') {
