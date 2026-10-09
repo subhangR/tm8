@@ -422,3 +422,102 @@
   display: flex;
   flex-direction: column;
 }
+
+/* --- Links: an entity peeked in the column, with its own breadcrumbs --- */
+.cv2-root .tws-peek {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .tws-peek-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  padding: 0 var(--pn-space-2) var(--pn-space-1) var(--pn-space-2);
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .tws-peek-crumbs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.cv2-root .tws-peek-step {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.cv2-root .tws-peek-step:last-child {
+  flex: 1 1 auto;
+}
+.cv2-root .tws-peek-sep {
+  flex: none;
+  padding: 0 2px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .tws-peek-crumb {
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cv2-root .tws-peek-crumb > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .tws-peek-crumb:hover:not(:disabled) {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cv2-root .tws-peek-crumb[aria-current='page'] {
+  color: var(--pn-ink);
+  font-weight: 500;
+  cursor: default;
+}
+.cv2-root .tws-peek-step:not(:last-child) .tws-peek-crumb {
+  max-width: 96px;
+}
+.cv2-root .tws-peek-open {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .tws-peek-open:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cv2-root .tws-peek-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.cv2-root .tws-peek-body > .pn-panel {
+  flex: 1;
+  min-height: 0;
+  width: auto;
+  border: 0;
+}

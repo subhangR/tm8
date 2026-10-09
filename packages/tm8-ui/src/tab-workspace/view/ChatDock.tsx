@@ -39,6 +39,7 @@ import { PanelResizer } from '../../kit/PanelResizer';
 import { relTime, absTime } from '../../kit/time';
 import { countMessages } from '../../panels';
 import { entityChatSurfaceFor, type EntityChatSurfaceHost } from '../../views/conversationSurface';
+import { EntityPeek } from '../adapters/entity';
 import { getKindAdapter } from '../adapters/registry';
 import { LAYOUT_BOUNDS, type EntityTabRecord, type SideSection, type TabId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
@@ -60,6 +61,8 @@ const MIN_CONTENT_W = 320;
 
 /** A new chat's settings, per tab, for the page's life. */
 const startedSeeds = new Map<TabId, NewChatSeed>();
+/** The linked entities each tab's Links section has drilled into, for the page's life. */
+const linkPeeks = new Map<TabId, readonly string[]>();
 /** Tabs whose Chat section shows the thread list rather than a thread (D11). */
 const chatListMode = new Set<TabId>();
 
@@ -113,8 +116,17 @@ function SideColumn({
     dispatch({ command: 'workspace.tabs.setUi', args: { tabId, patch: { chat: { open: false } } }, source: 'click' });
 
   /* Links inside the column open as workspace tabs, with this tab on the trail. */
-  const { openLinked } = useLinkedOpen(tab);
+  const { openLinked, openTab } = useLinkedOpen(tab);
   const open = onOpenEntity ?? openLinked;
+
+  /* A link opens IN the column (a peek), never over the tab's own body;
+     "Open in tab" is the explicit way to the full tab. */
+  const [peeks, setPeeksState] = useState<readonly string[]>(() => linkPeeks.get(tabId) ?? []);
+  const setPeeks = (next: readonly string[]) => {
+    if (next.length) linkPeeks.set(tabId, next);
+    else linkPeeks.delete(tabId);
+    setPeeksState(next);
+  };
 
   const { chats } = useChatsAbout(chatAvailable ? data.seam : null, about);
   const counts: Record<SideSection, number | null> = {
@@ -140,8 +152,19 @@ function SideColumn({
         onOpenEntity={open}
       />
     );
+  } else if (peeks.length) {
+    body = (
+      <LinkPeek
+        trail={peeks}
+        onTrail={setPeeks}
+        onOpenTab={openTab}
+        onOpenFull={open}
+      />
+    );
   } else {
-    body = <SideLinks detail={detail} connections={data.connectionsOf(tab.entityId)} onOpenEntity={open} />;
+    body = (
+      <SideLinks detail={detail} connections={data.connectionsOf(tab.entityId)} onOpenEntity={(id) => setPeeks([id])} />
+    );
   }
 
   return (
@@ -207,6 +230,77 @@ function SideColumn({
         {body}
       </div>
     </aside>
+  );
+}
+
+/**
+ * A linked entity shown in the column, with its own breadcrumbs: Links › A › B.
+ * Drilling from the peek pushes a crumb; a crumb (or Links) walks back. Open in
+ * tab is the explicit way to the full tab.
+ */
+function LinkPeek({
+  trail,
+  onTrail,
+  onOpenTab,
+  onOpenFull,
+}: {
+  trail: readonly string[];
+  onTrail: (next: readonly string[]) => void;
+  onOpenTab: (kind: string, id: string) => void;
+  onOpenFull: (id: string) => void;
+}) {
+  const { gate } = useWorkspace();
+  const id = trail[trail.length - 1]!;
+  const push = (next: string) => {
+    if (next === id) return;
+    const at = trail.indexOf(next);
+    onTrail(at >= 0 ? trail.slice(0, at + 1) : [...trail, next]);
+  };
+  return (
+    <div className="tws-peek" data-testid="tws-link-peek">
+      <div className="tws-peek-head">
+        <nav className="tws-peek-crumbs" aria-label="Links trail">
+          <button type="button" className="tws-peek-crumb" onClick={() => onTrail([])} data-testid="tws-peek-back">
+            Links
+          </button>
+          {trail.map((crumb, i) => {
+            const peer = gate.data.detailOf(crumb);
+            const last = i === trail.length - 1;
+            return (
+              <span key={crumb} className="tws-peek-step">
+                <span className="tws-peek-sep" aria-hidden="true">
+                  ›
+                </span>
+                <button
+                  type="button"
+                  className="tws-peek-crumb"
+                  aria-current={last ? 'page' : undefined}
+                  disabled={last}
+                  title={peer?.title ?? undefined}
+                  onClick={() => onTrail(trail.slice(0, i + 1))}
+                >
+                  {peer ? <KindIcon kind={peer.kind} size={12} /> : null}
+                  <span>{peer?.title ?? '…'}</span>
+                </button>
+              </span>
+            );
+          })}
+        </nav>
+        <button
+          type="button"
+          className="tws-peek-open"
+          title="Open in tab"
+          aria-label="Open in tab"
+          data-testid="tws-peek-open"
+          onClick={() => onOpenFull(id)}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+      <EntityPeek key={id} entityId={id} onOpenEntity={push} onOpenTab={onOpenTab} onClose={() => onTrail(trail.slice(0, -1))} />
+    </div>
   );
 }
 
