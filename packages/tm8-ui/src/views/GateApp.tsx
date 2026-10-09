@@ -119,6 +119,8 @@ import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } fro
 import { ChannelView } from './ChannelView';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { SettingsShell, SpaceAdminPage, SETTINGS_SECTIONS, ownerRoleRef, settingsPortFromSeam } from '../settings-space';
+import { settingsNavGroups, settingsNavKeyOfRoute, settingsNavTargetOfKey } from '../settings-space/nav';
+import { FrameNav } from '../shell/FrameNav';
 import { NodeAdminPage } from '../settings-node/NodeAdminPage';
 import type { SettingsShellProps } from '../settings-space';
 import { governancePortFromSeam } from '../settings-governance';
@@ -214,22 +216,27 @@ const BOARD_V2_TAB_ID = 'board-v2';
 const WORKSPACE_TABS_TAB_ID = 'workspace-tabs';
 
 /**
- * THE THREE DESKTOP MODES (D31, 2026-10-06): Work · Design · Observe, in that
- * order, and nothing else in the selector. Keyed by GROUP id, not view ref:
- * Work is the client-added tabs seat, Design is the `craft` group, Observe is
- * the `graph` group. The labels are the modes' own, whatever the menu calls
- * the groups. Glyphs: Design Advisor R39 (existing art, 14px).
+ * THE DESKTOP MODES (D31, 2026-10-06; Settings joined as the fourth in round
+ * 2, R2-D2): Work · Design · Observe · Settings, in that order, and nothing
+ * else in the selector. Keyed by GROUP id, not view ref: Work is the
+ * client-added tabs seat, Design is the `craft` group, Observe is the `graph`
+ * group, Settings the `settings` group (client-added when a menu lacks it).
+ * The labels are the modes' own, whatever the menu calls the groups. Glyphs:
+ * Design Advisor R39 (existing art, 14px).
  */
-const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'graph'];
+const SETTINGS_GROUP_ID = 'settings';
+const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'graph', SETTINGS_GROUP_ID];
 const VIEW_GROUP_LABEL: Record<string, string> = {
   [WORKSPACE_TABS_TAB_ID]: 'Work',
   craft: 'Design',
   graph: 'Observe',
+  [SETTINGS_GROUP_ID]: 'Settings',
 };
 const VIEW_GROUP_ART: Record<string, readonly string[]> = {
   [WORKSPACE_TABS_TAB_ID]: VIEW_ART.workspace,
   craft: VIEW_ART.craft,
   graph: VIEW_ART.graph,
+  [SETTINGS_GROUP_ID]: VIEW_ART.settings,
 };
 /** The frame's top-band title for a screen no menu group claims (Inbox, Messages…). */
 const FRAME_VIEW_TITLE: Partial<Record<string, string>> = {
@@ -2043,6 +2050,7 @@ export function GateApp(props: GateAppProps = {}) {
             { id: 'route:work', label: 'Work', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
             { id: 'view:craft', label: 'Design', glyph: <VectorIcon paths={VIEW_ART.craft} /> },
             { id: 'view:graph', label: 'Observe', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
+            { id: 'view:settings', label: 'Settings', glyph: <VectorIcon paths={VIEW_ART.settings} /> },
           ]
         : [
             { id: 'view:dashboard', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.dashboard} /> },
@@ -2117,6 +2125,9 @@ export function GateApp(props: GateAppProps = {}) {
         .map((group) => ({ id: group.id, label: group.label }));
       /* WORK (tabs view, Spec A §2) — the route-only seat, client-added. */
       tabs.unshift({ id: WORKSPACE_TABS_TAB_ID, label: VIEW_GROUP_LABEL[WORKSPACE_TABS_TAB_ID]! });
+      /* SETTINGS is a mode (R2-D2), so a menu that dropped its group still
+         has it: the seat is client-added, like Work's. */
+      if (!tabs.some((tab) => tab.id === SETTINGS_GROUP_ID)) tabs.push({ id: SETTINGS_GROUP_ID, label: VIEW_GROUP_LABEL[SETTINGS_GROUP_ID]! });
       const views = VIEW_GROUP_ORDER.flatMap((id) => {
         const tab = tabs.find((t) => t.id === id);
         return tab
@@ -2147,13 +2158,14 @@ export function GateApp(props: GateAppProps = {}) {
     if (navView.view === 'tabs') return WORKSPACE_TABS_TAB_ID;
     const direct = groupIdOfTarget(data.menu.config, activeTarget ?? null);
     if (direct) return direct;
+    if (threeModes && activeTarget?.type === 'view' && activeTarget.ref === 'settings') return SETTINGS_GROUP_ID;
     if (activeTarget?.type === 'entity' && voiceEntities.some((e) => e.id === activeTarget.ref)) {
       return conversationGroupId;
     }
     /* No group claims the target (e.g. Inbox, whose door is the bell): no
        tab reads current, and no rail pretends to contain it. */
     return null;
-  }, [navView.view, data.menu.config, activeTarget, voiceEntities, conversationGroupId]);
+  }, [navView.view, data.menu.config, activeTarget, voiceEntities, conversationGroupId, threeModes]);
   const activeGroup = data.menu.config.groups.find((g) => g.id === activeGroupId) ?? null;
   /* The rail is the active tab's contents. A group that IS its own one screen
      (Graph, Settings, Files — single childless view item) draws no rail. */
@@ -2179,7 +2191,7 @@ export function GateApp(props: GateAppProps = {}) {
         return;
       }
       const group = data.menu.config.groups.find((g) => g.id === id);
-      const target = group ? primaryTargetOfGroup(group) : null;
+      const target = group ? primaryTargetOfGroup(group) : id === SETTINGS_GROUP_ID ? { type: 'view' as const, ref: 'settings' as const } : null;
       if (target) navigateTo(target);
     },
     [data.menu.config, navigateTo],
@@ -2578,8 +2590,7 @@ export function GateApp(props: GateAppProps = {}) {
      (the rollback) and a boot that never became ready keep the top bar. */
   const framed = threeModes && !LEGACY_BAR && data.ready && !!data.spaceId;
   const observing = activeTarget?.type === 'view' && activeTarget.ref === 'graph' && navView.view !== 'newSession' && navView.view !== 'boardV2';
-  const frameTitle = navView.view === 'settings' && navView.scope
-    ? (navView.scope === 'space' ? 'Space admin' : 'Node admin') :
+  const frameTitle =
     (activeGroupId ? VIEW_GROUP_LABEL[activeGroupId] ?? activeGroup?.label : undefined) ??
     (activeTarget?.type === 'view' ? FRAME_VIEW_TITLE[activeTarget.ref] : undefined) ??
     (navView.view === 'newSession' ? 'New session' : navView.view === 'boardV2' ? 'Board' : 'tm8');
@@ -2596,6 +2607,25 @@ export function GateApp(props: GateAppProps = {}) {
       /* Live voice rooms hang beneath the conversation cluster —
          `channels` since 125, `chats` in pre-125 hand-edited menus. */
       dynamicGroups={{ channels: voiceGroup, chats: voiceGroup }}
+    />
+  ) : null;
+
+  /* SETTINGS in the frame (R2-D3/D4): one nav for personal, space admin and
+     node admin in the panel; the section body fills the content. */
+  const settingsFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'settings' && !!settingsPort;
+  const settingsNavEl = settingsFramed ? (
+    <FrameNav
+      label="Settings"
+      filterPlaceholder="Filter settings"
+      groups={settingsNavGroups(adminAccess)}
+      current={navView.view === 'settings' ? settingsNavKeyOfRoute(navView) : settingsNavKeyOfRoute({ section: null })}
+      onSelect={(key) => {
+        const target = settingsNavTargetOfKey(key);
+        if (!target) return;
+        navigateRouteView(target.scope === 'node'
+          ? { view: 'settings', scope: 'node', section: target.section }
+          : { view: 'settings', section: target.section });
+      }}
     />
   ) : null;
 
@@ -2735,7 +2765,7 @@ export function GateApp(props: GateAppProps = {}) {
           spaceId={data.spaceId}
           viewerId={viewerMemberId}
           title={frameTitle}
-          panel={railConfig ? menuRailEl : observing ? 'host' : null}
+          panel={railConfig ? menuRailEl : settingsNavEl ?? (observing ? 'host' : null)}
           strip={observing}
           goToWork={goToWork}
         >
@@ -3236,6 +3266,7 @@ export function GateApp(props: GateAppProps = {}) {
                 nodeName={activeServer.label}
                 initialSection={navView.section ?? undefined}
                 onSectionChange={(section) => navigateRouteView({ view: 'settings', scope: 'node', section })}
+                framed={settingsFramed}
               />
             ) : <SettingsPage
               /* `/settings/<section>` opens on that section — e.g. the Jev
@@ -3247,6 +3278,7 @@ export function GateApp(props: GateAppProps = {}) {
                 : {})}
               port={settingsPort}
               admin={navView.view === 'settings' && navView.scope === 'space'}
+              framed={settingsFramed}
               identity={viewerIdentity}
               onSectionChange={(section) => navigateRouteView({ view: 'settings', section,
                 ...(navView.view === 'settings' && navView.scope === 'space' ? { scope: 'space' as const } : {}),

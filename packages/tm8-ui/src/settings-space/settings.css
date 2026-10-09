@@ -836,3 +836,22 @@
 
 .set-space-admin { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .set-space-admin > h1 { margin: 0; padding: 16px; font-size: 20px; }
+
+/* --- framed (round 2, R2-D3) --------------------------------------------- */
+
+/* Inside the app frame Settings is full-bleed like Work: the nav is the
+   frame's panel, so the card, its frame padding and its centring go and the
+   section body fills the content area. The sections keep their own reading
+   measure. */
+.set-root[data-framed] {
+  padding: 0;
+  background: var(--pn-card, var(--pn-surface));
+}
+.set-root[data-framed] .set-card {
+  max-width: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}

@@ -156,19 +156,19 @@ describe('who is NOT redirected', () => {
   });
 });
 
-describe('the selector is Work · Design · Observe', () => {
-  it('in Work: the view menu lists exactly the three modes, Work current', async () => {
+describe('the selector is Work · Design · Observe · Settings', () => {
+  it('in Work: the view menu lists exactly the four modes, Work current', async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
     const trigger = view.getByTestId('tws-view-select');
     expect(trigger.textContent).toContain('Work');
     fireEvent.click(trigger);
     const rows = within(view.getByRole('menu', { name: 'Views' })).getAllByRole('menuitemradio');
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Design', 'Observe']);
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Design', 'Observe', 'Settings']);
     expect(rows[0]!.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('on Observe: the bar leads with the three modes and no retired view anywhere', async () => {
+  it('on Observe: the bar leads with the four modes and no retired view anywhere', async () => {
     const view = mount(at('/graph'));
     const tabs = await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
     const pill = within(tabs).getByTestId('top-view-switcher');
@@ -176,12 +176,13 @@ describe('the selector is Work · Design · Observe', () => {
       'Work',
       'Design',
       'Observe',
+      'Settings',
     ]);
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
     for (const retired of ['Home', 'Workspace', 'Board', 'Craft', 'Graph']) expect(labels).not.toContain(retired);
   });
 
-  it("Work's rail keeps Needs you at the bottom, and Design, Settings and Help behind the user switch", async () => {
+  it("Work's rail keeps Needs you at the bottom, and Design and Help (not Settings, a mode now) behind the user switch", async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
     const controls = view.getByRole('group', { name: 'Rail controls' });
@@ -191,7 +192,29 @@ describe('the selector is Work · Design · Observe', () => {
     const tools = view.getByRole('group', { name: 'Settings and tools' });
     const names = [...tools.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
     expect(names[0]).toBe('Status');
-    for (const tool of ['Command palette', 'Design', 'Settings', 'Help']) expect(names).toContain(tool);
+    for (const tool of ['Command palette', 'Design', 'Help']) expect(names).toContain(tool);
+    expect(names).not.toContain('Settings');
+  });
+
+  it('Settings is a mode: one grouped, filterable nav in the frame panel, the section filling the rest', async () => {
+    const target = at('/settings/axes');
+    const view = mount(target);
+    await waitFor(() => view.getByText('Task axes', { selector: '.set-section__title' }));
+    await settle(40);
+    const nav = view.getByRole('navigation', { name: 'Settings' });
+    expect(view.getByTestId('app-frame-panel').contains(nav)).toBe(true);
+    expect(view.getByTestId('tws-view-select').textContent).toContain('Settings');
+    /* No card and no second nav: the shell draws only the body. */
+    expect(view.container.querySelector('.set-nav')).toBeNull();
+    expect(view.container.querySelector('.set-root[data-framed]')).not.toBeNull();
+    const headings = [...nav.querySelectorAll('.frame-nav__heading')].map((n) => n.textContent);
+    expect(headings.slice(0, 3)).toEqual(['You', 'Team', 'Work setup']);
+    expect(within(nav).getByRole('button', { name: 'Task axes' }).getAttribute('aria-current')).toBe('page');
+    expect(within(nav).getByRole('button', { name: 'Space profile' })).toBeTruthy();
+    fireEvent.change(within(nav).getByRole('searchbox'), { target: { value: 'invit' } });
+    expect([...nav.querySelectorAll('.frame-nav__row')].map((n) => n.textContent)).toEqual(['Invites']);
+    fireEvent.click(within(nav).getByRole('button', { name: 'Invites' }));
+    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/settings/invites`));
   });
 });
 

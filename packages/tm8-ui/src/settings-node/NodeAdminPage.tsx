@@ -23,6 +23,8 @@ export interface NodeAdminPageProps {
   initialSection?: NodeAdminSection;
   identity?: IdentityView | null;
   onSectionChange?: (section: NodeAdminSection) => void;
+  /** Inside the app frame the one settings nav picks the section: no head, no nav here. */
+  framed?: boolean;
 }
 const sections: Record<NodeAdminSection, string> = {
   credentials: 'Node credentials',
@@ -50,6 +52,7 @@ export function NodeAdminPage({
   initialSection,
   onSectionChange,
   identity,
+  framed = false,
 }: NodeAdminPageProps) {
   const [section, setSection] = useState(() => sectionOf(initialSection));
   const [revision, setRevision] = useState(0);
@@ -115,11 +118,13 @@ export function NodeAdminPage({
       : undefined;
   const retry = useCallback(() => setRevision((value) => value + 1), []);
   return (
-    <main className="node-admin" aria-label="Node admin">
-      <header className="node-admin__header">
-        <h1>Node admin</h1>
-        {nodeName && <p>{nodeName}</p>}
-      </header>
+    <main className="node-admin" aria-label="Node admin" data-framed={framed || undefined}>
+      {framed ? null : (
+        <header className="node-admin__header">
+          <h1>Node admin</h1>
+          {nodeName && <p>{nodeName}</p>}
+        </header>
+      )}
       {!current ? (
         <p role="status">Checking node access…</p>
       ) : current.error ? (
@@ -141,7 +146,7 @@ export function NodeAdminPage({
         </div>
       ) : (
         <>
-          <nav
+          {framed ? null : <nav
             className="node-admin__nav"
             aria-label="Node administration sections"
           >
@@ -157,7 +162,7 @@ export function NodeAdminPage({
                 {sections[id]}
               </button>
             ))}
-          </nav>
+          </nav>}
           <div className="node-admin__toolbar">
             <button onClick={retry}>Refresh section</button>
           </div>

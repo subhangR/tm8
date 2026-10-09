@@ -58,7 +58,7 @@ export interface SettingsSectionDef {
  * you" read as neighbours, not as one thing.
  */
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
-  { id: 'profile', label: 'Profile', heading: 'Profile' },
+  { id: 'profile', label: 'Space profile', heading: 'Space profile' },
   { id: 'account', label: 'Your profile', heading: 'Your profile' },
   /* W4 — the account half of settings: every place YOU are signed in, beside
      "Your profile" because both are about the person, not the space. */
@@ -152,6 +152,12 @@ export interface SettingsShellProps {
   onOpenNodeAdmin?: () => void;
   /** Explicit navigation scope; omitted preserves legacy mixed settings. */
   sectionIds?: readonly SettingsSectionId[];
+  /**
+   * Inside the app frame the one settings nav (`nav.ts`) lives in the frame's
+   * panel (R2-D3): the shell then draws no nav of its own and no card — the
+   * section body fills the content area.
+   */
+  framed?: boolean;
   /** The one seam adapter. Construct with `settingsPortFromSeam(seam, spaceId)`. */
   port: SettingsPort;
   /**

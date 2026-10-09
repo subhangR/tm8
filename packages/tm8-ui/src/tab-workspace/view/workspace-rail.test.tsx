@@ -196,11 +196,12 @@ describe('the two faces', () => {
     expect(screen.queryByTestId('tws-rail-kinds')).toBeNull();
     const tools = screen.getByTestId('tws-rail-tools');
     const ids = Array.from(tools.querySelectorAll<HTMLElement>('[data-rail-tool]')).map((b) => b.dataset.railTool);
-    expect(ids).toEqual(['inbox', 'messages', 'files', 'git', 'craft', 'settings', 'help']);
+    /* Settings is a mode now (R2-D2): the view selector's, not the rail's. */
+    expect(ids).toEqual(['inbox', 'messages', 'files', 'git', 'craft', 'help']);
     fireEvent.click(within(tools).getByRole('button', { name: 'Inbox' }));
     expect(gate.navigateTo).toHaveBeenCalledWith({ type: 'view', ref: 'inbox' });
-    fireEvent.click(within(tools).getByRole('button', { name: 'Settings' }));
-    expect(gate.onSelectViewTab).toHaveBeenCalledWith('settings');
+    fireEvent.click(within(tools).getByRole('button', { name: 'Help' }));
+    expect(gate.onSelectViewTab).toHaveBeenCalledWith('help');
     fireEvent.click(screen.getByRole('button', { name: 'Close settings & tools' }));
     expect(screen.getByTestId('tws-rail-kinds')).toBeTruthy();
   });
@@ -216,13 +217,13 @@ describe('the two faces', () => {
   });
 
   it('marks the screen the shell shows as current, and the closed switch with it', () => {
-    mount({ activeViewTabId: 'settings', activeScreenRef: 'settings' });
+    mount({ activeViewTabId: 'help', activeScreenRef: 'help' });
     const toggle = screen.getByTestId('tws-rail-switch');
     expect(toggle.getAttribute('aria-current')).toBe('page');
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-current')).toBeNull();
     const current = document.querySelectorAll('[data-rail-tool][aria-current="page"]');
-    expect(Array.from(current).map((b) => (b as HTMLElement).dataset.railTool)).toEqual(['settings']);
+    expect(Array.from(current).map((b) => (b as HTMLElement).dataset.railTool)).toEqual(['help']);
   });
 
   it('a Messages screen marks Messages, not a shell tab', () => {

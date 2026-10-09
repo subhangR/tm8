@@ -1,0 +1,110 @@
+/*
+ * The frame nav (FrameNav.tsx): a filter box over grouped rows, filling the
+ * app frame's panel the way Work's browser does.
+ */
+.frame-nav {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+}
+
+.frame-nav__filter {
+  flex: none;
+  padding: var(--pn-space-2, 8px);
+  border-bottom: 1px solid var(--pn-line);
+}
+.frame-nav__input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--pn-space-2, 8px);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card, var(--pn-paper));
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: 12px;
+}
+.frame-nav__input:focus-visible {
+  outline: none;
+  border-color: var(--pn-brand);
+}
+
+.frame-nav__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0 12px;
+}
+
+.frame-nav__group + .frame-nav__group {
+  margin-top: 6px;
+}
+.frame-nav__heading {
+  padding: 8px 14px 4px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.frame-nav__row {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 14px 4px 11px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: none;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.frame-nav__row[data-depth='1'] {
+  padding-left: 27px;
+}
+.frame-nav__row:hover {
+  background: var(--pn-hover);
+}
+.frame-nav__row[aria-current='page'] {
+  font-weight: 600;
+  color: var(--pn-ink);
+  border-left-color: var(--pn-brand);
+  background: var(--pn-active);
+}
+.frame-nav__row[data-tone='danger'] {
+  color: var(--pn-block);
+}
+.frame-nav__label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.frame-nav__detail {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: 11px;
+}
+
+.frame-nav__empty {
+  padding: 12px 14px;
+  color: var(--pn-ink-3);
+  font-size: 12px;
+}
