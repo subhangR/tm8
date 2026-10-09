@@ -21,6 +21,7 @@
  * is no per-user tab state, and the row is the same for everyone (D5).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
@@ -45,6 +46,7 @@ import {
   type WorkspaceRuntime,
 } from '../tab-workspace/embed';
 import { HostedEntityColumn } from '../views/hostedEntityColumn';
+import { useFrameSlots } from '../shell/AppFrame';
 import { DesignChatPane } from './DesignChatPane';
 import { GraphPage, type ToolNote } from './GraphPage';
 import { PageRow } from './PageRow';
@@ -87,6 +89,14 @@ export interface DesignScreenProps {
   viewerName?: string | undefined;
   viewerId?: string | undefined;
   onNotice?: ((text: string) => void) | undefined;
+  /**
+   * Inside the app frame (round 2, R2-D1): the frame's panel lists the designs
+   * and pages, so this screen draws no header of its own — its title and chat
+   * toggle go to the frame's top band — and the design chat is a column on
+   * the RIGHT, beside the page, as Work's side column is (never a second left
+   * column next to the panel).
+   */
+  framed?: boolean | undefined;
 }
 
 /** The chat pane's default and floor (the composer's: narrower wraps it to three rows). */
@@ -140,7 +150,8 @@ function useEmbeddedTab(runtime: WorkspaceRuntime, entityId: string | null, kind
 }
 
 export function DesignScreen(props: DesignScreenProps) {
-  const { seam, spaceId, nodeKey, source, designId, pageId, nestedPageId, onNavigate, designs, gate, panelHost, onNotice } = props;
+  const { seam, spaceId, nodeKey, source, designId, pageId, nestedPageId, onNavigate, designs, gate, panelHost, onNotice, framed = false } = props;
+  const frameTop = useFrameSlots().top;
   const runtime = useEmbeddedRuntime(props.viewerId ?? 'viewer', spaceId);
   const expanded = useStore(runtime.store, (s) => s.layout.expanded);
 
@@ -253,6 +264,57 @@ export function DesignScreen(props: DesignScreenProps) {
       />
     );
 
+  const chatPane = (
+    <section className="crf-chat" id="crf-chat-pane" aria-label="Design chat" hidden={chatHidden} data-side={framed ? 'right' : 'left'}>
+      <DesignChatPane
+        seam={seam}
+        spaceId={spaceId}
+        nodeKey={nodeKey}
+        designId={designId}
+        bridge={props.bridge}
+        skillOptions={props.skillOptions}
+        viewerName={props.viewerName}
+        viewerId={props.viewerId}
+        composerSeed={composerSeed}
+        onPrompt={seedPrompt}
+        toolNote={toolNote ?? undefined}
+        onOpenEntity={openEntity}
+      />
+    </section>
+  );
+  const chatResizer = (side: 'left' | 'right') => (
+    <PanelResizer
+      side={side}
+      label="Design chat"
+      controls="crf-chat-pane"
+      width={chatWidth}
+      minWidth={CHAT_MIN}
+      maxWidth={chatMax}
+      onResize={chatPref.setWidth}
+      onReset={chatPref.reset}
+    />
+  );
+  const toggleChat = () => {
+    if (expanded) runtime.dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'click' });
+    else setChatCollapsed((was) => !was);
+  };
+  const chatToggle = (
+    <button
+      type="button"
+      className="crf-head__chat"
+      data-testid="crf-chat-toggle"
+      aria-pressed={!chatHidden}
+      aria-controls="crf-chat-pane"
+      title={chatHidden ? 'Show the chat' : 'Hide the chat'}
+      onClick={toggleChat}
+    >
+      <svg width={16} height={16} viewBox="0 0 16 16" aria-hidden>
+        <rect x={1.5} y={2.5} width={13} height={11} rx={2} />
+        <path d={chatHidden ? (framed ? 'M10 2.5 V13.5' : 'M6 2.5 V13.5') : framed ? 'M10 2.5 V13.5 M11 5 H14 M11 7.5 H14' : 'M6 2.5 V13.5 M2 5 H5 M2 7.5 H5'} />
+      </svg>
+    </button>
+  );
+
   const pagesSection = (
     <section className="dsn-main" aria-label={`Pages of ${title || 'the design'}`} data-testid="dsn-main">
       {handle.state === 'ready' ? (
@@ -313,6 +375,9 @@ export function DesignScreen(props: DesignScreenProps) {
         {/* The active PAGE's chat (task 01a11330): a column beside the page, as
             in the Workspace; the design's own chat stays the left pane. */}
         {gate && pageTab ? <ChatDock tab={pageTab} onOpenEntity={(id) => openEntity(id as EntityId)} /> : null}
+        {/* Framed: the design's chat is the right-hand column, before the strip. */}
+        {framed && !chatHidden ? chatResizer('right') : null}
+        {framed ? chatPane : null}
         {gate && pageTab && ownerTab ? (
           <EntityChromeContext.Provider value={pageChrome}>
             <ActionStrip
@@ -333,60 +398,27 @@ export function DesignScreen(props: DesignScreenProps) {
 
   const screen = (
     <div className="crf-root dsn-root" data-testid="design-screen">
-      <header className="crf-head dsn-head" data-testid="dsn-head">
-        <button
-          type="button"
-          className="crf-head__chat"
-          data-testid="crf-chat-toggle"
-          aria-pressed={!chatHidden}
-          aria-controls="crf-chat-pane"
-          title={chatHidden ? 'Show the chat' : 'Hide the chat'}
-          onClick={() => {
-            if (expanded) runtime.dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'click' });
-            else setChatCollapsed((was) => !was);
-          }}
-        >
-          <svg width={16} height={16} viewBox="0 0 16 16" aria-hidden>
-            <rect x={1.5} y={2.5} width={13} height={11} rx={2} />
-            <path d={chatHidden ? 'M6 2.5 V13.5' : 'M6 2.5 V13.5 M2 5 H5 M2 7.5 H5'} />
-          </svg>
-        </button>
+      {framed ? (
+        frameTop ? createPortal(
+          <div className="dsn-frame-top" data-testid="dsn-head">
+            <span className="dsn-frame-top__title">{title || 'Untitled design'}</span>
+            <span className="crf-head__fill" />
+            {chatToggle}
+          </div>,
+          frameTop,
+        ) : null
+      ) : <header className="crf-head dsn-head" data-testid="dsn-head">
+        {chatToggle}
         <button type="button" className="dsn-crumb" data-testid="dsn-back" onClick={() => onNavigate({})}>
           <span aria-hidden>‹</span> Designs
         </button>
         <span className="crf-head__sep" aria-hidden>·</span>
         <DesignSwitcher title={title} designs={designs} currentId={designId} onPick={(id) => onNavigate({ designId: id })} />
         <span className="crf-head__fill" />
-      </header>
+      </header>}
       <div className="crf-split" ref={splitRef} style={{ '--crf-chat': `${chatWidth}px` } as CSSProperties}>
-        <section className="crf-chat" id="crf-chat-pane" aria-label="Design chat" hidden={chatHidden}>
-          <DesignChatPane
-            seam={seam}
-            spaceId={spaceId}
-            nodeKey={nodeKey}
-            designId={designId}
-            bridge={props.bridge}
-            skillOptions={props.skillOptions}
-            viewerName={props.viewerName}
-            viewerId={props.viewerId}
-            composerSeed={composerSeed}
-            onPrompt={seedPrompt}
-            toolNote={toolNote ?? undefined}
-            onOpenEntity={openEntity}
-          />
-        </section>
-        {chatHidden ? null : (
-          <PanelResizer
-            side="left"
-            label="Design chat"
-            controls="crf-chat-pane"
-            width={chatWidth}
-            minWidth={CHAT_MIN}
-            maxWidth={chatMax}
-            onResize={chatPref.setWidth}
-            onReset={chatPref.reset}
-          />
-        )}
+        {framed ? null : chatPane}
+        {framed || chatHidden ? null : chatResizer('left')}
         {pagesSection}
       </div>
     </div>

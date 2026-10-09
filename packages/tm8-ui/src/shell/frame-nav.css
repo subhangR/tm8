@@ -108,3 +108,16 @@
   color: var(--pn-ink-3);
   font-size: 12px;
 }
+
+/* A screen's own actions under the filter (Design's + New design, All designs). */
+.frame-nav__actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--pn-line);
+}
+.frame-nav__row:disabled {
+  color: var(--pn-ink-4);
+  cursor: default;
+}

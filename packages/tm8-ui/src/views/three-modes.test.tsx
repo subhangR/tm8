@@ -218,6 +218,16 @@ describe('the selector is Work · Design · Observe · Settings', () => {
   });
 });
 
+describe('Design mirrors Work', () => {
+  it('the designs list is the frame panel; no second left column', async () => {
+    const view = mount(at('/craft'));
+    const nav = await waitFor(() => view.getByRole('navigation', { name: 'Designs' }));
+    expect(view.getByTestId('app-frame-panel').contains(nav)).toBe(true);
+    expect(view.getByTestId('tws-view-select').textContent).toContain('Design');
+    expect(within(nav).getByRole('button', { name: 'All designs' }).getAttribute('aria-current')).toBe('page');
+  });
+});
+
 describe('the palette', () => {
   const openPalette = async (view: ReturnType<typeof mount>) => {
     fireEvent.keyDown(window, { key: '/' });

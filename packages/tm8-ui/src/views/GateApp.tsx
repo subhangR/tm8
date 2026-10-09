@@ -74,7 +74,7 @@ import {
 import { FILE_PALETTE_SCOPE, parseFilePaletteRef, recentFilePaletteViews } from '../project-file/palette';
 import { useProjectNames } from '../project-file/projects';
 import { useRecentProjectFiles } from '../project-file/recent';
-import { DesignScreen, DesignsHome, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
+import { DesignScreen, DesignsHome, DesignsNav, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
@@ -2629,6 +2629,20 @@ export function GateApp(props: GateAppProps = {}) {
     />
   ) : null;
 
+  /* DESIGN in the frame (R2-D1): the designs, and the open design's pages,
+     in the panel — Work's browser, for designs. */
+  const designFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
+  const designsNavEl = designFramed ? (
+    <DesignsNav
+      designs={designsSource}
+      source={designSource}
+      designId={navView.view === 'craft' ? navView.designId : undefined}
+      pageId={navView.view === 'craft' ? navView.pageId : undefined}
+      onNavigate={navigateDesign}
+      onNotice={craftNotice}
+    />
+  ) : null;
+
   const workspaceGate: WorkspaceGateHandles = {
     data,
     reasons,
@@ -2765,7 +2779,7 @@ export function GateApp(props: GateAppProps = {}) {
           spaceId={data.spaceId}
           viewerId={viewerMemberId}
           title={frameTitle}
-          panel={railConfig ? menuRailEl : settingsNavEl ?? (observing ? 'host' : null)}
+          panel={railConfig ? menuRailEl : settingsNavEl ?? designsNavEl ?? (observing ? 'host' : null)}
           strip={observing}
           goToWork={goToWork}
         >
@@ -2995,6 +3009,7 @@ export function GateApp(props: GateAppProps = {}) {
               pageId={navView.pageId}
               nestedPageId={navView.nestedPageId}
               onNavigate={navigateDesign}
+              framed={designFramed}
               gate={workspaceGate}
               bridge={chatBridge}
               skillOptions={data.skillOptions}
