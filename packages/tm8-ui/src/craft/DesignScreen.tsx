@@ -51,6 +51,7 @@ import { DesignChatPane } from './DesignChatPane';
 import { GraphPage, type ToolNote } from './GraphPage';
 import { PageRow } from './PageRow';
 import { useDesign, type DesignHandle } from './useDesign';
+import { useExclusiveChat } from './useExclusiveChat';
 import type { DesignPageRow, DesignSource, NewPageKind } from './design-source';
 import type { DesignCard, DesignsSource } from './designs-source';
 import type { CraftPanelHostProps } from './types';
@@ -210,7 +211,6 @@ export function DesignScreen(props: DesignScreenProps) {
   const chatPref = usePanelWidth('craft.chat', CHAT_DEFAULT, CHAT_MIN);
   const chatMax = splitWidth > 0 ? Math.max(CHAT_MIN, splitWidth - PAGES_MIN - PANE_CHROME) : Number.POSITIVE_INFINITY;
   const chatWidth = Math.min(Math.max(CHAT_MIN, chatPref.width), chatMax);
-  const chatHidden = chatCollapsed || expanded;
 
   /* The strip's two subjects and their chrome seams (Workspace hosts only). */
   const [pageMainEl, setPageMainEl] = useState<HTMLDivElement | null>(null);
@@ -219,6 +219,18 @@ export function DesignScreen(props: DesignScreenProps) {
   const ownerTab = useEmbeddedTab(runtime, gate ? designId : null, gate ? 'design' : null);
   const pageTab = useEmbeddedTab(runtime, gate && activePage ? activePage.id : null, gate && activePage ? activePage.kind : null);
   const ownerSection = ownerTab?.ui.subview ?? 'entity';
+  /* R2-D9: the design's chat and the page's side column are exclusive. */
+  const pageSideOpen = !!pageTab?.ui.chat?.open;
+  const chatHidden = chatCollapsed || expanded;
+  useExclusiveChat({
+    designShown: !chatHidden,
+    pageShown: pageSideOpen,
+    pageId: pageTab?.id ?? null,
+    hideDesign: () => setChatCollapsed(true),
+    closePage: () => {
+      if (pageTab) runtime.dispatch({ command: 'workspace.tabs.setUi', args: { tabId: pageTab.id, patch: { chat: { open: false } } }, source: 'click' });
+    },
+  });
   /* Without a strip, the graph's controls need a home of their own. */
   const [liteSlot, setLiteSlot] = useState<HTMLDivElement | null>(null);
   const controlsSlot = gate ? pageChrome.kindSlot : liteSlot;
