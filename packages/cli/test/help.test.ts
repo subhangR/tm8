@@ -199,9 +199,14 @@ describe('command shards — tm8.help.command.v1, 16 KiB HARD', () => {
     // It is a published correlation id (messageBatchId, handoffId) by contract.
     // Text implying secrecy would teach a security property tm8 does not have.
     for (const c of commands()) {
-      const text = json(commandHelp(c.path));
-      if (!text.includes('mutation-id') && !text.includes('mutation id')) continue;
-      expect(text, c.command).not.toMatch(/secret|confidential|do not share|keep .{0,12}private/i);
+      const shard = commandHelp(c.path);
+      // A command may manage secrets. Only prose ABOUT the correlation id
+      // must never describe that id as confidential.
+      const prose = [shard?.summary ?? '', ...(shard?.notes ?? []), ...(shard?.trustNotes ?? [])];
+      for (const sentence of prose.flatMap(text => text.split(/[.;\n]/))) {
+        if (!/mutation[- ]id|clientMutationId|messageBatchId/i.test(sentence)) continue;
+        expect(sentence, c.command).not.toMatch(/secret|confidential|do not share|keep .{0,12}private/i);
+      }
     }
   });
 
