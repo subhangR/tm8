@@ -74,7 +74,17 @@ import {
 import { FILE_PALETTE_SCOPE, parseFilePaletteRef, recentFilePaletteViews } from '../project-file/palette';
 import { useProjectNames } from '../project-file/projects';
 import { useRecentProjectFiles } from '../project-file/recent';
-import { CraftScreen, CraftsHome, craftSourceFromSeam, craftsSourceFromSeam, type CraftTarget } from '../craft';
+import {
+  CraftHeaderSwitcher,
+  CraftScreen,
+  CraftsHome,
+  craftSourceFromSeam,
+  craftsSourceFromSeam,
+  craftTabsKey,
+  localOpenCraftsPort,
+  serverOpenCraftsPort,
+  type CraftTarget,
+} from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
@@ -2666,9 +2676,7 @@ export function GateApp(props: GateAppProps = {}) {
     />
   ) : null;
 
-  /* CRAFT in the frame (spec §3): an open craft's chats and sessions fill the
-     panel beside the rail — `CraftScreen` portals them into this host. The
-     crafts home has no 2nd panel. */
+  /* The craft's chats and sessions fill the second panel. */
   const craftFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
   const craftPanel = craftFramed && navView.view === 'craft' && navView.designId ? 'host' : null;
 
