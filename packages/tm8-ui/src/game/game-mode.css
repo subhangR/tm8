@@ -1,0 +1,8 @@
+.game-mode { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.game-mode__navigation { display: flex; align-items: center; gap: .75rem; padding: .5rem .75rem; flex: 0 0 auto; }
+.game-mode__navigation ol { display: flex; align-items: center; flex-wrap: wrap; list-style: none; gap: .5rem; margin: 0; padding: 0; }
+.game-mode__navigation li + li::before { content: '/'; margin-right: .5rem; opacity: .5; }
+.game-mode__map { position: relative; flex: 1; min-height: 0; }
+.game-mode__status { padding: 1rem; }
+.game-mode__status button + button { margin-left: .5rem; }
+.game-mode__notice { margin: 0; padding: .5rem .75rem; font-size: .875rem; }
