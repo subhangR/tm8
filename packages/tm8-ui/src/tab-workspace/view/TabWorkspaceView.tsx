@@ -12,6 +12,7 @@ import { initPersistence } from '../runtime/persistence';
 import { initUrlSync, type RouteFile } from '../runtime/url';
 import { drainWorkArrival, onWorkArrival } from '../runtime/arrival';
 import { getRailStore } from '../runtime/railStore';
+import { getWorkspaceListStore } from '../bridge/workspaceList';
 import { NOTICE_TTL_MS } from '../../shell';
 import { PanelResizer } from '../../kit/PanelResizer';
 import { VectorIcon } from '../../kit/VectorIcon';
@@ -120,6 +121,17 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
     () => ({ runtime, store: runtime.store, dispatch: runtime.dispatch, viewerId, spaceId, gate }),
     [runtime, viewerId, spaceId, gate],
   );
+
+  /* The workspace switcher lives in the left header, which is not drawn while
+     the navigation is expanded away. `g w` there would set an open flag with
+     no switcher on screen — a latch that pops it open on restore — so an open
+     request brings the navigation back and the switcher shows at once. */
+  const switcherOpen = useStore(getWorkspaceListStore(viewerId, spaceId), (s) => s.open);
+  useEffect(() => {
+    if (layout.expanded && switcherOpen) {
+      runtime.dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'keyboard' });
+    }
+  }, [layout.expanded, switcherOpen, runtime]);
 
   const setBrowserWidth = useCallback(
     (browserWidth: number) =>

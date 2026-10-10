@@ -94,7 +94,7 @@ describe('a server round trip keeps your place', () => {
     await goToObserve(first);
     // Back into Work through the view selector in Observe's frame header (shell alignment).
     fireEvent.click(first.getByTestId('tws-view-select'));
-    fireEvent.click(first.getByRole('menuitemradio', { name: /Work/ }));
+    fireEvent.click(first.getByRole('menuitemradio', { name: /Home/ }));
     await waitFor(() => first.getByTestId('tab-workspace'));
     first.unmount();
     window.location.hash = '';

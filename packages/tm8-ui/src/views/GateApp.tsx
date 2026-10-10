@@ -230,7 +230,8 @@ const WORKSPACE_TABS_TAB_ID = 'workspace-tabs';
 const SETTINGS_GROUP_ID = 'settings';
 const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'graph', SETTINGS_GROUP_ID];
 const VIEW_GROUP_LABEL: Record<string, string> = {
-  [WORKSPACE_TABS_TAB_ID]: 'Work',
+  /* Home (formerly Work; Craft redesign §2, 2026-10-10): the tabs view. */
+  [WORKSPACE_TABS_TAB_ID]: 'Home',
   craft: 'Design',
   graph: 'Observe',
   [SETTINGS_GROUP_ID]: 'Settings',
@@ -656,6 +657,8 @@ export function GateApp(props: GateAppProps = {}) {
      legacy desktop (`shell/desktop-modes.ts`). Never on the phone (D16). */
   const [modes] = useState(desktopModes);
   const threeModes = shell !== 'mobile' && modes === 'three';
+  const threeModesRef = useRef(threeModes);
+  threeModesRef.current = threeModes;
   const navView = useNavStore((s) => s.view);
 
   /**
@@ -906,6 +909,9 @@ export function GateApp(props: GateAppProps = {}) {
       onSpacePicker: () => {
         addressable = false;
       },
+      /* Craft redesign §2: on the three-mode desktop Home is the tabs view,
+         so bare `/home` (what it writes with no tab active) reads as itself. */
+      homeIsTabs: () => threeModesRef.current,
     });
     setBootRoute(addressable ? 'addressable' : 'none');
     /* R15's fact, read at the only moment it is true. A depth of 1 means this
@@ -1671,8 +1677,11 @@ export function GateApp(props: GateAppProps = {}) {
     if (command === 'help.open') setShortcutsOpen(true);
     /* `g w`: a no-op with a notice while the socket is down (S13). */
     if (command === 'workspace.switcher') {
-      openWorkspaceSwitcher(workspaceList, (title) =>
+      const opened = openWorkspaceSwitcher(workspaceList, (title) =>
         noticeSink.current({ id: 'kbd-workspace', tone: 'info', title, body: '', ttlMs: 4_000 }));
+      /* The workspace switcher is Home's (Craft redesign §2): from another
+         mode, `g w` goes to Home and opens it there. */
+      if (opened && threeModes && activeGroupId !== WORKSPACE_TABS_TAB_ID) navStore.getState().navigate(WORK_VIEW);
     }
     /* Esc in a text field LEAVES it. The controller has always emitted this and
        consumed the key, but nothing acted on it, so Esc did nothing at all and
@@ -2065,7 +2074,7 @@ export function GateApp(props: GateAppProps = {}) {
          which is route-only (no MenuTarget names it). */
       ...(threeModes
         ? [
-            { id: 'route:work', label: 'Work', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
+            { id: 'route:work', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
             { id: 'view:craft', label: 'Design', glyph: <VectorIcon paths={VIEW_ART.craft} /> },
             { id: 'view:graph', label: 'Observe', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
             { id: 'view:settings', label: 'Settings', glyph: <VectorIcon paths={VIEW_ART.settings} /> },
@@ -2180,6 +2189,10 @@ export function GateApp(props: GateAppProps = {}) {
        is claimed off the ROUTE, exactly as its screen mount is. */
     if (navView.view === 'boardV2') return BOARD_V2_TAB_ID;
     if (navView.view === 'tabs') return WORKSPACE_TABS_TAB_ID;
+    /* A kind's list is Home's (Craft redesign §2): the rail opens it from any
+       mode, and a kind Home's browser does not host yet keeps its own list
+       screen — still under the Home mode, never a mode of its own. */
+    if (threeModes && navView.view === 'kind') return WORKSPACE_TABS_TAB_ID;
     const direct = groupIdOfTarget(data.menu.config, activeTarget ?? null);
     if (direct) return direct;
     if (threeModes && activeTarget?.type === 'view' && activeTarget.ref === 'settings') return SETTINGS_GROUP_ID;
@@ -2346,6 +2359,14 @@ export function GateApp(props: GateAppProps = {}) {
    * Placed after the router mount effect deliberately — a fork above it would
    * give the two shells two mounts, and two mounts are two histories.
    */
+  /* The workspace switcher sits in Home's switcher slot only (Craft redesign
+     §2). An open flag with no switcher on screen would latch and pop it open
+     the next time Home mounts it, so it never outlives the slot. */
+  const workspaceSwitcherShown = !threeModes || activeGroupId === WORKSPACE_TABS_TAB_ID;
+  const workspaceSwitcherOpen = useStore(workspaceList, (s) => s.open);
+  useEffect(() => {
+    if (!workspaceSwitcherShown && workspaceSwitcherOpen) workspaceList.setState({ open: false });
+  }, [workspaceSwitcherShown, workspaceSwitcherOpen, workspaceList]);
   if (shell === 'mobile' && data.spaceId) {
     /* `data-shell` MARKS THE ROOT SO THE PHONE CAN DECLINE THE ZOOM LEVER.
        `app.css` puts `zoom: 1.1` on every `.cv2-root` — a user-ruled taste
@@ -2550,6 +2571,14 @@ export function GateApp(props: GateAppProps = {}) {
       notify={(title) => notices.push({ id: 'workspace-manage', tone: 'info', title, body: '', ttlMs: NOTICE_TTL_MS })}
     />
   ) : null;
+  /* THE MODE-AWARE SWITCHER SLOT (Craft redesign §2): the header reads
+     space · mode · switcher, and the switcher is the current mode's own —
+     Home switches workspaces, Craft switches crafts. One table, keyed by the
+     mode's group id; a mode with no row (Observe, Settings) draws none. */
+  const craftSwitcherEl: ReactNode = null; // L4: the craft switcher
+  const modeSwitcherEl: ReactNode = threeModes
+    ? (({ [WORKSPACE_TABS_TAB_ID]: workspaceSwitcherEl, craft: craftSwitcherEl } as Record<string, ReactNode>)[activeGroupId ?? ''] ?? null)
+    : workspaceSwitcherEl;
   const accountEl =
     authAccount && data.viewerActor ? (
       <AccountMenu
@@ -2681,10 +2710,12 @@ export function GateApp(props: GateAppProps = {}) {
     viewTabs,
     shellTabs,
     activeViewTabId: activeGroupId,
+    /* A kind's list screen reads as Home but is not Home's root (the tabs view). */
+    atViewRoot: !(threeModes && navView.view === 'kind'),
     activeScreenRef: activeTarget?.type === 'view' ? activeTarget.ref : null,
     onSelectViewTab: openTab,
     switcherSlot: switcherEl,
-    workspaceSwitcherSlot: workspaceSwitcherEl,
+    modeSwitcherSlot: modeSwitcherEl,
     accountSlot: accountEl,
   };
 
@@ -2701,10 +2732,13 @@ export function GateApp(props: GateAppProps = {}) {
       data-theme={theme === 'dark' ? 'dark' : undefined}
     >
       <div className="shell-root">
-        {desktopRedirect ? (
-          /* D31: a retired address is redirecting into Work this frame; the
-             retired screen is never mounted on the way. */
-          <BootLoader label="opening Work" />
+        {desktopRedirect && !(data.authRequired || data.bootError) ? (
+          /* D31: a retired address is redirecting into Home this frame; the
+             retired screen is never mounted on the way. A boot that failed
+             never resolves the redirect (it waits on the viewer), so it falls
+             through to the boot cards below — bare /home is the canonical
+             Home address, so a sign-in lands there routinely. */
+          <BootLoader label="opening Home" />
         ) : navView.view === 'tabs' && (data.ready || !(data.authRequired || data.bootError)) ? (
           /* WORK (tabs view, Spec A §2–§3): full-bleed, and the ONLY view
              that renders WITHOUT the top bar — its own left header and rail
@@ -2723,7 +2757,7 @@ export function GateApp(props: GateAppProps = {}) {
               />
             </CatchBoundary>
           ) : (
-            <BootLoader label="loading Work" />
+            <BootLoader label="loading Home" />
           )
         ) : (
         <>
@@ -2742,7 +2776,7 @@ export function GateApp(props: GateAppProps = {}) {
              leaveSpaceContext THEN resetAddress, together, in this order,
              wherever this control lives. */
           switcherSlot={switcherEl}
-          workspaceSwitcherSlot={workspaceSwitcherEl}
+          workspaceSwitcherSlot={modeSwitcherEl}
           /* R2: the menu's groups, as tabs. */
           viewTabs={viewTabs}
           tabs={threeModes ? shellTabs.filter((tab) => !VIEW_GROUP_ORDER.includes(tab.id)) : shellTabs}
@@ -3611,7 +3645,7 @@ export function GateApp(props: GateAppProps = {}) {
               </div>
             )
           ) : (
-            <BootLoader label="loading Work" />
+            <BootLoader label="loading Home" />
           )}
           </CatchBoundary>
         </div>
