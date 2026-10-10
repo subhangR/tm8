@@ -1517,6 +1517,7 @@ export class SpawnService {
         clientMutationId: request.clientMutationId ?? null,
         ...(request.newTask ? { newTaskTitle: request.newTask.title } : {}),
         ...(request.storyId ? { storyId: request.storyId } : {}),
+        ...(request.aboutEntityId ? { aboutEntityId: request.aboutEntityId } : {}),
         ...(request.sourceWorkSessionId ? { sourceWorkSessionId: request.sourceWorkSessionId } : {}),
       });
     } catch (error) {

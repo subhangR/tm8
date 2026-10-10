@@ -528,7 +528,7 @@ describe.sequential('TM8 Chat storage and door rules', () => {
       // `about` — the chat's subject (entity chat §3.6), so the Chats list can
       // draw it without a read per row. This chat was started about the channel.
       // `context` — the latest context reading (231), null until measured.
-      'about', 'agentTool', 'context', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
+      'about', 'agentTool', 'context', 'credentialSelection', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
       'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
     ]);
     expect(summary?.state).toMatchObject({
@@ -696,5 +696,47 @@ describe.sequential('TM8 Chat storage and door rules', () => {
       `select context from public.chats where entity_id=$1`, [chatId],
     ))[0]!;
     expect(stored.context).toEqual(reading(null));
+  });
+});
+
+
+describe('chat credential selection', () => {
+  it('persists and projects the choice while a claimed turn retains its snapshot', async () => {
+    const started = await startChat(fixture.identityA, 'browser', randomUUID());
+    const id = String(started.chatId);
+    const set = (source: string) => asIdentity(fixture.identityA, 'browser', async client =>
+      (await client.query(`select public.set_chat_credentials($1,$2::jsonb) result`, [id, JSON.stringify({ source })])).rows[0]!);
+    await set('member');
+    const claimed = await asIdentity(fixture.identityA, 'browser', async client =>
+      (await client.query(`select public.claim_next_chat_turn($1) result`, [id])).rows[0]!);
+    expect(claimed.result.credentialSelection).toEqual({ source: 'member' });
+    await set('node');
+    const [turn] = await database.query<{ credential_selection: unknown }>(
+      'select credential_selection from public.chat_turns where turn_id=$1', [claimed.result.turnId]);
+    expect(turn!.credential_selection).toEqual({ source: 'member' });
+    const [summary] = await facadeDb.tx({ identityId: fixture.identityA }, q => loadEntitySummariesByIds(q,[id],fixture.identityA));
+    expect(summary!.state).toMatchObject({ credentialSelection: { source: 'node' } });
+    await database.transaction(async client => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query("update public.chat_turns set lease_expires_at=now()-interval '1 minute' where turn_id=$1", [claimed.result.turnId]);
+    });
+    const reclaimed = await asIdentity(fixture.identityA, 'browser', async client =>
+      (await client.query(`select public.claim_next_chat_turn($1) result`, [id])).rows[0]!);
+    expect(reclaimed.result.credentialSelection).toEqual({ source: 'member' });
+  });
+
+  it('refuses another member, an agent credential, a wrong space pin and invalid references', async () => {
+    const id = String((await startChat(fixture.identityA, 'browser', randomUUID())).chatId);
+    const change = (identity: string, kind: 'browser' | 'agent', selection: unknown, pin?: string) =>
+      asIdentity(identity, kind, async client => {
+        if (pin) await client.query("select set_config('tm8.session_space_id',$1,true)",[pin]);
+        return (await client.query(`select public.set_chat_credentials($1,$2::jsonb) result`,[id,JSON.stringify(selection)])).rows[0]!;
+      });
+    await expect(change(fixture.identityB,'browser',{source:'node'})).rejects.toMatchObject({code:'P0002'});
+    await expect(change(fixture.identityA,'agent',{source:'node'})).rejects.toMatchObject({code:'42501'});
+    await expect(change(fixture.identityA,'browser',{source:'node'},randomUUID())).rejects.toMatchObject({code:'P0002'});
+    await expect(change(fixture.identityA,'browser',{source:'member',credentialId:randomUUID()})).rejects.toMatchObject({code:'22023'});
+    await expect(change(fixture.identityA,'browser',{source:'space',credentialId:'bad'})).rejects.toMatchObject({code:'22023'});
+    await expect(change(fixture.identityA,'browser',{source:'anything'})).rejects.toMatchObject({code:'22023'});
   });
 });

@@ -283,7 +283,7 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
-  SetChatModelInput,
+  SetChatModelInput, SetChatCredentialsInput, SetChatCredentialsResult,
   SetChatModelResult,
   StartChatInput,
   StartChatResult,
@@ -1175,6 +1175,7 @@ export interface Seam {
      * the old model until the next turn is claimed; nothing here interrupts an
      * answer in flight to apply a choice about the answer after it.
      */
+    setChatCredentials(chatId: EntityId, input: SetChatCredentialsInput): Promise<SetChatCredentialsResult>;
     setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;

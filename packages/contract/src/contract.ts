@@ -616,6 +616,7 @@ export type CoreEntityState =
    */
   | { kind: 'chat'; teammateId: EntityId; model: string; provider: string; agentTool: string;
       mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
+      credentialSelection?: ChatCredentialSelection;
       runtimeState: 'cold' | 'live' | 'stopped';
       turnState: 'idle' | 'queued' | 'running';
       turnCount: number; lastTurnAt: string | null;
@@ -1526,7 +1527,17 @@ export type ChatWorkdirMode = 'project' | 'scratch';
  * Craft blueprint, the task, the pull request — is a relation (`about`), which
  * a human can see and correct, rather than a hidden binding column.
  */
+/** Model credentials for one chat; secrets never travel in this selection. */
+export interface ChatCredentialSelection {
+  source: 'auto' | LaunchCredentialSource;
+  /** Only for source=space. Absent means the space default. */
+  credentialId?: EntityId;
+}
+export interface SetChatCredentialsInput { credentialSelection: ChatCredentialSelection }
+export interface SetChatCredentialsResult extends SetChatCredentialsInput { chatId: EntityId }
+
 export interface StartChatInput {
+  credentialSelection?: ChatCredentialSelection;
   mcpSelections?: McpSelection[];
   spaceId: SpaceId;
   teammateId: EntityId;
@@ -6078,6 +6089,13 @@ export interface ExecutionSpawnInput extends CommandContext {
   taskIds?: EntityId[];
   /** Direct story anchor, exclusive with taskIds, newTask and forceNewTask. Creates no task. */
   storyId?: EntityId;
+  /**
+   * What the session is ABOUT: written as `session -[about]-> aboutEntityId`
+   * in the spawn transaction, after checking the caller can read it. Only an
+   * edge written at spawn binds the session to it (e.g. a craft's workspace,
+   * Craft doc 01a1255d §4); one added later binds nothing.
+   */
+  aboutEntityId?: EntityId;
   /**
    * When a `taskIds` entry is a non-task entity, mint a NEW derived task for
    * it even when an open one exists — the "start a different piece of work

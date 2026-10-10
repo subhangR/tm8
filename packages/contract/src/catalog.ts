@@ -266,6 +266,7 @@ export const OPERATIONS = [
   // 276 — move a running chat onto another model. Sticky: it changes the chat,
   // and every turn claimed afterwards runs on the new model. A turn already
   // claimed keeps the model it was stamped with.
+  { name: 'chat.setCredentials', method: 'POST', path: '/v2/chats/:id/credentials', kind: 'command', status: 'v1' },
   { name: 'chat.setModel',           method: 'POST',   path: '/v2/chats/:id/model',                         kind: 'command', status: 'v1' },
 
   // collections / graph / placements / undo
@@ -386,6 +387,11 @@ export const OPERATIONS = [
   // §5.12: the human's answer to an agent's Switch/Stay or Delete/Keep prompt
   // (D8: the prompts live in the node's memory). Humans only.
   { name: 'workspace.prompts.resolve', method: 'POST', path: '/v2/spaces/:spaceId/workspace/prompts/:promptId', kind: 'command', status: 'v1' },
+  // Craft workspaces (Craft redesign doc 01a1255d §3, §4): the caller's tabs on
+  // each craft, and their open-crafts list. Hidden from the Home list above.
+  { name: 'workspace.crafts.list',   method: 'GET',    path: '/v2/spaces/:spaceId/craft-workspaces',        kind: 'read',    status: 'v1' },
+  { name: 'workspace.crafts.get',    method: 'GET',    path: '/v2/spaces/:spaceId/craft-workspaces/:craftId', kind: 'read',  status: 'v1' },
+  { name: 'workspace.crafts.command', method: 'POST',  path: '/v2/spaces/:spaceId/craft-workspaces/:craftId/commands', kind: 'command', status: 'v1' },
 
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },

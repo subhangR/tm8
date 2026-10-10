@@ -15,6 +15,7 @@
  */
 import {
   CollabError,
+  type CraftWorkspaceCommandInput,
   isWorkspaceColor,
   isWorkspaceName,
   WORKSPACE_COMMAND_TIMEOUT,
@@ -37,6 +38,7 @@ import { loadActors } from '../facade/entity-read.js';
 import { json, type OperationHandler, type RequestContext } from '../http/types.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import { clampTimeout, type WorkspaceBridge } from './bridge.js';
+import { CraftWorkspaceService } from './crafts.js';
 import { TargetRefused, type TargetRequest } from './resolve.js';
 import type { WorkspaceService } from './service.js';
 
@@ -72,6 +74,10 @@ export interface WorkspaceHandlers {
   readonly remove: OperationHandler;
   readonly switchTo: OperationHandler;
   readonly resolvePrompt: OperationHandler;
+  /** Craft workspaces (doc 01a1255d §3, §4; migration 315). */
+  readonly crafts: OperationHandler;
+  readonly craft: OperationHandler;
+  readonly craftCommand: OperationHandler;
 }
 
 /** Commands addressed by a tab id: explicit (must agree) → owner → active (§3.3). */
@@ -142,6 +148,7 @@ function workspaceParam(ctx: RequestContext): string {
  */
 export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers {
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
+  const craftService = new CraftWorkspaceService({ db: deps.db, bridge: deps.bridge });
 
   /**
    * Who is calling, checked against the space. The space read is the same RLS
@@ -476,7 +483,55 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
     }), 'answer prompts about'));
   };
 
-  return { list, inspect, command, get, workspaces, patchDraft, create, update, reorder, remove, switchTo, resolvePrompt };
+  /** The path's `:craftId`, a uuid. */
+  function craftParam(ctx: RequestContext): string {
+    const id = ctx.params['craftId'] ?? '';
+    if (!UUID_RE.test(id)) throw new CollabError('invalid_input', 'craftId must be a craft id (uuid)');
+    return id;
+  }
+
+  const crafts: OperationHandler = async (ctx) => {
+    const who = await caller(ctx);
+    return json(await craftService.list(who.claims, who.spaceId));
+  };
+
+  const craft: OperationHandler = async (ctx) => {
+    const craftId = craftParam(ctx);
+    const who = await caller(ctx);
+    return json(await craftService.get(who.claims, who.spaceId, craftId));
+  };
+
+  /**
+   * §4: the person, or a chat or session they started ON this craft. An agent
+   * token carries its starter's identity, so the row is always the starter's;
+   * what is checked is that the agent's chat or session is about the craft.
+   */
+  const craftCommand: OperationHandler = async (ctx) => {
+    const craftId = craftParam(ctx);
+    const who = await caller(ctx);
+    const input = ctx.body as CraftWorkspaceCommandInput;
+    if (who.actorClass === 'agent') {
+      const allowed = await craftService.agentMayCommand(who.claims, craftId, {
+        ...(ctx.identity.runtimeChatId ? { chatId: ctx.identity.runtimeChatId } : {}),
+        ...(ctx.identity.workSessionId ? { workSessionId: ctx.identity.workSessionId } : {}),
+      });
+      if (!allowed) {
+        throw new CollabError('forbidden', 'only a chat or session started on this craft may change its tabs', {
+          details: { reason: 'not_craft_session' },
+        });
+      }
+    }
+    const { clientMutationId: _minted, ...body } = (ctx.body ?? {}) as Record<string, unknown>;
+    return json(await deps.bridge.recorded(
+      who.identityId,
+      `craft:${input.requestId}`,
+      { craftId, spaceId: who.spaceId, body },
+      WORKSPACE_COMMAND_TIMEOUT.max,
+      () => craftService.command(who.claims, who.spaceId, craftId, input, actorOf(who)),
+    ));
+  };
+
+  return { list, inspect, command, get, workspaces, patchDraft, create, update, reorder, remove, switchTo, resolvePrompt, crafts, craft, craftCommand };
 }
 
 /**
