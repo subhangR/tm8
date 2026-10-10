@@ -1,4 +1,4 @@
-import { ACTION_ROW_COLUMNS, type ActionRows, type OperationName } from '@tm8/contract';
+import { ACTION_ROW_COLUMNS, ToolConfigSetInputSchema, ToolRunInputSchema, ToolSecretBindInputSchema, ToolViewSchema, type ActionRows, type OperationName } from '@tm8/contract';
 import { describe, expect, it, vi } from 'vitest';
 import { createHttpClient } from '../data/real/http';
 import { fakeFetch } from '../data/real/test-support';
@@ -16,13 +16,15 @@ describe('tool operation transport', () => {
     const f = fakeFetch(() => ({ data: {} }));
     const port = createToolPort(createHttpClient({ fetch: f.fetch }), graph());
     await port.setConfig(fixtureTool, 'limit', 7);
-    expect(f.last()).toMatchObject({ method: 'POST', url: `/v2/tools/${fixtureTool.id}/config`, body: { toolId: fixtureTool.id, expectedVersion: 1, inputName: 'limit', value: 7, clientMutationId: expect.any(String) } });
+    expect(f.last()).toMatchObject({ method: 'PUT', url: `/v2/tools/${fixtureTool.id}/config`, body: { toolId: fixtureTool.id, expectedVersion: 1, inputName: 'limit', value: 7, clientMutationId: expect.any(String) } });
+    expect(ToolConfigSetInputSchema.safeParse(f.last().body).success).toBe(true);
     await port.unsetConfig(fixtureTool, 'limit');
     expect(f.last()).toMatchObject({ method: 'POST', url: `/v2/tools/${fixtureTool.id}/config/unset`, body: { toolId: fixtureTool.id, expectedVersion: 1, inputName: 'limit' } });
     await port.setSecret(fixtureTool, 'token', 'private-value');
-    expect(f.last()).toMatchObject({ method: 'POST', url: `/v2/tools/${fixtureTool.id}/secrets`, body: { toolId: fixtureTool.id, expectedVersion: 1, inputName: 'token', value: 'private-value' } });
+    expect(f.last()).toMatchObject({ method: 'POST', url: `/v2/tools/${fixtureTool.id}/secrets/bind`, body: { toolId: fixtureTool.id, expectedVersion: 1, inputName: 'token', value: 'private-value' } });
     expect(f.last().body).not.toHaveProperty('secret');
     expect(f.last().body).not.toHaveProperty('label');
+    expect(ToolSecretBindInputSchema.safeParse(f.last().body).success).toBe(true);
     await port.unsetSecret(fixtureTool, 'token');
     expect(f.last()).toMatchObject({ method: 'POST', url: `/v2/tools/${fixtureTool.id}/secrets/unbind`, body: { toolId: fixtureTool.id, expectedVersion: 1, inputName: 'token' } });
     expect(f.calls.every(call => call.headers?.['x-tm8-client'] === 'tm8-ui')).toBe(true);
@@ -35,6 +37,7 @@ describe('tool operation transport', () => {
     const result = await port.run({ toolId: fixtureTool.id, expectedVersion: 1, clientMutationId: 'run-test', keepOpen: true, inputs: { limit: 3 }, secrets: { token: 'one-run-value' } });
     expect(f.last()).toMatchObject({ method: 'POST', url: `/v2/tools/${fixtureTool.id}/run`, body: { expectedVersion: 1, keepOpen: true, inputs: { limit: 3 }, secrets: { token: 'one-run-value' } } });
     expect(f.last().url).not.toContain('one-run-value');
+    expect(ToolRunInputSchema.safeParse(f.last().body).success).toBe(true);
     expect(result).toEqual({ sessionId });
   });
 
@@ -50,6 +53,17 @@ describe('tool operation transport', () => {
   it('refuses launch review when source changed after the dialog was opened', async () => {
     const f = fakeFetch(() => ({ data: { ...fixtureTool, sourceSha256: 'b'.repeat(64) } }));
     await expect(createToolPort(createHttpClient({ fetch: f.fetch }), graph()).sourceChange(fixtureTool)).rejects.toThrow('Reload the tool and review the source');
+  });
+
+  it('reads the final strict view and source attribution without exposing secret values', async () => {
+    const view = { ...fixtureTool, secretBindings: [{ inputName: 'token', credentialId: '00000000-0000-4000-8000-000000000003', keyHint: '…abcd', boundBy: null, boundAt: '2026-10-10T12:00:00Z' }],
+      sourceChangedSinceViewerLastRun: { byActor: { id: fixtureTool.id, kind: 'member', displayName: 'Ada', isAgent: false }, at: '2026-10-10T12:00:00Z', fromSha: 'b'.repeat(64), toSha: fixtureTool.sourceSha256 } };
+    expect(ToolViewSchema.safeParse(view).success).toBe(true);
+    const f = fakeFetch(() => ({ data: view }));
+    const port = createToolPort(createHttpClient({ fetch: f.fetch }), graph());
+    expect(await port.get(fixtureTool.id)).toMatchObject({ executionVersion: 1, configRevision: 0, secretBindings: [{ keyHint: '…abcd', boundAt: '2026-10-10T12:00:00Z' }] });
+    expect(await port.sourceChange(fixtureTool)).toEqual({ changedBy: 'Ada' });
+    expect(f.last()).toMatchObject({ method: 'GET', url: `/v2/tools/${fixtureTool.id}` });
   });
 
   it('gets run history from incoming executes edges and loads each pinned run', async () => {

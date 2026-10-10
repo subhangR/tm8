@@ -1,4 +1,4 @@
-import { CollabError, isOperationName, isRefusedActionRow, type ToolRun, type ToolView } from '@tm8/contract';
+import { isRefusedActionRow, type OperationName, type ToolRun, type ToolView } from '@tm8/contract';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { ToolPort } from './port';
@@ -7,8 +7,7 @@ import type { ToolPort } from './port';
 export function createToolPort(http: HttpClient, seam: Pick<Seam, 'connections' | 'actions'>): ToolPort {
   const command = () => ({ clientMutationId: `tool-${crypto.randomUUID()}` });
   const versioned = (tool: ToolView) => ({ ...command(), toolId: tool.id, expectedVersion: tool.version });
-  async function call<T>(name: string, options: Parameters<HttpClient['call']>[1]): Promise<T> {
-    if (!isOperationName(name)) throw new CollabError('not_implemented', 'Tools are unavailable on this server version.');
+  async function call<T>(name: OperationName, options: Parameters<HttpClient['call']>[1]): Promise<T> {
     return http.call<T>(name, options);
   }
   return {
@@ -29,7 +28,7 @@ export function createToolPort(http: HttpClient, seam: Pick<Seam, 'connections' 
       return { items: runs, nextCursor: page.nextCursor };
     },
     async sourceChange(tool) {
-      const current = await call<ToolView & { sourceChangedSinceViewerLastRun?: { byActor: { displayName: string } | null } | null }>('tools.get', { params: { toolId: tool.id } });
+      const current = await call<ToolView>('tools.get', { params: { toolId: tool.id } });
       if (current.sourceSha256 !== tool.sourceSha256) throw new Error('The source changed while the Run dialog was open. Reload the tool and review the source before running.');
       const change = current.sourceChangedSinceViewerLastRun;
       return change ? { changedBy: change.byActor?.displayName ?? 'an unknown author' } : null;

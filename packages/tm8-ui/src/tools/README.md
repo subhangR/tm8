@@ -4,7 +4,9 @@ An open definition draft keeps the version it loaded. A conflict preserves it an
 
 `ToolRunChip` reads the session's pinned `toolRun` outcome while `TerminalBody` continues to use PTY liveness. A tool exit therefore changes only the chip. `toolTabCloseEffect` terminates a live keep-open shell when the user explicitly removes its last tab; system navigation and other remaining tabs do not terminate it.
 
-`fixture.ts` and `e2e/tools-harness.html` simulate the tool operations while the parallel server work is unavailable. They never execute source or connect to a PTY. The browser check verifies the actual CodeMirror highlighting, page/config/Run UI and narrow layout against those fixtures. The terminal unit check proves the same `LiveTerminal` mount survives each tool exit state. A live server journey, including absence of secret environment variables, `TM8_AGENT_TOKEN`, and `TM8_SESSION_ID` in the leftover shell, belongs to Tools 5 after Tools 2's handlers and launcher land.
+`adapter.test.ts` uses the authenticated transport and final operation catalog to verify routes, strict request schemas, source attribution, human-only secret controls, and graph run history. The adapter exposes only the session pointer from a launch response.
+
+`fixture.ts` and `e2e/tools-harness.html` simulate tool operations for UI checks. They never execute source or connect to a PTY. The browser check verifies the actual CodeMirror highlighting, page/config/Run UI and narrow layout against those fixtures. The terminal unit check proves the same `LiveTerminal` mount survives each tool exit state. A live server journey, including absence of secret environment variables, `TM8_AGENT_TOKEN`, and `TM8_SESSION_ID` in the leftover shell, belongs to Tools 5 after Tools 2's handlers and launcher land.
 
 Checks:
 
