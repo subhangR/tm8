@@ -594,6 +594,8 @@ describe.sequential('TM8 Chat storage and door rules', () => {
         )
       ).rows[0]!.result);
       if (claimed?.userMessageId === otherReplyId) claimedByB = claimed;
+      else if (claimed) await asIdentity(fixture.identityA,'browser',client => client.query(
+        `select public.complete_chat_turn($1,'error','fixture settled without dispatch',null,null,'{}'::jsonb)`,[(claimed as {turnId:string}).turnId]));
     }
     expect(claimedByB).toMatchObject({
       userMessageId: otherReplyId,
@@ -722,7 +724,8 @@ describe('chat credential selection', () => {
     });
     const reclaimed = await asIdentity(fixture.identityA, 'browser', async client =>
       (await client.query(`select public.claim_next_chat_turn($1) result`, [id])).rows[0]!);
-    expect(reclaimed.result.credentialSelection).toEqual({ source: 'member' });
+    // An expired legacy lease does not prove that dispatch never happened.
+    expect(reclaimed.result).toBeNull();
   });
 
   it('refuses another member, an agent credential, a wrong space pin and invalid references', async () => {

@@ -459,6 +459,7 @@ begin
   end if;
   update public.chat_turn_attempts set open_receipt=p_open_receipt where snapshot_id=p_snapshot_id;
   update public.chat_native_bindings set native_id=p_open_receipt->'native'->>'nativeId',
+    storage_scope_ref=coalesce(p_open_receipt->>'nativeStorageScopeId',storage_scope_ref),
     seed_transport=seed->>'transport',seed_ack_digest=case when seed->>'acknowledgement' in ('protocol_echo','turn_accepted')
       then seed->>'contentHash' else null end where chat_id=p_chat_id and generation=a.native_generation;
   update public.chats set runtime_phase='ready',runtime_state='live' where entity_id=p_chat_id;
@@ -680,7 +681,7 @@ end $$;
 
 -- Narrow, chat-specific authority proof. Holding a SHARE lock until the effect
 -- commits serializes graph effects with a competing generation replacement.
-create function internal.assert_chat_runtime_authority() returns void language plpgsql volatile
+create function internal.assert_chat_generation(p_allow_prepared boolean) returns void language plpgsql volatile
 security definer set search_path=public,internal,pg_temp as $$
 declare s public.auth_sessions; c public.chats; a public.chat_turn_attempts; identity text:=internal.claim_text('tm8.identity_id');
 begin
@@ -694,12 +695,67 @@ begin
     or s.runtime_native_generation is distinct from a.native_generation or a.runtime_epoch is distinct from c.runtime_epoch
     or c.runtime_lease_expires_at is null or c.runtime_lease_expires_at<=clock_timestamp()
     or not exists(select 1 from public.members m where m.entity_id=s.runtime_member_id and m.identity_id=identity and m.space_id=c.space_id and m.status='active')
-    or c.runtime_phase not in ('dispatching','running') or a.phase not in ('dispatching','accepted')
+    or (not p_allow_prepared and (c.runtime_phase not in ('dispatching','running') or a.phase not in ('dispatching','accepted')))
+    or (p_allow_prepared and (c.runtime_phase not in ('prepared','ready','dispatching','running') or a.phase not in ('prepared','dispatching','accepted')))
+    or a.configuration_snapshot->'authority'->>'identityId' is distinct from identity
+    or a.configuration_snapshot->'authority'->>'memberId' is distinct from s.runtime_member_id::text
+    or not exists(select 1 from public.team_members teammate join public.entities entity on entity.id=teammate.entity_id
+      where teammate.entity_id=s.acting_as_team_member_id and teammate.deactivated_at is null and entity.deleted_at is null and entity.space_id=c.space_id)
+    or ((a.configuration_snapshot->'authority'->>'authSessionId') is not null and not exists(
+      select 1 from public.auth_sessions human join public.accounts account on account.id=human.account_id
+      where human.id=(a.configuration_snapshot->'authority'->>'authSessionId')::uuid and human.revoked_at is null
+        and human.expires_at>clock_timestamp() and account.status='active' and account.identity_id=identity))
     or (internal.session_space_id() is not null and c.space_id<>internal.session_space_id()) then
     raise exception 'runtime authority is no longer current' using errcode='42501';
   end if;
 end $$;
+revoke all on function internal.assert_chat_generation(boolean) from public;
+create function internal.assert_chat_runtime_authority() returns void language plpgsql volatile
+security definer set search_path=public,internal,pg_temp as $$
+begin perform internal.assert_chat_generation(false); end $$;
 revoke all on function internal.assert_chat_runtime_authority() from public;
+
+-- The launch resolver may verify connector selections before dispatch. This
+-- exception is confined to a pure binding read; identity_id still gates effects.
+create or replace function public.read_mcp_session_binding(p_session uuid,p_auth_session uuid)
+returns jsonb language plpgsql security definer set search_path=public,internal,pg_temp as $$
+declare b internal.mcp_session_bindings; generation_read boolean:=false;
+begin
+  if internal.claim_text('tm8.auth_kind')='agent_runtime' then
+    if p_auth_session::text is distinct from internal.claim_text('tm8.auth_session_id')
+      or not exists(select 1 from public.auth_sessions where id=p_auth_session and runtime_chat_id=p_session) then
+      raise exception 'MCP session unavailable' using errcode='42501';
+    end if;
+    perform internal.assert_chat_generation(true);
+    generation_read:=true;
+  end if;
+  select * into b from internal.mcp_session_bindings where session_id=p_session and auth_session_id=p_auth_session;
+  if b.session_id is null or b.runtime_identity_id is distinct from
+      (case when generation_read then internal.claim_text('tm8.identity_id') else internal.identity_id() end)
+    or coalesce(internal.claim_text('tm8.via_link'),'')<>'' then
+    raise exception 'MCP session unavailable' using errcode='42501';
+  end if;
+  if generation_read then
+    if (internal.session_space_id() is not null and b.space_id<>internal.session_space_id())
+      or not exists(select 1 from public.members member join public.entities entity on entity.id=member.entity_id
+        where member.identity_id=b.runtime_identity_id and member.space_id=b.space_id
+          and member.status='active' and entity.deleted_at is null) then
+      raise exception 'MCP session unavailable' using errcode='42501';
+    end if;
+  else perform internal.require_space_member(b.space_id); end if;
+  if not exists(select 1 from public.auth_sessions session join public.accounts account on account.id=session.account_id
+      where session.id=b.auth_session_id and session.revoked_at is null and session.expires_at>clock_timestamp()
+        and session.via_link_id is null and account.status='active')
+    or not exists(select 1 from public.members member join public.accounts account on account.identity_id=member.identity_id
+      where member.space_id=b.space_id and member.identity_id=b.launcher_identity_id and member.status='active' and account.status='active')
+    or not exists(select 1 from public.entities entity where entity.id=p_session and entity.space_id=b.space_id and entity.deleted_at is null
+      and (generation_read or exists(select 1 from public.work_sessions work where work.entity_id=entity.id and work.status in ('spawning','running','idle'))
+        or exists(select 1 from public.chats chat where chat.entity_id=entity.id and chat.runtime_state='live'))) then
+    raise exception 'MCP session unavailable' using errcode='42501';
+  end if;
+  return jsonb_build_object('sessionId',b.session_id,'spaceId',b.space_id,'identityId',b.runtime_identity_id,
+    'launcherIdentityId',b.launcher_identity_id,'launcherAuthKind',b.launcher_auth_kind,'selections',b.selections);
+end $$;
 -- Gate the primitive as well as require_identity: a mutation whose authority
 -- path uses identity_id directly cannot bypass the runtime proof. Human paths
 -- retain their immutable identity claim and incur no runtime row reads.
@@ -742,6 +798,7 @@ begin
   select * into b from public.chat_native_bindings where chat_id=p_chat_id and generation=a.native_generation;
   if a.configuration_snapshot->'authority'->>'identityId' is distinct from internal.identity_id()
     or a.configuration_snapshot->'authority'->>'authKind' is distinct from internal.claim_text('tm8.auth_kind')
+    or a.configuration_snapshot->'authority'->>'memberId' is distinct from internal.current_member_id(c.space_id)::text
     or ((a.configuration_snapshot->'authority'->>'authSessionId') is not null and not exists(
       select 1 from public.auth_sessions session join public.accounts account on account.id=session.account_id
       where session.id=(a.configuration_snapshot->'authority'->>'authSessionId')::uuid
