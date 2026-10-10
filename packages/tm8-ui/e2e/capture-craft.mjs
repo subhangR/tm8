@@ -1,5 +1,5 @@
 // Standalone pixel-evidence capture (NOT a spec — .mjs is outside the test glob).
-// Drives the REAL DesignScreen through the craft harness in system Chrome and
+// Drives the REAL CraftScreen through the craft harness in system Chrome and
 // saves screenshots to gate-evidence/. Run: bunx node e2e/capture-craft.mjs
 //   BASE=http://127.0.0.1:4612  SCENARIO=typical|awkward|plan|large  THEME=light|dark
 import { chromium } from '@playwright/test';
@@ -27,7 +27,7 @@ async function shoot(n) {
 }
 
 await page.goto(`${BASE}/e2e/craft-harness.html?scenario=${SCENARIO}`);
-await page.getByTestId('design-screen').waitFor({ timeout: 15_000 });
+await page.getByTestId('craft-screen').waitFor({ timeout: 15_000 });
 await page.getByTestId('crf-canvas').waitFor({ timeout: 15_000 });
 // The chat surface is a LAZY chunk; measuring before it lands reports the
 // pre-solo grid for a reason that is purely a race.
@@ -136,14 +136,14 @@ await page.waitForTimeout(300);
 console.log('FIT', await page.evaluate(() => document.querySelector('.crf-viewport')?.getAttribute('data-lod')));
 await shoot('07-fit-all');
 
-// ---- 6. THE PAGE ROW: a doc page (the Workspace body), a nested design. ---
+// ---- 6. THE PAGE ROW: a doc page (the Workspace body), a nested craft. ---
 await page.locator('[data-testid="dsn-tab"]').nth(2).getByRole('tab').click();
 await page.waitForTimeout(600);
 await shoot('08-doc-page');
 await page.locator('[data-testid="dsn-tab"]').nth(3).getByRole('tab').click();
 await page.getByTestId('dsn-nested-pages').waitFor({ timeout: 15_000 }).catch(() => {});
 await page.waitForTimeout(400);
-await shoot('08b-nested-design');
+await shoot('08b-nested-craft');
 await page.locator('[data-testid="dsn-tab"]').first().getByRole('tab').click();
 await page.getByTestId('crf-canvas').waitFor({ timeout: 15_000 });
 
