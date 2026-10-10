@@ -86,3 +86,65 @@ describe('generated Run form', () => {
     await screen.findByRole('alert'); fireEvent.click(screen.getByRole('button', { name: 'Run tool' })); expect(port.run).not.toHaveBeenCalled();
   });
 });
+
+it('preserves an unsaved source draft when a newer tool version arrives', async () => {
+  const { port } = createToolFixture();
+  const host = render(<ToolBody detail={detail} port={port} onOpenSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit tool' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo my-unsaved-draft\n' } });
+  host.rerender(<ToolBody detail={{ ...detail, version: 2 }} port={port} onOpenSession={vi.fn()} />);
+  expect(screen.getByRole('textbox', { name: 'Source' })).toHaveProperty('value', 'echo my-unsaved-draft\n');
+  expect(screen.getByText(/Your draft is preserved/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Run', exact: true })).toHaveProperty('disabled', true);
+  expect(screen.getByRole('button', { name: 'Run', exact: true }).title).toBe('Save or discard changes to run.');
+});
+
+it('saves a preserved draft at its loaded version and requires an explicit overwrite after a conflict', async () => {
+  const { port } = createToolFixture();
+  const update = port.update; port.update = vi.fn(update);
+  const host = render(<ToolBody detail={detail} port={port} onOpenSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit tool' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo my-draft\n' } });
+  await update(fixtureTool, { ...fixtureTool.definition, source: 'echo newer-source\n' });
+  host.rerender(<ToolBody detail={{ ...detail, version: 2 }} port={port} onOpenSession={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Save tool' }));
+  await screen.findByRole('region', { name: 'Version conflict' });
+  expect(port.update).toHaveBeenCalledTimes(1);
+  expect(port.update).toHaveBeenLastCalledWith(expect.objectContaining({ version: 1 }), expect.objectContaining({ source: 'echo my-draft\n' }));
+  expect((await port.get(fixtureTool.id)).definition.source).toBe('echo newer-source\n');
+  expect(screen.getByRole('button', { name: 'Save tool' })).toHaveProperty('disabled', true);
+  fireEvent.click(screen.getByRole('button', { name: 'Overwrite with my draft' }));
+  await waitFor(() => expect(screen.queryByRole('form', { name: 'Tool definition' })).toBeNull());
+  expect(port.update).toHaveBeenLastCalledWith(expect.objectContaining({ version: 2 }), expect.objectContaining({ source: 'echo my-draft\n' }));
+});
+
+it('rebases a draft onto newer fields and requires review when both editors changed the source', async () => {
+  const { port } = createToolFixture();
+  const update = port.update; port.update = vi.fn(update);
+  render(<ToolBody detail={detail} port={port} onOpenSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit tool' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo my-draft\n' } });
+  await update(fixtureTool, { ...fixtureTool.definition, source: 'echo newer-source\n', description: 'New description' });
+  fireEvent.click(screen.getByRole('button', { name: 'Save tool' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Rebase draft' }));
+  expect(screen.getByRole('textbox', { name: 'Description', exact: true })).toHaveProperty('value', 'New description');
+  expect(screen.getByRole('textbox', { name: 'Source' })).toHaveProperty('value', 'echo my-draft\n');
+  expect(screen.getByRole('button', { name: 'Save tool' })).toHaveProperty('disabled', true);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo manually-merged\n' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: 'I reviewed and merged the conflicting fields.' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save tool' }));
+  await waitFor(() => expect(screen.queryByRole('form', { name: 'Tool definition' })).toBeNull());
+  expect(port.update).toHaveBeenLastCalledWith(expect.objectContaining({ version: 2 }), expect.objectContaining({ source: 'echo manually-merged\n', description: 'New description' }));
+});
+
+it('enables Run again after an unsaved draft is discarded', async () => {
+  render(<ToolBody detail={detail} port={createToolFixture().port} onOpenSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit tool' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo unsaved\n' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Run', exact: true }));
+  expect(screen.queryByRole('dialog', { name: 'Run url-check' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Run', exact: true })).toHaveProperty('disabled', false));
+  fireEvent.click(screen.getByRole('button', { name: 'Run', exact: true }));
+  expect(await screen.findByRole('dialog', { name: 'Run url-check' })).toBeTruthy();
+});

@@ -1,4 +1,4 @@
-import { ToolDefinitionSchema, type ToolRun, type ToolView } from '@tm8/contract';
+import { CollabError, ToolDefinitionSchema, type ToolRun, type ToolView } from '@tm8/contract';
 import type { ToolPermissions, ToolPort } from './port';
 
 export const fixtureTool: ToolView = {
@@ -15,7 +15,7 @@ export function createToolFixture(initial: ToolView = fixtureTool, permissions: 
   const runs: ToolRun[] = [];
   let sequence = 10;
   const bump = () => { tool = { ...tool, version: tool.version + 1 }; };
-  const current = (version: number) => { if (version !== tool.version) throw new Error('The tool changed. Reload before saving.'); };
+  const current = (version: number) => { if (version !== tool.version) throw new CollabError('version_conflict', 'The tool changed. Reload before saving.'); };
   const port: ToolPort = {
     async get() { return structuredClone(tool); },
     async permissions() { return { edit: true, configure: true, setSecret: true, run: true, ...permissions }; },

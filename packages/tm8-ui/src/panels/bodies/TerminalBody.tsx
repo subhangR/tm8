@@ -246,7 +246,7 @@ export function TerminalBody({
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
-      {'toolRun' in detail.state && detail.state.toolRun && <ToolRunChip run={detail.state.toolRun} />}
+      {'toolRun' in detail.state && detail.state.toolRun && <ToolRunChip run={detail.state.toolRun} shellLive={liveness === 'live'} />}
       <div className="pn-terminal-stage" data-testid="terminal-stage" ref={stageRef}>
         <SessionCanvas
           presentation={presentation}

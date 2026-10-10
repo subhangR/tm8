@@ -1,10 +1,11 @@
 import { chromium, expect } from '@playwright/test';
-const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'], ...(process.env.TOOLS_CHROMIUM_PATH ? { executablePath: process.env.TOOLS_CHROMIUM_PATH } : {}) });
+const browser = await chromium.launch({ headless: true, timeout: 20000, args: ['--no-sandbox', '--no-zygote', '--single-process', '--disable-gpu', '--disable-dev-shm-usage'], ...(process.env.TOOLS_CHROMIUM_PATH ? { executablePath: process.env.TOOLS_CHROMIUM_PATH } : {}) });
 const base = process.env.TOOLS_UI_URL ?? 'http://127.0.0.1:4864';
 const results = [];
 try {
+  const page = await browser.newPage();
   for (const width of [1280, 390]) {
-    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    await page.setViewportSize({ width, height: 900 });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto(`${base}/e2e/tools-harness.html`);
     await page.getByRole('button', { name: 'Edit tool', exact: true }).click();
@@ -35,7 +36,7 @@ try {
     await page.getByRole('textbox', { name: 'Shell command' }).fill('echo still-open');
     if (errors.length) throw Error(errors.join('\n'));
     results.push({ width, sourceHighlighting: 'python', secret: 'hint only', result: 'exited 0', interactiveAfterExit: true, errors });
-    await page.close();
+    page.removeAllListeners('pageerror');
   }
   console.log(JSON.stringify({ fixtureOnly: true, results }, null, 2));
 } finally { await browser.close(); }
