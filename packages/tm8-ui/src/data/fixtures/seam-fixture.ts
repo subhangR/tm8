@@ -2885,7 +2885,7 @@ export function createFixtureSeam(): FixtureSeam {
            nobody noticed, because no assertion compared the two. That is the
            production defect in miniature: the live node's session list read
            "To Do 1" over an empty tab. */
-        if ((s.state as { sessionKind?: unknown }).sessionKind === 'credential') return false;
+        if (['credential', 'tool'].includes(String((s.state as { sessionKind?: unknown }).sessionKind))) return false;
         /* G6 (#841): an ended member is not LISTED — by id it still resolves. */
         if (endedMembers.has(s.id)) return false;
         const f = input.filters;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ToolDefinitionSchema, ToolInputSchema, ToolRunInputSchema, validateToolInputValue } from '../src/tools.js';
+import { ToolDefinitionSchema, ToolInputSchema, ToolRunInputSchema, ToolSecretBindInputSchema, validateToolInputValue } from '../src/tools.js';
 import { CoreEntityKindSchema, EntityStateSchema, ServerOnlyCredentialProviderNameSchema, SpaceCredentialProviderNameSchema, WorkSessionKindSchema } from '../src/schemas.js';
 const definition = { name: 'url-check', description: 'Check URLs', help: '', runtime: 'bash',
   source: 'curl "$URL"', inputs: [{ name: 'url', type: 'string', required: true }], tm8Access: 'none', timeoutSeconds: 900 };
@@ -26,6 +26,12 @@ describe('stored tool interface', () => {
       [{ name: 'token', type: 'secret' }, { name: 'token_from_env', type: 'string' }],
       [{ name: 'help', type: 'bool' }]]) expect(ToolDefinitionSchema.safeParse({ ...definition, inputs }).success).toBe(false);
   });
+  it('refuses inputs that overwrite runtime control variables', () => {
+    for (const env of ['PATH', 'HOME', 'SHELL', 'BASH_ENV', 'IFS', 'LD_PRELOAD', 'PYTHONPATH', 'USER', 'PROMPT_COMMAND', 'PWD', 'OLDPWD', 'LC_ALL']) {
+      expect(ToolDefinitionSchema.safeParse({ ...definition, inputs: [{ name: 'value', type: 'string', env }] }).success).toBe(false);
+      expect(ToolDefinitionSchema.safeParse({ ...definition, inputs: [{ name: env.toLowerCase(), type: 'string' }] }).success).toBe(false);
+    }
+  });
   it('enforces numeric and enum defaults and values', () => {
     for (const input of [{ name: 'limit', type: 'int', min: 5, max: 2 }, { name: 'limit', type: 'int', min: 2, default: 1 },
       { name: 'state', type: 'enum', options: ['open'], default: 'closed' },
@@ -37,6 +43,15 @@ describe('stored tool interface', () => {
   it('measures source bytes and bounds the number of declared inputs', () => {
     expect(ToolDefinitionSchema.safeParse({ ...definition, source: 'é'.repeat(131073) }).success).toBe(false);
     expect(ToolDefinitionSchema.safeParse({ ...definition, inputs: Array.from({ length: 65 }, (_, i) => ({ name: `value_${i}`, type: 'string' })) }).success).toBe(false);
+  });
+  it('binds a credential reference or receives a new secret with exactly one form', () => {
+    const request = { toolId: crypto.randomUUID(), expectedVersion: 1, inputName: 'token', clientMutationId: 'bind' };
+    const credentialId = crypto.randomUUID();
+    expect(ToolSecretBindInputSchema.safeParse({ ...request, credentialId }).success).toBe(true);
+    expect(ToolSecretBindInputSchema.safeParse({ ...request, value: 'from-stdin', label: 'Account' }).success).toBe(true);
+    for (const fields of [{}, { credentialId, value: 'ambiguous' }, { value: '' }]) {
+      expect(ToolSecretBindInputSchema.safeParse({ ...request, ...fields }).success).toBe(false);
+    }
   });
   it('defaults CLI and agent launches to closing the PTY and preserves a UI override', () => {
     const request = { toolId: crypto.randomUUID(), clientMutationId: 'run' };

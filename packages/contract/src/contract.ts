@@ -410,7 +410,7 @@ export type CoreEntityState =
        * behaviour — so a frozen server degrades to showing everything rather
        * than to showing nothing.
        *
-       * WRITE EVERY CLIENT FILTER AS `sessionKind !== 'credential'`, NEVER AS
+       * Session lists hide credential and tool runs with a deny-list, NEVER AS
        * `=== 'agent'`. SQL surfaces test the positive (`session_kind =
        * 'agent'`, credential-catalog.ts:506) because the database column is
        * NOT NULL; TypeScript surfaces must test the INVERSE, because here the
@@ -4950,7 +4950,7 @@ export type WorkSessionDriveMode = 'owner' | 'space';
 
 /**
  * What a work_session IS, mirroring 083's `work_sessions.session_kind` as
- * widened by 101.
+ * widened by 101, 177 and 318.
  *
  * `agent` is ordinary work. `credential` is a private login terminal minted by
  * `credentials.loginSessions.start` so a member can authenticate an agent tool
@@ -4966,6 +4966,7 @@ export type WorkSessionDriveMode = 'owner' | 'space';
  * to find it in the session list, so the deny-list filters that hide
  * `credential` must continue to SHOW this.
  */
+// Tool runs belong in the tool's history; their PTY may remain live after exit.
 export type WorkSessionKind = 'agent' | 'credential' | 'shell' | 'container_exec' | 'tool';
 
 /**

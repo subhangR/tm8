@@ -9,8 +9,15 @@ export const TOOL_DEFAULT_TIMEOUT_SECONDS = 900;
 const Id = z.string().uuid();
 const InputName = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
 const Flag = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
+// Runtime control names cannot be supplied as inputs: some make data execute as code.
+export const TOOL_RESERVED_ENV_NAMES = ['HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'TERM', 'COLORTERM', 'LANG',
+  'TMPDIR', 'ENV', 'BASH_ENV', 'IFS', 'CDPATH', 'GLOBIGNORE', 'SHELLOPTS', 'BASHOPTS', 'PS4',
+  'PROMPT_COMMAND', 'PWD', 'OLDPWD'] as const;
+export const TOOL_RESERVED_ENV_PREFIXES = ['TM8_', 'LD_', 'DYLD_', 'BASH_FUNC_', 'PYTHON', 'LC_'] as const;
+const ReservedEnvironment = new Set<string>(TOOL_RESERVED_ENV_NAMES);
 const Env = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/)
-  .refine(value => !value.toUpperCase().startsWith('TM8_'), 'TM8_* environment names are reserved');
+  .refine(value => !ReservedEnvironment.has(value.toUpperCase())
+    && !TOOL_RESERVED_ENV_PREFIXES.some(prefix => value.toUpperCase().startsWith(prefix)), 'runtime environment names are reserved');
 export type ToolJsonValue = null | boolean | number | string | ToolJsonValue[] | { [key: string]: ToolJsonValue };
 export const ToolJsonValueSchema: z.ZodType<ToolJsonValue> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(ToolJsonValueSchema), z.record(ToolJsonValueSchema),
@@ -116,7 +123,14 @@ export const ToolCreateInputSchema = z.object({ ...Command, spaceId: Id, definit
 export const ToolUpdateInputSchema = z.object({ ...Versioned, definition: ToolDefinitionSchema }).strict();
 export const ToolConfigSetInputSchema = z.object({ ...Versioned, inputName: InputName, value: ToolJsonValueSchema }).strict();
 export const ToolConfigUnsetInputSchema = z.object({ ...Versioned, inputName: InputName }).strict();
-export const ToolSecretBindInputSchema = z.object({ ...Versioned, inputName: InputName, credentialId: Id }).strict();
+export const ToolSecretBindInputSchema = z.object({
+  ...Versioned, inputName: InputName, credentialId: Id.optional(),
+  value: z.string().min(1).max(4096).optional(), label: z.string().min(1).max(120).optional(),
+}).strict().superRefine((input, ctx) => {
+  if ((input.credentialId !== undefined) === (input.value !== undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'supply exactly one of credentialId or value' });
+  }
+});
 export const ToolSecretUnbindInputSchema = ToolConfigUnsetInputSchema;
 /** Ephemeral secrets are supplied over the authenticated request body, never the command line or run record. */
 export const ToolRunInputSchema = z.object({
