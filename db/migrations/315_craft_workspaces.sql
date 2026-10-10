@@ -668,6 +668,8 @@ begin
 end;
 $$;
 
+-- Deletes only: internal.migrate_edge (node-admin repair) UPDATEs an edge's
+-- endpoints in place and does not prune; the next read prunes what it moved.
 create trigger edges_craft_workspaces_prune
   after delete on public.edges
   for each row when (old.type = 'contains')
@@ -685,38 +687,76 @@ update public.edge_types
 -- the SAME transaction that created the session (the server calls this right
 -- after execution_spawn, in one transaction). That is what makes the edge bind
 -- (§4: an about edge counts only when its created_at is its source's). Any
--- other session is refused, so this is no way to bind one later; a replayed
--- spawn whose edge already exists is answered as done. The target must be
--- live, in the session's space, and readable by the caller.
-create or replace function public.work_session_about(p_session_id uuid, p_about_id uuid)
+-- other session is refused, so this is no way to bind one later; a session
+-- that already has this edge is answered as done.
+--
+-- WHO may bind (§4 trusts the edge, so the writer must be trusted):
+--  * a person (auth kind browser | cli), to any live entity in the session's
+--    space they can read; or
+--  * a chat's runtime, spawning UNDER its own chat (p_from_chat: the server
+--    passes the bearer's runtime chat id, never a body field), and only when
+--    that chat is the caller's and was itself started about the target (its
+--    about edge written with it). With p_about_id null the session inherits
+--    what the chat is about; a chat about nothing binds nothing.
+-- Any other agent token (a worker session's, or one whose persona is gone)
+-- is refused: 42501.
+create or replace function public.work_session_about(p_session_id uuid, p_about_id uuid, p_from_chat uuid default null)
 returns void language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
   s public.entities;
+  target uuid := p_about_id;
+  caller_kind text := internal.claim_text('tm8.auth_kind');
+  chat_about uuid;
 begin
   select * into s from public.entities where id = p_session_id and kind = 'work_session' and deleted_at is null;
   if s.id is null then
     raise exception 'no such work session' using errcode = 'P0002';
   end if;
   perform internal.require_space_member(s.space_id);
-  if exists (select 1 from public.edges e where e.type = 'about' and e.src_id = p_session_id and e.dst_id = p_about_id) then
+  if p_from_chat is not null then
+    select e.dst_id into chat_about
+      from public.entities c
+      join public.chats ch on ch.entity_id = c.id
+      join public.edges e on e.src_id = c.id and e.type = 'about' and e.created_at = c.created_at
+     where c.id = p_from_chat and c.kind = 'chat' and c.deleted_at is null
+       and s.parent_id = c.id
+       and ch.configured_by_identity_id = internal.identity_id()
+     order by e.created_at, e.id
+     limit 1;
+    if target is null then
+      target := chat_about;
+    end if;
+    if target is null then
+      return;
+    end if;
+    if chat_about is distinct from target then
+      raise exception 'a chat binds its sessions only to what it is about' using errcode = '42501';
+    end if;
+  elsif caller_kind is null or caller_kind not in ('browser', 'cli') then
+    raise exception 'only a person, or a chat for its own sessions, binds a session at spawn' using errcode = '42501';
+  end if;
+  if target is null then
+    return;
+  end if;
+  if exists (select 1 from public.edges e where e.type = 'about' and e.src_id = p_session_id and e.dst_id = target) then
     return;
   end if;
   if s.created_at <> now() then
     raise exception 'an about edge binds only at spawn' using errcode = '42501';
   end if;
   if not exists (
-    select 1 from public.entities t where t.id = p_about_id and t.space_id = s.space_id and t.deleted_at is null
-  ) or not internal.entity_readable(p_about_id) then
-    raise exception 'no entity % to be about', p_about_id using errcode = 'P0002';
+    select 1 from public.entities t where t.id = target and t.space_id = s.space_id and t.deleted_at is null
+  ) or not internal.entity_readable(target) then
+    raise exception 'no entity % to be about', target using errcode = 'P0002';
   end if;
   perform internal.w1_set_writer('spawn');
   insert into public.edges(space_id, src_id, dst_id, type, created_by)
-  values (s.space_id, p_session_id, p_about_id, 'about', s.created_by);
+  values (s.space_id, p_session_id, target, 'about', s.created_by);
   perform internal.w1_set_writer(null);
 end;
 $$;
 
-revoke all on function public.work_session_about(uuid, uuid) from public;
-grant execute on function public.work_session_about(uuid, uuid) to tm8_app;
+revoke all on function public.work_session_about(uuid, uuid, uuid) from public;
+grant execute on function public.work_session_about(uuid, uuid, uuid) to tm8_app;
 
 analyze public.workspaces;
