@@ -128,7 +128,10 @@ function EntityTab({
               the content and the strip. */}
           <div className="tws-entity-row">
             <div ref={setMainEl} className="tws-entity-main tws-entity-host">
-              <TitleBar tab={tab} host={mainEl} setSlot={chrome.setTitleSlot} />
+              {/* A kind whose body is the whole tab (a drawing) opts out. */}
+              {getKind(tab.kind).panel.titleBar === false ? null : (
+                <TitleBar tab={tab} host={mainEl} setSlot={chrome.setTitleSlot} />
+              )}
               <EntityTabBody tab={bodyTab} adapter={getKindAdapter(tab.kind)} onHandle={onHandle} />
             </div>
             {/* Right-hand slot: the side column — Links · Messages · Chat. */}

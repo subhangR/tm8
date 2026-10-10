@@ -5,7 +5,7 @@
  * a graph is edited — this block IS the editor. A drawing has no studio screen
  * of its own, so the panel is the only place it is ever drawn.
  *
- * THREE THINGS SHAPE THIS COMPONENT:
+ * FOUR THINGS SHAPE THIS COMPONENT:
  *
  * 1. Excalidraw is ~47 MB unpacked, so it is behind `React.lazy` and never
  *    enters the main chunk. It is also never loaded from a CDN: agent-maestro's
@@ -22,6 +22,17 @@
  *    the moment one appears rather than let someone keep drawing on a scene
  *    that cannot be saved — the refusal is loud here precisely because the
  *    database's is a sentence the user would otherwise never see.
+ *
+ * 4. THE CANVAS IS THE WHOLE BODY (task 01a12506). The kind is a `frame`: no
+ *    title row, no border, no sections under it. The save status rides the
+ *    panel bar's slot (in a Workspace tab, the action strip) as a mark with a
+ *    tooltip, and has no row of its own. A conflict or a failed save also
+ *    shows as a notice over the canvas, because a tooltip is too quiet for
+ *    lost work. There is no fullscreen of the block's own: the tab is already
+ *    full size, and the strip's Expand covers the rest. Being a frame also
+ *    takes the attachment strip off the panel, and with it the drop listener
+ *    that used to upload a file dropped on the canvas as an attachment while
+ *    Excalidraw was inserting the same file as an image.
  */
 import {
   Suspense,
@@ -31,13 +42,14 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
+  useSyncExternalStore,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 
 import { entityPatchInput, type AuthoringCommands } from '../../authoring/commands';
+import { getStyleState, subscribeStyle } from '../../theme/style-store';
 import {
-  canvasClaimsEscape,
   drawingPatch,
   hasEmbeddedImages,
   sceneOf,
@@ -77,17 +89,26 @@ type SaveState =
   | { phase: 'conflict' }
   | { phase: 'error'; message: string };
 
+/** The slice of Excalidraw's imperative API this block uses. */
+interface CanvasApi {
+  refresh(): void;
+}
+
 export function DrawingBlock({
   detail,
   commands,
   onSaved,
+  barSlot,
 }: {
   detail: EntityDetail;
   commands?: Pick<AuthoringCommands, 'patchEntity'> | null;
   onSaved?: (result: CommandResult) => void;
+  /** The panel bar's slot (a Workspace tab's action strip). Null ⇒ the status renders in place. */
+  barSlot?: HTMLElement | null;
 }) {
   const scene = useMemo(() => sceneOf(detail.content), [detail.content]);
   const editable = Boolean(commands?.patchEntity);
+  const theme = useAppTheme();
 
   /*
    * The version this component will guard its next write with.
@@ -103,21 +124,16 @@ export function DrawingBlock({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [save, setSave] = useState<SaveState>({ phase: 'clean' });
   const [images, setImages] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const apiRef = useRef<CanvasApi | null>(null);
   /*
-   * FULLSCREEN IS A CSS STATE, the artifact viewer's exactly: the same element,
-   * pinned over the app with its own bar. Not `requestFullscreen` — that is
-   * the browser's exit path, drops out on a tab switch, and needs a user
-   * gesture.
-   *
-   * AN EMPTY CANVAS OPENS FULLSCREEN — "+ New drawing" lands where drawing
-   * happens, not in a 440px strip. Only the INITIAL value: once the block is
-   * mounted the user decides, so leaving fullscreen on a still-empty canvas,
-   * or the save that follows the first stroke, never bounces it back. A
-   * read-only empty scene has nothing to draw, so it stays in the panel.
+   * STABLE, like `onChange`. Excalidraw is memoised on a shallow compare of
+   * every prop but `initialData`, and it calls `onChange` from every update. A
+   * fresh callback per render re-rendered it on each render of this block, and
+   * the `onChange` that update fired re-rendered this block: measured in Chrome
+   * as "Maximum update depth exceeded" on the first stroke.
    */
-  const [fullscreen, setFullscreen] = useState(() => editable && scene.elements.length === 0);
-  /** The canvas's state as of its last render — what Escape is judged against. */
-  const appStateRef = useRef<unknown>(null);
+  const onApi = useCallback((api: CanvasApi) => { apiRef.current = api; }, []);
 
   /*
    * Re-point at a DIFFERENT entity. Not at every `detail` change: a save
@@ -135,6 +151,49 @@ export function DrawingBlock({
   // A pending timer must never outlive the component: it would write after the
   // panel closed, under a version nobody is watching.
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  /*
+   * INK LANDS UNDER THE POINTER, WHEREVER THE STAGE HAS MOVED.
+   *
+   * Excalidraw maps a pointer to the scene through the canvas's screen offset,
+   * which it caches. It re-reads it on a window resize, on a resize of its own
+   * box, and on scroll of ONE container: the nearest ancestor that was
+   * scrollable AT MOUNT (`getNearestScrollableContainer`), else the document.
+   * A panel whose content was still loading at mount was not scrollable yet, so
+   * the library listened on the document and never heard the panel scroll.
+   * Measured in Chrome: after the panel scrolled 150px, a rectangle drawn at
+   * the pointer landed 175px above it, and so did a text box.
+   *
+   * So the block re-reads the offset itself: on any scroll in the page
+   * (capture, because scroll does not bubble) and when the pointer enters the
+   * stage, which covers a stage that moved without a scroll or a resize (a
+   * collapsing bar above it). One read per frame, and only when the stage
+   * actually moved.
+   */
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+    let frame = 0;
+    let last = '';
+    const sync = () => {
+      frame = 0;
+      const root = stage.querySelector('.excalidraw');
+      if (!root || !apiRef.current) return;
+      const { left, top } = root.getBoundingClientRect();
+      const at = `${left},${top}`;
+      if (at === last) return;
+      last = at;
+      apiRef.current.refresh();
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(sync); };
+    window.addEventListener('scroll', schedule, true);
+    stage.addEventListener('pointerenter', sync);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', schedule, true);
+      stage.removeEventListener('pointerenter', sync);
+    };
+  }, []);
 
   const commit = useCallback(async (elements: unknown, appState: unknown) => {
     if (!commands?.patchEntity) return;
@@ -168,7 +227,6 @@ export function DrawingBlock({
   }, [commands, detail.id, onSaved]);
 
   const onChange = useCallback((elements: readonly unknown[], appState: unknown) => {
-    appStateRef.current = appState;
     const embedded = hasEmbeddedImages(elements, {});
     setImages((was) => (was === embedded ? was : embedded));
     // Phase 1: an image cannot be saved, so do not schedule a write that is
@@ -177,87 +235,81 @@ export function DrawingBlock({
     if (!editable) return;
     if (sceneSignature(elements, appState) === savedSignatureRef.current) return;
 
-    setSave((prev) => (prev.phase === 'saving' ? prev : { phase: 'dirty' }));
+    // The SAME state when nothing changed, so a repeat `onChange` renders nothing.
+    setSave((prev) => (prev.phase === 'saving' || prev.phase === 'dirty' ? prev : { phase: 'dirty' }));
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => { void commit(elements, appState); }, SAVE_DEBOUNCE_MS);
   }, [commit, editable]);
 
-  /*
-   * ESC LEAVES FULLSCREEN — unless the canvas has a use for it. Three handlers
-   * want Esc: Excalidraw's (leave text editing, drop a tool, close a popup),
-   * this one, and the host's document-level panel-stack pop (EntityView). One
-   * press does one thing:
-   *
-   * - CAPTURE phase, on the section. Excalidraw claims every Escape pressed in
-   *   its container — idle ones too — and stops it there, so a listener that
-   *   waits for the bubble never hears it (see `canvasClaimsEscape`). Capture
-   *   runs first, so it asks instead of waiting.
-   * - the canvas keeps a press it has a use for: pressed inside Excalidraw
-   *   while it is drawing, typing or showing a popup, this handler stands back.
-   *   Pressed anywhere else in the block — the bar, the notice — it is ours.
-   * - a press something above already consumed (`defaultPrevented`: the
-   *   app's modal layer) is not ours.
-   * - a press that exits calls `preventDefault`, which is exactly what the
-   *   host's handler checks — so one Esc never also pops the panel.
-   */
-  const onKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
-    if (!fullscreen || event.key !== 'Escape' || event.defaultPrevented) return;
-    const inCanvas = event.target instanceof Element && event.target.closest('.excalidraw') !== null;
-    if (inCanvas && canvasClaimsEscape(appStateRef.current)) return;
-    event.preventDefault();
-    setFullscreen(false);
-  }, [fullscreen]);
+  const text = statusText(save, editable);
+  const status = (
+    <span
+      className="drw__status"
+      role="status"
+      data-testid="drawing-status"
+      data-phase={editable ? save.phase : 'read-only'}
+      data-tip={text}
+      title={text}
+    >
+      <span className="drw__dot" aria-hidden />
+      <span className="drw__status-text">{text}</span>
+    </span>
+  );
+  const failed = save.phase === 'conflict' || save.phase === 'error';
 
   return (
     <section
-      className={`drw${fullscreen ? ' drw--fullscreen' : ''}`}
+      className="drw"
       data-testid="drawing-block"
       aria-label={`Drawing ${detail.title ?? ''}`}
-      onKeyDownCapture={onKeyDownCapture}
     >
-      <header className="drw__bar">
-        <span className="drw__status" role="status" data-testid="drawing-status">
-          {statusText(save, editable)}
-        </span>
-        {/* Rides into fullscreen with the element that goes fullscreen, and
-            stays visible there: Esc is the fast way out, this is the sure one. */}
-        <button
-          type="button"
-          className="pn-btn pn-btn--mark"
-          aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          aria-pressed={fullscreen}
-          onClick={() => setFullscreen((f) => !f)}
-        >
-          <span aria-hidden>{fullscreen ? '⛶̸' : '⛶'}</span>
-        </button>
-      </header>
-
-      {images ? (
-        <p className="drw__notice" role="alert" data-testid="drawing-image-notice">
-          Images can’t be saved in a drawing yet — this canvas has one, so changes are paused.
-          Remove the image to start saving again, or attach it as a file instead.
-        </p>
-      ) : null}
+      {/* In the action strip where the host offers a slot; in place where it
+          does not (a fixture, a host with no bar). */}
+      {barSlot ? createPortal(status, barSlot) : <header className="drw__bar">{status}</header>}
 
       {/* The canvas binds single keys to tools (`t` text, `r` rectangle, `/`…),
           so it tells the app's keyboard to stand back: plain keys reach
           Excalidraw, Mod-chords still reach the app. */}
-      <div className="drw__stage" data-owns-keys="canvas">
+      <div ref={stageRef} className="drw__stage" data-owns-keys="canvas">
         <Suspense fallback={<p className="drw__loading" role="status">Loading the canvas…</p>}>
           <ExcalidrawCanvas
+            excalidrawAPI={onApi as never}
             initialData={{
               elements: scene.elements as never,
               appState: { ...scene.appState, collaborators: new Map() } as never,
               scrollToContent: true,
             }}
+            theme={theme}
             viewModeEnabled={!editable}
             onChange={onChange as never}
           />
         </Suspense>
+        {images || failed ? (
+          <div className="drw__notices">
+            {images ? (
+              <p className="drw__notice" role="alert" data-testid="drawing-image-notice">
+                Images can’t be saved in a drawing yet — this canvas has one, so changes are paused.
+                Remove the image to start saving again, or attach it as a file instead.
+              </p>
+            ) : null}
+            {failed ? (
+              <p className="drw__notice" role="alert" data-testid="drawing-save-notice">{text}</p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </section>
   );
+}
+
+/**
+ * The app's light or dark, read live from the style store (the value
+ * `useTheme` derives), so the canvas follows a theme switch without a remount.
+ * Excalidraw's dark mode inverts the canvas, so a saved white background
+ * still reads dark: the theme is the viewer's, never part of the scene.
+ */
+function useAppTheme(): 'light' | 'dark' {
+  return useSyncExternalStore(subscribeStyle, () => (getStyleState().active.darkish ? 'dark' : 'light'));
 }
 
 function statusText(save: SaveState, editable: boolean): string {

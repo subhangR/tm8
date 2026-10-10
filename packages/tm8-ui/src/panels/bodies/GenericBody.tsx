@@ -207,6 +207,7 @@ function ContentBlock({
             detail={detail}
             commands={commands?.patchEntity ? { patchEntity: commands.patchEntity } : null}
             onSaved={onSaved}
+            barSlot={barSlot ?? null}
           />
         );
       /* The story page. The host's live surface when it wired one, else the

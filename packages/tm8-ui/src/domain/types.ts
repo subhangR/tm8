@@ -1416,6 +1416,13 @@ export interface PanelConfig {
    */
   composition?: 'chat' | 'frame' | 'canvas';
   /**
+   * `false` ⇒ a Workspace tab draws no title bar over this body (task
+   * 01a12506, the drawing). The body starts directly under the tab strip and
+   * the tab's own label names it; renaming stays on the strip's Edit. Absent ⇒
+   * the 36px title bar every other tab has.
+   */
+  titleBar?: false;
+  /**
    * The kind's conversation surface, when it is not the archetype's default.
    *
    * DATA rather than a fork in the composer, for the reason `launchMode` is
