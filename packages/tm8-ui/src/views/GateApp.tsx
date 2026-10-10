@@ -229,9 +229,9 @@ const WORKSPACE_TABS_TAB_ID = 'workspace-tabs';
 
 /**
  * THE DESKTOP MODES (D31, 2026-10-06; Settings joined as the fourth in round
- * 2, R2-D2): Work · Design · Observe · Settings, in that order, and nothing
+ * 2, R2-D2): Work · Craft · Observe · Settings, in that order, and nothing
  * else in the selector. Keyed by GROUP id, not view ref: Work is the
- * client-added tabs seat, Design is the `craft` group, Observe is the `graph`
+ * client-added tabs seat, Craft is the `craft` group, Observe is the `graph`
  * group, Settings the `settings` group (client-added when a menu lacks it).
  * The labels are the modes' own, whatever the menu calls the groups. Glyphs:
  * Design Advisor R39 (existing art, 14px).
@@ -241,7 +241,7 @@ const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'gr
 const VIEW_GROUP_LABEL: Record<string, string> = {
   /* Home (formerly Work; Craft redesign §2, 2026-10-10): the tabs view. */
   [WORKSPACE_TABS_TAB_ID]: 'Home',
-  craft: 'Design',
+  craft: 'Craft',
   graph: 'Observe',
   [SETTINGS_GROUP_ID]: 'Settings',
 };
@@ -335,7 +335,7 @@ function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteVie
         : scope === 'help'
           ? hintFor('help.open', undefined, platform)
           : scope === 'view' && ref === 'craft'
-            ? hintFor('work.design.toggle', undefined, platform)
+            ? hintFor('work.craft.toggle', undefined, platform)
             : scope === 'view'
               ? hintFor('nav.view', ref, platform)
               : slug
@@ -1684,7 +1684,7 @@ export function GateApp(props: GateAppProps = {}) {
     if (command === 'terminal.toggle' && !focusVisibleTerminal()) {
       noticeSink.current({ id: 'kbd-terminal', tone: 'info', title: 'No terminal on screen', body: '', ttlMs: 4_000 });
     }
-    if (command === 'work.design.toggle') {
+    if (command === 'work.craft.toggle') {
       if (navView.view === 'craft') navStore.getState().navigate(WORK_VIEW);
       else navigateTo({ type: 'view', ref: 'craft' as never });
       return;
@@ -2069,7 +2069,7 @@ export function GateApp(props: GateAppProps = {}) {
       ...(threeModes
         ? [
             { id: 'route:work', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
-            { id: 'view:craft', label: 'Design', glyph: <VectorIcon paths={VIEW_ART.craft} /> },
+            { id: 'view:craft', label: 'Craft', glyph: <VectorIcon paths={VIEW_ART.craft} /> },
             { id: 'view:graph', label: 'Observe', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
             { id: 'view:settings', label: 'Settings', glyph: <VectorIcon paths={VIEW_ART.settings} /> },
           ]
@@ -2237,7 +2237,7 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
   const openCraft = useCallback(
-    (craftId: EntityId) => navStore.getState().navigate({ view: 'craft', designId: craftId }),
+    (craftId: EntityId) => navStore.getState().navigate({ view: 'craft', craftId: craftId }),
     [],
   );
   /* The viewer's open-craft tabs in the Craft top bar. */
@@ -2259,7 +2259,7 @@ export function GateApp(props: GateAppProps = {}) {
     ({ craftId, pageId }: CraftTarget) =>
       navStore.getState().navigate({
         view: 'craft',
-        ...(craftId ? { designId: craftId } : {}),
+        ...(craftId ? { craftId: craftId } : {}),
         ...(craftId && pageId ? { pageId } : {}),
       }),
     [],
@@ -2583,7 +2583,7 @@ export function GateApp(props: GateAppProps = {}) {
     <CraftHeaderSwitcher
       source={craftsSource}
       openCrafts={openCraftsPort}
-      currentCraftId={navView.view === 'craft' ? navView.designId ?? null : null}
+      currentCraftId={navView.view === 'craft' ? navView.craftId ?? null : null}
       onOpenHome={() => navigateCraft({})}
       onOpenCraft={openCraft}
     />
@@ -2698,7 +2698,7 @@ export function GateApp(props: GateAppProps = {}) {
      panel beside the rail — `CraftScreen` portals them into this host. The
      crafts home has no 2nd panel. */
   const craftFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
-  const craftPanel = craftFramed && navView.view === 'craft' && navView.designId ? 'host' : null;
+  const craftPanel = craftFramed && navView.view === 'craft' && navView.craftId ? 'host' : null;
 
   const workspaceGate: WorkspaceGateHandles = {
     data,
@@ -3033,7 +3033,7 @@ export function GateApp(props: GateAppProps = {}) {
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref === 'craft' &&
-            !(navView.view === 'craft' && navView.designId) ? (
+            !(navView.view === 'craft' && navView.craftId) ? (
             /* ✎ Craft → Designs: bare `/craft` is the Designs home. Every
                door into Craft (the view selector, the Workspace rail's craft
                tool) lands here, and a card opens `/craft/{id}`. */
@@ -3054,22 +3054,22 @@ export function GateApp(props: GateAppProps = {}) {
             activeTarget?.type === 'view' &&
             activeTarget.ref === 'craft' &&
             navView.view === 'craft' &&
-            navView.designId ? (
+            navView.craftId ? (
             /* ✎ Craft → Designs: one design at `/craft/{design}[/{page}[/{nested}]]`
                — its chats on the left, its pages as tabs, the Workspace action
                strip split between the page and the design. The page bodies are
                the Workspace's own, hosted in a private runtime (`workspaceGate`
                is the same handle bundle the Workspace view gets). */
             /* Every Run inside the craft starts with the Crafter (launch-scope.tsx). */
-            <CraftLaunchScope key={navView.designId} craftId={navView.designId}>
+            <CraftLaunchScope key={navView.craftId} craftId={navView.craftId}>
             <CraftScreen
-              key={navView.designId}
+              key={navView.craftId}
               seam={data.seam}
               spaceId={data.spaceId as SpaceId}
               nodeKey={nodeKey}
               source={craftSource}
               crafts={craftsSource}
-              craftId={navView.designId}
+              craftId={navView.craftId}
               pageId={navView.pageId}
               onNavigate={navigateCraft}
               framed={craftFramed}

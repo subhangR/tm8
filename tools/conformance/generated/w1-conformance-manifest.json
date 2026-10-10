@@ -10315,12 +10315,12 @@
           "strategy": "story-detail"
         }
       },
-      "design": {
-        "kind": "design",
+      "craft": {
+        "kind": "craft",
         "entityKind": true,
         "route": {
           "strategy": "collection",
-          "slug": "designs"
+          "slug": "crafts"
         },
         "collection": {
           "strategy": "typed-collection"
@@ -10345,7 +10345,7 @@
           "strategy": "registered-not-default"
         },
         "migration": {
-          "strategy": "design-detail"
+          "strategy": "craft-detail"
         }
       },
       "style": {

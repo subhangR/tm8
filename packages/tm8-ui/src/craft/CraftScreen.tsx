@@ -105,7 +105,7 @@ const PANE_CHROME = 8 + 1;
 
 /** `/craft/{craft}` as an absolute URL — what the craft's "Copy link" copies. */
 function craftLinkUrl(spaceId: SpaceId, craftId: EntityId): string {
-  const { hash } = build(normalize({ spaceId, target: { view: 'craft', designId: craftId }, panels: emptyPanels() }));
+  const { hash } = build(normalize({ spaceId, target: { view: 'craft', craftId: craftId }, panels: emptyPanels() }));
   return new URL(hash, window.location.href).toString();
 }
 
@@ -259,7 +259,7 @@ export function CraftScreen(props: CraftScreenProps) {
      subject is the craft itself. */
   const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
   const chrome = useEntityChromeValue(mainEl);
-  const ownerTab = useEmbeddedTab(runtime, gate && !activePage ? craftId : null, gate && !activePage ? 'design' : null);
+  const ownerTab = useEmbeddedTab(runtime, gate && !activePage ? craftId : null, gate && !activePage ? 'craft' : null);
   const pageTab = useEmbeddedTab(runtime, gate && activePage ? activePage.id : null, gate && activePage ? activePage.kind : null);
   const stripTab = activePage ? pageTab : ownerTab;
   const chatHidden = chatCollapsed || expanded;
@@ -493,7 +493,7 @@ interface PageBodyProps {
  */
 function PageBody(props: PageBodyProps) {
   const { page, seam, gate, runtime } = props;
-  if (page.kind === 'design' || page.kind === 'craft') return <CraftPage {...props} />;
+  if (page.kind === 'craft' || page.kind === 'craft') return <CraftPage {...props} />;
   if (page.kind === 'graph') {
     return (
       <>

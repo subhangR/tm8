@@ -22,7 +22,7 @@
  * stays as the fallback a string-only surface can print. No component changed
  * shape to receive it, exactly as promised.
  */
-import type { CoreEntityKind, EntityKind } from '@tm8/contract';
+import { normalizeKindAlias, type CoreEntityKind, type EntityKind } from '@tm8/contract';
 import type {
   ActionRef,
   AssignControl,
@@ -43,7 +43,7 @@ import type {
 } from './types';
 import { CUSTOM_KIND_FALLBACK, VIEWER_ACTOR } from './types';
 import { KIND_ART } from './kind-art';
-import { DESIGN_KIND } from './design';
+import { CRAFT_KIND } from './craft';
 /* The container refusals live with the verbs that raise them, so the sentence
    a button refuses with and the sentence this row declares are one string. */
 import { CONTAINER_CAPABILITY_REASONS } from './actions';
@@ -1921,24 +1921,24 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
-   * -- design (Craft → Designs: an ordered set of pages) --
+   * -- craft (an ordered set of pages; `design` until migration 316) --
    *
    * A page is ANY entity, held as an ordered `contains` edge; the page is the
    * doc or graph itself and opens normally anywhere else. Its own screen is
-   * Craft (`/craft/{id}`); everywhere else a design gets the GENERIC panel:
+   * Craft (`/craft/{id}`); everywhere else a craft gets the GENERIC panel:
    * the description, then the collections it sits in. Launchable like every
-   * kind not opted out (Run anchors a session on the design).
+   * kind not opted out (Run anchors a session on the craft).
    *
    * `quickCreate` is on: a title is a legitimate start — the craft agent adds
    * the first page.
    */
   {
-    kind: 'design',
-    label: 'Design',
-    labelPlural: 'Designs',
+    kind: 'craft',
+    label: 'Craft',
+    labelPlural: 'Crafts',
     icon: '❐',
-    iconArt: KIND_ART.design,
-    slug: 'designs',
+    iconArt: KIND_ART.craft,
+    slug: 'crafts',
     strategy: 'collection',
     defaultMode: 'list',
     hiddenModes: ['board', 'tree'],
@@ -1951,7 +1951,7 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'fields', label: 'DESIGN' }, COLLECTIONS_BLOCK],
+      blocks: [{ block: 'fields', label: 'CRAFT' }, COLLECTIONS_BLOCK],
       primaries: ['edit'],
     },
     editFields: [
@@ -1960,11 +1960,11 @@ const ROWS: readonly KindConfig[] = [
         target: 'content',
         source: 'description',
         label: 'Description',
-        placeholder: 'What is this design for?',
+        placeholder: 'What is this craft for?',
         multiline: true,
       },
     ],
-    palette: { createLabel: 'New design' },
+    palette: { createLabel: 'New craft' },
   },
 
   /*
@@ -2878,7 +2878,8 @@ const FALLBACK = BY_KIND.get(CUSTOM_KIND_FALLBACK) as KindConfig;
  * is how custom kinds land on the generic archetype for free (LLD §2.3).
  */
 export function getKind(kind: string): KindConfig {
-  return BY_KIND.get(kind) ?? FALLBACK;
+  // `design` (renamed `craft` by 316) still resolves until KIND_ALIAS_UNTIL.
+  return BY_KIND.get(normalizeKindAlias(kind)) ?? FALLBACK;
 }
 
 /** Every row, fallback included. */
@@ -2893,7 +2894,9 @@ export function collectionKinds(): KindConfig[] {
 
 /** Slug → row, for the `k/{slug}` route and `origin` validation. */
 export function kindBySlug(slug: string): KindConfig | null {
-  return KINDS.find((row) => row.slug === slug) ?? null;
+  // An old `k/designs` link lands on crafts until KIND_ALIAS_UNTIL.
+  const wanted = slug === 'designs' ? 'crafts' : slug;
+  return KINDS.find((row) => row.slug === wanted) ?? null;
 }
 
 /** The `c:{name}` → `c-{name}` slug for a custom kind, collision-checked by callers. */

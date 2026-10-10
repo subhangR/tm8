@@ -181,7 +181,7 @@ export function CraftTabStrip(props: CraftTabStripProps) {
                   props.onNew(kind);
                 }}
               >
-                <KindIcon kind={kind} size={14} /> {kind === 'design' ? 'Craft' : getKind(kind).label}
+                <KindIcon kind={kind} size={14} /> {kind === 'craft' ? 'Craft' : getKind(kind).label}
               </button>
             ))}
             <div className="cts-menu__sep" role="separator" />

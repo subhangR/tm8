@@ -322,11 +322,11 @@ export const KIND_ART = {
 
   /**
    * Two sheets, one behind the other, the front one with a tab line across
-   * its top (Craft → Designs): a design is an ordered set of pages, and its
+   * its top: a craft is an ordered set of pages, and its
    * page row is the first thing its screen draws. Distinct from `doc`'s single
    * folded sheet and `artifact`'s frame.
    */
-  design: [
+  craft: [
     'M5.4 2.6h6.8a1 1 0 0 1 1 1v6.8',
     'M3.4 4.8h6.8a1 1 0 0 1 1 1v6.6a1 1 0 0 1-1 1H3.4a1 1 0 0 1-1-1V5.8a1 1 0 0 1 1-1z',
     'M2.4 7.4h8.8',

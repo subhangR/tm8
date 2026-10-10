@@ -246,14 +246,14 @@ export type NavView =
      no parameters of its own — same posture as the four above. */
   | { view: 'board' }
   /*
-   * Craft (2026-08-16; Craft → Designs 2026-10-06). Bare `/craft` is the
-   * Designs home. `/craft/{design}` opens one design, `/craft/{design}/{page}`
-   * a page of it, and `/craft/{design}/{page}/{nestedPage}` a page of a
-   * design that is itself a page (at most two page rows, so no deeper
+   * Craft (2026-08-16; the `design` kind 2026-10-06, renamed `craft` by 316).
+   * Bare `/craft` is the crafts home. `/craft/{craft}` opens one craft,
+   * `/craft/{craft}/{page}` a page of it, and `/craft/{craft}/{page}/{nestedPage}`
+   * a page of a craft that is itself a page (at most two page rows, so no deeper
    * segment). Each key is present only when the one before it is: the codec
-   * drops a page without a design, and a nested page without a page.
+   * drops a page without a craft, and a nested page without a page.
    */
-  | { view: 'craft'; designId?: EntityId; pageId?: EntityId }
+  | { view: 'craft'; craftId?: EntityId; pageId?: EntityId }
   /*
    * The Help shelf (2026-08-19): whole-centre contents + reader. Addressable
    * even though Help is not in the default tab spine — its door is a bar

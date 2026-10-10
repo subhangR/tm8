@@ -58,7 +58,7 @@ const TITLE_TABLES: ReadonlyArray<readonly [table: string, column: string]> = [
   ['tasks', 'title'], ['stories', 'title'], ['work_sessions', 'title'], ['documents', 'title'],
   ['artifacts', 'name'], ['collections', 'name'], ['team_members', 'name'], ['pull_requests', 'title'],
   ['files', 'name'], ['drawings', 'title'], ['chats', 'title'], ['channels', 'name'], ['loops', 'title'],
-  ['forms', 'title'], ['skills', 'name'], ['graphs', 'title'], ['designs', 'title'],
+  ['forms', 'title'], ['skills', 'name'], ['graphs', 'title'], ['crafts', 'title'],
 ];
 /** Shared with spawn-design.ts: a design's pages are read the same way. */
 export const TITLE_JOINS = TITLE_TABLES
