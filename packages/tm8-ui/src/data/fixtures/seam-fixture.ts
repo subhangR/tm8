@@ -850,10 +850,10 @@ function synthesizeContent(s: EntitySummary): EntityContent {
     case 'design':
       // 304: a fixture design is born empty; its pages are `contains` edges.
       return { kind: 'design', description: '', pages: [] };
+    case 'tool':
+      return { kind: 'tool', definition: { name: 'fixture-tool', description: '', help: '', runtime: 'bash', source: 'true', inputs: [], tm8Access: 'none', timeoutSeconds: 900 } };
     case 'mcp_server':
       return { kind: 'mcp_server', definition: { name: 'fixture', transport: 'http', url: 'https://fixture.example/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false } };
-    case 'tool':
-      return { ...state };
     case 'style':
       // 284: a space style's content is its state's facts plus a description.
       return { ...state, description: null };

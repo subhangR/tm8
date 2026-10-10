@@ -71,14 +71,14 @@ describe('tool input resolution and boundaries', () => {
   });
 });
 
-async function launch(source: string, keepOpen: boolean, extra: { runtime?: 'bash' | 'python'; timeoutSeconds?: number; secret?: string; killFailure?: boolean } = {}) {
+async function launch(source: string, keepOpen: boolean, extra: { runtime?: 'bash' | 'python'; timeoutSeconds?: number; secret?: string; killFailure?: boolean; recordFailure?: boolean } = {}) {
   const dir = await directory(), sessionId = randomUUID(); sessions.push(sessionId);
   const host = new PtyHostService({ logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() } }); hosts.push(host);
   if (extra.killFailure) vi.spyOn(host, 'captureProcessGroupKiller').mockReturnValue(() => { throw Object.assign(new Error('kill refused'), {code: 'EPERM'}); });
   const view = tool({ source, runtime: extra.runtime ?? 'bash', timeoutSeconds: extra.timeoutSeconds ?? 10,
     inputs: extra.secret ? [{ name: 'key', type: 'secret' }] : [] });
   const inputs = await resolveToolInputs(view, {}, extra.secret ? { key: extra.secret } : {}, { cwd: dir, roots: [], readSecret: vi.fn() });
-  const recordExit = vi.fn(async (_exit: ToolExit) => {}), revokeToken = vi.fn(async () => {});
+  const recordExit = vi.fn(async (_exit: ToolExit) => { if (extra.recordFailure) throw new Error('write unavailable'); }), revokeToken = vi.fn(async () => {});
   const launcher = new ToolSessionLauncher({ pty: host, dataDir: dir, baseUrl: 'http://127.0.0.1:4610', pollMs: 20, env: { PATH: '/usr/bin:/bin', HOME: dir, SHELL: '/bin/bash', DATABASE_URL: 'should-not-leak' } });
   await launcher.launch({ sessionId, toolId: view.id, toolVersion: view.version, definition: view.definition,
     inputs, cwd: dir, keepOpen, token: 'tm8s_secret_run_token_12345678901234567890', recordExit, revokeToken });
@@ -142,6 +142,14 @@ describe('tool exit capture on real PTYs', () => {
     expect(run.revokeToken).toHaveBeenCalledTimes(1);
     expect(run.recordExit.mock.calls[0]![0]).toMatchObject({state: 'exited', exitCode: 7});
     expect(run.host.hasSession(run.sessionId)).toBe(false);
+  });
+  it('releases completion watchers when exit persistence fails', async () => {
+    const run = await launch('exit 7', true, {recordFailure: true});
+    await vi.waitFor(() => expect(run.recordExit).toHaveBeenCalledTimes(1), { timeout: 15000 });
+    await run.launcher.checkExit(run.sessionId);
+    expect(run.recordExit).toHaveBeenCalledTimes(1);
+    expect(run.revokeToken).toHaveBeenCalledTimes(1);
+    expect(run.host.hasSession(run.sessionId)).toBe(true);
   });
   it('redacts before truncation and keeps output within 64 KiB including Unicode', () => {
     const secret = 'secret-across-boundary';

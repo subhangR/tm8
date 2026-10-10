@@ -118,15 +118,18 @@ export class ToolSessionLauncher {
           try { killProcessGroup(); }
           finally { this.options.pty.kill(request.sessionId); }
         }
-      } catch {
-        this.options.logger?.error('Tool process group cleanup failed', undefined, { sessionId: request.sessionId });
+      } catch (error) {
+        this.options.logger?.error('Tool process group cleanup failed', error instanceof Error ? error : new Error(String(error)), { sessionId: request.sessionId });
       } finally {
         // Cleanup failure must never skip token revocation or outcome capture.
-        try { await request.revokeToken(); }
-        finally { await request.recordExit({ exitCode: exit, state, outputTail }); }
+        try {
+          try { await request.revokeToken(); }
+          finally { await request.recordExit({ exitCode: exit, state, outputTail }); }
+        } finally {
+          try { stop(); }
+          finally { secretValues.fill(''); }
+        }
       }
-      stop();
-      secretValues.fill('');
     };
     const check = async () => {
       if (settled || checking) return;
@@ -142,10 +145,11 @@ export class ToolSessionLauncher {
           const exit = status!.exit as number;
           await settle(exit, exit === 124 || exit === 137 ? 'timed_out' : 'exited');
         } else if (!this.options.pty.hasSession(request.sessionId)) await settle(null, 'killed');
-      } catch {
-        this.options.logger?.error('Tool completion could not be persisted', undefined, { sessionId: request.sessionId });
-        // Completion persistence is idempotent. Retain the watcher and retry.
-        settled = false;
+      } catch (error) {
+        this.options.logger?.error('Tool completion could not be persisted', error instanceof Error ? error : new Error(String(error)), { sessionId: request.sessionId });
+        // Status-read failures retry on the next poll; settled runs release all
+        // watchers even when persistence fails. DB lifecycle/startup repair
+        // remains the backstop for an unavailable completion write.
       } finally { checking = false; }
     };
     const sink: FrameSink = {
