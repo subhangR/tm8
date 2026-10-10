@@ -362,16 +362,17 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // sessions Running · Interrupted · Completed · Stopped, and the shared
     // category stays underneath for story progress and cross-kind views.
     const list = getKind('work_session').list;
-    expect(list.categories?.map((t) => t.id)).toEqual(['running', 'interrupted', 'completed', 'stopped']);
+    expect(list.categories?.map((t) => t.id)).toEqual(['all', 'running', 'interrupted', 'completed', 'stopped']);
     expect(list.categories?.map((t) => t.filter)).toEqual([
+      { deleted: 'exclude' },
       { sessionStatus: ['spawning', 'running', 'idle'], sessionOutcome: ['open', 'completed'], deleted: 'exclude' },
       { sessionStatus: ['exited', 'failed'], sessionOutcome: ['open'], deleted: 'exclude' },
       { sessionStatus: ['exited', 'failed'], sessionOutcome: ['completed'], deleted: 'exclude' },
       { sessionOutcome: ['stopped'], deleted: 'exclude' },
     ]);
-    expect(list.defaultCategory).toBe('running');
-    // They PARTITION (stale rows are recorded live), so no total tab.
-    expect(list.tabTotal).toBeUndefined();
+    expect(list.defaultCategory).toBe('all');
+    // All overlaps the status tabs, so totals come from All alone.
+    expect(list.tabTotal).toBe('all');
   });
 
   it('5b. PHASE 7 — the session state options carry the ruled categories', () => {
@@ -451,7 +452,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(list.filters.some((f) => f.id === 'missing')).toBe(false);
     // Only kinds whose tabs overlap name a total tab.
     for (const row of allKinds()) {
-      if (row.kind !== 'skill') expect(row.list.tabTotal, row.kind).toBeUndefined();
+      expect(row.list.tabTotal, row.kind).toBe('all');
     }
   });
 
@@ -461,7 +462,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     // contract's closed `StatusCategory` union, so a kind cannot invent a
     // fifth bucket and a space that names its own statuses is filed correctly
     // without touching the registry.
-    const FOUR = ['to_do', 'in_progress', 'done', 'cancelled'];
+    const DEFAULT_TABS = ['all', 'to_do', 'in_progress', 'done', 'cancelled'];
     /*
      * THE FIVE FACT KINDS ARE EXEMPT, and the exemption is the ruling, not a
      * hole in it. `152_universal_status.sql` seeds commit, message, file,
@@ -482,8 +483,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
         continue;
       }
       if (OWN_TAB_KINDS.includes(row.kind)) continue;
-      expect(row.list.categories?.map((t) => t.id), `${row.kind}`).toEqual(FOUR);
+      expect(row.list.categories?.map((t) => t.id), `${row.kind}`).toEqual(DEFAULT_TABS);
       expect(row.list.categories?.map((t) => t.label)).toEqual([
+        'All',
         'To Do',
         'In Progress',
         'Done',
@@ -494,7 +496,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     for (const kind of FACT_KINDS) {
       expect(getKind(kind).list.categories, `${kind} must declare categories: null`).toBeUndefined();
     }
-    expect(getKind(CUSTOM_KIND_FALLBACK).list.categories?.map((t) => t.id)).toEqual(FOUR);
+    expect(getKind(CUSTOM_KIND_FALLBACK).list.categories?.map((t) => t.id)).toEqual(DEFAULT_TABS);
     expect(collectionKinds().length).toBeGreaterThan(0);
   });
 
@@ -507,7 +509,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       if (OWN_TAB_KINDS.includes(row.kind)) continue;
       for (const tab of row.list.categories ?? []) {
         expect(tab.filter, `${row.kind}/${tab.id}`).toEqual({
-          category: [tab.id],
+          ...(tab.id === 'all' ? {} : { category: [tab.id] }),
           deleted: 'exclude',
         });
       }

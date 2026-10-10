@@ -227,7 +227,9 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // and the fixture's EXITED session with no outcome is unfinished work —
     // "ended, not completed", in the attention group, not Recently completed.
     expect(words).toContain('working');
-    expect(words).toContain('stale');
+    // The bounded health summary shows the first two positioned rows. A
+    // stale third row is counted by the heading, not promoted by activity.
+    expect(words).toHaveLength(3);
     expect(words).toContain('ended, not completed');
     // Attention v2 (G1, tab 8): session health is status, not "needs you" —
     // with the attention module mounted the group is relabelled, and "Needs

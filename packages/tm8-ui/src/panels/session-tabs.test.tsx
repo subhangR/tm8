@@ -76,12 +76,12 @@ const tabNames = (view: ReturnType<typeof mount>) =>
 beforeEach(() => window.localStorage.clear());
 
 describe('§5.3 the session tab row', () => {
-  it('draws Running · Interrupted · Completed · Stopped, opens on Running, and the counts add up', () => {
+  it('opens All in manual order, keeps status tabs, and counts each entity once', () => {
     const view = mount();
-    expect(tabNames(view)).toEqual(['Running', 'Interrupted', 'Completed', 'Stopped']);
-    expect(view.getByRole('tab', { selected: true }).textContent).toContain('Running');
+    expect(tabNames(view)).toEqual(['All', 'Running', 'Interrupted', 'Completed', 'Stopped']);
+    expect(view.getByRole('tab', { selected: true }).textContent).toContain('All');
     const counts = view.getAllByRole('tab').map((t) => Number((t.textContent ?? '').match(/(\d+)$/)?.[1]));
-    expect(counts).toEqual([3, 3, 1, 1]);
+    expect(counts).toEqual([8, 3, 3, 1, 1]);
     expect(view.getByTestId('kind-total').textContent).toBe(String(ALL.length));
   });
 
@@ -105,6 +105,9 @@ describe('§5.3 Running tab layout', () => {
   it('working rows first, then the divider "Finished, still open (1)" with Stop all finished (scenario 1)', () => {
     const onSessionBulk = vi.fn();
     const view = mount({ onSessionBulk });
+    fireEvent.click(view.getByRole('tab', { name: /Running/ }));
+    fireEvent.click(view.getByTestId('sort-trigger'));
+    fireEvent.click(view.getByRole('menuitemradio', { name: /Recent activity/ }));
     const group = view.getByTestId('session-group');
     expect(group.textContent).toContain('Finished, still open (1)');
     // The finished row comes after the divider.
@@ -128,6 +131,7 @@ describe('§5.3 Running tab layout', () => {
 
   it('case 7: a running child under a completed parent sits at the top level with "↳ under <parent> (Completed)" (scenario 27)', () => {
     const view = mount();
+    fireEvent.click(view.getByRole('tab', { name: /Running/ }));
     const tile = view.container.querySelector(`[data-session-node="${child.id}"]`) as HTMLElement;
     expect(within(tile).getByTestId('session-row-crumb').textContent).toBe('↳ under Completed one (Completed)');
   });
@@ -148,6 +152,8 @@ describe('§5.3 Interrupted tab layout (§5.3.1 cases 4, 5)', () => {
     const onSessionVerb = vi.fn();
     const view = mount({ onSessionBulk, onSessionVerb, onResume: vi.fn() });
     fireEvent.click(view.getByRole('tab', { name: /Interrupted/ }));
+    fireEvent.click(view.getByTestId('sort-trigger'));
+    fireEvent.click(view.getByRole('menuitemradio', { name: /Recent activity/ }));
     const groups = view.getAllByTestId('session-group').map((g) => g.textContent ?? '');
     expect(groups[0]).toContain('Server restart (2)');
     expect(groups[1]).toContain('Crashed (1)');

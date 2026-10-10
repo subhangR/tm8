@@ -25,7 +25,7 @@ import { pageIsWholeMatch, queryCollection } from '../../src/facade/handlers/col
 const SPACE_ID = '00000000-0000-7000-8000-0000000007a1';
 const MEMBER_ID = '00000000-0000-7000-8000-0000000007a2';
 
-function taskRow(n: number): EntityRow & { __sort: string; __sort_cursor: string } {
+function taskRow(n: number): EntityRow & { __sort: number; __sort_cursor: number } {
   const id = `00000000-0000-7000-8000-${String(n).padStart(12, '0')}`;
   const at = `2026-09-24T10:00:${String(59 - n).padStart(2, '0')}.000Z`;
   return {
@@ -52,9 +52,9 @@ function taskRow(n: number): EntityRow & { __sort: string; __sort_cursor: string
     work_status: 'open',
     priority: 'medium',
     acceptance_criteria: [],
-    __sort: at,
-    __sort_cursor: at,
-  } as unknown as EntityRow & { __sort: string; __sort_cursor: string };
+    __sort: 0,
+    __sort_cursor: 0,
+  } as unknown as EntityRow & { __sort: number; __sort_cursor: number };
 }
 
 /**

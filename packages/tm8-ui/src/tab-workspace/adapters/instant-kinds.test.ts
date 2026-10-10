@@ -8,13 +8,13 @@ import { draftBodyFor } from './draft';
 
 const INSTANT = ['task', 'doc', 'drawing', 'story', 'collection', 'channel'];
 
-describe('instant create', () => {
-  it('is exactly the title-only kinds, and they share one draft body', () => {
+describe('title-only create', () => {
+  it('uses the shared draft until a title is submitted', () => {
     const instant = allKinds().filter((config) => config.createInstant !== undefined).map((config) => config.kind);
     expect([...instant].sort()).toEqual([...INSTANT].sort());
     const bodies = new Set(INSTANT.map((kind) => draftBodyFor(kind)));
     expect(bodies.size).toBe(1);
-    expect([...bodies][0]).toBeDefined();
+    expect([...bodies][0]).toBeUndefined();
   });
 
   it('a doc lands in its editor, every other instant kind on its title', () => {

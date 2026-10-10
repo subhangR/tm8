@@ -1177,6 +1177,8 @@ export type EntityConnectionsPage = Page<EdgeView>;
 
 export interface EntityCapabilities { canEdit: boolean; canDelete: boolean; canAddChild: boolean; canLink: boolean;
   canPull: boolean; canReact: boolean; canGrantPoints: boolean; canComplete: boolean;
+  /** Shared placement only; does not grant lifecycle or runtime control. */
+  canMove?: boolean;
   /**
    * Additive: the state ids the viewer may move this entity to, when a
    * transition matrix EXISTS for its type. ABSENT means "no matrix — fall
@@ -3736,7 +3738,9 @@ export interface WithdrawAttentionRequestInput extends CommandContext {
 
 export interface MoveEntityInput extends CommandContext {
   parentId: EntityId | null;      // same kind or null
-  position: number;
+  position?: number;
+  /** Server resolves the sibling rank; null + inside inserts first at root. */
+  placement?: { targetId: EntityId | null; relation: 'before' | 'after' | 'inside' };
   expectedVersion: number;
 }
 

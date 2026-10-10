@@ -66,7 +66,8 @@ describe('the files port reaches real data through a real seam', () => {
 
     // Find the anchor the fixture thread hangs off by walking real data
     // rather than hardcoding an id: the ids are another lane's to change.
-    const result = await seam.query({ spaceId });
+    const result = await seam.query({ spaceId, limit: 500 });
+    expect(result.page.nextCursor).toBeNull();
     let found: Awaited<ReturnType<typeof port.messagesWithFiles>> = [];
     for (const entity of result.page.items) {
       const withFiles = await port.messagesWithFiles(entity.id);
@@ -119,7 +120,8 @@ describe('the files port reaches real data through a real seam', () => {
   it('answers a MEASURED empty list on fixtures — and that is the data, not the port', async () => {
     const seam = createFixtureSeam();
     const spaceId = await firstSpaceId(seam);
-    const result = await seam.query({ spaceId });
+    const result = await seam.query({ spaceId, limit: 500 });
+    expect(result.page.nextCursor).toBeNull();
     const port = filesPortFromSeam(seam, spaceId);
 
     const types = new Set<string>();

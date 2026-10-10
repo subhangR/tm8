@@ -157,14 +157,14 @@ test('every entity gets its counter row from exactly one place', () => {
   );
 });
 
-test('a NULL position appends after the last sibling; an explicit 0 is honoured', () => {
+test('a NULL position inserts before the first sibling; an explicit 0 is honoured', () => {
   const first = json(`select public.create_task(${uuid(w.spaceA)}, 'pos first')`, { claims: w.claimsA })
     .entity;
   const second = json(`select public.create_task(${uuid(w.spaceA)}, 'pos second')`, { claims: w.claimsA })
     .entity;
   assert.ok(
-    Number(second.position) > Number(first.position),
-    `append semantics: ${second.position} should be after ${first.position}`,
+    Number(second.position) < Number(first.position),
+    `new-first semantics: ${second.position} should be before ${first.position}`,
   );
   const zeroed = json(
     `select public.create_task(${uuid(w.spaceA)}, 'pos zero', null, '', '{}'::jsonb, null, 0)`,

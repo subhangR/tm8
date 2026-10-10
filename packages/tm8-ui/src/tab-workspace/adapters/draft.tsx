@@ -35,13 +35,13 @@ import {
 import { ChatHomeSurface } from '../../chat-home/ChatHomeSurface';
 import { subscribeDrafts } from '../runtime/draftStore';
 import { nodeKeyOf } from '../../data/launch-cache';
-import { EMPTY_HEADER_DRAFT, getKind, headerDraftHasText, headerInputOf, placeholderNameFor, type HeaderDraft } from '../../domain';
+import { EMPTY_HEADER_DRAFT, getKind, headerDraftHasText, headerInputOf, type HeaderDraft } from '../../domain';
 import { pickFiles } from '../../files/pick';
 import { createFileUploadTask, safeUploadReason } from '../../files/upload';
 import { NewSessionScreen } from '../../new-session';
 import { HeaderFields } from '../../panels/detail/HeaderSection';
-import { FRESH_DOC_TITLE, markFreshDoc } from '../../doc-edit';
 import { SkillCreateControl } from '../../skills/SkillCreateControl';
+import { onDraftSubmit } from '../runtime/draftSubmit';
 import { onDraftFocusRequest } from '../runtime/draftFocus';
 import type { DraftTabRecord, KindId } from '../runtime/types';
 import { useWorkspace } from '../view/context';
@@ -81,7 +81,8 @@ export function DraftHost({ tab }: { tab: DraftTabRecord }) {
     subscribeDrafts,
     () => runtime.drafts.remoteVersionOf(tab.draftId),
   );
-  const values = useMemo(() => runtime.drafts.get(tab.draftId), [runtime, tab.draftId, remoteVersion]);
+  const revision = useSyncExternalStore(subscribeDrafts, () => runtime.drafts.revisionOf(tab.draftId));
+  const values = useMemo(() => runtime.drafts.get(tab.draftId), [runtime, tab.draftId, remoteVersion, revision]);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -228,7 +229,7 @@ function DraftHeading({ kind }: { kind: KindId }) {
 // ---------------------------------------------------------------------------
 
 function GenericDraftBody({ tab, values, onValues, onCreated, onCancel, onSubmitting }: DraftHostProps) {
-  const { gate, spaceId } = useWorkspace();
+  const { gate, spaceId, runtime } = useWorkspace();
   const config = getKind(tab.kind);
   const noun = config.label.toLowerCase();
   const placeholder = placeholderTitleFor(config.label);
@@ -244,18 +245,23 @@ function GenericDraftBody({ tab, values, onValues, onCreated, onCancel, onSubmit
   }, []);
 
   const write = (next: { title: string; header: HeaderDraft }) =>
-    onValues({ title: next.title, ...(config.createHeader ? { header: next.header } : {}) });
+    onValues({ ...values, title: next.title, ...(config.createHeader ? { header: next.header } : {}) });
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     const kind = creatableKind(tab.kind as Parameters<typeof creatableKind>[0]);
     if (inFlight.current || submitting || kind === null) return;
+    const latest = runtime.drafts.get(tab.draftId) ?? values;
+    const finalTitle = str(latest, 'title').trim() || title.trim();
+    if (!finalTitle) { firstField.current?.focus(); return; }
     inFlight.current = true;
     setFailure(null);
     onSubmitting(true);
-    const finalTitle = title.trim() || placeholder;
     try {
-      const input = newEntityInput(spaceId as SpaceId, kind, finalTitle);
+      const input = {
+        ...newEntityInput(spaceId as SpaceId, kind, finalTitle),
+        ...(typeof latest?.parentId === 'string' ? { parentId: latest.parentId as EntityId } : {}),
+      };
       const result = await gate.data.seam.commands.createEntity(
         config.createHeader && headerDraftHasText(header) ? { ...input, header: headerInputOf(header) } : input,
       );
@@ -282,13 +288,21 @@ function GenericDraftBody({ tab, values, onValues, onCreated, onCancel, onSubmit
     }
   };
 
+  useEffect(() => {
+    setTitle(str(values, 'title'));
+    setHeader(headerOf(values));
+  }, [values]);
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useEffect(() => onDraftSubmit(tab.id, () => { void submitRef.current(); }), [tab.id]);
+
   const errorId = `tws-draft-error-${tab.id}`;
   return (
     <form className="tws-draft-form" onSubmit={(event) => void submit(event)} aria-label={`New ${noun}`} data-testid="tws-draft-form">
       <DraftHeading kind={tab.kind} />
       <label className="au-dialog__field">
         <span className="au-dialog__label">
-          Title<em className="au-dialog__optional"> · optional</em>
+          Title
         </span>
         <input
           ref={firstField}
@@ -359,117 +373,6 @@ function DraftActions({
           {submitting ? 'Creating…' : createLabel}
         </button>
       ) : null}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// instant kinds: created at once, landed on their own page
-// ---------------------------------------------------------------------------
-
-/**
- * One create per draft, however many times its body mounts: StrictMode's
- * second mount and a remote-values remount (`key={remoteVersion}`) both find
- * the create already running here instead of starting another.
- */
-const instantCreates = new Map<string, Promise<string | null>>();
-
-/**
- * The title an instant create is born with. A doc keeps New doc's bare
- * "Untitled", which its title field shows as a placeholder; every other kind
- * wears its own ("Untitled task"), shaped to the kind's title grammar so a
- * channel's is a slug the server accepts.
- */
-function instantTitleFor(kind: KindId): string {
-  const config = getKind(kind);
-  if (config.createInstant === 'editor') return FRESH_DOC_TITLE;
-  return placeholderNameFor(config, placeholderTitleFor(config.label));
-}
-
-/**
- * NEW IS NOT A FORM for a kind whose only required field is its title (New
- * doc UX, Subhang 2026-10-06: "directly show editor"; Kalai 2026-10-07: the
- * same for task, drawing, story, collection and channel). The record is
- * created under its placeholder the moment its draft opens, and `drafts.bind`
- * turns this tab into the record's own tab: a doc opens in the editor with
- * the caret in its title (`ReaderSurface`), every other kind on its page with
- * the title selected (`EntityDetailPanel`). Both read the arrival from
- * `freshDocs.ts`. Anything the old form asked for up front is written on the
- * page, later, and never blocks create. One left untitled and untouched is
- * deleted once no tab holds it (`useAbandonedSweep`).
- */
-function InstantDraftBody({ tab, onCreated, onCancel, onSubmitting }: DraftHostProps) {
-  const { gate, spaceId } = useWorkspace();
-  const [failure, setFailure] = useState<RefusedFailure | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const noun = getKind(tab.kind).label.toLowerCase();
-
-  useEffect(() => {
-    let live = true;
-    const key = `${tab.draftId}#${attempt}`;
-    let pending = instantCreates.get(key);
-    const kind = creatableKind(tab.kind as Parameters<typeof creatableKind>[0]);
-    if (!pending && kind !== null) {
-      onSubmitting(true);
-      const title = instantTitleFor(tab.kind);
-      pending = gate.data.seam.commands
-        .createEntity(newEntityInput(spaceId as SpaceId, kind, title))
-        .then((result) => {
-          gate.data.reconcileCommand(result);
-          const id = createdIdOf(result);
-          // Bound here, once, rather than per mount: marked fresh BEFORE the
-          // bind, so the record's surface finds it on its first render.
-          if (id !== null) {
-            markFreshDoc(id, title);
-            onCreated(id, title);
-          }
-          return id;
-        });
-      instantCreates.set(key, pending);
-    }
-    pending?.then(
-      (id) => {
-        if (!live || id !== null) return;
-        setFailure(noIdFailure(noun));
-        onSubmitting(false);
-      },
-      (error: unknown) => {
-        instantCreates.delete(key);
-        if (!live) return;
-        const classified = classifyFailure(error, 'create');
-        setFailure(
-          classified.kind === 'refused'
-            ? classified
-            : { kind: 'refused', cause: classified.cause, detail: classified.detail, aftermath: 'Nothing was created.', code: 'version_conflict', retryable: true },
-        );
-        onSubmitting(false);
-      },
-    );
-    return () => {
-      live = false;
-    };
-    // The create is keyed by draft and attempt; the callbacks are the host's
-    // stable ones.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab.draftId, attempt]);
-
-  if (failure === null) {
-    return (
-      <div className="tws-draft-form" aria-busy="true" data-testid="tws-instant-creating">
-        <p className="tws-draft-note">{`Creating a new ${noun}…`}</p>
-      </div>
-    );
-  }
-  return (
-    <div className="tws-draft-form" data-testid="tws-instant-create-failed">
-      <DraftHeading kind={tab.kind} />
-      <RefusalCard
-        word={failure.cause}
-        detail={failure.detail}
-        aftermath={failure.aftermath}
-        moves={failure.retryable ? [{ label: 'retry', onSelect: () => { setFailure(null); setAttempt((n) => n + 1); } }] : []}
-      />
-      <DraftActions onCancel={onCancel} submitting={false} />
     </div>
   );
 }
@@ -648,7 +551,8 @@ function ChatDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
 export function draftBodyFor(kind: KindId): ComponentType<DraftHostProps> | undefined {
   if (kind === 'work_session') return LaunchDraftBody;
   if (kind === 'chat') return ChatDraftBody;
-  if (getKind(kind).createInstant) return InstantDraftBody;
+  // Title-only kinds use the synchronized inline/detail draft. No saved
+  // placeholder entity is created until a nonempty title is submitted.
   const form = getKind(kind).createForm;
   if (form === 'file-upload') return FileDraftBody;
   if (form === 'skill-file') return SkillDraftBody;

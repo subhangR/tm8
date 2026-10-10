@@ -2399,7 +2399,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // patch door will accept SOMETHING, which is the contract of this flag.
   // Work-session "edit" is likewise exactly one thing: the display title, via
   // rename_work_session (085). Everything else on that row belongs to the
-  // execution block, which is why it is still not deletable or hierarchical.
+  // execution block. Manual hierarchy uses the separate placement command.
   const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing', 'story', 'design']);
   // A story's children are child stories (same-kind hierarchy, 283).
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection', 'story']);
@@ -2407,6 +2407,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
 
   return {
     canEdit: live && editable.has(row.kind),
+    canMove: live && !new Set(['member','message','project','interaction_profile','credential','server','space_link','container','style','op_request']).has(row.kind),
     // 007:1437 refuses to delete a member entity — leaving the space is the
     // only way that row goes away.
     canDelete: live && row.kind !== 'member',

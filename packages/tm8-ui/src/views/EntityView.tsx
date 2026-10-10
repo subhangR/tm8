@@ -1131,6 +1131,13 @@ export function EntityView(props: EntityViewProps) {
           // first, detail as fallback. Absence still means refused; it is just
           // no longer the permanent state of every collapsed row.
           capabilitiesOf={data.capabilitiesOf}
+          onMoveEntity={async (row, placement) => {
+            const result = await data.seam.commands.moveEntity(row.id, {
+              parentId: row.parentId, placement, expectedVersion: row.version,
+              clientMutationId: crypto.randomUUID(),
+            });
+            data.reconcileCommand(result);
+          }}
           onNeedDetail={(id) => data.pull?.(id)}
           selectedId={selectedId}
           onSelect={selectFromList}

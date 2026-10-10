@@ -598,7 +598,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments, primaries, launchPort, membership, chatAbout],
   );
 
-  /** Keep the server's recent-activity order; EmptyCenter applies the bounded
+  /** Keep the server's position order; EmptyCenter applies the bounded
       status groups without turning this summary into a second full list. */
   const rosterRows = useMemo(() => {
     if (!TERMINAL_ROSTER_KIND) return [];
@@ -906,6 +906,13 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             // strip reads, and it is the fallback path for a node too old to
             // send the summary field.
             capabilitiesOf={data.capabilitiesOf}
+            onMoveEntity={async (row, placement) => {
+              const result = await data.seam.commands.moveEntity(row.id, {
+                parentId: row.parentId, placement, expectedVersion: row.version,
+                clientMutationId: crypto.randomUUID(),
+              });
+              data.reconcileCommand(result);
+            }}
             onNeedDetail={(id) => data.pull?.(id)}
             // The quick-config's escape to the full sheet. A1c's
             // LaunchTeammateOption is deliberately NOT my LaunchTeammate:
@@ -1084,6 +1091,13 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             membershipSets={rowLifecycle.membershipSets}
             connectionsOf={data.connectionsOf}
             capabilitiesOf={data.capabilitiesOf}
+            onMoveEntity={async (row, placement) => {
+              const result = await data.seam.commands.moveEntity(row.id, {
+                parentId: row.parentId, placement, expectedVersion: row.version,
+                clientMutationId: crypto.randomUUID(),
+              });
+              data.reconcileCommand(result);
+            }}
             onNeedDetail={(id) => data.pull?.(id)}
             launch={launchPort}
             /* The header verbs (101). `wiredActions` keeps the row honest,
