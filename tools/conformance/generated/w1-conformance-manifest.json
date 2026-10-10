@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:ad68d811b899852ddc759c8e9e17c55f6bac9dc7338df73477ec04a40f22f0a6",
+  "catalogDigest": "sha256:527a376d04e641936fd86e67099a0fc993cb6fe872aa7e115f0a9795921eba40",
   "catalog": {
-    "total": 372,
-    "v1": 370,
+    "total": 375,
+    "v1": 373,
     "reserved": 2,
-    "http": 370,
+    "http": 373,
     "ws": 1,
-    "registerableV1Http": 368,
+    "registerableV1Http": 371,
     "methods": {
-      "GET": 122,
-      "POST": 182,
+      "GET": 124,
+      "POST": 183,
       "PATCH": 21,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 128,
-      "command": 242,
+      "read": 130,
+      "command": 243,
       "stream": 2
     },
-    "uniqueNames": 372,
-    "uniqueBindings": 371
+    "uniqueNames": 375,
+    "uniqueBindings": 374
   },
   "reservedOperations": [
     "search.query",
@@ -1692,6 +1692,27 @@
         "source": "server-router"
       },
       {
+        "operation": "workspace.crafts.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/craft-workspaces",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.crafts.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/craft-workspaces/:craftId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.crafts.command",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/craft-workspaces/:craftId/commands",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.spawn",
         "method": "POST",
         "path": "/v2/execution/spawn",
@@ -3008,7 +3029,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 340
+    "unimplementedV1Http": 343
   },
   "schemas": {
     "additive": {
@@ -6745,6 +6766,57 @@
           "workspace",
           "prompts",
           "resolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.crafts.list",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.crafts.list",
+        "intentTags": [
+          "workspace",
+          "crafts",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.crafts.get",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.crafts.get",
+        "intentTags": [
+          "workspace",
+          "crafts",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.crafts.command",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.crafts.command",
+        "intentTags": [
+          "workspace",
+          "crafts",
+          "command"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

@@ -1,6 +1,6 @@
 /**
  * Craft workspaces (Craft redesign doc 01a1255d §3 "Persistence", §4; contract
- * `packages/contract/src/craft-workspace.ts`; migration 315).
+ * `packages/contract/src/craft-workspace.ts`; migration 321).
  *
  * One hidden row of `public.workspaces` per (space, identity, craft): the tabs
  * a person has open on a craft, and whether the craft is in their Craft top
@@ -11,7 +11,7 @@
  *
  * A tab shows the craft itself or one of its DIRECT pages (a `contains` edge
  * from the craft). Removing the edge prunes the tab in the database, for every
- * person, at once (migration 315's trigger). A page soft-deleted instead is
+ * person, at once (migration 321's trigger). A page soft-deleted instead is
  * pruned on the next read or command, and that prune is SAVED (as no one: it
  * stamps no agent change) and pushed, before the command runs or is refused.
  *
@@ -173,7 +173,7 @@ export class CraftWorkspaceService {
    *    (start_chat; same `created_at`), or
    *  - a work session whose `about` edge to the craft was written in the
    *    transaction that created it (execution.spawn `aboutEntityId`, which only
-   *    a person, or a chat runtime for its own sessions, may set: 315
+   *    a person, or a chat runtime for its own sessions, may set: 321
    *    work_session_about), and that the caller started: its creator is the
    *    caller's member, or its parent is a chat the caller started.
    * An `about` edge an agent adds later (edges.create) binds nothing, and nor

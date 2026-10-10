@@ -1,4 +1,4 @@
--- 315 — Craft workspaces: one hidden workspace per (space, identity, craft)
+-- 321 — Craft workspaces: one hidden workspace per (space, identity, craft)
 -- (Craft redesign doc 01a1255d §3 "Persistence", §4; contract
 -- packages/contract/src/craft-workspace.ts).
 --

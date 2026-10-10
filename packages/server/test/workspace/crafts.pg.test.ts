@@ -1,5 +1,5 @@
 /**
- * Craft workspaces (Craft redesign doc 01a1255d §3, §4; migration 315) against
+ * Craft workspaces (Craft redesign doc 01a1255d §3, §4; migration 321) against
  * a REAL database: one hidden workspace per (space, identity, craft), its tab
  * commands, the open-crafts list, pruning of pages that left the craft, and
  * which agents may command it.
@@ -124,7 +124,7 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     chatAbout = await chat(craft);
     chatElsewhere = await chat(other);
     chatSomeoneElse = await chat(craft, stranger);
-    sessionAbout = await sessionOn(craft); // 315: a work session may be `about` something
+    sessionAbout = await sessionOn(craft); // 321: a work session may be `about` something
     sessionLater = await raw('work_session');
     sessionUnderChat = await raw('work_session');
     await db.asOwner((q) => q.query('update public.entities set parent_id = $1 where id = $2', [chatAbout, sessionUnderChat]).catch(() => undefined));

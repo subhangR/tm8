@@ -74,7 +74,7 @@ export interface WorkspaceHandlers {
   readonly remove: OperationHandler;
   readonly switchTo: OperationHandler;
   readonly resolvePrompt: OperationHandler;
-  /** Craft workspaces (doc 01a1255d §3, §4; migration 315). */
+  /** Craft workspaces (doc 01a1255d §3, §4; migration 321). */
   readonly crafts: OperationHandler;
   readonly craft: OperationHandler;
   readonly craftCommand: OperationHandler;

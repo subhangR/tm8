@@ -320,7 +320,7 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
   });
 
   /**
-   * 315 (Craft doc §4) — WHO BINDS A SESSION ABOUT A CRAFT AT SPAWN. An about
+   * 321 (Craft doc §4) — WHO BINDS A SESSION ABOUT A CRAFT AT SPAWN. An about
    * edge written in the spawn transaction lets the session's agent command the
    * caller's craft workspace, so the handler names who may write one: a person
    * (`aboutEntityId`), or a chat runtime for its own sessions, whose chat comes

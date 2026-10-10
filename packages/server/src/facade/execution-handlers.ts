@@ -1022,7 +1022,7 @@ export class DbGraphPort implements GraphPort {
       input.storyId ?? null,
       input.sourceWorkSessionId ?? null,
     ];
-    // `aboutEntityId` / `aboutFromChatId` (315): the about edge goes in the SAME
+    // `aboutEntityId` / `aboutFromChatId` (321): the about edge goes in the SAME
     // transaction as the session, so it binds (Craft doc §4). work_session_about
     // decides who may bind; a replay answers what was recorded and binds nothing
     // new, so a retry naming a different entity cannot fail the retry.
@@ -3478,7 +3478,7 @@ function registerHandlers(
     // read or written. See identity/link-bearer.ts.
     refuseLinkBearerSpawn(ctx, claims);
 
-    // 315 (Craft doc §4): an about edge written at spawn lets the session's agent
+    // 321 (Craft doc §4): an about edge written at spawn lets the session's agent
     // command the caller's craft workspace, so only a person names it, or a chat
     // runtime for its own sessions (work_session_about re-checks both). Refused
     // here, before a worktree is provisioned for a spawn that cannot finish. A
@@ -3565,7 +3565,7 @@ function registerHandlers(
       ...(input.storyId ? { storyId: input.storyId } : {}),
       ...(input.aboutEntityId ? { aboutEntityId: input.aboutEntityId } : {}),
       // A chat runtime spawns under its own chat (resolveSpawnParentId); its
-      // sessions inherit what the chat is about (315 work_session_about).
+      // sessions inherit what the chat is about (321 work_session_about).
       ...(isChatRuntimeBearer(ctx) && runtimeChatIdOf(ctx) ? { aboutFromChatId: runtimeChatIdOf(ctx)! } : {}),
       ...(sourceWorkSessionId ? { sourceWorkSessionId } : {}),
       ...(input.newTask ? { newTask: { title: input.newTask.title } } : {}),
