@@ -121,6 +121,8 @@ export function DrawingBlock({
    * carries the authoritative new version, so that is what we bank.
    */
   const versionRef = useRef(detail.version);
+  // The content that version came with — see the remote-version effect below.
+  const bankedContentRef = useRef(detail.content);
   // The signature of what the SERVER holds. Anything else is unsaved.
   const savedSignatureRef = useRef(sceneSignature(scene.elements, scene.appState));
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -144,6 +146,7 @@ export function DrawingBlock({
    */
   useEffect(() => {
     versionRef.current = detail.version;
+    bankedContentRef.current = detail.content;
     savedSignatureRef.current = sceneSignature(scene.elements, scene.appState);
     setSave({ phase: 'clean' });
     setImages(hasEmbeddedImages(scene.elements, scene.files));
@@ -163,11 +166,22 @@ export function DrawingBlock({
    */
   const phaseRef = useRef(save.phase);
   phaseRef.current = save.phase;
+  /*
+   * The content the banked version came with. A store that overlays an
+   * upsert's SUMMARY (version, title) onto the cached detail keeps the old
+   * content object, so a newer version can arrive with the PREVIOUS scene.
+   * Banking it then would turn the real content, re-read a moment later at
+   * the same version, away: the version is no longer newer. Measured in QA:
+   * v14 banked over white, the yellow v14 never drawn. A version is adopted
+   * only with content that was actually re-read (`bankedContentRef`).
+   */
   useEffect(() => {
     if (!(detail.version > versionRef.current)) return;
+    if (detail.content === bankedContentRef.current) return;
     if (phaseRef.current !== 'clean' && phaseRef.current !== 'saved') return;
     if (timerRef.current) return;
     versionRef.current = detail.version;
+    bankedContentRef.current = detail.content;
     const signature = sceneSignature(scene.elements, scene.appState);
     if (signature === savedSignatureRef.current) return;
     savedSignatureRef.current = signature;
@@ -179,6 +193,7 @@ export function DrawingBlock({
       appState: scene.appState,
     });
     setImages(hasEmbeddedImages(scene.elements, scene.files));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.version, scene]);
 
   // A pending timer must never outlive the component: it would write after the

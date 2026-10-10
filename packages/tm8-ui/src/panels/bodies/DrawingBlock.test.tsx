@@ -172,6 +172,20 @@ describe('DrawingBlock', () => {
       expect(patchEntity.mock.calls[0]![1].expectedVersion).toBe(8);
     });
 
+    it('a SUMMARY overlay (new version, old content) does not bank the version ahead of its content', async () => {
+      // QA at b3a202010: the store stamped v14 onto the cached white content
+      // first; banking 14 there turned the yellow v14 re-read away.
+      const first = detailOf();
+      const { rerender } = render(<DrawingBlock detail={first} commands={null} />);
+      await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+
+      rerender(<DrawingBlock detail={{ ...first, version: 8 }} commands={null} />);
+      expect(api.updateScene).not.toHaveBeenCalled();
+      rerender(<DrawingBlock detail={detailOf({ version: 8, content: yellow } as Partial<EntityDetail>)} commands={null} />);
+      expect(api.updateScene).toHaveBeenCalledTimes(1);
+      expect((api.updateScene.mock.calls[0]![0] as { appState: Record<string, unknown> }).appState.viewBackgroundColor).toBe('#fff0a0');
+    });
+
     it('hands a new version’s files to the canvas BEFORE its scene', async () => {
       const { rerender } = render(<DrawingBlock detail={detailOf()} commands={null} />);
       await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
