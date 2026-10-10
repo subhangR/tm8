@@ -1,6 +1,6 @@
 # Chat harness adapters and lifecycle foundation
 
-Status: draft for coordinator review; design only. Base: `bad53675bcd608445ab45e66cd5f40af81fd7067` (merged credential-selection PR #1158). Date: 2026-10-10. Task: `01a1259f-ecef-7c13-8883-892ba4a68877`. Companion lanes own portable continuity and credential policy; their decisions must converge with the seams below before implementation.
+Status: reviewed by the coordinator for the foundation contract; design only. Base: `bad53675bcd608445ab45e66cd5f40af81fd7067` (merged credential-selection PR #1158). Date: 2026-10-10. Task: `01a1259f-ecef-7c13-8883-892ba4a68877`. Companion lanes own portable continuity and credential policy. Implementation proceeds through separate assignments; this document authorizes no independent merge.
 
 ## 1. Decision and boundary
 
@@ -637,10 +637,21 @@ Later validation: focused execution/server suites; `bun run typecheck:core`; exi
 
 ## 12. Convergence decisions and review receipt
 
+Coordinator review accepted the single shared execution-owned `HarnessAdapter`/`HarnessSession` port, registry, pinned Codex subset, logical bootstrap coverage and conservative unknown-account/native-tail behavior. The runtime types in this document are the canonical private names; continuity and credential composition import them rather than defining competing ports. Converged SQL/domain mapping:
+
+| Continuity/domain field | Canonical runtime field |
+| --- | --- |
+| `runtimeEpoch` | `GenerationFence.leaseEpoch` |
+| `nativeGeneration` | `GenerationFence.generation` |
+| Attempt/config `snapshot_id` | `AttemptRef.attemptId` |
+| Native-storage material generation | `PreparedLaunch.nativeStorageGeneration` and `NativeConversationRef.nativeStorageGeneration` |
+
+The attempt/config snapshot ID above identifies frozen dispatch work; `BootstrapContext.snapshotId` identifies the immutable historical-data seed and is explicitly a different purpose. Store their relationship when a bootstrap is used, rather than accidentally treating either ID as a native thread ID. `AttemptRef.configRevision` remains the frozen per-attempt configuration revision. Both adapters and the supervisor use the same mapping and generation fences.
+
 The implementation minimum is the two adapters and registry, a small pinned Codex v2 decoder, generation-owned launch material/MCP config, exact owner-fenced cleanup, existing-orchestrator continuity/claim fences, and truthful terminal/usage facts projected through existing publisher/storage seams. Interactive request kinds can return explicit unsupported responses in phase one; no new dynamic-tool execution or general approval UI is required. Richer revision writers, shared app-server multiplexing and expanded presentation DTOs are later optimizations, not prerequisites to a working foundation. Unknown credential revisions force replacement through continuity, and unknown native eligibility forces explicit bootstrap; the default never claims safe reuse from incomplete metadata.
 
-The coordinator needs to settle three shared seams: canonical coverage and bootstrap rendering from the continuity lane; credential/storage namespace and launch lease from the credential lane; and the minimal public lifecycle/replacement DTO alongside existing message parts. Runtime recommendations are one generation event stream, no adapter-owned retry/reset, per-attempt frozen configuration, and a pinned Codex protocol.
+The continuity lane owns canonical coverage and bootstrap rendering; the credential lane owns credential/storage namespace and launch lease; the coordinator owns public lifecycle/replacement DTO integration alongside existing message parts. These seams now use the canonical runtime names above. Runtime decisions are one generation event stream, no adapter-owned retry/reset, per-attempt frozen configuration, and a pinned Codex protocol.
 
 Open measurements for implementation: Claude interrupted-result identity on the supported binary; Codex cumulative counter/reset behavior and client-message correlation under a lost response; exact supported tool restrictions and settings isolation; whether native history can be safely reused across each credential/provider change. Unknowns refuse unsupported operations or use explicit bootstrap/reconciliation. They never justify silent reset, blind replay, invented billing facts or false live status.
 
-Review status and document-only verification will be recorded here after coordinator review. The PR and graph deliverable are linked on the task; no independent merge is authorized.
+Review receipt: coordinator message `01a125ab-dd62-7f81-85f6-747776ac1a2d` accepted the runtime core/lifecycle and specified the final field mapping on 2026-10-10. The credential and continuity peers converged generation-owned `PreparedLaunch`, logical `CoverageCursor`, seed injection transport and safe turn overrides through their task threads. Four TypeScript interface blocks compiled together under TypeScript 5.9.3 strict mode; all 16 local file links resolved, Markdown fences were balanced and whitespace validation passed. No implementation, inference or database work was performed for this design task. Draft [PR #1170](https://github.com/subhangR/tm8/pull/1170) and graph document `01a125ac-354e-7e19-9775-ee8ba356d755` are linked on the task. Separate implementation assignments are the next step; no independent merge is authorized.
