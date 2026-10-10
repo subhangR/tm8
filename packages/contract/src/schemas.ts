@@ -1546,10 +1546,12 @@ const chatConfigMutationShape = {
   expectedConfigRevision: z.number().int().positive().optional(),
   clientMutationId: z.string().min(1).max(240).optional(),
 };
+const hasPinnedMutationRevision = (input: { clientMutationId?: string; expectedConfigRevision?: number }) =>
+  input.clientMutationId === undefined || input.expectedConfigRevision !== undefined;
 export const SetChatCredentialsInputSchema: z.ZodType<SetChatCredentialsInput> = z.object({
   credentialSelection: ChatCredentialSelectionSchema,
   ...chatConfigMutationShape,
-}).strict();
+}).strict().refine(hasPinnedMutationRevision, { message: 'clientMutationId requires expectedConfigRevision', path: ['expectedConfigRevision'] });
 export const SetChatCredentialsResultSchema: z.ZodType<SetChatCredentialsResult> = z.object({
   chatId: EntityIdSchema, credentialSelection: ChatCredentialSelectionSchema,
   configRevision: z.number().int().positive().optional(),
@@ -1600,7 +1602,7 @@ export const SetChatModelInputSchema: z.ZodType<SetChatModelInput> = z.object({
   reasoningEffort: ChatReasoningEffortSchema.nullable().optional(),
   credentialSelection: ChatCredentialSelectionSchema.optional(),
   ...chatConfigMutationShape,
-}).strict() as z.ZodType<SetChatModelInput>;
+}).strict().refine(hasPinnedMutationRevision, { message: 'clientMutationId requires expectedConfigRevision', path: ['expectedConfigRevision'] });
 
 export const SetChatModelResultSchema: z.ZodType<SetChatModelResult> = z.object({
   chatId: EntityIdSchema,

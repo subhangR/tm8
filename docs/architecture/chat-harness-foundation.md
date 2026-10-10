@@ -79,6 +79,14 @@ provider, backend inference provider and policy namespace remain distinct for
 Kimi through Claude and Groq through Codex. Options are filtered by the target
 catalog route rather than an Anthropic-only UI filter.
 
+Freeze the effective human authority when claiming a turn. A human posting in
+a shared chat supplies both the model credentials and the runtime/MCP grant;
+they never inherit the configuring person's credentials or broader permissions.
+The configuring person owns settings and orchestration writes. Nonhuman input
+retains the existing configured-human fallback. Keep the verified requesting
+auth-session reference separate from the configuring session, and revalidate it
+before publishing a runtime or dispatching effects.
+
 Reuse existing credential/entity/policy revisions when they provide evidence.
 Unknown account/material revisions disable hot reuse: acquire an authorized
 generation-owned snapshot and replace through portable continuity. Do not make

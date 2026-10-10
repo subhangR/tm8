@@ -45,6 +45,9 @@ describe('chat configuration and public runtime boundaries', () => {
     expect(SetChatModelInputSchema.safeParse({ ...update, provider: 'anthropic' }).success).toBe(false);
     expect(SetChatModelInputSchema.safeParse({ ...update, reasoningEffort: 'invented' }).success).toBe(false);
     expect(SetChatModelInputSchema.safeParse({ ...update, expectedConfigRevision: 0 }).success).toBe(false);
+    const { expectedConfigRevision: _revision, ...unfencedMutation } = update;
+    expect(SetChatModelInputSchema.safeParse(unfencedMutation).success).toBe(false);
+    expect(SetChatModelInputSchema.parse({ model: 'gpt-6.1-sol' })).toEqual({ model: 'gpt-6.1-sol' });
     expect(SetChatCredentialsInputSchema.safeParse({ credentialSelection: { source: 'node', credentialId: PIN_B } }).success).toBe(false);
   });
 

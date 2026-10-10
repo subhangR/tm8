@@ -120,7 +120,7 @@ export function ModelEffortPicker({
             className="tch-effort"
             role="radiogroup"
             aria-label="Reasoning effort"
-            aria-disabled={availability.disabledReason ? true : undefined}
+            aria-disabled={(disabled || availability.disabledReason) ? true : undefined}
             data-testid={`${testId}-effort`}
           >
             <span className="tch-effort__label">Effort</span>
@@ -134,10 +134,11 @@ export function ModelEffortPicker({
                     type="button"
                     role="radio"
                     aria-checked={stop === effort}
+                    disabled={disabled}
                     className="tch-effort__stop"
                     data-testid={`${testId}-effort-${stop}`}
                     title={EFFORT_LABELS[stop].band}
-                    onClick={() => onEffortChange(stop)}
+                    onClick={() => { if (!disabled) onEffortChange(stop); }}
                   >
                     {EFFORT_LABELS[stop].short}
                   </button>

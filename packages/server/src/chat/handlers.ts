@@ -4,7 +4,14 @@ import { SpawnError } from '@tm8/execution';
 import { resolve as pathResolve } from 'node:path';
 import {
   CollabError,
+  isHumanAuthKind,
   launchModel,
+  chatCredentialProviderForModel,
+  chatCredentialChoice,
+  withChatCredentialChoice,
+  type ChatCredentialIntent,
+  type ChatCredentialSelection,
+  type LaunchModelEffort,
   type EntityId,
   type EntitySummary,
   type SetChatModelInput,
@@ -21,6 +28,7 @@ import { loadEntitySummariesByIds } from '../facade/entity-read.js';
 import type { OperationHandler } from '../http/types.js';
 import type { ChatOrchestrator } from './orchestrator.js';
 import { refuseChatRuntimeBearer } from './scope.js';
+import type { DbClaims } from '../db/types.js';
 
 export interface ChatHandlerDeps {
   readonly orchestrator: ChatOrchestrator;
@@ -33,21 +41,60 @@ interface StartRpcResult {
   readonly _requestHash?: string;
 }
 
+interface ChatDesiredRow {
+  space_id: string; teammate_id: string; model: string; provider: string;
+  agent_tool: string; chat_mode: import('@tm8/contract').ChatMode; cwd: string;
+  credential_selection: ChatCredentialSelection | null;
+  credential_intent: ChatCredentialIntent | null;
+  reasoning_effort: LaunchModelEffort | null;
+  config_revision: string | number;
+}
+
+function admittedModel(id: string, effort?: LaunchModelEffort | null) {
+  const model = launchModel(id);
+  if (!model || !['claude-code', 'codex'].includes(model.agentTool)) {
+    throw new CollabError('invalid_input', `unsupported chat model: ${id}`);
+  }
+  if (effort != null && !model.efforts.includes(effort)) {
+    throw new CollabError('invalid_input', `Model ${id} does not support reasoning effort ${effort}`);
+  }
+  return model;
+}
+
+async function readDesired(facade: FacadeDeps, auth: DbClaims, chatId: string): Promise<ChatDesiredRow> {
+  const [row] = await facade.db.tx(auth, q => q.query<ChatDesiredRow>(
+    `select c.space_id,c.teammate_id,c.model,c.provider,c.agent_tool,c.chat_mode,c.cwd,
+      c.credential_selection,c.credential_intent,c.reasoning_effort,c.config_revision
+     from public.chats c join public.entities e on e.id=c.entity_id
+     where c.entity_id=$1 and c.configured_by_identity_id=$2 and e.deleted_at is null`,
+    [chatId, auth.identityId]));
+  if (!row) throw new CollabError('not_found', 'chat not found for this identity');
+  return row;
+}
+
+function intentOf(row: ChatDesiredRow): ChatCredentialIntent {
+  if (row.credential_intent) return row.credential_intent;
+  const selection = row.credential_selection ?? { source: 'auto' as const };
+  const provider = chatCredentialProviderForModel(row.model);
+  return {
+    defaultChoice: { source: selection.credentialId ? 'auto' : selection.source },
+    byProvider: provider ? { [provider]: selection } : {},
+  };
+}
+
+function configurationResult(stored: SetChatModelResult): SetChatModelResult {
+  return {
+    chatId: stored.chatId, model: stored.model, provider: stored.provider,
+    agentTool: stored.agentTool, reasoningEffort: stored.reasoningEffort,
+    credentialSelection: stored.credentialSelection, credentialIntent: stored.credentialIntent,
+    configRevision: stored.configRevision, appliesAt: stored.appliesAt,
+  };
+}
+
 function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler {
   return async (ctx) => {
     const input = ctx.body as StartChatInput;
-    const model = launchModel(input.model);
-    if (!model) throw new CollabError('invalid_input', `unsupported chat model: ${input.model}`);
-    // Refuse a non-claude-code model HERE, at the human-gated start, rather
-    // than letting the chat commit and fail only on its first turn (the
-    // resolver's identical guard at createChatLaunchConfigResolver). chat v1
-    // runs claude-code models only.
-    if (model.agentTool !== 'claude-code') {
-      throw new CollabError(
-        'invalid_input',
-        `chat v1 runs claude-code models only; '${input.model}' launches via ${model.agentTool}`,
-      );
-    }
+    const model = admittedModel(input.model, input.reasoningEffort);
     const owner = await facade.owner();
     const requestClaims = claimsFor(owner, ctx);
     const requesterIdentityId = requestClaims.identityId;
@@ -67,14 +114,16 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
     // with no directory. The RPC owns the row; this owns the id and the
     // filesystem, which are the two things SQL cannot do.
     const chatId = randomUUID();
-    if (input.credentialSelection !== undefined && !['browser', 'cli'].includes(requestClaims.authKind ?? '')) {
+    if (input.credentialSelection !== undefined && !isHumanAuthKind(requestClaims.authKind)) {
       throw new CollabError('forbidden', 'Chat credential selection requires a human session');
     }
-    if (input.credentialSelection !== undefined) await chat.orchestrator.validateCredentialSelection({
+    const selection = input.credentialSelection ?? { source: 'auto' as const };
+    await chat.orchestrator.validateCredentialSelection({
       chatId, spaceId: input.spaceId, teammateId: input.teammateId,
       requesterIdentityId, requesterAuthKind: requestClaims.authKind ?? null,
+      ...(requestClaims.authSessionId ? { requesterAuthSessionId: requestClaims.authSessionId } : {}),
       model: input.model, provider: model.provider, agentTool: model.agentTool,
-      chatMode: input.mode, cwd: '', mode: 'new', credentialSelection: input.credentialSelection,
+      chatMode: input.mode, cwd: '', mode: 'new', credentialSelection: selection,
     }).catch(rethrowCredentialError);
     // Only a scratch chat gets a server-built directory, and only a scratch
     // chat sends one. For `project` the RPC reads `projects.working_dir` itself
@@ -108,8 +157,13 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
       if (input.mcpSelections !== undefined) {
         await q.rpc('save_chat_mcp_selections', [stored.chatId, JSON.stringify(input.mcpSelections)]);
       }
-      if (input.credentialSelection !== undefined && stored.chatId === chatId) {
-        await q.rpc('set_chat_credentials', [stored.chatId, JSON.stringify(input.credentialSelection)]);
+      if (stored.chatId === chatId) {
+        const provider = chatCredentialProviderForModel(input.model)!;
+        const credentialIntent = withChatCredentialChoice({ defaultChoice: { source: 'auto' }, byProvider: {} }, provider, selection);
+        await q.rpc('set_chat_configuration', [stored.chatId, 1, JSON.stringify({
+          model: input.model, provider: model.provider, agentTool: model.agentTool,
+          reasoningEffort: input.reasoningEffort ?? null, credentialIntent, credentialSelection: selection,
+        }), `start-config:${input.clientMutationId}`]);
       }
       // The RPC returns IDS. An `EntitySummary` is assembled here, from the
       // same read path `entities.get` uses, so a chat looks identical whether
@@ -146,61 +200,41 @@ function setChatCredentials(facade: FacadeDeps, chat?: ChatHandlerDeps): Operati
     const chatId = requireUuidParam(ctx, 'id') as EntityId;
     const input = ctx.body as SetChatCredentialsInput;
     const auth = claimsFor(await facade.owner(), ctx);
-    if (!['browser', 'cli'].includes(auth.authKind ?? '')) throw new CollabError('forbidden', 'Chat credential selection requires a human session');
-    const [config] = await facade.db.tx(auth, q => q.query<{
-      space_id: string; teammate_id: string; model: string; provider: string;
-      agent_tool: string; chat_mode: import('@tm8/contract').ChatMode; cwd: string;
-    }>(`select c.space_id,c.teammate_id,c.model,c.provider,c.agent_tool,c.chat_mode,c.cwd
-        from public.chats c join public.entities e on e.id=c.entity_id
-        where c.entity_id=$1 and c.configured_by_identity_id=$2 and e.deleted_at is null`,
-      [chatId, auth.identityId]));
-    if (!config) throw new CollabError('not_found', 'chat not found for this identity');
+    if (!isHumanAuthKind(auth.authKind)) throw new CollabError('forbidden', 'Chat credential selection requires a human session');
+    const config = await readDesired(facade, auth, chatId);
+    const provider = chatCredentialProviderForModel(config.model);
+    if (!provider) throw new CollabError('invalid_input', 'The chat model is no longer supported');
     await chat.orchestrator.validateCredentialSelection({
       chatId, requesterIdentityId: auth.identityId!, requesterAuthKind: auth.authKind ?? null,
+      ...(auth.authSessionId ? { requesterAuthSessionId: auth.authSessionId } : {}),
       spaceId: config.space_id, teammateId: config.teammate_id,
       model: config.model, provider: config.provider, agentTool: config.agent_tool,
       chatMode: config.chat_mode, cwd: config.cwd, mode: 'new', credentialSelection: input.credentialSelection,
     }).catch(rethrowCredentialError);
     // Persist only. The in-flight turn keeps its claim snapshot and process.
-    return facade.db.tx(auth, q => q.rpc<SetChatCredentialsResult>('set_chat_credentials',
-      [chatId, JSON.stringify(input.credentialSelection)]));
+    const credentialIntent = withChatCredentialChoice(intentOf(config), provider, input.credentialSelection);
+    const stored = await facade.db.tx(auth, q => q.rpc<SetChatCredentialsResult>('set_chat_configuration', [
+      chatId, input.expectedConfigRevision ?? Number(config.config_revision), JSON.stringify({
+        model: config.model, provider: config.provider, agentTool: config.agent_tool,
+        reasoningEffort: config.reasoning_effort ?? null,
+        credentialIntent, credentialSelection: input.credentialSelection,
+      }), input.clientMutationId ?? randomUUID(),
+    ]));
+    return { chatId: stored.chatId, credentialSelection: stored.credentialSelection,
+      credentialIntent: stored.credentialIntent, configRevision: stored.configRevision, appliesAt: stored.appliesAt };
   };
 }
 
 /**
- * MOVE A RUNNING CHAT ONTO ANOTHER MODEL (276).
- *
- * The two guards below are the SAME two `chat.start` makes, and they are
- * repeated rather than shared because they refuse different things at different
- * moments: start refuses a chat that could never run, this refuses a switch that
- * would break a chat that is already running.
- *
- * (a) the model must be in the launch catalog — the catalog is where `provider`
- *     comes from, and provider decides which API-key backend the child is given.
- *     A caller therefore names a MODEL and never a provider: letting a browser
- *     post `provider: 'moonshot'` would let it choose whose credential to spend.
- * (b) it must be a claude-code model. Chat composes one runtime adapter and the
- *     switch resumes a claude native session; a codex model here would spawn
- *     `claude --model gpt-…`. `set_chat_model` refuses the same mismatch in SQL,
- *     so the rule holds for any caller that reaches the RPC another way.
- *
- * NOTHING IS TORN DOWN HERE. The live runtime keeps running and the switch is
- * picked up by `ensureRuntime` on the next claimed turn, which closes the child
- * and restarts it on the new model with `--resume`. Killing it here would end an
- * in-flight turn to apply a setting that only affects the next one.
+ * Resolve model, effort and remembered provider credentials before one atomic
+ * revision-checked write. The next claim applies it; the active turn keeps its
+ * immutable configuration and runtime generation.
  */
 function setChatModel(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler {
   return async (ctx) => {
     const chatId = requireUuidParam(ctx, 'id') as EntityId;
     const input = ctx.body as SetChatModelInput;
-    const model = launchModel(input.model);
-    if (!model) throw new CollabError('invalid_input', `unsupported chat model: ${input.model}`);
-    if (model.agentTool !== 'claude-code') {
-      throw new CollabError(
-        'invalid_input',
-        `chat v1 runs claude-code models only; '${input.model}' launches via ${model.agentTool}`,
-      );
-    }
+    const model = admittedModel(input.model, input.reasoningEffort);
     const owner = await facade.owner();
     const requestClaims = claimsFor(owner, ctx);
     if (!requestClaims.identityId) {
@@ -209,14 +243,28 @@ function setChatModel(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHand
     if (!chat) {
       throw new CollabError('upstream_unavailable', 'chat runtime is unavailable on this node');
     }
-    const stored = await facade.db.tx(requestClaims, async (q) =>
-      q.rpc<SetChatModelResult>('set_chat_model', [
-        chatId,
-        input.model,
-        model.provider,
-        model.agentTool,
-      ]));
-    return { chatId: stored.chatId, model: stored.model, provider: stored.provider };
+    const config = await readDesired(facade, requestClaims, chatId);
+    const provider = chatCredentialProviderForModel(input.model)!;
+    const priorIntent = intentOf(config);
+    const credentialIntent = input.credentialSelection
+      ? withChatCredentialChoice(priorIntent, provider, input.credentialSelection) : priorIntent;
+    const selection = chatCredentialChoice(credentialIntent, provider);
+    const reasoningEffort = input.reasoningEffort !== undefined ? input.reasoningEffort
+      : config.reasoning_effort && model.efforts.includes(config.reasoning_effort) ? config.reasoning_effort : null;
+    await chat.orchestrator.validateCredentialSelection({
+      chatId, requesterIdentityId: requestClaims.identityId, requesterAuthKind: requestClaims.authKind ?? null,
+      ...(requestClaims.authSessionId ? { requesterAuthSessionId: requestClaims.authSessionId } : {}),
+      spaceId: config.space_id, teammateId: config.teammate_id,
+      model: input.model, provider: model.provider, agentTool: model.agentTool,
+      chatMode: config.chat_mode, cwd: config.cwd, mode: 'new', credentialSelection: selection,
+    }).catch(rethrowCredentialError);
+    const stored = await facade.db.tx(requestClaims, q => q.rpc<SetChatModelResult>('set_chat_configuration', [
+      chatId, input.expectedConfigRevision ?? Number(config.config_revision), JSON.stringify({
+        model: input.model, provider: model.provider, agentTool: model.agentTool,
+        reasoningEffort, credentialIntent, credentialSelection: selection,
+      }), input.clientMutationId ?? randomUUID(),
+    ]));
+    return configurationResult(stored);
   };
 }
 

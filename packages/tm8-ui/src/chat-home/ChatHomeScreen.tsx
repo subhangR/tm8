@@ -79,6 +79,8 @@ import type {
   ChatProjectOption,
   ChatTeammateOption,
   ChatThreadDetail,
+  ChatThreadConfig,
+  ChatSetModelResult,
   ChatThreadSummary,
   ChatTurnFrame,
   NewChatSeed,
@@ -522,6 +524,9 @@ export function ChatHomeScreen({
      the switch would look refused. The entry is dropped the instant the served
      config catches up, so a switch made anywhere else still wins. */
   const [modelOverrides, setModelOverrides] = useState<Readonly<Record<string, string>>>({});
+  const [configOverrides, setConfigOverrides] = useState<Readonly<Record<string, Partial<ChatThreadConfig>>>>({});
+  const configWriteRef = useRef(false);
+  const [configSaving, setConfigSaving] = useState(false);
   /* THIS NODE HAS NO `chat.setModel` ROUTE — LEARNED FROM A REFUSAL, BECAUSE
      NOTHING ELSE ANSWERS IT (276).
 
@@ -1297,7 +1302,15 @@ export function ChatHomeScreen({
   const selectedRow = selectedRootId === null
     ? undefined
     : threads.find((thread) => thread.rootId === selectedRootId);
-  const activeConfig = openDetail?.summary.config ?? selectedRow?.config ?? null;
+  const servedConfig = openDetail?.summary.config ?? selectedRow?.config ?? null;
+  const savedOverride = selectedRootId ? configOverrides[selectedRootId] : undefined;
+  const activeConfig = useMemo(() => servedConfig && savedOverride
+    ? { ...servedConfig, ...savedOverride } : servedConfig, [servedConfig, savedOverride]);
+  useEffect(() => {
+    if (!selectedRootId || !savedOverride?.configRevision || !servedConfig?.configRevision) return;
+    if (servedConfig.configRevision < savedOverride.configRevision) return;
+    setConfigOverrides(({ [selectedRootId]: _settled, ...rest }) => rest);
+  }, [selectedRootId, savedOverride?.configRevision, servedConfig?.configRevision]);
   const selectedModel = useMemo(
     () => models.find((model) => model.model === modelId) ?? null,
     [modelId, models],
@@ -1407,21 +1420,28 @@ export function ChatHomeScreen({
   const chooseCredential = useCallback((next: ChatCredentialSelection) => {
     if (!pinned) { setNewCredential(next); return; }
     const chatId = selectedRootId;
-    if (!chatId || !port.setCredentials || credentialsSaving) return;
+    if (!chatId || !port.setCredentials || configWriteRef.current) return;
+    configWriteRef.current = true;
+    setConfigSaving(true);
     setCredentialsSaving(true);
     fileSubmitFailure(chatId, null);
     void port.setCredentials({ chatId, credentialSelection: next }).then(
       saved => setCredentialOverrides(current => ({ ...current, [chatId]: saved })),
       error => fileSubmitFailure(chatId, describeError(error)),
-    ).finally(() => setCredentialsSaving(false));
-  }, [pinned, selectedRootId, port, credentialsSaving, fileSubmitFailure]);
+    ).finally(() => {
+      configWriteRef.current = false;
+      setConfigSaving(false);
+      setCredentialsSaving(false);
+      void loadDetail(chatId);
+    });
+  }, [pinned, selectedRootId, port, fileSubmitFailure, loadDetail]);
   const modelLockReason = !pinned
     ? null
     : port.setModel === undefined || nodeHasNoSetModel
       ? 'this node cannot change a chat\u2019s model'
       : selectedRootId === null
         ? 'this chat is still starting'
-        : null;
+        : configSaving ? 'Saving chat settings' : null;
   /**
    * THE MODE IS NOT WRITE-ONCE EITHER, and it never needed a relaunch to change.
    *
@@ -1471,14 +1491,23 @@ export function ChatHomeScreen({
     if (!pinned) { setModelId(next); return; }
     const chatId = selectedRootId;
     const setModel = port.setModel;
-    if (chatId === null || setModel === undefined) return;
+    if (chatId === null || setModel === undefined || configWriteRef.current) return;
+    configWriteRef.current = true;
+    setConfigSaving(true);
     /* Optimistic, and then corrected to what the server resolved rather than to
        what was asked for: the two agree today, and a surface that assumed so
        would be the place a future normalisation went unnoticed. */
     setModelOverrides((current) => ({ ...current, [chatId]: next }));
     fileSubmitFailure(chatId, null);
-    void setModel({ chatId, model: next }).then(
-      (result) => setModelOverrides((current) => ({ ...current, [chatId]: result.model })),
+    const target = models.find(model => model.model === next);
+    const nextEffort = activeConfig?.reasoningEffort === null ? null
+      : nearestEffort(activeConfig?.reasoningEffort ?? effortByMode[shownMode] ?? modeSpec(shownMode).defaultEffort, target?.efforts ?? []);
+    void setModel({ chatId, model: next, reasoningEffort: nextEffort }).then(
+      (result) => {
+        setModelOverrides((current) => ({ ...current, [chatId]: result.model }));
+        setConfigOverrides(current => ({ ...current, [chatId]: { ...current[chatId], ...result } }));
+        if (result.credentialSelection) setCredentialOverrides(current => ({ ...current, [chatId]: result.credentialSelection! }));
+      },
       (error: unknown) => {
         setModelOverrides(({ [chatId]: _failed, ...rest }) => rest);
         /* A NODE THAT HAS NO SUCH ROUTE IS NOT A REFUSED SWITCH. Keyed on the
@@ -1512,8 +1541,8 @@ export function ChatHomeScreen({
         }
         fileSubmitFailure(chatId, describeError(error));
       },
-    );
-  }, [pinned, selectedRootId, port, fileSubmitFailure]);
+    ).finally(() => { configWriteRef.current = false; setConfigSaving(false); });
+  }, [pinned, selectedRootId, port, fileSubmitFailure, models, activeConfig?.reasoningEffort, effortByMode, shownMode]);
   /* Under orchestrate the roster is COORDINATORS ONLY (ac_7); the model
      decides, the effect below applies its preselect. */
   const roster = useMemo(
@@ -1538,7 +1567,7 @@ export function ChatHomeScreen({
         }, ...base]
       : base;
   }, [roster.options, activeConfig]);
-  /* The COORDINATOR's list: codex models drawn disabled with the reason (ac_10). */
+  /* The coordinator may use either installed chat harness. */
   /* The catalog entry for the model the CHIP is showing, which since 276 is not
      always the pending new-chat pick. `selectedModel` stays what it was — the
      start path's pick — because that is the model `chat.start` is about to be
@@ -1556,9 +1585,23 @@ export function ChatHomeScreen({
   /* Effort rides the model popover and is remembered per mode; a model that
      lacks the remembered stop snaps to its nearest one. */
   const effort = useMemo<LaunchModelEffort | null>(() => {
-    const wanted = effortByMode[shownMode] ?? modeSpec(shownMode).defaultEffort;
+    if (activeConfig?.reasoningEffort !== undefined) return activeConfig.reasoningEffort;
+    const wanted = activeConfig?.reasoningEffort ?? effortByMode[shownMode] ?? modeSpec(shownMode).defaultEffort;
     return nearestEffort(wanted, shownModel?.efforts ?? []);
-  }, [effortByMode, shownMode, shownModel]);
+  }, [activeConfig?.reasoningEffort, effortByMode, shownMode, shownModel]);
+  const chooseEffort = useCallback((next: LaunchModelEffort) => {
+    if (!pinned) { setEffortByMode(current => ({ ...current, [shownMode]: next })); return; }
+    const chatId = selectedRootId;
+    if (!chatId || !port.setModel || configWriteRef.current) return;
+    configWriteRef.current = true;
+    setConfigSaving(true);
+    fileSubmitFailure(chatId, null);
+    void port.setModel({ chatId, model: shownModelId, reasoningEffort: next }).then(
+      (result: ChatSetModelResult) => setConfigOverrides(current => ({ ...current,
+        [chatId]: { ...current[chatId], ...result, reasoningEffort: result.reasoningEffort ?? next } })),
+      error => fileSubmitFailure(chatId, describeError(error)),
+    ).finally(() => { configWriteRef.current = false; setConfigSaving(false); });
+  }, [pinned, selectedRootId, port, shownModelId, shownMode, fileSubmitFailure]);
   const modeSelectOptions = useMemo<ComposerSelectOption[]>(
     () => MODE_SPECS.map((spec) => ({
       id: spec.id,
@@ -1671,7 +1714,7 @@ export function ChatHomeScreen({
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
 
-  const sendDisabled = credentialsSaving || busy || draft.trim() === '' || refusal !== null || attachments.blocked;
+  const sendDisabled = configSaving || credentialsSaving || busy || draft.trim() === '' || refusal !== null || attachments.blocked;
 
   /* THE ROOT (task 01a00932 R3 — the three-tab column generalized to chats +
      every collection kind). CONTROLLED when the host owns it (D15 per-space
@@ -1904,7 +1947,7 @@ export function ChatHomeScreen({
     const draftBody = draft.trim();
     // Teammate and model are checked on the NEW-chat path only — a turn in a
     // started thread names neither (see `selectionUnavailable`).
-    if (draftBody === '' || busy || credentialsSaving || refusal) return;
+    if (draftBody === '' || busy || configWriteRef.current || credentialsSaving || refusal) return;
     /* The crew rides the opening turn (see `crewBrief`): visible before send,
        verbatim in the transcript. Only a NEW orchestrate chat has one. */
     const brief = newThread && chatMode === 'orchestrate'
@@ -2059,6 +2102,7 @@ export function ChatHomeScreen({
         ...(brief ? { title: draftBody.slice(0, 240) } : {}),
         teammateId,
         model: selectedModel.model,
+        reasoningEffort: effort,
         credentialSelection: newCredential,
         mode: chatMode,
         /* Write-once (167): offered in the empty state, locked after this. */
@@ -2154,7 +2198,7 @@ export function ChatHomeScreen({
     newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId, pinnedMode,
     modeOverrides,
     mcpSelections,
-    newCredential, credentialsSaving,
+    newCredential, credentialsSaving, effort,
   ]);
 
   const interrupt = useCallback(async () => {
@@ -2843,14 +2887,18 @@ export function ChatHomeScreen({
                     value={shownModelId}
                     onChange={chooseModel}
                     effort={effort}
-                    onEffortChange={(next) => setEffortByMode((current) => ({ ...current, [shownMode]: next }))}
+                    onEffortChange={chooseEffort}
                     disabled={modelLockReason !== null}
                     {...(modelLockReason ? { disabledReason: modelLockReason } : {})}
                   />
-                  <ChatCredentialPicker port={port} spaceId={spaceId} value={shownCredential}
+                  <ChatCredentialPicker port={port} spaceId={spaceId} model={shownModelId} value={shownCredential}
                     onChange={chooseCredential}
-                    disabled={credentialsSaving || (pinned && (!selectedRootId || !port.setCredentials))}
-                    backendKeyOnly={models.find(model => model.model === shownModelId)?.provider.toLowerCase() !== 'anthropic'} />
+                    disabled={configSaving || credentialsSaving || (pinned && (!selectedRootId || !port.setCredentials))}
+                    backendKeyOnly={['moonshot', 'kimi', 'groq'].includes(shownModel?.provider.toLowerCase() ?? '')} />
+                  {activeConfig?.runtime?.activeTurn && (activeConfig.runtime.pendingForNextClaim
+                    || (activeConfig.configRevision ?? 0) > activeConfig.runtime.activeTurn.configRevision) ? (
+                    <span role="status" data-testid="tch-settings-pending">Current turn: {activeConfig.runtime.activeTurn.model}. Settings apply to the next turn.</span>
+                  ) : null}
                   <ModeOptionsSlot
                     mode={shownMode}
                     values={modeOptions[shownMode]}

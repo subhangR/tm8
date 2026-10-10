@@ -12,7 +12,8 @@ function rig({ refused = false, found = true } = {}) {
   const validate = vi.fn(async () => { if (refused) throw new SpawnError('Node credential forbidden', 'forbidden'); });
   const rpc = vi.fn(async () => ({ chatId: CHAT, credentialSelection: { source: 'node' } }));
   const query = vi.fn(async () => found ? [{ space_id: 'space', teammate_id: 'teammate', model: 'claude-opus-5',
-    provider: 'anthropic', agent_tool: 'claude-code', chat_mode: 'ask', cwd: '/tmp/chat' }] : []);
+    provider: 'anthropic', agent_tool: 'claude-code', chat_mode: 'ask', cwd: '/tmp/chat',
+    config_revision: 1, reasoning_effort: null, credential_selection: { source: 'auto' }, credential_intent: null }] : []);
   const registry = new HandlerRegistry();
   registerChatHandlers(registry, {
     owner: async () => ({ identityId: 'human', isNodeAdmin: true }),
@@ -32,7 +33,12 @@ describe('chat credential selection handler', () => {
     expect(await test.run()).toMatchObject({ credentialSelection: { source: 'node' } });
     expect(test.validate).toHaveBeenCalledWith(expect.objectContaining({ chatId: CHAT, requesterIdentityId: 'human',
       model: 'claude-opus-5', agentTool: 'claude-code', credentialSelection: { source: 'node' } }));
-    expect(test.rpc).toHaveBeenCalledWith('set_chat_credentials', [CHAT, '{"source":"node"}']);
+    expect(test.rpc).toHaveBeenCalledWith('set_chat_configuration', [CHAT, 1, expect.any(String), expect.any(String)]);
+    expect(JSON.parse(test.rpc.mock.calls[0]![1][2] as string)).toMatchObject({
+      model: 'claude-opus-5', agentTool: 'claude-code', reasoningEffort: null,
+      credentialSelection: { source: 'node' },
+      credentialIntent: { defaultChoice: { source: 'node' }, byProvider: { anthropic: { source: 'node' } } },
+    });
     expect(test.validate.mock.invocationCallOrder[0]).toBeLessThan(test.rpc.mock.invocationCallOrder[0]!);
   });
   it('returns a policy refusal without writing the selection', async () => {

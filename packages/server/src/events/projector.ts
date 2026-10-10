@@ -1,4 +1,5 @@
 import { McpServerDefinitionSchema } from '@tm8/contract';
+import { attachChatRuntimeFacts } from '../chat/public-state.js';
 import type { EffectiveSkills, OpRequestStatus, TaskLiveSession } from '@tm8/contract';
 /**
  * Entity hydration for the event stream — the `EntityProjector` seam.
@@ -321,6 +322,11 @@ interface SummaryRow {
   loop_last_error: string | null;
   chat_title: string | null;
   chat_teammate_id: string | null;
+  chat_credential_selection?: import('@tm8/contract').ChatCredentialSelection | null;
+  chat_credential_intent?: import('@tm8/contract').ChatCredentialIntent | null;
+  chat_reasoning_effort?: import('@tm8/contract').LaunchModelEffort | null;
+  chat_config_revision?: string | number | null;
+  chat_runtime_public?: import('@tm8/contract').ChatRuntimeState;
   chat_model: string | null;
   chat_provider: string | null;
   chat_agent_tool: string | null;
@@ -530,6 +536,10 @@ select
   lp.last_error      as loop_last_error,
   cht.title          as chat_title,
   cht.teammate_id    as chat_teammate_id,
+  to_jsonb(cht)->'credential_selection' as chat_credential_selection,
+  to_jsonb(cht)->'credential_intent' as chat_credential_intent,
+  to_jsonb(cht)->>'reasoning_effort' as chat_reasoning_effort,
+  to_jsonb(cht)->>'config_revision' as chat_config_revision,
   cht.model          as chat_model,
   cht.provider       as chat_provider,
   cht.agent_tool     as chat_agent_tool,
@@ -767,6 +777,7 @@ export class PgEntityProjector implements EntityProjector {
 
     const rows = await q.query<SummaryRow>(SUMMARY_SQL, [unique]);
     if (rows.length === 0) return out;
+    await attachChatRuntimeFacts(q, rows);
 
     const humanMessageAuthors = await loadHumanMessageAuthorIds(q, unique);
 
@@ -1572,6 +1583,13 @@ export class PgEntityProjector implements EntityProjector {
         // tile changes shape depending on which door answered.
         return {
           kind: 'chat',
+          credentialSelection: r.chat_credential_selection ?? { source: 'auto' },
+          ...(r.chat_config_revision != null ? {
+            configRevision: Number(r.chat_config_revision),
+            reasoningEffort: r.chat_reasoning_effort ?? null,
+            ...(r.chat_credential_intent ? { credentialIntent: r.chat_credential_intent } : {}),
+            ...(r.chat_runtime_public ? { runtime: r.chat_runtime_public } : {}),
+          } : {}),
           teammateId: r.chat_teammate_id ?? '',
           model: r.chat_model ?? '',
           provider: r.chat_provider ?? '',

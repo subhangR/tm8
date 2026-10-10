@@ -69,6 +69,8 @@ export interface ChatLaunchConfig {
 }
 
 export interface ChatLaunchConfigInput {
+  /** Verified requesting session row; never accepted from a model or request body. */
+  readonly requesterAuthSessionId?: string;
   /** 176: the chat entity. Was `rootMessageId` while a chat was a message. */
   readonly chatId: string;
   readonly credentialSelection?: ChatCredentialSelection;

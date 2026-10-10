@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { chmod, lstat, mkdir, open, realpath, rm } from 'node:fs/promises';
+import { chmod, lstat, mkdir, open, realpath, rm, type FileHandle } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -37,6 +37,7 @@ export class ChatLaunchDirectory {
   private constructor(
     readonly path: string, readonly id: string, readonly owner: ChatCredentialOwner,
     private readonly device: number, private readonly inode: number,
+    private readonly anchor: FileHandle,
   ) {}
 
   static async create(dataDir: string, owner: ChatCredentialOwner): Promise<ChatLaunchDirectory> {
@@ -53,8 +54,13 @@ export class ChatLaunchDirectory {
     const id = randomUUID();
     path = join(path, id);
     await mkdir(path, { mode: 0o700 });
-    const info = await lstat(path);
-    return new ChatLaunchDirectory(path, id, { ...owner }, info.dev, info.ino);
+    // Holding the original directory open prevents inode reuse after deletion.
+    // A saved inode number alone can match an unrelated successor on Linux.
+    const anchor = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    try {
+      const info = await anchor.stat();
+      return new ChatLaunchDirectory(path, id, { ...owner }, info.dev, info.ino, anchor);
+    } catch (error) { await anchor.close(); throw error; }
   }
 
   async write(name: string, value: string): Promise<string> {
@@ -82,11 +88,17 @@ export class ChatLaunchDirectory {
     if (this.released) return;
     try { await this.assertOwned(); }
     catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') { this.released = true; return; }
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.released = true; await this.anchor.close(); return;
+      }
+      if (error instanceof CollabError && error.code === 'invariant_violation') {
+        this.released = true; await this.anchor.close();
+      }
       throw error;
     }
     await rm(this.path, { recursive: true, force: true });
     this.released = true;
+    await this.anchor.close();
   }
 }
 

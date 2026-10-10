@@ -96,10 +96,10 @@ describe('teammate roster under orchestrate', () => {
 });
 
 describe('models and effort', () => {
-  it('lists codex models for the coordinator disabled with a reason, never omitted', () => {
+  it('admits Claude and Codex models for the chat coordinator', () => {
     const choices = coordinatorModelChoices(MODELS);
     expect(choices).toHaveLength(3);
-    expect(choices[1]?.disabledReason).toMatch(/Claude Code only/);
+    expect(choices[1]?.disabledReason).toBeUndefined();
     expect(choices[0]?.disabledReason).toBeUndefined();
   });
   it('disables the effort dial with a reason when the model declares no stops', () => {

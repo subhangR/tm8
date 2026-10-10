@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
-import type { ChatCredentialSelection, ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, SessionTranscriptContext, SpaceId, TeamMemberMode } from '@tm8/contract';
+import type { ChatCredentialIntent, ChatRuntimeState, ChatCredentialSelection, ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, SessionTranscriptContext, SpaceId, TeamMemberMode } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
   | { kind: 'thinking'; text: string }
-  | { kind: 'text'; text: string }
+  | { kind: 'text'; text: string; itemId?: string; revision?: number; operation?: 'append' | 'replace'; phase?: 'commentary' | 'final' | 'unknown' }
   | {
       kind: 'tool_call';
       toolCallId: string;
@@ -132,6 +132,10 @@ export interface ChatThreadConfig {
   model: string;
   modelLabel: string;
   credentialSelection?: ChatCredentialSelection;
+  credentialIntent?: ChatCredentialIntent;
+  reasoningEffort?: LaunchModelEffort | null;
+  configRevision?: number;
+  runtime?: ChatRuntimeState;
   mode: ChatMode;
   /** The write-once directory binding. Absent on a port that predates 167. */
   workdirMode?: ChatWorkdirMode;
@@ -311,6 +315,7 @@ export interface ChatThreadDetail {
  */
 export interface ChatCreateInput {
   credentialSelection?: ChatCredentialSelection;
+  reasoningEffort?: LaunchModelEffort | null;
   mcpSelections?: import("../mcp/port").McpSelection[];
   spaceId: SpaceId | string;
   /**
@@ -387,14 +392,23 @@ export interface ChatPostInput {
  */
 export interface ChatSetModelInput {
   chatId: EntityId;
-  /** A launch-catalog model id running the same agent tool as the chat. */
+  /** A launch-catalog model id admitted by the server's adapter registry. */
   model: string;
+  reasoningEffort?: LaunchModelEffort | null;
+  credentialSelection?: ChatCredentialSelection;
+  expectedConfigRevision?: number;
+  clientMutationId?: string;
 }
 
 export interface ChatSetModelResult {
   model: string;
   /** Server-resolved from the model. Shown nowhere yet; kept so it cannot be invented. */
   provider: string;
+  reasoningEffort?: LaunchModelEffort | null;
+  credentialSelection?: ChatCredentialSelection;
+  credentialIntent?: ChatCredentialIntent;
+  configRevision?: number;
+  appliesAt?: 'next_claim';
 }
 
 export interface ChatStartResult {
@@ -461,8 +475,8 @@ export interface ChatHomePort {
    * check for it rather than assume it, and a stale port literal in a test keeps
    * working instead of crashing on a member it never declared.
    */
-  credentialOptions?(spaceId: SpaceId | string): Promise<readonly { id: string; label: string }[]>;
-  setCredentials?(input: { chatId: EntityId; credentialSelection: ChatCredentialSelection }): Promise<ChatCredentialSelection>;
+  credentialOptions?(spaceId: SpaceId | string, model?: string): Promise<readonly { id: string; label: string }[]>;
+  setCredentials?(input: { chatId: EntityId; credentialSelection: ChatCredentialSelection; expectedConfigRevision?: number; clientMutationId?: string }): Promise<ChatCredentialSelection>;
   setModel?(input: ChatSetModelInput): Promise<ChatSetModelResult>;
   interrupt?(chatId: EntityId): Promise<void>;
   subscribe(listener: (frame: ChatTurnFrame) => void): () => void;

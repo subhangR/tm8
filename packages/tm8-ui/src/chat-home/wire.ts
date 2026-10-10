@@ -33,7 +33,7 @@ export function turnItemFromMessagePart(part: MessagePart): ChatTurnItem {
     case 'thinking':
       return { kind: 'thinking', text: part.payload.text };
     case 'text':
-      return { kind: 'text', text: part.payload.text };
+      return { kind: 'text', ...part.payload };
     case 'tool_call':
       return {
         kind: 'tool_call',

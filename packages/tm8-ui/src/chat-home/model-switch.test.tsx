@@ -15,7 +15,7 @@
  * answer before choosing who writes the one after it.
  */
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CollabError } from '@tm8/contract';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
@@ -24,9 +24,7 @@ import type { ChatHomePort, ChatModelOption } from './types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const FIXTURE_CHAT = CHAT_HOME_FIXTURE_THREAD.summary.rootId;
-/* The fixture chat opens on Sonnet. Opus is the switch target and Sol is the
-   control: chat runs Claude Code only, so a codex row must stay refused even
-   after the claude-to-claude lock is gone. */
+/* The fixture opens on Sonnet and can continue through either harness. */
 const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
   { model: 'claude-opus-4-1', label: 'Opus 4.1', provider: 'Anthropic', agentTool: 'claude-code' },
@@ -36,13 +34,13 @@ const MODELS: ChatModelOption[] = [
 afterEach(cleanup);
 
 /** Mount with the fixture chat already open, so the chip is on a PINNED chat. */
-async function openChat(overrides: Partial<ChatHomePort> = {}) {
+async function openChat(overrides: Partial<ChatHomePort> = {}, models = MODELS) {
   const { port, controls } = createChatHomeFixturePort();
   const view = render(
     <ChatHomeScreen
       port={{ ...port, ...overrides }}
       spaceId={SPACE_ID}
-      models={MODELS}
+      models={models}
       routeThreadId={FIXTURE_CHAT}
     />,
   );
@@ -53,6 +51,23 @@ async function openChat(overrides: Partial<ChatHomePort> = {}) {
 }
 
 describe('276: changing an open chat’s model from the composer', () => {
+  it('shows the current claimed model while the chosen next-turn settings are pending', async () => {
+    const { port } = createChatHomeFixturePort();
+    const readThread: ChatHomePort['readThread'] = async id => {
+      const detail = await port.readThread(id);
+      return { ...detail, summary: { ...detail.summary, config: { ...detail.summary.config!,
+        model: 'gpt-5.6-sol', modelLabel: 'GPT 5.6 Sol', configRevision: 8,
+        runtime: { schemaVersion: 1, configRevision: 8, pendingForNextClaim: true,
+          activeTurn: { turnId: FIXTURE_CHAT, configRevision: 7, generation: 2, model: 'claude-sonnet-4-5',
+            provider: 'anthropic', agentTool: 'claude-code', reasoningEffort: 'high', status: 'running' },
+          runtime: { generation: 2, phase: 'running', continuity: 'portable_verified', observedAt: null } },
+      } } };
+    };
+    const view = render(<ChatHomeScreen port={{ ...port, readThread }} spaceId={SPACE_ID} models={MODELS} routeThreadId={FIXTURE_CHAT} />);
+    await waitFor(() => expect(view.getByTestId('tch-settings-pending').textContent).toContain('Current turn: claude-sonnet-4-5'));
+    expect(view.getByTestId('tch-model').textContent).toContain('GPT 5.6 Sol');
+  });
+
   it('leaves the chip ENABLED on an open chat, with no lock reason', async () => {
     const { view } = await openChat();
     const chip = view.getByTestId('tch-model');
@@ -69,24 +84,40 @@ describe('276: changing an open chat’s model from the composer', () => {
     // THE WRITE HAPPENED, addressed to the open chat. A chip that only changed
     // locally is the bug, not the fix.
     await waitFor(() => expect(controls.modelSwitches).toEqual([
-      { chatId: FIXTURE_CHAT, model: 'claude-opus-4-1' },
+      { chatId: FIXTURE_CHAT, model: 'claude-opus-4-1', reasoningEffort: null },
     ]));
     // AND THE CHIP FOLLOWS. Without the optimistic override the label snaps
     // back on the next render and the switch reads as refused.
     await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Opus 4.1'));
   });
 
-  it('still refuses a codex model — the agent tool is the one axis a switch cannot cross', async () => {
+  it('switches the same open chat to a Codex model', async () => {
     const { view, controls } = await openChat();
     fireEvent.click(view.getByLabelText('Chat model'));
     const codexRow = view.getByTestId('tch-model-gpt-5.6-sol');
-    expect(codexRow.getAttribute('aria-disabled')).toBe('true');
-    expect(codexRow.textContent).toContain('Claude Code only');
+    expect(codexRow.getAttribute('aria-disabled')).not.toBe('true');
     fireEvent.click(codexRow);
-    // Drawn and explained, never silently omitted — and clicking it writes nothing.
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(controls.modelSwitches).toEqual([]);
-    expect(view.getByTestId('tch-model').textContent).toContain('Sonnet 4.5');
+    await waitFor(() => expect(controls.modelSwitches).toEqual([
+      { chatId: FIXTURE_CHAT, model: 'gpt-5.6-sol', reasoningEffort: null },
+    ]));
+    expect(view.getByTestId('tch-model').textContent).toContain('GPT 5.6 Sol');
+  });
+
+  it('persists native effort and blocks a second setting write until the first is acknowledged', async () => {
+    let finish!: (value: { chatId: string; model: string; provider: string; reasoningEffort: 'high'; configRevision: number }) => void;
+    const setModel = vi.fn(() => new Promise<Awaited<ReturnType<NonNullable<ChatHomePort['setModel']>>>>(resolve => { finish = resolve; }));
+    const { view } = await openChat({ setModel }, MODELS.map(model => model.model === 'claude-sonnet-4-5'
+      ? { ...model, efforts: ['low', 'medium', 'high'] } : model));
+    fireEvent.click(view.getByLabelText('Chat model'));
+    fireEvent.click(view.getByTestId('tch-model-effort-high'));
+    expect(setModel).toHaveBeenCalledWith({ chatId: FIXTURE_CHAT, model: 'claude-sonnet-4-5', reasoningEffort: 'high' });
+    expect(view.getByTestId('tch-model-effort-low').hasAttribute('disabled')).toBe(true);
+    fireEvent.click(view.getByTestId('tch-model-gpt-5.6-sol'));
+    fireEvent.click(view.getByTestId('tch-model-effort-low'));
+    expect(setModel).toHaveBeenCalledTimes(1);
+    finish({ chatId: FIXTURE_CHAT, model: 'claude-sonnet-4-5', provider: 'anthropic', reasoningEffort: 'high', configRevision: 2 });
+    await waitFor(() => expect(view.getByTestId('tch-model-effort-high').getAttribute('aria-checked')).toBe('true'));
+    await waitFor(() => expect(view.getByTestId('tch-model-effort-low').hasAttribute('disabled')).toBe(false));
   });
 
   it('a REFUSED switch reverts the chip and reports the reason', async () => {

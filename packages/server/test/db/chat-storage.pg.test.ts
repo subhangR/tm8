@@ -528,11 +528,14 @@ describe.sequential('TM8 Chat storage and door rules', () => {
       // `about` — the chat's subject (entity chat §3.6), so the Chats list can
       // draw it without a read per row. This chat was started about the channel.
       // `context` — the latest context reading (231), null until measured.
-      'about', 'agentTool', 'context', 'credentialSelection', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
-      'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
+      'about', 'agentTool', 'configRevision', 'context', 'credentialSelection', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
+      'reasoningEffort', 'runtime', 'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
     ]);
     expect(summary?.state).toMatchObject({
       kind: 'chat',
+      configRevision: 1, reasoningEffort: null,
+      runtime: { schemaVersion: 1, configRevision: 1, activeTurn: null, pendingForNextClaim: false,
+        runtime: { generation: null, phase: 'stopped', continuity: 'unavailable', observedAt: null } },
       teammateId: fixture.teammateId,
       model: 'gpt-5.6-sol',
       provider: 'openai',
