@@ -132,14 +132,14 @@ function pageLine(p: PromptDesignPage): string {
 
 /** The design as plain text, for the inside of the untrusted block. */
 export function designContextText(design: PromptDesignContext): string {
-  const lines: string[] = [`Design: ${design.title || '(untitled)'}`];
+  const lines: string[] = [`Craft: ${design.title || '(untitled)'}`];
   if (design.description) lines.push('', 'Description:', design.description);
   const pages = design.pages ?? [];
   const total = design.pageCount ?? pages.filter((p) => p.depth === 0).length;
   lines.push('', `Pages, in order (${total}):`);
   if (pages.length === 0) lines.push('- (none)');
   lines.push(...pages.map(pageLine));
-  if (design.truncated) lines.push(`- … more pages: read the design with \`tm8 entity context ${design.id}\``);
+  if (design.truncated) lines.push(`- … more pages: read the craft with \`tm8 entity context ${design.id}\``);
   return lines.join('\n');
 }
 
@@ -166,13 +166,13 @@ export function blueprintMaterializeSteps(confirmOnlyKinds: readonly string[] = 
  * pages describe, nothing else, and do not start the work.
  */
 export function designRunInstruction(design: Pick<PromptDesignContext, 'id' | 'confirmOnlyKinds'>): string {
-  return `You were launched on design ${design.id}. Its pages follow as data, in page order; `
-    + 'a page is an ordinary entity (a graph, doc, artifact, drawing, or a nested design whose own pages are listed under it). '
+  return `You were launched on craft ${design.id}. Its pages follow as data, in page order; `
+    + 'a page is an ordinary entity (a graph, doc, artifact, drawing, or a nested craft whose own pages are listed under it). '
     + 'Your job is to CREATE THE ENTITIES ITS GRAPH PAGES DESCRIBE, AND NOTHING ELSE unless the launch text says so. '
     + 'Other pages are context: read them where a blueprint needs them, but create nothing from them. '
     + blueprintMaterializeSteps(design.confirmOnlyKinds ?? [])
     + ' Do NOT dispatch, spawn or start work on anything you create: what happens next is the launch text\'s call, and with none, nobody\'s yet. '
-    + `When done, post the node → entity map for each graph page on the design (\`tm8 message send --to ${design.id}\`) and report it on your task.`;
+    + `When done, post the node → entity map for each graph page on the craft (\`tm8 message send --to ${design.id}\`) and report it on your task.`;
 }
 
 /**
@@ -194,7 +194,7 @@ export function renderDesignContext(design: PromptDesignContext, full = true): s
     `  <instruction>${escapeAttr(designRunInstruction(design))}</instruction>`,
     '</design>',
   ];
-  const body = full && loaded ? designContextText(design) : `Design: ${design.title || '(untitled)'}`;
+  const body = full && loaded ? designContextText(design) : `Craft: ${design.title || '(untitled)'}`;
   out.push(untrustedData({
     type: 'design-context',
     body,
