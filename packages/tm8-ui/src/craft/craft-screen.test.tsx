@@ -193,7 +193,7 @@ describe('the craft screen', () => {
     for (const kind of ['graph', 'doc', 'artifact', 'drawing', 'craft']) {
       expect(within(menu).getByTestId(`craft-new-${kind}`)).toBeTruthy();
     }
-    expect(within(menu).getByTestId('craft-new-design').textContent).toContain('Craft');
+    expect(within(menu).getByTestId('craft-new-craft').textContent).toContain('Craft');
     expect(within(menu).getByTestId('membership-add').textContent).toBe('Add existing…');
     fireEvent.click(within(menu).getByTestId('craft-new-graph'));
     await waitFor(() => view.getByTestId('crf-empty'));
@@ -292,8 +292,7 @@ describe('a graph page', () => {
     });
     await waitFor(() => view.getByTestId('dsn-overview'));
     openFromPages(view, 'State machine');
-    await waitFor(() => view.getByTestId('crf-unknown-type'));
-    expect(view.getByTestId('crf-unknown-type').textContent).toContain('statechart');
+    await waitFor(() => expect(view.getByTestId('crf-unknown-type').textContent).toContain('statechart'));
   });
 });
 
@@ -327,7 +326,7 @@ describe('the tab strip', () => {
     const overview = view.getAllByTestId('craft-tab')[0]!;
     expect(overview.hasAttribute('data-pinned')).toBe(true);
     expect(within(overview).queryByTestId('craft-tab-close')).toBeNull();
-    expect(view.getByTestId('dsn-overview').textContent).toContain('3 pages');
+    expect(within(view.getByTestId('dsn-overview')).getAllByTestId('craft-detail-page')).toHaveLength(3);
     fireEvent.click(view.getByTestId('craft-pages-btn'));
     expect(pageTitles(view)).toEqual(['Plan', 'Brief', 'Rollout']);
   });
@@ -550,7 +549,7 @@ describe('a craft page', () => {
     await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Backend']));
     const nested = await waitFor(() => view.getByTestId('dsn-nested'));
     /* Its pages are its own: shown in its overview, never as tabs here. */
-    await waitFor(() => expect(within(nested).getByTestId('dsn-overview').textContent).toContain('1 page'));
+    await waitFor(() => expect(within(nested).getAllByTestId('craft-detail-page')).toHaveLength(1));
     expect(tabTitles(view)).toEqual(['Overview', 'Backend']);
     expect(view.getAllByRole('tablist')).toHaveLength(1);
     expect(targets.at(-1)).toEqual({ craftId: CRAFT, pageId: nested.getAttribute('data-craft') });
