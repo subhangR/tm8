@@ -369,6 +369,8 @@ export function composeChatBootstrap(ctx: {
   baseUrl: string;
   /** Stable server-local identity supplied by bootstrap. */
   nodeId: string;
+  /** Schedule exact owned cleanup retries, including failed preparation unwind. */
+  onCleanupFailure?: ChatHarnessComposition['onCleanupFailure'];
   /**
    * Node-level tm8-curated skills plugin directory. When set, chat runtimes
    * load it and expose `Skill`; when absent, `Skill` is offered but resolves
