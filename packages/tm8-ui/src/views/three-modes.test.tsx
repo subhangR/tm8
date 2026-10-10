@@ -156,7 +156,7 @@ describe('who is NOT redirected', () => {
   });
 });
 
-describe('the selector is Work · Design · Observe · Settings', () => {
+describe('the selector is Work · Craft · Observe · Settings', () => {
   it('in Work: the view menu lists exactly the four modes, Work current', async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
@@ -179,7 +179,7 @@ describe('the selector is Work · Design · Observe · Settings', () => {
       'Settings',
     ]);
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
-    for (const retired of ['Home', 'Workspace', 'Board', 'Craft', 'Graph']) expect(labels).not.toContain(retired);
+    for (const retired of ['Home', 'Workspace', 'Board', 'Design', 'Graph']) expect(labels).not.toContain(retired);
   });
 
   it("Work's rail keeps Needs you, you and expand at the bottom, and no tools face", async () => {

@@ -61,7 +61,7 @@ describe('ActionStrip owner split', () => {
   it('with an owner, the TOP holds the page’s Run and the BOTTOM is the owner’s', () => {
     const view = render(<Split owner />);
     const strip = view.getByTestId('tws-action-strip');
-    expect(strip.getAttribute('aria-label')).toBe('Design actions');
+    expect(strip.getAttribute('aria-label')).toBe('Craft actions');
     /* The page's own Run slot sits in the kind (TOP) section. */
     const top = strip.querySelector('.tws-astrip-section--kind')!;
     expect(within(top as HTMLElement).getByTestId('tws-astrip-page-common')).toBeTruthy();

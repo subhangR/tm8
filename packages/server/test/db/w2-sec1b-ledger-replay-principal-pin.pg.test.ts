@@ -242,6 +242,17 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   // second door that skipped 234's one-space-per-folder guard is not left
   // behind. See db/migrations/234_space_owned_projects.sql, section 4.
   ['public.link_project', '234_space_owned_projects.sql'],
+  // 316 renames 304's `design` kind to `craft`: the detail table is renamed
+  // (`designs` -> `crafts`) and every door and helper is re-created under its
+  // craft name with the old one dropped; 304's one-time graph backfill is
+  // dropped outright. See db/migrations/316_design_to_craft.sql, sections 2-3.
+  ['public.designs', '316_design_to_craft.sql'],
+  ['public.create_design_entity', '316_design_to_craft.sql'],
+  ['public.update_design_entity', '316_design_to_craft.sql'],
+  ['internal.assert_design_acyclic', '316_design_to_craft.sql'],
+  ['internal.design_contains_guard', '316_design_to_craft.sql'],
+  ['internal.design_summary', '316_design_to_craft.sql'],
+  ['internal.backfill_graph_designs', '316_design_to_craft.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {
