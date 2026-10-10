@@ -253,7 +253,7 @@ export type NavView =
    * segment). Each key is present only when the one before it is: the codec
    * drops a page without a design, and a nested page without a page.
    */
-  | { view: 'craft'; designId?: EntityId; pageId?: EntityId; nestedPageId?: EntityId }
+  | { view: 'craft'; designId?: EntityId; pageId?: EntityId }
   /*
    * The Help shelf (2026-08-19): whole-centre contents + reader. Addressable
    * even though Help is not in the default tab spine — its door is a bar

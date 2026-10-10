@@ -1,26 +1,26 @@
 /**
- * ONE CRAFT — `/craft/{craft}[/{page}]` (Craft → Crafts, D2–D5 and change
- * list items 10–12). It replaced the blueprint studio.
+ * ONE CRAFT — `/craft/{craft}[/{page}]` (Craft redesign doc 01a1255d §3).
  *
  *   ‹ Crafts · Title ▾
- *   [chat about the craft] ┃ [Overview | page row …… ＋ page]  [side] [strip]
- *                           ┃ [overview, or the selected page]
+ *   [chat about the craft] ┃ [pages ▾][Overview][Plan ×][Brief ×]  [side] [strip]
+ *                           ┃ [the selected tab's body]
  *
  *  · LEFT, the craft's chats (`CraftChatPane`): all ABOUT the craft, mode
  *    pinned to craft; the agent picks which page to work on.
- *  · MIDDLE, the page row (`PageRow`, the tab strip's look; Overview pinned
- *    first) over the selected tab. Overview is `CraftOverview`; a graph page
- *    is the blueprint canvas (`GraphPage`); every other kind, a craft page
- *    included, is the Workspace entity body.
+ *  · MIDDLE, THIS PERSON'S tabs on the craft (`CraftTabStrip`, backed by their
+ *    craft workspace — `useCraftWorkspace`), Overview pinned first. Overview
+ *    is `CraftOverview`; a graph page is the blueprint canvas (`GraphPage`); a
+ *    page that is itself a craft opens inline as that craft's overview; every
+ *    other kind is the Workspace entity body. Closing a tab never removes a
+ *    page; pages are added and removed from [pages ▾].
  *  · RIGHT, ONLY the selected tab's entity strip, exactly as in Home: its
  *    options on top, Links · Messages · Chat, Run, Expand below. Overview
  *    selected ⇒ the craft's own strip. The tab keeps its own side column
  *    (Chat · Messages · Links), beside the body, never in place of it.
  *
- * The selected page is in the URL (no page ⇒ Overview); there is no per-user
- * tab state yet, and the row is the same for everyone (D5).
+ * The route mirrors the selected tab (no page ⇒ Overview).
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
 import type { EntityId, SpaceId } from '@tm8/contract';
@@ -49,7 +49,8 @@ import { useFrameSlots } from '../shell/AppFrame';
 import { CraftChatPane } from './CraftChatPane';
 import { GraphPage, type ToolNote } from './GraphPage';
 import { CraftOverview } from './CraftOverview';
-import { PageRow } from './PageRow';
+import { CraftTabStrip } from './CraftTabStrip';
+import { craftWorkspacesPortOf, useCraftWorkspace } from './useCraftWorkspace';
 import { useCraft, type CraftHandle } from './useCraft';
 import type { CraftPageRow, CraftSource, NewPageKind } from './craft-source';
 import type { CraftsSource } from './crafts-source';
@@ -156,10 +157,20 @@ export function CraftScreen(props: CraftScreenProps) {
   const [toolNote, setToolNote] = useState<ToolNote | null>(null);
   const publishToolNote = useCallback((note: ToolNote | null) => setToolNote(() => note), []);
 
-  const handle = useCraft(source, craftId, pageId ?? null, onNotice);
-  /* THE SELECTED TAB: a page of this craft, or — no page in the route, or one
-     that has left the craft — the craft's own overview. */
-  const activePage = selectedPage(handle.pages, pageId);
+  /* The page on screen, fed back to `useCraft` for its "updated" marks. */
+  const [lookingAt, setLookingAt] = useState<EntityId | null>(pageId ?? null);
+  const handle = useCraft(source, craftId, lookingAt, onNotice);
+  const pageIds = useMemo(
+    () => (handle.state === 'ready' ? new Set<string>(handle.pages.map((page) => page.id)) : null),
+    [handle.state, handle.pages],
+  );
+  /* THE SELECTED TAB: this person's active tab — a page of this craft, or the
+     craft's own overview. */
+  const tabs = useCraftWorkspace(craftWorkspacesPortOf(seam), spaceId, craftId, pageIds, onNotice);
+  const activePage = tabs.activeTab.pinned ? null : (handle.pages.find((page) => page.id === tabs.activeTab.entityId) ?? null);
+  useEffect(() => setLookingAt(activePage?.id ?? null), [activePage?.id]);
+  const pagesRef = useRef(handle.pages);
+  pagesRef.current = handle.pages;
   /* The updated mark clears on the page being looked at. */
   useEffect(() => {
     if (activePage) handle.seen(activePage.id);
@@ -182,14 +193,49 @@ export function CraftScreen(props: CraftScreenProps) {
     }
   }, [craftGone, handle.state, onNavigate]);
 
-  const selectPage = useCallback((id: EntityId) => onNavigate({ craftId, pageId: id }), [onNavigate, craftId]);
-  const selectOverview = useCallback(() => onNavigate({ craftId }), [onNavigate, craftId]);
+  /* THE ROUTE MIRRORS THE ACTIVE TAB. The workspace's active tab is the
+     truth (another window or the craft agent may move it); the URL follows it
+     — no page ⇒ the overview — and a URL the viewer brought (a shared link,
+     Back) opens or focuses its tab once. `routedRef` is the page the route
+     was last reconciled to; a route that differs is the viewer's ask. */
+  const openTab = tabs.open;
+  const activateTab = tabs.activate;
+  const routedRef = useRef<EntityId | undefined | null>(null);
+  const activeRoute = tabs.activeTab.pinned ? undefined : (tabs.activeTab.entityId as EntityId);
+  useEffect(() => {
+    if (!tabs.loaded || routedRef.current !== pageId) return;
+    if (activeRoute === pageId) return;
+    routedRef.current = activeRoute;
+    onNavigate(activeRoute ? { craftId, pageId: activeRoute } : { craftId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs.loaded, activeRoute]);
+  useEffect(() => {
+    if (!tabs.loaded || handle.state !== 'ready' || routedRef.current === pageId) return;
+    routedRef.current = pageId;
+    if (!pageId) {
+      activateTab(craftId);
+      return;
+    }
+    const page = handle.pages.find((row) => row.id === pageId);
+    if (page) void openTab(page.kind, page.id);
+    else onNavigate(activeRoute ? { craftId, pageId: activeRoute } : { craftId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs.loaded, pageId, handle.state, handle.pages]);
+
+  /* Open (or focus) a page's tab; the route follows. */
+  const selectPage = useCallback(
+    (id: EntityId) => {
+      /* A page added a moment ago may not be on screen yet: read its kind. */
+      const known = pagesRef.current.find((row) => row.id === id);
+      const page = known ? Promise.resolve(known) : source.read(craftId).then((read) => read.pages.find((row) => row.id === id));
+      void page.then((row) => row && openTab(row.kind, row.id), () => undefined);
+    },
+    [openTab, craftId, source],
+  );
 
   /* An entity opened from the chat or a page: a page of this craft is
      selected; anything else opens in the column over the page (or leaves). */
   const [detailId, setDetailId] = useState<EntityId | null>(null);
-  const pagesRef = useRef(handle.pages);
-  pagesRef.current = handle.pages;
   const openEntity = useCallback(
     (id: EntityId) => {
       if (pagesRef.current.some((page) => page.id === id)) {
@@ -254,6 +300,7 @@ export function CraftScreen(props: CraftScreenProps) {
         key={activePage.id}
         page={activePage}
         seam={seam}
+        source={source}
         gate={gate}
         runtime={runtime}
         controlsSlot={controlsSlot}
@@ -325,19 +372,19 @@ export function CraftScreen(props: CraftScreenProps) {
   const pagesSection = (
     <section className="dsn-main" aria-label={`Pages of ${title || 'the craft'}`} data-testid="dsn-main">
       {handle.state === 'ready' ? (
-        <PageRow
+        <CraftTabStrip
+          tabs={tabs.tabs}
+          activeTabId={tabs.activeTab.id}
           pages={handle.pages}
-          activeId={activePage?.id ?? null}
+          craftTitle={title}
           updated={handle.updated}
-          label={`Pages of ${title}`}
-          ownerId={craftId}
-          onOverview={selectOverview}
-          onSelect={selectPage}
-          onMove={(id, index) => void handle.move(id, index)}
-          onRemove={(id) => {
-            void handle.remove(id).then((ok) => {
-              if (ok && id === activePage?.id) selectOverview();
-            });
+          onSelect={activateTab}
+          onClose={tabs.close}
+          onMove={tabs.move}
+          onOpenPage={(page) => selectPage(page.id)}
+          onRemovePage={(id) => {
+            /* The node drops the page's tab; the strip hides it at once. */
+            void handle.remove(id);
           }}
           onNew={onNewPage}
           onAddExisting={(id) => void handle.addExisting(id).then((ok) => ok && selectPage(id))}
@@ -419,11 +466,6 @@ export function CraftScreen(props: CraftScreenProps) {
   );
 }
 
-/** The route's page when it is still in the craft; null ⇒ the overview is the selected tab. */
-function selectedPage(pages: readonly CraftPageRow[], id: EntityId | undefined): CraftPageRow | null {
-  return (id && pages.find((page) => page.id === id)) || null;
-}
-
 /** `[+ page]`: create and open; Artifact asks the agent, which is the one door artifacts have. */
 function useNewPage(handle: CraftHandle, ask: (text: string) => void, open: (id: EntityId) => void) {
   return useCallback(
@@ -441,6 +483,7 @@ function useNewPage(handle: CraftHandle, ask: (text: string) => void, open: (id:
 interface PageBodyProps {
   page: CraftPageRow;
   seam: Seam;
+  source: CraftSource;
   gate: WorkspaceGateHandles | undefined;
   runtime: WorkspaceRuntime;
   /** The strip TOP's kind slot (or the lite strip without a Workspace host). */
@@ -452,10 +495,11 @@ interface PageBodyProps {
 
 /**
  * One page's body, in its kind's full view. A page that is itself a craft is
- * that craft's own body, inline — no nested page rows.
+ * that craft's overview, inline — no nested page rows.
  */
 function PageBody(props: PageBodyProps) {
   const { page, seam, gate, runtime } = props;
+  if (page.kind === 'design' || page.kind === 'craft') return <CraftPage {...props} />;
   if (page.kind === 'graph') {
     return (
       <>
@@ -473,6 +517,21 @@ function PageBody(props: PageBodyProps) {
   }
   if (!gate) return <PlainPage page={page} onOpen={() => props.onOpenEntity(page.id)} />;
   return <WorkspacePage page={page} runtime={runtime} onOpenEntity={props.onOpenEntity} />;
+}
+
+/**
+ * A PAGE THAT IS ITSELF A CRAFT (doc §3): one tab, showing that craft's own
+ * overview in place. Its pages are not tabs here — they are not pages of
+ * this craft.
+ */
+function CraftPage({ page, source, gate, runtime, onOpenEntity }: PageBodyProps) {
+  const nested = useCraft(source, page.id, null);
+  const tab = useEmbeddedTab(runtime, gate ? page.id : null, gate ? page.kind : null);
+  return (
+    <div className="dsn-nested" data-testid="dsn-nested" data-craft={page.id}>
+      <CraftOverview tab={tab} pages={nested.pages} onOpenEntity={onOpenEntity} onClose={noop} />
+    </div>
+  );
 }
 
 /** A non-graph page: the Workspace entity adapter's body, in the private runtime. */

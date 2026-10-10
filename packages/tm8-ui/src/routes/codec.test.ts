@@ -839,7 +839,6 @@ describe('craft routes (Craft → Designs)', () => {
     [`#/s/${SPACE}/craft`, { view: 'craft' }],
     [`#/s/${SPACE}/craft/${D}`, { view: 'craft', designId: D }],
     [`#/s/${SPACE}/craft/${D}/${P}`, { view: 'craft', designId: D, pageId: P }],
-    [`#/s/${SPACE}/craft/${D}/${P}/${N}`, { view: 'craft', designId: D, pageId: P, nestedPageId: N }],
   ];
 
   it.each(cases)('round-trips %s', (hash, target) => {
@@ -858,11 +857,13 @@ describe('craft routes (Craft → Designs)', () => {
     expect(parse(`#/s/${SPACE}/craft/x`).route?.target).toEqual({ view: 'craft' });
   });
 
-  it('builds no page without its design, and no nested page without its page', () => {
+  it('builds no page without its design', () => {
     const orphanPage = { ...routeOf(), target: { view: 'craft' as const, pageId: P } };
     expect(build(orphanPage).hash).toBe(`#/s/${SPACE}/craft`);
-    const orphanNested = { ...routeOf(), target: { view: 'craft' as const, designId: D, nestedPageId: N } };
-    expect(build(orphanNested).hash).toBe(`#/s/${SPACE}/craft/${D}`);
+  });
+
+  it('reads an old nested-page link as the page: a craft page opens inline as a tab', () => {
+    expect(parse(`#/s/${SPACE}/craft/${D}/${P}/${N}`).route?.target).toEqual({ view: 'craft', designId: D, pageId: P });
   });
 });
 
