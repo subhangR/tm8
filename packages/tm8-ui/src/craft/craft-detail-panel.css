@@ -1,0 +1,115 @@
+/* The craft detail panel (CraftDetailPanel.tsx): every page live, stacked. */
+.cdp {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-4);
+  padding: var(--pn-space-4) var(--pn-space-5);
+}
+
+.cdp-page {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+
+.cdp-page__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  border-radius: var(--pn-r-sm) var(--pn-r-sm) 0 0;
+}
+.cdp-page__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--pn-ink);
+  cursor: pointer;
+}
+.cdp-page__title:hover {
+  text-decoration: underline;
+}
+.cdp-page__kind,
+.cdp-page__live {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+}
+.cdp-page__fill {
+  flex: 1;
+}
+/* A graph's view switcher, laid along the header instead of down the strip. */
+.cdp-page__controls .dsn-graph-controls {
+  flex-direction: row;
+}
+
+/* A live body gets a real viewport of its own; the panel scrolls past it. */
+.cdp-page__body {
+  height: min(70vh, 640px);
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  resize: vertical;
+}
+.cdp-page[data-compact='true'] .cdp-page__body {
+  height: auto;
+  min-height: 0;
+  resize: none;
+}
+.cdp-entity {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cdp-plain {
+  margin: auto;
+  color: var(--pn-ink-3);
+}
+
+.cdp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  margin: 0;
+  padding: var(--pn-space-3);
+  list-style: none;
+}
+.cdp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-1) var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-paper);
+  color: var(--pn-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.cdp-chip__title {
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The craft's own body, kept mounted behind the detail panel (CraftOverview). */
+.dsn-entity[hidden] {
+  display: none;
+}

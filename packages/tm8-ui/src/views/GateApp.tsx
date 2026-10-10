@@ -1,6 +1,3 @@
-import { ToolLaunchProvider } from '../tools/context';
-import { toolTabCloseEffect } from '../tools/close-tabs';
-import { getWorkspaceRuntime } from '../tab-workspace/runtime/dispatch';
 /**
  * GateApp — the complete T0-1 master screen, composed (R5 THE GATE).
  *
@@ -77,7 +74,17 @@ import {
 import { FILE_PALETTE_SCOPE, parseFilePaletteRef, recentFilePaletteViews } from '../project-file/palette';
 import { useProjectNames } from '../project-file/projects';
 import { useRecentProjectFiles } from '../project-file/recent';
-import { CraftScreen, CraftsHome, CraftsNav, craftSourceFromSeam, craftsSourceFromSeam, type CraftTarget } from '../craft';
+import {
+  CraftHeaderSwitcher,
+  CraftScreen,
+  CraftsHome,
+  craftSourceFromSeam,
+  craftsSourceFromSeam,
+  craftTabsKey,
+  localOpenCraftsPort,
+  serverOpenCraftsPort,
+  type CraftTarget,
+} from '../craft';
 import { CraftLaunchScope } from '../new-session/launch-scope';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
@@ -548,14 +555,7 @@ export function GateApp(props: GateAppProps = {}) {
       <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
         <EntitySeenProvider scope={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
           commands={data.seam.commands} refreshCounts={data.refreshCounts}>
-          <McpProvider key={data.spaceId} port={mcpPort}>
-            <ToolLaunchProvider open={(id) => {
-              data.pull?.(id);
-              const viewer = data.viewerActor?.id;
-              if (navStore.getState().view.view === 'tabs' && viewer) openInWorkspace(viewer, data.spaceId, LIVE_COUNT_KIND, id);
-              else navStore.getState().navigate({ view: 'tabs', tab: id as EntityId });
-            }}>{node}</ToolLaunchProvider>
-          </McpProvider>
+          <McpProvider key={data.spaceId} port={mcpPort}>{node}</McpProvider>
         </EntitySeenProvider>
       </AttentionProvider>
     </PendingFormsProvider>
@@ -910,8 +910,6 @@ export function GateApp(props: GateAppProps = {}) {
       onSpacePicker: () => {
         addressable = false;
       },
-      /* Craft redesign §2: on the three-mode desktop Home is the tabs view,
-         so bare `/home` (what it writes with no tab active) reads as itself. */
       homeIsTabs: () => threeModesRef.current,
     });
     setBootRoute(addressable ? 'addressable' : 'none');
@@ -1363,14 +1361,6 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
-  useEffect(() => {
-    if (!viewerMemberId || !data.spaceId || !data.seam.commands) return;
-    return getWorkspaceRuntime(viewerMemberId, data.spaceId).registerEffect(toolTabCloseEffect({
-      detailOf: data.detailOf,
-      terminate: (id) => data.seam.commands!.terminate(id, { clientMutationId: `tool-close-${crypto.randomUUID()}` }),
-      onError: () => notices.push({ id: `tool-close-${crypto.randomUUID()}`, tone: 'error', title: 'The tool terminal could not be closed', body: 'Reopen its run from tool history and end the session.', ttlMs: 12000 }),
-    }));
-  }, [viewerMemberId, data.spaceId, data.seam, data.detailOf, notices.push]);
   /* Multiple workspaces (API doc 01a115c4 §10): the switcher's list, fed by
      the bridge. Nothing shows until the node has proved it knows workspaces. */
   const workspaceSpaceId = data.ready && data.spaceId ? data.spaceId : null;
@@ -2247,18 +2237,27 @@ export function GateApp(props: GateAppProps = {}) {
     (craftId: EntityId) => navStore.getState().navigate({ view: 'craft', designId: craftId }),
     [],
   );
+  /* The viewer's open-craft tabs in the Craft top bar. */
+  const openCraftsPort = useMemo(
+    () =>
+      !workspaceSpaceId || !viewerMemberId
+        ? null
+        : data.seam.craftWorkspaces
+          ? serverOpenCraftsPort(data.seam.craftWorkspaces, workspaceSpaceId)
+          : localOpenCraftsPort(craftTabsKey(nodeKey, workspaceSpaceId, viewerMemberId)),
+    [data.seam.craftWorkspaces, nodeKey, workspaceSpaceId, viewerMemberId],
+  );
   const craftSource = useMemo(
     () => craftSourceFromSeam(data.seam, data.spaceId as SpaceId),
     [data.seam, data.spaceId],
   );
-  /* No design ⇒ the Designs home; otherwise exactly the design, page and nested page asked for. */
+  /* No craft ⇒ the Crafts home; otherwise exactly the craft and page asked for. */
   const navigateCraft = useCallback(
-    ({ craftId, pageId, nestedPageId }: CraftTarget) =>
+    ({ craftId, pageId }: CraftTarget) =>
       navStore.getState().navigate({
         view: 'craft',
         ...(craftId ? { designId: craftId } : {}),
         ...(craftId && pageId ? { pageId } : {}),
-        ...(craftId && pageId && nestedPageId ? { nestedPageId } : {}),
       }),
     [],
   );
@@ -2576,7 +2575,16 @@ export function GateApp(props: GateAppProps = {}) {
      space · mode · switcher, and the switcher is the current mode's own —
      Home switches workspaces, Craft switches crafts. One table, keyed by the
      mode's group id; a mode with no row (Observe, Settings) draws none. */
-  const craftSwitcherEl: ReactNode = null; // L4: the craft switcher
+  /* Craft's switcher + the viewer's open-craft tabs (doc 01a1255d §3). */
+  const craftSwitcherEl: ReactNode = workspaceSpaceId ? (
+    <CraftHeaderSwitcher
+      source={craftsSource}
+      openCrafts={openCraftsPort}
+      currentCraftId={navView.view === 'craft' ? navView.designId ?? null : null}
+      onOpenHome={() => navigateCraft({})}
+      onOpenCraft={openCraft}
+    />
+  ) : null;
   const modeSwitcherEl: ReactNode = threeModes
     ? (({ [WORKSPACE_TABS_TAB_ID]: workspaceSwitcherEl, craft: craftSwitcherEl } as Record<string, ReactNode>)[activeGroupId ?? ''] ?? null)
     : workspaceSwitcherEl;
@@ -2683,19 +2691,9 @@ export function GateApp(props: GateAppProps = {}) {
     />
   ) : null;
 
-  /* DESIGN in the frame (R2-D1): the designs, and the open design's pages,
-     in the panel — Work's browser, for designs. */
+  /* The craft's chats and sessions fill the second panel. */
   const craftFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
-  const craftsNavEl = craftFramed ? (
-    <CraftsNav
-      crafts={craftsSource}
-      source={craftSource}
-      craftId={navView.view === 'craft' ? navView.designId : undefined}
-      pageId={navView.view === 'craft' ? navView.pageId : undefined}
-      onNavigate={navigateCraft}
-      onNotice={craftNotice}
-    />
-  ) : null;
+  const craftPanel = craftFramed && navView.view === 'craft' && navView.designId ? 'host' : null;
 
   const workspaceGate: WorkspaceGateHandles = {
     data,
@@ -2710,9 +2708,8 @@ export function GateApp(props: GateAppProps = {}) {
     openInbox: openInboxView,
     viewTabs,
     shellTabs,
-    activeViewTabId: activeGroupId,
-    /* A kind's list screen reads as Home but is not Home's root (the tabs view). */
     atViewRoot: !(threeModes && navView.view === 'kind'),
+    activeViewTabId: activeGroupId,
     activeScreenRef: activeTarget?.type === 'view' ? activeTarget.ref : null,
     onSelectViewTab: openTab,
     switcherSlot: switcherEl,
@@ -2838,7 +2835,7 @@ export function GateApp(props: GateAppProps = {}) {
           spaceId={data.spaceId}
           viewerId={viewerMemberId}
           title={frameTitle}
-          panel={railConfig ? menuRailEl : settingsNavEl ?? craftsNavEl ?? (observing ? 'host' : null)}
+          panel={railConfig ? menuRailEl : settingsNavEl ?? craftPanel ?? (observing ? 'host' : null)}
           strip={observing}
           goToWork={goToWork}
         >
@@ -3057,7 +3054,6 @@ export function GateApp(props: GateAppProps = {}) {
                strip split between the page and the design. The page bodies are
                the Workspace's own, hosted in a private runtime (`workspaceGate`
                is the same handle bundle the Workspace view gets). */
-            /* Every Run inside the craft starts with the Crafter (launch-scope.tsx). */
             <CraftLaunchScope key={navView.designId} craftId={navView.designId}>
             <CraftScreen
               key={navView.designId}
@@ -3068,7 +3064,6 @@ export function GateApp(props: GateAppProps = {}) {
               crafts={craftsSource}
               craftId={navView.designId}
               pageId={navView.pageId}
-              nestedPageId={navView.nestedPageId}
               onNavigate={navigateCraft}
               framed={craftFramed}
               gate={workspaceGate}

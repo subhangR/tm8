@@ -1,0 +1,88 @@
+/* THE CRAFT'S 2ND PANEL (`CraftSidePanel`). Tokens only, no raw hex. The
+   picker and popover reuse the studio's `crf-pick` / `crf-pop` rules. */
+.crf-side {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--pn-surface);
+}
+.crf-side__head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-2);
+  border-bottom: 1px solid var(--pn-line);
+}
+.crf-side__title {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crf-side__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-1);
+  min-width: 0;
+}
+.crf-side__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--pn-ink-3);
+}
+.crf-side__picker {
+  position: relative;
+  display: flex;
+  flex: 1 1 120px;
+  min-width: 0;
+}
+.crf-side__picker .crf-pick {
+  flex: 1;
+}
+.crf-side__picker .crf-pick__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--pn-ink-2);
+}
+.crf-side__picker .crf-pop {
+  top: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  width: min(380px, 80vw);
+}
+.crf-side__picker .crf-pop__row-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.crf-side__new:disabled {
+  color: var(--pn-ink-4);
+  cursor: default;
+}
+.crf-side__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.crf-side__body[hidden] {
+  display: none;
+}
+.crf-side__session {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
