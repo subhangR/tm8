@@ -30,6 +30,7 @@ import {
 } from '@tm8/contract';
 import { randomUUID } from 'node:crypto';
 import type { Db, DbClaims } from '../db/types.js';
+import type { GenerationFence } from '@tm8/execution';
 import {
   ScryptPasswordHasher,
   UNMATCHABLE_VERIFIER,
@@ -70,6 +71,8 @@ export interface ResolvedAuthSession {
   /** Pre-176 credentials only; a chat is an entity now and binds through runtimeChatId. */
   runtimeThreadRootId: string | null;
   runtimeChatId: string | null;
+  runtimeEpoch?: number | null;
+  runtimeNativeGeneration?: number | null;
   /** 226: required for agent kinds, null for a human (gate) session. */
   spaceId: string | null;
   /** 256 (W7p): the space link a `link` session, or an agent minted under one, descends from. */
@@ -166,7 +169,7 @@ export interface IssuedAgentRuntimeSession {
 export async function issueAgentRuntimeSession(
   db: Db,
   claims: DbClaims,
-  input: { chatId: string; teamMemberId: string; label?: string | null },
+  input: { chatId: string; teamMemberId: string; label?: string | null; fence?: GenerationFence },
 ): Promise<IssuedAgentRuntimeSession> {
   const secret = generateSecret();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS.agent_runtime).toISOString();
@@ -176,6 +179,7 @@ export async function issueAgentRuntimeSession(
     hashToken(secret),
     expiresAt,
     input.label ?? `chat:${input.chatId}`,
+    ...(input.fence ? [JSON.stringify(input.fence)] : []),
   ]);
   if (!session.runtime_member_id || !session.runtime_chat_id) {
     throw new CollabError('upstream_unavailable', 'agent runtime session returned no attribution');
@@ -195,8 +199,11 @@ export async function revokeAgentRuntimeSession(
   db: Db,
   claims: DbClaims,
   chatId: string,
+  guard?: { sessionId: string; fence: GenerationFence },
 ): Promise<void> {
-  await db.rpc(claims, 'revoke_agent_runtime_session', [chatId]);
+  await db.rpc(claims, 'revoke_agent_runtime_session', guard
+    ? [chatId, guard.fence.leaseEpoch, guard.fence.generation, guard.sessionId]
+    : [chatId]);
 }
 
 /** One message and one code for every rejection: a caller holding a bad credential learns nothing. */
