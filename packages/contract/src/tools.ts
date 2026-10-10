@@ -82,8 +82,6 @@ export const ToolDefinitionSchema = z.object({
   });
 });
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
-export const ToolEntitySchema = z.object({ kind: z.literal('tool'), definition: ToolDefinitionSchema }).strict();
-export type ToolEntity = z.infer<typeof ToolEntitySchema>;
 
 /** Validate a resolved non-secret value against its declaration; path confinement is checked by execution. */
 export function validateToolInputValue(input: ToolInput, value: unknown): boolean {
@@ -113,13 +111,17 @@ export const ToolRunSchema = z.object({
   invoker: z.lazy(() => ActorSummarySchema).nullable().optional(),
 }).strict();
 export type ToolRun = z.infer<typeof ToolRunSchema>;
-export const ToolSecretBindingSchema = z.object({ inputName: InputName, credentialId: Id, keyHint: z.string().nullable(), boundBy: z.lazy(() => ActorSummarySchema).nullable().optional() }).strict();
+export const ToolSecretBindingSchema = z.object({ inputName: InputName, credentialId: Id, keyHint: z.string().nullable(), boundBy: z.lazy(() => ActorSummarySchema).nullable().optional(), boundAt: z.string().nullable().optional() }).strict();
 export const ToolViewSchema = z.object({
   id: Id, spaceId: Id, version: z.number().int().positive(), sourceSha256: z.string().regex(/^[0-9a-f]{64}$/), definition: ToolDefinitionSchema,
+  executionVersion: z.number().int().positive(), configRevision: z.number().int().nonnegative(),
   config: z.record(ToolJsonValueSchema), secretBindings: z.array(ToolSecretBindingSchema),
   sourceChangedSinceViewerLastRun: z.object({ byActor: z.lazy(() => ActorSummarySchema).nullable(), at: z.string(), fromSha: z.string(), toSha: z.string() }).strict().nullable().optional(),
 }).strict();
 export type ToolView = z.infer<typeof ToolViewSchema>;
+// Older entity summaries carry only the definition; current projections carry the full view.
+export const ToolEntitySchema = ToolViewSchema.partial().required({ definition: true }).extend({ kind: z.literal('tool') }).strict();
+export type ToolEntity = z.infer<typeof ToolEntitySchema>;
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
 const Versioned = { ...Command, toolId: Id, expectedVersion: z.number().int().positive() };
 export const ToolCreateInputSchema = z.object({ ...Command, spaceId: Id, definition: ToolDefinitionSchema }).strict();

@@ -7,7 +7,7 @@ import {
   PtyHostService, ToolSessionLauncher, confineToolPath, resolveToolInputs, redactToolOutput,
   type ToolExit,
 } from '@tm8/execution';
-import { ToolDefinitionSchema, ToolRunInputSchema, ToolSecretBindInputSchema, getOperation, type ToolView } from '@tm8/contract';
+import { ToolDefinitionSchema, ToolRunInputSchema, ToolSecretBindInputSchema, OPERATIONS, getOperation, type ToolView } from '@tm8/contract';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { registerToolHandlers } from '../../src/tools/handlers.js';
 import { toolTokenScope } from '../../src/tools/runtime.js';
@@ -25,7 +25,7 @@ async function directory() { const dir = await mkdtemp(join(tmpdir(), 'tm8-tool-
 function tool(overrides: Partial<ToolView['definition']> = {}): ToolView {
   const definition = ToolDefinitionSchema.parse({ name: 'demo-tool', description: '', help: '', source: 'exit 0',
     runtime: 'bash', inputs: [], tm8Access: 'none', timeoutSeconds: 10, ...overrides });
-  return { id: randomUUID(), spaceId: randomUUID(), version: 3, sourceSha256: 'a'.repeat(64), definition, config: {}, secretBindings: [] };
+  return { id: randomUUID(), spaceId: randomUUID(), version: 3, executionVersion: 1, configRevision: 0, sourceSha256: 'a'.repeat(64), definition, config: {}, secretBindings: [] };
 }
 describe('tool input resolution and boundaries', () => {
   it('uses argument > config > default, preserving false, zero, and JSON values', async () => {
@@ -149,6 +149,7 @@ describe('tool authorization', () => {
     await expect(registry.get('tools.secrets.bind')!(ctx('tools.secrets.bind'))).rejects.toThrow('human sessions only');
     await expect(registry.get('tools.secrets.unbind')!(ctx('tools.secrets.unbind'))).rejects.toThrow('human sessions only');
     expect(owner).not.toHaveBeenCalled();
+    expect(OPERATIONS.some(op => JSON.stringify(op).includes('record_tool_exit'))).toBe(false);
     expect(getOperation('tools.secrets.bind').humanOnly).toBe(true); expect(getOperation('tools.secrets.unbind').humanOnly).toBe(true);
     const base = { toolId: randomUUID(), expectedVersion: 1, inputName: 'key', clientMutationId: 'one' };
     expect(ToolSecretBindInputSchema.safeParse({ ...base, value: 'prompt-secret' }).success).toBe(true);

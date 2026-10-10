@@ -1,6 +1,6 @@
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { CollabError, validateToolInputValue, type ToolJsonValue, type ToolView } from '@tm8/contract';
+import { CollabError, TOOL_RESERVED_ENV_NAMES, TOOL_RESERVED_ENV_PREFIXES, validateToolInputValue, type ToolJsonValue, type ToolView } from '@tm8/contract';
 
 export interface ResolvedToolInputs {
   values: Record<string, ToolJsonValue>;
@@ -43,7 +43,7 @@ export async function resolveToolInputs(
   const missing: string[] = [];
   for (const input of tool.definition.inputs) {
     const key = input.env ?? input.name.toUpperCase();
-    if (['SHELL', 'BASH_ENV', 'ENV', 'LD_PRELOAD', 'LD_LIBRARY_PATH'].includes(key)) {
+    if ((TOOL_RESERVED_ENV_NAMES as readonly string[]).includes(key.toUpperCase()) || TOOL_RESERVED_ENV_PREFIXES.some(prefix => key.toUpperCase().startsWith(prefix))) {
       throw new CollabError('invalid_input', `Reserved tool environment name: ${key}`);
     }
     let value: ToolJsonValue | undefined;
