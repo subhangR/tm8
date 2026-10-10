@@ -22,3 +22,18 @@ export async function addToolProjectionShape(database: W1ScratchDatabase): Promi
     grant execute on function public.read_space_credential(uuid) to tm8_app;
     reset role;`);
 }
+
+/**
+ * 322 renames 304's `design` kind to `craft`; current readers left-join
+ * `public.crafts` and select `internal.craft_summary(e.id)`. Historical
+ * fixtures that stop at 304 mirror only that read shape: the table rename and
+ * a NULL summary stub. No craft rows are tested.
+ */
+export async function addCraftProjectionShape(database: W1ScratchDatabase): Promise<void> {
+  await database.query(`set role tm8_graph_owner;
+    alter table public.designs rename to crafts;
+    create or replace function internal.craft_summary(p_craft_id uuid) returns jsonb
+      language sql stable as 'select null::jsonb';
+    grant execute on function internal.craft_summary(uuid) to tm8_app;
+    reset role;`);
+}

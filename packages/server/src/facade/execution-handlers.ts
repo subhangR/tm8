@@ -71,7 +71,7 @@ import {
   type GhostReconcileReport,
   type WorktreeReconcileReport,
 } from '@tm8/execution';
-import { CollabError, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
+import { CollabError, isHumanAuthKind, SessionJournalRecordSchema, SPAWN_SELECTION_REFERENCE_KINDS } from '@tm8/contract';
 import { BudgetExceededError } from '@tm8/prompt';
 import { dispatchRequestInjection } from '@tm8/prompt';
 import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
@@ -3484,7 +3484,7 @@ function registerHandlers(
     // here, before a worktree is provisioned for a spawn that cannot finish. A
     // runtime bearer whose row names no chat has no sessions of its own to bind.
     if (input.aboutEntityId !== undefined && ctx.identity.kind === 'bearer'
-      && !['browser', 'cli'].includes(ctx.identity.authKind ?? '') && runtimeChatIdOf(ctx) === null) {
+      && !isHumanAuthKind(ctx.identity.authKind) && runtimeChatIdOf(ctx) === null) {
       throw fail('forbidden', 'only a person, or a chat for its own sessions, sets aboutEntityId', { reason: 'about_not_allowed' });
     }
     if (input.storyId !== undefined && (input.taskIds !== undefined || input.newTask !== undefined || input.forceNewTask !== undefined)) {

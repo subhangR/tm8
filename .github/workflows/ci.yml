@@ -197,9 +197,11 @@ jobs:
       - uses: ./.github/actions/tm8-setup
         with:
           postgres: "true"
-      # Builds: packages/server (its references cover mcp, jev, execution, prompt, contract).
+      # Builds: packages/server (its references cover mcp, jev, execution, prompt, contract)
+      # AND packages/cli — test/tools/tools-e2e.pg.test.ts spawns packages/cli/dist/index.js,
+      # which no server reference builds (main run 38077433007: MODULE_NOT_FOUND).
       - name: Gate
-        run: bash tools/ci/check.sh --only typecheck:packages/server,test:packages/server --shard ${{ matrix.shard }}/4
+        run: bash tools/ci/check.sh --only typecheck:packages/server,typecheck:packages/cli,test:packages/server --shard ${{ matrix.shard }}/4
         env:
           # Read by BOTH scratch-database helpers: packages/server's w1-pg.ts
           # (2nd of 3 fallbacks) and packages/cli's integration harness. It is
