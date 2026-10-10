@@ -1,4 +1,4 @@
-// Craft as an Entity (migration 304 as `design`, renamed to `craft` by 315;
+// Craft as an Entity (migration 304 as `design`, renamed to `craft` by 316;
 // task 01a1118f, change list items 1-2, Subhang 2026-10-06; rename 01a1255e).
 //
 // A craft is a title and a description holding an ordered set of PAGES. A

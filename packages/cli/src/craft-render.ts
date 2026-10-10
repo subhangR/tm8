@@ -1,5 +1,5 @@
 /**
- * Text for a craft (migration 304, renamed to craft by 315) — the two places a craft
+ * Text for a craft (migration 304, renamed to craft by 316) — the two places a craft
  * is read from the CLI, both listing its PAGES in page order:
  *
  *   - `tm8 entity context <craft>`: the server's v2 `pages` field (id, kind,

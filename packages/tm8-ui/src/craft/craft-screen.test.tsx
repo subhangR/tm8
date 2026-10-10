@@ -154,7 +154,7 @@ describe('the design screen', () => {
     fireEvent.click(view.getByTestId('dsn-add-page'));
     const menu = view.getByTestId('dsn-add-menu');
     /* The five kinds and the existing-entity door. */
-    for (const kind of ['graph', 'doc', 'artifact', 'drawing', 'design']) {
+    for (const kind of ['graph', 'doc', 'artifact', 'drawing', 'craft']) {
       expect(within(menu).getByTestId(`dsn-new-${kind}`)).toBeTruthy();
     }
     expect(within(menu).getByTestId('membership-add').textContent).toBe('Add existing entity…');
@@ -336,10 +336,10 @@ describe('a nested design page (D7)', () => {
     const { view, targets } = await mountDesign(async (seam, source) => {
       const plan = await createGraph(seam, 'Plan');
       await source.placePage(DESIGN, plan, 1);
-      const nested = await source.createPage(DESIGN, 'design', 2);
+      const nested = await source.createPage(DESIGN, 'craft', 2);
       source.designs.get(nested)!.title = 'Backend';
       await source.placePage(nested, await createGraph(seam, 'API flow'), 1);
-      const deeper = await source.createPage(nested, 'design', 2);
+      const deeper = await source.createPage(nested, 'craft', 2);
       source.designs.get(deeper)!.title = 'Storage';
       await source.placePage(deeper, await createDoc(seam, 'Schema'), 1);
     });

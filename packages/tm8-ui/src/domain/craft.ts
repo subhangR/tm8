@@ -1,5 +1,5 @@
 /**
- * The `craft` kind (born `design` in migration 304, renamed by 315): an ORDERED
+ * The `craft` kind (born `design` in migration 304, renamed by 316): an ORDERED
  * set of pages, each page any entity, held as `contains` edges ordered by
  * `props.position`. No wrapper per page — the page IS the doc or graph.
  *

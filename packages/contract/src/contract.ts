@@ -104,7 +104,7 @@ export type CoreEntityKind =
   // `entities.create`/`entities.patch` refuse it. Personal styles are NOT
   // entities (they live in `personal_styles`, owner-only).
   | 'style' | 'mcp_server'
-  // Crafts (migration 304 as `design`, renamed by 315 on 2026-10-10): an ordered set of
+  // Crafts (migration 304 as `design`, renamed by 316 on 2026-10-10): an ordered set of
   // PAGES, each any entity, held as ordered `contains` edges. See ./craft.ts.
   | 'craft';
 
@@ -577,7 +577,7 @@ export type CoreEntityState =
    * last activity. Computed by `internal.story_summary` on BOTH read paths.
    */
   | StoryState
-  /** A craft's page count and page kinds in order (304/315), `internal.craft_summary` on BOTH read paths. */
+  /** A craft's page count and page kinds in order (304/316), `internal.craft_summary` on BOTH read paths. */
   | CraftState
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
@@ -1060,7 +1060,7 @@ export type CoreEntityContent =
       appState: Record<string, unknown>; files: Record<string, unknown> }
   /** A story's description, plus the computed page on a detail read (283). */
   | StoryContent
-  /** A craft's description, plus its ordered pages on a detail read (304/315). */
+  /** A craft's description, plus its ordered pages on a detail read (304/316). */
   | CraftContent
   /**
    * A form (209), everything its panel needs in one read: settings with
@@ -8180,7 +8180,7 @@ export interface EntityContextV2View {
   projectId?: string | null;
   // story (283): the page projected small for an agent.
   story?: EntityContextStory;
-  // craft (304/315): its pages in page order (kind, title, id, position).
+  // craft (304/316): its pages in page order (kind, title, id, position).
   pages?: EntityContextCraftPage[];
   // message
   anchor?: EntityContextRef;

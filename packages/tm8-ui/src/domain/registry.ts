@@ -1921,7 +1921,7 @@ const ROWS: readonly KindConfig[] = [
   },
 
   /*
-   * -- craft (an ordered set of pages; `design` until migration 315) --
+   * -- craft (an ordered set of pages; `design` until migration 316) --
    *
    * A page is ANY entity, held as an ordered `contains` edge; the page is the
    * doc or graph itself and opens normally anywhere else. Its own screen is
@@ -2878,7 +2878,7 @@ const FALLBACK = BY_KIND.get(CUSTOM_KIND_FALLBACK) as KindConfig;
  * is how custom kinds land on the generic archetype for free (LLD §2.3).
  */
 export function getKind(kind: string): KindConfig {
-  // `design` (renamed `craft` by 315) still resolves until KIND_ALIAS_UNTIL.
+  // `design` (renamed `craft` by 316) still resolves until KIND_ALIAS_UNTIL.
   return BY_KIND.get(normalizeKindAlias(kind)) ?? FALLBACK;
 }
 

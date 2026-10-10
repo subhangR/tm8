@@ -161,9 +161,9 @@ describe('the seam-backed designs source', () => {
   it('reads designs, counts chats by subject and reads each card’s page kinds off its summary', async () => {
     const design = summary({
       id: id(10),
-      kind: 'design' as EntitySummary['kind'],
+      kind: 'craft' as EntitySummary['kind'],
       title: 'Launch',
-      state: { kind: 'design', pageCount: 2, pageKinds: ['doc', 'graph'] } as unknown as EntitySummary['state'],
+      state: { kind: 'craft', pageCount: 2, pageKinds: ['doc', 'graph'] } as unknown as EntitySummary['state'],
       badges: { workingActors: [{}] } as unknown as EntitySummary['badges'],
     });
     const chats = [
@@ -172,7 +172,7 @@ describe('the seam-backed designs source', () => {
       summary({ id: id(22), kind: 'chat', state: { about: null } as unknown as EntitySummary['state'] }),
     ];
     const query = vi.fn(async (input: { kinds?: string[] }) => ({
-      page: { items: input.kinds?.[0] === 'design' ? [design] : chats },
+      page: { items: input.kinds?.[0] === 'craft' ? [design] : chats },
     }));
     /* The summary carries the page kinds (304): no design page, so no detail read. */
     const entity = vi.fn();
@@ -195,14 +195,14 @@ describe('the seam-backed designs source', () => {
     expect(entity).not.toHaveBeenCalled();
 
     expect(await source.create('Untitled design')).toBe(id(40));
-    expect(createEntity).toHaveBeenCalledWith(expect.objectContaining({ kind: 'design', title: 'Untitled design', spaceId: SPACE }));
+    expect(createEntity).toHaveBeenCalledWith(expect.objectContaining({ kind: 'craft', title: 'Untitled design', spaceId: SPACE }));
   });
 });
 
 describe('top-level designs only', () => {
   it('a design that is a page of another is reached through its parent, not listed', async () => {
     const source = fixtureDesignsSource([
-      { id: id(1), title: 'Pricing launch', pages: [{ kind: 'graph' }, { kind: 'design', id: id(2) }] },
+      { id: id(1), title: 'Pricing launch', pages: [{ kind: 'graph' }, { kind: 'craft', id: id(2) }] },
       { id: id(2), title: 'Backend', pages: [{ kind: 'graph' }] },
     ]);
     const view = render(<DesignsHome source={source} onOpenDesign={() => {}} now={NOW} />);
@@ -214,26 +214,26 @@ describe('top-level designs only', () => {
     const design = (n: number, title: string, pageKinds: string[]) =>
       ({
         id: id(n),
-        kind: 'design',
+        kind: 'craft',
         title,
         activityAt: '2026-10-06T00:00:00Z',
-        state: { kind: 'design', pageCount: pageKinds.length, pageKinds },
+        state: { kind: 'craft', pageCount: pageKinds.length, pageKinds },
         badges: {},
       }) as unknown as EntitySummary;
-    const parent = design(10, 'Pricing launch', ['graph', 'design']);
+    const parent = design(10, 'Pricing launch', ['graph', 'craft']);
     const nested = design(11, 'Backend', ['graph']);
     const plain = design(12, 'Passkeys', ['doc']);
     const query = vi.fn(async (input: { kinds?: string[] }) => ({
-      page: { items: input.kinds?.[0] === 'design' ? [parent, nested, plain] : [] },
+      page: { items: input.kinds?.[0] === 'craft' ? [parent, nested, plain] : [] },
     }));
     const entity = vi.fn(async () => ({
-      content: { description: '', pages: [{ id: id(30), kind: 'graph' }, { id: id(11), kind: 'design' }] },
+      content: { description: '', pages: [{ id: id(30), kind: 'graph' }, { id: id(11), kind: 'craft' }] },
     }));
     const seam = { query, entity, commands: {}, onEvent: () => () => {} } as unknown as Seam;
 
     const cards = await designsSourceFromSeam(seam, 'space-1' as SpaceId).list();
     expect(cards.map((card) => card.title)).toEqual(['Pricing launch', 'Passkeys']);
-    expect(cards[0]!.pageKinds).toEqual(['graph', 'design']);
+    expect(cards[0]!.pageKinds).toEqual(['graph', 'craft']);
     expect(entity).toHaveBeenCalledTimes(1);
     expect(entity).toHaveBeenCalledWith(id(10));
   });

@@ -244,7 +244,7 @@ export const CoreEntityKindSchema = z.enum([
   'story', 'mcp_server',
   // Space styles (284). Not in `CreatableEntityKind`: `styles.push` is its door.
   'style',
-  // Crafts (304; renamed from design in 315): ordered pages by `contains`. Creatable through the generic
+  // Crafts (304; renamed from design in 316): ordered pages by `contains`. Creatable through the generic
   // envelope.
   'craft',
 ]);
@@ -255,7 +255,7 @@ export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
 );
 
 /**
- * Input-only kind aliases. `design` was renamed `craft` by migration 315
+ * Input-only kind aliases. `design` was renamed `craft` by migration 316
  * (2026-10-10); it is still ACCEPTED wherever a kind is input, and never
  * output. DEPRECATED: remove the alias on or after {@link KIND_ALIAS_UNTIL}.
  */

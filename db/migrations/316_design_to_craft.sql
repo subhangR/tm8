@@ -1,5 +1,5 @@
 -- =============================================================================
--- 315 — RENAME the `design` kind to `craft` (task 01a1255e, owner decision doc
+-- 316 — RENAME the `design` kind to `craft` (task 01a1255e, owner decision doc
 -- 01a1255d §1, Kalai 2026-10-10: "Design" appears nowhere in the product).
 --
 -- 304 shipped the kind as `design`. This migration moves every piece of it:
@@ -19,14 +19,18 @@
 --     workspace_drafts.kind, workspace tab state, menu kind leaves, saved
 --     view filters, activity summaries, the command ledger's stored results
 --     (replays), and the
---     space event log since 304 landed (2026-10-06).
+--     space event log since 304 landed (2026-10-06);
+--   * 315_craft_workspaces' one old-name check (craft_workspace_save's
+--     `e.kind in ('craft', 'design')` -> `e.kind = 'craft'`), so that nothing
+--     in the DB says design after 316.
 --
 -- INPUT ALIAS: `design` stays accepted as a kind INPUT until 2027-01-08 in the
 -- contract (`normalizeKindAlias`), never here: the DB only ever holds `craft`.
 --
--- REVERSIBLE: db/rollback/315_design_to_craft.down.sql is this file with
--- design<->craft swapped (db/test/craft_rename.test.mjs checks that it is,
--- and runs down -> up on a populated database).
+-- REVERSIBLE: db/rollback/316_design_to_craft.down.sql is this file with
+-- design<->craft swapped, up to a hand-written NOT SWAPPED tail
+-- (packages/server/test/db/craft-kind.pg.test.ts checks that it is, and runs
+-- down -> up on a populated database).
 --
 -- SHARED-OBJECT NOTICE: §4 REPLACES `internal.entity_content` (latest definer
 -- was 304) and §6 the membership pair (latest definer was 304).
@@ -146,7 +150,7 @@ begin
       when 'op_request' then select to_jsonb(opr) - 'entity_id' - 'requester_identity_id' - 'decided_identity_id'
         into content from public.op_requests opr where opr.entity_id = target;
       when 'mcp_server' then select to_jsonb(m) - 'entity_id' into content from public.mcp_servers m where m.entity_id=target;
-      -- 304/315: the craft's title and description. Its pages are `contains`
+      -- 304/316: the craft's title and description. Its pages are `contains`
       -- edges ordered by props.position, never embedded here.
       when 'craft' then select to_jsonb(dsg) - 'entity_id' into content from public.crafts dsg where dsg.entity_id = target;
       else content := '{}'::jsonb;
@@ -501,3 +505,31 @@ update public.saved_views
 reset role;
 
 analyze public.crafts;
+
+-- =============================================================================
+-- NOT SWAPPED: the rollback carries its own inverse of everything below.
+-- 315_craft_workspaces (task 01a1255e-1431) accepts the old kind name in one
+-- place, public.craft_workspace_save's `e.kind in ('craft', 'design')`. After
+-- this rename only `craft` exists, so the check narrows in place. create or
+-- replace keeps the runner's ownership and 315's grants. It is a no-op on a
+-- database without 315.
+-- =============================================================================
+do $rename$
+declare
+  fn  regprocedure := to_regprocedure('public.craft_workspace_save(uuid,uuid,bigint,bigint,jsonb,uuid,boolean)');
+  src text;
+begin
+  if fn is null then
+    return;
+  end if;
+  src := pg_get_functiondef(fn);
+  if position($k$e.kind in ('craft', 'design')$k$ in src) = 0 then
+    raise exception '316: craft_workspace_save lost the kind check this migration narrows';
+  end if;
+  src := replace(src, $k$e.kind in ('craft', 'design')$k$, $k$e.kind = 'craft'$k$);
+  if src ilike '%design%' then
+    raise exception '316: craft_workspace_save still names design';
+  end if;
+  execute src;
+end
+$rename$;

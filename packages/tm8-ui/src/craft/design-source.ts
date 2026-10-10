@@ -12,7 +12,7 @@
  */
 import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
-import { DESIGN_KIND, designContentOf } from '../domain';
+import { designContentOf } from '../domain';
 
 /** One page as the row and body need it. */
 export interface DesignPageRow {
@@ -35,7 +35,7 @@ export interface DesignRead {
 }
 
 /** The kinds `[+ page]` can make. Artifacts have no generic create; the menu says so. */
-export const NEW_PAGE_KINDS = ['graph', 'doc', 'artifact', 'drawing', 'design'] as const;
+export const NEW_PAGE_KINDS = ['graph', 'doc', 'artifact', 'drawing', 'craft'] as const;
 export type NewPageKind = (typeof NEW_PAGE_KINDS)[number];
 
 /** A change the screen may need to react to. */
@@ -65,12 +65,12 @@ function cmid(tag: string): string {
 
 /** The title a fresh page of each kind starts with. */
 export function newPageTitle(kind: NewPageKind): string {
-  return kind === 'graph' ? 'Untitled graph' : kind === 'design' ? 'Untitled design' : `Untitled ${kind}`;
+  return kind === 'graph' ? 'Untitled graph' : kind === 'craft' ? 'Untitled design' : `Untitled ${kind}`;
 }
 
 function contentFor(kind: Exclude<NewPageKind, 'artifact'>): Record<string, unknown> | undefined {
   if (kind === 'graph') return { graphType: 'entity' };
-  if (kind === 'design') return { description: '' };
+  if (kind === 'craft') return { description: '' };
   return undefined;
 }
 
@@ -118,7 +118,7 @@ export function designSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignSource
       const result = await seam.commands.createEntity({
         clientMutationId: cmid('page'),
         spaceId,
-        kind: kind === 'design' ? DESIGN_KIND : kind,
+        kind: kind,
         title: newPageTitle(kind),
         ...(content ? { content } : {}),
       });
@@ -190,7 +190,7 @@ export function fixtureDesignSource(
   const rowFor = async (entityId: EntityId, position: number): Promise<DesignPageRow> => {
     const nested = designs.get(entityId);
     if (nested) {
-      return { id: entityId, kind: 'design', title: nested.title, version: nested.version, activityAt: new Date().toISOString(), position, running: false };
+      return { id: entityId, kind: 'craft', title: nested.title, version: nested.version, activityAt: new Date().toISOString(), position, running: false };
     }
     const detail = await seam.entity(entityId);
     return { ...pageRowOf(detail), position };
@@ -213,7 +213,7 @@ export function fixtureDesignSource(
     },
     async createPage(designId, kind, position) {
       let id: EntityId;
-      if (kind === 'design') {
+      if (kind === 'craft') {
         id = `fixture-design-page-${next++}` as EntityId;
         designs.set(id, { id, title: newPageTitle(kind), version: 1, pages: [] });
       } else {

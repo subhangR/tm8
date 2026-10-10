@@ -1,5 +1,5 @@
 /**
- * DEPRECATED shim: the `design` kind is `craft` since migration 315. These
+ * DEPRECATED shim: the `design` kind is `craft` since migration 316. These
  * old names re-export ./craft so src/craft keeps compiling while L4 moves it
  * over; import from './craft' in new code. Delete once nothing imports it.
  */
