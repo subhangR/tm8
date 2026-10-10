@@ -2007,6 +2007,15 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
+  {
+    kind: 'tool', label: 'Tool', labelPlural: 'Tools', icon: '⌘', iconArt: KIND_ART.tool,
+    slug: 'tools', strategy: 'collection', defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⌘', tintBy: 'none' }, card: { fields: ['excerpt', 'activityAt'] },
+    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    panel: { archetype: 'scripted', blocks: [COLLECTIONS_BLOCK] },
+  },
+
   // Catalog definitions are managed separately from their private accounts.
   {
     kind: 'mcp_server',

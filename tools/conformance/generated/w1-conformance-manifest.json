@@ -10177,6 +10177,39 @@
           "strategy": "op-request-detail"
         }
       },
+      "tool": {
+        "kind": "tool",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "tools"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "mcp-server-detail"
+        }
+      },
       "mcp_server": {
         "kind": "mcp_server",
         "entityKind": true,

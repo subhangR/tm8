@@ -739,6 +739,19 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
 const GUARD_DTOS_BOUND_TO_NO_OPERATION = ['PatchTaskInputSchema'];
 
 /**
+ * Tools 1 introduces the frozen schemas before Tools 2 registers their API
+ * operations. Exempt each schema only while its specific catalog row is absent;
+ * once that row lands, Direction B requires the operation-to-DTO mapping.
+ */
+const GUARD_DTOS_AWAITING_CATALOG: Readonly<Record<string, string>> = {
+  ToolUpdateInputSchema: 'tools.update',
+  ToolConfigSetInputSchema: 'tools.config.set',
+  ToolConfigUnsetInputSchema: 'tools.config.unset',
+  ToolSecretBindInputSchema: 'tools.secrets.bind',
+  ToolSecretUnbindInputSchema: 'tools.secrets.unbind',
+};
+
+/**
  * Guard-bearing rows whose DTO lives on the SERVER, not in the contract, so
  * this sweep cannot introspect it. Named exactly, each with the schema that
  * does carry the guard: `skills.edit` binds `SkillEditInputSchema`
@@ -815,7 +828,11 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     const mapped = new Set(Object.values(DTO_BY_OPERATION));
     const unreachable = bearing
       .filter((n) => !mapped.has(n))
-      .filter((n) => !GUARD_DTOS_BOUND_TO_NO_OPERATION.includes(n));
+      .filter((n) => !GUARD_DTOS_BOUND_TO_NO_OPERATION.includes(n))
+      .filter((n) => {
+        const stagedOperation = GUARD_DTOS_AWAITING_CATALOG[n];
+        return stagedOperation === undefined || DISCOVERY.some((d) => d.operation === stagedOperation);
+      });
     expect(unreachable).toEqual([]);
   });
 

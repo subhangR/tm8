@@ -607,7 +607,7 @@ export function projectRows(input: RowProjection): EntitySummary[] {
     // nothing rather than an empty shell. (Every read ingests, so this is the
     // transient window between a read landing and its ingest, not a leak.)
     if (!row) continue;
-    if (isCredentialLoginSession(row)) continue;
+    if (isHiddenWorkSession(row)) continue;
     if (membershipOf(filter, row) === 'out') continue;
     base.push(row);
   }
@@ -619,7 +619,7 @@ export function projectRows(input: RowProjection): EntitySummary[] {
         !seen.has(e.id) &&
         e.kind === kind &&
         e.spaceId === spaceId &&
-        !isCredentialLoginSession(e) &&
+        !isHiddenWorkSession(e) &&
         membershipOf(filter, e) === 'in',
     )
     .sort(compare);
@@ -650,7 +650,8 @@ export function projectRows(input: RowProjection): EntitySummary[] {
  * a session bar built and never mounted, and a per-surface filter would have
  * missed it and every future sibling.
  *
- * WRITTEN AS `!== 'credential'`, NEVER `=== 'agent'` — and this inversion is
+ * Tool runs are hidden here too: the tool page owns their run history (318).
+ * WRITTEN AS a deny-list, NEVER `=== 'agent'` — and this inversion is
  * the whole point of the function. The field is OPTIONAL: a node predating
  * 082, or a row hydrated from a payload cached before the column shipped,
  * carries no `sessionKind` at all. Testing the positive would classify every
@@ -663,9 +664,9 @@ export function projectRows(input: RowProjection): EntitySummary[] {
  * for a security guard the safe default is deny, for a visibility filter the
  * safe default is show.
  */
-function isCredentialLoginSession(row: EntitySummary): boolean {
+function isHiddenWorkSession(row: EntitySummary): boolean {
   const state = row.state as { sessionKind?: unknown } | null | undefined;
-  return state?.sessionKind === 'credential';
+  return state?.sessionKind === 'credential' || state?.sessionKind === 'tool';
 }
 
 // --- narrow selector helpers (mirroring collab-v2 graph.ts) -----------------

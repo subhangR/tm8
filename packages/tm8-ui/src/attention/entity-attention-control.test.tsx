@@ -58,7 +58,8 @@ it('lists local, rolled-up, raised-elsewhere and legacy requests only through th
   const pop = screen.getByRole('dialog', { name: 'Session attention' });
   expect(within(pop).getAllByTestId('attention-block-row')).toHaveLength(4);
   expect(within(pop).queryByText('Unrelated request')).toBeNull();
-  expect(pop.querySelector('[data-attention-root="task-a"]')?.textContent).toContain('Title task-a');
+  // Request counts and entity titles settle through separate asynchronous reads.
+  await waitFor(() => expect(pop.querySelector('[data-attention-root="task-a"]')?.textContent).toContain('Title task-a'));
   expect(pop.querySelector('[data-attention-root="task-a"]')?.textContent).toContain('2 requests waiting');
   for (const root of ['task-a', 'task-b', session]) {
     const group = pop.querySelector(`[data-attention-root="${root}"]`)! as HTMLElement;
