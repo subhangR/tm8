@@ -552,7 +552,7 @@ export function GateApp(props: GateAppProps = {}) {
   const withPendingForms = (node: ReactNode) => (
     <PendingFormsProvider store={pendingFormsStore}>
       <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
-        <EntitySeenProvider key={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
+        <EntitySeenProvider scope={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
           commands={data.seam.commands} refreshCounts={data.refreshCounts}>
           <McpProvider key={data.spaceId} port={mcpPort}>{node}</McpProvider>
         </EntitySeenProvider>
@@ -657,6 +657,8 @@ export function GateApp(props: GateAppProps = {}) {
      legacy desktop (`shell/desktop-modes.ts`). Never on the phone (D16). */
   const [modes] = useState(desktopModes);
   const threeModes = shell !== 'mobile' && modes === 'three';
+  const threeModesRef = useRef(threeModes);
+  threeModesRef.current = threeModes;
   const navView = useNavStore((s) => s.view);
 
   /**
@@ -907,6 +909,7 @@ export function GateApp(props: GateAppProps = {}) {
       onSpacePicker: () => {
         addressable = false;
       },
+      homeIsTabs: () => threeModesRef.current,
     });
     setBootRoute(addressable ? 'addressable' : 'none');
     /* R15's fact, read at the only moment it is true. A depth of 1 means this
@@ -1664,8 +1667,11 @@ export function GateApp(props: GateAppProps = {}) {
     if (command === 'help.open') setShortcutsOpen(true);
     /* `g w`: a no-op with a notice while the socket is down (S13). */
     if (command === 'workspace.switcher') {
-      openWorkspaceSwitcher(workspaceList, (title) =>
+      const opened = openWorkspaceSwitcher(workspaceList, (title) =>
         noticeSink.current({ id: 'kbd-workspace', tone: 'info', title, body: '', ttlMs: 4_000 }));
+      /* The workspace switcher is Home's (Craft redesign §2): from another
+         mode, `g w` goes to Home and opens it there. */
+      if (opened && threeModes && activeGroupId !== WORKSPACE_TABS_TAB_ID) navStore.getState().navigate(WORK_VIEW);
     }
     /* Esc in a text field LEAVES it. The controller has always emitted this and
        consumed the key, but nothing acted on it, so Esc did nothing at all and
@@ -2352,6 +2358,14 @@ export function GateApp(props: GateAppProps = {}) {
    * Placed after the router mount effect deliberately — a fork above it would
    * give the two shells two mounts, and two mounts are two histories.
    */
+  /* The workspace switcher sits in Home's switcher slot only (Craft redesign
+     §2). An open flag with no switcher on screen would latch and pop it open
+     the next time Home mounts it, so it never outlives the slot. */
+  const workspaceSwitcherShown = !threeModes || activeGroupId === WORKSPACE_TABS_TAB_ID;
+  const workspaceSwitcherOpen = useStore(workspaceList, (s) => s.open);
+  useEffect(() => {
+    if (!workspaceSwitcherShown && workspaceSwitcherOpen) workspaceList.setState({ open: false });
+  }, [workspaceSwitcherShown, workspaceSwitcherOpen, workspaceList]);
   if (shell === 'mobile' && data.spaceId) {
     /* `data-shell` MARKS THE ROOT SO THE PHONE CAN DECLINE THE ZOOM LEVER.
        `app.css` puts `zoom: 1.1` on every `.cv2-root` — a user-ruled taste
@@ -2693,6 +2707,7 @@ export function GateApp(props: GateAppProps = {}) {
     openInbox: openInboxView,
     viewTabs,
     shellTabs,
+    atViewRoot: !(threeModes && navView.view === 'kind'),
     activeViewTabId: activeGroupId,
     activeScreenRef: activeTarget?.type === 'view' ? activeTarget.ref : null,
     onSelectViewTab: openTab,

@@ -29,7 +29,7 @@ export function CraftOverview({ tab, pages, panel, onOpenEntity, onClose }: Craf
   const view =
     pages.length === 0 ? (
       <p className="crf-empty" data-testid="dsn-no-pages">
-        No pages yet. Ask the chat to start one, or add a page with ＋.
+        No pages yet. Ask the chat to start one, or add one from Pages ▾.
       </p>
     ) : (
       <CraftDetailPanel {...panel} pages={pages} />
