@@ -43,7 +43,7 @@ import {
 } from 'react';
 import { useStore } from 'zustand';
 import { KindIcon, homeRootKinds, type KindConfig } from '../../domain';
-import { DESIGN_KIND } from '../../domain/design';
+import { CRAFT_KIND } from '../../domain/craft';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { browserSources, type BrowserSource } from '../adapters/browserSources';
 import { getRailStore, workspacePinnedKinds } from '../runtime/railStore';
@@ -94,11 +94,10 @@ export function WorkspaceRail() {
      opens there; any other opens its own kind list, which the shell counts as
      Home, until the allow-list widens — read from the contract, so widening
      it needs no change here. The craft kind is the one exception: it opens
-     Craft mode on the crafts home. (`craft` is listed beside DESIGN_KIND so
-     the design → craft kind rename needs no change here either.) */
+     Craft mode on the crafts home. */
   const openKind = useCallback(
     (kind: string) => {
-      if (kind === DESIGN_KIND || kind === 'craft') gate.navigateView({ view: 'craft' });
+      if (kind === CRAFT_KIND) gate.navigateView({ view: 'craft' });
       else if (isWorkspaceKind(kind)) selectKind(kind);
       else gate.navigateTo({ type: 'kind', ref: kind });
     },

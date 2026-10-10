@@ -187,16 +187,16 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
     await addToolProjectionShape(database);
-    // 316 renames it `craft` (`public.crafts`, `internal.craft_summary`). 316
+    // 322 renames it `craft` (`public.crafts`, `internal.craft_summary`). 322
     // itself cannot apply on this partial chain (§9 rewrites stored kind strings
     // in tables it lacks), so its schema sections are taken verbatim: §1-8 and
     // §10's grants, without §9. DELETE this shim if this suite ever applies
-    // the chain through 316.
-    const r316 = readFileSync(new URL('../../../../db/migrations/316_design_to_craft.sql', import.meta.url), 'utf8');
-    const grants = r316.indexOf('-- 10. Privileges');
+    // the chain through 322.
+    const r322 = readFileSync(new URL('../../../../db/migrations/322_design_to_craft.sql', import.meta.url), 'utf8');
+    const grants = r322.indexOf('-- 10. Privileges');
     await database.query(
-      r316.slice(0, r316.indexOf('-- 9. Stored kind strings')) +
-        r316.slice(grants, r316.indexOf('reset role;', grants) + 'reset role;'.length),
+      r322.slice(0, r322.indexOf('-- 9. Stored kind strings')) +
+        r322.slice(grants, r322.indexOf('reset role;', grants) + 'reset role;'.length),
     );
     // 313 (seen entities): the current classifier, taken
     // verbatim from the migration (313 itself cannot apply on this partial

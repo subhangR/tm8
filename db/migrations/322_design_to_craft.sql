@@ -1,16 +1,45 @@
 -- =============================================================================
--- ROLLBACK for 316_design_to_craft.sql — NOT a migration (db/migrate.mjs never
--- reads this directory). Run by hand, as the migration owner, only to undo 316:
+-- 322 — RENAME the `design` kind to `craft` (task 01a1255e, owner decision doc
+-- 01a1255d §1, Kalai 2026-10-10: "Design" appears nowhere in the product).
 --
---   psql "$OWNER_URL" -v ON_ERROR_STOP=1 -1 -f db/rollback/316_design_to_craft.down.sql
---   psql "$OWNER_URL" -c "delete from public.applied_migrations where filename = '316_design_to_craft.sql'"
+-- 304 shipped the kind as `design`. This migration moves every piece of it:
+--   * the registry row (entity_kinds) and `contains` src_kinds;
+--   * every `entities` row of kind design (the capture trigger emits one
+--     entity.upsert per row, so live clients see the new kind);
+--   * the detail table `designs` -> `crafts`, its constraints, index, policy
+--     and triggers (validate_kind is re-created: its argument is the kind);
+--   * the doors and helpers: create_/update_design_entity ->
+--     create_/update_craft_entity, assert_design_acyclic ->
+--     assert_craft_acyclic, design_contains_guard -> craft_contains_guard,
+--     design_summary -> craft_summary (bodies are 304's with the kind renamed);
+--     backfill_graph_designs is dropped (one-time, already ran);
+--   * re-issued shared objects: entity_content (318 verbatim, i.e. 296+304
+--     plus 318's `tool` arm, with the `craft` arm),
+--     set_collection_item / remove_collection_item (304 verbatim, `craft`);
+--   * stored kind strings: cross_space_refs.target_kind, workflows.kind,
+--     workspace_drafts.kind, workspace tab state, menu kind leaves, saved
+--     view filters, activity summaries, the command ledger's stored results
+--     (replays), and the
+--     space event log since 304 landed (2026-10-06);
+--   * 321_craft_workspaces' one old-name check (craft_workspace_save's
+--     `e.kind in ('craft', 'design')` -> `e.kind = 'craft'`), so that nothing
+--     in the DB says design after 322.
 --
--- Its SQL is 316's with design<->craft swapped, statement for statement;
--- packages/server/test/db/craft-kind.pg.test.ts asserts that up to each
--- file's NOT SWAPPED tail, and runs down -> up. Comments are 316's, swapped
--- mechanically.
+-- INPUT ALIAS: `design` stays accepted as a kind INPUT until 2027-01-08 in the
+-- contract (`normalizeKindAlias`), never here: the DB only ever holds `craft`.
+--
+-- REVERSIBLE: db/rollback/322_design_to_craft.down.sql is this file with
+-- design<->craft swapped, up to a hand-written NOT SWAPPED tail
+-- (packages/server/test/db/craft-kind.pg.test.ts checks that it is, and runs
+-- down -> up on a populated database).
+--
+-- SHARED-OBJECT NOTICE: §3 REPLACES `internal.entity_content` (latest definer
+-- was 318_tools, which copied 304 verbatim and added the `tool` arm; this body
+-- is 318's with `design` -> `craft`, the `tool` arm kept verbatim) and §7 the
+-- membership pair (latest definer was 304). A later re-issuer of
+-- entity_content must keep BOTH the `craft` and the `tool` arms
+-- (craft-kind.pg.test.ts pins both non-null).
 -- =============================================================================
---
 
 set role tm8_graph_owner;
 
@@ -19,47 +48,47 @@ set role tm8_graph_owner;
 --    (005: "promotion is a migration") — this is that migration.
 -- -----------------------------------------------------------------------------
 alter table public.entity_kinds disable trigger entity_kinds_guard_core;
-update public.entity_kinds set kind = 'design' where kind = 'craft' and space_id is null;
+update public.entity_kinds set kind = 'craft' where kind = 'design' and space_id is null;
 alter table public.entity_kinds enable trigger entity_kinds_guard_core;
 
 update public.edge_types
-   set src_kinds = array_replace(src_kinds, 'craft', 'design'),
-       dst_kinds = array_replace(dst_kinds, 'craft', 'design')
- where 'craft' = any(src_kinds) or 'craft' = any(dst_kinds);
+   set src_kinds = array_replace(src_kinds, 'design', 'craft'),
+       dst_kinds = array_replace(dst_kinds, 'design', 'craft')
+ where 'design' = any(src_kinds) or 'design' = any(dst_kinds);
 
 -- -----------------------------------------------------------------------------
 -- 2. Retire the old objects. The edge trigger goes first: nothing may run the
 --    old guard against a half-renamed kind.
 -- -----------------------------------------------------------------------------
-drop trigger if exists edges_craft_contains_acyclic on public.edges;
-drop function if exists internal.craft_contains_guard();
-drop function if exists internal.assert_craft_acyclic(uuid, uuid);
-drop function if exists internal.craft_summary(uuid);
-drop function if exists public.create_craft_entity(uuid, text, uuid, text, uuid, double precision, text);
-drop function if exists public.update_craft_entity(uuid, integer, uuid, text, text, text);
-drop function if exists internal.backfill_graph_crafts();
+drop trigger if exists edges_design_contains_acyclic on public.edges;
+drop function if exists internal.design_contains_guard();
+drop function if exists internal.assert_design_acyclic(uuid, uuid);
+drop function if exists internal.design_summary(uuid);
+drop function if exists public.create_design_entity(uuid, text, uuid, text, uuid, double precision, text);
+drop function if exists public.update_design_entity(uuid, integer, uuid, text, text, text);
+drop function if exists internal.backfill_graph_designs();
 
 -- -----------------------------------------------------------------------------
 -- 3. The rows and the detail table.
 -- -----------------------------------------------------------------------------
-update public.entities set kind = 'design' where kind = 'craft';
+update public.entities set kind = 'craft' where kind = 'design';
 
-alter table public.crafts rename to designs;
-alter table public.designs rename constraint crafts_pkey to designs_pkey;
-alter table public.designs rename constraint crafts_entity_id_fkey to designs_entity_id_fkey;
-alter table public.designs rename constraint crafts_title_check to designs_title_check;
-alter table public.designs rename constraint crafts_description_check to designs_description_check;
+alter table public.designs rename to crafts;
+alter table public.crafts rename constraint designs_pkey to crafts_pkey;
+alter table public.crafts rename constraint designs_entity_id_fkey to crafts_entity_id_fkey;
+alter table public.crafts rename constraint designs_title_check to crafts_title_check;
+alter table public.crafts rename constraint designs_description_check to crafts_description_check;
 
-drop trigger crafts_validate_kind on public.designs;
-create trigger designs_validate_kind
-before insert or update of entity_id on public.designs
-for each row execute function internal.validate_detail_envelope('design');
-alter trigger crafts_touch_updated_at on public.designs rename to designs_touch_updated_at;
-alter trigger crafts_w2_snapshot_version on public.designs rename to designs_w2_snapshot_version;
+drop trigger designs_validate_kind on public.crafts;
+create trigger crafts_validate_kind
+before insert or update of entity_id on public.crafts
+for each row execute function internal.validate_detail_envelope('craft');
+alter trigger designs_touch_updated_at on public.crafts rename to crafts_touch_updated_at;
+alter trigger designs_w2_snapshot_version on public.crafts rename to crafts_w2_snapshot_version;
 
-drop policy crafts_select on public.designs;
-create policy designs_select on public.designs for select to tm8_app
-  using ((exists (select 1 from public.entities readable_entity where readable_entity.id = designs.entity_id and readable_entity.deleted_at is null offset 0)));
+drop policy designs_select on public.crafts;
+create policy crafts_select on public.crafts for select to tm8_app
+  using ((exists (select 1 from public.entities readable_entity where readable_entity.id = crafts.entity_id and readable_entity.deleted_at is null offset 0)));
 
 -- -----------------------------------------------------------------------------
 -- 4-8. 304's bodies with the kind renamed.
@@ -126,9 +155,13 @@ begin
       when 'op_request' then select to_jsonb(opr) - 'entity_id' - 'requester_identity_id' - 'decided_identity_id'
         into content from public.op_requests opr where opr.entity_id = target;
       when 'mcp_server' then select to_jsonb(m) - 'entity_id' into content from public.mcp_servers m where m.entity_id=target;
-      -- 304/316: the design's title and description. Its pages are `contains`
+      -- 304/322: the craft's title and description. Its pages are `contains`
       -- edges ordered by props.position, never embedded here.
-      when 'design' then select to_jsonb(dsg) - 'entity_id' into content from public.designs dsg where dsg.entity_id = target;
+      when 'craft' then select to_jsonb(dsg) - 'entity_id' into content from public.crafts dsg where dsg.entity_id = target;
+      when 'tool' then select to_jsonb(tl) - 'entity_id'
+        || jsonb_build_object('config', coalesce((select jsonb_object_agg(c.input_name,c.value) from public.tool_config c where c.tool_id=target),'{}'::jsonb),
+          'secretBindings', coalesce((select jsonb_agg(jsonb_build_object('inputName',b.input_name,'credentialId',b.credential_id,'boundBy',b.bound_by,'boundAt',b.bound_at)) from public.tool_secret_bindings b where b.tool_id=target),'[]'::jsonb))
+        into content from public.tools tl where tl.entity_id=target;
       else content := '{}'::jsonb;
     end case;
   end if;
@@ -140,10 +173,10 @@ $$;
 -- -----------------------------------------------------------------------------
 -- 4. Create door. Ledger label `entities.create` (091/135/194/283).
 --    `p_parent_id` is the envelope's homogeneous hierarchy and is passed
---    through as every door does; NESTING a design is a page (`contains`),
+--    through as every door does; NESTING a craft is a page (`contains`),
 --    never hierarchy.
 -- -----------------------------------------------------------------------------
-create or replace function public.create_design_entity(
+create or replace function public.create_craft_entity(
   p_space_id uuid, p_title text, p_actor_id uuid default null,
   p_description text default '',
   p_parent_id uuid default null, p_position double precision default null,
@@ -152,7 +185,7 @@ create or replace function public.create_design_entity(
 declare
   replay jsonb;
   actor uuid;
-  design_id uuid;
+  craft_id uuid;
   activity_id uuid;
 begin
   perform internal.require_replay_principal(p_client_mutation_id);
@@ -169,21 +202,21 @@ begin
   perform internal.bind_actor(actor);
 
   if length(btrim(coalesce(p_title, ''))) not between 1 and 200 then
-    raise exception 'design title is required (1..200 chars after trim)' using errcode = '22023';
+    raise exception 'craft title is required (1..200 chars after trim)' using errcode = '22023';
   end if;
   if length(coalesce(p_description, '')) > 20000 then
-    raise exception 'design description is too long (% chars; limit 20000)', length(p_description) using errcode = '22023';
+    raise exception 'craft description is too long (% chars; limit 20000)', length(p_description) using errcode = '22023';
   end if;
 
-  design_id := internal.create_envelope(p_space_id, 'design', actor, p_parent_id, p_position);
-  insert into public.designs(entity_id, title, description)
-  values (design_id, btrim(p_title), coalesce(p_description, ''));
-  perform internal.record_initial_version(design_id, actor);
+  craft_id := internal.create_envelope(p_space_id, 'craft', actor, p_parent_id, p_position);
+  insert into public.crafts(entity_id, title, description)
+  values (craft_id, btrim(p_title), coalesce(p_description, ''));
+  perform internal.record_initial_version(craft_id, actor);
 
-  activity_id := internal.record_activity(p_space_id, design_id, actor, 'created',
-                   null, jsonb_build_object('kind', 'design'));
+  activity_id := internal.record_activity(p_space_id, craft_id, actor, 'created',
+                   null, jsonb_build_object('kind', 'craft'));
   return internal.ledger_record(p_client_mutation_id, 'entities.create',
-           internal.command_result(design_id, null, activity_id, array[design_id]));
+           internal.command_result(craft_id, null, activity_id, array[craft_id]));
 end
 $$;
 
@@ -192,7 +225,7 @@ $$;
 --    patch carries only what it changes. "Empty" is '', never null. Pages are
 --    not patched here: they are `contains` edges (collection add/remove).
 -- -----------------------------------------------------------------------------
-create or replace function public.update_design_entity(
+create or replace function public.update_craft_entity(
   p_entity_id uuid, p_expected_version integer, p_actor_id uuid default null,
   p_title text default null, p_description text default null,
   p_client_mutation_id text default null
@@ -211,20 +244,20 @@ begin
       replay #>> '{entity,id}', p_entity_id::text, 'entity');
     return replay;
   end if;
-  e := internal.live_entity(p_entity_id, 'design');
+  e := internal.live_entity(p_entity_id, 'craft');
   perform internal.require_space_member(e.space_id);
   actor := internal.resolve_actor(p_actor_id, e.space_id);
   perform internal.bind_actor(actor);
   perform internal.assert_version(p_entity_id, p_expected_version);
 
   if p_title is not null and length(btrim(p_title)) not between 1 and 200 then
-    raise exception 'design title must be 1..200 chars after trim' using errcode = '22023';
+    raise exception 'craft title must be 1..200 chars after trim' using errcode = '22023';
   end if;
   if p_description is not null and length(p_description) > 20000 then
-    raise exception 'design description is too long (% chars; limit 20000)', length(p_description) using errcode = '22023';
+    raise exception 'craft description is too long (% chars; limit 20000)', length(p_description) using errcode = '22023';
   end if;
 
-  update public.designs
+  update public.crafts
      set title       = coalesce(btrim(p_title), title),
          description = coalesce(p_description, description),
          updated_at  = now()
@@ -233,35 +266,35 @@ begin
   return internal.ledger_record(p_client_mutation_id, 'entities.patch',
            internal.command_result(p_entity_id, null,
              internal.record_activity(e.space_id, p_entity_id, actor, 'updated',
-               null, jsonb_build_object('kind', 'design')), array[p_entity_id]));
+               null, jsonb_build_object('kind', 'craft')), array[p_entity_id]));
 end
 $$;
 
 -- -----------------------------------------------------------------------------
--- 6. THE CYCLE GUARD (D2). Putting `p_item` into design `p_design` closes a
---    loop iff `p_design` is reachable from `p_item` along design -> page
---    `contains` edges — that is, `p_item` is the design itself or a design
---    somewhere above it. Deleted designs' edges count: a restore must not
+-- 6. THE CYCLE GUARD (D2). Putting `p_item` into craft `p_craft` closes a
+--    loop iff `p_craft` is reachable from `p_item` along craft -> page
+--    `contains` edges — that is, `p_item` is the craft itself or a craft
+--    somewhere above it. Deleted crafts' edges count: a restore must not
 --    bring a loop back. `union` (not `union all`) makes the walk terminate on
 --    any graph, even one an older build let loop. Definer-side (it is called
 --    from the doors and from a trigger that may fire under tm8_app), so RLS
 --    cannot hide a link in the loop from the check.
 -- -----------------------------------------------------------------------------
-create or replace function internal.assert_design_acyclic(p_design uuid, p_item uuid)
+create or replace function internal.assert_craft_acyclic(p_craft uuid, p_item uuid)
 returns void language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
-  design_space uuid;
+  craft_space uuid;
 begin
-  if p_item = p_design then
-    raise exception 'a design cannot contain itself' using errcode = '22023';
+  if p_item = p_craft then
+    raise exception 'a craft cannot contain itself' using errcode = '22023';
   end if;
-  if not exists (select 1 from public.entities where id = p_item and kind = 'design') then
+  if not exists (select 1 from public.entities where id = p_item and kind = 'craft') then
     return;
   end if;
-  select space_id into design_space from public.entities where id = p_design;
-  -- Serialise every design-into-design write in the space: two concurrent
+  select space_id into craft_space from public.entities where id = p_craft;
+  -- Serialise every craft-into-craft write in the space: two concurrent
   -- adds (A into B, B into A) each see no loop alone.
-  perform pg_advisory_xact_lock(hashtextextended('tm8.design_nesting:' || coalesce(design_space::text, ''), 0));
+  perform pg_advisory_xact_lock(hashtextextended('tm8.craft_nesting:' || coalesce(craft_space::text, ''), 0));
   if exists (
     with recursive below(id) as (
       select p_item
@@ -269,36 +302,36 @@ begin
       select c.dst_id
         from below b
         join public.edges c on c.src_id = b.id and c.type = 'contains'
-        join public.entities d on d.id = c.dst_id and d.kind = 'design'
+        join public.entities d on d.id = c.dst_id and d.kind = 'craft'
     )
-    select 1 from below where id = p_design
+    select 1 from below where id = p_craft
   ) then
-    raise exception 'a design cannot contain a design it is already inside (that would make a loop)'
+    raise exception 'a craft cannot contain a craft it is already inside (that would make a loop)'
       using errcode = '22023';
   end if;
 end
 $$;
 
-create or replace function internal.design_contains_guard()
+create or replace function internal.craft_contains_guard()
 returns trigger language plpgsql set search_path = public, internal, pg_temp as $$
 begin
-  if exists (select 1 from public.entities where id = new.src_id and kind = 'design') then
-    perform internal.assert_design_acyclic(new.src_id, new.dst_id);
+  if exists (select 1 from public.entities where id = new.src_id and kind = 'craft') then
+    perform internal.assert_craft_acyclic(new.src_id, new.dst_id);
   end if;
   return new;
 end
 $$;
 
-create trigger edges_design_contains_acyclic
+create trigger edges_craft_contains_acyclic
 before insert or update of src_id, dst_id, type on public.edges
 for each row when (new.type = 'contains')
-execute function internal.design_contains_guard();
+execute function internal.craft_contains_guard();
 
 -- -----------------------------------------------------------------------------
--- 7. The membership doors accept a DESIGN container (D1). Both bodies are
+-- 7. The membership doors accept a CRAFT container (D1). Both bodies are
 --    283's VERBATIM (the latest definer) with these changes only: the kind
 --    check names three kinds, and `set_collection_item` runs the cycle guard
---    for a design container before it writes. Same signatures, so `create or
+--    for a craft container before it writes. Same signatures, so `create or
 --    replace` keeps the handlers' call sites.
 -- -----------------------------------------------------------------------------
 create or replace function public.remove_collection_item(
@@ -319,8 +352,8 @@ begin
   replay := internal.ledger_replay(p_client_mutation_id, 'edges.delete');
   if replay is not null then return replay; end if;
   collection := internal.live_entity(p_collection_id);
-  if collection.kind not in ('collection', 'story', 'design') then
-    raise exception 'entity % is a %, expected a collection, a story or a design', p_collection_id, collection.kind
+  if collection.kind not in ('collection', 'story', 'craft') then
+    raise exception 'entity % is a %, expected a collection, a story or a craft', p_collection_id, collection.kind
       using errcode = '22023';
   end if;
   perform internal.require_space_member(collection.space_id);
@@ -361,17 +394,17 @@ begin
     raise exception 'a collection cannot contain itself' using errcode = '22023';
   end if;
   collection := internal.live_entity(p_collection_id);
-  if collection.kind not in ('collection', 'story', 'design') then
-    raise exception 'entity % is a %, expected a collection, a story or a design', p_collection_id, collection.kind
+  if collection.kind not in ('collection', 'story', 'craft') then
+    raise exception 'entity % is a %, expected a collection, a story or a craft', p_collection_id, collection.kind
       using errcode = '22023';
   end if;
   perform internal.require_space_member(collection.space_id);
   actor := internal.resolve_actor(p_actor_id, collection.space_id);
   perform internal.bind_actor(actor);
   perform internal.live_entity(p_entity_id);
-  -- 304 (D2): a design may not hold itself or a design above it.
-  if collection.kind = 'design' then
-    perform internal.assert_design_acyclic(p_collection_id, p_entity_id);
+  -- 304 (D2): a craft may not hold itself or a craft above it.
+  if collection.kind = 'craft' then
+    perform internal.assert_craft_acyclic(p_collection_id, p_entity_id);
   end if;
 
   next_position := p_position;
@@ -396,15 +429,15 @@ end
 $$;
 
 -- -----------------------------------------------------------------------------
--- 8. THE SUMMARY (D3) — contract `DesignState`, read by BOTH twins: the
---    live pages' count and their kinds IN PAGE ORDER (so a Designs card draws
+-- 8. THE SUMMARY (D3) — contract `CraftState`, read by BOTH twins: the
+--    live pages' count and their kinds IN PAGE ORDER (so a Crafts card draws
 --    its page icons without a detail read), under the caller's RLS (security
 --    invoker, 252's attention_badges posture).
 -- -----------------------------------------------------------------------------
-create or replace function internal.design_summary(p_design_id uuid)
+create or replace function internal.craft_summary(p_craft_id uuid)
 returns jsonb language sql stable set search_path = public, internal, pg_temp as $$
   select jsonb_build_object(
-    'kind', 'design',
+    'kind', 'craft',
     'pageCount', count(*)::integer,
     'pageKinds', coalesce(jsonb_agg(p.kind order by p.pos nulls last, p.created_at, p.id), '[]'::jsonb))
     from (
@@ -413,7 +446,7 @@ returns jsonb language sql stable set search_path = public, internal, pg_temp as
                   then (c.props ->> 'position')::double precision end as pos
         from public.edges c
         join public.entities pe on pe.id = c.dst_id and pe.deleted_at is null
-       where c.src_id = p_design_id and c.type = 'contains'
+       where c.src_id = p_craft_id and c.type = 'contains'
     ) p
 $$;
 
@@ -421,29 +454,29 @@ $$;
 -- -----------------------------------------------------------------------------
 -- 9. Stored kind strings outside the envelope.
 -- -----------------------------------------------------------------------------
-update public.cross_space_refs set target_kind = 'design' where target_kind = 'craft';
-update public.workflows set kind = 'design' where kind = 'craft';
+update public.cross_space_refs set target_kind = 'craft' where target_kind = 'design';
+update public.workflows set kind = 'craft' where kind = 'design';
 update public.activity
-   set summary = jsonb_set(summary, '{kind}', '"design"')
- where summary ->> 'kind' = 'craft';
+   set summary = jsonb_set(summary, '{kind}', '"craft"')
+ where summary ->> 'kind' = 'design';
 -- The replayable event log: only events since 304 can name the kind.
 update public.workspace_events
-   set payload = replace(payload::text, '"kind": "craft"', '"kind": "design"')::jsonb
+   set payload = replace(payload::text, '"kind": "design"', '"kind": "craft"')::jsonb
  where occurred_at >= timestamptz '2026-10-05'
-   and payload::text like '%"kind": "craft"%';
+   and payload::text like '%"kind": "design"%';
 
 -- A replayed command (24h ledger TTL) answers with the stored result.
 update public.command_ledger
-   set result = replace(result::text, '"kind": "craft"', '"kind": "design"')::jsonb
- where result::text like '%"kind": "craft"%';
+   set result = replace(result::text, '"kind": "design"', '"kind": "craft"')::jsonb
+ where result::text like '%"kind": "design"%';
 
 -- -----------------------------------------------------------------------------
 -- 10. Privileges (full signatures; 304's posture).
 -- -----------------------------------------------------------------------------
-revoke all on function public.create_design_entity(uuid,text,uuid,text,uuid,double precision,text) from public;
-grant execute on function public.create_design_entity(uuid,text,uuid,text,uuid,double precision,text) to tm8_app;
-revoke all on function public.update_design_entity(uuid,integer,uuid,text,text,text) from public;
-grant execute on function public.update_design_entity(uuid,integer,uuid,text,text,text) to tm8_app;
+revoke all on function public.create_craft_entity(uuid,text,uuid,text,uuid,double precision,text) from public;
+grant execute on function public.create_craft_entity(uuid,text,uuid,text,uuid,double precision,text) to tm8_app;
+revoke all on function public.update_craft_entity(uuid,integer,uuid,text,text,text) from public;
+grant execute on function public.update_craft_entity(uuid,integer,uuid,text,text,text) to tm8_app;
 -- The re-issued membership pair keeps 100's explicit privileges.
 revoke all on function public.remove_collection_item(uuid,uuid,uuid,text) from public;
 grant execute on function public.remove_collection_item(uuid,uuid,uuid,text) to tm8_app;
@@ -451,41 +484,44 @@ revoke all on function public.set_collection_item(uuid,uuid,double precision,uui
 grant execute on function public.set_collection_item(uuid,uuid,double precision,uuid,text) to tm8_app;
 -- The guard runs inside the definer doors and from the trigger, which may
 -- fire under tm8_app.
-revoke all on function internal.assert_design_acyclic(uuid,uuid) from public;
-grant execute on function internal.assert_design_acyclic(uuid,uuid) to tm8_app, tm8_graph_owner;
-revoke all on function internal.design_contains_guard() from public;
-grant execute on function internal.design_contains_guard() to tm8_app, tm8_graph_owner;
+revoke all on function internal.assert_craft_acyclic(uuid,uuid) from public;
+grant execute on function internal.assert_craft_acyclic(uuid,uuid) to tm8_app, tm8_graph_owner;
+revoke all on function internal.craft_contains_guard() from public;
+grant execute on function internal.craft_contains_guard() to tm8_app, tm8_graph_owner;
 -- Invoker-rights read: granting it gives neither role a row it could not
 -- already select.
-revoke all on function internal.design_summary(uuid) from public;
-grant execute on function internal.design_summary(uuid) to tm8_app, tm8_graph_owner;
+revoke all on function internal.craft_summary(uuid) from public;
+grant execute on function internal.craft_summary(uuid) to tm8_app, tm8_graph_owner;
 
 reset role;
 
 -- 305/311's tables belong to the migration runner, not tm8_graph_owner.
-update public.workspace_drafts set kind = 'design' where kind = 'craft';
+update public.workspace_drafts set kind = 'craft' where kind = 'design';
 -- Workspace tab state is opaque jsonb of {kind, id} refs; jsonb's text form
--- always prints `"kind": "craft"` with exactly one space.
+-- always prints `"kind": "design"` with exactly one space.
 update public.workspaces
-   set state = replace(state::text, '"kind": "craft"', '"kind": "design"')::jsonb
- where state::text like '%"kind": "craft"%';
+   set state = replace(state::text, '"kind": "design"', '"kind": "craft"')::jsonb
+ where state::text like '%"kind": "design"%';
 set role tm8_graph_owner;
 -- Menus name kinds as {"type":"kind","ref":...}; jsonb prints keys shortest
 -- first, so the leaf's text form is fixed. Saved views filter by kind.
 update public.space_menu_configs
-   set payload = replace(payload::text, '{"ref": "craft", "type": "kind"}', '{"ref": "design", "type": "kind"}')::jsonb
- where payload::text like '%{"ref": "craft", "type": "kind"}%';
+   set payload = replace(payload::text, '{"ref": "design", "type": "kind"}', '{"ref": "craft", "type": "kind"}')::jsonb
+ where payload::text like '%{"ref": "design", "type": "kind"}%';
 update public.saved_views
-   set query = replace(query::text, '"kind": "craft"', '"kind": "design"')::jsonb
- where query::text like '%"kind": "craft"%';
+   set query = replace(query::text, '"kind": "design"', '"kind": "craft"')::jsonb
+ where query::text like '%"kind": "design"%';
 reset role;
 
-analyze public.designs;
+analyze public.crafts;
 
 -- =============================================================================
--- NOT SWAPPED: the inverse of 316's tail. It widens 315_craft_workspaces'
--- craft_workspace_save back to `e.kind in ('craft', 'design')`. It is a no-op
--- on a database without 315.
+-- NOT SWAPPED: the rollback carries its own inverse of everything below.
+-- 321_craft_workspaces (task 01a1255e-1431) accepts the old kind name in one
+-- place, public.craft_workspace_save's `e.kind in ('craft', 'design')`. After
+-- this rename only `craft` exists, so the check narrows in place. create or
+-- replace keeps the runner's ownership and 321's grants. It is a no-op on a
+-- database without 321.
 -- =============================================================================
 do $rename$
 declare
@@ -496,9 +532,13 @@ begin
     return;
   end if;
   src := pg_get_functiondef(fn);
-  if position($k$e.kind = 'craft'$k$ in src) = 0 then
-    raise exception 'rollback 316: craft_workspace_save lost the kind check 316 narrowed';
+  if position($k$e.kind in ('craft', 'design')$k$ in src) = 0 then
+    raise exception '322: craft_workspace_save lost the kind check this migration narrows';
   end if;
-  execute replace(src, $k$e.kind = 'craft'$k$, $k$e.kind in ('craft', 'design')$k$);
+  src := replace(src, $k$e.kind in ('craft', 'design')$k$, $k$e.kind = 'craft'$k$);
+  if src ilike '%design%' then
+    raise exception '322: craft_workspace_save still names design';
+  end if;
+  execute src;
 end
 $rename$;

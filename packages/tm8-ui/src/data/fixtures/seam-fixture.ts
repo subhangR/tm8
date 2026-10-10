@@ -848,7 +848,7 @@ function synthesizeContent(s: EntitySummary): EntityContent {
       // The page is hydrated on a detail read only; a seam row carries none.
       return { kind: 'story', description: '', page: null };
     case 'craft':
-      // 304/316: a fixture craft is born empty; its pages are `contains` edges.
+      // 304/322: a fixture craft is born empty; its pages are `contains` edges.
       return { kind: 'craft', description: '', pages: [] };
     case 'tool':
       return { kind: 'tool', definition: { name: 'fixture-tool', description: '', help: '', runtime: 'bash', source: 'true', inputs: [], tm8Access: 'none', timeoutSeconds: 900 } };

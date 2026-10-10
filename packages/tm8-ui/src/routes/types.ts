@@ -246,7 +246,7 @@ export type NavView =
      no parameters of its own — same posture as the four above. */
   | { view: 'board' }
   /*
-   * Craft (2026-08-16; the `design` kind 2026-10-06, renamed `craft` by 316).
+   * Craft (2026-08-16; the `design` kind 2026-10-06, renamed `craft` by 322).
    * Bare `/craft` is the crafts home. `/craft/{craft}` opens one craft,
    * `/craft/{craft}/{page}` a page of it, and `/craft/{craft}/{page}/{nestedPage}`
    * a page of a craft that is itself a page (at most two page rows, so no deeper

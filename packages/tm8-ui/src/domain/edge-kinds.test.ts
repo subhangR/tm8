@@ -139,7 +139,7 @@ function migratedEndpoints(): Map<string, Endpoints> {
       }
     }
 
-    /* A kind rename (316) rewrites one kind in EVERY type's endpoints: `array_replace(col, 'old', 'new')`. */
+    /* A kind rename (322) rewrites one kind in EVERY type's endpoints: `array_replace(col, 'old', 'new')`. */
     for (const column of ['src_kinds', 'dst_kinds'] as const) {
       const key = column === 'src_kinds' ? 'src' : 'dst';
       const replace = new RegExp(`update\\s+(?:public\\.)?edge_types\\s+set[^;]*?${column}\\s*=\\s*array_replace\\(\\s*${column}\\s*,\\s*'([^']+)'\\s*,\\s*'([^']+)'\\s*\\)`, 'gi');

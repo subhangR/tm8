@@ -1,12 +1,13 @@
 /**
- * 304 + 316 against a real Postgres: `craft` (born `design` in 304, renamed
- * by 316), an ordered set of PAGES (change list items 1, 6 and 15).
+ * 304 + 322 against a real Postgres: `craft` (born `design` in 304, renamed
+ * by 322), an ordered set of PAGES (change list items 1, 6 and 15).
  *
  * Pinned here:
  *   - the registry row, and `contains` src_kinds APPENDED (never rewritten);
  *   - the backfill: one craft per live graph that is in no craft, same
  *     title, that graph its only page — and it is idempotent;
- *   - the create/update doors and `internal.entity_content`'s craft arm;
+ *   - the create/update doors and `internal.entity_content`'s craft arm, and
+ *     318's tool arm beside it (the shared object 322 re-issues);
  *   - pages through the membership doors: appended positions, an explicit
  *     position, re-adding re-positions, removing never deletes the page;
  *   - `internal.craft_summary`: live pages only, kinds in page order;
@@ -192,7 +193,7 @@ afterAll(async () => {
   await database?.destroy();
 }, 30_000);
 
-describe('304/316: the registry and the contains edge type', () => {
+describe('304/322: the registry and the contains edge type', () => {
   it('registers craft as a core kind in place of design, as the last contains source', async () => {
     const [kind] = await database.query(`select origin from public.entity_kinds where kind = 'craft' and space_id is null`);
     expect(kind).toEqual({ origin: 'core' });
@@ -222,7 +223,7 @@ describe('304 §9: the backfill gives every orphan graph a craft', () => {
     }
   });
 
-  it('skipped the deleted graph, and 316 retired the one-time backfill', async () => {
+  it('skipped the deleted graph, and 322 retired the one-time backfill', async () => {
     const [{ n }] = (await database.query<{ n: number }>(
       `select count(*)::int n from public.edges c join public.crafts d on d.entity_id = c.src_id where c.dst_id = $1`,
       [backfilled.deleted],
@@ -441,9 +442,9 @@ describe('304: the read paths', () => {
   });
 });
 
-describe('316: the rename and its rollback', () => {
-  const up = readFileSync(join(MIGRATIONS_DIR, '316_design_to_craft.sql'), 'utf8');
-  const down = readFileSync(join(REPO_ROOT, 'db', 'rollback', '316_design_to_craft.down.sql'), 'utf8');
+describe('322: the rename and its rollback', () => {
+  const up = readFileSync(join(MIGRATIONS_DIR, '322_design_to_craft.sql'), 'utf8');
+  const down = readFileSync(join(REPO_ROOT, 'db', 'rollback', '322_design_to_craft.down.sql'), 'utf8');
   const swap = (text: string): string => text
     .replace(/design/g, '\u0001').replace(/Design/g, '\u0002').replace(/DESIGN/g, '\u0003')
     .replace(/craft/g, 'design').replace(/Craft/g, 'Design').replace(/CRAFT/g, 'DESIGN')
@@ -454,11 +455,11 @@ describe('316: the rename and its rollback', () => {
   const kindOf = async (id: string): Promise<string> =>
     ((await database.query<{ kind: string }>(`select kind from public.entities where id = $1`, [id]))[0]!).kind;
 
-  // Each file ends in a hand-written NOT SWAPPED tail (315_craft_workspaces'
+  // Each file ends in a hand-written NOT SWAPPED tail (321_craft_workspaces'
   // kind check); everything before it is mechanical.
   const swapped = (text: string): string => text.split('-- NOT SWAPPED')[0]!;
 
-  it('the rollback is 316 with design<->craft swapped, statement for statement', () => {
+  it('the rollback is 322 with design<->craft swapped, statement for statement', () => {
     expect(statements(swapped(down))).toBe(swap(statements(swapped(up))));
     expect(down).toContain(`$k$e.kind in ('craft', 'design')$k$`);
   });
@@ -485,17 +486,39 @@ describe('316: the rename and its rollback', () => {
     expect(await kindOf(await createCraft('After the round trip'))).toBe('craft');
   });
 
-  it('narrows 315_craft_workspaces\' kind check to craft, and the rollback widens it back', async () => {
+  it('narrows 321_craft_workspaces\' kind check to craft, and the rollback widens it back', async () => {
     const save = async (): Promise<string | null> => ((await database.query<{ src: string | null }>(
       `select prosrc src from pg_proc where oid = to_regprocedure('public.craft_workspace_save(uuid,uuid,bigint,bigint,jsonb,uuid,boolean)')`,
     ))[0] ?? { src: null }).src;
     const before = await save();
-    if (before === null) return; // 315 is not on this branch yet: the tails are no-ops.
+    if (before === null) return; // 321 is not on this branch yet: the tails are no-ops.
     expect(before).toContain(`e.kind = 'craft'`);
     expect(before).not.toMatch(/design/i);
     await run(down);
     expect(await save()).toContain(`e.kind in ('craft', 'design')`);
     await run(up);
     expect(await save()).toBe(before);
+  });
+
+  // SHARED OBJECT: 318_tools re-issued entity_content with a `tool` arm; 322
+  // re-issues it again. Both arms must survive here, after down and after up.
+  it('keeps entity_content non-null for a craft AND a tool, through down and up', async () => {
+    const craft = await createCraft('Shared object', 'craft arm');
+    const tool = idOf(await asApp((q) => q(
+      `select public.create_tool_entity($1,$2::jsonb,null,$3) r`,
+      [fixture.spaceId, JSON.stringify({ name: 'shared-object-tool', description: 'tool arm', help: '', runtime: 'bash',
+        source: 'true', inputs: [], tm8Access: 'none', timeoutSeconds: 900 }), cmid('tool')],
+    )));
+    const content = async (id: string): Promise<Record<string, unknown> | null> =>
+      ((await database.query<{ c: Record<string, unknown> | null }>(`select internal.entity_content($1) c`, [id]))[0]!).c;
+    const both = async (): Promise<void> => {
+      expect(await content(craft)).toMatchObject({ title: 'Shared object', description: 'craft arm' });
+      expect(await content(tool)).toMatchObject({ definition: { name: 'shared-object-tool' }, config: {}, secretBindings: [] });
+    };
+    await both();
+    await run(down);
+    await both();
+    await run(up);
+    await both();
   });
 });

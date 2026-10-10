@@ -1081,7 +1081,7 @@ const fixtureToolDefinition = { name: 'fixture-tool', description: 'Stored tool 
 export const toolFixture = summary({ id: 'tool-fixture', kind: 'tool', title: 'Fixture tool',
   excerpt: 'Stored source and declared inputs.', state: {kind: 'tool', definition: fixtureToolDefinition} });
 
-/** Craft (304/316) — an ordered set of pages; its pages are `contains` edges. */
+/** Craft (304/322) — an ordered set of pages; its pages are `contains` edges. */
 export const designCheckout = summary({
   id: 'design-checkout', kind: 'craft', title: 'Checkout redesign',
   excerpt: 'The new checkout, page by page.',

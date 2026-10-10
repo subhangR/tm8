@@ -9,7 +9,7 @@ import {
 } from '../src/index.js';
 
 /*
- * `design` was renamed `craft` by migration 316 (2026-10-10). The old name is
+ * `design` was renamed `craft` by migration 322 (2026-10-10). The old name is
  * an INPUT alias for 90 days; nothing ever outputs it.
  */
 describe('the design -> craft kind alias', () => {

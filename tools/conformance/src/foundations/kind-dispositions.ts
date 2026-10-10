@@ -670,7 +670,7 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal, capabilities: generic,
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'story-detail' },
   }),
-  // Crafts (migration 304 as `design`, renamed by 316). `story`'s disposition:
+  // Crafts (migration 304 as `design`, renamed by 322). `story`'s disposition:
   // created and patched through the generic envelope (create_craft_entity /
   // update_craft_entity), zero new catalog rows; its pages are `contains`
   // edges written through the existing collection doors.
