@@ -345,6 +345,69 @@ describe('the page row', () => {
   });
 });
 
+describe('the craft detail panel (the overview, L4.2)', () => {
+  const sections = (view: ReturnType<typeof render>) => within(view.getByTestId('craft-detail-panel')).getAllByTestId('craft-detail-page');
+
+  it('is what a craft shows with no page selected: every page, live, stacked in contains order', async () => {
+    let nested = '' as EntityId;
+    const { view, ids } = await (async () => {
+      const ids: EntityId[] = [];
+      const mounted = await mountCraft(async (seam, source) => {
+        ids.push(await createGraph(seam, 'Plan'), await createDoc(seam, 'Brief'));
+        await source.placePage(CRAFT, ids[0]!, 1);
+        await source.placePage(CRAFT, ids[1]!, 2);
+        nested = await source.createPage(CRAFT, 'design', 3);
+        source.crafts.get(nested)!.title = 'Backend';
+        await source.placePage(nested, await createGraph(seam, 'API flow'), 1);
+      });
+      return { ...mounted, ids };
+    })();
+    await waitFor(() => expect(sections(view)).toHaveLength(3));
+    expect(sections(view).map((section) => section.getAttribute('data-page-id'))).toEqual([ids[0], ids[1], nested]);
+    expect(sections(view).map((section) => section.getAttribute('data-kind'))).toEqual(['graph', 'doc', 'design']);
+    /* The graph is the live blueprint page (empty yet), inside its own section. */
+    const [graph, doc, craft] = sections(view);
+    await waitFor(() => within(graph!).getByTestId('crf-empty'));
+    /* Outside a Workspace host a doc says what it is (the live body needs the host). */
+    expect(within(doc!).getByTestId('craft-detail-plain')).toBeTruthy();
+    /* A craft page is a compact section of its pages — no nested page row. */
+    await waitFor(() =>
+      expect(within(craft!).getAllByTestId('craft-detail-chip').map((chip) => chip.textContent)).toEqual(['API flow']),
+    );
+    expect(view.queryByTestId('dsn-nested-pages')).toBeNull();
+  });
+
+  it('stays live: a graph patch redraws its section, and a new page appears in place', async () => {
+    let graphId = '' as EntityId;
+    const { seam, source, view } = await mountCraft(async (s, src) => {
+      graphId = await createGraph(s, 'Plan');
+      await src.placePage(CRAFT, graphId, 1);
+    });
+    await waitFor(() => expect(sections(view)).toHaveLength(1));
+    await seam.commands.patchEntity(graphId, {
+      clientMutationId: 'cdp-live',
+      expectedVersion: 1,
+      content: { graphType: 'entity', nodes: [{ key: 'a', spec: { kind: 'task', title: 'Ship API' } }], edges: [] },
+    });
+    await waitFor(() => expect(within(sections(view)[0]!).getByTestId('crf-canvas').textContent).toContain('Ship API'));
+    await source.placePage(CRAFT, await createDoc(seam, 'Brief'), 2);
+    await waitFor(() => expect(sections(view)).toHaveLength(2));
+  });
+
+  it('Open (or the title) opens that page on its own', async () => {
+    let docId = '' as EntityId;
+    const { view, targets } = await mountCraft(async (s, src) => {
+      docId = await createDoc(s, 'Brief');
+      await src.placePage(CRAFT, docId, 1);
+    });
+    await waitFor(() => expect(sections(view)).toHaveLength(1));
+    fireEvent.click(within(sections(view)[0]!).getByTestId('craft-detail-open'));
+    await waitFor(() => expect(targets.at(-1)).toEqual({ craftId: CRAFT, pageId: docId }));
+    await waitFor(() => view.getByTestId('dsn-plain-page'));
+    expect(view.queryByTestId('craft-detail-panel')).toBeNull();
+  });
+});
+
 describe('a craft page', () => {
   it('opens inline as that craft, with no nested page row', async () => {
     const { view, targets } = await mountCraft(async (seam, source) => {
