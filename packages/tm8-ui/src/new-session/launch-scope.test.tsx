@@ -22,12 +22,17 @@ describe('the launch card in a craft', () => {
   it('a Run inside a craft spawns the Crafter, shown as Auto’s current pick', async () => {
     const view = renderPopup({ teammates: ROSTER }, (card) => <CraftLaunchScope craftId="craft-1">{card}</CraftLaunchScope>);
     expect(view.getByTestId('nsx-team').textContent).toContain('Crafter');
-    expect((await view.spawn()).teamMemberId).toBe('tm-crafter');
+    const input = await view.spawn();
+    expect(input.teamMemberId).toBe('tm-crafter');
+    // …and is ABOUT the craft, so the session may manage its tabs (L3).
+    expect(input.aboutEntityId).toBe('craft-1');
   });
 
   it('a Run outside a craft keeps Auto on the roster’s front row', async () => {
     const view = renderPopup({ teammates: ROSTER });
-    expect((await view.spawn()).teamMemberId).toBe('tm-coord');
+    const input = await view.spawn();
+    expect(input.teamMemberId).toBe('tm-coord');
+    expect('aboutEntityId' in input).toBe(false);
   });
 });
 

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import type {
   ContextBudgets,
   CredentialsServiceKeysStatusView,
+  EntityId,
   ExecutionDispatchResult,
   ExecutionSpawnInput,
   SpawnSelectionGroup,
@@ -535,14 +536,20 @@ export function LaunchComposerPopup({
       ...(promptExtra ? { promptExtra } : {}),
     };
     const launched = { ...config };
-    const inputWith = (id: string) => buildSpawnInput({
-      clientMutationId: id,
-      spaceId,
-      config: { ...config, ...launchFields, mcpSelections },
-      // Still named `taskIds` on the wire; the server maps a non-task
-      // subject through `derive_task_for_entity` (064).
-      taskIds: subjectTaskIds,
-      title: defaultTitle,
+    const inputWith = (id: string) => ({
+      ...buildSpawnInput({
+        clientMutationId: id,
+        spaceId,
+        config: { ...config, ...launchFields, mcpSelections },
+        // Still named `taskIds` on the wire; the server maps a non-task
+        // subject through `derive_task_for_entity` (064).
+        taskIds: subjectTaskIds,
+        title: defaultTitle,
+      }),
+      /* A Run inside a craft is ABOUT the craft: the node writes session
+         -[about]-> craft in the spawn, which lets the session manage that
+         craft's tabs (L3). Outside a craft the key is absent. */
+      ...(launchScope ? { aboutEntityId: launchScope.craftId as EntityId } : {}),
     });
     /* ONE KEY PER UNCHANGED LAUNCH: a retry of the same launch reuses its
        key, so the node's ledger replays the session instead of starting a
