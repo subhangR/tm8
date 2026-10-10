@@ -510,24 +510,13 @@ describe('ClaudeHeadlessAdapter', () => {
     ).resolves.toContainEqual({ kind: 'text', text: 'echo:after-node-restart:1' });
   });
 
-  it('starts a FRESH native session when the transcript to resume is gone', async () => {
-    // Claude deletes transcripts after cleanupPeriodDays (30); a chat idle that
-    // long used to fail every turn with "No conversation found".
-    const argvFile = join(root, 'expired-resume-argv.json');
+  it('requires continuity when the native transcript to resume is gone', async () => {
     const emptyHome = join(root, 'expired-home');
     await mkdir(join(emptyHome, 'projects', '-some-other-project'), { recursive: true });
     const runtime = adapter();
-    const thread = input({
-      resume: 'post_interrupt',
-      env: { TM8_FAKE_ARGV_FILE: argvFile, CLAUDE_CONFIG_DIR: emptyHome },
-    });
-    await runtime.startThread(thread);
-    const recorded = await readRecorded<{ args: string[] }>(argvFile);
-    expect(recorded.args).not.toContain('--resume');
-    expect(recorded.args[recorded.args.indexOf('--session-id') + 1]).toBe(NATIVE_SESSION_ID);
-    await expect(
-      collect(runtime.sendTurn(thread.threadId, { text: 'after-expiry' })),
-    ).resolves.toContainEqual({ kind: 'text', text: 'echo:after-expiry:1' });
+    await expect(runtime.startThread(input({ resume: 'post_interrupt', env: { CLAUDE_CONFIG_DIR: emptyHome } })))
+      .rejects.toMatchObject({ code: 'continuity_required' });
+    expect(runtime.activeThreadIds()).toEqual([]);
   });
 
   it('turns a mid-turn process crash into error + exactly one done and evicts it', async () => {
@@ -893,22 +882,16 @@ describe('ClaudeHeadlessAdapter', () => {
         cache_creation_input_tokens: 0,
       });
     });
-    it('counts from zero when an expired transcript turns a resume into a fresh session', async () => {
-      // No transcript anywhere: the adapter drops `--resume`, so the new
-      // process's totals start at zero and are all this turn's.
+    it('does not invent fresh totals when a resumed transcript is unavailable', async () => {
       const { runtime, thread } = await fixtureThread({
         again: [result(request(3, 12_000, 0), { input: 3, output: 9, read: 12_000, created: 0, cost: 0.004 })],
       });
       await runtime.close(thread.threadId);
       const emptyHome = join(root, 'expired-home');
       await mkdir(join(emptyHome, 'projects'), { recursive: true });
-      await runtime.startThread({
-        ...thread,
-        resume: 'post_interrupt',
-        env: { ...thread.env, CLAUDE_CONFIG_DIR: emptyHome },
-      });
-      const again = await collect(runtime.sendTurn(thread.threadId, { text: 'again' }));
-      expect(again.find((item) => item.kind === 'usage')).toMatchObject({ input_tokens: 3, total_cost_usd: 0.004 });
+      await expect(runtime.startThread({ ...thread, resume: 'post_interrupt', env: { ...thread.env, CLAUDE_CONFIG_DIR: emptyHome } }))
+        .rejects.toMatchObject({ code: 'continuity_required' });
+      expect(runtime.hasThread(thread.threadId)).toBe(false);
     });
   });
 

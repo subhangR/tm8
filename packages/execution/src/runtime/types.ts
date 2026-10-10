@@ -18,6 +18,9 @@ export interface ThinkingTurnItem {
 export interface TextTurnItem {
   kind: 'text';
   text: string;
+  itemId?: string;
+  revision?: number;
+  operation?: 'append' | 'replace';
 }
 
 /**
@@ -85,6 +88,7 @@ export type TurnDoneReason = 'success' | 'error' | 'interrupted' | 'closed';
 export interface DoneTurnItem {
   kind: 'done';
   reason: TurnDoneReason;
+  evidence?: 'provider_terminal' | 'process_exit' | 'reconciliation';
 }
 
 /** The exact eight-kind union pinned by TM8 Chat contract C1 (`context` joined for Chat Context). */
@@ -107,6 +111,7 @@ export interface StartAgentThreadInput {
   /** Absolute and immutable for the thread: Claude transcripts are cwd-keyed. */
   cwd: string;
   systemPrompt: string;
+  reasoningEffort?: string;
   /** Absolute path to the per-thread strict MCP configuration. */
   mcpConfigPath: string;
   /** Provider-native tools visible to the model. Empty explicitly disallows Claude built-ins. */
@@ -172,6 +177,7 @@ export class AgentRuntimeError extends Error {
       | 'thread_not_found'
       | 'turn_in_progress'
       | 'thread_closing'
+      | 'continuity_required'
       | 'resume_required'
       | 'resume_mismatch'
       | 'spawn_failed'
