@@ -108,6 +108,7 @@ class ClaudeSession extends HarnessSessionBase {
   private exitSeen = false;
   private forced = false;
   private seedAcknowledged = false;
+  private acceptedAttempt: string | null = null;
   private released: Promise<void> | null = null;
   constructor(
     input: OpenHarnessInput,
@@ -161,6 +162,10 @@ class ClaudeSession extends HarnessSessionBase {
       onNativeConfirmed: () => {
         this.opened = { ...this.opened, nativeConfirmed: true };
         this.emit({ kind: 'native_confirmed', native });
+        if (this.active && this.acceptedAttempt !== this.active.attemptId) {
+          this.acceptedAttempt = this.active.attemptId;
+          this.emit({ kind: 'turn_accepted', nativeTurnId: null });
+        }
         if (this.opened.seed && !this.seedAcknowledged) {
           this.seedAcknowledged = true;
           this.emit({

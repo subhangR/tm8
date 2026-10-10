@@ -6,7 +6,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import type { SessionTranscriptContext } from '@tm8/contract';
-import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
+import { boundedLines } from './BoundedLines.js';
 import type { Logger } from '../pty/types.js';
 import { redactSecretTokens } from '../spawn/secret-redaction.js';
 import { composeChatEnv } from './chat-env.js';
@@ -41,7 +41,7 @@ function claudeTranscriptExists(env: NodeJS.ProcessEnv, nativeSessionId: string)
   let dirs: string[];
   try {
     dirs = readdirSync(projects);
-  } catch (error) {
+  } catch {
     return false;
   }
   return dirs.some((dir) => existsSync(join(projects, dir, `${nativeSessionId}.jsonl`)));
@@ -91,7 +91,7 @@ interface ActiveTurn {
 interface ThreadState {
   readonly input: StartAgentThreadInput;
   readonly child: ChildProcessWithoutNullStreams;
-  readonly lines: ReadlineInterface;
+  readonly lines: { close(): void };
   readonly exited: Promise<void>;
   resolveExited(): void;
   active: ActiveTurn | null;
@@ -250,7 +250,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     // Own an immutable snapshot. Retaining a caller-owned object would let a
     // later `input.threadId = ...` make exit cleanup delete the wrong registry
     // key and leave a live-looking ghost behind.
-    let config: StartAgentThreadInput = {
+    const config: StartAgentThreadInput = {
       ...input,
       availableTools: [...input.availableTools],
       allowedTools: [...input.allowedTools],
@@ -288,7 +288,11 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     const exited = new Promise<void>((resolve) => {
       resolveExited = resolve;
     });
-    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    const lines = boundedLines(
+      child.stdout,
+      (line) => this.handleLine(state, line),
+      () => this.failActiveTurn(state, 'frame_limit', 'Claude protocol frame exceeded its bound'),
+    );
     const state: ThreadState = {
       input: config,
       child,
@@ -308,7 +312,6 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     };
     this.threads.set(config.threadId, state);
 
-    lines.on('line', (line) => this.handleLine(state, line));
     child.stderr.on('data', (chunk: Buffer | string) => this.captureStderr(state, chunk));
     child.on('error', (error) => this.handleProcessError(state, error));
     child.once('close', (code, signal) => this.handleProcessClose(state, code, signal));
@@ -319,9 +322,15 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       if (config.resume === 'post_interrupt') this.interruptedThreads.delete(config.threadId);
     } catch (error) {
       state.booting = false;
-      this.threads.delete(config.threadId);
       lines.close();
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+      // Failed open must still confirm exit before generation-owned files can be released.
+      if (!await this.waitForExit(state, this.closeGraceMs)) {
+        child.kill('SIGKILL');
+        if (!await this.waitForExit(state, this.closeGraceMs)) {
+          throw new AgentRuntimeError('Claude failed open and its exit is unconfirmed', 'close_failed');
+        }
+      }
       if (error instanceof AgentRuntimeError) throw error;
       throw this.spawnError(error);
     }
@@ -606,6 +615,11 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       return;
     }
 
+    const sessionId = stringField(event, 'session_id');
+    if (sessionId && sessionId !== state.input.nativeSessionId) {
+      this.failActiveTurn(state, 'native_session_mismatch', 'Claude emitted a different native session than TM8 selected');
+      return;
+    }
     const type = stringField(event, 'type');
     if (type === 'system') {
       this.handleSystemEvent(state, event);
