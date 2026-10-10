@@ -496,7 +496,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 11 -> 12 (187): execution.sessions.share registers in the execution
     // handler module, beside terminate and resume.
     expect(handlers.execution).toHaveLength(16 /* +2 execution.gitCheckouts|gitCheckoutDiff (Changes for every session). MEASURED. */ /* +2 execution.complete, entities.commands.release (Spec D1, 302). MEASURED. */ /* +1 execution.dispatchers (launch v3 C). MEASURED. */);
-    expect(handlers.events).toHaveLength(15); /* +1 workspace.prompts.resolve (MW W3.1). MEASURED. */ /* +5 workspace.create|update|reorder|delete|switch (MW W2.1). MEASURED. */ /* +1 workspace.list (MW W1.2). MEASURED. */ /* +2 workspace.get|drafts.patch (Spec D). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
+    expect(handlers.events).toHaveLength(18 /* +3 workspace.crafts.list|get|command (Craft L3). MEASURED. */); /* +1 workspace.prompts.resolve (MW W3.1). MEASURED. */ /* +5 workspace.create|update|reorder|delete|switch (MW W2.1). MEASURED. */ /* +1 workspace.list (MW W1.2). MEASURED. */ /* +2 workspace.get|drafts.patch (Spec D). MEASURED. */ /* +1 events.changes (change feed step 3). MEASURED. */
     // 124 -> 125 (2026-08-07): `execution.transcript` joins the execution
     // handler module, so both the execution count and the whole list move.
     // projects.branches.list adds exactly one facade handler.

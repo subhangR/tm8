@@ -1692,6 +1692,27 @@
         "source": "server-router"
       },
       {
+        "operation": "workspace.crafts.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/craft-workspaces",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.crafts.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/craft-workspaces/:craftId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.crafts.command",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/craft-workspaces/:craftId/commands",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.spawn",
         "method": "POST",
         "path": "/v2/execution/spawn",
@@ -6745,6 +6766,57 @@
           "workspace",
           "prompts",
           "resolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.crafts.list",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.crafts.list",
+        "intentTags": [
+          "workspace",
+          "crafts",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.crafts.get",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.crafts.get",
+        "intentTags": [
+          "workspace",
+          "crafts",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.crafts.command",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.crafts.command",
+        "intentTags": [
+          "workspace",
+          "crafts",
+          "command"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

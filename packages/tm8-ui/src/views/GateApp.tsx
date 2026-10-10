@@ -74,7 +74,18 @@ import {
 import { FILE_PALETTE_SCOPE, parseFilePaletteRef, recentFilePaletteViews } from '../project-file/palette';
 import { useProjectNames } from '../project-file/projects';
 import { useRecentProjectFiles } from '../project-file/recent';
-import { CraftScreen, CraftsHome, CraftsNav, craftSourceFromSeam, craftsSourceFromSeam, type CraftTarget } from '../craft';
+import {
+  CraftHeaderSwitcher,
+  CraftScreen,
+  CraftsHome,
+  CraftsNav,
+  craftSourceFromSeam,
+  craftsSourceFromSeam,
+  craftTabsKey,
+  localOpenCraftsPort,
+  serverOpenCraftsPort,
+  type CraftTarget,
+} from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
@@ -227,7 +238,8 @@ const WORKSPACE_TABS_TAB_ID = 'workspace-tabs';
 const SETTINGS_GROUP_ID = 'settings';
 const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'graph', SETTINGS_GROUP_ID];
 const VIEW_GROUP_LABEL: Record<string, string> = {
-  [WORKSPACE_TABS_TAB_ID]: 'Work',
+  /* Home (formerly Work; Craft redesign §2, 2026-10-10): the tabs view. */
+  [WORKSPACE_TABS_TAB_ID]: 'Home',
   craft: 'Design',
   graph: 'Observe',
   [SETTINGS_GROUP_ID]: 'Settings',
@@ -2047,7 +2059,7 @@ export function GateApp(props: GateAppProps = {}) {
          which is route-only (no MenuTarget names it). */
       ...(threeModes
         ? [
-            { id: 'route:work', label: 'Work', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
+            { id: 'route:work', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
             { id: 'view:craft', label: 'Design', glyph: <VectorIcon paths={VIEW_ART.craft} /> },
             { id: 'view:graph', label: 'Observe', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
             { id: 'view:settings', label: 'Settings', glyph: <VectorIcon paths={VIEW_ART.settings} /> },
@@ -2162,6 +2174,10 @@ export function GateApp(props: GateAppProps = {}) {
        is claimed off the ROUTE, exactly as its screen mount is. */
     if (navView.view === 'boardV2') return BOARD_V2_TAB_ID;
     if (navView.view === 'tabs') return WORKSPACE_TABS_TAB_ID;
+    /* A kind's list is Home's (Craft redesign §2): the rail opens it from any
+       mode, and a kind Home's browser does not host yet keeps its own list
+       screen — still under the Home mode, never a mode of its own. */
+    if (threeModes && navView.view === 'kind') return WORKSPACE_TABS_TAB_ID;
     const direct = groupIdOfTarget(data.menu.config, activeTarget ?? null);
     if (direct) return direct;
     if (threeModes && activeTarget?.type === 'view' && activeTarget.ref === 'settings') return SETTINGS_GROUP_ID;
@@ -2214,6 +2230,16 @@ export function GateApp(props: GateAppProps = {}) {
   const openCraft = useCallback(
     (craftId: EntityId) => navStore.getState().navigate({ view: 'craft', designId: craftId }),
     [],
+  );
+  /* The viewer's open-craft tabs in the Craft top bar. */
+  const openCraftsPort = useMemo(
+    () =>
+      !workspaceSpaceId || !viewerMemberId
+        ? null
+        : data.seam.craftWorkspaces
+          ? serverOpenCraftsPort(data.seam.craftWorkspaces, workspaceSpaceId)
+          : localOpenCraftsPort(craftTabsKey(nodeKey, workspaceSpaceId, viewerMemberId)),
+    [data.seam.craftWorkspaces, nodeKey, workspaceSpaceId, viewerMemberId],
   );
   const craftSource = useMemo(
     () => craftSourceFromSeam(data.seam, data.spaceId as SpaceId),
@@ -2531,6 +2557,23 @@ export function GateApp(props: GateAppProps = {}) {
       notify={(title) => notices.push({ id: 'workspace-manage', tone: 'info', title, body: '', ttlMs: NOTICE_TTL_MS })}
     />
   ) : null;
+  /* THE MODE-AWARE SWITCHER SLOT (Craft redesign §2): the header reads
+     space · mode · switcher, and the switcher is the current mode's own —
+     Home switches workspaces, Craft switches crafts. One table, keyed by the
+     mode's group id; a mode with no row (Observe, Settings) draws none. */
+  /* Craft's switcher + the viewer's open-craft tabs (doc 01a1255d §3). */
+  const craftSwitcherEl: ReactNode = workspaceSpaceId ? (
+    <CraftHeaderSwitcher
+      source={craftsSource}
+      openCrafts={openCraftsPort}
+      currentCraftId={navView.view === 'craft' ? navView.designId ?? null : null}
+      onOpenHome={() => navigateCraft({})}
+      onOpenCraft={openCraft}
+    />
+  ) : null;
+  const modeSwitcherEl: ReactNode = threeModes
+    ? (({ [WORKSPACE_TABS_TAB_ID]: workspaceSwitcherEl, craft: craftSwitcherEl } as Record<string, ReactNode>)[activeGroupId ?? ''] ?? null)
+    : workspaceSwitcherEl;
   const accountEl =
     authAccount && data.viewerActor ? (
       <AccountMenu
@@ -2665,7 +2708,7 @@ export function GateApp(props: GateAppProps = {}) {
     activeScreenRef: activeTarget?.type === 'view' ? activeTarget.ref : null,
     onSelectViewTab: openTab,
     switcherSlot: switcherEl,
-    workspaceSwitcherSlot: workspaceSwitcherEl,
+    modeSwitcherSlot: modeSwitcherEl,
     accountSlot: accountEl,
   };
 
@@ -2682,10 +2725,13 @@ export function GateApp(props: GateAppProps = {}) {
       data-theme={theme === 'dark' ? 'dark' : undefined}
     >
       <div className="shell-root">
-        {desktopRedirect ? (
-          /* D31: a retired address is redirecting into Work this frame; the
-             retired screen is never mounted on the way. */
-          <BootLoader label="opening Work" />
+        {desktopRedirect && !(data.authRequired || data.bootError) ? (
+          /* D31: a retired address is redirecting into Home this frame; the
+             retired screen is never mounted on the way. A boot that failed
+             never resolves the redirect (it waits on the viewer), so it falls
+             through to the boot cards below — bare /home is the canonical
+             Home address, so a sign-in lands there routinely. */
+          <BootLoader label="opening Home" />
         ) : navView.view === 'tabs' && (data.ready || !(data.authRequired || data.bootError)) ? (
           /* WORK (tabs view, Spec A §2–§3): full-bleed, and the ONLY view
              that renders WITHOUT the top bar — its own left header and rail
@@ -2704,7 +2750,7 @@ export function GateApp(props: GateAppProps = {}) {
               />
             </CatchBoundary>
           ) : (
-            <BootLoader label="loading Work" />
+            <BootLoader label="loading Home" />
           )
         ) : (
         <>
@@ -2723,7 +2769,7 @@ export function GateApp(props: GateAppProps = {}) {
              leaveSpaceContext THEN resetAddress, together, in this order,
              wherever this control lives. */
           switcherSlot={switcherEl}
-          workspaceSwitcherSlot={workspaceSwitcherEl}
+          workspaceSwitcherSlot={modeSwitcherEl}
           /* R2: the menu's groups, as tabs. */
           viewTabs={viewTabs}
           tabs={threeModes ? shellTabs.filter((tab) => !VIEW_GROUP_ORDER.includes(tab.id)) : shellTabs}
@@ -3591,7 +3637,7 @@ export function GateApp(props: GateAppProps = {}) {
               </div>
             )
           ) : (
-            <BootLoader label="loading Work" />
+            <BootLoader label="loading Home" />
           )}
           </CatchBoundary>
         </div>

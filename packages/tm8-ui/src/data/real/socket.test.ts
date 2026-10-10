@@ -201,6 +201,14 @@ describe('socket: parseFrame in isolation', () => {
     expect(parseFrame({ type: 'x', spaceId: 's', seq: 1 }).kind).toBe('event');
   });
 
+  it('reads the craft workspace pushes (lane L3): one workspace, or the open set', () => {
+    const workspace = { craftId: 'c', revision: 1, state: { tabs: [], activeTabId: 'c' } };
+    expect(parseFrame({ type: 'craft.workspace', spaceId: 's', workspace }).kind).toBe('craft-workspace');
+    expect(parseFrame({ type: 'craft.workspaces', spaceId: 's', items: [workspace] }).kind).toBe('craft-workspace');
+    expect(parseFrame({ type: 'craft.workspace', spaceId: 's' }).kind).toBe('malformed');
+    expect(parseFrame({ type: 'craft.workspaces', items: [] }).kind).toBe('malformed');
+  });
+
   it('seq 0 is a legal seq (falsy, and the mistake is easy)', () => {
     expect(parseFrame({ type: 'x', spaceId: 's', seq: 0 }).kind).toBe('event');
   });

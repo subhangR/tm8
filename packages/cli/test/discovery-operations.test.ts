@@ -699,6 +699,8 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'spaces.interactionProfile.setDefault': 'SetSpaceProfileDefaultInputSchema',
   // Spec C bridge: an OPTIONAL runtime-revision guard, enforced by the window when supplied.
   'workspace.command': 'WorkspaceCommandInputSchema',
+  // Craft L3: an OPTIONAL workspace-revision guard (`revision_conflict` when it is stale).
+  'workspace.crafts.command': 'CraftWorkspaceCommandInputSchema',
   'artifacts.publish': 'ArtifactsPublishInputSchema',
   'artifacts.restore': 'ArtifactsRestoreInputSchema',
   // 187: the session sharing dials. `expectedVersion` is OPTIONAL on this DTO
