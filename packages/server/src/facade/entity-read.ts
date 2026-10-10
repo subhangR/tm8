@@ -1,4 +1,5 @@
 import { McpServerDefinitionSchema } from '@tm8/contract';
+import { attachChatRuntimeFacts } from '../chat/public-state.js';
 import type { EffectiveSkills, OpRequestStatus, TaskLiveSession } from '@tm8/contract';
 /**
  * Derived truth, assembled ONCE, server-side (L3).
@@ -171,7 +172,10 @@ export const ENTITY_COLUMNS = `
   lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
   lp.last_error as loop_last_error,
   cht.title as chat_title, cht.teammate_id as chat_teammate_id,
-  cht.credential_selection as chat_credential_selection,
+  to_jsonb(cht)->'credential_selection' as chat_credential_selection,
+  to_jsonb(cht)->'credential_intent' as chat_credential_intent,
+  to_jsonb(cht)->>'reasoning_effort' as chat_reasoning_effort,
+  to_jsonb(cht)->>'config_revision' as chat_config_revision,
   cht.model as chat_model, cht.provider as chat_provider, cht.agent_tool as chat_agent_tool,
   cht.chat_mode as chat_mode, cht.workdir_mode as chat_workdir_mode,
   cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
@@ -601,6 +605,10 @@ export interface EntityRow {
   chat_title: string | null;
   chat_teammate_id: string | null;
   chat_credential_selection: import("@tm8/contract").ChatCredentialSelection | null;
+  chat_credential_intent?: import('@tm8/contract').ChatCredentialIntent | null;
+  chat_reasoning_effort?: import('@tm8/contract').LaunchModelEffort | null;
+  chat_config_revision?: string | number | null;
+  chat_runtime_public?: import('@tm8/contract').ChatRuntimeState;
   chat_model: string | null;
   chat_provider: string | null;
   chat_agent_tool: string | null;
@@ -2104,6 +2112,12 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       return {
         kind: 'chat',
         credentialSelection: row.chat_credential_selection ?? { source: 'auto' },
+        ...(row.chat_config_revision != null ? {
+          configRevision: Number(row.chat_config_revision),
+          reasoningEffort: row.chat_reasoning_effort ?? null,
+          ...(row.chat_credential_intent ? { credentialIntent: row.chat_credential_intent } : {}),
+          ...(row.chat_runtime_public ? { runtime: row.chat_runtime_public } : {}),
+        } : {}),
         teammateId: row.chat_teammate_id ?? '',
         model: row.chat_model ?? '',
         provider: row.chat_provider ?? '',
@@ -2986,6 +3000,7 @@ export async function assembleSummaries(
   } = {},
 ): Promise<EntitySummary[]> {
   if (rows.length === 0) return [];
+  await attachChatRuntimeFacts(q, rows);
 
   const ids = rows.map((r) => r.id);
   // Sequential, NOT Promise.all: a `Querier` wraps ONE pooled client, and a pg

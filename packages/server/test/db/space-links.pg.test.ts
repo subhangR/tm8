@@ -55,6 +55,7 @@ const CREDENTIAL_MANAGEMENT = 'credential management: refuses link (E2)';
 const CREDENTIAL_READ = 'credential read, on the gate (refuses link)';
 const IDENTITY_WIDE = 'refused for link (identity-wide act)';
 const AUTH_MINTING = 'refused for link (decision 31, auth minting)';
+const CHAT_CONFIGURATION = 'chat configuration/seen marker, human-only; link and agent refuse';
 const PENDING = 'non-credential, refused pending follow-up 01a0db78-f1ab';
 const SESSION_MANAGEMENT = 'session listing/revoke, human-only (W4, 249): refuses link';
 const SPACE_LINKS = 'spaceLinks write, human-only by design (W6)';
@@ -104,8 +105,13 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   // public.disable_account wraps it and calls it first, so the gate still runs
   // before anything the wrapper does. The caller is the core.
   'internal.disable_account_core(uuid,text)': IDENTITY_WIDE,
-  'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text)': AUTH_MINTING,
-  'revoke_agent_runtime_session(uuid)': AUTH_MINTING,
+  // 315 keeps the original human-only bodies private for nongeneration grants.
+  'internal.chat_mint_legacy_314(uuid,uuid,text,timestamp with time zone,text)': AUTH_MINTING,
+  'internal.chat_revoke_legacy_314(uuid)': AUTH_MINTING,
+  'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text,jsonb)': AUTH_MINTING,
+  'revoke_agent_runtime_session(uuid,bigint,bigint,uuid)': AUTH_MINTING,
+  'set_chat_configuration(uuid,bigint,jsonb,text)': CHAT_CONFIGURATION,
+  'mark_entity_seen(uuid,text)': CHAT_CONFIGURATION,
   'leave_space(uuid,text)': PENDING,
   'remove_space_member(uuid,uuid,text)': PENDING,
   'start_chat(uuid,uuid,uuid,text,text,text,text,text,uuid,uuid,text,text,text,uuid[],uuid,text)': PENDING,
@@ -367,14 +373,15 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
   it('the list is 33 credential management + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 op request decision (L5, 280)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(33); // +3 share/unshare/list (992), +2 MCP consent/selections (297/298)
-    expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
+    expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(8);
+    expect(labels.filter((l) => l === CHAT_CONFIGURATION)).toHaveLength(2);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(12); // +4 W9c (301): add_remote, grant_remote, remote context, store_remote
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
     expect(labels.filter((l) => l === OP_REQUESTS)).toHaveLength(1);
-    expect(labels).toHaveLength(64); // +3 (992); +4 -2 W9c (301); +2 MCP (297/298)
+    expect(labels).toHaveLength(68); // +2 private compatibility bodies, +1 settings writer, +1 seen marker.
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

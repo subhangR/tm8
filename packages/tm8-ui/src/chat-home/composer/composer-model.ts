@@ -249,18 +249,17 @@ export interface ModelChoice {
 }
 
 /**
- * The chat COORDINATOR runs claude-code only (`startChatThread` refuses any
- * other tool). A codex model is still LISTED, disabled with that reason: a
- * silent omission is how a human concludes GPT 5.6 was never an option.
+ * Both implemented harnesses are available; the server validates admission
+ * against its installed adapter registry before storing a configuration.
  */
 export function coordinatorModelChoices(models: readonly ChatModelOption[]): ModelChoice[] {
   return models.map((model) => ({
     id: model.model,
     label: model.label,
-    hint: model.provider,
-    ...(model.agentTool === 'claude-code'
+    hint: `${model.provider} · ${model.agentTool}`,
+    ...(['claude-code', 'codex'].includes(model.agentTool)
       ? {}
-      : { disabledReason: `chat runs Claude Code only — ${model.agentTool} models can be workers, not the coordinator` }),
+      : { disabledReason: `Chat adapter ${model.agentTool} is unavailable` }),
   }));
 }
 

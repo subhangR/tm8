@@ -172,7 +172,7 @@ describe('composer acceptance', () => {
     expect(menu.textContent).toContain('No coordinator teammate exists');
   });
 
-  it('ac_8 + ac_9 + ac_10 · crew rows take any model incl. codex; worker access is capped; coordinator list says why codex is out', async () => {
+  it('ac_8 + ac_9 + ac_10 · crew and coordinator support Codex; worker access is capped', async () => {
     const { port, controls } = portWith();
     const view = await openNewChat(port);
     fireEvent.click(view.getByLabelText('Chat mode'));
@@ -190,11 +190,12 @@ describe('composer acceptance', () => {
     expect(view.getByLabelText('Worker 2 model').textContent).toContain('GPT 5.6');
     fireEvent.click(view.getByTestId('tch-crew-w2-model-effort-xhigh'));
 
-    // ac_10: the coordinator list draws the same model disabled, with the reason.
+    // The shared chat registry now admits Codex for the coordinator too.
     fireEvent.keyDown(view.getByLabelText('Worker 2 model'), { key: 'Escape' });
     fireEvent.click(view.getByLabelText('Chat model'));
-    expect(view.getByTestId('tch-model-gpt-5.6-sol').getAttribute('aria-disabled')).toBe('true');
-    expect(view.getByTestId('tch-model-gpt-5.6-sol').textContent).toContain('Claude Code only');
+    expect(view.getByTestId('tch-model-gpt-5.6-sol').getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(view.getByTestId('tch-model-gpt-5.6-sol'));
+    expect(view.getByLabelText('Chat model').textContent).toContain('GPT 5.6');
     fireEvent.keyDown(view.getByLabelText('Chat model'), { key: 'Escape' });
 
     // ac_9: under Ask first, Auto is not selectable for a worker; a stale pick is capped in the brief.

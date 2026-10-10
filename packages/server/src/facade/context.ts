@@ -103,6 +103,7 @@ export function claimsFor(
     // 299 (Spec D1). Only from a verified bearer: the body's `workSessionId`
     // is a routing hint and never names the claimant.
     ...(bearer?.workSessionId ? { workSessionId: bearer.workSessionId } : {}),
+    ...(bearer?.sessionId ? { authSessionId: bearer.sessionId } : {}),
   };
 }
 

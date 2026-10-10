@@ -18,7 +18,7 @@ import { McpTestResultSchema } from '@tm8/contract';
 import type { IncomingMessage } from 'node:http';
 import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
-import { CredentialSessionLauncher } from '@tm8/execution';
+import { CredentialSessionLauncher, type HarnessRegistry } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 import { gatePosture, writeNodePolicy } from './projects/node-policy.js';
 
@@ -117,12 +117,17 @@ import {
   type AgentRuntime,
   type ResolveChatLaunchConfig,
   type ResolveChatCredentialEnv,
+  type ResolveChatPreparedLaunch,
+  type ChatHarnessComposition,
 } from './chat/index.js';
+import { ChatCleanupRetryQueue } from './chat/cleanup-retries.js';
 
 export interface ChatBootstrapOptions {
   readonly runtime: AgentRuntime;
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
+  readonly harnessRegistry?: HarnessRegistry;
+  readonly resolvePreparedLaunch?: ResolveChatPreparedLaunch;
   readonly onError?: (error: unknown) => void;
 }
 
@@ -135,6 +140,8 @@ export type ChatBootstrapFactory = (ctx: {
   db: Db;
   dataDir: string;
   baseUrl: string;
+  nodeId: string;
+  onCleanupFailure?: ChatHarnessComposition['onCleanupFailure'];
 }) => ChatBootstrapOptions;
 
 export interface BootstrapOptions {
@@ -340,12 +347,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // pushed to the owner's own windows over that bridge.
   const workspaceService = db ? new WorkspaceService({ db, bridge: workspaceBridge }) : undefined;
   const subscriptions = new SubscriptionRegistry();
+  const chatCleanupRetries = new ChatCleanupRetryQueue();
   // Factory callers get the composed context; block callers pass through
   // unchanged (every test harness injects the block form directly).
   const chatBlock: ChatBootstrapOptions | undefined =
     db && opts.chat
       ? typeof opts.chat === 'function'
-        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}` })
+        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}`, nodeId: desktopNodeId(dataDir),
+            onCleanupFailure: chatCleanupRetries.schedule })
         : opts.chat
       : undefined;
   const chat = db && chatBlock
@@ -354,6 +363,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         runtime: chatBlock.runtime,
         publisher: new ChatTurnPublisher(subscriptions),
         resolveLaunchConfig: chatBlock.resolveLaunchConfig,
+        ...(chatBlock.harnessRegistry ? {
+          registry: chatBlock.harnessRegistry,
+          resolvePreparedLaunch: chatBlock.resolvePreparedLaunch!,
+          nodeId: desktopNodeId(dataDir),
+        } : {}),
         ...(chatBlock.resolveCredentialEnv ? { resolveCredentialEnv: chatBlock.resolveCredentialEnv } : {}),
         ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
         // F2: only the production (factory) composition gets the boot sweep —
@@ -466,7 +480,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         dataDir,
         callbackUrl: `${config.publicOrigin ?? `http://${config.host}:${config.port}`}/mcp/oauth/callback`,
         definition: (claims, serverId) => db.tx(claims, q => loadMcpServer(q, serverId)),
-        authorize: (claims, sessionId, serverId) => mcpBindings.authorize(claims, sessionId, serverId),
+        authorize: async (claims, sessionId, serverId) => {
+          if (claims.authKind === 'agent_runtime') {
+            if (!claims.authSessionId) throw new CollabError('forbidden', 'MCP runtime unavailable');
+            await db.rpc(claims, 'authorize_chat_runtime_effect', [sessionId, claims.authSessionId]);
+          }
+          return mcpBindings.authorize(claims, sessionId, serverId);
+        },
         recordTest: async (claims, serverId, result) => {
           const health = McpTestResultSchema.parse(result);
           await db.rpc(claims, 'record_mcp_server_health', [serverId, JSON.stringify(health)]);
@@ -586,6 +606,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       nodeAdmin: identity.sessionSpaceId ? false : identity.nodeAdmin === true,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
       ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
+      ...(identity.authKind ? { authKind: identity.authKind } : {}),
+      ...(identity.kind === 'bearer' && identity.sessionId ? { authSessionId: identity.sessionId } : {}),
     };
   };
 
@@ -650,7 +672,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    */
   const resolveOptionalSocketIdentityId = async (
     req: IncomingMessage,
-  ): Promise<{ identityId: string; sessionSpaceId?: string; viaLinkId?: string } | undefined> => {
+  ): Promise<{ identityId: string; sessionSpaceId?: string; viaLinkId?: string; authKind?: string; authSessionId?: string } | undefined> => {
     if (!readTm8SessionCookie(req.headers) && req.headers.authorization === undefined) return undefined;
     const identity = await resolveSocketIdentity(req);
     if (!identity.identityId) return undefined;
@@ -659,6 +681,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       identityId: identity.identityId,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
       ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
+      ...(identity.authKind ? { authKind: identity.authKind } : {}),
+      ...(identity.kind === 'bearer' && identity.sessionId ? { authSessionId: identity.sessionId } : {}),
     };
   };
 
@@ -831,6 +855,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
+  server.http.once('close', () => chatCleanupRetries.stop());
   const { url } = await server.listen();
 
   // Retention, on boot and never on the request path: an expired date-bucket is
@@ -1212,9 +1237,8 @@ export async function main(): Promise<void> {
     const { server, url, db, delivery, preview, scheduler, execution, claimUrl } = await bootstrap({
       startBackgroundJobs: true,
       ...(sidecar ? { config: await desktopServerConfig() } : {}),
-      // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
-      // launch-config resolver. Without this line the chat ships dead — the
-      // orchestrator only exists when a runtime is injected (see compose.ts).
+      // The shared registry owns Claude/Codex execution. The orchestrator owns
+      // durable turn claims, portable history and generation-fenced launch grants.
       // TM8_CHAT_SKILLS_DIR, when set, is the tm8-curated Claude Code plugin
       // directory that turns the chat `Skill` tool on; unset ⇒ Skill is offered
       // but resolves nothing (no behaviour change).

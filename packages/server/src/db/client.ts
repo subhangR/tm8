@@ -147,7 +147,8 @@ const BIND_CLAIMS_SQL = `select
   set_config('tm8.via_link',    $7, true),
   set_config('tm8.work_session_id', $8, true),
   set_config('tm8.background_job', $9, true),
-  set_config('role',            $10, true)`;
+  set_config('tm8.auth_session_id', $10, true),
+  set_config('role',            $11, true)`;
 
 /**
  * An RPC name must be a bare (optionally schema-qualified) identifier. `fn` is
@@ -454,6 +455,7 @@ export class PgDb implements Db {
         // session never binds it, whatever built `claims`, and neither does a
         // value outside the closed list.
         backgroundJobClaim(claims.sessionSpaceId ? undefined : claims.backgroundJob),
+        claimValue(claims.authSessionId),
         this.role,
       ]);
 

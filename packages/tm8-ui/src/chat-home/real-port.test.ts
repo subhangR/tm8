@@ -527,6 +527,35 @@ describe('real chat-home seam adapter', () => {
 });
 
 describe('the chat state the port hands the screen stays current (lane 1)', () => {
+  it('sends one atomic model effort and credential update and rejects an older list overwrite', async () => {
+    const summary = chatSummary({ state: { ...chatSummary().state, configRevision: 7, reasoningEffort: 'high',
+      credentialSelection: { source: 'member' } } });
+    const { seam } = seamStub([summary]);
+    const setModel = vi.fn(async () => ({ chatId: CHAT, model: 'gpt-6.1-sol', provider: 'openai', agentTool: 'codex',
+      reasoningEffort: 'xhigh', credentialSelection: { source: 'node' }, configRevision: 8, appliesAt: 'next_claim' }));
+    Object.assign(seam.commands, { setChatModel: setModel });
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+    await port.setModel!({ chatId: CHAT, model: 'gpt-6.1-sol', reasoningEffort: 'xhigh', credentialSelection: { source: 'node' }, clientMutationId: 'switch' });
+    expect(setModel).toHaveBeenCalledWith(CHAT, { model: 'gpt-6.1-sol', reasoningEffort: 'xhigh',
+      credentialSelection: { source: 'node' }, expectedConfigRevision: 7, clientMutationId: 'switch' });
+    const rows = await port.listThreads('space-1');
+    expect(rows[0]!.config).toMatchObject({ model: 'gpt-6.1-sol', reasoningEffort: 'xhigh',
+      credentialSelection: { source: 'node' }, configRevision: 8 });
+  });
+
+  it('lists only authorized credentials for the selected catalog provider', async () => {
+    const { seam } = seamStub();
+    const list = vi.fn(async () => ({ credentials: [
+      { id: ABOUT, label: 'Claude account', provider: 'anthropic', status: 'active', ownerAccountId: null, visibility: 'public' },
+      { id: MSG, label: 'Codex account', provider: 'openai', status: 'active', ownerAccountId: 'account-me', visibility: 'private' },
+      { id: TEAMMATE, label: 'Hidden account', provider: 'openai', status: 'active', ownerAccountId: 'account-other', visibility: 'private' },
+    ] }));
+    Object.assign(seam, { credentials: { space: { list } }, identity: async () => ({ accountId: 'account-me' }) });
+    const port = createChatHomePortFromSeam(seam);
+    expect(await port.credentialOptions!('space-1', 'gpt-6.1-sol')).toEqual([{ id: MSG, label: 'Codex account' }]);
+    expect(list).toHaveBeenCalledWith('space-1');
+  });
   function withFrames() {
     const stub = seamStub([chatSummary({ state: { ...chatSummary().state, turnState: 'running' } })]);
     let emit: (frame: unknown) => void = () => undefined;

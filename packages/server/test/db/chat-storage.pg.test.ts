@@ -528,11 +528,15 @@ describe.sequential('TM8 Chat storage and door rules', () => {
       // `about` — the chat's subject (entity chat §3.6), so the Chats list can
       // draw it without a read per row. This chat was started about the channel.
       // `context` — the latest context reading (231), null until measured.
-      'about', 'agentTool', 'context', 'credentialSelection', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
-      'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
+      'about', 'agentTool', 'configRevision', 'context', 'credentialIntent', 'credentialSelection', 'kind', 'lastTurnAt', 'mode', 'model', 'projectId', 'provider',
+      'reasoningEffort', 'runtime', 'runtimeState', 'teammateId', 'turnCount', 'turnState', 'workdirMode',
     ]);
     expect(summary?.state).toMatchObject({
       kind: 'chat',
+      configRevision: 1, reasoningEffort: null,
+      credentialIntent: { defaultChoice: { source: 'auto' }, byProvider: {} },
+      runtime: { schemaVersion: 1, configRevision: 1, activeTurn: null, pendingForNextClaim: false,
+        runtime: { generation: null, phase: 'stopped', continuity: 'unavailable', observedAt: null } },
       teammateId: fixture.teammateId,
       model: 'gpt-5.6-sol',
       provider: 'openai',
@@ -594,6 +598,8 @@ describe.sequential('TM8 Chat storage and door rules', () => {
         )
       ).rows[0]!.result);
       if (claimed?.userMessageId === otherReplyId) claimedByB = claimed;
+      else if (claimed) await asIdentity(fixture.identityA,'browser',client => client.query(
+        `select public.complete_chat_turn($1,'error','fixture settled without dispatch',null,null,'{}'::jsonb)`,[(claimed as {turnId:string}).turnId]));
     }
     expect(claimedByB).toMatchObject({
       userMessageId: otherReplyId,
@@ -722,7 +728,8 @@ describe('chat credential selection', () => {
     });
     const reclaimed = await asIdentity(fixture.identityA, 'browser', async client =>
       (await client.query(`select public.claim_next_chat_turn($1) result`, [id])).rows[0]!);
-    expect(reclaimed.result.credentialSelection).toEqual({ source: 'member' });
+    // An expired legacy lease does not prove that dispatch never happened.
+    expect(reclaimed.result).toBeNull();
   });
 
   it('refuses another member, an agent credential, a wrong space pin and invalid references', async () => {

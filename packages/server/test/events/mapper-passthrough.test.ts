@@ -208,6 +208,7 @@ describe('WorkspaceEventMapper passthrough arm', () => {
       expect(RPC_AUTHORED_PASSTHROUGH.has(type)).toBe(false);
     }
     expect([...RPC_AUTHORED_PASSTHROUGH].sort()).toEqual([
+      'entity.seen',
       'git.commit_recorded',
       'git.pr_state_changed',
       'git.worktree_status_changed',

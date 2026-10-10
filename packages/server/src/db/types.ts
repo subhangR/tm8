@@ -30,6 +30,9 @@
  * someone else's identity.
  */
 export interface DbClaims {
+  /** → `tm8.auth_session_id`. Immutable verified token-row identity; runtime
+   * authorization re-reads its generation ownership at the effect boundary. */
+  readonly authSessionId?: string | undefined;
   /** → `SET LOCAL tm8.identity_id`. The authenticated identity row. */
   readonly identityId?: string | undefined;
   /** → `SET LOCAL tm8.actor_id`. The effective author (acting-as target). */

@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { BLUEPRINT_NODE_URI, CollabError, confirmOnlyNodeKinds, type ChatMode } from '@tm8/contract';
 import {
   ClaudeHeadlessAdapter,
+  ClaudeHarnessAdapter, CodexAppServerAdapter, HarnessRegistry,
   connectorBridgeConfig,
   type AgentRuntime as ExecutionAgentRuntime,
 } from '@tm8/execution';
@@ -23,6 +24,9 @@ import { MCP_TOOL_NAMES, exposedToolNames } from '@tm8/mcp';
 import type { Db, DbClaims } from '../db/types.js';
 import { issueAgentRuntimeSession } from '../identity/pg-auth.js';
 import { createChatCredentialEnvResolver } from './credentials.js';
+import {
+  createChatPreparedLaunchResolver, type ChatHarnessComposition, type ResolveChatPreparedLaunch,
+} from './harness-composition.js';
 import { McpSessionBindings } from '../mcp/session-bindings.js';
 import type {
   AgentRuntime,
@@ -333,13 +337,40 @@ export interface ChatBootstrapComposition {
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv: ResolveChatCredentialEnv;
   readonly onError?: (error: unknown) => void;
+  readonly harnessRegistry: HarnessRegistry;
+  readonly resolvePreparedLaunch: ResolveChatPreparedLaunch;
 }
+
+export interface ChatHarnessFoundation {
+  readonly harnessRegistry: HarnessRegistry;
+  readonly resolvePreparedLaunch: ResolveChatPreparedLaunch;
+}
+
+/** Production registry. Node identity comes from trusted server configuration. */
+export function composeChatHarnessFoundation(ctx: Omit<ChatHarnessComposition, 'registry'> & {
+  nodeId: string;
+  registry?: HarnessRegistry;
+}): ChatHarnessFoundation {
+  if (!ctx.nodeId.trim()) throw new CollabError('invalid_input', 'Chat harness requires a node identity');
+  const harnessRegistry = ctx.registry ?? new HarnessRegistry([
+    new ClaudeHarnessAdapter({ nodeId: ctx.nodeId, ...(ctx.skillsPluginDir ? { pluginDir: ctx.skillsPluginDir } : {}) }),
+    new CodexAppServerAdapter({ nodeId: ctx.nodeId }),
+  ]);
+  return { harnessRegistry, resolvePreparedLaunch: createChatPreparedLaunchResolver({ ...ctx, registry: harnessRegistry }) };
+}
+
+export { createChatPreparedLaunchResolver };
+export type { ChatHarnessComposition, ChatPreparedLaunchInput, PreparedChatLaunch, ResolveChatPreparedLaunch } from './harness-composition.js';
 
 /** The production chat block main() hands to bootstrap once a db exists. */
 export function composeChatBootstrap(ctx: {
   db: Db;
   dataDir: string;
   baseUrl: string;
+  /** Stable server-local identity supplied by bootstrap. */
+  nodeId: string;
+  /** Schedule exact owned cleanup retries, including failed preparation unwind. */
+  onCleanupFailure?: ChatHarnessComposition['onCleanupFailure'];
   /**
    * Node-level tm8-curated skills plugin directory. When set, chat runtimes
    * load it and expose `Skill`; when absent, `Skill` is offered but resolves
@@ -349,6 +380,7 @@ export function composeChatBootstrap(ctx: {
   skillsPluginDir?: string;
 }): ChatBootstrapComposition {
   return {
+    ...composeChatHarnessFoundation(ctx),
     runtime: wrapExecutionAgentRuntime(
       new ClaudeHeadlessAdapter(ctx.skillsPluginDir ? { pluginDir: ctx.skillsPluginDir } : {}),
     ),

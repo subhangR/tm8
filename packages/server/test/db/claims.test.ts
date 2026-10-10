@@ -34,15 +34,19 @@ describeDb('db claims (SET LOCAL)', () => {
     identity: string | null;
     actor: string | null;
     admin: boolean;
+    adminClaim: string | null;
     request: string | null;
     pin: string | null;
+    authSession: string | null;
   }>> =>
     q.query(`select
         current_setting('tm8.identity_id', true) as identity,
         current_setting('tm8.actor_id', true)    as actor,
         internal.is_node_admin()                 as admin,
+        current_setting('tm8.node_admin', true) as "adminClaim",
         current_setting('tm8.request_id', true)  as request,
-        current_setting('tm8.session_space_id', true) as pin`);
+        current_setting('tm8.session_space_id', true) as pin,
+        current_setting('tm8.auth_session_id', true) as "authSession"`);
 
   const isEmpty = (v: string | null): boolean => v === null || v === '';
 
@@ -84,12 +88,16 @@ describeDb('db claims (SET LOCAL)', () => {
           actorId: '00000000-0000-7000-8000-000000000001',
           nodeAdmin: true,
           sessionSpaceId: '00000000-0000-7000-8000-0000000000a1',
+          authSessionId: '00000000-0000-7000-8000-0000000000b1',
         },
         readClaims,
       );
       expect(first[0]?.identity).toBe('id_alpha');
-      expect(first[0]?.admin).toBe(true);
+      // PgDb and the SQL helper both strip node-admin power under a space pin.
+      expect(first[0]?.adminClaim).toBe('false');
+      expect(first[0]?.admin).toBe(false);
       expect(first[0]?.pin).toBe('00000000-0000-7000-8000-0000000000a1');
+      expect(first[0]?.authSession).toBe('00000000-0000-7000-8000-0000000000b1');
 
       // Same backend, no claims. If SET LOCAL were SET, this transaction would
       // be authenticated as id_alpha and node-admin.
@@ -97,8 +105,10 @@ describeDb('db claims (SET LOCAL)', () => {
       expect(isEmpty(second[0]?.identity ?? null)).toBe(true);
       expect(isEmpty(second[0]?.actor ?? null)).toBe(true);
       expect(second[0]?.admin).toBe(false);
+      expect(second[0]?.adminClaim).toBe('false');
       // 227: a leaked pin would narrow the next caller to someone else's space.
       expect(isEmpty(second[0]?.pin ?? null)).toBe(true);
+      expect(isEmpty(second[0]?.authSession ?? null)).toBe(true);
     } finally {
       await shared.end();
     }

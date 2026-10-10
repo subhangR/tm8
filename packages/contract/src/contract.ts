@@ -617,6 +617,10 @@ export type CoreEntityState =
   | { kind: 'chat'; teammateId: EntityId; model: string; provider: string; agentTool: string;
       mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
       credentialSelection?: ChatCredentialSelection;
+      credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
+      reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+      configRevision?: number;
+      runtime?: import('./chat-runtime.js').ChatRuntimeState;
       runtimeState: 'cold' | 'live' | 'stopped';
       turnState: 'idle' | 'queued' | 'running';
       turnCount: number; lastTurnAt: string | null;
@@ -1449,7 +1453,14 @@ export interface MessageThinkingPart extends MessagePartBase {
 
 export interface MessageTextPart extends MessagePartBase {
   kind: 'text';
-  payload: { text: string };
+  payload: {
+    text: string;
+    /** Native item identity and revision support corrected final snapshots. */
+    itemId?: string;
+    revision?: number;
+    operation?: 'append' | 'replace';
+    phase?: 'commentary' | 'final' | 'unknown';
+  };
 }
 
 export interface MessageToolCallPart extends MessagePartBase {
@@ -1533,11 +1544,21 @@ export interface ChatCredentialSelection {
   /** Only for source=space. Absent means the space default. */
   credentialId?: EntityId;
 }
-export interface SetChatCredentialsInput { credentialSelection: ChatCredentialSelection }
-export interface SetChatCredentialsResult extends SetChatCredentialsInput { chatId: EntityId }
+export interface SetChatCredentialsInput {
+  credentialSelection: ChatCredentialSelection;
+  expectedConfigRevision?: number;
+  clientMutationId?: string;
+}
+export interface SetChatCredentialsResult extends SetChatCredentialsInput {
+  chatId: EntityId;
+  configRevision?: number;
+  credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
+  appliesAt?: 'next_claim';
+}
 
 export interface StartChatInput {
   credentialSelection?: ChatCredentialSelection;
+  reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
   mcpSelections?: McpSelection[];
   spaceId: SpaceId;
   teammateId: EntityId;
@@ -1567,33 +1588,25 @@ export interface StartChatResult {
 }
 
 /**
- * MOVE A RUNNING CHAT ONTO ANOTHER MODEL (276).
- *
- * The model used to be a write-once fact for a chat's whole life, so finishing a
- * conversation on a stronger model meant abandoning the conversation. It does
- * not any more: a Claude Code session carries turns from different models and
- * `--resume` keeps the transcript across the switch, so the chat's model is a
- * setting, and the turn records what actually ran it.
- *
- * STICKY, NOT PER-MESSAGE. This moves the chat; every turn claimed after it runs
- * on the new model until it is moved again. A turn already claimed keeps the
- * model it was stamped with — the claim is the serialization point, so a switch
- * can never rewrite a run that is already under way.
- *
- * `agentTool` is the one axis that cannot move: chat runs claude-code only, and
- * a tool change would invalidate the native session the resume depends on. The
- * server resolves the tool from the launch catalog and the database refuses a
- * mismatch.
+ * Atomically change the desired model, effort and optional credential choice.
+ * Turns claimed after this mutation use its configuration revision; an active
+ * turn retains its immutable snapshot. The catalog selects the harness and
+ * inference provider. Switching harnesses keeps the tm8 conversation through
+ * verified native resume or a bounded portable history seed.
  */
 export interface SetChatModelInput {
   /**
-   * A `LAUNCH_MODEL_CATALOG` id whose `agentTool` matches the chat's.
+   * A model admitted by the launch catalog and the chat adapter registry.
    *
    * The chat is addressed by the PATH (`/v2/chats/:id/model`) and so is absent
    * here, like every other `:id`-addressed command: two places to name the same
    * chat is two places for them to disagree.
    */
   model: string;
+  reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+  credentialSelection?: ChatCredentialSelection;
+  expectedConfigRevision?: number;
+  clientMutationId?: string;
 }
 
 export interface SetChatModelResult {
@@ -1601,6 +1614,12 @@ export interface SetChatModelResult {
   model: string;
   /** Server-resolved from the catalog; decides which API-key backend is used. */
   provider: string;
+  agentTool?: string;
+  reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+  credentialSelection?: ChatCredentialSelection;
+  credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
+  configRevision?: number;
+  appliesAt?: 'next_claim';
 }
 
 export interface ChatTurnDeltaFrame {

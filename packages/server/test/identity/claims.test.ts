@@ -45,7 +45,7 @@ describe('claim set (R2/T-L11)', () => {
    * job of this pin is to make widening the trusted surface cost a decision. A
    * sixth name must move this line again, and must answer "is it immutable?".
    */
-  it('emits exactly the seven settings the RLS helpers, 082, 227 and 256 read', async () => {
+  it('emits the immutable auth-session reference beside the existing identity settings', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
     h.join(owner.identityId, SPACE_A);
@@ -60,6 +60,7 @@ describe('claim set (R2/T-L11)', () => {
         CLAIM_NAMES.authKind,
         CLAIM_NAMES.sessionSpaceId,
         CLAIM_NAMES.viaLinkId,
+        CLAIM_NAMES.authSessionId,
       ].sort(),
     );
   });
@@ -135,7 +136,7 @@ describe('claim set (R2/T-L11)', () => {
     // cannot.
     // Six since 227: `session_space_id` is fixed at issue, like `auth_kind`.
     // Seven since 256: `via_link`, the same.
-    expect(names).toHaveLength(7);
+    expect(names).toHaveLength(8);
 
     // The server-side facts survive — the facade gates capabilities with them.
     expect(claims.memberIds).toEqual([member.id]);
@@ -227,7 +228,8 @@ describe('claim set (R2/T-L11)', () => {
     expect(values[CLAIM_NAMES.sessionSpaceId]).toBe('');
     // No link, bound explicitly for the same reason (256).
     expect(values[CLAIM_NAMES.viaLinkId]).toBe('');
-    expect(Object.keys(values)).toHaveLength(7);
+    expect(values[CLAIM_NAMES.authSessionId]).toBe('');
+    expect(Object.keys(values)).toHaveLength(8);
     // No bypass claim exists to find.
     expect(Object.keys(values).some((n) => /bypass|service_role|superuser/.test(n))).toBe(false);
   });

@@ -272,6 +272,8 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'commands.undo',
   'edges.delete',
   'entities.delete',
+  // The existing mark-seen body is local to INPUT_SCHEMAS, without a typed contract binding.
+  'entities.markSeen',
   'entities.restore',
   'projects.unlink',
   'readMarks.upsert',
