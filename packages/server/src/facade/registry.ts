@@ -17,8 +17,9 @@
  * semantics red), which is how we prove the frame replaces the stub honestly
  * rather than papering over it.
  */
-import { CollabError, RESERVED_OPERATIONS, isOperationName, type OperationName } from '@tm8/contract';
+import { RESERVED_OPERATIONS, isOperationName, type OperationName } from '@tm8/contract';
 import type { OperationHandler } from '../http/types.js';
+import { requireWriteApiScope } from '../identity/api-scope.js';
 import { refuseLinkBearerOp } from '../identity/link-bearer.js';
 
 const RESERVED = new Set<string>(RESERVED_OPERATIONS.map((op) => op.name));
@@ -76,9 +77,7 @@ export class HandlerRegistry {
       // A context with no identity (in-process callers and tests that build
       // one by hand) is not a link bearer: it passes through, as before.
       refuseLinkBearerOp(name, ctx);
-      if (ctx.identity?.apiScope === 'read' && ctx.op.kind !== 'read') {
-        throw new CollabError('forbidden', 'This tool run token permits read operations only');
-      }
+      if (ctx.op.kind !== 'read') requireWriteApiScope(ctx.identity);
       return handler(ctx);
     };
   }

@@ -36,7 +36,7 @@ export class ToolRuntime {
     if (claims.viaLinkId || claims.authKind === 'link') throw new CollabError('forbidden', 'Tool runs are unavailable through space links');
     const tool = await this.options.db.tx(claims, q => loadTool(q, input.toolId));
     const access = tool.definition.tm8Access;
-    if (access !== 'none' && (identity.authKind !== 'agent' || !identity.actorId || !claims.workSessionId)) {
+    if (access !== 'none' && (identity.authKind !== 'agent' || !identity.actorId || !identity.sessionId || !claims.workSessionId)) {
       throw new CollabError('forbidden', 'Tools with tm8Access read or write require an invoking agent persona in v1');
     }
     const caller = claims.workSessionId ? (await this.options.db.query<{ workdir_path: string | null }>(claims,
@@ -87,7 +87,7 @@ export class ToolRuntime {
       if (access !== 'none') {
         const secret = generateSecret();
         const row = await this.options.db.rpc<{ id: string }>(claims, 'issue_tool_session_agent_session',
-          [sessionId, identity.actorId!, hashToken(secret), new Date(Date.now() + (tool.definition.timeoutSeconds + 60) * 1000).toISOString(), toolTokenScope(access, identity.apiScope)]);
+          [sessionId, identity.actorId!, hashToken(secret), new Date(Date.now() + (tool.definition.timeoutSeconds + 60) * 1000).toISOString(), toolTokenScope(access, identity.apiScope), identity.sessionId!]);
         if (!row.id) throw new CollabError('upstream_unavailable', 'Tool token mint returned no session');
         token = formatToken(row.id, secret);
       }

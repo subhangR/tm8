@@ -119,6 +119,22 @@ describe('tool exit capture on real PTYs', () => {
     await vi.waitFor(() => expect(python.recordExit).toHaveBeenCalledTimes(1), { timeout: 15000 });
     expect(python.recordExit.mock.calls[0]![0]).toMatchObject({ state: 'exited', exitCode: 4 });
   });
+  it('kills background children holding secret envs when a closed run times out', async () => {
+    const run = await launch('(trap \'\' HUP TERM; exec /bin/sleep 60) &\nprintf "%s" "$!" > "$TM8_RUN_DIR/child.pid"\n/bin/sleep 60', false, { timeoutSeconds: 1, secret: 'child-secret' });
+    const childFile = join(run.dir, 'tool-runs', run.sessionId, 'child.pid');
+    let pid = 0;
+    await vi.waitFor(async () => { pid = Number(await readFile(childFile, 'utf8')); expect(pid).toBeGreaterThan(0); }, { timeout: 10000 });
+    expect(await readFile(`/proc/${pid}/environ`, 'utf8')).toContain('KEY=child-secret');
+    await vi.waitFor(() => expect(run.recordExit).toHaveBeenCalledTimes(1), { timeout: 15000 });
+    await vi.waitFor(async () => {
+      // A killed orphan may be a zombie until init reaps it; it holds no env.
+      let environ = ''; try { environ = await readFile(`/proc/${pid}/environ`, 'utf8'); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+      expect(environ).toBe('');
+    }, { timeout: 10000 });
+    expect(run.recordExit.mock.calls[0]![0].state).toBe('timed_out');
+    expect(run.host.hasSession(run.sessionId)).toBe(false);
+  });
   it('redacts before truncation and keeps output within 64 KiB including Unicode', () => {
     const secret = 'secret-across-boundary';
     const output = 'prefix'.repeat(12000) + secret + '界'.repeat(22000);

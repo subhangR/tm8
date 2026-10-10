@@ -62,6 +62,7 @@ import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-up
 import type { RemoteSpaceLinkRoute } from '../facade/handlers/w2/space-link-remote-route.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
 import type { ReadAdmission } from './read-admission.js';
+import { requireWriteApiScope } from '../identity/api-scope.js';
 import { assertSpaceGate } from './space-gate.js';
 import {
   isHandlerResult,
@@ -231,7 +232,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         }, opts.sessionIssuedHere).then(
-          (caller) => relay.handleUpgrade(req, socket, head, caller),
+          (caller) => {
+            requireWriteApiScope(caller.identity);
+            return relay.handleUpgrade(req, socket, head, caller);
+          },
           (error: unknown) => refuseUpgrade(socket, upgradeRefusalStatus(error),
             error instanceof Error ? error.message : String(error)),
         ).catch(() => socket.destroy());
@@ -241,8 +245,17 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         socket.destroy();
         return;
       }
-      void Promise.resolve(upgrades.handleUpgrade(req, socket, head)).catch(() => {
-        socket.destroy();
+      // Socket input bypasses HandlerRegistry. Resolve the same verified bearer
+      // and refuse read scope before terminal/event upgrade dispatch.
+      void Promise.resolve().then(() => resolveIdentity(req.headers, {
+        remoteAddress: req.socket.remoteAddress,
+        disableAutoOwner: config.disableAutoOwner === true,
+      })).then(identity => {
+        requireWriteApiScope(identity);
+        return upgrades.handleUpgrade(req, socket, head);
+      }).catch((error: unknown) => {
+        refuseUpgrade(socket, upgradeRefusalStatus(error),
+          error instanceof Error ? error.message : String(error));
       });
     });
   }
@@ -366,6 +379,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         });
+        requireWriteApiScope(identity);
         // W3: a gate session under enforce has no space to upload into.
         assertSpaceGate(config.spaceSessions, identity, undefined);
         if (await opts.fileUploadRoute(req, res, { requestId, identity })) return;
@@ -376,6 +390,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         });
+        requireWriteApiScope(identity);
         // W3: a gate session under enforce has no space to upload into.
         assertSpaceGate(config.spaceSessions, identity, undefined);
         if (await opts.clipboardUploadRoute(req, res, { requestId, identity })) return;
@@ -391,6 +406,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         }, opts.sessionIssuedHere);
+        requireWriteApiScope(caller.identity);
         await opts.remoteServerProxy.handleHttp(req, res, caller);
         return;
       }

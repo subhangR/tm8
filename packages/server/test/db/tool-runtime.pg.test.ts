@@ -16,7 +16,7 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 300000 });
 let database: W1ScratchDatabase;
 let db: Db;
-const space = randomUUID(), owner = randomUUID(), peer = randomUUID(), persona = randomUUID(), parent = randomUUID();
+const space = randomUUID(), owner = randomUUID(), peer = randomUUID(), persona = randomUUID(), parent = randomUUID(), parentAuth = randomUUID();
 const auth = (identityId = 'tools-owner', authKind = 'browser'): DbClaims => ({ identityId, authKind, sessionSpaceId: space });
 const agent: DbClaims = { ...auth('tools-owner', 'agent'), actorId: persona, workSessionId: parent };
 const definition = (name: string, secrets = false) => ({ name, description: 'DB fixture', help: 'Usage', runtime: 'bash',
@@ -60,6 +60,7 @@ beforeAll(async () => {
     await c.query("insert into public.team_members(entity_id,owner_member_id,name,role,identity) values($1,$2,'Tool invoker','','persona')", [persona, owner]);
     await c.query("insert into public.work_sessions(entity_id,title,status,share_mode) values($1,'Invoker','running','none')", [parent]);
     await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'participates_in',$2)", [space, persona, parent]);
+    await c.query("insert into public.auth_sessions(id,account_id,kind,acting_as_team_member_id,work_session_id,space_id,token_hash,expires_at) select $1,id,'agent',$2,$3,$4,$5,now()+interval '2 hours' from public.accounts where identity_id='tools-owner'", [parentAuth, persona, parent, space, createHash('sha256').update(randomUUID()).digest('hex')]);
   });
 });
 afterAll(async () => { await db?.end(); await database?.destroy(); });
@@ -69,10 +70,10 @@ async function accessibleTool(access: 'none' | 'read' | 'write') {
   [space, { ...definition(`scope-${randomUUID()}`), tm8Access: access }, null, randomUUID()]);
  return result.entity.id;
 }
-async function mint(session: string, claims = agent, scope = 'write') {
+async function mint(session: string, claims = agent, scope = 'write', parentAuthId = parentAuth, expiry = new Date(Date.now() + 60000).toISOString()) {
  const hash = createHash('sha256').update(randomUUID()).digest('hex');
  const row = await db.rpc<{id: string; api_scope: string; kind: string}>(claims, 'issue_tool_session_agent_session',
-  [session, persona, hash, new Date(Date.now() + 60000).toISOString(), scope]);
+  [session, persona, hash, expiry, scope, parentAuthId]);
  return { hash, row };
 }
 
@@ -95,6 +96,35 @@ it('mints only for live agent personas, with the pinned tool/caller cap and cano
  expect((await mint(writeSession)).row.api_scope).toBe('write');
  await expect(mint(await run(await accessibleTool('none'), {}, false, agent))).rejects.toThrow();
  await expect(database.query("update public.auth_sessions set api_scope='write' where id=$1", [row.id])).rejects.toThrow('immutable');
+});
+
+it('caps expiry at the live parent bearer and cascades parent revocation', async () => {
+ const session = await run(await accessibleTool('write'), {}, false, agent);
+ const root = parentAuth;
+ await database.query("update public.auth_sessions set expires_at=now()+interval '30 seconds' where id=$1", [root]);
+ const child = await mint(session, agent, 'write', root);
+ const [rows] = await database.query<{parent_session_id: string; capped: boolean}>("select c.parent_session_id,c.expires_at<=p.expires_at as capped from public.auth_sessions c join public.auth_sessions p on p.id=c.parent_session_id where c.id=$1", [child.row.id]);
+ expect(rows).toMatchObject({parent_session_id: root, capped: true});
+ await database.query('update public.auth_sessions set revoked_at=now() where id=$1', [root]);
+ expect((await database.query('select revoked_at from public.auth_sessions where id=$1', [child.row.id]))[0]!.revoked_at).toBeTruthy();
+ expect(await db.rpc({}, 'resolve_auth_session', [child.hash])).toBeNull();
+ await expect(mint(session, agent, 'write', root)).rejects.toThrow('live invoking agent bearer');
+ await expect(mint(session, agent, 'write', randomUUID())).rejects.toThrow('live invoking agent bearer');
+ await database.query('update public.auth_sessions set revoked_at=null,work_session_id=$2 where id=$1', [root, session]);
+ await expect(mint(session, agent, 'write', root)).rejects.toThrow('live invoking agent bearer');
+ await database.query("update public.auth_sessions set work_session_id=$2,expires_at=now()+interval '2 hours' where id=$1", [root, parent]);
+});
+
+it('pins long timeout independently of pruned snapshots and subsequent definition edits', async () => {
+ const tool = await accessibleTool('write');
+ await db.rpc(auth(), 'update_tool_entity', [tool, await version(tool), {...definition(`long-${randomUUID()}`), tm8Access: 'write', timeoutSeconds: 3600}, null, randomUUID()]);
+ const session = await run(tool, {}, false, agent);
+ expect((await database.query('select tool_timeout_seconds from public.work_sessions where entity_id=$1', [session]))[0]!.tool_timeout_seconds).toBe(3600);
+ await db.rpc(auth(), 'update_tool_entity', [tool, await version(tool), {...definition(`short-${randomUUID()}`), tm8Access: 'write', timeoutSeconds: 1}, null, randomUUID()]);
+ await database.query('delete from public.entity_versions where entity_id=$1', [tool]);
+ const child = await mint(session, agent, 'write', parentAuth, new Date(Date.now()+7200000).toISOString());
+ const [row] = await database.query<{remaining: number}>('select extract(epoch from (expires_at-now()))::float8 as remaining from public.auth_sessions where id=$1', [child.row.id]);
+ expect(row!.remaining).toBeGreaterThan(3500); expect(row!.remaining).toBeLessThanOrEqual(3660);
 });
 
 it('revokes on tool settlement or PTY end, with an idempotent explicit revoke and live resolve backstop', async () => {
@@ -157,7 +187,7 @@ it('runs only reviewed stored source, resolves server inputs, and never returns 
  const pty = new PtyHostService(), runtime = new ToolRuntime({ db, pty,
   spawnService: { adoptToolSession: vi.fn() } as unknown as SpawnService, dataDir: dir,
   baseUrl: 'http://127.0.0.1:17777', nodeId: 'tool-test' });
- const identity = { identityId: 'tools-owner', authKind: 'agent', actorId: persona, workSessionId: parent } as const;
+ const identity = { identityId: 'tools-owner', authKind: 'agent', actorId: persona, workSessionId: parent, sessionId: parentAuth } as const;
  let session: string | undefined;
  try {
   await db.rpc(auth(), 'set_tool_config', [tool, await version(tool), 'value', JSON.stringify('configured-public'), false, null, randomUUID()]);

@@ -96,6 +96,7 @@ export class ToolSessionLauncher {
     const contextBytes = Math.max(4096, ...secretValues.map(value => Buffer.byteLength(value)));
     const output = new OutputBuffer(TOOL_MAX_OUTPUT_BYTES + contextBytes * 2);
     let settled = false, checking = false, watcher: FSWatcher | undefined;
+    let killProcessGroup = () => {};
     let timer: ReturnType<typeof setInterval> | undefined;
     const stop = () => {
       if (timer) clearInterval(timer);
@@ -108,6 +109,14 @@ export class ToolSessionLauncher {
       const replay = this.options.pty.getReplay(request.sessionId, output.totalBytes);
       if (replay) output.append(replay.data);
       const outputTail = redactToolOutput(output.replayFrom(-1).data.toString('utf8'), secretValues);
+      // timeout --foreground leaves background jobs in the PTY group. Closed
+      // runs kill that group even when its leader already exited. Keep-open runs
+      // preserve shell/jobs until explicit tab closure; only the new shell's
+      // environment is scrubbed, so existing jobs can still hold secret envs.
+      if (!request.keepOpen) {
+        killProcessGroup();
+        this.options.pty.kill(request.sessionId);
+      }
       // Always revoke, even if recording failed. No secret or token reaches a result.
       try { await request.revokeToken(); }
       finally { await request.recordExit({ exitCode: exit, state, outputTail }); }
@@ -122,6 +131,9 @@ export class ToolSessionLauncher {
         try { status = JSON.parse(await readFile(join(runDir, 'status'), 'utf8')) as { exit?: unknown }; }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
         if (Number.isInteger(status?.exit) && (status!.exit as number) >= 0 && (status!.exit as number) <= 255) {
+          // Outcome is self-reported (outcome_source='self'): the script can
+          // write its status file, and exits 124/137 are indistinguishable from
+          // timeout's codes. They are completion evidence, not host attestation.
           const exit = status!.exit as number;
           await settle(exit, exit === 124 || exit === 137 ? 'timed_out' : 'exited');
         } else if (!this.options.pty.hasSession(request.sessionId)) await settle(null, 'killed');
@@ -139,6 +151,7 @@ export class ToolSessionLauncher {
     request.onReady?.();
     const { reused } = this.options.pty.spawnIfAbsent({ sessionId: request.sessionId,
       command: `exec /bin/bash --noprofile --norc ${shellQuote(join(runDir, 'run'))}`, cwd: request.cwd, env });
+    killProcessGroup = this.options.pty.captureProcessGroupKiller(request.sessionId);
     const initial = this.options.pty.getReplay(request.sessionId, -1);
     if (initial) output.append(initial.data);
     this.options.pty.addSubscriber(request.sessionId, sink);
