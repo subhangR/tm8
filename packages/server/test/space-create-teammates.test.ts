@@ -137,7 +137,13 @@ describe('spaces.create default teammates', () => {
     expect(created('Crafter')?.slice(5, 8)).toEqual(['claude-opus-5-5[1m]', 'claude-code', 'worker']);
     // The Crafter's persona: it builds pages and keeps the craft workspace.
     expect(String(created('Crafter')?.[4])).toMatch(/pages[\s\S]*workspace/);
-    expect(String(created('Crafter')?.[4])).toContain('`tm8 workspace --craft <craft-id>`');
+    // L3's final CLI (#1168): the verb path first, `--craft` as a flag.
+    const crafter = String(created('Crafter')?.[4]);
+    expect(crafter).toContain('`tm8 workspace tabs open|close|move|activate|focus … --craft <craft-id>`');
+    expect(crafter).toContain('`tm8 workspace tabs open <kind> <entity-id> --craft <craft-id>`');
+    expect(crafter).toContain('`tm8 workspace crafts --space <space-id>`');
+    expect(crafter).toContain('`tm8 workspace crafts open|close|move <craft-id>`');
+    expect(crafter).not.toContain('workspace --craft');
     expect(created('TM8 Helper')?.slice(5, 8)).toEqual(['claude-sonnet-5', 'claude-code', 'worker']);
     expect(created('Dispatcher')?.slice(5, 8)).toEqual(['claude-opus-5-5[1m]', 'claude-code', 'dispatcher']);
     // A brand-new space has nothing to retire.

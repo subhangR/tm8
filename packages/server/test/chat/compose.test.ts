@@ -211,7 +211,8 @@ describe('chat launch composition', () => {
     expect(craft).toContain('collections.removeItem takes a page out without deleting it');
     expect(craft).toContain('A craft cannot contain itself or a craft above it');
     // The human's open tabs (owner decisions §5): the workspace CLI, pages only.
-    expect(craft).toContain('`tm8 workspace --craft <design-id> tabs open|close|move|focus`');
+    expect(craft).toContain('`tm8 workspace tabs open|close|move|activate|focus … --craft <craft-id>`');
+    expect(craft).not.toContain('workspace --craft');
     expect(craft).toContain('A graph page is a PLAN');
     expect(craft).toContain('Nothing is materialized while crafting, approved or not');
     expect(craft).toContain('same type, same direction');
