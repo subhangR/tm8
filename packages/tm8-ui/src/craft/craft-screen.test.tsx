@@ -1,21 +1,21 @@
 // @vitest-environment jsdom
 /**
- * ONE DESIGN, MOUNTED — `DesignScreen` over the fixture seam and a fixture
- * design source, plus the GateApp router mounts at `#/s/{s}/craft[/{id}]`
- * (Craft → Designs, change list items 10–13).
+ * ONE CRAFT, MOUNTED — `CraftScreen` over the fixture seam and a fixture
+ * craft source, plus the GateApp router mounts at `#/s/{s}/craft[/{id}]`
+ * (Craft → Crafts, change list items 10–13).
  *
  * What these cases pin:
- *  · the routes: bare `/craft` is the Designs home, `/craft/{id}` the design;
- *  · the header `‹ Designs · Title`, and ‹ going home;
- *  · ONE empty state for a design with no pages, and `[+ page]` making one;
+ *  · the routes: bare `/craft` is the Crafts home, `/craft/{id}` the craft;
+ *  · the header `‹ Crafts · Title`, and ‹ going home;
+ *  · ONE empty state for a craft with no pages, and `[+ page]` making one;
  *  · a graph page renders the ROW and re-renders on its patch event (R1),
  *    mermaid and unknown graph types included;
  *  · the page row: order, selection by URL, keyboard reorder writing a
- *    position, "Remove from design" keeping the entity, the "updated" dot on
+ *    position, "Remove from craft" keeping the entity, the "updated" dot on
  *    a page changed while not active, and "Add existing entity…";
- *  · a nested design page draws its own smaller row in place, and a design
+ *  · a nested craft page draws its own smaller row in place, and a craft
  *    one level deeper is cards plus Open (D7);
- *  · the chat pane: hosted SOLO, a thread picker over the design's chats, and
+ *  · the chat pane: hosted SOLO, a thread picker over the craft's chats, and
  *    ＋ New chat back to the composer after a send;
  *  · Orchestrate, the graph picker and the old chat picker are gone (D4).
  *
@@ -31,11 +31,11 @@ import { screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget } from '../routes';
 import { FIXTURE_SPACE_ID } from '../fixtures';
 import { createFixtureSeam } from '../data';
-import { DesignScreen, type DesignTarget } from './DesignScreen';
-import { fixtureDesignSource, positionAt } from './design-source';
+import { CraftScreen, type CraftTarget } from './CraftScreen';
+import { fixtureCraftSource, positionAt } from './craft-source';
 
 const SPACE = FIXTURE_SPACE_ID;
-const DESIGN = 'design-1' as EntityId;
+const CRAFT = 'craft-1' as EntityId;
 
 function installStorage(): void {
   const map = new Map<string, string>();
@@ -64,19 +64,19 @@ afterEach(() => {
 });
 
 type Seam = ReturnType<typeof createFixtureSeam>;
-type Source = ReturnType<typeof fixtureDesignSource>;
+type Source = ReturnType<typeof fixtureCraftSource>;
 
 /** The host's URL, held in state, so the screen's navigation is observable. */
-function Harness({ seam, source, initial, onTarget }: { seam: Seam; source: Source; initial: DesignTarget; onTarget?: (t: DesignTarget) => void }) {
+function Harness({ seam, source, initial, onTarget }: { seam: Seam; source: Source; initial: CraftTarget; onTarget?: (t: CraftTarget) => void }) {
   const [target, setTarget] = useState(initial);
-  if (!target.designId) return <div data-testid="went-home" />;
+  if (!target.craftId) return <div data-testid="went-home" />;
   return (
-    <DesignScreen
+    <CraftScreen
       seam={seam}
       spaceId={SPACE}
       nodeKey="fixture"
       source={source}
-      designId={target.designId}
+      craftId={target.craftId}
       pageId={target.pageId}
       nestedPageId={target.nestedPageId}
       onNavigate={(next) => {
@@ -87,14 +87,14 @@ function Harness({ seam, source, initial, onTarget }: { seam: Seam; source: Sour
   );
 }
 
-async function mountDesign(setup?: (seam: Seam, source: Source) => Promise<void>, initial: DesignTarget = { designId: DESIGN }) {
+async function mountCraft(setup?: (seam: Seam, source: Source) => Promise<void>, initial: CraftTarget = { craftId: CRAFT }) {
   const seam = createFixtureSeam();
   await seam.openSpace(SPACE);
-  const source = fixtureDesignSource(seam, SPACE, [{ id: DESIGN, title: 'Launch plan' }]);
+  const source = fixtureCraftSource(seam, SPACE, [{ id: CRAFT, title: 'Launch plan' }]);
   await setup?.(seam, source);
-  const targets: DesignTarget[] = [];
+  const targets: CraftTarget[] = [];
   const view = render(<Harness seam={seam} source={source} initial={initial} onTarget={(t) => targets.push(t)} />);
-  await waitFor(() => view.getByTestId('design-screen'));
+  await waitFor(() => view.getByTestId('craft-screen'));
   return { seam, source, view, targets };
 }
 
@@ -112,44 +112,43 @@ const tabTitles = (view: ReturnType<typeof render>) =>
   within(view.getByTestId('dsn-pages')).getAllByRole('tab').map((tab) => tab.textContent);
 
 describe('the craft routes', () => {
-  it('mounts the Designs home at bare #/s/{s}/craft', async () => {
+  it('mounts the Crafts home at bare #/s/{s}/craft', async () => {
     const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/craft`)} />);
-    await waitFor(() => view.getByTestId('designs-home'));
-    expect(view.queryByTestId('design-screen')).toBeNull();
+    await waitFor(() => view.getByTestId('crafts-home'));
+    expect(view.queryByTestId('craft-screen')).toBeNull();
     view.unmount();
   });
 
-  it('mounts the design screen at #/s/{s}/craft/{id}', async () => {
+  it('mounts the craft screen at #/s/{s}/craft/{id}', async () => {
     const view = render(
       <GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/craft/019f98a0-aaaa-bbbb-cccc-000000000041`)} />,
     );
-    await waitFor(() => view.getByTestId('design-screen'));
-    expect(view.queryByTestId('designs-home')).toBeNull();
-    expect(view.queryByTestId('craft-screen')).toBeNull();
+    await waitFor(() => view.getByTestId('craft-screen'));
+    expect(view.queryByTestId('crafts-home')).toBeNull();
     view.unmount();
   });
 });
 
-describe('the design screen', () => {
-  it('heads the screen ‹ Designs · Title, and ‹ goes home', async () => {
-    const { view } = await mountDesign();
+describe('the craft screen', () => {
+  it('heads the screen ‹ Crafts · Title, and ‹ goes home', async () => {
+    const { view } = await mountCraft();
     await waitFor(() => expect(view.getByTestId('dsn-title').textContent).toBe('Launch plan'));
     const head = view.getByTestId('dsn-head');
-    expect(head.textContent).toContain('Designs');
+    expect(head.textContent).toContain('Crafts');
     fireEvent.click(view.getByTestId('dsn-back'));
     await waitFor(() => view.getByTestId('went-home'));
   });
 
   it('draws no Orchestrate, no graph picker and no header chat picker (D4)', async () => {
-    const { view } = await mountDesign();
+    const { view } = await mountCraft();
     await waitFor(() => view.getByTestId('dsn-no-pages'));
     for (const gone of ['crf-orchestrate', 'crf-picker', 'crf-chat-picker', 'crf-no-graph']) {
       expect(view.queryByTestId(gone)).toBeNull();
     }
   });
 
-  it('says a design has no pages ONCE, and [+ page] → Graph makes and opens one', async () => {
-    const { view, source, targets } = await mountDesign();
+  it('says a craft has no pages ONCE, and [+ page] → Graph makes and opens one', async () => {
+    const { view, source, targets } = await mountCraft();
     await waitFor(() => view.getByTestId('dsn-no-pages'));
     fireEvent.click(view.getByTestId('dsn-add-page'));
     const menu = view.getByTestId('dsn-add-menu');
@@ -161,12 +160,12 @@ describe('the design screen', () => {
     fireEvent.click(within(menu).getByTestId('dsn-new-graph'));
     await waitFor(() => view.getByTestId('crf-empty'));
     expect(tabTitles(view)).toEqual(['Untitled graph']);
-    const pageId = source.designs.get(DESIGN)!.pages[0]!.id;
-    expect(targets.at(-1)).toEqual({ designId: DESIGN, pageId });
+    const pageId = source.crafts.get(CRAFT)!.pages[0]!.id;
+    expect(targets.at(-1)).toEqual({ craftId: CRAFT, pageId });
   });
 
   it('Artifact asks the agent in the chat, which is the one door an artifact has', async () => {
-    const { view } = await mountDesign();
+    const { view } = await mountCraft();
     await waitFor(() => view.getByTestId('dsn-no-pages'));
     await waitFor(() => view.getByLabelText('Message the chat agent'));
     fireEvent.click(view.getByTestId('dsn-add-page'));
@@ -179,9 +178,9 @@ describe('the design screen', () => {
 describe('a graph page', () => {
   it('renders the ROW on the canvas and re-renders on its patch event (R1)', async () => {
     let graphId = '' as EntityId;
-    const { seam, view } = await mountDesign(async (s, source) => {
+    const { seam, view } = await mountCraft(async (s, source) => {
       graphId = await createGraph(s, 'Launch flow');
-      await source.placePage(DESIGN, graphId, 1);
+      await source.placePage(CRAFT, graphId, 1);
     });
     await waitFor(() => view.getByTestId('crf-empty'));
 
@@ -237,16 +236,16 @@ describe('a graph page', () => {
   });
 
   it('renders a mermaid row through the Mermaid path, not the card canvas', async () => {
-    const { view } = await mountDesign(async (seam, source) => {
-      await source.placePage(DESIGN, await createGraph(seam, 'Auth sketch', { graphType: 'mermaid', source: 'flowchart TD; login-->token' }), 1);
+    const { view } = await mountCraft(async (seam, source) => {
+      await source.placePage(CRAFT, await createGraph(seam, 'Auth sketch', { graphType: 'mermaid', source: 'flowchart TD; login-->token' }), 1);
     });
     await waitFor(() => view.getByTestId('crf-mermaid'));
     expect(view.queryByTestId('crf-canvas')).toBeNull();
   });
 
   it('says so honestly for a graphType this build cannot draw (R3 forward-compat)', async () => {
-    const { view } = await mountDesign(async (seam, source) => {
-      await source.placePage(DESIGN, await createGraph(seam, 'State machine', { graphType: 'statechart' }), 1);
+    const { view } = await mountCraft(async (seam, source) => {
+      await source.placePage(CRAFT, await createGraph(seam, 'State machine', { graphType: 'statechart' }), 1);
     });
     await waitFor(() => view.getByTestId('crf-unknown-type'));
     expect(view.getByTestId('crf-unknown-type').textContent).toContain('statechart');
@@ -256,20 +255,20 @@ describe('a graph page', () => {
 describe('the page row', () => {
   async function threePages() {
     const ids: EntityId[] = [];
-    const mounted = await mountDesign(async (seam, source) => {
+    const mounted = await mountCraft(async (seam, source) => {
       ids.push(await createGraph(seam, 'Plan'), await createDoc(seam, 'Brief'), await createGraph(seam, 'Rollout'));
-      for (const [index, id] of ids.entries()) await source.placePage(DESIGN, id, index + 1);
+      for (const [index, id] of ids.entries()) await source.placePage(CRAFT, id, index + 1);
     });
     await waitFor(() => expect(tabTitles(mounted.view)).toEqual(['Plan', 'Brief', 'Rollout']));
     return { ...mounted, ids };
   }
 
-  it('is the design’s pages in order, the first active, and a tab press navigates', async () => {
+  it('is the craft’s pages in order, the first active, and a tab press navigates', async () => {
     const { view, ids, targets } = await threePages();
     const tabs = within(view.getByTestId('dsn-pages')).getAllByRole('tab');
     expect(tabs[0]!.getAttribute('aria-selected')).toBe('true');
     fireEvent.click(tabs[2]!);
-    await waitFor(() => expect(targets.at(-1)).toEqual({ designId: DESIGN, pageId: ids[2] }));
+    await waitFor(() => expect(targets.at(-1)).toEqual({ craftId: CRAFT, pageId: ids[2] }));
     await waitFor(() =>
       expect(within(view.getByTestId('dsn-pages')).getAllByRole('tab')[2]!.getAttribute('aria-selected')).toBe('true'),
     );
@@ -288,11 +287,11 @@ describe('the page row', () => {
     const first = within(view.getByTestId('dsn-pages')).getAllByRole('tab')[0]!;
     fireEvent.keyDown(first, { key: 'ArrowRight', altKey: true });
     await waitFor(() => expect(tabTitles(view)).toEqual(['Brief', 'Plan', 'Rollout']));
-    const moved = source.designs.get(DESIGN)!.pages.find((page) => page.id === ids[0])!;
+    const moved = source.crafts.get(CRAFT)!.pages.find((page) => page.id === ids[0])!;
     expect(moved.position).toBe(2.5);
   });
 
-  it('"Remove from design" takes the page out and keeps the entity', async () => {
+  it('"Remove from craft" takes the page out and keeps the entity', async () => {
     const { seam, view, ids } = await threePages();
     fireEvent.click(within(view.getByTestId('dsn-pages')).getAllByTestId('dsn-tab-more')[1]!);
     fireEvent.click(view.getByTestId('dsn-remove-page'));
@@ -331,16 +330,16 @@ describe('the page row', () => {
   });
 });
 
-describe('a nested design page (D7)', () => {
-  it('draws its own smaller row in place, and a design one level deeper is cards plus Open', async () => {
-    const { view, targets } = await mountDesign(async (seam, source) => {
+describe('a nested craft page (D7)', () => {
+  it('draws its own smaller row in place, and a craft one level deeper is cards plus Open', async () => {
+    const { view, targets } = await mountCraft(async (seam, source) => {
       const plan = await createGraph(seam, 'Plan');
-      await source.placePage(DESIGN, plan, 1);
-      const nested = await source.createPage(DESIGN, 'design', 2);
-      source.designs.get(nested)!.title = 'Backend';
+      await source.placePage(CRAFT, plan, 1);
+      const nested = await source.createPage(CRAFT, 'design', 2);
+      source.crafts.get(nested)!.title = 'Backend';
       await source.placePage(nested, await createGraph(seam, 'API flow'), 1);
       const deeper = await source.createPage(nested, 'design', 2);
-      source.designs.get(deeper)!.title = 'Storage';
+      source.crafts.get(deeper)!.title = 'Storage';
       await source.placePage(deeper, await createDoc(seam, 'Schema'), 1);
     });
     await waitFor(() => expect(tabTitles(view)).toEqual(['Plan', 'Backend']));
@@ -354,20 +353,20 @@ describe('a nested design page (D7)', () => {
     );
     await waitFor(() => view.getByTestId('crf-empty'));
 
-    /* The design inside the nested one: no third row — cards and Open. */
+    /* The craft inside the nested one: no third row — cards and Open. */
     fireEvent.click(within(view.getByTestId('dsn-nested-pages')).getAllByRole('tab')[1]!);
-    const cards = await waitFor(() => view.getByTestId('dsn-design-cards'));
+    const cards = await waitFor(() => view.getByTestId('dsn-craft-cards'));
     expect(view.queryAllByTestId('dsn-nested-pages')).toHaveLength(1);
     await waitFor(() => expect(within(cards).getAllByTestId('dsn-page-card').map((c) => c.textContent)).toEqual([expect.stringContaining('Schema')]));
-    fireEvent.click(within(cards).getByTestId('dsn-open-design'));
-    await waitFor(() => expect(targets.at(-1)?.designId).toMatch(/^fixture-design-page-/));
+    fireEvent.click(within(cards).getByTestId('dsn-open-craft'));
+    await waitFor(() => expect(targets.at(-1)?.craftId).toMatch(/^fixture-craft-page-/));
     expect(targets.at(-1)?.pageId).toBeUndefined();
   });
 });
 
 describe('the chat pane', () => {
   it('hosts the conversation SOLO — no thread sidebar inside the chat pane', async () => {
-    const { view } = await mountDesign();
+    const { view } = await mountCraft();
     await waitFor(() => view.container.querySelector('.tch-root'));
     expect(view.container.querySelector('.tch-root--solo')).toBeTruthy();
     expect(view.container.querySelector('.tch-sidebar')).toBeNull();
@@ -376,8 +375,8 @@ describe('the chat pane', () => {
     expect(view.getByTestId('panel-resizer-left')).toBeTruthy();
   });
 
-  it('lists only the chats about this design, and says so when there are none', async () => {
-    const { view } = await mountDesign();
+  it('lists only the chats about this craft, and says so when there are none', async () => {
+    const { view } = await mountCraft();
     fireEvent.click(await waitFor(() => view.getByTestId('dsn-thread-picker')));
     /* The fixture's threads are about other things and not craft-mode. */
     await waitFor(() => view.getByTestId('dsn-thread-empty'));
@@ -386,7 +385,7 @@ describe('the chat pane', () => {
   });
 
   it('returns to the composer when ＋ New chat is pressed after a send created a thread', async () => {
-    const { view } = await mountDesign();
+    const { view } = await mountCraft();
     const picker = await waitFor(() => view.getByTestId('dsn-thread-picker'));
     await waitFor(() => expect(picker.textContent).toContain('New chat'));
     fireEvent.change(await waitFor(() => view.getByLabelText('Message the chat agent')), {

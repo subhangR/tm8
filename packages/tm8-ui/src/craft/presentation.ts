@@ -51,7 +51,7 @@ export type StatusTone = 'run' | 'wait' | 'block' | 'done' | 'idle' | 'none';
 
 /**
  * A live status → one of five tones (the tokens `--pn-run/wait/block/idle`).
- * Tolerant by design: the status strings are the entity's own, and an unknown
+ * Tolerant by craft: the status strings are the entity's own, and an unknown
  * one reads as idle rather than as nothing.
  */
 export function statusTone(status: string | null, live = false): StatusTone {

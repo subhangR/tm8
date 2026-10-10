@@ -220,7 +220,7 @@ export function BlueprintCanvas({
   );
 
   /* Wheel: pinch / ctrl-wheel zooms about the cursor; a plain wheel or a
-     two-finger scroll PANS — the convention every design canvas uses, and
+     two-finger scroll PANS — the convention every craft canvas uses, and
      the one that stops a trackpad scroll from lurching the zoom. Non-passive,
      because React registers `onWheel` passive and preventDefault there is
      ignored. */

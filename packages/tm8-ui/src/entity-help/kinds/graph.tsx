@@ -16,7 +16,7 @@
  *     design materializes 1:1 with edges.create and writes back `content.link`):
  *     server/src/chat/compose.ts craft mode
  *   - a graph is a page of a design (`contains`, design → graph), crafted in a
- *     chat `about` the design: tm8-ui/src/craft/DesignScreen.tsx, DesignChatPane.tsx
+ *     chat `about` the design: tm8-ui/src/craft/CraftScreen.tsx, CraftChatPane.tsx
  *   - the panel block is read-only: tm8-ui/src/panels/bodies/BlueprintBlock.tsx
  *   - no edge type names `graph`; it is reached only through `*` endpoints:
  *     tm8-ui/src/domain/edge-kinds.ts

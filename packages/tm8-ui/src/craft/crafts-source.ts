@@ -1,45 +1,45 @@
 /**
- * WHERE THE DESIGNS HOME READS FROM. One small port so the home renders the
- * same against the node (`designsSourceFromSeam`) and against a fixture
- * (`fixtureDesignsSource`, for tests and until the design kind lands on a
+ * WHERE THE CRAFTS HOME READS FROM. One small port so the home renders the
+ * same against the node (`craftsSourceFromSeam`) and against a fixture
+ * (`fixtureCraftsSource`, for tests and until the craft kind lands on a
  * node). The card is a view-model: everything a tile shows, already counted.
  */
 import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { DESIGN_KIND, designContentOf, designStateOf } from '../domain';
 
-export interface DesignCard {
+export interface CraftCard {
   id: EntityId;
   title: string;
-  /** The kinds of the design's pages, IN PAGE ORDER (one per page). Empty until read. */
+  /** The kinds of the craft's pages, IN PAGE ORDER (one per page). Empty until read. */
   pageKinds: readonly string[];
   pageCount: number;
-  /** Chats `about` the design. */
+  /** Chats `about` the craft. */
   chatCount: number;
-  /** ISO instant the design last changed (the tile's "edited …"). */
+  /** ISO instant the craft last changed (the tile's "edited …"). */
   activityAt: string;
-  /** A session is live on the design right now. */
+  /** A session is live on the craft right now. */
   running: boolean;
 }
 
-export interface DesignsSource {
-  list(): Promise<DesignCard[]>;
-  /** Create an empty design and resolve its id. */
+export interface CraftsSource {
+  list(): Promise<CraftCard[]>;
+  /** Create an empty craft and resolve its id. */
   create(title: string): Promise<EntityId>;
   /** Call back when the list may have changed. Returns the unsubscribe. */
   subscribe(onChange: () => void): () => void;
 }
 
-/** The ceiling on one read; the home is a grid of recent designs, not an archive. */
+/** The ceiling on one read; the home is a grid of recent crafts, not an archive. */
 const LIST_LIMIT = 100;
 const CHAT_SCAN_LIMIT = 500;
 
 function cmid(tag: string): string {
-  return `designs:${tag}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+  return `crafts:${tag}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** A design row → its card, before page kinds and chats are known. */
-export function cardOfSummary(summary: EntitySummary, chatCount = 0): DesignCard {
+/** A craft row → its card, before page kinds and chats are known. */
+export function cardOfSummary(summary: EntitySummary, chatCount = 0): CraftCard {
   return {
     id: summary.id,
     title: summary.title,
@@ -62,26 +62,26 @@ export function chatCountsBySubject(chats: readonly EntitySummary[]): Map<string
 }
 
 /**
- * The node-backed source. The designs and the chats (counted by subject) in
+ * The node-backed source. The crafts and the chats (counted by subject) in
  * two reads; a summary carries its page count and page kinds in order.
  *
- * TOP-LEVEL ONLY: a design that is a page of another design is reached
- * through its parent, not listed on the home. Which designs are nested is
+ * TOP-LEVEL ONLY: a craft that is a page of another craft is reached
+ * through its parent, not listed on the home. Which crafts are nested is
  * only on a detail read (a summary carries page KINDS, not ids), so the detail
- * is read only for the designs that hold a design page — or for every design
+ * is read only for the crafts that hold a craft page — or for every craft
  * while summaries do not carry page kinds yet. Bounded by the one list page.
  */
-export function designsSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignsSource {
+export function craftsSourceFromSeam(seam: Seam, spaceId: SpaceId): CraftsSource {
   return {
     async list() {
-      const [designs, chats] = await Promise.all([
+      const [crafts, chats] = await Promise.all([
         seam.query({ spaceId, kinds: [DESIGN_KIND], sort: 'activityAt_desc', limit: LIST_LIMIT }),
         seam.query({ spaceId, kinds: ['chat'], sort: 'activityAt_desc', limit: CHAT_SCAN_LIMIT }),
       ]);
       const counts = chatCountsBySubject(chats.page.items);
       const nested = new Set<string>();
       const cards = await Promise.all(
-        designs.page.items.map(async (summary) => {
+        crafts.page.items.map(async (summary) => {
           const card = cardOfSummary(summary, counts.get(summary.id) ?? 0);
           const kinds = designStateOf(summary)?.pageKinds;
           if (kinds && !kinds.includes(DESIGN_KIND)) return card;
@@ -106,7 +106,7 @@ export function designsSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignsSour
         content: { description: '' },
       });
       const id = result.entity?.id as EntityId | undefined;
-      if (!id) throw new Error('The design was not created.');
+      if (!id) throw new Error('The craft was not created.');
       return id;
     },
     subscribe(onChange) {
@@ -120,43 +120,43 @@ export function designsSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignsSour
 }
 
 /**
- * A client fixture: designs held in memory, `create` appends one. Mirrors the
+ * A client fixture: crafts held in memory, `create` appends one. Mirrors the
  * contract shape (pages are summaries, in order) so a test can build one from
  * the same `EntitySummary`s a node would return.
  */
-export interface FixtureDesign {
+export interface FixtureCraft {
   id: EntityId;
   title: string;
-  /** In order; a page that is itself a design names its `id`, which keeps it off the home. */
+  /** In order; a page that is itself a craft names its `id`, which keeps it off the home. */
   pages: readonly (Pick<EntitySummary, 'kind'> & { id?: EntityId })[];
   chatCount?: number;
   activityAt?: string;
   running?: boolean;
 }
 
-export function fixtureDesignsSource(seed: readonly FixtureDesign[] = []): DesignsSource & {
-  readonly designs: FixtureDesign[];
+export function fixtureCraftsSource(seed: readonly FixtureCraft[] = []): CraftsSource & {
+  readonly crafts: FixtureCraft[];
 } {
-  const designs = [...seed];
+  const crafts = [...seed];
   const listeners = new Set<() => void>();
   let next = 1;
   return {
-    designs,
+    crafts,
     async list() {
-      const nested = new Set(designs.flatMap((design) => design.pages.flatMap((page) => (page.id ? [page.id] : []))));
-      return designs.filter((design) => !nested.has(design.id)).map((design) => ({
-        id: design.id,
-        title: design.title,
-        pageKinds: design.pages.map((page) => page.kind),
-        pageCount: design.pages.length,
-        chatCount: design.chatCount ?? 0,
-        activityAt: design.activityAt ?? new Date(0).toISOString(),
-        running: design.running ?? false,
+      const nested = new Set(crafts.flatMap((craft) => craft.pages.flatMap((page) => (page.id ? [page.id] : []))));
+      return crafts.filter((craft) => !nested.has(craft.id)).map((craft) => ({
+        id: craft.id,
+        title: craft.title,
+        pageKinds: craft.pages.map((page) => page.kind),
+        pageCount: craft.pages.length,
+        chatCount: craft.chatCount ?? 0,
+        activityAt: craft.activityAt ?? new Date(0).toISOString(),
+        running: craft.running ?? false,
       }));
     },
     async create(title) {
-      const id = `fixture-design-${next++}` as EntityId;
-      designs.unshift({ id, title, pages: [], activityAt: new Date().toISOString() });
+      const id = `fixture-craft-${next++}` as EntityId;
+      crafts.unshift({ id, title, pages: [], activityAt: new Date().toISOString() });
       for (const listener of listeners) listener();
       return id;
     },
