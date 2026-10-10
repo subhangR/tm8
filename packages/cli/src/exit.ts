@@ -98,7 +98,9 @@ export const EXIT_MEANING = {
   130: 'interrupted',
 } as const;
 
-export type ExitCode = keyof typeof EXIT_MEANING;
+/** Tool execution passes through the process's shell exit byte, including 1. */
+export type ToolExitCode = number & { readonly toolExitCode: unique symbol };
+export type ExitCode = keyof typeof EXIT_MEANING | ToolExitCode;
 
 /** Every code in the frozen table, ascending. */
 export const EXIT_CODES: readonly ExitCode[] = Object.keys(EXIT_MEANING)

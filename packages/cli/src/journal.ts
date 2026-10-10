@@ -218,7 +218,11 @@ class FileJournal implements Journal {
     try {
       // Option values by name, then any minted token in any slot (`auth claim
       // tm8c_…` takes it positionally).
-      const argv = redactArgv(outcome.argv).map(redactTokens);
+      // Tool secret slots have arbitrary flag names. Even a REFUSED literal
+      // must not reach the journal, so omit the dynamic tail conservatively.
+      const sourceArgv = outcome.path[0] === 'tool' && ['run', 'secret', 'config'].includes(outcome.path[1] ?? '')
+        ? [...outcome.path, '<tool arguments omitted>'] : outcome.argv;
+      const argv = redactArgv(sourceArgv).map(redactTokens);
       // Direction, stated once so it cannot drift: what the agent TYPED is what
       // it emitted (its output tokens); what the CLI PRINTED is what lands in
       // its context next turn (its input tokens).
@@ -246,7 +250,10 @@ class FileJournal implements Journal {
           stderrChars: this.stderrChars,
           // Redacted at WRITE time, like argv. `truncated` below compares the
           // RAW samples, so a redaction cannot make a sample look cut.
-          stdoutSample: redactTokens(this.stdoutSample),
+          // Live PTY bytes are not redacted. Tool output can echo a secret;
+          // keep exact counts without persisting a second, unredacted tail.
+          stdoutSample: outcome.path[0] === 'tool' && outcome.path[1] === 'run'
+            ? '<tool output omitted>' : redactTokens(this.stdoutSample),
           stderrSample: redactTokens(this.stderrSample),
           truncated: this.stdoutChars > this.stdoutSample.length || this.stderrChars > this.stderrSample.length,
         },

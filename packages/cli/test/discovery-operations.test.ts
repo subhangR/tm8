@@ -41,7 +41,7 @@ import {
 } from '../src/discovery/operations.js';
 // READ-ONLY consumption of group 1's frozen kernel: the parser's own allowlists
 // are the ground truth for what a published flag can actually mean.
-import { BOOLEAN_OPTIONS, COMMAND_SCOPED_GLOBALS, GLOBAL_OPTIONS } from '../src/args.js';
+import { BOOLEAN_OPTIONS, COMMAND_SCOPED_GLOBALS, GLOBAL_OPTIONS, PATH_SCOPED_BOOLEANS } from '../src/args.js';
 // The unbound fact has two renderings; the pin at the bottom of this file drives
 // the REAL help renderer through the REAL Output rather than a copy of either.
 import { emitCommandHelp } from '../src/commands/help.js';
@@ -215,18 +215,6 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
  */
 const COMMANDLESS_OPERATIONS = [
       // Tools server operations are discoverable before the CLI implementation lands.
-      'tools.create',
-      'tools.update',
-      'tools.get',
-      'tools.list',
-      'tools.help',
-      'tools.config.set',
-      'tools.config.unset',
-      'tools.secrets.bind',
-      'tools.secrets.unbind',
-      'tools.run',
-      'tools.runs.list',
-      'tools.runs.get',
 
       // Attention v2 S6: tm8's own conflict signal, reached only through the worktree rail.
       'attentionSignals.clear',
@@ -816,6 +804,12 @@ const PENDING_AMENDMENT: OperationName[] = [
   // delisted. The class is closed again.
 ];
 
+// These commands supply the version they loaded themselves. The run guard is
+// automatic; config and secret commands also accept an explicit override.
+// tool.test.ts measures the actual request body for each of these paths.
+const LOADED_VERSION_GUARDS: readonly OperationName[] = [
+  'tools.config.set', 'tools.config.unset', 'tools.secrets.bind', 'tools.secrets.unbind', 'tools.run',
+];
 describe('version guards: the projection and the frozen DTOs agree, both directions', () => {
   it('the schema side of the join is real — introspection finds the guard DTOs', () => {
     // Vacuity guard. If `objectShapeOf` ever stops unwrapping (a zod upgrade
@@ -889,14 +883,14 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       swept++;
       const syntax = discoveryFor(operation).syntax;
       const flags = syntax === null ? [] : guardFlagsIn(syntax);
-      if (!flags.some((f) => f.required)) missing.push(operation);
+      if (!flags.some((f) => f.required) && !LOADED_VERSION_GUARDS.includes(operation)) missing.push(operation);
     }
     // Every mapped guard DTO is required, but two: entities.header.set's and
     // entities.header.clear's expectedVersion are optional (unguarded header
     // writes, lenient headers / migration 223), so they are not swept.
     // 20 -> 31 (2026-09-03, containers): the eleven guard-bearing containers.*
     // rows. MEASURED on this tree.
-    expect(swept).toBe(41 /* +1 styles.personal.update (284): the one REQUIRED style guard. MEASURED. */); /* -1 entities.header.clear: its guard is optional now (lenient headers, 223). MEASURED. */ /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */
+    expect(swept).toBe(46 /* +1 styles.personal.update (284): the one REQUIRED style guard. MEASURED. */); /* -1 entities.header.clear: its guard is optional now (lenient headers, 223). MEASURED. */ /* +1 entities.header.clear (headers I4). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). +6 forms.* guards (Forms W1). MEASURED. */ /* +5 Tools 3: edit plus four automatically loaded config/secret guards. MEASURED. */
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -907,7 +901,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     for (const d of DISCOVERY) {
       if (d.syntax === null) continue;
       compared++;
-      const advertises = guardFlagsIn(d.syntax).length > 0;
+      const advertises = guardFlagsIn(d.syntax).length > 0 || LOADED_VERSION_GUARDS.includes(d.operation);
       expect(d.versioning === 'expectedVersion', `${d.operation} ${d.syntax}`).toBe(advertises);
     }
     expect(compared).toBeGreaterThan(90);
@@ -943,6 +937,11 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
    * applied to the MAPPING rather than to membership.
    */
   const GUARD_PIN: ReadonlyArray<readonly [OperationName, string, string]> = [
+    ['tools.update', '--expect-version', 'expectedVersion'],
+    ['tools.config.set', '--expect-version', 'expectedVersion'],
+    ['tools.config.unset', '--expect-version', 'expectedVersion'],
+    ['tools.secrets.bind', '--expect-version', 'expectedVersion'],
+    ['tools.secrets.unbind', '--expect-version', 'expectedVersion'],
     ['mcp.servers.update', '--expected-version', 'expectedVersion'],
     ['mcp.servers.delete', '--expected-version', 'expectedVersion'],
     ['attentionRequests.update', '--expect-version', 'expectedVersion'],
@@ -1049,7 +1048,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
     // 31 -> 32 (187): execution.sessions.share.
-    expect(actual.length).toBe(48 /* +1 workspace.command --expect-revision (Spec C bridge). MEASURED. */ /* +3 styles.personal.update, styles.push, styles.remove (284). MEASURED. */) /* +1 attentionRequests.withdraw guard row (Attention v2 S4). MEASURED. */; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */
+    expect(actual.length).toBe(53 /* +1 workspace.command --expect-revision (Spec C bridge). MEASURED. */ /* +3 styles.personal.update, styles.push, styles.remove (284). MEASURED. */) /* +1 attentionRequests.withdraw guard row (Attention v2 S4). MEASURED. */; /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +6 forms.* guard rows (Forms W1 CLI). MEASURED. */ /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* +5 Tools 3: edit/config/secret version override flags. MEASURED. */
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 
@@ -1139,7 +1138,8 @@ describe('flag parseability: what the projection publishes, the parser can repre
       for (const m of d.syntax.matchAll(/--([a-z][a-z0-9-]*)(?![^\s\]])(?!\s+(?:<|[a-z0-9_]+\|))/g)) {
         const flag = m[1]!;
         seen.add(flag);
-        if (!BOOLEAN_OPTIONS.has(flag) && !COMMAND_SCOPED_GLOBALS.has(flag)) {
+        if (!BOOLEAN_OPTIONS.has(flag) && !COMMAND_SCOPED_GLOBALS.has(flag)
+          && !PATH_SCOPED_BOOLEANS.get(flag)?.has(d.command?.join(' ') ?? '')) {
           unlisted.push(`${d.operation} --${flag}`);
         }
       }
