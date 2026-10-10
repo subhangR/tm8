@@ -4,18 +4,17 @@
  * edge written by `chat.start`) with the mode PINNED to craft; the agent
  * picks which page to work on. No per-page chats.
  *
- * The pane's own header holds the thread picker over the chats about this
- * craft and `+ New chat`. The chat surface is hosted SOLO — the picker is
- * its thread column — and `routeThreadId` is authoritative.
+ * It draws no header: the craft's side panel (`CraftSidePanel`) lists these
+ * chats beside the craft's sessions and drives the selection. The chat
+ * surface is hosted SOLO and `routeThreadId` is authoritative.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from '../chat-home/real-port';
 import { ChatHomeSurface } from '../chat-home/ChatHomeSurface';
 import type { ChatThreadSummary } from '../chat-home/types';
 import type { TriggerOption } from '../rich-input';
-import { Timestamp } from '../kit';
 import type { ToolNoteCall } from './turn-notes';
 
 export const EXAMPLE_PROMPTS: readonly string[] = [
@@ -44,6 +43,18 @@ export interface CraftChatPaneProps {
   onPrompt(text: string): void;
   toolNote?: ((call: ToolNoteCall) => ReactNode) | undefined;
   onOpenEntity(id: EntityId): void;
+  /**
+   * What the host's list asked for. `undefined` = nothing asked yet (the
+   * surface keeps its cold start); `null` = the explicit new-chat composer.
+   * The host TRACKS the resolved selection (`onSelectionChange`), because
+   * `routeThreadId` is compared by value and a stale request could never be
+   * re-asked.
+   */
+  requestedThreadId: EntityId | null | undefined;
+  /** The craft chats about this craft, newest first, and every loaded thread. */
+  onThreadsChange(scoped: readonly ChatThreadSummary[], all: readonly ChatThreadSummary[]): void;
+  /** The selection the chat surface resolved. */
+  onSelectionChange(id: EntityId | null): void;
 }
 
 export function CraftChatPane({
@@ -59,19 +70,13 @@ export function CraftChatPane({
   onPrompt,
   toolNote,
   onOpenEntity,
+  requestedThreadId,
+  onThreadsChange,
+  onSelectionChange,
 }: CraftChatPaneProps) {
   /* The SAME port `ChatHomeSurface` builds from this seam — a pure factory. */
   const port = useMemo(() => createChatHomePortFromSeam(seam, bridge), [seam, bridge]);
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
-  /** The resolved selection the chat surface reports; the picker's label. */
-  const [activeThreadId, setActiveThreadId] = useState<EntityId | null>(null);
-  /**
-   * What the picker asked for. `undefined` = nothing asked yet (the surface
-   * keeps its cold start); `null` = the explicit new-chat composer. It TRACKS
-   * the resolved selection (`adoptSelection`), because `routeThreadId` is
-   * compared by value and a stale request could never be re-asked.
-   */
-  const [requestedThreadId, setRequestedThreadId] = useState<EntityId | null | undefined>(undefined);
 
   /* Which chats are about the craft: ONE incoming-edge read on the craft,
      re-run when the thread list's membership changes (a send that started a
@@ -92,38 +97,14 @@ export function CraftChatPane({
     () => threads.filter((thread) => thread.config.mode === 'craft' && aboutCraft.has(thread.rootId)),
     [threads, aboutCraft],
   );
-
-  /* Opening a craft opens ITS most recent chat, or the composer — never the
-     space's most recent thread, which could be about anything. Waits for the
-     list so "no chat here" is not answered before anything was read. */
-  const resolvedForRef = useRef<EntityId | null>(null);
+  const reportRef = useRef(onThreadsChange);
+  reportRef.current = onThreadsChange;
   useEffect(() => {
-    if (resolvedForRef.current === craftId || threads.length === 0) return;
-    resolvedForRef.current = craftId;
-    const first = scoped[0]?.rootId ?? null;
-    setRequestedThreadId(first);
-    setActiveThreadId(first);
-  }, [craftId, threads, scoped]);
-
-  /* The host driving its own selection moves both halves: the surface does
-     not echo a selection the host pushed down. */
-  const requestThread = useCallback((id: EntityId | null) => {
-    setRequestedThreadId(id);
-    setActiveThreadId(id);
-  }, []);
-  const adoptSelection = useCallback((id: EntityId | null) => {
-    setActiveThreadId(id);
-    setRequestedThreadId((asked) => (asked === undefined ? asked : id));
-  }, []);
+    reportRef.current(scoped, threads);
+  }, [scoped, threads]);
 
   return (
     <div className="dsn-chat">
-      <div className="dsn-chat__head">
-        <ThreadPicker threads={scoped} all={threads} selectedId={activeThreadId} onSelect={requestThread} />
-        <button type="button" className="dsn-btn" data-testid="dsn-new-chat" onClick={() => requestThread(null)}>
-          ＋ New chat
-        </button>
-      </div>
       <div className="crf-chat__body">
         <ChatHomeSurface
           seam={seam}
@@ -141,105 +122,11 @@ export function CraftChatPane({
           soloConversation
           routeThreadId={requestedThreadId}
           onThreadsChange={setThreads}
-          onSelectionChange={adoptSelection}
+          onSelectionChange={onSelectionChange}
           viewerName={viewerName}
           viewerId={viewerId}
         />
       </div>
-    </div>
-  );
-}
-
-/** The thread picker: the craft chats about this craft, newest first. */
-function ThreadPicker({
-  threads,
-  all,
-  selectedId,
-  onSelect,
-}: {
-  threads: readonly ChatThreadSummary[];
-  /** Every loaded thread: the open one is named even before its `about` edge is read back. */
-  all: readonly ChatThreadSummary[];
-  selectedId: EntityId | null;
-  onSelect(id: EntityId): void;
-}) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const current = all.find((thread) => thread.rootId === selectedId) ?? null;
-
-  /* Dismissal: outside press or Escape, captured so it wins over outer rungs. */
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (event: MouseEvent) => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
-      event.preventDefault();
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [open]);
-
-  return (
-    <div className="dsn-threads" ref={wrapRef}>
-      <button
-        type="button"
-        className="crf-pick"
-        data-testid="dsn-thread-picker"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={current ? current.title : 'Choose a chat about this craft'}
-        onClick={() => setOpen((was) => !was)}
-      >
-        <span className="crf-pick__title">{current ? current.title : 'New chat'}</span>
-        <span className="crf-pick__caret" aria-hidden>
-          ▾
-        </span>
-      </button>
-      {open ? (
-        <div className="crf-pop" role="menu" aria-label="Chats about this craft" data-testid="dsn-thread-pop">
-          <div className="crf-pop__list">
-            {threads.length === 0 ? (
-              <p className="crf-pop__hollow" data-testid="dsn-thread-empty">
-                No chats about this craft yet. Start one with ＋ New chat.
-              </p>
-            ) : (
-              threads.map((thread) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  key={thread.rootId}
-                  className="crf-pop__row"
-                  data-active={thread.rootId === selectedId || undefined}
-                  onClick={() => {
-                    setOpen(false);
-                    onSelect(thread.rootId);
-                  }}
-                >
-                  <span className="crf-pop__row-title">
-                    {thread.state === 'streaming' ? (
-                      <span className="crf-pop__live" title="Agent is working" aria-label="Agent is working" />
-                    ) : null}
-                    {thread.title}
-                  </span>
-                  <span className="crf-pop__row-meta">
-                    <span>{thread.config.teammateLabel}</span>
-                    <span aria-hidden>·</span>
-                    <span>{thread.config.modelLabel}</span>
-                    <Timestamp at={thread.updatedAt} />
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

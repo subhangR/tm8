@@ -6,8 +6,6 @@ export { blueprintView } from './blueprint-model';
 export type { BlueprintCard, BlueprintLine, BlueprintView, RefTitles } from './blueprint-model';
 export { BlueprintCanvas } from './BlueprintCanvas';
 export { CraftsHome } from './CraftsHome';
-export { CraftsNav } from './CraftsNav';
-export type { CraftsNavProps } from './CraftsNav';
 export type { CraftsHomeProps } from './CraftsHome';
 export { craftsSourceFromSeam, fixtureCraftsSource } from './crafts-source';
 export type { CraftCard, CraftsSource, FixtureCraft } from './crafts-source';
