@@ -637,7 +637,9 @@ function ArtifactPreviewBlock({
       () => { if (!cancelled) setRevisions(null); },
     );
     return () => { cancelled = true; };
-  }, [detail.id, listArtifactRevisions]);
+    // `currentRevision` too: a publish arrives as a fresh detail of the SAME
+    // id, and a list read once per id never offered the new revision at all.
+  }, [detail.id, currentRevision, listArtifactRevisions]);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -659,6 +661,15 @@ function ArtifactPreviewBlock({
    * the page on screen is the review finding this line closes (F1).
    */
   const shownRevision = run.phase === 'running' ? run.revisionNumber : selectedRevision ?? currentRevision;
+  /*
+   * A revision NEWER than the frame on screen. The frame stays pinned — a
+   * publish never swaps the page under the reader — but the reader must be
+   * able to SEE that it exists, and a closed picker shows only the pinned one.
+   */
+  const newerRevision = currentRevision != null && shownRevision != null && currentRevision > shownRevision
+    && revisions?.some((r) => r.revisionNumber === currentRevision)
+    ? currentRevision
+    : null;
 
   const onDownload = async () => {
     if (!exportArtifactRevision) return;
@@ -730,7 +741,7 @@ function ArtifactPreviewBlock({
           className="pn-preview__revpick"
           aria-label="revision"
           title={revisionFacts || undefined}
-          value={String(selectedRevision ?? currentRevision ?? revisions[0]!.revisionNumber)}
+          value={String(shownRevision ?? revisions[0]!.revisionNumber)}
           onChange={(e) => setSelectedRevision(Number(e.target.value))}
         >
           {/* A `<select>` is as wide as its WIDEST OPTION, so " · current"
@@ -743,10 +754,21 @@ function ArtifactPreviewBlock({
               replaces is spelled out in the control's own tooltip. */}
           {revisions.map((r) => (
             <option key={r.revisionNumber} value={String(r.revisionNumber)}>
-              {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' ✓' : ''}`}
+              {`rev ${r.revisionNumber}${r.revisionNumber === currentRevision ? ' ✓' : ''}${r.revisionNumber === newerRevision ? ' — new' : ''}`}
             </option>
           ))}
         </select>
+      ) : null}
+      {newerRevision !== null ? (
+        <button
+          type="button"
+          className="pn-preview__newrev"
+          data-testid="artifact-new-revision"
+          title={`Revision ${newerRevision} was published — show it`}
+          onClick={() => setSelectedRevision(newerRevision)}
+        >
+          {`rev ${newerRevision} new`}
+        </button>
       ) : null}
       {/* THE WORD IS THE ACCESSIBLE NAME, THE GLYPH IS THE BUTTON. Every one of
           these keeps `aria-label` and `title`, so `getByRole('button', { name })`
