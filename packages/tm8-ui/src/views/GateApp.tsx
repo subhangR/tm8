@@ -545,7 +545,7 @@ export function GateApp(props: GateAppProps = {}) {
   const withPendingForms = (node: ReactNode) => (
     <PendingFormsProvider store={pendingFormsStore}>
       <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
-        <EntitySeenProvider key={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
+        <EntitySeenProvider scope={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
           commands={data.seam.commands} refreshCounts={data.refreshCounts}>
           <McpProvider key={data.spaceId} port={mcpPort}>
             <ToolLaunchProvider open={(id) => {

@@ -114,12 +114,13 @@ describe('§5.3 Running tab layout', () => {
     expect(onSessionBulk).toHaveBeenCalledWith('stop-all-finished', [finished.id]);
   });
 
-  it('a ✓ row shows its word, "Completed 12m ago · receipt", a grey process dot, a fixed check and Stop (scenario 1, 2)', () => {
+  it('a ✓ row shows its word, no completion line (#1123), a grey process dot, a fixed check and Stop (scenario 1, 2)', () => {
     const onSessionVerb = vi.fn();
     const view = mount({ onSessionVerb });
     const tile = view.container.querySelector(`[data-session-node="${finished.id}"]`) as HTMLElement;
     expect(within(tile).getByTestId('session-row-word').textContent).toBe('Finished, still open');
-    expect(within(tile).getByTestId('session-row-line2').textContent).toBe('Completed 12m ago · receipt');
+    // #1123 removed the "Completed 12m ago · receipt" line: the word says it.
+    expect(within(tile).queryByTestId('session-row-line2')).toBeNull();
     expect(within(tile).getByTestId('session-process-dot').getAttribute('data-dot')).toBe('grey');
     expect(within(tile).getByTestId('session-fixed-check')).toBeTruthy();
     fireEvent.click(tile.querySelector('[data-action="close-process"]')!);

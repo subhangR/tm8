@@ -458,6 +458,10 @@ describe.sequential('task assignment provenance (129)', () => {
         language sql stable as 'select null::jsonb';
       grant execute on function internal.task_progress(uuid) to tm8_app;
       reset role;`);
+    // 314 (chat credential selection): entity reads select
+    // `chats.credential_selection`. Only the read column, none of 314's RPCs.
+    await database.query(`alter table public.chats
+      add column credential_selection jsonb not null default '{"source":"auto"}'`);
   }, 180_000);
 
   afterAll(async () => {
