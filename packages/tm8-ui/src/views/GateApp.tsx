@@ -3054,7 +3054,7 @@ export function GateApp(props: GateAppProps = {}) {
                strip split between the page and the design. The page bodies are
                the Workspace's own, hosted in a private runtime (`workspaceGate`
                is the same handle bundle the Workspace view gets). */
-            <CraftLaunchScope key={navView.designId} craftId={navView.designId}>
+            <CraftLaunchScope key={navView.craftId} craftId={navView.craftId}>
             <CraftScreen
               key={navView.craftId}
               seam={data.seam}

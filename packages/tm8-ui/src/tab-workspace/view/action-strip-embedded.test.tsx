@@ -27,7 +27,7 @@ function detail(id: string, kind: string): EntityDetail {
 
 const gate = {
   data: {
-    detailOf: (id: string) => (id === 'craft-1' ? detail(id, 'design') : id === 'doc-1' ? detail(id, 'doc') : undefined),
+    detailOf: (id: string) => (id === 'craft-1' ? detail(id, 'craft') : id === 'doc-1' ? detail(id, 'doc') : undefined),
     messagesOf: () => undefined,
   },
 } as unknown as WorkspaceGateHandles;
@@ -50,8 +50,8 @@ function Strip({ id, kind }: { id: string; kind: string }) {
 
 describe('ActionStrip in a private host', () => {
   it('is one entity’s strip: no split, the side toggles and Run below', () => {
-    const view = render(<Strip id="craft-1" kind="design" />);
-    expect(view.getByTestId('tws-action-strip').getAttribute('aria-label')).toBe('Design actions');
+    const view = render(<Strip id="craft-1" kind="craft" />);
+    expect(view.getByTestId('tws-action-strip').getAttribute('aria-label')).toBe('Craft actions');
     expect(view.queryByTestId('tws-astrip-page-common')).toBeNull();
     expect(view.queryByRole('radiogroup', { name: 'Section' })).toBeNull();
     expect(view.getByTestId('tws-astrip-side')).toBeTruthy();

@@ -33,7 +33,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { EntityId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
-import { DESIGN_KIND, getKind, KindIcon } from '../domain';
+import { CRAFT_KIND, getKind, KindIcon } from '../domain';
 import type { WorkspaceGateHandles } from '../tab-workspace';
 import {
   EntityChromeContext,
@@ -67,7 +67,7 @@ const noop = () => undefined;
 
 /** A page that is itself a craft (the kind is still named `design` until lane L1 lands). */
 export function isCraftPage(page: Pick<CraftPageRow, 'kind'>): boolean {
-  return page.kind === DESIGN_KIND || page.kind === 'craft';
+  return page.kind === CRAFT_KIND;
 }
 
 export function CraftDetailPanel(props: CraftDetailPanelProps) {
