@@ -66,16 +66,33 @@ describe('tool operation transport', () => {
     expect(f.last()).toMatchObject({ method: 'GET', url: `/v2/tools/${fixtureTool.id}` });
   });
 
-  it('gets run history from incoming executes edges and loads each pinned run', async () => {
+  it('gets one paged history response with invoker metadata', async () => {
     const fixture = createToolFixture();
     const { sessionId } = await fixture.port.run({ toolId: fixtureTool.id, expectedVersion: 1, clientMutationId: 'history-test', keepOpen: true });
     const run = await fixture.port.runGet(sessionId);
-    const f = fakeFetch(() => ({ data: run }));
+    run.invoker = { id: fixtureTool.id, kind: 'member', displayName: 'Ada', isAgent: false };
+    const f = fakeFetch(() => ({ data: { items: [run], nextCursor: 'next' } }));
     const seam = graph();
-    seam.connections = vi.fn(async () => ({ items: [{ type: 'executes', source: { id: sessionId }, target: { id: fixtureTool.id } }], nextCursor: 'next' })) as unknown as typeof seam.connections;
     const page = await createToolPort(createHttpClient({ fetch: f.fetch }), seam).history(fixtureTool.id, 'cursor');
-    expect(seam.connections).toHaveBeenCalledWith(fixtureTool.id, { limit: 20, types: ['executes'], direction: 'incoming', cursor: 'cursor' });
-    expect(f.last()).toMatchObject({ method: 'GET', url: `/v2/tool-runs/${sessionId}` });
+    expect(f.calls).toHaveLength(1);
+    expect(f.last()).toMatchObject({ method: 'GET', url: `/v2/tools/${fixtureTool.id}/runs?limit=20&cursor=cursor` });
+    expect(seam.connections).not.toHaveBeenCalled();
     expect(page).toEqual({ items: [run], nextCursor: 'next' });
+  });
+
+  it.each(['unreadable', 'deleted'])('keeps visible history when an executes edge points to a %s run', async inaccessible => {
+    const fixture = createToolFixture();
+    const { sessionId } = await fixture.port.run({ toolId: fixtureTool.id, expectedVersion: 1, clientMutationId: 'visible-history', keepOpen: true });
+    const run = await fixture.port.runGet(sessionId);
+    const f = fakeFetch(call => {
+      if (call.url.includes(`/tool-runs/${inaccessible}`)) return { status: inaccessible === 'deleted' ? 404 : 403, error: { code: inaccessible === 'deleted' ? 'not_found' : 'unauthorized', message: 'Run is unavailable' } };
+      return { data: { items: [run], nextCursor: null } };
+    });
+    const seam = { ...graph(), connections: vi.fn(async () => ({ items: [sessionId, inaccessible].map(id => ({ type: 'executes', source: { id }, target: { id: fixtureTool.id } })), nextCursor: null })) };
+    const history = await createToolPort(createHttpClient({ fetch: f.fetch }), seam).history(fixtureTool.id);
+    expect(history.items).toEqual([run]);
+    expect(f.calls).toHaveLength(1);
+    expect(f.last()).toMatchObject({ method: 'GET', url: `/v2/tools/${fixtureTool.id}/runs?limit=20` });
+    expect(seam.connections).not.toHaveBeenCalled();
   });
 });

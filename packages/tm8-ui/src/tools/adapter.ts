@@ -4,7 +4,7 @@ import type { Seam } from '../data/seam';
 import type { ToolPort } from './port';
 
 /** All network requests use the operation catalog and the existing authenticated transport. */
-export function createToolPort(http: HttpClient, seam: Pick<Seam, 'connections' | 'actions'>): ToolPort {
+export function createToolPort(http: HttpClient, seam: Pick<Seam, 'actions'>): ToolPort {
   const command = () => ({ clientMutationId: `tool-${crypto.randomUUID()}` });
   const versioned = (tool: ToolView) => ({ ...command(), toolId: tool.id, expectedVersion: tool.version });
   async function call<T>(name: OperationName, options: Parameters<HttpClient['call']>[1]): Promise<T> {
@@ -22,11 +22,7 @@ export function createToolPort(http: HttpClient, seam: Pick<Seam, 'connections' 
     unsetConfig: (tool, inputName) => call('tools.config.unset', { params: { toolId: tool.id }, body: { ...versioned(tool), inputName } }),
     setSecret: (tool, inputName, secret) => call('tools.secrets.bind', { params: { toolId: tool.id }, body: { ...versioned(tool), inputName, value: secret } }),
     unsetSecret: (tool, inputName) => call('tools.secrets.unbind', { params: { toolId: tool.id }, body: { ...versioned(tool), inputName } }),
-    async history(toolId, cursor) {
-      const page = await seam.connections(toolId, { limit: 20, types: ['executes'], direction: 'incoming', ...(cursor ? { cursor } : {}) });
-      const runs = await Promise.all(page.items.filter(edge => edge.type === 'executes' && edge.target.id === toolId).map(edge => call<ToolRun>('tools.runs.get', { params: { sessionId: edge.source.id } })));
-      return { items: runs, nextCursor: page.nextCursor };
-    },
+    history: (toolId, cursor) => call<{ items: ToolRun[]; nextCursor: string | null }>('tools.runs.list', { params: { toolId }, query: { limit: 20, ...(cursor ? { cursor } : {}) } }),
     async sourceChange(tool) {
       const current = await call<ToolView>('tools.get', { params: { toolId: tool.id } });
       if (current.sourceSha256 !== tool.sourceSha256) throw new Error('The source changed while the Run dialog was open. Reload the tool and review the source before running.');
