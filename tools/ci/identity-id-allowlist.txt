@@ -300,3 +300,5 @@ require_identity public.read_space_tracking_token(p_space_id uuid)  # GUARDED: t
 require_identity public.record_tracking_poll(p_entity_id uuid, p_error text)  # GUARDED: require_tracking_space on the row's own space; writes poll bookkeeping only (306_tracking_worker_scope.sql)
 require_identity public.tracking_health(p_stale_after_seconds integer)  # GUARDED: scoped by tracking_space_ids(): every space for the tracking worker, else member_space_ids(), which is pinned (306_tracking_worker_scope.sql)
 require_identity public.tracking_sweep_staleness(p_stale_after_seconds integer)  # GUARDED: tracking worker only (42501 otherwise) (306_tracking_worker_scope.sql)
+identity_id public.set_chat_configuration(p_chat_id uuid, p_expected_revision bigint, p_resolved_target jsonb, p_mutation_id text)  # GUARDED: configured identity plus explicit session-space pin and require_space_member before atomic CAS update (315)
+require_identity public.set_chat_configuration(p_chat_id uuid, p_expected_revision bigint, p_resolved_target jsonb, p_mutation_id text)  # PIN-HELPER: human-only writer, configured identity, explicit pin and require_space_member(chat.space_id) (315)

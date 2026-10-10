@@ -65,6 +65,13 @@ the runtime lane. Provider protocol details belong there, not in SQL.
 | `logicalHistoryDigest` | hash of the authorized, eligible logical history at that cursor |
 | `contentHash` | hash of exact rendered bootstrap bytes; distinct from source history hash |
 
+Execution-facing contracts are imported from the runtime lane once implemented,
+not duplicated in server/execution ports. SQL `runtime_epoch` maps to
+`GenerationFence.leaseEpoch`; SQL native generation maps to
+`GenerationFence.generation`; `snapshot_id` maps to `AttemptRef.attemptId`.
+The examples below describe that shared contract, with server-only metadata
+stored separately. `projectionPolicyVersion` is a string in every layer.
+
 `provider`, `agentTool` and model identity are separate. For example, a harness
 may serve a third-party model backend. Credential/storage compatibility is never
 inferred from the model name. IDs and revisions are references, not secret keys;
@@ -134,7 +141,7 @@ Portable items are versioned data records, not vendor protocol messages:
 interface CoverageCursor {
   throughTurnOrdinal: number;
   captureHighWater: number;
-  projectionPolicyVersion: number;
+  projectionPolicyVersion: string;
   authorityScopeDigest: string;
   logicalHistoryDigest: string;
 }
