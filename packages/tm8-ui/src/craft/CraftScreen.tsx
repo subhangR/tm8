@@ -5,8 +5,7 @@
  *   [chat about the craft] ┃ [pages ▾][Overview][Plan ×][Brief ×]  [side] [strip]
  *                           ┃ [the selected tab's body]
  *
- *  · LEFT, the craft's chats (`CraftChatPane`): all ABOUT the craft, mode
- *    pinned to craft; the agent picks which page to work on.
+ *  · LEFT, the craft's chats and sessions (`CraftSidePanel`), in the app frame's second panel.
  *  · MIDDLE, THIS PERSON'S tabs on the craft (`CraftTabStrip`, backed by their
  *    craft workspace — `useCraftWorkspace`), Overview pinned first. Overview
  *    is `CraftOverview`; a graph page is the blueprint canvas (`GraphPage`); a
@@ -37,16 +36,14 @@ import {
   EmbeddedWorkspace,
   EntityChromeContext,
   EntityTabBody,
-  embeddedTab,
   getKindAdapter,
   useEmbeddedRuntime,
   useEntityChromeValue,
-  type EntityTabRecord,
   type WorkspaceRuntime,
 } from '../tab-workspace/embed';
 import { HostedEntityColumn } from '../views/hostedEntityColumn';
 import { useFrameSlots } from '../shell/AppFrame';
-import { CraftChatPane } from './CraftChatPane';
+import { CraftSidePanel } from './CraftSidePanel';
 import { GraphPage, type ToolNote } from './GraphPage';
 import { CraftOverview } from './CraftOverview';
 import { CraftTabStrip } from './CraftTabStrip';
@@ -55,6 +52,7 @@ import { useCraft, type CraftHandle } from './useCraft';
 import type { CraftPageRow, CraftSource, NewPageKind } from './craft-source';
 import type { CraftsSource } from './crafts-source';
 import type { CraftPanelHostProps } from './types';
+import { useEmbeddedTab } from './use-embedded-tab';
 import '../session-graph/session-graph.css';
 import './craft.css';
 import './craft-screen.css';
@@ -89,11 +87,10 @@ export interface CraftScreenProps {
   viewerId?: string | undefined;
   onNotice?: ((text: string) => void) | undefined;
   /**
-   * Inside the app frame (round 2, R2-D1): the frame's panel lists the crafts
-   * and pages, so this screen draws no header of its own — its title and chat
-   * toggle go to the frame's top band — and the craft chat is a column on
-   * the RIGHT, beside the page, as Work's side column is (never a second left
-   * column next to the panel).
+   * Inside the app frame: the craft's chats and sessions (`CraftSidePanel`)
+   * fill the frame's own panel column beside the rail — the 2nd panel — and
+   * this screen draws no header of its own (its title goes to the frame's
+   * top band). Unframed hosts keep the chat as this screen's left column.
    */
   framed?: boolean | undefined;
 }
@@ -113,15 +110,6 @@ function craftLinkUrl(spaceId: SpaceId, craftId: EntityId): string {
 }
 
 const noop = () => undefined;
-
-/** The private runtime's record for one entity, seeded after render. */
-function useEmbeddedTab(runtime: WorkspaceRuntime, entityId: string | null, kind: string | null): EntityTabRecord | null {
-  const record = useStore(runtime.store, (s) => (entityId ? s.tabs[entityId] : undefined));
-  useLayoutEffect(() => {
-    if (entityId && kind) embeddedTab(runtime, entityId, kind);
-  }, [runtime, entityId, kind]);
-  return record?.type === 'entity' && record.kind === kind ? record : null;
-}
 
 export function CraftScreen(props: CraftScreenProps) {
   const { seam, spaceId, nodeKey, source, craftId, pageId, onNavigate, gate, panelHost, onNotice, framed = false } = props;
@@ -319,27 +307,36 @@ export function CraftScreen(props: CraftScreenProps) {
       />
     );
 
+  /* The craft's chats and sessions (spec §3, 2nd panel): framed, the frame's
+     own panel column beside the rail; unframed, the left column here. */
+  const sidePanel = (
+    <CraftSidePanel
+      seam={seam}
+      spaceId={spaceId}
+      nodeKey={nodeKey}
+      craftId={craftId}
+      title={title}
+      gate={gate}
+      runtime={runtime}
+      bridge={props.bridge}
+      skillOptions={props.skillOptions}
+      viewerName={props.viewerName}
+      viewerId={props.viewerId}
+      composerSeed={composerSeed}
+      onPrompt={seedPrompt}
+      toolNote={toolNote ?? undefined}
+      onOpenEntity={openEntity}
+      onNotice={onNotice}
+    />
+  );
   const chatPane = (
-    <section className="crf-chat" id="crf-chat-pane" aria-label="Craft chat" hidden={chatHidden} data-side={framed ? 'right' : 'left'}>
-      <CraftChatPane
-        seam={seam}
-        spaceId={spaceId}
-        nodeKey={nodeKey}
-        craftId={craftId}
-        bridge={props.bridge}
-        skillOptions={props.skillOptions}
-        viewerName={props.viewerName}
-        viewerId={props.viewerId}
-        composerSeed={composerSeed}
-        onPrompt={seedPrompt}
-        toolNote={toolNote ?? undefined}
-        onOpenEntity={openEntity}
-      />
+    <section className="crf-chat" id="crf-chat-pane" aria-label="Craft chat" hidden={chatHidden}>
+      {sidePanel}
     </section>
   );
-  const chatResizer = (side: 'left' | 'right') => (
+  const chatResizer = (
     <PanelResizer
-      side={side}
+      side="left"
       label="Craft chat"
       controls="crf-chat-pane"
       width={chatWidth}
@@ -365,7 +362,7 @@ export function CraftScreen(props: CraftScreenProps) {
     >
       <svg width={16} height={16} viewBox="0 0 16 16" aria-hidden>
         <rect x={1.5} y={2.5} width={13} height={11} rx={2} />
-        <path d={chatHidden ? (framed ? 'M10 2.5 V13.5' : 'M6 2.5 V13.5') : framed ? 'M10 2.5 V13.5 M11 5 H14 M11 7.5 H14' : 'M6 2.5 V13.5 M2 5 H5 M2 7.5 H5'} />
+        <path d={chatHidden ? 'M6 2.5 V13.5' : 'M6 2.5 V13.5 M2 5 H5 M2 7.5 H5'} />
       </svg>
     </button>
   );
@@ -413,9 +410,6 @@ export function CraftScreen(props: CraftScreenProps) {
         {/* The selected tab's side column — Links · Messages · Chat — as in
             the Workspace; each page (and the overview) keeps its own. */}
         {gate && stripTab ? <ChatDock tab={stripTab} onOpenEntity={(id) => openEntity(id as EntityId)} /> : null}
-        {/* Framed: the craft's chat is the right-hand column, before the strip. */}
-        {framed && !chatHidden ? chatResizer('right') : null}
-        {framed ? chatPane : null}
         {gate && stripTab ? (
           <EntityChromeContext.Provider value={chrome}>
             <ActionStrip tab={stripTab} linkUrl={activePage ? undefined : craftLinkUrl(spaceId, craftId)} />
@@ -433,8 +427,6 @@ export function CraftScreen(props: CraftScreenProps) {
         frameTop ? createPortal(
           <div className="dsn-frame-top" data-testid="dsn-head">
             <span className="dsn-frame-top__title">{title || 'Untitled craft'}</span>
-            <span className="crf-head__fill" />
-            {chatToggle}
           </div>,
           frameTop,
         ) : null
@@ -452,8 +444,9 @@ export function CraftScreen(props: CraftScreenProps) {
       </header>}
       <div className="crf-split" ref={splitRef} style={{ '--crf-chat': `${chatWidth}px` } as CSSProperties}>
         {framed ? null : chatPane}
-        {framed || chatHidden ? null : chatResizer('left')}
+        {framed || chatHidden ? null : chatResizer}
         {pagesSection}
+        {framed && frame.panel ? createPortal(sidePanel, frame.panel) : null}
       </div>
     </div>
   );
@@ -500,7 +493,7 @@ interface PageBodyProps {
  */
 function PageBody(props: PageBodyProps) {
   const { page, seam, gate, runtime } = props;
-  if (page.kind === 'design' || page.kind === 'craft') return <CraftPage {...props} />;
+  if (page.kind === 'craft' || page.kind === 'design') return <CraftPage {...props} />;
   if (page.kind === 'graph') {
     return (
       <>
@@ -530,13 +523,7 @@ function CraftPage({ page, seam, source, gate, runtime, onAsk, onOpenEntity }: P
   const tab = useEmbeddedTab(runtime, gate ? page.id : null, gate ? page.kind : null);
   return (
     <div className="dsn-nested" data-testid="dsn-nested" data-craft={page.id}>
-      <CraftOverview
-        tab={tab}
-        pages={nested.pages}
-        panel={{ seam, source, gate, runtime, onOpenPage: onOpenEntity, onAsk, onOpenEntity }}
-        onOpenEntity={onOpenEntity}
-        onClose={noop}
-      />
+      <CraftOverview tab={tab} pages={nested.pages} panel={{ seam, source, gate, runtime, onAsk, onOpenPage: onOpenEntity, onOpenEntity }} onOpenEntity={onOpenEntity} onClose={noop} />
     </div>
   );
 }

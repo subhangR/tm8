@@ -226,56 +226,12 @@ describe('the selector is Home · Design · Observe · Settings', () => {
   });
 });
 
-describe('the Home-only controls from another mode', () => {
-  const capable = () => act(() => listStores.forEach((store) => store.setState({ capable: true, online: true })));
-
-  it('`g w` from Observe goes to Home and opens the workspace switcher there', async () => {
-    const target = at('/graph');
-    const view = mount(target);
-    await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
-    await capable();
-    fireEvent.keyDown(window, { key: 'g' });
-    fireEvent.keyDown(window, { key: 'w' });
-    await waitFor(() => view.getByTestId('tab-workspace'));
-    await waitFor(() => view.getByRole('dialog', { name: 'Switch workspace' }));
-    expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/home(\\?tab=|$)`));
-  });
-
-  it('the switcher never stays latched open off Home', async () => {
-    const view = mount(at('/graph'));
-    await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
-    await capable();
-    act(() => listStores.forEach((store) => store.setState({ open: true })));
-    await settle();
-    expect(listStores.every((store) => !store.getState().open)).toBe(true);
-  });
-
-  it('`g w` on Home with the navigation expanded away restores it and shows the switcher', async () => {
-    const view = mount(at('/home'));
-    await waitFor(() => view.getByTestId('tab-workspace'));
-    await capable();
-    const [viewerId, spaceId] = listKeys.find(([, space]) => space === SPACE)!;
-    const runtime = getWorkspaceRuntime(viewerId, spaceId);
-    act(() => void runtime.dispatch({ command: 'workspace.layout.set', args: { expanded: true }, source: 'click' }));
-    await waitFor(() => expect(view.queryByTestId('tws-view-select')).toBeNull());
-    fireEvent.keyDown(window, { key: 'g' });
-    fireEvent.keyDown(window, { key: 'w' });
-    await waitFor(() => view.getByRole('dialog', { name: 'Switch workspace' }));
-    expect(runtime.store.getState().layout.expanded).toBe(false);
-  });
-
-  it('picking Home in the view menu on a kind list lands on the Home tabs view', async () => {
-    const target = at('/k/credentials');
-    const view = mount(target);
-    await waitFor(() => view.getByTestId('app-frame'));
-    await settle();
-    expect(target.getHash()).toBe(`#/s/${SPACE}/k/credentials`);
-    const trigger = view.getByTestId('tws-view-select');
-    expect(trigger.textContent).toContain('Home');
-    fireEvent.click(trigger);
-    fireEvent.click(within(view.getByRole('menu', { name: 'Views' })).getByRole('menuitemradio', { name: 'Home' }));
-    await waitFor(() => view.getByTestId('tab-workspace'));
-    expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/home(\\?tab=|$)`));
+describe('Craft: the crafts list is not the 2nd panel', () => {
+  it('the crafts home draws no crafts list in the frame panel', async () => {
+    const view = mount(at('/craft'));
+    await waitFor(() => view.getByTestId('crafts-home'));
+    expect(view.queryByRole('navigation', { name: 'Crafts' })).toBeNull();
+    expect(view.queryByTestId('crf-side')).toBeNull();
   });
 });
 

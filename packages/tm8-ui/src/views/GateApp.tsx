@@ -78,7 +78,6 @@ import {
   CraftHeaderSwitcher,
   CraftScreen,
   CraftsHome,
-  CraftsNav,
   craftSourceFromSeam,
   craftsSourceFromSeam,
   craftTabsKey,
@@ -2677,19 +2676,9 @@ export function GateApp(props: GateAppProps = {}) {
     />
   ) : null;
 
-  /* DESIGN in the frame (R2-D1): the designs, and the open design's pages,
-     in the panel — Work's browser, for designs. */
+  /* The craft's chats and sessions fill the second panel. */
   const craftFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
-  const craftsNavEl = craftFramed ? (
-    <CraftsNav
-      crafts={craftsSource}
-      source={craftSource}
-      craftId={navView.view === 'craft' ? navView.designId : undefined}
-      pageId={navView.view === 'craft' ? navView.pageId : undefined}
-      onNavigate={navigateCraft}
-      onNotice={craftNotice}
-    />
-  ) : null;
+  const craftPanel = craftFramed && navView.view === 'craft' && navView.designId ? 'host' : null;
 
   const workspaceGate: WorkspaceGateHandles = {
     data,
@@ -2830,7 +2819,7 @@ export function GateApp(props: GateAppProps = {}) {
           spaceId={data.spaceId}
           viewerId={viewerMemberId}
           title={frameTitle}
-          panel={railConfig ? menuRailEl : settingsNavEl ?? craftsNavEl ?? (observing ? 'host' : null)}
+          panel={railConfig ? menuRailEl : settingsNavEl ?? craftPanel ?? (observing ? 'host' : null)}
           strip={observing}
           goToWork={goToWork}
         >
