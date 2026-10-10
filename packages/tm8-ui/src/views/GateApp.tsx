@@ -78,7 +78,6 @@ import {
   CraftHeaderSwitcher,
   CraftScreen,
   CraftsHome,
-  CraftsNav,
   craftSourceFromSeam,
   craftsSourceFromSeam,
   craftTabsKey,
