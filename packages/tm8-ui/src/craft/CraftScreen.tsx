@@ -1,26 +1,26 @@
 /**
- * ONE CRAFT — `/craft/{craft}[/{page}[/{nestedPage}]]` (Craft → Crafts,
- * D2–D7 and change list items 10–12). It replaced the blueprint studio.
+ * ONE CRAFT — `/craft/{craft}[/{page}]` (Craft → Crafts, D2–D5 and change
+ * list items 10–12). It replaced the blueprint studio.
  *
  *   ‹ Crafts · Title ▾
- *   [chat about the craft] ┃ [page row ………………… ＋ page]           [strip]
- *                           ┃ [the active page, in its kind's full view] [TOP]
- *                           ┃                                            [BOT]
+ *   [chat about the craft] ┃ [Overview | page row …… ＋ page]  [side] [strip]
+ *                           ┃ [overview, or the selected page]
  *
  *  · LEFT, the craft's chats (`CraftChatPane`): all ABOUT the craft, mode
  *    pinned to craft; the agent picks which page to work on.
- *  · MIDDLE, the page row (`PageRow`, the tab strip's look) over the active
- *    page. A graph page is the blueprint canvas (`GraphPage`); a craft page
- *    holds its own smaller row in place (D7); every other kind is the
- *    Workspace entity body.
- *  · RIGHT, the Workspace action strip, split by subject (D6): TOP is the
- *    active page's own controls, BOTTOM is the craft's Run, Links, Messages,
- *    Expand and More.
+ *  · MIDDLE, the page row (`PageRow`, the tab strip's look; Overview pinned
+ *    first) over the selected tab. Overview is `CraftOverview`; a graph page
+ *    is the blueprint canvas (`GraphPage`); every other kind, a craft page
+ *    included, is the Workspace entity body.
+ *  · RIGHT, ONLY the selected tab's entity strip, exactly as in Home: its
+ *    options on top, Links · Messages · Chat, Run, Expand below. Overview
+ *    selected ⇒ the craft's own strip. The tab keeps its own side column
+ *    (Chat · Messages · Links), beside the body, never in place of it.
  *
- * Opening a page, the active page and a nested page are all in the URL; there
- * is no per-user tab state, and the row is the same for everyone (D5).
+ * The selected page is in the URL (no page ⇒ Overview); there is no per-user
+ * tab state yet, and the row is the same for everyone (D5).
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
 import type { EntityId, SpaceId } from '@tm8/contract';
@@ -41,7 +41,6 @@ import {
   getKindAdapter,
   useEmbeddedRuntime,
   useEntityChromeValue,
-  type EntityChromeContextValue,
   type EntityTabRecord,
   type WorkspaceRuntime,
 } from '../tab-workspace/embed';
@@ -49,9 +48,9 @@ import { HostedEntityColumn } from '../views/hostedEntityColumn';
 import { useFrameSlots } from '../shell/AppFrame';
 import { CraftChatPane } from './CraftChatPane';
 import { GraphPage, type ToolNote } from './GraphPage';
+import { CraftOverview } from './CraftOverview';
 import { PageRow } from './PageRow';
 import { useCraft, type CraftHandle } from './useCraft';
-import { useExclusiveChat } from './useExclusiveChat';
 import type { CraftPageRow, CraftSource, NewPageKind } from './craft-source';
 import type { CraftCard, CraftsSource } from './crafts-source';
 import type { CraftPanelHostProps } from './types';
@@ -63,7 +62,6 @@ import './craft-screen.css';
 export interface CraftTarget {
   craftId?: EntityId;
   pageId?: EntityId;
-  nestedPageId?: EntityId;
 }
 
 export interface CraftScreenProps {
@@ -73,7 +71,6 @@ export interface CraftScreenProps {
   source: CraftSource;
   craftId: EntityId;
   pageId?: EntityId | undefined;
-  nestedPageId?: EntityId | undefined;
   onNavigate(target: CraftTarget): void;
   /** The home's source, for the title's ▾ craft switcher. Absent ⇒ the title is plain text. */
   crafts?: CraftsSource | undefined;
@@ -116,31 +113,6 @@ function craftLinkUrl(spaceId: SpaceId, craftId: EntityId): string {
 
 const noop = () => undefined;
 
-/** A chrome that takes only a Run: a nested craft's Run goes to the strip TOP, the rest stays hidden. */
-function runOnlyChrome(commonVerbsSlot: HTMLElement | null): EntityChromeContextValue {
-  return {
-    verbsSlot: null,
-    kindSlot: null,
-    commonVerbsSlot,
-    statsSlot: null,
-    outlineSlot: null,
-    titleSlot: null,
-    menuSlot: null,
-    dangerSlot: null,
-    menuOpen: false,
-    setMenuOpen: noop,
-    contentWidth: Infinity,
-    setVerbsSlot: noop,
-    setKindSlot: noop,
-    setCommonVerbsSlot: noop,
-    setStatsSlot: noop,
-    setOutlineSlot: noop,
-    setTitleSlot: noop,
-    setMenuSlot: noop,
-    setDangerSlot: noop,
-  };
-}
-
 /** The private runtime's record for one entity, seeded after render. */
 function useEmbeddedTab(runtime: WorkspaceRuntime, entityId: string | null, kind: string | null): EntityTabRecord | null {
   const record = useStore(runtime.store, (s) => (entityId ? s.tabs[entityId] : undefined));
@@ -151,10 +123,26 @@ function useEmbeddedTab(runtime: WorkspaceRuntime, entityId: string | null, kind
 }
 
 export function CraftScreen(props: CraftScreenProps) {
-  const { seam, spaceId, nodeKey, source, craftId, pageId, nestedPageId, onNavigate, crafts, gate, panelHost, onNotice, framed = false } = props;
-  const frameTop = useFrameSlots().top;
+  const { seam, spaceId, nodeKey, source, craftId, pageId, onNavigate, crafts, gate, panelHost, onNotice, framed = false } = props;
+  const frame = useFrameSlots();
+  const frameTop = frame.top;
   const runtime = useEmbeddedRuntime(props.viewerId ?? 'viewer', spaceId);
   const expanded = useStore(runtime.store, (s) => s.layout.expanded);
+
+  /* THE STRIP'S EXPAND IS THE FRAME'S: expanding hides the frame's rail, panel
+     and header, as Work's does; the frame's own "Restore navigation" restores. */
+  const setFrameExpanded = frame.setExpanded;
+  useEffect(() => {
+    setFrameExpanded?.(expanded);
+  }, [expanded, setFrameExpanded]);
+  const frameWasExpanded = useRef(frame.expanded);
+  useEffect(() => {
+    const was = frameWasExpanded.current;
+    frameWasExpanded.current = frame.expanded;
+    if (was && !frame.expanded && runtime.store.getState().layout.expanded) {
+      runtime.dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'click' });
+    }
+  }, [frame.expanded, runtime]);
 
   const [composerSeed, setComposerSeed] = useState<{ text: string; nonce: number } | undefined>(undefined);
   const [chatCollapsed, setChatCollapsed] = useState(false);
@@ -169,7 +157,9 @@ export function CraftScreen(props: CraftScreenProps) {
   const publishToolNote = useCallback((note: ToolNote | null) => setToolNote(() => note), []);
 
   const handle = useCraft(source, craftId, pageId ?? null, onNotice);
-  const activePage = pickPage(handle.pages, pageId);
+  /* THE SELECTED TAB: a page of this craft, or — no page in the route, or one
+     that has left the craft — the craft's own overview. */
+  const activePage = selectedPage(handle.pages, pageId);
   /* The updated mark clears on the page being looked at. */
   useEffect(() => {
     if (activePage) handle.seen(activePage.id);
@@ -177,6 +167,7 @@ export function CraftScreen(props: CraftScreenProps) {
   }, [activePage?.id, handle.seen, handle.updated]);
 
   const selectPage = useCallback((id: EntityId) => onNavigate({ craftId, pageId: id }), [onNavigate, craftId]);
+  const selectOverview = useCallback(() => onNavigate({ craftId }), [onNavigate, craftId]);
 
   /* An entity opened from the chat or a page: a page of this craft is
      selected; anything else opens in the column over the page (or leaves). */
@@ -212,28 +203,19 @@ export function CraftScreen(props: CraftScreenProps) {
   const chatMax = splitWidth > 0 ? Math.max(CHAT_MIN, splitWidth - PAGES_MIN - PANE_CHROME) : Number.POSITIVE_INFINITY;
   const chatWidth = Math.min(Math.max(CHAT_MIN, chatPref.width), chatMax);
 
-  /* The strip's two subjects and their chrome seams (Workspace hosts only). */
-  const [pageMainEl, setPageMainEl] = useState<HTMLDivElement | null>(null);
-  const pageChrome = useEntityChromeValue(pageMainEl);
-  const ownerChrome = useEntityChromeValue(null);
-  const ownerTab = useEmbeddedTab(runtime, gate ? craftId : null, gate ? 'design' : null);
+  /* ONE STRIP, THE SELECTED TAB'S (Workspace hosts only): exactly Home's — the
+     entity's own options on top; Links · Messages · Chat, Run, Expand and More
+     below — over one chrome seam, for the one body mounted. The overview's
+     subject is the craft itself. */
+  const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
+  const chrome = useEntityChromeValue(mainEl);
+  const ownerTab = useEmbeddedTab(runtime, gate && !activePage ? craftId : null, gate && !activePage ? 'design' : null);
   const pageTab = useEmbeddedTab(runtime, gate && activePage ? activePage.id : null, gate && activePage ? activePage.kind : null);
-  const ownerSection = ownerTab?.ui.subview ?? 'entity';
-  /* R2-D9: the craft's chat and the page's side column are exclusive. */
-  const pageSideOpen = !!pageTab?.ui.chat?.open;
+  const stripTab = activePage ? pageTab : ownerTab;
   const chatHidden = chatCollapsed || expanded;
-  useExclusiveChat({
-    craftShown: !chatHidden,
-    pageShown: pageSideOpen,
-    pageId: pageTab?.id ?? null,
-    hideCraft: () => setChatCollapsed(true),
-    closePage: () => {
-      if (pageTab) runtime.dispatch({ command: 'workspace.tabs.setUi', args: { tabId: pageTab.id, patch: { chat: { open: false } } }, source: 'click' });
-    },
-  });
   /* Without a strip, the graph's controls need a home of their own. */
   const [liteSlot, setLiteSlot] = useState<HTMLDivElement | null>(null);
-  const controlsSlot = gate ? pageChrome.kindSlot : liteSlot;
+  const controlsSlot = gate ? chrome.kindSlot : liteSlot;
 
   const title = handle.craft?.title ?? '';
   const onNewPage = useNewPage(handle, seedPrompt, (id) => selectPage(id));
@@ -251,28 +233,25 @@ export function CraftScreen(props: CraftScreenProps) {
         <p>This craft could not be read.</p>
         <button type="button" className="dsn-btn" onClick={handle.retry}>Retry</button>
       </div>
-    ) : !activePage ? (
-      <p className="crf-empty" data-testid="dsn-no-pages">
-        No pages yet. Ask the chat to start one, or add a page with ＋.
-      </p>
-    ) : (
+    ) : activePage ? (
       <PageBody
         key={activePage.id}
         page={activePage}
-        depth={0}
         seam={seam}
-        source={source}
         gate={gate}
         runtime={runtime}
         controlsSlot={controlsSlot}
-        runSlot={pageChrome.commonVerbsSlot}
-        nestedPageId={nestedPageId}
-        onSelectNested={(id) => onNavigate({ craftId, pageId: activePage.id, nestedPageId: id })}
-        onOpenCraft={(id) => onNavigate({ craftId: id })}
         onAsk={seedPrompt}
         onOpenEntity={openEntity}
         onToolNote={publishToolNote}
-        onNotice={onNotice}
+      />
+    ) : (
+      /* THE OVERVIEW — the craft's own tab (L4.2 draws its detail panel). */
+      <CraftOverview
+        tab={ownerTab}
+        pages={handle.pages}
+        onOpenEntity={openEntity}
+        onClose={() => onNavigate({})}
       />
     );
 
@@ -336,14 +315,12 @@ export function CraftScreen(props: CraftScreenProps) {
           updated={handle.updated}
           label={`Pages of ${title}`}
           ownerId={craftId}
+          onOverview={selectOverview}
           onSelect={selectPage}
           onMove={(id, index) => void handle.move(id, index)}
           onRemove={(id) => {
-            const at = handle.pages.findIndex((page) => page.id === id);
             void handle.remove(id).then((ok) => {
-              if (!ok || id !== activePage?.id) return;
-              const next = handle.pages.filter((page) => page.id !== id)[Math.max(0, at - 1)];
-              onNavigate(next ? { craftId, pageId: next.id } : { craftId });
+              if (ok && id === activePage?.id) selectOverview();
             });
           }}
           onNew={onNewPage}
@@ -352,25 +329,10 @@ export function CraftScreen(props: CraftScreenProps) {
         />
       ) : null}
       <div className="dsn-band">
-        <div className="dsn-content" ref={setPageMainEl}>
-          <div className="dsn-page" hidden={ownerSection !== 'entity'} data-testid="dsn-page">
-            {gate ? <EntityChromeContext.Provider value={pageChrome}>{body}</EntityChromeContext.Provider> : body}
+        <div className="dsn-content" ref={setMainEl}>
+          <div className="dsn-page" data-testid="dsn-page">
+            {gate ? <EntityChromeContext.Provider value={chrome}>{body}</EntityChromeContext.Provider> : body}
           </div>
-          {/* The CRAFT's own panel: always mounted under a Workspace host, so its
-              Run and ⋯ portal into the strip's BOTTOM; shown when the strip's
-              Links or Messages is chosen. */}
-          {gate && ownerTab ? (
-            <div className="dsn-owner" hidden={ownerSection === 'entity'} data-testid="dsn-owner">
-              <EntityChromeContext.Provider value={ownerChrome}>
-                <EntityTabBody
-                  tab={ownerTab}
-                  adapter={getKindAdapter('design')}
-                  onOpenEntity={(id) => openEntity(id as EntityId)}
-                  onClose={() => onNavigate({})}
-                />
-              </EntityChromeContext.Provider>
-            </div>
-          ) : null}
           {detailId && panelHost ? (
             <aside className="crf-detail" data-overlay aria-label="Entity details" data-testid="crf-detail">
               <div className="crf-detail__entity">
@@ -384,24 +346,17 @@ export function CraftScreen(props: CraftScreenProps) {
             </aside>
           ) : null}
         </div>
-        {/* The active PAGE's chat (task 01a11330): a column beside the page, as
-            in the Workspace; the craft's own chat stays the left pane. */}
-        {gate && pageTab ? <ChatDock tab={pageTab} onOpenEntity={(id) => openEntity(id as EntityId)} /> : null}
+        {/* The selected tab's side column — Links · Messages · Chat — as in
+            the Workspace; each page (and the overview) keeps its own. */}
+        {gate && stripTab ? <ChatDock tab={stripTab} onOpenEntity={(id) => openEntity(id as EntityId)} /> : null}
         {/* Framed: the craft's chat is the right-hand column, before the strip. */}
         {framed && !chatHidden ? chatResizer('right') : null}
         {framed ? chatPane : null}
-        {gate && pageTab && ownerTab ? (
-          <EntityChromeContext.Provider value={pageChrome}>
-            <ActionStrip
-              tab={pageTab}
-              owner={{ tab: ownerTab, chrome: ownerChrome, linkUrl: craftLinkUrl(spaceId, craftId) }}
-            />
+        {gate && stripTab ? (
+          <EntityChromeContext.Provider value={chrome}>
+            <ActionStrip tab={stripTab} linkUrl={activePage ? undefined : craftLinkUrl(spaceId, craftId)} />
           </EntityChromeContext.Provider>
-        ) : gate && ownerTab ? (
-          <EntityChromeContext.Provider value={pageChrome}>
-            <ActionStrip tab={ownerTab} owner={{ tab: ownerTab, chrome: ownerChrome, linkUrl: craftLinkUrl(spaceId, craftId) }} />
-          </EntityChromeContext.Provider>
-        ) : (
+        ) : gate ? null : (
           <div className="dsn-strip-lite" ref={setLiteSlot} data-testid="dsn-strip-lite" />
         )}
       </div>
@@ -445,9 +400,9 @@ export function CraftScreen(props: CraftScreenProps) {
   );
 }
 
-/** The route's page when it is still in the craft, else the first page. */
-function pickPage(pages: readonly CraftPageRow[], id: EntityId | undefined): CraftPageRow | null {
-  return pages.find((page) => page.id === id) ?? pages[0] ?? null;
+/** The route's page when it is still in the craft; null ⇒ the overview is the selected tab. */
+function selectedPage(pages: readonly CraftPageRow[], id: EntityId | undefined): CraftPageRow | null {
+  return (id && pages.find((page) => page.id === id)) || null;
 }
 
 /** `[+ page]`: create and open; Artifact asks the agent, which is the one door artifacts have. */
@@ -466,28 +421,22 @@ function useNewPage(handle: CraftHandle, ask: (text: string) => void, open: (id:
 
 interface PageBodyProps {
   page: CraftPageRow;
-  /** 0 = a page of the opened craft; 1 = a page of a nested craft. */
-  depth: 0 | 1;
   seam: Seam;
-  source: CraftSource;
   gate: WorkspaceGateHandles | undefined;
   runtime: WorkspaceRuntime;
   /** The strip TOP's kind slot (or the lite strip without a Workspace host). */
   controlsSlot: HTMLElement | null;
-  /** The strip TOP's Run slot — where a nested craft's Run goes. */
-  runSlot: HTMLElement | null;
-  nestedPageId?: EntityId | undefined;
-  onSelectNested(id: EntityId): void;
-  onOpenCraft(id: EntityId): void;
   onAsk(text: string): void;
   onOpenEntity(id: EntityId): void;
   onToolNote(note: ToolNote | null): void;
-  onNotice?: ((text: string) => void) | undefined;
 }
 
-/** One page's body, in its kind's full view. */
+/**
+ * One page's body, in its kind's full view. A page that is itself a craft is
+ * that craft's own body, inline — no nested page rows.
+ */
 function PageBody(props: PageBodyProps) {
-  const { page, depth, seam, gate, runtime } = props;
+  const { page, seam, gate, runtime } = props;
   if (page.kind === 'graph') {
     return (
       <GraphPage
@@ -499,9 +448,6 @@ function PageBody(props: PageBodyProps) {
         onToolNote={props.onToolNote}
       />
     );
-  }
-  if (page.kind === 'design') {
-    return depth === 0 ? <NestedCraft {...props} /> : <CraftCards {...props} />;
   }
   if (!gate) return <PlainPage page={page} onOpen={() => props.onOpenEntity(page.id)} />;
   return <WorkspacePage page={page} runtime={runtime} onOpenEntity={props.onOpenEntity} />;
@@ -539,93 +485,6 @@ function PlainPage({ page, onOpen }: { page: CraftPageRow; onOpen(): void }) {
       <h2 className="dsn-plain__title">{page.title}</h2>
       <p className="dsn-plain__line">{getKind(page.kind).label}</p>
       <button type="button" className="dsn-btn" onClick={onOpen}>Open</button>
-    </div>
-  );
-}
-
-/**
- * A CRAFT PAGE, IN PLACE (D7): its own smaller page row under the parent's,
- * and its active page below it. The parent row stays. Its Run sits in the
- * strip's TOP section — it is the active page — through its own panel, kept
- * mounted and hidden for exactly that portal.
- */
-function NestedCraft(props: PageBodyProps) {
-  const { page, source, gate, runtime, nestedPageId, onSelectNested, onNotice } = props;
-  const handle = useCraft(source, page.id, nestedPageId ?? null, onNotice);
-  const active = pickPage(handle.pages, nestedPageId);
-  useEffect(() => {
-    if (active) handle.seen(active.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.id, handle.seen, handle.updated]);
-  const onNew = useNewPage(handle, props.onAsk, onSelectNested);
-  const ownTab = useEmbeddedTab(runtime, gate ? page.id : null, gate ? 'design' : null);
-  const runChrome = useMemo(() => runOnlyChrome(props.runSlot), [props.runSlot]);
-
-  return (
-    <div className="dsn-nested" data-testid="dsn-nested">
-      {handle.state === 'ready' ? (
-        <PageRow
-          size="nested"
-          pages={handle.pages}
-          activeId={active?.id ?? null}
-          updated={handle.updated}
-          label={`Pages of ${handle.craft?.title ?? 'the nested craft'}`}
-          ownerId={page.id}
-          onSelect={onSelectNested}
-          onMove={(id, index) => void handle.move(id, index)}
-          onRemove={(id) => void handle.remove(id)}
-          onNew={onNew}
-          onAddExisting={(id) => void handle.addExisting(id).then((ok) => ok && onSelectNested(id))}
-          candidates={(text) => source.candidates(text)}
-        />
-      ) : null}
-      <div className="dsn-nested__body">
-        {handle.state === 'loading' ? (
-          <p className="crf-empty" role="status">Loading the craft…</p>
-        ) : handle.state !== 'ready' ? (
-          <p className="crf-empty">This craft could not be read.</p>
-        ) : !active ? (
-          <p className="crf-empty" data-testid="dsn-nested-empty">This craft has no pages yet. Add one with ＋.</p>
-        ) : (
-          <PageBody {...props} key={active.id} page={active} depth={1} />
-        )}
-      </div>
-      {gate && ownTab ? (
-        <div hidden inert data-testid="dsn-nested-run-host">
-          <EntityChromeContext.Provider value={runChrome}>
-            <EntityTabBody tab={ownTab} adapter={getKindAdapter('design')} onClose={noop} />
-          </EntityChromeContext.Provider>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** THE DEPTH CAP (D7): a craft two levels down is its page cards and "Open". */
-function CraftCards({ page, source, onOpenCraft, onNotice }: PageBodyProps) {
-  const handle = useCraft(source, page.id, null, onNotice);
-  return (
-    <div className="dsn-cards" data-testid="dsn-craft-cards">
-      <div className="dsn-cards__head">
-        <KindIcon kind="design" size={16} />
-        <h2 className="dsn-cards__title">{handle.craft?.title ?? page.title}</h2>
-        <button type="button" className="dsn-btn" data-testid="dsn-open-craft" onClick={() => onOpenCraft(page.id)}>
-          Open
-        </button>
-      </div>
-      {handle.state === 'ready' && handle.pages.length === 0 ? (
-        <p className="crf-empty">No pages yet.</p>
-      ) : (
-        <ul className="dsn-cards__grid">
-          {handle.pages.map((card) => (
-            <li key={card.id} className="dsn-card" data-testid="dsn-page-card">
-              <KindIcon kind={card.kind} size={16} />
-              <span className="dsn-card__title">{card.title}</span>
-              <span className="dsn-card__kind">{getKind(card.kind).label}</span>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

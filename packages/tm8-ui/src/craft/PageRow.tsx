@@ -12,8 +12,8 @@
  *  · ＋ → a new Graph / Doc / Artifact / Drawing / Craft page, or "Add
  *    existing entity…".
  *
- * `size="nested"` is the smaller second row a nested craft page draws (D7),
- * one existing type step down.
+ * The craft's own OVERVIEW tab leads the row, pinned: never dragged, never
+ * removed. `activeId` null ⇒ it is the selected tab.
  */
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import type { EntityId, EntitySummary } from '@tm8/contract';
@@ -27,9 +27,10 @@ export interface PageRowProps {
   activeId: EntityId | null;
   /** Pages changed while not active. */
   updated: ReadonlySet<string>;
-  size?: 'main' | 'nested';
   /** The row's accessible name ("Pages of Launch plan"). */
   label: string;
+  /** Select the pinned overview tab. */
+  onOverview(): void;
   onSelect(id: EntityId): void;
   /** Move `id` so it sits at `index` in the order WITHOUT it. */
   onMove(id: EntityId, index: number): void;
@@ -52,8 +53,8 @@ export function PageRow({
   pages,
   activeId,
   updated,
-  size = 'main',
   label,
+  onOverview,
   onSelect,
   onMove,
   onRemove,
@@ -111,8 +112,20 @@ export function PageRow({
   const excluded = new Set<string>([ownerId, ...pages.map((page) => page.id)]);
 
   return (
-    <div className={`dsn-pages dsn-pages--${size}`} ref={rowRef} data-testid={size === 'nested' ? 'dsn-nested-pages' : 'dsn-pages'}>
+    <div className="dsn-pages dsn-pages--main" ref={rowRef} data-testid="dsn-pages">
       <div className="tws-ts-scroll dsn-pages__scroll" role="tablist" aria-label={label}>
+        <div className="tws-ts-tab dsn-tab" data-active={activeId === null || undefined} data-pinned data-testid="dsn-tab-overview">
+          <button
+            type="button"
+            role="tab"
+            className="tws-ts-tab-main"
+            aria-selected={activeId === null}
+            tabIndex={activeId === null ? 0 : -1}
+            onClick={onOverview}
+          >
+            <span className="tws-ts-title">Overview</span>
+          </button>
+        </div>
         {pages.map((page, index) => {
           const active = page.id === activeId;
           const isUpdated = !active && updated.has(page.id);
@@ -142,7 +155,7 @@ export function PageRow({
                 role="tab"
                 className="tws-ts-tab-main"
                 aria-selected={active}
-                tabIndex={active || (activeId === null && index === 0) ? 0 : -1}
+                tabIndex={active ? 0 : -1}
                 title={`${page.title} — ${getKind(page.kind).label}${isUpdated ? ' (updated)' : ''}`}
                 onClick={() => onSelect(page.id)}
                 onKeyDown={(event) => {
@@ -162,7 +175,7 @@ export function PageRow({
                 }}
               >
                 <span className="tws-ts-icon">
-                  <KindIcon kind={page.kind} size={size === 'nested' ? 12 : 14} />
+                  <KindIcon kind={page.kind} size={14} />
                 </span>
                 <span className="tws-ts-title">{page.title}</span>
               </button>
@@ -226,7 +239,7 @@ export function PageRow({
             setAddOpen((was) => !was);
           }}
         >
-          ＋{size === 'main' ? <span className="dsn-add__label">page</span> : null}
+          ＋<span className="dsn-add__label">page</span>
         </button>
         {addOpen ? (
           <div className="dsn-menu dsn-menu--add pn-overflow__menu" role="menu" data-testid="dsn-add-menu">

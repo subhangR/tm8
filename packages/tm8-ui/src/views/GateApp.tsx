@@ -2219,14 +2219,13 @@ export function GateApp(props: GateAppProps = {}) {
     () => craftSourceFromSeam(data.seam, data.spaceId as SpaceId),
     [data.seam, data.spaceId],
   );
-  /* No design ⇒ the Designs home; otherwise exactly the design, page and nested page asked for. */
+  /* No craft ⇒ the Crafts home; otherwise exactly the craft and page asked for. */
   const navigateCraft = useCallback(
-    ({ craftId, pageId, nestedPageId }: CraftTarget) =>
+    ({ craftId, pageId }: CraftTarget) =>
       navStore.getState().navigate({
         view: 'craft',
         ...(craftId ? { designId: craftId } : {}),
         ...(craftId && pageId ? { pageId } : {}),
-        ...(craftId && pageId && nestedPageId ? { nestedPageId } : {}),
       }),
     [],
   );
@@ -3013,7 +3012,6 @@ export function GateApp(props: GateAppProps = {}) {
               crafts={craftsSource}
               craftId={navView.designId}
               pageId={navView.pageId}
-              nestedPageId={navView.nestedPageId}
               onNavigate={navigateCraft}
               framed={craftFramed}
               gate={workspaceGate}

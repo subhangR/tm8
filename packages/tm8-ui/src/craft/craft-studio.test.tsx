@@ -84,7 +84,7 @@ async function mountWithPlan(content: unknown = PLAN, ready = 'crf-canvas') {
   const source = fixtureCraftSource(seam, SPACE, [{ id: 'craft-1' as EntityId, title: 'Pricing craft' }]);
   await source.placePage('craft-1' as EntityId, graphId, 1);
   const view = render(
-    <CraftScreen seam={seam} spaceId={SPACE} nodeKey="fixture" source={source} craftId={'craft-1' as EntityId} onNavigate={() => undefined} />,
+    <CraftScreen seam={seam} spaceId={SPACE} nodeKey="fixture" source={source} craftId={'craft-1' as EntityId} pageId={graphId} onNavigate={() => undefined} />,
   );
   await waitFor(() => view.getByTestId(ready));
   /* The chat surface is a lazy chunk; the composer is part of "mounted". */

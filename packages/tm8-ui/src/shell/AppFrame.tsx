@@ -38,9 +38,12 @@ export interface FrameSlots {
   top: HTMLElement | null;
   /** The right action strip's top section, when the screen asked for a strip. */
   strip: HTMLElement | null;
+  /** The frame's Expand (rail, panel and header hidden), for a screen that draws its own Expand. */
+  expanded: boolean;
+  setExpanded?: ((expanded: boolean) => void) | undefined;
 }
 
-const NO_SLOTS: FrameSlots = { panel: null, top: null, strip: null };
+const NO_SLOTS: FrameSlots = { panel: null, top: null, strip: null, expanded: false };
 const FrameSlotsContext = createContext<FrameSlots>(NO_SLOTS);
 
 /** Hosts a framed screen may portal into; all null outside the frame (render inline then). */
@@ -111,8 +114,14 @@ export function AppFrame({ gate, spaceId, viewerId, title, panel, strip = false,
     [gate, title, spaceId, selectKind, selectSource, panel, panelWidth],
   );
   const slots = useMemo<FrameSlots>(
-    () => ({ panel: hasPanel && panel === 'host' ? panelHost : null, top: topHost, strip: strip ? stripHost : null }),
-    [hasPanel, panel, panelHost, topHost, strip, stripHost],
+    () => ({
+      panel: hasPanel && panel === 'host' ? panelHost : null,
+      top: topHost,
+      strip: strip ? stripHost : null,
+      expanded,
+      setExpanded,
+    }),
+    [hasPanel, panel, panelHost, topHost, strip, stripHost, expanded],
   );
 
   const style = {
