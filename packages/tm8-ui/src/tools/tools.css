@@ -7,6 +7,7 @@
   padding: 8px; color: var(--pn-ink); background: var(--pn-paper); border: 1px solid var(--pn-line); border-radius: 4px; max-width: 100%; min-width: 0; font: inherit;
 }
 .cv2-root .tool-definition fieldset { border: 0; padding: 0; min-width: 0; }
+.cv2-root .tool-definition pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cv2-root .tool-source { border: 1px solid var(--pn-line); min-height: 120px; max-height: 480px; overflow: auto; }
 .cv2-root .tool-source textarea { width: 100%; font-family: var(--pn-mono, monospace); box-sizing: border-box; }
 .cv2-root .tool-table-scroll { max-width: 100%; overflow-x: auto; }
