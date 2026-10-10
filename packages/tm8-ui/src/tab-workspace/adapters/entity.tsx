@@ -600,6 +600,71 @@ export function EntityTabBody({ tab, adapter, onHandle, onOpenEntity: hostOpen, 
   );
 }
 
+/**
+ * AN ENTITY PEEKED IN THE SIDE COLUMN (task 01a122b9): a linked entity opened
+ * from the Links list shows here, beside the tab's own body, instead of
+ * replacing it. Same panel host, verbs and edit sheet as a tab body — only the
+ * placement differs (`stack`, with no embedded chrome, so its verbs draw in
+ * its own bar rather than in the tab's strip).
+ */
+export function EntityPeek({
+  entityId,
+  onOpenEntity,
+  onOpenTab,
+  onClose,
+}: {
+  entityId: string;
+  /** Drilling sideways from the peek: replace what it shows. */
+  onOpenEntity: (id: string) => void;
+  /** Where a verb's result that wants a tab (a created child) lands. */
+  onOpenTab: (kind: string, id: string) => void;
+  onClose: () => void;
+}) {
+  const { gate } = useWorkspace();
+  const data = gate.data as PullableData;
+  const { availability, retry } = useAvailability(data, entityId);
+  const { host, verbs } = useWorkspacePanelHost(data, entityId, onOpenTab);
+  if (availability.state !== 'ready') {
+    if (availability.state === 'loading') return <div className="tws-chat-wait" role="status" aria-label="Loading" />;
+    const text =
+      availability.state === 'not_found'
+        ? 'This entity no longer exists.'
+        : availability.state === 'forbidden'
+          ? 'You do not have access to this entity.'
+          : `It could not be read: ${availability.message}`;
+    return (
+      <div className="tws-side-state" role="alert">
+        <p>{text}</p>
+        {availability.state === 'failed' ? (
+          <button type="button" className="tws-side-state__action" onClick={retry}>
+            Retry
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+  return (
+    <div className="tws-peek-body" data-testid="tws-peek-body">
+      {host.primaries.dialog}
+      <AuxEntityPanel
+        host={host}
+        entityId={entityId as EntityId}
+        onOpenEntity={(id) => onOpenEntity(id)}
+        onClose={onClose}
+        extraActions={{ onAction: verbs.onAction, wiredActions: verbs.wiredActions }}
+      />
+      <EditEntityDialog
+        flow={verbs.edit}
+        fields={verbs.editFields}
+        title={verbs.editTitle}
+        skillOptions={data.skillOptions}
+        attach={host.attachments ? (file: File) => host.attachments!.startUpload(file, entityId) : undefined}
+        onAttached={() => data.refetchDetail(entityId)}
+      />
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Live status for the strip (Spec A §15) — from live data, never the body
 // ---------------------------------------------------------------------------

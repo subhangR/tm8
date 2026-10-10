@@ -46,6 +46,7 @@ import {
   isFileTabProjectId,
   isWorkspaceKind,
   LAYOUT_BOUNDS,
+  SIDE_SECTIONS,
   TAB_SUBVIEWS,
   type BrowserKindState,
   type BrowserState,
@@ -54,6 +55,7 @@ import {
   type TabId,
   type TabRecord,
   type TabScope,
+  type SideSection,
   type TabSubview,
   type TabUi,
   type TrailCrumb,
@@ -186,6 +188,7 @@ function validUi(v: unknown): TabUi {
     const chat: NonNullable<TabUi['chat']> = { open: v.chat.open };
     if (isFinite(v.chat.width)) chat.width = clamp(v.chat.width, LAYOUT_BOUNDS.chatWidth);
     if (isId(v.chat.threadId)) chat.threadId = v.chat.threadId;
+    if (SIDE_SECTIONS.includes(v.chat.section as SideSection)) chat.section = v.chat.section as SideSection;
     ui.chat = chat;
   }
   return ui;

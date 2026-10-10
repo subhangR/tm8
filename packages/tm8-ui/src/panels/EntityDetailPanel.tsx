@@ -2229,6 +2229,11 @@ function PanelBody(
             The session graph host is unavailable in this view.
           </p>
         )}
+        launchContext={props.launchContextSurface ?? (
+          <p className="pn-surface-host-missing" role="alert">
+            The session launch context host is unavailable in this view.
+          </p>
+        )}
       />
     );
   }

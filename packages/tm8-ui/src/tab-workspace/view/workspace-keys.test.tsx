@@ -63,7 +63,7 @@ describe('handleWorkKey — tabs', () => {
     expect(visibleTabs(rt.store.getState())).toHaveLength(1);
   });
 
-  it('t f toggles full screen; t l switches the tab to its links', () => {
+  it('t f toggles full screen; t l opens the links in the side column', () => {
     const rt = withTabs(1);
     handleWorkKey(rt, { command: 'work.tab.fullscreen' }, () => {});
     expect(rt.store.getState().layout.expanded).toBe(true);
@@ -71,7 +71,9 @@ describe('handleWorkKey — tabs', () => {
     expect(rt.store.getState().layout.expanded).toBe(false);
     handleWorkKey(rt, { command: 'work.tab.section', ref: 'connections' }, () => {});
     const tab = visibleTabs(rt.store.getState())[0];
-    expect(tab?.type === 'entity' && tab.ui.subview).toBe('connections');
+    /* The body stays the entity; Links open beside it (task 01a122b9). */
+    expect(tab?.type === 'entity' && tab.ui.subview).toBe('entity');
+    expect(tab?.type === 'entity' && tab.ui.chat).toEqual({ open: true, section: 'links' });
   });
 
   it('t c opens and closes the tab chat', () => {
@@ -155,11 +157,11 @@ describe('t l — the links list takes focus', () => {
     expect(focusLinksList()).toBe(false);
     const host = document.createElement('div');
     host.setAttribute('data-testid', 'tws-content');
-    host.innerHTML = '<ul data-testid="pn-peers-list" tabindex="-1"><li data-peer-id="a">a</li></ul>';
+    host.innerHTML = '<ul data-testid="tws-side-links-list" tabindex="-1"><li data-peer-id="a">a</li></ul>';
     document.body.appendChild(host);
     try {
       expect(focusLinksList()).toBe(true);
-      expect(document.activeElement).toBe(host.querySelector('[data-testid="pn-peers-list"]'));
+      expect(document.activeElement).toBe(host.querySelector('[data-testid="tws-side-links-list"]'));
     } finally {
       host.remove();
     }

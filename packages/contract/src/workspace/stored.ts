@@ -17,8 +17,10 @@ import {
   isFileTabProjectId,
   isWorkspaceKind,
   LAYOUT_BOUNDS,
+  SIDE_SECTIONS,
   TAB_SUBVIEWS,
   type Presentation,
+  type SideSection,
   type TabId,
   type TabRecord,
   type TabScope,
@@ -148,7 +150,12 @@ function cleanTab(id: string, raw: unknown): TabRecord | null {
         .slice(0, 20)
     : undefined;
   const chat = isObj(ui.chat) && typeof ui.chat.open === 'boolean'
-    ? { open: ui.chat.open, ...(num(ui.chat.width) ? { width: ui.chat.width } : {}), ...(str(ui.chat.threadId) ? { threadId: ui.chat.threadId } : {}) }
+    ? {
+        open: ui.chat.open,
+        ...(num(ui.chat.width) ? { width: ui.chat.width } : {}),
+        ...(str(ui.chat.threadId) ? { threadId: ui.chat.threadId } : {}),
+        ...(SIDE_SECTIONS.includes(ui.chat.section as never) ? { section: ui.chat.section as SideSection } : {}),
+      }
     : undefined;
   return {
     id,

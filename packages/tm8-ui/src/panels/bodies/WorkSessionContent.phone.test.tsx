@@ -217,7 +217,7 @@ describe('WorkSessionContent on a phone', () => {
    * proves the fork is a fork: no provider, six tabs, terminal default, and
    * the marker absent.
    */
-  it('leaves the desktop arrangement alone — six surfaces, terminal first, no marker', () => {
+  it('leaves the desktop arrangement alone — seven surfaces, terminal first, no marker', () => {
     render(
       <WorkSessionContent
         sessionId={SESSION}
@@ -234,6 +234,7 @@ describe('WorkSessionContent on a phone', () => {
       'Git',
       'Debug',
       'Graph',
+      'Launch context',
     ]);
     expect(screen.getByTestId('work-session-content').dataset.surface).toBe('terminal');
     expect(screen.getByTestId('work-session-content').dataset.arrangement).toBe('desktop');
