@@ -24,6 +24,7 @@ import {
   build,
   defaultRoute,
   dropNoticeText,
+  homeAsTabs,
   normalize,
   parse,
   redirect,
@@ -669,6 +670,12 @@ export interface RouterSyncOptions {
   onNotice?: (notice: RouteNotice) => void;
   /** No addressable space in the hash ⇒ the space picker renders. */
   onSpacePicker?: () => void;
+  /**
+   * Whether bare `/home` reads as the tabs view (`homeAsTabs`) — true on the
+   * three-mode desktop, where Home IS the tabs view, so its own address reads
+   * back without a redirect. Asked per read: the shell can change under it.
+   */
+  homeIsTabs?: () => boolean;
 }
 
 export type RouteNotice =
@@ -721,10 +728,11 @@ export function attachRouter(target: RouterTarget, opts: RouterSyncOptions = {})
       const text = dropNoticeText(outcome.dropped);
       if (text) notice({ kind: 'dropped', classes: outcome.dropped, text });
     }
+    const route = opts.homeIsTabs?.() ? homeAsTabs(outcome.route) : outcome.route;
 
     applying = true;
     try {
-      navStore.getState().hydrate(outcome.route);
+      navStore.getState().hydrate(route);
       /*
        * THE ADDRESS LEADS THE SCREEN STACK — but ONLY here, and "here" is the
        * whole rule. This path runs for back, forward, a pasted hash and a
