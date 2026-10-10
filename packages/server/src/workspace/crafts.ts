@@ -1,6 +1,6 @@
 /**
  * Craft workspaces (Craft redesign doc 01a1255d §3 "Persistence", §4; contract
- * `packages/contract/src/craft-workspace.ts`; migration 315).
+ * `packages/contract/src/craft-workspace.ts`; migration 321).
  *
  * One hidden row of `public.workspaces` per (space, identity, craft): the tabs
  * a person has open on a craft, and whether the craft is in their Craft top
@@ -11,7 +11,7 @@
  *
  * A tab shows the craft itself or one of its DIRECT pages (a `contains` edge
  * from the craft). Removing the edge prunes the tab in the database, for every
- * person, at once (migration 315's trigger). A page soft-deleted instead is
+ * person, at once (migration 321's trigger). A page soft-deleted instead is
  * pruned on the next read or command, and that prune is SAVED (as no one: it
  * stamps no agent change) and pushed, before the command runs or is refused.
  *
@@ -171,10 +171,14 @@ export class CraftWorkspaceService {
    *  - a chat the caller started (`configured_by_identity_id`) whose `about`
    *    edge to the craft was written in the transaction that created the chat
    *    (start_chat; same `created_at`), or
-   *  - a work session under such a chat, or a work session the caller started
-   *    (its creator is the caller's member) whose `about` edge to the craft was
-   *    written in the transaction that created it.
-   * An `about` edge an agent adds later (edges.create) binds nothing.
+   *  - a work session whose `about` edge to the craft was written in the
+   *    transaction that created it (execution.spawn `aboutEntityId`, which only
+   *    a person, or a chat runtime for its own sessions, may set: 321
+   *    work_session_about), and that the caller started: its creator is the
+   *    caller's member, or its parent is a chat the caller started.
+   * An `about` edge an agent adds later (edges.create) binds nothing, and nor
+   * does merely being spawned under the craft's chat: any session token may
+   * name a parent.
    */
   async agentMayCommand(claims: DbClaims, craftId: string, ids: { chatId?: string; workSessionId?: string }): Promise<boolean> {
     if (ids.chatId === undefined && ids.workSessionId === undefined) return false;
@@ -194,17 +198,18 @@ export class CraftWorkspaceService {
              or exists (
                   select 1 from public.entities s
                    where s.id = $3::uuid and s.kind = 'work_session' and s.deleted_at is null
+                     and exists (
+                       select 1 from public.edges e
+                        where e.src_id = s.id and e.type = 'about' and e.dst_id = $1 and e.created_at = s.created_at
+                     )
                      and (
-                       s.parent_id in (select id from chat_ok)
-                       or (
-                         exists (
-                           select 1 from public.members m
-                            where m.entity_id = s.created_by and m.identity_id = (select internal.identity_id())
-                         )
-                         and exists (
-                           select 1 from public.edges e
-                            where e.src_id = s.id and e.type = 'about' and e.dst_id = $1 and e.created_at = s.created_at
-                         )
+                       exists (
+                         select 1 from public.members m
+                          where m.entity_id = s.created_by and m.identity_id = (select internal.identity_id())
+                       )
+                       or exists (
+                         select 1 from public.chats ch
+                          where ch.entity_id = s.parent_id and ch.configured_by_identity_id = (select internal.identity_id())
                        )
                      )
                 ) as ok`,

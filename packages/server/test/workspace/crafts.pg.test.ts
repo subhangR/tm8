@@ -1,5 +1,5 @@
 /**
- * Craft workspaces (Craft redesign doc 01a1255d §3, §4; migration 315) against
+ * Craft workspaces (Craft redesign doc 01a1255d §3, §4; migration 321) against
  * a REAL database: one hidden workspace per (space, identity, craft), its tab
  * commands, the open-crafts list, pruning of pages that left the craft, and
  * which agents may command it.
@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { getOperation, type OperationName } from '@tm8/contract';
 
-import type { DbClaims } from '../../src/db/types.js';
+import type { DbClaims, Querier } from '../../src/db/types.js';
 import { registerEventHandlers } from '../../src/events/handlers.js';
 import { HandlerRegistry } from '../../src/facade/index.js';
 import type { RequestContext } from '../../src/http/types.js';
@@ -124,7 +124,7 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     chatAbout = await chat(craft);
     chatElsewhere = await chat(other);
     chatSomeoneElse = await chat(craft, stranger);
-    sessionAbout = await sessionOn(craft); // 315: a work session may be `about` something
+    sessionAbout = await sessionOn(craft); // 321: a work session may be `about` something
     sessionLater = await raw('work_session');
     sessionUnderChat = await raw('work_session');
     await db.asOwner((q) => q.query('update public.entities set parent_id = $1 where id = $2', [chatAbout, sessionUnderChat]).catch(() => undefined));
@@ -281,14 +281,11 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
   it('§4: a chat or session started on the craft may command it; any other agent is refused', async () => {
     expect(await cmd(craft, 'tabs.activate', { entityId: page }, { as: asChat(chatAbout) })).toMatchObject({ status: 'applied' });
     expect(await cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(sessionAbout) })).toMatchObject({ status: 'applied', workspace: { lastAgentChange: expect.anything() } });
-    const parent = await db.asOwner((q) => q.query<{ parent_id: string | null }>('select parent_id from public.entities where id = $1', [sessionUnderChat]));
-    if (parent[0]?.parent_id === chatAbout) {
-      expect(await cmd(craft, 'tabs.activate', { entityId: page }, { as: asSession(sessionUnderChat) })).toMatchObject({ status: 'applied' });
-      expect(await cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(sessionUnderChat) })).toMatchObject({ status: 'applied' });
-    } else {
-      console.warn('fixture: a work session cannot be parented to a chat here; the child-of-chat path is untested');
-    }
     const refused = { code: 'forbidden', details: { reason: 'not_craft_session' } };
+    // Being under the craft's chat is not enough: any session token may name that chat as its parent.
+    const parent = await db.asOwner((q) => q.query<{ parent_id: string | null }>('select parent_id from public.entities where id = $1', [sessionUnderChat]));
+    expect(parent[0]?.parent_id).toBe(chatAbout);
+    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(sessionUnderChat) })).rejects.toMatchObject(refused);
     await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asChat(chatElsewhere) })).rejects.toMatchObject(refused);
     await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asChat(chatSomeoneElse) })).rejects.toMatchObject(refused);
     await expect(cmd(craft, 'craft.open', undefined, { as: asSession(randomUUID()) })).rejects.toMatchObject(refused);
@@ -308,6 +305,58 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     const bare = await chat(null);
     await about(bare, craft);
     await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asChat(bare) })).rejects.toMatchObject(refused);
+  });
+
+  it('§4 spawn: only a person, or a chat for its own sessions, binds a session at spawn; nothing binds one later', async () => {
+    // The pg harness sets only the four W1 claims; the fifth, tm8.auth_kind, is set here.
+    const as = <T>(authKind: string, fn: (q: Querier) => Promise<T>): Promise<T> =>
+      db.tx(claims(), async (q) => {
+        await q.query("select set_config('tm8.auth_kind', $1, true)", [authKind]);
+        return fn(q);
+      });
+    // As createWorkSession does it: execution_spawn, then work_session_about, in ONE transaction.
+    const spawn = async (authKind: string, opts: { about?: string; parent?: string; fromChat?: string } = {}) =>
+      as(authKind, async (q) => {
+        const r = await q.rpc<{ entity: { id: string } }>('public.execution_spawn', [
+          spaceId, teammate, [], null, 'scratch', '/tmp/craft-spawn', null, null, null, null, 'Craft session', null, false, 50, null,
+          `cmid_${randomUUID()}`, opts.parent ?? null, null, null, null,
+        ]);
+        if (opts.about !== undefined || opts.fromChat !== undefined) {
+          await q.rpc('public.work_session_about', [r.entity.id, opts.about ?? null, opts.fromChat ?? null]);
+        }
+        return r.entity.id;
+      });
+    const refused = { code: 'forbidden', details: { reason: 'not_craft_session' } };
+
+    // A person's spawn with aboutEntityId = the craft.
+    const bound = await spawn('cli', { about: craft });
+    expect(await cmd(craft, 'tabs.activate', { entityId: page }, { as: asSession(bound) })).toMatchObject({ status: 'applied' });
+    expect(await cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(bound) })).toMatchObject({ status: 'applied' });
+    await as('cli', (q) => q.rpc('public.work_session_about', [bound, craft, null])); // a replay: done
+
+    // The craft chat's runtime spawning under itself: the session inherits what the chat is about.
+    const fromChat = await spawn('agent_runtime', { parent: chatAbout, fromChat: chatAbout });
+    expect(await cmd(craft, 'tabs.activate', { entityId: page }, { as: asSession(fromChat) })).toMatchObject({ status: 'applied' });
+    // ...but a chat about something else cannot bind to this craft.
+    await expect(spawn('agent_runtime', { parent: chatElsewhere, fromChat: chatElsewhere, about: craft })).rejects.toMatchObject({ code: '42501' });
+
+    // ESCAPE: an unrelated agent spawns under the craft chat Q. Unbound, it is refused;
+    // it cannot bind itself explicitly, nor borrow Q's binding when Q is not its runtime.
+    const underQ = await spawn('agent', { parent: chatAbout });
+    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(underQ) })).rejects.toMatchObject(refused);
+    await expect(spawn('agent', { parent: chatAbout, about: craft })).rejects.toMatchObject({ code: '42501' });
+    const notUnderQ = await spawn('agent_runtime', { fromChat: chatAbout }); // parent is not Q: binds nothing
+    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(notUnderQ) })).rejects.toMatchObject(refused);
+    // A forged call: a worker token (same identity) names the craft chat as parent AND p_from_chat.
+    await expect(spawn('agent', { parent: chatAbout, fromChat: chatAbout })).rejects.toMatchObject({ code: '42501' });
+
+    // Later: work_session_about refuses a session from another transaction; an edges.create binds nothing.
+    const unbound = await spawn('cli');
+    await expect(as('cli', (q) => q.rpc('public.work_session_about', [unbound, craft, null]))).rejects.toMatchObject({ code: '42501' });
+    await about(unbound, craft);
+    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(unbound) })).rejects.toMatchObject(refused);
+    // The target must be readable.
+    await expect(spawn('cli', { about: randomUUID() })).rejects.toMatchObject({ code: 'P0002' });
   });
 
   it('the list keeps the open flag of a craft the person can no longer see', async () => {
