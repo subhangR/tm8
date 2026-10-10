@@ -525,12 +525,18 @@ function PageBody(props: PageBodyProps) {
  * overview in place. Its pages are not tabs here — they are not pages of
  * this craft.
  */
-function CraftPage({ page, source, gate, runtime, onOpenEntity }: PageBodyProps) {
+function CraftPage({ page, seam, source, gate, runtime, onAsk, onOpenEntity }: PageBodyProps) {
   const nested = useCraft(source, page.id, null);
   const tab = useEmbeddedTab(runtime, gate ? page.id : null, gate ? page.kind : null);
   return (
     <div className="dsn-nested" data-testid="dsn-nested" data-craft={page.id}>
-      <CraftOverview tab={tab} pages={nested.pages} onOpenEntity={onOpenEntity} onClose={noop} />
+      <CraftOverview
+        tab={tab}
+        pages={nested.pages}
+        panel={{ seam, source, gate, runtime, onOpenPage: onOpenEntity, onAsk, onOpenEntity }}
+        onOpenEntity={onOpenEntity}
+        onClose={noop}
+      />
     </div>
   );
 }
