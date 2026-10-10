@@ -16,7 +16,10 @@
  *  · A graph page is the live blueprint canvas (`GraphPage`); its view
  *    switcher sits in the section's own header, not the strip.
  *  · A doc, artifact or drawing is the Workspace entity body, the same one
- *    Home draws, in the screen's private runtime. Its chrome is cut off here
+ *    Home draws, in the screen's private runtime. An `entity.upsert` only
+ *    overlays the summary onto a cached detail (title, version) and keeps its
+ *    heavy content, so each section re-reads its own detail on its event
+ *    (`useLiveDetail`): a body edited elsewhere redraws without a reload. Its chrome is cut off here
  *    (no provider value), so a stacked body never portals verbs into the
  *    strip: the strip belongs to the craft while the overview is selected.
  *  · A page that is itself a craft is a compact live section: its title and
@@ -26,7 +29,7 @@
  * caller's `useDesign` read, a graph re-reads on its patch event, an entity
  * body is the Workspace runtime's, and a nested craft runs its own read.
  */
-import { useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import type { EntityId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
@@ -136,7 +139,7 @@ function SectionBody(props: CraftDetailPanelProps & { page: CraftPageRow; contro
       </p>
     );
   }
-  return <EntitySection page={page} runtime={runtime} onOpenEntity={props.onOpenEntity} />;
+  return <EntitySection page={page} seam={seam} gate={gate} runtime={runtime} onOpenEntity={props.onOpenEntity} />;
 }
 
 /** The private runtime's record for one entity, seeded after render. */
@@ -148,8 +151,56 @@ function useEmbeddedTab(runtime: WorkspaceRuntime, entityId: string, kind: strin
   return record?.type === 'entity' && record.kind === kind ? record : null;
 }
 
+/** Quiet time before a burst of upserts (an agent's run of saves) is re-read once. */
+const LIVE_DETAIL_QUIET_MS = 150;
+
+/**
+ * Keep one entity's DETAIL current on its own events. The store overlays an
+ * `entity.upsert` envelope onto a cached detail but keeps the heavy sections
+ * (a doc's body, a drawing's scene), so a stacked body would otherwise show
+ * the content it first read until a reload. One trailing re-read per burst.
+ */
+export function useLiveDetail(
+  seam: Pick<Seam, 'onEvent'>,
+  data: Pick<WorkspaceGateHandles['data'], 'refetchDetail'>,
+  entityId: string,
+): void {
+  /* The gate's data object is rebuilt on most store changes; read it late. */
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = seam.onEvent((event) => {
+      if (event.type !== 'entity.upsert') return;
+      if ((event as { entity?: { id?: string } }).entity?.id !== entityId) return;
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        void dataRef.current.refetchDetail(entityId);
+      }, LIVE_DETAIL_QUIET_MS);
+    });
+    return () => {
+      unsubscribe();
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [seam, entityId]);
+}
+
 /** A doc, artifact or drawing: the Workspace entity body, as Home draws it. */
-function EntitySection({ page, runtime, onOpenEntity }: { page: CraftPageRow; runtime: WorkspaceRuntime; onOpenEntity(id: EntityId): void }) {
+function EntitySection({
+  page,
+  seam,
+  gate,
+  runtime,
+  onOpenEntity,
+}: {
+  page: CraftPageRow;
+  seam: Seam;
+  gate: WorkspaceGateHandles;
+  runtime: WorkspaceRuntime;
+  onOpenEntity(id: EntityId): void;
+}) {
+  useLiveDetail(seam, gate.data, page.id);
   const tab = useEmbeddedTab(runtime, page.id, page.kind);
   if (!tab) return null;
   return (
