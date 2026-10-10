@@ -7,10 +7,19 @@
  */
 import type { EntityTabRecord, SideSection, TabSubview, TabUi } from '../runtime/types';
 
+/**
+ * The section each tab last showed, kept on the client too. A node on a
+ * contract from before `section` drops the field when it normalises the
+ * stored workspace, and every ack rebuilds the store from that copy — a
+ * column resize was enough to snap the column back to Chat. The record wins
+ * when it carries the field; this only fills the gap.
+ */
+const lastSection = new Map<string, SideSection>();
+
 /** The section showing, or null when the column is closed. */
 export function openSideSection(tab: EntityTabRecord, chatAvailable: boolean): SideSection | null {
   if (!tab.ui.chat?.open) return null;
-  const section = tab.ui.chat.section ?? 'chat';
+  const section = tab.ui.chat.section ?? lastSection.get(tab.id) ?? 'chat';
   /* A kind without chat falls back to Messages rather than an empty column. */
   return section === 'chat' && !chatAvailable ? 'messages' : section;
 }
@@ -27,6 +36,7 @@ export function sidePatch(
 ): Partial<TabUi> {
   const showing = openSideSection(tab, chatAvailable);
   if (toggle && showing === section) return { chat: { open: false } };
+  lastSection.set(tab.id, section);
   return { chat: { open: true, section } };
 }
 

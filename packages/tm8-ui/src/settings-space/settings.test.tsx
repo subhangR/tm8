@@ -148,7 +148,7 @@ function fakePort(over: Partial<SettingsPort> = {}): SettingsPort {
  * defect) or a verb somebody wired without saying so.
  */
 const LIVE_VERBS = [
-  /^Profile$/,
+  /^Space profile$/,
   /^Members & roles$/,
   /^Invites$/,
   // W4: both Sessions nav rows are live — `auth.sessions.list/revoke` are real
@@ -351,14 +351,14 @@ describe('T2-1a — the settings shell has no dead nav row', () => {
     render(<SettingsShell port={port} />);
     await screen.findByTestId('settings-load-error');
     // Profile still has its real facts even though the members read died.
-    fireEvent.click(screen.getByRole('button', { name: 'Profile' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Space profile' }));
     expect(screen.getByText('atelier')).toBeTruthy();
   });
 
   it('Profile shows only what SpaceSummary carries, and refuses editing', async () => {
     render(<SettingsShell port={fakePort()} />);
     await screen.findByText('Members & roles', { selector: '.set-section__title' });
-    fireEvent.click(screen.getByRole('button', { name: 'Profile' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Space profile' }));
     expect(screen.getByText('the workshop space')).toBeTruthy();
     const edit = screen.getByRole('button', { name: 'edit space details' });
     expect(edit.getAttribute('aria-disabled')).toBe('true');

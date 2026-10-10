@@ -156,19 +156,19 @@ describe('who is NOT redirected', () => {
   });
 });
 
-describe('the selector is Work · Design · Observe', () => {
-  it('in Work: the view menu lists exactly the three modes, Work current', async () => {
+describe('the selector is Work · Design · Observe · Settings', () => {
+  it('in Work: the view menu lists exactly the four modes, Work current', async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
     const trigger = view.getByTestId('tws-view-select');
     expect(trigger.textContent).toContain('Work');
     fireEvent.click(trigger);
     const rows = within(view.getByRole('menu', { name: 'Views' })).getAllByRole('menuitemradio');
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Design', 'Observe']);
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Design', 'Observe', 'Settings']);
     expect(rows[0]!.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('on Observe: the bar leads with the three modes and no retired view anywhere', async () => {
+  it('on Observe: the bar leads with the four modes and no retired view anywhere', async () => {
     const view = mount(at('/graph'));
     const tabs = await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
     const pill = within(tabs).getByTestId('top-view-switcher');
@@ -176,6 +176,7 @@ describe('the selector is Work · Design · Observe', () => {
       'Work',
       'Design',
       'Observe',
+      'Settings',
     ]);
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
     for (const retired of ['Home', 'Workspace', 'Board', 'Craft', 'Graph']) expect(labels).not.toContain(retired);
