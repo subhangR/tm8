@@ -184,6 +184,9 @@ export function registerEventHandlers(registry: HandlerRegistry, deps: EventHand
     registry.register('workspace.delete', workspace.remove);
     registry.register('workspace.switch', workspace.switchTo);
     registry.register('workspace.prompts.resolve', workspace.resolvePrompt);
+    registry.register('workspace.crafts.list', workspace.crafts);
+    registry.register('workspace.crafts.get', workspace.craft);
+    registry.register('workspace.crafts.command', workspace.craftCommand);
   }
 }
 
