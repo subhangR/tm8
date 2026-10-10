@@ -74,7 +74,18 @@ import {
 import { FILE_PALETTE_SCOPE, parseFilePaletteRef, recentFilePaletteViews } from '../project-file/palette';
 import { useProjectNames } from '../project-file/projects';
 import { useRecentProjectFiles } from '../project-file/recent';
-import { CraftScreen, CraftsHome, CraftsNav, craftSourceFromSeam, craftsSourceFromSeam, type CraftTarget } from '../craft';
+import {
+  CraftHeaderSwitcher,
+  CraftScreen,
+  CraftsHome,
+  CraftsNav,
+  craftSourceFromSeam,
+  craftsSourceFromSeam,
+  craftTabsKey,
+  localOpenCraftsPort,
+  serverOpenCraftsPort,
+  type CraftTarget,
+} from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
@@ -2220,6 +2231,16 @@ export function GateApp(props: GateAppProps = {}) {
     (craftId: EntityId) => navStore.getState().navigate({ view: 'craft', designId: craftId }),
     [],
   );
+  /* The viewer's open-craft tabs in the Craft top bar. */
+  const openCraftsPort = useMemo(
+    () =>
+      !workspaceSpaceId || !viewerMemberId
+        ? null
+        : data.seam.craftWorkspaces
+          ? serverOpenCraftsPort(data.seam.craftWorkspaces, workspaceSpaceId)
+          : localOpenCraftsPort(craftTabsKey(nodeKey, workspaceSpaceId, viewerMemberId)),
+    [data.seam.craftWorkspaces, nodeKey, workspaceSpaceId, viewerMemberId],
+  );
   const craftSource = useMemo(
     () => craftSourceFromSeam(data.seam, data.spaceId as SpaceId),
     [data.seam, data.spaceId],
@@ -2540,7 +2561,16 @@ export function GateApp(props: GateAppProps = {}) {
      space · mode · switcher, and the switcher is the current mode's own —
      Home switches workspaces, Craft switches crafts. One table, keyed by the
      mode's group id; a mode with no row (Observe, Settings) draws none. */
-  const craftSwitcherEl: ReactNode = null; // L4: the craft switcher
+  /* Craft's switcher + the viewer's open-craft tabs (doc 01a1255d §3). */
+  const craftSwitcherEl: ReactNode = workspaceSpaceId ? (
+    <CraftHeaderSwitcher
+      source={craftsSource}
+      openCrafts={openCraftsPort}
+      currentCraftId={navView.view === 'craft' ? navView.designId ?? null : null}
+      onOpenHome={() => navigateCraft({})}
+      onOpenCraft={openCraft}
+    />
+  ) : null;
   const modeSwitcherEl: ReactNode = threeModes
     ? (({ [WORKSPACE_TABS_TAB_ID]: workspaceSwitcherEl, craft: craftSwitcherEl } as Record<string, ReactNode>)[activeGroupId ?? ''] ?? null)
     : workspaceSwitcherEl;

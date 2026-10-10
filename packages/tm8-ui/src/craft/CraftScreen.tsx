@@ -52,7 +52,7 @@ import { CraftOverview } from './CraftOverview';
 import { PageRow } from './PageRow';
 import { useCraft, type CraftHandle } from './useCraft';
 import type { CraftPageRow, CraftSource, NewPageKind } from './craft-source';
-import type { CraftCard, CraftsSource } from './crafts-source';
+import type { CraftsSource } from './crafts-source';
 import type { CraftPanelHostProps } from './types';
 import '../session-graph/session-graph.css';
 import './craft.css';
@@ -123,7 +123,7 @@ function useEmbeddedTab(runtime: WorkspaceRuntime, entityId: string | null, kind
 }
 
 export function CraftScreen(props: CraftScreenProps) {
-  const { seam, spaceId, nodeKey, source, craftId, pageId, onNavigate, crafts, gate, panelHost, onNotice, framed = false } = props;
+  const { seam, spaceId, nodeKey, source, craftId, pageId, onNavigate, gate, panelHost, onNotice, framed = false } = props;
   const frame = useFrameSlots();
   const frameTop = frame.top;
   const runtime = useEmbeddedRuntime(props.viewerId ?? 'viewer', spaceId);
@@ -380,7 +380,10 @@ export function CraftScreen(props: CraftScreenProps) {
           <span aria-hidden>‹</span> Crafts
         </button>
         <span className="crf-head__sep" aria-hidden>·</span>
-        <CraftSwitcher title={title} crafts={crafts} currentId={craftId} onPick={(id) => onNavigate({ craftId: id })} />
+        {/* Switching crafts is the top bar's job now (CraftHeaderSwitcher). */}
+        <h1 className="dsn-title" data-testid="dsn-title">
+          {title}
+        </h1>
         <span className="crf-head__fill" />
       </header>}
       <div className="crf-split" ref={splitRef} style={{ '--crf-chat': `${chatWidth}px` } as CSSProperties}>
@@ -485,94 +488,6 @@ function PlainPage({ page, onOpen }: { page: CraftPageRow; onOpen(): void }) {
       <h2 className="dsn-plain__title">{page.title}</h2>
       <p className="dsn-plain__line">{getKind(page.kind).label}</p>
       <button type="button" className="dsn-btn" onClick={onOpen}>Open</button>
-    </div>
-  );
-}
-
-/** The title and its ▾: switch to another craft without going home. */
-function CraftSwitcher({
-  title,
-  crafts,
-  currentId,
-  onPick,
-}: {
-  title: string;
-  crafts: CraftsSource | undefined;
-  currentId: EntityId;
-  onPick(id: EntityId): void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [cards, setCards] = useState<readonly CraftCard[] | null>(null);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!open || !crafts) return;
-    let live = true;
-    crafts.list().then(
-      (list) => live && setCards(list),
-      () => live && setCards([]),
-    );
-    const onDown = (event: MouseEvent) => {
-      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
-      event.preventDefault();
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      live = false;
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey, true);
-    };
-  }, [open, crafts]);
-
-  if (!crafts) {
-    return <h1 className="dsn-title" data-testid="dsn-title">{title}</h1>;
-  }
-  return (
-    <div className="dsn-switch" ref={wrapRef}>
-      <button
-        type="button"
-        className="crf-pick dsn-title"
-        data-testid="dsn-title"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title="Switch craft"
-        onClick={() => setOpen((was) => !was)}
-      >
-        <span className="crf-pick__title">{title}</span>
-        <span className="crf-pick__caret" aria-hidden>
-          ▾
-        </span>
-      </button>
-      {open ? (
-        <div className="crf-pop" role="menu" aria-label="Crafts" data-testid="dsn-switch-pop">
-          <div className="crf-pop__list">
-            {cards === null ? (
-              <p className="crf-pop__hollow" role="status">Loading crafts…</p>
-            ) : (
-              cards.map((card) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  key={card.id}
-                  className="crf-pop__row"
-                  data-active={card.id === currentId || undefined}
-                  onClick={() => {
-                    setOpen(false);
-                    if (card.id !== currentId) onPick(card.id);
-                  }}
-                >
-                  <span className="crf-pop__row-title">{card.title}</span>
-                  <span className="crf-pop__row-meta">{`${card.pageCount} page${card.pageCount === 1 ? '' : 's'}`}</span>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
