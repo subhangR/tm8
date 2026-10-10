@@ -516,11 +516,20 @@ function craftFlag(cmd: CommandContext): string | undefined {
   return raw;
 }
 
-/** A tab named by its tab id or the entity it shows; the server matches either. */
-function craftTabRef(raw: string, craftId: string): { tabId: string } | { entityId: string } {
-  // The overview tab's id IS the craft id; any other uuid names an entity.
-  if (raw === craftId || !UUID_RE.test(raw)) return { tabId: raw };
-  return { entityId: raw };
+/**
+ * A tab named by its tab id or by the entity it shows, resolved against the
+ * workspace as it is now: a tab id wins, then the entity a tab shows. Both are
+ * uuids, so the shape of the argument cannot tell them apart.
+ */
+async function craftTabId(cmd: CommandContext, craftId: string, raw: string, ws?: CraftWorkspace): Promise<string> {
+  const now = ws ?? await craftFetch(cmd, craftId);
+  const tab = now.state.tabs.find((t) => t.id === raw) ?? now.state.tabs.find((t) => t.entityId === raw);
+  if (!tab) throw new CliError(`no tab ${raw} (by tab id or the entity it shows)`, EXIT_NOT_FOUND, { hint: `tm8 workspace --craft ${craftId} get` });
+  return tab.id;
+}
+
+function craftFetch(cmd: CommandContext, craftId: string): Promise<CraftWorkspace> {
+  return observedInvoke<CraftWorkspace>(clientFor(cmd.ctx), 'workspace.crafts.get', { params: { spaceId: requireSpace(cmd.ctx), craftId } });
 }
 
 function renderCraft(ws: CraftWorkspace): string {
@@ -641,33 +650,27 @@ const CRAFT_COMMANDS: CommandModule[] = [
   },
 ];
 
-const craftTabsOpen = (cmd: CommandContext, craftId: string): Promise<ExitCode> => {
+const craftTabsOpen = async (cmd: CommandContext, craftId: string): Promise<ExitCode> => {
   const hint = 'tm8 workspace --craft <craft-id> tabs open <kind> <entity-id> [--before <tab|entity>] [--no-activate]';
   const kind = arg(cmd, 0, 'kind', hint);
   const entityId = arg(cmd, 1, 'entity-id', hint);
   if (cmd.args.length > 2) usage('a craft opens one tab at a time', hint);
   const before = cmd.options.value('before');
-  const beforeRef = before === undefined || before === 'last' ? undefined : craftTabRef(before, craftId);
-  if (beforeRef && 'entityId' in beforeRef) usage('--before names a tab id here', hint);
+  const beforeTabId = before === undefined || before === 'last' ? null : await craftTabId(cmd, craftId, before);
   return craftSend(cmd, craftId, 'tabs.open', {
     kind,
     entityId,
     ...(cmd.options.bool('no-activate') ? { activate: false } : {}),
-    ...(before === undefined ? {} : { beforeTabId: beforeRef ? beforeRef.tabId : null }),
+    ...(before === undefined ? {} : { beforeTabId }),
   });
 };
 
-/** Resolve `--before <tab|entity|last>` to a tab id, reading the workspace when an entity is named. */
-async function craftBeforeTab(cmd: CommandContext, craftId: string, hint: string): Promise<string | null> {
+/** Resolve `--before <tab|entity|last>` to a tab id. */
+async function craftBeforeTab(cmd: CommandContext, craftId: string, hint: string, ws: CraftWorkspace): Promise<string | null> {
   const raw = cmd.options.value('before');
   if (raw === undefined) usage('tabs move needs --before <tab|entity|last>', hint);
   if (raw === 'last') return null;
-  const ref = craftTabRef(raw, craftId);
-  if ('tabId' in ref) return ref.tabId;
-  const ws = await observedInvoke<CraftWorkspace>(clientFor(cmd.ctx), 'workspace.crafts.get', { params: { spaceId: requireSpace(cmd.ctx), craftId } });
-  const tab = ws.state.tabs.find((t) => t.entityId === ref.entityId);
-  if (!tab) throw new CliError(`no open tab shows ${ref.entityId}`, EXIT_NOT_FOUND, { hint: `tm8 workspace --craft ${craftId} get` });
-  return tab.id;
+  return craftTabId(cmd, craftId, raw, ws);
 }
 
 export const WORKSPACE_COMMANDS: CommandModule[] = [
@@ -723,7 +726,7 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
     path: ['workspace', 'tabs', 'close'],
     run: tabsVerb(
       (cmd) => send(cmd, 'workspace.tabs.close', { tabId: arg(cmd, 0, 'tab-id', 'tm8 workspace tabs close <tab-id>') }),
-      (cmd, craftId) => craftSend(cmd, craftId, 'tabs.close', craftTabRef(arg(cmd, 0, 'tab|entity', CRAFT_TABS_HINT), craftId)),
+      async (cmd, craftId) => craftSend(cmd, craftId, 'tabs.close', { tabId: await craftTabId(cmd, craftId, arg(cmd, 0, 'tab|entity', CRAFT_TABS_HINT)) }),
     ),
   },
   {
@@ -751,7 +754,7 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
     path: ['workspace', 'tabs', 'activate'],
     run: tabsVerb(
       (cmd) => send(cmd, 'workspace.tabs.activate', { tabId: arg(cmd, 0, 'tab-id', 'tm8 workspace tabs activate <tab-id>') }),
-      (cmd, craftId) => craftSend(cmd, craftId, 'tabs.activate', craftTabRef(arg(cmd, 0, 'tab|entity', CRAFT_TABS_HINT), craftId)),
+      async (cmd, craftId) => craftSend(cmd, craftId, 'tabs.activate', { tabId: await craftTabId(cmd, craftId, arg(cmd, 0, 'tab|entity', CRAFT_TABS_HINT)) }),
     ),
   },
   {
@@ -759,7 +762,7 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
     path: ['workspace', 'tabs', 'focus'],
     run: tabsVerb(
       (cmd) => send(cmd, 'workspace.tabs.activate', { tabId: arg(cmd, 0, 'tab-id', 'tm8 workspace tabs focus <tab-id>') }),
-      (cmd, craftId) => craftSend(cmd, craftId, 'tabs.activate', craftTabRef(arg(cmd, 0, 'tab|entity', CRAFT_TABS_HINT), craftId)),
+      async (cmd, craftId) => craftSend(cmd, craftId, 'tabs.activate', { tabId: await craftTabId(cmd, craftId, arg(cmd, 0, 'tab|entity', CRAFT_TABS_HINT)) }),
     ),
   },
   {
@@ -770,8 +773,9 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
       return send(cmd, 'workspace.tabs.move', { tabId, ...(before ? { beforeTabId: before } : {}) });
     }, async (cmd, craftId) => {
       const hint = 'tm8 workspace --craft <craft-id> tabs move <tab|entity> --before <tab|entity|last>';
-      const ref = craftTabRef(arg(cmd, 0, 'tab|entity', hint), craftId);
-      return craftSend(cmd, craftId, 'tabs.move', { ...ref, beforeTabId: await craftBeforeTab(cmd, craftId, hint) });
+      const raw = arg(cmd, 0, 'tab|entity', hint);
+      const ws = await craftFetch(cmd, craftId);
+      return craftSend(cmd, craftId, 'tabs.move', { tabId: await craftTabId(cmd, craftId, raw, ws), beforeTabId: await craftBeforeTab(cmd, craftId, hint, ws) });
     }),
   },
   {

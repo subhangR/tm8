@@ -5,12 +5,15 @@
  * One hidden row of `public.workspaces` per (space, identity, craft): the tabs
  * a person has open on a craft, and whether the craft is in their Craft top
  * bar. Reads and writes run as the caller (`tm8_app`, identity-equality RLS);
- * the writes go through `craft_workspace_save` / `craft_workspaces_arrange`.
+ * the writes go through `craft_workspace_save` (tab state, compare-and-swap) and
+ * `craft_workspace_list_apply` (the open-crafts list, read-modify-written under
+ * the database lock).
  *
  * A tab shows the craft itself or one of its DIRECT pages (a `contains` edge
- * from the craft). A tab whose page has left the craft is pruned on the next
- * read or write; a read that prunes saves the result and pushes it, so every
- * window of the person drops the tab.
+ * from the craft). Removing the edge prunes the tab in the database, for every
+ * person, at once (migration 315's trigger). A page soft-deleted instead is
+ * pruned on the next read or command, and that prune is SAVED (as no one: it
+ * stamps no agent change) and pushed, before the command runs or is refused.
  *
  * Writes are serialized per (space, identity) in this process, like Home
  * workspaces; the revision compare-and-swap catches the rest.
@@ -69,6 +72,9 @@ const iso = (v: Date | string | null): string | null => (v === null ? null : new
 /** Unscoped craft kinds, until the design→craft rename (L1) lands everywhere. */
 const CRAFT_KINDS_SQL = `('craft', 'design')`;
 
+/** Who a prune is saved as: no actor, so it never reads as an agent's change. */
+const SYSTEM: CraftActor = { actorClass: 'human' };
+
 class Refused extends Error {
   constructor(readonly reason: CraftWorkspaceResultReason, message: string) {
     super(message);
@@ -81,26 +87,23 @@ export class CraftWorkspaceService {
   constructor(private readonly deps: { db: Db; bridge: WorkspaceBridge }) {}
 
   /** The person's craft workspaces in the space, in `position` order; crafts they can no longer read are left out. */
-  list(claims: DbClaims, spaceId: string): Promise<CraftWorkspaceListResult> {
-    return this.deps.db.tx(claims, async (q) => {
-      await q.query('set local role tm8_app');
-      const query = q.query.bind(q) as Query;
-      const rows = await this.rows(query, spaceId);
-      const pages = await this.pagesOf(query, rows.map((r) => r.craft_id));
-      return { items: rows.map((r) => this.view(r, pages.get(r.craft_id) ?? new Set()).workspace), openCap: CRAFT_OPEN_CAP };
-    });
+  async list(claims: DbClaims, spaceId: string): Promise<CraftWorkspaceListResult> {
+    const views = await this.views(claims, spaceId);
+    if (views.some((v) => v.pruned)) {
+      return this.serialize(claims, spaceId, async () => {
+        const items: CraftWorkspace[] = [];
+        for (const v of await this.views(claims, spaceId)) {
+          items.push(v.pruned ? await this.persistPrune(claims, spaceId, v.workspace) : v.workspace);
+        }
+        return { items, openCap: CRAFT_OPEN_CAP };
+      });
+    }
+    return { items: views.map((v) => v.workspace), openCap: CRAFT_OPEN_CAP };
   }
 
   /** One craft's workspace (the default when the person has none yet). A read that prunes saves and pushes. */
-  get(claims: DbClaims, spaceId: string, craftId: string, actor: CraftActor): Promise<CraftWorkspace> {
-    return this.serialize(claims, spaceId, async () => {
-      const loaded = await this.load(claims, spaceId, craftId);
-      if (!loaded.pruned || loaded.row === null) return loaded.workspace;
-      const saved = await this.save(claims, spaceId, craftId, loaded.workspace, loaded.workspace.state, actor);
-      if (saved === null) return (await this.load(claims, spaceId, craftId)).workspace;
-      this.pushOne(claims, spaceId, saved);
-      return saved;
-    });
+  get(claims: DbClaims, spaceId: string, craftId: string): Promise<CraftWorkspace> {
+    return this.serialize(claims, spaceId, async () => (await this.loadPersisted(claims, spaceId, craftId)).workspace);
   }
 
   /** One command on one craft's workspace (contract `workspace.crafts.command`). */
@@ -112,11 +115,13 @@ export class CraftWorkspaceService {
     actor: CraftActor,
   ): Promise<CraftWorkspaceCommandResult> {
     return this.serialize(claims, spaceId, async () => {
-      const loaded = await this.load(claims, spaceId, craftId);
+      const stored = await this.load(claims, spaceId, craftId);
+      const loaded = stored.pruned ? await this.loadPersisted(claims, spaceId, craftId) : stored;
       const ws = loaded.workspace;
       const result = (status: CraftWorkspaceCommandResult['status'], workspace: CraftWorkspace, extra: Partial<CraftWorkspaceCommandResult> = {}): CraftWorkspaceCommandResult =>
         ({ requestId: input.requestId, status, ...extra, workspace });
-      if (input.expectedRevision !== undefined && input.expectedRevision !== ws.revision) {
+      // The revision the caller saw is the stored one, from before any prune made here.
+      if (input.expectedRevision !== undefined && input.expectedRevision !== stored.workspace.revision) {
         return result('conflict', ws, { reason: 'revision_conflict' });
       }
       const parsed = CRAFT_WORKSPACE_ARG_SCHEMAS[input.command].safeParse(input.args);
@@ -125,7 +130,7 @@ export class CraftWorkspaceService {
 
       if (input.command.startsWith('craft.')) {
         try {
-          const changed = await this.arrange(claims, spaceId, craftId, loaded, input.command, args, actor);
+          const changed = await this.arrange(claims, spaceId, craftId, loaded.workspace, input.command, args, actor);
           const after = (await this.load(claims, spaceId, craftId)).workspace;
           if (!changed) return result('no_op', after);
           await this.pushList(claims, spaceId);
@@ -144,7 +149,7 @@ export class CraftWorkspaceService {
         throw error;
       }
       const extra = { ...(step.tabId ? { tabId: step.tabId } : {}), ...(step.outcome ? { outcome: step.outcome } : {}) };
-      if (!loaded.pruned && sameState(step.state, ws.state)) return result('no_op', ws, extra);
+      if (sameState(step.state, ws.state)) return result('no_op', ws, extra);
       const saved = await this.save(claims, spaceId, craftId, ws, step.state, actor);
       if (saved === null) {
         return result('conflict', (await this.load(claims, spaceId, craftId)).workspace, { reason: 'revision_conflict' });
@@ -160,26 +165,50 @@ export class CraftWorkspaceService {
   }
 
   /**
-   * §4: may this agent command the caller's workspace for `craftId`? Only a
-   * chat about the craft, a work session about it, or a session whose parent
-   * is a chat about it. The ids come off the verified bearer, never the body.
+   * §4: may this agent command the caller's workspace for `craftId`? The ids
+   * come off the verified bearer, never the body, and the binding to the craft
+   * must be one the agent could not have made itself:
+   *  - a chat the caller started (`configured_by_identity_id`) whose `about`
+   *    edge to the craft was written in the transaction that created the chat
+   *    (start_chat; same `created_at`), or
+   *  - a work session under such a chat, or a work session the caller started
+   *    (its creator is the caller's member) whose `about` edge to the craft was
+   *    written in the transaction that created it.
+   * An `about` edge an agent adds later (edges.create) binds nothing.
    */
   async agentMayCommand(claims: DbClaims, craftId: string, ids: { chatId?: string; workSessionId?: string }): Promise<boolean> {
-    const sources = [ids.chatId, ids.workSessionId].filter((x): x is string => typeof x === 'string');
-    if (sources.length === 0) return false;
+    if (ids.chatId === undefined && ids.workSessionId === undefined) return false;
     return this.deps.db.tx(claims, async (q) => {
       await q.query('set local role tm8_app');
       const rows = await q.query<{ ok: boolean }>(
-        `select exists (
-                  select 1 from public.edges e
-                   where e.type = 'about' and e.dst_id = $1 and e.src_id = any($2::uuid[])
-                ) or exists (
+        `with chat_ok as (
+           select c.id
+             from public.entities c
+             join public.chats ch on ch.entity_id = c.id
+             join public.edges e on e.src_id = c.id and e.type = 'about' and e.dst_id = $1
+                                and e.created_at = c.created_at
+            where c.kind = 'chat' and c.deleted_at is null
+              and ch.configured_by_identity_id = (select internal.identity_id())
+         )
+         select exists (select 1 from chat_ok where id = $2::uuid)
+             or exists (
                   select 1 from public.entities s
-                    join public.entities c on c.id = s.parent_id and c.kind = 'chat'
-                    join public.edges e on e.src_id = c.id and e.type = 'about' and e.dst_id = $1
-                   where s.id = $3::uuid
+                   where s.id = $3::uuid and s.kind = 'work_session' and s.deleted_at is null
+                     and (
+                       s.parent_id in (select id from chat_ok)
+                       or (
+                         exists (
+                           select 1 from public.members m
+                            where m.entity_id = s.created_by and m.identity_id = (select internal.identity_id())
+                         )
+                         and exists (
+                           select 1 from public.edges e
+                            where e.src_id = s.id and e.type = 'about' and e.dst_id = $1 and e.created_at = s.created_at
+                         )
+                       )
+                     )
                 ) as ok`,
-        [craftId, sources, ids.workSessionId ?? null],
+        [craftId, ids.chatId ?? null, ids.workSessionId ?? null],
       );
       return rows[0]?.ok === true;
     });
@@ -238,6 +267,33 @@ export class CraftWorkspaceService {
     };
   }
 
+  /** Every workspace in the list, pruned in view, and whether the prune is unsaved. */
+  private views(claims: DbClaims, spaceId: string): Promise<Array<{ workspace: CraftWorkspace; pruned: boolean }>> {
+    return this.deps.db.tx(claims, async (q) => {
+      await q.query('set local role tm8_app');
+      const query = q.query.bind(q) as Query;
+      const rows = await this.rows(query, spaceId);
+      const pages = await this.pagesOf(query, rows.map((r) => r.craft_id));
+      return rows.map((r) => this.view(r, pages.get(r.craft_id) ?? new Set()));
+    });
+  }
+
+  /** Save a prune seen on read, as no one, and push it; on a lost race, whatever is stored now. Call serialized. */
+  private async persistPrune(claims: DbClaims, spaceId: string, ws: CraftWorkspace): Promise<CraftWorkspace> {
+    const saved = await this.save(claims, spaceId, ws.craftId, ws, ws.state, SYSTEM);
+    if (saved === null) return (await this.load(claims, spaceId, ws.craftId)).workspace;
+    this.pushOne(claims, spaceId, saved);
+    return saved;
+  }
+
+  /** load(), with an unsaved prune saved first. Call serialized. */
+  private async loadPersisted(claims: DbClaims, spaceId: string, craftId: string): Promise<Awaited<ReturnType<CraftWorkspaceService['load']>>> {
+    const loaded = await this.load(claims, spaceId, craftId);
+    if (!loaded.pruned || loaded.row === null) return loaded;
+    await this.persistPrune(claims, spaceId, loaded.workspace);
+    return this.load(claims, spaceId, craftId);
+  }
+
   /** The craft's workspace as stored (or the default), pruned; `craft_not_found` (404) when the caller cannot read the craft. */
   private load(claims: DbClaims, spaceId: string, craftId: string): Promise<{ row: Row | null; workspace: CraftWorkspace; pruned: boolean; all: Row[] }> {
     return this.deps.db.tx(claims, async (q) => {
@@ -287,54 +343,45 @@ export class CraftWorkspaceService {
     return (await this.load(claims, spaceId, craftId)).workspace;
   }
 
-  /** craft.open / craft.close / craft.move: the person's list, laid out again. */
+  /**
+   * craft.open / craft.close / craft.move: one call that reads and writes the
+   * person's list under the database lock, so concurrent commands (any node)
+   * cannot overwrite each other. Only this craft's `open` flag changes.
+   */
   private async arrange(
     claims: DbClaims,
     spaceId: string,
     craftId: string,
-    loaded: { row: Row | null; all: Row[]; workspace: CraftWorkspace },
+    ws: CraftWorkspace,
     command: CraftWorkspaceCommand,
     args: Record<string, unknown>,
     actor: CraftActor,
   ): Promise<boolean> {
-    let all = loaded.all;
-    const ids = all.map((r) => r.craft_id);
     const before = args['beforeCraftId'] as string | null | undefined;
-    if (typeof before === 'string' && (before === craftId || !ids.includes(before))) {
-      throw new Refused('craft_not_found', `no open craft ${before} to place it before`);
+    try {
+      return await this.deps.db.tx(claims, async (q) => {
+        await q.query('set local role tm8_app');
+        const rows = await q.query<{ changed: boolean }>(
+          'select public.craft_workspace_list_apply($1, $2, $3, $4, $5, $6::jsonb, $7, $8) as changed',
+          [
+            spaceId,
+            craftId,
+            command,
+            before !== undefined,
+            before ?? null,
+            JSON.stringify(ws.state),
+            actor.actorClass === 'agent' ? (actor.actorId ?? null) : null,
+            actor.actorClass === 'agent',
+          ],
+        );
+        return rows[0]!.changed;
+      });
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'P0002') throw new Refused('craft_not_found', (error as Error).message);
+      if (code === '53400') throw new Refused('open_limit', `at most ${CRAFT_OPEN_CAP} crafts may be open`);
+      throw error;
     }
-    if (command === 'craft.close' && !(loaded.row?.open ?? false)) return false;
-    if (command === 'craft.move' && loaded.row === null) throw new Refused('craft_not_found', 'the craft is not in the list');
-    if (command === 'craft.open' && loaded.row?.open && before === undefined) return false;
-
-    const open = new Set(all.filter((r) => r.open).map((r) => r.craft_id));
-    if (command === 'craft.open') open.add(craftId);
-    if (command === 'craft.close') open.delete(craftId);
-    if (open.size > CRAFT_OPEN_CAP) throw new Refused('open_limit', `at most ${CRAFT_OPEN_CAP} crafts may be open`);
-
-    if (loaded.row === null) {
-      // The first touch makes the row: closed, last, the overview alone.
-      const made = await this.save(claims, spaceId, craftId, loaded.workspace, loaded.workspace.state, actor);
-      if (made === null) throw new Refused('revision_conflict', 'the craft workspace changed');
-      all = [...all, { craft_id: craftId } as Row];
-    }
-    let order = all.map((r) => r.craft_id);
-    if (command !== 'craft.close' && before !== undefined) {
-      order = order.filter((id) => id !== craftId);
-      const at = before === null ? -1 : order.indexOf(before);
-      if (at < 0) order.push(craftId);
-      else order.splice(at, 0, craftId);
-    }
-    const changed = await this.deps.db.tx(claims, async (q) => {
-      await q.query('set local role tm8_app');
-      const rows = await q.query<{ changed: boolean }>('select public.craft_workspaces_arrange($1, $2::uuid[], $3::uuid[]) as changed', [
-        spaceId,
-        order,
-        [...open],
-      ]);
-      return rows[0]!.changed;
-    });
-    return changed || loaded.row === null;
   }
 
   /** The tab commands, on a pruned state. */
