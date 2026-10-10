@@ -266,6 +266,7 @@ export const OPERATIONS = [
   // 276 — move a running chat onto another model. Sticky: it changes the chat,
   // and every turn claimed afterwards runs on the new model. A turn already
   // claimed keeps the model it was stamped with.
+  { name: 'chat.setCredentials', method: 'POST', path: '/v2/chats/:id/credentials', kind: 'command', status: 'v1' },
   { name: 'chat.setModel',           method: 'POST',   path: '/v2/chats/:id/model',                         kind: 'command', status: 'v1' },
 
   // collections / graph / placements / undo

@@ -1,4 +1,4 @@
-import type { ChatMode, ChatWorkdirMode, CommandResult, EntityId, EntitySummary, MessageBatchResult, MessageView, SessionTranscriptContext, SpaceId } from '@tm8/contract';
+import type { ChatCredentialSelection, ChatMode, ChatWorkdirMode, CommandResult, EntityId, EntitySummary, MessageBatchResult, MessageView, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import {
   CHAT_HOME_FIXTURE_THREAD,
@@ -32,6 +32,7 @@ interface ChatListItem {
   about?: ChatThreadSummary['about'];
   teammateId: EntityId;
   model: string;
+  credentialSelection?: ChatCredentialSelection;
   mode: ChatMode;
   workdirMode: ChatWorkdirMode;
   projectId: EntityId | null;
@@ -64,6 +65,7 @@ function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): Chat
     ...(state.about !== undefined ? { about: state.about } : {}),
     teammateId: state.teammateId,
     model: state.model,
+    credentialSelection: state.credentialSelection,
     mode: state.mode,
     workdirMode: state.workdirMode,
     projectId: state.projectId,
@@ -272,6 +274,7 @@ export function createChatHomePortFromSeam(
         teammateLabel: labels.get(item.teammateId) ?? 'Agent teammate',
         model: item.model,
         modelLabel: item.model,
+        credentialSelection: item.credentialSelection,
         mode: item.mode,
         workdirMode: item.workdirMode,
         projectId: item.projectId,
@@ -352,6 +355,7 @@ export function createChatHomePortFromSeam(
             teammateLabel,
             model: item.model,
             modelLabel: item.model,
+            credentialSelection: item.credentialSelection,
             mode: item.mode,
             workdirMode: item.workdirMode,
             projectId: item.projectId,
@@ -376,6 +380,7 @@ export function createChatHomePortFromSeam(
           spaceId: input.spaceId as SpaceId,
           teammateId: input.teammateId,
           model: input.model,
+          ...(input.credentialSelection ? { credentialSelection: input.credentialSelection } : {}),
           mode: input.mode,
           // The rail's project control (write-once, empty state only). A
           // composer that offers none still sends `scratch` explicitly.
@@ -430,6 +435,21 @@ export function createChatHomePortFromSeam(
         ...(input.mode ? { mode: input.mode } : {}),
       });
       return { messageId: messageIdFrom(result) };
+    },
+    async credentialOptions(spaceId) {
+      const [listed, identity] = await Promise.all([
+        seam.credentials.space.list(spaceId as SpaceId), seam.identity(),
+      ]);
+      return listed.credentials.filter(row => row.provider === 'anthropic' && row.status === 'active'
+        && (row.ownerAccountId === null || row.visibility === 'public'
+          || row.ownerAccountId === identity.accountId || row.sharedWithMe))
+        .map(row => ({ id: row.id, label: row.label }));
+    },
+    async setCredentials(input) {
+      const result = await seam.commands.setChatCredentials(input.chatId, { credentialSelection: input.credentialSelection });
+      const cached = listCache.get(input.chatId);
+      if (cached) listCache.set(input.chatId, { ...cached, credentialSelection: result.credentialSelection });
+      return result.credentialSelection;
     },
     async setModel(input) {
       const result = await seam.commands.setChatModel(input.chatId, { model: input.model });

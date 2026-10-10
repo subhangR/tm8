@@ -181,7 +181,7 @@ import {
   RemoveMessageAttachmentsInputSchema,
   SavedViewInputSchema,
   SendHandoffInputSchema,
-  SetChatModelInputSchema,
+  SetChatModelInputSchema, SetChatCredentialsInputSchema,
   StartChatInputSchema,
   ResolveEntityAttentionInputSchema,
   RaiseAttentionSignalInputSchema,
@@ -433,6 +433,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'handoffs.withdraw': WithdrawHandoffInputSchema,
   'chat.start': StartChatInputSchema,
   'chat.setModel': SetChatModelInputSchema,
+  'chat.setCredentials': SetChatCredentialsInputSchema,
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,

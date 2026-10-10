@@ -574,6 +574,21 @@ describe('TM8 Chat durable orchestration', () => {
     }
   });
 
+  it('forwards each claimed credential selection and restarts at the next turn', async () => {
+    const base = { ...claim('cold'), credentialSelection: { source: 'member' }, agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, credentialSelection: { source: 'node' }, runtimeState: 'live' }], []);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async input => ({ CLAUDE_CONFIG_DIR: '/'+input.credentialSelection?.source }),
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp', availableTools: [], allowedTools: [] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts.map(start => start.env?.CLAUDE_CONFIG_DIR)).toEqual(['/member','/node']);
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(runtime.turns).toHaveLength(2);
+  });
+
   it('stops a live child when a credential mutation makes its selection unavailable', async () => {
     const events: string[] = [];
     const db = new FakeDb({ ...claim('cold'), agentMessageId: AGENT_MESSAGE }, events);
