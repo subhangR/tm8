@@ -92,6 +92,8 @@ type SaveState =
 /** The slice of Excalidraw's imperative API this block uses. */
 interface CanvasApi {
   refresh(): void;
+  updateScene(scene: { elements?: readonly unknown[]; appState?: Record<string, unknown> }): void;
+  addFiles?(files: unknown[]): void;
 }
 
 export function DrawingBlock({
@@ -119,6 +121,8 @@ export function DrawingBlock({
    * carries the authoritative new version, so that is what we bank.
    */
   const versionRef = useRef(detail.version);
+  // The content that version came with — see the remote-version effect below.
+  const bankedContentRef = useRef(detail.content);
   // The signature of what the SERVER holds. Anything else is unsaved.
   const savedSignatureRef = useRef(sceneSignature(scene.elements, scene.appState));
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -142,11 +146,55 @@ export function DrawingBlock({
    */
   useEffect(() => {
     versionRef.current = detail.version;
+    bankedContentRef.current = detail.content;
     savedSignatureRef.current = sceneSignature(scene.elements, scene.appState);
     setSave({ phase: 'clean' });
     setImages(hasEmbeddedImages(scene.elements, scene.files));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.id]);
+
+  /*
+   * SOMEONE ELSE'S SAVE REACHES AN OPEN CANVAS.
+   *
+   * Excalidraw reads `initialData` once, at mount, so a host that hands this
+   * block a newer detail (a live re-read after another actor's write) changed
+   * nothing on screen until a reload. A version NEWER than the one banked is
+   * not this block's own save — that one is banked before the host re-renders
+   * — so its scene is pushed into the live canvas. Never over unsaved or
+   * in-flight edits: those keep the canvas, and their save meets the version
+   * conflict below, which is the honest outcome.
+   */
+  const phaseRef = useRef(save.phase);
+  phaseRef.current = save.phase;
+  /*
+   * The content the banked version came with. A store that overlays an
+   * upsert's SUMMARY (version, title) onto the cached detail keeps the old
+   * content object, so a newer version can arrive with the PREVIOUS scene.
+   * Banking it then would turn the real content, re-read a moment later at
+   * the same version, away: the version is no longer newer. Measured in QA:
+   * v14 banked over white, the yellow v14 never drawn. A version is adopted
+   * only with content that was actually re-read (`bankedContentRef`).
+   */
+  useEffect(() => {
+    if (!(detail.version > versionRef.current)) return;
+    if (detail.content === bankedContentRef.current) return;
+    if (phaseRef.current !== 'clean' && phaseRef.current !== 'saved') return;
+    if (timerRef.current) return;
+    versionRef.current = detail.version;
+    bankedContentRef.current = detail.content;
+    const signature = sceneSignature(scene.elements, scene.appState);
+    if (signature === savedSignatureRef.current) return;
+    savedSignatureRef.current = signature;
+    // Files first, so an image the new version adds never renders broken.
+    const files = Object.values(scene.files);
+    if (files.length > 0) apiRef.current?.addFiles?.(files);
+    apiRef.current?.updateScene({
+      elements: scene.elements,
+      appState: scene.appState,
+    });
+    setImages(hasEmbeddedImages(scene.elements, scene.files));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.version, scene]);
 
   // A pending timer must never outlive the component: it would write after the
   // panel closed, under a version nobody is watching.
@@ -238,7 +286,7 @@ export function DrawingBlock({
     // The SAME state when nothing changed, so a repeat `onChange` renders nothing.
     setSave((prev) => (prev.phase === 'saving' || prev.phase === 'dirty' ? prev : { phase: 'dirty' }));
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => { void commit(elements, appState); }, SAVE_DEBOUNCE_MS);
+    timerRef.current = setTimeout(() => { timerRef.current = null; void commit(elements, appState); }, SAVE_DEBOUNCE_MS);
   }, [commit, editable]);
 
   const text = statusText(save, editable);

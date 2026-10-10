@@ -262,10 +262,11 @@ export function CraftScreen(props: CraftScreenProps) {
         onToolNote={publishToolNote}
       />
     ) : (
-      /* THE OVERVIEW — the craft's own tab (L4.2 draws its detail panel). */
+      /* THE OVERVIEW — the craft's own tab (its detail panel: every page live, stacked). */
       <CraftOverview
         tab={ownerTab}
         pages={handle.pages}
+        panel={{ seam, source, gate, runtime, onOpenPage: selectPage, onAsk: seedPrompt, onOpenEntity: openEntity, onNotice }}
         onOpenEntity={openEntity}
         onClose={() => onNavigate({})}
       />
