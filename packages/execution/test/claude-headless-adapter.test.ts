@@ -571,7 +571,7 @@ describe('ClaudeHeadlessAdapter', () => {
       {
         kind: 'error',
         code: 'native_session_mismatch',
-        message: 'Claude initialized a different native session than TM8 pre-minted',
+        message: 'Claude emitted a different native session than TM8 selected',
       },
       { kind: 'done', reason: 'error' },
     ]);
