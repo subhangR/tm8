@@ -12,12 +12,30 @@
  * stop — and it would be wrong in one theme by construction.
  */
 .drw {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-2);
   min-width: 0;
 }
 
+/*
+ * THE CANVAS TAKES THE BODY (task 01a12506). The kind is a `frame`, so its
+ * section is the body's only one: it grows into every pixel and drops the
+ * section's tail padding and rule, which are for a block with something under
+ * it. In a Workspace tab the body's own padding goes too, so the canvas meets
+ * the tab strip, the strip and the screen's bottom edge.
+ */
+.cv2-root .pn-body > .pn-section[data-testid='block-canvas'] {
+  flex: 1 1 auto;
+  padding: 0;
+  border-bottom: 0;
+}
+.cv2-root .tws-panel .pn-body:has(> .pn-section[data-testid='block-canvas']) {
+  padding: 0;
+}
+
+/* The in-place status row: only where the host offers no bar slot. */
 .drw__bar {
   display: flex;
   align-items: center;
@@ -26,16 +44,64 @@
   min-height: 18px;
 }
 
+/*
+ * THE SAVE STATUS: a dot, with its sentence beside it in place and as the
+ * tooltip in the 40px action strip, where a word does not fit. Quiet when
+ * saved, the running colour while a write is pending, the blocked colour when
+ * it failed (and then the notice over the canvas says it out loud too).
+ */
 .drw__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-1);
+  min-width: 28px;
+  min-height: 28px;
   font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);
 }
+.drw__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-ink-4);
+}
+.drw__status[data-phase='dirty'] .drw__dot,
+.drw__status[data-phase='saving'] .drw__dot {
+  background: var(--pn-run);
+}
+.drw__status[data-phase='conflict'] .drw__dot,
+.drw__status[data-phase='error'] .drw__dot {
+  background: var(--pn-block);
+}
+.tws-astrip .drw__status-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 /*
- * The embedded-image notice. `--pn-block` is the BLOCKED colour and that is
- * the honest reading: saving is stopped until the image goes, which is the
+ * The notices: an embedded image (saving paused) and a failed save. They float
+ * over the canvas's top edge, under Excalidraw's toolbar, so they are seen
+ * without taking a row from the canvas. `--pn-block` is the BLOCKED colour and
+ * that is the honest reading: saving is stopped until something changes, the
  * same state a blocked task is in — not an error the user made.
  */
+.drw__notices {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  z-index: 10;
+  width: min(560px, calc(100% - 2 * var(--pn-space-3)));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
 .drw__notice {
   margin: 0;
   padding: var(--pn-space-2) var(--pn-space-3);
@@ -48,9 +114,10 @@
 }
 
 .drw__stage {
-  /* Excalidraw reads its container's box; zero height renders nothing. */
-  min-height: 420px;
-  height: 52vh;
+  /* Excalidraw reads its container's box; zero height renders nothing. The
+     floor is a `min`: the stage grows into whatever the body gives it. */
+  flex: 1 1 auto;
+  min-height: 320px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   overflow: hidden;
@@ -58,6 +125,11 @@
      and would otherwise escape over the panel's chrome. */
   position: relative;
   isolation: isolate;
+}
+/* In a tab the canvas is the tab: no frame around it. */
+.cv2-root .tws-panel .drw__stage {
+  border: 0;
+  border-radius: 0;
 }
 
 /*
@@ -90,27 +162,6 @@
 
 .cv2-root[data-shell='mobile'] .drw__stage > .excalidraw {
   zoom: 1;
-}
-
-/*
- * FULLSCREEN — the artifact viewer's state (`panels.css`, `.pn-preview--
- * fullscreen`), same altitude: `z-index: 60` covers the panel chrome and
- * stays under dialogs (120+) and the palette (200). The stage drops its
- * in-panel height and takes whatever the bar leaves.
- */
-.drw--fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  margin: 0;
-  padding: var(--pn-space-3);
-  background: var(--pn-card);
-}
-
-.drw--fullscreen .drw__stage {
-  flex: 1;
-  min-height: 0;
-  height: auto;
 }
 
 .drw__loading {

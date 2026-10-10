@@ -24,27 +24,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EntityDetail } from '@tm8/contract';
 
 /** Captures the props Excalidraw was mounted with, and lets a test drive onChange. */
-const mounted: { onChange?: (els: unknown[], app: unknown) => void; viewMode?: boolean; initial?: unknown } = {};
+const mounted: {
+  onChange?: (els: unknown[], app: unknown) => void;
+  viewMode?: boolean;
+  initial?: unknown;
+  theme?: unknown;
+  apiProp?: unknown;
+} = {};
+const api = { refresh: vi.fn() };
 
 vi.mock('@excalidraw/excalidraw', () => ({
   Excalidraw: (props: Record<string, unknown>) => {
     mounted.onChange = props.onChange as (els: unknown[], app: unknown) => void;
     mounted.viewMode = props.viewModeEnabled as boolean;
     mounted.initial = props.initialData;
-    // The real root's class, and the real root's Escape: 0.18.1 claims EVERY
-    // Escape pressed in its container — idle ones too — with preventDefault
-    // and stopPropagation (measured in a browser). A mock that let it bubble
-    // would pass a block that can never leave fullscreen by key.
-    return (
-      <div
-        className="excalidraw"
-        data-testid="excalidraw-mock"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }
-        }}
-      />
-    );
+    mounted.theme = props.theme;
+    mounted.apiProp = props.excalidrawAPI;
+    (props.excalidrawAPI as ((a: typeof api) => void) | undefined)?.(api);
+    return <div className="excalidraw" data-testid="excalidraw-mock" tabIndex={0} />;
   },
 }));
 vi.mock('@excalidraw/excalidraw/index.css', () => ({}));
@@ -201,118 +198,125 @@ describe('DrawingBlock', () => {
     expect(screen.getByTestId('excalidraw-mock').closest('[data-owns-keys]')).toBe(stage);
   });
 
-  describe('fullscreen', () => {
-    const idle = { activeTool: { type: 'selection' }, selectedElementIds: {} };
-    const block = () => screen.getByTestId('drawing-block');
-    const toggle = () => screen.getByRole('button', { name: /fullscreen/i });
-
-    async function enterFullscreen() {
-      await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
-      fireEvent.click(toggle());
-      expect(block().classList.contains('drw--fullscreen')).toBe(true);
-    }
-
-    it('the toggle flips a class on the SAME element — the canvas never remounts', async () => {
-      await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
-      const before = block();
-      const canvas = screen.getByTestId('excalidraw-mock');
-      expect(before.classList.contains('drw--fullscreen')).toBe(false);
-      expect(toggle().getAttribute('aria-pressed')).toBe('false');
-
-      fireEvent.click(toggle());
-      expect(block()).toBe(before);
-      expect(screen.getByTestId('excalidraw-mock')).toBe(canvas);
-      expect(before.classList.contains('drw--fullscreen')).toBe(true);
-
-      fireEvent.click(toggle());
-      expect(before.classList.contains('drw--fullscreen')).toBe(false);
-    });
-
-    it('keeps a visible Exit control while fullscreen — Escape is the fast way out, not the only one', async () => {
-      await enterFullscreen();
-      const exit = screen.getByRole('button', { name: 'Exit fullscreen' });
-      expect(exit.getAttribute('aria-pressed')).toBe('true');
-      expect(exit.closest('.drw__bar')).not.toBeNull();
-    });
-
-    it('Escape on the bar exits AND claims the press, so the panel stack does not also pop', async () => {
-      await enterFullscreen();
-      const notCancelled = fireEvent.keyDown(toggle(), { key: 'Escape' });
-      expect(notCancelled).toBe(false); // preventDefault — EntityView's pop checks exactly this
-      expect(block().classList.contains('drw--fullscreen')).toBe(false);
-    });
-
-    it('Escape on an IDLE canvas exits — even though Excalidraw would swallow it', async () => {
-      await enterFullscreen();
-      act(() => mounted.onChange!([el('a', 1)], { ...idle, selectedElementIds: { a: true } }));
-      fireEvent.keyDown(screen.getByTestId('excalidraw-mock'), { key: 'Escape' });
-      expect(block().classList.contains('drw--fullscreen')).toBe(false);
-    });
-
-    it('Escape the canvas has a use for stays in the canvas — and fullscreen stays on', async () => {
-      await enterFullscreen();
-      act(() => mounted.onChange!([el('a', 1)], { ...idle, activeTool: { type: 'rectangle' } }));
-      fireEvent.keyDown(screen.getByTestId('excalidraw-mock'), { key: 'Escape' });
-      expect(block().classList.contains('drw--fullscreen')).toBe(true);
-    });
-
-    it('Escape something above already claimed (defaultPrevented) leaves fullscreen on', async () => {
-      await enterFullscreen();
-      // The app's modal layer consumes in a window capture listener, ahead of
-      // every React handler.
-      const claim = (e: KeyboardEvent) => e.preventDefault();
-      window.addEventListener('keydown', claim, true);
-      try {
-        fireEvent.keyDown(toggle(), { key: 'Escape' });
-      } finally {
-        window.removeEventListener('keydown', claim, true);
-      }
-      expect(block().classList.contains('drw--fullscreen')).toBe(true);
-    });
-
+  describe('the canvas is the whole body (task 01a12506)', () => {
     const empty = () => detailOf({
       content: { kind: 'drawing', format: 'excalidraw', elements: [], appState: {}, files: {} },
       state: { kind: 'drawing', format: 'excalidraw', elementCount: 0 },
     } as Partial<EntityDetail>);
 
-    it('an EMPTY editable scene opens fullscreen — "+ New drawing" lands on the canvas', async () => {
+    it('has no fullscreen of its own — not even for an empty canvas', async () => {
       await mountBlock(<DrawingBlock detail={empty()} commands={{ patchEntity: vi.fn() }} />);
-      expect(block().classList.contains('drw--fullscreen')).toBe(true);
-      expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /fullscreen/i })).toBeNull();
+      expect(screen.getByTestId('drawing-block').className).toBe('drw');
     });
 
-    it('a scene with ANY element opens in the panel', async () => {
+    it('portals the save status into the bar slot, and draws no row of its own', async () => {
+      const slot = document.createElement('div');
+      document.body.appendChild(slot);
+      try {
+        const { container } = render(
+          <DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} barSlot={slot} />,
+        );
+        await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+        const status = screen.getByTestId('drawing-status');
+        expect(slot.contains(status)).toBe(true);
+        expect(status.getAttribute('data-tip')).toBe('Saved');
+        expect(container.querySelector('.drw__bar')).toBeNull();
+      } finally {
+        slot.remove();
+      }
+    });
+
+    it('draws the status in place where the host offers no slot', async () => {
       await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
-      expect(block().classList.contains('drw--fullscreen')).toBe(false);
+      expect(screen.getByTestId('drawing-status').closest('.drw__bar')).not.toBeNull();
     });
 
-    it('a READ-ONLY empty scene opens in the panel — nothing to draw', async () => {
-      await mountBlock(<DrawingBlock detail={empty()} commands={null} />);
-      expect(block().classList.contains('drw--fullscreen')).toBe(false);
-    });
-
-    it('leaving fullscreen on an empty canvas STAYS left — across a re-render and a save', async () => {
+    it('marks a pending write, then a saved one', async () => {
       const patchEntity = vi.fn().mockResolvedValue({ entity: { version: 8 }, patches: [] });
-      const { rerender } = render(<DrawingBlock detail={empty()} commands={{ patchEntity }} />);
-      await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
-      fireEvent.click(toggle());
-      expect(block().classList.contains('drw--fullscreen')).toBe(false);
-
-      // Still empty, re-rendered by the host with a fresh detail object.
-      rerender(<DrawingBlock detail={{ ...empty(), version: 7 }} commands={{ patchEntity }} />);
-      expect(block().classList.contains('drw--fullscreen')).toBe(false);
-
-      // The first stroke saves; the host hands back the row it wrote.
-      act(() => mounted.onChange!([el('a', 1)], {}));
+      await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity }} />);
+      act(() => mounted.onChange!([el('a', 2)], {}));
+      expect(screen.getByTestId('drawing-status').getAttribute('data-phase')).toBe('dirty');
       await vi.advanceTimersByTimeAsync(1000);
-      await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
-      rerender(<DrawingBlock detail={{ ...detailOf(), version: 8 }} commands={{ patchEntity }} />);
-      expect(block().classList.contains('drw--fullscreen')).toBe(false);
+      await waitFor(() => expect(screen.getByTestId('drawing-status').getAttribute('data-phase')).toBe('saved'));
     });
 
-    it('Escape outside fullscreen is left alone for the panel stack', async () => {
+    it('says a failed save OVER the canvas too — a tooltip is too quiet for lost work', async () => {
+      const patchEntity = vi.fn().mockRejectedValue(new Error('expected version 7 is stale'));
+      const slot = document.createElement('div');
+      await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity }} barSlot={slot} />);
+      act(() => mounted.onChange!([el('a', 2)], {}));
+      await vi.advanceTimersByTimeAsync(1000);
+      await waitFor(() =>
+        expect(screen.getByTestId('drawing-save-notice').textContent).toContain('Someone else saved this drawing'));
+      expect(screen.getByTestId('drawing-save-notice').closest('.drw__stage')).not.toBeNull();
+    });
+
+    /*
+     * Excalidraw is memoised on every prop but `initialData` and calls
+     * `onChange` from each update, so a prop that changes per render loops:
+     * an inline `excalidrawAPI` crashed the first stroke with "Maximum update
+     * depth exceeded" (measured in Chrome).
+     */
+    it('hands Excalidraw the SAME callbacks across a re-render', async () => {
+      const commands = { patchEntity: vi.fn() };
+      const { rerender } = render(<DrawingBlock detail={detailOf()} commands={commands} />);
+      await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+      const first = { api: mounted.apiProp, onChange: mounted.onChange };
+      act(() => mounted.onChange!([el('a', 2)], {}));
+      rerender(<DrawingBlock detail={{ ...detailOf(), version: 7 }} commands={commands} />);
+      expect(mounted.apiProp).toBe(first.api);
+      expect(mounted.onChange).toBe(first.onChange);
+    });
+
+    it('follows the app theme', async () => {
       await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
-      expect(fireEvent.keyDown(toggle(), { key: 'Escape' })).toBe(true);
+      expect(['light', 'dark']).toContain(mounted.theme);
+    });
+  });
+
+  /*
+   * THE POINTER FIX. Excalidraw caches the canvas's screen offset and only
+   * hears scroll on the container that was scrollable when it mounted, so a
+   * panel that scrolled later put ink 175px from the pointer (measured). The
+   * block re-reads the offset itself when the stage has actually moved.
+   */
+  describe('re-reads the canvas offset when the stage moves', () => {
+    let top = 100;
+    beforeEach(() => {
+      top = 100;
+      api.refresh.mockClear();
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+        () => ({ left: 10, top, right: 0, bottom: 0, width: 0, height: 0, x: 10, y: top, toJSON: () => ({}) }) as DOMRect,
+      );
+    });
+
+    it('on a scroll anywhere in the page, once the stage has moved', async () => {
+      await mountBlock(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
+      top = 40;
+      const scroller = document.createElement('div');
+      document.body.appendChild(scroller);
+      scroller.dispatchEvent(new Event('scroll'));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(api.refresh).toHaveBeenCalledTimes(1);
+
+      // A scroll that did not move the stage costs nothing.
+      scroller.dispatchEvent(new Event('scroll'));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(api.refresh).toHaveBeenCalledTimes(1);
+      scroller.remove();
+    });
+
+    it('when the pointer enters a stage that moved with no scroll at all', async () => {
+      const { container } = render(<DrawingBlock detail={detailOf()} commands={{ patchEntity: vi.fn() }} />);
+      await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+      fireEvent.pointerEnter(container.querySelector('.drw__stage')!);
+      expect(api.refresh).toHaveBeenCalledTimes(1);
+      fireEvent.pointerEnter(container.querySelector('.drw__stage')!);
+      expect(api.refresh).toHaveBeenCalledTimes(1);
+      top = 64;
+      fireEvent.pointerEnter(container.querySelector('.drw__stage')!);
+      expect(api.refresh).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -349,6 +353,9 @@ describe('DrawingBlock', () => {
   it('never sizes a canvas — Excalidraw sizes its own', () => {
     const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'drawing-block.css'), 'utf8');
     const selectors = css.replace(/\/\*[\s\S]*?\*\//g, '').match(/[^{}]+(?=\{)/g) ?? [];
-    expect(selectors.filter((sel) => /\bcanvas\b/.test(sel))).toEqual([]);
+    // The ELEMENT, not the word: `[data-testid='block-canvas']` names the
+    // panel section the block sits in, which the sheet does size.
+    const unquoted = (sel: string) => sel.replace(/'[^']*'|"[^"]*"/g, '');
+    expect(selectors.filter((sel) => /\bcanvas\b/.test(unquoted(sel)))).toEqual([]);
   });
 });

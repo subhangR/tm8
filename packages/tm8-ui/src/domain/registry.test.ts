@@ -1249,6 +1249,9 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
       // edge for the artifact's reason: a strip and a footer stapled under a
       // frame are chrome the panel exists to get out of the way of.
       container: 'frame',
+      // The drawing's tab IS the canvas (task 01a12506): the Excalidraw
+      // viewport takes the body, its save status rides the strip.
+      drawing: 'frame',
       story: 'canvas',
     };
     for (const row of allKinds()) {

@@ -1830,7 +1830,18 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'canvas' }, { block: 'fields', label: 'DRAWING' }, COLLECTIONS_BLOCK],
+      /*
+       * THE TAB IS THE CANVAS (task 01a12506, owner ruling 2026-10-10): only
+       * the drawing, from under the tab bar to the bottom of the screen. A
+       * `frame` takes the attachment strip and footer off and hands the body's
+       * controls (here, the save status) to the action strip; `titleBar: false`
+       * takes the title row off. Nothing is stranded by the two blocks
+       * leaving: DRAWING held only `format`, always "excalidraw", and
+       * COLLECTIONS' `contains` edges are listed under Links in the side column.
+       */
+      composition: 'frame',
+      titleBar: false,
+      blocks: [{ block: 'canvas' }],
       primaries: ['edit'],
     },
     editFields: [
