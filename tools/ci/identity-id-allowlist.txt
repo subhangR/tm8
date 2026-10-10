@@ -323,5 +323,5 @@ setting public.read_mcp_session_binding(p_session uuid, p_auth_session uuid)  # 
 # Audited inherited readers, with 315 compatibility wrappers revalidated.
 identity_id public.set_chat_credentials(p_chat_id uuid, p_selection jsonb)  # GUARDED: configuring identity and explicit session-space pin; revisioned writer requires human auth and current membership before changing provider intent (315)
 require_identity public.set_chat_credentials(p_chat_id uuid, p_selection jsonb)  # GUARDED: configuring identity and explicit session-space pin; delegates to the same human-only revisioned writer and current membership proof (315)
-identity_id policy entity_seen_select on table public.entity_seen  # GUARDED: caller-owned active member, pinned members_select RLS and is_space_member(m.space_id); reads only that member's markers (313_seen_entities.sql)
+identity_id policy entity_seen_select on table public.entity_seen  # GUARDED: caller-owned active member, pinned members_select RLS and once-per-statement member_space_ids(); reads only that member's markers (315_chat_continuity.sql)
 identity_id public.mark_entity_seen(p_entity_id uuid, p_client_mutation_id text)  # GUARDED: human auth, pinned entity_readable and current_member_id before ledger access; own member actor only; pinned ledger replay with principal and entity binding (313_seen_entities.sql)

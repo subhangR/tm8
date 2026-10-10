@@ -188,6 +188,44 @@ it('checks exact native binding before mint and denies runtime effects outside t
   expect((await database.query('select public.resolve_auth_session($1) result',[tokenHash]))[0].result).toBeNull();
 });
 
+it('verifies legacy bearer, graph and MCP grants only while both generation stamps are absent and the chat is at epoch zero',async()=>{
+  const id=await chat();const tokenHash=createHash('sha256').update(randomUUID()).digest('hex');
+  const mint=()=>caller(async q=>(await q.query(
+    "select public.issue_agent_runtime_session($1,$2,$3,now()+interval '1 hour',null) result",
+    [id,fixture.teammateId,tokenHash])).rows[0].result);
+  const grant=await mint();
+  await caller(q=>q.query("select public.bind_mcp_session($1,$2,'[]'::jsonb)",[id,tokenHash]));
+  const resolve=async()=>(await database.query('select public.resolve_auth_session($1) result',[tokenHash]))[0].result;
+  const runtime=<T>(fn:(q:PoolClient)=>Promise<T>)=>database.transaction(async q=>{
+    await q.query('set local role tm8_app');
+    await q.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','agent_runtime',true),set_config('tm8.auth_session_id',$2,true),set_config('tm8.session_space_id',$3,true)",
+      [fixture.identityA,grant.id,fixture.spaceId]);
+    return fn(q);
+  });
+  const effect=()=>runtime(q=>q.query(`select public.w2_post_message_batch($1::uuid[],'legacy runtime effect',null,
+    '{}'::uuid[],'{}'::uuid[],null,$2::uuid,$3,null,null)`,[[fixture.channelId],fixture.teammateId,randomUUID()]));
+  const read=()=>runtime(async q=>(await q.query('select public.read_mcp_session_binding($1,$2) result',[id,grant.id])).rows[0].result);
+  expect(await resolve()).toMatchObject({sessionId:grant.id,kind:'agent_runtime'});
+  await expect(effect()).resolves.toBeDefined();
+  expect(await read()).toMatchObject({identityId:fixture.identityA,selections:[]});
+  for (const stamp of ['runtime_epoch','runtime_native_generation']) {
+    await database.query(`update auth_sessions set ${stamp}=1 where id=$1`,[grant.id]);
+    expect(await resolve()).toBeNull();
+    await expect(effect()).rejects.toMatchObject({code:'42501'});
+    await expect(read()).rejects.toMatchObject({code:'42501'});
+    await database.query(`update auth_sessions set ${stamp}=null where id=$1`,[grant.id]);
+  }
+  await database.query('update auth_sessions set revoked_at=now() where id=$1',[grant.id]);
+  expect(await resolve()).toBeNull();await expect(read()).rejects.toMatchObject({code:'42501'});
+  await database.query('update auth_sessions set revoked_at=null where id=$1',[grant.id]);
+  await prepared(id);
+  expect(await resolve()).toBeNull();
+  await expect(effect()).rejects.toMatchObject({code:'42501'});
+  await expect(read()).rejects.toMatchObject({code:'42501'});
+  await expect(mint()).rejects.toMatchObject({code:'42501'});
+  expect((await database.query('select revoked_at from auth_sessions where id=$1',[grant.id]))[0].revoked_at).toBeNull();
+});
+
 async function agentMessage(p:Awaited<ReturnType<typeof prepared>>) {
   const id=await caller(async q => (await q.query(`select public.w2_post_message_batch($1::uuid[],'in progress',null,
     '{}'::uuid[],'{}'::uuid[],null,$2::uuid,$3,null,$4::uuid) result`,
@@ -214,6 +252,26 @@ it('fences append and settlement, deduplicates normalized events and does not cl
     [p.id,p.claim.turnId,p.claim.attemptNo,{nodeId:'node-b',bootId:'boot-b'}])).rows[0].result);
   expect(recovery.disposition).toBe('finalized_terminal');
   expect((await database.query('select state from chat_turns where turn_id=$1',[p.claim.turnId]))[0].state).toBe('completed');
+});
+it('requires the recorded normalized done part and restores it during recovery without another submission',async()=>{
+  const p=await prepared();const message=await agentMessage(p);await opened(p);
+  await caller(q=>q.query('select public.begin_chat_dispatch($1,$2,$3,$4)',[p.id,p.fence,p.snapshot,p.sealed.inputDigest]));
+  const terminal={outcome:'completed',evidence:'provider_terminal',body:'final answer',
+    donePart:{eventId:'adapter:terminal',seq:0,payload:{reason:'success'}}};
+  await caller(q=>q.query('select public.record_chat_terminal($1,$2,$3,$4)',[p.id,p.fence,p.snapshot,terminal]));
+  await expect(caller(q=>q.query('select public.complete_chat_turn($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+    [p.claim.turnId,'completed','final answer',null,null,null,p.fence,p.snapshot,terminal,null])))
+    .rejects.toMatchObject({code:'23514'});
+  expect((await database.query('select state from chat_turns where turn_id=$1',[p.claim.turnId]))[0].state).toBe('running');
+  const recovery=await caller(async q=>(await q.query('select public.recover_chat_attempt($1,$2,$3,$4) result',
+    [p.id,p.claim.turnId,p.claim.attemptNo,{nodeId:'node-a',bootId:'boot-b'}])).rows[0].result);
+  expect(recovery.disposition).toBe('finalized_terminal');
+  expect((await database.query('select state from chat_turns where turn_id=$1',[p.claim.turnId]))[0].state).toBe('completed');
+  expect(await database.query("select seq,normalized_event_id,payload from message_parts where message_id=$1 and kind='done'",[message]))
+    .toEqual([{seq:0,normalized_event_id:'adapter:terminal',payload:{reason:'success'}}]);
+  await caller(q=>q.query('select public.recover_chat_attempt($1,$2,$3,$4)',
+    [p.id,p.claim.turnId,p.claim.attemptNo,{nodeId:'node-a',bootId:'boot-b'}]));
+  expect(await database.query("select seq from message_parts where message_id=$1 and kind='done'",[message])).toHaveLength(1);
 });
 it('lets only one claim owner win and preserves a healthy other node at boot',async () => {
   const p=await prepared();
