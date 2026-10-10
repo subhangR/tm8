@@ -2103,6 +2103,13 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 chat start --teammate <team-member-id> --model <model> --mode ask --workdir project --project <project-id> --about <entity-id> -',
     ],
   },
+  'chat.setCredentials': {
+    cmd: ['chat', 'credentials'], syn: 'tm8 chat credentials <chat-id> <auto|member|space|node> [--credential <space-credential-id>]',
+    sum: 'Choose model credentials for the next turns of a chat', authz: 'entity', input: 'bound',
+    tags: ['chat', 'credential', 'switch'],
+    notes: ['Human-only; policy and credential access are checked before use. Applies to the next claimed turn.',
+      'Switching account directories may reset native model context; stored tm8 messages survive.'],
+  },
   'chat.setModel': {
     cmd: ['chat', 'model'],
     syn: 'tm8 chat model <chat-id> <model>',

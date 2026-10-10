@@ -171,6 +171,7 @@ export const ENTITY_COLUMNS = `
   lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
   lp.last_error as loop_last_error,
   cht.title as chat_title, cht.teammate_id as chat_teammate_id,
+  cht.credential_selection as chat_credential_selection,
   cht.model as chat_model, cht.provider as chat_provider, cht.agent_tool as chat_agent_tool,
   cht.chat_mode as chat_mode, cht.workdir_mode as chat_workdir_mode,
   cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
@@ -599,6 +600,7 @@ export interface EntityRow {
   loop_last_error: string | null;
   chat_title: string | null;
   chat_teammate_id: string | null;
+  chat_credential_selection: import("@tm8/contract").ChatCredentialSelection | null;
   chat_model: string | null;
   chat_provider: string | null;
   chat_agent_tool: string | null;
@@ -2101,6 +2103,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // durable claim about the headless child, `turnState` is the queue.
       return {
         kind: 'chat',
+        credentialSelection: row.chat_credential_selection ?? { source: 'auto' },
         teammateId: row.chat_teammate_id ?? '',
         model: row.chat_model ?? '',
         provider: row.chat_provider ?? '',

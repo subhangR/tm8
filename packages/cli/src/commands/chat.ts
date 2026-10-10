@@ -197,6 +197,21 @@ function renderStarted(dto: unknown): string {
  * saying out loud in the rendered result, because a caller who expected an
  * immediate change would otherwise read the current answer as proof it failed.
  */
+async function chatCredentials(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('chat credentials', cmd.options.value('mutation-id'));
+  assertKnownOptions(cmd, ['credential']);
+  const chatId = requireArg(cmd, 0, '<chat-id>');
+  const source = requireArg(cmd, 1, '<auto|member|space|node>');
+  if (!['auto', 'member', 'space', 'node'].includes(source)) throw new CliError('credential source must be auto, member, space or node', EXIT_USAGE);
+  const credentialId = cmd.options.value('credential');
+  if (credentialId && source !== 'space') throw new CliError('--credential requires source space', EXIT_USAGE);
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.setCredentials', {
+    params: { id: chatId }, body: { credentialSelection: { source, ...(credentialId ? { credentialId } : {}) } },
+  });
+  cmd.out.data(data, () => 'Credential selection saved; applies to the next claimed turn.');
+  return EXIT_OK;
+}
+
 async function chatModel(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('chat model', cmd.options.value('mutation-id'));
   assertKnownOptions(cmd, []);
@@ -423,6 +438,7 @@ function renderTurnRows(dto: unknown): string {
 export const CHAT_COMMANDS: CommandModule[] = [
   { path: ['chat', 'start'], run: chatStart },
   { path: ['chat', 'model'], run: chatModel },
+  { path: ['chat', 'credentials'], run: chatCredentials },
   { path: ['chat', 'list'], run: chatList },
   { path: ['chat', 'show'], run: chatShow },
   { path: ['chat', 'send'], run: chatSend },
