@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ActorSummarySchema } from './schemas.js';
 
 export const TOOL_MAX_SOURCE_BYTES = 256 * 1024;
 export const TOOL_MAX_OUTPUT_BYTES = 64 * 1024;
@@ -109,12 +110,14 @@ export const ToolRunSchema = z.object({
   startedAt: z.string().nullable(), exitedAt: z.string().nullable(),
   outputTail: z.string().refine(value => new TextEncoder().encode(value).byteLength <= TOOL_MAX_OUTPUT_BYTES),
   parentSessionId: Id.nullable(),
+  invoker: z.lazy(() => ActorSummarySchema).nullable().optional(),
 }).strict();
 export type ToolRun = z.infer<typeof ToolRunSchema>;
-export const ToolSecretBindingSchema = z.object({ inputName: InputName, credentialId: Id, keyHint: z.string().nullable() }).strict();
+export const ToolSecretBindingSchema = z.object({ inputName: InputName, credentialId: Id, keyHint: z.string().nullable(), boundBy: z.lazy(() => ActorSummarySchema).nullable().optional() }).strict();
 export const ToolViewSchema = z.object({
   id: Id, spaceId: Id, version: z.number().int().positive(), sourceSha256: z.string().regex(/^[0-9a-f]{64}$/), definition: ToolDefinitionSchema,
   config: z.record(ToolJsonValueSchema), secretBindings: z.array(ToolSecretBindingSchema),
+  sourceChangedSinceViewerLastRun: z.object({ byActor: z.lazy(() => ActorSummarySchema).nullable(), at: z.string(), fromSha: z.string(), toSha: z.string() }).strict().nullable().optional(),
 }).strict();
 export type ToolView = z.infer<typeof ToolViewSchema>;
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
@@ -134,7 +137,7 @@ export const ToolSecretBindInputSchema = z.object({
 export const ToolSecretUnbindInputSchema = ToolConfigUnsetInputSchema;
 /** Ephemeral secrets are supplied over the authenticated request body, never the command line or run record. */
 export const ToolRunInputSchema = z.object({
-  ...Command, toolId: Id, inputs: z.record(ToolJsonValueSchema).optional(),
+  ...Command, toolId: Id, expectedVersion: z.number().int().positive().optional(), inputs: z.record(ToolJsonValueSchema).optional(),
   secrets: z.record(z.string().min(1).max(4096)).optional(), cwd: z.string().min(1).max(4096).optional(),
   keepOpen: z.boolean().default(false),
 }).strict();

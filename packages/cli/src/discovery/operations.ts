@@ -161,6 +161,19 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
+  'tools.create': { cmd: null, sum: 'tools create', authz: 'space', input: 'bound', side: 'durable' },
+  'tools.update': { cmd: null, sum: 'tools update', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.get': { cmd: null, sum: 'tools get', authz: 'entity', input: 'none', side: 'none' },
+  'tools.list': { cmd: null, sum: 'tools list', authz: 'space', input: 'none', side: 'none' },
+  'tools.help': { cmd: null, sum: 'tools help', authz: 'entity', input: 'none', side: 'none' },
+  'tools.config.set': { cmd: null, sum: 'tools config set', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.config.unset': { cmd: null, sum: 'tools config unset', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.secrets.bind': { cmd: null, sum: 'tools secrets bind', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.secrets.unbind': { cmd: null, sum: 'tools secrets unbind', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.run': { cmd: null, sum: 'tools run', authz: 'entity', input: 'bound', side: 'execution' },
+  'tools.runs.list': { cmd: null, sum: 'tools runs list', authz: 'entity', input: 'none', side: 'none' },
+  'tools.runs.get': { cmd: null, sum: 'tools runs get', authz: 'session', input: 'none', side: 'none' },
+
   'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
   'mcp.servers.get': {cmd: ['mcp','server','get'], syn: 'tm8 mcp server get [<id>]', sum: 'Get MCP server', authz: 'entity', input: 'none'},
   'mcp.servers.create': {cmd: ['mcp','server','create'], syn: 'tm8 mcp server create [<id>] --input <@file|->', sum: 'Create MCP server', authz: 'space', input: 'bound'},
@@ -4123,6 +4136,7 @@ const ROWS: Record<OperationName, Row> = {
  * collection` and `tm8 help task` both resolve.
  */
 const NOUN_BY_FAMILY: Record<string, string> = {
+  tools: 'tool',
   mcp: 'mcp',
   workspace: 'workspace',
   identity: 'identity',
@@ -4314,7 +4328,7 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
-  'sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d';
+  'sha256:ad68d811b899852ddc759c8e9e17c55f6bac9dc7338df73477ec04a40f22f0a6';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -5167,6 +5181,7 @@ export function isCommandPath(path: readonly string[]): boolean {
  * EVERY public noun, so these are deliberately short.
  */
 const NOUN_SUMMARY: Record<string, string> = {
+  tool: 'Versioned scripts with declared inputs, sealed secrets, and recorded tool sessions',
   identity: 'Who this process is calling as',
   auth: 'Local accounts: sign up, log in, log out, and inspect the current session',
   server: 'Named routes to other tm8 Servers',
