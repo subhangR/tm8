@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { createInterface } from 'node:readline';
+import { boundedLines } from './BoundedLines.js';
 import { composeChatEnv } from './chat-env.js';
 import { harnessFailure } from './HarnessRegistry.js';
 import { HarnessSessionBase, validateLaunch } from './HarnessSessionBase.js';
@@ -127,15 +127,17 @@ class CodexSession extends HarnessSessionBase {
       windowsHide: true,
     });
     // Install listeners before handshake; idle exits are observations too.
-    const lines = createInterface({ input: this.child.stdout, crlfDelay: Infinity });
-    lines.on('line', (line) => {
-      try {
-        if (line.length > 1_048_576) throw new Error('frame bound');
-        this.receive(object(JSON.parse(line)));
-      } catch {
-        this.protocolLost('Invalid Codex protocol frame');
-      }
-    });
+    const lines = boundedLines(
+      this.child.stdout,
+      (line) => {
+        try {
+          this.receive(object(JSON.parse(line)));
+        } catch {
+          this.protocolLost('Invalid Codex protocol frame');
+        }
+      },
+      () => this.protocolLost('Codex protocol frame exceeded its bound'),
+    );
     // Diagnostics are intentionally drained without carrying vendor/secret text to public errors.
     this.child.stderr.on('data', () => {});
     this.child.stdin.on('error', () => this.protocolLost('Codex stdin became unavailable'));

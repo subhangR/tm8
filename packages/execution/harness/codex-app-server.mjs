@@ -8,7 +8,7 @@ let seq = 0,
 const send = (frame) => process.stdout.write(JSON.stringify(frame) + '\n');
 const notify = (method, params) => send({ method, params });
 const result = (id, value) => send({ id, result: value });
-const native = 'native-codex/opaque:returned';
+let native = 'native-codex/opaque:returned';
 const turn = (id, status, items = []) => ({
   id,
   status,
@@ -33,18 +33,19 @@ lines.on('line', (line) => {
   else if (frame.method === 'thread/start' || frame.method === 'thread/resume') {
     if (frame.method === 'thread/resume' && process.env.TM8_FAKE_CODEX_RESUME === 'missing')
       send({ id: frame.id, error: { code: -32000, message: 'missing' } });
-    else
-      result(frame.id, {
-        thread: {
-          id:
-            frame.method === 'thread/resume' && process.env.TM8_FAKE_CODEX_RESUME !== 'mismatch'
-              ? frame.params.threadId
-              : native,
-        },
-        model: frame.params.model,
-        modelProvider: frame.params.modelProvider,
-        reasoningEffort: frame.params.config?.model_reasoning_effort ?? null,
-      });
+    else if (frame.method === 'thread/resume' && process.env.TM8_FAKE_CODEX_RESUME !== 'mismatch')
+      native = frame.params.threadId;
+    result(frame.id, {
+      thread: {
+        id:
+          frame.method === 'thread/resume' && process.env.TM8_FAKE_CODEX_RESUME !== 'mismatch'
+            ? frame.params.threadId
+            : native,
+      },
+      model: frame.params.model,
+      modelProvider: frame.params.modelProvider,
+      reasoningEffort: frame.params.config?.model_reasoning_effort ?? null,
+    });
     if (process.env.TM8_FAKE_CODEX_IDLE_EXIT) setTimeout(() => process.exit(7), 100);
   } else if (frame.method === 'turn/start') {
     const text = frame.params.input[0].text,
@@ -72,6 +73,10 @@ lines.on('line', (line) => {
     if (text === 'crash') {
       notify('item/agentMessage/delta', { ...params, itemId: 'partial', delta: 'partial' });
       process.exit(9);
+    }
+    if (text === 'oversize-frame') {
+      process.stdout.write('x'.repeat(1_048_577));
+      return;
     }
     if (text === 'bad-frame') {
       process.stdout.write('broken json\n');
@@ -133,6 +138,10 @@ lines.on('line', (line) => {
     });
     result(frame.id, { turn: turn(id, 'inProgress') });
     active = null;
+    setTimeout(() => {
+      notify('item/agentMessage/delta', { ...params, itemId: 'late-old', delta: 'STALE' });
+      notify('turn/completed', { threadId: native, turn: turn(id, 'completed') });
+    }, 20);
   } else if (frame.method === 'turn/interrupt') {
     result(frame.id, {});
     const saved = active;

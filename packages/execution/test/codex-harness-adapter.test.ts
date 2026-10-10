@@ -237,8 +237,36 @@ describe('Codex pinned-v2 conformance', () => {
     expect(record.events.at(-1)?.payload).toMatchObject({ outcome: 'completed' });
     await expect(session.submit(first)).rejects.toThrow('already dispatched');
   });
+  it('defers cancellation before native acceptance and rejects retired-turn events during a successor', async () => {
+    const data = input(material()),
+      session = await open(data),
+      record = new Recorder(session);
+    const early = command(data.config, 'hang');
+    const dispatch = session.submit(early);
+    expect(await session.cancel(early.attempt, 'user')).toMatchObject({
+      disposition: 'requested',
+      nativeTurnId: null,
+    });
+    await dispatch;
+    await record.terminal();
+    expect(record.events.find((e) => e.payload.kind === 'terminal')?.payload).toMatchObject({
+      outcome: 'interrupted',
+    });
+    await session.submit(command(data.config, 'normal', 2));
+    await record.terminal(2);
+    const next = command(data.config, 'hang', 3);
+    await session.submit(next);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(record.events.filter((e) => e.payload.kind === 'terminal')).toHaveLength(2);
+    expect(record.events.some((e) => e.payload.kind === 'text' && e.payload.text === 'STALE')).toBe(
+      false,
+    );
+    await session.cancel(next.attempt, 'user');
+    await record.terminal(3);
+  });
+
   it('preserves partial output and reports one runtime_lost on death/invalid frames/timeouts', async () => {
-    for (const text of ['crash', 'bad-frame', 'timeout']) {
+    for (const text of ['crash', 'bad-frame', 'oversize-frame', 'timeout']) {
       const data = input(material()),
         session = await open(data),
         record = new Recorder(session);
