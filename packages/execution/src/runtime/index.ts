@@ -1,3 +1,5 @@
+export { CodexAppServerAdapter, type CodexAppServerAdapterOptions } from './CodexAppServerAdapter.js';
+export { ClaudeHarnessAdapter, type ClaudeHarnessAdapterOptions } from './ClaudeHarnessAdapter.js';
 export { ClaudeHeadlessAdapter, type ClaudeHeadlessAdapterOptions } from './ClaudeHeadlessAdapter.js';
 export { AgentRuntimeError } from './types.js';
 export { HarnessRegistry, HarnessRuntimeError, harnessFailure } from './HarnessRegistry.js';
