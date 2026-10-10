@@ -31,6 +31,7 @@ export function SettingsShell({
   sectionIds,
   onOpenSpaceAdmin,
   onOpenNodeAdmin,
+  framed = false,
 }: SettingsShellProps) {
   const [active, setActive] = useState<SettingsSectionId>(initialSection);
   const [data, setData] = useState<SettingsData>({
@@ -168,9 +169,9 @@ export function SettingsShell({
   const spaceLabel = data.space?.name ?? '—';
 
   return (
-    <div className="set-root cv2-root">
+    <div className="set-root cv2-root" data-framed={framed || undefined}>
       <div className="set-card">
-        <nav className="set-nav" aria-label="Space settings sections">
+        {framed ? null : <nav className="set-nav" aria-label="Space settings sections">
           {onOpenSpaceAdmin && <button type="button" className="set-nav__row" onClick={onOpenSpaceAdmin}>Space admin</button>}
           {onOpenNodeAdmin && <button type="button" className="set-nav__row" onClick={onOpenNodeAdmin}>Node admin</button>}
           <span className="set-nav__eyebrow">Space · {spaceLabel}</span>
@@ -197,7 +198,7 @@ export function SettingsShell({
               {s.label}
             </button>
           ))}
-        </nav>
+        </nav>}
 
         <div className="set-body">
           {loadError ? (
