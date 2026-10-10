@@ -40,17 +40,19 @@ Distinguish the harness's native authentication provider, the inference backend,
 
 The backend policy column deliberately preserves the shared resolver's existing D5 rule. A Kimi key is governed by the Anthropic tool's member-source policy, and a Groq key by OpenAI's. Moving policy to backend namespaces would be a separate policy migration, never a chat-only reinterpretation. The existing chat resolver adds an explicit backend/node refusal; preserve it in this port even though the session resolver's backend branch currently has looser node wording. Backend routes cannot use an Anthropic/OpenAI space credential pin. Adapter admission is independent of credential availability: an OpenAI account alone does not make Codex chat supported.
 
-Retain the merged picker's single `{ source, credentialId? }` chat selection. Sources express account intent and can be retained across providers; pins are scoped to the **inference credential provider**. A cross-provider model switch with an incompatible pin refuses unless the same atomic configuration write supplies a compatible selection. Never replace the pin with Auto or a different default as a side effect of switching models. A UI may remember choices locally, but must explicitly submit the selected target choice; remembered UI state is not server authority.
+Retain the merged picker's `{ source, credentialId? }` as the **active-provider projection** of a small additive stored intent: an unpinned default plus provider-specific remembered explicit choices. Sources express account intent and can be retained across providers; pins are scoped to the **inference credential provider**. A model-only provider switch projects the target provider's remembered choice or the unpinned default, while preserving the old provider's pin. This is target-provider selection, not fallback from a failed pin. A pin explicitly submitted for the wrong target provider refuses the entire candidate write.
 
-Examples: unpinned `member` follows Anthropic→OpenAI and reads the human's OpenAI account. Unpinned `space` resolves the target provider's space default; unpinned `node` retains node intent subject to target policy/route. An Anthropic space pin followed by an OpenAI model-only write returns `requires_choice` with no configuration change. A combined model/selection write can deliberately choose Auto or a compatible OpenAI pin. `node`→Kimi refuses unless that write chooses auto/member. Same-provider model changes retain their pin and still refuse if inaccessible. Auto is re-resolved through the ladder for each claim.
+On an explicit selection write, remember the choice under the target inference provider. An unpinned selection also updates the unpinned default; a pin leaves that default untouched. On a model-only write, preserve a same-provider choice; for another provider, select its remembered choice or the unpinned default. Never overwrite another provider's remembered choice. Validate the resulting target projection atomically; dormant choices remain preferences and do not need to be usable on this route. Returning to a provider recovers its old choice, subject to fresh authorization; failure of that provider's pin never falls back to the default. The API shows which choice was projected.
+
+Examples: unpinned `member` follows Anthropic→OpenAI and reads the human's OpenAI account when OpenAI has no remembered override. Unpinned `space` resolves the target provider's space default; unpinned `node` retains node intent subject to target policy/route. An Anthropic space pin followed by an OpenAI model-only write projects OpenAI's saved choice or the unpinned default; switching back restores the Anthropic pin. Passing that Anthropic pin explicitly in the OpenAI write refuses atomically. A combined model/selection write can deliberately override the target choice with Auto or a compatible OpenAI pin. A default `node`→Kimi switch refuses unless the target remembered/submitted choice is auto/member. Same-provider model changes retain their pin and still refuse if inaccessible. Auto is re-resolved through the ladder for each claim.
 
 Extend `chat.setModel` to accept optional `reasoningEffort` and optional `credentialSelection` in the same candidate configuration; keep `chat.setCredentials` for selection-only changes. A source-only write never changes the model. Credential option listing accepts a catalog model/harness selection and derives the provider server-side; remove the current Anthropic-only assumption. Responses show the derived target provider, supported sources, saved selection and safe preview. Model/harness changes must not implicitly change personal/space defaults.
 
-Existing `{ source, credentialId? }` stays wire-compatible. Infer a pin's provider from authorized credential metadata and the recorded route, not from a guessed `'anthropic'` fallback. A contradictory or unreadable legacy binding becomes a visible `requires_choice` state; never relabel the secret. Existing turns retain their recorded intent for audit. Auth/home material revisions need migration, but the picker does not require a new multi-provider selection format.
+Existing `{ source, credentialId? }` inputs stay wire-compatible. A legacy unpinned selection initializes the default and current provider's remembered choice. A legacy pin initializes that provider's override with Auto as the unpinned default, preserving its active pin. Infer the provider from authorized credential metadata and the recorded route, not from a guessed `'anthropic'` fallback. A contradictory or unreadable binding becomes visible `requires_choice`; never relabel the secret. Existing turns retain their recorded intent for audit. Stored choices are preferences, not grants, and are revalidated under the current human.
 
 ## 4. TypeScript boundary contracts
 
-These are proposed standalone contracts. Identifier brands, catalog entries, permissions and continuity types should converge with the sibling documents before implementation; they are not new public endpoints by themselves. `ResolvedCredentialPlan` and `EffectiveCapabilities` are server-internal metadata; DTOs use the narrower projections in section 9.
+These are proposed standalone contracts describing the full decomposition. The implementable phase-one prepare/revalidate/release contract is in section 12; richer revision stamps and capability ports are optional refactoring targets. Identifier brands, catalog entries, permissions and continuity types should converge with the sibling documents before implementation; they are not new public endpoints by themselves. `ResolvedCredentialPlan` and `EffectiveCapabilities` are server-internal metadata; DTOs use the narrower projections in section 9.
 
 ```ts
 type Id = string;
@@ -65,7 +67,10 @@ type CredentialChoice = UnpinnedChoice | Readonly<{
   source: 'space'; credentialId: Id;
 }>;
 
-type CredentialIntent = CredentialChoice;
+interface CredentialIntent {
+  readonly defaultChoice: UnpinnedChoice;
+  readonly byProvider: Readonly<Partial<Record<Provider, CredentialChoice>>>;
+}
 
 interface ModelCredentialRequirement {
   readonly catalogRevision: Revision;
@@ -83,7 +88,7 @@ interface TurnAuthorizer {
   readonly authKind: string; // verified, persisted provenance; never client text
   readonly authoritySessionId: Id;
   readonly viaLinkId: Id | null;
-  readonly authorityRevision: Revision;
+  readonly authorityRevision: Revision | null; // absent evidence requires live reads
 }
 
 interface ClaimedChatConfig {
@@ -95,17 +100,18 @@ interface ClaimedChatConfig {
   readonly authorizer: TurnAuthorizer;
   readonly requirement: ModelCredentialRequirement;
   readonly credentialIntent: CredentialIntent;
+  readonly credentialSelection: CredentialChoice; // active-provider projection
   readonly capabilities: CapabilityIntent;
   readonly chatMode: string;
   readonly reasoningEffort: string | null;
 }
 
 interface AuthorizationStamp {
-  readonly membershipRevision: Revision;
-  readonly authorityRevision: Revision;
-  readonly spacePolicyRevision: Revision;
-  readonly nodePolicyRevision: Revision;
-  readonly credentialAccessRevision: Revision;
+  readonly membershipRevision: Revision | null;
+  readonly authorityRevision: Revision | null;
+  readonly spacePolicyRevision: Revision | null;
+  readonly nodePolicyRevision: Revision | null;
+  readonly credentialAccessRevision: Revision | null;
 }
 
 interface ResolvedCredentialPlan {
@@ -119,13 +125,14 @@ interface ResolvedCredentialPlan {
     provider: Provider;
     credentialId: Id | null; // space credential only
     accountScopeId: string; // opaque member/node account binding, no path
-    accountGeneration: Revision;
-    materialRevision: Revision;
+    accountGeneration: Revision | null;
+    materialRevision: Revision | null;
     homeScopeId: string;
     homeGeneration: Revision;
   }>;
   readonly authorization: AuthorizationStamp;
   readonly reuseKey: string; // digest of nonsensitive, canonical metadata
+  readonly reuseEligibility: 'verified' | 'unversioned';
   readonly expiresAt: string;
 }
 
@@ -140,7 +147,7 @@ interface ModelCredentialLease {
   readonly leaseId: string;
   readonly owner: RuntimeGeneration;
   readonly planId: string;
-  readonly loadedMaterialRevision: Revision;
+  readonly loadedMaterialRevision: Revision | null;
   // Native resume is compatible only inside this opaque namespace.
   readonly nativeStorageScopeId: string;
   readonly nativeStorageGeneration: Revision;
@@ -179,7 +186,7 @@ interface EffectiveCapabilities {
   readonly preapprovedToolIds: readonly string[];
   readonly connectors: readonly Readonly<{
     connectorId: Id; credentialId?: Id; definitionRevision: Revision;
-    accountGeneration: Revision; accessRevision: Revision;
+    accountGeneration: Revision | null; accessRevision: Revision | null;
   }>[];
   readonly skills: readonly Readonly<{
     skillId: Id; contentRevision: Revision;
@@ -223,26 +230,50 @@ interface RuntimeBinding {
   readonly capabilityDigest: string;
   readonly storageNamespace: Readonly<{ scopeId: string; generation: Revision }>;
 }
-declare const preparedLaunchTag: unique symbol;
+type HarnessKind = 'claude' | 'codex'; // only implemented registry entries are admitted
+interface McpDescriptor {
+  readonly name: string;
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly env: Readonly<Record<string, string>>;
+  readonly cwd?: string;
+}
+interface LaunchMaterial { // trusted node memory; may contain secrets
+  readonly harness: HarnessKind;
+  readonly command: string;
+  readonly argvPrefix: readonly string[];
+  readonly cwd: string;
+  readonly env: Readonly<Record<string, string>>;
+  readonly instructionText: string;
+  readonly providerConfig: Readonly<Record<string, unknown>>;
+  readonly mcpConfigPath: string;
+  readonly mcpServers: readonly McpDescriptor[];
+  readonly nativeTools: readonly string[];
+  readonly allowedTools: readonly string[];
+}
 interface PreparedLaunch {
-  readonly [preparedLaunchTag]: true; // opaque, node-local, never durable
-  readonly handleId: string;
+  readonly kind: 'ephemeral-launch';
+  readonly launchId: string;
   readonly owner: RuntimeGeneration;
   readonly binding: RuntimeBinding; // only this metadata is durable
+  readonly storageScopeId: string; // same value as nativeStorageScopeId
+  readonly nativeStorageScopeId: string;
+  readonly nativeStorageGeneration: Revision;
+  readonly modelCredentialLeaseId: string;
+  readonly runtimeGrantId: Id;
+  readonly capabilityPlanId: string;
+  materialize(): Promise<LaunchMaterial>; // trusted adapter access only
+  release(): Promise<void>; // exact owner, after generation exit
 }
 // Implementation-only bridge. Never serialize its handles/output to a DTO.
 interface TrustedCredentialBootBridge {
   prepare(resources: CredentialBootResources): Promise<PreparedLaunch>;
   withAdapterResources<T>(launch: PreparedLaunch,
-    run: (input: Readonly<{
-      env: Readonly<Record<string, string>>;
-      modelConfigDir: string;
-      mcpConfigPath: string;
-    }>) => Promise<T>): Promise<T>;
+    run: (input: LaunchMaterial) => Promise<T>): Promise<T>;
 }
 ```
 
-The bridge is deliberately separate from serializable plans. `acquire` creates generation-owned, least-privilege material, and the bridge makes it available only to the trusted adapter. Passing a lease ID over a client endpoint does not confer access: the owning claim, generation, node and verified server identity must match. All expiry decisions use server time.
+The bridge is deliberately separate from serializable plans. `acquire` creates generation-owned, least-privilege material, and the bridge makes it available only to the trusted adapter. `PreparedLaunch` aligns with the runtime lane's ephemeral handle; `LaunchMaterial` and MCP descriptors remain private, and composition translates them to each adapter's configuration. Native history scope is separate from auth/config overlay. Passing a lease/launch ID over a client endpoint does not confer access: the node-local handle table and owning claim, generation, node and verified server identity must match. All expiry decisions use server time.
 
 `resolve` is side-effect-free with respect to runtime resources: no home rewrite, token mint, connector process or vendor refresh. It may check decryptability server-side and return a safe refusal, but cannot return plaintext or an unsanitized crypto failure. Public preview uses the same authorized resolution logic and does not acquire a plan for arbitrary client-selected identities.
 
@@ -262,7 +293,7 @@ For a rejected pin, return the authorized caller's safe repair guidance. To an u
 
 ## 6. Capability selection and least authority
 
-Resolve capabilities against the claimed mode, user intent, current graph equipment, admitted adapter support, space/node policy, connector definitions and explicit account bindings. Keep semantic tool IDs in tm8; translate to Claude or Codex native tool names in the adapter. Requested exposure and auto-approval are distinct. A hidden tool is absent, a visible tool may require approval, and an approved tool is still subject to live server authorization.
+For phase one, use existing MCP selections, equipped skills and mode/tool policy as a capability descriptor/digest. This design does not require a new capability editing product, connector picker or skill-selection API. The explicit intent types describe a future boundary for those existing facts; they must not expand the user's authority. Resolve capabilities against the claimed mode, existing graph equipment/selections, admitted adapter support, space/node policy, connector definitions and explicit account bindings. Keep semantic tool IDs in tm8; translate to Claude or Codex native tool names in the adapter. Requested exposure and auto-approval are distinct. A hidden tool is absent, a visible tool may require approval, and an approved tool is still subject to live server authorization.
 
 Connector bindings follow [ADR0297](../adr/0297-mcp-credential-boundary.md): explicit connector/account references, sealed server-side vendor secrets, launcher-bound grants, live checks per proxy request, and refresh serialization/CAS where revocation wins. Authenticated connectors never get an automatic default account. An unauthenticated connector omits `credentialId`; providing a credential for the wrong connector, space, issuer/resource binding or definition revision refuses. No raw MCP command/env can enter from ordinary chat settings. Administratively trusted stdio definitions retain their explicit code-trust boundary.
 
@@ -274,7 +305,9 @@ Native tools outside the tm8 proxy still need an admitted adapter policy: exact 
 
 ## 7. Fingerprints, generation and home lifecycle
 
-Use monotonic revisions maintained by credential mutation writers, not hashes of secrets or only filesystem mtimes. A credential binding has an account generation, access revision, exported-material revision and home generation. Member reconnect, space key rotation, node login/config mutation and home relocation need events/revisions. A material revision advances when authentication delivered to the model changes; background same-account refresh handling may keep it stable only when the adapter proves it consumes refreshes safely. If that fact is unknown, replace the runtime on refresh-material change. Node ambient authentication must be wrapped in a versioned node account binding; arbitrary unseen server-home mutations make a claimed reuse unverified.
+Use existing durable entity/policy/security revisions where they actually describe account/material changes; richer monotonic writer revisions can be added later. Never substitute secret hashes or filesystem mtimes for account identity. Unknown account/material generation is `null`, sets `reuseEligibility: unversioned`, and forbids hot reuse even when the metadata digest matches. Acquire a fresh isolated generation and bootstrap through continuity on the next claim. If a source cannot provide safely acquired, isolated material under current authorization, refuse instead of mounting an unverified ambient home. No global membership/session/node-account epoch subsystem is required for phase one.
+
+With richer writers, a credential binding has account generation, access revision, exported-material revision and home generation. Member reconnect, space key rotation, node login/config mutation and home relocation produce observable mutation evidence. A material revision advances when authentication delivered to the model changes; background same-account refresh handling may keep it stable only when the adapter proves it consumes refreshes safely. If that fact is unknown, replace the runtime on refresh-material change. Arbitrary unseen server-home mutations cannot establish a versioned node account or authorize reuse.
 
 The runtime reuse key is a canonical, server-internal digest over chat/space scope, verified authorizer identity/auth kind/session/link provenance, route/catalog/adapter version, workspace scope, selected provider/source/account generation/material revision, home and native-storage scope/generation, and effective capability surface. Include model/effort when they are frozen at startup. An admitted adapter may instead prove native per-turn model/effort overrides: apply those within the generation only when route, credential requirement, capability surface and history eligibility remain compatible, and record the actual override on the turn receipt. The credential port's reuse key covers credentials/route; the runtime adds its adapter/options compatibility rules. Never hash plaintext keys, bearer tokens, ciphertext nonces or full environment strings to establish identity. A cosmetic account label change does not force a restart. A different account with byte-identical environment paths does.
 
@@ -292,11 +325,11 @@ Cleanup revokes the exact runtime grant first, waits for adapter close/confirmed
 
 1. Atomically claim the next turn and snapshot the latest desired configuration revision, target requirement, capability intent and verified authorizer. Queued turns unclaimed at a settings edit receive the new configuration when claimed. An already claimed turn retains its snapshot.
 2. Resolve credential and capability metadata without acquiring resources. Revalidate chat/history access and the current account/policy grants. A runtime currently executing a prior turn is not retargeted by a picker edit.
-3. If an existing generation matches the target reuse key, is ready, and both ports revalidate it, retain its MCP grant and model lease. Recheck grant expiry and capability compatibility. Refresh/replace an expiring grant through a generation-fenced operation at a safe boundary; never mint as an incidental resolver side effect.
+3. If an existing generation matches the target reuse key, is ready, has verified account/material revision evidence, and both ports revalidate it, retain its MCP grant and model lease. An unversioned plan always replaces through continuity. Recheck grant expiry and capability compatibility. Refresh/replace an expiring grant through a generation-fenced operation at a safe boundary; never mint as an incidental resolver side effect.
 4. For replacement, commit the prior turn's terminal/partial outcome and tool effects, quiesce its runtime, reserve generation `g`, and write `starting`. Obtain model material, effective skill delivery and a **staged** runtime grant. Do not publish `live` yet. Side-effect-free boot discovery may use a tightly restricted staging grant; it cannot invoke mutating tm8/connector/native tools or submit a user prompt.
 5. Ask the continuity port to prepare the committed checkpoint for the target adapter and `nativeStorageScopeId/generation`. Same harness/account/home may use verified native resume. Another harness/home uses verified import/portable hydration. A native-not-found response is a failed resume that must be repaired through portable history or surfaced as `continuity_unavailable`, never silently treated as an empty conversation.
 6. Start the adapter with the exact resources and continuity bootstrap. The adapter reports a boot receipt and continuity acknowledgement. Revalidate credential access/material, capability grants, authorizer and ownership after all asynchronous boot awaits. A changed desired revision alone does not cancel the immutable claimed turn. A revoked authority or changed loaded material does.
-7. In one fenced publication transaction, check relevant authorization revisions under locks against mutation writers, activate the staged grant and record ready/effective generation/config/checkpoint. Compare the claim/lease/generation, not the latest desired revision. Authorization changes committed first must prevent activation. Changes committed afterwards fence the now-live generation through the invalidation path. `startThread` completion alone never marks a chat live.
+7. In one fenced publication transaction, perform current guarded authorization reads and check available revisions under locks against existing mutation writers, activate the staged grant and record ready/effective generation/config/checkpoint. Missing revision evidence never becomes a permissive cached stamp. Compare the claim/lease/generation, not the latest desired revision. Authorization changes committed first must prevent activation. Changes committed afterwards fence the now-live generation through the invalidation path. `startThread` completion alone never marks a chat live.
 8. Before dispatch, check the active generation and turn dispatch state again. Send the new user prompt once. Persist every tool receipt/outcome and terminal result to tm8. Late output is accepted only for its originating turn and valid generation; post-revocation late content cannot masquerade as a fresh effective response.
 
 Credential/capability plan IDs expire quickly and are bound to the claim. Acquisition rechecks them. If a safe race changes material during boot, discard resources and replan for the same unsent claim with a bounded retry. Explicit intent remains explicit. Once a prompt/tool request might have been accepted, do not automatically replay it: persist an interrupted or unknown-outcome receipt and let continuity include that fact. A lost acknowledgement is not evidence of non-execution.
@@ -329,12 +362,47 @@ interface CredentialDisplay {
   readonly label?: string; // authorized safe label, no private owner/address
   readonly resolutionReason: ResolvedCredentialPlan['resolutionReason'];
 }
+type CredentialChoiceDisplay = Readonly<
+  { status: 'visible'; selection: CredentialChoice }
+  | { status: 'redacted'; source: 'space' }
+>;
+interface CredentialIntentDisplay {
+  readonly defaultChoice: UnpinnedChoice;
+  readonly byProvider: Readonly<Partial<Record<Provider, CredentialChoiceDisplay>>>;
+}
+interface SetChatModelInput {
+  readonly model: string;
+  readonly reasoningEffort?: string | null; // validate against target catalog
+  readonly credentialSelection?: CredentialChoice;
+  readonly expectedConfigRevision?: Revision; // new UI always supplies this
+  readonly clientMutationId?: string;
+}
+interface SetChatCredentialsInput {
+  readonly credentialSelection: CredentialChoice;
+  readonly expectedConfigRevision?: Revision;
+  readonly clientMutationId?: string;
+}
+interface ChatConfigurationWriteResult {
+  readonly chatId: Id;
+  readonly model: string;
+  readonly reasoningEffort: string | null;
+  readonly credentialSelection: CredentialChoice; // existing authorized write result
+  readonly credentialIntent: CredentialIntentDisplay;
+  readonly configRevision: Revision;
+  readonly appliesTo: 'next_claim';
+  readonly credentialPreview: Readonly<{
+    provider: Provider; checkedAt: string;
+    status: 'ready' | 'requires_choice' | 'forbidden' | 'unavailable';
+    resolved?: CredentialDisplay;
+  }>;
+}
+interface ChatCredentialOptionsInput {
+  readonly model: string; // registry derives harness/provider; no env/provider input
+}
 interface ChatEffectiveState {
   readonly desiredRevision: Revision;
-  readonly desiredCredential: Readonly<
-    { status: 'visible'; selection: CredentialIntent }
-    | { status: 'redacted'; source: 'space' }
-  >;
+  readonly desiredCredential: CredentialChoiceDisplay;
+  readonly credentialIntent: CredentialIntentDisplay;
   readonly preview: Readonly<{
     status: 'ready' | 'requires_choice' | 'forbidden' | 'unavailable';
     checkedAt: string;
@@ -359,13 +427,15 @@ interface ChatEffectiveState {
 
 `desiredCredential` is a viewer projection: an unreadable pin needs a redacted placeholder/state rather than an invented usable choice; never submit that projection back as a replacement config. Config setters return desired revision, safe preview and `appliesTo: next_claim`, not a successful-runtime claim. Send state events with generation and config revision; the UI drops stale events. If a running response used credential A and the picker now names B, render “Current answer: A; next turn: B”. Auto shows its resolved provider/source and reason, not a false promise to use the same account indefinitely.
 
+The input names extend existing commands; ordinary callers still submit the existing raw selection shape, and authorized write results retain raw `credentialSelection`. The display wrapper makes redaction explicit in new read projection fields, including dormant inaccessible provider pins; never change legacy wire fields silently. Omitted expected revision is accepted only for legacy clients through a locked atomic writer; new UI writes use CAS. No input permits caller-supplied auth kind, provider, private plan ID or material. Credential option results contain derived provider, allowed sources and authorized discoverable account IDs/labels, not resolved secret/account paths. Snapshot the canonical intent and active projection together at claim; continuity owns that SQL contract with the coordinator.
+
 A denied pending choice remains visible with an actionable safe reason. Do not erase it, change defaults or show “connected” from directory existence. Failure diagnostics distinguish unavailable credential, forbidden policy, unsupported adapter, continuity unavailable, startup failure and interrupted/unknown dispatch. Graph/transcript audit receives codes and references only; raw adapter stderr and secret environment stay in a restricted redacted diagnostics boundary.
 
 ## 10. Revocation and race linearization
 
-Credential deletion/revocation, sharing removal, membership loss, human authority-session revocation, node/space source-policy tightening and connector trust/scope changes increment durable access revisions and emit invalidations in the same transaction. Event delivery is an optimization; publication, turn dispatch and proxy requests always read live durable authorization. Multi-node consumers fence affected grants before asynchronously closing model processes. A periodic sweep detects missed events, but is not the authorization boundary.
+Credential deletion/revocation, sharing removal, membership loss, human authority-session revocation, node/space source-policy tightening and connector trust/scope changes use existing guarded mutations, available entity/security revisions and durable invalidations. Richer access epochs are an optimization once their writers exist. Event delivery is an optimization; publication, turn dispatch and proxy requests always read live durable authorization. Multi-node consumers fence affected grants before asynchronously closing model processes. A periodic sweep detects missed events, but is not the authorization boundary.
 
-Generation publication and revocation writers lock the same authorization rows/versioned epoch records in deterministic order. Model dispatch has a durable generation/authority permit check immediately before sending. A provider request already admitted before revocation can complete afterwards; an external provider cannot participate in tm8's transaction. Record the admission and outcome honestly, deny subsequent sends and mediated calls, and close the process. Do not claim instantaneous recall or rollback of vendor/native operations.
+Generation publication and revocation writers lock the same existing authorization rows, plus versioned records where available, in deterministic order. Model dispatch has a durable generation/authority permit check immediately before sending. A provider request already admitted before revocation can complete afterwards; an external provider cannot participate in tm8's transaction. Record the admission and outcome honestly, deny subsequent sends and mediated calls, and close the process. Do not claim instantaneous recall or rollback of vendor/native operations. External unmanaged credential-file edits have no durable tm8 event; do not promise immediate detection. Such sources cannot enable hot reuse and must be isolated anew or refused.
 
 A mutation of ordinary selection/defaults emits desired-state invalidation but does not masquerade as revocation. A runtime whose actual account remains allowed finishes its claimed turn. A mutation of authentication material invalidates matching loaded-material leases; the coordinator stops/replaces those at a safe boundary and records interruption if mid-turn continuation cannot be authenticated safely.
 
@@ -376,7 +446,7 @@ These are implementation acceptance tests to assign after convergence. This docu
 | Area | Cases | Required assertion |
 | --- | --- | --- |
 | Provider derivation | Anthropic→OpenAI; native Claude→Kimi; Codex→Groq; model/tool mismatch; unknown tool | Correct native/inference/policy tuple; unavailable adapter refuses before secret/token/file work; no Anthropic default guess |
-| Intent switching | Auto/Mine/Space/Node across providers; same-provider pin; wrong-provider pin; node→Kimi; atomic new selection | Unpinned source retained/revalidated; incompatible pin/source refuses without partial write; only explicitly submitted compatible selection replaces it |
+| Intent switching | Auto/Mine/Space/Node across providers; remembered choice/default; switch back to saved pin; wrong-provider submitted pin; node→Kimi; atomic new selection | Target remembered/default choice revalidated; old provider pin retained; failed target pin never falls back; explicitly wrong-provider pin refuses; no partial writes |
 | Auto ladder | Personal default/member/space/node present/absent and policy-excluded combinations | Same ordered resolver behavior; broken/unreadable selected default refuses; link callers skip forbidden rungs |
 | Explicit security | Missing/stale/revoked/private pin; wrong space/provider; decrypt failure; policy-read failure | Fail closed; no fallback, no secret/private-account discovery through errors |
 | Backend policy | Kimi/Groq member policy denied; explicit space/node; link-bound route | Preserve native-provider policy gate and chat member-only restriction; never inject native vendor account |
@@ -384,6 +454,7 @@ These are implementation acceptance tests to assign after convergence. This docu
 | Next claimed turn | Change intent/model/capabilities during streaming; queue before edit but claim after | Current receipt unchanged; next claim gets new desired revision; one atomic snapshot includes harness, mode and capabilities |
 | Pure preview | Repeated previews, rejected candidate, resolver reuse checks | No token mint/revoke, credential-home rewrite, connector process or live process interruption |
 | Account identity | Same paths but reconnect to another account; same API key under different binding | Account generation changes; no reuse based on path/env equality |
+| Unknown revisions | Member/node material without trustworthy version; absent policy/session epochs; matching metadata digest | Fresh durable guards still run; no hot reuse; isolated replacement plus portable bootstrap, or visible refusal if safe acquisition unsupported |
 | Reuse | Identical account/material/route/surface; cosmetic label; allowed policy epoch change | Revalidate; keep same generation/token if compatible; irrelevant labels/epochs do not churn |
 | Turn overrides | Adapter supports/does not support model/effort override; same route; changed backend | Supported compatible override retains generation with truthful receipt; incompatible/unsupported override replaces through continuity |
 | Home/material | Member-home relocation; space key rotation; node key change; model OAuth refresh | Generation-owned home protects old process; changed loaded material replaces; no shared-login deletion |
@@ -407,7 +478,31 @@ Unit-test requirement derivation, intent migration/selection, canonical nonsensi
 
 Keep `resolveSessionCredentials` as the shared credential policy implementation. Refactor its selection result into secret-free grant metadata plus separately acquired material; retaining the existing function as a compatibility wrapper avoids a second ladder. Add binding/revision facts through credential stores and member/node home ports rather than reading process.env as identity. Replace `ResolveChatCredentialEnv` with the metadata/lease bridge in stages.
 
-Extend claim snapshots to include harness, requirement/catalog revision, mode, capabilities and desired revision. Introduce generation/owner state, access epochs and generation-scoped MCP grants before introducing new adapters. The present chat-id-only runtime token replacement and per-chat files cannot support safe staged replacement/cleanup. Keep legacy readers and queued turns compatible through an explicit migration/recovery path; reauthorize legacy rows that cannot prove a runtime source.
+Extend claim snapshots to include harness, requirement/catalog revision, mode, existing capability descriptor and desired revision. Introduce generation/owner state and generation-scoped MCP grants before introducing new adapters; consume current policy/entity revisions and guarded reads without requiring global auth epochs. The present chat-id-only runtime token replacement and per-chat files cannot support safe staged replacement/cleanup. Keep legacy readers and queued turns compatible through an explicit migration/recovery path; reauthorize legacy rows that cannot prove a runtime source.
+
+### Implementable phase-one minimum
+
+The runtime-facing credential contract can start with three operations. Its private preparation uses the shared resolver's existing authorization/selection code, isolates acquired material, and assembles the node-local handle. The runtime coordinator still owns the staged MCP grant, existing capability descriptor and continuity plan; preparing model credentials does not mint the MCP token.
+
+```ts
+interface PreparedCredentialBinding {
+  readonly owner: RuntimeGeneration;
+  readonly plan: ResolvedCredentialPlan;
+  readonly modelLease: ModelCredentialLease;
+}
+interface PhaseOneChatCredentialPort {
+  prepare(config: ClaimedChatConfig, owner: RuntimeGeneration):
+    Promise<PreparedCredentialBinding>;
+  revalidate(binding: PreparedCredentialBinding): Promise<Revalidation>;
+  release(binding: PreparedCredentialBinding): Promise<void>;
+}
+```
+
+`prepare` supports inspection internally without acquiring material for previews; public preview continues through the existing selection-validation surface. The coordinator assembles `PreparedLaunch` from this binding plus its exact generation grant and capability descriptor. `revalidate` always uses current guarded reads; an unknown stamp is not evidence. On the first isolated boot, unversioned material can be used only as the newly authorized immutable acquisition for that claim, with a post-boot access recheck. It remains ineligible for later-turn hot reuse or assumed native-history eligibility. Concurrent managed source changes trigger invalidation; an unisolatable/unmanaged source refuses.
+
+Minimum storage adds owned runtime generation/lease references, secret-free prepared binding metadata and per-turn effective receipts. Use credential/connector entity or security revisions that already exist. Where material account revision is unknown, persist null and a replacement reason. Preserve the existing picker selection as the active projection of provider-scoped remembered choices plus an unpinned default; provider switches retain dormant pins and same-provider pin failures never fall back. Derive the capability digest from existing launch selections/skills/mode tools. New capability editing endpoints and global epoch stores are outside this increment.
+
+Generation-owned model material and MCP config, exact owner-fenced release, live authorization checks, portable bootstrap and refusal when acquisition/continuity cannot be verified are correctness requirements now. Additional revision writers, hot reuse across more account types and richer capability editing are later optimizations; none can be a prerequisite to honest Claude/Codex foundation behavior.
 
 Converge these points with runtime/continuity before implementation:
 
@@ -415,6 +510,6 @@ Converge these points with runtime/continuity before implementation:
 - Continuity's checkpoint/boot acknowledgement shape and native-storage compatibility proof; credential plans provide opaque storage scope, never transcript paths/secrets.
 - Capability surface digest includes actual skill delivery and connector account/definition bindings; portable context includes readable skill references and historic effects, not grants.
 - Generation-scoped token mint/activation and read-only boot discovery replace the current early `live` marker.
-- Provider intent UX retains merged selection shape and atomic model/effort/selection writes; wrong-provider pins require explicit replacement. Kimi/Groq source restrictions and native-policy namespaces remain compatible.
+- Provider intent UX retains merged active selection shape, additive remembered-provider/default intent and atomic model/effort/selection writes; wrong-provider submitted pins refuse and failed target pins never fall back. Kimi/Groq source restrictions and native-policy namespaces remain compatible.
 
 No unresolved product choice permits silent fallback, forged human authority, unverified liveness, empty-context replacement or side-effect replay. Once contracts converge, implementation tasks can stage schema/ports, generation orchestration, adapter continuity and UI projection with the matrix above as their review gates.
