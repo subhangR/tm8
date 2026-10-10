@@ -166,6 +166,22 @@ export function CraftScreen(props: CraftScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePage?.id, handle.seen, handle.updated]);
 
+  /* DELETED WHILE OPEN (the overview strip's Delete, or anyone's) ⇒ back to the
+     Crafts home. A link to an already-deleted craft keeps its notice. */
+  const craftGone = handle.state === 'deleted' || gate?.data.detailOf(craftId)?.deletedAt != null;
+  const sawCraft = useRef(false);
+  useEffect(() => {
+    sawCraft.current = false;
+  }, [craftId]);
+  useEffect(() => {
+    if (!craftGone) {
+      if (handle.state === 'ready') sawCraft.current = true;
+    } else if (sawCraft.current) {
+      sawCraft.current = false;
+      onNavigate({});
+    }
+  }, [craftGone, handle.state, onNavigate]);
+
   const selectPage = useCallback((id: EntityId) => onNavigate({ craftId, pageId: id }), [onNavigate, craftId]);
   const selectOverview = useCallback(() => onNavigate({ craftId }), [onNavigate, craftId]);
 
@@ -439,14 +455,17 @@ function PageBody(props: PageBodyProps) {
   const { page, seam, gate, runtime } = props;
   if (page.kind === 'graph') {
     return (
-      <GraphPage
-        seam={seam}
-        graphId={page.id}
-        controlsSlot={props.controlsSlot}
-        onAsk={props.onAsk}
-        onOpenEntity={props.onOpenEntity}
-        onToolNote={props.onToolNote}
-      />
+      <>
+        <GraphPage
+          seam={seam}
+          graphId={page.id}
+          controlsSlot={props.controlsSlot}
+          onAsk={props.onAsk}
+          onOpenEntity={props.onOpenEntity}
+          onToolNote={props.onToolNote}
+        />
+        {gate ? <GraphChrome page={page} runtime={runtime} onOpenEntity={props.onOpenEntity} /> : null}
+      </>
     );
   }
   if (!gate) return <PlainPage page={page} onOpen={() => props.onOpenEntity(page.id)} />;
@@ -473,6 +492,23 @@ function WorkspacePage({
         onOpenEntity={(id) => onOpenEntity(id as EntityId)}
         onClose={noop}
       />
+    </div>
+  );
+}
+
+/**
+ * A GRAPH PAGE'S STRIP. The canvas is the body (Craft is where a graph is
+ * built), but the strip must be the graph's own, exactly as in Home: Run,
+ * Edit, Links · Messages, Rename and Delete. Those are drawn by the entity
+ * panel into the strip's slots, so its body is mounted HIDDEN: only its
+ * portals show, and it loads the detail the strip's Links/Messages read.
+ */
+function GraphChrome({ page, runtime, onOpenEntity }: { page: CraftPageRow; runtime: WorkspaceRuntime; onOpenEntity(id: EntityId): void }) {
+  const tab = useEmbeddedTab(runtime, page.id, page.kind);
+  if (!tab) return null;
+  return (
+    <div hidden className="dsn-graph-chrome" data-testid="dsn-graph-chrome">
+      <EntityTabBody tab={tab} adapter={getKindAdapter(page.kind)} onOpenEntity={(id) => onOpenEntity(id as EntityId)} onClose={noop} />
     </div>
   );
 }
