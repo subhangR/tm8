@@ -110,7 +110,7 @@ const PANE_CHROME = 8 + 1;
 
 /** `/craft/{design}` as an absolute URL — what the design's "Copy link" copies. */
 function designLinkUrl(spaceId: SpaceId, designId: EntityId): string {
-  const { hash } = build(normalize({ spaceId, target: { view: 'craft', designId }, panels: emptyPanels() }));
+  const { hash } = build(normalize({ spaceId, target: { view: 'craft', craftId: designId }, panels: emptyPanels() }));
   return new URL(hash, window.location.href).toString();
 }
 

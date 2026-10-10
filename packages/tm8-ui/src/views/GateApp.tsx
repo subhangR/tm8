@@ -2212,7 +2212,7 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
   const openDesign = useCallback(
-    (designId: EntityId) => navStore.getState().navigate({ view: 'craft', designId }),
+    (designId: EntityId) => navStore.getState().navigate({ view: 'craft', craftId: designId }),
     [],
   );
   const designSource = useMemo(
@@ -2224,7 +2224,7 @@ export function GateApp(props: GateAppProps = {}) {
     ({ designId, pageId, nestedPageId }: DesignTarget) =>
       navStore.getState().navigate({
         view: 'craft',
-        ...(designId ? { designId } : {}),
+        ...(designId ? { craftId: designId } : {}),
         ...(designId && pageId ? { pageId } : {}),
         ...(designId && pageId && nestedPageId ? { nestedPageId } : {}),
       }),
@@ -2642,7 +2642,7 @@ export function GateApp(props: GateAppProps = {}) {
     <DesignsNav
       designs={designsSource}
       source={designSource}
-      designId={navView.view === 'craft' ? navView.designId : undefined}
+      designId={navView.view === 'craft' ? navView.craftId : undefined}
       pageId={navView.view === 'craft' ? navView.pageId : undefined}
       onNavigate={navigateDesign}
       onNotice={craftNotice}
@@ -2977,7 +2977,7 @@ export function GateApp(props: GateAppProps = {}) {
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref === 'craft' &&
-            !(navView.view === 'craft' && navView.designId) ? (
+            !(navView.view === 'craft' && navView.craftId) ? (
             /* ✎ Craft → Designs: bare `/craft` is the Designs home. Every
                door into Craft (the view selector, the Workspace rail's craft
                tool) lands here, and a card opens `/craft/{id}`. */
@@ -2998,20 +2998,20 @@ export function GateApp(props: GateAppProps = {}) {
             activeTarget?.type === 'view' &&
             activeTarget.ref === 'craft' &&
             navView.view === 'craft' &&
-            navView.designId ? (
+            navView.craftId ? (
             /* ✎ Craft → Designs: one design at `/craft/{design}[/{page}[/{nested}]]`
                — its chats on the left, its pages as tabs, the Workspace action
                strip split between the page and the design. The page bodies are
                the Workspace's own, hosted in a private runtime (`workspaceGate`
                is the same handle bundle the Workspace view gets). */
             <DesignScreen
-              key={navView.designId}
+              key={navView.craftId}
               seam={data.seam}
               spaceId={data.spaceId as SpaceId}
               nodeKey={nodeKey}
               source={designSource}
               designs={designsSource}
-              designId={navView.designId}
+              designId={navView.craftId}
               pageId={navView.pageId}
               nestedPageId={navView.nestedPageId}
               onNavigate={navigateDesign}
