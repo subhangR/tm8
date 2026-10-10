@@ -96,17 +96,17 @@ export const ToolRunStateSchema = z.enum(['running', 'exited', 'timed_out', 'kil
 export type ToolRunState = z.infer<typeof ToolRunStateSchema>;
 /** Stored inputs contain only values or secret references, never the secret itself. */
 export const ToolRunSchema = z.object({
-  id: Id, spaceId: Id, toolId: Id, toolVersion: z.number().int().positive(),
+  id: Id, spaceId: Id, toolId: Id, toolVersion: z.number().int().positive(), sourceSha256: z.string().regex(/^[0-9a-f]{64}$/),
   inputs: z.record(ToolJsonValueSchema), state: ToolRunStateSchema,
   keepOpen: z.boolean(), exitCode: z.number().int().nullable(),
   startedAt: z.string().nullable(), exitedAt: z.string().nullable(),
   outputTail: z.string().refine(value => new TextEncoder().encode(value).byteLength <= TOOL_MAX_OUTPUT_BYTES),
-  invokedFromSession: Id.nullable(),
+  parentSessionId: Id.nullable(),
 }).strict();
 export type ToolRun = z.infer<typeof ToolRunSchema>;
 export const ToolSecretBindingSchema = z.object({ inputName: InputName, credentialId: Id, keyHint: z.string().nullable() }).strict();
 export const ToolViewSchema = z.object({
-  id: Id, spaceId: Id, version: z.number().int().positive(), definition: ToolDefinitionSchema,
+  id: Id, spaceId: Id, version: z.number().int().positive(), sourceSha256: z.string().regex(/^[0-9a-f]{64}$/), definition: ToolDefinitionSchema,
   config: z.record(ToolJsonValueSchema), secretBindings: z.array(ToolSecretBindingSchema),
 }).strict();
 export type ToolView = z.infer<typeof ToolViewSchema>;
