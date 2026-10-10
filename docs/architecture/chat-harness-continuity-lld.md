@@ -700,8 +700,8 @@ interface SetChatModelInput {
   model: string;
   reasoningEffort?: string | null; // omitted preserves compatible value
   credentialSelection?: ChatCredentialSelection; // omitted preserves intent
-  expectedConfigRevision: number;
-  clientMutationId: string;
+  expectedConfigRevision?: number; // server normalizes legacy omission
+  clientMutationId?: string; // canonical request mutation ID supplies omission
 }
 interface ResolvedDesiredConfiguration {
   model: string;
@@ -722,6 +722,12 @@ interface SetChatConfigurationResult extends ResolvedDesiredConfiguration {
   appliesAt: 'next_claim';
 }
 ```
+
+Import the public input/credential-intent types from the credentials lane. For
+legacy callers that omit revision/mutation ID, the handler reads current desired
+settings, resolves their complete target, and passes that observed revision and
+the canonical request mutation ID to SQL. An intervening edit still fails CAS;
+it is never silently overwritten. SQL inputs remain required.
 
 Replay matches the mutation ID plus request hash; mismatched replay is refused.
 Revision conflict returns current revision without saving a partial field set.
