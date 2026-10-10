@@ -377,6 +377,24 @@ export function parse(hash: string): ParseOutcome {
   return { route: { spaceId, target, panels }, dropped };
 }
 
+/**
+ * Home, the tabs view. `?tab=` names the active entity tab; `?fp=&f=` an
+ * active project file tab (project id, relative path), held to the
+ * workspace's own file-tab rule. Lossy-tolerant like `?about=`: a value that
+ * does not fit is not carried.
+ */
+function tabsOf(query: Query): NavView {
+  const tab = query.get('tab');
+  if (tab && ID_LIKE.test(tab)) return { view: 'tabs', tab: tab as EntityId };
+  const rawProject = query.get('fp');
+  const rawPath = query.get('f');
+  const projectId = rawProject === null ? null : dec(rawProject);
+  const path = rawPath === null ? null : dec(rawPath);
+  return isFileTabProjectId(projectId) && isFileTabPath(path)
+    ? { view: 'tabs', file: { projectId, path } }
+    : { view: 'tabs' };
+}
+
 function parseTarget(
   rest: string[],
   query: Query,
@@ -437,6 +455,14 @@ function parseTarget(
           },
         };
       }
+      /* `/home` IS THE DESKTOP'S HOME, the tabs view (Craft redesign §2,
+         2026-10-10: Work was renamed Home and `/home` made canonical; `/work`
+         and `/tabs` decode to it below). A `?tab=` or `?fp=&f=` names a Home
+         tab and decodes straight to it. BARE `/home` still decodes to the
+         shared Home target, because the phone (D16) and the legacy desktop
+         keep their chat Home there; the three-mode desktop lands it in the
+         tabs view through `workRedirectOf` (replace), as it always has. */
+      if (rest[1] === undefined && (query.get('tab') !== null || query.get('fp') !== null)) return tabsOf(query);
       return { view: 'home' };
     }
     case 'feed':
@@ -478,23 +504,11 @@ function parseTarget(
       return { view: 'help', plate: plate && plate.length > 0 ? plate : null };
     }
     case 'work':
-    case 'tabs': {
-      /* Work — the tabs view (Spec B §7; D31). `work` is the canonical path;
-         `tabs` is its permanent decode alias (links to it are in chats and
-         docs) and `build` never emits it. `?tab=` names the active entity
-         tab. Lossy-tolerant like `?about=`: a non-id value is not carried. */
-      const tab = query.get('tab');
-      if (tab && ID_LIKE.test(tab)) return { view: 'tabs', tab: tab as EntityId };
-      /* `?fp=&f=` names an active project file tab (project id, relative
-         path), held to the workspace's own file-tab rule. */
-      const rawProject = query.get('fp');
-      const rawPath = query.get('f');
-      const projectId = rawProject === null ? null : dec(rawProject);
-      const path = rawPath === null ? null : dec(rawPath);
-      return isFileTabProjectId(projectId) && isFileTabPath(path)
-        ? { view: 'tabs', file: { projectId, path } }
-        : { view: 'tabs' };
-    }
+    case 'tabs':
+      /* Home's former addresses (Work, D31; the tabs view, Spec B §7) are
+         permanent decode aliases — links to them are in chats and docs — and
+         `build` never emits them. */
+      return tabsOf(query);
     case 'board-v2':
       /* Board v2 (2026-08-18) — hyphenated segment, camel member, exactly the
          `new-session` precedent. */
@@ -623,7 +637,7 @@ function pathOf(route: Route): string {
     case 'boardV2':
       return `${base}/board-v2`;
     case 'tabs':
-      return `${base}/work`;
+      return `${base}/home`;
     case 'newSession':
       return `${base}/new-session`;
     case 'voice':
