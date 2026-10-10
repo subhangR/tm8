@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { watch, type FSWatcher } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { TOOL_MAX_OUTPUT_BYTES, type ToolDefinition } from '@tm8/contract';
 import { OutputBuffer } from '../pty/OutputBuffer.js';
 import type { PtyHostService } from '../pty/PtyHostService.js';
@@ -37,6 +38,20 @@ export interface ToolSessionLauncherOptions {
   env?: NodeJS.ProcessEnv;
   logger?: Logger;
   pollMs?: number;
+}
+
+/** Retry only the idempotent exit write; cleanup, revocation and redaction run once. */
+async function recordExitWithRetry(record: ToolLaunchRequest['recordExit'], exit: ToolExit, deadline: number): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try { await record(exit); return; }
+    catch (error) {
+      if (attempt === 2) throw error;
+      const backoff = 100 * 2 ** attempt;
+      if (Date.now() + backoff >= deadline) throw error;
+      await delay(backoff);
+      if (Date.now() >= deadline) throw error;
+    }
+  }
 }
 
 /** A server-generated wrapper; no input value is interpolated into shell code. */
@@ -76,6 +91,7 @@ export class ToolSessionLauncher {
 
   async launch(request: ToolLaunchRequest): Promise<{ sessionId: string; cwd: string; reused: boolean }> {
     if (this.options.pty.hasSession(request.sessionId)) return { sessionId: request.sessionId, cwd: request.cwd, reused: true };
+    const deadline = Date.now() + request.definition.timeoutSeconds * 1000;
     const runDir = join(this.options.dataDir, 'tool-runs', request.sessionId);
     await mkdir(runDir, { recursive: true, mode: 0o700 });
     await chmod(runDir, 0o700);
@@ -124,7 +140,8 @@ export class ToolSessionLauncher {
         // Cleanup failure must never skip token revocation or outcome capture.
         try {
           try { await request.revokeToken(); }
-          finally { await request.recordExit({ exitCode: exit, state, outputTail }); }
+          finally { await recordExitWithRetry(request.recordExit, { exitCode: exit, state, outputTail },
+            deadline); }
         } finally {
           try { stop(); }
           finally { secretValues.fill(''); }
