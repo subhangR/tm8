@@ -493,7 +493,7 @@ interface PageBodyProps {
  */
 function PageBody(props: PageBodyProps) {
   const { page, seam, gate, runtime } = props;
-  if (page.kind === 'craft' || page.kind === 'design') return <CraftPage {...props} />;
+  if (page.kind === 'craft') return <CraftPage {...props} />;
   if (page.kind === 'graph') {
     return (
       <>

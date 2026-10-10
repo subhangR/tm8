@@ -484,7 +484,7 @@ describe('the craft detail panel (the overview, L4.2)', () => {
         ids.push(await createGraph(seam, 'Plan'), await createDoc(seam, 'Brief'));
         await source.placePage(CRAFT, ids[0]!, 1);
         await source.placePage(CRAFT, ids[1]!, 2);
-        nested = await source.createPage(CRAFT, 'design', 3);
+        nested = await source.createPage(CRAFT, 'craft', 3);
         source.crafts.get(nested)!.title = 'Backend';
         await source.placePage(nested, await createGraph(seam, 'API flow'), 1);
       });
@@ -492,7 +492,7 @@ describe('the craft detail panel (the overview, L4.2)', () => {
     })();
     await waitFor(() => expect(sections(view)).toHaveLength(3));
     expect(sections(view).map((section) => section.getAttribute('data-page-id'))).toEqual([ids[0], ids[1], nested]);
-    expect(sections(view).map((section) => section.getAttribute('data-kind'))).toEqual(['graph', 'doc', 'design']);
+    expect(sections(view).map((section) => section.getAttribute('data-kind'))).toEqual(['graph', 'doc', 'craft']);
     /* The graph is the live blueprint page (empty yet), inside its own section. */
     const [graph, doc, craft] = sections(view);
     await waitFor(() => within(graph!).getByTestId('crf-empty'));
