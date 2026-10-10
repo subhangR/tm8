@@ -21,7 +21,7 @@ export class ToolRuntime {
   constructor(private readonly options: ToolRuntimeOptions) {
     this.launcher = new ToolSessionLauncher({ pty: options.pty, dataDir: options.dataDir, baseUrl: options.baseUrl });
   }
-  async createSecret(claims: DbClaims, input: ToolSecretBindInput & { value: string }): Promise<void> {
+  async createSecret(claims: DbClaims, input: ToolSecretBindInput & { toolId: string; value: string }): Promise<void> {
     const tool = await this.options.db.tx(claims, q => loadTool(q, input.toolId));
     const id = randomUUID();
     const sealed = sealSecret(await loadOrCreateCredentialKey(this.options.dataDir), input.value,
@@ -30,7 +30,7 @@ export class ToolRuntime {
       input.label ?? `${tool.definition.name}: ${input.inputName}: ${id.slice(0, 8)}`, '••••', sealed.ciphertext, sealed.nonce,
       input.expectedVersion, input.actorId ?? null, input.clientMutationId]);
   }
-  async run(claims: DbClaims, identity: RequestIdentity, input: ToolRunInput): Promise<{
+  async run(claims: DbClaims, identity: RequestIdentity, input: ToolRunInput & { toolId: string }): Promise<{
     sessionId: string; toolId: string; toolVersion: number; sourceSha256: string; keepOpen: boolean; reused: boolean;
   }> {
     if (claims.viaLinkId || claims.authKind === 'link') throw new CollabError('forbidden', 'Tool runs are unavailable through space links');

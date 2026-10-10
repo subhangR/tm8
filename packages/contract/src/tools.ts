@@ -123,8 +123,9 @@ export type ToolView = z.infer<typeof ToolViewSchema>;
 export const ToolEntitySchema = ToolViewSchema.partial().required({ definition: true }).extend({ kind: z.literal('tool') }).strict();
 export type ToolEntity = z.infer<typeof ToolEntitySchema>;
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
-const Versioned = { ...Command, toolId: Id, expectedVersion: z.number().int().positive() };
-export const ToolCreateInputSchema = z.object({ ...Command, spaceId: Id, definition: ToolDefinitionSchema }).strict();
+// IDs ride the route; clients may repeat them in the body for compatibility.
+const Versioned = { ...Command, toolId: Id.optional(), expectedVersion: z.number().int().positive() };
+export const ToolCreateInputSchema = z.object({ ...Command, spaceId: Id.optional(), definition: ToolDefinitionSchema }).strict();
 export const ToolUpdateInputSchema = z.object({ ...Versioned, definition: ToolDefinitionSchema }).strict();
 export const ToolConfigSetInputSchema = z.object({ ...Versioned, inputName: InputName, value: ToolJsonValueSchema }).strict();
 export const ToolConfigUnsetInputSchema = z.object({ ...Versioned, inputName: InputName }).strict();
@@ -139,7 +140,7 @@ export const ToolSecretBindInputSchema = z.object({
 export const ToolSecretUnbindInputSchema = ToolConfigUnsetInputSchema;
 /** Ephemeral secrets are supplied over the authenticated request body, never the command line or run record. */
 export const ToolRunInputSchema = z.object({
-  ...Command, toolId: Id, expectedVersion: z.number().int().positive().optional(), inputs: z.record(ToolJsonValueSchema).optional(),
+  ...Command, toolId: Id.optional(), expectedVersion: z.number().int().positive().optional(), inputs: z.record(ToolJsonValueSchema).optional(),
   secrets: z.record(z.string().min(1).max(4096)).optional(), cwd: z.string().min(1).max(4096).optional(),
   keepOpen: z.boolean().default(false),
 }).strict();

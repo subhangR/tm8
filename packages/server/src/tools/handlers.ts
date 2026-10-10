@@ -10,11 +10,22 @@ import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { loadActors, actorOf } from '../facade/entity-read.js';
 import { loadTool, loadToolRun, RUN_SELECT, toolRunView, type ToolRunRow } from './views.js';
 import type { ToolRuntime } from './runtime.js';
+import type { RequestContext } from '../http/types.js';
+
+/** The route names the target; a repeated body ID must agree with it. */
+function toolRouteId(ctx: RequestContext, field: 'spaceId' | 'toolId'): string {
+  const id = requireUuidParam(ctx, field);
+  const bodyId = (ctx.body as Record<string, unknown>)[field];
+  if (bodyId !== undefined && bodyId !== id) {
+    throw new CollabError('invalid_input', `body ${field} does not match route`);
+  }
+  return id;
+}
 
 export function registerToolHandlers(registry: HandlerRegistry, deps: FacadeDeps, runtime?: ToolRuntime): void {
   registry.registerAll({
     'tools.create': async ctx => {
-      const input = ToolCreateInputSchema.parse({ ...ctx.body as object, spaceId: requireUuidParam(ctx, 'spaceId') });
+      const input = { ...ToolCreateInputSchema.parse(ctx.body), spaceId: toolRouteId(ctx, 'spaceId') };
       return deps.db.tx(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), async q => {
         const result = await q.rpc<{ entity: { id: string } }>('create_tool_entity',
           [input.spaceId, JSON.stringify(input.definition), input.actorId ?? null, input.clientMutationId]);
@@ -22,7 +33,7 @@ export function registerToolHandlers(registry: HandlerRegistry, deps: FacadeDeps
       });
     },
     'tools.update': async ctx => {
-      const input = ToolUpdateInputSchema.parse({ ...ctx.body as object, toolId: requireUuidParam(ctx, 'toolId') });
+      const input = { ...ToolUpdateInputSchema.parse(ctx.body), toolId: toolRouteId(ctx, 'toolId') };
       return deps.db.tx(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), async q => {
         await q.rpc('update_tool_entity', [input.toolId, input.expectedVersion, JSON.stringify(input.definition), input.actorId ?? null, input.clientMutationId]);
         return loadTool(q, input.toolId);
@@ -56,21 +67,21 @@ export function registerToolHandlers(registry: HandlerRegistry, deps: FacadeDeps
           ...(input.type !== 'secret' && Object.hasOwn(view.config, input.name) ? { configuredValue: view.config[input.name] } : {}) })) };
     },
     'tools.config.set': async ctx => {
-      const input = ToolConfigSetInputSchema.parse({ ...ctx.body as object, toolId: requireUuidParam(ctx, 'toolId') });
+      const input = { ...ToolConfigSetInputSchema.parse(ctx.body), toolId: toolRouteId(ctx, 'toolId') };
       return deps.db.tx(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), async q => {
         await q.rpc('set_tool_config', [input.toolId, input.expectedVersion, input.inputName, JSON.stringify(input.value), false, input.actorId ?? null, input.clientMutationId]);
         return loadTool(q, input.toolId);
       });
     },
     'tools.config.unset': async ctx => {
-      const input = ToolConfigUnsetInputSchema.parse({ ...ctx.body as object, toolId: requireUuidParam(ctx, 'toolId') });
+      const input = { ...ToolConfigUnsetInputSchema.parse(ctx.body), toolId: toolRouteId(ctx, 'toolId') };
       return deps.db.tx(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), async q => {
         await q.rpc('set_tool_config', [input.toolId, input.expectedVersion, input.inputName, null, true, input.actorId ?? null, input.clientMutationId]);
         return loadTool(q, input.toolId);
       });
     },
     'tools.secrets.bind': requireHumanSession(async ctx => {
-      const input = ToolSecretBindInputSchema.parse({ ...ctx.body as object, toolId: requireUuidParam(ctx, 'toolId') });
+      const input = { ...ToolSecretBindInputSchema.parse(ctx.body), toolId: toolRouteId(ctx, 'toolId') };
       const claims = claimsFor(await deps.owner(), ctx, commandEnvelope(ctx));
       const value = input.value;
       if (value !== undefined) {
@@ -83,14 +94,14 @@ export function registerToolHandlers(registry: HandlerRegistry, deps: FacadeDeps
       return { inputName: input.inputName, keyHint: view.secretBindings.find(binding => binding.inputName === input.inputName)?.keyHint ?? null };
     }),
     'tools.secrets.unbind': requireHumanSession(async ctx => {
-      const input = ToolSecretUnbindInputSchema.parse({ ...ctx.body as object, toolId: requireUuidParam(ctx, 'toolId') });
+      const input = { ...ToolSecretUnbindInputSchema.parse(ctx.body), toolId: toolRouteId(ctx, 'toolId') };
       return deps.db.tx(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), async q => {
         await q.rpc('bind_tool_secret', [input.toolId, input.expectedVersion, input.inputName, null, true, input.actorId ?? null, input.clientMutationId]);
         return loadTool(q, input.toolId);
       });
     }),
     'tools.run': async ctx => {
-      const input = ToolRunInputSchema.parse({ ...ctx.body as object, toolId: requireUuidParam(ctx, 'toolId') });
+      const input = { ...ToolRunInputSchema.parse(ctx.body), toolId: toolRouteId(ctx, 'toolId') };
       if (!runtime) throw new CollabError('not_implemented', 'Tool execution is unavailable on this node');
       return runtime.run(claimsFor(await deps.owner(), ctx, commandEnvelope(ctx)), ctx.identity, input);
     },
