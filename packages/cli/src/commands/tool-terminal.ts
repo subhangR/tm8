@@ -14,7 +14,7 @@ export function toolRunExitCode(run: ToolRun): ExitCode {
   return code as ToolExitCode;
 }
 
-/** Stored run state is authoritative, including when a keep-open shell is still live. */
+/** Stored run state is authoritative, including when the PTY end signal is lost. */
 export async function attachToolRun(cmd: CommandContext, sessionId: string, keepOpen: boolean): Promise<ExitCode> {
   const client = clientFor({ ...cmd.ctx, fresh: true });
   const getRun = (): Promise<ToolRun> => observedInvoke(client, 'tools.runs.get', { params: { sessionId } });
@@ -49,9 +49,9 @@ export async function attachToolRun(cmd: CommandContext, sessionId: string, keep
   const socket = new Ctor(grantSocketUrl(cmd, grant), [PTY_WS_PROTOCOL, `${PTY_GRANT_PROTOCOL_PREFIX}${grant.token}`]);
   socket.binaryType = 'arraybuffer';
   return new Promise<ExitCode>((resolve, reject) => {
-    let settled = false, checking = false, closedPending = false, rawChanged = false, receivedOutput = false, timer: ReturnType<typeof setInterval> | undefined;
+    let settled = false, checking = false, closedPending = false, rawChanged = false, forwardingInput = false, receivedOutput = false, terminalSeenAt: number | undefined, timer: ReturnType<typeof setInterval> | undefined;
     const drive = grant.mode === 'drive';
-    const wasRaw = process.stdin.isRaw, wasPaused = process.stdin.isPaused();
+    const wasRaw = process.stdin.isRaw;
     const forward = (chunk: Buffer): void => { if (socket.readyState === 1) socket.send(chunk); };
     const resize = (): void => {
       if (drive && socket.readyState === 1) socket.send(JSON.stringify({ type: 'resize', cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 }));
@@ -61,9 +61,13 @@ export async function attachToolRun(cmd: CommandContext, sessionId: string, keep
       settled = true;
       clearInterval(timer);
       if (drive) {
-        process.stdin.off('data', forward); process.stdout.off('resize', resize);
+        if (forwardingInput) {
+          process.stdin.off('data', forward);
+          process.stdin.pause();
+          forwardingInput = false;
+        }
+        process.stdout.off('resize', resize);
         if (rawChanged) process.stdin.setRawMode(wasRaw);
-        if (wasPaused) process.stdin.pause();
       }
       socket.close();
       if (error) reject(error); else resolve(code!);
@@ -78,10 +82,15 @@ export async function attachToolRun(cmd: CommandContext, sessionId: string, keep
           const current = await getRun();
           if (settled) return;
           if (current.state !== 'running') {
-            if (closed || keepOpen) {
-              if (!receivedOutput && current.outputTail) cmd.out.bytes(Buffer.from(current.outputTail));
-              done(toolRunExitCode(current));
+            // The stored outcome can become visible just before the PTY closes.
+            // Let its exit frame/close event release the shell first; if either
+            // event was lost, use the outcome after a short bounded grace period.
+            if (!closed) {
+              terminalSeenAt ??= Date.now();
+              if (Date.now() - terminalSeenAt < 1_000) return;
             }
+            if (!receivedOutput && current.outputTail) cmd.out.bytes(Buffer.from(current.outputTail));
+            done(toolRunExitCode(current));
             return;
           }
           if (closed) await new Promise<void>(resolve => setTimeout(resolve, 100));
@@ -96,10 +105,12 @@ export async function attachToolRun(cmd: CommandContext, sessionId: string, keep
     socket.addEventListener('open', () => {
       if (socket.protocol !== PTY_WS_PROTOCOL) { done(undefined, new CliError('Unexpected PTY subprotocol', 10)); return; }
       if (drive) {
-        if (process.stdin.isTTY && process.stdout.isTTY) { process.stdin.setRawMode(true); rawChanged = true; }
-        process.stdin.on('data', forward); process.stdin.resume(); process.stdout.on('resize', resize); resize();
+        if (process.stdin.isTTY) {
+          if (process.stdout.isTTY) { process.stdin.setRawMode(true); rawChanged = true; }
+          process.stdin.on('data', forward); forwardingInput = true; process.stdin.resume();
+        }
+        process.stdout.on('resize', resize); resize();
       }
-      if (keepOpen) timer = setInterval(() => { void check(); }, 250);
     });
     socket.addEventListener('message', (event: MessageEvent) => {
       if (settled) return;
@@ -116,7 +127,11 @@ export async function attachToolRun(cmd: CommandContext, sessionId: string, keep
       catch { done(undefined, new CliError('Invalid PTY control frame', 10)); return; }
       if (control.type === 'exit') { clearInterval(timer); void check(true); }
     });
-    socket.addEventListener('error', () => { /* The close event settles against stored run state. */ });
+    socket.addEventListener('error', () => { void check(true); });
     socket.addEventListener('close', () => { clearInterval(timer); void check(true); });
+    // Poll persisted state even if the PTY adapter loses its final control or
+    // close event. The database outcome is authoritative; the socket's exit
+    // frame is only a prompt to check it.
+    timer = setInterval(() => { void check(); }, 250);
   });
 }

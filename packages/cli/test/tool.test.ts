@@ -38,7 +38,7 @@ let server: Server, baseUrl: string;
 let requests: Array<{ method: string; path: string; query: URLSearchParams; body: Record<string, any> }> = [];
 let stdout = '', stderr = '', fast = false, completed = false, exitCode = 37, keepOpen = false, conflict = false, helpVersionMismatch = false;
 let namePage = 0;
-let noReplay = false, statusDelay = 0;
+let noReplay = false, statusDelay = 0, noTerminalEnd = false;
 const storedRun = (): ToolRun => ({ id: SESSION, spaceId: SPACE, toolId: TOOL, toolVersion: tool.version,
   sourceSha256: tool.sourceSha256, inputs: {}, state: completed ? 'exited' : 'running', keepOpen,
   exitCode: completed ? exitCode : null, startedAt: null, exitedAt: null, outputTail: 'stored output\n', parentSessionId: null });
@@ -54,7 +54,7 @@ class TerminalSocket extends EventTarget {
       if (!noReplay) this.dispatchEvent(new MessageEvent('message', { data: new TextEncoder().encode('live output\n').buffer }));
       if (statusDelay) setTimeout(() => { completed = true; }, statusDelay);
       else completed = true;
-      if (!keepOpen) {
+      if (!keepOpen && !noTerminalEnd) {
         this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ type: 'exit', exitCode: 0 }) }));
         // A PTY's exit frame can differ from the recorded tool's status.
         this.close();
@@ -111,7 +111,7 @@ beforeEach(() => {
     executionVersion: 1, configRevision: 0, config: {}, secretBindings: [], sourceChangedSinceViewerLastRun: null };
   requests = []; stdout = ''; stderr = ''; fast = false; completed = false; exitCode = 37; keepOpen = false; conflict = false; helpVersionMismatch = false; namePage = 0;
   TerminalSocket.instances = [];
-  noReplay = false; statusDelay = 0;
+  noReplay = false; statusDelay = 0; noTerminalEnd = false;
   vi.stubEnv('TM8_BASE_URL', baseUrl); vi.stubEnv('TM8_SPACE_ID', SPACE); vi.stubEnv('TM8_CREDENTIALS_MODE', 'off');
   vi.stubEnv('TM8_SESSION_ID', ''); vi.stubEnv('TM8_AGENT_TOKEN', ''); vi.stubEnv('TM8_TEAM_MEMBER_ID', '');
   vi.stubEnv('TM8_JOURNAL_CLASS', 'human'); vi.stubEnv('TM8_NO_TERSE_DEFAULT', '1');
@@ -269,6 +269,22 @@ describe('attached execution', () => {
     expect(await run(['tool', 'run', TOOL])).toBe(37);
     expect(stdout).toBe(`${SESSION}\nlive output\n`);
     expect(requests.filter(req => req.path.includes('/tool-runs/')).length).toBeGreaterThan(2);
+  });
+  it('settles from persisted status when the PTY end frame and close event are lost', async () => {
+    noTerminalEnd = true; exitCode = 1;
+    expect(await run(['tool', 'run', TOOL])).toBe(1);
+    expect(TerminalSocket.instances[0]!.closed).toBe(true);
+    expect(stdout).toBe(`${SESSION}\nlive output\n`);
+  });
+  it('does not resume piped stdin for an attached drive session', async () => {
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process, 'stdin')!;
+    const input = Object.assign(new EventEmitter(), { isTTY: false, resume: vi.fn(), pause: vi.fn() });
+    Object.defineProperty(process, 'stdin', { configurable: true, value: input });
+    try {
+      expect(await run(['tool', 'run', TOOL])).toBe(37);
+      expect(input.resume).not.toHaveBeenCalled();
+      expect(input.listenerCount('data')).toBe(0);
+    } finally { Object.defineProperty(process, 'stdin', stdinDescriptor); }
   });
   it.each([false, true])('forwards stdin, sets raw mode only with TTY stdout (%s), and restores it', async stdoutTty => {
     const stdinDescriptor = Object.getOwnPropertyDescriptor(process, 'stdin')!;
