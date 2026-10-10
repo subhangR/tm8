@@ -856,7 +856,8 @@ export class WorkspaceService {
         ? []
         : await q.query<{ workspace_id: string; state: unknown; revision: string | number }>(
             `select workspace_id, state, revision from public.workspaces
-              where space_id = $1 and identity_id = (select internal.identity_id()) and workspace_id = $2`,
+              where space_id = $1 and identity_id = (select internal.identity_id()) and workspace_id = $2
+                and scope_entity_id is null`,
             [spaceId, workspaceId],
           );
       const row = rows[0];

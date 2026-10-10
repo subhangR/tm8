@@ -3,7 +3,7 @@
  *
  * A craft is shared by the space; the TABS a person has open on it are theirs.
  * Each (space, identity, craft) has at most one craft workspace: a row of
- * `public.workspaces` scoped to the craft entity (migration 314). It is
+ * `public.workspaces` scoped to the craft entity (migration 315). It is
  * hidden — never in the Home workspace switcher, never counted against its
  * cap of 20, never the active Home workspace — and private by the same
  * identity-equality rule as every other workspace.
