@@ -125,8 +125,9 @@ const err = (): string => stderr.join('');
 // ---------------------------------------------------------------------------
 
 describe('the module registers exactly its own rows, and the projection agrees', () => {
-  it('owns the six chat paths and nothing else', () => {
+  it('owns the seven chat paths and nothing else', () => {
     expect(CHAT_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
+      'chat credentials',
       'chat list',
       // +1 chat.setModel (276, chat model switch). MEASURED. `chat model` is
       // the second WRITE this noun exposes; it sorts between list and send.
@@ -154,6 +155,7 @@ describe('the module registers exactly its own rows, and the projection agrees',
    */
   it('one command is a catalog row; four are aliases over doors that already existed', () => {
     expect(commandDiscovery(['chat', 'start'])?.operations).toEqual(['chat.start']);
+    expect(commandDiscovery(['chat', 'credentials'])?.operations).toEqual(['chat.setCredentials']);
     expect(commandDiscovery(['chat', 'list'])?.operations).toEqual(['collections.query']);
     expect(commandDiscovery(['chat', 'show'])?.operations).toEqual(['entities.context']);
     expect(commandDiscovery(['chat', 'send'])?.operations).toEqual(['messages.post']);
@@ -164,6 +166,23 @@ describe('the module registers exactly its own rows, and the projection agrees',
 
   it('the noun is `chat` — `chat-thread` named a shape that no longer exists', () => {
     for (const c of CHAT_COMMANDS) expect(commandDiscovery(c.path)?.noun).toBe('chat');
+  });
+});
+
+describe('chat credentials wire contract', () => {
+  it('sends the selected source and space credential reference without secrets', async () => {
+    reply = () => envelope({ chatId: CHAT, credentialSelection: { source: 'space', credentialId: ABOUT } });
+    const code = await run(['chat', 'credentials', CHAT, 'space', '--credential', ABOUT, '--format', 'json']);
+    expect(code).toBe(0);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ method: 'POST', path: bindPath('chat.setCredentials', { id: CHAT }),
+      body: { credentialSelection: { source: 'space', credentialId: ABOUT } } });
+  });
+
+  it('refuses a named space credential paired with another source before any request', async () => {
+    const code = await run(['chat', 'credentials', CHAT, 'member', '--credential', ABOUT]);
+    expect(code).toBe(2);
+    expect(seen).toHaveLength(0);
   });
 });
 
