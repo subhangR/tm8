@@ -64,6 +64,9 @@ export interface RequestIdentity {
    * why `messages.post` and `execution.spawn` may treat it as provenance.
    */
   runtimeChatId?: string;
+  /** Verified runtime token generation; evidence only, SQL checks current rows. */
+  runtimeEpoch?: number;
+  runtimeNativeGeneration?: number;
   /**
    * The one space this session may act in (226 `auth_sessions.space_id`),
    * bound as `tm8.session_space_id`. Set for agent kinds and for a human
