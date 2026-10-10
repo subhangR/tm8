@@ -549,6 +549,8 @@ export class SpawnService {
    * the actor who started it.
    */
   private readonly sessionAuth = new Map<string, GraphAuth>();
+  /** Tool exit codes describe the command result, rather than an agent crash. */
+  private readonly toolSessions = new Set<string>();
   /**
    * The cgroup OOM-kill counter as it stood when each session's PTY was
    * spawned (171). The exit path compares against it: an ADVANCE across a
@@ -2022,6 +2024,7 @@ export class SpawnService {
   /** Capture server-derived claims before a tool PTY can produce an exit event. */
   adoptToolSession(auth: GraphAuth, sessionId: string): void {
     this.sessionAuth.set(sessionId, auth);
+    this.toolSessions.add(sessionId);
   }
 
   async startShell(auth: GraphAuth, request: ShellSessionRequest): Promise<ShellSessionResult> {
@@ -3233,6 +3236,7 @@ export class SpawnService {
   async killRecordedEnding(sessionId: string): Promise<PtyKillOutcome> {
     const outcome = this.pty.kill(sessionId, true);
     this.sessionAuth.delete(sessionId);
+    this.toolSessions.delete(sessionId);
     if (outcome === 'killed') await this.scrubSpaceSecrets(sessionId);
     this.logger?.info('SpawnService: session killed after its membership ended', { sessionId, outcome });
     return outcome;
@@ -3271,6 +3275,7 @@ export class SpawnService {
   ): Promise<{ outcome: PtyKillOutcome; recorded: boolean }> {
     const outcome = this.pty.kill(sessionId, true);
     this.sessionAuth.delete(sessionId);
+    this.toolSessions.delete(sessionId);
     // Even a failed kill must lose graph authority: a process whose lifecycle
     // is no longer under control is the least safe process to leave credentialed.
     if (outcome === 'error') return { outcome, recorded: false };
@@ -3810,6 +3815,12 @@ export class SpawnService {
   ): Promise<void> => {
     const auth = this.sessionAuth.get(sessionId);
     this.sessionAuth.delete(sessionId);
+    // Tools report a nonzero command result in tool_exit_code. A wrapper
+    // that exits normally has ended cleanly, including when that result is
+    // nonzero; signal deaths still use the shared failure classification.
+    if (this.toolSessions.delete(sessionId) && exitInfo.signal === null && exitInfo.exitCode !== null) {
+      status = 'completed';
+    }
     // FIRST, before any graph write can fail, and on the ghost path too: the
     // process that read the space key is gone, so the key leaves the disk. A
     // kill (containment) arrives here like any other exit.

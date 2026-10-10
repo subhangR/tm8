@@ -96,11 +96,19 @@ export class ToolRuntime {
       await this.options.db.rpc(claims, 'work_session_transition', [sessionId, 'running']);
       await this.launcher.launch({ sessionId, toolId: tool.id, toolVersion: pinnedVersion, definition: tool.definition,
         inputs: resolved, cwd, keepOpen: input.keepOpen, ...(token ? { token } : {}),
-        onReady: () => this.options.spawnService.adoptToolSession(claims, sessionId), recordExit, revokeToken });
+        onReady: () => this.options.spawnService.adoptToolSession(claims, sessionId), recordExit, revokeToken,
+        closePty: async () => { await this.options.spawnService.terminate(claims, sessionId, {
+          force: true, endedKind: 'exited_clean', endedReason: 'Tool execution ended.',
+        }); } });
     } catch (error) {
-      this.options.pty.kill(sessionId);
-      await revokeToken(); await recordExit({ exitCode: null, state: 'killed', outputTail: '' });
-      await this.options.db.rpc(claims, 'work_session_transition', [sessionId, 'failed', null, 'Tool launch failed']);
+      // Use the same kill-and-record writer as explicit cleanup, including
+      // retiring captured claims when spawn itself failed after onReady.
+      try { await this.options.spawnService.terminate(claims, sessionId, {
+        force: true, terminalStatus: 'failed', reason: 'Tool launch failed',
+        endedKind: 'crashed', endedReason: 'Tool could not start.',
+      }); }
+      finally { try { await revokeToken(); }
+        finally { await recordExit({ exitCode: null, state: 'killed', outputTail: '' }); } }
       throw new CollabError('upstream_unavailable', 'Tool launch failed');
     }
     return result;
