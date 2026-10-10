@@ -1,0 +1,9 @@
+{
+  "help": "Summarise events since a space event sequence (exclusive), including task updates and merged PRs observed in the feed. Uses the run-scoped read token, revoked on exit. Agent sessions only in v1; human CLI/UI runs are refused. Example: tm8 tool run space-digest --since 0 --format markdown",
+  "tm8Access": "read",
+  "timeoutSeconds": 120,
+  "inputs": [
+    { "name": "since", "type": "int", "min": 0, "default": 0, "description": "Exclusive starting event sequence" },
+    { "name": "format", "type": "enum", "options": ["markdown", "json"], "default": "markdown" }
+  ]
+}

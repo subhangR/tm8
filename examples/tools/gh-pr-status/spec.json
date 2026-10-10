@@ -1,0 +1,11 @@
+{
+  "help": "List pull requests and their CI checks as JSON using GitHub CLI. Requires gh and a token allowed to read the repository. Example: tm8 tool run gh-pr-status --repo owner/repo --state open --limit 20 --github-token-from-env MY_GITHUB_TOKEN",
+  "tm8Access": "none",
+  "timeoutSeconds": 120,
+  "inputs": [
+    { "name": "repo", "type": "string", "required": true, "description": "GitHub owner/repository", "short": "r" },
+    { "name": "state", "type": "enum", "options": ["open", "closed", "merged", "all"], "default": "open" },
+    { "name": "limit", "type": "int", "min": 1, "max": 200, "default": 20 },
+    { "name": "github_token", "type": "secret", "required": true, "description": "GitHub token with repository read access" }
+  ]
+}
