@@ -1,10 +1,11 @@
 import { connect } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { getOperation } from '@tm8/contract';
 import { createFacadeServer, type FacadeServer } from '../../src/http/server.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { CLIPBOARD_UPLOAD_PATH } from '../../src/http/clipboard-upload.js';
-import type { RequestIdentity } from '../../src/http/types.js';
+import type { RequestContext, RequestIdentity } from '../../src/http/types.js';
 
 const token = 'tm8s_read_scoped_tool_test';
 const identity: RequestIdentity = {kind: 'bearer', authKind: 'agent', apiScope: 'read',
@@ -45,4 +46,19 @@ it('refuses read-scoped tool tokens before terminal WebSocket upgrade/input disp
   });
   expect(response).toContain('403'); expect(response).toContain('read operations only');
   expect(upgrade).not.toHaveBeenCalled();
+});
+
+it('keeps hand-built in-process contexts working without a redundant operation binding', async () => {
+  const registry = new HandlerRegistry().register('tools.run', async () => 'called');
+  expect(await registry.get('tools.run')!({} as RequestContext)).toBe('called');
+});
+it('checks the registered catalog operation even if a context claims a read binding', async () => {
+  const handler = vi.fn(async () => 'called');
+  const registry = new HandlerRegistry().register('tools.run', handler);
+  expect(() => registry.get('tools.run')!({ identity, op: getOperation('tools.get') } as RequestContext)).toThrow('read operations only');
+  expect(handler).not.toHaveBeenCalled();
+});
+it('permits catalog reads for read tokens without a redundant context operation binding', async () => {
+  const registry = new HandlerRegistry().register('tools.get', async () => 'read');
+  expect(await registry.get('tools.get')!({ identity } as RequestContext)).toBe('read');
 });
