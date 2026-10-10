@@ -308,6 +308,9 @@ export interface CloseReceipt {
   readonly exited: boolean;
   readonly forced: boolean;
   readonly nativeUsable: boolean | null;
+  // Process exit is independent of owned-resource cleanup. A missing field
+  // proves nothing about cleanup; the launch owner may retry its exact release.
+  readonly cleanup?: 'complete' | 'pending';
 }
 
 export interface HarnessSession {

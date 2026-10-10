@@ -412,8 +412,10 @@ class CodexSession extends HarnessSessionBase {
         await this.exitPromise;
         clearTimeout(timer);
       }
-      await this.release();
-      return { exited: true, forced, nativeUsable: null };
+      let cleanup: 'complete' | 'pending' = 'complete';
+      try { await this.release(); }
+      catch { cleanup = 'pending'; }
+      return { exited: true, forced, nativeUsable: null, cleanup };
     })();
     return this.closePromise;
   }

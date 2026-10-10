@@ -45,6 +45,23 @@ async function open(data: ReturnType<typeof input>) {
   return session;
 }
 describe('Claude shared-port conformance', () => {
+  it('preserves confirmed exit when owned-resource release rejects and permits an exact-owner retry', async () => {
+    let releases = 0;
+    const data = input(material(), () => {
+      if (++releases === 1) throw new Error('private cleanup diagnostic');
+    });
+    const session = await open(data), record = new Recorder(session);
+    const receipt = await session.close('shutdown');
+    expect(receipt).toMatchObject({ exited: true, nativeUsable: null, cleanup: 'pending' });
+    expect(await session.close('shutdown')).toBe(receipt);
+    await record.finished;
+    expect(record.events.some(event => event.payload.kind === 'runtime_exit')).toBe(true);
+    expect(releases).toBe(1);
+    await data.launch.release();
+    expect(releases).toBe(2);
+    expect(JSON.stringify(receipt)).not.toContain('private cleanup diagnostic');
+  });
+
   it('keeps CLI recipe, validates native init and emits paired tools and one provider terminal', async () => {
     const data = input(material()),
       session = await open(data),
