@@ -206,8 +206,8 @@ describe('chat launch composition', () => {
     // through the membership doors, and never materializes — Run on the craft does
     // (its steps live in @tm8/prompt design-context.ts), and Run does not
     // dispatch.
-    expect(craft).toContain('a CRAFT: a `design` entity holding ordered PAGES');
-    expect(craft).toContain('collections.addItem {id: <design-id>, entityId, position?}');
+    expect(craft).toContain('a CRAFT: a `craft` entity holding ordered PAGES');
+    expect(craft).toContain('collections.addItem {id: <craft-id>, entityId, position?}');
     expect(craft).toContain('collections.removeItem takes a page out without deleting it');
     expect(craft).toContain('A craft cannot contain itself or a craft above it');
     // The human's open tabs (owner decisions §5): the workspace CLI, pages only.

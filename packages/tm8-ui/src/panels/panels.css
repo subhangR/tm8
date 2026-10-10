@@ -1044,7 +1044,7 @@
   background: var(--pn-pr-merged-soft);
   color: var(--pn-pr-merged);
 }
-.cv2-root .pn-body--links .kit-chip:is([data-kind='doc'], [data-kind='file'], [data-kind='artifact'], [data-kind='drawing'], [data-kind='design'], [data-kind='form'], [data-kind='message'], [data-kind='channel'], [data-kind='voice_channel'], [data-kind='memory'], [data-kind='graph'], [data-kind='style']) > .kit-chip__glyph {
+.cv2-root .pn-body--links .kit-chip:is([data-kind='doc'], [data-kind='file'], [data-kind='artifact'], [data-kind='drawing'], [data-kind='craft'], [data-kind='form'], [data-kind='message'], [data-kind='channel'], [data-kind='voice_channel'], [data-kind='memory'], [data-kind='graph'], [data-kind='style']) > .kit-chip__glyph {
   background: var(--pn-wait-soft);
   color: var(--pn-wait);
 }

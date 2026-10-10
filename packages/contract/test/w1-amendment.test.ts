@@ -259,9 +259,9 @@ describe('W1 frozen-row schema amendments', () => {
       // 2026-10-02: `style` — a read-only space style (284, styles spec v8).
       // Not creatable through entities.create: `styles.push` is its only door.
       'style',
-      // 2026-10-06: `design` — an ordered set of pages held as `contains`
-      // edges (304, Craft → Designs). Creatable through the ordinary envelope.
-      'design',
+      // 2026-10-06: `design` (304), renamed `craft` by 322 on 2026-10-10 — an
+      // ordered set of pages held as `contains` edges. Creatable.
+      'craft',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

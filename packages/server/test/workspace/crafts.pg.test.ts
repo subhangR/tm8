@@ -68,7 +68,7 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
   const entities = (ws: Ws) => ws.state.tabs.map((t) => t.entityId);
 
   const rpc = async <T>(fn: string, args: unknown[]) => db.rpc<T>(claims(), fn, args);
-  const design = async (title: string) => (await rpc<{ entity: { id: string } } | { id: string }>('public.create_design_entity', [spaceId, title, null, '', null, null, `cmid_${randomUUID()}`]));
+  const createCraft = async (title: string) => (await rpc<{ entity: { id: string } } | { id: string }>('public.create_craft_entity', [spaceId, title, null, '', null, null, `cmid_${randomUUID()}`]));
   const idOf = (r: unknown): string => ((r as { entity?: { id: string } }).entity?.id ?? (r as { id: string }).id);
   const contains = async (src: string, dst: string) => rpc('public.write_edge', [src, dst, 'contains', {}, null, `cmid_${randomUUID()}`]);
   const raw = async (kind: string, parent: string | null = null) => db.asOwner(async (q) => {
@@ -109,9 +109,9 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     await db.rpc({ identityId: human }, 'public.upsert_user_profile', ['Crafter', null, null]);
     spaceId = (await db.rpc<{ space: { id: string } }>({ identityId: human }, 'public.create_space', ['Craft space', 'craft workspace proof', 'private', null, null])).space.id;
     member = (await memberForClaims(db, { identityId: human }, spaceId))!;
-    craft = idOf(await design('Craft A'));
-    other = idOf(await design('Craft B'));
-    nested = idOf(await design('Nested craft'));
+    craft = idOf(await createCraft('Craft A'));
+    other = idOf(await createCraft('Craft B'));
+    nested = idOf(await createCraft('Nested craft'));
     page = idOf(await rpc('public.create_document', [spaceId, 'Page doc', null, 'body', 'markdown', null, null, null, null, `cmid_${randomUUID()}`]));
     graphPage = idOf(await rpc('public.create_graph_entity', [spaceId, 'Page graph', null, 'flow', '[]', '[]', '{}', null, null, null, `cmid_${randomUUID()}`]));
     stray = idOf(await rpc('public.create_document', [spaceId, 'Not a page', null, 'body', 'markdown', null, null, null, null, `cmid_${randomUUID()}`]));
@@ -360,7 +360,7 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
   });
 
   it('the list keeps the open flag of a craft the person can no longer see', async () => {
-    const gone = idOf(await design('Craft to delete'));
+    const gone = idOf(await createCraft('Craft to delete'));
     expect(await cmd(gone, 'craft.open')).toMatchObject({ status: 'applied' });
     await db.asOwner((q) => q.query('update public.entities set deleted_at = now() where id = $1', [gone]));
     expect(await cmd(other, 'craft.move', { beforeCraftId: null })).toMatchObject({ status: 'applied' });

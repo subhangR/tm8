@@ -84,6 +84,8 @@ export {
 } from './registry';
 
 export { KIND_ART, SURFACE_ART, SURFACE_LABEL, VIEW_ART, type KindArt } from './kind-art';
+export { CRAFT_KIND, craftContentOf, craftStateOf, type CraftContent, type CraftKind, type CraftPage, type CraftState } from './craft';
+/** @deprecated `design` is `craft` since migration 322; use the Craft names above. */
 export { DESIGN_KIND, designContentOf, designStateOf, type DesignContent, type DesignKind, type DesignPage, type DesignState } from './design';
 export { KindIcon } from './KindIcon';
 export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';

@@ -48,7 +48,7 @@ import { BUILTIN_STYLES } from './builtins/index.js';
 import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormStatusSchema } from './forms.js';
 import { OpRequestEntityFactsSchema } from './op-requests.js';
 import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
-import { DesignContentSchema, DesignStateSchema, EntityContextDesignPageSchema } from './design.js';
+import { CraftContentSchema, CraftStateSchema, EntityContextCraftPageSchema } from './craft.js';
 import { TaskProgressSchema } from './progress.js';
 import {
   SELECTION_HEADER_KINDS,
@@ -245,9 +245,9 @@ export const CoreEntityKindSchema = z.enum([
   'story', 'mcp_server', 'tool',
   // Space styles (284). Not in `CreatableEntityKind`: `styles.push` is its door.
   'style',
-  // Designs (304): ordered pages by `contains`. Creatable through the generic
+  // Crafts (304; renamed from design in 322): ordered pages by `contains`. Creatable through the generic
   // envelope.
-  'design',
+  'craft',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -255,8 +255,31 @@ export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
   'custom kinds are namespaced "c:<name>"',
 );
 
+/**
+ * Input-only kind aliases. `design` was renamed `craft` by migration 322
+ * (2026-10-10); it is still ACCEPTED wherever a kind is input, and never
+ * output. DEPRECATED: remove the alias on or after {@link KIND_ALIAS_UNTIL}.
+ */
+export const KIND_ALIASES: Readonly<Record<string, z.infer<typeof CoreEntityKindSchema>>> = Object.freeze({ design: 'craft' });
+export const KIND_ALIAS_UNTIL = '2027-01-08';
+
+/** Maps a deprecated kind alias to its kind; any other value passes through untouched. */
+export function normalizeKindAlias<T>(value: T): T {
+  return (typeof value === 'string' && Object.hasOwn(KIND_ALIASES, value) ? KIND_ALIASES[value] : value) as T;
+}
+
+/**
+ * `schema`, accepting the kind aliases on input. Typed as `schema` itself: an
+ * alias is still a kind string, and the parsed output never carries it. The
+ * runtime value is a ZodEffects, so `.options`/`.exclude` are not available on
+ * the result — derive from the inner schema instead.
+ */
+function acceptingKindAliases<S extends z.ZodTypeAny>(schema: S): S {
+  return z.preprocess(normalizeKindAlias, schema) as unknown as S;
+}
+
 export const EntityKindSchema: z.ZodType<EntityKind> =
-  z.union([CoreEntityKindSchema, CustomEntityKindSchema]);
+  acceptingKindAliases(z.union([CoreEntityKindSchema, CustomEntityKindSchema]));
 
 /**
  * Craft P1 — the lean blueprint vocabulary (rulings R1-R3), SOFT by design.
@@ -283,7 +306,7 @@ export const GraphNodeInputSchema = z.object({
   /** Present ⇔ this node references a real entity. */
   ref: GraphNodeRefSchema.optional(),
   spec: z.object({
-    kind: z.string().min(1).optional(),
+    kind: acceptingKindAliases(z.string().min(1)).optional(),
     title: z.string().optional(),
     hint: z.string().optional(),
   }).passthrough().optional(),
@@ -716,8 +739,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   }).strict(),
   // 283 — the story's computed summary.
   StoryStateSchema,
-  // 304 — the design's page count.
-  DesignStateSchema,
+  // 304 — the craft's page count.
+  CraftStateSchema,
   McpServerEntitySchema,
   ToolEntitySchema,
   // 209 — a form's lifecycle status and its question count.
@@ -1147,8 +1170,8 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   }).passthrough(),
   // 283 — the story's description and, on a detail read, its page.
   StoryContentSchema,
-  // 304 — the design's description and, on a detail read, its ordered pages.
-  DesignContentSchema,
+  // 304 — the craft's description and, on a detail read, its ordered pages.
+  CraftContentSchema,
   McpServerEntitySchema,
   ToolEntitySchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
@@ -1963,7 +1986,7 @@ export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
       state: z.record(z.unknown()),
       drafts: z.array(z.object({
         draftId: z.string().uuid(),
-        kind: z.string().min(1).max(64),
+        kind: acceptingKindAliases(z.string().min(1).max(64)),
         values: z.record(z.unknown()),
       }).strict()).max(30),
       workspaceId: z.null().optional(),
@@ -2879,7 +2902,7 @@ export const PatchTaskInputSchema: z.ZodType<PatchTaskInput> = z.object({
 }).strict();
 
 /** The runtime half of `CreatableEntityKind` — the one place the set is stated. */
-export const CreatableEntityKindSchema = z.union([
+export const CreatableEntityKindSchema = acceptingKindAliases(z.union([
   // `chat` and `container` are excluded for the same reason `work_session`
   // is: each is born only from its own door — `chat.start` and
   // `containers.create` — which supply a runtime binding a generic create
@@ -2889,7 +2912,7 @@ export const CreatableEntityKindSchema = z.union([
   // and born under a SQL guard from credentials.space.* (W10a).
   CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact', 'chat', 'container', 'form', 'credential', 'space_link', 'server', 'op_request', 'style']),
   CustomEntityKindSchema,
-]);
+]));
 
 export const CreateEntityInputSchema: z.ZodType<CreateEntityInput> = z.object({
   ...commandContextShape,
@@ -3384,10 +3407,10 @@ export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspac
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection
 // kind with a real `k/channels` list, so the rail can name it. See the type.
-export const MenuKindRefSchema = z.union([
+export const MenuKindRefSchema = acceptingKindAliases(z.union([
   CoreEntityKindSchema.exclude(['message']),
   CustomEntityKindSchema,
-]);
+]));
 
 export const MenuLeafSchema: z.ZodType<MenuLeaf> = z.discriminatedUnion('type', [
   z.object({ type: z.literal('view'), ref: MenuViewRefSchema }).strict(),
@@ -4884,7 +4907,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   mode: NullableString,
   projectId: NullableString,
   story: EntityContextStorySchema.optional(),
-  pages: z.array(EntityContextDesignPageSchema).optional(),
+  pages: z.array(EntityContextCraftPageSchema).optional(),
   anchor: ContextRefSchema.optional(),
   parentMessage: ContextRefSchema.nullable().optional(),
   attachments: z.array(z.object({

@@ -13,7 +13,7 @@ describe('ShortcutsOverlay', () => {
   it('lists the Workspace shortcuts, leaving the field first', () => {
     const { getAllByTestId, getByRole } = render(<ShortcutsOverlay open onClose={() => {}} />);
     const ids = getAllByTestId('shortcut-row').map((row) => row.getAttribute('data-binding'));
-    for (const id of ['text.blur', 'terminal.toggle', 'l.focus', 'l.task', 'n.task', 'n.drawing', 'work.tab.close', 'work.tab.1', 'work.design', 't.links', 'list.launch', 'help.open']) {
+    for (const id of ['text.blur', 'terminal.toggle', 'l.focus', 'l.task', 'n.task', 'n.drawing', 'work.tab.close', 'work.tab.1', 'work.craft', 't.links', 'list.launch', 'help.open']) {
       expect(ids, id).toContain(id);
     }
     // The first section is about getting out of a field.

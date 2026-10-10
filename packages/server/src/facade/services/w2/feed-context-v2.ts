@@ -63,7 +63,7 @@ import {
   type EntityContextNotLoaded,
   type EntityContextOmitted,
   type EntityContextStory,
-  type EntityContextDesignPage,
+  type EntityContextCraftPage,
   type EntityContextRef,
   type EntityContextV2View,
   type EntityHeaderView,
@@ -159,7 +159,7 @@ function sectionsFor(kind: string): readonly V2Section[] {
     // 283: the description is the assignment; children are child stories.
     case 'story': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
     // 304: the description is the assignment; the pages are a core field.
-    case 'design': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
+    case 'craft': return ['assignment', 'hierarchy', 'connections', 'messages', 'actions'];
     // c761 §3.2: a message is its body and its refs; no thread expansion.
     case 'message': return ['assignment', 'connections', 'actions'];
     default: return ['hierarchy', 'connections', 'messages', 'actions'];
@@ -175,7 +175,7 @@ function coreSectionsFor(kind: string): readonly V2Section[] {
   switch (kind) {
     case 'task': return [...header, 'acceptance', 'assignees', 'gate'];
     case 'story': return [...header, 'story'];
-    case 'design': return [...header, 'pages'];
+    case 'craft': return [...header, 'pages'];
     case 'work_session': return [...header, 'tasks'];
     case 'message': return [...header, 'anchor', 'attachments'];
     default: return header;
@@ -223,8 +223,8 @@ export interface ContextV2LoadPlan {
   readonly attachments: boolean;
   /** story (283): the page projected small — roots, by kind, blocked, who runs what. */
   readonly storyCard: boolean;
-  /** design (304): its pages in page order — kind, title, id, position. */
-  readonly designPages: boolean;
+  /** craft (304): its pages in page order — kind, title, id, position. */
+  readonly craftPages: boolean;
   readonly messages: MessagePlan | null;
   readonly connections: boolean;
   /** Sections not loaded, each advertised with its expand. */
@@ -266,7 +266,7 @@ export function v2LoadPlan(
       anchor: kind === 'message',
       attachments: kind === 'message',
       storyCard: isStory,
-      designPages: kind === 'design',
+      craftPages: kind === 'craft',
       messages: loaded.has('messages') ? messagePlan : null,
       connections: false,
       notLoaded: available.filter((section) => !loaded.has(section)),
@@ -293,7 +293,7 @@ export function v2LoadPlan(
     anchor: has('anchor'),
     attachments: has('attachments'),
     storyCard: has('story'),
-    designPages: has('pages'),
+    craftPages: has('pages'),
     messages: has('messages') ? messagePlan : null,
     connections: has('connections'),
     // `actions` is always notLoaded: v2 never renders the palette itself.
@@ -466,7 +466,7 @@ const REF_COLUMNS = `
   mem.display_name member_display_name, tm.name team_member_name,
   col.name collection_name, sk.name skill_name, sp.name spell_name, f.name file_name,
   lp.title loop_title, gr.title graph_title, drw.title drawing_title, sty.title story_title, ctr.title ctr_title,
-  dsg.title design_title,
+  dsg.title craft_title,
   wt.branch wt_branch, art.name artifact_name,
   pr.title pr_title, pr.repo pr_repo, pr.number pr_number, pr.state pr_state,
   cm.sha commit_sha, left(cm.message, 200) commit_message,
@@ -492,7 +492,7 @@ const REF_FROM = `
   left join public.graphs gr on gr.entity_id = e.id
   left join public.drawings drw on drw.entity_id = e.id
   left join public.stories sty on sty.entity_id = e.id
-  left join public.designs dsg on e.kind = 'design' and dsg.entity_id = e.id
+  left join public.crafts dsg on e.kind = 'craft' and dsg.entity_id = e.id
   left join public.containers ctr on ctr.entity_id = e.id
   left join public.worktrees wt on wt.entity_id = e.id
   left join public.artifacts art on art.entity_id = e.id
@@ -711,7 +711,7 @@ function bodyOf(row: EntityRow): string {
     case 'doc': return row.doc_body ?? '';
     case 'message': return row.message_redacted_at ? '' : (row.message_body ?? '');
     case 'story': return row.story_description ?? '';
-    case 'design': return row.design_description ?? '';
+    case 'craft': return row.craft_description ?? '';
     default: return '';
   }
 }
@@ -760,7 +760,7 @@ interface Loaded {
   teammate?: string | null;
   story?: EntityContextStory;
   tasks?: EntityContextRef[];
-  pages?: EntityContextDesignPage[];
+  pages?: EntityContextCraftPage[];
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;
   attachments?: Array<{ id: string; name: string; bytes: number | null }>;
@@ -1111,8 +1111,8 @@ async function loadV2(q: Querier, id: string, request: V2Request): Promise<{ loa
     }
   }
 
-  if (plan.designPages) {
-    // 304: the design's pages, one indexed read of its `contains` edges in
+  if (plan.craftPages) {
+    // 304: the craft's pages, one indexed read of its `contains` edges in
     // page order. A page the viewer cannot read is not listed (RLS on the
     // join); a failure is reported under `connections`, whose
     // `--edge-type contains` expand lists the same edges.
