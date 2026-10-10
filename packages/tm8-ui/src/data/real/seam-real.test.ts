@@ -592,6 +592,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // unequip, preview), one namespaced member. Appended like the rows above.
       'skills',
       'terminate',
+      // Tools 4 (approved design 01a12587 §4.3): stored tool operations,
+      // including version-pinned runs that open a retained terminal.
+      'tools',
       // 2026-08-16 (attention history): `updateAttentionRequest` — the
       // PER-REQUEST write. `resolveAttention` above is the bulk verb and
       // cannot address one row or say 'dismissed', so a quarter of the status
