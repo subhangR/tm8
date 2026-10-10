@@ -2913,7 +2913,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>... | --story <story-id>] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>... | --story <story-id>] [--about <entity-id>] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--reasoning-effort low|medium|high|xhigh|max|ultra] [--credential-source <provider=member|space|node[:<space-credential-id>]>...] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -2922,6 +2922,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
       '--story anchors a session directly to a story without making a task; exclusive with --task and --force-new-task (the API also excludes newTask). The story context is injected and inherited by authenticated children',
+      '--about <entity-id> records session -[about]-> entity in the spawn itself (you must be able to read it); only that edge lets the session\'s agent command your workspace on a craft — an about edge added later does not',
       '`--context` is launch-manifest context, NOT a runtime prompt',
       '`--memory` appends memory entities to the persona’s injected working set for THIS session only; nothing is written to the graph',
       'memories a `--task` task `remembers` are auto-injected after the persona’s working set (D9)',

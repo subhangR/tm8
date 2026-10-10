@@ -489,6 +489,8 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   if (cmd.ctx.sessionId) body.parentSessionId = cmd.ctx.sessionId;
   if (taskIds.length > 0) body.taskIds = taskIds;
   if (storyId !== undefined) body.storyId = storyId;
+  const aboutId = cmd.options.value('about');
+  if (aboutId !== undefined) body.aboutEntityId = aboutId;
   if (projectId !== undefined) body.projectId = projectId;
   // `SpawnWorkdir` is a discriminated union, not a bare string.
   //
