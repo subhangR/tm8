@@ -1112,6 +1112,8 @@ export type BodyArchetype =
   // F4 (#648): a file-backed body with its equipment. Named for what the
   // body SHOWS, never after a kind (§15.2 no-branching).
   | 'equipment'
+  /** Stored source, declared inputs, configuration and recorded executions. */
+  | 'scripted'
   | 'terminal'
   // Surface wave (kind-bodies-2): project's governed body and
   // interaction_profile's restricted body.
