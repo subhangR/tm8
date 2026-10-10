@@ -93,6 +93,7 @@ type SaveState =
 interface CanvasApi {
   refresh(): void;
   updateScene(scene: { elements?: readonly unknown[]; appState?: Record<string, unknown> }): void;
+  addFiles?(files: unknown[]): void;
 }
 
 export function DrawingBlock({
@@ -170,6 +171,9 @@ export function DrawingBlock({
     const signature = sceneSignature(scene.elements, scene.appState);
     if (signature === savedSignatureRef.current) return;
     savedSignatureRef.current = signature;
+    // Files first, so an image the new version adds never renders broken.
+    const files = Object.values(scene.files);
+    if (files.length > 0) apiRef.current?.addFiles?.(files);
     apiRef.current?.updateScene({
       elements: scene.elements,
       appState: scene.appState,

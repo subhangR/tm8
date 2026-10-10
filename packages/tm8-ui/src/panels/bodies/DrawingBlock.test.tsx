@@ -31,7 +31,7 @@ const mounted: {
   theme?: unknown;
   apiProp?: unknown;
 } = {};
-const api = { refresh: vi.fn(), updateScene: vi.fn() };
+const api = { refresh: vi.fn(), updateScene: vi.fn(), addFiles: vi.fn() };
 
 vi.mock('@excalidraw/excalidraw', () => ({
   Excalidraw: (props: Record<string, unknown>) => {
@@ -160,6 +160,7 @@ describe('DrawingBlock', () => {
       const pushed = api.updateScene.mock.calls[0]![0] as { elements: unknown[]; appState: Record<string, unknown> };
       expect(pushed.elements).toHaveLength(2);
       expect(pushed.appState.viewBackgroundColor).toBe('#fff0a0');
+      expect(api.addFiles).not.toHaveBeenCalled();
 
       // The adopted version guards the next write, and the adopted scene is not "unsaved".
       mounted.onChange!([el('a', 1), el('b', 1)], { viewBackgroundColor: '#fff0a0' });
@@ -169,6 +170,15 @@ describe('DrawingBlock', () => {
       await vi.advanceTimersByTimeAsync(1000);
       await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
       expect(patchEntity.mock.calls[0]![1].expectedVersion).toBe(8);
+    });
+
+    it('hands a new version’s files to the canvas BEFORE its scene', async () => {
+      const { rerender } = render(<DrawingBlock detail={detailOf()} commands={null} />);
+      await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+      const file = { id: 'f1', mimeType: 'image/png', dataURL: 'data:image/png;base64,AA' };
+      rerender(<DrawingBlock detail={detailOf({ version: 8, content: { ...yellow, files: { f1: file } } } as Partial<EntityDetail>)} commands={null} />);
+      expect(api.addFiles).toHaveBeenCalledWith([file]);
+      expect(api.addFiles.mock.invocationCallOrder[0]!).toBeLessThan(api.updateScene.mock.invocationCallOrder[0]!);
     });
 
     it('never overwrites an edit the user has not saved yet', async () => {
