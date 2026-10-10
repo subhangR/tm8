@@ -33,7 +33,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
  * Whether ANY project directory of the child's Claude config home holds
  * `<nativeSessionId>.jsonl`. Deliberately not one encoded path: a miss must
  * mean "no transcript anywhere", never "the slug rule changed". An unreadable
- * projects directory answers true, which keeps today's `--resume` behaviour.
+ * projects directory refuses resume, as its transcript availability is unknown.
  */
 function claudeTranscriptExists(env: NodeJS.ProcessEnv, nativeSessionId: string): boolean {
   const configDir = env['CLAUDE_CONFIG_DIR']?.trim() || join(env['HOME'] || homedir(), '.claude');
@@ -42,7 +42,7 @@ function claudeTranscriptExists(env: NodeJS.ProcessEnv, nativeSessionId: string)
   try {
     dirs = readdirSync(projects);
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+    return false;
   }
   return dirs.some((dir) => existsSync(join(projects, dir, `${nativeSessionId}.jsonl`)));
 }
@@ -84,6 +84,8 @@ const FRESH_TOTALS: RunningTotals = {
 interface ActiveTurn {
   queue: AsyncTurnQueue;
   toolCalls: Map<string, ToolCallTurnItem>;
+  textRevisions: Map<string, number>;
+  textSequence: number;
 }
 
 interface ThreadState {
@@ -135,6 +137,9 @@ export interface ClaudeHeadlessAdapterOptions {
   bootSettlementMs?: number;
   closeGraceMs?: number;
   onThreadExit?: (event: AgentThreadExit) => void | Promise<void>;
+  onNativeConfirmed?: (nativeSessionId: string) => void;
+  onTurnDispatched?: (error: Error | null) => void;
+  normalizedEvidence?: boolean;
   /**
    * A node-level Claude Code plugin directory holding the tm8-curated skills.
    * When set, the runtime loads it with `--plugin-dir` and ENABLES the slash-
@@ -163,6 +168,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   private readonly closeGraceMs: number;
   private readonly onThreadExit: ClaudeHeadlessAdapterOptions['onThreadExit'];
   private readonly pluginDir: string | undefined;
+  private readonly options: ClaudeHeadlessAdapterOptions;
   private readonly threads = new Map<string, ThreadState>();
   /**
    * Same-process consistency hints for R8. The orchestrator's durable binding
@@ -185,6 +191,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   private readonly lastTotals = new Map<string, RunningTotals>();
 
   constructor(options: ClaudeHeadlessAdapterOptions = {}) {
+    this.options = options;
     this.command = options.command ?? 'claude';
     this.commandArgs = options.commandArgs ?? [];
     this.env = options.env ?? process.env;
@@ -258,26 +265,9 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     // live. See chat-env.ts for the measurement and the argument.
     const childEnv: NodeJS.ProcessEnv = { ...composeChatEnv(this.env), ...config.env };
 
-    // A resume whose transcript is GONE can never succeed: claude answers
-    // `No conversation found with session ID` and every later turn of the
-    // chat fails the same way, for ever ("Claude failed the turn"). Claude
-    // Code deletes transcripts older than `cleanupPeriodDays` (30 by default),
-    // so any chat idle for a month hits this. Measured 2026-09-25 on the
-    // desktop node: a chat last used 21 Aug, native session f0f9a027…, no
-    // .jsonl under any config home. Start a FRESH native session under the
-    // same id instead — `--session-id` is valid exactly when no transcript
-    // holds it. The model loses its own memory of the thread; tm8's messages
-    // are untouched and the chat works again. Only the case where the id is
-    // in NO project directory falls back, so a transcript claude CAN resume is
-    // never shadowed by a path-encoding guess.
+    // Unknown or absent native data must return to the continuity planner.
     if (config.resume === 'post_interrupt' && !claudeTranscriptExists(childEnv, config.nativeSessionId)) {
-      this.logger?.warn('ClaudeHeadlessAdapter: native transcript is gone; starting a fresh session', {
-        threadId: config.threadId,
-        nativeSessionId: config.nativeSessionId,
-      });
-      this.interruptedThreads.delete(config.threadId);
-      const { resume: _expired, ...fresh } = config;
-      config = fresh;
+      throw new AgentRuntimeError('Claude native transcript is unavailable; continuity bootstrap is required', 'continuity_required');
     }
 
     const args = this.buildArgs(config);
@@ -364,6 +354,8 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     const active: ActiveTurn = {
       queue: new AsyncTurnQueue(),
       toolCalls: new Map(),
+      textRevisions: new Map(),
+      textSequence: 0,
     };
     state.active = active;
 
@@ -373,11 +365,13 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     })}\n`;
     try {
       state.child.stdin.write(message, 'utf8', (error) => {
+        this.options.onTurnDispatched?.(error ?? null);
         if (error && state.active === active) {
           this.failActiveTurn(state, 'stdin_write_failed', 'failed to deliver the user turn to Claude');
         }
       });
     } catch {
+      this.options.onTurnDispatched?.(new Error('stdin write failed'));
       this.failActiveTurn(state, 'stdin_write_failed', 'failed to deliver the user turn to Claude');
     }
     return active.queue;
@@ -506,6 +500,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       'stream-json',
       '--model',
       input.model,
+      ...(input.reasoningEffort ? ['--effort', input.reasoningEffort] : []),
       '--setting-sources',
       '',
       // A curated plugin dir enables skills via the slash-command surface;
@@ -638,6 +633,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     }
     if (stringField(event, 'subtype') !== 'init') return;
     const observed = stringField(event, 'session_id');
+    if (observed === state.input.nativeSessionId) this.options.onNativeConfirmed?.(observed);
     if (observed && observed !== state.input.nativeSessionId) {
       this.failActiveTurn(
         state,
@@ -654,7 +650,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     if (message) this.sampleContext(state, event, message);
     const content = message?.['content'];
     if (!Array.isArray(content)) return;
-    for (const rawBlock of content) {
+    for (const [blockIndex, rawBlock] of content.entries()) {
       if (!isObject(rawBlock)) continue;
       const blockType = stringField(rawBlock, 'type');
       if (blockType === 'thinking') {
@@ -662,7 +658,14 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
         if (text !== null) active.queue.push({ kind: 'thinking', text });
       } else if (blockType === 'text') {
         const text = stringField(rawBlock, 'text');
-        if (text !== null) active.queue.push({ kind: 'text', text });
+        if (text !== null) {
+          if (this.options.normalizedEvidence) {
+            const id = `${stringField(message!, 'id') ?? stringField(event, 'uuid') ?? `event-${++active.textSequence}`}/${blockIndex}`;
+            const revision = (active.textRevisions.get(id) ?? 0) + 1;
+            active.textRevisions.set(id, revision);
+            active.queue.push({ kind: 'text', text, itemId: id, revision, operation: 'replace' });
+          } else active.queue.push({ kind: 'text', text });
+        }
       } else if (blockType === 'tool_use') {
         const id = stringField(rawBlock, 'id');
         const name = stringField(rawBlock, 'name');
@@ -708,7 +711,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   private handleResultEvent(state: ThreadState, event: JsonObject): void {
     const active = state.active;
     if (!active) return;
-    const interrupted = state.interruptRequested;
+    const interrupted = state.interruptRequested && (stringField(event, 'terminal_reason') === 'aborted_streaming' || /interrupt/i.test(stringField(event, 'result') ?? ''));
     const failed = event['is_error'] === true || stringField(event, 'subtype') !== 'success';
     if (failed && !interrupted) {
       const result = stringField(event, 'result');
@@ -840,10 +843,10 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     }));
   }
 
-  private finishActiveTurn(state: ThreadState, reason: TurnDoneReason): void {
+  private finishActiveTurn(state: ThreadState, reason: TurnDoneReason, evidence: 'provider_terminal' | 'process_exit' | 'reconciliation' = 'provider_terminal'): void {
     const active = state.active;
     if (!active) return;
-    active.queue.push({ kind: 'done', reason });
+    active.queue.push({ kind: 'done', reason, ...(this.options.normalizedEvidence ? { evidence } : {}) });
     active.queue.end();
     state.active = null;
   }
@@ -854,7 +857,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     const active = state.active;
     if (active) {
       active.queue.push({ kind: 'error', code, message });
-      this.finishActiveTurn(state, 'error');
+      this.finishActiveTurn(state, 'error', 'reconciliation');
     }
     if (firstFailure && !state.closed) state.child.kill('SIGTERM');
   }
@@ -877,7 +880,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     if (state.closed) return;
     state.closed = true;
     state.lines.close();
-    this.threads.delete(state.input.threadId);
+    if (this.threads.get(state.input.threadId) === state) this.threads.delete(state.input.threadId);
 
     const reason: AgentThreadExit['reason'] = state.interruptRequested
       ? 'interrupted'
@@ -893,7 +896,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     }
     if (state.active) {
       if (reason === 'closed' || reason === 'interrupted') {
-        this.finishActiveTurn(state, reason);
+        this.finishActiveTurn(state, reason, 'process_exit');
       } else {
         this.failActiveTurn(
           state,
