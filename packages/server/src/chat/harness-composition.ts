@@ -44,6 +44,10 @@ export interface PreparedChatLaunch {
   revalidate(): Promise<void>;
 }
 
+export type ResolveChatPreparedLaunch = (
+  input: ChatPreparedLaunchInput, owner: PreparedLaunch['owner'], fence: GenerationFence,
+) => Promise<PreparedChatLaunch>;
+
 export interface ChatHarnessComposition extends ChatCredentialResolverOptions {
   readonly baseUrl: string;
   readonly registry: HarnessRegistry;
@@ -76,7 +80,7 @@ function claimsForLaunch(input: ChatPreparedLaunchInput): DbClaims {
 }
 
 /** Prepare after continuity reserves/seals the owner; release after confirmed process exit. */
-export function createChatPreparedLaunchResolver(options: ChatHarnessComposition) {
+export function createChatPreparedLaunchResolver(options: ChatHarnessComposition): ResolveChatPreparedLaunch {
   const credentials = options.credentialPreparation ?? createChatCredentialPreparation(options);
   const bindings = options.mcpBindings ?? new McpSessionBindings(options.db);
   const require = createRequire(import.meta.url);
@@ -126,6 +130,7 @@ export function createChatPreparedLaunchResolver(options: ChatHarnessComposition
         codexSettings.model_providers = { groq: {
           name: 'Groq', base_url: modelMaterial.env.OPENAI_BASE_URL,
           env_key: 'OPENAI_API_KEY', wire_api: 'responses', requires_openai_auth: false,
+          supports_websockets: false,
         } };
       }
       root = await ChatLaunchDirectory.create(options.dataDir, owner);
@@ -159,7 +164,8 @@ export function createChatPreparedLaunchResolver(options: ChatHarnessComposition
       const capabilityDescriptor = {
         harness: route.harness, nativeTools, allowedTools,
         selections: selections.map((s: McpSelection) => ({ serverId: s.serverId, credentialId: s.credentialId ?? null })),
-        skillsPluginDir: options.skillsPluginDir ?? null,
+        // This existing node plugin is a Claude plugin; do not claim Codex loaded it.
+        skillsPluginDir: route.harness === 'claude' ? options.skillsPluginDir ?? null : null,
       };
       const capabilityPlanId = digest(capabilityDescriptor);
       const mcpConfigPath = await root.write('mcp.json', `${JSON.stringify({ mcpServers: Object.fromEntries(descriptors.map(s => [s.name, {
@@ -180,7 +186,7 @@ export function createChatPreparedLaunchResolver(options: ChatHarnessComposition
             || runtime.runtimeNativeGeneration !== fence.generation) throw new Error('Grant changed');
           const runtimeClaims: McpBindingClaims = {
             identityId: runtime.identityId, authKind: runtime.kind, authSessionId: runtime.sessionId,
-            sessionSpaceId: input.spaceId,
+            sessionSpaceId: input.spaceId, viaLinkId: runtime.viaLinkId ?? undefined,
           };
           for (const selection of selections) {
             const authorized = await bindings.authorize(runtimeClaims, input.chatId, selection.serverId);
