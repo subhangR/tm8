@@ -279,6 +279,8 @@ export interface CredentialHandlerDeps {
    * permits, called after a switch to private and a revoke. Optional.
    */
   streams?: CredentialStreamClosePort;
+  /** Recheck headless chat processes after a model credential or policy changes. */
+  credentialsChanged?: () => Promise<void>;
 }
 
 /** Structural alias so this module does not import `@tm8/execution` for a type. */
@@ -580,39 +582,45 @@ export function registerCredentialHandlers(
     return spaceCatalog.setNodePolicy(claims, provider, allowNode);
   };
 
+  const afterCredentialChange = (handler: OperationHandler): OperationHandler => async ctx => {
+    const result = await handler(ctx);
+    await credentials.credentialsChanged?.();
+    return result;
+  };
+
   // EVERY VALUE HERE IS `requireHumanSession(...)`. An entry that is not is a
   // credential operation reachable by an agent holding its owner's identity.
   // `credentials-registration` in the test suite asserts this over the catalog,
   // so a fifth row cannot be added unguarded without something going red.
   registry.registerAll({
     'credentials.status': requireHumanSession(status),
-    'credentials.delete': requireHumanSession(disconnect),
+    'credentials.delete': requireHumanSession(afterCredentialChange(disconnect)),
     'credentials.loginSessions.start': requireHumanSession(startLogin),
-    'credentials.loginSessions.finish': requireHumanSession(finishLogin),
+    'credentials.loginSessions.finish': requireHumanSession(afterCredentialChange(finishLogin)),
     'credentials.serviceKeys.status': requireHumanSession(serviceKeyStatus),
     'credentials.serviceKeys.put': requireHumanSession(serviceKeyPut),
     'credentials.serviceKeys.delete': requireHumanSession(serviceKeyDelete),
     'credentials.space.list': requireHumanSession(spaceList),
-    'credentials.space.create': requireHumanSession(spaceCreate),
-    'credentials.space.rekey': requireHumanSession(spaceRekey),
-    'credentials.space.setDefault': requireHumanSession(spaceSetDefault),
+    'credentials.space.create': requireHumanSession(afterCredentialChange(spaceCreate)),
+    'credentials.space.rekey': requireHumanSession(afterCredentialChange(spaceRekey)),
+    'credentials.space.setDefault': requireHumanSession(afterCredentialChange(spaceSetDefault)),
     'credentials.space.rename': requireHumanSession(spaceRename),
-    'credentials.space.delete': requireHumanSession(spaceDelete),
-    'credentials.space.setVisibility': requireHumanSession(spaceSetVisibility),
-    'credentials.space.share': requireHumanSession(spaceShare),
-    'credentials.space.unshare': requireHumanSession(spaceUnshare),
+    'credentials.space.delete': requireHumanSession(afterCredentialChange(spaceDelete)),
+    'credentials.space.setVisibility': requireHumanSession(afterCredentialChange(spaceSetVisibility)),
+    'credentials.space.share': requireHumanSession(afterCredentialChange(spaceShare)),
+    'credentials.space.unshare': requireHumanSession(afterCredentialChange(spaceUnshare)),
     'credentials.space.shares': requireHumanSession(spaceShares),
-    'credentials.space.spaceDefaultConsent': requireHumanSession(spaceDefaultConsent),
-    'credentials.space.addMine': requireHumanSession(spaceAddMine),
-    'credentials.space.claim': requireHumanSession(spaceClaim),
-    'credentials.space.myDefault.set': requireHumanSession(spaceMyDefaultSet),
-    'credentials.space.myDefault.clear': requireHumanSession(spaceMyDefaultClear),
+    'credentials.space.spaceDefaultConsent': requireHumanSession(afterCredentialChange(spaceDefaultConsent)),
+    'credentials.space.addMine': requireHumanSession(afterCredentialChange(spaceAddMine)),
+    'credentials.space.claim': requireHumanSession(afterCredentialChange(spaceClaim)),
+    'credentials.space.myDefault.set': requireHumanSession(afterCredentialChange(spaceMyDefaultSet)),
+    'credentials.space.myDefault.clear': requireHumanSession(afterCredentialChange(spaceMyDefaultClear)),
     'credentials.space.usage': requireHumanSession(spaceUsage),
     'credentials.space.readiness': requireHumanSession(spaceReadiness),
     'credentials.space.policy.get': requireHumanSession(spacePolicyGet),
-    'credentials.space.policy.set': requireHumanSession(spacePolicySet),
+    'credentials.space.policy.set': requireHumanSession(afterCredentialChange(spacePolicySet)),
     'node.credentials.status': requireHumanSession(nodeStatus),
-    'node.credentials.policy.set': requireHumanSession(nodePolicySet),
+    'node.credentials.policy.set': requireHumanSession(afterCredentialChange(nodePolicySet)),
   });
 }
 

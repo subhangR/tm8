@@ -541,6 +541,107 @@ describe('TM8 Chat durable orchestration', () => {
    * announce itself as a bug — the chat would just feel slow. So the negative
    * case is pinned next to the positive one.
    */
+  it.each([true, false])('rechecks model credentials each turn and restarts only on a change (%s)', async change => {
+    const events: string[] = [];
+    const base = { ...claim('cold'), agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, runtimeState: 'live',
+      turnId: '10000000-0000-4000-8000-00000000000a',
+      userMessageId: '10000000-0000-4000-8000-00000000000b' }], events);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    let checks = 0;
+    let launches = 0;
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async input => {
+        expect(input.requesterIdentityId).toBe(IDENTITY);
+        checks++;
+        return { CLAUDE_CONFIG_DIR: runtime.turns.length === 1 && change ? '/new-home' : '/member-home' };
+      },
+      resolveLaunchConfig: async () => {
+        launches++;
+        return { systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [],
+          allowedTools: ['mcp__tm8__tm8_read'] };
+      },
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(checks).toBe(change ? 4 : 3);
+    expect(launches).toBe(change ? 2 : 1);
+    expect(runtime.starts[0]?.env).toEqual({ CLAUDE_CONFIG_DIR: '/member-home' });
+    expect(runtime.closes).toEqual(change ? [CHAT] : []);
+    if (change) {
+      expect(runtime.starts[1]?.env).toEqual({ CLAUDE_CONFIG_DIR: '/new-home' });
+      expect(runtime.starts[1]?.resume).toEqual({ nativeSessionId: NATIVE, cwd: base.cwd });
+    }
+  });
+
+  it('stops a live child when a credential mutation makes its selection unavailable', async () => {
+    const events: string[] = [];
+    const db = new FakeDb({ ...claim('cold'), agentMessageId: AGENT_MESSAGE }, events);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    let revoked = false;
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async () => {
+        if (revoked) throw new Error('credential revoked');
+        return { CLAUDE_CONFIG_DIR: '/member-home' };
+      },
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: ['mcp__tm8__tm8_read'] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    await orchestrator.recheckCredentials();
+    expect(runtime.closes).toEqual([]);
+    revoked = true;
+    await orchestrator.recheckCredentials();
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(db.states).toEqual(['live', 'stopped']);
+  });
+
+  it('closes a process before sending when a credential changes during startup', async () => {
+    const events: string[] = [];
+    const db = new FakeDb({ ...claim('cold'), agentMessageId: AGENT_MESSAGE }, events);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async () => ({
+        CLAUDE_CONFIG_DIR: runtime.starts.length ? '/changed-home' : '/original-home',
+      }),
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: ['mcp__tm8__tm8_read'] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts).toHaveLength(1);
+    expect(runtime.turns).toEqual([]);
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(db.states).toEqual(['live', 'stopped']);
+    expect(db.completed[0]?.[1]).toBe('error');
+  });
+
+  it('refuses a turn and closes the old process when its credential policy cannot be read', async () => {
+    const events: string[] = [];
+    const base = { ...claim('cold'), agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, runtimeState: 'live',
+      turnId: '10000000-0000-4000-8000-00000000000a',
+      userMessageId: '10000000-0000-4000-8000-00000000000b' }], events);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    let checks = 0;
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async () => {
+        checks++;
+        if (runtime.turns.length === 1) throw new Error('policy read failed');
+        return { CLAUDE_CONFIG_DIR: '/member-home' };
+      },
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: ['mcp__tm8__tm8_read'] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts).toHaveLength(1);
+    expect(runtime.turns).toHaveLength(1);
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(db.completed[1]?.[1]).toBe('error');
+  });
+
   it('276: an unchanged model reuses the live child — no close, no second start', async () => {
     const events: string[] = [];
     const base = {

@@ -35,15 +35,10 @@
 // have a passing test for it. It was never applied to chat, because when chat
 // was written chat had no shell.
 //
-// WHAT THIS DOES **NOT** BUY, stated here so it is never cited as more than it
-// is. `HOME` is the server's own and must be: the runtime authenticates from
-// `~/.claude`, so redirecting it would break every chat turn. Every
-// filesystem-reachable credential under that home therefore remains reachable —
-// `~/.git-credentials`, `~/.config/gh/hosts.yml`, `~/.claude/.credentials.json`,
-// `~/.ssh`. This allow-list stops the chat child from carrying TM8'S OWN
-// SECRETS, which is worth doing and is all it does. It is not a sandbox. The
-// honest posture remains: a chat thread with Bash is a shell as the tm8 OS
-// user, with that user's home and everything reachable from it.
+// This allow-list bounds the ambient environment. The server resolves model
+// credentials under the turn author's claims and supplies a config-directory
+// override or selected API key separately. HOME remains the OS user's home;
+// this environment is not a filesystem sandbox.
 
 import { withAgentBinDirs } from '../spawn/manifest.js';
 

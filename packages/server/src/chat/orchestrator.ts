@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   MessagePartSchema,
   type ChatMode,
@@ -12,6 +13,8 @@ import type { ChatTurnPublisher } from './publisher.js';
 import type {
   AgentRuntime,
   ResolveChatLaunchConfig,
+  ResolveChatCredentialEnv,
+  ChatLaunchConfigInput,
   StartAgentThreadInput,
   TurnItem,
 } from './runtime.js';
@@ -80,6 +83,7 @@ export interface ChatOrchestratorOptions {
   readonly runtime: AgentRuntime;
   readonly publisher: ChatTurnPublisher;
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
+  readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
   readonly onError?: (error: unknown) => void;
   /**
    * Node-scoped claims for the boot liveness sweep (PR188 review F2). Only the
@@ -87,6 +91,12 @@ export interface ChatOrchestratorOptions {
    * queries ever run against their fixtures.
    */
   readonly sweepClaims?: DbClaims;
+}
+
+function credentialFingerprint(env: Readonly<Record<string, string>> | undefined): string {
+  return createHash('sha256').update(
+    JSON.stringify(Object.entries(env ?? {}).sort(([a], [b]) => a.localeCompare(b))),
+  ).digest('hex');
 }
 
 function claims(identityId: string): DbClaims {
@@ -281,6 +291,8 @@ export class ChatOrchestrator {
     readonly threadId: string;
     readonly authorizationIdentityId: string;
     readonly authorizationAuthKind: string | null;
+    readonly credentialFingerprint: string;
+    readonly credentialInput: ChatLaunchConfigInput;
     // 276: the model the LIVE CHILD was spawned on, which is not always the
     // model the chat is set to any more — `chat.setModel` moves the row while
     // this process keeps a child running on the old one. Recording what
@@ -603,10 +615,41 @@ export class ChatOrchestrator {
     return result;
   }
 
+  /** Credential mutations also stop already-running chats that lose their selection. */
+  async recheckCredentials(): Promise<void> {
+    if (!this.options.resolveCredentialEnv) return;
+    await Promise.all([...this.liveChats.entries()].map(async ([chatId, live]) => {
+      try {
+        let matches = false;
+        try {
+          const env = await this.options.resolveCredentialEnv!(live.credentialInput);
+          matches = credentialFingerprint(env) === live.credentialFingerprint;
+        } catch { /* Unreadable policy/credential refuses continued reuse. */ }
+        if (matches || this.liveChats.get(chatId) !== live) return;
+        await this.options.runtime.close(live.threadId);
+        if (this.liveChats.get(chatId) !== live) return;
+        this.liveChats.delete(chatId);
+        await this.options.db.rpc(claims(live.credentialInput.requesterIdentityId),
+          'mark_chat_runtime_state', [chatId, 'stopped']);
+      } catch (error) { this.options.onError?.(error); }
+    }));
+  }
+
   private async ensureRuntime(turn: ClaimedTurn): Promise<string> {
     const authorizationIdentityId = turn.requestedByIdentityId ?? turn.requesterIdentityId;
     const authorizationAuthKind = turn.requestedByAuthKind
       ?? (authorizationIdentityId === turn.requesterIdentityId ? turn.requesterAuthKind ?? null : null);
+    const credentialInput: ChatLaunchConfigInput = {
+      chatId: turn.chatId, requesterIdentityId: authorizationIdentityId,
+      requesterAuthKind: authorizationAuthKind, teammateId: turn.teammateId,
+      model: turn.model, provider: turn.provider, agentTool: turn.agentTool,
+      chatMode: turn.chatMode, spaceId: turn.spaceId, cwd: turn.cwd,
+      mode: turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new',
+    };
+    // Do not reuse a process whose credential or policy has changed. The MCP
+    // token mint stays cold-start-only so reuse never invalidates a live token.
+    const credentialEnv = await this.options.resolveCredentialEnv?.(credentialInput);
+    const fingerprint = credentialFingerprint(credentialEnv);
     const live = this.liveChats.get(turn.chatId);
     // A live child is reused only when NOTHING that was fixed at spawn has
     // moved. Authorization was the original reason (a different human must not
@@ -620,6 +663,7 @@ export class ChatOrchestrator {
       live?.authorizationIdentityId === authorizationIdentityId
       && live.authorizationAuthKind === authorizationAuthKind
       && live.model === turn.model
+      && live.credentialFingerprint === fingerprint
     ) return live.threadId;
     // True when we just tore a live child down, whatever the reason. It is not
     // named for the reason because the CONSEQUENCE is what the next line needs:
@@ -637,19 +681,7 @@ export class ChatOrchestrator {
       closedLiveRuntime = true;
     }
     const mode = closedLiveRuntime || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
-    const launch = await this.options.resolveLaunchConfig({
-      chatId: turn.chatId,
-      requesterIdentityId: authorizationIdentityId,
-      requesterAuthKind: authorizationAuthKind,
-      teammateId: turn.teammateId,
-      model: turn.model,
-      provider: turn.provider,
-      agentTool: turn.agentTool,
-      chatMode: turn.chatMode,
-      spaceId: turn.spaceId,
-      cwd: turn.cwd,
-      mode,
-    });
+    const launch = await this.options.resolveLaunchConfig({ ...credentialInput, mode });
     const runtimeCwd = launch.cwd ?? turn.cwd;
     const input: StartAgentThreadInput = {
       threadId: turn.chatId,
@@ -660,7 +692,7 @@ export class ChatOrchestrator {
       mcpConfigPath: launch.mcpConfigPath,
       availableTools: launch.availableTools,
       allowedTools: launch.allowedTools,
-      ...(launch.env ? { env: launch.env } : {}),
+      ...((launch.env || credentialEnv) ? { env: { ...launch.env, ...credentialEnv } } : {}),
       ...(mode === 'resume-after-interrupt'
         ? { resume: { nativeSessionId: turn.nativeSessionId, cwd: runtimeCwd } }
         : {}),
@@ -669,8 +701,18 @@ export class ChatOrchestrator {
     // starting runtime before entering it, and fail closed if startup fails.
     await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'live']);
     let started;
-    try { started = await this.options.runtime.startThread(input); }
-    catch (error) {
+    try {
+      started = await this.options.runtime.startThread(input);
+      // A revoke can commit while startThread awaits the vendor's boot. It
+      // found no registered live chat then, so close that race before sending.
+      if (this.options.resolveCredentialEnv) {
+        const bootEnv = await this.options.resolveCredentialEnv(credentialInput);
+        if (credentialFingerprint(bootEnv) !== fingerprint) {
+          throw new Error('chat model credential changed during startup — retry the turn');
+        }
+      }
+    } catch (error) {
+      if (started) await this.options.runtime.close(started.threadId);
       await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'stopped']);
       throw error;
     }
@@ -679,6 +721,8 @@ export class ChatOrchestrator {
       authorizationIdentityId,
       authorizationAuthKind,
       model: turn.model,
+      credentialFingerprint: fingerprint,
+      credentialInput,
     });
     return started.threadId;
   }

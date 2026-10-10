@@ -196,3 +196,6 @@ export {
   type ContextIndexSource,
   type LaunchIndexFitInput,
 } from './context-index.js';
+
+export { resolveMemberCredentialHome } from './member-credential-home.js';
+export { applyAgentCredentialEnv } from './agent-credential-injection.js';

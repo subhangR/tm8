@@ -227,6 +227,7 @@ function context(
 function registryFor(
   db: Db,
   terminals: FakeTerminals = new FakeTerminals([]),
+  credentialsChanged?: () => Promise<void>,
 ): HandlerRegistry {
   const registry = new HandlerRegistry();
   registerCredentialHandlers(registry, deps(db), {
@@ -234,6 +235,7 @@ function registryFor(
     launcher: terminals as never,
     agentSessions: terminals,
     dataDir: '/tmp/tm8-credentials-test',
+    ...(credentialsChanged ? { credentialsChanged } : {}),
     // SC-3: never reach a real vendor from a unit suite.
     probeSpaceCredential: async () => ({ ok: true, displayLogin: null }),
   });
@@ -779,6 +781,19 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
     });
     return { order, db, terminals, registry, catalog, provider };
   }
+
+  it('rechecks headless chat credentials after a successful revoke and never on a refused agent call', async () => {
+    const { order, db, terminals } = disconnectFixture('anthropic');
+    const registry = registryFor(db, terminals, async () => { order.push('chat-recheck'); });
+    await expect(invoke(registry, 'credentials.delete',
+      context('credentials.delete', 'agent', { params: { provider: 'anthropic' }, body: {} })))
+      .rejects.toThrow();
+    expect(order).not.toContain('chat-recheck');
+    await invoke(registry, 'credentials.delete',
+      context('credentials.delete', 'browser', { params: { provider: 'anthropic' }, body: {} }));
+    expect(order.indexOf('chat-recheck')).toBeGreaterThan(order.indexOf('rpc:delete_account_agent_credential'));
+    expect(order.filter(item => item === 'chat-recheck')).toHaveLength(1);
+  });
 
   it('revokes BEFORE it kills anything — the order is the security property', async () => {
     const { order, registry } = disconnectFixture('anthropic');

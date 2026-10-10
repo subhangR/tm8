@@ -92,3 +92,8 @@ export interface ChatLaunchConfigInput {
 export type ResolveChatLaunchConfig = (
   input: ChatLaunchConfigInput,
 ) => Promise<ChatLaunchConfig>;
+
+/** Rechecked before every turn, separately from the cold-start MCP token mint. */
+export type ResolveChatCredentialEnv = (
+  input: ChatLaunchConfigInput,
+) => Promise<Readonly<Record<string, string>>>;

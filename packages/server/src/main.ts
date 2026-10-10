@@ -116,11 +116,13 @@ import {
   composeChatBootstrap,
   type AgentRuntime,
   type ResolveChatLaunchConfig,
+  type ResolveChatCredentialEnv,
 } from './chat/index.js';
 
 export interface ChatBootstrapOptions {
   readonly runtime: AgentRuntime;
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
+  readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
   readonly onError?: (error: unknown) => void;
 }
 
@@ -352,6 +354,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         runtime: chatBlock.runtime,
         publisher: new ChatTurnPublisher(subscriptions),
         resolveLaunchConfig: chatBlock.resolveLaunchConfig,
+        ...(chatBlock.resolveCredentialEnv ? { resolveCredentialEnv: chatBlock.resolveCredentialEnv } : {}),
         ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
         // F2: only the production (factory) composition gets the boot sweep —
         // block-form test harnesses must never see sweep queries.
@@ -421,6 +424,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         launcher: new CredentialSessionLauncher({ pty: execution.pty }),
         agentSessions: execution.spawnService,
         streams: credentialStreams,
+        ...(chat ? { credentialsChanged: () => chat.recheckCredentials() } : {}),
         dataDir,
         ...(opts.spaceCredentialProbe ? { probeSpaceCredential: opts.spaceCredentialProbe } : {}),
       }

@@ -22,12 +22,14 @@ import { MCP_TOOL_NAMES, exposedToolNames } from '@tm8/mcp';
 
 import type { Db, DbClaims } from '../db/types.js';
 import { issueAgentRuntimeSession } from '../identity/pg-auth.js';
+import { createChatCredentialEnvResolver } from './credentials.js';
 import { McpSessionBindings } from '../mcp/session-bindings.js';
 import type {
   AgentRuntime,
   ChatLaunchConfig,
   ChatLaunchConfigInput,
   ResolveChatLaunchConfig,
+  ResolveChatCredentialEnv,
   StartAgentThreadInput,
 } from './runtime.js';
 
@@ -329,6 +331,7 @@ export function createChatLaunchConfigResolver(
 export interface ChatBootstrapComposition {
   readonly runtime: AgentRuntime;
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
+  readonly resolveCredentialEnv: ResolveChatCredentialEnv;
   readonly onError?: (error: unknown) => void;
 }
 
@@ -350,6 +353,7 @@ export function composeChatBootstrap(ctx: {
       new ClaudeHeadlessAdapter(ctx.skillsPluginDir ? { pluginDir: ctx.skillsPluginDir } : {}),
     ),
     resolveLaunchConfig: createChatLaunchConfigResolver(ctx),
+    resolveCredentialEnv: createChatCredentialEnvResolver(ctx),
     onError: (error) => {
       // eslint-disable-next-line no-console
       console.error('[chat]', error instanceof Error ? error.message : String(error));
