@@ -1,0 +1,28 @@
+.cv2-root .tool-body { padding: 18px; display: flex; flex-direction: column; gap: 22px; overflow: auto; }
+.cv2-root .tool-body h2, .cv2-root .tool-body h3 { margin: 0 0 10px; }
+.cv2-root .tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cv2-root .tool-field { display: flex; flex-direction: column; gap: 6px; margin-block: 12px; }
+.cv2-root .tool-body input, .cv2-root .tool-body select, .cv2-root .tool-body textarea,
+.cv2-root .tool-dialog input, .cv2-root .tool-dialog select, .cv2-root .tool-dialog textarea {
+  padding: 8px; color: var(--pn-ink); background: var(--pn-paper); border: 1px solid var(--pn-line); border-radius: 4px; max-width: 100%; min-width: 0; font: inherit;
+}
+.cv2-root .tool-definition fieldset { border: 0; padding: 0; min-width: 0; }
+.cv2-root .tool-source { border: 1px solid var(--pn-line); min-height: 120px; max-height: 480px; overflow: auto; }
+.cv2-root .tool-source textarea { width: 100%; font-family: var(--pn-mono, monospace); box-sizing: border-box; }
+.cv2-root .tool-table-scroll { max-width: 100%; overflow-x: auto; }
+.cv2-root .tool-inputs { border-collapse: collapse; width: 100%; text-align: left; }
+.cv2-root .tool-inputs td, .cv2-root .tool-inputs th { border-bottom: 1px solid var(--pn-line); padding: 8px; vertical-align: top; }
+.cv2-root .tool-inputs td input:not([type='checkbox']) { width: 140px; }
+.cv2-root .tool-input-details { display: grid; gap: 8px; min-width: 180px; }
+.cv2-root .tool-input-details label { display: flex; flex-direction: column; gap: 4px; }
+.cv2-root .tool-config-row { border-bottom: 1px solid var(--pn-line); padding-block: 12px; }
+.cv2-root .tool-config-row form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cv2-root .tool-runs { padding: 0; list-style: none; }
+.cv2-root .tool-runs li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-block: 8px; }
+.cv2-root .tool-run-status { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 14px; flex: 0 0 auto; }
+.cv2-root .tool-dialog-backdrop { position: fixed; inset: 0; z-index: 150; background: rgb(0 0 0 / 45%); display: grid; place-items: center; padding: 16px; }
+.cv2-root .tool-dialog { width: min(560px, 100%); max-height: 85dvh; overflow: auto; background: var(--pn-paper); color: var(--pn-ink); border: 1px solid var(--pn-line); border-radius: 8px; padding: 20px; box-sizing: border-box; }
+.cv2-root .tool-notice { padding: 10px; border-left: 3px solid var(--pn-ink); }
+@media (max-width: 500px) { .cv2-root .tool-body { padding: 12px; } .cv2-root .tool-config-row form { align-items: stretch; flex-direction: column; } }
+
+.cv2-root .tool-source .cm-content { caret-color: var(--pn-ink); }

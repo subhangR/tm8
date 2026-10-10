@@ -1,3 +1,6 @@
+import { ToolLaunchProvider } from '../tools/context';
+import { toolTabCloseEffect } from '../tools/close-tabs';
+import { getWorkspaceRuntime } from '../tab-workspace/runtime/dispatch';
 /**
  * GateApp — the complete T0-1 master screen, composed (R5 THE GATE).
  *
@@ -543,7 +546,14 @@ export function GateApp(props: GateAppProps = {}) {
       <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
         <EntitySeenProvider key={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
           commands={data.seam.commands} refreshCounts={data.refreshCounts}>
-          <McpProvider key={data.spaceId} port={mcpPort}>{node}</McpProvider>
+          <McpProvider key={data.spaceId} port={mcpPort}>
+            <ToolLaunchProvider open={(id) => {
+              data.pull?.(id);
+              const viewer = data.viewerActor?.id;
+              if (navStore.getState().view.view === 'tabs' && viewer) openInWorkspace(viewer, data.spaceId, LIVE_COUNT_KIND, id);
+              else navStore.getState().navigate({ view: 'tabs', tab: id as EntityId });
+            }}>{node}</ToolLaunchProvider>
+          </McpProvider>
         </EntitySeenProvider>
       </AttentionProvider>
     </PendingFormsProvider>
@@ -1346,6 +1356,14 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
+  useEffect(() => {
+    if (!viewerMemberId || !data.spaceId || !data.seam.commands) return;
+    return getWorkspaceRuntime(viewerMemberId, data.spaceId).registerEffect(toolTabCloseEffect({
+      detailOf: data.detailOf,
+      terminate: (id) => data.seam.commands!.terminate(id, { clientMutationId: `tool-close-${crypto.randomUUID()}` }),
+      onError: () => notices.push({ id: `tool-close-${crypto.randomUUID()}`, tone: 'error', title: 'The tool terminal could not be closed', body: 'Reopen its run from tool history and end the session.', ttlMs: 12000 }),
+    }));
+  }, [viewerMemberId, data.spaceId, data.seam, data.detailOf, notices.push]);
   /* Multiple workspaces (API doc 01a115c4 §10): the switcher's list, fed by
      the bridge. Nothing shows until the node has proved it knows workspaces. */
   const workspaceSpaceId = data.ready && data.spaceId ? data.spaceId : null;
