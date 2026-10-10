@@ -49,6 +49,8 @@ describe('via_link claim forwarding (256, W7p)', () => {
   it('names the exact set of files that set the space pin', () => {
     // A new builder lands here first, so it is looked at rather than passed.
     expect(builders).toEqual([
+      // Generation launch checks reconstruct runtime claims from the verified bearer read.
+      'chat/harness-composition.ts',
       'facade/context.ts',
       // #884: the invoke executor pins the inner link identity to the link's
       // target in every mode, beside the viaLinkId it already sets.

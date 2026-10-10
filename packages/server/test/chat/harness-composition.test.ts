@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,6 +10,7 @@ import {
 import { createChatPreparedLaunchResolver, type ChatPreparedLaunchInput } from '../../src/chat/harness-composition.js';
 import type { Db } from '../../src/db/types.js';
 import type { ResolvedAuthSession } from '../../src/identity/pg-auth.js';
+import { composeChatHarnessFoundation } from '../../src/chat/compose.js';
 
 const CHAT = '019f0000-0000-7000-8000-000000000401';
 const SPACE = '019f0000-0000-7000-8000-000000000402';
@@ -45,7 +46,7 @@ async function rig() {
       const issuedFence = JSON.parse(args[5] as string) as GenerationFence;
       const id = randomUUID();
       const session = {
-        sessionId: id, identityId: input.requesterIdentityId, kind: 'agent_runtime', runtimeChatId: CHAT,
+        sessionId: id, identityId: _claims.identityId, kind: 'agent_runtime', runtimeChatId: CHAT,
         spaceId: SPACE, runtimeEpoch: issuedFence.leaseEpoch, runtimeNativeGeneration: issuedFence.generation,
       } as ResolvedAuthSession;
       sessions.set(id, session);
@@ -143,7 +144,7 @@ describe('private generation launch composition', () => {
     expect(material.env.OPENAI_API_KEY).toBe(KEY);
     expect(material.providerConfig).toMatchObject({ model_providers: { groq: {
       name: 'Groq', base_url: material.env.OPENAI_BASE_URL, env_key: 'OPENAI_API_KEY',
-      wire_api: 'responses', requires_openai_auth: false,
+      wire_api: 'responses', requires_openai_auth: false, supports_websockets: false,
     } } });
     expect(JSON.stringify(material.providerConfig)).not.toContain(KEY);
     expect(prepared.target.provider).toBe('groq');
@@ -170,6 +171,43 @@ describe('private generation launch composition', () => {
     expect(await readdir(dataDir)).toEqual([]);
     expect(rpc).not.toHaveBeenCalled();
     expect(bind).not.toHaveBeenCalled();
+  });
+
+  it('registers both production adapters and refuses unavailable Codex restrictions before mint', async () => {
+    const { options, rpc, dataDir } = await rig();
+    const foundation = composeChatHarnessFoundation({ ...options, registry: undefined, nodeId: 'node-a', requiredCapabilities: ['builtInToolRestriction'] });
+    expect(foundation.harnessRegistry.get('claude').kind).toBe('claude');
+    expect(foundation.harnessRegistry.get('codex').kind).toBe('codex');
+    await expect(foundation.resolvePreparedLaunch(input, owner, fence)).rejects.toThrow('builtInToolRestriction');
+    expect(rpc).not.toHaveBeenCalled();
+    expect(await readdir(dataDir)).toEqual([]);
+    expect(() => composeChatHarnessFoundation({ ...options, nodeId: ' ' })).toThrow('node identity');
+  });
+
+  it('uses the human poster for model selection and grant authority without creator inheritance', async () => {
+    const { options, rpc, bind, authorize, dataDir } = await rig();
+    const homes = { creator: join(dataDir, 'creator'), poster: join(dataDir, 'poster') };
+    for (const who of ['creator', 'poster'] as const) {
+      await mkdir(homes[who]);
+      await writeFile(join(homes[who], 'auth.json'), JSON.stringify({ tokens: { access_token: `secret-${who}` } }));
+    }
+    const member = vi.fn(async (claims: { identityId?: string }) => ({ provider: 'openai' as const,
+      homeDir: dataDir, configDir: claims.identityId === 'poster' ? homes.poster : homes.creator,
+    }));
+    const resolve = createChatPreparedLaunchResolver({ ...options, memberCredentials: { resolve: member } });
+    const posted = { ...input, requesterIdentityId: 'poster', requesterAuthSessionId: 'poster-session', credentialSelection: { source: 'member' as const } };
+    const prepared = await resolve(posted, owner, fence);
+    const material = await prepared.launch.materialize();
+    expect(await readFile(join(material.modelConfigDir, 'auth.json'), 'utf8')).toContain('secret-poster');
+    expect(await readFile(join(material.modelConfigDir, 'auth.json'), 'utf8')).not.toContain('secret-creator');
+    expect(material.env.OPENAI_API_KEY).toBeUndefined();
+    expect(member.mock.calls.every(call => call[0].identityId === 'poster')).toBe(true);
+    expect(rpc.mock.calls.find(call => call[1] === 'issue_agent_runtime_session')![0])
+      .toEqual({ identityId: 'poster', authKind: 'browser', authSessionId: 'poster-session' });
+    expect(bind.mock.calls[0]![0]).toMatchObject({ identityId: 'poster', authSessionId: 'poster-session' });
+    expect(authorize.mock.calls.at(-1)![0]).toMatchObject({ identityId: 'poster', authKind: 'agent_runtime' });
+    await prepared.launch.release();
+    expect(await readFile(join(homes.creator, 'auth.json'), 'utf8')).toContain('secret-creator');
   });
 
   it('refuses mismatched owner/snapshot and provider routes before any grant', async () => {
