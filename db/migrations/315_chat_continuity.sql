@@ -13,6 +13,13 @@ alter table public.chats
   add column next_native_generation bigint not null default 1,
   add column history_visibility_revision bigint not null default 1;
 
+-- Preserve existing provider pins without inventing a cross-provider default.
+update public.chats set credential_intent=jsonb_build_object('defaultChoice',
+  case when credential_selection ? 'credentialId' then '{"source":"auto"}'::jsonb else credential_selection end,
+  'byProvider',jsonb_build_object(case when provider='moonshot' then 'kimi' else provider end,credential_selection));
+alter table public.chats alter column credential_intent set default '{"defaultChoice":{"source":"auto"},"byProvider":{}}'::jsonb,
+  alter column credential_intent set not null;
+
 -- Runtime lane shares these ownership columns on the existing chat row.
 alter table public.chats
   add column runtime_owner_boot_id text,
@@ -424,6 +431,16 @@ begin
   if c.runtime_phase<>'opening' or p_configuration->'desired' is distinct from t.claimed_configuration
     or p_configuration->'authority' is distinct from t.claimed_authority
     or jsonb_typeof(p_configuration)<>'object' or p_bootstrap is null
+    or p_bootstrap->>'schemaVersion' is distinct from '1'
+    or jsonb_typeof(p_bootstrap->'renderedContext') is distinct from 'string'
+    or jsonb_typeof(p_bootstrap->'manifest') is distinct from 'array'
+    or coalesce(p_bootstrap->'coverage'->>'projectionPolicyVersion','')=''
+    or coalesce(p_bootstrap->'coverage'->>'authorityScopeDigest','')=''
+    or coalesce(p_bootstrap->'coverage'->>'logicalHistoryDigest','')=''
+    or p_bootstrap->'coverage'->>'captureHighWater' is null
+    or (p_bootstrap->'coverage'->>'captureHighWater')::bigint<0
+    or octet_length(p_bootstrap->>'renderedContext')>coalesce((p_configuration->>'historyBudgetBytes')::integer,32768)
+    or octet_length(p_bootstrap::text)>262144
     or p_bootstrap->>'snapshotId' is distinct from p_snapshot_id::text
     or (p_bootstrap->'coverage'->>'throughTurnOrdinal')::bigint is distinct from t.turn_ordinal-1
     or (p_bootstrap->'coverage'->>'captureHighWater')::bigint>c.history_seq
@@ -612,7 +629,7 @@ begin
     'nativeResumable',false,'reason','native_checkpoint_unknown','omissions',a.bootstrap_context->'manifest');
   return jsonb_build_object('turnId',p_turn_id,'state',p_state,'terminalReason',p_terminal->>'outcome','continuityReceipt',receipt);
 end $$;
-create function public.release_chat_runtime(p_chat_id uuid,p_runtime_epoch bigint,p_lease_token text) returns void
+create function public.release_chat_runtime(p_chat_id uuid,p_runtime_epoch bigint,p_lease_token text) returns boolean
 language plpgsql security definer set search_path=public,internal,pg_temp as $$
 begin
   perform internal.require_identity();
@@ -622,6 +639,7 @@ begin
     and internal.is_space_member(space_id) and runtime_epoch=p_runtime_epoch
     and runtime_lease_token_hash=encode(sha256(convert_to(p_lease_token,'UTF8')),'hex')
     and runtime_phase='closing';
+  return found;
 end $$;
 create function public.heartbeat_chat_runtime(p_chat_id uuid,p_fence jsonb) returns void
 language plpgsql security definer set search_path=public,internal,pg_temp as $$
@@ -642,7 +660,8 @@ begin
   end if;
   perform internal.require_space_member(c.space_id);
   select * into t from public.chat_turns where chat_id=p_chat_id and turn_id=p_turn_id for update;
-  if t.state<>'running' or t.attempt_no is distinct from p_expected_attempt then
+  if t.turn_id is null or t.attempt_no is distinct from p_expected_attempt
+    or (t.state<>'running' and not(c.runtime_phase='closing' and c.active_execution_snapshot_id=t.execution_snapshot_id)) then
     return jsonb_build_object('disposition','wait_owner','turnId',p_turn_id);
   end if;
   -- Reboot may recover its own old boot; another node must wait for expiry.
@@ -651,7 +670,11 @@ begin
     return jsonb_build_object('disposition','wait_owner','turnId',p_turn_id);
   end if;
   select * into a from public.chat_turn_attempts where snapshot_id=t.execution_snapshot_id;
-  if a.phase='prepared' or (a.snapshot_id is null and t.claimed_configuration is not null) then
+  if t.state<>'running' then
+    -- Settlement already committed. Retire only this abandoned owner; never
+    -- change the recorded answer or requeue the completed input.
+    disposition:='released_settled';
+  elsif a.phase='prepared' or (a.snapshot_id is null and t.claimed_configuration is not null) then
     disposition:='retry_prepared';
     update public.chat_turns set state='queued',lease_expires_at=null,execution_snapshot_id=null where turn_id=p_turn_id;
     update public.chat_turn_attempts set phase='settled',settled_at=clock_timestamp(),
@@ -965,5 +988,48 @@ begin
 end $$;
 revoke all on function public.authorize_chat_runtime_effect(uuid,uuid) from public;
 grant execute on function public.authorize_chat_runtime_effect(uuid,uuid) to tm8_app;
+
+-- Backwards-compatible setters also use the revisioned writer. Old clients do
+-- not retain a cross-harness restriction or bypass provider-intent persistence.
+-- The pre-owner-role model setter was created by the migration principal.
+reset role;
+alter function public.set_chat_model(uuid,text,text,text) owner to tm8_graph_owner;
+set role tm8_graph_owner;
+create or replace function public.set_chat_model(p_chat_id uuid,p_model text,p_provider text,p_agent_tool text)
+returns jsonb language plpgsql security definer set search_path=public,internal,pg_temp as $$
+declare c public.chats; provider_key text:=case when p_provider='moonshot' then 'kimi' else p_provider end; selection jsonb; result jsonb;
+begin
+  perform internal.require_identity();
+  select * into c from public.chats where entity_id=p_chat_id for update;
+  if c.entity_id is null or c.configured_by_identity_id<>internal.identity_id()
+    or (nullif(current_setting('tm8.session_space_id',true),'')::uuid is not null
+      and c.space_id<>nullif(current_setting('tm8.session_space_id',true),'')::uuid) then
+    raise exception 'chat not found for this identity' using errcode='P0002';
+  end if;
+  selection:=coalesce(c.credential_intent->'byProvider'->provider_key,c.credential_intent->'defaultChoice');
+  result:=public.set_chat_configuration(p_chat_id,c.config_revision,jsonb_build_object(
+    'model',p_model,'provider',p_provider,'agentTool',p_agent_tool,'reasoningEffort',null,
+    'credentialIntent',c.credential_intent,'credentialSelection',selection),internal.new_id()::text);
+  return jsonb_build_object('chatId',p_chat_id,'model',p_model,'provider',p_provider,'agentTool',p_agent_tool,
+    'updatedAt',(select updated_at from public.chats where entity_id=p_chat_id));
+end $$;
+create or replace function public.set_chat_credentials(p_chat_id uuid,p_selection jsonb)
+returns jsonb language plpgsql security definer set search_path=public,internal,pg_temp as $$
+declare c public.chats; provider_key text; intent jsonb; result jsonb;
+begin
+  perform internal.require_identity();
+  select * into c from public.chats where entity_id=p_chat_id for update;
+  if c.entity_id is null or c.configured_by_identity_id<>internal.identity_id()
+    or (nullif(current_setting('tm8.session_space_id',true),'')::uuid is not null
+      and c.space_id<>nullif(current_setting('tm8.session_space_id',true),'')::uuid) then
+    raise exception 'chat not found for this identity' using errcode='P0002';
+  end if;
+  provider_key:=case when c.provider='moonshot' then 'kimi' else c.provider end;
+  intent:=jsonb_set(c.credential_intent,array['byProvider',provider_key],p_selection);
+  if not (p_selection ? 'credentialId') then intent:=jsonb_set(intent,'{defaultChoice}',p_selection); end if;
+  result:=public.set_chat_configuration(p_chat_id,c.config_revision,jsonb_build_object('model',c.model,'provider',c.provider,
+    'agentTool',c.agent_tool,'reasoningEffort',c.reasoning_effort,'credentialIntent',intent,'credentialSelection',p_selection),internal.new_id()::text);
+  return jsonb_build_object('chatId',p_chat_id,'credentialSelection',p_selection);
+end $$;
 
 reset role;

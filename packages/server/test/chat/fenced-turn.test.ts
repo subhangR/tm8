@@ -10,7 +10,7 @@ const caps: HarnessCapabilities={schemaVersion:1,harness:'codex',binaryVersion:'
   builtInToolRestriction:'unknown',configuration:{model:'per_turn',reasoningEffort:'per_turn',serviceTier:'per_turn',instructions:'restart',tools:'restart',credential:'restart'}};
 function deferred<T>() { let resolve!:(value:T)=>void; const promise=new Promise<T>(r=>{resolve=r;}); return {promise,resolve}; }
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
-function fixture(delivery:'sent'|'unknown'|'not_sent'='sent') {
+function fixture(delivery:'sent'|'unknown'|'not_sent'|'reject'|'timeout'='sent',terminalBeforeAck=false) {
   const calls:{name:string;args:readonly unknown[]}[]=[]; const events:string[]=[];
   const turn={turnId:randomUUID(),chatId:randomUUID(),userMessageId:randomUUID(),agentMessageId:null,spaceId:randomUUID(),
     body:'current request',attachments:[],requesterIdentityId:'creator',requesterAuthKind:'browser',teammateId:randomUUID(),
@@ -23,6 +23,7 @@ function fixture(delivery:'sent'|'unknown'|'not_sent'='sent') {
     if (name==='reserve_chat_continuity') return {nativeGeneration:1,bindingId:randomUUID()} as T;
     if (name==='seal_chat_turn_snapshot') return {inputDigest:'input-hash'} as T;
     if (name==='append_chat_message_part') return {seq:args[1],kind:args[2],payload:args[3],createdAt:new Date().toISOString()} as T;
+    if (name==='release_chat_runtime') return true as T;
     return undefined as T;
   };
   const q:Querier={query:async <T>()=>[] as T[],rpc};
@@ -41,7 +42,7 @@ function fixture(delivery:'sent'|'unknown'|'not_sent'='sent') {
       seed:input.mode.kind==='bootstrap'?{...input.mode.context,transport:'instructions',acknowledgement:'launch_materialized'}:null},
       observations:(async function*(){
         const command=await sent.promise;
-        if (delivery!=='sent') return;
+        if (delivery!=='sent' && !terminalBeforeAck) return;
         const base={fence:input.fence,attempt:command.attempt,nativeTurnId:'turn',observedAt:new Date().toISOString()};
         yield {...base,fence:{...input.fence,generation:99},adapterSeq:1,payload:{kind:'text' as const,itemId:'stale',revision:1,operation:'append' as const,phase:'final' as const,text:'STALE'}};
         yield {...base,adapterSeq:2,payload:{kind:'text' as const,itemId:'answer',revision:1,operation:'append' as const,phase:'commentary' as const,text:'draft'}};
@@ -51,6 +52,8 @@ function fixture(delivery:'sent'|'unknown'|'not_sent'='sent') {
         yield {...base,adapterSeq:5,payload:{kind:'terminal' as const,outcome:'completed' as const,evidence:'provider_terminal' as const}};
       })(),
       submit:async command=>{events.push('submit');sent.resolve(command); await sleep(2); events.push('ack');
+        if (delivery==='reject') throw new Error('ACK lost');
+        if (delivery==='timeout') return new Promise(()=>{});
         return delivery==='sent'?{delivery:'sent',acknowledgement:'native_ack',nativeTurnId:'turn'}:delivery==='unknown'?{delivery:'unknown',nativeTurnId:null}:{delivery:'not_sent',code:'not_written'};},
       cancel:async()=>({disposition:'requested',nativeTurnId:'turn'}),respond:async()=>{},
       close:async()=>{events.push('exit');return {exited:true,nativeUsable:null};}};
@@ -59,7 +62,7 @@ function fixture(delivery:'sent'|'unknown'|'not_sent'='sent') {
   const registry=new HarnessRegistry([{kind:'codex',capabilities:async()=>caps,open}]);
   const publish=vi.fn();
   const options={db,registry,resolvePreparedLaunch:resolver,publisher:{publish},turn,leaseToken:'private-fence',prompt:'current request',
-    historyBudgetBytes:32768,createAgentMessage:async()=>randomUUID(),track:vi.fn(),untrack:vi.fn(),onError:vi.fn(),
+    historyBudgetBytes:32768,createAgentMessage:async()=>randomUUID(),track:vi.fn(),untrack:vi.fn(),onError:vi.fn(),onReleased:vi.fn(),
     timeouts:{preparation:100,open:100,submit:100,observation:100,close:100}} as unknown as FencedTurnOptions;
   return {options,calls,events,release,resolver,open,makeSession,publish};
 }
@@ -80,6 +83,28 @@ it.each(['unknown','not_sent'] as const)('does not resend a %s dispatch',async d
   const f=fixture(delivery); await executeFencedTurn(f.options);
   expect(f.events.filter(e=>e==='submit')).toHaveLength(1);
   expect(f.calls.find(c=>c.name==='complete_chat_turn')!.args[1]).toBe('error');
+  if (delivery==='not_sent') expect(f.calls.find(c=>c.name==='complete_chat_turn')!.args[5]).toMatchObject({code:'provider_not_sent'});
+});
+it.each(['unknown','not_sent','reject','timeout'] as const)('preserves a durable provider terminal before a %s ACK',async delivery=>{
+  const f=fixture(delivery,true); f.options.timeouts!.submit=10;
+  await executeFencedTurn(f.options);
+  const done=f.calls.filter(c=>c.name==='append_chat_message_part' && c.args[2]==='done');
+  expect(done.map(c=>c.args[3])).toEqual([{reason:'success'}]);
+  const completion=f.calls.find(c=>c.name==='complete_chat_turn')!;
+  expect(completion.args[1]).toBe('completed');expect(completion.args[2]).toBe('final answer');
+  expect(completion.args[8]).toMatchObject({outcome:'completed',evidence:'provider_terminal'});
+  expect(f.events.filter(e=>e==='submit')).toHaveLength(1);
+});
+it('keeps the lease until exact resource cleanup succeeds and then wakes the queued drain',async()=>{
+  const f=fixture();f.options.timeouts!.cleanupRetry=5;
+  let available=false;
+  f.release.mockImplementation(async()=>{if(!available)throw new Error('cleanup offline');f.events.push('release');});
+  await executeFencedTurn(f.options);
+  expect(f.calls.some(c=>c.name==='release_chat_runtime')).toBe(false);
+  expect(f.options.onReleased).not.toHaveBeenCalled();
+  available=true;await sleep(15);
+  expect(f.calls.filter(c=>c.name==='release_chat_runtime')).toHaveLength(1);
+  expect(f.options.onReleased).toHaveBeenCalledOnce();
 });
 it('retains a timed-out open lease until the late child confirms exit',async()=>{
   const f=fixture(); const late=deferred<HarnessSession>(); let input!:OpenHarnessInput;
@@ -88,6 +113,7 @@ it('retains a timed-out open lease until the late child confirms exit',async()=>
   await executeFencedTurn(f.options); expect(f.release).not.toHaveBeenCalled();
   late.resolve(f.makeSession(input)); await sleep(5);
   expect(f.events.indexOf('exit')).toBeLessThan(f.events.indexOf('release')); expect(f.release).toHaveBeenCalledOnce();
+  expect(f.options.onReleased).toHaveBeenCalledOnce();
 });
 it('releases late prepared material and does not open it after timeout',async()=>{
   const f=fixture(); const late=deferred<Awaited<ReturnType<typeof f.resolver>>>(); const original=f.resolver.getMockImplementation()!;

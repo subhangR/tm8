@@ -320,5 +320,7 @@ require_identity public.issue_agent_runtime_session(p_chat_id uuid, p_team_membe
 require_identity public.revoke_agent_runtime_session(p_chat_id uuid)  # GUARDED: refuses generation-owned chats; compatibility cleanup delegates to existing owner check (315)
 
 setting public.read_mcp_session_binding(p_session uuid, p_auth_session uuid)  # GUARDED: prepared pure read only after verified auth-session id, exact chat epoch/generation/frozen author, live lease and explicit pinned active membership; identity_id effect gate unchanged (315)
-
-setting public.authorize_chat_runtime_effect(p_chat_id uuid, p_auth_session_id uuid)  # GUARDED: exact verified auth-session id and chat binding, then private dispatch-only generation guard; no prepared effects and explicit pinned-space proof (315)
+identity_id public.set_chat_credentials(p_chat_id uuid, p_selection jsonb)  # GUARDED: configuring identity and explicit session-space pin; revisioned writer requires human auth and current membership before changing provider intent (315)
+require_identity public.set_chat_credentials(p_chat_id uuid, p_selection jsonb)  # GUARDED: configuring identity and explicit session-space pin; delegates to the same human-only revisioned writer and current membership proof (315)
+identity_id policy entity_seen_select on table public.entity_seen  # GUARDED: caller-owned active member, pinned members_select RLS and is_space_member(m.space_id); reads only that member's markers (313_seen_entities.sql)
+identity_id public.mark_entity_seen(p_entity_id uuid, p_client_mutation_id text)  # GUARDED: human auth, pinned entity_readable and current_member_id before ledger access; own member actor only; pinned ledger replay with principal and entity binding (313_seen_entities.sql)

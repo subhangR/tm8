@@ -225,6 +225,56 @@ it('lets only one claim owner win and preserves a healthy other node at boot',as
   expect(recovery.disposition).toBe('wait_owner');
 });
 
+it('recovers a settled closing owner without changing its answer or replaying it',async()=>{
+  const p=await prepared();await agentMessage(p);await opened(p);
+  await caller(q=>q.query('select public.begin_chat_dispatch($1,$2,$3,$4)',[p.id,p.fence,p.snapshot,p.sealed.inputDigest]));
+  const terminal={outcome:'completed',evidence:'provider_terminal',body:'settled answer'};
+  await caller(q=>q.query('select public.complete_chat_turn($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+    [p.claim.turnId,'completed','settled answer',null,null,null,p.fence,p.snapshot,terminal,null]));
+  const recover=(nodeId:string)=>caller(async q=>(await q.query('select public.recover_chat_attempt($1,$2,$3,$4) result',
+    [p.id,p.claim.turnId,p.claim.attemptNo,{nodeId,bootId:'boot-b'}])).rows[0].result);
+  expect((await recover('other-node')).disposition).toBe('wait_owner');
+  expect((await recover('node-a')).disposition).toBe('released_settled');
+  expect((await database.query('select state from chat_turns where turn_id=$1',[p.claim.turnId]))[0].state).toBe('completed');
+  expect((await database.query('select runtime_phase from chats where entity_id=$1',[p.id]))[0].runtime_phase).toBe('idle');
+  expect((await caller(async q=>(await q.query('select public.release_chat_runtime($1,$2,$3) result',
+    [p.id,p.fence.runtimeEpoch,p.fence.leaseToken])).rows[0].result))).toBe(false);
+});
+
+it('removes edited and deleted source detail from subsequent portable history',async()=>{
+  const {PgDb}=await import('../../src/db/client.js');const {readPortableHistory,projectHistory}=await import('../../src/chat/continuity.js');
+  const p=await prepared();const message=await agentMessage(p);await opened(p);
+  await caller(q=>q.query('select public.begin_chat_dispatch($1,$2,$3,$4)',[p.id,p.fence,p.snapshot,p.sealed.inputDigest]));
+  await caller(q=>q.query("select public.append_chat_message_part($1,0,'text',$2,$3,$4,'old-output')",
+    [message,{text:'removed assistant secret'},p.fence,p.snapshot]));
+  const terminal={outcome:'completed',evidence:'provider_terminal',body:'removed assistant secret'};
+  await caller(q=>q.query('select public.complete_chat_turn($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+    [p.claim.turnId,'completed',terminal.body,null,null,null,p.fence,p.snapshot,terminal,null]));
+  await database.query("update messages set body='revised user' where entity_id=$1",[p.claim.userMessageId]);
+  await database.query("update messages set body='revised assistant',edited_at=now()+interval '1 second' where entity_id=$1",[message]);
+  const db=new PgDb({databaseUrl:database.url});
+  try {
+    const rendered=async()=>projectHistory(await readPortableHistory(db,{identityId:fixture.identityA},p.id,2,1000),{
+      snapshotId:randomUUID(),currentTurnOrdinal:2,captureHighWater:1000,authorityScopeDigest:'authority',maxBytes:32768}).renderedContext;
+    const edited=await rendered();expect(edited).toContain('revised user');expect(edited).toContain('revised assistant');
+    expect(edited).not.toContain('removed assistant secret');expect(edited).not.toContain('original input');
+    await database.query('update entities set deleted_at=now() where id=any($1::uuid[])',[[p.claim.userMessageId,message]]);
+    const deleted=await rendered();expect(deleted).not.toContain('revised user');expect(deleted).not.toContain('revised assistant');
+    expect(deleted).toContain('source deleted or unavailable');
+  } finally {await db.end();}
+});
+
+it('keeps legacy setters revisioned and permits a cross-harness change with remembered provider choices',async()=>{
+  const id=await chat();
+  await caller(q=>q.query('select public.set_chat_credentials($1,$2)',[id,{source:'member'}]));
+  await caller(q=>q.query('select public.set_chat_model($1,$2,$3,$4)',[id,'claude-opus-4-6','anthropic','claude-code']));
+  await caller(q=>q.query('select public.set_chat_credentials($1,$2)',[id,{source:'node'}]));
+  await caller(q=>q.query('select public.set_chat_model($1,$2,$3,$4)',[id,'gpt-5.6-sol','openai','codex']));
+  const row=(await database.query('select config_revision,credential_selection,credential_intent from chats where entity_id=$1',[id]))[0];
+  expect(Number(row.config_revision)).toBe(5);expect(row.credential_selection).toEqual({source:'member'});
+  expect(row.credential_intent.byProvider).toEqual({openai:{source:'member'},anthropic:{source:'node'}});
+});
+
 it('binds a second human turn to that poster instead of inheriting the creator runtime authority',async () => {
   const first=await prepared();
   await caller(q => q.query('select public.fail_chat_preparation($1,$2,$3)',[first.id,first.fence,{code:'test_not_sent',message:'not dispatched'}]));
