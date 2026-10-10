@@ -77,7 +77,7 @@ import {
 import { FILE_PALETTE_SCOPE, parseFilePaletteRef, recentFilePaletteViews } from '../project-file/palette';
 import { useProjectNames } from '../project-file/projects';
 import { useRecentProjectFiles } from '../project-file/recent';
-import { DesignScreen, DesignsHome, DesignsNav, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
+import { CraftScreen, CraftsHome, CraftsNav, craftSourceFromSeam, craftsSourceFromSeam, type CraftTarget } from '../craft';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
@@ -2238,26 +2238,26 @@ export function GateApp(props: GateAppProps = {}) {
   const openPaletteOverlay = useCallback(() => setPaletteOpen(true), []);
   const navigateRouteView = useCallback((view: NavView) => navStore.getState().navigate(view), []);
   /* Craft → Designs: the home's source, and its door into one design. */
-  const designsSource = useMemo(
-    () => designsSourceFromSeam(data.seam, data.spaceId as SpaceId),
+  const craftsSource = useMemo(
+    () => craftsSourceFromSeam(data.seam, data.spaceId as SpaceId),
     [data.seam, data.spaceId],
   );
-  const openDesign = useCallback(
-    (designId: EntityId) => navStore.getState().navigate({ view: 'craft', designId }),
+  const openCraft = useCallback(
+    (craftId: EntityId) => navStore.getState().navigate({ view: 'craft', designId: craftId }),
     [],
   );
-  const designSource = useMemo(
-    () => designSourceFromSeam(data.seam, data.spaceId as SpaceId),
+  const craftSource = useMemo(
+    () => craftSourceFromSeam(data.seam, data.spaceId as SpaceId),
     [data.seam, data.spaceId],
   );
   /* No design ⇒ the Designs home; otherwise exactly the design, page and nested page asked for. */
-  const navigateDesign = useCallback(
-    ({ designId, pageId, nestedPageId }: DesignTarget) =>
+  const navigateCraft = useCallback(
+    ({ craftId, pageId, nestedPageId }: CraftTarget) =>
       navStore.getState().navigate({
         view: 'craft',
-        ...(designId ? { designId } : {}),
-        ...(designId && pageId ? { pageId } : {}),
-        ...(designId && pageId && nestedPageId ? { nestedPageId } : {}),
+        ...(craftId ? { designId: craftId } : {}),
+        ...(craftId && pageId ? { pageId } : {}),
+        ...(craftId && pageId && nestedPageId ? { nestedPageId } : {}),
       }),
     [],
   );
@@ -2684,14 +2684,14 @@ export function GateApp(props: GateAppProps = {}) {
 
   /* DESIGN in the frame (R2-D1): the designs, and the open design's pages,
      in the panel — Work's browser, for designs. */
-  const designFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
-  const designsNavEl = designFramed ? (
-    <DesignsNav
-      designs={designsSource}
-      source={designSource}
-      designId={navView.view === 'craft' ? navView.designId : undefined}
+  const craftFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
+  const craftsNavEl = craftFramed ? (
+    <CraftsNav
+      crafts={craftsSource}
+      source={craftSource}
+      craftId={navView.view === 'craft' ? navView.designId : undefined}
       pageId={navView.view === 'craft' ? navView.pageId : undefined}
-      onNavigate={navigateDesign}
+      onNavigate={navigateCraft}
       onNotice={craftNotice}
     />
   ) : null;
@@ -2837,7 +2837,7 @@ export function GateApp(props: GateAppProps = {}) {
           spaceId={data.spaceId}
           viewerId={viewerMemberId}
           title={frameTitle}
-          panel={railConfig ? menuRailEl : settingsNavEl ?? designsNavEl ?? (observing ? 'host' : null)}
+          panel={railConfig ? menuRailEl : settingsNavEl ?? craftsNavEl ?? (observing ? 'host' : null)}
           strip={observing}
           goToWork={goToWork}
         >
@@ -3033,9 +3033,9 @@ export function GateApp(props: GateAppProps = {}) {
             /* ✎ Craft → Designs: bare `/craft` is the Designs home. Every
                door into Craft (the view selector, the Workspace rail's craft
                tool) lands here, and a card opens `/craft/{id}`. */
-            <DesignsHome
-              source={designsSource}
-              onOpenDesign={openDesign}
+            <CraftsHome
+              source={craftsSource}
+              onOpenCraft={openCraft}
               onNotice={(text) =>
                 notices.push({
                   id: `crf:${Date.now()}`,
@@ -3056,18 +3056,18 @@ export function GateApp(props: GateAppProps = {}) {
                strip split between the page and the design. The page bodies are
                the Workspace's own, hosted in a private runtime (`workspaceGate`
                is the same handle bundle the Workspace view gets). */
-            <DesignScreen
+            <CraftScreen
               key={navView.designId}
               seam={data.seam}
               spaceId={data.spaceId as SpaceId}
               nodeKey={nodeKey}
-              source={designSource}
-              designs={designsSource}
-              designId={navView.designId}
+              source={craftSource}
+              crafts={craftsSource}
+              craftId={navView.designId}
               pageId={navView.pageId}
               nestedPageId={navView.nestedPageId}
-              onNavigate={navigateDesign}
-              framed={designFramed}
+              onNavigate={navigateCraft}
+              framed={craftFramed}
               gate={workspaceGate}
               bridge={chatBridge}
               skillOptions={data.skillOptions}

@@ -1,20 +1,20 @@
 /**
- * ONE DESIGN, LIVE: its read, its page edits and the "updated" marks, for the
- * design screen's page row and for a nested design's smaller row (the same
+ * ONE CRAFT, LIVE: its read, its page edits and the "updated" marks, for the
+ * craft screen's page row and for a nested craft's smaller row (the same
  * hook at both depths).
  *
- * LIVE BY EVENTS: a change to the design (a page added, moved, removed, a
+ * LIVE BY EVENTS: a change to the craft (a page added, moved, removed, a
  * rename) re-reads it; a change to one of its pages marks that page updated
  * unless it is the active one. Agents never switch the page (D5).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
-import { positionAt, type DesignPageRow, type DesignRead, type DesignSource, type NewPageKind } from './design-source';
+import { positionAt, type CraftPageRow, type CraftRead, type CraftSource, type NewPageKind } from './craft-source';
 
-export interface DesignHandle {
-  design: DesignRead | null;
+export interface CraftHandle {
+  craft: CraftRead | null;
   state: 'loading' | 'ready' | 'error' | 'deleted';
-  pages: readonly DesignPageRow[];
+  pages: readonly CraftPageRow[];
   updated: ReadonlySet<string>;
   retry(): void;
   /** Clear a page's updated mark (it was looked at). */
@@ -25,24 +25,24 @@ export interface DesignHandle {
   remove(id: EntityId): Promise<boolean>;
 }
 
-/** The node's refusal for a design that would contain itself (lane A's cycle guard). */
+/** The node's refusal for a craft that would contain itself (lane A's cycle guard). */
 function refusalText(error: unknown, fallback: string): string {
   const code = (error as { code?: unknown } | null)?.code;
   const message = error instanceof Error ? error.message : '';
   if (code === '22023' || /contain itself|cycle|loop/i.test(message)) {
-    return 'A design cannot contain itself, or a design it sits inside.';
+    return 'A craft cannot contain itself, or a craft it sits inside.';
   }
   return message || fallback;
 }
 
-export function useDesign(
-  source: DesignSource,
-  designId: EntityId,
+export function useCraft(
+  source: CraftSource,
+  craftId: EntityId,
   activeId: EntityId | null,
   onNotice?: (text: string) => void,
-): DesignHandle {
-  const [design, setDesign] = useState<DesignRead | null>(null);
-  const [state, setState] = useState<DesignHandle['state']>('loading');
+): CraftHandle {
+  const [craft, setCraft] = useState<CraftRead | null>(null);
+  const [state, setState] = useState<CraftHandle['state']>('loading');
   const [updated, setUpdated] = useState<ReadonlySet<string>>(new Set());
   const [attempt, setAttempt] = useState(0);
   const pageIdsRef = useRef<ReadonlySet<string>>(new Set());
@@ -51,17 +51,17 @@ export function useDesign(
 
   const read = useCallback(async () => {
     try {
-      const next = await source.read(designId);
+      const next = await source.read(craftId);
       pageIdsRef.current = new Set(next.pages.map((page) => page.id));
-      setDesign(next);
+      setCraft(next);
       setState('ready');
     } catch (error) {
       setState((error as { code?: unknown } | null)?.code === 'not_found' ? 'deleted' : 'error');
     }
-  }, [source, designId]);
+  }, [source, craftId]);
 
   useEffect(() => {
-    setDesign(null);
+    setCraft(null);
     setState('loading');
     setUpdated(new Set());
     void read();
@@ -69,20 +69,20 @@ export function useDesign(
 
   useEffect(
     () =>
-      source.subscribe(designId, () => pageIdsRef.current, (change) => {
-        if (change.type === 'design') void read();
+      source.subscribe(craftId, () => pageIdsRef.current, (change) => {
+        if (change.type === 'craft') void read();
         else if (change.type === 'deleted') {
-          if (change.id === designId) setState('deleted');
+          if (change.id === craftId) setState('deleted');
           else void read();
         } else {
-          /* The page re-renders itself; the design's row learns its new title. */
+          /* The page re-renders itself; the craft's row learns its new title. */
           void read();
           if (change.id !== activeRef.current) {
             setUpdated((current) => (current.has(change.id) ? current : new Set(current).add(change.id)));
           }
         }
       }),
-    [source, designId, read],
+    [source, craftId, read],
   );
 
   const seen = useCallback((id: EntityId) => {
@@ -97,12 +97,12 @@ export function useDesign(
     if (activeId) seen(activeId);
   }, [activeId, seen]);
 
-  const pages = useMemo(() => design?.pages ?? [], [design]);
+  const pages = useMemo(() => craft?.pages ?? [], [craft]);
 
   const createPage = useCallback(
     async (kind: Exclude<NewPageKind, 'artifact'>) => {
       try {
-        const id = await source.createPage(designId, kind, positionAt(pages, pages.length));
+        const id = await source.createPage(craftId, kind, positionAt(pages, pages.length));
         await read();
         return id;
       } catch (error) {
@@ -110,13 +110,13 @@ export function useDesign(
         return null;
       }
     },
-    [source, designId, pages, read, onNotice],
+    [source, craftId, pages, read, onNotice],
   );
 
   const addExisting = useCallback(
     async (id: EntityId) => {
       try {
-        await source.placePage(designId, id, positionAt(pages, pages.length));
+        await source.placePage(craftId, id, positionAt(pages, pages.length));
         await read();
         return true;
       } catch (error) {
@@ -124,7 +124,7 @@ export function useDesign(
         return false;
       }
     },
-    [source, designId, pages, read, onNotice],
+    [source, craftId, pages, read, onNotice],
   );
 
   const move = useCallback(
@@ -134,25 +134,25 @@ export function useDesign(
       const without = pages.filter((page) => page.id !== id);
       const position = positionAt(without, index);
       /* Optimistic: the row shows the new order now; the re-read confirms it. */
-      setDesign((current) =>
+      setCraft((current) =>
         current
           ? { ...current, pages: [...without.slice(0, index), { ...moving, position }, ...without.slice(index)] }
           : current,
       );
       try {
-        await source.placePage(designId, id, position);
+        await source.placePage(craftId, id, position);
       } catch (error) {
         onNotice?.(refusalText(error, 'Could not move the page.'));
       }
       await read();
     },
-    [source, designId, pages, read, onNotice],
+    [source, craftId, pages, read, onNotice],
   );
 
   const remove = useCallback(
     async (id: EntityId) => {
       try {
-        await source.removePage(designId, id);
+        await source.removePage(craftId, id);
         await read();
         return true;
       } catch (error) {
@@ -160,11 +160,11 @@ export function useDesign(
         return false;
       }
     },
-    [source, designId, read, onNotice],
+    [source, craftId, read, onNotice],
   );
 
   return {
-    design,
+    craft,
     state,
     pages,
     updated,

@@ -8,11 +8,11 @@
  *    spelling the craft prompt teaches (`blueprintNodeRef`);
  *  · Outline and Table are real views over the same selection — and the
  *    accessible fallback for the SVG;
- *  · there is no Orchestrate: a design is Run like any launchable entity (D4);
+ *  · there is no Orchestrate: a craft is Run like any launchable entity (D4);
  *  · the canvas is keyboard-navigable.
  *
- * The blueprint is a GRAPH PAGE of a design now (Craft → Designs), mounted
- * through `DesignScreen` over a fixture design source.
+ * The blueprint is a GRAPH PAGE of a craft now (Craft → Crafts), mounted
+ * through `CraftScreen` over a fixture craft source.
  *
  * jsdom draws no pixels (the recurring law): structure, text and wiring only.
  */
@@ -23,8 +23,8 @@ import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { FIXTURE_SPACE_ID } from '../fixtures';
 import { createFixtureSeam } from '../data';
-import { DesignScreen } from './DesignScreen';
-import { fixtureDesignSource } from './design-source';
+import { CraftScreen } from './CraftScreen';
+import { fixtureCraftSource } from './craft-source';
 import { BlueprintCanvas } from './BlueprintCanvas';
 import { blueprintView } from './blueprint-model';
 
@@ -81,10 +81,10 @@ async function mountWithPlan(content: unknown = PLAN, ready = 'crf-canvas') {
   });
   const graphId = created.entity!.id as EntityId;
   await seam.commands.patchEntity(graphId, { clientMutationId: 'crf-studio-2', expectedVersion: 1, content });
-  const source = fixtureDesignSource(seam, SPACE, [{ id: 'design-1' as EntityId, title: 'Pricing design' }]);
-  await source.placePage('design-1' as EntityId, graphId, 1);
+  const source = fixtureCraftSource(seam, SPACE, [{ id: 'craft-1' as EntityId, title: 'Pricing craft' }]);
+  await source.placePage('craft-1' as EntityId, graphId, 1);
   const view = render(
-    <DesignScreen seam={seam} spaceId={SPACE} nodeKey="fixture" source={source} designId={'design-1' as EntityId} onNavigate={() => undefined} />,
+    <CraftScreen seam={seam} spaceId={SPACE} nodeKey="fixture" source={source} craftId={'craft-1' as EntityId} onNavigate={() => undefined} />,
   );
   await waitFor(() => view.getByTestId(ready));
   /* The chat surface is a lazy chunk; the composer is part of "mounted". */
