@@ -347,6 +347,8 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     await expect(spawn('agent', { parent: chatAbout, about: craft })).rejects.toMatchObject({ code: '42501' });
     const notUnderQ = await spawn('agent_runtime', { fromChat: chatAbout }); // parent is not Q: binds nothing
     await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(notUnderQ) })).rejects.toMatchObject(refused);
+    // A forged call: a worker token (same identity) names the craft chat as parent AND p_from_chat.
+    await expect(spawn('agent', { parent: chatAbout, fromChat: chatAbout })).rejects.toMatchObject({ code: '42501' });
 
     // Later: work_session_about refuses a session from another transaction; an edges.create binds nothing.
     const unbound = await spawn('cli');

@@ -3481,9 +3481,10 @@ function registerHandlers(
     // 315 (Craft doc §4): an about edge written at spawn lets the session's agent
     // command the caller's craft workspace, so only a person names it, or a chat
     // runtime for its own sessions (work_session_about re-checks both). Refused
-    // here, before a worktree is provisioned for a spawn that cannot finish.
+    // here, before a worktree is provisioned for a spawn that cannot finish. A
+    // runtime bearer whose row names no chat has no sessions of its own to bind.
     if (input.aboutEntityId !== undefined && ctx.identity.kind === 'bearer'
-      && !['browser', 'cli'].includes(ctx.identity.authKind ?? '') && !isChatRuntimeBearer(ctx)) {
+      && !['browser', 'cli'].includes(ctx.identity.authKind ?? '') && runtimeChatIdOf(ctx) === null) {
       throw fail('forbidden', 'only a person, or a chat for its own sessions, sets aboutEntityId', { reason: 'about_not_allowed' });
     }
     if (input.storyId !== undefined && (input.taskIds !== undefined || input.newTask !== undefined || input.forceNewTask !== undefined)) {

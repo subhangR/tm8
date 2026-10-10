@@ -318,6 +318,53 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
     await expect(runSpawn({ kind: 'auto-owner', identityId: 'owner-identity' }))
       .rejects.toThrow(/parentSessionId/);
   });
+
+  /**
+   * 315 (Craft doc §4) — WHO BINDS A SESSION ABOUT A CRAFT AT SPAWN. An about
+   * edge written in the spawn transaction lets the session's agent command the
+   * caller's craft workspace, so the handler names who may write one: a person
+   * (`aboutEntityId`), or a chat runtime for its own sessions, whose chat comes
+   * from the verified auth row and never from the body.
+   */
+  const ABOUT = '88888888-8888-4888-8888-888888888888';
+  const aboutCall = (db: SpawnDb) => db.rpcCalls.find(({ fn }) => fn === 'public.work_session_about');
+
+  it.each([
+    ['a worker agent token', { kind: 'bearer', identityId: 'owner-identity', authKind: 'agent', workSessionId: PARENT_SESSION }],
+    ['a runtime token whose row names no chat', { kind: 'bearer', identityId: 'chat-identity', authKind: 'agent_runtime' }],
+  ] as const)('refuses aboutEntityId from %s, before anything is spawned', async (_label, identity) => {
+    let db: SpawnDb | undefined;
+    await expect((async () => { db = await runSpawn(identity as RequestIdentity, { aboutEntityId: ABOUT, parentSessionId: PARENT_SESSION }, 'work_session'); })())
+      .rejects.toMatchObject({ code: 'forbidden', details: { reason: 'about_not_allowed' } });
+    expect(db).toBeUndefined();
+  });
+
+  it('binds a person\'s aboutEntityId in the spawn transaction, with no chat', async () => {
+    const db = await runSpawn(
+      { kind: 'bearer', identityId: 'owner-identity', authKind: 'cli' },
+      { aboutEntityId: ABOUT, parentSessionId: PARENT_SESSION },
+      'work_session',
+    );
+    expect(aboutCall(db)?.args).toEqual([SESSION, ABOUT, null]);
+  });
+
+  it('takes a chat runtime\'s chat from its auth row, not from the body', async () => {
+    const db = await runSpawn(
+      { kind: 'bearer', identityId: 'chat-identity', authKind: 'agent_runtime', runtimeChatId: CHAT },
+      { aboutFromChatId: PARENT_SESSION },
+    );
+    expect(aboutCall(db)?.args).toEqual([SESSION, null, CHAT]);
+  });
+
+  it('binds nothing for a worker token that names no about', async () => {
+    const db = await runSpawn(
+      { kind: 'bearer', identityId: 'owner-identity', authKind: 'agent', workSessionId: PARENT_SESSION },
+      {},
+      'work_session',
+    );
+    expect(db.rpcCalls.some(({ fn }) => fn === 'public.execution_spawn')).toBe(true);
+    expect(aboutCall(db)).toBeUndefined();
+  });
 });
 
 describe('loadSpawnContext resolves what the parent IS (176)', () => {

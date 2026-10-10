@@ -714,6 +714,11 @@ begin
   end if;
   perform internal.require_space_member(s.space_id);
   if p_from_chat is not null then
+    -- The caller itself must be a chat runtime: a worker token carries the same
+    -- identity and could otherwise pass the craft chat as both parent and p_from_chat.
+    if caller_kind is distinct from 'agent_runtime' then
+      raise exception 'only a chat runtime binds its sessions to what the chat is about' using errcode = '42501';
+    end if;
     select e.dst_id into chat_about
       from public.entities c
       join public.chats ch on ch.entity_id = c.id
