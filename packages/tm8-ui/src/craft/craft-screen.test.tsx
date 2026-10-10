@@ -15,8 +15,8 @@
  *    a page changed while not active, and "Add existing entity…";
  *  · a nested craft page draws its own smaller row in place, and a craft
  *    one level deeper is cards plus Open (D7);
- *  · the chat pane: hosted SOLO, a thread picker over the craft's chats, and
- *    ＋ New chat back to the composer after a send;
+ *  · the 2nd panel: the chat hosted SOLO, one list of the craft's chats and
+ *    sessions, and ＋ New chat back to the composer after a send;
  *  · Orchestrate, the graph picker and the old chat picker are gone (D4).
  *
  * jsdom loads no stylesheets (the recurring law): structure and text only.
@@ -134,6 +134,21 @@ describe('the craft routes', () => {
     );
     await waitFor(() => view.getByTestId('craft-screen'));
     expect(view.queryByTestId('crafts-home')).toBeNull();
+    view.unmount();
+  });
+
+  it('puts the craft\'s chats and sessions in the frame\'s 2nd panel, and no chat on the right', async () => {
+    const view = render(
+      <GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/craft/019f98a0-aaaa-bbbb-cccc-000000000041`)} />,
+    );
+    await waitFor(() => view.getByTestId('craft-screen'));
+    /* Re-queried: the frame's panel host remounts as the app settles. */
+    const side = await waitFor(() => within(view.getByTestId('app-frame-panel')).getByTestId('crf-side'));
+    expect(within(side).getByTestId('crf-new-chat')).toBeTruthy();
+    expect(within(side).getByTestId('crf-new-session')).toBeTruthy();
+    /* The crafts list left the panel (reverses 6a022279e). */
+    expect(view.queryByRole('navigation', { name: 'Crafts' })).toBeNull();
+    expect(view.getByTestId('craft-screen').querySelector('.crf-chat')).toBeNull();
     view.unmount();
   });
 });
@@ -375,26 +390,39 @@ describe('the chat pane', () => {
     expect(view.getByTestId('panel-resizer-left')).toBeTruthy();
   });
 
-  it('lists only the chats about this craft, and says so when there are none', async () => {
+  it('lists only the chats and sessions on this craft, and says so when there are none', async () => {
     const { view } = await mountCraft();
-    fireEvent.click(await waitFor(() => view.getByTestId('dsn-thread-picker')));
+    fireEvent.click(await waitFor(() => view.getByTestId('crf-side-picker')));
     /* The fixture's threads are about other things and not craft-mode. */
-    await waitFor(() => view.getByTestId('dsn-thread-empty'));
+    await waitFor(() => expect(view.getByTestId('crf-side-empty').textContent).toContain('No chats or sessions'));
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(view.queryByTestId('dsn-thread-pop')).toBeNull());
+    await waitFor(() => expect(view.queryByTestId('crf-side-pop')).toBeNull());
+  });
+
+  it('draws the 2nd panel header: title, chats icon, the list, ＋ New chat, ＋ New session', async () => {
+    const { view } = await mountCraft();
+    const head = await waitFor(() => view.getByTestId('crf-side-head'));
+    await waitFor(() => expect(within(head).getByTestId('crf-side-title').textContent).toBe('Launch plan'));
+    expect(within(head).getByTestId('crf-side-chats-icon')).toBeTruthy();
+    expect(within(head).getByTestId('crf-side-picker')).toBeTruthy();
+    expect(within(head).getByTestId('crf-new-chat').textContent).toContain('New chat');
+    /* No Workspace host here, so no spawn: the button says why. */
+    const newSession = within(head).getByTestId('crf-new-session') as HTMLButtonElement;
+    expect(newSession.disabled).toBe(true);
+    expect(newSession.title).toBe('Sessions launch from the app.');
   });
 
   it('returns to the composer when ＋ New chat is pressed after a send created a thread', async () => {
     const { view } = await mountCraft();
-    const picker = await waitFor(() => view.getByTestId('dsn-thread-picker'));
+    const picker = await waitFor(() => view.getByTestId('crf-side-picker'));
     await waitFor(() => expect(picker.textContent).toContain('New chat'));
     fireEvent.change(await waitFor(() => view.getByLabelText('Message the chat agent')), {
       target: { value: 'Draft the plan.' },
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
-    await waitFor(() => expect(view.getByTestId('dsn-thread-picker').textContent).not.toContain('New chat'));
-    fireEvent.click(view.getByTestId('dsn-new-chat'));
-    await waitFor(() => expect(view.getByTestId('dsn-thread-picker').textContent).toContain('New chat'));
+    await waitFor(() => expect(view.getByTestId('crf-side-picker').textContent).not.toContain('New chat'));
+    fireEvent.click(view.getByTestId('crf-new-chat'));
+    await waitFor(() => expect(view.getByTestId('crf-side-picker').textContent).toContain('New chat'));
   });
 });
 

@@ -193,6 +193,15 @@ describe('the selector is Work · Design · Observe · Settings', () => {
   });
 });
 
+describe('Craft: the crafts list is not the 2nd panel', () => {
+  it('the crafts home draws no crafts list in the frame panel', async () => {
+    const view = mount(at('/craft'));
+    await waitFor(() => view.getByTestId('crafts-home'));
+    expect(view.queryByRole('navigation', { name: 'Crafts' })).toBeNull();
+    expect(view.queryByTestId('crf-side')).toBeNull();
+  });
+});
+
 describe('the palette', () => {
   const openPalette = async (view: ReturnType<typeof mount>) => {
     fireEvent.keyDown(window, { key: '/' });
