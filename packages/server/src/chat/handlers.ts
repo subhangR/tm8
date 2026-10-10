@@ -4,6 +4,7 @@ import { SpawnError } from '@tm8/execution';
 import { resolve as pathResolve } from 'node:path';
 import {
   CollabError,
+  isHumanAuthKind,
   launchModel,
   type EntityId,
   type EntitySummary,
@@ -67,7 +68,7 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
     // with no directory. The RPC owns the row; this owns the id and the
     // filesystem, which are the two things SQL cannot do.
     const chatId = randomUUID();
-    if (input.credentialSelection !== undefined && !['browser', 'cli'].includes(requestClaims.authKind ?? '')) {
+    if (input.credentialSelection !== undefined && !isHumanAuthKind(requestClaims.authKind)) {
       throw new CollabError('forbidden', 'Chat credential selection requires a human session');
     }
     if (input.credentialSelection !== undefined) await chat.orchestrator.validateCredentialSelection({
@@ -146,7 +147,7 @@ function setChatCredentials(facade: FacadeDeps, chat?: ChatHandlerDeps): Operati
     const chatId = requireUuidParam(ctx, 'id') as EntityId;
     const input = ctx.body as SetChatCredentialsInput;
     const auth = claimsFor(await facade.owner(), ctx);
-    if (!['browser', 'cli'].includes(auth.authKind ?? '')) throw new CollabError('forbidden', 'Chat credential selection requires a human session');
+    if (!isHumanAuthKind(auth.authKind)) throw new CollabError('forbidden', 'Chat credential selection requires a human session');
     const [config] = await facade.db.tx(auth, q => q.query<{
       space_id: string; teammate_id: string; model: string; provider: string;
       agent_tool: string; chat_mode: import('@tm8/contract').ChatMode; cwd: string;
