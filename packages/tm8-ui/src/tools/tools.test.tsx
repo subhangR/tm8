@@ -1,0 +1,150 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { EntityDetail } from '@tm8/contract';
+import { fixtureDetails, sessionStale } from '../fixtures';
+import { ToolBody } from './ToolBody';
+import { RunDialog } from './RunDialog';
+import { fixtureTool, createToolFixture } from './fixture';
+import { UI_ACCESS_REFUSAL } from './values';
+
+vi.mock('./SourceEditor', () => ({ SourceEditor: ({ value, onChange, readOnly }: { value: string; onChange(value: string): void; readOnly?: boolean }) => <textarea aria-label="Source" value={value} readOnly={readOnly} onChange={event => onChange(event.target.value)} /> }));
+afterEach(cleanup);
+const detail = { ...fixtureDetails[sessionStale.id]!, id: fixtureTool.id, version: fixtureTool.version, state: { kind: 'tool', name: fixtureTool.definition.name, runtime: 'bash', inputCount: 5, tm8Access: 'none' }, content: { kind: 'tool', definition: fixtureTool.definition } } as EntityDetail;
+
+describe('tool definition and configuration', () => {
+  it('saves Python source and an edited input definition through the versioned operation', async () => {
+    const { port } = createToolFixture(); port.update = vi.fn(port.update);
+    render(<ToolBody detail={detail} port={port} onOpenSession={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit tool' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Runtime' }), { target: { value: 'python' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'print("hello")\n' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Input 1 name' }), { target: { value: 'target' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save tool' }));
+    await waitFor(() => expect(port.update).toHaveBeenCalledWith(expect.objectContaining({ version: 1 }), expect.objectContaining({ runtime: 'python', source: 'print("hello")\n', inputs: expect.arrayContaining([expect.objectContaining({ name: 'target', type: 'string' })]) })));
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Tool definition' })).toBeNull());
+  });
+  it('stores typed configuration and clears a secret entry, showing only its key hint', async () => {
+    const { port } = createToolFixture(); port.setConfig = vi.fn(port.setConfig); port.setSecret = vi.fn(port.setSecret);
+    render(<ToolBody detail={detail} port={port} onOpenSession={vi.fn()} />);
+    const limit = await screen.findByRole('spinbutton', { name: 'Configured limit' });
+    fireEvent.change(limit, { target: { value: '7' } }); fireEvent.click(screen.getByRole('button', { name: 'Save limit' }));
+    await waitFor(() => expect(port.setConfig).toHaveBeenCalledWith(expect.objectContaining({ version: 1 }), 'limit', 7));
+    await waitFor(() => expect(screen.getByText('Version 2')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Set secret for token' }));
+    const secret = 'private-token-abcd'; fireEvent.change(screen.getByLabelText('Secret for token'), { target: { value: secret } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save secret' }));
+    await waitFor(() => expect(port.setSecret).toHaveBeenCalledWith(expect.objectContaining({ version: 2 }), 'token', secret));
+    expect(await screen.findByText('Secret set · …abcd')).toBeTruthy();
+    expect(screen.queryByDisplayValue(secret)).toBeNull(); expect(document.body.textContent).not.toContain(secret);
+  });
+  it('offers no secret write control to an agent', async () => {
+    render(<ToolBody detail={detail} port={createToolFixture(fixtureTool, { setSecret: false }).port} />);
+    expect(await screen.findByText('Only a human can set secrets.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Set secret for token' })).toBeNull();
+  });
+});
+describe('generated Run form', () => {
+  it('prefills config and defaults, names a source editor, and opens a keep-open session', async () => {
+    const { port } = createToolFixture(); port.run = vi.fn(port.run); port.sourceChange = vi.fn(async () => ({ changedBy: 'Ada' }));
+    const open = vi.fn(), close = vi.fn(); render(<RunDialog tool={fixtureTool} port={port} onClose={close} onOpenSession={open} />);
+    expect(await screen.findByText('Source changed since your last run, by Ada.')).toBeTruthy();
+    expect((screen.getByRole('textbox', { name: 'url' }) as HTMLInputElement).value).toBe('https://example.test');
+    expect((screen.getByRole('spinbutton', { name: 'limit' }) as HTMLInputElement).value).toBe('20');
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'limit' }), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Run tool' }));
+    await waitFor(() => expect(port.run).toHaveBeenCalledWith(expect.objectContaining({ keepOpen: true, inputs: { url: 'https://example.test', limit: 8, verbose: false, state: 'open' } })));
+    await waitFor(() => expect(open).toHaveBeenCalledWith(expect.any(String))); expect(close).toHaveBeenCalled();
+  });
+  it.each(['read', 'write'] as const)('refuses %s API access with an explanation and makes no run request', async tm8Access => {
+    const { port } = createToolFixture(); port.run = vi.fn(port.run);
+    render(<RunDialog tool={{ ...fixtureTool, definition: { ...fixtureTool.definition, tm8Access } }} port={port} onClose={vi.fn()} onOpenSession={vi.fn()} />);
+    expect(screen.getByText(UI_ACCESS_REFUSAL)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('Checking source changes…')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Run tool' })); expect(port.run).not.toHaveBeenCalled();
+  });
+  it('refuses a missing required secret, without sending input values', async () => {
+    const tool = structuredClone(fixtureTool); tool.definition.inputs.find(input => input.name === 'token')!.required = true;
+    const { port } = createToolFixture(tool); port.run = vi.fn(port.run);
+    render(<RunDialog tool={tool} port={port} onClose={vi.fn()} onOpenSession={vi.fn()} />);
+    await waitFor(() => expect(screen.queryByText('Checking source changes…')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Run tool' }));
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'token: set a secret or provide one for this run.'); expect(port.run).not.toHaveBeenCalled();
+  });
+  it('clears an ephemeral secret and uses the separate request field without storing it', async () => {
+    const { port } = createToolFixture(); port.run = vi.fn(port.run);
+    render(<RunDialog tool={fixtureTool} port={port} onClose={vi.fn()} onOpenSession={vi.fn()} />);
+    await waitFor(() => expect(screen.queryByText('Checking source changes…')).toBeNull());
+    fireEvent.change(screen.getByLabelText('token'), { target: { value: 'one-run-secret' } }); fireEvent.click(screen.getByRole('button', { name: 'Run tool' }));
+    await waitFor(() => expect(port.run).toHaveBeenCalledWith(expect.objectContaining({ secrets: { token: 'one-run-secret' }, inputs: expect.not.objectContaining({ token: expect.anything() }) })));
+    expect(screen.queryByDisplayValue('one-run-secret')).toBeNull();
+    const [request] = (port.run as ReturnType<typeof vi.fn>).mock.calls[0]!; const run = await port.runGet((await port.run(request)).sessionId); expect(JSON.stringify(run)).not.toContain('one-run-secret');
+  });
+  it('blocks launch if the source-change check fails', async () => {
+    const { port } = createToolFixture(); port.sourceChange = vi.fn(async () => { throw new Error('source changed'); }); port.run = vi.fn(port.run);
+    render(<RunDialog tool={fixtureTool} port={port} onClose={vi.fn()} onOpenSession={vi.fn()} />);
+    await screen.findByRole('alert'); fireEvent.click(screen.getByRole('button', { name: 'Run tool' })); expect(port.run).not.toHaveBeenCalled();
+  });
+});
+
+it('preserves an unsaved source draft when a newer tool version arrives', async () => {
+  const { port } = createToolFixture();
+  const host = render(<ToolBody detail={detail} port={port} onOpenSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit tool' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo my-unsaved-draft\n' } });
+  host.rerender(<ToolBody detail={{ ...detail, version: 2 }} port={port} onOpenSession={vi.fn()} />);
+  expect(screen.getByRole('textbox', { name: 'Source' })).toHaveProperty('value', 'echo my-unsaved-draft\n');
+  expect(screen.getByText(/Your draft is preserved/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Run', exact: true })).toHaveProperty('disabled', true);
+  expect(screen.getByRole('button', { name: 'Run', exact: true }).title).toBe('Save or discard changes to run.');
+});
+
+it('saves a preserved draft at its loaded version and requires an explicit overwrite after a conflict', async () => {
+  const { port } = createToolFixture();
+  const update = port.update; port.update = vi.fn(update);
+  const host = render(<ToolBody detail={detail} port={port} onOpenSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit tool' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo my-draft\n' } });
+  await update(fixtureTool, { ...fixtureTool.definition, source: 'echo newer-source\n' });
+  host.rerender(<ToolBody detail={{ ...detail, version: 2 }} port={port} onOpenSession={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Save tool' }));
+  await screen.findByRole('region', { name: 'Version conflict' });
+  expect(port.update).toHaveBeenCalledTimes(1);
+  expect(port.update).toHaveBeenLastCalledWith(expect.objectContaining({ version: 1 }), expect.objectContaining({ source: 'echo my-draft\n' }));
+  expect((await port.get(fixtureTool.id)).definition.source).toBe('echo newer-source\n');
+  expect(screen.getByRole('button', { name: 'Save tool' })).toHaveProperty('disabled', true);
+  fireEvent.click(screen.getByRole('button', { name: 'Overwrite with my draft' }));
+  await waitFor(() => expect(screen.queryByRole('form', { name: 'Tool definition' })).toBeNull());
+  expect(port.update).toHaveBeenLastCalledWith(expect.objectContaining({ version: 2 }), expect.objectContaining({ source: 'echo my-draft\n' }));
+});
+
+it('rebases a draft onto newer fields and requires review when both editors changed the source', async () => {
+  const { port } = createToolFixture();
+  const update = port.update; port.update = vi.fn(update);
+  render(<ToolBody detail={detail} port={port} onOpenSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit tool' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo my-draft\n' } });
+  await update(fixtureTool, { ...fixtureTool.definition, source: 'echo newer-source\n', description: 'New description' });
+  fireEvent.click(screen.getByRole('button', { name: 'Save tool' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Rebase draft' }));
+  expect(screen.getByRole('textbox', { name: 'Description', exact: true })).toHaveProperty('value', 'New description');
+  expect(screen.getByRole('textbox', { name: 'Source' })).toHaveProperty('value', 'echo my-draft\n');
+  expect(screen.getByRole('button', { name: 'Save tool' })).toHaveProperty('disabled', true);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo manually-merged\n' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: 'I reviewed and merged the conflicting fields.' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save tool' }));
+  await waitFor(() => expect(screen.queryByRole('form', { name: 'Tool definition' })).toBeNull());
+  expect(port.update).toHaveBeenLastCalledWith(expect.objectContaining({ version: 2 }), expect.objectContaining({ source: 'echo manually-merged\n', description: 'New description' }));
+});
+
+it('enables Run again after an unsaved draft is discarded', async () => {
+  render(<ToolBody detail={detail} port={createToolFixture().port} onOpenSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit tool' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Source' }), { target: { value: 'echo unsaved\n' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Run', exact: true }));
+  expect(screen.queryByRole('dialog', { name: 'Run url-check' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Run', exact: true })).toHaveProperty('disabled', false));
+  fireEvent.click(screen.getByRole('button', { name: 'Run', exact: true }));
+  expect(await screen.findByRole('dialog', { name: 'Run url-check' })).toBeTruthy();
+});

@@ -62,16 +62,16 @@ const SPACE_PASSWORD = 'space password, human-only (W5, 268): refuses link';
 const SERVERS = 'servers write or gate-token open, human-only by design (W8)';
 const PATH_GRANTS = 'node path-grant write, human gate admin only (282): refuses link';
 const OP_REQUESTS = 'op request decision, human-only by design (L5, 280): refuses link and agent';
-const SEEN_STATE = 'personal seen state, human-only by design (313): refuses link and agent';
 
 const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
+  // Tool secret writes are human-only; the shared storage guard gates binding writes.
+  // read_tool_credential deliberately admits agent invokers under owner/share visibility.
+  'bind_tool_secret(uuid,integer,text,uuid,boolean,uuid,text)': CREDENTIAL_MANAGEMENT,
+  'create_tool_credential(uuid,uuid,uuid,text,text,text,bytea,bytea,integer,uuid,text)': CREDENTIAL_MANAGEMENT,
+  'internal.guard_tool_input_storage()': CREDENTIAL_MANAGEMENT,
   // MCP connector consent and persisted chat selections are human-only writes.
   'create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamp with time zone,boolean,integer)': CREDENTIAL_MANAGEMENT,
   'save_chat_mcp_selections(uuid,jsonb)': CREDENTIAL_MANAGEMENT,
-  // 314 (#1158): which credential a chat's next turn spends, human-only.
-  'set_chat_credentials(uuid,jsonb)': CREDENTIAL_MANAGEMENT,
-  // 313 (#1122): seen state is the signed-in member's own, never a link's or an agent's.
-  'mark_entity_seen(uuid,text)': SEEN_STATE,
   'claim_space_credential(uuid)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
   'clear_my_space_credential_default(uuid,text)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
   // W10b (255, #869) drops the 9-arg overload for this 12-arg one.
@@ -369,9 +369,9 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 33 credential management + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 op request decision (L5, 280) + 1 seen state (313)', () => {
+  it('the list is 36 credential management + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 op request decision (L5, 280)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
-    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(34); // +3 share/unshare/list (992), +2 MCP consent/selections (297/298), +1 chat credentials (314)
+    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(36); // +3 tool secret writers (318)
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(12); // +4 W9c (301): add_remote, grant_remote, remote context, store_remote
@@ -379,8 +379,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
     expect(labels.filter((l) => l === OP_REQUESTS)).toHaveLength(1);
-    expect(labels.filter((l) => l === SEEN_STATE)).toHaveLength(1);
-    expect(labels).toHaveLength(66); // +3 (992); +4 -2 W9c (301); +2 MCP (297/298); +1 seen (313); +1 chat credentials (314)
+    expect(labels).toHaveLength(67); // +3 tool secret writers (318)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

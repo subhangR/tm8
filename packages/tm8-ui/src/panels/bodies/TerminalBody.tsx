@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
+import { ToolRunChip } from '../../tools/ToolRunChip';
+import '../../tools/tools.css';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
 import type { ActionRef } from '../../domain';
@@ -244,6 +246,7 @@ export function TerminalBody({
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
+      {'toolRun' in detail.state && detail.state.toolRun && <ToolRunChip run={detail.state.toolRun} shellLive={liveness === 'live'} />}
       <div className="pn-terminal-stage" data-testid="terminal-stage" ref={stageRef}>
         <SessionCanvas
           presentation={presentation}

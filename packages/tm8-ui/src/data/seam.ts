@@ -1098,6 +1098,7 @@ export interface Seam {
      * synthesized id the caller could not reconcile.
      */
     skills?: SkillPort;
+    tools?: import("../tools/port").ToolPort;
     /**
      * The managed panel's port (task 01a0e24d): credential, space link and
      * server verbs by OPERATION name, gated by `actions.list`. Optional like

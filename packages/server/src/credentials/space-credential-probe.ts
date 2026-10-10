@@ -16,7 +16,7 @@
  * The secret goes into ONE request header and nowhere else: not a URL, not a
  * log line, not an error (I5). Failures carry an HTTP status or an error NAME.
  */
-import { isServerOnlyCredentialProvider } from '@tm8/contract';
+import { isServerOnlyCredentialProvider, type ServerOnlyCredentialProviderName } from '@tm8/contract';
 
 import type { SpaceCredentialStoredProvider } from './space-credential-store.js';
 
@@ -47,7 +47,7 @@ interface VendorRequest {
   headers(secret: string): Record<string, string>;
 }
 
-const VENDORS: Record<Exclude<SpaceCredentialStoredProvider, 'typesafe' | 'mcp'>, VendorRequest> = {
+const VENDORS: Record<Exclude<SpaceCredentialStoredProvider, ServerOnlyCredentialProviderName>, VendorRequest> = {
   anthropic: {
     url: 'https://api.anthropic.com/v1/models?limit=1',
     headers: (secret) => ({ 'x-api-key': secret, 'anthropic-version': '2023-06-01' }),

@@ -29,6 +29,7 @@ export const WORKSPACE_KINDS = [
   'pull_request',
   'project',
   'skill',
+  'tool',
   'channel',
 ] as const;
 export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
