@@ -118,7 +118,9 @@ import {
   type ResolveChatLaunchConfig,
   type ResolveChatCredentialEnv,
   type ResolveChatPreparedLaunch,
+  type ChatHarnessComposition,
 } from './chat/index.js';
+import { ChatCleanupRetryQueue } from './chat/cleanup-retries.js';
 
 export interface ChatBootstrapOptions {
   readonly runtime: AgentRuntime;
@@ -139,6 +141,7 @@ export type ChatBootstrapFactory = (ctx: {
   dataDir: string;
   baseUrl: string;
   nodeId: string;
+  onCleanupFailure?: ChatHarnessComposition['onCleanupFailure'];
 }) => ChatBootstrapOptions;
 
 export interface BootstrapOptions {
@@ -344,12 +347,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // pushed to the owner's own windows over that bridge.
   const workspaceService = db ? new WorkspaceService({ db, bridge: workspaceBridge }) : undefined;
   const subscriptions = new SubscriptionRegistry();
+  const chatCleanupRetries = new ChatCleanupRetryQueue();
   // Factory callers get the composed context; block callers pass through
   // unchanged (every test harness injects the block form directly).
   const chatBlock: ChatBootstrapOptions | undefined =
     db && opts.chat
       ? typeof opts.chat === 'function'
-        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}`, nodeId: desktopNodeId(dataDir) })
+        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}`, nodeId: desktopNodeId(dataDir),
+            onCleanupFailure: chatCleanupRetries.schedule })
         : opts.chat
       : undefined;
   const chat = db && chatBlock
@@ -850,6 +855,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
+  server.http.once('close', () => chatCleanupRetries.stop());
   const { url } = await server.listen();
 
   // Retention, on boot and never on the request path: an expired date-bucket is
