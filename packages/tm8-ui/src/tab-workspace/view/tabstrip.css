@@ -23,6 +23,29 @@
   padding-left: var(--pn-space-3);
 }
 
+/* ---- the tab scope: the strip's left-most tab (owner, 2026-10-10) ----
+   A small TAB, not a pill: full band height, square corners, flush against
+   the browser's edge (the strip's left padding is cancelled), closed by a
+   hairline on its right like a tab's seam. With the Restore cluster leading
+   (navigation expanded away) it follows that cluster instead. */
+.tws-ts-scope {
+  display: flex;
+  flex: none;
+  height: var(--tws-header-h, 40px);
+  margin-left: calc(-1 * var(--pn-space-2));
+  border-right: 1px solid var(--tws-band-line, var(--pn-line));
+}
+.tws-strip.tws-ts[data-has-leading] .tws-ts-scope {
+  margin-left: 0;
+  border-left: 1px solid var(--tws-band-line, var(--pn-line));
+}
+.tws-ts-scope .tws-scope-btn {
+  height: 100%;
+  padding: 0 var(--pn-space-2);
+  border-radius: 0;
+  font-size: var(--pn-fs-label);
+}
+
 .tws-ts-leading {
   display: flex;
   align-items: center;

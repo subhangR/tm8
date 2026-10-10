@@ -8,6 +8,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { homeRootKinds } from '../../domain';
+import { DESIGN_KIND } from '../../domain/design';
 import { loadRailPins } from '../../stores/homeRailStore';
 import { getRailStore, RAIL_EXPANDED_KEY, railPinsKey, resetRailStores } from '../runtime/railStore';
 import { createWorkspaceStore } from '../runtime/store';
@@ -177,6 +178,15 @@ describe('the kind list', () => {
     fireEvent.click(kindButtons('credential')[0]!);
     expect(gate.navigateTo).toHaveBeenCalledWith({ type: 'kind', ref: 'credential' });
     expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('the craft kind opens Craft mode, not a list (Craft redesign §2)', () => {
+    const navigateView = vi.fn();
+    const { dispatch, gate } = mount({ navigateView });
+    fireEvent.click(kindButtons(DESIGN_KIND)[0]!);
+    expect(navigateView).toHaveBeenCalledWith({ view: 'craft' });
+    expect(gate.navigateTo).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('any kind can be pinned, not only the ones Work holds', () => {

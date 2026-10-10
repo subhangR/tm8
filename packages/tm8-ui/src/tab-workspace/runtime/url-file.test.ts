@@ -41,7 +41,7 @@ afterEach(() => {
 describe('file tab address: codec', () => {
   it('round-trips project and path, dots and slashes included', () => {
     const hash = hashOf(workspaceFileView(FILE));
-    expect(hash).toMatch(/\/work\?.*fp=proj-1/);
+    expect(hash).toMatch(/\/home\?.*fp=proj-1/);
     expect(parse(hash).route?.target).toEqual({ view: 'tabs', file: FILE });
   });
 

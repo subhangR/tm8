@@ -146,13 +146,15 @@ function ScopePopover({
   const titleId = useId();
   const statusId = useId();
 
-  // Anchored under the trigger, right edges aligned (design log §8). Fixed,
-  // so the strip's overflow never clips it.
+  // Anchored under the trigger, LEFT edges aligned: the trigger is the strip's
+  // left-most tab (Craft redesign §2), so the popover opens over the content
+  // rather than back across the browser. Fixed, so the strip's overflow never
+  // clips it.
   useLayoutEffect(() => {
     const place = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setPosition({ top: rect.bottom + POPOVER_GAP, right: Math.max(window.innerWidth - rect.right, POPOVER_GAP) });
+      setPosition({ top: rect.bottom + POPOVER_GAP, left: Math.max(rect.left, POPOVER_GAP) });
     };
     place();
     window.addEventListener('resize', place);
