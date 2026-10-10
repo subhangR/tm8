@@ -18,6 +18,6 @@ export interface ToolPort {
   unsetSecret(tool: ToolView, inputName: string): Promise<unknown>;
   history(toolId: string, cursor?: string): Promise<{ items: ToolRun[]; nextCursor: string | null }>;
   sourceChange(tool: ToolView): Promise<ToolSourceChange | null>;
-  run(input: ToolRunInput): Promise<{ sessionId: string }>;
+  run(input: ToolRunInput & { expectedVersion: number }): Promise<{ sessionId: string }>;
   runGet(sessionId: string): Promise<ToolRun>;
 }

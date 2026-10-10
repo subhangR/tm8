@@ -40,7 +40,7 @@ export function RunDialog({ tool, port, onClose, onOpenSession }: { tool: ToolVi
       let resolved: ReturnType<typeof runValues>;
       try { resolved = runValues(tool, values, secrets); } catch (failure) { setError(failure instanceof Error ? failure.message : 'Check the inputs.'); return; }
       setBusy(true); setSecrets({});
-      void port.run({ toolId: tool.id, clientMutationId: `tool-run-${crypto.randomUUID()}`, keepOpen: true, ...resolved }).then(run => { onOpenSession(run.sessionId); onClose(); }, () => { setError('The tool could not be started. Check input values, secret access and permissions, then try again.'); setBusy(false); });
+      void port.run({ toolId: tool.id, expectedVersion: tool.version, clientMutationId: `tool-run-${crypto.randomUUID()}`, keepOpen: true, ...resolved }).then(run => { onOpenSession(run.sessionId); onClose(); }, () => { setError('The tool could not be started. Check input values, secret access and permissions, then try again.'); setBusy(false); });
     }}>
       {tool.definition.inputs.map(input => <label key={input.name} className="tool-field"><span>{input.name}{input.required ? ' · required' : ''}</span>
         {input.description && <small>{input.description}</small>}

@@ -1,4 +1,4 @@
-import { CollabError, isOperationName, isRefusedActionRow, type ToolRun, type ToolRunInput, type ToolView } from '@tm8/contract';
+import { CollabError, isOperationName, isRefusedActionRow, type ToolRun, type ToolView } from '@tm8/contract';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { ToolPort } from './port';
@@ -34,7 +34,7 @@ export function createToolPort(http: HttpClient, seam: Pick<Seam, 'connections' 
       const change = current.sourceChangedSinceViewerLastRun;
       return change ? { changedBy: change.byActor?.displayName ?? 'an unknown author' } : null;
     },
-    run: (input: ToolRunInput) => call<{ sessionId: string }>('tools.run', { params: { toolId: input.toolId }, body: input }),
+    run: input => call<{ sessionId: string }>('tools.run', { params: { toolId: input.toolId }, body: input }),
     runGet: sessionId => call<ToolRun>('tools.runs.get', { params: { sessionId } }),
   };
 }
