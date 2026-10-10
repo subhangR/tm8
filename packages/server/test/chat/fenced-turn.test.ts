@@ -95,6 +95,29 @@ it.each(['unknown','not_sent','reject','timeout'] as const)('preserves a durable
   expect(completion.args[8]).toMatchObject({outcome:'completed',evidence:'provider_terminal'});
   expect(f.events.filter(e=>e==='submit')).toHaveLength(1);
 });
+it.each(['transient','permanent'] as const)('requires the same normalized done write to persist after a %s failure',async fault=>{
+  const f=fixture();const rpc=f.options.db.rpc.bind(f.options.db);const attempts:{seq:unknown;event:unknown}[]=[];
+  f.options.db.rpc=async(auth,name,args)=>{
+    if(name==='append_chat_message_part' && args?.[2]==='done') {
+      attempts.push({seq:args[1],event:args[6]});
+      if(fault==='permanent' || attempts.length===1)throw new Error('done write unavailable');
+    }
+    return rpc(auth,name,args);
+  };
+  if(fault==='permanent') {
+    await expect(executeFencedTurn(f.options)).rejects.toThrow('done write unavailable');
+    expect(f.calls.some(c=>c.name==='complete_chat_turn')).toBe(false);
+    expect(f.publish.mock.calls.some(c=>c[1].type==='chat.turn.done')).toBe(false);
+    expect(f.calls.find(c=>c.name==='record_chat_terminal')!.args[3]).toMatchObject({outcome:'completed',evidence:'provider_terminal'});
+  } else {
+    await executeFencedTurn(f.options);
+    expect(f.calls.find(c=>c.name==='complete_chat_turn')!.args[1]).toBe('completed');
+    expect(f.calls.filter(c=>c.name==='append_chat_message_part' && c.args[2]==='done')).toHaveLength(1);
+    expect(f.publish.mock.calls.some(c=>c[1].type==='chat.turn.done')).toBe(true);
+  }
+  expect(attempts).toHaveLength(2);expect(attempts[0]).toEqual(attempts[1]);
+  expect(f.events.filter(e=>e==='submit')).toHaveLength(1);
+});
 it('keeps the lease until exact resource cleanup succeeds and then wakes the queued drain',async()=>{
   const f=fixture();f.options.timeouts!.cleanupRetry=5;
   let available=false;

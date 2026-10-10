@@ -271,11 +271,14 @@ alter table public.chat_native_bindings enable row level security;
 alter table public.chat_turn_attempts enable row level security;
 alter table public.chat_context_checkpoints enable row level security;
 create policy chat_native_bindings_read on public.chat_native_bindings for select to tm8_app
-  using (internal.entity_readable(chat_id));
+  using (exists(select 1 from public.entities readable_entity
+    where readable_entity.id=chat_native_bindings.chat_id and readable_entity.deleted_at is null offset 0));
 create policy chat_turn_attempts_read on public.chat_turn_attempts for select to tm8_app
-  using (internal.entity_readable(chat_id));
+  using (exists(select 1 from public.entities readable_entity
+    where readable_entity.id=chat_turn_attempts.chat_id and readable_entity.deleted_at is null offset 0));
 create policy chat_context_checkpoints_read on public.chat_context_checkpoints for select to tm8_app
-  using (internal.entity_readable(chat_id));
+  using (exists(select 1 from public.entities readable_entity
+    where readable_entity.id=chat_context_checkpoints.chat_id and readable_entity.deleted_at is null offset 0));
 grant select on public.chat_native_bindings, public.chat_turn_attempts, public.chat_context_checkpoints to tm8_app;
 -- Immutable source and attempt fields: lifecycle receipts can advance only.
 create function internal.chat_immutable_turn() returns trigger language plpgsql as $$
@@ -611,6 +614,13 @@ begin
       or p_terminal->>'evidence' is distinct from 'provider_terminal')) then
     raise exception 'stale or unproved chat completion' using errcode='42501';
   end if;
+  if p_terminal ? 'donePart' and not exists(select 1 from public.message_parts
+    where message_id=t.agent_message_id and execution_snapshot_id=p_snapshot_id
+      and normalized_event_id=p_terminal->'donePart'->>'eventId'
+      and seq=(p_terminal->'donePart'->>'seq')::integer and kind='done'
+      and payload=p_terminal->'donePart'->'payload') then
+    raise exception 'normalized terminal part is not durable' using errcode='23514';
+  end if;
   perform internal.chat_complete_legacy_314(p_turn_id,p_state,p_body,p_usage,p_total_cost_usd,p_failure);
   update public.chats set history_seq=history_seq+1,runtime_phase='closing',runtime_state='stopped'
     where entity_id=t.chat_id returning history_seq into settled;
@@ -652,6 +662,7 @@ end $$;
 create function public.recover_chat_attempt(p_chat_id uuid,p_turn_id uuid,p_expected_attempt integer,p_recovery_owner jsonb)
 returns jsonb language plpgsql security definer set search_path=public,internal,pg_temp as $$
 declare c public.chats; t public.chat_turns; a public.chat_turn_attempts; disposition text; seq bigint; terminal jsonb;
+  done_event text; done_seq integer; done_payload jsonb; done_stored public.message_parts;
 begin
   perform internal.require_identity();
   select * into c from public.chats where entity_id=p_chat_id for update;
@@ -682,6 +693,29 @@ begin
   else
     terminal:=a.provider_terminal;
     disposition:=case when terminal->>'evidence'='provider_terminal' then 'finalized_terminal' else 'settled_unknown' end;
+    if disposition='finalized_terminal' and t.agent_message_id is not null then
+      done_event:=coalesce(terminal->'donePart'->>'eventId','server:recovery:'||a.snapshot_id::text||':done');
+      done_payload:=coalesce(terminal->'donePart'->'payload',jsonb_build_object('reason',
+        case when terminal->>'outcome'='completed' then 'success' when terminal->>'outcome'='interrupted' then 'interrupted' else 'error' end));
+      select * into done_stored from public.message_parts where message_id=t.agent_message_id
+        and execution_snapshot_id=a.snapshot_id and normalized_event_id=done_event;
+      if done_stored.message_id is null then
+        select coalesce((terminal->'donePart'->>'seq')::integer,coalesce(max(p.seq)+1,0)) into done_seq
+          from public.message_parts p where p.message_id=t.agent_message_id;
+        -- Restore only the inert normalized terminal part, in the same recovery
+        -- transaction as settlement. No provider submission or tool dispatch.
+        perform internal.chat_append_legacy_314(t.agent_message_id,done_seq,'done',done_payload);
+        select p.* into done_stored from public.message_parts p where p.message_id=t.agent_message_id and p.seq=done_seq;
+        if done_stored.kind<>'done' or done_stored.payload<>done_payload
+          or (done_stored.normalized_event_id is not null and done_stored.normalized_event_id<>done_event) then
+          raise exception 'recovered terminal part conflicts with recorded output' using errcode='23514';
+        end if;
+        update public.message_parts p set execution_snapshot_id=a.snapshot_id,normalized_event_id=done_event
+          where p.message_id=t.agent_message_id and p.seq=done_seq;
+      elsif done_stored.kind<>'done' or done_stored.payload<>done_payload then
+        raise exception 'normalized terminal replay mismatch' using errcode='23514';
+      end if;
+    end if;
     perform internal.chat_complete_legacy_314(p_turn_id,
       case when disposition='finalized_terminal' and terminal->>'outcome'='completed' then 'completed' else 'error' end,
       coalesce(terminal->>'body','Runtime interrupted; delivery or effects may be unknown.'),
@@ -704,6 +738,24 @@ end $$;
 
 -- Narrow, chat-specific authority proof. Holding a SHARE lock until the effect
 -- commits serializes graph effects with a competing generation replacement.
+-- Legacy grants remain usable only before that same chat acquires a generation.
+-- Both absent stamps are required; partial metadata never takes this branch.
+create function internal.chat_legacy_runtime_valid(p_session_id uuid,p_identity text) returns boolean
+language sql stable security definer set search_path=public,internal,pg_temp as $$
+  select exists(select 1 from public.auth_sessions s join public.accounts account on account.id=s.account_id
+    join public.chats c on c.entity_id=s.runtime_chat_id
+    join public.entities chat_entity on chat_entity.id=c.entity_id
+    join public.members member on member.entity_id=s.runtime_member_id
+    join public.team_members teammate on teammate.entity_id=s.acting_as_team_member_id
+    join public.entities teammate_entity on teammate_entity.id=teammate.entity_id
+    where s.id=p_session_id and s.kind='agent_runtime' and s.runtime_epoch is null
+      and s.runtime_native_generation is null and c.runtime_epoch=0
+      and s.revoked_at is null and s.expires_at>now() and account.status='active' and account.identity_id=p_identity
+      and member.identity_id=p_identity and member.status='active' and member.space_id=c.space_id
+      and s.space_id=c.space_id and chat_entity.deleted_at is null
+      and teammate.deactivated_at is null and teammate_entity.deleted_at is null and teammate_entity.space_id=c.space_id);
+$$;
+revoke all on function internal.chat_legacy_runtime_valid(uuid,text) from public;
 create function internal.assert_chat_generation(p_allow_prepared boolean) returns void language plpgsql volatile
 security definer set search_path=public,internal,pg_temp as $$
 declare s public.auth_sessions; c public.chats; a public.chat_turn_attempts; identity text:=internal.claim_text('tm8.identity_id');
@@ -713,6 +765,8 @@ begin
       and x.revoked_at is null and x.expires_at>clock_timestamp() and account.status='active'
       and account.identity_id=identity;
   select * into c from public.chats where entity_id=s.runtime_chat_id for share;
+  if internal.chat_legacy_runtime_valid(s.id,identity)
+    and (internal.session_space_id() is null or c.space_id=internal.session_space_id()) then return; end if;
   select * into a from public.chat_turn_attempts where snapshot_id=c.active_execution_snapshot_id;
   if s.id is null or c.entity_id is null or s.runtime_epoch is distinct from c.runtime_epoch
     or s.runtime_native_generation is distinct from a.native_generation or a.runtime_epoch is distinct from c.runtime_epoch
@@ -799,9 +853,11 @@ revoke all on function internal.chat_mint_legacy_314(uuid,uuid,text,timestamptz,
 create function public.issue_agent_runtime_session(p_chat_id uuid,p_team_member_id uuid,p_token_hash text,
  p_expires_at timestamptz,p_label text default null) returns jsonb language plpgsql security definer
 set search_path=public,internal,pg_temp as $$
+declare c public.chats;
 begin
   perform internal.require_identity();
-  if exists(select 1 from public.chats where entity_id=p_chat_id and runtime_epoch>0) then
+  select * into c from public.chats where entity_id=p_chat_id for update;
+  if c.runtime_epoch>0 then
     raise exception 'generation runtime grant required' using errcode='42501';
   end if;
   return internal.chat_mint_legacy_314(p_chat_id,p_team_member_id,p_token_hash,p_expires_at,p_label);
@@ -876,7 +932,8 @@ security definer set search_path=public,internal,pg_temp as $$
     'spaceId',s.space_id,'viaLinkId',s.via_link_id,'expiresAt',s.expires_at,'label',s.label)
   from public.auth_sessions s join public.accounts a on a.id=s.account_id
   where s.token_hash=p_token_hash and s.revoked_at is null and s.expires_at>now() and a.status='active'
-    and (s.kind<>'agent_runtime' or exists(select 1 from public.chats c
+    and (s.kind<>'agent_runtime' or internal.chat_legacy_runtime_valid(s.id,a.identity_id)
+      or exists(select 1 from public.chats c
       join public.chat_turn_attempts t on t.snapshot_id=c.active_execution_snapshot_id
       where c.entity_id=s.runtime_chat_id and c.runtime_epoch=s.runtime_epoch
         and t.native_generation=s.runtime_native_generation and t.runtime_epoch=c.runtime_epoch
@@ -1031,5 +1088,18 @@ begin
     'agentTool',c.agent_tool,'reasoningEffort',c.reasoning_effort,'credentialIntent',intent,'credentialSelection',p_selection),internal.new_id()::text);
   return jsonb_build_object('chatId',p_chat_id,'credentialSelection',p_selection);
 end $$;
+
+-- Preserve caller-owned active-member proof while computing the pinned space
+-- membership set once per statement, as for the other member-space policies.
+alter policy entity_seen_select on public.entity_seen using (
+  member_id in (select m.entity_id from public.members m
+    where m.identity_id=internal.identity_id() and m.status='active'
+      and m.space_id=any((select internal.member_space_ids())::uuid[]))
+);
+
+analyze public.chat_context_checkpoints;
+analyze public.chat_native_bindings;
+analyze public.chat_turn_attempts;
+analyze public.entity_seen;
 
 reset role;

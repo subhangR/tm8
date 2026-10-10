@@ -84,6 +84,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   let seq=Number(turn.nextSeq);
   let agentMessageId=turn.agentMessageId;
   let terminal: {outcome:TerminalOutcome;evidence:'provider_terminal'|'process_exit'|'reconciliation'} | null=null;
+  let terminalPart: {eventId:string;seq:number;payload:{reason:'success'|'interrupted'|'error'};persisted:boolean} | undefined;
   let failure: {code:string;message:string} | null=null;
   let completed=false;
   let settled=false;
@@ -98,10 +99,10 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   const usage=new UsageAccumulator();
   const text=() => [...textItems.values()].map(item=>item.text).join('');
   const rpc=<T>(name:string,args:readonly unknown[]) => db.rpc<T>(auth,name,args);
-  const append=async (kind:string,payload:unknown,event:string) => {
+  const append=async (kind:string,payload:unknown,event:string,partSeq=seq) => {
     if (!agentMessageId || !snapshotId) throw new Error('chat output has no sealed message');
     const stored=await rpc<unknown>('append_chat_message_part',
-      [agentMessageId,seq,kind,payload,leaseFence,snapshotId,event]);
+      [agentMessageId,partSeq,kind,payload,leaseFence,snapshotId,event]);
     const part=MessagePartSchema.parse(stored);
     options.publisher.publish(turn.spaceId,{type:'chat.turn.delta',chatId:turn.chatId,messageId:agentMessageId,seq:part.seq,part});
     seq=Math.max(seq,part.seq+1);
@@ -144,8 +145,19 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     options.onError?.(error); void session?.cancel({turnId:turn.turnId,attemptId:snapshotId ?? '',configRevision:turn.configRevision},'revocation');
   }); },30_000);
   heartbeat.unref();
+  const persistTerminalPart=async () => {
+    if (!terminalPart) throw new Error('terminal has no normalized part');
+    if (!terminalPart.persisted) {
+      await append('done',terminalPart.payload,terminalPart.eventId,terminalPart.seq);
+      terminalPart.persisted=true;
+    }
+  };
   const settleTerminal=async (proofTerminal: NonNullable<typeof terminal>) => {
-    const proof={...proofTerminal,body:text(),usage:usage.value(),failure};
+    terminalPart ??= {eventId:`server:${snapshotId}:done`,seq,payload:{reason:proofTerminal.outcome==='completed'
+      && proofTerminal.evidence==='provider_terminal' ? 'success' : proofTerminal.outcome==='interrupted' ? 'interrupted' : 'error'},persisted:false};
+    await persistTerminalPart();
+    const proof={...proofTerminal,body:text(),usage:usage.value(),failure,
+      ...(terminalPart ? {donePart:{eventId:terminalPart.eventId,seq:terminalPart.seq,payload:terminalPart.payload}} : {})};
     await rpc('record_chat_terminal',[turn.chatId,leaseFence,snapshotId,proof]);
     completed=proofTerminal.outcome==='completed' && proofTerminal.evidence==='provider_terminal';
     await rpc('complete_chat_turn',[turn.turnId,completed ? 'completed' : 'error',text(),usage.value(),
@@ -258,11 +270,13 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
           failure={code:'interaction_unavailable',message:'This chat cannot resolve this runtime interaction.'};
           await append('error',failure,event);
         } else if (payload.kind==='terminal') {
-          const proof={outcome:payload.outcome,evidence:payload.evidence,body:text(),usage:usage.value(),failure};
+          terminalPart={eventId:event,seq,payload:{reason:payload.outcome==='completed' && payload.evidence==='provider_terminal'
+            ? 'success' : payload.outcome==='interrupted' ? 'interrupted' : 'error'},persisted:false};
+          const proof={outcome:payload.outcome,evidence:payload.evidence,body:text(),usage:usage.value(),failure,
+            donePart:{eventId:event,seq:terminalPart.seq,payload:terminalPart.payload}};
           await rpc('record_chat_terminal',[turn.chatId,leaseFence,snapshotId,proof]);
           terminal={outcome:payload.outcome,evidence:payload.evidence};
-          await append('done',{reason:payload.outcome==='completed' && payload.evidence==='provider_terminal'
-            ? 'success' : payload.outcome==='interrupted' ? 'interrupted' : 'error'},event);
+          await persistTerminalPart();
         }
       }
     };
@@ -290,7 +304,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     options.onError?.(error);
     // An ACK failure is weaker evidence than an already-durable provider terminal.
     // Its output parts are consumed before this branch and must not gain a second done.
-    if (terminal?.evidence==='provider_terminal') await settleTerminal(terminal);
+    if (terminal) await settleTerminal(terminal);
     else {
       failure={code:knownNotSent ? 'provider_not_sent' : barrier ? 'delivery_unknown' : 'preparation_failed',
         message:knownNotSent ? 'The provider confirmed this input was not sent.' : barrier
