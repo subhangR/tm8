@@ -300,3 +300,13 @@ require_identity public.read_space_tracking_token(p_space_id uuid)  # GUARDED: t
 require_identity public.record_tracking_poll(p_entity_id uuid, p_error text)  # GUARDED: require_tracking_space on the row's own space; writes poll bookkeeping only (306_tracking_worker_scope.sql)
 require_identity public.tracking_health(p_stale_after_seconds integer)  # GUARDED: scoped by tracking_space_ids(): every space for the tracking worker, else member_space_ids(), which is pinned (306_tracking_worker_scope.sql)
 require_identity public.tracking_sweep_staleness(p_stale_after_seconds integer)  # GUARDED: tracking worker only (42501 otherwise) (306_tracking_worker_scope.sql)
+
+# Tools: server-side secret reads are bound to a readable tool in the pinned Space.
+current_account_id internal.guard_tool_input_storage()  # GUARDED: live_entity(tool), require_space_member(space), entity_readable; human-only binding writes; credential space/provider/status and owner/public/share predicate (318)
+current_account_id public.read_tool_credential(p_space uuid, p_tool uuid, p_input_name text, p_id uuid)  # GUARDED: require_space_member(p_space), entity_readable(p_tool), exact tool/input binding and Space; links refused; owner/public/shared visibility (318)
+# Baseline 313/314 additions, audited alongside the full migration gate.
+identity_id policy entity_seen_select on table public.entity_seen  # GUARDED: own active member rows AND space_id in internal.member_space_ids() (pinned, 227), resolved once per statement (313, policy rewritten to the InitPlan shape in 320_entity_seen_policy_initplan.sql)
+identity_id public.mark_entity_seen(p_entity_id uuid, p_client_mutation_id text)  # GUARDED: entity_readable, current_member_id and human-only write before identity-scoped ledger; pinned Space inherited by membership (313)
+identity_id public.set_chat_credentials(p_chat_id uuid, p_selection jsonb)  # GUARDED: own configured_by_identity_id, explicit session_space_id conjunct, require_space_member(chat space); human only (314)
+require_identity public.set_chat_credentials(p_chat_id uuid, p_selection jsonb)  # GUARDED: own configured_by_identity_id, explicit session_space_id conjunct, require_space_member(chat space); human only (314)
+current_account_id public.issue_tool_session_agent_session(p_session_id uuid, p_team_member_id uuid, p_token_hash text, p_expires_at timestamp with time zone, p_api_scope text, p_parent_auth_session_id uuid)  # GUARDED: agent work-session only, no link; require_space_member before account read, verifies parent and participates_in persona, can_act_as, pinned version API access and least caller scope (319_tool_run_tokens.sql)

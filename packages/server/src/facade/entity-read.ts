@@ -1,3 +1,4 @@
+import { TOOL_CONTENT_SQL, TOOL_RUN_SQL, toolBindingActorIds, projectToolView, projectToolRun } from '../tools/projection.js';
 import { McpServerDefinitionSchema } from '@tm8/contract';
 import type { EffectiveSkills, OpRequestStatus, TaskLiveSession } from '@tm8/contract';
 /**
@@ -171,6 +172,7 @@ export const ENTITY_COLUMNS = `
   lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
   lp.last_error as loop_last_error,
   cht.title as chat_title, cht.teammate_id as chat_teammate_id,
+  cht.credential_selection as chat_credential_selection,
   cht.model as chat_model, cht.provider as chat_provider, cht.agent_tool as chat_agent_tool,
   cht.chat_mode as chat_mode, cht.workdir_mode as chat_workdir_mode,
   cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
@@ -183,6 +185,8 @@ export const ENTITY_COLUMNS = `
   drw.elements as drawing_elements, drw.app_state as drawing_app_state,
   drw.files as drawing_files,
   mcp.definition as mcp_definition,
+  ${TOOL_CONTENT_SQL} as tool_content,
+  ${TOOL_RUN_SQL} as ws_tool_run,
   case when e.kind='mcp_server' then internal.is_space_admin(e.space_id) else false end as mcp_manage,
   sty.title as story_title, sty.description as story_description,
   -- 283: the computed summary, one SQL function the projector twin selects
@@ -599,6 +603,7 @@ export interface EntityRow {
   loop_last_error: string | null;
   chat_title: string | null;
   chat_teammate_id: string | null;
+  chat_credential_selection: import("@tm8/contract").ChatCredentialSelection | null;
   chat_model: string | null;
   chat_provider: string | null;
   chat_agent_tool: string | null;
@@ -622,6 +627,7 @@ export interface EntityRow {
   drawing_app_state: Record<string, unknown> | null;
   drawing_files: Record<string, unknown> | null;
   mcp_definition?: unknown;
+  tool_content?: unknown; ws_tool_run?: unknown;
   mcp_manage?: boolean;
   story_title?: string | null;
   story_description?: string | null;
@@ -1627,6 +1633,7 @@ export function titleOf(row: EntityRow): string {
     case 'drawing':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.drawing_title ?? 'Drawing';
+    case 'tool': return projectToolView(row, new Map()).definition.name;
     case 'mcp_server': return McpServerDefinitionSchema.parse(row.mcp_definition).name;
     case 'story':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
@@ -1970,6 +1977,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // a server that never looked. `.strict()` refuses an explicit
         // `undefined` key, hence the spread rather than a ternary value.
         ...(row.ws_session_kind ? { sessionKind: row.ws_session_kind as WorkSessionKind } : {}),
+        ...(row.ws_tool_run ? { toolRun: projectToolRun(row.ws_tool_run, actorOf(ctx.actors, row.created_by)) } : {}),
         // The lane facts (107). `checkoutBranch` is nullable-and-present:
         // an explicit null is "measured absence / never captured — render no
         // claim", while a missing KEY would mean "server too old to know the
@@ -2076,6 +2084,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         format: row.drawing_format ?? 'excalidraw',
         elementCount: Array.isArray(row.drawing_elements) ? row.drawing_elements.length : 0,
       };
+    case 'tool': return { kind: 'tool', ...projectToolView(row, ctx.actors) };
     case 'mcp_server': return { kind: 'mcp_server', definition: McpServerDefinitionSchema.parse(row.mcp_definition) };
     case 'story':
       // 283: computed by `internal.story_summary`, which the projector twin
@@ -2101,6 +2110,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // durable claim about the headless child, `turnState` is the queue.
       return {
         kind: 'chat',
+        credentialSelection: row.chat_credential_selection ?? { source: 'auto' },
         teammateId: row.chat_teammate_id ?? '',
         model: row.chat_model ?? '',
         provider: row.chat_provider ?? '',
@@ -2482,6 +2492,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
 export function entityCapabilities(row: EntityRow): EntityCapabilities {
   const base = capabilitiesOf(row);
   const live = row.deleted_at === null;
+  if (row.kind === 'tool') return { ...base, canEdit: live, canDelete: live, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'mcp_server') return { ...base, canEdit: live && row.mcp_manage === true, canDelete: live && row.mcp_manage === true, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'project' || row.kind === 'interaction_profile') {
     return {
@@ -2810,6 +2821,7 @@ export function contentOf(row: EntityRow): EntityContent {
         appState: row.drawing_app_state ?? {},
         files: row.drawing_files ?? {},
       };
+    case 'tool': return { kind: 'tool', ...projectToolView(row, new Map()) };
     case 'mcp_server': return { kind: 'mcp_server', definition: McpServerDefinitionSchema.parse(row.mcp_definition) };
     case 'story':
       // The prose; `hydrateDetail` adds the computed page on a detail read.
@@ -3016,6 +3028,7 @@ export async function assembleSummaries(
   const allRows = [...rows, ...dependencyRows];
   const actorIds = allRows.flatMap((r) => [
     r.created_by,
+    ...toolBindingActorIds(r.tool_content),
     r.author_id ?? '',
     r.team_member_owner_id ?? '',
     // A work_session's OWN id, so `loadActors` runs its `participates_in` hop
@@ -3235,6 +3248,7 @@ export async function hydrateDetail(
   q: Querier, row: EntityRow, state: EntityState, content: EntityContent, viewerIdentityId: string,
 ): Promise<{ state: EntityState; content: EntityContent }> {
   if (row.deleted_at) return { state, content };
+  if (state.kind === 'tool') return { state, content: { ...state } };
   if (content.kind === 'form') {
     const [structure] = await q.query<{ sections: FormSectionRow[]; questions: FormQuestionRow[] }>(
       `select internal.form_sections_json($1) as sections, internal.form_questions_json($1) as questions`,

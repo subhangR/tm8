@@ -3,7 +3,7 @@ import type { McpSelection } from '../mcp/port';
 import { EntityAttentionChip } from '../attention';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CollabError } from '@tm8/contract';
-import type { ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
+import type { ChatCredentialSelection, ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import { CHATS_ROOT, KindIcon, actorName, homeQuickBirthKinds, type HomeRoot } from '../domain';
 import { rememberChatStart } from '../chat-defaults/lastUsed';
 import { Avatar, Markdown, RibbonMark, Timestamp } from '../kit';
@@ -41,6 +41,7 @@ import type { FleetEntityReader } from './fleet/use-fleet-entities';
 import type { FleetRowInput } from './fleet/fleet-rows';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { ComposerSelect, type ComposerSelectOption } from './ComposerSelect';
+import { ChatCredentialPicker, credentialValue } from './ChatCredentialPicker';
 import { ChatContextNumber, staleReason } from './ChatContextNumber';
 import {
   AddToTurnMenu,
@@ -564,6 +565,9 @@ export function ChatHomeScreen({
      the default again — that IS what the next turn would run as. */
   const [modeOverrides, setModeOverrides] = useState<Readonly<Record<string, ChatMode>>>({});
   const [teammateId, setTeammateId] = useState<EntityId | ''>('');
+  const [newCredential, setNewCredential] = useState<ChatCredentialSelection>({ source: 'auto' });
+  const [credentialOverrides, setCredentialOverrides] = useState<Readonly<Record<string, ChatCredentialSelection>>>({});
+  const [credentialsSaving, setCredentialsSaving] = useState(false);
   const [modelId, setModelId] = useState(() =>
     newChatSeed?.model && models.some((model) => model.model === newChatSeed.model)
       ? newChatSeed.model
@@ -1391,6 +1395,26 @@ export function ChatHomeScreen({
     (selectedRootId === null ? undefined : modelOverrides[selectedRootId])
     ?? activeConfig?.model
     ?? modelId;
+  const shownCredential = (selectedRootId ? credentialOverrides[selectedRootId] : undefined)
+    ?? activeConfig?.credentialSelection ?? newCredential;
+  useEffect(() => {
+    if (!selectedRootId || !activeConfig?.credentialSelection) return;
+    const override = credentialOverrides[selectedRootId];
+    if (override && credentialValue(override) === credentialValue(activeConfig.credentialSelection)) {
+      setCredentialOverrides(({ [selectedRootId]: _settled, ...rest }) => rest);
+    }
+  }, [selectedRootId, activeConfig?.credentialSelection, credentialOverrides]);
+  const chooseCredential = useCallback((next: ChatCredentialSelection) => {
+    if (!pinned) { setNewCredential(next); return; }
+    const chatId = selectedRootId;
+    if (!chatId || !port.setCredentials || credentialsSaving) return;
+    setCredentialsSaving(true);
+    fileSubmitFailure(chatId, null);
+    void port.setCredentials({ chatId, credentialSelection: next }).then(
+      saved => setCredentialOverrides(current => ({ ...current, [chatId]: saved })),
+      error => fileSubmitFailure(chatId, describeError(error)),
+    ).finally(() => setCredentialsSaving(false));
+  }, [pinned, selectedRootId, port, credentialsSaving, fileSubmitFailure]);
   const modelLockReason = !pinned
     ? null
     : port.setModel === undefined || nodeHasNoSetModel
@@ -1647,7 +1671,7 @@ export function ChatHomeScreen({
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
 
-  const sendDisabled = busy || draft.trim() === '' || refusal !== null || attachments.blocked;
+  const sendDisabled = credentialsSaving || busy || draft.trim() === '' || refusal !== null || attachments.blocked;
 
   /* THE ROOT (task 01a00932 R3 — the three-tab column generalized to chats +
      every collection kind). CONTROLLED when the host owns it (D15 per-space
@@ -1880,7 +1904,7 @@ export function ChatHomeScreen({
     const draftBody = draft.trim();
     // Teammate and model are checked on the NEW-chat path only — a turn in a
     // started thread names neither (see `selectionUnavailable`).
-    if (draftBody === '' || busy || refusal) return;
+    if (draftBody === '' || busy || credentialsSaving || refusal) return;
     /* The crew rides the opening turn (see `crewBrief`): visible before send,
        verbatim in the transcript. Only a NEW orchestrate chat has one. */
     const brief = newThread && chatMode === 'orchestrate'
@@ -2035,6 +2059,7 @@ export function ChatHomeScreen({
         ...(brief ? { title: draftBody.slice(0, 240) } : {}),
         teammateId,
         model: selectedModel.model,
+        credentialSelection: newCredential,
         mode: chatMode,
         /* Write-once (167): offered in the empty state, locked after this. */
         workdirMode: projectBinding.workdirMode,
@@ -2129,6 +2154,7 @@ export function ChatHomeScreen({
     newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId, pinnedMode,
     modeOverrides,
     mcpSelections,
+    newCredential, credentialsSaving,
   ]);
 
   const interrupt = useCallback(async () => {
@@ -2821,6 +2847,10 @@ export function ChatHomeScreen({
                     disabled={modelLockReason !== null}
                     {...(modelLockReason ? { disabledReason: modelLockReason } : {})}
                   />
+                  <ChatCredentialPicker port={port} spaceId={spaceId} value={shownCredential}
+                    onChange={chooseCredential}
+                    disabled={credentialsSaving || (pinned && (!selectedRootId || !port.setCredentials))}
+                    backendKeyOnly={models.find(model => model.model === shownModelId)?.provider.toLowerCase() !== 'anthropic'} />
                   <ModeOptionsSlot
                     mode={shownMode}
                     values={modeOptions[shownMode]}

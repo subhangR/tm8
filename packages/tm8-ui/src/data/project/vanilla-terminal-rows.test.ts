@@ -42,7 +42,8 @@ const LEGACY = session('ws_legacy', { agentTool: 'codex', model: null });
 const SHELL = session('ws_shell', { agentTool: null, model: null, sessionKind: 'shell' });
 const CREDENTIAL = session('ws_login', { agentTool: null, model: null, sessionKind: 'credential' });
 
-const ALL = [AGENT, LEGACY, SHELL, CREDENTIAL];
+const TOOL = session('ws_tool', { agentTool: null, model: null, sessionKind: 'tool' });
+const ALL = [AGENT, LEGACY, SHELL, CREDENTIAL, TOOL];
 const entities = Object.fromEntries(ALL.map((row) => [row.id, row]));
 
 describe('the session row filter is a deny-list, and a vanilla terminal survives it', () => {
@@ -70,9 +71,10 @@ describe('the session row filter is a deny-list, and a vanilla terminal survives
     });
     expect(rows.map((row) => row.id)).toContain('ws_shell');
     expect(rows.map((row) => row.id)).not.toContain('ws_login');
+    expect(rows.map((row) => row.id)).not.toContain('ws_tool');
   });
 
-  it('hides ONLY the private login terminal — never the shell, never the unlabelled row', () => {
+  it('hides login terminals and tool runs — never the shell, never the unlabelled row', () => {
     const rows = projectRows({
       ordered: ALL.map((row) => row.id),
       entities,
@@ -83,7 +85,7 @@ describe('the session row filter is a deny-list, and a vanilla terminal survives
     const hidden = ALL.filter((row) => !rows.some((kept) => kept.id === row.id));
     // Asserted as the COMPLETE hidden set rather than "shell is present": the
     // latter passes unchanged the day a fourth kind is added and dropped.
-    expect(hidden.map((row) => row.id)).toEqual(['ws_login']);
+    expect(hidden.map((row) => row.id)).toEqual(['ws_login', 'ws_tool']);
   });
 
   it('a null agentTool is not, by itself, grounds for hiding anything', () => {

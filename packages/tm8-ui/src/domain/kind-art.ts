@@ -222,6 +222,7 @@ export const KIND_ART = {
    * credential is what a session is let in with.
    */
   /** A plug: a connector links an external tool service. */
+  tool: ['M9.5 2.5a3 3 0 0 0-3.7 3.7L2.7 9.3a1.6 1.6 0 0 0 2.3 2.3l3.1-3.1a3 3 0 0 0 3.7-3.7L10 6.6 8.4 5z'],
   mcp_server: ['M5.5 2.5v3M10.5 2.5v3', 'M4 5.5h8v2a4 4 0 0 1-8 0z', 'M8 11.5v2'],
 
   credential: [

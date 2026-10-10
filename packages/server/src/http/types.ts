@@ -52,6 +52,8 @@ export interface RequestIdentity {
    * `SET LOCAL tm8.auth_kind` (083, R11), which `credentials.*` reads to refuse
    * an agent holding its owner's credential. Absent ⇒ refused.
    */
+  /** Verified immutable API scope on the auth session; absent preserves existing write scope. */
+  apiScope?: 'read' | 'write';
   authKind?: 'browser' | 'cli' | 'agent' | 'agent_runtime' | 'link';
   /** Requesting member recorded on an `agent_runtime` bearer row. */
   runtimeMemberId?: string;

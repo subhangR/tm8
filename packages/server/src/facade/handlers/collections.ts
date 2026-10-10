@@ -478,6 +478,8 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   // every row that is not a work_session at all, and a plain `<>` would drop
   // the entire graph.
   where.push(`ws.session_kind is distinct from 'credential'`);
+  // Tool sessions live in their tool's run history, including retained PTYs.
+  where.push(`ws.session_kind is distinct from 'tool'`);
 
   if (f.axes) {
     for (const [axis, values] of Object.entries(f.axes)) {

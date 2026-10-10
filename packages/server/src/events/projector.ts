@@ -1,3 +1,4 @@
+import { TOOL_CONTENT_SQL, TOOL_RUN_SQL, toolBindingActorIds, projectToolView, projectToolRun } from '../tools/projection.js';
 import { McpServerDefinitionSchema } from '@tm8/contract';
 import type { EffectiveSkills, OpRequestStatus, TaskLiveSession } from '@tm8/contract';
 /**
@@ -340,6 +341,7 @@ interface SummaryRow {
   drawing_format: string | null;
   drawing_element_count: number | null;
   mcp_definition?: unknown;
+  tool_content?: unknown; ws_tool_run?: unknown; ws_session_kind?: string | null;
   story_title: string | null;
   story_description: string | null;
   story_summary: unknown;
@@ -551,6 +553,9 @@ select
   -- and the event path must never move it. The elements are content.
   coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
   mcp.definition as mcp_definition,
+  ${TOOL_CONTENT_SQL} as tool_content,
+  ${TOOL_RUN_SQL} as ws_tool_run,
+  ws.session_kind as ws_session_kind,
   sty.title          as story_title,
   sty.description    as story_description,
   -- 283: the SAME function entity-read.ts selects — the twins mirror by
@@ -776,6 +781,7 @@ export class PgEntityProjector implements EntityProjector {
     const actorIds = new Set<string>();
     for (const r of rows) {
       actorIds.add(r.created_by);
+      for (const id of toolBindingActorIds(r.tool_content)) actorIds.add(id);
       if (r.msg_author_id !== null) actorIds.add(r.msg_author_id);
     }
     for (const authors of humanMessageAuthors.values()) {
@@ -1172,6 +1178,7 @@ export class PgEntityProjector implements EntityProjector {
       case 'drawing':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.drawing_title ?? 'Drawing';
+      case 'tool': return projectToolView(r, new Map()).definition.name;
       case 'mcp_server': return McpServerDefinitionSchema.parse(r.mcp_definition).name;
       case 'story':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
@@ -1388,6 +1395,8 @@ export class PgEntityProjector implements EntityProjector {
       case 'work_session':
         return {
           kind: 'work_session',
+          ...(r.ws_session_kind ? { sessionKind: r.ws_session_kind as import('@tm8/contract').WorkSessionKind } : {}),
+          ...(r.ws_tool_run ? { toolRun: projectToolRun(r.ws_tool_run, actors.get(r.created_by) ?? null) } : {}),
           ...(r.ws_skills ? { skills: r.ws_skills } : {}),
           status: oneOf(r.ws_status, WS_STATUSES, 'spawning'),
           agentTool: r.ws_agent_tool,
@@ -1539,6 +1548,7 @@ export class PgEntityProjector implements EntityProjector {
           format: r.drawing_format ?? 'excalidraw',
           elementCount: r.drawing_element_count ?? 0,
         };
+      case 'tool': return { kind: 'tool', ...projectToolView(r, actors) };
       case 'mcp_server': return { kind: 'mcp_server', definition: McpServerDefinitionSchema.parse(r.mcp_definition) };
       case 'story':
         // MIRRORS entity-read.ts stateOf: the same `internal.story_summary`

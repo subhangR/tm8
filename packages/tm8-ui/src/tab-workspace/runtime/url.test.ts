@@ -2,10 +2,10 @@
 import { describe, expect, it } from 'vitest';
 import { workspaceTabUrl, workspaceTabView } from './url';
 
-describe("Work's Copy link (D31: /work is canonical)", () => {
-  it('names /work with the active tab, and the bare /work without one', () => {
-    expect(workspaceTabUrl('sp-a', 'task-4f8c2a9e')).toMatch(/#\/s\/sp-a\/work\?tab=task-4f8c2a9e$/);
-    expect(workspaceTabUrl('sp-a')).toMatch(/#\/s\/sp-a\/work$/);
+describe("Home's Copy link (Craft redesign §2: /home is canonical)", () => {
+  it('names /home with the active tab, and the bare /home without one', () => {
+    expect(workspaceTabUrl('sp-a', 'task-4f8c2a9e')).toMatch(/#\/s\/sp-a\/home\?tab=task-4f8c2a9e$/);
+    expect(workspaceTabUrl('sp-a')).toMatch(/#\/s\/sp-a\/home$/);
   });
 
   it('routes to the tabs view', () => {
