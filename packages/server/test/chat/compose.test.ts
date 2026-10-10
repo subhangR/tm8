@@ -159,7 +159,7 @@ describe('chat launch composition', () => {
     expect(base).toContain('Approve → dispatch');
     expect(base).toContain('edits are real writes');
     expect(base).toContain('ORCHESTRATE coordinates');
-    expect(base).toContain('CRAFT designs with the human');
+    expect(base).toContain('CRAFT builds with the human');
     expect(base).toContain('Nothing is materialized while crafting');
     expect(base).toContain('One guarded patch per turn');
     // No variant denies a capability the mode now has.
@@ -202,14 +202,14 @@ describe('chat launch composition', () => {
     expect(craft).toContain('One guarded patch per turn');
     expect(craft).toContain('`content.findings`');
     expect(craft).toContain('ask one or two sharp questions instead of inventing structure');
-    // Craft → Designs (304): craft edits a DESIGN of ordered pages through the
-    // membership doors, and never materializes — Run on the design does
+    // Craft → Designs (304): craft edits a CRAFT (kind `design`) of ordered pages
+    // through the membership doors, and never materializes — Run on the craft does
     // (its steps live in @tm8/prompt design-context.ts), and Run does not
     // dispatch.
-    expect(craft).toContain('`design` entity holding ordered PAGES');
+    expect(craft).toContain('a CRAFT: a `design` entity holding ordered PAGES');
     expect(craft).toContain('collections.addItem {id: <design-id>, entityId, position?}');
     expect(craft).toContain('collections.removeItem takes a page out without deleting it');
-    expect(craft).toContain('A design cannot contain itself or a design above it');
+    expect(craft).toContain('A craft cannot contain itself or a craft above it');
     expect(craft).toContain('A graph page is a PLAN');
     expect(craft).toContain('Nothing is materialized while crafting, approved or not');
     expect(craft).toContain('same type, same direction');

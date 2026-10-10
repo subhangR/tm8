@@ -5,8 +5,8 @@
  * model is a setting on it (and an override per launch), so the default roster
  * names jobs rather than one teammate per catalog row. The server seeds these
  * (`packages/server/src/bootstrap/default-teammates.ts`); the names live here
- * because the UI also needs one of them — a Craft chat starts with the Graph
- * Architect when the viewer has not picked anyone.
+ * because the UI also needs one of them — a Craft chat or session starts with
+ * the Crafter when the viewer has not picked anyone.
  */
 export const HOUSE_TEAMMATE_NAMES = {
   worker: 'Worker',
@@ -15,6 +15,7 @@ export const HOUSE_TEAMMATE_NAMES = {
   helper: 'TM8 Helper',
   teammateManager: 'Teammate Manager',
   graphArchitect: 'Graph Architect',
+  crafter: 'Crafter',
   dreamer: 'Dreamer',
   dispatcher: 'Dispatcher',
 } as const;

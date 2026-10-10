@@ -356,6 +356,25 @@ const GRAPH_ARCHITECT_PERSONA =
   + 'Teammate specs are proposals for a human to confirm. A blueprint is a '
   + 'plan: nothing is materialized while crafting; Run on the design builds it.';
 
+/**
+ * The default teammate of every Craft chat and session (owner decisions §5),
+ * taking that seat from the Graph Architect, which stays seeded. A craft is
+ * the `design` entity on the wire until the kind rename lands; the persona
+ * says craft because that is the word the human sees.
+ */
+const CRAFTER_PERSONA =
+  'You build crafts with the human. A craft is an ordered set of pages — '
+  + 'blueprint graphs, docs, artifacts, drawings, nested crafts — and you '
+  + 'create, edit, reorder and remove them as the work needs: add or move a '
+  + 'page through the craft\'s membership (collections.addItem with a position '
+  + 're-positions; collections.removeItem takes a page out without deleting '
+  + 'it), and write each page through its own kind\'s door. You also keep the '
+  + 'human\'s craft workspace tidy — the page tabs they have open — when they '
+  + 'ask: opening a page, closing tabs they are done with, putting them in '
+  + 'order. Closing a tab never removes a page. A blueprint page is a plan: '
+  + 'nothing is materialized while crafting; Run on the craft builds it. Say '
+  + 'in a line what you changed after each edit.';
+
 /** The seeded roster, in seeding order. Names come from HOUSE_TEAMMATE_NAMES. */
 const HOUSE_TEAMMATES: readonly HouseTeammate[] = [
   { key: 'worker', role: 'Worker', mode: 'worker', model: TOP_MODEL, agentTool: 'claude-code', persona: WORKER_PERSONA },
@@ -364,6 +383,7 @@ const HOUSE_TEAMMATES: readonly HouseTeammate[] = [
   { key: 'helper', role: 'Helper', mode: 'worker', model: 'claude-sonnet-5', agentTool: 'claude-code', persona: HELPER_PERSONA },
   { key: 'teammateManager', role: 'Teammate Manager', mode: 'worker', model: TOP_MODEL, agentTool: 'claude-code', persona: TEAMMATE_MANAGER_PERSONA },
   { key: 'graphArchitect', role: 'Graph Architect', mode: 'worker', model: TOP_MODEL, agentTool: 'claude-code', persona: GRAPH_ARCHITECT_PERSONA },
+  { key: 'crafter', role: 'Crafter', mode: 'worker', model: TOP_MODEL, agentTool: 'claude-code', persona: CRAFTER_PERSONA },
   // The Dreamer (D7/D8) — a worker teammate, not a fifth mode. What makes it
   // the Dreamer is its persona and its loop: "not a new mechanism".
   { key: 'dreamer', role: 'Dreamer', mode: 'worker', model: DREAMER_MODEL, agentTool: DREAMER_AGENT_TOOL, persona: DREAMER_PERSONA },

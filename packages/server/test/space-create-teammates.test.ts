@@ -125,6 +125,7 @@ describe('spaces.create default teammates', () => {
       HOUSE_TEAMMATE_NAMES.helper,
       HOUSE_TEAMMATE_NAMES.teammateManager,
       HOUSE_TEAMMATE_NAMES.graphArchitect,
+      HOUSE_TEAMMATE_NAMES.crafter,
       HOUSE_TEAMMATE_NAMES.dreamer,
       HOUSE_TEAMMATE_NAMES.dispatcher,
     ]);
@@ -133,6 +134,9 @@ describe('spaces.create default teammates', () => {
       db.calls.find(({ fn, args }) => fn === 'public.create_team_member' && args[1] === name)?.args;
     expect(created('Coordinator')?.slice(5, 8)).toEqual(['claude-opus-5-5[1m]', 'claude-code', 'coordinator']);
     expect(created('Graph Architect')?.slice(5, 8)).toEqual(['claude-opus-5-5[1m]', 'claude-code', 'worker']);
+    expect(created('Crafter')?.slice(5, 8)).toEqual(['claude-opus-5-5[1m]', 'claude-code', 'worker']);
+    // The Crafter's persona: it builds pages and keeps the craft workspace.
+    expect(String(created('Crafter')?.[4])).toMatch(/pages[\s\S]*workspace/);
     expect(created('TM8 Helper')?.slice(5, 8)).toEqual(['claude-sonnet-5', 'claude-code', 'worker']);
     expect(created('Dispatcher')?.slice(5, 8)).toEqual(['claude-opus-5-5[1m]', 'claude-code', 'dispatcher']);
     // A brand-new space has nothing to retire.
