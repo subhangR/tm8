@@ -1,5 +1,5 @@
 /**
- * Craft workspaces (Craft redesign doc 01a1255d §3, §4; migration 315) against
+ * Craft workspaces (Craft redesign doc 01a1255d §3, §4; migration 321) against
  * a REAL database: one hidden workspace per (space, identity, craft), its tab
  * commands, the open-crafts list, pruning of pages that left the craft, and
  * which agents may command it.
@@ -124,7 +124,7 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     chatAbout = await chat(craft);
     chatElsewhere = await chat(other);
     chatSomeoneElse = await chat(craft, stranger);
-    sessionAbout = await sessionOn(craft); // 315: a work session may be `about` something
+    sessionAbout = await sessionOn(craft); // 321: a work session may be `about` something
     sessionLater = await raw('work_session');
     sessionUnderChat = await raw('work_session');
     await db.asOwner((q) => q.query('update public.entities set parent_id = $1 where id = $2', [chatAbout, sessionUnderChat]).catch(() => undefined));
@@ -347,6 +347,8 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     await expect(spawn('agent', { parent: chatAbout, about: craft })).rejects.toMatchObject({ code: '42501' });
     const notUnderQ = await spawn('agent_runtime', { fromChat: chatAbout }); // parent is not Q: binds nothing
     await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(notUnderQ) })).rejects.toMatchObject(refused);
+    // A forged call: a worker token (same identity) names the craft chat as parent AND p_from_chat.
+    await expect(spawn('agent', { parent: chatAbout, fromChat: chatAbout })).rejects.toMatchObject({ code: '42501' });
 
     // Later: work_session_about refuses a session from another transaction; an edges.create binds nothing.
     const unbound = await spawn('cli');

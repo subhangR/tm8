@@ -43,6 +43,7 @@ export * from './builtins/index.js';
 
 export * from './mcp.js';
 export * from './workspace-bridge.js';
+export * from './craft-workspace.js';
 
 export * from './tools.js';
 export * from './craft-workspace.js';
