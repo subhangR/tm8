@@ -1,29 +1,29 @@
 /**
- * A DESIGN'S PAGE ROW (Craft → Designs, D5 and change list items 10, 12): the
- * Workspace tab strip's LOOK (`tabstrip.css`), driven by the design's own
+ * A CRAFT'S PAGE ROW (Craft → Crafts, D5 and change list items 10, 12): the
+ * Workspace tab strip's LOOK (`tabstrip.css`), driven by the craft's own
  * ordered pages — not by the Workspace runtime, and with no per-user tab
  * state. Everyone sees the same row.
  *
  *  · a page changed while it is not the active one carries an "updated" dot;
  *    agents never switch your page;
  *  · drag a tab (or Alt+←/→ on it) to reorder — one position write;
- *  · ⋯ on a tab → "Remove from design", which takes the page out of the
- *    design and never deletes the entity;
- *  · ＋ → a new Graph / Doc / Artifact / Drawing / Design page, or "Add
+ *  · ⋯ on a tab → "Remove from craft", which takes the page out of the
+ *    craft and never deletes the entity;
+ *  · ＋ → a new Graph / Doc / Artifact / Drawing / Craft page, or "Add
  *    existing entity…".
  *
- * `size="nested"` is the smaller second row a nested design page draws (D7),
+ * `size="nested"` is the smaller second row a nested craft page draws (D7),
  * one existing type step down.
  */
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import type { EntityId, EntitySummary } from '@tm8/contract';
 import { getKind, KindIcon } from '../domain';
 import { MembershipPicker } from '../panels/bodies/MembershipBlock';
-import { NEW_PAGE_KINDS, type DesignPageRow, type NewPageKind } from './design-source';
+import { NEW_PAGE_KINDS, type CraftPageRow, type NewPageKind } from './craft-source';
 import '../tab-workspace/view/tabstrip.css';
 
 export interface PageRowProps {
-  pages: readonly DesignPageRow[];
+  pages: readonly CraftPageRow[];
   activeId: EntityId | null;
   /** Pages changed while not active. */
   updated: ReadonlySet<string>;
@@ -38,7 +38,7 @@ export interface PageRowProps {
   onAddExisting(id: EntityId): void;
   /** Candidates for "Add existing entity…" (one bounded recent page). */
   candidates(text: string): Promise<EntitySummary[]>;
-  /** The design itself, never offered as its own page. */
+  /** The craft itself, never offered as its own page. */
   ownerId: EntityId;
 }
 
@@ -96,7 +96,7 @@ export function PageRow({
 
   const dropAt = (event: DragEvent, targetId: EntityId) => {
     event.preventDefault();
-    const moving = dragId ?? (event.dataTransfer.getData('text/x-design-page') as EntityId);
+    const moving = dragId ?? (event.dataTransfer.getData('text/x-craft-page') as EntityId);
     setDragId(null);
     if (!moving || moving === targetId) return;
     const without = pages.filter((page) => page.id !== moving);
@@ -128,7 +128,7 @@ export function PageRow({
               onDragStart={(event) => {
                 setDragId(page.id);
                 event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/x-design-page', page.id);
+                event.dataTransfer.setData('text/x-craft-page', page.id);
               }}
               onDragEnd={() => setDragId(null)}
               onDragOver={(event) => {
@@ -201,14 +201,14 @@ export function PageRow({
             role="menuitem"
             className="pn-overflow__item"
             data-testid="dsn-remove-page"
-            title="Takes the page out of this design; the entity itself is kept"
+            title="Takes the page out of this craft; the entity itself is kept"
             onClick={() => {
               const id = menuFor;
               setMenuFor(null);
               onRemove(id);
             }}
           >
-            Remove from design
+            Remove from craft
           </button>
         </div>
       ) : null}

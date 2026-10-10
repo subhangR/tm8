@@ -1,6 +1,6 @@
 /**
  * A GRAPH PAGE — the blueprint canvas, moved out of the old Craft studio into
- * a design page body (Craft → Designs, change list item 10). Its internals
+ * a craft page body (Craft → Crafts, change list item 10). Its internals
  * are unchanged: the canvas dispatches on `graphType` (R3), a node selected
  * in any view is selected everywhere and opens its INSPECTOR, each agent
  * patch is DIFFED against the previous fold of the same row and the strip
@@ -10,7 +10,7 @@
  * `entity.upsert` events and the page re-reads the row on each one (R1).
  *
  * THE VIEW SWITCHER AND THE FINDINGS CHIP are this page's controls, so they
- * portal into the action strip's TOP section (`controlsSlot`); the design's
+ * portal into the action strip's TOP section (`controlsSlot`); the craft's
  * shared verbs sit in its BOTTOM.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -41,7 +41,7 @@ export interface GraphPageProps {
   graphId: EntityId;
   /** The strip's TOP section; the view switcher and the findings chip render here. */
   controlsSlot: HTMLElement | null;
-  /** "Ask about this": seed the design's composer. */
+  /** "Ask about this": seed the craft's composer. */
   onAsk(text: string): void;
   onOpenEntity(id: EntityId): void;
   /** Publishes the transcript note for calls that wrote THIS graph (null on unmount). */

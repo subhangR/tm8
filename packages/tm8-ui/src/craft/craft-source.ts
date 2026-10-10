@@ -1,21 +1,21 @@
 /**
- * WHERE ONE DESIGN READS AND WRITES (Craft → Designs, change list item 10).
- * The design screen's port, beside the home's (`designs-source.ts`): a node
- * backed source (`designSourceFromSeam`) and a client fixture
- * (`fixtureDesignSource`) for tests and until the design kind lands on a node.
+ * WHERE ONE CRAFT READS AND WRITES (Craft → Crafts, change list item 10).
+ * The craft screen's port, beside the home's (`crafts-source.ts`): a node
+ * backed source (`craftSourceFromSeam`) and a client fixture
+ * (`fixtureCraftSource`) for tests and until the craft kind lands on a node.
  *
- * Zero new catalog ops: a page is a `contains` edge from the design, so add,
+ * Zero new catalog ops: a page is a `contains` edge from the craft, so add,
  * reorder and remove are `collections.addItem` / `collections.removeItem`
  * (re-adding a member re-positions it), a new page is `entities.create` then
- * add, and the read is the design's own detail, which carries its pages in
- * order. "Remove from design" takes the edge away and never the entity.
+ * add, and the read is the craft's own detail, which carries its pages in
+ * order. "Remove from craft" takes the edge away and never the entity.
  */
 import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { DESIGN_KIND, designContentOf } from '../domain';
 
 /** One page as the row and body need it. */
-export interface DesignPageRow {
+export interface CraftPageRow {
   id: EntityId;
   kind: string;
   title: string;
@@ -27,11 +27,11 @@ export interface DesignPageRow {
   running: boolean;
 }
 
-export interface DesignRead {
+export interface CraftRead {
   id: EntityId;
   title: string;
   version: number;
-  pages: DesignPageRow[];
+  pages: CraftPageRow[];
 }
 
 /** The kinds `[+ page]` can make. Artifacts have no generic create; the menu says so. */
@@ -39,33 +39,33 @@ export const NEW_PAGE_KINDS = ['graph', 'doc', 'artifact', 'drawing', 'design'] 
 export type NewPageKind = (typeof NEW_PAGE_KINDS)[number];
 
 /** A change the screen may need to react to. */
-export type DesignChange =
-  | { type: 'design' }
+export type CraftChange =
+  | { type: 'craft' }
   | { type: 'page'; id: EntityId }
   | { type: 'deleted'; id: EntityId };
 
-export interface DesignSource {
-  read(designId: EntityId): Promise<DesignRead>;
+export interface CraftSource {
+  read(craftId: EntityId): Promise<CraftRead>;
   /** Create a new entity of `kind` and add it as a page at `position`. Resolves the page id. */
-  createPage(designId: EntityId, kind: Exclude<NewPageKind, 'artifact'>, position: number): Promise<EntityId>;
+  createPage(craftId: EntityId, kind: Exclude<NewPageKind, 'artifact'>, position: number): Promise<EntityId>;
   /** Add an existing entity as a page (or move one already in it) to `position`. */
-  placePage(designId: EntityId, entityId: EntityId, position: number): Promise<void>;
-  /** Take the page out of the design. The entity itself is untouched. */
-  removePage(designId: EntityId, entityId: EntityId): Promise<void>;
-  rename(designId: EntityId, title: string, expectedVersion: number): Promise<void>;
+  placePage(craftId: EntityId, entityId: EntityId, position: number): Promise<void>;
+  /** Take the page out of the craft. The entity itself is untouched. */
+  removePage(craftId: EntityId, entityId: EntityId): Promise<void>;
+  rename(craftId: EntityId, title: string, expectedVersion: number): Promise<void>;
   /** One bounded recent page of candidates for "Add existing entity…". */
   candidates(text: string): Promise<EntitySummary[]>;
-  /** Call back on any change to the design or to one of `pageIds()`. Returns the unsubscribe. */
-  subscribe(designId: EntityId, pageIds: () => ReadonlySet<string>, onChange: (change: DesignChange) => void): () => void;
+  /** Call back on any change to the craft or to one of `pageIds()`. Returns the unsubscribe. */
+  subscribe(craftId: EntityId, pageIds: () => ReadonlySet<string>, onChange: (change: CraftChange) => void): () => void;
 }
 
 function cmid(tag: string): string {
-  return `design:${tag}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+  return `craft:${tag}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /** The title a fresh page of each kind starts with. */
 export function newPageTitle(kind: NewPageKind): string {
-  return kind === 'graph' ? 'Untitled graph' : kind === 'design' ? 'Untitled design' : `Untitled ${kind}`;
+  return kind === 'graph' ? 'Untitled graph' : kind === 'design' ? 'Untitled craft' : `Untitled ${kind}`;
 }
 
 function contentFor(kind: Exclude<NewPageKind, 'artifact'>): Record<string, unknown> | undefined {
@@ -74,7 +74,7 @@ function contentFor(kind: Exclude<NewPageKind, 'artifact'>): Record<string, unkn
   return undefined;
 }
 
-export function pageRowOf(page: EntitySummary & { pagePosition?: number | null }): DesignPageRow {
+export function pageRowOf(page: EntitySummary & { pagePosition?: number | null }): CraftPageRow {
   return {
     id: page.id,
     kind: page.kind,
@@ -93,7 +93,7 @@ export function pageRowOf(page: EntitySummary & { pagePosition?: number | null }
  * that carried no positions falls back to the index, which only happens
  * against a source with no positions at all.
  */
-export function positionAt(pages: readonly Pick<DesignPageRow, 'position'>[], index: number): number {
+export function positionAt(pages: readonly Pick<CraftPageRow, 'position'>[], index: number): number {
   const before = index > 0 ? pages[index - 1]?.position ?? null : null;
   const after = pages[index]?.position ?? null;
   if (before !== null && after !== null) return (before + after) / 2;
@@ -102,10 +102,10 @@ export function positionAt(pages: readonly Pick<DesignPageRow, 'position'>[], in
   return index + 1;
 }
 
-export function designSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignSource {
+export function craftSourceFromSeam(seam: Seam, spaceId: SpaceId): CraftSource {
   return {
-    async read(designId) {
-      const detail = await seam.entity(designId);
+    async read(craftId) {
+      const detail = await seam.entity(craftId);
       return {
         id: detail.id,
         title: detail.title,
@@ -113,7 +113,7 @@ export function designSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignSource
         pages: designContentOf(detail.content).pages.map(pageRowOf),
       };
     },
-    async createPage(designId, kind, position) {
+    async createPage(craftId, kind, position) {
       const content = contentFor(kind);
       const result = await seam.commands.createEntity({
         clientMutationId: cmid('page'),
@@ -124,31 +124,31 @@ export function designSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignSource
       });
       const id = result.entity?.id as EntityId | undefined;
       if (!id) throw new Error('The page was not created.');
-      await seam.commands.addToCollection(designId, { clientMutationId: cmid('add'), entityId: id, position });
+      await seam.commands.addToCollection(craftId, { clientMutationId: cmid('add'), entityId: id, position });
       return id;
     },
-    async placePage(designId, entityId, position) {
-      await seam.commands.addToCollection(designId, { clientMutationId: cmid('place'), entityId, position });
+    async placePage(craftId, entityId, position) {
+      await seam.commands.addToCollection(craftId, { clientMutationId: cmid('place'), entityId, position });
     },
-    async removePage(designId, entityId) {
-      await seam.commands.removeFromCollection(designId, entityId, { clientMutationId: cmid('remove') });
+    async removePage(craftId, entityId) {
+      await seam.commands.removeFromCollection(craftId, entityId, { clientMutationId: cmid('remove') });
     },
-    async rename(designId, title, expectedVersion) {
-      await seam.commands.patchEntity(designId, { clientMutationId: cmid('rename'), expectedVersion, title });
+    async rename(craftId, title, expectedVersion) {
+      await seam.commands.patchEntity(craftId, { clientMutationId: cmid('rename'), expectedVersion, title });
     },
     async candidates() {
       const result = await seam.query({ spaceId, sort: 'activityAt_desc', limit: 50 });
       return result.page.items;
     },
-    subscribe(designId, pageIds, onChange) {
+    subscribe(craftId, pageIds, onChange) {
       return seam.onEvent((event) => {
         if (event.type === 'edge.upsert' || event.type === 'edge.deleted') {
-          if (event.edge.type === 'contains' && event.edge.source.id === designId) onChange({ type: 'design' });
+          if (event.edge.type === 'contains' && event.edge.source.id === craftId) onChange({ type: 'craft' });
           return;
         }
         if (event.type !== 'entity.upsert' && event.type !== 'entity.deleted') return;
         const id = event.entity.id as EntityId;
-        if (id === designId) onChange(event.type === 'entity.deleted' ? { type: 'deleted', id } : { type: 'design' });
+        if (id === craftId) onChange(event.type === 'entity.deleted' ? { type: 'deleted', id } : { type: 'craft' });
         else if (pageIds().has(id)) onChange(event.type === 'entity.deleted' ? { type: 'deleted', id } : { type: 'page', id });
       });
     },
@@ -156,66 +156,66 @@ export function designSourceFromSeam(seam: Seam, spaceId: SpaceId): DesignSource
 }
 
 /**
- * A client fixture over a REAL seam for the pages: the design and its page
+ * A client fixture over a REAL seam for the pages: the craft and its page
  * list live here in memory, while the pages themselves are created and read
  * through the seam, so a page body renders exactly as it would on a node.
  */
-export interface FixtureDesignRecord {
+export interface FixtureCraftRecord {
   id: EntityId;
   title: string;
   version: number;
-  pages: DesignPageRow[];
+  pages: CraftPageRow[];
 }
 
-export function fixtureDesignSource(
+export function fixtureCraftSource(
   seam: Seam,
   spaceId: SpaceId,
-  seed: readonly { id: EntityId; title: string; pages?: readonly DesignPageRow[] }[] = [],
-): DesignSource & { readonly designs: Map<string, FixtureDesignRecord> } {
-  const designs = new Map<string, FixtureDesignRecord>(
-    seed.map((design) => [design.id, { id: design.id, title: design.title, version: 1, pages: [...(design.pages ?? [])] }]),
+  seed: readonly { id: EntityId; title: string; pages?: readonly CraftPageRow[] }[] = [],
+): CraftSource & { readonly crafts: Map<string, FixtureCraftRecord> } {
+  const crafts = new Map<string, FixtureCraftRecord>(
+    seed.map((craft) => [craft.id, { id: craft.id, title: craft.title, version: 1, pages: [...(craft.pages ?? [])] }]),
   );
-  const listeners = new Set<(designId: EntityId) => void>();
+  const listeners = new Set<(craftId: EntityId) => void>();
   let next = 1;
   const need = (id: EntityId) => {
-    const design = designs.get(id);
-    if (!design) throw Object.assign(new Error(`${id} not found`), { code: 'not_found' });
-    return design;
+    const craft = crafts.get(id);
+    if (!craft) throw Object.assign(new Error(`${id} not found`), { code: 'not_found' });
+    return craft;
   };
-  const changed = (design: FixtureDesignRecord) => {
-    design.version += 1;
-    design.pages.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-    for (const listener of listeners) listener(design.id);
+  const changed = (craft: FixtureCraftRecord) => {
+    craft.version += 1;
+    craft.pages.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    for (const listener of listeners) listener(craft.id);
   };
-  const rowFor = async (entityId: EntityId, position: number): Promise<DesignPageRow> => {
-    const nested = designs.get(entityId);
+  const rowFor = async (entityId: EntityId, position: number): Promise<CraftPageRow> => {
+    const nested = crafts.get(entityId);
     if (nested) {
       return { id: entityId, kind: 'design', title: nested.title, version: nested.version, activityAt: new Date().toISOString(), position, running: false };
     }
     const detail = await seam.entity(entityId);
     return { ...pageRowOf(detail), position };
   };
-  const place = async (designId: EntityId, entityId: EntityId, position: number) => {
-    const design = need(designId);
-    if (entityId === designId) throw Object.assign(new Error('A design cannot contain itself.'), { code: 'invalid_input' });
-    const existing = design.pages.find((page) => page.id === entityId);
+  const place = async (craftId: EntityId, entityId: EntityId, position: number) => {
+    const craft = need(craftId);
+    if (entityId === craftId) throw Object.assign(new Error('A craft cannot contain itself.'), { code: 'invalid_input' });
+    const existing = craft.pages.find((page) => page.id === entityId);
     if (existing) existing.position = position;
-    else design.pages.push(await rowFor(entityId, position));
-    changed(design);
+    else craft.pages.push(await rowFor(entityId, position));
+    changed(craft);
   };
   return {
-    designs,
-    async read(designId) {
-      const design = need(designId);
-      /* A nested design's title is read live, as a node's page summary would be. */
-      const pages = design.pages.map((page) => ({ ...page, title: designs.get(page.id)?.title ?? page.title }));
-      return { id: design.id, title: design.title, version: design.version, pages };
+    crafts,
+    async read(craftId) {
+      const craft = need(craftId);
+      /* A nested craft's title is read live, as a node's page summary would be. */
+      const pages = craft.pages.map((page) => ({ ...page, title: crafts.get(page.id)?.title ?? page.title }));
+      return { id: craft.id, title: craft.title, version: craft.version, pages };
     },
-    async createPage(designId, kind, position) {
+    async createPage(craftId, kind, position) {
       let id: EntityId;
       if (kind === 'design') {
-        id = `fixture-design-page-${next++}` as EntityId;
-        designs.set(id, { id, title: newPageTitle(kind), version: 1, pages: [] });
+        id = `fixture-craft-page-${next++}` as EntityId;
+        crafts.set(id, { id, title: newPageTitle(kind), version: 1, pages: [] });
       } else {
         const content = contentFor(kind);
         const result = await seam.commands.createEntity({
@@ -227,37 +227,37 @@ export function fixtureDesignSource(
         });
         id = result.entity!.id as EntityId;
       }
-      await place(designId, id, position);
+      await place(craftId, id, position);
       return id;
     },
     placePage: place,
-    async removePage(designId, entityId) {
-      const design = need(designId);
-      design.pages = design.pages.filter((page) => page.id !== entityId);
-      changed(design);
+    async removePage(craftId, entityId) {
+      const craft = need(craftId);
+      craft.pages = craft.pages.filter((page) => page.id !== entityId);
+      changed(craft);
     },
-    async rename(designId, title) {
-      const design = need(designId);
-      design.title = title;
-      changed(design);
+    async rename(craftId, title) {
+      const craft = need(craftId);
+      craft.title = title;
+      changed(craft);
     },
     async candidates() {
       const result = await seam.query({ spaceId, sort: 'activityAt_desc', limit: 50 });
       return result.page.items;
     },
-    subscribe(designId, pageIds, onChange) {
-      const onDesign = (id: EntityId) => {
-        if (id === designId) onChange({ type: 'design' });
+    subscribe(craftId, pageIds, onChange) {
+      const onCraft = (id: EntityId) => {
+        if (id === craftId) onChange({ type: 'craft' });
         else if (pageIds().has(id)) onChange({ type: 'page', id });
       };
-      listeners.add(onDesign);
+      listeners.add(onCraft);
       const off = seam.onEvent((event) => {
         if (event.type !== 'entity.upsert') return;
         const id = event.entity.id as EntityId;
         if (pageIds().has(id)) onChange({ type: 'page', id });
       });
       return () => {
-        listeners.delete(onDesign);
+        listeners.delete(onCraft);
         off();
       };
     },

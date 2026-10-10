@@ -4,7 +4,7 @@
  * coherence check says about it.
  *
  * It REPLACES region C rather than joining it (coordinator ruling on the
- * design audit: never four columns). "Open entity" swaps this body for the
+ * craft audit: never four columns). "Open entity" swaps this body for the
  * hosted entity column with a back arrow — the host does that swap; this
  * component only asks for it.
  *
