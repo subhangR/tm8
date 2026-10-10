@@ -51,6 +51,14 @@ describe('the design hand-over', () => {
     expect(text).toContain('never created again');
   });
 
+  it('speaks of the launch as a craft (the kind is still `design` on the wire)', () => {
+    const text = designRunInstruction(design);
+    expect(text).toContain('You were launched on craft design-1.');
+    expect(text).toContain('a nested craft whose own pages are listed under it');
+    expect(text).not.toMatch(/\bon design\b|nested design/);
+    expect(composePrompt(manifestFor('2')).task).toContain('Craft: Checkout');
+  });
+
   it('round-trips through the persisted manifest, and drops what is malformed', () => {
     expect(parseDesignContext(JSON.parse(JSON.stringify(design)))).toEqual(design);
     expect(parseDesignContext({ ...design, taskId: 42 })).toBeUndefined();
