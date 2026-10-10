@@ -92,6 +92,7 @@ type SaveState =
 /** The slice of Excalidraw's imperative API this block uses. */
 interface CanvasApi {
   refresh(): void;
+  updateScene(scene: { elements?: readonly unknown[]; appState?: Record<string, unknown> }): void;
 }
 
 export function DrawingBlock({
@@ -147,6 +148,34 @@ export function DrawingBlock({
     setImages(hasEmbeddedImages(scene.elements, scene.files));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.id]);
+
+  /*
+   * SOMEONE ELSE'S SAVE REACHES AN OPEN CANVAS.
+   *
+   * Excalidraw reads `initialData` once, at mount, so a host that hands this
+   * block a newer detail (a live re-read after another actor's write) changed
+   * nothing on screen until a reload. A version NEWER than the one banked is
+   * not this block's own save — that one is banked before the host re-renders
+   * — so its scene is pushed into the live canvas. Never over unsaved or
+   * in-flight edits: those keep the canvas, and their save meets the version
+   * conflict below, which is the honest outcome.
+   */
+  const phaseRef = useRef(save.phase);
+  phaseRef.current = save.phase;
+  useEffect(() => {
+    if (!(detail.version > versionRef.current)) return;
+    if (phaseRef.current !== 'clean' && phaseRef.current !== 'saved') return;
+    if (timerRef.current) return;
+    versionRef.current = detail.version;
+    const signature = sceneSignature(scene.elements, scene.appState);
+    if (signature === savedSignatureRef.current) return;
+    savedSignatureRef.current = signature;
+    apiRef.current?.updateScene({
+      elements: scene.elements,
+      appState: scene.appState,
+    });
+    setImages(hasEmbeddedImages(scene.elements, scene.files));
+  }, [detail.version, scene]);
 
   // A pending timer must never outlive the component: it would write after the
   // panel closed, under a version nobody is watching.
@@ -238,7 +267,7 @@ export function DrawingBlock({
     // The SAME state when nothing changed, so a repeat `onChange` renders nothing.
     setSave((prev) => (prev.phase === 'saving' || prev.phase === 'dirty' ? prev : { phase: 'dirty' }));
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => { void commit(elements, appState); }, SAVE_DEBOUNCE_MS);
+    timerRef.current = setTimeout(() => { timerRef.current = null; void commit(elements, appState); }, SAVE_DEBOUNCE_MS);
   }, [commit, editable]);
 
   const text = statusText(save, editable);

@@ -31,7 +31,7 @@ const mounted: {
   theme?: unknown;
   apiProp?: unknown;
 } = {};
-const api = { refresh: vi.fn() };
+const api = { refresh: vi.fn(), updateScene: vi.fn() };
 
 vi.mock('@excalidraw/excalidraw', () => ({
   Excalidraw: (props: Record<string, unknown>) => {
@@ -139,6 +139,64 @@ describe('DrawingBlock', () => {
 
     // Reading `detail.version` at save time would send 7 again and conflict.
     expect(patchEntity.mock.calls[1]![1].expectedVersion).toBe(8);
+  });
+
+  describe('a NEWER version from elsewhere reaches the open canvas', () => {
+    /*
+     * Excalidraw reads `initialData` once. A host re-reading the row after
+     * another actor's write (the craft overview's live sections) hands this
+     * block a new detail; without `updateScene` the canvas stayed as it was
+     * until a reload — QA saw a v6 yellow background render white.
+     */
+    const yellow = { kind: 'drawing', format: 'excalidraw', elements: [el('a', 1), el('b', 1)], appState: { viewBackgroundColor: '#fff0a0' }, files: {} };
+
+    it('pushes the new scene into the live canvas when nothing is unsaved', async () => {
+      const patchEntity = vi.fn();
+      const { rerender } = render(<DrawingBlock detail={detailOf()} commands={{ patchEntity }} />);
+      await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+
+      rerender(<DrawingBlock detail={detailOf({ version: 8, content: yellow } as Partial<EntityDetail>)} commands={{ patchEntity }} />);
+      expect(api.updateScene).toHaveBeenCalledTimes(1);
+      const pushed = api.updateScene.mock.calls[0]![0] as { elements: unknown[]; appState: Record<string, unknown> };
+      expect(pushed.elements).toHaveLength(2);
+      expect(pushed.appState.viewBackgroundColor).toBe('#fff0a0');
+
+      // The adopted version guards the next write, and the adopted scene is not "unsaved".
+      mounted.onChange!([el('a', 1), el('b', 1)], { viewBackgroundColor: '#fff0a0' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(patchEntity).not.toHaveBeenCalled();
+      mounted.onChange!([el('a', 2), el('b', 1)], { viewBackgroundColor: '#fff0a0' });
+      await vi.advanceTimersByTimeAsync(1000);
+      await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
+      expect(patchEntity.mock.calls[0]![1].expectedVersion).toBe(8);
+    });
+
+    it('never overwrites an edit the user has not saved yet', async () => {
+      const patchEntity = vi.fn().mockRejectedValue(new Error('expected version 7 is stale'));
+      const { rerender } = render(<DrawingBlock detail={detailOf()} commands={{ patchEntity }} />);
+      await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+
+      mounted.onChange!([el('a', 2)], {});
+      rerender(<DrawingBlock detail={detailOf({ version: 8, content: yellow } as Partial<EntityDetail>)} commands={{ patchEntity }} />);
+      expect(api.updateScene).not.toHaveBeenCalled();
+      // The pending save still goes out against the version it read, and meets the conflict.
+      await vi.advanceTimersByTimeAsync(1000);
+      await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
+      expect(patchEntity.mock.calls[0]![1].expectedVersion).toBe(7);
+    });
+
+    it('does not re-push its OWN save when the host re-renders with it', async () => {
+      const patchEntity = vi.fn().mockResolvedValue({ entity: { version: 8 }, patches: [] });
+      const { rerender } = render(<DrawingBlock detail={detailOf()} commands={{ patchEntity }} />);
+      await waitFor(() => expect(screen.getByTestId('excalidraw-mock')).toBeTruthy());
+
+      mounted.onChange!([el('a', 2)], {});
+      await vi.advanceTimersByTimeAsync(1000);
+      await waitFor(() => expect(screen.getByTestId('drawing-status').textContent).toBe('Saved'));
+      const saved = { kind: 'drawing', format: 'excalidraw', elements: [el('a', 2)], appState: {}, files: {} };
+      rerender(<DrawingBlock detail={detailOf({ version: 8, content: saved } as Partial<EntityDetail>)} commands={{ patchEntity }} />);
+      expect(api.updateScene).not.toHaveBeenCalled();
+    });
   });
 
   it('reports a version CONFLICT as someone else’s save, not as an error', async () => {
