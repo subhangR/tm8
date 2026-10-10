@@ -113,13 +113,18 @@ export class ToolSessionLauncher {
       // runs kill that group even when its leader already exited. Keep-open runs
       // preserve shell/jobs until explicit tab closure; only the new shell's
       // environment is scrubbed, so existing jobs can still hold secret envs.
-      if (!request.keepOpen) {
-        killProcessGroup();
-        this.options.pty.kill(request.sessionId);
+      try {
+        if (!request.keepOpen) {
+          try { killProcessGroup(); }
+          finally { this.options.pty.kill(request.sessionId); }
+        }
+      } catch {
+        this.options.logger?.error('Tool process group cleanup failed', undefined, { sessionId: request.sessionId });
+      } finally {
+        // Cleanup failure must never skip token revocation or outcome capture.
+        try { await request.revokeToken(); }
+        finally { await request.recordExit({ exitCode: exit, state, outputTail }); }
       }
-      // Always revoke, even if recording failed. No secret or token reaches a result.
-      try { await request.revokeToken(); }
-      finally { await request.recordExit({ exitCode: exit, state, outputTail }); }
       stop();
       secretValues.fill('');
     };

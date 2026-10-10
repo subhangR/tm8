@@ -71,9 +71,10 @@ describe('tool input resolution and boundaries', () => {
   });
 });
 
-async function launch(source: string, keepOpen: boolean, extra: { runtime?: 'bash' | 'python'; timeoutSeconds?: number; secret?: string } = {}) {
+async function launch(source: string, keepOpen: boolean, extra: { runtime?: 'bash' | 'python'; timeoutSeconds?: number; secret?: string; killFailure?: boolean } = {}) {
   const dir = await directory(), sessionId = randomUUID(); sessions.push(sessionId);
   const host = new PtyHostService({ logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() } }); hosts.push(host);
+  if (extra.killFailure) vi.spyOn(host, 'captureProcessGroupKiller').mockReturnValue(() => { throw Object.assign(new Error('kill refused'), {code: 'EPERM'}); });
   const view = tool({ source, runtime: extra.runtime ?? 'bash', timeoutSeconds: extra.timeoutSeconds ?? 10,
     inputs: extra.secret ? [{ name: 'key', type: 'secret' }] : [] });
   const inputs = await resolveToolInputs(view, {}, extra.secret ? { key: extra.secret } : {}, { cwd: dir, roots: [], readSecret: vi.fn() });
@@ -133,6 +134,13 @@ describe('tool exit capture on real PTYs', () => {
       expect(environ).toBe('');
     }, { timeout: 10000 });
     expect(run.recordExit.mock.calls[0]![0].state).toBe('timed_out');
+    expect(run.host.hasSession(run.sessionId)).toBe(false);
+  });
+  it('revokes the token and records exit even when process group cleanup throws EPERM', async () => {
+    const run = await launch('exit 7', false, {killFailure: true});
+    await vi.waitFor(() => expect(run.recordExit).toHaveBeenCalledTimes(1), { timeout: 15000 });
+    expect(run.revokeToken).toHaveBeenCalledTimes(1);
+    expect(run.recordExit.mock.calls[0]![0]).toMatchObject({state: 'exited', exitCode: 7});
     expect(run.host.hasSession(run.sessionId)).toBe(false);
   });
   it('redacts before truncation and keeps output within 64 KiB including Unicode', () => {
