@@ -3,6 +3,7 @@
  * two-step commit (Launch → preview → Launch), and a controllable upload.
  * Not a test file — vitest only collects `*.test.*`.
  */
+import type { ReactElement } from 'react';
 import { expect, vi } from 'vitest';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import type { EntityId, ExecutionSpawnInput, ProjectId } from '@tm8/contract';
@@ -28,7 +29,11 @@ export const POOLS = {
   skills: [row('sk-extra', 'skill', 'graphify')],
 };
 
-export function renderPopup(over: Partial<LaunchComposerPopupProps> = {}) {
+export function renderPopup(
+  over: Partial<LaunchComposerPopupProps> = {},
+  /** Wraps the card, e.g. in the craft launch scope. */
+  wrap: (card: ReactElement) => ReactElement = (card) => card,
+) {
   const onSpawn = vi.fn<(input: ExecutionSpawnInput) => void>();
   const onDismiss = vi.fn();
   const load = vi.fn(async () => LAUNCH_DEFAULTS);
@@ -43,7 +48,7 @@ export function renderPopup(over: Partial<LaunchComposerPopupProps> = {}) {
     selection: { load, candidates: POOLS },
     ...over,
   };
-  const view = render(<div className="cv2-root"><LaunchComposerPopup {...props} /></div>);
+  const view = render(<div className="cv2-root">{wrap(<LaunchComposerPopup {...props} />)}</div>);
   /** Launch opens the preview; its Launch commits. */
   const spawn = async () => {
     const calls = onSpawn.mock.calls.length;

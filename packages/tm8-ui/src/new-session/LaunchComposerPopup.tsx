@@ -56,6 +56,7 @@ import { clearDraft, readDraft, writeDraft } from './launch-draft';
 import { describePicks, readPicks, readRemember, writePicks, writeRemember, type RememberedPicks } from './launch-picks';
 import { useLaunchComposerState } from './useLaunchComposerState';
 import { useOverlayHost } from '../kit/useOverlayHost';
+import { rosterForLaunchScope, useCraftLaunchScope } from './launch-scope';
 /* The popup mounts WITHOUT the screen, so it carries the stylesheets itself —
    the same mounting-styles-it rule the screen's import states. */
 import './new-session.css';
@@ -241,8 +242,10 @@ export function LaunchComposerPopup({
   const overlay = useOverlayHost();
   /* The panels' option shapes, adapted ONCE into the composer's vocabulary.
      Absent facts stay absent — no invented owner, no invented path. */
+  /* In a craft, Auto is the Crafter (launch-scope.tsx). */
+  const launchScope = useCraftLaunchScope();
   const teammateRows = useMemo<readonly LaunchTeammate[]>(
-    () => teammates.map((t) => ({
+    () => rosterForLaunchScope(teammates, launchScope).map((t) => ({
       id: t.id,
       name: t.label,
       initial: t.label.charAt(0).toUpperCase(),
@@ -250,7 +253,7 @@ export function LaunchComposerPopup({
       agentTool: t.agentTool ?? '',
       owner: '',
     })),
-    [teammates],
+    [teammates, launchScope],
   );
   const projectRows = useMemo<readonly LaunchProject[]>(
     () => projects.map((p) => ({

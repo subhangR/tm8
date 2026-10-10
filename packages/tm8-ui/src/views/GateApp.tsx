@@ -75,6 +75,7 @@ import { FILE_PALETTE_SCOPE, parseFilePaletteRef, recentFilePaletteViews } from 
 import { useProjectNames } from '../project-file/projects';
 import { useRecentProjectFiles } from '../project-file/recent';
 import { DesignScreen, DesignsHome, DesignsNav, designSourceFromSeam, designsSourceFromSeam, type DesignTarget } from '../craft';
+import { CraftLaunchScope } from '../new-session/launch-scope';
 import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
@@ -3004,6 +3005,8 @@ export function GateApp(props: GateAppProps = {}) {
                strip split between the page and the design. The page bodies are
                the Workspace's own, hosted in a private runtime (`workspaceGate`
                is the same handle bundle the Workspace view gets). */
+            /* Every Run inside the craft starts with the Crafter (launch-scope.tsx). */
+            <CraftLaunchScope key={navView.designId} craftId={navView.designId}>
             <DesignScreen
               key={navView.designId}
               seam={data.seam}
@@ -3032,6 +3035,7 @@ export function GateApp(props: GateAppProps = {}) {
               }}
               onNotice={craftNotice}
             />
+            </CraftLaunchScope>
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'help' ? (
             /* ? Help (2026-08-19; STATIC since 2026-08-20) — the field guide.
                Its 55 plates ship WITH the app as vendored artifact bundles, so
