@@ -1,4 +1,4 @@
-import { addToolProjectionShape } from './tool-projection-shape.js';
+import { addCraftProjectionShape, addToolProjectionShape } from './tool-projection-shape.js';
 import type { PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -440,6 +440,7 @@ describe.sequential('task assignment provenance (129)', () => {
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
+    await addCraftProjectionShape(database);
     await addToolProjectionShape(database);
     // 302 (Spec D1): entity reads select the session OUTCOME columns. Same
     // shape as the shims above — only the read columns, none of 302's rules.

@@ -1,4 +1,4 @@
-import { addToolProjectionShape } from './tool-projection-shape.js';
+import { addCraftProjectionShape, addToolProjectionShape } from './tool-projection-shape.js';
 /**
  * 147 against a real Postgres: the backfill, the two triggers, and the EVENT
  * COST of each — which is the part that is easy to get wrong and invisible in
@@ -393,6 +393,7 @@ describe.sequential('147 — entities.status_category', () => {
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
+    await addCraftProjectionShape(database);
     await addToolProjectionShape(database);
     // 302 adds session outcome fields selected by current entity readers.
     // This task-category fixture needs their shape, not the later backfill.
