@@ -42,9 +42,9 @@ export interface EdgeKinds {
 
 export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
   about: {
-    src: ['memory', 'chat'],
+    src: ['memory', 'chat', 'work_session'],
     dst: ['*'],
-    description: 'Subject: this chat or memory is about that entity.',
+    description: 'Subject: this chat, memory or work session is about that entity.',
     acyclic: false,
   },
   anchored_to: {

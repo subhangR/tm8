@@ -1,6 +1,3 @@
-import { ToolLaunchProvider } from '../tools/context';
-import { toolTabCloseEffect } from '../tools/close-tabs';
-import { getWorkspaceRuntime } from '../tab-workspace/runtime/dispatch';
 /**
  * GateApp — the complete T0-1 master screen, composed (R5 THE GATE).
  *
@@ -545,16 +542,9 @@ export function GateApp(props: GateAppProps = {}) {
   const withPendingForms = (node: ReactNode) => (
     <PendingFormsProvider store={pendingFormsStore}>
       <AttentionProvider seam={data.seam} spaceId={data.spaceId} viewerId={data.viewerActor?.id ?? null}>
-        <EntitySeenProvider scope={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
+        <EntitySeenProvider key={`${data.spaceId}:${data.viewerActor?.id ?? ''}`}
           commands={data.seam.commands} refreshCounts={data.refreshCounts}>
-          <McpProvider key={data.spaceId} port={mcpPort}>
-            <ToolLaunchProvider open={(id) => {
-              data.pull?.(id);
-              const viewer = data.viewerActor?.id;
-              if (navStore.getState().view.view === 'tabs' && viewer) openInWorkspace(viewer, data.spaceId, LIVE_COUNT_KIND, id);
-              else navStore.getState().navigate({ view: 'tabs', tab: id as EntityId });
-            }}>{node}</ToolLaunchProvider>
-          </McpProvider>
+          <McpProvider key={data.spaceId} port={mcpPort}>{node}</McpProvider>
         </EntitySeenProvider>
       </AttentionProvider>
     </PendingFormsProvider>
@@ -657,8 +647,6 @@ export function GateApp(props: GateAppProps = {}) {
      legacy desktop (`shell/desktop-modes.ts`). Never on the phone (D16). */
   const [modes] = useState(desktopModes);
   const threeModes = shell !== 'mobile' && modes === 'three';
-  const threeModesRef = useRef(threeModes);
-  threeModesRef.current = threeModes;
   const navView = useNavStore((s) => s.view);
 
   /**
@@ -909,9 +897,6 @@ export function GateApp(props: GateAppProps = {}) {
       onSpacePicker: () => {
         addressable = false;
       },
-      /* Craft redesign §2: on the three-mode desktop Home is the tabs view,
-         so bare `/home` (what it writes with no tab active) reads as itself. */
-      homeIsTabs: () => threeModesRef.current,
     });
     setBootRoute(addressable ? 'addressable' : 'none');
     /* R15's fact, read at the only moment it is true. A depth of 1 means this
@@ -1362,14 +1347,6 @@ export function GateApp(props: GateAppProps = {}) {
   // identity read that supplies the account face. Reuse its canonical member
   // id here: a second resolver/read would let the two surfaces disagree.
   const viewerMemberId = data.viewerActor?.id ?? null;
-  useEffect(() => {
-    if (!viewerMemberId || !data.spaceId || !data.seam.commands) return;
-    return getWorkspaceRuntime(viewerMemberId, data.spaceId).registerEffect(toolTabCloseEffect({
-      detailOf: data.detailOf,
-      terminate: (id) => data.seam.commands!.terminate(id, { clientMutationId: `tool-close-${crypto.randomUUID()}` }),
-      onError: () => notices.push({ id: `tool-close-${crypto.randomUUID()}`, tone: 'error', title: 'The tool terminal could not be closed', body: 'Reopen its run from tool history and end the session.', ttlMs: 12000 }),
-    }));
-  }, [viewerMemberId, data.spaceId, data.seam, data.detailOf, notices.push]);
   /* Multiple workspaces (API doc 01a115c4 §10): the switcher's list, fed by
      the bridge. Nothing shows until the node has proved it knows workspaces. */
   const workspaceSpaceId = data.ready && data.spaceId ? data.spaceId : null;
@@ -1677,11 +1654,8 @@ export function GateApp(props: GateAppProps = {}) {
     if (command === 'help.open') setShortcutsOpen(true);
     /* `g w`: a no-op with a notice while the socket is down (S13). */
     if (command === 'workspace.switcher') {
-      const opened = openWorkspaceSwitcher(workspaceList, (title) =>
+      openWorkspaceSwitcher(workspaceList, (title) =>
         noticeSink.current({ id: 'kbd-workspace', tone: 'info', title, body: '', ttlMs: 4_000 }));
-      /* The workspace switcher is Home's (Craft redesign §2): from another
-         mode, `g w` goes to Home and opens it there. */
-      if (opened && threeModes && activeGroupId !== WORKSPACE_TABS_TAB_ID) navStore.getState().navigate(WORK_VIEW);
     }
     /* Esc in a text field LEAVES it. The controller has always emitted this and
        consumed the key, but nothing acted on it, so Esc did nothing at all and
@@ -2246,6 +2220,16 @@ export function GateApp(props: GateAppProps = {}) {
     (craftId: EntityId) => navStore.getState().navigate({ view: 'craft', designId: craftId }),
     [],
   );
+  /* The viewer's open-craft tabs in the Craft top bar. */
+  const openCraftsPort = useMemo(
+    () =>
+      !workspaceSpaceId || !viewerMemberId
+        ? null
+        : data.seam.craftWorkspaces
+          ? serverOpenCraftsPort(data.seam.craftWorkspaces, workspaceSpaceId)
+          : localOpenCraftsPort(craftTabsKey(nodeKey, workspaceSpaceId, viewerMemberId)),
+    [data.seam.craftWorkspaces, nodeKey, workspaceSpaceId, viewerMemberId],
+  );
   const craftSource = useMemo(
     () => craftSourceFromSeam(data.seam, data.spaceId as SpaceId),
     [data.seam, data.spaceId],
@@ -2358,14 +2342,6 @@ export function GateApp(props: GateAppProps = {}) {
    * Placed after the router mount effect deliberately — a fork above it would
    * give the two shells two mounts, and two mounts are two histories.
    */
-  /* The workspace switcher sits in Home's switcher slot only (Craft redesign
-     §2). An open flag with no switcher on screen would latch and pop it open
-     the next time Home mounts it, so it never outlives the slot. */
-  const workspaceSwitcherShown = !threeModes || activeGroupId === WORKSPACE_TABS_TAB_ID;
-  const workspaceSwitcherOpen = useStore(workspaceList, (s) => s.open);
-  useEffect(() => {
-    if (!workspaceSwitcherShown && workspaceSwitcherOpen) workspaceList.setState({ open: false });
-  }, [workspaceSwitcherShown, workspaceSwitcherOpen, workspaceList]);
   if (shell === 'mobile' && data.spaceId) {
     /* `data-shell` MARKS THE ROOT SO THE PHONE CAN DECLINE THE ZOOM LEVER.
        `app.css` puts `zoom: 1.1` on every `.cv2-root` — a user-ruled taste
@@ -2574,7 +2550,16 @@ export function GateApp(props: GateAppProps = {}) {
      space · mode · switcher, and the switcher is the current mode's own —
      Home switches workspaces, Craft switches crafts. One table, keyed by the
      mode's group id; a mode with no row (Observe, Settings) draws none. */
-  const craftSwitcherEl: ReactNode = null; // L4: the craft switcher
+  /* Craft's switcher + the viewer's open-craft tabs (doc 01a1255d §3). */
+  const craftSwitcherEl: ReactNode = workspaceSpaceId ? (
+    <CraftHeaderSwitcher
+      source={craftsSource}
+      openCrafts={openCraftsPort}
+      currentCraftId={navView.view === 'craft' ? navView.designId ?? null : null}
+      onOpenHome={() => navigateCraft({})}
+      onOpenCraft={openCraft}
+    />
+  ) : null;
   const modeSwitcherEl: ReactNode = threeModes
     ? (({ [WORKSPACE_TABS_TAB_ID]: workspaceSwitcherEl, craft: craftSwitcherEl } as Record<string, ReactNode>)[activeGroupId ?? ''] ?? null)
     : workspaceSwitcherEl;
@@ -2701,8 +2686,6 @@ export function GateApp(props: GateAppProps = {}) {
     viewTabs,
     shellTabs,
     activeViewTabId: activeGroupId,
-    /* A kind's list screen reads as Home but is not Home's root (the tabs view). */
-    atViewRoot: !(threeModes && navView.view === 'kind'),
     activeScreenRef: activeTarget?.type === 'view' ? activeTarget.ref : null,
     onSelectViewTab: openTab,
     switcherSlot: switcherEl,

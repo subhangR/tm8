@@ -57,7 +57,7 @@ import {
 import type { ConnectionState, Unsubscribe } from '../seam';
 import type { ChatContextFrame, ChatTurnFrame } from '../../chat-home/types';
 import type { DurableEventPage } from './ops';
-import { openSocket, type SocketHandle, type WebSocketFactory, type WorkspaceBridgeFrame, type WorkspaceSyncFrame } from './socket';
+import { openSocket, type SocketHandle, type WebSocketFactory, type WorkspaceBridgeFrame, type WorkspaceSyncFrame, type CraftWorkspacePushFrame } from './socket';
 
 /** Injectable timers. The handle is opaque so a fake may return anything. */
 export interface Timers {
@@ -249,6 +249,8 @@ export interface ConnectionManager {
   onSocketOpen(cb: () => void): Unsubscribe;
   /** Spec D: the stored workspace frames for this page's identity. */
   onWorkspaceSync(cb: (frame: WorkspaceSyncFrame) => void): Unsubscribe;
+  /** Lane L3: this page's identity's craft workspaces changed. */
+  onCraftWorkspacePush(cb: (frame: CraftWorkspacePushFrame) => void): Unsubscribe;
   /**
    * Replace the socket now, because the credential it upgraded with is no
    * longer the page's: `auth.space.enter` swapped the session cookie (W3 F1).
@@ -313,6 +315,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   const socketOpenSubs = new Set<() => void>();
   const workspaceCommandSubs = new Set<(frame: WorkspaceBridgeCommandFrame) => void>();
   const workspaceSyncSubs = new Set<(frame: WorkspaceSyncFrame) => void>();
+  const craftWorkspaceSubs = new Set<(frame: CraftWorkspacePushFrame) => void>();
 
   let socket: SocketHandle | null = null;
   let phase: ConnectionState = { phase: 'connecting' };
@@ -590,6 +593,11 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
           if (disposed) return;
           lastInboundAtMs = now();
           fanout(workspaceSyncSubs, frame);
+        },
+        onCraftWorkspacePush: (frame) => {
+          if (disposed) return;
+          lastInboundAtMs = now();
+          fanout(craftWorkspaceSubs, frame);
         },
         onRefused: handleRefused,
         onClose: handleClose,
@@ -893,6 +901,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     onWorkspaceCommand(cb) { workspaceCommandSubs.add(cb); return () => { workspaceCommandSubs.delete(cb); }; },
     onSocketOpen(cb) { socketOpenSubs.add(cb); return () => { socketOpenSubs.delete(cb); }; },
     onWorkspaceSync(cb) { workspaceSyncSubs.add(cb); return () => { workspaceSyncSubs.delete(cb); }; },
+    onCraftWorkspacePush(cb) { craftWorkspaceSubs.add(cb); return () => { craftWorkspaceSubs.delete(cb); }; },
 
     reconnect() {
       if (disposed) return;

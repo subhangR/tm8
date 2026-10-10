@@ -9,3 +9,7 @@ export { CraftsHome } from './CraftsHome';
 export type { CraftsHomeProps } from './CraftsHome';
 export { craftsSourceFromSeam, fixtureCraftsSource } from './crafts-source';
 export type { CraftCard, CraftsSource, FixtureCraft } from './crafts-source';
+export { CraftHeaderSwitcher } from './CraftHeaderSwitcher';
+export type { CraftHeaderSwitcherProps } from './CraftHeaderSwitcher';
+export { craftTabsKey, clearCraftOpenTabs, localOpenCraftsPort, serverOpenCraftsPort } from './craft-open-tabs';
+export type { OpenCraftsPort } from './craft-open-tabs';

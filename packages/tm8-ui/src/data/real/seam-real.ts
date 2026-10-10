@@ -331,6 +331,12 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       connection.onChatTurn((frame) =>
         cb(chatTurnFrameFromWire(frame as unknown as WireChatTurnFrame))),
     onChatContext: (cb) => connection.onChatContext(cb),
+    craftWorkspaces: {
+      list: (spaceId) => ops.listCraftWorkspaces(spaceId as SpaceId),
+      get: (spaceId, craftId) => ops.getCraftWorkspace(spaceId as SpaceId, craftId),
+      command: (spaceId, craftId, input) => ops.commandCraftWorkspace(spaceId as SpaceId, craftId, input),
+      onPush: (cb) => connection.onCraftWorkspacePush(cb),
+    },
     workspaceBridge: {
       send: (frame) => connection.sendWorkspace(frame),
       onCommand: (cb) => connection.onWorkspaceCommand(cb),

@@ -661,6 +661,8 @@ export interface Seam {
   onChatContext?(cb: (frame: ChatContextFrame) => void): Unsubscribe;
   /** Spec C: the Workspace remote bridge over the events socket. Optional: fixtures have none. */
   workspaceBridge?: WorkspaceBridgePort;
+  /** Lane L3: this identity's per-craft workspaces and open-crafts row. Optional: fixtures have none. */
+  craftWorkspaces?: CraftWorkspacesPort;
   onConnection(cb: (s: ConnectionState) => void): Unsubscribe;
   getConnection(): ConnectionState;
   /**
@@ -1823,6 +1825,24 @@ export interface WorkspaceBridgePort {
   onStatus?(cb: (online: boolean) => void): Unsubscribe;
   /** Multiple workspaces (API doc 01a115c4 §5): the HTTP management ops. */
   manage?: WorkspaceManagePort;
+}
+
+/**
+ * Craft-scoped workspaces (lane L3, doc 01a1255d §3 Persistence): one hidden
+ * workspace per (space, identity, craft), whose `open` / `position` are also
+ * the Craft top bar's open-craft tabs. Every call addresses the caller's own.
+ */
+export interface CraftWorkspacesPort {
+  list(spaceId: string): Promise<import('@tm8/contract').CraftWorkspaceListResult>;
+  /** Get-or-default: no write on read. */
+  get(spaceId: string, craftId: string): Promise<import('@tm8/contract').CraftWorkspace>;
+  command(
+    spaceId: string,
+    craftId: string,
+    input: import('@tm8/contract').CraftWorkspaceCommandInput,
+  ): Promise<import('@tm8/contract').CraftWorkspaceCommandResult>;
+  /** `craft.workspace` / `craft.workspaces` frames for this identity's windows. */
+  onPush(cb: (frame: import('./real/socket').CraftWorkspacePushFrame) => void): Unsubscribe;
 }
 
 /** The HTTP `workspace.*` management ops, scoped to one call's space. */
