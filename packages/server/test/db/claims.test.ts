@@ -93,9 +93,8 @@ describeDb('db claims (SET LOCAL)', () => {
         readClaims,
       );
       expect(first[0]?.identity).toBe('id_alpha');
-      expect(first[0]?.adminClaim).toBe('true');
-      // A space pin removes node-admin power even when the serialized claim
-      // is true (233); this test verifies both scoping and pooled clearing.
+      // PgDb and the SQL helper both strip node-admin power under a space pin.
+      expect(first[0]?.adminClaim).toBe('false');
       expect(first[0]?.admin).toBe(false);
       expect(first[0]?.pin).toBe('00000000-0000-7000-8000-0000000000a1');
       expect(first[0]?.authSession).toBe('00000000-0000-7000-8000-0000000000b1');

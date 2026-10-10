@@ -10,7 +10,7 @@ import type { RequestContext } from '../../src/http/types.js';
 const CHAT = '10000000-0000-4000-8000-000000000001';
 const PIN_A = '10000000-0000-4000-8000-000000000002';
 const PIN_B = '10000000-0000-4000-8000-000000000003';
-function rig({ refused = false, conflict = false } = {}) {
+function rig({ refused = false, conflict = false, unsupportedHarness = false } = {}) {
   const row = {
     space_id: 'space', teammate_id: 'teammate', model: 'claude-opus-5', provider: 'anthropic',
     agent_tool: 'claude-code', chat_mode: 'ask', cwd: '/tmp/chat', reasoning_effort: 'high',
@@ -21,7 +21,9 @@ function rig({ refused = false, conflict = false } = {}) {
   };
   const query = vi.fn(async () => [row]);
   const validate = vi.fn(async () => { if (refused) throw new SpawnError('Selected credential unavailable', 'forbidden'); });
-  const admit = vi.fn(async () => undefined);
+  const admit = vi.fn(async () => {
+    if (unsupportedHarness) throw Object.assign(new Error('Harness capability unavailable'), { code: 'invalid_input' });
+  });
   const rpc = vi.fn(async (name: string, args: unknown[]) => {
     if (conflict) throw Object.assign(new Error('Configuration changed'), { code: 'version_conflict' });
     const target = JSON.parse(args[2] as string);
@@ -41,7 +43,7 @@ function rig({ refused = false, conflict = false } = {}) {
     identity: { kind: 'auto-owner', identityId: 'human', authKind: 'browser' },
     headers: {}, method: op.method, path: op.path, requestId: 'test',
   } as RequestContext);
-  return { run, query, rpc, validate, row };
+  return { run, query, rpc, validate, admit, row };
 }
 
 describe('atomic chat configuration handler', () => {
@@ -55,6 +57,7 @@ describe('atomic chat configuration handler', () => {
     expect(test.validate).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-6.1-sol', agentTool: 'codex',
       credentialSelection: { source: 'space', credentialId: PIN_B } }));
     expect(test.rpc).toHaveBeenCalledTimes(1);
+    expect(test.admit).toHaveBeenCalledWith({ model: 'gpt-6.1-sol', reasoningEffort: 'xhigh' });
     expect(test.rpc.mock.calls[0]![1][1]).toBe(7);
     const target = JSON.parse(test.rpc.mock.calls[0]![1][2] as string);
     expect(target.credentialIntent.byProvider.anthropic).toEqual({ source: 'space', credentialId: PIN_A });
@@ -92,5 +95,12 @@ describe('atomic chat configuration handler', () => {
     expect(test.rpc.mock.calls[0]![1][1]).toBe(5);
     expect(test.rpc.mock.calls[0]![1][3]).toBe('same-mutation');
     expect(test.row.model).toBe('claude-opus-5');
+  });
+
+  it('refuses unsupported harness capabilities before credential resolution or a write', async () => {
+    const test = rig({ unsupportedHarness: true });
+    await expect(test.run({ model: 'gpt-6.1-sol' })).rejects.toMatchObject({ code: 'invalid_input' });
+    expect(test.validate).not.toHaveBeenCalled();
+    expect(test.rpc).not.toHaveBeenCalled();
   });
 });

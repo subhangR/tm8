@@ -102,6 +102,7 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
     if (!chat) {
       throw new CollabError('upstream_unavailable', 'chat runtime is unavailable on this node');
     }
+    await chat.orchestrator.admitConfiguration({ model: input.model, reasoningEffort: input.reasoningEffort ?? null });
 
     // D8/C6: both values are server-owned and pinned before the write commits.
     // A replay may mint throwaway candidates, but the ledger returns the
@@ -251,6 +252,7 @@ function setChatModel(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHand
     const selection = chatCredentialChoice(credentialIntent, provider);
     const reasoningEffort = input.reasoningEffort !== undefined ? input.reasoningEffort
       : config.reasoning_effort && model.efforts.includes(config.reasoning_effort) ? config.reasoning_effort : null;
+    await chat.orchestrator.admitConfiguration({ model: input.model, reasoningEffort });
     await chat.orchestrator.validateCredentialSelection({
       chatId, requesterIdentityId: requestClaims.identityId, requesterAuthKind: requestClaims.authKind ?? null,
       ...(requestClaims.authSessionId ? { requesterAuthSessionId: requestClaims.authSessionId } : {}),
