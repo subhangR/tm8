@@ -251,3 +251,21 @@ it('binds a second human turn to that poster instead of inheriting the creator r
   expect(granted.runtime_member_id).toBe(fixture.memberB);
   expect((await database.query('select identity_id from accounts where id=$1',[granted.account_id]))[0].identity_id).toBe(fixture.identityB);
 });
+
+
+it('permits a current prepared connector read but refuses pre-barrier effects and spoofed or stale grants',async () => {
+  const p=await prepared(); const tokenHash='e'.repeat(64);
+  const grant=await caller(async q => (await q.query("select public.issue_agent_runtime_session($1,$2,$3,now()+interval '1 hour',null,$4) result",
+    [p.id,fixture.teammateId,tokenHash,p.generation])).rows[0].result);
+  await caller(q => q.query("select public.bind_mcp_session($1,$2,'[]'::jsonb)",[p.id,tokenHash]));
+  const read=(session:string=grant.id) => database.transaction(async q => {
+    await q.query('set local role tm8_app');
+    await q.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','agent_runtime',true),set_config('tm8.auth_session_id',$2,true),set_config('tm8.session_space_id',$3,true)",
+      [fixture.identityA,grant.id,fixture.spaceId]);
+    return (await q.query('select public.read_mcp_session_binding($1,$2) result',[p.id,session])).rows[0].result;
+  });
+  expect(await read()).toMatchObject({identityId:fixture.identityA,launcherIdentityId:fixture.identityA,selections:[]});
+  await expect(read(randomUUID())).rejects.toMatchObject({code:'42501'});
+  await database.query('update chats set runtime_epoch=runtime_epoch+1 where entity_id=$1',[p.id]);
+  await expect(read()).rejects.toMatchObject({code:'42501'});
+});
