@@ -586,6 +586,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       nodeAdmin: identity.sessionSpaceId ? false : identity.nodeAdmin === true,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
       ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
+      ...(identity.authKind ? { authKind: identity.authKind } : {}),
+      ...(identity.kind === 'bearer' && identity.sessionId ? { authSessionId: identity.sessionId } : {}),
     };
   };
 
@@ -650,7 +652,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    */
   const resolveOptionalSocketIdentityId = async (
     req: IncomingMessage,
-  ): Promise<{ identityId: string; sessionSpaceId?: string; viaLinkId?: string } | undefined> => {
+  ): Promise<{ identityId: string; sessionSpaceId?: string; viaLinkId?: string; authKind?: string; authSessionId?: string } | undefined> => {
     if (!readTm8SessionCookie(req.headers) && req.headers.authorization === undefined) return undefined;
     const identity = await resolveSocketIdentity(req);
     if (!identity.identityId) return undefined;
@@ -659,6 +661,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       identityId: identity.identityId,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
       ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
+      ...(identity.authKind ? { authKind: identity.authKind } : {}),
+      ...(identity.kind === 'bearer' && identity.sessionId ? { authSessionId: identity.sessionId } : {}),
     };
   };
 

@@ -37,5 +37,7 @@ export async function supportClaims(
     requestId,
     ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
     ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
+    ...(identity.authKind ? { authKind: identity.authKind } : {}),
+    ...(identity.kind === 'bearer' && identity.sessionId ? { authSessionId: identity.sessionId } : {}),
   };
 }

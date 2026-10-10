@@ -125,6 +125,8 @@ export function identityFromSession(
       ? { runtimeThreadRootId: session.runtimeThreadRootId }
       : {}),
     ...(session.runtimeChatId ? { runtimeChatId: session.runtimeChatId } : {}),
+    ...(session.runtimeEpoch != null ? { runtimeEpoch: session.runtimeEpoch } : {}),
+    ...(session.runtimeNativeGeneration != null ? { runtimeNativeGeneration: session.runtimeNativeGeneration } : {}),
     // 082 / R11. Taken straight off the verified session row, which
     // `resolveBearerIdentity` looked up by TOKEN HASH — so it is a
     // server fact, not a client assertion. This is the only thing that
