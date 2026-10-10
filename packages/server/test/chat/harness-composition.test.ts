@@ -10,7 +10,7 @@ import {
 import { createChatPreparedLaunchResolver, type ChatPreparedLaunchInput } from '../../src/chat/harness-composition.js';
 import type { Db } from '../../src/db/types.js';
 import type { ResolvedAuthSession } from '../../src/identity/pg-auth.js';
-import { composeChatHarnessFoundation } from '../../src/chat/compose.js';
+import { composeChatBootstrap, composeChatHarnessFoundation } from '../../src/chat/compose.js';
 
 const CHAT = '019f0000-0000-7000-8000-000000000401';
 const SPACE = '019f0000-0000-7000-8000-000000000402';
@@ -267,6 +267,63 @@ describe('private generation launch composition', () => {
     const resolve = createChatPreparedLaunchResolver({ ...options, onCleanupFailure: cleanup });
     await expect(resolve(input, owner, fence)).rejects.toThrow('Chat launch cleanup is pending');
     expect(await readdir(join(dataDir, 'chat', 'launches', CHAT, '1'))).toEqual([]);
+    expect(cleanup).toHaveBeenCalledOnce();
+    state.failRevoke = false;
+    await cleanup.mock.calls[0]![0]();
+    expect(sessions.size).toBe(0);
+  });
+
+  it('coalesces post-launch cleanup and retries only the retired generation', async () => {
+    const { options, state, rpc, sessions, dataDir } = await rig();
+    const cleanup = vi.fn();
+    const resolve = createChatPreparedLaunchResolver({ ...options, onCleanupFailure: cleanup });
+    const first = await resolve(input, owner, fence);
+    state.failRevoke = true;
+    const releasing = first.launch.release();
+    const concurrent = first.launch.release();
+    const results = await Promise.allSettled([releasing, concurrent]);
+    expect(results.map(result => result.status)).toEqual(['rejected', 'rejected']);
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(rpc.mock.calls.filter(call => call[1] === 'revoke_agent_runtime_session')).toHaveLength(1);
+    expect(await readdir(join(dataDir, 'chat', 'launches', CHAT, '1'))).toEqual([]);
+
+    state.failRevoke = false;
+    const next = await resolve(input, { ...owner, generation: 2, ownerLeaseId: 'lease-b' }, { ...fence, generation: 2, leaseEpoch: 3 });
+    const material = await next.launch.materialize();
+    await cleanup.mock.calls[0]![0]();
+    await first.launch.release();
+    expect(rpc.mock.calls.filter(call => call[1] === 'revoke_agent_runtime_session').map(call => call[2]))
+      .toEqual([
+        [CHAT, fence.leaseEpoch, fence.generation, first.launch.runtimeGrantId],
+        [CHAT, fence.leaseEpoch, fence.generation, first.launch.runtimeGrantId],
+      ]);
+    expect(sessions.has(next.launch.runtimeGrantId)).toBe(true);
+    expect(await stat(material.mcpConfigPath)).toBeDefined();
+    await next.revalidate();
+    await next.launch.release();
+  });
+
+  it('keeps a failed post-launch cleanup retryable when its reporting hook throws', async () => {
+    const { options, state, sessions } = await rig();
+    const cleanup = vi.fn(() => { throw new Error(SECRET_ERROR); });
+    const resolve = createChatPreparedLaunchResolver({ ...options, onCleanupFailure: cleanup });
+    const prepared = await resolve(input, owner, fence);
+    state.failRevoke = true;
+    await expect(prepared.launch.release()).rejects.toThrow('Chat launch cleanup is pending');
+    expect(cleanup).toHaveBeenCalledOnce();
+    state.failRevoke = false;
+    await prepared.launch.release();
+    expect(sessions.size).toBe(0);
+  });
+
+  it('forwards the production factory cleanup hook for failed preparation unwind', async () => {
+    const { options, state, bind, sessions } = await rig();
+    const { registry: _registry, ...factoryOptions } = options;
+    const cleanup = vi.fn();
+    const foundation = composeChatBootstrap({ ...factoryOptions, nodeId: 'node-a', onCleanupFailure: cleanup });
+    state.failRevoke = true;
+    bind.mockRejectedValueOnce(new Error(SECRET_ERROR));
+    await expect(foundation.resolvePreparedLaunch(input, owner, fence)).rejects.toThrow('Chat launch cleanup is pending');
     expect(cleanup).toHaveBeenCalledOnce();
     state.failRevoke = false;
     await cleanup.mock.calls[0]![0]();

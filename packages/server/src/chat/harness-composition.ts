@@ -106,18 +106,25 @@ export function createChatPreparedLaunchResolver(options: ChatHarnessComposition
     let root: ChatLaunchDirectory | undefined;
     let grant: IssuedAgentRuntimeSession | undefined;
     let released = false;
+    let releaseInFlight: Promise<void> | undefined;
     const claims = claimsForLaunch(input);
-    const release = async () => {
-      if (released) return;
+    const release = (): Promise<void> => {
+      if (released) return Promise.resolve();
+      if (releaseInFlight) return releaseInFlight;
       // A stale release can revoke only this exact grant, never a successor.
-      const results = await Promise.allSettled([
+      releaseInFlight = Promise.allSettled([
         ...(grant ? [revokeAgentRuntimeSession(options.db, claims, input.chatId, { sessionId: grant.sessionId, fence })] : []),
         ...(root ? [root.release(owner)] : []), credential.release(owner),
-      ]);
-      if (results.some(result => result.status === 'rejected')) {
-        throw new CollabError('upstream_unavailable', 'Chat launch cleanup is pending');
-      }
-      released = true;
+      ]).then(results => {
+        // A rejected attempt must not become a permanently cached rejection.
+        releaseInFlight = undefined;
+        if (results.some(result => result.status === 'rejected')) {
+          try { options.onCleanupFailure?.(release); } catch { /* Reporting cannot replace safe cleanup evidence. */ }
+          throw new CollabError('upstream_unavailable', 'Chat launch cleanup is pending');
+        }
+        released = true;
+      });
+      return releaseInFlight;
     };
     try {
       const modelMaterial = await credential.materialize();
@@ -226,7 +233,7 @@ export function createChatPreparedLaunchResolver(options: ChatHarnessComposition
     } catch {
       // Nothing was handed to execution yet, so these resources have no live process owner.
       try { await release(); }
-      catch { options.onCleanupFailure?.(release); throw new CollabError('upstream_unavailable', 'Chat launch cleanup is pending'); }
+      catch { throw new CollabError('upstream_unavailable', 'Chat launch cleanup is pending'); }
       throw new CollabError('forbidden', 'Chat launch could not be prepared');
     }
   };
