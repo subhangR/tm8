@@ -2935,7 +2935,8 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
       '--story anchors a session directly to a story without making a task; exclusive with --task and --force-new-task (the API also excludes newTask). The story context is injected and inherited by authenticated children',
-      '--about <entity-id> records session -[about]-> entity in the spawn itself (you must be able to read it); only that edge lets the session\'s agent command your workspace on a craft — an about edge added later does not',
+      '--about <entity-id> records session -[about]-> entity in the spawn itself (you must be able to read it); only that edge lets the session\'s agent command your workspace on a craft — an about edge added later does not; --about is for a person (browser or cli): an agent token gets 403 about_not_allowed',
+      'an agent does not pass --about: a craft chat\'s runtime that spawns under its own chat (parentSessionId = the chat, the default for a chat) binds the session to what the chat is about automatically; a session that merely names a craft chat as its parent is not bound',
       '`--context` is launch-manifest context, NOT a runtime prompt',
       '`--memory` appends memory entities to the persona’s injected working set for THIS session only; nothing is written to the graph',
       'memories a `--task` task `remembers` are auto-injected after the persona’s working set (D9)',
