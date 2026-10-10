@@ -28,6 +28,8 @@ export interface ChatCredentialResolverOptions {
   parentEnv?: NodeJS.ProcessEnv;
 }
 
+export type ChatCredentialInput = ChatLaunchConfigInput & { readonly requesterAuthSessionId?: string };
+
 export interface ChatCredentialRoute {
   readonly model: string;
   readonly agentTool: 'claude-code' | 'codex';
@@ -78,10 +80,11 @@ export interface ResolvedChatCredential {
 export function createChatCredentialResolver(options: ChatCredentialResolverOptions) {
   const member = options.memberCredentials ?? new DbAgentCredentialHome(options);
   const space = options.spaceCredentials ?? spaceCredentialPort(options.db, options.dataDir);
-  return async (input: ChatLaunchConfigInput): Promise<ResolvedChatCredential> => {
+  return async (input: ChatCredentialInput): Promise<ResolvedChatCredential> => {
     const auth: DbClaims = {
       identityId: input.requesterIdentityId,
       ...(input.requesterAuthKind ? { authKind: input.requesterAuthKind } : {}),
+      ...(input.requesterAuthSessionId ? { authSessionId: input.requesterAuthSessionId } : {}),
     };
     const selection = input.credentialSelection ?? { source: 'auto' };
     const route = chatCredentialRoute(input);
