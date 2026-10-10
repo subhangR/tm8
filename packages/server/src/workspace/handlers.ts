@@ -498,7 +498,7 @@ export function workspaceHandlers(deps: WorkspaceHandlerDeps): WorkspaceHandlers
   const craft: OperationHandler = async (ctx) => {
     const craftId = craftParam(ctx);
     const who = await caller(ctx);
-    return json(await craftService.get(who.claims, who.spaceId, craftId, actorOf(who)));
+    return json(await craftService.get(who.claims, who.spaceId, craftId));
   };
 
   /**
