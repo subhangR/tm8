@@ -374,6 +374,8 @@ export const SPACE_LINK_REFUSED: readonly SpaceLinkRefusedPrefix[] = [
   { prefix: 'containers.expose', kinds: 'all', reason: 'grant', exact: true },
   { prefix: 'execution.terminal.start', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'execution.prompt', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'tools.run', kinds: 'all', reason: 'process_start', exact: true },
+  { prefix: 'tools.runs.', kinds: 'all', reason: 'session_body' },
   { prefix: 'chat.start', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.setCredentials', kinds: 'all', reason: 'process_start', exact: true },
   { prefix: 'chat.setModel', kinds: 'all', reason: 'process_start', exact: true },

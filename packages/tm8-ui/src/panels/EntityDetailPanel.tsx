@@ -70,6 +70,7 @@ import {
 } from './controls/EntityControls';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
+import { ToolBody } from '../tools/ToolBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
 import { TaskDescription } from './bodies/TaskDescription';
 import { RailRelations, relationLinks } from './bodies/RailRelations';
@@ -486,7 +487,7 @@ export interface EntityDetailPanelProps {
    * only the task half gets a reader panel whose `Edit` is
    * disabled-with-reason, which is the honest report of what it wired.
    */
-  commands?: ({ skills?: SkillPort; managed?: ManagedPort; opRequests?: OpRequestsOps } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands> & Partial<HeaderCommands>) | null;
+  commands?: ({ tools?: import("../tools/port").ToolPort; skills?: SkillPort; managed?: ManagedPort; opRequests?: OpRequestsOps } & AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands> & Partial<HeaderCommands>) | null;
   /** A save landed. The durable event carries only a summary, so the host
       must receive this result to reconcile heavy detail fields such as the
       task description into its detail cache. */
@@ -580,6 +581,8 @@ export interface EntityDetailPanelProps {
    * the row's own shape. No kind literal enters this file (§15.2).
    */
   mergePr?: MergePrSources | null;
+  /** Open a recorded execution in its terminal tab. */
+  onOpenToolSession?: (id: string) => void;
   onOpenEntity?: (id: string) => void;
   onRetry?: () => void;
   /**
@@ -2439,6 +2442,8 @@ function PanelBody(
       />
     );
   }
+
+  if (config.panel.archetype === 'scripted') return <ToolBody detail={detail} port={props.commands?.tools} onOpenSession={props.onOpenToolSession} />;
 
   if (config.panel.archetype === 'equipment') return <SkillBody detail={detail} port={props.commands?.skills} onOpenEntity={onOpenEntity} />;
 

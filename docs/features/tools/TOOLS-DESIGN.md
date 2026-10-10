@@ -1,0 +1,15 @@
+# Tools: design summary
+
+The approved design is [doc 01a12587-b29f-74d5-8dd3-14a70051c2d1](tm8://entity/01a12587-b29f-74d5-8dd3-14a70051c2d1). Its resolved decisions (§8 and §9) define v1; the contract describes the implemented API.
+
+A `tool` is a versioned bash or Python program with declared inputs and help. Humans and agents create and edit tools through `tools.*`. Each execution is a `work_session` with `sessionKind: tool`, linked to its definition by `executes`. Agent runs are children of their invoking session. Run history pins the definition version and source hash and records resolved public inputs, secret references, outcome, exit code and a redacted output tail (64 KiB).
+
+Values resolve in this order: run arguments, configured values, declared defaults. Missing required inputs refuse the run. Inputs are validated against their declared type and arrive as environment variables. The source comes from the stored definition; the run request carries values. Environment names that could change the interpreter, PATH or tm8 identity are reserved.
+
+Secrets can be supplied from an environment variable or bound to a sealed space credential. Binding/writing credentials is human-only; using one checks the invoker's credential visibility. Editing source preserves secret bindings, as approved. The source-change notice identifies changes since the viewer's last run. Live terminal output can contain secrets; persisted tails, events and command results redact them. Output redaction does not isolate the program from the node's filesystem or network.
+
+The node materialises a private run directory and executes its generated wrapper through the work-session PTY. CLI/agent runs close on exit and propagate the tool's exit code. UI runs set `keepOpen: true`: completion is recorded while the PTY becomes an interactive shell with no idle auto-close. Before starting that shell, the wrapper removes all declared secret variables, `TM8_AGENT_TOKEN` and `TM8_SESSION_ID`. Closed runs kill background children in the tool process group. Timeout and explicit termination settle the run as stopped; ordinary exits settle it as completed, including a nonzero exit code.
+
+`tm8Access: none` supplies no tm8 bearer and disables credential-store fallback. `read` and `write` mint a run-scoped agent token, capped by the caller's API scope and parent token lifetime. The facade rejects write operations under a read scope. Exit revokes the token; parent revocation cascades. In v1, tools with tm8 access require an invoking agent persona. Human CLI/UI runs of those tools are refused; follow-up [01a125a6-fb9e](tm8://entity/01a125a6-fb9e) owns the human token path.
+
+The starter set is [url-check](../../../examples/tools/url-check/), [gh-pr-status](../../../examples/tools/gh-pr-status/), [space-digest](../../../examples/tools/space-digest/) and [slack-notify](../../../examples/tools/slack-notify/). Each has separate source and a CLI spec JSON. The [integration suite](../../../packages/server/test/tools/tools-e2e.pg.test.ts) exercises the production server, throwaway database, real PTYs and CLI subprocesses with local external API stubs.

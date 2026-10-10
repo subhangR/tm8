@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
-import { build, defaultRoute, normalize, parse, workRedirectOf } from './codec';
+import { build, defaultRoute, homeAsTabs, normalize, parse, workRedirectOf } from './codec';
 import { decodeQ, encodeQ } from './q';
 import { MAX_HASH_LENGTH, emptyPanels } from './types';
 import type { ContentSurface, PanelTab, Route } from './types';
@@ -886,9 +886,34 @@ describe('Home (the tabs view) — /home is canonical, /work and /tabs permanent
     expect(build(route!).hash).toBe(hash);
   });
 
-  it('keeps bare /home as the shared Home target (the phone and legacy desktop draw it; the desktop redirects it)', () => {
+  it('round-trips bare /home on the three-mode desktop (homeAsTabs), no redirect', () => {
+    const hash = build(defaultRoute(SPACE, { view: 'tabs' })).hash;
+    expect(hash).toBe(`#/s/${SPACE}/home`);
+    const route = homeAsTabs(parse(hash).route!);
+    expect(route.target).toEqual({ view: 'tabs' });
+    expect(workRedirectOf(route)).toBeNull();
+    expect(build(route).hash).toBe(hash);
+  });
+
+  it('keeps bare /home as the shared Home target where the phone and legacy desktop read it', () => {
     expect(parse(`#/s/${SPACE}/home`).route?.target).toEqual({ view: 'home' });
-    expect(workRedirectOf(parse(`#/s/${SPACE}/home`).route!)).toMatchObject({ to: { view: 'tabs' }, open: [] });
+  });
+
+  it('homeAsTabs leaves a /home that carries anything (or names a root) to the redirect', () => {
+    for (const path of [`/home?p=${A}`, `/home?pin=${A}`, '/home/k/docs', '/home/chat']) {
+      const { route } = parse(`#/s/${SPACE}${path}`);
+      expect(homeAsTabs(route!)).toBe(route);
+    }
+  });
+
+  it('reads /home?tab=X&p=B back as written — X stays the active tab and the trail rides along', () => {
+    const B = '01a11195-aaaa-7bbb-8ccc-000000000002';
+    const hash = `#/s/${SPACE}/home?tab=${A}&p=${B}`;
+    const { route } = parse(hash);
+    expect(route?.target).toEqual({ view: 'tabs', tab: A });
+    expect(route?.panels.stack).toEqual([B]);
+    expect(workRedirectOf(route!)).toBeNull();
+    expect(build(route!).hash).toBe(hash);
   });
 
   it.each(['work', 'tabs'])('decodes /%s to the same route, and builds it back as /home', (alias) => {

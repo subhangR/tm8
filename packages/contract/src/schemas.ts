@@ -1,4 +1,5 @@
 import { McpServerEntitySchema, McpSelectionsSchema } from './mcp.js';
+import { ToolEntitySchema, ToolRunSchema } from './tools.js';
 import { WORKSPACE_WINDOW_CAPS } from './workspace-bridge.js';
 /**
  * Zod schemas for every contract shape — the single validation source
@@ -241,7 +242,7 @@ export const CoreEntityKindSchema = z.enum([
   'op_request',
   // Stories (283): roots by `contains`, the rest follows. Creatable through
   // the generic envelope.
-  'story', 'mcp_server',
+  'story', 'mcp_server', 'tool',
   // Space styles (284). Not in `CreatableEntityKind`: `styles.push` is its door.
   'style',
   // Designs (304): ordered pages by `contains`. Creatable through the generic
@@ -363,7 +364,7 @@ export const WorkSessionDriveModeSchema: z.ZodType<WorkSessionDriveMode> =
   z.enum(['owner', 'space']);
 /** Mirrors `work_sessions.session_kind`'s CHECK exactly — 083, widened by 101. */
 export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
-  z.enum(['agent', 'credential', 'shell']);
+  z.enum(['agent', 'credential', 'shell', 'container_exec', 'tool']);
 /** Mirrors `work_sessions.workdir_mode`'s CHECK exactly — 001, widened by 015. */
 export const WorkSessionWorkdirModeSchema: z.ZodType<WorkSessionWorkdirMode> =
   z.enum(['project', 'worktree', 'scratch']);
@@ -612,6 +613,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     // read that absence as `agent` so a frozen server keeps today's behaviour.
     // Clients filter with `!== 'credential'`; see the DTO note in contract.ts.
     sessionKind: WorkSessionKindSchema.optional(),
+    toolRun: ToolRunSchema.optional(),
     // The lane facts (107), additive: absent = a pre-107 node, no claim;
     // explicit null checkoutBranch = measured absence (no repo/detached HEAD).
     checkoutBranch: z.string().nullable().optional(),
@@ -717,6 +719,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // 304 — the design's page count.
   DesignStateSchema,
   McpServerEntitySchema,
+  ToolEntitySchema,
   // 209 — a form's lifecycle status and its question count.
   z.object({
     kind: z.literal('form'),
@@ -1147,6 +1150,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   // 304 — the design's description and, on a detail read, its ordered pages.
   DesignContentSchema,
   McpServerEntitySchema,
+  ToolEntitySchema,
   // 209 — a form: settings (defaults applied), sections and questions in order.
   z.object({
     kind: z.literal('form'),
@@ -2454,10 +2458,10 @@ export const CredentialsServiceKeyDeleteResultSchema: z.ZodType<CredentialsServi
 export const SpaceCredentialProviderNameSchema: z.ZodType<SpaceCredentialProviderName> =
   z.enum(['anthropic', 'openai', 'github']);
 /** server_only_space_credentials: stored as a space credential, spent server-side, never bound by a session. */
-export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe', 'mcp']);
-export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe', 'mcp']);
+export const SERVER_ONLY_CREDENTIAL_PROVIDERS: readonly ServerOnlyCredentialProviderName[] = Object.freeze(['typesafe', 'mcp', 'tool']);
+export const ServerOnlyCredentialProviderNameSchema: z.ZodType<ServerOnlyCredentialProviderName> = z.enum(['typesafe', 'mcp', 'tool']);
 export const SpaceCredentialStoredProviderNameSchema: z.ZodType<SpaceCredentialStoredProviderName> =
-  z.enum(['anthropic', 'openai', 'github', 'typesafe', 'mcp']);
+  z.enum(['anthropic', 'openai', 'github', 'typesafe', 'mcp', 'tool']);
 /** True for a provider that must never reach a session (gate 8). */
 export function isServerOnlyCredentialProvider(provider: string): provider is ServerOnlyCredentialProviderName {
   return (SERVER_ONLY_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider);

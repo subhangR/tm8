@@ -2017,6 +2017,11 @@ export class SpawnService {
    * and the honest report for it is the same exit transition every other death
    * takes rather than a synthesized launch error.
    */
+  /** Capture server-derived claims before a tool PTY can produce an exit event. */
+  adoptToolSession(auth: GraphAuth, sessionId: string): void {
+    this.sessionAuth.set(sessionId, auth);
+  }
+
   async startShell(auth: GraphAuth, request: ShellSessionRequest): Promise<ShellSessionResult> {
     const context = await this.graph.loadShellContext(auth, {
       spaceId: request.spaceId,

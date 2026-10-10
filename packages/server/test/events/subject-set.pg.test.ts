@@ -1,3 +1,4 @@
+import { addToolProjectionShape } from '../db/tool-projection-shape.js';
 /**
  * THE canonical subject set (migration 208, src/events/subject-set.ts), pinned
  * on both sides:
@@ -185,6 +186,7 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
     // shape again. It applies cleanly LAST, after the styles/mcp shims: its
     // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
     database.apply(['304_design_kind.sql']);
+    await addToolProjectionShape(database);
     // 313 (seen entities): the current classifier, taken
     // verbatim from the migration (313 itself cannot apply on this partial
     // chain), and the outcome column shapes the session reads select. No

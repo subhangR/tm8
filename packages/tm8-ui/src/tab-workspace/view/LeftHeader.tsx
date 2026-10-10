@@ -128,7 +128,7 @@ export function ViewSelector({ variant }: ViewSelectorProps) {
               className="tws-menu-row"
               onClick={() => {
                 close(true);
-                if (tab.id !== gate.activeViewTabId) gate.onSelectViewTab(tab.id);
+                if (tab.id !== gate.activeViewTabId || gate.atViewRoot === false) gate.onSelectViewTab(tab.id);
               }}
             >
               {tab.glyph ? (

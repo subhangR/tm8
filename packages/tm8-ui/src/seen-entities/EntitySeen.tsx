@@ -4,14 +4,23 @@ import type { Seam } from '../data/seam';
 
 const SeenContext = createContext<(id: string) => void>(() => undefined);
 
-/** Mounted once per signed-in member/space, above desktop and mobile lists. */
-export function EntitySeenProvider({ commands, refreshCounts, children }: {
+/**
+ * Mounted above desktop and mobile lists. Its memory is per signed-in
+ * member/space: `scope` names that pair, and a new scope starts empty sets.
+ *
+ * `scope` is a PROP, not a React `key`. Keying the provider on
+ * `space:viewer` remounted the whole app beneath it the moment the viewer
+ * resolved after the space did (the normal boot order) — every open rail
+ * group, menu and in-flight interaction was thrown away on first paint.
+ */
+export function EntitySeenProvider({ commands, refreshCounts, scope, children }: {
   commands: Seam['commands'];
   refreshCounts: () => void;
+  scope?: string;
   children: ReactNode;
 }) {
-  const pending = useMemo(() => new Set<string>(), [commands]);
-  const seen = useMemo(() => new Set<string>(), [commands]);
+  const pending = useMemo(() => new Set<string>(), [commands, scope]);
+  const seen = useMemo(() => new Set<string>(), [commands, scope]);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;

@@ -457,11 +457,18 @@ function parseTarget(
       /* `/home` IS THE DESKTOP'S HOME, the tabs view (Craft redesign §2,
          2026-10-10: Work was renamed Home and `/home` made canonical; `/work`
          and `/tabs` decode to it below). A `?tab=` or `?fp=&f=` names a Home
-         tab and decodes straight to it. BARE `/home` still decodes to the
-         shared Home target, because the phone (D16) and the legacy desktop
-         keep their chat Home there; the three-mode desktop lands it in the
-         tabs view through `workRedirectOf` (replace), as it always has. */
-      if (rest[1] === undefined && (query.get('tab') !== null || query.get('fp') !== null)) return tabsOf(query);
+         tab and decodes straight to it, with any panel params (`?p=` …) kept
+         as they are: the tabs view writes `/home?tab=X&p=B` itself (a palette
+         pick of a kind Home does not host pushes B over tab X), so reload,
+         Back and Forward must read back X active with the same trail.
+         BARE `/home` decodes to the shared Home target too, because the phone
+         (D16) and the legacy desktop keep their chat Home there; the
+         three-mode desktop reads it as the tabs view at decode time instead
+         (`homeAsTabs`, applied by the router), so its own address reads back
+         without a redirect. */
+      if (rest[1] === undefined && (query.get('tab') !== null || query.get('fp') !== null)) {
+        return tabsOf(query);
+      }
       return { view: 'home' };
     }
     case 'feed':
@@ -857,6 +864,23 @@ function dedupe(ids: readonly EntityId[]): EntityId[] {
     out.push(id);
   }
   return out;
+}
+
+/**
+ * THE THREE-MODE DESKTOP'S READING OF BARE `/home` (Craft redesign §2): Home
+ * is the tabs view there, so a bare `/home` — exactly what the tabs view
+ * writes with no tab active — decodes to it directly. Anything carried with
+ * it (a trail, pins, a chat, a session) is left as the shared Home target, so
+ * `workRedirectOf` still opens it as tabs. The phone and the legacy desktop
+ * never ask; their bare `/home` is the chat Home.
+ */
+export function homeAsTabs(route: Route): Route {
+  if (route.target.view !== 'home' || route.target.root) return route;
+  const { stack, pinned, tabs, contentSurface, session, chat } = route.panels;
+  const carries =
+    stack.length > 0 || pinned.length > 0 || Object.keys(tabs).length > 0 ||
+    Object.keys(contentSurface).length > 0 || session !== null || chat !== null;
+  return carries ? route : { ...route, target: { view: 'tabs' } };
 }
 
 /** A route with nothing open — the canonical default for a space. */

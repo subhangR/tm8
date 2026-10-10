@@ -35,6 +35,12 @@ export interface WorkspaceGateHandles {
   viewTabs: ShellTab[];
   shellTabs: ShellTab[];
   activeViewTabId: string | null;
+  /**
+   * False when the current mode is shown by one of its sub-screens rather
+   * than its own root — a kind's list screen under Home (Craft redesign §2) —
+   * so picking the current mode in the view menu still goes to its root.
+   */
+  atViewRoot?: boolean;
   /** The view the shell shows (`inbox`, `settings`, `files`…), or null on an entity: the rail's screens read current off it. */
   activeScreenRef?: string | null | undefined;
   onSelectViewTab(id: string): void;

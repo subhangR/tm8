@@ -208,6 +208,8 @@ describe('WorkspaceEventMapper passthrough arm', () => {
       expect(RPC_AUTHORED_PASSTHROUGH.has(type)).toBe(false);
     }
     expect([...RPC_AUTHORED_PASSTHROUGH].sort()).toEqual([
+      // 313: mark_entity_seen writes its own recipient-only row; no trigger.
+      'entity.seen',
       'git.commit_recorded',
       'git.pr_state_changed',
       'git.worktree_status_changed',
