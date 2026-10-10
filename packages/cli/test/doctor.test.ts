@@ -406,7 +406,7 @@ describe('agent CLIs — the exit-127 outage', () => {
 // ── 2. postgres ────────────────────────────────────────────────────────────
 
 describe('postgres — connect, do not ask pg_isready', () => {
-  it('resolves the URL exactly as db/migrate.mjs does', () => {
+  it('resolves an explicit target exactly as db/migrate.mjs does; with none it inspects the dev default', () => {
     expect(databaseUrl({})).toBe('postgres://postgres@127.0.0.1:5442/tm8_dev');
     expect(databaseUrl({ USER: 'me' })).toBe('postgres://me@127.0.0.1:5442/tm8_dev');
     expect(databaseUrl({ TM8_PG_PORT: '5443', TM8_DB: 'tm8_x', USER: 'me' })).toBe(

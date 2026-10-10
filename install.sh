@@ -702,7 +702,7 @@ if [[ "$MODE" == status ]]; then
         total="$(ls -1 "$TM8_ENV_CHECKOUT"/db/migrations/*.sql 2>/dev/null | wc -l | tr -d ' ')"
         if   [[ "$total" == 0 ]];        then dim "migrations $applied applied (no checkout at $TM8_ENV_CHECKOUT to compare against)"
         elif [[ "$applied" == "$total" ]]; then ok "migrations $applied/$total applied"
-        else warn "migrations $applied applied, $total in $TM8_ENV_CHECKOUT — run: node db/migrate.mjs up"; fi
+        else warn "migrations $applied applied, $total in $TM8_ENV_CHECKOUT — run: TM8_DATABASE_URL=<superuser url> node db/migrate.mjs up (add --i-mean-prod on 5442)"; fi
       else
         warn "no applied_migrations table — the database has no schema yet"
       fi
@@ -1322,7 +1322,10 @@ if (( DO_MIGRATE )); then
   info "$total migration files on disk; forward-only and checksum-locked"
   # As the SUPERUSER url, not the service's. A tm8_app URL gets "permission
   # denied for schema public" trying to create applied_migrations.
-  act_sh "cd '$TM8_ENV_CHECKOUT' && TM8_DATABASE_URL='$TM8_ENV_SUPERUSER_URL' TM8_PSQL='$PSQL' '$NODE_BIN' db/migrate.mjs up" \
+  # migrate.mjs refuses port 5442 unless told --i-mean-prod. dev and prod share
+  # the 5442 cluster (deploy/environments.sh), so the flag goes on for 5442 only.
+  migrate_flags=""; [[ "$TM8_ENV_PG_PORT" == 5442 ]] && migrate_flags="--i-mean-prod"
+  act_sh "cd '$TM8_ENV_CHECKOUT' && TM8_DATABASE_URL='$TM8_ENV_SUPERUSER_URL' TM8_PSQL='$PSQL' '$NODE_BIN' db/migrate.mjs up $migrate_flags" \
     || die "migration failed. The database is left as the last successful file
       left it (one transaction per file), so fix forward and re-run."
   did "schema current"

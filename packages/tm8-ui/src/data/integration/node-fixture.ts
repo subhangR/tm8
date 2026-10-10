@@ -30,8 +30,9 @@
  * the command reads harmless and the blast radius is not. So: a scratch
  * database per suite, name-prefixed `tm8ui_b4_`, dropped in `close()`, and
  * `assertNotSharedDatabase` refuses anything that even looks like `tm8_dev`
- * BEFORE the first byte is written. `db/migrate.mjs` falls back to `tm8_dev`
- * when `TM8_DATABASE_URL` is unset, so every invocation here sets it explicitly.
+ * BEFORE the first byte is written. `db/migrate.mjs` used to fall back to
+ * `tm8_dev` when `TM8_DATABASE_URL` was unset (it now refuses, db/target.mjs);
+ * every invocation here sets it explicitly regardless.
  *
  * **2. Boot from SOURCE, never from `dist`.** `packages/server/dist` predates
  * the Delta 1 mapper passthrough arm. A dist-booted node reports `menu.updated`
@@ -196,8 +197,8 @@ export async function startIntegrationNode(label: string): Promise<IntegrationNo
   const migrated = spawnSync('node', ['db/migrate.mjs', 'up'], {
     encoding: 'utf8',
     cwd: REPO_ROOT,
-    // TM8_DATABASE_URL is set EXPLICITLY, every time. migrate.mjs falls back to
-    // tm8_dev when it is absent, and that fallback is silent.
+    // TM8_DATABASE_URL is set EXPLICITLY, every time. migrate.mjs has no
+    // default target and refuses without one (db/target.mjs).
     env: { ...process.env, TM8_DATABASE_URL: databaseUrl },
     timeout: 300_000,
   });

@@ -142,8 +142,8 @@ natural place beside `p_max_uses` would silently reinterpret the cmid as a role.
 
 ```sh
 # SQL — 18 assertions, run AS tm8_app with claims bound the way the server binds them.
-TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_roles_check node db/migrate.mjs reset --force
-TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_roles_check TM8_TEST_DB=tm8_roles_check \
+TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_roles_check node db/migrate.mjs reset --force
+TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_roles_check TM8_TEST_DB=tm8_roles_check \
   node --test db/test/member_roles.test.mjs
 
 # UI

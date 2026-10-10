@@ -82,6 +82,10 @@ everything else in about two seconds.
 
 ## 1. The fastest way to see it work
 
+`db/migrate.mjs` has no default target and refuses port 5442 unless you pass
+`--i-mean-prod` — on the tm8 host 5442 is the PROD cluster; on a laptop it is
+your own sidecar's, so the recipes below pass it deliberately.
+
 One command. It resets the database, starts the server, drives all 17 calls of
 the loop, and prints what it did at every step. It uses a fake **echo agent**
 instead of a real model, so it costs nothing and needs no API key.
@@ -90,7 +94,7 @@ instead of a real model, so it costs nothing and needs no API key.
 cd ~/Desktop/Projects/tm8 && bun run build && \
 PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH \
 TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_dev \
-  node db/migrate.mjs reset --force && \
+  node db/migrate.mjs reset --force --i-mean-prod && \
 TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_dev \
 TM8_PORT=4610 TM8_AGENT_CMD=echo-agent \
   node packages/server/dist/index.js & \
@@ -126,7 +130,7 @@ Do this when you want to watch it rather than trust it.
 cd /path/to/your/tm8/clone
 PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH \
 TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_dev \
-  node db/migrate.mjs reset --force
+  node db/migrate.mjs reset --force --i-mean-prod
 ```
 
 Expect `dropped database` / `created database` / 14 migrations `ok` /

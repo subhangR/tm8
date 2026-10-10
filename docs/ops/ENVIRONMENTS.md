@@ -237,4 +237,5 @@ Each of these was actually run:
 - Staging runs the *uncommitted* working tree, including other lanes' in-flight
   migrations. `run-server.sh` does not migrate the DB; if a lane adds a
   migration, run `TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_staging
-  node db/migrate.mjs up` yourself.
+  node db/migrate.mjs up --i-mean-prod` yourself (the runner refuses the 5442
+  cluster without that flag, and has no default target at all).
