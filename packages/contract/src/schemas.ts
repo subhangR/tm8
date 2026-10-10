@@ -3929,6 +3929,7 @@ const executionSpawnInputObject = z.object({
   parentSessionId: SpawnUuidSchema.optional(),
   taskIds: z.array(SpawnUuidSchema).optional(),
   storyId: SpawnUuidSchema.optional(),
+  aboutEntityId: SpawnUuidSchema.optional(),
   forceNewTask: z.boolean().optional(),
   newTask: ExecutionNewTaskSchema.optional(),
   projectId: SpawnUuidSchema.nullable().optional(),

@@ -795,6 +795,8 @@ export interface LaunchHarnessRecord {
 
 export interface CreateWorkSessionInput {
   storyId?: string;
+  /** Written as session -[about]-> it in the same transaction as the session (315). */
+  aboutEntityId?: string;
   sourceWorkSessionId?: string;
   spaceId: string;
   teamMemberId: string;
@@ -1559,6 +1561,8 @@ export interface Tm8Manifest {
 export interface SpawnRequest {
   mcpSelections?: Array<{ serverId: string; credentialId?: string }>;
   storyId?: string;
+  /** `ExecutionSpawnInput.aboutEntityId`: the about edge written in the spawn transaction. */
+  aboutEntityId?: string;
   /** Server verified bearer provenance; never populated from request body. */
   sourceWorkSessionId?: string;
   spaceId: string;

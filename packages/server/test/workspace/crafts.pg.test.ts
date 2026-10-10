@@ -310,6 +310,31 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asChat(bare) })).rejects.toMatchObject(refused);
   });
 
+  it('§4 spawn: execution.spawn aboutEntityId binds the session; work_session_about cannot bind one later', async () => {
+    // As createWorkSession does it: execution_spawn, then work_session_about, in ONE transaction.
+    const spawn = async (about: string | null) => db.tx(claims(), async (q) => {
+      const r = await q.rpc<{ entity: { id: string } }>('public.execution_spawn', [
+        spaceId, teammate, [], null, 'scratch', '/tmp/craft-spawn', null, null, null, null, 'Craft session', null, false, 50, null,
+        `cmid_${randomUUID()}`, null, null, null, null,
+      ]);
+      if (about !== null) await q.rpc('public.work_session_about', [r.entity.id, about]);
+      return r.entity.id;
+    });
+    const bound = await spawn(craft);
+    expect(await cmd(craft, 'tabs.activate', { entityId: page }, { as: asSession(bound) })).toMatchObject({ status: 'applied' });
+    expect(await cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(bound) })).toMatchObject({ status: 'applied' });
+    // Idempotent for the edge it already wrote (a replayed spawn).
+    await db.rpc(claims(), 'public.work_session_about', [bound, craft]);
+
+    const refused = { code: 'forbidden', details: { reason: 'not_craft_session' } };
+    const unbound = await spawn(null);
+    await expect(db.rpc(claims(), 'public.work_session_about', [unbound, craft])).rejects.toMatchObject({ code: '42501' });
+    await about(unbound, craft); // an edges.create after the spawn
+    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asSession(unbound) })).rejects.toMatchObject(refused);
+    // The target must be readable.
+    await expect(spawn(randomUUID())).rejects.toMatchObject({ code: 'P0002' });
+  });
+
   it('the list keeps the open flag of a craft the person can no longer see', async () => {
     const gone = idOf(await design('Craft to delete'));
     expect(await cmd(gone, 'craft.open')).toMatchObject({ status: 'applied' });

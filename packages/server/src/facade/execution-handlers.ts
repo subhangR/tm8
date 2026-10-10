@@ -1000,32 +1000,40 @@ export class DbGraphPort implements GraphPort {
     // Positional, in 007_rpc_catalog.sql:2027's declared order. Getting this
     // wrong is a silent semantic swap, not a type error — the two text
     // parameters either side of p_mode are the ones to watch.
-    const result = await this.db.rpc<Record<string, unknown>>(
-      this.claims(auth),
-      'public.execution_spawn',
-      [
-        input.spaceId,
-        input.teamMemberId,
-        input.taskIds,
-        input.projectId,
-        input.workdirMode,
-        input.workdirPath,
-        input.baseRef,
-        input.mode,
-        input.model,
-        input.agentTool,
-        input.title,
-        input.nodeId,
-        input.confirmUntrusted,
-        this.sessionCap,
-        null, // p_actor_id — resolve_actor derives it from the claims
-        input.clientMutationId,
-        input.parentSessionId,
-        input.newTaskTitle ?? null,
-        input.storyId ?? null,
-        input.sourceWorkSessionId ?? null,
-      ],
-    );
+    const args = [
+      input.spaceId,
+      input.teamMemberId,
+      input.taskIds,
+      input.projectId,
+      input.workdirMode,
+      input.workdirPath,
+      input.baseRef,
+      input.mode,
+      input.model,
+      input.agentTool,
+      input.title,
+      input.nodeId,
+      input.confirmUntrusted,
+      this.sessionCap,
+      null, // p_actor_id — resolve_actor derives it from the claims
+      input.clientMutationId,
+      input.parentSessionId,
+      input.newTaskTitle ?? null,
+      input.storyId ?? null,
+      input.sourceWorkSessionId ?? null,
+    ];
+    // `aboutEntityId` (315): the about edge goes in the SAME transaction as the
+    // session, so it binds (Craft doc §4); work_session_about refuses any
+    // session not created in the calling transaction, and answers a replay.
+    const about = input.aboutEntityId;
+    const result = about
+      ? await this.db.tx(this.claims(auth), async (q) => {
+        const spawned = await q.rpc<Record<string, unknown>>('public.execution_spawn', args);
+        const spawnedId = (spawned?.entity as { id?: unknown } | undefined)?.id;
+        if (typeof spawnedId === 'string') await q.rpc('public.work_session_about', [spawnedId, about]);
+        return spawned;
+      })
+      : await this.db.rpc<Record<string, unknown>>(this.claims(auth), 'public.execution_spawn', args);
 
     const replayed = result?.__tm8_replayed === true;
     const { __tm8_replayed: _replayMarker, createdTaskId, ...commandResult } = result ?? {};
@@ -3542,6 +3550,7 @@ function registerHandlers(
       parentSessionId,
       ...(taskIds ? { taskIds } : {}),
       ...(input.storyId ? { storyId: input.storyId } : {}),
+      ...(input.aboutEntityId ? { aboutEntityId: input.aboutEntityId } : {}),
       ...(sourceWorkSessionId ? { sourceWorkSessionId } : {}),
       ...(input.newTask ? { newTask: { title: input.newTask.title } } : {}),
       projectId: input.projectId ?? null,

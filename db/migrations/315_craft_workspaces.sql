@@ -681,4 +681,42 @@ update public.edge_types
  where type = 'about'
    and not ('work_session' = any(src_kinds));
 
+-- execution.spawn's `aboutEntityId`: session -[about]-> p_about_id, written in
+-- the SAME transaction that created the session (the server calls this right
+-- after execution_spawn, in one transaction). That is what makes the edge bind
+-- (§4: an about edge counts only when its created_at is its source's). Any
+-- other session is refused, so this is no way to bind one later; a replayed
+-- spawn whose edge already exists is answered as done. The target must be
+-- live, in the session's space, and readable by the caller.
+create or replace function public.work_session_about(p_session_id uuid, p_about_id uuid)
+returns void language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  s public.entities;
+begin
+  select * into s from public.entities where id = p_session_id and kind = 'work_session' and deleted_at is null;
+  if s.id is null then
+    raise exception 'no such work session' using errcode = 'P0002';
+  end if;
+  perform internal.require_space_member(s.space_id);
+  if exists (select 1 from public.edges e where e.type = 'about' and e.src_id = p_session_id and e.dst_id = p_about_id) then
+    return;
+  end if;
+  if s.created_at <> now() then
+    raise exception 'an about edge binds only at spawn' using errcode = '42501';
+  end if;
+  if not exists (
+    select 1 from public.entities t where t.id = p_about_id and t.space_id = s.space_id and t.deleted_at is null
+  ) or not internal.entity_readable(p_about_id) then
+    raise exception 'no entity % to be about', p_about_id using errcode = 'P0002';
+  end if;
+  perform internal.w1_set_writer('spawn');
+  insert into public.edges(space_id, src_id, dst_id, type, created_by)
+  values (s.space_id, p_session_id, p_about_id, 'about', s.created_by);
+  perform internal.w1_set_writer(null);
+end;
+$$;
+
+revoke all on function public.work_session_about(uuid, uuid) from public;
+grant execute on function public.work_session_about(uuid, uuid) to tm8_app;
+
 analyze public.workspaces;
