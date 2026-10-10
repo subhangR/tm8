@@ -1,6 +1,6 @@
 # Seamless chat harness continuity LLD
 
-Status: design draft for coordinator review; no implementation in this change.
+Status: coordinator reviewed and approved design; no implementation in this change.
 Baseline: `bad53675b`, including migration 314 and chat credential selection.
 Owner task: `01a1259f-edda-7eb3-b432-499756c142ff`.
 Related lanes: runtime `01a1259f-ecef-7c13-8883-892ba4a68877`, credentials
@@ -241,8 +241,10 @@ payload handle, content hash and explicit truncation notice. Do not split a
 JSON/tool evidence unit into an invalid provider call. Retain the latest request,
 constraints, decisions, unresolved work and all uncertainty notices; earlier
 material is represented by a checkpoint with citations. References are usable
-through a read-only authorized `chat.history.read`/payload read tool in every
-harness, returning bounded pages and explicit continuation cursors.
+through existing authorized tm8 message/entity/file read tools with bounded
+pages and continuation cursors. The server's internal ordinal/part reader does
+not require a new public endpoint. Add a dedicated bounded payload/history read
+surface only if existing tools cannot express the necessary authorized read.
 
 Checkpoints contain goals/preferences, decisions with source keys, completed
 effects with their receipts, uncertain effects, unresolved questions and artifact
@@ -254,8 +256,9 @@ covered cursor and all uncertainty notices survive. Record summarizer model,
 prompt/reducer version and source digest. If generation or validation fails,
 use the deterministic reducer and disclose omitted detail; never start empty.
 
-Maintain a checkpoint after settlement when needed so a switch does not depend
-on a fresh summary request through a revoked credential. Reuse checkpoints only
+Use deterministic extractive compaction in phase one, so a switch never depends
+on a fresh summary request through a revoked credential. Cached checkpoints
+after settlement are optional latency optimizations. Reuse checkpoints only
 with matching source/visibility digests. A smaller-model switch re-renders to
 that model's budget. If the current input and required uncertainty/constraint
 envelope alone exceed capacity, return `continuity_context_overflow` with the
@@ -940,6 +943,21 @@ nonce recall or readback and a mutation count of one; final prose alone is not
 evidence. No such implementation tests are claimed by this design-only draft.
 
 ## 14. Cross-lane decisions for review
+
+Minimum first implementation: bounded portable history from existing turns and
+parts; deterministic extractive compaction with honest references/omissions;
+atomic desired model/effort/credential configuration; immutable attempt input
+and provenance; durable prepared/sent distinction and boot recovery; scoped
+native generations; generation-aware MCP authorization; stale append/settle
+fences; and exact canonical runtime contracts. The sent-versus-prepared crash
+test and stale-token mutation test are release requirements.
+
+Later optimizations: model-generated summaries, eager checkpoint creation,
+deduplicated projections/externalized large blobs, new history endpoints and
+richer native-store coverage probes. An initial probe can return `unknown` and
+always bootstrap on cold start. It cannot claim exact coverage from file
+existence. This trades acceleration for an honest portable transition and does
+not weaken the first implementation's continuity guarantees.
 
 The runtime lane owns adapter protocols, effective configuration evidence,
 process fencing/close semantics and provider-native checkpoint probes. The
