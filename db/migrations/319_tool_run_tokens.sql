@@ -44,7 +44,7 @@ returns jsonb language sql stable security definer set search_path = public, int
      and a.status = 'active'
      and not exists (select 1 from public.work_sessions ws
        where ws.entity_id=s.work_session_id and ws.session_kind='tool'
-       and (ws.tool_state<>'running' or ws.status not in ('spawning','running','idle')))
+       and (ws.tool_state<>'running' or ws.outcome<>'open' or ws.status not in ('spawning','running','idle')))
 $$;
 
 create function public.issue_tool_session_agent_session(p_session_id uuid,p_team_member_id uuid,
@@ -69,7 +69,7 @@ begin
  end if;
  select * into ws from public.work_sessions where entity_id=e.id for update;
  select * into parent from public.work_sessions where entity_id=caller;
- if ws.session_kind<>'tool' or ws.tool_state<>'running' or ws.status not in ('spawning','running','idle')
+ if ws.session_kind<>'tool' or ws.tool_state<>'running' or ws.outcome<>'open' or ws.status not in ('spawning','running','idle')
  or parent.session_kind<>'agent' or parent.status not in ('running','idle')
  or not exists(select 1 from public.edges g where g.src_id=p_team_member_id and g.dst_id=caller
    and g.type='participates_in' and g.space_id=e.space_id) then
@@ -107,13 +107,13 @@ end $$;
 create function internal.revoke_settled_tool_tokens() returns trigger
 language plpgsql security definer set search_path=public,internal,pg_temp as $$
 begin
- if new.session_kind='tool' and (new.tool_state<>'running' or new.status not in ('spawning','running','idle')) then
+ if new.session_kind='tool' and (new.tool_state<>'running' or new.outcome<>'open' or new.status not in ('spawning','running','idle')) then
   update public.auth_sessions set revoked_at=coalesce(revoked_at,now())
   where work_session_id=new.entity_id and revoked_at is null;
  end if;
  return new;
 end $$;
-create trigger work_sessions_revoke_tool_tokens after update of tool_state,status on public.work_sessions
+create trigger work_sessions_revoke_tool_tokens after update of tool_state,status,outcome on public.work_sessions
  for each row execute function internal.revoke_settled_tool_tokens();
 revoke all on function public.issue_tool_session_agent_session(uuid,uuid,text,timestamptz,text) from public;
 grant execute on function public.issue_tool_session_agent_session(uuid,uuid,text,timestamptz,text) to tm8_app;

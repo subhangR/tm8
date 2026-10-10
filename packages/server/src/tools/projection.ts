@@ -2,10 +2,11 @@ import { ToolRunSchema, ToolViewSchema, type ActorSummary, type ToolRun, type To
 import { createHash } from 'node:crypto';
 
 /** Shared by entity reads and event projection, with no credential material. */
-export const TOOL_CONTENT_SQL = `case when e.kind='tool' then internal.entity_content(e.id) || jsonb_build_object(
+export const TOOL_CONTENT_SQL = `case when e.kind='tool' then (select to_jsonb(tl)-'entity_id' || jsonb_build_object(
+ 'config',coalesce((select jsonb_object_agg(c.input_name,c.value) from public.tool_config c where c.tool_id=e.id),'{}'::jsonb),
  'secretBindings',coalesce((select jsonb_agg(jsonb_build_object('inputName',b.input_name,'credentialId',b.credential_id,
- 'keyHint',c.key_hint,'boundBy',b.bound_by,'boundAt',b.bound_at)) from public.tool_secret_bindings b
- left join public.space_credentials c on c.id=b.credential_id where b.tool_id=e.id),'[]'::jsonb)) end`;
+ 'keyHint',public.read_space_credential(b.credential_id)->>'keyHint','boundBy',b.bound_by,'boundAt',b.bound_at))
+ from public.tool_secret_bindings b where b.tool_id=e.id),'[]'::jsonb)) from public.tools tl where tl.entity_id=e.id) end`;
 
 export const TOOL_RUN_SQL = `case when ws.session_kind='tool' then jsonb_build_object(
  'id',e.id,'spaceId',e.space_id,'parentSessionId',e.parent_id,'toolId',ws.tool_id,'toolVersion',ws.tool_version,

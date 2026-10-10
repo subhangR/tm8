@@ -169,7 +169,7 @@ it('runs only reviewed stored source, resolves server inputs, and never returns 
   await vi.waitFor(async () => expect((await db.tx(agent, q => loadToolRun(q, session!))).state).toBe('exited'), { timeout: 10000 });
   const runView = await db.tx(agent, q => loadToolRun(q, session!));
   expect(runView).toMatchObject({ exitCode: 6, inputs: { value: 'argument-public' } });
-  expect(runView.outputTail).toContain('argument-public|[redacted]|[redacted]');
+  expect(runView.outputTail).toContain('argument-public|[credential-redacted]|[credential-redacted]');
   expect(runView.outputTail).not.toContain('bound-private-value'); expect(runView.outputTail).not.toMatch(/tm8s_/);
   expect((await database.query('select revoked_at from public.auth_sessions where work_session_id=$1', [session]))[0]!.revoked_at).toBeTruthy();
   expect((await runtime.run(agent, identity, input)).reused).toBe(true);

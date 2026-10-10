@@ -14,8 +14,8 @@ export async function loadTool(q: Querier, toolId: string): Promise<ToolView> {
   const config = await q.query<{ input_name: string; value: ToolView['config'][string] }>(
     'select input_name,value from public.tool_config where tool_id=$1', [toolId]);
   const bindings = await q.query<{ input_name: string; credential_id: string; key_hint: string | null; bound_by: string | null; bound_at: Date | string | null }>(
-    `select b.input_name,b.credential_id,c.key_hint,b.bound_by,b.bound_at from public.tool_secret_bindings b
-     left join public.space_credentials c on c.id=b.credential_id where b.tool_id=$1`, [toolId]);
+    `select b.input_name,b.credential_id,public.read_space_credential(b.credential_id)->>'keyHint' as key_hint,b.bound_by,b.bound_at from public.tool_secret_bindings b
+     where b.tool_id=$1`, [toolId]);
   const actors = await loadActors(q, bindings.flatMap(value => value.bound_by ? [value.bound_by] : []));
   const [last] = await q.query<{ tool_source_sha256: string }>(`select w.tool_source_sha256 from public.work_sessions w
     join public.entities e on e.id=w.entity_id where w.tool_id=$1 and e.deleted_at is null
