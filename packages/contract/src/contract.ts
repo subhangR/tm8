@@ -6096,6 +6096,13 @@ export interface ExecutionSpawnInput extends CommandContext {
   /** Direct story anchor, exclusive with taskIds, newTask and forceNewTask. Creates no task. */
   storyId?: EntityId;
   /**
+   * What the session is ABOUT: written as `session -[about]-> aboutEntityId`
+   * in the spawn transaction, after checking the caller can read it. Only an
+   * edge written at spawn binds the session to it (e.g. a craft's workspace,
+   * Craft doc 01a1255d §4); one added later binds nothing.
+   */
+  aboutEntityId?: EntityId;
+  /**
    * When a `taskIds` entry is a non-task entity, mint a NEW derived task for
    * it even when an open one exists — the "start a different piece of work
    * here" gesture. Ignored for ids that already name tasks (the 064 fast

@@ -124,7 +124,7 @@ import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loo
 import type { HandlerRegistry } from './registry.js';
 import { sessionCheckoutHandlers } from './services/session-checkouts.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
-import { resolveSpawnParentId } from '../chat/scope.js';
+import { isChatRuntimeBearer, resolveSpawnParentId, runtimeChatIdOf } from '../chat/scope.js';
 import { issuePtyGrantToken } from '../pty/grant-token.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
@@ -1000,32 +1000,44 @@ export class DbGraphPort implements GraphPort {
     // Positional, in 007_rpc_catalog.sql:2027's declared order. Getting this
     // wrong is a silent semantic swap, not a type error — the two text
     // parameters either side of p_mode are the ones to watch.
-    const result = await this.db.rpc<Record<string, unknown>>(
-      this.claims(auth),
-      'public.execution_spawn',
-      [
-        input.spaceId,
-        input.teamMemberId,
-        input.taskIds,
-        input.projectId,
-        input.workdirMode,
-        input.workdirPath,
-        input.baseRef,
-        input.mode,
-        input.model,
-        input.agentTool,
-        input.title,
-        input.nodeId,
-        input.confirmUntrusted,
-        this.sessionCap,
-        null, // p_actor_id — resolve_actor derives it from the claims
-        input.clientMutationId,
-        input.parentSessionId,
-        input.newTaskTitle ?? null,
-        input.storyId ?? null,
-        input.sourceWorkSessionId ?? null,
-      ],
-    );
+    const args = [
+      input.spaceId,
+      input.teamMemberId,
+      input.taskIds,
+      input.projectId,
+      input.workdirMode,
+      input.workdirPath,
+      input.baseRef,
+      input.mode,
+      input.model,
+      input.agentTool,
+      input.title,
+      input.nodeId,
+      input.confirmUntrusted,
+      this.sessionCap,
+      null, // p_actor_id — resolve_actor derives it from the claims
+      input.clientMutationId,
+      input.parentSessionId,
+      input.newTaskTitle ?? null,
+      input.storyId ?? null,
+      input.sourceWorkSessionId ?? null,
+    ];
+    // `aboutEntityId` / `aboutFromChatId` (321): the about edge goes in the SAME
+    // transaction as the session, so it binds (Craft doc §4). work_session_about
+    // decides who may bind; a replay answers what was recorded and binds nothing
+    // new, so a retry naming a different entity cannot fail the retry.
+    const about = input.aboutEntityId ?? null;
+    const fromChat = input.aboutFromChatId ?? null;
+    const result = about !== null || fromChat !== null
+      ? await this.db.tx(this.claims(auth), async (q) => {
+        const spawned = await q.rpc<Record<string, unknown>>('public.execution_spawn', args);
+        const spawnedId = (spawned?.entity as { id?: unknown } | undefined)?.id;
+        if (typeof spawnedId === 'string' && spawned?.__tm8_replayed !== true) {
+          await q.rpc('public.work_session_about', [spawnedId, about, fromChat]);
+        }
+        return spawned;
+      })
+      : await this.db.rpc<Record<string, unknown>>(this.claims(auth), 'public.execution_spawn', args);
 
     const replayed = result?.__tm8_replayed === true;
     const { __tm8_replayed: _replayMarker, createdTaskId, ...commandResult } = result ?? {};
@@ -3466,6 +3478,15 @@ function registerHandlers(
     // read or written. See identity/link-bearer.ts.
     refuseLinkBearerSpawn(ctx, claims);
 
+    // 321 (Craft doc §4): an about edge written at spawn lets the session's agent
+    // command the caller's craft workspace, so only a person names it, or a chat
+    // runtime for its own sessions (work_session_about re-checks both). Refused
+    // here, before a worktree is provisioned for a spawn that cannot finish. A
+    // runtime bearer whose row names no chat has no sessions of its own to bind.
+    if (input.aboutEntityId !== undefined && ctx.identity.kind === 'bearer'
+      && !['browser', 'cli'].includes(ctx.identity.authKind ?? '') && runtimeChatIdOf(ctx) === null) {
+      throw fail('forbidden', 'only a person, or a chat for its own sessions, sets aboutEntityId', { reason: 'about_not_allowed' });
+    }
     if (input.storyId !== undefined && (input.taskIds !== undefined || input.newTask !== undefined || input.forceNewTask !== undefined)) {
       throw fail('invalid_input', 'storyId cannot be combined with taskIds, newTask or forceNewTask', { reason: 'story_spawn_conflict' });
     }
@@ -3542,6 +3563,10 @@ function registerHandlers(
       parentSessionId,
       ...(taskIds ? { taskIds } : {}),
       ...(input.storyId ? { storyId: input.storyId } : {}),
+      ...(input.aboutEntityId ? { aboutEntityId: input.aboutEntityId } : {}),
+      // A chat runtime spawns under its own chat (resolveSpawnParentId); its
+      // sessions inherit what the chat is about (321 work_session_about).
+      ...(isChatRuntimeBearer(ctx) && runtimeChatIdOf(ctx) ? { aboutFromChatId: runtimeChatIdOf(ctx)! } : {}),
       ...(sourceWorkSessionId ? { sourceWorkSessionId } : {}),
       ...(input.newTask ? { newTask: { title: input.newTask.title } } : {}),
       projectId: input.projectId ?? null,

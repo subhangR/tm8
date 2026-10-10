@@ -795,6 +795,10 @@ export interface LaunchHarnessRecord {
 
 export interface CreateWorkSessionInput {
   storyId?: string;
+  /** Written as session -[about]-> it in the same transaction as the session (321). */
+  aboutEntityId?: string;
+  /** The spawning chat runtime's own chat (server fact): its sessions inherit what it is about (321). */
+  aboutFromChatId?: string;
   sourceWorkSessionId?: string;
   spaceId: string;
   teamMemberId: string;
@@ -1559,6 +1563,10 @@ export interface Tm8Manifest {
 export interface SpawnRequest {
   mcpSelections?: Array<{ serverId: string; credentialId?: string }>;
   storyId?: string;
+  /** `ExecutionSpawnInput.aboutEntityId`: the about edge written in the spawn transaction. */
+  aboutEntityId?: string;
+  /** Server fact: the chat runtime bearer's own chat, which may bind its sessions to what it is about (321). */
+  aboutFromChatId?: string;
   /** Server verified bearer provenance; never populated from request body. */
   sourceWorkSessionId?: string;
   spaceId: string;
