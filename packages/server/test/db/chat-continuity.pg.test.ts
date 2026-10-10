@@ -265,7 +265,87 @@ it('permits a current prepared connector read but refuses pre-barrier effects an
     return (await q.query('select public.read_mcp_session_binding($1,$2) result',[p.id,session])).rows[0].result;
   });
   expect(await read()).toMatchObject({identityId:fixture.identityA,launcherIdentityId:fixture.identityA,selections:[]});
+  const effect=()=>database.transaction(async q=>{
+    await q.query('set local role tm8_app');
+    await q.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','agent_runtime',true),set_config('tm8.auth_session_id',$2,true)",[fixture.identityA,grant.id]);
+    return q.query('select public.authorize_chat_runtime_effect($1,$2)',[p.id,grant.id]);
+  });
+  await expect(effect()).rejects.toMatchObject({code:'42501'});
+  await opened(p);await caller(q=>q.query('select public.begin_chat_dispatch($1,$2,$3,$4)',[p.id,p.fence,p.snapshot,p.sealed.inputDigest]));
+  await expect(effect()).resolves.toBeDefined();
   await expect(read(randomUUID())).rejects.toMatchObject({code:'42501'});
   await database.query('update chats set runtime_epoch=runtime_epoch+1 where entity_id=$1',[p.id]);
   await expect(read()).rejects.toMatchObject({code:'42501'});
+});
+
+it('runs queued cross-harness turns through the registry with durable inert history and exact grant ownership',async () => {
+  const {PgDb}=await import('../../src/db/client.js');
+  const {ChatOrchestrator}=await import('../../src/chat/orchestrator.js');
+  const {ChatTurnPublisher}=await import('../../src/chat/publisher.js');
+  const {SubscriptionRegistry}=await import('../../src/events/subscriptions.js');
+  const {HarnessRegistry}=await import('@tm8/execution');
+  const db=new PgDb({databaseUrl:database.url}); const id=await chat();
+  const opens:any[]=[]; const submissions:any[]=[]; const releases:string[]=[]; const errors:unknown[]=[];
+  const adapter=(kind:'codex'|'claude') => {
+    const caps={schemaVersion:1,harness:kind,binaryVersion:'test',protocolRevision:'v2',nativeResume:'unknown',portableBootstrap:'supported',
+      cancelActiveTurn:'supported',nativeTurnIds:'supported',usage:'supported',contextReading:'supported',interactiveRequests:'unsupported',
+      textInputs:'supported',imageInputs:'unsupported',fileInputs:'unsupported',builtInToolRestriction:'unknown',
+      configuration:{model:'per_turn',reasoningEffort:'per_turn',serviceTier:'per_turn',instructions:'restart',tools:'restart',credential:'restart'}};
+    return {kind,capabilities:async()=>caps,open:async(input:any)=>{
+      opens.push(input);let command:any;let ready!:()=>void;const submitted=new Promise<void>(r=>{ready=r;});
+      const seed={...input.mode.context,transport:'instructions',acknowledgement:'turn_accepted'};
+      return {fence:input.fence,opened:{native:{schemaVersion:1,harness:kind,nativeId:`opaque:${kind}:${opens.length}`,nodeId:'node-a',
+        storageScopeId:input.launch.nativeStorageScopeId,nativeStorageGeneration:1,cwdIdentity:input.config.cwdIdentity,historyFormat:'test'},nativeConfirmed:true,
+        readiness:'protocol_session_ack',capabilities:caps,execution:{requested:input.config.target,configuredModel:input.config.target.model,
+          observedModel:null,observedEffort:null,observedServiceTier:null,evidence:'protocol_echo'},seed:{...seed,acknowledgement:'launch_materialized'}},
+        observations:(async function*(){await submitted; const base={fence:input.fence,attempt:command.attempt,nativeTurnId:'native-turn',observedAt:new Date().toISOString()};
+          yield {...base,adapterSeq:1,payload:{kind:'seed_acknowledged',seed}};
+          yield {...base,adapterSeq:2,payload:{kind:'text',itemId:'answer',revision:1,operation:'append',phase:'final',text:`answer:${kind}`}};
+          if(submissions.length===1) yield {...base,adapterSeq:3,payload:{kind:'tool',tool:{toolKey:'first-tool',nativeCallId:'tool',name:'write',args:{path:'once'},
+            state:'completed',result:'written once',origin:'native',evidence:'completion_only'}}};
+          yield {...base,adapterSeq:4,payload:{kind:'terminal',outcome:'completed',evidence:'provider_terminal'}};
+        })(),
+        submit:async(value:any)=>{command=value;submissions.push(value);
+          if(submissions.length===1) {
+            await caller(q=>q.query(`select public.w2_post_message_batch($1::uuid[],'queued future user',null,'{}'::uuid[],'{}'::uuid[],null,null,$2,null,null)`,[[id],randomUUID()]));
+            await caller(q=>q.query('select public.set_chat_configuration($1,1,$2,$3)',[id,target,randomUUID()]));
+          }
+          ready();return {delivery:'sent',acknowledgement:'native_ack',nativeTurnId:'native-turn'};},
+        cancel:async()=>({disposition:'requested',nativeTurnId:'native-turn'}),respond:async()=>{},close:async()=>({exited:true,nativeUsable:null})};
+    }};
+  };
+  const registry=new HarnessRegistry([adapter('codex'),adapter('claude')] as any);
+  const resolver=async(input:any,owner:any,fence:any)=>{
+    const auth={identityId:input.requesterIdentityId,authKind:input.requesterAuthKind,...(input.requesterAuthSessionId?{authSessionId:input.requesterAuthSessionId}:{})};
+    const grant:any=await db.rpc(auth,'issue_agent_runtime_session',[id,fixture.teammateId,randomUUID().replaceAll('-','').repeat(2),new Date(Date.now()+3600000).toISOString(),null,fence]);
+    const tokenHash=(await database.query('select token_hash from auth_sessions where id=$1',[grant.id]))[0].token_hash;
+    await db.rpc(auth,'bind_mcp_session',[id,tokenHash,JSON.stringify([])]);
+    const revalidate=async()=>{await db.rpc({identityId:input.requesterIdentityId,authKind:'agent_runtime',authSessionId:grant.id,sessionSpaceId:fixture.spaceId},'read_mcp_session_binding',[id,grant.id]);};
+    const requested={harness:input.agentTool==='codex'?'codex':'claude',provider:input.provider,model:input.model,reasoningEffort:input.reasoningEffort,serviceTier:null};
+    return {target:requested,instructionHash:'instructions',toolPolicyHash:'policy',mcpBindingRevision:'mcp',credentialBinding:{},credentialBindingId:randomUUID(),
+      credentialRevision:null,launchFingerprint:null,revalidate,launch:{owner,kind:'ephemeral-launch',launchId:randomUUID(),storageScopeId:'private',
+        nativeStorageScopeId:`history:${fence.generation}`,nativeStorageGeneration:1,modelCredentialLeaseId:'lease',runtimeGrantId:grant.id,capabilityPlanId:'plan',
+        materialize:async()=>({}),release:async()=>{releases.push(grant.id);await db.rpc(auth,'revoke_agent_runtime_session',[id,fence.leaseEpoch,fence.generation,grant.id]);}}};
+  };
+  const orchestrator=new ChatOrchestrator({db,registry,resolvePreparedLaunch:resolver as any,nodeId:'node-a',bootId:'boot-a',
+    publisher:new ChatTurnPublisher(new SubscriptionRegistry()),onError:error=>errors.push(error)});
+  try {
+    await orchestrator.wake(id,fixture.identityA);
+    expect(errors).toEqual([]); expect(opens.map(o=>o.config.target.harness)).toEqual(['codex','claude']);
+    expect(submissions[0].config.target.model).toBe('gpt-5.6-sol');
+    expect(opens[0].mode.context.renderedContext).not.toContain('queued future user');
+    expect(opens[1].mode.context.renderedContext).toContain('original input');
+    expect(opens[1].mode.context.renderedContext).toContain('answer:codex');
+    expect(opens[1].mode.context.renderedContext).toContain('written once');
+    expect(opens[1].mode.context.renderedContext).not.toContain('queued future user');
+    expect(opens[1].mode.context.renderedContext).toContain('"executable":false');
+    const back={...target,model:'gpt-5.6-sol',provider:'openai',agentTool:'codex'};
+    await caller(q=>q.query('select public.set_chat_configuration($1,2,$2,$3)',[id,back,randomUUID()]));
+    await caller(q=>q.query(`select public.w2_post_message_batch($1::uuid[],'return to codex',null,'{}'::uuid[],'{}'::uuid[],null,null,$2,null,null)`,[[id],randomUUID()]));
+    await orchestrator.wake(id,fixture.identityA);
+    expect(errors).toEqual([]);expect(opens[2].mode.kind).toBe('bootstrap');expect(opens[2].mode.context.renderedContext).toContain('answer:claude');
+    expect(new Set(opens.map(o=>o.fence.generation)).size).toBe(3);expect(releases).toHaveLength(3);
+    expect((await database.query('select state from chat_turns where chat_id=$1 order by turn_ordinal',[id])).map(r=>r.state)).toEqual(['completed','completed','completed']);
+    expect(await database.query("select * from message_parts where kind='tool_result' and message_id in(select agent_message_id from chat_turns where chat_id=$1)",[id])).toHaveLength(1);
+  } finally {await db.end();}
 });

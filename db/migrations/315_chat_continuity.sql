@@ -927,4 +927,43 @@ end $$;
 revoke all on function public.fail_chat_preparation(uuid,jsonb,jsonb) from public;
 grant execute on function public.fail_chat_preparation(uuid,jsonb,jsonb) to tm8_app;
 
+-- Stream evidence is mutable, generation-fenced state, distinct from requested
+-- immutable configuration. Only the latest bounded context/facts are retained.
+create function public.record_chat_runtime_observation(p_chat_id uuid,p_fence jsonb,p_snapshot_id uuid,p_kind text,p_payload jsonb)
+returns void language plpgsql security definer set search_path=public,internal,pg_temp as $$
+declare c public.chats; a public.chat_turn_attempts;
+begin
+  c:=internal.chat_lock_owned(p_chat_id,p_fence);
+  select * into a from public.chat_turn_attempts where snapshot_id=p_snapshot_id;
+  if c.active_execution_snapshot_id is distinct from p_snapshot_id or a.phase not in ('dispatching','accepted')
+    or c.runtime_phase not in ('dispatching','running') or p_kind not in ('context','execution')
+    or jsonb_typeof(p_payload) is distinct from 'object' or octet_length(p_payload::text)>8192 then
+    raise exception 'stale or invalid runtime observation' using errcode='42501';
+  end if;
+  if p_kind='context' then
+    perform public.set_chat_context(p_chat_id,p_payload);
+  elsif p_payload->'requested' is distinct from a.open_receipt->'execution'->'requested' then
+    raise exception 'runtime requested target changed' using errcode='23514';
+  end if;
+  update public.chat_turn_attempts set open_receipt=jsonb_set(open_receipt,array[p_kind],p_payload)
+    where snapshot_id=p_snapshot_id;
+end $$;
+revoke all on function public.record_chat_runtime_observation(uuid,jsonb,uuid,text,jsonb) from public;
+grant execute on function public.record_chat_runtime_observation(uuid,jsonb,uuid,text,jsonb) to tm8_app;
+
+-- Proxy/local connector dispatch uses this before every external effect. The
+-- resolver's prepared binding read does not grant permission to call tools.
+create function public.authorize_chat_runtime_effect(p_chat_id uuid,p_auth_session_id uuid) returns void
+language plpgsql security definer set search_path=public,internal,pg_temp as $$
+begin
+  if internal.claim_text('tm8.auth_kind') is distinct from 'agent_runtime'
+    or p_auth_session_id is null or p_auth_session_id::text is distinct from internal.claim_text('tm8.auth_session_id')
+    or not exists(select 1 from public.auth_sessions where id=p_auth_session_id and runtime_chat_id=p_chat_id) then
+    raise exception 'runtime effect unavailable' using errcode='42501';
+  end if;
+  perform internal.assert_chat_runtime_authority();
+end $$;
+revoke all on function public.authorize_chat_runtime_effect(uuid,uuid) from public;
+grant execute on function public.authorize_chat_runtime_effect(uuid,uuid) to tm8_app;
+
 reset role;

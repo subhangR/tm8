@@ -1,12 +1,18 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   MessagePartSchema,
+  launchModel,
+  CollabError,
+  type LaunchModelEffort,
   type ChatMode,
   type ChatCredentialSelection,
   type ChatTurnUsage,
   type MessageView,
   type SessionTranscriptContext,
 } from '@tm8/contract';
+import type { HarnessRegistry } from '@tm8/execution';
+import { executeFencedTurn, type ActiveChatHarness, type FencedClaim } from './fenced-turn.js';
+import type { createChatPreparedLaunchResolver } from './harness-composition.js';
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
 import { chatModeLine } from './compose.js';
@@ -27,7 +33,7 @@ interface ChatTurnAttachment {
   readonly mime?: string | null;
 }
 
-interface ClaimedTurn {
+export interface ClaimedTurn {
   readonly turnId: string;
   readonly chatId: string;
   readonly userMessageId: string;
@@ -82,9 +88,14 @@ interface BatchRpcResult {
 
 export interface ChatOrchestratorOptions {
   readonly db: Db;
-  readonly runtime: AgentRuntime;
+  readonly runtime?: AgentRuntime;
+  readonly registry?: HarnessRegistry;
+  readonly resolvePreparedLaunch?: ReturnType<typeof createChatPreparedLaunchResolver>;
+  readonly nodeId?: string;
+  readonly bootId?: string;
+  readonly historyBudgetBytes?: number;
   readonly publisher: ChatTurnPublisher;
-  readonly resolveLaunchConfig: ResolveChatLaunchConfig;
+  readonly resolveLaunchConfig?: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
   readonly onError?: (error: unknown) => void;
   /**
@@ -306,7 +317,33 @@ export class ChatOrchestrator {
     readonly model: string;
   }>();
 
-  constructor(private readonly options: ChatOrchestratorOptions) {}
+  private readonly activeHarnesses=new Map<string,ActiveChatHarness>();
+  private readonly bootId: string;
+  constructor(private readonly options: ChatOrchestratorOptions) {
+    this.bootId=options.bootId ?? randomUUID();
+    if (options.registry && (!options.nodeId || !options.resolvePreparedLaunch)) {
+      throw new Error('Production chat requires node identity and prepared launch resolver');
+    }
+  }
+
+  async admitConfiguration(input:{model:string;reasoningEffort:LaunchModelEffort|null}):Promise<void> {
+    const entry=launchModel(input.model);
+    if (!entry || input.reasoningEffort!==null && !entry.efforts.includes(input.reasoningEffort as never)) {
+      throw new CollabError('invalid_input','Chat model or effort is not supported');
+    }
+    if (this.options.registry) await this.options.registry.admit({
+      harness:entry.agentTool==='claude-code' ? 'claude' : 'codex',provider:entry.provider,model:entry.model,
+      reasoningEffort:input.reasoningEffort,serviceTier:null,
+    },['portableBootstrap']);
+  }
+
+  async interrupt(chatId:string):Promise<boolean> {
+    const active=this.activeHarnesses.get(chatId);
+    if (active) { const receipt=await active.session.cancel(active.attempt,'user');
+      return receipt.disposition==='requested' || receipt.disposition==='already_terminal'; }
+    return await this.options.runtime?.interrupt(chatId) ?? false;
+  }
+
 
   /**
    * F2 (PR188 review): reconcile durable state with process reality at boot.
@@ -324,6 +361,21 @@ export class ChatOrchestrator {
   async reconcileOnBoot(): Promise<void> {
     const sweep = this.options.sweepClaims;
     if (!sweep) return;
+    if (this.options.registry) {
+      const rows=await this.options.db.query<{entity_id:string;configured_by_identity_id:string;turn_id:string;attempt_no:number}>(sweep,
+        `select c.entity_id,c.configured_by_identity_id,t.turn_id,t.attempt_no
+         from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
+         where t.state='running' and ((c.node_id=$1 and c.runtime_owner_boot_id is distinct from $2)
+           or coalesce(c.runtime_lease_expires_at,t.lease_expires_at)<=now()) order by t.turn_ordinal`,
+        [this.options.nodeId,this.bootId]);
+      for (const row of rows) await this.options.db.rpc(claims(row.configured_by_identity_id),
+        'recover_chat_attempt',[row.entity_id,row.turn_id,row.attempt_no,{nodeId:this.options.nodeId,bootId:this.bootId}]);
+      const queued=await this.options.db.query<{entity_id:string;configured_by_identity_id:string}>(sweep,
+        `select distinct c.entity_id,c.configured_by_identity_id from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
+         where t.state='queued' and (c.node_id=$1 or c.node_id is null or c.runtime_lease_expires_at<=now())`,[this.options.nodeId]);
+      for (const row of queued) void this.wake(row.entity_id,row.configured_by_identity_id);
+      return;
+    }
     try {
       const stale = await this.options.db.query<{
         entity_id: string;
@@ -425,13 +477,22 @@ export class ChatOrchestrator {
 
   private async drain(chatId: string, requesterIdentityId: string): Promise<void> {
     for (;;) {
-      const turn = await this.options.db.rpc<ClaimedTurn | null>(
-        claims(requesterIdentityId),
-        'claim_next_chat_turn',
-        [chatId],
-      );
-      if (!turn) return;
-      await this.runTurn(turn);
+      if (this.options.registry && this.options.resolvePreparedLaunch) {
+        const leaseToken=randomUUID();
+        const turn=await this.options.db.rpc<FencedClaim|null>(claims(requesterIdentityId),'claim_next_chat_turn',[
+          chatId,2,{nodeId:this.options.nodeId,bootId:this.bootId,
+            leaseTokenHash:createHash('sha256').update(leaseToken).digest('hex')}]);
+        if (!turn) return;
+        await executeFencedTurn({db:this.options.db,registry:this.options.registry,
+          resolvePreparedLaunch:this.options.resolvePreparedLaunch,publisher:this.options.publisher,turn,leaseToken,
+          prompt:promptFor(turn,await this.readAbout(turn)),historyBudgetBytes:this.options.historyBudgetBytes ?? 32768,
+          createAgentMessage:()=>this.createAgentMessage(turn),track:active=>this.activeHarnesses.set(chatId,active),
+          untrack:()=>this.activeHarnesses.delete(chatId),onError:this.options.onError});
+      } else {
+        const turn=await this.options.db.rpc<ClaimedTurn|null>(claims(requesterIdentityId),'claim_next_chat_turn',[chatId]);
+        if (!turn) return;
+        await this.runTurn(turn);
+      }
     }
   }
 
@@ -509,7 +570,7 @@ export class ChatOrchestrator {
     try {
       const threadId = await this.ensureRuntime(turn);
       const about = await this.readAbout(turn);
-      for await (const item of this.options.runtime.sendTurn(threadId, { text: promptFor(turn, about) })) {
+      for await (const item of this.options.runtime!.sendTurn(threadId, { text: promptFor(turn, about) })) {
         // F6 (PR188 review): claude emits an empty thinking block on some
         // turns; persisting it draws an empty "Thinking" disclosure. Skip it —
         // absence of thought is not a part.
@@ -540,7 +601,7 @@ export class ChatOrchestrator {
       'complete_chat_turn',
       [
         turn.turnId,
-        terminal.reason === 'success' || terminal.reason === 'closed' ? 'completed' : 'error',
+        terminal.reason === 'success' ? 'completed' : 'error',
         text,
         finalUsage,
         totalCost,
@@ -565,7 +626,7 @@ export class ChatOrchestrator {
       const currentLive = this.liveChats.get(turn.chatId);
       this.liveChats.delete(turn.chatId);
       if (currentLive) {
-        await this.options.runtime.close(currentLive.threadId).catch(() => undefined);
+        await this.options.runtime!.close(currentLive.threadId).catch(() => undefined);
         await this.options.db.rpc(
           claims(turn.requesterIdentityId),
           'mark_chat_runtime_state',
@@ -619,6 +680,9 @@ export class ChatOrchestrator {
 
   /** Credential mutations also stop already-running chats that lose their selection. */
   async recheckCredentials(): Promise<void> {
+    await Promise.all([...this.activeHarnesses.values()].map(async active=>{
+      try { await active.revalidate(); } catch { await active.session.cancel(active.attempt,'revocation'); }
+    }));
     if (!this.options.resolveCredentialEnv) return;
     await Promise.all([...this.liveChats.entries()].map(async ([chatId, live]) => {
       try {
@@ -628,7 +692,7 @@ export class ChatOrchestrator {
           matches = credentialFingerprint(env) === live.credentialFingerprint;
         } catch { /* Unreadable policy/credential refuses continued reuse. */ }
         if (matches || this.liveChats.get(chatId) !== live) return;
-        await this.options.runtime.close(live.threadId);
+        await this.options.runtime!.close(live.threadId);
         if (this.liveChats.get(chatId) !== live) return;
         this.liveChats.delete(chatId);
         await this.options.db.rpc(claims(live.credentialInput.requesterIdentityId),
@@ -678,7 +742,7 @@ export class ChatOrchestrator {
     // start a new one, or the switch would cost the user the conversation.
     let closedLiveRuntime = false;
     if (live) {
-      await this.options.runtime.close(live.threadId);
+      await this.options.runtime!.close(live.threadId);
       this.liveChats.delete(turn.chatId);
       await this.options.db.rpc(
         claims(turn.requesterIdentityId),
@@ -688,7 +752,7 @@ export class ChatOrchestrator {
       closedLiveRuntime = true;
     }
     const mode = closedLiveRuntime || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
-    const launch = await this.options.resolveLaunchConfig({ ...credentialInput, mode });
+    const launch = await this.options.resolveLaunchConfig!({ ...credentialInput, mode });
     const runtimeCwd = launch.cwd ?? turn.cwd;
     const input: StartAgentThreadInput = {
       threadId: turn.chatId,
@@ -709,7 +773,7 @@ export class ChatOrchestrator {
     await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'live']);
     let started;
     try {
-      started = await this.options.runtime.startThread(input);
+      started = await this.options.runtime!.startThread(input);
       // A revoke can commit while startThread awaits the vendor's boot. It
       // found no registered live chat then, so close that race before sending.
       if (this.options.resolveCredentialEnv) {
@@ -719,7 +783,7 @@ export class ChatOrchestrator {
         }
       }
     } catch (error) {
-      if (started) await this.options.runtime.close(started.threadId);
+      if (started) await this.options.runtime!.close(started.threadId);
       await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'stopped']);
       throw error;
     }
