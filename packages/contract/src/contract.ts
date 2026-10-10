@@ -19,6 +19,7 @@
 
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { McpSelection, McpServerEntity } from './mcp.js';
+import type { ToolEntity, ToolRun } from './tools.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
 import type { OpRequestStatus } from './op-requests.js';
@@ -103,7 +104,7 @@ export type CoreEntityKind =
   // READ-ONLY theme in a space. Born and re-versioned only by `styles.push`;
   // `entities.create`/`entities.patch` refuse it. Personal styles are NOT
   // entities (they live in `personal_styles`, owner-only).
-  | 'style' | 'mcp_server'
+  | 'style' | 'mcp_server' | 'tool'
   // Designs (migration 304, Craft → Designs 2026-10-06): an ordered set of
   // PAGES, each any entity, held as ordered `contains` edges. See ./design.ts.
   | 'design';
@@ -289,6 +290,7 @@ export interface TaskAssignment {
 
 export type CoreEntityState =
   | McpServerEntity
+  | ToolEntity
   | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
       assignees: ActorSummary[];
@@ -428,6 +430,8 @@ export type CoreEntityState =
        * value, re-derive BOTH sides yourself; do not read either as covered.
        */
       sessionKind?: WorkSessionKind;
+      /** The pinned tool run; PTY status is independent of its outcome. */
+      toolRun?: ToolRun;
       /**
        * THE SESSION'S LANE FACTS (107) — "what am I working on, git-wise",
        * answerable from every list/tile read without a second fetch and
@@ -988,6 +992,7 @@ export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note
 
 export type CoreEntityContent =
   | McpServerEntity
+  | ToolEntity
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
   | { kind: 'channel'; topic: string; pinned: EntitySummary[]; autoTabs: ChannelTab[] }
@@ -3049,7 +3054,7 @@ export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
  * Jev's key), and never handed to a session — the spawn reader refuses them
  * in SQL and in TS, and `session_space_credentials` cannot hold one.
  */
-export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp';
+export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp' | 'tool';
 
 /** Every provider a space credential row can carry: launchable or server-only. */
 export type SpaceCredentialStoredProviderName = SpaceCredentialProviderName | ServerOnlyCredentialProviderName;
@@ -4961,7 +4966,7 @@ export type WorkSessionDriveMode = 'owner' | 'space';
  * to find it in the session list, so the deny-list filters that hide
  * `credential` must continue to SHOW this.
  */
-export type WorkSessionKind = 'agent' | 'credential' | 'shell';
+export type WorkSessionKind = 'agent' | 'credential' | 'shell' | 'container_exec' | 'tool';
 
 /**
  * Where a session's working directory lives — `work_sessions.workdir_mode`'s
