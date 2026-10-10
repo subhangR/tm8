@@ -180,7 +180,7 @@ describe('who is NOT redirected', () => {
   });
 });
 
-describe('the selector is Home · Design · Observe · Settings', () => {
+describe('the selector is Home · Craft · Observe · Settings', () => {
   it('in Home: the view menu lists exactly the four modes, Home current', async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
@@ -188,7 +188,7 @@ describe('the selector is Home · Design · Observe · Settings', () => {
     expect(trigger.textContent).toContain('Home');
     fireEvent.click(trigger);
     const rows = within(view.getByRole('menu', { name: 'Views' })).getAllByRole('menuitemradio');
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Home', 'Design', 'Observe', 'Settings']);
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Home', 'Craft', 'Observe', 'Settings']);
     expect(rows[0]!.getAttribute('aria-checked')).toBe('true');
   });
 
@@ -198,12 +198,12 @@ describe('the selector is Home · Design · Observe · Settings', () => {
     const pill = within(tabs).getByTestId('top-view-switcher');
     expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim())).toEqual([
       'Home',
-      'Design',
+      'Craft',
       'Observe',
       'Settings',
     ]);
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
-    for (const retired of ['Work', 'Workspace', 'Board', 'Craft', 'Graph']) expect(labels).not.toContain(retired);
+    for (const retired of ['Work', 'Workspace', 'Board', 'Design', 'Graph']) expect(labels).not.toContain(retired);
   });
 
   it('the tab scope button leads the tab strip, before every tab (Craft redesign §2)', async () => {

@@ -1,12 +1,12 @@
 /**
- * A design (304) read from the CLI lists its PAGES in page order — position,
+ * A craft (304 as `design`, renamed by 316) read from the CLI lists its PAGES in page order — position,
  * kind, title, id — on `entity context` (the v2 `pages` field), on `entity
  * get` text, and as one small row per page in the bounded json projection.
  */
 import { expect, it } from 'vitest';
 import { boundEntityDetail } from '../src/entity-bounded.js';
 import { renderContextBrief } from '../src/context-brief.js';
-import { renderDesignDetail } from '../src/design-render.js';
+import { renderCraftDetail } from '../src/craft-render.js';
 import { parseManifest } from '../src/manifest.js';
 import { operationHelp } from '../src/discovery/help.js';
 
@@ -17,7 +17,7 @@ const page = (id: string, kind: string, title: string, pagePosition: number | nu
 
 it('entity context prints the pages in order with position, kind, title and id', () => {
   const text = renderContextBrief({
-    schemaVersion: 'tm8.entity-context.v2', id: 'design-1', kind: 'design', title: 'Checkout', version: 3,
+    schemaVersion: 'tm8.entity-context.v2', id: 'design-1', kind: 'craft', title: 'Checkout', version: 3,
     status: 'to_do', asOfSeq: 9,
     pages: [
       { id: 'graph-1', kind: 'graph', title: 'Plan', status: 'to_do', position: 1 },
@@ -28,28 +28,28 @@ it('entity context prints the pages in order with position, kind, title and id',
   expect(text).not.toContain('pages: ');
 });
 
-it('an empty design says how to add a page', () => {
-  const text = renderContextBrief({ id: 'design-1', kind: 'design', title: 'Empty', version: 1, status: 'to_do', asOfSeq: 1, pages: [] });
+it('an empty craft says how to add a page', () => {
+  const text = renderContextBrief({ id: 'design-1', kind: 'craft', title: 'Empty', version: 1, status: 'to_do', asOfSeq: 1, pages: [] });
   expect(text).toContain('pages (0):');
-  expect(text).toContain('tm8 collection add <design-id> <entity-id>');
+  expect(text).toContain('tm8 collection add <craft-id> <entity-id>');
 });
 
 it('entity get text lists the hydrated pages after the summary line', () => {
-  const text = renderDesignDetail(
-    { id: 'design-1', kind: 'design', content: { kind: 'design', description: '', pages: [page('graph-1', 'graph', 'Plan', 1), page('doc-1', 'doc', 'Spec', null)] } },
-    'design design-1 Checkout',
+  const text = renderCraftDetail(
+    { id: 'design-1', kind: 'craft', content: { kind: 'craft', description: '', pages: [page('graph-1', 'graph', 'Plan', 1), page('doc-1', 'doc', 'Spec', null)] } },
+    'craft design-1 Checkout',
   );
-  expect(text).toBe('design design-1 Checkout\npages (2):\n  #1 graph Plan graph-1\n  #- doc Spec doc-1');
+  expect(text).toBe('craft design-1 Checkout\npages (2):\n  #1 graph Plan graph-1\n  #- doc Spec doc-1');
   // Not hydrated (a command result): just the summary line.
-  expect(renderDesignDetail({ id: 'd', content: { kind: 'design', description: '', pages: null } }, 'line')).toBe('line');
+  expect(renderCraftDetail({ id: 'd', content: { kind: 'craft', description: '', pages: null } }, 'line')).toBe('line');
 });
 
 it('the bounded projection keeps one small row per page', () => {
   const bounded = boundEntityDetail({
-    id: 'design-1', kind: 'design', title: 'Checkout',
-    content: { kind: 'design', description: 'x', pages: [page('graph-1', 'graph', 'Plan', 1)] },
+    id: 'design-1', kind: 'craft', title: 'Checkout',
+    content: { kind: 'craft', description: 'x', pages: [page('graph-1', 'graph', 'Plan', 1)] },
   });
-  expect(bounded.content).toEqual({ kind: 'design', description: 'x', pages: [{ position: 1, kind: 'graph', title: 'Plan', id: 'graph-1' }] });
+  expect(bounded.content).toEqual({ kind: 'craft', description: 'x', pages: [{ position: 1, kind: 'graph', title: 'Plan', id: 'graph-1' }] });
 });
 
 it('a persisted manifest keeps its design hand-over', () => {
@@ -61,9 +61,13 @@ it('a persisted manifest keeps its design hand-over', () => {
   expect(manifest.design).toMatchObject({ id: 'design-1', taskId: 'task-1', pages: [] });
 });
 
-it('collection add/remove help names the design container', () => {
+it('collection add/remove help names the craft container', () => {
   const add = JSON.stringify(operationHelp('collections.addItem'));
-  expect(add).toContain('a story or a design');
+  expect(add).toContain('a story or a craft');
   expect(add).toContain('re-adding an existing page with a new --position moves it');
   expect(JSON.stringify(operationHelp('collections.removeItem'))).toContain('never deleted');
+});
+
+it('entity create help carries the design alias deprecation', () => {
+  expect(JSON.stringify(operationHelp('entities.create'))).toContain('`design` is still accepted as input (never output) until 2027-01-08');
 });

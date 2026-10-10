@@ -23,7 +23,7 @@
  * Home SCREEN, derived from the registry at render time.
  */
 import { collectionKinds } from './registry';
-import { DESIGN_KIND } from './design';
+import { CRAFT_KIND } from './craft';
 import type { KindConfig } from './types';
 
 /**
@@ -130,9 +130,9 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     label: 'Library',
     // Authored, produced, uploaded — then the two arrangements OVER those
     // things: a curated set and an extracted index. `drawing` sits beside
-    // `doc` because it is AUTHORED, not an arrangement. `design` closes it:
+    // `doc` because it is AUTHORED, not an arrangement. `craft` closes it:
     // an ordered set of pages made of the kinds above it.
-    kinds: ['doc', 'drawing', 'artifact', 'file', 'collection', 'graph', DESIGN_KIND],
+    kinds: ['doc', 'drawing', 'artifact', 'file', 'collection', 'graph', CRAFT_KIND],
   },
   {
     id: 'people',

@@ -28,7 +28,7 @@ export * from './op-requests.js';
 export * from './servers.js';
 export * from './forms.js';
 export * from './story.js';
-export * from './design.js';
+export * from './craft.js';
 export * from './progress.js';
 export * from './edges.js';
 export * from './kind-info.js';

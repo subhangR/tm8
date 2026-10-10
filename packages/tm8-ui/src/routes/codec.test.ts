@@ -837,8 +837,8 @@ describe('craft routes (Craft → Designs)', () => {
   const N = id(43) as EntityId;
   const cases: [string, unknown][] = [
     [`#/s/${SPACE}/craft`, { view: 'craft' }],
-    [`#/s/${SPACE}/craft/${D}`, { view: 'craft', designId: D }],
-    [`#/s/${SPACE}/craft/${D}/${P}`, { view: 'craft', designId: D, pageId: P }],
+    [`#/s/${SPACE}/craft/${D}`, { view: 'craft', craftId: D }],
+    [`#/s/${SPACE}/craft/${D}/${P}`, { view: 'craft', craftId: D, pageId: P }],
   ];
 
   it.each(cases)('round-trips %s', (hash, target) => {
@@ -853,7 +853,7 @@ describe('craft routes (Craft → Designs)', () => {
   });
 
   it('cuts the path at the first segment that is not an id', () => {
-    expect(parse(`#/s/${SPACE}/craft/${D}/not!an!id/${N}`).route?.target).toEqual({ view: 'craft', designId: D });
+    expect(parse(`#/s/${SPACE}/craft/${D}/not!an!id/${N}`).route?.target).toEqual({ view: 'craft', craftId: D });
     expect(parse(`#/s/${SPACE}/craft/x`).route?.target).toEqual({ view: 'craft' });
   });
 
@@ -863,7 +863,7 @@ describe('craft routes (Craft → Designs)', () => {
   });
 
   it('reads an old nested-page link as the page: a craft page opens inline as a tab', () => {
-    expect(parse(`#/s/${SPACE}/craft/${D}/${P}/${N}`).route?.target).toEqual({ view: 'craft', designId: D, pageId: P });
+    expect(parse(`#/s/${SPACE}/craft/${D}/${P}/${N}`).route?.target).toEqual({ view: 'craft', craftId: D, pageId: P });
   });
 });
 

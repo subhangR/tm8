@@ -10,7 +10,7 @@ import {
   graphNodeKey,
   DrawingContentInputSchema,
   StoryContentInputSchema,
-  DesignContentInputSchema,
+  CraftContentInputSchema,
   McpServerDefinitionSchema,
   decodeCursor,
   encodeCursor,
@@ -1197,13 +1197,13 @@ function storyContent(content: Record<string, unknown>) {
   return parsed.data;
 }
 
-function designContent(content: Record<string, unknown>) {
-  const parsed = DesignContentInputSchema.safeParse(content);
+function craftContent(content: Record<string, unknown>) {
+  const parsed = CraftContentInputSchema.safeParse(content);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     throw new CollabError('invalid_input',
-      `design content: ${issue ? `${issue.path.join('.')}: ${issue.message}` : 'malformed'}`
-        + ' (pages are not content: add one with `tm8 collection add <design-id> <entity-id>`)');
+      `craft content: ${issue ? `${issue.path.join('.')}: ${issue.message}` : 'malformed'}`
+        + ' (pages are not content: add one with `tm8 collection add <craft-id> <entity-id>`)');
   }
   return parsed.data;
 }
@@ -1524,13 +1524,13 @@ export class W2EntitiesCommandsTrackingService {
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
-        case 'design': {
-          // 304: zero new catalog rows, the story posture. A design is born
+        case 'craft': {
+          // 304: zero new catalog rows, the story posture. A craft is born
           // empty; its PAGES are `contains` edges put in through
           // `collections.addItem`, never content and never hierarchy.
-          const design = designContent(content);
-          raw = await q.rpc('create_design_entity', [input.spaceId, input.title, envelope.actorId ?? null,
-            design.description ?? '',
+          const craft = craftContent(content);
+          raw = await q.rpc('create_craft_entity', [input.spaceId, input.title, envelope.actorId ?? null,
+            craft.description ?? '',
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
         }
@@ -1726,12 +1726,12 @@ export class W2EntitiesCommandsTrackingService {
               envelope.clientMutationId ?? null, story.status ?? null]);
             break;
           }
-          case 'design': {
+          case 'craft': {
             // `null` MERGES: a rename sends only the title. Pages move through
             // `collections.addItem` (re-adding re-positions), not here.
-            const design = designContent(content);
-            raw = await q.rpc('update_design_entity', [id, input.expectedVersion, envelope.actorId ?? null,
-              input.title ?? null, design.description ?? null,
+            const craft = craftContent(content);
+            raw = await q.rpc('update_craft_entity', [id, input.expectedVersion, envelope.actorId ?? null,
+              input.title ?? null, craft.description ?? null,
               envelope.clientMutationId ?? null]);
             break;
           }

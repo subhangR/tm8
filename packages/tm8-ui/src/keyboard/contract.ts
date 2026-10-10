@@ -74,7 +74,7 @@ export type KeyCommand =
   // -- Workspace (Work) ------------------------------------------------------
   // Emitted like every other command; the shell hands them to the mounted
   // Work view (`tab-workspace/keys.ts`), which owns tabs, drafts and the browser.
-  | 'work.design.toggle'
+  | 'work.craft.toggle'
   /** Focus the Work browser; `ref` (optional) is the kind to show in it first. */
   | 'work.browser.focus'
   | 'work.tab.next'
@@ -465,7 +465,8 @@ export const BINDINGS: readonly Binding[] = [
   // -- Workspace (Work) -------------------------------------------------------
   // Plain keys and chords only — browser-proof by construction, and dead while
   // typing (layer 4). Every one also has a pointer path in the Work view.
-  { id: 'work.design', layer: 'global', keys: 'd', label: 'Toggle Design mode', command: 'work.design.toggle', guaranteed: true, match: plain('d') },
+  // `d`, not `c` (Craft rename 2026-10-10): plain `c` is already create-here.
+  { id: 'work.craft', layer: 'global', keys: 'd', label: 'Toggle Craft mode', command: 'work.craft.toggle', guaranteed: true, match: plain('d') },
   ...LIST_CHORDS,
   ...LIST_PIN_CHORDS,
   { id: 'work.tab.next', layer: 'global', keys: ']', label: 'Next tab', command: 'work.tab.next', guaranteed: true, match: plain(']') },

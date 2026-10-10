@@ -190,7 +190,7 @@ describe('the craft screen', () => {
     fireEvent.click(view.getByTestId('craft-pages-btn'));
     const menu = view.getByTestId('craft-pages-menu');
     /* The five kinds and the existing-entity door. */
-    for (const kind of ['graph', 'doc', 'artifact', 'drawing', 'design']) {
+    for (const kind of ['graph', 'doc', 'artifact', 'drawing', 'craft']) {
       expect(within(menu).getByTestId(`craft-new-${kind}`)).toBeTruthy();
     }
     expect(within(menu).getByTestId('craft-new-craft').textContent).toContain('Craft');
@@ -540,7 +540,7 @@ describe('a craft page', () => {
   it('opens inline as that craft, with no nested page row', async () => {
     const { view, targets } = await mountCraft(async (seam, source) => {
       await source.placePage(CRAFT, await createGraph(seam, 'Plan'), 1);
-      const nested = await source.createPage(CRAFT, 'design', 2);
+      const nested = await source.createPage(CRAFT, 'craft', 2);
       source.crafts.get(nested)!.title = 'Backend';
       await source.placePage(nested, await createGraph(seam, 'API flow'), 1);
     });

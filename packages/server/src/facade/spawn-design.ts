@@ -71,9 +71,9 @@ export async function loadDesignContextForTask(
 ): Promise<PromptDesignContext | null> {
   const heads = await db.tx(claims, (q) =>
     q.query<DesignHead>(
-      `select d.entity_id as id, d.title, d.description, (internal.design_summary(d.entity_id) ->> 'pageCount')::int as page_count
+      `select d.entity_id as id, d.title, d.description, (internal.craft_summary(d.entity_id) ->> 'pageCount')::int as page_count
          from public.edges df
-         join public.designs d on d.entity_id = df.dst_id
+         join public.crafts d on d.entity_id = df.dst_id
          join public.entities e on e.id = d.entity_id and e.deleted_at is null
         where df.src_id = $1::uuid and df.type = 'derived_from'
         order by df.created_at desc, df.id
@@ -116,7 +116,7 @@ export async function loadDesignContextForTask(
             designId,
             ...(row.kind === 'graph' ? { graphType: row.graph_type } : {}),
           });
-          if (row.kind !== 'design' || seen.has(row.id)) continue;
+          if (row.kind !== 'craft' || seen.has(row.id)) continue;
           seen.add(row.id);
           if (depth + 1 >= DESIGN_PROMPT_LIMITS.depth) {
             // Deeper designs are named, not opened: the agent reads them.
