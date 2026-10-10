@@ -29,7 +29,7 @@ function detail(id: string, kind: string): EntityDetail {
 
 const gate = {
   data: {
-    detailOf: (id: string) => (id === 'design-1' ? detail(id, 'design') : id === 'task-1' ? detail(id, 'task') : undefined),
+    detailOf: (id: string) => (id === 'design-1' ? detail(id, 'craft') : id === 'task-1' ? detail(id, 'task') : undefined),
     messagesOf: () => undefined,
   },
 } as unknown as WorkspaceGateHandles;
@@ -38,7 +38,7 @@ function Split({ owner, noPage = false }: { owner: boolean; noPage?: boolean }) 
   const runtime = useEmbeddedRuntime(VIEWER, SPACE);
   const pageChrome = useEntityChromeValue(null);
   const ownerChrome = useEntityChromeValue(null);
-  const design = embeddedTab(runtime, 'design-1', 'design');
+  const design = embeddedTab(runtime, 'design-1', 'craft');
   const page = noPage ? design : embeddedTab(runtime, owner ? 'page-1' : 'task-1', owner ? 'doc' : 'task');
   return (
     <EmbeddedWorkspace runtime={runtime} gate={gate}>
@@ -70,7 +70,7 @@ describe('ActionStrip owner split', () => {
     /* The sections are the OWNER's: its noun, its message count. */
     const sections = within(strip).getByRole('radiogroup', { name: 'Section' });
     expect(within(sections).getByTestId('tws-section-messages').getAttribute('aria-label')).toBe('Messages, 3');
-    expect(within(sections).getByTestId('tws-section-entity').getAttribute('data-tip')).toBe('Design');
+    expect(within(sections).getByTestId('tws-section-entity').getAttribute('data-tip')).toBe('Craft');
   });
 
   it('with no page, the strip is the owner’s and has no chat toggle: its chat is the host’s pane', () => {
@@ -86,7 +86,7 @@ describe('ActionStrip owner split', () => {
       const pageChrome = useEntityChromeValue(null);
       const ownerChrome = useEntityChromeValue(null);
       const page = embeddedTab(runtime, 'page-1', 'doc');
-      const design = embeddedTab(runtime, 'design-1', 'design');
+      const design = embeddedTab(runtime, 'design-1', 'craft');
       return (
         <EmbeddedWorkspace runtime={runtime} gate={gate}>
           <EntityChromeContext.Provider value={pageChrome}>

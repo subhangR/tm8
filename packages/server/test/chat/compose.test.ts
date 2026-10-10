@@ -206,8 +206,8 @@ describe('chat launch composition', () => {
     // membership doors, and never materializes — Run on the design does
     // (its steps live in @tm8/prompt design-context.ts), and Run does not
     // dispatch.
-    expect(craft).toContain('`design` entity holding ordered PAGES');
-    expect(craft).toContain('collections.addItem {id: <design-id>, entityId, position?}');
+    expect(craft).toContain('`craft` entity holding ordered PAGES');
+    expect(craft).toContain('collections.addItem {id: <craft-id>, entityId, position?}');
     expect(craft).toContain('collections.removeItem takes a page out without deleting it');
     expect(craft).toContain('A design cannot contain itself or a design above it');
     expect(craft).toContain('A graph page is a PLAN');

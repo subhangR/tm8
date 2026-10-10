@@ -53,7 +53,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, designSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
+import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, craftSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -343,9 +343,9 @@ interface SummaryRow {
   story_title: string | null;
   story_description: string | null;
   story_summary: unknown;
-  design_title?: string | null;
-  design_description?: string | null;
-  design_summary?: unknown;
+  craft_title?: string | null;
+  craft_description?: string | null;
+  craft_summary?: unknown;
   task_progress?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
@@ -557,9 +557,9 @@ select
   -- construction. Computed at projection time, never stored.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
   -- 304: the SAME summary function entity-read.ts selects.
-  dsg.title          as design_title,
-  dsg.description    as design_description,
-  case when e.kind = 'design' then internal.design_summary(e.id) end as design_summary,
+  dsg.title          as craft_title,
+  dsg.description    as craft_description,
+  case when e.kind = 'craft' then internal.craft_summary(e.id) end as craft_summary,
   -- 307: likewise the SAME function entity-read.ts selects.
   case when e.kind = 'task' then internal.task_progress(e.id) end as task_progress,
   -- Space styles (284): the WHOLE document rides the summary on purpose (spec
@@ -668,7 +668,7 @@ left join lateral (
 left join public.graphs gr           on gr.entity_id = e.id
 left join public.drawings drw         on drw.entity_id = e.id
 left join public.stories sty          on sty.entity_id = e.id
-left join public.designs dsg          on e.kind = 'design' and dsg.entity_id = e.id
+left join public.crafts dsg          on e.kind = 'craft' and dsg.entity_id = e.id
 left join public.mcp_servers mcp on e.kind='mcp_server' and mcp.entity_id=e.id
 left join public.styles stl           on e.kind = 'style' and stl.entity_id = e.id
 left join public.forms frm            on frm.entity_id = e.id
@@ -1176,9 +1176,9 @@ export class PgEntityProjector implements EntityProjector {
       case 'story':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.story_title ?? 'Story';
-      case 'design':
+      case 'craft':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
-        return r.design_title ?? 'Design';
+        return r.craft_title ?? 'Craft';
       case 'style':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.sty_title ?? 'Style';
@@ -1251,7 +1251,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'graph' ? r.graph_type
       : r.kind === 'drawing' ? r.drawing_format
       : r.kind === 'story' ? r.story_description
-      : r.kind === 'design' ? (r.design_description ?? null)
+      : r.kind === 'craft' ? (r.craft_description ?? null)
       : r.kind === 'style' ? (r.sty_description ?? null)
       : r.kind === 'form' ? r.form_description
       : r.kind === 'credential' ? r.cred_provider
@@ -1544,10 +1544,10 @@ export class PgEntityProjector implements EntityProjector {
         // MIRRORS entity-read.ts stateOf: the same `internal.story_summary`
         // jsonb through the same coercion.
         return storySummaryOf(r.story_summary);
-      case 'design':
-        // MIRRORS entity-read.ts stateOf: the same `internal.design_summary`
+      case 'craft':
+        // MIRRORS entity-read.ts stateOf: the same `internal.craft_summary`
         // jsonb through the same coercion.
-        return designSummaryOf(r.design_summary);
+        return craftSummaryOf(r.craft_summary);
       case 'form':
         // MIRRORS entity-read.ts stateOf: lifecycle status and question count.
         return {

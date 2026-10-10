@@ -176,7 +176,7 @@ export function designRunInstruction(design: Pick<PromptDesignContext, 'id' | 'c
 }
 
 /**
- * The rendered hand-over: one trusted `<design>` element carrying ids and the
+ * The rendered hand-over: one trusted `<craft>` element carrying ids and the
  * standing instruction, and (`full`) the design as an untrusted block. `full:
  * false` is the compact form a frame falls back to when the whole would cross
  * the combined budget.
@@ -190,13 +190,13 @@ export function renderDesignContext(design: PromptDesignContext, full = true): s
     ...(loaded ? [] : [`reason="${escapeAttr(design.snapshot)}"`]),
   ].join(' ');
   const out = [
-    `<design ${attrs}>`,
+    `<craft ${attrs}>`,
     `  <instruction>${escapeAttr(designRunInstruction(design))}</instruction>`,
-    '</design>',
+    '</craft>',
   ];
   const body = full && loaded ? designContextText(design) : `Design: ${design.title || '(untitled)'}`;
   out.push(untrustedData({
-    type: 'design-context',
+    type: 'craft-context',
     body,
     truncated: design.truncated === true || (loaded && !full),
     fetchRef: `tm8 entity context ${design.id}`,

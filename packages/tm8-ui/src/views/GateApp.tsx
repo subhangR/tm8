@@ -217,9 +217,9 @@ const WORKSPACE_TABS_TAB_ID = 'workspace-tabs';
 
 /**
  * THE DESKTOP MODES (D31, 2026-10-06; Settings joined as the fourth in round
- * 2, R2-D2): Work · Design · Observe · Settings, in that order, and nothing
+ * 2, R2-D2): Work · Craft · Observe · Settings, in that order, and nothing
  * else in the selector. Keyed by GROUP id, not view ref: Work is the
- * client-added tabs seat, Design is the `craft` group, Observe is the `graph`
+ * client-added tabs seat, Craft is the `craft` group, Observe is the `graph`
  * group, Settings the `settings` group (client-added when a menu lacks it).
  * The labels are the modes' own, whatever the menu calls the groups. Glyphs:
  * Design Advisor R39 (existing art, 14px).
@@ -228,7 +228,7 @@ const SETTINGS_GROUP_ID = 'settings';
 const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'graph', SETTINGS_GROUP_ID];
 const VIEW_GROUP_LABEL: Record<string, string> = {
   [WORKSPACE_TABS_TAB_ID]: 'Work',
-  craft: 'Design',
+  craft: 'Craft',
   graph: 'Observe',
   [SETTINGS_GROUP_ID]: 'Settings',
 };
@@ -322,7 +322,7 @@ function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteVie
         : scope === 'help'
           ? hintFor('help.open', undefined, platform)
           : scope === 'view' && ref === 'craft'
-            ? hintFor('work.design.toggle', undefined, platform)
+            ? hintFor('work.craft.toggle', undefined, platform)
             : scope === 'view'
               ? hintFor('nav.view', ref, platform)
               : slug
@@ -1663,7 +1663,7 @@ export function GateApp(props: GateAppProps = {}) {
     if (command === 'terminal.toggle' && !focusVisibleTerminal()) {
       noticeSink.current({ id: 'kbd-terminal', tone: 'info', title: 'No terminal on screen', body: '', ttlMs: 4_000 });
     }
-    if (command === 'work.design.toggle') {
+    if (command === 'work.craft.toggle') {
       if (navView.view === 'craft') navStore.getState().navigate(WORK_VIEW);
       else navigateTo({ type: 'view', ref: 'craft' as never });
       return;
@@ -2048,7 +2048,7 @@ export function GateApp(props: GateAppProps = {}) {
       ...(threeModes
         ? [
             { id: 'route:work', label: 'Work', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
-            { id: 'view:craft', label: 'Design', glyph: <VectorIcon paths={VIEW_ART.craft} /> },
+            { id: 'view:craft', label: 'Craft', glyph: <VectorIcon paths={VIEW_ART.craft} /> },
             { id: 'view:graph', label: 'Observe', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
             { id: 'view:settings', label: 'Settings', glyph: <VectorIcon paths={VIEW_ART.settings} /> },
           ]

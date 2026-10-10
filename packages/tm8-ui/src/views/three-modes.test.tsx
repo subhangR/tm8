@@ -164,7 +164,7 @@ describe('the selector is Work · Design · Observe · Settings', () => {
     expect(trigger.textContent).toContain('Work');
     fireEvent.click(trigger);
     const rows = within(view.getByRole('menu', { name: 'Views' })).getAllByRole('menuitemradio');
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Design', 'Observe', 'Settings']);
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Craft', 'Observe', 'Settings']);
     expect(rows[0]!.getAttribute('aria-checked')).toBe('true');
   });
 
@@ -174,7 +174,7 @@ describe('the selector is Work · Design · Observe · Settings', () => {
     const pill = within(tabs).getByTestId('top-view-switcher');
     expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim())).toEqual([
       'Work',
-      'Design',
+      'Craft',
       'Observe',
       'Settings',
     ]);

@@ -216,7 +216,7 @@ export function DesignScreen(props: DesignScreenProps) {
   const [pageMainEl, setPageMainEl] = useState<HTMLDivElement | null>(null);
   const pageChrome = useEntityChromeValue(pageMainEl);
   const ownerChrome = useEntityChromeValue(null);
-  const ownerTab = useEmbeddedTab(runtime, gate ? designId : null, gate ? 'design' : null);
+  const ownerTab = useEmbeddedTab(runtime, gate ? designId : null, gate ? 'craft' : null);
   const pageTab = useEmbeddedTab(runtime, gate && activePage ? activePage.id : null, gate && activePage ? activePage.kind : null);
   const ownerSection = ownerTab?.ui.subview ?? 'entity';
   /* R2-D9: the design's chat and the page's side column are exclusive. */
@@ -364,7 +364,7 @@ export function DesignScreen(props: DesignScreenProps) {
               <EntityChromeContext.Provider value={ownerChrome}>
                 <EntityTabBody
                   tab={ownerTab}
-                  adapter={getKindAdapter('design')}
+                  adapter={getKindAdapter('craft')}
                   onOpenEntity={(id) => openEntity(id as EntityId)}
                   onClose={() => onNavigate({})}
                 />
@@ -500,7 +500,7 @@ function PageBody(props: PageBodyProps) {
       />
     );
   }
-  if (page.kind === 'design') {
+  if (page.kind === 'craft') {
     return depth === 0 ? <NestedDesign {...props} /> : <DesignCards {...props} />;
   }
   if (!gate) return <PlainPage page={page} onOpen={() => props.onOpenEntity(page.id)} />;
@@ -558,7 +558,7 @@ function NestedDesign(props: PageBodyProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id, handle.seen, handle.updated]);
   const onNew = useNewPage(handle, props.onAsk, onSelectNested);
-  const ownTab = useEmbeddedTab(runtime, gate ? page.id : null, gate ? 'design' : null);
+  const ownTab = useEmbeddedTab(runtime, gate ? page.id : null, gate ? 'craft' : null);
   const runChrome = useMemo(() => runOnlyChrome(props.runSlot), [props.runSlot]);
 
   return (
@@ -593,7 +593,7 @@ function NestedDesign(props: PageBodyProps) {
       {gate && ownTab ? (
         <div hidden inert data-testid="dsn-nested-run-host">
           <EntityChromeContext.Provider value={runChrome}>
-            <EntityTabBody tab={ownTab} adapter={getKindAdapter('design')} onClose={noop} />
+            <EntityTabBody tab={ownTab} adapter={getKindAdapter('craft')} onClose={noop} />
           </EntityChromeContext.Provider>
         </div>
       ) : null}
@@ -607,7 +607,7 @@ function DesignCards({ page, source, onOpenDesign, onNotice }: PageBodyProps) {
   return (
     <div className="dsn-cards" data-testid="dsn-design-cards">
       <div className="dsn-cards__head">
-        <KindIcon kind="design" size={16} />
+        <KindIcon kind="craft" size={16} />
         <h2 className="dsn-cards__title">{handle.design?.title ?? page.title}</h2>
         <button type="button" className="dsn-btn" data-testid="dsn-open-design" onClick={() => onOpenDesign(page.id)}>
           Open

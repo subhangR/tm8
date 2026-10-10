@@ -55,6 +55,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   WORKSPACE_DIALOG_IDS,
+  normalizeKindAlias,
   type WorkspaceListResult,
   type WorkspaceManageResult,
   type WorkspaceRef,
@@ -523,7 +524,7 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
   {
     path: ['workspace', 'tabs', 'open'],
     run: (cmd) => {
-      const kind = arg(cmd, 0, 'kind', OPEN_HINT);
+      const kind = normalizeKindAlias(arg(cmd, 0, 'kind', OPEN_HINT));
       const entityId = arg(cmd, 1, 'entity-id', OPEN_HINT);
       const subview = cmd.options.value('subview');
       const options = {
@@ -591,7 +592,7 @@ export const WORKSPACE_COMMANDS: CommandModule[] = [
   },
   {
     path: ['workspace', 'drafts', 'open'],
-    run: (cmd) => send(cmd, 'workspace.drafts.open', { kind: arg(cmd, 0, 'kind', 'tm8 workspace drafts open <kind>') }),
+    run: (cmd) => send(cmd, 'workspace.drafts.open', { kind: normalizeKindAlias(arg(cmd, 0, 'kind', 'tm8 workspace drafts open <kind>')) }),
   },
   {
     path: ['workspace', 'browser', 'set'],

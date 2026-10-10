@@ -29,7 +29,7 @@ import {
 } from '../domain/launch';
 import { modelCatalog } from '../domain/model-catalog';
 import { currentNodeKey } from '../domain/launch';
-import { DESIGN_KIND } from '../domain/design';
+import { CRAFT_KIND } from '../domain/craft';
 import {
   formatRunCost,
   JEV_ENTITY_GROUPS,
@@ -209,8 +209,8 @@ const groupOf = (row: { kind: string }): SpawnSelectionGroup => (
  */
 export function notesPlaceholderFor(subjectKind: string | undefined, continuing: boolean): string {
   if (continuing) return 'Notes for the new session (optional) — it reads this session’s transcript first…';
-  if (subjectKind === DESIGN_KIND) {
-    return 'Run this design: the agent creates what its graph pages describe. Notes or extra context (optional)…';
+  if (subjectKind === CRAFT_KIND) {
+    return 'Run this craft: the agent creates what its graph pages describe. Notes or extra context (optional)…';
   }
   return 'Notes or extra context for this launch — the task stays as written.';
 }

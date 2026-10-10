@@ -1076,11 +1076,11 @@ export const mcpCalendar = summary({
   state: { kind: 'mcp_server', definition: fixtureMcpDefinition },
 });
 
-/** Design (304) — an ordered set of pages; its pages are `contains` edges. */
+/** Craft (304/314) — an ordered set of pages; its pages are `contains` edges. */
 export const designCheckout = summary({
-  id: 'design-checkout', kind: 'design', title: 'Checkout redesign',
+  id: 'design-checkout', kind: 'craft', title: 'Checkout redesign',
   excerpt: 'The new checkout, page by page.',
-  state: { kind: 'design', pageCount: 0, pageKinds: [] },
+  state: { kind: 'craft', pageCount: 0, pageKinds: [] },
 });
 
 export const credentialTeamKey = summary({
@@ -1965,7 +1965,7 @@ export const fixtureDetails: Record<string, EntityDetail> = {
   }),
 
   [designCheckout.id]: detail(designCheckout, {
-    content: { kind: 'design', description: 'The new checkout, page by page.', pages: [] },
+    content: { kind: 'craft', description: 'The new checkout, page by page.', pages: [] },
   }),
 
   [credentialTeamKey.id]: detail(credentialTeamKey, {

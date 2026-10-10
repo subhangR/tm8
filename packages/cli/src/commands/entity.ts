@@ -54,6 +54,8 @@
  * caller who still passes one gets the ordinary unknown-option refusal quoting
  * the real syntax — which is now the honest answer.
  */
+import { normalizeKindAlias } from '@tm8/contract';
+
 import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { ApiError } from '../errors.js';
@@ -76,7 +78,7 @@ import { renderContextBrief, renderHeaderLines } from '../context-brief.js';
 import { isAgentCaller, resolveWireSchema, schemaOption, type WireSchema } from '../wire-schema.js';
 import { boundEntityDetail, isEntityDetail } from '../entity-bounded.js';
 import { renderStoryDetail } from '../story-render.js';
-import { renderDesignDetail } from '../design-render.js';
+import { renderCraftDetail } from '../craft-render.js';
 
 // ── shared local validation, used by every module in this slot ─────────────
 
@@ -317,10 +319,10 @@ function renderEntity(dto: unknown): string {
   if (line !== '' && (dto as { kind?: unknown }).kind === 'story') {
     return renderStoryDetail(dto as Record<string, unknown>, line);
   }
-  // A design's detail carries its ordered pages: text lists them after the
+  // A craft's detail carries its ordered pages: text lists them after the
   // summary (position, kind, title, id).
-  if (line !== '' && (dto as { kind?: unknown }).kind === 'design') {
-    return renderDesignDetail(dto as Record<string, unknown>, line);
+  if (line !== '' && (dto as { kind?: unknown }).kind === 'craft') {
+    return renderCraftDetail(dto as Record<string, unknown>, line);
   }
   return line === '' ? JSON.stringify(dto) : line;
 }
@@ -664,7 +666,7 @@ async function entityQuery(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity query', cmd.options.value('mutation-id'));
   assertKnownOptions(cmd, ['kind', 'subtree', 'parent', 'roots', 'status', 'assignee', 'ready', 'title-contains', 'words', 'limit', 'cursor']);
 
-  const kinds = cmd.options.values('kind');
+  const kinds = cmd.options.values('kind').map(normalizeKindAlias);
   const subtreeOf = cmd.options.value('subtree');
   /* `--parent <id|none>` names the DIRECT parent (`CollectionQuery.parentId`);
      `none` is the top level. `--roots` is that same `none`, spelled for the
@@ -824,7 +826,7 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
     'parent', 'position', 'content', 'attach-to', 'relate-to', 'connect', 'mutation-id',
     'no-session-link', 'criterion', 'estimate', ...HEADER_TEXT_OPTIONS,
   ]);
-  const kind = requireArg(cmd, 0, '<kind>');
+  const kind = normalizeKindAlias(requireArg(cmd, 0, '<kind>'));
   // A space style is born only by `styles.push` (284): the Server refuses a
   // generic create, and the refusal is more useful naming the door here than
   // as an enum mismatch from the wire.

@@ -75,7 +75,7 @@ describe('Workspace bindings', () => {
     ['3', 'work.tab.nth', '3'],
     ['9', 'work.tab.nth', '9'],
     ['w', 'work.tab.close', undefined],
-    ['d', 'work.design.toggle', undefined],
+    ['d', 'work.craft.toggle', undefined],
     ['m', 'work.chat.focus', undefined],
     ['r', 'work.launch', undefined],
     ['c', 'list.create', undefined],

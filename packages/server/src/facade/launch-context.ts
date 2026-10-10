@@ -57,7 +57,7 @@ export async function projectLaunchContext(
                 when 'channel' then ch.name
                 when 'collection' then col.name
                 when 'story' then st.title
-                when 'design' then dsg.title
+                when 'craft' then dsg.title
                 when 'graph' then gr.title
               end, e.kind) as title,
               exists (select 1 from public.edges r
@@ -78,7 +78,7 @@ export async function projectLaunchContext(
          left join public.channels ch on ch.entity_id = e.id
          left join public.collections col on col.entity_id = e.id
          left join public.stories st on st.entity_id = e.id
-         left join public.designs dsg on dsg.entity_id = e.id
+         left join public.crafts dsg on dsg.entity_id = e.id
          left join public.graphs gr on gr.entity_id = e.id
         where e.id = any($1::uuid[]) and e.deleted_at is null`,
       [ids, teamMemberId, taskIds],
