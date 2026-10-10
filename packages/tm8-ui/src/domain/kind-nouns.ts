@@ -124,7 +124,7 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   // 284: a space style is written only by `tm8 style push`; the noun owns it.
   style: { nouns: ['style'], commands: [] },
   server: { nouns: ['server'], commands: ['identity get', 'node mode'] },
-  tool: { nouns: [], commands: [] },
+  tool: { nouns: ['tool'], commands: [] },
   mcp_server: {
     nouns: [],
     commands: [

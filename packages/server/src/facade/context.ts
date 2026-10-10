@@ -84,6 +84,7 @@ export function claimsFor(
   // fallback below can never shed a pin the resolver set.
   const sessionSpaceId = ctx.identity?.sessionSpaceId;
   return {
+    apiScope: ctx.identity?.apiScope ?? 'write',
     identityId: bearer ? bearer.identityId! : owner.identityId,
     // See the file header: unset unless explicitly requested.
     ...(actorId ? { actorId } : {}),

@@ -136,6 +136,14 @@ describe('spaceLinks.invoke classification — every start, grant and session-bo
     }
   });
 
+  it('tools cannot start or disclose run bodies through a space link', () => {
+    expect(spaceLinkRefusal('tools.run', 'command', {}, true)).toBe('process_start');
+    for (const op of ['tools.runs.list', 'tools.runs.get']) {
+      expect(spaceLinkRefusal(op, 'read', {}, true)).toBe('session_body');
+      expect(spaceLinkRefusal(op, 'read', {}, true, true)).toBe('session_body');
+    }
+  });
+
   it('every workspace op is refused at home (personal_workspace), reads too: a Workspace is one human\'s own', () => {
     const ops = OPERATIONS.filter((o) => o.name.startsWith('workspace.'));
     for (const op of ['workspace.prompts.resolve', 'workspace.switch', 'workspace.delete', 'workspace.list', 'workspace.command']) {

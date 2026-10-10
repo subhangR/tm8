@@ -137,6 +137,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'follow-os',           // style use — pick the dark style when the OS is dark...
   'no-follow-os',        // ...and its opposite; passing both is refused
   'trust-css',           // style use — allow the named space style's css
+  'detach', 'close', 'value-stdin', // tool launch / hidden secret input
 ]);
 
 /**
@@ -184,6 +185,8 @@ export const COMMAND_SCOPED_GLOBALS: ReadonlySet<string> = new Set(['version']);
  */
 export const PATH_SCOPED_BOOLEANS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['last', new Set(['workspace reorder'])],
+  ['source', new Set(['tool show'])],
+  ['output', new Set(['tool run-show'])],
 ]);
 
 /**
@@ -355,6 +358,12 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     if (tok === undefined) continue;
 
     if (tok === '--') {
+      if (positionals.length === 2 && positionals[0] === 'tool' && positionals[1] === 'run') {
+        const name = argv[i + 1];
+        if (name !== undefined) positionals.push(name);
+        passthrough = argv.slice(i + 2);
+        break;
+      }
       passthrough = argv.slice(i + 1);
       break;
     }
@@ -368,6 +377,12 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
       // Only a bare word can begin a command path, so bare `-` (stdin, handled
       // above) deliberately does not flip this.
       sawCommandToken = true;
+      // A tool owns every token after its name, including globals, bools,
+      // short flags and --help. Its declaration supplies their arity later.
+      if (positionals.length === 3 && positionals[0] === 'tool' && positionals[1] === 'run') {
+        passthrough = argv.slice(i + 1);
+        break;
+      }
       continue;
     }
     if (!tok.startsWith('--')) {

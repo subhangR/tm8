@@ -161,6 +161,19 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
+  'tools.create': { cmd: ['tool', 'create'], syn: 'tm8 tool create <name> --runtime bash|python --source <@file> [--spec <@file>] [--description <text>] [--when-to-use <text>] [--summary <text>] [--keyword <text>...] [--mutation-id <id>]', sum: 'Create a stored tool definition', authz: 'space', input: 'bound', side: 'durable' },
+  'tools.update': { cmd: ['tool', 'edit'], syn: 'tm8 tool edit <name|id> [--source <@file>] [--spec <@file>] [--runtime bash|python] [--description <text>] --expect-version <n> [--mutation-id <id>]', sum: 'Update a stored tool definition', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.get': { cmd: ['tool', 'show'], syn: 'tm8 tool show <name|id> [--source]', sum: 'Read a tool and its configured inputs', authz: 'entity', input: 'none', side: 'none' },
+  'tools.list': { cmd: ['tool', 'list'], syn: 'tm8 tool list [--words <text>] [--limit <count>] [--cursor <cursor>]', sum: 'List stored tools in a Space', authz: 'space', input: 'none', side: 'none' },
+  'tools.help': { cmd: ['tool', 'help'], syn: 'tm8 tool help <name|id>', sum: 'Read a tool input declaration', authz: 'entity', input: 'none', side: 'none' },
+  'tools.config.set': { cmd: ['tool', 'config', 'set'], syn: 'tm8 tool config set <name|id> <input> <value> [--expect-version <n>] [--mutation-id <id>]', sum: 'Set a configured tool input', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.config.unset': { cmd: ['tool', 'config', 'unset'], syn: 'tm8 tool config unset <name|id> <input> [--expect-version <n>] [--mutation-id <id>]', sum: 'Unset a configured tool input', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.secrets.bind': { cmd: ['tool', 'secret', 'set'], syn: 'tm8 tool secret set <name|id> <input> [--value-stdin | --credential-id <id>] [--label <text>] [--expect-version <n>] [--mutation-id <id>]', sum: 'Bind a tool secret credential', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.secrets.unbind': { cmd: ['tool', 'secret', 'unset'], syn: 'tm8 tool secret unset <name|id> <input> [--expect-version <n>] [--mutation-id <id>]', sum: 'Unbind a tool secret credential', authz: 'entity', input: 'bound', side: 'durable', ver: 'expectedVersion' },
+  'tools.run': { cmd: ['tool', 'run'], syn: 'tm8 tool run [--detach] [--keep-open | --close] [--cwd <dir>] [--mutation-id <id>] <name|id> [tool arguments...]', sum: 'Run the stored tool source', authz: 'entity', input: 'bound', side: 'execution', ver: 'expectedVersion', notes: ['Run options precede the tool name; every subsequent token belongs to the declared tool inputs, including --help and short flags', 'Secrets use --<input>-from-env <VAR> or a hidden TTY prompt; literal values on argv are refused', 'Attached output uses human format and returns the tool process exit code; structured formats require --detach', 'The CLI pins the version just loaded and prints a source-change notice before execution; keepOpen defaults to false']},
+  'tools.runs.list': { cmd: ['tool', 'runs'], syn: 'tm8 tool runs <name|id> [--limit <count>] [--cursor <cursor>]', sum: 'List runs of a stored tool', authz: 'entity', input: 'none', side: 'none' },
+  'tools.runs.get': { cmd: ['tool', 'run-show'], syn: 'tm8 tool run-show <session-id> [--output]', sum: 'Read a recorded tool run', authz: 'session', input: 'none', side: 'none' },
+
   'mcp.servers.list': {cmd: ['mcp','server','list'], syn: 'tm8 mcp server list [--target <id>] [--limit <count>] [--cursor <cursor>]', sum: 'List MCP server', authz: 'space', input: 'none'},
   'mcp.servers.get': {cmd: ['mcp','server','get'], syn: 'tm8 mcp server get [<id>]', sum: 'Get MCP server', authz: 'entity', input: 'none'},
   'mcp.servers.create': {cmd: ['mcp','server','create'], syn: 'tm8 mcp server create [<id>] --input <@file|->', sum: 'Create MCP server', authz: 'space', input: 'bound'},
@@ -4123,6 +4136,7 @@ const ROWS: Record<OperationName, Row> = {
  * collection` and `tm8 help task` both resolve.
  */
 const NOUN_BY_FAMILY: Record<string, string> = {
+  tools: 'tool',
   mcp: 'mcp',
   workspace: 'workspace',
   identity: 'identity',
@@ -4245,6 +4259,7 @@ function exposureFor(operation: OperationName): Exposure {
  */
 // 2026-08-13 (first-run claim): auth.claim + auth.claim.status take the catalog
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
+// Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
   // Re-measured for MW W1.2 (+workspace.list) — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command) and Spec D (+workspace.get|drafts.patch) on main 0edaefe41 — RECOMPUTED, not adjusted.
@@ -4314,7 +4329,7 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
-  'sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d';
+  'sha256:ad68d811b899852ddc759c8e9e17c55f6bac9dc7338df73477ec04a40f22f0a6';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -5167,6 +5182,7 @@ export function isCommandPath(path: readonly string[]): boolean {
  * EVERY public noun, so these are deliberately short.
  */
 const NOUN_SUMMARY: Record<string, string> = {
+  tool: 'Reusable scripts: declared inputs, generated help, configuration, secrets and recorded terminal runs',
   identity: 'Who this process is calling as',
   auth: 'Local accounts: sign up, log in, log out, and inspect the current session',
   server: 'Named routes to other tm8 Servers',
