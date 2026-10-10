@@ -148,6 +148,21 @@ describe('the craft routes', () => {
     expect(view.queryByTestId('crafts-home')).toBeNull();
     view.unmount();
   });
+
+  it('puts the craft\'s chats and sessions in the frame\'s 2nd panel, and no chat on the right', async () => {
+    const view = render(
+      <GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/craft/019f98a0-aaaa-bbbb-cccc-000000000041`)} />,
+    );
+    await waitFor(() => view.getByTestId('craft-screen'));
+    /* Re-queried: the frame's panel host remounts as the app settles. */
+    const side = await waitFor(() => within(view.getByTestId('app-frame-panel')).getByTestId('crf-side'));
+    expect(within(side).getByTestId('crf-new-chat')).toBeTruthy();
+    expect(within(side).getByTestId('crf-new-session')).toBeTruthy();
+    /* The crafts list left the panel (reverses 6a022279e). */
+    expect(view.queryByRole('navigation', { name: 'Crafts' })).toBeNull();
+    expect(view.getByTestId('craft-screen').querySelector('.crf-chat')).toBeNull();
+    view.unmount();
+  });
 });
 
 describe('the craft screen', () => {
@@ -178,7 +193,7 @@ describe('the craft screen', () => {
     for (const kind of ['graph', 'doc', 'artifact', 'drawing', 'design']) {
       expect(within(menu).getByTestId(`craft-new-${kind}`)).toBeTruthy();
     }
-    expect(within(menu).getByTestId('craft-new-design').textContent).toContain('Craft');
+    expect(within(menu).getByTestId('craft-new-craft').textContent).toContain('Craft');
     expect(within(menu).getByTestId('membership-add').textContent).toBe('Add existing…');
     fireEvent.click(within(menu).getByTestId('craft-new-graph'));
     await waitFor(() => view.getByTestId('crf-empty'));
@@ -277,8 +292,7 @@ describe('a graph page', () => {
     });
     await waitFor(() => view.getByTestId('dsn-overview'));
     openFromPages(view, 'State machine');
-    await waitFor(() => view.getByTestId('crf-unknown-type'));
-    expect(view.getByTestId('crf-unknown-type').textContent).toContain('statechart');
+    await waitFor(() => expect(view.getByTestId('crf-unknown-type').textContent).toContain('statechart'));
   });
 });
 
@@ -312,7 +326,7 @@ describe('the tab strip', () => {
     const overview = view.getAllByTestId('craft-tab')[0]!;
     expect(overview.hasAttribute('data-pinned')).toBe(true);
     expect(within(overview).queryByTestId('craft-tab-close')).toBeNull();
-    expect(within(view.getByTestId('craft-detail-panel')).getAllByTestId('craft-detail-page')).toHaveLength(3);
+    expect(within(view.getByTestId('dsn-overview')).getAllByTestId('craft-detail-page')).toHaveLength(3);
     fireEvent.click(view.getByTestId('craft-pages-btn'));
     expect(pageTitles(view)).toEqual(['Plan', 'Brief', 'Rollout']);
   });
@@ -553,26 +567,39 @@ describe('the chat pane', () => {
     expect(view.getByTestId('panel-resizer-left')).toBeTruthy();
   });
 
-  it('lists only the chats about this craft, and says so when there are none', async () => {
+  it('lists only the chats and sessions on this craft, and says so when there are none', async () => {
     const { view } = await mountCraft();
-    fireEvent.click(await waitFor(() => view.getByTestId('dsn-thread-picker')));
+    fireEvent.click(await waitFor(() => view.getByTestId('crf-side-picker')));
     /* The fixture's threads are about other things and not craft-mode. */
-    await waitFor(() => view.getByTestId('dsn-thread-empty'));
+    await waitFor(() => expect(view.getByTestId('crf-side-empty').textContent).toContain('No chats or sessions'));
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(view.queryByTestId('dsn-thread-pop')).toBeNull());
+    await waitFor(() => expect(view.queryByTestId('crf-side-pop')).toBeNull());
+  });
+
+  it('draws the 2nd panel header: title, chats icon, the list, ＋ New chat, ＋ New session', async () => {
+    const { view } = await mountCraft();
+    const head = await waitFor(() => view.getByTestId('crf-side-head'));
+    await waitFor(() => expect(within(head).getByTestId('crf-side-title').textContent).toBe('Launch plan'));
+    expect(within(head).getByTestId('crf-side-chats-icon')).toBeTruthy();
+    expect(within(head).getByTestId('crf-side-picker')).toBeTruthy();
+    expect(within(head).getByTestId('crf-new-chat').textContent).toContain('New chat');
+    /* No Workspace host here, so no spawn: the button says why. */
+    const newSession = within(head).getByTestId('crf-new-session') as HTMLButtonElement;
+    expect(newSession.disabled).toBe(true);
+    expect(newSession.title).toBe('Sessions launch from the app.');
   });
 
   it('returns to the composer when ＋ New chat is pressed after a send created a thread', async () => {
     const { view } = await mountCraft();
-    const picker = await waitFor(() => view.getByTestId('dsn-thread-picker'));
+    const picker = await waitFor(() => view.getByTestId('crf-side-picker'));
     await waitFor(() => expect(picker.textContent).toContain('New chat'));
     fireEvent.change(await waitFor(() => view.getByLabelText('Message the chat agent')), {
       target: { value: 'Draft the plan.' },
     });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
-    await waitFor(() => expect(view.getByTestId('dsn-thread-picker').textContent).not.toContain('New chat'));
-    fireEvent.click(view.getByTestId('dsn-new-chat'));
-    await waitFor(() => expect(view.getByTestId('dsn-thread-picker').textContent).toContain('New chat'));
+    await waitFor(() => expect(view.getByTestId('crf-side-picker').textContent).not.toContain('New chat'));
+    fireEvent.click(view.getByTestId('crf-new-chat'));
+    await waitFor(() => expect(view.getByTestId('crf-side-picker').textContent).toContain('New chat'));
   });
 });
 
