@@ -1518,6 +1518,7 @@ export class SpawnService {
         ...(request.newTask ? { newTaskTitle: request.newTask.title } : {}),
         ...(request.storyId ? { storyId: request.storyId } : {}),
         ...(request.aboutEntityId ? { aboutEntityId: request.aboutEntityId } : {}),
+        ...(request.aboutFromChatId ? { aboutFromChatId: request.aboutFromChatId } : {}),
         ...(request.sourceWorkSessionId ? { sourceWorkSessionId: request.sourceWorkSessionId } : {}),
       });
     } catch (error) {
