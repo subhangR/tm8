@@ -135,6 +135,7 @@ export type ChatBootstrapFactory = (ctx: {
   db: Db;
   dataDir: string;
   baseUrl: string;
+  nodeId: string;
 }) => ChatBootstrapOptions;
 
 export interface BootstrapOptions {
@@ -345,7 +346,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const chatBlock: ChatBootstrapOptions | undefined =
     db && opts.chat
       ? typeof opts.chat === 'function'
-        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}` })
+        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}`, nodeId: desktopNodeId(dataDir) })
         : opts.chat
       : undefined;
   const chat = db && chatBlock
