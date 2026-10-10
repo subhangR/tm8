@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
  * The Workspace icon rail (task 01a1112a-c568): hold-to-pin vs click, pinned
- * kinds moved out of the list, the kinds/tools faces, the flat kind list (no groups), the persisted expanded
- * flag, and the separation from Home's pins.
+ * kinds moved out of the list, the flat list of EVERY kind (task 01a122ea-b5d9),
+ * the bottom three and the account card, the persisted expanded flag, and the
+ * separation from Home's pins.
  */
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -156,12 +157,34 @@ describe('the kind list', () => {
     const list = screen.getByTestId('tws-rail-kinds');
     const kinds = Array.from(list.querySelectorAll<HTMLElement>('[data-kind]')).map((b) => b.dataset.kind);
     const pins = getRailStore(SPACE).getState().pins;
-    expect(kinds).toEqual(homeRootKinds().map((config) => config.kind).filter((k) => isWorkspaceKind(k) && !pins.includes(k)));
+    expect(kinds).toEqual(homeRootKinds().map((config) => config.kind).filter((k) => !pins.includes(k)));
     expect(kinds).toContain('doc');
+    /* Not only the kinds Work's browser holds: the admin and code kinds too. */
+    expect(kinds).toEqual(expect.arrayContaining(['commit', 'credential', 'memory', 'loop']));
     for (const label of ['Work', 'Library', 'Agents & People', 'Code']) {
       expect(screen.queryByRole('button', { name: label })).toBeNull();
     }
-    expect(screen.getByTestId('tws-rail').querySelector('[aria-expanded]')).toBeNull();
+    expect(list.querySelector('[aria-expanded]')).toBeNull();
+  });
+
+  it('a kind Work holds opens in the browser; any other opens its kind list', () => {
+    const { dispatch, gate } = mount();
+    fireEvent.click(kindButtons('doc')[0]!);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'doc' } }),
+    );
+    expect(isWorkspaceKind('credential')).toBe(false);
+    fireEvent.click(kindButtons('credential')[0]!);
+    expect(gate.navigateTo).toHaveBeenCalledWith({ type: 'kind', ref: 'credential' });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('any kind can be pinned, not only the ones Work holds', () => {
+    window.localStorage.setItem(railPinsKey(SPACE), JSON.stringify(['commit', 'task']));
+    mount();
+    const pinned = Array.from(screen.getByTestId('tws-rail-pinned').querySelectorAll<HTMLElement>('[data-kind]')).map((b) => b.dataset.kind);
+    expect(pinned).toEqual(['commit', 'task']);
+    expect(kindButtons('commit').map((b) => b.dataset.placement)).toEqual(['pinned']);
   });
 });
 
@@ -182,54 +205,61 @@ describe('expand', () => {
   });
 });
 
-describe('the two faces', () => {
-  it('opens on the kinds with one switch at the bottom; the switch swaps in the tools', () => {
-    const { gate } = mount();
+describe('the bottom three and the account card', () => {
+  it('one face only: no tools, screens or switch anywhere in the rail', () => {
+    mount();
     expect(screen.getByTestId('tws-rail-kinds')).toBeTruthy();
     expect(screen.queryByTestId('tws-rail-tools')).toBeNull();
+    expect(screen.queryByTestId('tws-rail-switch')).toBeNull();
     expect(document.querySelector('[data-rail-tool]')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Command palette' })).toBeNull();
-    const toggle = screen.getByTestId('tws-rail-switch');
-    expect(toggle.getAttribute('aria-label')).toBe('Settings & tools');
-    fireEvent.click(toggle);
-    expect(screen.getByTestId('tws-rail').dataset.railMode).toBe('tools');
-    expect(screen.queryByTestId('tws-rail-kinds')).toBeNull();
-    const tools = screen.getByTestId('tws-rail-tools');
-    const ids = Array.from(tools.querySelectorAll<HTMLElement>('[data-rail-tool]')).map((b) => b.dataset.railTool);
-    expect(ids).toEqual(['inbox', 'messages', 'files', 'git', 'craft', 'settings', 'help']);
-    fireEvent.click(within(tools).getByRole('button', { name: 'Inbox' }));
-    expect(gate.navigateTo).toHaveBeenCalledWith({ type: 'view', ref: 'inbox' });
-    fireEvent.click(within(tools).getByRole('button', { name: 'Settings' }));
-    expect(gate.onSelectViewTab).toHaveBeenCalledWith('settings');
-    fireEvent.click(screen.getByRole('button', { name: 'Close settings & tools' }));
-    expect(screen.getByTestId('tws-rail-kinds')).toBeTruthy();
+    /* "Files" is not checked by name: the `file` kind's own button carries it. */
+    for (const name of ['Command palette', 'Inbox', 'Messages', 'Git', 'Settings', 'Help']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
   });
 
-  it('the bottom is always the three: Needs you, the user switch, expand', () => {
+  it('the bottom is always the three: Needs you, you, expand', () => {
     mount();
-    const names = () =>
-      Array.from(screen.getByRole('group', { name: 'Rail controls' }).querySelectorAll('button')).map((b) => b.getAttribute('aria-label'));
+    const names = Array.from(screen.getByRole('group', { name: 'Rail controls' }).querySelectorAll('button')).map((b) =>
+      b.getAttribute('aria-label'),
+    );
     /* No attention provider in this mount, so the bell draws nothing. */
-    expect(names()).toEqual(['Settings & tools', 'Expand sidebar']);
-    fireEvent.click(screen.getByTestId('tws-rail-switch'));
-    expect(names()).toEqual(['Close settings & tools', 'Expand sidebar']);
+    expect(names).toEqual(['Account: You', 'Expand sidebar']);
   });
 
-  it('marks the screen the shell shows as current, and the closed switch with it', () => {
-    mount({ activeViewTabId: 'settings', activeScreenRef: 'settings' });
-    const toggle = screen.getByTestId('tws-rail-switch');
-    expect(toggle.getAttribute('aria-current')).toBe('page');
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute('aria-current')).toBeNull();
-    const current = document.querySelectorAll('[data-rail-tool][aria-current="page"]');
-    expect(Array.from(current).map((b) => (b as HTMLElement).dataset.railTool)).toEqual(['settings']);
+  it('the avatar opens the account menu inline in a card beside the rail, and a row closes it', () => {
+    const onClose = vi.fn();
+    function FakeAccount(props: { inline?: boolean; onClose?: () => void }) {
+      onClose.mockImplementation(() => props.onClose?.());
+      return (
+        <div data-testid="fake-account" data-inline={props.inline ? 'yes' : 'no'}>
+          <button type="button" onClick={onClose}>
+            Space settings
+          </button>
+        </div>
+      );
+    }
+    mount({ accountSlot: <FakeAccount /> });
+    const you = screen.getByTestId('tws-rail-user');
+    expect(you.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('fake-account')).toBeNull();
+    fireEvent.click(you);
+    expect(you.getAttribute('aria-expanded')).toBe('true');
+    const card = screen.getByTestId('tws-rail-user-popover');
+    expect(card.dataset.pop).toBe('user');
+    expect(within(card).getByTestId('fake-account').dataset.inline).toBe('yes');
+    fireEvent.click(within(card).getByRole('button', { name: 'Space settings' }));
+    expect(screen.queryByTestId('tws-rail-user-popover')).toBeNull();
   });
 
-  it('a Messages screen marks Messages, not a shell tab', () => {
-    mount({ activeScreenRef: 'messages' });
-    fireEvent.click(screen.getByTestId('tws-rail-switch'));
-    const current = document.querySelectorAll('[data-rail-tool][aria-current="page"]');
-    expect(Array.from(current).map((b) => (b as HTMLElement).dataset.railTool)).toEqual(['messages']);
+  it('with no account the card still opens, with the name and a Settings row', () => {
+    const { gate } = mount();
+    fireEvent.click(screen.getByTestId('tws-rail-user'));
+    const card = screen.getByTestId('tws-rail-user-popover');
+    expect(card.textContent).toContain('You');
+    fireEvent.click(within(card).getByRole('button', { name: 'Settings' }));
+    expect(gate.onSelectViewTab).toHaveBeenCalledWith('settings');
+    expect(screen.queryByTestId('tws-rail-user-popover')).toBeNull();
   });
 });
 

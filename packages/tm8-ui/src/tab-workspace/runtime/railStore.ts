@@ -12,7 +12,6 @@
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { homeRailPinnedKinds, type KindConfig } from '../../domain';
-import { isWorkspaceKind } from './types';
 
 export const DEFAULT_WORKSPACE_RAIL_PINS: readonly string[] = ['chat', 'task', 'work_session'];
 export const railPinsKey = (spaceId: string) => `tm8.workspace.rail-pins:${spaceId}`;
@@ -50,9 +49,13 @@ function write(key: string, value: unknown): void {
   }
 }
 
-/** The rail's Pinned group, top to bottom: what it draws and what `l 1`…`l 9` count. */
+/**
+ * The rail's Pinned group, top to bottom: what it draws and what `l 1`…`l 9`
+ * count. ANY kind (Subhang, 2026-10-10): the rail lists every kind, and Pinned
+ * is the same population, not only the kinds Work's browser can hold.
+ */
 export function workspacePinnedKinds(pins: readonly string[]): KindConfig[] {
-  return homeRailPinnedKinds(pins).filter((config) => isWorkspaceKind(config.kind));
+  return homeRailPinnedKinds(pins);
 }
 
 export function loadWorkspaceRailPins(spaceId: string): readonly string[] {

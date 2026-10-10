@@ -356,26 +356,25 @@ describe('the help route', () => {
     expect(build(bare!).hash).toBe(`#/s/${SPACE}/help`);
   });
 
-  it('is the last rail tool, owns current state, and has no duplicate ? control', async () => {
+  it('opens from the palette, names itself in the selector, and has no duplicate ? control', async () => {
     /* Shell alignment (2026-10-06): no desktop screen carries the top bar any
-       more; Observe sits in Work's frame, and Help is the rail's last tool
-       after Design and Settings (D4 moved the top bar's tabs into the rail). */
+       more; Observe sits in Work's frame. The rail's tools face is gone (task
+       01a122ea-b5d9), so Help's door is the palette's Help row. */
     const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/graph`)} />);
     await waitFor(() => view.getByTestId('app-frame'));
     expect(view.queryByTestId('space-tab-bar')).toBeNull();
-    /* Rail fixes (2026-10-07): the tools sit behind the rail's user switch. */
-    fireEvent.click(view.getByTestId('tws-rail-switch'));
-    const tools = [...view.getByTestId('tws-rail').querySelectorAll<HTMLElement>('[data-rail-tool]')];
-    expect(tools.map((tool) => tool.getAttribute('data-rail-tool'))).toEqual(['inbox', 'messages', 'files', 'git', 'craft', 'settings', 'help']);
+    expect(view.getByTestId('tws-rail').querySelector('[data-rail-tool]')).toBeNull();
     expect(view.queryByTestId('open-help')).toBeNull();
 
-    fireEvent.click(view.getByRole('button', { name: 'Help' }));
+    fireEvent.keyDown(window, { key: '/' });
+    const palette = await waitFor(() => view.getByTestId('command-palette'));
+    const row = [...palette.querySelectorAll<HTMLElement>('[data-testid="palette-row"]')].find(
+      (r) => r.querySelector('.pal__row-label')?.textContent === 'Help',
+    );
+    expect(row).toBeDefined();
+    fireEvent.click(row!);
     await waitFor(() => view.getByTestId('help-screen'));
     expect(view.getByTestId('tws-view-select').textContent).toContain('Help');
-    /* Current: Help itself when the tools are up, else the switch that holds it. */
-    const rail = view.getByTestId('tws-rail');
-    const current = rail.querySelector('[data-rail-tool="help"][aria-current="page"]') ?? rail.querySelector('[data-testid="tws-rail-switch"][aria-current="page"]');
-    expect(current).not.toBeNull();
     view.unmount();
   });
 });

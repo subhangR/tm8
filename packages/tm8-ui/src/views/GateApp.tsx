@@ -79,7 +79,7 @@ import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
 import { ShortcutsOverlay } from '../shell/ShortcutsOverlay';
-import { allKinds, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
+import { allKinds, CHANNEL_KIND, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { Landing } from '../domain/nav-targets';
 import type { NavView } from '../routes';
 import { emptyPanels, workRedirectOf, type WorkRedirect } from '../routes';
@@ -2064,8 +2064,14 @@ export function GateApp(props: GateAppProps = {}) {
       // unbuilt-view card would be discovery pointing at a placeholder.
       { id: 'view:messages', label: 'Messages', glyph: <VectorIcon paths={VIEW_ART.messages} /> },
       { id: 'view:inbox', label: 'Inbox', glyph: <VectorIcon paths={VIEW_ART.inbox} /> },
+      /* The rail's retired tools face was these screens' only door (task
+         01a122ea-b5d9); the palette carries them now. */
+      { id: 'view:files', label: 'Files', glyph: <VectorIcon paths={VIEW_ART.files} /> },
+      { id: 'view:git', label: 'Git', glyph: <VectorIcon paths={VIEW_ART.git} /> },
+      { id: 'view:help', label: 'Help', glyph: <VectorIcon paths={VIEW_ART.help} /> },
       ...allKinds()
-        .filter((row) => !row.kind.startsWith('c:'))
+        /* The channel kind's row would repeat "Channels": the view row above is its door. */
+        .filter((row) => !row.kind.startsWith('c:') && row.kind !== CHANNEL_KIND)
         .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: <KindIcon kind={row.kind} /> })),
       /* The creation drafts and the help overlay, as rows: the palette is
          where a shortcut is discovered, so each carries its key. */

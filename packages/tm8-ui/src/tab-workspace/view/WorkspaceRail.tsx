@@ -1,26 +1,25 @@
 /**
- * Icon rail (Spec A §4, design log §3 + R36, task 01a1112a-c568).
- * Workstream A.
+ * Icon rail (Spec A §4, design log §3 + R36, task 01a1112a-c568; redesign
+ * task 01a122ea-b5d9). Workstream A.
  *
- *   kinds face (default)            tools face (--pn-paper band)
- *   [Pinned kinds]  ── hairline      Status · ⌘K
- *   [every other kind, one list]     Inbox · Messages · Files · Git
- *                                    Design · Settings · Help · account
- *   ── hairline                      ── hairline
- *   Needs you · 👤 · »                Needs you · 👤 · »
+ *   [Pinned kinds]  ── hairline
+ *   [every kind, one list]
+ *   ── hairline · [Project files]
+ *   ── hairline
+ *   Needs you · 👤 · »
  *
- * THE THREE (Subhang, 2026-10-07): the bottom is always Needs you, the user
- * switch and expand. The user switch swaps the column between the two faces;
- * closed, it carries the current bar while the shell shows one of the tools.
- * A top group taller than the window fades the edge that has more.
+ * ONE LIST OF EVERY KIND (Subhang, 2026-10-10): `homeRootKinds()`, the whole
+ * Home population — no groups, no tools face. A kind Work's browser holds
+ * (`isWorkspaceKind`, the contract's allow-list) opens in Work; any other
+ * opens its own kind list. Pins and the expanded flag are the rail's own
+ * (`railStore`), never Home's; Pinned takes any kind. A pinned kind moves up
+ * to Pinned and leaves the list; an unpinned kind returns at the top of the
+ * list (`lifted`, newest first).
  *
- * THE LIST IS THE HOME RAIL'S POPULATION, NOT ITS COMPONENT: `homeRootKinds()`
- * (the Home rail's groups, flattened in order) restricted to the Workspace
- * kinds (D7). NO GROUPS (task 01a11230): the Work / Library / Agents & People /
- * Code accordions are gone — every kind sits in one list, no headings, no
- * dividers. Pins and the expanded flag are the Workspace's own (`railStore`),
- * never Home's. A pinned kind moves up to Pinned and leaves the list; an
- * unpinned kind returns at the top of the list (`lifted`, newest first).
+ * THE THREE (Subhang, 2026-10-07): the bottom is always Needs you, you and
+ * expand. The avatar opens one card beside the rail — status, then the
+ * account menu (`RailUser`). A top group taller than the window fades the
+ * edge that has more.
  *
  * A kind button IS the browser's kind control (click ⇒ `browsers.main.kind`);
  * a 500ms hold — pointer or Enter/Space — toggles its pin instead, and the
@@ -31,8 +30,6 @@
  * badge. Expanded: the number right-aligned in the row.
  */
 import {
-  cloneElement,
-  isValidElement,
   useCallback,
   useEffect,
   useMemo,
@@ -45,35 +42,15 @@ import {
   type ReactNode,
 } from 'react';
 import { useStore } from 'zustand';
-import { KindIcon, VIEW_ART, homeRootKinds, type KindConfig } from '../../domain';
-import { Avatar } from '../../kit/Avatar';
+import { KindIcon, homeRootKinds, type KindConfig } from '../../domain';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { browserSources, type BrowserSource } from '../adapters/browserSources';
 import { getRailStore, workspacePinnedKinds } from '../runtime/railStore';
 import { isWorkspaceKind } from '../runtime/types';
 import { useShellFrame } from './context';
 import { railCountLabel, railKindLabel, isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts';
-import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART, RAIL_USER_ART } from './railArt';
-import { RailAttention, RailStatus } from './RailStatus';
-
-const BOTTOM_GROUP_IDS = ['craft', 'settings', 'help'] as const;
-const BOTTOM_ART: Record<(typeof BOTTOM_GROUP_IDS)[number], readonly string[]> = {
-  craft: VIEW_ART.craft,
-  settings: VIEW_ART.settings,
-  help: VIEW_ART.help,
-};
-
-/**
- * THE SCREENS (Subhang, shell-alignment round 2): the desktop's other screens
- * live in the rail's bottom group, drawn while the rail is expanded. Their old
- * door, the top bar, is gone on the three-mode desktop.
- */
-const SCREEN_VIEWS = [
-  { ref: 'inbox', label: 'Inbox', art: VIEW_ART.inbox },
-  { ref: 'messages', label: 'Messages', art: VIEW_ART.messages },
-  { ref: 'files', label: 'Files', art: VIEW_ART.files },
-  { ref: 'git', label: 'Git', art: VIEW_ART.git },
-] as const;
+import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART } from './railArt';
+import { RailAttention, RailUser } from './RailStatus';
 
 /** How long a press must be held to toggle a pin, and how far it may drift. */
 export const HOLD_MS = 500;
@@ -93,19 +70,16 @@ export function WorkspaceRail() {
   const lifted = useStore(railStore, (s) => s.lifted);
   const expanded = useStore(railStore, (s) => s.expanded);
   const [announcement, setAnnouncement] = useState('');
-  /* Two faces (Subhang, 2026-10-07): the kinds by default; the bottom
-     switch swaps in the settings and tools, on a darker band. */
-  const [tools, setTools] = useState(false);
   const counts: RailCounts = useRailCounts();
   const topRef = useRef<HTMLDivElement>(null);
-  const viewer = gate.data?.viewerActor ?? null;
-  const more = useScrollHints(topRef, tools);
 
   const pinned = useMemo(() => workspacePinnedKinds(pins), [pins]);
-  /* A pinned kind MOVES to Pinned and leaves the list; an unpinned one comes
-     back at the TOP of the list, most recent first (Subhang, 2026-10-07). */
+  const more = useScrollHints(topRef, pinned.length > 0);
+  /* EVERY KIND (Subhang, 2026-10-10): the whole Home population, no Work
+     filter. A pinned kind MOVES to Pinned and leaves the list; an unpinned
+     one comes back at the TOP of the list, most recent first (2026-10-07). */
   const kinds = useMemo(() => {
-    const rest = homeRootKinds().filter((config) => isWorkspaceKind(config.kind) && !pinned.some((p) => p.kind === config.kind));
+    const rest = homeRootKinds().filter((config) => !pinned.some((p) => p.kind === config.kind));
     const rank = (kind: string) => {
       const i = lifted.indexOf(kind);
       return i < 0 ? lifted.length : i;
@@ -113,10 +87,14 @@ export function WorkspaceRail() {
     return rest.map((config, i) => ({ config, i })).sort((a, b) => rank(a.config.kind) - rank(b.config.kind) || a.i - b.i).map((x) => x.config);
   }, [pinned, lifted]);
   const railRef = useRef<HTMLElement>(null);
-  const bottom = BOTTOM_GROUP_IDS.flatMap((id) => {
-    const tab = gate.shellTabs.find((t) => t.id === id);
-    return tab ? [{ id, label: tab.label }] : [];
-  });
+
+  /* A kind Work's browser holds (the contract's allow-list) opens there; any
+     other opens its own kind list until the allow-list widens — read from the
+     contract, so widening it needs no change here. */
+  const openKind = useCallback(
+    (kind: string) => (isWorkspaceKind(kind) ? selectKind(kind) : gate.navigateTo({ type: 'kind', ref: kind })),
+    [selectKind, gate],
+  );
 
   const togglePin = useCallback(
     (config: KindConfig): boolean => {
@@ -158,16 +136,12 @@ export function WorkspaceRail() {
       expanded={expanded}
       count={isRailCountKind(config.kind) ? counts[config.kind] : undefined}
       unseen={gate.data?.countsFor?.(config.kind)?.unseen}
-      onSelect={selectKind}
+      onSelect={openKind}
       onTogglePin={togglePin}
     />
   );
 
   const expandLabel = expanded ? 'Collapse sidebar' : 'Expand sidebar';
-  const screenCurrent = (ref: string) => gate.activeScreenRef === ref;
-  const toolCurrent = (id: string) => gate.activeViewTabId === id || gate.activeScreenRef === id;
-  const onToolScreen = SCREEN_VIEWS.some((s) => screenCurrent(s.ref)) || bottom.some((t) => toolCurrent(t.id));
-  const switchLabel = tools ? 'Close settings & tools' : 'Settings & tools';
   return (
     <nav
       ref={railRef}
@@ -175,142 +149,44 @@ export function WorkspaceRail() {
       aria-label="Work rail"
       data-testid="tws-rail"
       data-rail-expanded={expanded || undefined}
-      data-rail-mode={tools ? 'tools' : 'kinds'}
     >
-      {tools ? (
-        <div
-          ref={topRef}
-          className="tws-rail-top tws-rail-tools"
-          role="group"
-          aria-label="Settings and tools"
-          data-testid="tws-rail-tools"
-          data-more-above={more.above || undefined}
-          data-more-below={more.below || undefined}
-        >
-          <div className="tws-rail-cluster" data-cluster="status">
-            <RailStatus expanded={expanded} />
-            <RailTip label={expanded ? null : 'Command palette'} shortcut="⌘K">
-              <button
-                type="button"
-                className="tws-rail-btn"
-                aria-label="Command palette"
-                aria-keyshortcuts="Meta+K"
-                onClick={gate.openPalette}
-              >
-                <span className="tws-rail-icon">
-                  <span className="tws-rail-kbd" aria-hidden>
-                    ⌘K
-                  </span>
-                </span>
-                {expanded ? <span className="tws-rail-label">Command palette</span> : null}
-              </button>
-            </RailTip>
-          </div>
-          <div className="tws-rail-cluster" data-cluster="screens">
-            {SCREEN_VIEWS.map((screen) => (
-              <ToolButton
-                key={screen.ref}
-                id={screen.ref}
-                label={screen.label}
-                art={screen.art}
-                current={screenCurrent(screen.ref)}
-                expanded={expanded}
-                onClick={() => gate.navigateTo({ type: 'view', ref: screen.ref })}
-              />
-            ))}
-          </div>
-          <div className="tws-rail-cluster" data-cluster="tools">
-            {bottom.map((tab) => (
-              <ToolButton
-                key={tab.id}
-                id={tab.id}
-                label={tab.label}
-                art={BOTTOM_ART[tab.id]}
-                current={toolCurrent(tab.id)}
-                expanded={expanded}
-                onClick={() => gate.onSelectViewTab(tab.id)}
-              />
-            ))}
-            {gate.accountSlot ? (
-              <RailTip label={expanded ? null : 'Account'}>
-                <div className="tws-rail-account">
-                  {/* R12: the avatar-only trigger with its own accessible name;
-                      the expanded rail adds the name beside it. */}
-                  {isValidElement<{ compact?: boolean; compactName?: boolean }>(gate.accountSlot)
-                    ? cloneElement(gate.accountSlot, { compact: true, compactName: expanded })
-                    : gate.accountSlot}
-                </div>
-              </RailTip>
-            ) : null}
-          </div>
+      <div
+        ref={topRef}
+        className="tws-rail-top"
+        data-more-above={more.above || undefined}
+        data-more-below={more.below || undefined}
+      >
+        {pinned.length > 0 ? (
+          <>
+            <div className="tws-rail-group" role="group" aria-label="Pinned" data-testid="tws-rail-pinned">
+              {pinned.map((config) => kindButton(config, 'pinned'))}
+            </div>
+            <hr className="tws-rail-rule" />
+          </>
+        ) : null}
+        <div className="tws-rail-group" role="group" aria-label="Kinds" data-testid="tws-rail-kinds">
+          {kinds.map((config) => kindButton(config, 'list'))}
         </div>
-      ) : (
-        <div
-          ref={topRef}
-          className="tws-rail-top"
-          data-more-above={more.above || undefined}
-          data-more-below={more.below || undefined}
-        >
-          {pinned.length > 0 ? (
-            <>
-              <div className="tws-rail-group" role="group" aria-label="Pinned" data-testid="tws-rail-pinned">
-                {pinned.map((config) => kindButton(config, 'pinned'))}
-              </div>
-              <hr className="tws-rail-rule" />
-            </>
-          ) : null}
-          <div className="tws-rail-group" role="group" aria-label="Kinds" data-testid="tws-rail-kinds">
-            {kinds.map((config) => kindButton(config, 'list'))}
-          </div>
-          {/* Non-entity browser sources (Project files), from their registry. */}
-          <hr className="tws-rail-rule" />
-          <div className="tws-rail-group" role="group" aria-label="Sources" data-testid="tws-rail-sources">
-            {browserSources().map((source) => (
-              <SourceButton
-                key={source.id}
-                source={source}
-                current={source.id === currentSource}
-                expanded={expanded}
-                onSelect={selectSource}
-              />
-            ))}
-          </div>
+        {/* Non-entity browser sources (Project files), from their registry. */}
+        <hr className="tws-rail-rule" />
+        <div className="tws-rail-group" role="group" aria-label="Sources" data-testid="tws-rail-sources">
+          {browserSources().map((source) => (
+            <SourceButton
+              key={source.id}
+              source={source}
+              current={source.id === currentSource}
+              expanded={expanded}
+              onSelect={selectSource}
+            />
+          ))}
         </div>
-      )}
+      </div>
       <hr className="tws-rail-rule" />
-      {/* THE THREE (Subhang, 2026-10-07): Needs you, the user switch, expand —
-          always here, whichever face is up. */}
+      {/* THE THREE (Subhang, 2026-10-07): Needs you, you, expand. The avatar
+          opens the account card beside the rail; the rail never swaps. */}
       <div className="tws-rail-bottom" role="group" aria-label="Rail controls">
         <RailAttention expanded={expanded} />
-        <RailTip label={expanded ? null : switchLabel}>
-          <button
-            type="button"
-            className="tws-rail-btn tws-rail-switch"
-            aria-label={switchLabel}
-            aria-pressed={tools}
-            aria-current={!tools && onToolScreen ? 'page' : undefined}
-            data-testid="tws-rail-switch"
-            onClick={() => setTools((t) => !t)}
-          >
-            <span className="tws-rail-icon">
-              {/* The viewer's own avatar in a ring, as the account trigger draws it. */}
-              <span className="tws-rail-disc" data-disc="user">
-                {viewer ? (
-                  <Avatar
-                    actorId={viewer.id}
-                    provenance={viewer.isAgent ? 'agent' : 'human'}
-                    label={viewer.displayName}
-                    size={32}
-                    src={viewer.avatar ?? null}
-                  />
-                ) : (
-                  <VectorIcon paths={RAIL_USER_ART} size={16} />
-                )}
-              </span>
-            </span>
-            {expanded ? <span className="tws-rail-label">{switchLabel}</span> : null}
-          </button>
-        </RailTip>
+        <RailUser expanded={expanded} />
         <RailTip label={expanded ? null : expandLabel} shortcut="⌘\">
           <button
             type="button"
@@ -339,9 +215,9 @@ export function WorkspaceRail() {
 /**
  * OVERFLOW HINTS (Subhang, 2026-10-07): the top group scrolls inside itself
  * with no scrollbar, so it says when there is more above or below — the CSS
- * fades that edge. Re-measured on scroll, resize and face swap.
+ * fades that edge. Re-measured on scroll, resize and when Pinned appears.
  */
-function useScrollHints(ref: { current: HTMLElement | null }, face: unknown): { above: boolean; below: boolean } {
+function useScrollHints(ref: { current: HTMLElement | null }, layout: unknown): { above: boolean; below: boolean } {
   const [hints, setHints] = useState({ above: false, below: false });
   useEffect(() => {
     const el = ref.current;
@@ -360,43 +236,8 @@ function useScrollHints(ref: { current: HTMLElement | null }, face: unknown): { 
       el.removeEventListener('scroll', measure);
       observer?.disconnect();
     };
-  }, [ref, face]);
+  }, [ref, layout]);
   return hints;
-}
-
-/** A screen or shell tab in the tools rail: current while the shell shows it. */
-function ToolButton({
-  id,
-  label,
-  art,
-  current,
-  expanded,
-  onClick,
-}: {
-  id: string;
-  label: string;
-  art: readonly string[];
-  current: boolean;
-  expanded: boolean;
-  onClick(): void;
-}) {
-  return (
-    <RailTip label={expanded ? null : label}>
-      <button
-        type="button"
-        className="tws-rail-btn"
-        aria-label={label}
-        aria-current={current ? 'page' : undefined}
-        data-rail-tool={id}
-        onClick={onClick}
-      >
-        <span className="tws-rail-icon">
-          <VectorIcon paths={art} size={18} />
-        </span>
-        {expanded ? <span className="tws-rail-label">{label}</span> : null}
-      </button>
-    </RailTip>
-  );
 }
 
 /** A non-entity browser source: a click shows it in the browser column. */
