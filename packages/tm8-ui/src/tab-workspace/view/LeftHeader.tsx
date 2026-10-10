@@ -1,7 +1,8 @@
 /**
- * Left header (Spec A §3, design log §2): tm8 mark · space switcher … view
- * selector (right-aligned; Subhang round 2 item 7), spanning the rail and
- * the browser. Workstream A.
+ * Left header (Spec A §3, design log §2), spanning the rail and the browser:
+ * tm8 mark · space switcher · mode selector · the mode's own switcher (Craft
+ * redesign §2, 2026-10-10 — the workspace switcher in Home, the craft
+ * switcher in Craft). Workstream A.
  *
  * `ViewSelector` is also mounted by the Restore cluster's ⋯ while the
  * navigation is expanded away (Spec A §14), so both doors open one menu.
@@ -23,21 +24,21 @@ export function LeftHeader() {
   return (
     <header className="tws-left-header" data-testid="tws-left-header">
       <div className="tws-mark-cell">
-        <button type="button" className="tws-icon-btn tws-mark" aria-label="Work" title="Work" onClick={gate.goHome}>
+        <button type="button" className="tws-icon-btn tws-mark" aria-label="Home" title="Home" onClick={gate.goHome}>
           <BrandMark />
         </button>
       </div>
       <div className="tws-space-slot" data-narrow={narrow || undefined}>
         {switcher}
-        {gate.workspaceSwitcherSlot ?? null}
       </div>
       <ViewSelector variant="label" />
+      {gate.modeSwitcherSlot ? <div className="tws-mode-switcher-slot" data-testid="tws-mode-switcher-slot">{gate.modeSwitcherSlot}</div> : null}
     </header>
   );
 }
 
 export interface ViewSelectorProps {
-  /** `label` draws `Work ▾`; `more` draws the Restore cluster's ⋯. */
+  /** `label` draws `Home ▾`; `more` draws the Restore cluster's ⋯. */
   variant: 'label' | 'more';
 }
 
@@ -87,7 +88,7 @@ export function ViewSelector({ variant }: ViewSelectorProps) {
   };
 
   /* Outside the three modes (Settings, Inbox…) the selector names the screen. */
-  const label = current?.label ?? gate.shellTabs.find((tab) => tab.id === gate.activeViewTabId)?.label ?? gate.screenLabel ?? 'Work';
+  const label = current?.label ?? gate.shellTabs.find((tab) => tab.id === gate.activeViewTabId)?.label ?? gate.screenLabel ?? 'Home';
   const trigger: ReactNode =
     variant === 'label' ? (
       <>

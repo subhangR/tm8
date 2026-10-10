@@ -54,29 +54,32 @@ async function settle(ms = 120): Promise<void> {
   });
 }
 
-describe('the default landing is Work', () => {
-  it('lands the bare space on Work, at its canonical /work address', async () => {
+describe('the default landing is Home', () => {
+  it('lands the bare space on Home, at its canonical /home address', async () => {
     const target = createMemoryTarget(`#/s/${SPACE}`);
     const view = mount(target);
     await waitFor(() => view.getByTestId('tab-workspace'));
-    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/work`));
+    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home`));
     expect(view.queryByTestId('home-page')).toBeNull();
   });
 
-  it('keeps /tabs as a permanent alias, rewritten in place to /work', async () => {
-    const target = at('/tabs');
-    const view = mount(target);
-    await waitFor(() => view.getByTestId('tab-workspace'));
-    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/work`));
+  it('keeps /tabs and /work as permanent aliases, rewritten in place to /home', async () => {
+    for (const alias of ['/tabs', '/work']) {
+      const target = at(alias);
+      const view = mount(target);
+      await waitFor(() => view.getByTestId('tab-workspace'));
+      await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home`));
+      view.unmount();
+    }
   });
 });
 
 describe('retired desktop addresses land in Work (replace history)', () => {
-  it('/home → Work', async () => {
+  it('bare /home → Home (the tabs view)', async () => {
     const target = at('/home');
     const view = mount(target);
     await waitFor(() => view.getByTestId('tab-workspace'));
-    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/work`));
+    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home`));
     expect(view.queryByTestId('home-page')).toBeNull();
   });
 
@@ -87,7 +90,7 @@ describe('retired desktop addresses land in Work (replace history)', () => {
     await waitFor(() =>
       expect(view.container.querySelector('.tws-rail-kind[data-kind="doc"][aria-current="true"]')).not.toBeNull(),
     );
-    expect(target.getHash()).toBe(`#/s/${SPACE}/work`);
+    expect(target.getHash()).toBe(`#/s/${SPACE}/home`);
   });
 
   it('k/{slug} for a Work kind → Work with that kind in the browser', async () => {
@@ -104,7 +107,7 @@ describe('retired desktop addresses land in Work (replace history)', () => {
     const target = at(`/workspace?p=${TASK}`);
     const view = mount(target);
     await waitFor(() => view.getByTestId('tab-workspace'));
-    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/work?tab=${TASK}`));
+    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home?tab=${TASK}`));
     expect(view.queryByTestId('workspace-grid')).toBeNull();
   });
 
@@ -112,15 +115,15 @@ describe('retired desktop addresses land in Work (replace history)', () => {
     const target = at(`/e/${TASK}`);
     const view = mount(target);
     await waitFor(() => view.getByTestId('tab-workspace'));
-    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/work?tab=${TASK}`));
+    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home?tab=${TASK}`));
   });
 
-  it('/board → Work', async () => {
+  it('/board → Home', async () => {
     const target = at('/board');
     const view = mount(target);
     await waitFor(() => view.getByTestId('tab-workspace'));
     /* Work restores the tabs this viewer already has open in the space. */
-    await waitFor(() => expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/work(\\?tab=|$)`)));
+    await waitFor(() => expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/home(\\?tab=|$)`)));
     expect(view.queryByTestId('board-screen')).toBeNull();
   });
 
@@ -156,15 +159,15 @@ describe('who is NOT redirected', () => {
   });
 });
 
-describe('the selector is Work · Design · Observe · Settings', () => {
-  it('in Work: the view menu lists exactly the four modes, Work current', async () => {
+describe('the selector is Home · Design · Observe · Settings', () => {
+  it('in Home: the view menu lists exactly the four modes, Home current', async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
     const trigger = view.getByTestId('tws-view-select');
-    expect(trigger.textContent).toContain('Work');
+    expect(trigger.textContent).toContain('Home');
     fireEvent.click(trigger);
     const rows = within(view.getByRole('menu', { name: 'Views' })).getAllByRole('menuitemradio');
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Design', 'Observe', 'Settings']);
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Home', 'Design', 'Observe', 'Settings']);
     expect(rows[0]!.getAttribute('aria-checked')).toBe('true');
   });
 
@@ -173,16 +176,25 @@ describe('the selector is Work · Design · Observe · Settings', () => {
     const tabs = await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
     const pill = within(tabs).getByTestId('top-view-switcher');
     expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim())).toEqual([
-      'Work',
+      'Home',
       'Design',
       'Observe',
       'Settings',
     ]);
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
-    for (const retired of ['Home', 'Workspace', 'Board', 'Craft', 'Graph']) expect(labels).not.toContain(retired);
+    for (const retired of ['Work', 'Workspace', 'Board', 'Craft', 'Graph']) expect(labels).not.toContain(retired);
   });
 
-  it("Work's rail keeps Needs you, you and expand at the bottom, and no tools face", async () => {
+  it('the tab scope button leads the tab strip, before every tab (Craft redesign §2)', async () => {
+    const view = mount(at('/home'));
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    const scope = view.getByTestId('tws-scope');
+    const tabs = view.getByRole('tablist', { name: 'Open tabs' });
+    expect(scope.closest('.tws-ts-scope')).not.toBeNull();
+    expect(scope.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("Home's rail keeps Needs you, you and expand at the bottom, and no tools face", async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
     const controls = view.getByRole('group', { name: 'Rail controls' });
@@ -201,22 +213,22 @@ describe('the palette', () => {
   const rowLabels = (palette: HTMLElement) =>
     [...palette.querySelectorAll('[data-testid="palette-row"] .pal__row-label')].map((n) => n.textContent);
 
-  it('offers Work, and opening it lands on Work (not the old Work)', async () => {
+  it('offers Home, and opening it lands on Home (the tabs view, not the old chat Home)', async () => {
     const target = at('/graph');
     const view = mount(target);
     await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
     const palette = await openPalette(view);
-    fireEvent.change(palette.querySelector('input') as HTMLInputElement, { target: { value: 'Work' } });
+    fireEvent.change(palette.querySelector('input') as HTMLInputElement, { target: { value: 'Home' } });
     const row = await waitFor(() => {
       const found = [...palette.querySelectorAll<HTMLElement>('[data-testid="palette-row"]')].find(
-        (n) => n.querySelector('.pal__row-label')?.textContent === 'Work',
+        (n) => n.querySelector('.pal__row-label')?.textContent === 'Home',
       );
-      if (!found) throw new Error('no Work row');
+      if (!found) throw new Error('no Home row');
       return found;
     });
     fireEvent.click(row);
     await waitFor(() => view.getByTestId('tab-workspace'));
-    expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/work(\\?tab=|$)`));
+    expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/home(\\?tab=|$)`));
     expect(view.queryByTestId('workspace-grid')).toBeNull();
   });
 
@@ -224,7 +236,7 @@ describe('the palette', () => {
     const view = mount(at('/graph'));
     await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
     const palette = await openPalette(view);
-    for (const retired of ['Home', 'Workspace']) {
+    for (const retired of ['Work', 'Workspace']) {
       fireEvent.change(palette.querySelector('input') as HTMLInputElement, { target: { value: retired } });
       await settle(40);
       expect(rowLabels(palette)).not.toContain(retired);
