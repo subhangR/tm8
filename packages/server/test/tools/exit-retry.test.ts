@@ -15,9 +15,11 @@ afterEach(async () => {
   }
 });
 
-async function launch(failures: number, timeoutSeconds = 10, onFailure?: () => void) {
+async function launch(failures: number, timeoutSeconds = 10, onFailure?: () => void,
+  source = 'printf "%s\\n" "$KEY"; exit 7', closeExplicitly = false) {
   const dir = await mkdtemp(join(tmpdir(), 'tm8-tool-retry-'));
-  const id = randomUUID(), host = new PtyHostService();
+  const onSessionStatus = vi.fn();
+  const id = randomUUID(), host = new PtyHostService({ onSessionStatus });
   const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const launcher = new ToolSessionLauncher({ logger, pty: host, dataDir: dir, baseUrl: 'http://127.0.0.1:4610', pollMs: 20,
     env: { PATH: '/usr/bin:/bin', HOME: dir, SHELL: '/bin/bash' } });
@@ -29,6 +31,7 @@ async function launch(failures: number, timeoutSeconds = 10, onFailure?: () => v
     }
   });
   const revokeToken = vi.fn(async () => {});
+  const closePty = vi.fn(async () => { host.kill(id); });
   const original = host.captureProcessGroupKiller.bind(host);
   const cleanup = vi.fn<() => void>();
   vi.spyOn(host, 'captureProcessGroupKiller').mockImplementation(sessionId => {
@@ -38,13 +41,33 @@ async function launch(failures: number, timeoutSeconds = 10, onFailure?: () => v
   });
   await launcher.launch({ sessionId: id, toolId: randomUUID(), toolVersion: 1,
     definition: { name: 'retry-probe', description: '', help: '', runtime: 'bash',
-      source: 'printf "%s\\n" "$KEY"; exit 7', inputs: [{ name: 'key', type: 'secret' }],
+      source, inputs: [{ name: 'key', type: 'secret' }],
       tm8Access: 'none', timeoutSeconds },
     inputs: { env: { KEY: 'synthetic-retry-secret' }, values: { key: { secret: 'passed' } },
       secretValues: ['synthetic-retry-secret'], secretEnvKeys: ['KEY'] }, cwd: dir, keepOpen: false,
-    recordExit, revokeToken });
-  return { host, launcher, id, recordExit, revokeToken, cleanup, logger };
+    recordExit, revokeToken, ...(closeExplicitly ? { closePty } : {}) });
+  return { host, launcher, id, recordExit, revokeToken, cleanup, logger, onSessionStatus, closePty };
 }
+
+it('lets the real PTY exit reach its process writer before closed-run cleanup', async () => {
+  // Force status observation while the wrapper is still live, rather than
+  // depending on which callback wins an instant-command scheduling race.
+  const run = await launch(0, 10, undefined,
+    'printf \'{"exit":7}\\n\' > "$TM8_RUN_DIR/status.tmp"; /bin/mv "$TM8_RUN_DIR/status.tmp" "$TM8_RUN_DIR/status"; /bin/sleep 0.2; exit 7');
+  await vi.waitFor(() => expect(run.recordExit).toHaveBeenCalledTimes(1), { timeout: 5000 });
+  expect(run.onSessionStatus).toHaveBeenCalledWith(run.id, 'failed', { exitCode: 7, signal: null });
+  expect(run.cleanup).toHaveBeenCalledTimes(1);
+  expect(run.host.hasSession(run.id)).toBe(false);
+});
+
+it('uses the process-ending writer when a closed run needs explicit PTY cleanup', async () => {
+  const run = await launch(0, 10, undefined,
+    'printf \'{"exit":7}\\n\' > "$TM8_RUN_DIR/status.tmp"; /bin/mv "$TM8_RUN_DIR/status.tmp" "$TM8_RUN_DIR/status"; /bin/sleep 30', true);
+  await vi.waitFor(() => expect(run.recordExit).toHaveBeenCalledTimes(1), { timeout: 5000 });
+  expect(run.closePty).toHaveBeenCalledTimes(1);
+  expect(run.revokeToken).toHaveBeenCalledTimes(1);
+  expect(run.host.hasSession(run.id)).toBe(false);
+});
 
 it('retries a transient exit write without repeating token revocation, cleanup or redaction', async () => {
   const run = await launch(1);
