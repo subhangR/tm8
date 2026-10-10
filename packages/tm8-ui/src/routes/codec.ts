@@ -253,7 +253,7 @@ type CraftView = Extract<NavView, { view: 'craft' }>;
 
 /** `/craft/…` segments → the craft view; ids only, cut at the first non-id. */
 function craftOf(segments: readonly string[]): CraftView {
-  const keys = ['designId', 'pageId', 'nestedPageId'] as const;
+  const keys = ['designId', 'pageId'] as const;
   const view: CraftView = { view: 'craft' };
   for (const [index, key] of keys.entries()) {
     const segment = segments[index];
@@ -267,8 +267,7 @@ function craftOf(segments: readonly string[]): CraftView {
 function craftPath(view: CraftView): string {
   if (!view.designId) return '';
   if (!view.pageId) return `/${enc(view.designId)}`;
-  if (!view.nestedPageId) return `/${enc(view.designId)}/${enc(view.pageId)}`;
-  return `/${enc(view.designId)}/${enc(view.pageId)}/${enc(view.nestedPageId)}`;
+  return `/${enc(view.designId)}/${enc(view.pageId)}`;
 }
 
 export function parse(hash: string): ParseOutcome {
