@@ -26,8 +26,10 @@ export interface FencedTurnOptions {
   publisher: ChatTurnPublisher; turn: FencedClaim; leaseToken: string; prompt: string;
   historyBudgetBytes: number; createAgentMessage(): Promise<string>;
   track(active: ActiveChatHarness): void; untrack(): void;
+  /** Called only after this owner's resources and durable lease are released. */
+  onReleased?: (() => void) | undefined;
   onError?: ((error: unknown) => void) | undefined;
-  timeouts?: { preparation?: number; open?: number; submit?: number; observation?: number; close?: number };
+  timeouts?: { preparation?: number; open?: number; submit?: number; observation?: number; close?: number; cleanupRetry?: number };
 }
 
 export async function deadline<T>(promise: Promise<T>, milliseconds: number, operation: string): Promise<T> {
@@ -77,6 +79,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   let session: HarnessSession | undefined;
   let snapshotId: string | undefined;
   let barrier=false;
+  let knownNotSent=false;
   let closed=false;
   let seq=Number(turn.nextSeq);
   let agentMessageId=turn.agentMessageId;
@@ -88,6 +91,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   let opening=false;
   let resourcesReleased=false;
   let resourceRelease: Promise<void> | undefined;
+  let cleanupRetry: ReturnType<typeof setTimeout> | undefined;
   let cleanupRunning=false;
   let observed: Promise<void> | undefined;
   const textItems=new Map<string,{revision:number;text:string}>();
@@ -104,12 +108,21 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   };
   const releaseResources=() => {
     if (resourceRelease) return resourceRelease;
-    resourcesReleased=true;
     resourceRelease=(async () => {
-      try { await prepared?.launch.release(); } catch (error) { options.onError?.(error); }
-      try { await rpc('release_chat_runtime',[turn.chatId,turn.runtimeEpoch,options.leaseToken]); }
-      catch (error) { options.onError?.(error); }
-    })();
+      await prepared?.launch.release();
+      const released=await rpc<boolean>('release_chat_runtime',[turn.chatId,turn.runtimeEpoch,options.leaseToken]);
+      resourcesReleased=true;
+      if (released) options.onReleased?.();
+    })().catch(error => {
+      options.onError?.(error);
+      resourceRelease=undefined;
+      // Retry the original launch and lease fence; a successor is never revoked.
+      // Closing remains durable until both cleanup operations succeed.
+      if (!cleanupRetry) {
+        cleanupRetry=setTimeout(() => { cleanupRetry=undefined; void releaseResources(); },options.timeouts?.cleanupRetry ?? 1_000);
+        cleanupRetry.unref();
+      }
+    });
     return resourceRelease;
   };
   const cleanup=async () => {
@@ -131,6 +144,14 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     options.onError?.(error); void session?.cancel({turnId:turn.turnId,attemptId:snapshotId ?? '',configRevision:turn.configRevision},'revocation');
   }); },30_000);
   heartbeat.unref();
+  const settleTerminal=async (proofTerminal: NonNullable<typeof terminal>) => {
+    const proof={...proofTerminal,body:text(),usage:usage.value(),failure};
+    await rpc('record_chat_terminal',[turn.chatId,leaseFence,snapshotId,proof]);
+    completed=proofTerminal.outcome==='completed' && proofTerminal.evidence==='provider_terminal';
+    await rpc('complete_chat_turn',[turn.turnId,completed ? 'completed' : 'error',text(),usage.value(),
+      usage.value()?.total_cost_usd ?? null,failure ?? (completed ? null : {code:proofTerminal.outcome}),leaseFence,snapshotId,proof,null]);
+    settled=true;
+  };
   try {
     agentMessageId ??= await options.createAgentMessage();
     const harness=turn.agentTool==='claude-code' ? 'claude' : turn.agentTool==='codex' ? 'codex' : null;
@@ -147,7 +168,9 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       leaseEpoch:turn.runtimeEpoch,configRevision:turn.configRevision};
     snapshotId=randomUUID();
     const attempt: AttemptRef={turnId:turn.turnId,attemptId:snapshotId,configRevision:turn.configRevision};
-    const history=await readPortableHistory(db,auth,turn.chatId,turn.turnOrdinal,turn.captureHighWater);
+    const history=await readPortableHistory(db,{identityId:turn.claimedAuthority.identityId,authKind:turn.claimedAuthority.authKind,
+      sessionSpaceId:turn.spaceId,...(turn.claimedAuthority.authSessionId ? {authSessionId:turn.claimedAuthority.authSessionId} : {})},
+      turn.chatId,turn.turnOrdinal,turn.captureHighWater);
     const bootstrap=projectHistory(history,{snapshotId,currentTurnOrdinal:turn.turnOrdinal,captureHighWater:turn.captureHighWater,
       authorityScopeDigest:historyDigest({authority:turn.claimedAuthority,mode:turn.chatMode}),maxBytes:options.historyBudgetBytes});
     const sealed=await rpc<{inputDigest:string}>('seal_chat_turn_snapshot',[turn.chatId,leaseFence,snapshotId,{
@@ -235,6 +258,8 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
           failure={code:'interaction_unavailable',message:'This chat cannot resolve this runtime interaction.'};
           await append('error',failure,event);
         } else if (payload.kind==='terminal') {
+          const proof={outcome:payload.outcome,evidence:payload.evidence,body:text(),usage:usage.value(),failure};
+          await rpc('record_chat_terminal',[turn.chatId,leaseFence,snapshotId,proof]);
           terminal={outcome:payload.outcome,evidence:payload.evidence};
           await append('done',{reason:payload.outcome==='completed' && payload.evidence==='provider_terminal'
             ? 'success' : payload.outcome==='interrupted' ? 'interrupted' : 'error'},event);
@@ -247,6 +272,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     const dispatched=await deadline(current.submit({attempt,clientSubmissionId:snapshotId,text:options.prompt,
       attachmentRefs:(turn.attachments ?? []).map(file=>file.fileEntityId),config}),options.timeouts?.submit ?? 30_000,'harness submission');
     if (dispatched.delivery!=='sent') {
+      knownNotSent=dispatched.delivery==='not_sent';
       await deadline(current.close('failure'),options.timeouts?.close ?? 15_000,'failed dispatch close');
       await deadline(observed.catch(()=>undefined),options.timeouts?.close ?? 15_000,'failed dispatch observations');
       throw new Error(dispatched.delivery==='not_sent' ? 'provider_not_sent' : 'delivery_unknown');
@@ -255,27 +281,28 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       turn.chatId,leaseFence,snapshotId,{nativeTurnId:dispatched.nativeTurnId}]);
     await observed;
     if (!terminal) terminal={outcome:'runtime_lost',evidence:'reconciliation'};
-    const proof={...terminal,body:text(),usage:usage.value(),failure};
-    await rpc('record_chat_terminal',[turn.chatId,leaseFence,snapshotId,proof]);
-    completed=terminal.outcome==='completed' && terminal.evidence==='provider_terminal';
-    await rpc('complete_chat_turn',[turn.turnId,completed ? 'completed' : 'error',text(),usage.value(),
-      usage.value()?.total_cost_usd ?? null,failure ?? (completed ? null : {code:terminal.outcome}),leaseFence,snapshotId,proof,null]);
-    settled=true;
+    await settleTerminal(terminal);
   } catch (error) {
-    failure={code:barrier ? 'delivery_unknown' : 'preparation_failed',
-      message:barrier ? 'Chat delivery was interrupted; recorded effects may have occurred.' : 'Chat runtime could not prepare this turn.'};
     if (barrier && session) {
       await deadline(session.close('failure'),options.timeouts?.close ?? 15_000,'failed turn close').catch(error=>options.onError?.(error));
       if (observed) await deadline(observed.catch(()=>undefined),options.timeouts?.close ?? 15_000,'failed turn observations').catch(error=>options.onError?.(error));
     }
     options.onError?.(error);
-    if (!barrier) { await rpc('fail_chat_preparation',[turn.chatId,leaseFence,failure]); settled=true; }
-    else if (snapshotId) {
-      await append('error',failure,`server:${snapshotId}:error`);
-      await append('done',{reason:'error'},`server:${snapshotId}:done`);
-      await rpc('complete_chat_turn',[turn.turnId,'error',text(),usage.value(),usage.value()?.total_cost_usd ?? null,
-        failure,leaseFence,snapshotId,{outcome:'runtime_lost',evidence:'reconciliation',body:text(),failure},null]);
-      settled=true;
+    // An ACK failure is weaker evidence than an already-durable provider terminal.
+    // Its output parts are consumed before this branch and must not gain a second done.
+    if (terminal?.evidence==='provider_terminal') await settleTerminal(terminal);
+    else {
+      failure={code:knownNotSent ? 'provider_not_sent' : barrier ? 'delivery_unknown' : 'preparation_failed',
+        message:knownNotSent ? 'The provider confirmed this input was not sent.' : barrier
+          ? 'Chat delivery was interrupted; recorded effects may have occurred.' : 'Chat runtime could not prepare this turn.'};
+      if (!barrier) { await rpc('fail_chat_preparation',[turn.chatId,leaseFence,failure]); settled=true; }
+      else if (snapshotId) {
+        await append('error',failure,`server:${snapshotId}:error`);
+        await append('done',{reason:'error'},`server:${snapshotId}:done`);
+        await rpc('complete_chat_turn',[turn.turnId,'error',text(),usage.value(),usage.value()?.total_cost_usd ?? null,
+          failure,leaseFence,snapshotId,{outcome:knownNotSent ? 'failed' : 'runtime_lost',evidence:'reconciliation',body:text(),failure},null]);
+        settled=true;
+      }
     }
   } finally {
     clearInterval(heartbeat); options.untrack(); closed=true;

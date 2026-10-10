@@ -365,7 +365,8 @@ export class ChatOrchestrator {
       const rows=await this.options.db.query<{entity_id:string;configured_by_identity_id:string;turn_id:string;attempt_no:number}>(sweep,
         `select c.entity_id,c.configured_by_identity_id,t.turn_id,t.attempt_no
          from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
-         where t.state='running' and ((c.node_id=$1 and c.runtime_owner_boot_id is distinct from $2)
+         where (t.state='running' or (c.runtime_phase='closing' and c.active_execution_snapshot_id=t.execution_snapshot_id))
+           and ((c.node_id=$1 and c.runtime_owner_boot_id is distinct from $2)
            or coalesce(c.runtime_lease_expires_at,t.lease_expires_at)<=now()) order by t.turn_ordinal`,
         [this.options.nodeId,this.bootId]);
       for (const row of rows) await this.options.db.rpc(claims(row.configured_by_identity_id),
@@ -487,7 +488,8 @@ export class ChatOrchestrator {
           resolvePreparedLaunch:this.options.resolvePreparedLaunch,publisher:this.options.publisher,turn,leaseToken,
           prompt:promptFor(turn,await this.readAbout(turn)),historyBudgetBytes:this.options.historyBudgetBytes ?? 32768,
           createAgentMessage:()=>this.createAgentMessage(turn),track:active=>this.activeHarnesses.set(chatId,active),
-          untrack:()=>this.activeHarnesses.delete(chatId),onError:this.options.onError});
+          untrack:()=>this.activeHarnesses.delete(chatId),onError:this.options.onError,
+          onReleased:()=>{ void this.wake(chatId,requesterIdentityId); }});
       } else {
         const turn=await this.options.db.rpc<ClaimedTurn|null>(claims(requesterIdentityId),'claim_next_chat_turn',[chatId]);
         if (!turn) return;

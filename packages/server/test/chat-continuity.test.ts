@@ -48,4 +48,14 @@ describe('portable history',() => {
     expect(sameCoverage(a,{...a,captureHighWater:100})).toBe(true);
     expect(sameCoverage(a,{...a,authorityScopeDigest:'other'})).toBe(false);
   });
+  it('labels requested model and storage excerpts honestly and omits private bearer-row provenance',()=>{
+    const result=projectHistory([turn(1,{input:{body:'prior input',authSessionId:'private-human-session'},parts:[
+      {seq:0,kind:'text',payload:{text:'excerpt',omittedDetail:true,sourceRef:'a1:part:0'}},
+    ]})],options);
+    expect(result.renderedContext).toContain('requested_only');
+    expect(result.renderedContext).toContain('"observedModel":null');
+    expect(result.renderedContext).not.toContain('private-human-session');
+    expect(result.manifest.find(row=>row.sourceId==='a1')?.treatment).toBe('summarized');
+  });
+
 });

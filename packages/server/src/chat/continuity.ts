@@ -20,6 +20,7 @@ export interface HistoricalTurn {
   readonly agentMessageId: string | null;
   readonly input: Record<string, unknown>;
   readonly assistantBody: string | null;
+  readonly assistantNotice?: string | null;
   readonly parts: readonly HistoryPart[];
   readonly state: string;
   readonly failure: unknown;
@@ -60,8 +61,9 @@ export function sameCoverage(a: CoverageCursor, b: CoverageCursor): boolean {
 }
 
 function evidenceFor(turn: HistoricalTurn): Evidence[] {
+  const { authSessionId: _privateSession, ...input } = turn.input;
   const records: Evidence[] = [{ sourceId: turn.userMessageId, role: 'user',
-    turnOrdinal: turn.ordinal, content: turn.input }];
+    turnOrdinal: turn.ordinal, content: input }];
   // Thinking and usage are not portable memory. Final body repeats text parts.
   const texts = turn.parts.filter(part => part.kind === 'text');
   const textItems = new Map<string, { revision: number; text: string }>();
@@ -76,10 +78,11 @@ function evidenceFor(turn: HistoricalTurn): Evidence[] {
   if (texts.length) {
     records.push({ sourceId: turn.agentMessageId ?? turn.turnId, role: 'assistant',
       turnOrdinal: turn.ordinal, content: { text: [...textItems.values()].map(p => p.text).join(''),
-        model: turn.model, attribution: turn.model === null ? 'legacy_unknown' : 'recorded' } });
+        requestedModel: turn.model, observedModel: null, attribution: turn.model === null ? 'legacy_unknown' : 'requested_only',
+        omittedDetail: texts.some(part=>part.payload.omittedDetail===true) } });
   } else if (turn.assistantBody && turn.assistantBody !== 'Agent turn in progress.') {
     records.push({ sourceId: turn.agentMessageId ?? turn.turnId, role: 'assistant',
-      turnOrdinal: turn.ordinal, content: { text: turn.assistantBody, model: turn.model } });
+      turnOrdinal: turn.ordinal, content: { text: turn.assistantBody, requestedModel: turn.model, observedModel: null, attribution: 'requested_only' } });
   }
   const calls = new Map<string, { call?: HistoryPart; result?: HistoryPart }>();
   for (const part of turn.parts) {
@@ -97,12 +100,21 @@ function evidenceFor(turn: HistoricalTurn): Evidence[] {
         status: pair.result ? (pair.result.payload.is_error ? 'error' : 'completed') : 'effect_unknown',
         executable: false, orphaned: !pair.call } });
   }
+  if (turn.assistantNotice) records.push({sourceId:turn.agentMessageId ?? turn.turnId,role:'continuity_notice',turnOrdinal:turn.ordinal,
+    content:{sourceRef:turn.agentMessageId,omittedDetail:true,reason:turn.assistantNotice,
+      instruction:'Prior effects are historical evidence; do not automatically replay missing tool detail.'}});
   if (turn.state !== 'completed' || turn.failure) {
     records.push({ sourceId: turn.turnId, role: 'continuity_notice', turnOrdinal: turn.ordinal,
       content: { state: turn.state, failure: turn.failure, partialOutput: true,
         instruction: 'Effects may be unknown. Do not automatically retry this historical request.' } });
   }
   return records;
+}
+
+function omitted(value: unknown): boolean {
+  if (value===null || typeof value!=='object') return false;
+  if ('omittedDetail' in value && value.omittedDetail===true) return true;
+  return Object.values(value).some(omitted);
 }
 
 /** Pure renderer: data serialization cannot dispatch any provider tool. */
@@ -142,8 +154,8 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
   return { schemaVersion: 1, snapshotId: options.snapshotId, coverage,
     contentHash: createHash('sha256').update(rendered).digest('hex'), renderedContext: rendered,
     manifest: records.map((record, index) => ({ sourceId: record.sourceId,
-      treatment: record === original[index] ? 'included' as const : 'summarized' as const,
-      reason: record === original[index] ? null : 'deterministic extract; full authorized source retained' })) };
+      treatment: record === original[index] && !omitted(record.content) ? 'included' as const : 'summarized' as const,
+      reason: record === original[index] && !omitted(record.content) ? null : 'bounded deterministic extract; details require a current authorized source read' })) };
 }
 
 /** Read existing canonical rows under current authority; no UI entity joins. */
@@ -154,18 +166,22 @@ export async function readPortableHistory(
     const turns = await q.query<{
       turn_id: string; turn_ordinal: string; user_message_id: string; agent_message_id: string | null;
       input_snapshot: Record<string, unknown> | null; user_body: string; attachments: unknown;
-      author_id: string; assistant_body: string | null; state: string; failure: unknown; model: string | null;
+      author_id: string; assistant_body: string | null; assistant_available: boolean; assistant_edited: boolean; user_available: boolean; state: string; failure: unknown; model: string | null;
     }>(`select t.turn_id, t.turn_ordinal, t.user_message_id, t.agent_message_id,
          t.input_snapshot, u.body user_body, u.attachments, u.author_id,
-         a.body assistant_body, t.state, t.failure, t.model
-       from public.chat_turns t join public.messages u on u.entity_id=t.user_message_id
-       left join public.messages a on a.entity_id=t.agent_message_id
+         a.body assistant_body, ua.id is not null user_available, aa.id is not null assistant_available,
+         coalesce(a.edited_at>t.completed_at,false) assistant_edited, t.state, t.failure, t.model
+       from public.chat_turns t
+       left join public.entities ua on ua.id=t.user_message_id and ua.deleted_at is null
+       left join public.messages u on u.entity_id=ua.id
+       left join public.entities aa on aa.id=t.agent_message_id and aa.deleted_at is null
+       left join public.messages a on a.entity_id=aa.id
        where t.chat_id=$1 and t.turn_ordinal<$2
          and (t.input_history_seq is null or t.input_history_seq<=$3)
        order by t.turn_ordinal limit 257`, [chatId, ordinal, highWater]);
     // Refuse an incomplete source read; never silently omit an unbounded prefix.
     if (turns.length === 257) throw new Error('continuity_unavailable: history requires a cached checkpoint');
-    const ids = turns.flatMap(t => t.agent_message_id ? [t.agent_message_id] : []);
+    const ids = turns.flatMap(t => t.agent_message_id && t.assistant_available && !t.assistant_edited ? [t.agent_message_id] : []);
     const parts = ids.length ? await q.query<HistoryPart & { message_id: string }>(
       `select message_id, seq, kind,
          case when octet_length(payload::text)<=8192 then payload else
@@ -188,9 +204,12 @@ export async function readPortableHistory(
     }
     return turns.map(t => ({ turnId: t.turn_id, ordinal: Number(t.turn_ordinal),
       userMessageId: t.user_message_id, agentMessageId: t.agent_message_id,
-      input: t.input_snapshot ?? { body: t.user_body, attachments: t.attachments,
-        actorId: t.author_id, attribution: 'legacy_unknown' },
-      assistantBody: t.assistant_body, parts: byMessage.get(t.agent_message_id ?? '') ?? [],
+      input: !t.user_available ? { sourceRef:t.user_message_id,body:null,omittedDetail:true,reason:'source deleted or unavailable' }
+        : t.input_snapshot ? { ...t.input_snapshot, body:t.user_body,attachments:t.attachments,
+          ...(t.input_snapshot.body!==t.user_body ? {projectionNotice:'source was edited after queueing; current authorized content shown'} : {}) }
+        : { body:t.user_body,attachments:t.attachments,actorId:t.author_id,attribution:'legacy_unknown' },
+      assistantBody: t.assistant_body, assistantNotice: t.agent_message_id && (!t.assistant_available || t.assistant_edited)
+        ? 'assistant source edited or unavailable; earlier part payloads omitted' : null, parts: byMessage.get(t.agent_message_id ?? '') ?? [],
       state: t.state, failure: t.failure, model: t.model }));
   });
 }
