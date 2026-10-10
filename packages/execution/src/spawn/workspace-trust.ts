@@ -40,6 +40,7 @@ import { execFile } from 'node:child_process';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+import { GIT_NO_HOOKS_ARGS, gitChildEnv } from '../worktree/git-invoker.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -326,8 +327,11 @@ export async function resolveClaudeTrustRoot(
 /** The main worktree's root for a (linked) worktree, from git's common dir. */
 async function mainRepositoryRoot(cwd: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync('git', ['-C', cwd, 'rev-parse', '--git-common-dir'], {
+    // Same env allow-list and no-hooks prefix as every other server-run git:
+    // `cwd` is the agent's own checkout (see worktree/git-invoker.ts).
+    const { stdout } = await execFileAsync('git', [...GIT_NO_HOOKS_ARGS, '-C', cwd, 'rev-parse', '--git-common-dir'], {
       timeout: 5_000,
+      env: gitChildEnv(),
     });
     const commonDir = resolve(cwd, stdout.trim());
     // A bare or unusual layout has no main checkout for Claude to key on.
