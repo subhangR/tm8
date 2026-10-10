@@ -407,3 +407,65 @@ describe('positionAt', () => {
     expect(positionAt([{ position: null }, { position: null }], 1)).toBe(2);
   });
 });
+
+/* THE REAL GATE: a Workspace host, so the right strip is the selected tab's
+   own entity strip (spec §3) — QA defects 01a125c7 (overview Delete) and
+   01a125cb (graph page strip). */
+describe('the right strip in a Workspace host', () => {
+  const FIXTURE_CRAFT = 'design-checkout' as EntityId;
+
+  async function mountGate(path: string, setup?: (seam: Seam) => Promise<void>) {
+    const seam = createFixtureSeam();
+    await seam.openSpace(SPACE);
+    await setup?.(seam);
+    const view = render(<GateApp seam={seam} routerTarget={createMemoryTarget(`#/s/${SPACE}/craft/${path}`)} />);
+    await waitFor(() => view.getByTestId('craft-screen'));
+    return { seam, view };
+  }
+
+  it('the overview strip offers Delete, and deleting the craft goes to the Crafts home', async () => {
+    const { view } = await mountGate(FIXTURE_CRAFT);
+    await waitFor(() => expect(view.getAllByTestId('tws-action-strip')).toHaveLength(1));
+    fireEvent.click(view.getByTestId('tws-more'));
+    const danger = await waitFor(() => {
+      const button = view.getByTestId('tws-more-menu').querySelector<HTMLButtonElement>('.tws-astrip-danger button');
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    fireEvent.click(danger);
+    await waitFor(() => view.getByTestId('crafts-home'));
+    expect(view.queryByTestId('craft-screen')).toBeNull();
+  });
+
+  it('a graph page carries its own strip: Links, Messages and Run, with the canvas as the body', async () => {
+    let graphId = '' as EntityId;
+    const { view } = await mountGate(`${FIXTURE_CRAFT}`, async (seam) => {
+      graphId = await createGraph(seam, 'Flow', {
+        graphType: 'entity',
+        nodes: [{ key: 'a', spec: { kind: 'task', title: 'Ship it' } }],
+        edges: [],
+      });
+      /* The fixture seam keeps no `contains` edges for a craft: hand its read
+         the graph as its one page. */
+      const graph = await seam.entity(graphId);
+      const read = seam.entity.bind(seam);
+      seam.entity = (async (id: EntityId) => {
+        const detail = await read(id);
+        if (id !== FIXTURE_CRAFT) return detail;
+        return { ...detail, content: { ...(detail.content as object), pages: [{ ...graph, pagePosition: 1 }] } };
+      }) as typeof seam.entity;
+    });
+    fireEvent.click(await waitFor(() => pageTabs(view)[0]!));
+    await waitFor(() => view.getByTestId('dsn-graph-chrome'));
+    const strip = view.getByTestId('tws-action-strip');
+    expect(view.getAllByTestId('tws-action-strip')).toHaveLength(1);
+    await waitFor(() => within(strip).getByTestId('tws-section-connections'));
+    within(strip).getByTestId('tws-section-messages');
+    await waitFor(() => expect(within(strip).getByTestId('tws-astrip-common').querySelector('button')).not.toBeNull());
+    /* The canvas is the visible body; the panel only lends the strip its verbs. */
+    expect(view.getByTestId('dsn-graph-chrome').hidden).toBe(true);
+    fireEvent.click(within(strip).getByTestId('tws-section-connections'));
+    await waitFor(() => expect(within(strip).getByTestId('tws-section-connections').getAttribute('aria-pressed')).toBe('true'));
+    expect(view.getByTestId('dsn-graph-chrome').previousElementSibling).not.toBeNull();
+  });
+});

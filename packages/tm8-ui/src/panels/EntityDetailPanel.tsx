@@ -1381,7 +1381,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
             embedded.menuSlot,
           )
         : null}
-      {embedded?.dangerSlot && strip !== null
+      {/* Delete in the ⋯ menu for EVERY kind the host can archive, not only
+          kinds with a chip strip: a doc or a craft has no controls and still
+          deletes. `RowAction` hides it where `canDelete` refuses. */}
+      {embedded?.dangerSlot && controlHost.onArchive !== undefined && !isTombstone
         ? createPortal(
             <>
               <span className="pn-overflow__rule" />
