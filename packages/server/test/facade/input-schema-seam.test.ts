@@ -272,6 +272,7 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'commands.undo',
   'edges.delete',
   'entities.delete',
+  'entities.markSeen', // 313: context-only command, no contract input type
   'entities.restore',
   'projects.unlink',
   'readMarks.upsert',
