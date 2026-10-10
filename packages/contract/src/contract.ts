@@ -616,6 +616,7 @@ export type CoreEntityState =
    */
   | { kind: 'chat'; teammateId: EntityId; model: string; provider: string; agentTool: string;
       mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
+      credentialSelection?: ChatCredentialSelection;
       runtimeState: 'cold' | 'live' | 'stopped';
       turnState: 'idle' | 'queued' | 'running';
       turnCount: number; lastTurnAt: string | null;
@@ -1526,7 +1527,17 @@ export type ChatWorkdirMode = 'project' | 'scratch';
  * Craft blueprint, the task, the pull request — is a relation (`about`), which
  * a human can see and correct, rather than a hidden binding column.
  */
+/** Model credentials for one chat; secrets never travel in this selection. */
+export interface ChatCredentialSelection {
+  source: 'auto' | LaunchCredentialSource;
+  /** Only for source=space. Absent means the space default. */
+  credentialId?: EntityId;
+}
+export interface SetChatCredentialsInput { credentialSelection: ChatCredentialSelection }
+export interface SetChatCredentialsResult extends SetChatCredentialsInput { chatId: EntityId }
+
 export interface StartChatInput {
+  credentialSelection?: ChatCredentialSelection;
   mcpSelections?: McpSelection[];
   spaceId: SpaceId;
   teammateId: EntityId;

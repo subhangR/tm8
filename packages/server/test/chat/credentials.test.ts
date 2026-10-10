@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -86,11 +86,45 @@ describe('chat model credentials', () => {
     expect(read).toHaveBeenCalledWith(expect.anything(), input.spaceId, 'anthropic', CRED);
   });
 
+  it('honors an explicit member choice over my default and refuses a missing login', async () => {
+    const selected = { ...input, credentialSelection: { source: 'member' as const } };
+    const rigged = await rig({ member: home, mine: CRED, grant: login });
+    expect((await rigged.resolve(selected)).CLAUDE_CONFIG_DIR).toBe(home.configDir);
+    expect(rigged.read).not.toHaveBeenCalled();
+    await expect((await rig({ grant: login })).resolve(selected)).rejects.toThrow();
+  });
+
+  it('honors a specific space credential and refuses revocation without falling back', async () => {
+    const selected = { ...input, credentialSelection: { source: 'space' as const, credentialId: CRED } };
+    const rigged = await rig({ member: home, grant: login });
+    expect((await rigged.resolve(selected)).CLAUDE_CONFIG_DIR).toBe(join(login.homeDir, 'anthropic'));
+    expect(rigged.read).toHaveBeenCalledWith(expect.anything(), input.spaceId, 'anthropic', CRED);
+    expect(rigged.memberResolve).not.toHaveBeenCalled();
+    await expect((await rig({ member: home, refuse: 'revoked' })).resolve(selected)).rejects.toThrow();
+  });
+
+  it('honors explicit node selection and still enforces node and space policy', async () => {
+    const selected = { ...input, credentialSelection: { source: 'node' as const } };
+    expect(await (await rig({ member: home, grant: login })).resolve(selected)).toEqual({ ANTHROPIC_API_KEY: 'node-key' });
+    await expect((await rig({ policies: { space: {}, node: { anthropic: false } } })).resolve(selected)).rejects.toThrow();
+    await expect((await rig({ policies: { space: { anthropic: ['member'] }, node: {} } })).resolve(selected)).rejects.toThrow();
+  });
+
   it('uses the space default when no member credential exists, without looking up GitHub', async () => {
     const { resolve, read } = await rig({ grant: login });
     expect((await resolve(input)).CLAUDE_CONFIG_DIR).toBe(join(login.homeDir, 'anthropic'));
     expect(read).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledWith(expect.anything(), input.spaceId, 'anthropic', null);
+  });
+
+  it('validates a selected space API key without rewriting the running chat home', async () => {
+    const { resolve, dataDir } = await rig({ grant: {
+      kind: 'secret', provider: 'anthropic', credentialId: CRED, shape: 'api_key',
+      label: 'api', displayLogin: null, secret: 'space-api-key',
+    } });
+    const env = await resolve({ ...input, credentialValidationOnly: true });
+    expect(env.ANTHROPIC_API_KEY).toBe('space-api-key');
+    await expect(stat(join(dataDir, 'credentials', 'sessions', CHAT))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('materializes a space API key in the chat home and injects the selected key', async () => {

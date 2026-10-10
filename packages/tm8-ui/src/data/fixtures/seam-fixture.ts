@@ -4742,6 +4742,7 @@ export function createFixtureSeam(): FixtureSeam {
             kind: 'chat',
             teammateId: input.teammateId,
             model: input.model,
+            credentialSelection: input.credentialSelection ?? { source: 'auto' },
             provider: 'fixture',
             agentTool: 'claude-code',
             mode: input.mode,
@@ -4772,6 +4773,13 @@ export function createFixtureSeam(): FixtureSeam {
         return { chat: clone(chat), messageId: message.id };
       },
 
+      async setChatCredentials(chatId, input) {
+        const chat = requireSummary(chatId);
+        if (chat.state.kind !== 'chat') throw new CollabError('invalid_input', 'Not a chat');
+        chat.state = { ...chat.state, credentialSelection: input.credentialSelection };
+        touch(chat); emit(chat.spaceId, { type: 'entity.upsert', entity: clone(chat) });
+        return { chatId, credentialSelection: input.credentialSelection };
+      },
       /**
        * 276: fixture echo of `chat.setModel`.
        *

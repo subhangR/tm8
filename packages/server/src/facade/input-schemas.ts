@@ -3,6 +3,7 @@ import {
   WorkspaceCreateInputSchema,
   WorkspaceDraftPatchInputSchema,
   WorkspacePromptsResolveInputSchema,
+  CraftWorkspaceCommandInputSchema,
   WorkspaceReorderInputSchema,
   WorkspaceSwitchInputSchema,
   WorkspaceUpdateInputSchema,
@@ -181,7 +182,7 @@ import {
   RemoveMessageAttachmentsInputSchema,
   SavedViewInputSchema,
   SendHandoffInputSchema,
-  SetChatModelInputSchema,
+  SetChatModelInputSchema, SetChatCredentialsInputSchema,
   StartChatInputSchema,
   ResolveEntityAttentionInputSchema,
   RaiseAttentionSignalInputSchema,
@@ -247,6 +248,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'workspace.reorder': WorkspaceReorderInputSchema,
   'workspace.switch': WorkspaceSwitchInputSchema,
   'workspace.prompts.resolve': WorkspacePromptsResolveInputSchema,
+  'workspace.crafts.command': CraftWorkspaceCommandInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,
   'mcp.servers.delete': McpServerDeleteInputSchema,
@@ -433,6 +435,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'handoffs.withdraw': WithdrawHandoffInputSchema,
   'chat.start': StartChatInputSchema,
   'chat.setModel': SetChatModelInputSchema,
+  'chat.setCredentials': SetChatCredentialsInputSchema,
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,

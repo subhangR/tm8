@@ -115,7 +115,7 @@ describe('B10 — chat.start is closed to a chat runtime', () => {
     // same reason `chat.start` is: a chat runtime holds a credential minted BY
     // a chat, and a chat that could repoint itself onto another model would be
     // choosing which API-key backend its own next turn spends.
-    expect([...CHAT_OPERATIONS_CLOSED_TO_RUNTIME]).toEqual(['chat.start', 'chat.setModel']);
+    expect([...CHAT_OPERATIONS_CLOSED_TO_RUNTIME]).toEqual(['chat.start', 'chat.setModel', 'chat.setCredentials']);
     for (const name of CHAT_OPERATIONS_CLOSED_TO_RUNTIME) {
       expect(getOperation(name).name).toBe(name);
     }
