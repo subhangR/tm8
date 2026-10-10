@@ -217,6 +217,14 @@ describe.sequential('TM8 Chat turns are queued for every author', () => {
       ).rows[0]!);
       if (!claimed.result) break;
       drained.push(claimed.result);
+      // This storage fixture never dispatches a provider. Settle each claim
+      // before requesting its successor, as the serialized production drain does.
+      await asIdentity(fixture.identityA, async (client) => (
+        await client.query(
+          `select public.complete_chat_turn($1,'error','fixture settled without dispatch',null,null,'{}'::jsonb)`,
+          [claimed.result!.turnId],
+        )
+      ).rows[0]!);
     }
     expect(drained.map((turn) => turn['body'])).toEqual([
       'root prompt from A',
@@ -224,8 +232,8 @@ describe.sequential('TM8 Chat turns are queued for every author', () => {
       'follow-up from A',
       'a worker reports back',
     ]);
-    // Authority stays frozen to the configuring human on every turn; the
-    // requester fields are provenance, never a second set of claims.
+    // Lifecycle writes remain with the configuring human. The requested author
+    // below is separately frozen for that turn's model and runtime grant.
     expect(drained.every((turn) => turn['requesterIdentityId'] === fixture.identityA)).toBe(true);
     expect(drained.every((turn) => turn['chatMode'] === 'orchestrate')).toBe(true);
     expect(drained.map((turn) => turn['requestedByMemberId'])).toEqual([
