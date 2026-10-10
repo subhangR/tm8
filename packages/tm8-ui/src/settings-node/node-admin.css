@@ -67,3 +67,10 @@
     flex: 1 1 140px;
   }
 }
+
+/* Inside the app frame the one settings nav names the section; no page head. */
+.node-admin[data-framed] .node-admin__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0;
+}

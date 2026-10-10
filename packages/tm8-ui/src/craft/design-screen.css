@@ -418,3 +418,26 @@
   color: inherit;
   text-align: left;
 }
+
+/* Framed (round 2, R2-D1): the title and chat toggle sit in the frame's top
+   band, and the design chat is the column on the right, before the strip. */
+.dsn-frame-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  color: var(--pn-ink);
+}
+.dsn-frame-top__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 13px;
+}
+.crf-chat[data-side='right'] {
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}

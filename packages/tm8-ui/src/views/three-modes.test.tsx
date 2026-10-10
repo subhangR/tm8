@@ -156,19 +156,19 @@ describe('who is NOT redirected', () => {
   });
 });
 
-describe('the selector is Work · Design · Observe', () => {
-  it('in Work: the view menu lists exactly the three modes, Work current', async () => {
+describe('the selector is Work · Design · Observe · Settings', () => {
+  it('in Work: the view menu lists exactly the four modes, Work current', async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
     const trigger = view.getByTestId('tws-view-select');
     expect(trigger.textContent).toContain('Work');
     fireEvent.click(trigger);
     const rows = within(view.getByRole('menu', { name: 'Views' })).getAllByRole('menuitemradio');
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Design', 'Observe']);
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Design', 'Observe', 'Settings']);
     expect(rows[0]!.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('on Observe: the bar leads with the three modes and no retired view anywhere', async () => {
+  it('on Observe: the bar leads with the four modes and no retired view anywhere', async () => {
     const view = mount(at('/graph'));
     const tabs = await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
     const pill = within(tabs).getByTestId('top-view-switcher');
@@ -176,22 +176,20 @@ describe('the selector is Work · Design · Observe', () => {
       'Work',
       'Design',
       'Observe',
+      'Settings',
     ]);
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
     for (const retired of ['Home', 'Workspace', 'Board', 'Craft', 'Graph']) expect(labels).not.toContain(retired);
   });
 
-  it("Work's rail keeps Needs you at the bottom, and Design, Settings and Help behind the user switch", async () => {
+  it("Work's rail keeps Needs you, you and expand at the bottom, and no tools face", async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
     const controls = view.getByRole('group', { name: 'Rail controls' });
     const bottom = [...controls.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
-    expect(bottom).toEqual(['Needs you', 'Settings & tools', 'Expand sidebar']);
-    fireEvent.click(view.getByTestId('tws-rail-switch'));
-    const tools = view.getByRole('group', { name: 'Settings and tools' });
-    const names = [...tools.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
-    expect(names[0]).toBe('Status');
-    for (const tool of ['Command palette', 'Design', 'Settings', 'Help']) expect(names).toContain(tool);
+    expect(bottom).toEqual(['Needs you', 'Account: Ada', 'Expand sidebar']);
+    expect(view.queryByTestId('tws-rail-switch')).toBeNull();
+    expect(view.queryByRole('group', { name: 'Settings and tools' })).toBeNull();
   });
 });
 
@@ -231,6 +229,13 @@ describe('the palette', () => {
       await settle(40);
       expect(rowLabels(palette)).not.toContain(retired);
     }
+  });
+
+  it('lists Channels once (the view row, not the kind row too)', async () => {
+    const view = mount(at('/graph'));
+    await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
+    const palette = await openPalette(view);
+    expect(rowLabels(palette).filter((label) => label === 'Channels')).toHaveLength(1);
   });
 });
 

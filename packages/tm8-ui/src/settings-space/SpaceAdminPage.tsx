@@ -35,7 +35,7 @@ export function SpaceAdminPage(props: SettingsShellProps & { identity?: Identity
 
   if (!access || access.port !== port || access.hostIdentity !== hostIdentity || access.revision !== revision) return <div role="status">Checking space admin access…</div>;
   if (!access.allowed) return <div><p role="alert">{access.error ?? 'Space admin access requires an owner or admin membership in this space.'}</p><button type="button" onClick={() => setRevision((value) => value + 1)}>Retry access check</button></div>;
-  return <section className="set-space-admin" aria-label="Space admin"><h1>Space admin</h1>
+  return <section className="set-space-admin" aria-label="Space admin" data-framed={props.framed || undefined}>{props.framed ? null : <h1>Space admin</h1>}
     <SettingsShell {...props} sectionIds={SPACE_ADMIN_SECTIONS} initialSection={props.initialSection ?? 'profile'} />
   </section>;
 }

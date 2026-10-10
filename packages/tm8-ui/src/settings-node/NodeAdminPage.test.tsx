@@ -242,7 +242,7 @@ describe('NodeAdminPage', () => {
       <NodeAdminPage seam={seam} spaceId="space" initialSection="filesystem" />,
     );
     await screen.findByTestId('fs-access-form');
-    expect(mocks.pathGrants.list).toHaveBeenCalled();
+    await waitFor(() => expect(mocks.pathGrants.list).toHaveBeenCalled());
     expect(mocks.pathGrants.mine).not.toHaveBeenCalled();
     expect(await filesystemAccessPortFromSeam(seam)!.viewer()).toEqual({
       isNodeAdmin: true,
