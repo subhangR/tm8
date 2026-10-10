@@ -210,6 +210,8 @@ describe('chat launch composition', () => {
     expect(craft).toContain('collections.addItem {id: <design-id>, entityId, position?}');
     expect(craft).toContain('collections.removeItem takes a page out without deleting it');
     expect(craft).toContain('A craft cannot contain itself or a craft above it');
+    // The human's open tabs (owner decisions §5): the workspace CLI, pages only.
+    expect(craft).toContain('`tm8 workspace --craft <design-id> tabs open|close|move|focus`');
     expect(craft).toContain('A graph page is a PLAN');
     expect(craft).toContain('Nothing is materialized while crafting, approved or not');
     expect(craft).toContain('same type, same direction');
@@ -223,7 +225,10 @@ describe('chat launch composition', () => {
     // 4800 -> 4900 (2026-10-06, Craft → Designs): the design contract (pages,
     // membership doors, Run) replaced the materialize steps, which moved to the
     // Run prompt. MEASURED 4839 on this tree.
-    expect(craft.length).toBeLessThanOrEqual(4900);
+    // 4900 -> 5000 (2026-10-10, Crafter): one sentence naming the workspace tab
+    // CLI, which a non-Crafter teammate in a craft chat cannot learn from its
+    // persona. MEASURED 4951.
+    expect(craft.length).toBeLessThanOrEqual(5000);
   });
 
   /**
