@@ -18,9 +18,25 @@ selection follows this order, subject to the space and node credential policies:
 Choose a personal default under the space's credential settings or connect a
 member credential under Settings → Connections. Those existing settings now
 apply to chat too. A Kimi model requires that human's connected, readable Kimi
-key; it cannot fall back to a Claude account. Work sessions can additionally
-request explicit sources and pin credentials at launch; chat uses automatic
-selection and has no per-chat source override in this change.
+key; it cannot fall back to a Claude account.
+
+The chat composer's **Chat credentials** picker is available before the opening
+message and during an existing conversation. Choose Auto, Mine, Space default,
+Server, or a named space credential you may use. The selection belongs to that
+chat and survives a reload; it does not change your personal or space default.
+Explicit selections refuse unavailable or forbidden credentials rather than
+falling back. Kimi models offer only Auto and Mine because they require your
+connected backend key.
+
+A mid-chat change is saved immediately and applies to the next claimed turn.
+The current answer retains the credential selection it started with. The next
+turn rechecks access and policy, and restarts the runtime if the selected account
+changes. Switching account directories may reset native model context if the
+new account cannot access the transcript; stored tm8 messages remain intact.
+
+The CLI equivalent is `tm8 chat credentials <chat-id> auto|member|space|node`;
+append `--credential <space-credential-id>` with `space` to pin a named credential.
+Work sessions also support explicit sources and pins at launch.
 
 The model credential is separate from the short-lived tm8 MCP runtime token.
 The token authorizes tm8 tools for the current human; it does not log Claude into

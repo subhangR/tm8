@@ -198,7 +198,7 @@ import {
   type SessionTranscriptPage,
   type SpaceId,
   type HomeSnapshot,
-  type SetChatModelInput,
+  type SetChatModelInput, type SetChatCredentialsInput, type SetChatCredentialsResult,
   type SetChatModelResult,
   type StartChatInput,
   type StartChatResult,
@@ -241,6 +241,10 @@ import {
   type EntityHeaderView,
   type WorkspaceColor,
   type WorkspaceListResult,
+  type CraftWorkspace,
+  type CraftWorkspaceCommandInput,
+  type CraftWorkspaceCommandResult,
+  type CraftWorkspaceListResult,
   type WorkspaceManageResult,
 } from '@tm8/contract';
 import { measureSpawnTerminalSize } from '../../terminal/pty/terminalSize.js';
@@ -411,6 +415,20 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { spaceId, memberId },
         body: { clientMutationId: newId('memremove') },
       });
+    },
+
+    // -- craft-scoped workspaces (lane L3) ------------------------------------
+
+    listCraftWorkspaces(spaceId: SpaceId): Promise<CraftWorkspaceListResult> {
+      return http.call<CraftWorkspaceListResult>('workspace.crafts.list', { params: { spaceId } });
+    },
+
+    getCraftWorkspace(spaceId: SpaceId, craftId: string): Promise<CraftWorkspace> {
+      return http.call<CraftWorkspace>('workspace.crafts.get', { params: { spaceId, craftId } });
+    },
+
+    commandCraftWorkspace(spaceId: SpaceId, craftId: string, input: CraftWorkspaceCommandInput): Promise<CraftWorkspaceCommandResult> {
+      return http.call<CraftWorkspaceCommandResult>('workspace.crafts.command', { params: { spaceId, craftId }, body: input });
     },
 
     // -- multiple workspaces (API doc 01a115c4 §5) ---------------------------
@@ -1730,6 +1748,9 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
 
     /** 276: `chat.setModel` — the chat is in the path, the model in the body. */
+    setChatCredentials(chatId: EntityId, input: SetChatCredentialsInput): Promise<SetChatCredentialsResult> {
+      return http.call<SetChatCredentialsResult>('chat.setCredentials', { params: { id: chatId }, body: input });
+    },
     setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult> {
       return http.call<SetChatModelResult>('chat.setModel', { params: { id: chatId }, body: input });
     },

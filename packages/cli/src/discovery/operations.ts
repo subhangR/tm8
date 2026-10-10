@@ -2103,6 +2103,13 @@ const ROWS: Record<OperationName, Row> = {
       'tm8 chat start --teammate <team-member-id> --model <model> --mode ask --workdir project --project <project-id> --about <entity-id> -',
     ],
   },
+  'chat.setCredentials': {
+    cmd: ['chat', 'credentials'], syn: 'tm8 chat credentials <chat-id> <auto|member|space|node> [--credential <space-credential-id>]',
+    sum: 'Choose model credentials for the next turns of a chat', authz: 'entity', input: 'bound',
+    tags: ['chat', 'credential', 'switch'],
+    notes: ['Human-only; policy and credential access are checked before use. Applies to the next claimed turn.',
+      'Switching account directories may reset native model context; stored tm8 messages survive.'],
+  },
   'chat.setModel': {
     cmd: ['chat', 'model'],
     syn: 'tm8 chat model <chat-id> <model>',
@@ -2750,6 +2757,52 @@ const ROWS: Record<OperationName, Row> = {
       'revision 0 means you have no stored workspace in this Space yet',
     ],
     examples: ['tm8 workspace get --space <space-id>'],
+  },
+  // ── craft workspaces (Craft redesign doc 01a1255d §3, §4) ──────────────────
+  'workspace.crafts.list': {
+    cmd: ['workspace', 'crafts'],
+    syn: 'tm8 workspace crafts [list] [--space <space-id>]',
+    sum: 'List your craft workspaces in this Space: which crafts are open in your Craft top bar, in order',
+    authz: 'space',
+    input: 'none',
+    tags: ['craft', 'crafts', 'workspace', 'tabs', 'open', 'top bar'],
+    notes: [
+      'your own only (an agent lists the ones of the human it works for); a craft workspace is hidden from `tm8 workspace list` and its cap of 20',
+      'arrange the list with tm8 workspace crafts open|close <craft-id> and crafts move <craft-id> --before <craft-id|last> (at most 30 open: open_limit, exit 6)',
+    ],
+    examples: ['tm8 workspace crafts --space <space-id>'],
+  },
+  'workspace.crafts.get': {
+    cmd: ['workspace', 'crafts', 'get'],
+    syn: 'tm8 workspace --craft <craft-id> get  |  tm8 workspace crafts get <craft-id>',
+    sum: 'Read your tabs on one craft: the pinned overview first, then the pages you have open',
+    authz: 'space',
+    input: 'none',
+    tags: ['craft', 'workspace', 'tabs', 'pages', 'overview'],
+    notes: [
+      'revision 0 / no row yet: only the overview tab, which is the craft itself',
+      'a tab whose page has left the craft is dropped on read',
+    ],
+    examples: ['tm8 workspace --craft <craft-id> get'],
+  },
+  'workspace.crafts.command': {
+    cmd: ['workspace', 'crafts', 'command'],
+    syn: 'tm8 workspace --craft <craft-id> {tabs open <kind> <id> | tabs close <tab|entity> | tabs move <tab|entity> --before <tab|last> | tabs focus <tab|entity>}',
+    sum: "Open, close, reorder or focus tabs in your workspace for one craft (the human's own, or from a chat/session started on that craft)",
+    authz: 'space',
+    input: 'bound',
+    side: 'durable',
+    tags: ['craft', 'workspace', 'tabs', 'open', 'close', 'move', 'focus', 'agent'],
+    notes: [
+      'a tab opens only on the craft or one of its direct pages (not_a_page, exit 6): add the page to the craft first; kinds: craft, graph, doc, artifact, drawing',
+      'the overview tab is pinned: never closed or moved, nothing goes before it (pinned, exit 6)',
+      'an agent may change a craft\'s tabs only from a chat or session started on that craft (forbidden / not_craft_session, exit 4)',
+      'also: tm8 workspace crafts open|close|move <craft-id> for the top bar, and crafts command <craft-id> <command> --args <json>; idempotent by --request-id',
+    ],
+    examples: [
+      'tm8 workspace --craft <craft-id> tabs open doc <doc-id>',
+      'tm8 workspace --craft <craft-id> tabs move <entity-id> --before last',
+    ],
   },
   'workspace.drafts.patch': {
     cmd: ['workspace', 'drafts', 'set'],
@@ -4307,7 +4360,8 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
-  'sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d';
+  // Re-measured for Craft L3 (+workspace.crafts.list|get|command) — RECOMPUTED, not adjusted.
+  'sha256:35a8b0d57119b59a256f92171a64f276e8adbb5c1645d7b2cdafbb79c4abe4dd';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -5017,6 +5071,10 @@ const WORKSPACE_COMMON = '[--workspace <id|name>] [--expect-workspace <id>] [--i
 const WORKSPACE_IDEMPOTENCY =
   'idempotent by --request-id: the same id and arguments return the recorded result and never run twice; a reused id with other arguments is refused (request_id_reused)';
 const WORKSPACE_EXIT = 'exit 0 applied/no_op; 16 requires_user_choice (the human must choose in the window); 4/2/6 rejected; 6 conflict';
+// `--craft <craft-id>` sends these to that craft's workspace (workspace.crafts.command) instead.
+const CRAFT_TAB_VERBS = new Set(['workspace tabs open', 'workspace tabs close', 'workspace tabs move', 'workspace tabs activate']);
+const CRAFT_TAB_NOTE =
+  'with --craft <craft-id>: your workspace for that craft instead (workspace.crafts.command) — one <kind> <entity-id>, tabs named by tab id or entity id, --before <tab|last>';
 const WORKSPACE_VERBS: Array<[string, string, string, string[], string[]]> = [
   ['workspace tabs open', `tm8 workspace tabs open <kind> <entity-id> [<kind> <entity-id>...] [--no-activate] [--subview entity|connections|messages] ${WORKSPACE_COMMON}`,
     'Open an entity as a tab in your live Workspace window (workspace.tabs.open)',
@@ -5076,7 +5134,7 @@ for (const [key, syntax, summary, notes, examples] of WORKSPACE_VERBS) {
     path: key.split(' '),
     syntax,
     summary,
-    notes: [...notes, WORKSPACE_IDEMPOTENCY, WORKSPACE_EXIT],
+    notes: [...notes, ...(CRAFT_TAB_VERBS.has(key) ? [CRAFT_TAB_NOTE] : []), WORKSPACE_IDEMPOTENCY, WORKSPACE_EXIT],
     examples,
   });
   COMMAND_OPS.set(key, ['workspace.command']);
@@ -5087,6 +5145,46 @@ for (const [key, syntax, summary, notes, examples] of WORKSPACE_VERBS) {
     workspaceCommandIndex < 0 ? COMMAND_ORDER.length : workspaceCommandIndex + 1,
     0,
     ...WORKSPACE_VERBS.map(([key]) => key),
+  );
+}
+
+// Craft workspaces (Craft L3): the top-bar verbs are sugar over
+// `workspace.crafts.command` (`crafts list` over `workspace.crafts.list`), and
+// `tabs focus` is `tabs activate` under the name agents reach for. With
+// `--craft <craft-id>` every `workspace tabs` verb drives that craft's tabs.
+const CRAFT_COMMON = '[--space <space-id>] [--expect-revision <n>] [--request-id <id>]';
+const CRAFT_VERBS: Array<[string, OperationName[], string, string, string[], string[]]> = [
+  ['workspace crafts list', ['workspace.crafts.list'], 'tm8 workspace crafts list [--space <space-id>]',
+    'List your craft workspaces in this Space, open and closed, in top-bar order (same as `tm8 workspace crafts`)',
+    [],
+    ['tm8 workspace crafts list --space <space-id>']],
+  ['workspace crafts open', ['workspace.crafts.command'], `tm8 workspace crafts open <craft-id> [--before <craft-id|last>] ${CRAFT_COMMON}`,
+    'Put a craft in your Craft top bar (craft.open); its tabs are the ones you left',
+    ['at most 30 open crafts (open_limit, exit 6)', 'already open: no_op unless --before moves it'],
+    ['tm8 workspace crafts open <craft-id> --before <craft-id>']],
+  ['workspace crafts close', ['workspace.crafts.command'], `tm8 workspace crafts close <craft-id> ${CRAFT_COMMON}`,
+    'Take a craft out of your Craft top bar (craft.close); its tabs are kept for next time',
+    ['closing never changes the craft or its pages'],
+    ['tm8 workspace crafts close <craft-id>']],
+  ['workspace crafts move', ['workspace.crafts.command'], `tm8 workspace crafts move <craft-id> --before <craft-id|last> ${CRAFT_COMMON}`,
+    'Reorder a craft in your Craft top bar (craft.move)',
+    [],
+    ['tm8 workspace crafts move <craft-id> --before last']],
+  ['workspace tabs focus', ['workspace.crafts.command', 'workspace.command'], `tm8 workspace --craft <craft-id> tabs focus <tab|entity> ${CRAFT_COMMON}  |  tm8 workspace tabs focus <tab-id>`,
+    'Select a tab: in your workspace for a craft with --craft, else in your live Workspace window (same as `tabs activate`)',
+    ['with --craft a tab is named by its tab id or by the entity it shows', 'an agent may use --craft only from a chat or session started on that craft (forbidden / not_craft_session, exit 4)'],
+    ['tm8 workspace --craft <craft-id> tabs focus <entity-id>']],
+];
+for (const [key, ops, syntax, summary, notes, examples] of CRAFT_VERBS) {
+  COMMAND_ALIASES.set(key, { path: key.split(' '), syntax, summary, notes, examples });
+  COMMAND_OPS.set(key, ops);
+}
+{
+  const craftCommandIndex = COMMAND_ORDER.indexOf('workspace crafts command');
+  COMMAND_ORDER.splice(
+    craftCommandIndex < 0 ? COMMAND_ORDER.length : craftCommandIndex + 1,
+    0,
+    ...CRAFT_VERBS.map(([key]) => key),
   );
 }
 

@@ -901,6 +901,11 @@ export function TabStrip({ leading }: TabStripProps = {}) {
   return (
     <div className="tws-strip tws-ts" data-testid="tws-strip" data-has-leading={restore ? true : undefined}>
       {restore ? <div className="tws-ts-leading">{restore}</div> : null}
+      {/* THE TAB SCOPE, LEFT-MOST (owner, 2026-10-10; Craft redesign §2): a
+          small tab stuck to the browser's edge, ahead of the tabs it scopes. */}
+      <div className="tws-ts-scope">
+        <ScopePicker />
+      </div>
       <div
         ref={scrollerRef}
         className="tws-ts-scroll"
@@ -969,7 +974,6 @@ export function TabStrip({ leading }: TabStripProps = {}) {
         >
           <PlusGlyph />
         </button>
-        <ScopePicker />
       </div>
       {menu ? (
         <StripMenu

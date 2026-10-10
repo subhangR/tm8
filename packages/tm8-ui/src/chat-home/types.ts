@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, SessionTranscriptContext, SpaceId, TeamMemberMode } from '@tm8/contract';
+import type { ChatCredentialSelection, ActorSummary, ChatMode, ChatWorkdirMode, EntityId, EntityKind, FileAttachment, LaunchModelEffort, SessionTranscriptContext, SpaceId, TeamMemberMode } from '@tm8/contract';
 
 /** C1, normalized for rendering. The durable row sequence lives beside each item. */
 export type ChatTurnItem =
@@ -131,6 +131,7 @@ export interface ChatThreadConfig {
   teammateLabel: string;
   model: string;
   modelLabel: string;
+  credentialSelection?: ChatCredentialSelection;
   mode: ChatMode;
   /** The write-once directory binding. Absent on a port that predates 167. */
   workdirMode?: ChatWorkdirMode;
@@ -309,6 +310,7 @@ export interface ChatThreadDetail {
  * message existed that was not yet a chat) has nothing left to express.
  */
 export interface ChatCreateInput {
+  credentialSelection?: ChatCredentialSelection;
   mcpSelections?: import("../mcp/port").McpSelection[];
   spaceId: SpaceId | string;
   /**
@@ -459,6 +461,8 @@ export interface ChatHomePort {
    * check for it rather than assume it, and a stale port literal in a test keeps
    * working instead of crashing on a member it never declared.
    */
+  credentialOptions?(spaceId: SpaceId | string): Promise<readonly { id: string; label: string }[]>;
+  setCredentials?(input: { chatId: EntityId; credentialSelection: ChatCredentialSelection }): Promise<ChatCredentialSelection>;
   setModel?(input: ChatSetModelInput): Promise<ChatSetModelResult>;
   interrupt?(chatId: EntityId): Promise<void>;
   subscribe(listener: (frame: ChatTurnFrame) => void): () => void;

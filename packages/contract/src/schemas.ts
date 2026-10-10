@@ -139,7 +139,7 @@ import type {
   NotificationItem, Page, PaletteAction, ActionRows, ActionDiscoveryPage, ActionListResult, PatchEdgeInput, PatchEntityInput,
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot, SetChatModelInput,
-  SetChatModelResult, StartChatInput,
+  SetChatModelResult, StartChatInput, ChatCredentialSelection, SetChatCredentialsInput, SetChatCredentialsResult,
   PersonalStyleCreateInput, PersonalStyleUpdateInput, PersonalStyleDeleteInput, StylePushInput,
   StylePullInput, StyleRemoveInput, StylesResolveInput, StylePrefsSetInput, SpaceStyleDefaultSetInput,
   StartChatResult,
@@ -748,6 +748,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   // message is still coming" looks like.
   z.object({
     kind: z.literal('chat'),
+    credentialSelection: z.lazy(() => ChatCredentialSelectionSchema).optional(),
     teammateId: EntityIdSchema,
     model: z.string().min(1),
     provider: z.string().min(1),
@@ -1482,8 +1483,22 @@ export const MessagePartSchema: z.ZodType<MessagePart> = z.discriminatedUnion('k
   }).strict(),
 ]);
 
+export const ChatCredentialSelectionSchema: z.ZodType<ChatCredentialSelection> = z.object({
+  source: z.enum(['auto', 'member', 'space', 'node']),
+  credentialId: EntityIdSchema.optional(),
+}).strict().refine(input => !input.credentialId || input.source === 'space', {
+  message: 'credentialId is only valid with source space',
+});
+export const SetChatCredentialsInputSchema: z.ZodType<SetChatCredentialsInput> = z.object({
+  credentialSelection: ChatCredentialSelectionSchema,
+}).strict();
+export const SetChatCredentialsResultSchema: z.ZodType<SetChatCredentialsResult> = z.object({
+  chatId: EntityIdSchema, credentialSelection: ChatCredentialSelectionSchema,
+}).strict();
+
 export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
   mcpSelections: McpSelectionsSchema.optional(),
+  credentialSelection: ChatCredentialSelectionSchema.optional(),
   spaceId: SpaceIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),

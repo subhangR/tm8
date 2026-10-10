@@ -122,7 +122,7 @@ export async function loadWorkspaces(q: Querier, spaceId: string, find: { tabId?
        from public.workspaces w
        left join public.workspace_active a
          on a.space_id = w.space_id and a.identity_id = w.identity_id and a.workspace_id = w.workspace_id
-      where w.space_id = $1 and w.identity_id = (select internal.identity_id())
+      where w.space_id = $1 and w.identity_id = (select internal.identity_id()) and w.scope_entity_id is null
       order by w.position, w.created_at, w.workspace_id`,
     [spaceId, find.tabId ?? null, find.draftId ?? null],
   );

@@ -839,7 +839,6 @@ describe('craft routes (Craft → Designs)', () => {
     [`#/s/${SPACE}/craft`, { view: 'craft' }],
     [`#/s/${SPACE}/craft/${D}`, { view: 'craft', designId: D }],
     [`#/s/${SPACE}/craft/${D}/${P}`, { view: 'craft', designId: D, pageId: P }],
-    [`#/s/${SPACE}/craft/${D}/${P}/${N}`, { view: 'craft', designId: D, pageId: P, nestedPageId: N }],
   ];
 
   it.each(cases)('round-trips %s', (hash, target) => {
@@ -858,11 +857,13 @@ describe('craft routes (Craft → Designs)', () => {
     expect(parse(`#/s/${SPACE}/craft/x`).route?.target).toEqual({ view: 'craft' });
   });
 
-  it('builds no page without its design, and no nested page without its page', () => {
+  it('builds no page without its design', () => {
     const orphanPage = { ...routeOf(), target: { view: 'craft' as const, pageId: P } };
     expect(build(orphanPage).hash).toBe(`#/s/${SPACE}/craft`);
-    const orphanNested = { ...routeOf(), target: { view: 'craft' as const, designId: D, nestedPageId: N } };
-    expect(build(orphanNested).hash).toBe(`#/s/${SPACE}/craft/${D}`);
+  });
+
+  it('reads an old nested-page link as the page: a craft page opens inline as a tab', () => {
+    expect(parse(`#/s/${SPACE}/craft/${D}/${P}/${N}`).route?.target).toEqual({ view: 'craft', designId: D, pageId: P });
   });
 });
 
@@ -870,25 +871,35 @@ describe('craft routes (Craft → Designs)', () => {
 // D31 — Work's address and the one redirect table
 // ---------------------------------------------------------------------------
 
-describe('Work (the tabs view) — /work is canonical, /tabs a permanent alias', () => {
+describe('Home (the tabs view) — /home is canonical, /work and /tabs permanent aliases', () => {
   const A = '01a11195-aaaa-7bbb-8ccc-000000000001';
 
-  it('builds /work, bare and with ?tab=', () => {
-    expect(build(defaultRoute(SPACE, { view: 'tabs' })).hash).toBe(`#/s/${SPACE}/work`);
-    expect(build(defaultRoute(SPACE, { view: 'tabs', tab: A as never })).hash).toBe(`#/s/${SPACE}/work?tab=${A}`);
+  it('builds /home, bare and with ?tab=', () => {
+    expect(build(defaultRoute(SPACE, { view: 'tabs' })).hash).toBe(`#/s/${SPACE}/home`);
+    expect(build(defaultRoute(SPACE, { view: 'tabs', tab: A as never })).hash).toBe(`#/s/${SPACE}/home?tab=${A}`);
   });
 
-  it('round-trips /work', () => {
-    for (const hash of [`#/s/${SPACE}/work`, `#/s/${SPACE}/work?tab=${A}`]) {
-      const { route } = parse(hash);
-      expect(build(route!).hash).toBe(hash);
-    }
-  });
-
-  it('decodes /tabs to the same route, and builds it back as /work', () => {
-    const { route } = parse(`#/s/${SPACE}/tabs?tab=${A}`);
+  it('round-trips /home?tab=', () => {
+    const hash = `#/s/${SPACE}/home?tab=${A}`;
+    const { route } = parse(hash);
     expect(route?.target).toEqual({ view: 'tabs', tab: A });
-    expect(build(route!).hash).toBe(`#/s/${SPACE}/work?tab=${A}`);
+    expect(build(route!).hash).toBe(hash);
+  });
+
+  it('keeps bare /home as the shared Home target (the phone and legacy desktop draw it; the desktop redirects it)', () => {
+    expect(parse(`#/s/${SPACE}/home`).route?.target).toEqual({ view: 'home' });
+    expect(workRedirectOf(parse(`#/s/${SPACE}/home`).route!)).toMatchObject({ to: { view: 'tabs' }, open: [] });
+  });
+
+  it.each(['work', 'tabs'])('decodes /%s to the same route, and builds it back as /home', (alias) => {
+    const { route } = parse(`#/s/${SPACE}/${alias}?tab=${A}`);
+    expect(route?.target).toEqual({ view: 'tabs', tab: A });
+    expect(build(route!).hash).toBe(`#/s/${SPACE}/home?tab=${A}`);
+  });
+
+  it('leaves /home/k/{slug} and /home/chat as the retired Home roots', () => {
+    expect(parse(`#/s/${SPACE}/home/k/docs`).route?.target.view).toBe('home');
+    expect(parse(`#/s/${SPACE}/home/chat`).route?.target.view).toBe('home');
   });
 
   it('leaves the old /workspace decoding as itself (the phone keeps its card; the desktop redirects)', () => {
@@ -902,10 +913,15 @@ describe('workRedirectOf — every retired desktop address lands in Work', () =>
   const C = '01a11195-aaaa-7bbb-8ccc-000000000003';
   const redirectOf = (path: string) => workRedirectOf(parse(`#/s/${SPACE}${path}`).route!);
 
-  it('bare /home and the bare space → Work, nothing opened', () => {
+  it('bare /home and the bare space → Home (tabs), nothing opened', () => {
     for (const path of ['', '/home']) {
       expect(redirectOf(path)).toMatchObject({ to: { view: 'tabs' }, open: [], activate: null, browserSlug: null });
     }
+  });
+
+  it('a pre-D31 /home?p= trail → its ids as tabs', () => {
+    const B2 = '01a11195-aaaa-7bbb-8ccc-000000000002';
+    expect(redirectOf(`/home?p=${B2}`)).toMatchObject({ to: { view: 'tabs' }, open: [B2], activate: B2 });
   });
 
   it('/home/k/{slug} → Work with that browser kind', () => {

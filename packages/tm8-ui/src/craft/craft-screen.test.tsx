@@ -7,14 +7,16 @@
  * What these cases pin:
  *  · the routes: bare `/craft` is the Crafts home, `/craft/{id}` the craft;
  *  · the header `‹ Crafts · Title`, and ‹ going home;
- *  · ONE empty state for a craft with no pages, and `[+ page]` making one;
+ *  · ONE empty state for a craft with no pages, and Pages ▾ → + New page making one;
  *  · a graph page renders the ROW and re-renders on its patch event (R1),
  *    mermaid and unknown graph types included;
- *  · the page row: order, selection by URL, keyboard reorder writing a
- *    position, "Remove from craft" keeping the entity, the "updated" dot on
- *    a page changed while not active, and "Add existing entity…";
- *  · a nested craft page draws its own smaller row in place, and a craft
- *    one level deeper is cards plus Open (D7);
+ *  · the tab strip (doc §3): [pages ▾] left-most and no scope picker, the
+ *    pinned overview first and never closable, a page opening (or focusing)
+ *    its tab, closing a tab keeping the page, Alt+→ reordering the person's
+ *    tabs, "Remove from craft" dropping the tab and keeping the entity, the
+ *    "updated" dot, "Add existing…", and a `craft.workspace` push redrawing
+ *    the strip; the route mirrors the selected tab;
+ *  · a page that is a craft opens inline as a tab with that craft's overview;
  *  · the chat pane: hosted SOLO, a thread picker over the craft's chats, and
  *    ＋ New chat back to the composer after a send;
  *  · Orchestrate, the graph picker and the old chat picker are gone (D4).
@@ -33,6 +35,8 @@ import { FIXTURE_SPACE_ID } from '../fixtures';
 import { createFixtureSeam } from '../data';
 import { CraftScreen, type CraftTarget } from './CraftScreen';
 import { fixtureCraftSource, positionAt } from './craft-source';
+import { memoryCraftWorkspacesPort } from '../data/craft-workspace';
+import type { CraftWorkspacesPort } from '../data/seam';
 
 const SPACE = FIXTURE_SPACE_ID;
 const CRAFT = 'craft-1' as EntityId;
@@ -86,13 +90,19 @@ function Harness({ seam, source, initial, onTarget }: { seam: Seam; source: Sour
   );
 }
 
-async function mountCraft(setup?: (seam: Seam, source: Source) => Promise<void>, initial: CraftTarget = { craftId: CRAFT }) {
+async function mountCraft(
+  setup?: (seam: Seam, source: Source) => Promise<void>,
+  initial: CraftTarget | (() => CraftTarget) = { craftId: CRAFT },
+  port?: CraftWorkspacesPort,
+) {
   const seam = createFixtureSeam();
+  if (port) (seam as { craftWorkspaces?: CraftWorkspacesPort }).craftWorkspaces = port;
   await seam.openSpace(SPACE);
   const source = fixtureCraftSource(seam, SPACE, [{ id: CRAFT, title: 'Launch plan' }]);
   await setup?.(seam, source);
   const targets: CraftTarget[] = [];
-  const view = render(<Harness seam={seam} source={source} initial={initial} onTarget={(t) => targets.push(t)} />);
+  const first = typeof initial === 'function' ? initial() : initial;
+  const view = render(<Harness seam={seam} source={source} initial={first} onTarget={(t) => targets.push(t)} />);
   await waitFor(() => view.getByTestId('craft-screen'));
   return { seam, source, view, targets };
 }
@@ -107,17 +117,19 @@ async function createDoc(seam: Seam, title: string) {
   return created.entity!.id as EntityId;
 }
 
-/** The page tabs, after the pinned Overview. */
-const pageTabs = (view: ReturnType<typeof render>) =>
-  within(view.getByTestId('dsn-pages'))
-    .getAllByTestId('dsn-tab')
-    .map((tab) => within(tab).getByRole('tab'));
-const tabTitles = (view: ReturnType<typeof render>) => pageTabs(view).map((tab) => tab.textContent);
-const overviewTab = (view: ReturnType<typeof render>) => within(view.getByTestId('dsn-tab-overview')).getByRole('tab');
+const tabTitles = (view: ReturnType<typeof render>) =>
+  within(view.getByTestId('craft-tab-strip')).getAllByRole('tab').map((tab) => tab.textContent);
+const tabAt = (view: ReturnType<typeof render>, index: number) =>
+  within(view.getByTestId('craft-tab-strip')).getAllByRole('tab')[index]!;
+const pageTitles = (view: ReturnType<typeof render>) =>
+  view.getAllByTestId('craft-pages-item').map((item) => item.textContent);
 
-/** Select the first page's tab (a bare craft route opens on the overview). */
-async function openFirstPage(view: ReturnType<typeof render>) {
-  fireEvent.click(await waitFor(() => pageTabs(view)[0]!));
+/** Pages ▾ → the page called `title`. */
+function openFromPages(view: ReturnType<typeof render>, title: string) {
+  fireEvent.click(view.getByTestId('craft-pages-btn'));
+  const item = view.getAllByTestId('craft-pages-item').find((row) => row.textContent === title);
+  if (!item) throw new Error(`no page ${title}`);
+  fireEvent.click(item);
 }
 
 describe('the craft routes', () => {
@@ -156,29 +168,32 @@ describe('the craft screen', () => {
     }
   });
 
-  it('says a craft has no pages ONCE, and [+ page] → Graph makes and opens one', async () => {
+  it('says a craft has no pages ONCE, and Pages ▾ → + New page → Graph makes one and opens its tab', async () => {
     const { view, source, targets } = await mountCraft();
     await waitFor(() => view.getByTestId('dsn-no-pages'));
-    fireEvent.click(view.getByTestId('dsn-add-page'));
-    const menu = view.getByTestId('dsn-add-menu');
+    expect(tabTitles(view)).toEqual(['Overview']);
+    fireEvent.click(view.getByTestId('craft-pages-btn'));
+    const menu = view.getByTestId('craft-pages-menu');
     /* The five kinds and the existing-entity door. */
     for (const kind of ['graph', 'doc', 'artifact', 'drawing', 'design']) {
-      expect(within(menu).getByTestId(`dsn-new-${kind}`)).toBeTruthy();
+      expect(within(menu).getByTestId(`craft-new-${kind}`)).toBeTruthy();
     }
-    expect(within(menu).getByTestId('membership-add').textContent).toBe('Add existing entity…');
-    fireEvent.click(within(menu).getByTestId('dsn-new-graph'));
+    expect(within(menu).getByTestId('craft-new-design').textContent).toContain('Craft');
+    expect(within(menu).getByTestId('membership-add').textContent).toBe('Add existing…');
+    fireEvent.click(within(menu).getByTestId('craft-new-graph'));
     await waitFor(() => view.getByTestId('crf-empty'));
-    expect(tabTitles(view)).toEqual(['Untitled graph']);
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Untitled graph']));
+    expect(tabAt(view, 1).getAttribute('aria-selected')).toBe('true');
     const pageId = source.crafts.get(CRAFT)!.pages[0]!.id;
-    expect(targets.at(-1)).toEqual({ craftId: CRAFT, pageId });
+    await waitFor(() => expect(targets.at(-1)).toEqual({ craftId: CRAFT, pageId }));
   });
 
   it('Artifact asks the agent in the chat, which is the one door an artifact has', async () => {
     const { view } = await mountCraft();
     await waitFor(() => view.getByTestId('dsn-no-pages'));
     await waitFor(() => view.getByLabelText('Message the chat agent'));
-    fireEvent.click(view.getByTestId('dsn-add-page'));
-    fireEvent.click(view.getByTestId('dsn-new-artifact'));
+    fireEvent.click(view.getByTestId('craft-pages-btn'));
+    fireEvent.click(view.getByTestId('craft-new-artifact'));
     const area = view.getByLabelText('Message the chat agent') as HTMLTextAreaElement;
     await waitFor(() => expect(area.value).toContain('artifact page'));
   });
@@ -191,7 +206,8 @@ describe('a graph page', () => {
       graphId = await createGraph(s, 'Launch flow');
       await source.placePage(CRAFT, graphId, 1);
     });
-    await openFirstPage(view);
+    await waitFor(() => view.getByTestId('dsn-overview'));
+    openFromPages(view, 'Launch flow');
     await waitFor(() => view.getByTestId('crf-empty'));
 
     /* The agent's move: ONE guarded patch to the row, picked up from the
@@ -249,7 +265,8 @@ describe('a graph page', () => {
     const { view } = await mountCraft(async (seam, source) => {
       await source.placePage(CRAFT, await createGraph(seam, 'Auth sketch', { graphType: 'mermaid', source: 'flowchart TD; login-->token' }), 1);
     });
-    await openFirstPage(view);
+    await waitFor(() => view.getByTestId('dsn-overview'));
+    openFromPages(view, 'Auth sketch');
     await waitFor(() => view.getByTestId('crf-mermaid'));
     expect(view.queryByTestId('crf-canvas')).toBeNull();
   });
@@ -258,109 +275,207 @@ describe('a graph page', () => {
     const { view } = await mountCraft(async (seam, source) => {
       await source.placePage(CRAFT, await createGraph(seam, 'State machine', { graphType: 'statechart' }), 1);
     });
-    await openFirstPage(view);
+    await waitFor(() => view.getByTestId('dsn-overview'));
+    openFromPages(view, 'State machine');
     await waitFor(() => view.getByTestId('crf-unknown-type'));
     expect(view.getByTestId('crf-unknown-type').textContent).toContain('statechart');
   });
 });
 
-describe('the page row', () => {
-  async function threePages() {
+describe('the tab strip', () => {
+  async function threePages(port?: CraftWorkspacesPort) {
     const ids: EntityId[] = [];
-    const mounted = await mountCraft(async (seam, source) => {
-      ids.push(await createGraph(seam, 'Plan'), await createDoc(seam, 'Brief'), await createGraph(seam, 'Rollout'));
-      for (const [index, id] of ids.entries()) await source.placePage(CRAFT, id, index + 1);
-    });
-    await waitFor(() => expect(tabTitles(mounted.view)).toEqual(['Plan', 'Brief', 'Rollout']));
+    const mounted = await mountCraft(
+      async (seam, source) => {
+        ids.push(await createGraph(seam, 'Plan'), await createDoc(seam, 'Brief'), await createGraph(seam, 'Rollout'));
+        for (const [index, id] of ids.entries()) await source.placePage(CRAFT, id, index + 1);
+      },
+      { craftId: CRAFT },
+      port,
+    );
+    await waitFor(() => mounted.view.getByTestId('dsn-overview'));
     return { ...mounted, ids };
   }
+  async function openAll(view: ReturnType<typeof render>) {
+    for (const title of ['Plan', 'Brief', 'Rollout']) {
+      openFromPages(view, title);
+      await waitFor(() => expect(tabTitles(view)).toContain(title));
+    }
+  }
 
-  it('is the pinned Overview, then the craft’s pages in order; the overview is selected and a tab press navigates', async () => {
+  it('puts [pages ▾] left-most, draws no scope picker, and opens on the pinned overview', async () => {
+    const { view } = await threePages();
+    const strip = view.getByTestId('craft-tab-strip');
+    expect(strip.firstElementChild?.contains(view.getByTestId('craft-pages-btn'))).toBe(true);
+    expect(view.queryByTestId('tws-scope')).toBeNull();
+    expect(tabTitles(view)).toEqual(['Overview']);
+    const overview = view.getAllByTestId('craft-tab')[0]!;
+    expect(overview.hasAttribute('data-pinned')).toBe(true);
+    expect(within(overview).queryByTestId('craft-tab-close')).toBeNull();
+    expect(view.getByTestId('dsn-overview').textContent).toContain('3 pages');
+    fireEvent.click(view.getByTestId('craft-pages-btn'));
+    expect(pageTitles(view)).toEqual(['Plan', 'Brief', 'Rollout']);
+  });
+
+  it('a page from Pages ▾ opens its tab, and picking it again focuses the one tab', async () => {
     const { view, ids, targets } = await threePages();
-    expect(overviewTab(view).getAttribute('aria-selected')).toBe('true');
-    expect(view.getByTestId('dsn-overview')).toBeTruthy();
-    expect(pageTabs(view).map((tab) => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'false']);
-    fireEvent.click(pageTabs(view)[2]!);
+    openFromPages(view, 'Rollout');
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Rollout']));
+    expect(tabAt(view, 1).getAttribute('aria-selected')).toBe('true');
     await waitFor(() => expect(targets.at(-1)).toEqual({ craftId: CRAFT, pageId: ids[2] }));
-    await waitFor(() => expect(pageTabs(view)[2]!.getAttribute('aria-selected')).toBe('true'));
-    expect(overviewTab(view).getAttribute('aria-selected')).toBe('false');
-    fireEvent.click(overviewTab(view));
+    fireEvent.click(tabAt(view, 0));
     await waitFor(() => expect(targets.at(-1)).toEqual({ craftId: CRAFT }));
-    await waitFor(() => view.getByTestId('dsn-overview'));
+    openFromPages(view, 'Rollout');
+    await waitFor(() => expect(tabAt(view, 1).getAttribute('aria-selected')).toBe('true'));
+    expect(tabTitles(view)).toEqual(['Overview', 'Rollout']);
+  });
+
+  it('a URL page opens (or focuses) its tab; a URL page that is not a page falls back to the overview', async () => {
+    const ids: EntityId[] = [];
+    const { view, targets } = await mountCraft(
+      async (seam, source) => {
+        ids.push(await createDoc(seam, 'Brief'));
+        await source.placePage(CRAFT, ids[0]!, 1);
+      },
+      () => ({ craftId: CRAFT, pageId: ids[0] }),
+    );
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Brief']));
+    expect(tabAt(view, 1).getAttribute('aria-selected')).toBe('true');
+    cleanup();
+
+    const stray = await mountCraft(undefined, { craftId: CRAFT, pageId: 'not-a-page' as EntityId });
+    await waitFor(() => expect(stray.targets.at(-1)).toEqual({ craftId: CRAFT }));
+    expect(tabTitles(stray.view)).toEqual(['Overview']);
+    expect(targets).toEqual([]);
   });
 
   it('a page outside a Workspace host says what it is and offers Open', async () => {
-    const { view, ids } = await threePages();
-    fireEvent.click(pageTabs(view)[1]!);
+    const { view } = await threePages();
+    openFromPages(view, 'Brief');
     const plain = await waitFor(() => view.getByTestId('dsn-plain-page'));
     expect(plain.textContent).toContain('Brief');
-    expect(ids[1]).toBeTruthy();
   });
 
-  it('Alt+→ moves a page one place and writes ONE position between its new neighbours', async () => {
-    const { view, source, ids } = await threePages();
-    const first = pageTabs(view)[0]!;
-    fireEvent.keyDown(first, { key: 'ArrowRight', altKey: true });
-    await waitFor(() => expect(tabTitles(view)).toEqual(['Brief', 'Plan', 'Rollout']));
-    const moved = source.crafts.get(CRAFT)!.pages.find((page) => page.id === ids[0])!;
-    expect(moved.position).toBe(2.5);
+  it('closing a tab never removes the page', async () => {
+    const { view, source, targets } = await threePages();
+    await openAll(view);
+    const brief = view.getAllByTestId('craft-tab').find((tab) => tab.textContent?.includes('Brief'))!;
+    fireEvent.click(within(brief).getByTestId('craft-tab-close'));
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Plan', 'Rollout']));
+    expect(source.crafts.get(CRAFT)!.pages.map((page) => page.id)).toHaveLength(3);
+    fireEvent.click(view.getByTestId('craft-pages-btn'));
+    expect(pageTitles(view)).toEqual(['Plan', 'Brief', 'Rollout']);
+    /* The active tab closed: its right-hand neighbour is selected, and the route follows. */
+    await waitFor(() => expect(targets.at(-1)?.pageId).toBeTruthy());
   });
 
-  it('"Remove from craft" takes the page out and keeps the entity', async () => {
+  it('Alt+→ moves a tab one place, and never past the overview', async () => {
+    const { view, source } = await threePages();
+    await openAll(view);
+    const before = source.crafts.get(CRAFT)!.pages.map((page) => page.position);
+    fireEvent.keyDown(tabAt(view, 1), { key: 'ArrowRight', altKey: true });
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Brief', 'Plan', 'Rollout']));
+    fireEvent.keyDown(tabAt(view, 1), { key: 'ArrowLeft', altKey: true });
+    expect(tabTitles(view)).toEqual(['Overview', 'Brief', 'Plan', 'Rollout']);
+    /* Tabs are the person's; the craft's page order is untouched. */
+    expect(source.crafts.get(CRAFT)!.pages.map((page) => page.position)).toEqual(before);
+  });
+
+  it('"Remove from craft" takes the page out, drops its tab and keeps the entity', async () => {
     const { seam, view, ids } = await threePages();
-    fireEvent.click(within(view.getByTestId('dsn-pages')).getAllByTestId('dsn-tab-more')[1]!);
-    fireEvent.click(view.getByTestId('dsn-remove-page'));
-    await waitFor(() => expect(tabTitles(view)).toEqual(['Plan', 'Rollout']));
+    await openAll(view);
+    fireEvent.click(view.getByTestId('craft-pages-btn'));
+    fireEvent.click(view.getAllByTestId('craft-remove-page')[1]!);
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Plan', 'Rollout']));
+    fireEvent.click(view.getByTestId('craft-pages-btn'));
+    expect(pageTitles(view)).toEqual(['Plan', 'Rollout']);
     /* Never a delete: the doc still reads. */
     await expect(seam.entity(ids[1]!)).resolves.toMatchObject({ title: 'Brief' });
   });
 
-  it('marks a page changed while not active, and the mark clears when it is opened', async () => {
+  it('marks a tab changed while not active, and the mark clears when it is selected', async () => {
     const { seam, view, ids } = await threePages();
-    expect(view.queryByTestId('dsn-updated')).toBeNull();
+    await openAll(view);
+    fireEvent.click(tabAt(view, 0));
+    await waitFor(() => expect(tabAt(view, 0).getAttribute('aria-selected')).toBe('true'));
+    expect(view.queryByTestId('craft-tab-updated')).toBeNull();
     await seam.commands.patchEntity(ids[2]!, {
       clientMutationId: 'crf-upd',
       expectedVersion: 1,
       content: { graphType: 'entity', nodes: [{ key: 'x', spec: { kind: 'task', title: 'Flip flag' } }], edges: [] },
     });
-    const dot = await waitFor(() => view.getByTestId('dsn-updated'));
-    expect(dot.closest('[data-page]')?.getAttribute('data-page')).toBe(ids[2]);
-    /* The tab the viewer is on did not move: agents never switch pages. */
-    expect(overviewTab(view).getAttribute('aria-selected')).toBe('true');
-    fireEvent.click(pageTabs(view)[2]!);
-    await waitFor(() => expect(view.queryByTestId('dsn-updated')).toBeNull());
+    const dot = await waitFor(() => view.getByTestId('craft-tab-updated'));
+    expect(dot.closest('[data-entity]')?.getAttribute('data-entity')).toBe(ids[2]);
+    /* The tab the viewer is on did not move: agents never switch tabs by editing a page. */
+    expect(tabAt(view, 0).getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(tabAt(view, 3));
+    await waitFor(() => expect(view.queryByTestId('craft-tab-updated')).toBeNull());
   });
 
-  it('"Add existing entity…" puts a recent entity in as a page', async () => {
+  it('"Add existing…" puts a recent entity in as a page and opens its tab', async () => {
     const { view, seam } = await threePages();
-    const extra = await createDoc(seam, 'Pricing notes');
-    fireEvent.click(view.getByTestId('dsn-add-page'));
+    await createDoc(seam, 'Pricing notes');
+    fireEvent.click(view.getByTestId('craft-pages-btn'));
     fireEvent.click(view.getByTestId('membership-add'));
     const option = await waitFor(() =>
       view.getAllByTestId('membership-option').find((button) => button.textContent?.includes('Pricing notes'))!,
     );
     fireEvent.click(option);
-    await waitFor(() => expect(tabTitles(view)).toEqual(['Plan', 'Brief', 'Rollout', 'Pricing notes']));
-    expect(extra).toBeTruthy();
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Pricing notes']));
+    fireEvent.click(view.getByTestId('craft-pages-btn'));
+    expect(pageTitles(view)).toEqual(['Plan', 'Brief', 'Rollout', 'Pricing notes']);
+  });
+
+  it('redraws from a craft.workspace push — another window, or the craft agent', async () => {
+    const port = memoryCraftWorkspacesPort();
+    const { view, ids, targets } = await threePages(port);
+    /* Another window opens Brief: the push lands here, the route follows. */
+    await port.command(SPACE, CRAFT, { requestId: 'r1', command: 'tabs.open', args: { kind: 'doc', entityId: ids[1]! } });
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Brief']));
+    expect(tabAt(view, 1).getAttribute('aria-selected')).toBe('true');
+    await waitFor(() => expect(targets.at(-1)).toEqual({ craftId: CRAFT, pageId: ids[1] }));
+    /* …and closes it: the strip and the route follow again. */
+    await port.command(SPACE, CRAFT, { requestId: 'r2', command: 'tabs.close', args: { entityId: ids[1]! } });
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview']));
+    await waitFor(() => expect(targets.at(-1)).toEqual({ craftId: CRAFT }));
+  });
+
+  it('the node refuses a tab for an entity that is not a page', async () => {
+    const port = memoryCraftWorkspacesPort();
+    const refusing: CraftWorkspacesPort = {
+      ...port,
+      command: async (spaceId, craftId, input) => ({
+        requestId: input.requestId,
+        status: 'rejected',
+        reason: 'not_a_page',
+        workspace: await port.get(spaceId, craftId),
+      }),
+    };
+    const { view } = await threePages(refusing);
+    openFromPages(view, 'Plan');
+    /* Shown at once, then put back by the node's answer. */
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview']));
+    expect(tabAt(view, 0).getAttribute('aria-selected')).toBe('true');
   });
 });
 
-describe('a craft page', () => {
-  it('opens inline as that craft, with no nested page row', async () => {
+describe('a page that is a craft', () => {
+  it('opens inline as a tab showing that craft’s overview, with no nested page tabs', async () => {
     const { view, targets } = await mountCraft(async (seam, source) => {
       await source.placePage(CRAFT, await createGraph(seam, 'Plan'), 1);
       const nested = await source.createPage(CRAFT, 'design', 2);
       source.crafts.get(nested)!.title = 'Backend';
       await source.placePage(nested, await createGraph(seam, 'API flow'), 1);
     });
-    await waitFor(() => expect(tabTitles(view)).toEqual(['Plan', 'Backend']));
-    fireEvent.click(pageTabs(view)[1]!);
-    await waitFor(() => expect(targets.at(-1)?.pageId).toBeTruthy());
-    /* Outside a Workspace host the page says what it is; never a second row. */
-    const plain = await waitFor(() => view.getByTestId('dsn-plain-page'));
-    expect(plain.textContent).toContain('Backend');
+    await waitFor(() => view.getByTestId('dsn-overview'));
+    openFromPages(view, 'Backend');
+    await waitFor(() => expect(tabTitles(view)).toEqual(['Overview', 'Backend']));
+    const nested = await waitFor(() => view.getByTestId('dsn-nested'));
+    /* Its pages are its own: shown in its overview, never as tabs here. */
+    await waitFor(() => expect(within(nested).getByTestId('dsn-overview').textContent).toContain('1 page'));
+    expect(tabTitles(view)).toEqual(['Overview', 'Backend']);
     expect(view.getAllByRole('tablist')).toHaveLength(1);
-    expect(view.queryByTestId('dsn-nested-pages')).toBeNull();
+    expect(targets.at(-1)).toEqual({ craftId: CRAFT, pageId: nested.getAttribute('data-craft') });
   });
 });
 
@@ -455,7 +570,8 @@ describe('the right strip in a Workspace host', () => {
         return { ...detail, content: { ...(detail.content as object), pages: [{ ...graph, pagePosition: 1 }] } };
       }) as typeof seam.entity;
     });
-    fireEvent.click(await waitFor(() => pageTabs(view)[0]!));
+    await waitFor(() => expect(view.getByTestId('craft-pages-btn').textContent).toContain('1'));
+    openFromPages(view, 'Flow');
     await waitFor(() => view.getByTestId('dsn-graph-chrome'));
     const strip = view.getByTestId('tws-action-strip');
     expect(view.getAllByTestId('tws-action-strip')).toHaveLength(1);

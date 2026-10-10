@@ -31,11 +31,11 @@ export function CraftOverview({ tab, pages, onOpenEntity, onClose }: CraftOvervi
   }
   return pages.length === 0 ? (
     <p className="crf-empty" data-testid="dsn-no-pages">
-      No pages yet. Ask the chat to start one, or add a page with ＋.
+      No pages yet. Ask the chat to start one, or add one from Pages ▾.
     </p>
   ) : (
     <p className="crf-empty" data-testid="dsn-overview">
-      {`${pages.length} page${pages.length === 1 ? '' : 's'}. Pick one above.`}
+      {`${pages.length} page${pages.length === 1 ? '' : 's'}. Open one from Pages ▾.`}
     </p>
   );
 }

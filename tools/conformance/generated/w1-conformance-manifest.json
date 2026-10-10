@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d",
+  "catalogDigest": "sha256:35a8b0d57119b59a256f92171a64f276e8adbb5c1645d7b2cdafbb79c4abe4dd",
   "catalog": {
-    "total": 359,
-    "v1": 357,
+    "total": 363,
+    "v1": 361,
     "reserved": 2,
-    "http": 357,
+    "http": 361,
     "ws": 1,
-    "registerableV1Http": 355,
+    "registerableV1Http": 359,
     "methods": {
-      "GET": 117,
-      "POST": 176,
+      "GET": 119,
+      "POST": 178,
       "PATCH": 20,
       "DELETE": 23,
       "PUT": 21,
       "WS": 2
     },
     "kinds": {
-      "read": 123,
-      "command": 234,
+      "read": 125,
+      "command": 236,
       "stream": 2
     },
-    "uniqueNames": 359,
-    "uniqueBindings": 358
+    "uniqueNames": 363,
+    "uniqueBindings": 362
   },
   "reservedOperations": [
     "search.query",
@@ -1188,6 +1188,13 @@
         "source": "server-router"
       },
       {
+        "operation": "chat.setCredentials",
+        "method": "POST",
+        "path": "/v2/chats/:id/credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "chat.setModel",
         "method": "POST",
         "path": "/v2/chats/:id/model",
@@ -1597,6 +1604,27 @@
         "operation": "workspace.prompts.resolve",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/workspace/prompts/:promptId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.crafts.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/craft-workspaces",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.crafts.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/craft-workspaces/:craftId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "workspace.crafts.command",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/craft-workspaces/:craftId/commands",
         "status": "registered",
         "source": "server-router"
       },
@@ -2917,7 +2945,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 327
+    "unimplementedV1Http": 331
   },
   "schemas": {
     "additive": {
@@ -5453,6 +5481,23 @@
         "publicComposite": null
       },
       {
+        "operation": "chat.setCredentials",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.setCredentials",
+        "intentTags": [
+          "chat",
+          "set",
+          "credentials"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "chat.setModel",
         "noun": "chat",
         "exposure": "public",
@@ -6439,6 +6484,57 @@
           "workspace",
           "prompts",
           "resolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.crafts.list",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.crafts.list",
+        "intentTags": [
+          "workspace",
+          "crafts",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.crafts.get",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.crafts.get",
+        "intentTags": [
+          "workspace",
+          "crafts",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "workspace.crafts.command",
+        "noun": "workspace",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/workspace.crafts.command",
+        "intentTags": [
+          "workspace",
+          "crafts",
+          "command"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
