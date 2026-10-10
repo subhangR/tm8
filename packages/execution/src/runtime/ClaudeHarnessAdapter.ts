@@ -368,8 +368,10 @@ class ClaudeSession extends HarnessSessionBase {
     this.closePromise = (async () => {
       if (this.started && !this.exitSeen) await this.runtime.close(this.key);
       await this.pump;
-      await this.release();
-      return { exited: true, forced: this.forced, nativeUsable: null };
+      let cleanup: 'complete' | 'pending' = 'complete';
+      try { await this.release(); }
+      catch { cleanup = 'pending'; }
+      return { exited: true, forced: this.forced, nativeUsable: null, cleanup };
     })();
     return this.closePromise;
   }
