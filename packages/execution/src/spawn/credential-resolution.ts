@@ -84,6 +84,8 @@ export interface CredentialResolutionInput {
    * server's claims, since `GraphAuth` is opaque here. Absent means false.
    */
   linkBound?: boolean;
+  /** Headless chat selects only its model credential; GitHub selection remains separate. */
+  modelOnly?: boolean;
 }
 
 export interface ResolvedSessionCredentials {
@@ -387,6 +389,13 @@ export async function resolveSessionCredentials(
     if (toolProvider) effective[toolProvider] = credentialHome ? 'member' : 'node';
   }
 
+  if (input.modelOnly) return {
+    launch: { ...launch, credentialSources: sources, credentialSource: commonCredentialSource(sources),
+      spaceCredentialIds: ids, effectiveCredentialSources: effective,
+      ...(Object.keys(picks).length > 0 ? { spaceCredentialPicks: picks } : {}) },
+    credentialHome, gitHubCredential: null, spaceCredentialIds: Object.values(ids),
+  };
+
   // ---- GitHub -----------------------------------------------------------
   let gitHubCredential: GitHubCredential | null = null;
   {
@@ -591,6 +600,12 @@ async function resolveLinkBoundCredentials(
     (sources as Partial<Record<string, CredentialSource>>)[toolProvider] = 'node';
     effective[toolProvider] = 'node';
   }
+
+  if (input.modelOnly) return {
+    launch: { ...launch, credentialSources: sources, credentialSource: commonCredentialSource(sources),
+      spaceCredentialIds: ids, effectiveCredentialSources: effective },
+    credentialHome, gitHubCredential: null, spaceCredentialIds: Object.values(ids),
+  };
 
   // ---- GitHub: this space's default, nothing else ------------------------
   const ghSource = launch.credentialSources.github ?? null;

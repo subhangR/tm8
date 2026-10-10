@@ -23,6 +23,7 @@ export type {
   ChatLaunchConfig,
   ChatLaunchConfigInput,
   ResolveChatLaunchConfig,
+  ResolveChatCredentialEnv,
   StartAgentThreadInput,
   TurnItem,
 } from './runtime.js';
