@@ -1,5 +1,7 @@
 export { ClaudeHeadlessAdapter, type ClaudeHeadlessAdapterOptions } from './ClaudeHeadlessAdapter.js';
 export { AgentRuntimeError } from './types.js';
+export { HarnessRegistry, HarnessRuntimeError, harnessFailure } from './HarnessRegistry.js';
+export type * from './harness-types.js';
 export type {
   AgentRuntime,
   AgentThread,
