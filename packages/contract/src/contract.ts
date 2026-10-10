@@ -19,6 +19,7 @@
 
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
 import type { McpSelection, McpServerEntity } from './mcp.js';
+import type { ToolEntity, ToolRun } from './tools.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
 import type { OpRequestStatus } from './op-requests.js';
@@ -103,7 +104,7 @@ export type CoreEntityKind =
   // READ-ONLY theme in a space. Born and re-versioned only by `styles.push`;
   // `entities.create`/`entities.patch` refuse it. Personal styles are NOT
   // entities (they live in `personal_styles`, owner-only).
-  | 'style' | 'mcp_server'
+  | 'style' | 'mcp_server' | 'tool'
   // Designs (migration 304, Craft → Designs 2026-10-06): an ordered set of
   // PAGES, each any entity, held as ordered `contains` edges. See ./design.ts.
   | 'design';
@@ -289,6 +290,7 @@ export interface TaskAssignment {
 
 export type CoreEntityState =
   | McpServerEntity
+  | ToolEntity
   | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
       assignees: ActorSummary[];
@@ -408,7 +410,7 @@ export type CoreEntityState =
        * behaviour — so a frozen server degrades to showing everything rather
        * than to showing nothing.
        *
-       * WRITE EVERY CLIENT FILTER AS `sessionKind !== 'credential'`, NEVER AS
+       * Session lists hide credential and tool runs with a deny-list, NEVER AS
        * `=== 'agent'`. SQL surfaces test the positive (`session_kind =
        * 'agent'`, credential-catalog.ts:506) because the database column is
        * NOT NULL; TypeScript surfaces must test the INVERSE, because here the
@@ -428,6 +430,8 @@ export type CoreEntityState =
        * value, re-derive BOTH sides yourself; do not read either as covered.
        */
       sessionKind?: WorkSessionKind;
+      /** The pinned tool run; PTY status is independent of its outcome. */
+      toolRun?: ToolRun;
       /**
        * THE SESSION'S LANE FACTS (107) — "what am I working on, git-wise",
        * answerable from every list/tile read without a second fetch and
@@ -616,6 +620,7 @@ export type CoreEntityState =
    */
   | { kind: 'chat'; teammateId: EntityId; model: string; provider: string; agentTool: string;
       mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
+      credentialSelection?: ChatCredentialSelection;
       runtimeState: 'cold' | 'live' | 'stopped';
       turnState: 'idle' | 'queued' | 'running';
       turnCount: number; lastTurnAt: string | null;
@@ -987,6 +992,7 @@ export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note
 
 export type CoreEntityContent =
   | McpServerEntity
+  | ToolEntity
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
   | { kind: 'channel'; topic: string; pinned: EntitySummary[]; autoTabs: ChannelTab[] }
@@ -1526,7 +1532,17 @@ export type ChatWorkdirMode = 'project' | 'scratch';
  * Craft blueprint, the task, the pull request — is a relation (`about`), which
  * a human can see and correct, rather than a hidden binding column.
  */
+/** Model credentials for one chat; secrets never travel in this selection. */
+export interface ChatCredentialSelection {
+  source: 'auto' | LaunchCredentialSource;
+  /** Only for source=space. Absent means the space default. */
+  credentialId?: EntityId;
+}
+export interface SetChatCredentialsInput { credentialSelection: ChatCredentialSelection }
+export interface SetChatCredentialsResult extends SetChatCredentialsInput { chatId: EntityId }
+
 export interface StartChatInput {
+  credentialSelection?: ChatCredentialSelection;
   mcpSelections?: McpSelection[];
   spaceId: SpaceId;
   teammateId: EntityId;
@@ -3038,7 +3054,7 @@ export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
  * Jev's key), and never handed to a session — the spawn reader refuses them
  * in SQL and in TS, and `session_space_credentials` cannot hold one.
  */
-export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp';
+export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp' | 'tool';
 
 /** Every provider a space credential row can carry: launchable or server-only. */
 export type SpaceCredentialStoredProviderName = SpaceCredentialProviderName | ServerOnlyCredentialProviderName;
@@ -4934,7 +4950,7 @@ export type WorkSessionDriveMode = 'owner' | 'space';
 
 /**
  * What a work_session IS, mirroring 083's `work_sessions.session_kind` as
- * widened by 101.
+ * widened by 101, 177 and 318.
  *
  * `agent` is ordinary work. `credential` is a private login terminal minted by
  * `credentials.loginSessions.start` so a member can authenticate an agent tool
@@ -4950,7 +4966,8 @@ export type WorkSessionDriveMode = 'owner' | 'space';
  * to find it in the session list, so the deny-list filters that hide
  * `credential` must continue to SHOW this.
  */
-export type WorkSessionKind = 'agent' | 'credential' | 'shell';
+// Tool runs belong in the tool's history; their PTY may remain live after exit.
+export type WorkSessionKind = 'agent' | 'credential' | 'shell' | 'container_exec' | 'tool';
 
 /**
  * Where a session's working directory lives — `work_sessions.workdir_mode`'s

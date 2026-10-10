@@ -1,5 +1,5 @@
 import type { ChatTurnUsage, SessionTranscriptContext } from '@tm8/contract';
-import type { ChatMode } from '@tm8/contract';
+import type { ChatMode, ChatCredentialSelection } from '@tm8/contract';
 
 /**
  * C1 runtime port. This intentionally mirrors packages/execution's chat lane
@@ -71,6 +71,9 @@ export interface ChatLaunchConfig {
 export interface ChatLaunchConfigInput {
   /** 176: the chat entity. Was `rootMessageId` while a chat was a message. */
   readonly chatId: string;
+  readonly credentialSelection?: ChatCredentialSelection;
+  /** Preflight checks access without rewriting any live credential home. */
+  readonly credentialValidationOnly?: boolean;
   /** Human whose current turn authorizes this runtime token. */
   readonly requesterIdentityId: string;
   /**

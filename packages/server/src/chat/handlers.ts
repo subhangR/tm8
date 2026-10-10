@@ -1,13 +1,17 @@
 import { mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { SpawnError } from '@tm8/execution';
 import { resolve as pathResolve } from 'node:path';
 import {
   CollabError,
+  isHumanAuthKind,
   launchModel,
   type EntityId,
   type EntitySummary,
   type SetChatModelInput,
   type SetChatModelResult,
+  type SetChatCredentialsInput,
+  type SetChatCredentialsResult,
   type StartChatInput,
   type StartChatResult,
 } from '@tm8/contract';
@@ -64,6 +68,15 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
     // with no directory. The RPC owns the row; this owns the id and the
     // filesystem, which are the two things SQL cannot do.
     const chatId = randomUUID();
+    if (input.credentialSelection !== undefined && !isHumanAuthKind(requestClaims.authKind)) {
+      throw new CollabError('forbidden', 'Chat credential selection requires a human session');
+    }
+    if (input.credentialSelection !== undefined) await chat.orchestrator.validateCredentialSelection({
+      chatId, spaceId: input.spaceId, teammateId: input.teammateId,
+      requesterIdentityId, requesterAuthKind: requestClaims.authKind ?? null,
+      model: input.model, provider: model.provider, agentTool: model.agentTool,
+      chatMode: input.mode, cwd: '', mode: 'new', credentialSelection: input.credentialSelection,
+    }).catch(rethrowCredentialError);
     // Only a scratch chat gets a server-built directory, and only a scratch
     // chat sends one. For `project` the RPC reads `projects.working_dir` itself
     // and ignores anything passed here — creating a directory for that case
@@ -96,6 +109,9 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
       if (input.mcpSelections !== undefined) {
         await q.rpc('save_chat_mcp_selections', [stored.chatId, JSON.stringify(input.mcpSelections)]);
       }
+      if (input.credentialSelection !== undefined && stored.chatId === chatId) {
+        await q.rpc('set_chat_credentials', [stored.chatId, JSON.stringify(input.credentialSelection)]);
+      }
       // The RPC returns IDS. An `EntitySummary` is assembled here, from the
       // same read path `entities.get` uses, so a chat looks identical whether
       // the client just created it or listed it a minute later — the exact
@@ -115,6 +131,40 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
       void chat.orchestrator.wake(summary.id, requesterIdentityId);
     });
     return result;
+  };
+}
+
+function rethrowCredentialError(error: unknown): never {
+  if (error instanceof SpawnError) {
+    throw new CollabError(error.code === 'internal' ? 'upstream_unavailable' : error.code, error.message, error.detail);
+  }
+  throw error;
+}
+
+function setChatCredentials(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler {
+  return async ctx => {
+    if (!chat) throw new CollabError('upstream_unavailable', 'chat runtime is unavailable on this node');
+    const chatId = requireUuidParam(ctx, 'id') as EntityId;
+    const input = ctx.body as SetChatCredentialsInput;
+    const auth = claimsFor(await facade.owner(), ctx);
+    if (!isHumanAuthKind(auth.authKind)) throw new CollabError('forbidden', 'Chat credential selection requires a human session');
+    const [config] = await facade.db.tx(auth, q => q.query<{
+      space_id: string; teammate_id: string; model: string; provider: string;
+      agent_tool: string; chat_mode: import('@tm8/contract').ChatMode; cwd: string;
+    }>(`select c.space_id,c.teammate_id,c.model,c.provider,c.agent_tool,c.chat_mode,c.cwd
+        from public.chats c join public.entities e on e.id=c.entity_id
+        where c.entity_id=$1 and c.configured_by_identity_id=$2 and e.deleted_at is null`,
+      [chatId, auth.identityId]));
+    if (!config) throw new CollabError('not_found', 'chat not found for this identity');
+    await chat.orchestrator.validateCredentialSelection({
+      chatId, requesterIdentityId: auth.identityId!, requesterAuthKind: auth.authKind ?? null,
+      spaceId: config.space_id, teammateId: config.teammate_id,
+      model: config.model, provider: config.provider, agentTool: config.agent_tool,
+      chatMode: config.chat_mode, cwd: config.cwd, mode: 'new', credentialSelection: input.credentialSelection,
+    }).catch(rethrowCredentialError);
+    // Persist only. The in-flight turn keeps its claim snapshot and process.
+    return facade.db.tx(auth, q => q.rpc<SetChatCredentialsResult>('set_chat_credentials',
+      [chatId, JSON.stringify(input.credentialSelection)]));
   };
 }
 
@@ -218,5 +268,6 @@ export function registerChatHandlers(
   registry.registerAll({
     'chat.start': humanOnly(startChat(facade, chat)),
     'chat.setModel': humanOnly(setChatModel(facade, chat)),
+    'chat.setCredentials': humanOnly(setChatCredentials(facade, chat)),
   });
 }

@@ -1076,6 +1076,11 @@ export const mcpCalendar = summary({
   state: { kind: 'mcp_server', definition: fixtureMcpDefinition },
 });
 
+const fixtureToolDefinition = { name: 'fixture-tool', description: 'Stored tool fixture', help: '',
+  runtime: 'bash' as const, source: 'true', inputs: [], tm8Access: 'none' as const, timeoutSeconds: 900 };
+export const toolFixture = summary({ id: 'tool-fixture', kind: 'tool', title: 'Fixture tool',
+  excerpt: 'Stored source and declared inputs.', state: {kind: 'tool', definition: fixtureToolDefinition} });
+
 /** Design (304) — an ordered set of pages; its pages are `contains` edges. */
 export const designCheckout = summary({
   id: 'design-checkout', kind: 'design', title: 'Checkout redesign',
@@ -1447,7 +1452,7 @@ export const fixtureSummaries: EntitySummary[] = [
   chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, credentialTeamKey, mcpCalendar, designCheckout, customRitual, artifactPulseBoard, drawingLoginFlow,
+  profileHouseStyle, credentialTeamKey, mcpCalendar, toolFixture, designCheckout, customRitual, artifactPulseBoard, drawingLoginFlow,
   opRequestLinkResearch,
   storyAsAnEntity,
   styleMidnight,
@@ -1958,6 +1963,8 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       generatedByTeamMemberId: teamMemberForge.id,
     },
   }),
+
+  [toolFixture.id]: detail(toolFixture, {content: {kind: 'tool', definition: fixtureToolDefinition}, capabilities: CAPS_READONLY}),
 
   [mcpCalendar.id]: detail(mcpCalendar, {
     content: { kind: 'mcp_server', definition: fixtureMcpDefinition },

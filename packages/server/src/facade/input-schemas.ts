@@ -1,3 +1,4 @@
+import { ToolCreateInputSchema, ToolUpdateInputSchema, ToolConfigSetInputSchema, ToolConfigUnsetInputSchema, ToolSecretBindInputSchema, ToolSecretUnbindInputSchema, ToolRunInputSchema } from '@tm8/contract';
 import {
   WorkspaceCommandInputSchema,
   WorkspaceCreateInputSchema,
@@ -181,7 +182,7 @@ import {
   RemoveMessageAttachmentsInputSchema,
   SavedViewInputSchema,
   SendHandoffInputSchema,
-  SetChatModelInputSchema,
+  SetChatModelInputSchema, SetChatCredentialsInputSchema,
   StartChatInputSchema,
   ResolveEntityAttentionInputSchema,
   RaiseAttentionSignalInputSchema,
@@ -247,6 +248,13 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'workspace.reorder': WorkspaceReorderInputSchema,
   'workspace.switch': WorkspaceSwitchInputSchema,
   'workspace.prompts.resolve': WorkspacePromptsResolveInputSchema,
+  'tools.create': ToolCreateInputSchema,
+  'tools.update': ToolUpdateInputSchema,
+  'tools.config.set': ToolConfigSetInputSchema,
+  'tools.config.unset': ToolConfigUnsetInputSchema,
+  'tools.secrets.bind': ToolSecretBindInputSchema,
+  'tools.secrets.unbind': ToolSecretUnbindInputSchema,
+  'tools.run': ToolRunInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,
   'mcp.servers.delete': McpServerDeleteInputSchema,
@@ -433,6 +441,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'handoffs.withdraw': WithdrawHandoffInputSchema,
   'chat.start': StartChatInputSchema,
   'chat.setModel': SetChatModelInputSchema,
+  'chat.setCredentials': SetChatCredentialsInputSchema,
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,

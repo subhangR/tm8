@@ -466,6 +466,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // unknown. Inserted at its sorted position.
       'launchDefaults',
       'markRead',
+      'markSeen',
       // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
       // the counterpart to `gitMerge`'s deliberate exclusion from the tracking
       // side. It sorts between `markRead` and `moveEntity`, beside nothing it
@@ -546,6 +547,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // the next turn runs on whatever the chat is set to when that turn is
       // CLAIMED, so `setChatModel` is a chat-level write and not a field on
       // `postTurn`. Sorts between revokeInvite and setEntityHeader.
+      'setChatCredentials',
       'setChatModel',
       // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
       // TERMINAL (101). Sorts after `spawn`, which is where it reads like it

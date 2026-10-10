@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   MessagePartSchema,
   type ChatMode,
+  type ChatCredentialSelection,
   type ChatTurnUsage,
   type MessageView,
   type SessionTranscriptContext,
@@ -64,6 +65,7 @@ interface ClaimedTurn {
   readonly requestedBySessionId?: string | null;
   readonly requestedByChatId?: string | null;
   readonly teammateId: string;
+  readonly credentialSelection?: ChatCredentialSelection;
   readonly model: string;
   readonly provider: string;
   readonly agentTool: string;
@@ -635,11 +637,16 @@ export class ChatOrchestrator {
     }));
   }
 
+  async validateCredentialSelection(input: ChatLaunchConfigInput): Promise<void> {
+    await this.options.resolveCredentialEnv?.({ ...input, credentialValidationOnly: true });
+  }
+
   private async ensureRuntime(turn: ClaimedTurn): Promise<string> {
     const authorizationIdentityId = turn.requestedByIdentityId ?? turn.requesterIdentityId;
     const authorizationAuthKind = turn.requestedByAuthKind
       ?? (authorizationIdentityId === turn.requesterIdentityId ? turn.requesterAuthKind ?? null : null);
     const credentialInput: ChatLaunchConfigInput = {
+      credentialSelection: turn.credentialSelection,
       chatId: turn.chatId, requesterIdentityId: authorizationIdentityId,
       requesterAuthKind: authorizationAuthKind, teammateId: turn.teammateId,
       model: turn.model, provider: turn.provider, agentTool: turn.agentTool,

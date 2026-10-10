@@ -125,3 +125,5 @@ export const EXECUTION_PACKAGE = '@tm8/execution';
 export * from './containers/index.js';
 
 export { connectorBridgeConfig } from './spawn/manifest.js';
+
+export * from './tool/index.js';

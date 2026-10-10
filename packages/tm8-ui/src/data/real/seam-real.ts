@@ -1,4 +1,5 @@
 import { createMcpPort } from '../../mcp/adapter';
+import { createToolPort } from '../../tools/adapter';
 /**
  * `createRealSeam()` — the HTTP + WS implementation of the co-owned Facade seam
  * (LLD §5–§6, §9). Drop-in interchangeable with `createFixtureSeam()`: both are
@@ -503,6 +504,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         ops.removeFromCollection(collectionId, entityId, ctx),
       postMessage: (input) => ops.postMessage(input),
       startChat: (input) => ops.startChat(input),
+      setChatCredentials: (chatId, input) => ops.setChatCredentials(chatId, input),
       setChatModel: (chatId, input) => ops.setChatModel(chatId, input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
@@ -684,6 +686,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
      finished object. This therefore REQUIRES an unfrozen seam; freezing
      `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
+  seam.commands.tools = createToolPort(http, seam);
   // The approve card's port IS the noun; the panel reaches it through `commands`.
   seam.commands.opRequests = seam.opRequests;
   return seam;

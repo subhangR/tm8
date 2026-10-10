@@ -95,6 +95,7 @@ describe('the Home icon rail', () => {
       'space_link',
       'server',
       'mcp_server',
+      'tool',
       'op_request',
       'style',
       'loop',

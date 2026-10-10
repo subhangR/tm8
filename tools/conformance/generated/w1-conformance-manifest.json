@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:0381fe511ac726674dab6ecc0903f6321647a4c5510dda78671d109c4f57471d",
+  "catalogDigest": "sha256:ad68d811b899852ddc759c8e9e17c55f6bac9dc7338df73477ec04a40f22f0a6",
   "catalog": {
-    "total": 359,
-    "v1": 357,
+    "total": 372,
+    "v1": 370,
     "reserved": 2,
-    "http": 357,
+    "http": 370,
     "ws": 1,
-    "registerableV1Http": 355,
+    "registerableV1Http": 368,
     "methods": {
-      "GET": 117,
-      "POST": 176,
-      "PATCH": 20,
+      "GET": 122,
+      "POST": 182,
+      "PATCH": 21,
       "DELETE": 23,
-      "PUT": 21,
+      "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 123,
-      "command": 234,
+      "read": 128,
+      "command": 242,
       "stream": 2
     },
-    "uniqueNames": 359,
-    "uniqueBindings": 358
+    "uniqueNames": 372,
+    "uniqueBindings": 371
   },
   "reservedOperations": [
     "search.query",
@@ -200,6 +200,90 @@
   ],
   "routes": {
     "http": [
+      {
+        "operation": "tools.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/tools",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.update",
+        "method": "PATCH",
+        "path": "/v2/tools/:toolId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.get",
+        "method": "GET",
+        "path": "/v2/tools/:toolId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/tools",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.help",
+        "method": "GET",
+        "path": "/v2/tools/:toolId/help",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.config.set",
+        "method": "PUT",
+        "path": "/v2/tools/:toolId/config",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.config.unset",
+        "method": "POST",
+        "path": "/v2/tools/:toolId/config/unset",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.secrets.bind",
+        "method": "POST",
+        "path": "/v2/tools/:toolId/secrets/bind",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.secrets.unbind",
+        "method": "POST",
+        "path": "/v2/tools/:toolId/secrets/unbind",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.run",
+        "method": "POST",
+        "path": "/v2/tools/:toolId/run",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.runs.list",
+        "method": "GET",
+        "path": "/v2/tools/:toolId/runs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tools.runs.get",
+        "method": "GET",
+        "path": "/v2/tool-runs/:sessionId",
+        "status": "registered",
+        "source": "server-router"
+      },
       {
         "operation": "mcp.credentials.rotate",
         "method": "POST",
@@ -1184,6 +1268,13 @@
         "operation": "chat.start",
         "method": "POST",
         "path": "/v2/chats",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.setCredentials",
+        "method": "POST",
+        "path": "/v2/chats/:id/credentials",
         "status": "registered",
         "source": "server-router"
       },
@@ -2917,7 +3008,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 327
+    "unimplementedV1Http": 340
   },
   "schemas": {
     "additive": {
@@ -3083,6 +3174,204 @@
   },
   "help": {
     "operations": [
+      {
+        "operation": "tools.create",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.create",
+        "intentTags": [
+          "tools",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.update",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.update",
+        "intentTags": [
+          "tools",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.get",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.get",
+        "intentTags": [
+          "tools",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.list",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.list",
+        "intentTags": [
+          "tools",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.help",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.help",
+        "intentTags": [
+          "tools",
+          "help"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.config.set",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.config.set",
+        "intentTags": [
+          "tools",
+          "config",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.config.unset",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.config.unset",
+        "intentTags": [
+          "tools",
+          "config",
+          "unset"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.secrets.bind",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.secrets.bind",
+        "intentTags": [
+          "tools",
+          "secrets",
+          "bind"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.secrets.unbind",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.secrets.unbind",
+        "intentTags": [
+          "tools",
+          "secrets",
+          "unbind"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.run",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.run",
+        "intentTags": [
+          "tools",
+          "run"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.runs.list",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.runs.list",
+        "intentTags": [
+          "tools",
+          "runs",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tools.runs.get",
+        "noun": "tool",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tools.runs.get",
+        "intentTags": [
+          "tools",
+          "runs",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
       {
         "operation": "mcp.credentials.rotate",
         "noun": "mcp",
@@ -5447,6 +5736,23 @@
         ],
         "inputSchemaRef": "StartChatInputSchema",
         "resultSchemaRef": "StartChatResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.setCredentials",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.setCredentials",
+        "intentTags": [
+          "chat",
+          "set",
+          "credentials"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
@@ -10151,6 +10457,39 @@
         },
         "migration": {
           "strategy": "op-request-detail"
+        }
+      },
+      "tool": {
+        "kind": "tool",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "tools"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "mcp-server-detail"
         }
       },
       "mcp_server": {

@@ -50,6 +50,18 @@ describe('the gate', () => {
 });
 
 describe('observing without participating', () => {
+  it('does not persist dynamic tool arguments or live output that can contain secrets', () => {
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    const wrapped = j.wrapStreams(sink);
+    wrapped.stdout('private-value');
+    j.finish({ path: ['tool', 'run'], argv: ['tool', 'run', 'demo', '--auth', 'private-value'], exitCode: 1 });
+    expect(readFileSync(path, 'utf8')).not.toContain('private-value');
+    const [record] = readRecords(path);
+    expect(record.command.argv).toEqual(['tool', 'run', '<tool arguments omitted>']);
+    expect(record.output.stdoutChars).toBe(13);
+    expect(record.output.stdoutSample).toBe('<tool output omitted>');
+  });
   it('forwards every byte to the real stream unchanged', () => {
     const path = tempJournal();
     const seen: string[] = [];

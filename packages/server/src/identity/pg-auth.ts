@@ -56,6 +56,7 @@ export type LoginKind = keyof typeof SESSION_TTL_MS;
 
 /** `public.resolve_auth_session` result (007:110-124) — camelCase by construction. */
 export interface ResolvedAuthSession {
+  apiScope?: 'read' | 'write';
   sessionId: string;
   accountId: string;
   identityId: string;

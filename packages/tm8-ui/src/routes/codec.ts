@@ -377,6 +377,24 @@ export function parse(hash: string): ParseOutcome {
   return { route: { spaceId, target, panels }, dropped };
 }
 
+/**
+ * Home, the tabs view. `?tab=` names the active entity tab; `?fp=&f=` an
+ * active project file tab (project id, relative path), held to the
+ * workspace's own file-tab rule. Lossy-tolerant like `?about=`: a value that
+ * does not fit is not carried.
+ */
+function tabsOf(query: Query): NavView {
+  const tab = query.get('tab');
+  if (tab && ID_LIKE.test(tab)) return { view: 'tabs', tab: tab as EntityId };
+  const rawProject = query.get('fp');
+  const rawPath = query.get('f');
+  const projectId = rawProject === null ? null : dec(rawProject);
+  const path = rawPath === null ? null : dec(rawPath);
+  return isFileTabProjectId(projectId) && isFileTabPath(path)
+    ? { view: 'tabs', file: { projectId, path } }
+    : { view: 'tabs' };
+}
+
 function parseTarget(
   rest: string[],
   query: Query,
@@ -437,6 +455,21 @@ function parseTarget(
           },
         };
       }
+      /* `/home` IS THE DESKTOP'S HOME, the tabs view (Craft redesign §2,
+         2026-10-10: Work was renamed Home and `/home` made canonical; `/work`
+         and `/tabs` decode to it below). A `?tab=` or `?fp=&f=` names a Home
+         tab and decodes straight to it, with any panel params (`?p=` …) kept
+         as they are: the tabs view writes `/home?tab=X&p=B` itself (a palette
+         pick of a kind Home does not host pushes B over tab X), so reload,
+         Back and Forward must read back X active with the same trail.
+         BARE `/home` decodes to the shared Home target too, because the phone
+         (D16) and the legacy desktop keep their chat Home there; the
+         three-mode desktop reads it as the tabs view at decode time instead
+         (`homeAsTabs`, applied by the router), so its own address reads back
+         without a redirect. */
+      if (rest[1] === undefined && (query.get('tab') !== null || query.get('fp') !== null)) {
+        return tabsOf(query);
+      }
       return { view: 'home' };
     }
     case 'feed':
@@ -478,23 +511,11 @@ function parseTarget(
       return { view: 'help', plate: plate && plate.length > 0 ? plate : null };
     }
     case 'work':
-    case 'tabs': {
-      /* Work — the tabs view (Spec B §7; D31). `work` is the canonical path;
-         `tabs` is its permanent decode alias (links to it are in chats and
-         docs) and `build` never emits it. `?tab=` names the active entity
-         tab. Lossy-tolerant like `?about=`: a non-id value is not carried. */
-      const tab = query.get('tab');
-      if (tab && ID_LIKE.test(tab)) return { view: 'tabs', tab: tab as EntityId };
-      /* `?fp=&f=` names an active project file tab (project id, relative
-         path), held to the workspace's own file-tab rule. */
-      const rawProject = query.get('fp');
-      const rawPath = query.get('f');
-      const projectId = rawProject === null ? null : dec(rawProject);
-      const path = rawPath === null ? null : dec(rawPath);
-      return isFileTabProjectId(projectId) && isFileTabPath(path)
-        ? { view: 'tabs', file: { projectId, path } }
-        : { view: 'tabs' };
-    }
+    case 'tabs':
+      /* Home's former addresses (Work, D31; the tabs view, Spec B §7) are
+         permanent decode aliases — links to them are in chats and docs — and
+         `build` never emits them. */
+      return tabsOf(query);
     case 'board-v2':
       /* Board v2 (2026-08-18) — hyphenated segment, camel member, exactly the
          `new-session` precedent. */
@@ -623,7 +644,7 @@ function pathOf(route: Route): string {
     case 'boardV2':
       return `${base}/board-v2`;
     case 'tabs':
-      return `${base}/work`;
+      return `${base}/home`;
     case 'newSession':
       return `${base}/new-session`;
     case 'voice':
@@ -844,6 +865,23 @@ function dedupe(ids: readonly EntityId[]): EntityId[] {
     out.push(id);
   }
   return out;
+}
+
+/**
+ * THE THREE-MODE DESKTOP'S READING OF BARE `/home` (Craft redesign §2): Home
+ * is the tabs view there, so a bare `/home` — exactly what the tabs view
+ * writes with no tab active — decodes to it directly. Anything carried with
+ * it (a trail, pins, a chat, a session) is left as the shared Home target, so
+ * `workRedirectOf` still opens it as tabs. The phone and the legacy desktop
+ * never ask; their bare `/home` is the chat Home.
+ */
+export function homeAsTabs(route: Route): Route {
+  if (route.target.view !== 'home' || route.target.root) return route;
+  const { stack, pinned, tabs, contentSurface, session, chat } = route.panels;
+  const carries =
+    stack.length > 0 || pinned.length > 0 || Object.keys(tabs).length > 0 ||
+    Object.keys(contentSurface).length > 0 || session !== null || chat !== null;
+  return carries ? route : { ...route, target: { view: 'tabs' } };
 }
 
 /** A route with nothing open — the canonical default for a space. */

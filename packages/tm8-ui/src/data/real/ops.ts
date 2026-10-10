@@ -198,7 +198,7 @@ import {
   type SessionTranscriptPage,
   type SpaceId,
   type HomeSnapshot,
-  type SetChatModelInput,
+  type SetChatModelInput, type SetChatCredentialsInput, type SetChatCredentialsResult,
   type SetChatModelResult,
   type StartChatInput,
   type StartChatResult,
@@ -1730,6 +1730,9 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
 
     /** 276: `chat.setModel` — the chat is in the path, the model in the body. */
+    setChatCredentials(chatId: EntityId, input: SetChatCredentialsInput): Promise<SetChatCredentialsResult> {
+      return http.call<SetChatCredentialsResult>('chat.setCredentials', { params: { id: chatId }, body: input });
+    },
     setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult> {
       return http.call<SetChatModelResult>('chat.setModel', { params: { id: chatId }, body: input });
     },

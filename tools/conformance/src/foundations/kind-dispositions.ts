@@ -664,6 +664,7 @@ export const CORE_KIND_DISPOSITIONS = {
   // collection doors; progress and the page are computed at read time.
   // `registered-not-default`: the kind registers without rearranging anybody's
   // default menu.
+  tool: core('tool', 'tools', { collection: typedCollection, projection: universal, capabilities: generic, menu: { strategy: 'registered-not-default' }, migration: { strategy: 'mcp-server-detail' } }),
   mcp_server: core('mcp_server', 'mcp_servers', { collection: typedCollection, projection: universal, capabilities: generic, menu: { strategy: 'registered-not-default' }, migration: { strategy: 'mcp-server-detail' } }),
   story: core('story', 'stories', {
     collection: typedCollection, projection: universal, capabilities: generic,

@@ -59,6 +59,18 @@ export interface OperationBinding {
 export const BASE_PATH = '/v2';
 
 export const OPERATIONS = [
+  { name: 'tools.create', method: 'POST', path: '/v2/spaces/:spaceId/tools', kind: 'command', status: 'v1' },
+  { name: 'tools.update', method: 'PATCH', path: '/v2/tools/:toolId', kind: 'command', status: 'v1' },
+  { name: 'tools.get', method: 'GET', path: '/v2/tools/:toolId', kind: 'read', status: 'v1' },
+  { name: 'tools.list', method: 'GET', path: '/v2/spaces/:spaceId/tools', kind: 'read', status: 'v1' },
+  { name: 'tools.help', method: 'GET', path: '/v2/tools/:toolId/help', kind: 'read', status: 'v1' },
+  { name: 'tools.config.set', method: 'PUT', path: '/v2/tools/:toolId/config', kind: 'command', status: 'v1' },
+  { name: 'tools.config.unset', method: 'POST', path: '/v2/tools/:toolId/config/unset', kind: 'command', status: 'v1' },
+  { name: 'tools.secrets.bind', method: 'POST', path: '/v2/tools/:toolId/secrets/bind', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'tools.secrets.unbind', method: 'POST', path: '/v2/tools/:toolId/secrets/unbind', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'tools.run', method: 'POST', path: '/v2/tools/:toolId/run', kind: 'command', status: 'v1' },
+  { name: 'tools.runs.list', method: 'GET', path: '/v2/tools/:toolId/runs', kind: 'read', status: 'v1' },
+  { name: 'tools.runs.get', method: 'GET', path: '/v2/tool-runs/:sessionId', kind: 'read', status: 'v1' },
   { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
   { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },
@@ -266,6 +278,7 @@ export const OPERATIONS = [
   // 276 — move a running chat onto another model. Sticky: it changes the chat,
   // and every turn claimed afterwards runs on the new model. A turn already
   // claimed keeps the model it was stamped with.
+  { name: 'chat.setCredentials', method: 'POST', path: '/v2/chats/:id/credentials', kind: 'command', status: 'v1' },
   { name: 'chat.setModel',           method: 'POST',   path: '/v2/chats/:id/model',                         kind: 'command', status: 'v1' },
 
   // collections / graph / placements / undo
