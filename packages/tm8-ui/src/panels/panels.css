@@ -2113,6 +2113,18 @@
   border-radius: 6px;
   padding: 4px 6px;
 }
+/* A newer revision than the pinned frame: visible, never automatic. */
+.cv2-root .pn-preview__newrev {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-brand);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 3px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
 /* THE FRAME TAKES EVERYTHING. `.pn-body` is a flex column, so the artifact's
    section claims every pixel between the panel bar and the panel edge — and
    since the 2026-08-20 ruling there is nothing left to share it with: the

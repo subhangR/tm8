@@ -119,16 +119,11 @@
   flex-direction: column;
   background: var(--pn-card);
 }
-.dsn-page,
-.dsn-owner {
+.dsn-page {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.dsn-page[hidden],
-.dsn-owner[hidden] {
-  display: none;
 }
 .dsn-entity {
   flex: 1;
@@ -280,99 +275,6 @@
   height: 1px;
   margin: var(--pn-space-1) 0;
   background: var(--pn-line);
-}
-
-/* The nested row (D7): one existing type step down, a shorter band. */
-.dsn-pages--nested {
-  height: 32px;
-  background: var(--pn-surface);
-}
-.dsn-pages--nested .tws-ts-scroll,
-.dsn-pages--nested .tws-ts-tab,
-.dsn-pages--nested .tws-ts-tab-main,
-.dsn-pages--nested .tws-ts-slot,
-.dsn-pages--nested .dsn-add {
-  height: 32px;
-}
-.dsn-pages--nested .tws-ts-tab-main,
-.dsn-pages--nested .dsn-add__btn {
-  font-size: var(--pn-fs-micro);
-}
-.dsn-pages--nested .tws-ts-tab {
-  flex-basis: 180px;
-  max-width: 180px;
-  min-width: 96px;
-}
-.dsn-pages--nested .dsn-add__btn {
-  height: 24px;
-}
-
-/* -- nested craft body and the depth cap ----------------------------------- */
-.dsn-nested {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.dsn-nested__body {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.dsn-cards {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--pn-space-4) var(--pn-space-5);
-}
-.dsn-cards__head {
-  display: flex;
-  align-items: center;
-  gap: var(--pn-space-2);
-  margin-bottom: var(--pn-space-3);
-}
-.dsn-cards__title {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: var(--pn-fs-title);
-  font-weight: 600;
-  color: var(--pn-ink);
-}
-.dsn-cards__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--pn-space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.dsn-card {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  column-gap: var(--pn-space-2);
-  padding: var(--pn-space-3);
-  background: var(--pn-paper);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-  color: var(--pn-ink-2);
-}
-.dsn-card__title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--pn-fs-sm);
-  color: var(--pn-ink);
-}
-.dsn-card__kind {
-  grid-column: 2;
-  font-size: var(--pn-fs-micro);
-  color: var(--pn-ink-3);
 }
 
 /* -- a page outside a Workspace host ---------------------------------------- */

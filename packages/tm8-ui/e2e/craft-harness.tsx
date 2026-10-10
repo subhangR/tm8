@@ -281,7 +281,6 @@ function Harness() {
             source={source}
             craftId={target.craftId}
             pageId={target.pageId}
-            nestedPageId={target.nestedPageId}
             onNavigate={setTarget}
             gate={gate}
             panelHost={{ data, reasons: REASONS, viewerMemberId: 'ada' }}
