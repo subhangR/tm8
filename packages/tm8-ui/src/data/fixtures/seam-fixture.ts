@@ -850,6 +850,8 @@ function synthesizeContent(s: EntitySummary): EntityContent {
     case 'design':
       // 304: a fixture design is born empty; its pages are `contains` edges.
       return { kind: 'design', description: '', pages: [] };
+    case 'tool':
+      return { kind: 'tool', definition: { name: 'fixture-tool', description: '', help: '', runtime: 'bash', source: 'true', inputs: [], tm8Access: 'none', timeoutSeconds: 900 } };
     case 'mcp_server':
       return { kind: 'mcp_server', definition: { name: 'fixture', transport: 'http', url: 'https://fixture.example/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false } };
     case 'style':
@@ -2885,7 +2887,7 @@ export function createFixtureSeam(): FixtureSeam {
            nobody noticed, because no assertion compared the two. That is the
            production defect in miniature: the live node's session list read
            "To Do 1" over an empty tab. */
-        if ((s.state as { sessionKind?: unknown }).sessionKind === 'credential') return false;
+        if (['credential', 'tool'].includes(String((s.state as { sessionKind?: unknown }).sessionKind))) return false;
         /* G6 (#841): an ended member is not LISTED — by id it still resolves. */
         if (endedMembers.has(s.id)) return false;
         const f = input.filters;
@@ -6053,8 +6055,8 @@ export function createFixtureSeam(): FixtureSeam {
           const row = spaceCredentialById(credentialId);
           return {
             credentialId,
-            // A server-only key (typesafe) never reaches a session: no usage rows.
-            sessions: row.lastUsedAt === null || row.provider === 'typesafe' || row.provider === 'mcp' ? [] : [{
+            // This fixture emits vendor launch usage; server-only keys have no vendor rows.
+            sessions: row.lastUsedAt === null || row.provider === 'typesafe' || row.provider === 'mcp' || row.provider === 'tool' ? [] : [{
               workSessionId: 'ws-fixture-usage', provider: row.provider, source: 'space_default',
               credentialId, ownerAccountId: row.ownerAccountId ?? null, launcherAccountId: 'acct-ada',
               agentSessionId: null, status: 'ended', recordedAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW,

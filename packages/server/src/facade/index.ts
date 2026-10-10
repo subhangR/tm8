@@ -1,3 +1,5 @@
+import { registerToolHandlers } from '../tools/handlers.js';
+import type { ToolRuntime } from '../tools/runtime.js';
 import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
 import { registerMcpDefinitionHandlers } from '../mcp/definitions.js';
 import { installedPluginsFor, registerSkillHandlers } from '../skills/handlers.js';
@@ -103,6 +105,7 @@ import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
 export interface RegisterFacadeHandlersDeps {
+  readonly tools?: ToolRuntime;
   readonly mcp?: McpRuntimeHandlerOptions;
   readonly db: Db;
   readonly config: ServerConfig;
@@ -232,6 +235,7 @@ export function registerFacadeHandlers(
    */
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
   registerMcpDefinitionHandlers(registry, facade);
+  registerToolHandlers(registry, facade, deps.tools);
   if (deps.mcp) registerMcpRuntimeHandlers(registry, facade, deps.mcp);
   // Attention v2: the one attention module owns every attentionRequests.* op.
   registerAttentionHandlers(registry, facade);

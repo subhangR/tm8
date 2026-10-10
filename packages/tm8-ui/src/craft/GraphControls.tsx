@@ -1,9 +1,9 @@
 /**
  * A GRAPH PAGE'S CONTROLS — the view switcher and the coherence-findings
- * chip, drawn in the design screen's action strip TOP section (Craft →
- * Designs, change list item 11). They were the old studio header's; the
+ * chip, drawn in the craft screen's action strip TOP section (Craft →
+ * Crafts, change list item 11). They were the old studio header's; the
  * header's blueprint and conversation pickers and Orchestrate are gone (D4:
- * a design is Run like any launchable entity).
+ * a craft is Run like any launchable entity).
  */
 import type { ReactNode } from 'react';
 import type { CoherenceFinding } from '@tm8/contract';

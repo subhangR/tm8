@@ -131,6 +131,7 @@ export function identityFromSession(
     // distinguishes a human from an agent carrying that human's full
     // identity (sub-doc 14, channel C7).
     authKind: session.kind,
+    apiScope: session.apiScope ?? 'write',
     // 226/227. The space the session was minted for, off the same
     // verified row. Every membership helper intersects with it.
     ...(sessionSpaceId ? { sessionSpaceId } : {}),

@@ -30,6 +30,8 @@
  * someone else's identity.
  */
 export interface DbClaims {
+  /** Immutable scope from the verified auth session; used only to narrow tool minting. */
+  readonly apiScope?: 'read' | 'write' | undefined;
   /** → `SET LOCAL tm8.identity_id`. The authenticated identity row. */
   readonly identityId?: string | undefined;
   /** → `SET LOCAL tm8.actor_id`. The effective author (acting-as target). */

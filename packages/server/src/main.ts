@@ -1,3 +1,4 @@
+import { ToolRuntime } from './tools/runtime.js';
 import { McpSessionBindings } from './mcp/session-bindings.js';
 import { loadMcpServer } from './mcp/definitions.js';
 import { WorkspaceBridge } from './workspace/bridge.js';
@@ -461,7 +462,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     const mcpBindings = new McpSessionBindings(db);
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
     const spaceServiceKeys = new DbSpaceCredentialStore({ db, dataDir });
+    const tools = execution ? new ToolRuntime({ db, pty: execution.pty, spawnService: execution.spawnService, dataDir,
+      baseUrl: config.publicOrigin ?? `http://${config.host}:${config.port}`, nodeId: `${config.host}:${config.port}` }) : undefined;
+    if (tools && owner) {
+      const o = await owner();
+      await tools.reconcile({ identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'tool-startup-reconcile' });
+    }
     registerFacadeHandlers(registry, {
+      ...(tools ? { tools } : {}),
       mcp: {
         dataDir,
         callbackUrl: `${config.publicOrigin ?? `http://${config.host}:${config.port}`}/mcp/oauth/callback`,

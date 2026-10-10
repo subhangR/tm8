@@ -812,7 +812,7 @@ async function sessionAttach(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /** The subset of `StreamAttachGrant` this command reads. */
-interface StreamAttachGrantDto {
+export interface StreamAttachGrantDto {
   workSessionId?: unknown;
   url?: unknown;
   mode?: unknown;
@@ -923,7 +923,7 @@ async function streamTerminal(cmd: CommandContext, grant: StreamAttachGrantDto):
  * declares — an `http://` WebSocket URL is not a different opinion about the
  * endpoint, it is simply not dialable.
  */
-function grantSocketUrl(cmd: CommandContext, grant: StreamAttachGrantDto): string {
+export function grantSocketUrl(cmd: CommandContext, grant: StreamAttachGrantDto): string {
   const raw = grant.url;
   if (typeof raw !== 'string' || raw.length === 0) {
     throw new CliError('the attach grant carried no stream url', EXIT_USAGE, {

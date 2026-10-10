@@ -1,3 +1,4 @@
+import { ToolCreateInputSchema, ToolUpdateInputSchema, ToolConfigSetInputSchema, ToolConfigUnsetInputSchema, ToolSecretBindInputSchema, ToolSecretUnbindInputSchema, ToolRunInputSchema } from '@tm8/contract';
 import {
   WorkspaceCommandInputSchema,
   WorkspaceCreateInputSchema,
@@ -248,6 +249,13 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'workspace.reorder': WorkspaceReorderInputSchema,
   'workspace.switch': WorkspaceSwitchInputSchema,
   'workspace.prompts.resolve': WorkspacePromptsResolveInputSchema,
+  'tools.create': ToolCreateInputSchema,
+  'tools.update': ToolUpdateInputSchema,
+  'tools.config.set': ToolConfigSetInputSchema,
+  'tools.config.unset': ToolConfigUnsetInputSchema,
+  'tools.secrets.bind': ToolSecretBindInputSchema,
+  'tools.secrets.unbind': ToolSecretUnbindInputSchema,
+  'tools.run': ToolRunInputSchema,
   'workspace.crafts.command': CraftWorkspaceCommandInputSchema,
   'mcp.servers.create': McpServerCreateInputSchema,
   'mcp.servers.update': McpServerUpdateInputSchema,

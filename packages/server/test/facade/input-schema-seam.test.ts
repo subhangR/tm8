@@ -272,6 +272,7 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'commands.undo',
   'edges.delete',
   'entities.delete',
+  'entities.markSeen', // Uses the server-local RequiredCommandContextSchema.
   'entities.restore',
   'projects.unlink',
   'readMarks.upsert',
@@ -290,7 +291,7 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
 ];
 
 /** Contract-owned schemas whose runtime identity is checked below. */
-const MCP_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
+const CONTRACT_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'mcp.credentials.create',
   'mcp.credentials.revoke',
   'mcp.credentials.rotate',
@@ -305,6 +306,7 @@ const MCP_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
   'mcp.servers.import',
   'mcp.servers.test',
   'mcp.servers.update',
+  'tools.create','tools.update','tools.config.set','tools.config.unset','tools.secrets.bind','tools.secrets.unbind','tools.run',
 ];
 
 interface ParityRow {
@@ -405,12 +407,16 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
   /** Exactly, for the reason in the comment on the constant. */
   it('the uncomparable set is exactly the local and identity-only operations', () => {
     expect([...scan.uncomparable].sort()).toEqual(
-      [...NO_CONTRACT_TYPE_TO_COMPARE, ...MCP_IDENTITY_ONLY_OPERATIONS].sort(),
+      [...NO_CONTRACT_TYPE_TO_COMPARE, ...CONTRACT_IDENTITY_ONLY_OPERATIONS].sort(),
     );
   });
 
-  it('binds every MCP input operation to its exported contract schema by identity', () => {
+  it('binds every MCP and tool input operation to its exported contract schema by identity', () => {
     const contractSchemas: Record<string, unknown> = {
+      'tools.create': contract.ToolCreateInputSchema, 'tools.update': contract.ToolUpdateInputSchema,
+      'tools.config.set': contract.ToolConfigSetInputSchema, 'tools.config.unset': contract.ToolConfigUnsetInputSchema,
+      'tools.secrets.bind': contract.ToolSecretBindInputSchema, 'tools.secrets.unbind': contract.ToolSecretUnbindInputSchema,
+      'tools.run': contract.ToolRunInputSchema,
       'mcp.servers.create': contract.McpServerCreateInputSchema,
       'mcp.servers.update': contract.McpServerUpdateInputSchema,
       'mcp.servers.delete': contract.McpServerDeleteInputSchema,

@@ -1394,6 +1394,27 @@ export class PtyHostService {
   }
 
   /**
+   * Capture the POSIX PTY process group while the leader is live. The closure
+   * also kills remaining children after the leader's natural exit removed its
+   * session entry. Used for closed tool runs; interactive shells retain jobs.
+   */
+  captureProcessGroupKiller(sessionId: string): () => void {
+    const proc = this.sessions.get(sessionId)?.proc;
+    const pid = proc?.pid;
+    let signalled = false;
+    return () => {
+      if (signalled || !proc || !pid || pid <= 0) return;
+      try {
+        if (process.platform === 'win32') proc.kill();
+        else process.kill(-pid, 'SIGKILL');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+      }
+      signalled = true;
+    };
+  }
+
+  /**
    * Kill the PTY for a session.
    *
    * @param notify When true (the default, an explicit user stop), send a

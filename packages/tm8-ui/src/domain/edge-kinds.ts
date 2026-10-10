@@ -175,6 +175,7 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
     description: 'This task, teammate or session is equipped with that skill, spell or MCP server.',
     acyclic: false,
   },
+  executes: { src: ['work_session'], dst: ['tool'], description: 'This work session executes that tool.', acyclic: false },
   follows_up: {
     src: ['task', 'work_session'],
     dst: ['task', 'work_session'],

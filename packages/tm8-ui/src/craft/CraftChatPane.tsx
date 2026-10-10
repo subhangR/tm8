@@ -1,11 +1,11 @@
 /**
- * THE DESIGN'S CHAT PANE (Craft → Designs, D3 and change list item 10): the
- * left column of a design. Every chat here is ABOUT the design (an `about`
+ * THE CRAFT'S CHAT PANE (Craft → Crafts, D3 and change list item 10): the
+ * left column of a craft. Every chat here is ABOUT the craft (an `about`
  * edge written by `chat.start`) with the mode PINNED to craft; the agent
  * picks which page to work on. No per-page chats.
  *
  * The pane's own header holds the thread picker over the chats about this
- * design and `+ New chat`. The chat surface is hosted SOLO — the picker is
+ * craft and `+ New chat`. The chat surface is hosted SOLO — the picker is
  * its thread column — and `routeThreadId` is authoritative.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -19,9 +19,9 @@ import { Timestamp } from '../kit';
 import type { ToolNoteCall } from './turn-notes';
 
 export const EXAMPLE_PROMPTS: readonly string[] = [
-  'Plan a launch for our new pricing page: research, copy, design review and the ship checklist.',
+  'Plan a launch for our new pricing page: research, copy, craft review and the ship checklist.',
   'Break "migrate auth to passkeys" into tasks, who should own each, and the docs they produce.',
-  'Design a weekly research digest: a teammate that reads sources, writes a doc, and remembers what it covered.',
+  'Craft a weekly research digest: a teammate that reads sources, writes a doc, and remembers what it covered.',
 ];
 
 /** One frozen empty set, so "no chats yet" never mints a new identity. */
@@ -31,11 +31,11 @@ function sameIds(current: ReadonlySet<EntityId>, next: readonly EntityId[]): boo
   return current.size === next.length && next.every((id) => current.has(id));
 }
 
-export interface DesignChatPaneProps {
+export interface CraftChatPaneProps {
   seam: Seam;
   spaceId: SpaceId;
   nodeKey: string;
-  designId: EntityId;
+  craftId: EntityId;
   bridge?: ChatHomeL2Bridge | undefined;
   skillOptions?: readonly TriggerOption[] | undefined;
   viewerName?: string | undefined;
@@ -46,11 +46,11 @@ export interface DesignChatPaneProps {
   onOpenEntity(id: EntityId): void;
 }
 
-export function DesignChatPane({
+export function CraftChatPane({
   seam,
   spaceId,
   nodeKey,
-  designId,
+  craftId,
   bridge,
   skillOptions,
   viewerName,
@@ -59,7 +59,7 @@ export function DesignChatPane({
   onPrompt,
   toolNote,
   onOpenEntity,
-}: DesignChatPaneProps) {
+}: CraftChatPaneProps) {
   /* The SAME port `ChatHomeSurface` builds from this seam — a pure factory. */
   const port = useMemo(() => createChatHomePortFromSeam(seam, bridge), [seam, bridge]);
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
@@ -73,37 +73,37 @@ export function DesignChatPane({
    */
   const [requestedThreadId, setRequestedThreadId] = useState<EntityId | null | undefined>(undefined);
 
-  /* Which chats are about the design: ONE incoming-edge read on the design,
+  /* Which chats are about the craft: ONE incoming-edge read on the craft,
      re-run when the thread list's membership changes (a send that started a
      chat wrote a new `about` edge). Settles rather than re-sets. */
-  const [aboutDesign, setAboutDesign] = useState<ReadonlySet<EntityId>>(EMPTY_ABOUT);
+  const [aboutCraft, setAboutCraft] = useState<ReadonlySet<EntityId>>(EMPTY_ABOUT);
   const threadKey = threads.map((thread) => thread.rootId).join(',');
   useEffect(() => {
     let live = true;
-    void port.chatIdsAbout(designId).then((ids) => {
-      if (live) setAboutDesign((current) => (sameIds(current, ids) ? current : new Set(ids)));
+    void port.chatIdsAbout(craftId).then((ids) => {
+      if (live) setAboutCraft((current) => (sameIds(current, ids) ? current : new Set(ids)));
     });
     return () => {
       live = false;
     };
-  }, [port, designId, threadKey]);
+  }, [port, craftId, threadKey]);
 
   const scoped = useMemo(
-    () => threads.filter((thread) => thread.config.mode === 'craft' && aboutDesign.has(thread.rootId)),
-    [threads, aboutDesign],
+    () => threads.filter((thread) => thread.config.mode === 'craft' && aboutCraft.has(thread.rootId)),
+    [threads, aboutCraft],
   );
 
-  /* Opening a design opens ITS most recent chat, or the composer — never the
+  /* Opening a craft opens ITS most recent chat, or the composer — never the
      space's most recent thread, which could be about anything. Waits for the
      list so "no chat here" is not answered before anything was read. */
   const resolvedForRef = useRef<EntityId | null>(null);
   useEffect(() => {
-    if (resolvedForRef.current === designId || threads.length === 0) return;
-    resolvedForRef.current = designId;
+    if (resolvedForRef.current === craftId || threads.length === 0) return;
+    resolvedForRef.current = craftId;
     const first = scoped[0]?.rootId ?? null;
     setRequestedThreadId(first);
     setActiveThreadId(first);
-  }, [designId, threads, scoped]);
+  }, [craftId, threads, scoped]);
 
   /* The host driving its own selection moves both halves: the surface does
      not echo a selection the host pushed down. */
@@ -130,11 +130,11 @@ export function DesignChatPane({
           spaceId={spaceId}
           nodeKey={nodeKey}
           bridge={bridge}
-          /* Contextual chat: a new thread is ABOUT the design. */
-          aboutId={designId}
+          /* Contextual chat: a new thread is ABOUT the craft. */
+          aboutId={craftId}
           pinnedMode="craft"
           composerSeed={composerSeed}
-          newThreadIntro={<DesignChatIntro onPrompt={onPrompt} />}
+          newThreadIntro={<CraftChatIntro onPrompt={onPrompt} />}
           toolNote={toolNote}
           skillOptions={skillOptions}
           onOpenEntity={onOpenEntity}
@@ -150,7 +150,7 @@ export function DesignChatPane({
   );
 }
 
-/** The thread picker: the craft chats about this design, newest first. */
+/** The thread picker: the craft chats about this craft, newest first. */
 function ThreadPicker({
   threads,
   all,
@@ -194,7 +194,7 @@ function ThreadPicker({
         data-testid="dsn-thread-picker"
         aria-haspopup="menu"
         aria-expanded={open}
-        title={current ? current.title : 'Choose a chat about this design'}
+        title={current ? current.title : 'Choose a chat about this craft'}
         onClick={() => setOpen((was) => !was)}
       >
         <span className="crf-pick__title">{current ? current.title : 'New chat'}</span>
@@ -203,11 +203,11 @@ function ThreadPicker({
         </span>
       </button>
       {open ? (
-        <div className="crf-pop" role="menu" aria-label="Chats about this design" data-testid="dsn-thread-pop">
+        <div className="crf-pop" role="menu" aria-label="Chats about this craft" data-testid="dsn-thread-pop">
           <div className="crf-pop__list">
             {threads.length === 0 ? (
               <p className="crf-pop__hollow" data-testid="dsn-thread-empty">
-                No chats about this design yet. Start one with ＋ New chat.
+                No chats about this craft yet. Start one with ＋ New chat.
               </p>
             ) : (
               threads.map((thread) => (
@@ -245,17 +245,17 @@ function ThreadPicker({
 }
 
 /**
- * The new-chat intro in a design — in place of the generic greeting, it says
+ * The new-chat intro in a craft — in place of the generic greeting, it says
  * what this agent does here. The examples land in the composer, unsent.
  */
-export function DesignChatIntro({ onPrompt }: { onPrompt(text: string): void }) {
+export function CraftChatIntro({ onPrompt }: { onPrompt(text: string): void }) {
   return (
     <div className="crf-intro" data-testid="crf-chat-intro">
-      <h1>Craft a design</h1>
+      <h1>Start a craft</h1>
       <p>
-        Describe the work. The craft agent builds this design&apos;s pages — a graph that plans the tasks and who owns
+        Describe the work. The craft agent builds this craft&apos;s pages — a graph that plans the tasks and who owns
         them, the docs, drawings and artifacts they need — and revises them with you. Nothing is created until you
-        Run the design.
+        Run the craft.
       </p>
       <ul className="crf-intro__prompts">
         {EXAMPLE_PROMPTS.slice(0, 2).map((prompt) => (

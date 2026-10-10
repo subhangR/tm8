@@ -264,6 +264,18 @@ function operationParams(operation: OperationName): string[] {
 function structurallyAvailable(operation: OperationName, row: ActionContextRow): boolean {
   const live = row.deleted_at === null;
   switch (operation) {
+    case 'tools.get':
+    case 'tools.help':
+    case 'tools.update':
+    case 'tools.config.set':
+    case 'tools.config.unset':
+    case 'tools.secrets.bind':
+    case 'tools.secrets.unbind':
+    case 'tools.run':
+    case 'tools.runs.list':
+      return live && row.kind === 'tool';
+    case 'tools.runs.get':
+      return live && row.kind === 'work_session';
     case 'entities.get':
     case 'entities.activity':
     case 'entities.connections':
@@ -836,7 +848,8 @@ async function discover(
     // never the filtered or ranked view: two views of the same capability
     // state must carry the same epoch, and a client comparing epochs must not
     // see a change that is only a change of presentation.
-    const authorized = registry.implemented().filter((operation) => isAvailable(operation, row));
+    const authorized = registry.implemented().filter((operation) =>
+      isAvailable(operation, row) && (ctx.identity.apiScope !== 'read' || getOperation(operation).kind === 'read')); 
     // The same allow-list as 083's `require_human_auth_kind()`: a `link`
     // session is NOT human. Joined with each binding's `humanOnly` into the
     // row's `refused`, once, here.

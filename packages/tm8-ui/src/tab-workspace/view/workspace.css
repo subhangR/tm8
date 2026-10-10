@@ -73,16 +73,36 @@
 .tws-mark {
   color: var(--pn-ink);
 }
-/* Round 2 item 7: [mark][space switcher] … [view selector], the selector
-   right-aligned on the header's 12px right inset. */
+/* Craft redesign §2 (2026-10-10): [mark][space] · [mode] · [mode switcher],
+   read left to right — the mode follows the space it is a mode of, and the
+   mode's own switcher follows the mode. Supersedes round 2 item 7, which
+   right-aligned the mode selector. */
 .tws-left-header .tws-view-select {
-  margin-left: auto;
   padding-left: var(--pn-space-2);
 }
-/* Right-aligned trigger: its menu opens leftward from the right edge. */
-.tws-left-header .tws-view-select .tws-menu {
-  right: 0;
-  left: auto;
+.tws-left-header .tws-view-select::before,
+.tws-mode-switcher-slot::before {
+  content: '·';
+  align-self: center;
+  padding-right: var(--pn-space-2);
+  color: var(--pn-ink-3);
+}
+/* The mode's switcher (workspaces in Home, crafts in Craft — the craft
+   switcher plus its open-craft tabs) takes ALL the header width that is left
+   and is the first thing to shrink. No overflow clip here: the switchers'
+   popovers hang below the slot, so the content clips its own overflow. */
+.tws-mode-switcher-slot {
+  display: flex;
+  align-items: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--tws-band-ctl);
+  padding-left: var(--pn-space-2);
+}
+.tws-mode-switcher-slot::before {
+  height: var(--tws-band-ctl);
+  display: flex;
+  align-items: center;
 }
 .tws-view-select {
   position: relative;
@@ -104,12 +124,14 @@
 }
 /* R4: the space switcher as a single-line quiet button; the server line is
    in its tooltip. Max 140px with an ellipsis. */
-.tws-root .tws-space-slot .shell-switcher {
+.tws-root .tws-space-slot .shell-switcher,
+.tws-root .tws-mode-switcher-slot .shell-switcher {
   display: flex;
   min-width: 0;
   padding: 0;
 }
-.tws-root .tws-space-slot .shell-switcher__trigger--quiet {
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet {
   width: auto;
   max-width: 140px;
   min-width: var(--tws-band-ctl);
@@ -124,26 +146,31 @@
   font-size: var(--pn-fs-sm);
   font-weight: 500;
 }
-.tws-root .tws-space-slot .shell-switcher__trigger--quiet:hover {
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet:hover,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet:hover {
   background: var(--tws-band-hover);
 }
-.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__space {
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__space,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet .shell-switcher__space {
   min-width: 0;
   color: inherit;
   font-size: inherit;
   font-weight: inherit;
 }
-.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__caret {
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__caret,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet .shell-switcher__caret {
   color: var(--pn-ink-3);
   font-size: var(--pn-fs-label);
 }
 /* Below a 300px browser: the space initial in a 28px tile. */
-.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__monogram {
+.tws-root .tws-space-slot .shell-switcher__trigger--quiet .shell-switcher__monogram,
+.tws-root .tws-mode-switcher-slot .shell-switcher__trigger--quiet .shell-switcher__monogram {
   width: 28px;
   height: 28px;
   font-size: var(--pn-fs-sm);
 }
-.tws-root .tws-space-slot .shell-switcher__pop {
+.tws-root .tws-space-slot .shell-switcher__pop,
+.tws-root .tws-mode-switcher-slot .shell-switcher__pop {
   top: calc(100% + var(--pn-space-1));
   right: auto;
   left: 0;
