@@ -28,12 +28,12 @@ const CRAFT = 'craft-1' as EntityId;
 
 afterEach(cleanup);
 
-function mount(createEdge: () => Promise<unknown>) {
+function mount() {
   const spawn = vi.fn(async () => 'session-9');
   const onNotice = vi.fn();
   const seam = {
     connections: vi.fn(async () => ({ items: [] })),
-    commands: { createEdge: vi.fn(createEdge) },
+    commands: { createEdge: vi.fn(async () => ({})) },
   };
   const gate = {
     data: {
@@ -65,27 +65,23 @@ function mount(createEdge: () => Promise<unknown>) {
 }
 
 describe('CraftSidePanel ＋ New session', () => {
-  it('spawns on the craft, shows the live terminal, and links it about the craft', async () => {
-    const { view, spawn, onNotice, createEdge } = mount(async () => ({}));
+  it('spawns on and about the craft, shows the live terminal, and writes no edge afterwards', async () => {
+    const { view, spawn, onNotice, createEdge } = mount();
     const button = view.getByTestId('crf-new-session') as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     fireEvent.click(button);
     await waitFor(() => expect(view.getByTestId('stub-terminal').textContent).toBe('session-9'));
-    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ teamMemberId: 'tm-arch', taskIds: [CRAFT] }));
-    await waitFor(() =>
-      expect(createEdge).toHaveBeenCalledWith(expect.objectContaining({ srcId: 'session-9', dstId: CRAFT, type: 'about' })),
-    );
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ teamMemberId: 'tm-arch', taskIds: [CRAFT], aboutEntityId: CRAFT }));
     expect(view.getByTestId('crf-side-chat').hidden).toBe(true);
+    expect(createEdge).not.toHaveBeenCalled();
     expect(onNotice).not.toHaveBeenCalled();
   });
 
-  it('keeps the session when the about edge is refused, and says so', async () => {
-    const { view, onNotice } = mount(async () => {
-      throw new Error('about: work_session is not an allowed source');
-    });
+  it('says so and shows no terminal when the spawn is refused', async () => {
+    const { view, spawn, onNotice } = mount();
+    spawn.mockRejectedValueOnce(new Error('no node'));
     fireEvent.click(view.getByTestId('crf-new-session'));
-    await waitFor(() => view.getByTestId('stub-terminal'));
-    await waitFor(() => expect(onNotice).toHaveBeenCalledWith(expect.stringContaining('could not be linked to this craft')));
-    expect(view.getByTestId('stub-terminal').textContent).toBe('session-9');
+    await waitFor(() => expect(onNotice).toHaveBeenCalledWith(expect.stringContaining('Session refused')));
+    expect(view.queryByTestId('stub-terminal')).toBeNull();
   });
 });

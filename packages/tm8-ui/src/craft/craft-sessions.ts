@@ -8,12 +8,13 @@
  * of a craft are two incoming-edge reads: the craft's derived tasks, then each
  * task's working sessions. The `working_on` edge's creation is the spawn, so
  * its `createdAt` is the session's start. A session may also be ABOUT the
- * craft directly (`about` session → craft): "+ New session" writes that edge,
- * because it is what lets the session's agent command the viewer's craft
- * workspace (spec §4), so those are read too.
+ * craft directly (`about` session → craft), so those are read too.
  *
  * A new session is the ordinary `execution.spawn` with the craft as its
- * subject (`taskIds: [craft]`) and the craft's default teammate.
+ * subject (`taskIds: [craft]`), the craft's default teammate, and `aboutEntityId`
+ * the craft. The spawn writes that `about` edge in its own transaction, which is
+ * the only `about` edge that lets the session's agent command the viewer's
+ * craft workspace (spec §4). One written afterwards is refused.
  */
 import type { EntityId, EntityKind, EntitySummary, ExecutionSpawnInput } from '@tm8/contract';
 import type { Seam } from '../data/seam';
@@ -76,10 +77,13 @@ export function defaultCraftTeammate(teammates: readonly LaunchTeammate[]): Laun
   return teammates.find((teammate) => teammate.id === id) ?? null;
 }
 
+/** `execution.spawn`'s `aboutEntityId` (L3 #1168): the server writes session -[about]-> it in the spawn's transaction. */
+export type CraftSpawnInput = ExecutionSpawnInput & { aboutEntityId: EntityId };
+
 /**
  * The spawn input for "+ New session" on a craft: the default teammate's own
- * tool and model, in the default trusted project (else scratch), working on the
- * craft. Null when the space has no teammate to run it as.
+ * tool and model, in the default trusted project (else scratch), working on
+ * and about the craft. Null when the space has no teammate to run it as.
  */
 export function craftSpawnInput(args: {
   spaceId: string;
@@ -87,7 +91,7 @@ export function craftSpawnInput(args: {
   title: string;
   teammates: readonly LaunchTeammate[];
   projects: readonly LaunchProject[];
-}): ExecutionSpawnInput | null {
+}): CraftSpawnInput | null {
   const teammate = defaultCraftTeammate(args.teammates);
   if (!teammate) return null;
   /* The launch sheet's default target when it names one, else the first
@@ -100,7 +104,7 @@ export function craftSpawnInput(args: {
     { id: teammate.id as EntityId, agentTool: teammate.agentTool || null, model: teammate.model || null },
     (project?.id ?? null) as Parameters<typeof defaultConfigFor>[1],
   );
-  return buildSpawnInput({
+  const input = buildSpawnInput({
     clientMutationId: newLaunchMutationId(),
     spaceId: args.spaceId,
     config,
@@ -108,22 +112,5 @@ export function craftSpawnInput(args: {
     taskIds: [args.craftId],
     ...(args.title ? { title: args.title } : {}),
   });
-}
-
-/**
- * Record the session as ABOUT the craft (spec §4 auth: a session tied to
- * craft C may command its starter's workspace for C). Best-effort: the spawn
- * already happened, so a refusal is reported, never thrown.
- */
-export async function markSessionAboutCraft(
-  seam: Pick<Seam, 'commands'>,
-  sessionId: EntityId,
-  craftId: EntityId,
-): Promise<boolean> {
-  try {
-    await seam.commands.createEdge({ clientMutationId: newLaunchMutationId(), srcId: sessionId, dstId: craftId, type: 'about' });
-    return true;
-  } catch {
-    return false;
-  }
+  return { ...input, aboutEntityId: args.craftId };
 }

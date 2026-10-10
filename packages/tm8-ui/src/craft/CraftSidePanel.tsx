@@ -28,7 +28,7 @@ import { Timestamp } from '../kit';
 import type { WorkspaceGateHandles } from '../tab-workspace';
 import { EntityTabBody, getKindAdapter, type WorkspaceRuntime } from '../tab-workspace/embed';
 import { CraftChatPane } from './CraftChatPane';
-import { craftSpawnInput, listCraftSessions, markSessionAboutCraft, type CraftSessionRow } from './craft-sessions';
+import { craftSpawnInput, listCraftSessions, type CraftSessionRow } from './craft-sessions';
 import type { ToolNoteCall } from './turn-notes';
 import { useEmbeddedTab } from './use-embedded-tab';
 import './craft-side-panel.css';
@@ -170,10 +170,7 @@ export function CraftSidePanel(props: CraftSidePanelProps) {
           ...(was ?? []).filter((row) => row.id !== id),
         ]);
         showSession(id);
-        void markSessionAboutCraft(seam, id, craftId).then((ok) => {
-          if (!ok) onNotice?.('The session started, but could not be linked to this craft, so it cannot arrange your craft tabs.');
-          refreshSessions();
-        });
+        refreshSessions();
       })
       .catch((error: unknown) =>
         onNotice?.(`Session refused: ${String((error as { message?: string })?.message ?? error)}`),

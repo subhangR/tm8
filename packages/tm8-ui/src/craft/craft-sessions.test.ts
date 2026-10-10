@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { HOUSE_TEAMMATE_NAMES } from '@tm8/contract';
 import type { LaunchProject, LaunchTeammate } from '../domain/launch';
-import { craftSpawnInput, defaultCraftTeammate, listCraftSessions, markSessionAboutCraft } from './craft-sessions';
+import { craftSpawnInput, defaultCraftTeammate, listCraftSessions } from './craft-sessions';
 
 const CRAFT = 'craft-1' as EntityId;
 
@@ -76,6 +76,8 @@ describe('+ New session spawn input', () => {
     const input = craftSpawnInput({ spaceId: 'sp', craftId: CRAFT, title: 'Launch plan', teammates: roster, projects })!;
     expect(input.teamMemberId).toBe('t-arch');
     expect(input.taskIds).toEqual([CRAFT]);
+    // About the craft in the spawn's own transaction; no edge is written afterwards.
+    expect(input.aboutEntityId).toBe(CRAFT);
     expect(input.projectId).toBe('p-1');
     expect(input.title).toBe('Launch plan');
   });
@@ -91,20 +93,5 @@ describe('+ New session spawn input', () => {
     expect(input.teamMemberId).toBe('t-1');
     expect(input.projectId).toBeNull();
     expect(craftSpawnInput({ spaceId: 'sp', craftId: CRAFT, title: '', teammates: [], projects })).toBeNull();
-  });
-});
-
-describe('markSessionAboutCraft', () => {
-  it('writes session -[about]-> craft and reports success', async () => {
-    const createEdge = vi.fn(async () => ({}));
-    expect(await markSessionAboutCraft({ commands: { createEdge } } as never, 's-1' as EntityId, CRAFT)).toBe(true);
-    expect(createEdge).toHaveBeenCalledWith(expect.objectContaining({ srcId: 's-1', dstId: CRAFT, type: 'about' }));
-  });
-
-  it('reports a refusal instead of throwing (before migration 314 allows work_session sources)', async () => {
-    const createEdge = vi.fn(async () => {
-      throw new Error('edge type about does not allow work_session sources');
-    });
-    expect(await markSessionAboutCraft({ commands: { createEdge } } as never, 's-1' as EntityId, CRAFT)).toBe(false);
   });
 });
