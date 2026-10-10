@@ -1,5 +1,5 @@
 /** Production facade + throwaway Postgres + real PTY + subprocess CLI, local external API stubs. */
-import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { execFile } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -49,7 +49,19 @@ async function probe(name: string, source: string, access = 'none', inputs: unkn
 }
 async function settled(id: string): Promise<ToolRun> {
   let run: ToolRun | undefined;
-  await vi.waitFor(async () => { const result = await request<ToolRun>('GET', '/v2/tool-runs/' + id); expect(result.status).toBe(200); run = result.data; expect(run!.state).not.toBe('running'); }, { timeout: 15000, interval: 50 }); return run!;
+  await vi.waitFor(async () => {
+    const result = await request<ToolRun>('GET', '/v2/tool-runs/' + id);
+    expect(result.status).toBe(200); run = result.data; expect(run!.state).not.toBe('running');
+    if (!run!.keepOpen) {
+      const [row] = await node.database.query<{ status: string; exit_code: number | null }>(
+        'select status,exit_code from public.work_sessions where entity_id=$1', [id]);
+      expect(['exited', 'failed']).toContain(row!.status);
+      if (run!.state === 'exited') {
+        expect(row!.status).toBe('exited');
+        expect(row!.exit_code).toBe(run!.exitCode);
+      }
+    }
+  }, { timeout: 15000, interval: 50 }); return run!;
 }
 async function closeShell(id: string) {
   node.production.execution!.pty.write(id, 'exit\r');
@@ -103,6 +115,20 @@ beforeAll(async () => {
     await q.query("insert into public.auth_sessions(id,account_id,kind,acting_as_team_member_id,work_session_id,space_id,token_hash,expires_at) select $1,id,'agent',$2,$3,$4,$5,now()+interval '2 hours' from public.accounts where identity_id=$6", [parentAuth, persona, parent, spaceId, hashToken(secret), owner.identityId]);
     await q.query("insert into public.auth_sessions(id,account_id,kind,acting_as_team_member_id,work_session_id,space_id,token_hash,expires_at) select $1,id,'agent',$2,$3,$4,$5,now()+interval '2 hours' from public.accounts where identity_id=$6", [revocationParentAuth, revocationPersona, revocationParent, spaceId, hashToken(revocationSecret), owner.identityId]);
   });
+});
+afterEach(async () => {
+  for (const id of shells) {
+    const terminated = await request('POST', `/v2/entities/${id}/commands/terminate`, {
+      clientMutationId: cmid(), force: true,
+    });
+    expect(terminated.status, JSON.stringify(terminated.error)).toBe(200);
+    await settled(id);
+    shells.delete(id);
+  }
+  // Every case releases its slots before the next shared-member fixture runs.
+  const [row] = await node.database.query<{ count: number }>(
+    "select count(*)::int as count from public.work_sessions where session_kind='tool' and status in ('spawning','running','idle')");
+  expect(row!.count).toBe(0);
 });
 afterAll(async () => {
   for (const id of shells) node?.production.execution?.pty.kill(id);
@@ -176,4 +202,24 @@ it('cascades parent revocation to a still-running tool token', async () => {
   const [bearer] = await node.database.query<{ id: string; revoked_at: unknown }>('select id,revoked_at from public.auth_sessions where work_session_id=$1', [id]); expect(bearer!.revoked_at).toBeNull(); await node.database.query('update public.auth_sessions set revoked_at=now() where id=$1', [revocationParentAuth]);
   const [revoked] = await node.database.query<{ revoked_at: unknown }>('select revoked_at from public.auth_sessions where id=$1', [bearer!.id]); expect(revoked!.revoked_at).toBeTruthy();
   expect((await request('GET', '/v2/entities/' + id, undefined, runToken)).status).toBe(401);
+});
+it('records a launch failure once and revokes its token without a PTY exit transition', async () => {
+  const tool = await probe('launch-failure-probe', 'exit 0', 'read');
+  const spawn = vi.spyOn(node.production.execution!.pty, 'spawnIfAbsent').mockImplementationOnce(() => {
+    throw new Error('Synthetic PTY launch failure');
+  });
+  try {
+    const started = await request('POST', `/v2/tools/${tool.id}/run`, {
+      clientMutationId: cmid(), expectedVersion: tool.version, inputs: {}, keepOpen: false,
+    }, agentToken);
+    expect(started.status, JSON.stringify(started.error)).toBe(503);
+    expect(started.error!.code).toBe('upstream_unavailable');
+    const [run] = await node.database.query<{ entity_id: string; status: string; tool_state: string; outcome: string }>(
+      'select entity_id,status,tool_state,outcome from public.work_sessions where tool_id=$1', [tool.id]);
+    expect(run).toMatchObject({ status: 'failed', tool_state: 'killed', outcome: 'stopped' });
+    expect(node.production.execution!.pty.hasSession(run!.entity_id)).toBe(false);
+    const [bearer] = await node.database.query<{ revoked_at: unknown }>(
+      'select revoked_at from public.auth_sessions where work_session_id=$1', [run!.entity_id]);
+    expect(bearer!.revoked_at).toBeTruthy();
+  } finally { spawn.mockRestore(); }
 });

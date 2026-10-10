@@ -30,6 +30,8 @@ export interface ToolLaunchRequest {
   onReady?: () => void;
   recordExit: (exit: ToolExit) => Promise<void>;
   revokeToken: () => Promise<void>;
+  /** Explicit cleanup must also record the PTY's process ending. */
+  closePty?: () => Promise<void>;
 }
 export interface ToolSessionLauncherOptions {
   pty: PtyHostService;
@@ -122,6 +124,10 @@ export class ToolSessionLauncher {
     const settle = async (exit: number | null, state: ToolExit['state']) => {
       if (settled) return;
       settled = true;
+      // The wrapper writes status just before exiting. Let node-pty deliver
+      // that exit to the ordinary process writer before cleaning up children:
+      // pty.kill() removes the entry and suppresses its late exit callback.
+      if (!request.keepOpen) await this.options.pty.waitForBootSettlement(request.sessionId, 1000);
       const replay = this.options.pty.getReplay(request.sessionId, output.totalBytes);
       if (replay) output.append(replay.data);
       const outputTail = redactToolOutput(output.replayFrom(-1).data.toString('utf8'), secretValues);
@@ -131,8 +137,12 @@ export class ToolSessionLauncher {
       // environment is scrubbed, so existing jobs can still hold secret envs.
       try {
         if (!request.keepOpen) {
-          try { killProcessGroup(); }
-          finally { this.options.pty.kill(request.sessionId); }
+          try {
+            if (this.options.pty.hasSession(request.sessionId)) {
+              if (request.closePty) await request.closePty();
+              else this.options.pty.kill(request.sessionId);
+            }
+          } finally { killProcessGroup(); }
         }
       } catch (error) {
         this.options.logger?.error('Tool process group cleanup failed', error instanceof Error ? error : new Error(String(error)), { sessionId: request.sessionId });

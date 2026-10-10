@@ -133,6 +133,11 @@ it('propagates the real PTY exit status, waits for persisted status, and exits w
     expect(run.state).toBe('exited');
     expect(run.exitCode).toBe(1);
     expect(run.outputTail).toContain(`FAIL 503 ${stubUrl}/fail`);
+    await vi.waitFor(async () => {
+      const session = await call<{ state: { status: string; endedKind: string } }>(`/v2/entities/${id}`);
+      expect(session.state.status).toBe('exited');
+      expect(session.state.endedKind).toBe('exited_clean');
+    }, { timeout: 5000, interval: 50 });
     // Terminate the completed work session to keep this 20-run cap regression
     // independent of retained PTY/session lifecycle cleanup in other tests.
     const terminated = await cli(['session', 'terminate', '--yes', '--force', id], server);

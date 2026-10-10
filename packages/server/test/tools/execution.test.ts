@@ -19,7 +19,9 @@ const sessions: string[] = [];
 afterEach(async () => {
   for (const host of hosts.splice(0)) for (const id of sessions) host.kill(id);
   sessions.length = 0;
-  await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })));
+  // node-pty kill is synchronous bookkeeping; the retained shell can still
+  // finish writing its history file while the OS delivers the signal.
+  await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })));
 });
 async function directory() { const dir = await mkdtemp(join(tmpdir(), 'tm8-tool-test-')); dirs.push(dir); return dir; }
 function tool(overrides: Partial<ToolView['definition']> = {}): ToolView {
