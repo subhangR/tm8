@@ -53,6 +53,7 @@ const ARCHETYPE_SENTENCE: Readonly<Record<BodyArchetype, string>> = {
   generic: 'Its panel is the generic body: ordered blocks, each answering one question.',
   equipment: 'Its panel is equipment: a file-backed body with the tools it brings along.',
   terminal: 'Its panel is a terminal: the live surface itself, streamed as it runs.',
+  scripted: 'Its panel describes stored source, declared inputs, configuration, and recorded executions.',
   governed: 'Its panel is governed: its state is owned by a process, and the panel reports it.',
   restricted: 'Its panel is restricted: managed by a named writer, read here.',
   conversation: 'Its panel IS the conversation: the transcript is the body, not a tab on it.',
