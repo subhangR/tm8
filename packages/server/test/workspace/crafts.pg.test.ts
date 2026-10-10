@@ -37,9 +37,13 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
   let stray: string;
   let chatAbout: string;
   let chatElsewhere: string;
+  let chatSomeoneElse: string;
   let sessionAbout: string;
+  let sessionLater: string;
   let sessionUnderChat: string;
+  let teammate: string;
   const human = `identity_${randomUUID()}`;
+  const stranger = `identity_${randomUUID()}`;
   const bridge = new WorkspaceBridge();
   const registry = new HandlerRegistry();
   const asHuman = { kind: 'bearer', identityId: human, authKind: 'cli' } as const;
@@ -74,6 +78,31 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
   });
   const about = async (src: string, dst: string) => db.asOwner((q) =>
     q.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'about', $4)`, [spaceId, src, dst, member]));
+  /** A chat as start_chat makes it: entity, chats row and (when `on`) its `about` edge in ONE transaction. */
+  const chat = async (on: string | null, by = human) => db.asOwner(async (q) => {
+    const id = randomUUID();
+    await q.query(`insert into public.entities(id, space_id, kind, parent_id, position, created_by) values ($1, $2, 'chat', null, 0, $3)`, [id, spaceId, member]);
+    await q.query(
+      `insert into public.chats(entity_id, space_id, title, teammate_id, model, provider, agent_tool, chat_mode, workdir_mode, cwd,
+                                native_session_id, configured_by_identity_id, configured_by_member_id, client_mutation_id)
+       values ($1, $2, 'Craft chat', $3, 'claude-opus-5', 'anthropic', 'claude-code', 'craft', 'scratch', '/tmp/craft-chat',
+               gen_random_uuid(), $4, $5, $6)`,
+      [id, spaceId, teammate, by, member, `craft-chat-${randomUUID()}`],
+    );
+    if (on !== null) {
+      await q.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'about', $4)`, [spaceId, id, on, member]);
+    }
+    return id;
+  });
+  /** A work session the human started, with its `about` edge written in the same transaction. */
+  const sessionOn = async (on: string) => db.asOwner(async (q) => {
+    const id = randomUUID();
+    await q.query(`insert into public.entities(id, space_id, kind, parent_id, position, created_by) values ($1, $2, 'work_session', null, 0, $3)`, [id, spaceId, member]);
+    await q.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'about', $4)`, [spaceId, id, on, member]);
+    return id;
+  });
+  const stored = async (craftId: string) => (await db.asOwner((q) => q.query<{ revision: string; open: boolean; last_agent_change_at: Date | null }>(
+    `select revision, open, last_agent_change_at from public.workspaces where space_id = $1 and scope_entity_id = $2`, [spaceId, craftId])))[0];
 
   beforeAll(async () => {
     db = createTestDb(url!);
@@ -89,13 +118,15 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     await contains(craft, page);
     await contains(craft, graphPage);
     await contains(craft, nested);
-    chatAbout = await raw('chat');
-    chatElsewhere = await raw('chat');
-    sessionAbout = await raw('work_session');
+    teammate = await raw('team_member');
+    await db.asOwner((q) => q.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity) values ($1, $2, 'Crafter', 'worker', 'persona')`, [teammate, member]));
+    await db.rpc({ identityId: stranger }, 'public.upsert_user_profile', ['Stranger', null, null]);
+    chatAbout = await chat(craft);
+    chatElsewhere = await chat(other);
+    chatSomeoneElse = await chat(craft, stranger);
+    sessionAbout = await sessionOn(craft); // 315: a work session may be `about` something
+    sessionLater = await raw('work_session');
     sessionUnderChat = await raw('work_session');
-    await about(chatAbout, craft);
-    await about(chatElsewhere, other);
-    await about(sessionAbout, craft); // 315: a work session may be `about` something
     await db.asOwner((q) => q.query('update public.entities set parent_id = $1 where id = $2', [chatAbout, sessionUnderChat]).catch(() => undefined));
 
     const service = new WorkspaceService({ db, bridge });
@@ -162,15 +193,51 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     expect(await cmd(craft, 'tabs.open', { kind: 'graph', entityId: graphPage }, { requestId })).toEqual(first);
   });
 
-  it('a page that leaves the craft loses its tab on the next read, which saves and pushes', async () => {
+  it('a page whose contains edge is deleted loses its tab in the database at once', async () => {
     const edge = await db.asOwner((q) => q.query<{ id: string }>(`select id from public.edges where src_id = $1 and dst_id = $2 and type = 'contains'`, [craft, graphPage]));
+    const before = (await stored(craft))!;
     await rpc('public.delete_edge', [edge[0]!.id, null, `cmid_${randomUUID()}`]);
+    const after = (await stored(craft))!;
+    expect(Number(after.revision)).toBe(Number(before.revision) + 1);
+    const row = (await db.asOwner((q) => q.query<{ state: { tabs: Tab[]; activeTabId: string } }>(
+      `select state from public.workspaces where space_id = $1 and scope_entity_id = $2`, [spaceId, craft])))[0]!;
+    expect(row.state.tabs.map((t) => t.entityId)).toEqual([craft, page]);
+    expect(row.state.tabs.map((t) => t.id)).toContain(row.state.activeTabId);
     frames.length = 0;
-    const before = (await db.asOwner((q) => q.query<{ revision: string }>(`select revision from public.workspaces where scope_entity_id = $1`, [craft])))[0]!;
     const ws = await get(craft);
     expect(entities(ws)).toEqual([craft, page]);
-    expect(ws.revision).toBe(Number(before.revision) + 1);
-    expect(frames).toMatchObject([{ type: 'craft.workspace', workspace: { craftId: craft } }]);
+    expect(ws.revision).toBe(Number(after.revision));
+    expect(frames).toEqual([]);
+  });
+
+  it('a soft-deleted page is pruned on read and SAVED: by list, and by a command even when refused, never as an agent', async () => {
+    const extra = async () => {
+      const id = idOf(await rpc('public.create_document', [spaceId, 'Passing page', null, 'body', 'markdown', null, null, null, null, `cmid_${randomUUID()}`]));
+      await contains(craft, id);
+      expect(await cmd(craft, 'tabs.open', { kind: 'doc', entityId: id, activate: false })).toMatchObject({ status: 'applied' });
+      return id;
+    };
+    const gone = async (id: string) => db.asOwner((q) => q.query('update public.entities set deleted_at = now() where id = $1', [id]));
+    const p1 = await extra();
+    const p2 = await extra();
+    expect((await stored(craft))!.last_agent_change_at).toBeNull();
+
+    await gone(p1);
+    let rev = Number((await stored(craft))!.revision);
+    frames.length = 0;
+    const listed = (await list()).items.find((w) => w.craftId === craft)!;
+    expect(entities(listed)).toEqual([craft, page, p2]);
+    expect(Number((await stored(craft))!.revision)).toBe(rev + 1);
+    expect(listed.revision).toBe(rev + 1);
+    expect(frames).toMatchObject([{ type: 'craft.workspace', workspace: { craftId: craft, revision: rev + 1 } }]);
+
+    await gone(p2);
+    rev = Number((await stored(craft))!.revision);
+    expect(await cmd(craft, 'tabs.close', { tabId: craft }, { as: asChat(chatAbout) })).toMatchObject({ status: 'rejected', reason: 'pinned' });
+    const after = (await stored(craft))!;
+    expect(Number(after.revision)).toBe(rev + 1);
+    expect(after.last_agent_change_at).toBeNull();
+    expect(entities(await get(craft))).toEqual([craft, page]);
   });
 
   it('the open-crafts list: open, order, close (tabs kept)', async () => {
@@ -189,6 +256,15 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     l = await list();
     expect(l.items.map((w) => [w.craftId, w.open])).toEqual([[other, true], [craft, false]]);
     expect(entities(l.items[1]!)).toEqual([craft, page]);
+  });
+
+  it('two list commands at once (any node) both land: the list is read-modify-written under the database lock', async () => {
+    const apply = (craftId: string, command: string) => db.rpc(claims(), 'public.craft_workspace_list_apply',
+      [spaceId, craftId, command, false, null, JSON.stringify({ tabs: [{ id: craftId, kind: 'craft', entityId: craftId, pinned: true }], activeTabId: craftId }), null, false]);
+    await Promise.all([apply(craft, 'craft.open'), apply(other, 'craft.close')]);
+    expect((await list()).items.map((w) => [w.craftId, w.open])).toEqual([[other, false], [craft, true]]);
+    await Promise.all([apply(craft, 'craft.close'), apply(other, 'craft.open')]);
+    expect((await list()).items.map((w) => [w.craftId, w.open])).toEqual([[other, true], [craft, false]]);
   });
 
   it('craft workspaces are not Home workspaces: not listed, not counted, not active', async () => {
@@ -212,13 +288,34 @@ describeIfPg('craft workspaces over real Postgres (doc 01a1255d §3, §4)', () =
     } else {
       console.warn('fixture: a work session cannot be parented to a chat here; the child-of-chat path is untested');
     }
-    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asChat(chatElsewhere) }))
-      .rejects.toMatchObject({ code: 'forbidden', details: { reason: 'not_craft_session' } });
-    await expect(cmd(craft, 'craft.open', undefined, { as: asSession(randomUUID()) }))
-      .rejects.toMatchObject({ code: 'forbidden', details: { reason: 'not_craft_session' } });
-    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: { kind: 'bearer', identityId: human, authKind: 'agent' } }))
-      .rejects.toMatchObject({ code: 'forbidden', details: { reason: 'not_craft_session' } });
+    const refused = { code: 'forbidden', details: { reason: 'not_craft_session' } };
+    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asChat(chatElsewhere) })).rejects.toMatchObject(refused);
+    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asChat(chatSomeoneElse) })).rejects.toMatchObject(refused);
+    await expect(cmd(craft, 'craft.open', undefined, { as: asSession(randomUUID()) })).rejects.toMatchObject(refused);
+    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: { kind: 'bearer', identityId: human, authKind: 'agent' } })).rejects.toMatchObject(refused);
     const ws = await get(craft);
     expect(ws.state.activeTabId).toBe(craft);
+  });
+
+  it('§4 escape: an agent cannot bind itself to a craft by writing an `about` edge after it started', async () => {
+    // The chat about `other`, and a session about nothing, each add an about edge to `craft` later (an edges.create).
+    await about(chatElsewhere, craft);
+    await about(sessionLater, craft);
+    const refused = { code: 'forbidden', details: { reason: 'not_craft_session' } };
+    await expect(cmd(craft, 'tabs.activate', { entityId: page }, { as: asChat(chatElsewhere) })).rejects.toMatchObject(refused);
+    await expect(cmd(craft, 'craft.open', undefined, { as: asSession(sessionLater) })).rejects.toMatchObject(refused);
+    // A chat with no craft at start, given one later, is no better.
+    const bare = await chat(null);
+    await about(bare, craft);
+    await expect(cmd(craft, 'tabs.activate', { tabId: craft }, { as: asChat(bare) })).rejects.toMatchObject(refused);
+  });
+
+  it('the list keeps the open flag of a craft the person can no longer see', async () => {
+    const gone = idOf(await design('Craft to delete'));
+    expect(await cmd(gone, 'craft.open')).toMatchObject({ status: 'applied' });
+    await db.asOwner((q) => q.query('update public.entities set deleted_at = now() where id = $1', [gone]));
+    expect(await cmd(other, 'craft.move', { beforeCraftId: null })).toMatchObject({ status: 'applied' });
+    expect((await stored(gone))!.open).toBe(true);
+    expect((await list()).items.map((w) => w.craftId)).not.toContain(gone);
   });
 });

@@ -10,9 +10,19 @@
 --   and a scoped row can never be the active Home workspace or take drafts.
 -- * The same rows are the person's open-crafts list: `open` says the craft is
 --   in the Craft top bar, `position` orders it (among scoped rows).
--- * `about` may now be sourced by a work session, so "+ New session" on a
---   craft can record session -[about]-> craft — the edge that lets that
---   session's agent command its starter's craft workspace (§4).
+-- * `about` may now be sourced by a work session. §4 counts an `about` edge
+--   only when it was written in the transaction that created its chat or
+--   session (same created_at) — never one an agent adds later.
+-- * Removing a page's `contains` edge prunes its tab from every craft
+--   workspace at once (trigger edges_craft_workspaces_prune).
+-- * The open-crafts list is changed only through craft_workspace_list_apply,
+--   which reads and writes it under the per-(space, identity) lock.
+--
+-- Rollback: there is no down migration. To back out, drop the trigger and the
+-- functions this file adds, delete the scoped rows, and drop the columns; the
+-- 311/312 writers re-issued here keep `where scope_entity_id is null` on every
+-- ON CONFLICT, and must keep it — the name index is now partial, so a writer
+-- restored from 311/312 without the where clause fails to match it.
 --
 -- Writes stay SECURITY DEFINER, identity-checked, tm8_app SELECT-only.
 -- `craft` and its old name `design` are both accepted as the scope entity
@@ -448,7 +458,9 @@ $$;
 -- -----------------------------------------------------------------------------
 
 -- The caller's craft workspace for p_craft_id: created at p_expected = 0
--- (closed, last in the list), compare-and-swap updated otherwise.
+-- (closed, last in the list), compare-and-swap updated otherwise. The craft
+-- must be one the caller can READ (entity_readable: the same rule as the
+-- entities RLS policy, which this definer function would otherwise bypass).
 -- An agent's write (p_agent, or an actor id) stamps last_agent_change_*.
 -- 40001 stale, P0002 no such craft, 54000 too large, 22023 bad revisions.
 create or replace function public.craft_workspace_save(
@@ -473,13 +485,13 @@ begin
   if p_next <= p_expected then
     raise exception 'the next revision must move forward' using errcode = '22023';
   end if;
+  if not exists (
+    select 1 from public.entities e
+     where e.id = p_craft_id and e.space_id = p_space_id and e.kind in ('craft', 'design') and e.deleted_at is null
+  ) or not internal.entity_readable(p_craft_id) then
+    raise exception 'no such craft' using errcode = 'P0002';
+  end if;
   if p_expected = 0 then
-    if not exists (
-      select 1 from public.entities e
-       where e.id = p_craft_id and e.space_id = p_space_id and e.kind in ('craft', 'design') and e.deleted_at is null
-    ) then
-      raise exception 'no such craft' using errcode = 'P0002';
-    end if;
     perform pg_advisory_xact_lock(hashtextextended('craft-workspaces:' || p_space_id::text || ':' || me_identity, 0));
     insert into public.workspaces(
       space_id, identity_id, member_id, state, revision, name, position, scope_kind, scope_entity_id, open,
@@ -514,55 +526,152 @@ begin
 end;
 $$;
 
--- Lay out the caller's craft list in a space: p_order (craft ids) first, in
--- that order, then any other craft workspaces in their current order; `open`
--- is exactly the craft ids in p_open. Every id must name one of the caller's
--- craft workspaces in the space (P0002). 53400 past 30 open. Returns whether
--- anything changed.
-create or replace function public.craft_workspaces_arrange(p_space_id uuid, p_order uuid[], p_open uuid[])
+-- One open-crafts-list command (craft.open | craft.close | craft.move) on the
+-- caller's list in a space, read-modify-written under the per-(space,
+-- identity) lock, so two concurrent commands cannot overwrite each other.
+-- p_place: the command names a position (p_before; null = last). The first
+-- touch of a craft creates its workspace (closed, last, p_default_state).
+-- Only the TARGET's `open` changes; every other row keeps its flag, and
+-- reordering keeps the relative order of rows whose craft the caller can no
+-- longer see. Returns whether anything changed. P0002: no such craft (or
+-- p_before is not in the list); 53400 past 30 open; 22023 bad command.
+create or replace function public.craft_workspace_list_apply(
+  p_space_id uuid, p_craft_id uuid, p_command text, p_place boolean, p_before uuid,
+  p_default_state jsonb, p_agent_actor_id uuid default null, p_agent boolean default false
+)
 returns boolean language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
   me_identity text := internal.identity_id();
+  target public.workspaces;
   ids uuid[];
-  changed int;
+  at int;
+  n int;
+  changed int := 0;
+  made boolean := false;
 begin
   perform internal.require_space_member(p_space_id);
-  if me_identity is null then
+  if me_identity is null or internal.current_member_id(p_space_id) is null then
     raise exception 'not a member of this space' using errcode = '42501';
   end if;
-  perform pg_advisory_xact_lock(hashtextextended('craft-workspaces:' || p_space_id::text || ':' || me_identity, 0));
-  select coalesce(array_agg(scope_entity_id order by position, created_at, workspace_id), '{}') into ids
-    from public.workspaces
-   where space_id = p_space_id and identity_id = me_identity and scope_entity_id is not null;
-  if exists (select 1 from unnest(coalesce(p_order, '{}') || coalesce(p_open, '{}')) x(id) where not (x.id = any(ids))) then
-    raise exception 'no such craft workspace' using errcode = 'P0002';
+  if p_command is null or p_command not in ('craft.open', 'craft.close', 'craft.move') then
+    raise exception 'unknown list command %', p_command using errcode = '22023';
   end if;
-  if (select count(distinct x) from unnest(coalesce(p_open, '{}')) x) > 30 then
+  perform pg_advisory_xact_lock(hashtextextended('craft-workspaces:' || p_space_id::text || ':' || me_identity, 0));
+  select * into target from public.workspaces
+   where space_id = p_space_id and identity_id = me_identity and scope_entity_id = p_craft_id
+   for update;
+  if not internal.entity_readable(p_craft_id) then
+    raise exception 'no such craft' using errcode = 'P0002';
+  end if;
+  if p_place and p_before is not null and (p_before = p_craft_id or not exists (
+    select 1 from public.workspaces w
+     where w.space_id = p_space_id and w.identity_id = me_identity and w.scope_entity_id = p_before
+       and internal.entity_readable(p_before)
+  )) then
+    raise exception 'no craft % in the list to place it before', p_before using errcode = 'P0002';
+  end if;
+  if p_command = 'craft.close' and not coalesce(target.open, false) then
+    return false;
+  end if;
+  if p_command = 'craft.move' and target.workspace_id is null then
+    raise exception 'the craft is not in the list' using errcode = 'P0002';
+  end if;
+  if p_command = 'craft.open' and coalesce(target.open, false) and not p_place then
+    return false;
+  end if;
+  if p_command = 'craft.open' and not coalesce(target.open, false) and (
+    select count(*) from public.workspaces w
+      join public.entities c on c.id = w.scope_entity_id and c.deleted_at is null
+     where w.space_id = p_space_id and w.identity_id = me_identity and w.open
+  ) >= 30 then
     raise exception 'too many open crafts' using errcode = '53400';
   end if;
-  ids := array(
-    select x.id from unnest(coalesce(p_order, '{}')) with ordinality x(id, ord)
-     group by x.id order by min(x.ord)
-  ) || array(
-    select w.scope_entity_id from public.workspaces w
-     where w.space_id = p_space_id and w.identity_id = me_identity and w.scope_entity_id is not null
-       and not (w.scope_entity_id = any(coalesce(p_order, '{}')))
-     order by w.position, w.created_at, w.workspace_id
-  );
-  update public.workspaces w
-     set position = o.ord - 1, open = (w.scope_entity_id = any(coalesce(p_open, '{}')))
-    from unnest(ids) with ordinality as o(id, ord)
-   where w.space_id = p_space_id and w.identity_id = me_identity and w.scope_entity_id = o.id
-     and (w.position <> o.ord - 1 or w.open <> (w.scope_entity_id = any(coalesce(p_open, '{}'))));
-  get diagnostics changed = row_count;
-  return changed > 0;
+  if target.workspace_id is null then
+    perform public.craft_workspace_save(p_space_id, p_craft_id, 0, 1, p_default_state, p_agent_actor_id, p_agent);
+    made := true;
+  end if;
+  if p_command <> 'craft.move' then
+    update public.workspaces
+       set open = (p_command = 'craft.open'), updated_at = now()
+     where space_id = p_space_id and identity_id = me_identity and scope_entity_id = p_craft_id
+       and open is distinct from (p_command = 'craft.open');
+    get diagnostics n = row_count;
+    changed := changed + n;
+  end if;
+  if p_command <> 'craft.close' and p_place then
+    ids := array(
+      select w.scope_entity_id from public.workspaces w
+       where w.space_id = p_space_id and w.identity_id = me_identity and w.scope_entity_id is not null
+         and w.scope_entity_id <> p_craft_id
+       order by w.position, w.created_at, w.workspace_id
+    );
+    at := case when p_before is null then null else array_position(ids, p_before) end;
+    ids := case when at is null then ids || p_craft_id else ids[1:at - 1] || p_craft_id || ids[at:] end;
+    update public.workspaces w
+       set position = o.ord - 1
+      from unnest(ids) with ordinality as o(id, ord)
+     where w.space_id = p_space_id and w.identity_id = me_identity and w.scope_entity_id = o.id
+       and w.position <> o.ord - 1;
+    get diagnostics n = row_count;
+    changed := changed + n;
+  end if;
+  return changed > 0 or made;
 end;
 $$;
 
 revoke all on function public.craft_workspace_save(uuid, uuid, bigint, bigint, jsonb, uuid, boolean) from public;
-revoke all on function public.craft_workspaces_arrange(uuid, uuid[], uuid[]) from public;
+revoke all on function public.craft_workspace_list_apply(uuid, uuid, text, boolean, uuid, jsonb, uuid, boolean) from public;
 grant execute on function public.craft_workspace_save(uuid, uuid, bigint, bigint, jsonb, uuid, boolean) to tm8_app;
-grant execute on function public.craft_workspaces_arrange(uuid, uuid[], uuid[]) to tm8_app;
+grant execute on function public.craft_workspace_list_apply(uuid, uuid, text, boolean, uuid, jsonb, uuid, boolean) to tm8_app;
+
+-- A page that leaves a craft (its `contains` edge deleted, by any path, on any
+-- node) loses its tab in EVERY person's workspace for that craft, at once. The
+-- active tab falls back to the overview. Each pruned row's revision moves, so
+-- a window holding the old revision refetches; the durable `edge.deleted`
+-- event is what tells every window, on every node, to do so. A page that is
+-- soft-deleted instead is pruned on the owner's next read.
+create or replace function internal.craft_state_without(p_state jsonb, p_entity_id uuid, p_craft_id uuid)
+returns jsonb language sql immutable set search_path = public, internal, pg_temp as $$
+  with kept as (
+    select coalesce(jsonb_agg(x.t order by x.o), '[]'::jsonb) as tabs
+      from jsonb_array_elements(coalesce(p_state -> 'tabs', '[]'::jsonb)) with ordinality as x(t, o)
+     where not (x.t ->> 'entityId' = p_entity_id::text and not coalesce((x.t ->> 'pinned')::boolean, false))
+  )
+  select jsonb_build_object(
+           'tabs', kept.tabs,
+           'activeTabId', case
+             when exists (select 1 from jsonb_array_elements(kept.tabs) k where k ->> 'id' = p_state ->> 'activeTabId')
+               then p_state -> 'activeTabId'
+             else to_jsonb(p_craft_id::text)
+           end)
+    from kept
+$$;
+
+create or replace function internal.craft_workspaces_prune_page() returns trigger
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+begin
+  if old.type <> 'contains' or exists (
+    select 1 from public.edges e where e.type = 'contains' and e.src_id = old.src_id and e.dst_id = old.dst_id
+  ) then
+    return null;
+  end if;
+  update public.workspaces w
+     set state = internal.craft_state_without(w.state, old.dst_id, w.scope_entity_id),
+         revision = w.revision + 1,
+         updated_at = now()
+   where w.scope_entity_id = old.src_id
+     and exists (
+       select 1 from jsonb_array_elements(coalesce(w.state -> 'tabs', '[]'::jsonb)) t
+        where t ->> 'entityId' = old.dst_id::text and not coalesce((t ->> 'pinned')::boolean, false)
+     );
+  return null;
+end;
+$$;
+
+create trigger edges_craft_workspaces_prune
+  after delete on public.edges
+  for each row when (old.type = 'contains')
+  execute function internal.craft_workspaces_prune_page();
 
 -- -----------------------------------------------------------------------------
 -- 3. A work session may say what it is about (append, idempotent; 304).
