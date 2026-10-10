@@ -184,6 +184,12 @@ export function createChatCredentialPreparation(options: ChatCredentialResolverO
             if (JSON.stringify(current.binding) !== JSON.stringify(selected.binding)) {
               throw new Error('Credential binding changed');
             }
+            // This detects relocation, not account identity or material revision.
+            // Unknown revisions still prohibit hot reuse at the next boundary.
+            if (current.credentialHome?.provider !== selected.credentialHome?.provider
+              || current.credentialHome?.configDir !== selected.credentialHome?.configDir) {
+              throw new Error('Credential home changed');
+            }
           } catch {
             throw new CollabError('forbidden', 'Chat credential authorization is no longer available');
           }

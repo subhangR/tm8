@@ -142,6 +142,23 @@ describe('generation-owned chat credentials', () => {
     await prepared.release();
   });
 
+  it('refuses credential-home relocation without touching either source home', async () => {
+    const { port, state, dataDir } = await rig();
+    const first = join(dataDir, 'first-home');
+    const second = join(dataDir, 'second-home');
+    for (const dir of [first, second]) {
+      await mkdir(dir);
+      await writeFile(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: KEY } }));
+    }
+    state.member = { provider: 'anthropic', configDir: first, homeDir: dataDir };
+    const prepared = await port.prepare(input, owner);
+    state.member = { ...state.member, configDir: second };
+    await expect(prepared.materialize()).rejects.toThrow('authorization is no longer available');
+    await prepared.release();
+    expect(await readFile(join(first, '.credentials.json'), 'utf8')).toContain(KEY);
+    expect(await readFile(join(second, '.credentials.json'), 'utf8')).toContain(KEY);
+  });
+
   it('cleans a refused post-copy boot race without publishing private diagnostics', async () => {
     const { port, state, read, dataDir } = await rig();
     state.grant = { kind: 'secret', provider: 'anthropic', credentialId: CRED, shape: 'api_key',
