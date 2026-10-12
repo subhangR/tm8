@@ -63,6 +63,7 @@ export function TaskDescription({
   detail,
   commands,
   editRefusal,
+  label = 'Description',
   onSaved,
   onReload,
   fileHref,
@@ -76,6 +77,8 @@ export function TaskDescription({
   commands: TaskDescriptionCommands | null;
   /** The registry's `capabilityReasons.canEdit`, for a server-refused edit. */
   editRefusal?: string;
+  /** Visible and accessible section name. The workstream page calls this its Brief. */
+  label?: string;
   onSaved?: (result: CommandResult) => void;
   onReload?: (current: EntityDetail) => void;
   fileHref?: MarkdownFileHref;
@@ -118,7 +121,7 @@ export function TaskDescription({
       onBlur={onBlur}
     >
       <div className="sb-description__head">
-        <span className="sb-description__label">Description</span>
+        <span className="sb-description__label">{label}</span>
         <span className="sb-description__spacer" />
         {writing && !save.unavailable ? (
           <>
@@ -168,15 +171,15 @@ export function TaskDescription({
       {mode === 'rich' ? (
         <RichBody
           save={save}
-          label="Description"
-          placeholder="Add a description, or type / for blocks and skills"
+          label={label}
+          placeholder={`Add a ${label.toLowerCase()}, or type / for blocks and skills`}
           fileHref={fileHref}
           attach={attach}
           onAttached={onAttached}
           skillOptions={skillOptions}
         />
       ) : (
-        <DocSource save={save} label="Description" attach={attach} onAttached={onAttached} skillOptions={skillOptions} />
+        <DocSource save={save} label={label} attach={attach} onAttached={onAttached} skillOptions={skillOptions} />
       )}
       <RefusalHost save={save} />
       {attachmentSlot ?? null}

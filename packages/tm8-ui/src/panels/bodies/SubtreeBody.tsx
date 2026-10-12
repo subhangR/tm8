@@ -161,27 +161,25 @@ export interface SubtreeBodyProps {
    */
   layout?: 'two-column';
   /**
-   * The rail's live controls — the host's `EntityControlStrip`, built where
+   * The overview band's live controls — the host's `EntityControlStrip`, built where
    * the `ControlHost` is in hand. Opaque here for the reason `gitSection` is:
    * this body is presentational and the strip is registry-driven already.
    * Read only in the two-column layout.
    */
   rail?: ReactNode;
   /**
-   * Rail rows drawn after the facts — the host's relations ("Depends on",
-   * "Blocks"), which write edges and so are built where the link port is.
-   * Two-column only.
+   * The host's relations ("Depends on", "Blocks"), which write edges and so
+   * are built where the link port is. Workstream places them in Linked work.
    */
   railTail?: ReactNode;
   /**
    * The entity's conversation — the host's discussion surface, the same one
-   * the Messages section draws — placed LAST in the main column (form
-   * 01a1164f: "activity inline at the bottom"). Two-column only; absent ⇒ no
-   * section, never an empty box.
+   * the Messages section draws — placed in the Momentum column. Two-column
+   * only; absent ⇒ no column, never an empty box.
    */
   activity?: ReactNode;
   /**
-   * Writes the estimate in one gesture. Absent ⇒ the rail shows the value
+   * Writes the estimate in one gesture. Absent ⇒ the overview shows the value
    * read-only (or nothing, when there is none). Two-column only.
    */
   onPointsChange?: (next: number | null) => void;
@@ -297,8 +295,16 @@ export function SubtreeBody({
       onChange={onCriteriaChange}
       unavailableReason={criteriaUnavailableReason}
       authoring={twoColumn}
+      label={twoColumn ? 'DEFINITION OF DONE' : 'ACCEPTANCE'}
     />
   );
+  const persistedCriteria = (detail.content as unknown as Record<string, unknown>).acceptanceCriteria;
+  const progressCriteria = Array.isArray(persistedCriteria)
+    ? ((criteriaDraft ?? persistedCriteria) as readonly AcceptanceCriterion[])
+    : null;
+  const progressDone = progressCriteria?.filter((criterion) => criterion.done).length ?? 0;
+  const progressTotal = progressCriteria?.length ?? 0;
+  const progressPercent = progressTotal === 0 ? 0 : Math.round((progressDone / progressTotal) * 100);
   const rest = (
     <>
       <SubtreeSection
@@ -386,17 +392,14 @@ export function SubtreeBody({
   );
 
   /*
-   * THE TWO-COLUMN PAGE (task 01a1163a; owner: "the things i need space to
-   * write, that is the main thing, it should not be clutter"). The main
-   * column is the writing — description, then what done means, then the
-   * pieces, then everything the task is connected to, further down. Every
-   * property is in the rail: the host's live controls first, then the facts
-   * the grid composed, drawn once in the same labelled-row voice.
+   * THE WORKSTREAM PAGE. Outcome controls lead in a scan-friendly band, then
+   * the task definition reads 01 Brief → 02 Definition of done → 03 Linked
+   * work. Supporting sections remain below and the conversation becomes the
+   * dark momentum column beside them.
    *
-   * THE GRID MOVES, IT IS NOT DROPPED. It is the only place a custom kind's
-   * scalars, the axes and the parent are drawn, and its suppression of the
-   * strip's own fields still applies — so nothing is shown twice, and nothing
-   * shown before is lost.
+   * THE GRID MOVES, IT IS NOT DROPPED. The live strip and composed metadata
+   * use `display: contents` in CSS so their real controls become overview
+   * cells — no duplicate, read-only facsimiles and no lost custom fields.
    */
   if (twoColumn) {
     return (
@@ -407,27 +410,61 @@ export function SubtreeBody({
         aria-labelledby="tab-content"
         data-testid="subtree-body"
         data-layout="two-column"
+        data-variant="workstream"
       >
+        <section className="sb-workstream-stats" aria-label="Workstream overview" data-testid="subtree-rail">
+          {rail ?? null}
+          {progressCriteria ? (
+            <div className="sb-workstream-progress" data-testid="workstream-progress">
+              <span className="sb-workstream-stat__label">Progress</span>
+              <strong>{progressPercent}%</strong>
+              <span className="sb-workstream-stat__note">
+                {progressTotal === 0
+                  ? 'No criteria yet'
+                  : `${progressDone} of ${progressTotal} ${progressTotal === 1 ? 'criterion' : 'criteria'}`}
+              </span>
+            </div>
+          ) : null}
+          <MetaGrid detail={detail} onOpenEntity={onOpenEntity} variant="rail" onPointsChange={onPointsChange} />
+        </section>
         <div className="sb-layout">
           <div className="sb-main" data-testid="subtree-main">
-            {description}
-            {acceptance}
-            {rest}
-            {activity ? (
-              /* A bounded box, because the conversation scrolls itself and
-                 keeps its composer at its own bottom edge; the page scrolls
-                 past it to nothing, since it is the last thing here. */
-              <section className="sb-activity" aria-label="Activity" data-testid="subtree-activity">
-                <h2 className="sb-activity__label">Activity</h2>
-                <div className="sb-activity__surface">{activity}</div>
+            <section className="sb-workstream-section" aria-label="Brief">
+              <span className="sb-workstream-section__number" aria-hidden="true">01</span>
+              <div className="sb-workstream-section__content">{description}</div>
+            </section>
+            <section className="sb-workstream-section" data-testid="workstream-definition">
+              <span className="sb-workstream-section__number" aria-hidden="true">02</span>
+              <div className="sb-workstream-section__content">{acceptance}</div>
+            </section>
+            {railTail ? (
+              <section className="sb-workstream-section sb-workstream-linked" aria-labelledby="workstream-linked-title">
+                <span className="sb-workstream-section__number" aria-hidden="true">03</span>
+                <div className="sb-workstream-section__content">
+                  <h2 className="sb-workstream-section__title" id="workstream-linked-title">Linked work</h2>
+                  {railTail}
+                </div>
               </section>
             ) : null}
+            <div className="sb-workstream-support" data-testid="workstream-support">{rest}</div>
           </div>
-          <aside className="sb-rail" aria-label="Properties" data-testid="subtree-rail">
-            {rail ?? null}
-            <MetaGrid detail={detail} onOpenEntity={onOpenEntity} variant="rail" onPointsChange={onPointsChange} />
-            {railTail ?? null}
-          </aside>
+          {activity ? (
+            /* A bounded surface because the conversation owns its composer
+               and its own scroll. The dark nested token root is intentional:
+               Momentum stays the selected direction in either app theme. */
+            <aside
+              className="cv2-root sb-activity"
+              data-theme="dark"
+              aria-label="Activity"
+              data-testid="subtree-activity"
+            >
+              <div className="sb-activity__head">
+                <h2 className="sb-activity__label">Momentum</h2>
+                <p>Updates and discussion</p>
+              </div>
+              <div className="sb-activity__surface">{activity}</div>
+            </aside>
+          ) : null}
         </div>
       </div>
     );
@@ -877,6 +914,7 @@ function AcceptanceSection({
   onChange,
   unavailableReason,
   authoring = false,
+  label = 'ACCEPTANCE',
 }: {
   detail: EntityDetail;
   draft?: readonly AcceptanceCriterion[];
@@ -889,6 +927,8 @@ function AcceptanceSection({
    * refusal still renders through the honesty vocabulary below.
    */
   authoring?: boolean;
+  /** Workstream calls the same persisted checklist its definition of done. */
+  label?: string;
 }) {
   const content = detail.content as unknown as Record<string, unknown>;
   const persisted = content.acceptanceCriteria;
@@ -914,7 +954,7 @@ function AcceptanceSection({
     return (
       <CollapsibleSection
         id="acceptance"
-        label="ACCEPTANCE"
+        label={label}
         count={`${completed}/${criteria.length}`}
         /* A writable checklist is never "empty": its add row is the
            invitation, and the page is where criteria get written. */
@@ -930,7 +970,7 @@ function AcceptanceSection({
   return (
     <CollapsibleSection
       id="acceptance"
-      label="ACCEPTANCE"
+      label={label}
       count={`${completed}/${criteria.length}`}
       empty={criteria.length === 0}
       defaultOpen={criteria.length > 0}

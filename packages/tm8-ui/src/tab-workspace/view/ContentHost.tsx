@@ -203,8 +203,9 @@ export function useEntityChromeValue(mainEl: HTMLElement | null): EntityChromeCo
 
 /** Scrolling down past this hides the title bar; any scroll up shows it. */
 const TITLE_HIDE_AFTER_PX = 8;
-/** The bar's height, and how long its collapse is left to settle. */
+/** The default bar height; a workstream hero is measured from the DOM. */
 const TITLE_BAR_PX = 36;
+/** How long a title collapse is left to settle. */
 const TITLE_SETTLE_MS = 250;
 /** On a body that owns its height, a pointer this close to the top reveals it. */
 const TITLE_REVEAL_EDGE_PX = 8;
@@ -263,9 +264,11 @@ function TitleBar({
         set(false);
       } else {
         down += y - last;
-        /* Only a page with room to spare hides it, or the 36px it gives back
-           would end the scroll and bounce the bar straight back. */
-        if (down > TITLE_HIDE_AFTER_PX && range > TITLE_BAR_PX + TITLE_HIDE_AFTER_PX) set(true);
+        /* Only a page with room to spare hides it, or the height it gives back
+           would end the scroll and bounce the bar straight back. Most titles
+           are 36px; the workstream title intentionally has a taller hero. */
+        const barHeight = barRef.current?.offsetHeight || TITLE_BAR_PX;
+        if (down > TITLE_HIDE_AFTER_PX && range > barHeight + TITLE_HIDE_AFTER_PX) set(true);
       }
     };
     const inBody = (n: EventTarget | null) =>

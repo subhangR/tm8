@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
  * THE TASK PAGE (task 01a1163a, mockup r6): on the Workspace page a
- * `panel.layout: 'two-column'` kind draws its writing in a main column and its
- * properties in a rail, edits its title in place, and writes each checklist
+ * `panel.layout: 'two-column'` kind draws the selected Workstream direction:
+ * an outcome hero, a live overview band, numbered definition sections, and a
+ * Momentum column. It edits its title in place and writes each checklist
  * gesture and the estimate as it happens — no Edit dialog, no staged Save.
  *
  * Through the panel, embedded, because every one of those is a decision the
@@ -112,16 +113,24 @@ const withDescription = (description: string): EntityDetail => ({
 });
 
 describe('the two-column page', () => {
-  it('draws a main column and a properties rail, and no band above the body', () => {
-    mount();
+  it('draws the workstream hero, overview band, and numbered task definition', () => {
+    const { slot } = mount();
     const body = screen.getByTestId('subtree-body');
     expect(body.getAttribute('data-layout')).toBe('two-column');
+    expect(body.getAttribute('data-variant')).toBe('workstream');
+    expect(within(slot).getByTestId('workstream-title')).toBeTruthy();
+    expect(within(slot).getByText('Workstream')).toBeTruthy();
     const main = screen.getByTestId('subtree-main');
-    const rail = screen.getByTestId('subtree-rail');
+    const overview = screen.getByTestId('subtree-rail');
     expect(within(main).getByTestId('task-description-editor')).toBeTruthy();
     expect(within(main).getByTestId('acceptance-section')).toBeTruthy();
-    // The grid's facts moved into the rail; nothing is drawn above the writing.
-    expect(within(rail).getByTestId('subtree-grid').className).toContain('sb-grid--rail');
+    expect(within(main).getByRole('region', { name: 'Brief' })).toBeTruthy();
+    expect(within(main).getByTestId('workstream-definition')).toBeTruthy();
+    expect(within(main).getByText('DEFINITION OF DONE')).toBeTruthy();
+    expect(within(overview).getByTestId('workstream-progress').textContent).toContain('50%');
+    expect(within(overview).getByText('1 of 2 criteria')).toBeTruthy();
+    // The grid's facts join the live controls in the overview band.
+    expect(within(overview).getByTestId('subtree-grid').className).toContain('sb-grid--rail');
     expect(within(main).queryByTestId('subtree-grid')).toBeNull();
     expect(screen.queryByTestId('panel-embedded-head')).toBeNull();
   });
@@ -130,6 +139,18 @@ describe('the two-column page', () => {
     mount(TASK, { embedded: false });
     expect(screen.getByTestId('subtree-body').getAttribute('data-layout')).toBeNull();
     expect(screen.queryByTestId('subtree-rail')).toBeNull();
+  });
+
+  it('derives progress from the refreshed checklist', () => {
+    mount({
+      ...TASK,
+      content: {
+        ...(TASK.content as object),
+        acceptanceCriteria: CRITERIA.map((criterion) => ({ ...criterion, done: true })),
+      } as EntityDetail['content'],
+    });
+    expect(screen.getByTestId('workstream-progress').textContent).toContain('100%');
+    expect(screen.getByTestId('workstream-progress').textContent).toContain('2 of 2 criteria');
   });
 
   it('edits the title in place, and Enter saves it', async () => {
@@ -312,10 +333,12 @@ describe('the rail carries what this task waits on, and what waits on it', () =>
   const row = (direction: 'outgoing' | 'incoming') =>
     screen.getAllByTestId('rail-relation').find((node) => node.getAttribute('data-direction') === direction)!;
 
-  it('draws Depends on and Blocks in the rail, and LINKED does not repeat them', () => {
+  it('draws Depends on and Blocks as Linked work, and LINKED does not repeat them', () => {
     mount(LINKED_TASK, { attachments: port() });
-    const rail = screen.getByTestId('subtree-rail');
-    expect(within(rail).getByTestId('rail-relations')).toBeTruthy();
+    const main = screen.getByTestId('subtree-main');
+    expect(within(main).getByRole('region', { name: 'Linked work' })).toBeTruthy();
+    expect(within(main).getByTestId('rail-relations')).toBeTruthy();
+    expect(within(screen.getByTestId('subtree-rail')).queryByTestId('rail-relations')).toBeNull();
     expect(within(row('outgoing')).getByText('Depends on')).toBeTruthy();
     expect(within(row('outgoing')).getByText('Ship the API')).toBeTruthy();
     expect(within(row('incoming')).getByText('Blocks')).toBeTruthy();
@@ -381,13 +404,14 @@ describe('the rail carries what this task waits on, and what waits on it', () =>
   });
 });
 
-describe('the page ends in its conversation', () => {
-  it('draws the host discussion surface as the last thing in the main column', () => {
+describe('the page carries its conversation in Momentum', () => {
+  it('draws the host discussion surface as the Momentum column beside the main work', () => {
     mount(TASK, { discussion: true });
     const main = screen.getByTestId('subtree-main');
-    const activity = within(main).getByTestId('subtree-activity');
+    const activity = screen.getByTestId('subtree-activity');
     expect(within(activity).getByTestId('host-discussion')).toBeTruthy();
-    expect(main.lastElementChild).toBe(activity);
+    expect(within(activity).getByText('Momentum')).toBeTruthy();
+    expect(main.parentElement?.lastElementChild).toBe(activity);
   });
 
   it('draws no Activity box when the host has no surface to give', () => {

@@ -1023,9 +1023,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    */
   const controlHost = props.controls ?? { kind: detail.kind, ctx: props.ctx };
   /*
-   * THE TWO-COLUMN PAGE MOVES THE STRIP INTO THE BODY'S RAIL (registry
-   * `panel.layout`, task 01a1163a): the same controls, drawn as labelled rows
-   * beside the writing instead of a chip band above it. Built here, where the
+   * THE WORKSTREAM PAGE MOVES THE STRIP INTO THE BODY'S OVERVIEW (registry
+   * `panel.layout`): the same controls, drawn as labelled facts before the
+   * writing instead of a chip band above it. Built here, where the
    * `ControlHost` is in hand, and handed to the body as an opaque slot.
    *
    * ONLY ON THE WORKSPACE PAGE, AND ONLY ON ITS CONTENT. The layout is a page
@@ -1362,6 +1362,32 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const titleEditable = (config.list.inlineEdit?.title ?? false) && save.unavailable === null;
   /* The footer's facts, kept when the host drops the footer row. */
   const byline = `by ${detail.createdBy.displayName} · v${detail.version}`;
+  const titleState = detail.state as unknown as Record<string, unknown>;
+  const titleStatus = typeof titleState.status === 'string' ? titleState.status : '';
+  const titleTone = config.panel.statusPill?.tones[titleStatus] ?? 'idle';
+  const titleEditor = (
+    <EmbeddedTitle
+      entityId={detail.id}
+      title={detail.title}
+      byline={byline}
+      editable={titleEditable}
+      arrival={titleArrival && titleEditable}
+      /* The two-column page edits in place, the title first among
+         them: a live field at rest, and Enter carries on into the
+         description, as the doc's title does. */
+      live={config.panel.layout === 'two-column' && titleEditable}
+      onEnter={twoColumn ? () => focusDescription(panelEl) : undefined}
+      onCommit={async (title) => {
+        await save.commitNow({ title });
+      }}
+    />
+  );
+  const embeddedTitle =
+    config.panel.layout === 'two-column' ? (
+      <WorkstreamTitle tone={titleTone} byline={byline}>
+        {titleEditor}
+      </WorkstreamTitle>
+    ) : titleEditor;
   const embeddedMenu = (
     <>
       {embedded?.menuSlot && embedded.omitFooter
@@ -1455,24 +1481,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       {embeddedMenu}
       {commonBar}
       {embedded?.titleSlot && !oneSurface
-        ? createPortal(
-            <EmbeddedTitle
-              entityId={detail.id}
-              title={detail.title}
-              byline={byline}
-              editable={titleEditable}
-              arrival={titleArrival && titleEditable}
-              /* The two-column page edits in place, the title first among
-                 them: a live field at rest, and Enter carries on into the
-                 description, as the doc's title does. */
-              live={config.panel.layout === 'two-column' && titleEditable}
-              onEnter={twoColumn ? () => focusDescription(panelEl) : undefined}
-              onCommit={async (title) => {
-                await save.commitNow({ title });
-              }}
-            />,
-            embedded.titleSlot,
-          )
+        ? createPortal(embeddedTitle, embedded.titleSlot)
         : null}
       {embedded?.verbsSlot && !oneSurface ? createPortal(barEnd, embedded.verbsSlot) : null}
       {canvas || embedded ? null : <PanelHeader
@@ -1727,9 +1736,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                   />
                 ) : null;
               const bodyConsumesSlot = config.panel.archetype === 'subtree';
-              /* THE RAIL'S RELATIONS (PR3): registry rows, read only on the
+              /* WORKSTREAM'S LINKED WORK: registry rows, read only on the
                  two-column page, written through the same link port as the
-                 palette. Their edges are the rail's there, so LINKED skips
+                 palette. Their edges are already drawn there, so LINKED skips
                  them by edge id, the way it skips the strip's tiles. */
               const relationRows = twoColumn ? config.panel.railRelations ?? [] : [];
               const relationEdgeIds = relationRows.flatMap((row) =>
@@ -1811,6 +1820,33 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     </section>
   );
 
+}
+
+/**
+ * The workstream direction gives the task its outcome-led identity before the
+ * controls and supporting detail. The coloured rail is deliberately
+ * presentational: the live state control remains the single written state in
+ * the overview band below, while this mark carries only its tone.
+ */
+function WorkstreamTitle({
+  tone,
+  byline,
+  children,
+}: {
+  tone: string;
+  byline: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="pn-workstream-title" data-tone={tone} data-testid="workstream-title">
+      <span className="pn-workstream-title__rail" aria-hidden="true" />
+      <div className="pn-workstream-title__copy">
+        <span className="pn-workstream-title__eyebrow">Workstream</span>
+        {children}
+        <span className="pn-workstream-title__byline">{byline}</span>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -2305,6 +2341,7 @@ function PanelBody(
               detail={detail}
               commands={props.commands ?? null}
               editRefusal={config.panel.capabilityReasons?.canEdit}
+              label="Brief"
               onSaved={props.onSaved}
               onReload={props.onReloadDetail}
               fileHref={props.attachments?.downloadHref}

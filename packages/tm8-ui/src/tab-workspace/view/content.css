@@ -787,3 +787,104 @@
   border-color: var(--pn-line-2);
   background: var(--pn-card);
 }
+
+/* WORKSTREAM TITLE. The selected outcome-led direction uses the existing live
+   title field as its hero — no duplicate heading and no second save path. */
+.tws-titlebar:has(.pn-workstream-title) {
+  height: 116px;
+  align-items: stretch;
+  padding: 0 var(--pn-space-8);
+  background: var(--pn-surface);
+}
+.tws-titlebar:has(.pn-workstream-title)[data-hidden] {
+  height: 0;
+}
+.tws-titlebar:has(.pn-workstream-title) > .tws-titlebar__text {
+  align-items: stretch;
+}
+.cv2-root .pn-workstream-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-5);
+}
+.cv2-root .pn-workstream-title__rail {
+  flex: none;
+  width: 5px;
+  height: 66px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand);
+}
+.cv2-root .pn-workstream-title[data-tone='run'] .pn-workstream-title__rail {
+  background: var(--pn-run);
+}
+.cv2-root .pn-workstream-title[data-tone='wait'] .pn-workstream-title__rail {
+  background: var(--pn-wait);
+}
+.cv2-root .pn-workstream-title[data-tone='block'] .pn-workstream-title__rail {
+  background: var(--pn-block);
+}
+.cv2-root .pn-workstream-title[data-tone='info'] .pn-workstream-title__rail {
+  background: var(--pn-info);
+}
+.cv2-root .pn-workstream-title[data-tone='idle'] .pn-workstream-title__rail {
+  background: var(--pn-idle);
+}
+.cv2-root .pn-workstream-title__copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.cv2-root .pn-workstream-title__eyebrow,
+.cv2-root .pn-workstream-title__byline {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-tick);
+  line-height: 1.25;
+  color: var(--pn-ink-2);
+}
+.cv2-root .pn-workstream-title__eyebrow {
+  font-weight: 700;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-brand-2);
+}
+.cv2-root .pn-workstream-title .pn-embedded-title--live,
+.cv2-root .pn-workstream-title .pn-embedded-title--editing,
+.cv2-root .pn-workstream-title .pn-embedded-title {
+  flex: none;
+  width: 100%;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 2px var(--pn-space-2);
+  margin: 1px 0 2px calc(-1 * var(--pn-space-2) - 1px);
+  font-size: clamp(25px, 3cqw, 36px);
+  font-weight: 650;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+
+@container (max-width: 600px) {
+  .tws-titlebar:has(.pn-workstream-title) {
+    height: 98px;
+    padding-inline: var(--pn-space-4);
+  }
+  .tws-titlebar:has(.pn-workstream-title)[data-hidden] {
+    height: 0;
+  }
+  .cv2-root .pn-workstream-title {
+    gap: var(--pn-space-3);
+  }
+  .cv2-root .pn-workstream-title__rail {
+    height: 54px;
+    width: 4px;
+  }
+  .cv2-root .pn-workstream-title .pn-embedded-title--live,
+  .cv2-root .pn-workstream-title .pn-embedded-title--editing,
+  .cv2-root .pn-workstream-title .pn-embedded-title {
+    height: 38px;
+    font-size: 24px;
+  }
+}
