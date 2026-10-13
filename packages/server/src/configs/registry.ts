@@ -23,6 +23,10 @@
  * resolves to a line that names it. The same suite fails when a
  * `env.TM8_*` read appears in a package source without an entry here or on
  * `NOT_CONFIG_ENV` below.
+ *
+ * A curated subset of NODE_ENV is also settable from Node admin →
+ * Configuration (`node-settings.ts`): precedence env > stored > default, and
+ * every stored value applies at the next restart.
  */
 import {
   AUTHORED_HEADER_LIMITS,
@@ -122,6 +126,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_STYLE_RESOLVE_MAX', group: 'Network & access', summary: 'styles.resolve per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.resolvePerMinute), definedIn: CONFIG },
   { name: 'TM8_STYLE_PREFS_MAX', group: 'Network & access', summary: 'Style preference writes per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.prefsPerMinute), definedIn: CONFIG },
   { name: 'TM8_STYLE_DEFAULT_MAX', group: 'Network & access', summary: 'Space default-style writes per space per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.defaultPerMinute), definedIn: CONFIG },
+  { name: 'TM8_SERVER_ORIGIN', group: 'Network & access', summary: 'Server origin the web UI\'s Vite servers proxy /v2 to (dev default http://127.0.0.1:4610, preview default http://127.0.0.1:7778). Read by the UI process, not this server; the value shown is this server\'s environment.', default: 'http://127.0.0.1:4610 (dev)', definedIn: 'packages/tm8-ui/vite.config.ts' },
+  { name: 'TM8_UI_PORT', group: 'Network & access', summary: 'Port the web UI\'s Vite preview server listens on (scripts/dev.mjs uses 4611 in dev). Read by the UI process, not this server; the value shown is this server\'s environment.', default: '7777', definedIn: 'packages/tm8-ui/vite.preview.config.ts' },
   { name: 'TM8_UI_DIR', group: 'Network & access', summary: 'Built web UI bundle served for non-/v2 paths. Unset in dev, where Vite serves the UI.', default: null, definedIn: CONFIG },
 
   // ── Storage & database ───────────────────────────────────────────────
@@ -157,8 +163,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_REQUIRE_CODEX_SANDBOX', group: 'Lane launch', summary: 'Refuses a Codex lane whose sandbox cannot be verified (1).', default: 'off', definedIn: SPAWN },
   { name: 'TM8_AUTO_TRUST_WORKSPACE', group: 'Lane launch', summary: 'Pre-trusts a lane\'s worktree in the agent config so it starts without a trust prompt (false turns it off).', default: 'true', definedIn: 'packages/execution/src/spawn/workspace-trust.ts' },
   { name: 'TM8_LOST_SESSION_AFTER_MIN', group: 'Lane launch', summary: 'Minutes without a live process before an open session is marked lost.', default: '10', definedIn: 'packages/server/src/scheduler/jobs/lost-session-reaper.ts' },
-  { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '64', definedIn: EXEC_HANDLERS },
-  { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs.', default: '4', definedIn: EXEC_HANDLERS },
+  { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs: a positive number, or unlimited (none, off and 0 mean the same). An unparseable value falls back to 64.', default: '64', definedIn: EXEC_HANDLERS },
+  { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs: a positive number, or unlimited (none, off and 0 mean the same).', default: '4', definedIn: EXEC_HANDLERS },
   { name: 'TM8_WORKTREE_CAP', group: 'Lane launch', summary: 'Concurrent worktree lanes (0 = unlimited).', default: '0', definedIn: EXEC_HANDLERS },
   { name: 'TM8_LAUNCH_BOOTSTRAP', group: 'Lane launch', summary: 'Seeds launchable personas and the current project at boot (0 turns it off).', default: 'on', definedIn: CONFIG },
   { name: 'TM8_PROJECT_DIR', group: 'Lane launch', summary: 'Project the launch bootstrap registers.', default: 'the server\'s working directory', definedIn: CONFIG },
@@ -170,7 +176,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_CHAT_SKILLS_DIR', group: 'Lane launch', summary: 'Skills plugin directory chat threads load.', default: null, definedIn: MAIN },
 
   // ── Containers ───────────────────────────────────────────────────────
-  { name: 'TM8_CONTAINERS', group: 'Containers', summary: 'Container runtime gate (off disables it).', default: 'on', definedIn: CONFIG },
+  { name: 'TM8_CONTAINERS', group: 'Containers', summary: 'Container runtime gate: on or off. Off answers every container operation with 501.', default: 'off', definedIn: CONFIG },
   { name: 'TM8_CONTAINER_DATA_DIR', group: 'Containers', summary: 'Container state directory.', default: '<data dir>/containers', definedIn: CONFIG },
   { name: 'TM8_CONTAINER_PROVIDERS', group: 'Containers', summary: 'Enabled container providers.', default: 'docker,gvisor,android-emulator', definedIn: CONFIG },
   { name: 'TM8_CONTAINER_CAP', group: 'Containers', summary: 'Concurrent containers.', default: '4', definedIn: CONFIG },

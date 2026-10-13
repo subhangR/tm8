@@ -11,12 +11,21 @@ import type {
   ConfigKnobView,
   ConfigSubjectView,
   ConfigValue,
+  NodeSettingSetResult,
+  NodeSettingState,
   SpaceConfigsView,
 } from '@tm8/contract';
 import { asHarnessSurface, asPermissionMode, asReadHints, memberLaunchPreferences } from '@tm8/execution';
 
 import type { DbClaims, Querier } from '../db/types.js';
 import { definedAt } from './locate.js';
+import {
+  AUTO_OWNER_LOCKOUT,
+  nodeSettingDef,
+  nodeSettingsBoot,
+  parseNodeSetting,
+  type NodeSettingsBoot,
+} from './node-settings.js';
 import {
   CLI_ENV,
   CODE_CONSTANTS,
@@ -56,18 +65,57 @@ export function envValue(knob: EnvKnob, env: NodeJS.ProcessEnv): { value: Config
   return { value: set ? { kind: 'value', text: raw } : { kind: 'unset' }, set };
 }
 
-export function nodeKnobs(env: NodeJS.ProcessEnv): ConfigKnobView[] {
+/** Provider keys: shown here, changed through Node credentials (never stored as a setting). */
+export const NODE_CREDENTIAL_KEYS: ReadonlySet<string> = new Set([
+  'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN', 'TM8_GITHUB_TOKEN',
+]);
+
+/** Stored node settings, by name (`public.node_settings_list()`). */
+export type StoredNodeSettings = Readonly<Record<string, { value: string }>>;
+
+/**
+ * One curated setting's state. Precedence env > stored > default; every
+ * setting applies on restart, so it is pending until this process booted with
+ * the stored value.
+ */
+export function nodeSettingState(
+  name: string,
+  stored: StoredNodeSettings,
+  boot: NodeSettingsBoot,
+): NodeSettingState | undefined {
+  const def = nodeSettingDef(name);
+  if (!def) return undefined;
+  const value = stored[name]?.value ?? null;
+  const pinnedByEnv = boot.pinnedByEnv.has(name);
+  return {
+    stored: value,
+    pinnedByEnv,
+    applies: 'restart',
+    restartPending: !pinnedByEnv && value !== (boot.applied.get(name) ?? null),
+    input: def.input,
+  };
+}
+
+export function nodeKnobs(
+  env: NodeJS.ProcessEnv,
+  stored: StoredNodeSettings = {},
+  boot: NodeSettingsBoot = nodeSettingsBoot(env),
+): ConfigKnobView[] {
   return NODE_ENV.map((knob) => {
     const { value, set } = envValue(knob, env);
+    const setting = nodeSettingState(knob.name, stored, boot);
     return {
       name: knob.name,
       group: knob.group,
       summary: knob.summary,
       value,
-      source: set ? 'env' : 'default',
+      // `db`: the boot overlay wrote this value from the stored setting.
+      source: boot.applied.has(knob.name) ? 'db' : set ? 'env' : 'default',
       default: knob.default,
       definedAt: definedAt(knob.definedIn, knob.name),
       change: 'env',
+      ...(setting ? { setting } : {}),
+      ...(NODE_CREDENTIAL_KEYS.has(knob.name) ? { managedIn: 'node_credentials' as const } : {}),
     };
   });
 }
@@ -212,7 +260,46 @@ export class ConfigsService {
   constructor(
     private readonly db: ConfigsDb,
     private readonly env: NodeJS.ProcessEnv = process.env,
+    private readonly boot: () => NodeSettingsBoot = () => nodeSettingsBoot(env),
   ) {}
+
+  /**
+   * `node.settings.set` — store or clear one curated setting. The caller must
+   * be a node admin on a human session (the RPC re-checks both). A value that
+   * turns off the loopback auto-owner is refused from the auto-owner arm
+   * itself, and the RPC refuses it unless the caller's account has a password:
+   * the admin making the change must be able to sign in after the restart.
+   */
+  async setNodeSetting(
+    caller: ConfigsCaller & { viaAutoOwner: boolean },
+    name: string,
+    raw: string | null,
+  ): Promise<NodeSettingSetResult> {
+    if (!this.canSeeNode(caller)) {
+      throw new CollabError('forbidden', 'node settings are changed by a node admin on a human session');
+    }
+    const { def, value } = parseNodeSetting(name, raw);
+    if (value !== null && def.disablesAutoOwner?.(value) && caller.viaAutoOwner) {
+      throw new CollabError('forbidden', AUTO_OWNER_LOCKOUT, { details: { reason: 'auto_owner_lockout' } });
+    }
+    const stored = await this.db.tx(caller.claims, async (q) => {
+      try {
+        await q.query('select public.set_node_setting($1, $2)', [name, value]);
+      } catch (error) {
+        // The db layer maps 42501 to `forbidden`; a raw driver error keeps the SQLSTATE.
+        const refused = error instanceof CollabError
+          ? error.code === 'forbidden'
+          : (error as { code?: string }).code === '42501';
+        if (refused && value !== null && def.disablesAutoOwner?.(value)) {
+          throw new CollabError('forbidden', AUTO_OWNER_LOCKOUT, { details: { reason: 'auto_owner_lockout' } });
+        }
+        throw error;
+      }
+      return storedSettings(q);
+    });
+    const state = nodeSettingState(name, stored, this.boot())!;
+    return { name, stored: state.stored, pinnedByEnv: state.pinnedByEnv, restartPending: state.restartPending };
+  }
 
   canSeeNode(caller: ConfigsCaller): boolean {
     return caller.claims.nodeAdmin === true
@@ -221,7 +308,7 @@ export class ConfigsService {
 
   async read(caller: ConfigsCaller, spaceId: string): Promise<SpaceConfigsView> {
     const nodeVisible = this.canSeeNode(caller);
-    const { teammates, profiles } = await this.db.tx(caller.claims, async (q) => {
+    const { teammates, profiles, stored } = await this.db.tx(caller.claims, async (q) => {
       const space = await q.query<{ id: string }>('select id from public.spaces where id = $1', [spaceId]);
       if (!space[0]) throw new CollabError('not_found', `space ${spaceId} not found`);
       const teammates = await q.query<TeammateRow>(
@@ -243,12 +330,14 @@ export class ConfigsService {
           order by p.created_at, p.entity_id`,
         [spaceId],
       );
-      return { teammates, profiles };
+      // Node admin and human only, like the env it sits beside.
+      const stored = nodeVisible ? await storedSettings(q) : {};
+      return { teammates, profiles, stored };
     });
     return {
       spaceId,
       node: nodeVisible
-        ? { visible: true, knobs: nodeKnobs(this.env) }
+        ? { visible: true, knobs: nodeKnobs(this.env, stored, this.boot()) }
         : { visible: false, reason: NODE_CONFIG_HIDDEN },
       cli: cliKnobs(),
       code: codeKnobs(),
@@ -256,4 +345,11 @@ export class ConfigsService {
       profiles: profiles.map(profileSubject),
     };
   }
+}
+
+async function storedSettings(q: Querier): Promise<StoredNodeSettings> {
+  const rows = await q.query<{ settings: StoredNodeSettings | null }>(
+    'select public.node_settings_list() as settings',
+  );
+  return rows[0]?.settings ?? {};
 }

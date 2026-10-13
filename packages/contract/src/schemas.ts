@@ -102,7 +102,7 @@ import type {
   CredentialsSpacePolicySetResult, CredentialsSpacePolicyView, CredentialsSpaceReadinessView, CredentialsSpaceRekeyInput,
   CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceShareInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
-  NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
+  NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeSettingSetInput, NodeMetricsView, SpaceCredentialPolicyEntry,
   NodeAccountListView, NodeAccountView, PathGrantCreateInput, PathGrantListView, PathGrantRevokeInput, PathGrantView,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   ServerOnlyCredentialProviderName, SpaceCredentialStoredProviderName,
@@ -2699,6 +2699,11 @@ export const NodeCredentialsPolicySetInputSchema: z.ZodType<NodeCredentialsPolic
   clientMutationId: z.string().min(1).optional(),
 }).strict();
 
+export const NodeSettingSetInputSchema: z.ZodType<NodeSettingSetInput> = z.object({
+  value: z.string().min(1).max(4096).nullable(),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
 export const NodeAccountViewSchema: z.ZodType<NodeAccountView> = z.object({
   accountId: z.string().min(1),
   username: z.string().min(1),
@@ -3368,6 +3373,7 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
   sessionShareDefault: z.enum(['none', 'space']).optional(),
   sessionDriveDefault: WorkSessionDriveModeSchema.optional(),
   sessionAutoCloseMinutes: z.number().int().min(0).max(10080).optional(),
+  visibility: z.enum(['private', 'public']).optional(),
 }).strict();
 
 /** The role vocabulary, in one place, so the wire and the check constraint agree. */
@@ -5224,6 +5230,7 @@ export const SpaceSummarySchema: z.ZodType<SpaceSummary> = z.object({
   sessionShareDefault: z.enum(['none', 'space']).optional(),
   sessionDriveDefault: WorkSessionDriveModeSchema.optional(),
   sessionAutoCloseMinutes: z.number().int().min(0).max(10080).optional(),
+  visibility: z.enum(['private', 'public']).optional(),
   createdAt: IsoTimestamp,
 }).strict();
 

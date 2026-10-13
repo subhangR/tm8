@@ -43,6 +43,8 @@ export interface SpaceRow {
   session_drive_default?: string | null;
   /** 301: the auto-close window (Spec D1 Q3); absent on a pre-301 database. */
   session_autoclose_minutes?: number | null;
+  /** 01 §2: who can discover the space. Absent on a row fixture that never read it. */
+  visibility?: string | null;
 }
 
 export function toSpaceSummary(row: SpaceRow): SpaceSummary {
@@ -71,6 +73,9 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
       : {}),
     ...(typeof row.session_autoclose_minutes === 'number'
       ? { sessionAutoCloseMinutes: row.session_autoclose_minutes }
+      : {}),
+    ...(row.visibility === 'private' || row.visibility === 'public'
+      ? { visibility: row.visibility }
       : {}),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
   };
@@ -122,6 +127,7 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
 export const SPACE_COLUMNS = `
   s.id, s.name, s.description, s.github_repo, s.created_at,
   s.session_share_default, s.session_drive_default, s.session_autoclose_minutes,
+  s.visibility,
   (select count(*)::text from public.members member_count_row
     where member_count_row.space_id = s.id
       and member_count_row.status = 'active') as member_count`;

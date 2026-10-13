@@ -3480,8 +3480,11 @@ export interface NodeAccountListView {
   accounts: NodeAccountView[];
 }
 
-/** Where a config knob's effective value came from. */
-export type ConfigSource = 'env' | 'persona' | 'profile' | 'default' | 'code';
+/**
+ * Where a config knob's effective value came from. `db` is a node setting
+ * stored from Node admin → Configuration (migration 323) and applied at boot.
+ */
+export type ConfigSource = 'env' | 'db' | 'persona' | 'profile' | 'default' | 'code';
 
 /** How a config knob is changed: an env edit and restart, a persona or profile edit, or a code change. */
 export type ConfigChangeRoute = 'env' | 'persona' | 'profile' | 'code';
@@ -3508,6 +3511,44 @@ export interface ConfigKnobView {
   /** `path/to/file.ts:line`, relative to the repository root. */
   definedAt: string;
   change: ConfigChangeRoute;
+  /** Present on a node knob a node admin may set (`node.settings.set`). */
+  setting?: NodeSettingState;
+  /** A provider key: changed through Node credentials, never stored as a setting. */
+  managedIn?: 'node_credentials';
+}
+
+/** The value a node setting accepts, for the editor. */
+export type NodeSettingInput =
+  | { kind: 'integer'; min: number; unlimited?: boolean }
+  | { kind: 'enum'; options: string[] }
+  | { kind: 'paths'; delimiter: string };
+
+/**
+ * A node setting's stored override. Precedence is env > stored > default: a
+ * variable the server environment sets wins, and the stored value applies only
+ * where the environment leaves it unset. Every setting applies at the next
+ * restart; `restartPending` says the stored value is not what this process
+ * booted with.
+ */
+export interface NodeSettingState {
+  stored: string | null;
+  pinnedByEnv: boolean;
+  applies: 'restart';
+  restartPending: boolean;
+  input: NodeSettingInput;
+}
+
+/** `node.settings.set` — node admin, human session. `null` clears the stored value. */
+export interface NodeSettingSetInput {
+  value: string | null;
+  clientMutationId?: string;
+}
+
+export interface NodeSettingSetResult {
+  name: string;
+  stored: string | null;
+  pinnedByEnv: boolean;
+  restartPending: boolean;
 }
 
 /** One teammate's or one interaction profile's knobs. */
@@ -4084,6 +4125,8 @@ export interface UpdateSpaceInput extends CommandContext {
    * Default 30. Writable through `spaces.update` by a space admin.
    */
   sessionAutoCloseMinutes?: number;
+  /** 323: who can discover the space. */
+  visibility?: 'private' | 'public';
 }
 
 /**
@@ -4625,6 +4668,12 @@ export interface SpaceSummary {
    * Default 30. Writable through `spaces.update` by a space admin.
    */
   sessionAutoCloseMinutes?: number;
+  /**
+   * 01 §2: `public` lists the space in discovery; `private` (the default) does
+   * not. Optional so an older node's response still validates. Writable
+   * through `spaces.update` by a space admin (migration 323).
+   */
+  visibility?: 'private' | 'public';
 }
 
 /** GET /v2/spaces/:spaceId/navigation */

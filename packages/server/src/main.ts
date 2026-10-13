@@ -22,6 +22,7 @@ import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 import { gatePosture, writeNodePolicy } from './projects/node-policy.js';
+import { applyNodeSettings, readStoredNodeSettings } from './configs/node-settings.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
@@ -1226,6 +1227,15 @@ export async function main(): Promise<void> {
     // The desktop app owns its Postgres. Everything about that lives behind
     // this one flag in `desktop.ts`; a server install takes neither branch.
     if (isDesktopProfile()) sidecar = await bootDesktopSidecar();
+
+    // Node settings stored from Node admin → Configuration (migration 323):
+    // written into the env, where the operator left a variable unset, BEFORE
+    // anything reads config. Env > stored > default; see node-settings.ts.
+    const settingsDb = process.env.TM8_DATABASE_URL?.trim();
+    if (settingsDb) {
+      const boot = applyNodeSettings(process.env, await readStoredNodeSettings(settingsDb));
+      if (boot.applied.size > 0) console.log(`  node settings applied: ${[...boot.applied.keys()].join(', ')}`);
+    }
 
     // TRUE only here: this is the one caller that owns the process lifetime and
     // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).

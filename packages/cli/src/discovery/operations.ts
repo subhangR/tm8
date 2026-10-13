@@ -1211,6 +1211,19 @@ const ROWS: Record<OperationName, Row> = {
       'null removes the policy: node fallback is allowed',
     ],
   },
+  'node.settings.set': {
+    cmd: null,
+    sum: 'Store or clear one curated node setting for the next restart — node admin, human sessions only',
+    authz: 'server',
+    input: 'bound',
+    tags: ['node', 'settings', 'config'],
+    reason: 'human_settings_only',
+    notes: [
+      'precedence is env > stored > default: a variable the server environment sets outranks the stored value',
+      'every setting applies at the next restart; spaces.configs shows restartPending until then',
+      'turning off loopback sign-in (TM8_NODE_MODE=multi, TM8_DISABLE_AUTO_OWNER=true) needs a password-signed-in admin',
+    ],
+  },
   'node.metrics.get': {
     cmd: null,
     sum: 'Read host metrics (CPU, memory, load, disk, server RSS) for this node — node admin, human sessions only',
