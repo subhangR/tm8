@@ -45,7 +45,7 @@ export function projectFoldersPolicy(posture: GatePosture): 'shared' | 'one_spac
 export const NODE_MODE_POLICY_KEY = 'node_mode';
 
 /**
- * `nodeMode`, when given, is pinned beside the folders policy (migration 323):
+ * `nodeMode`, when given, is pinned beside the folders policy (migration 324):
  * on a `multi` node an absent node-credential policy reads as NOT allowed, so
  * members do not silently run on the operator's own login.
  */

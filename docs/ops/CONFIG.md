@@ -83,7 +83,7 @@ The complete list, with defaults and the file that reads each one, is
 `packages/server/src/configs/registry.ts`. Node admin → Configuration renders it,
 grouped, with the running value and where it came from.
 
-### Settings a node admin can change from the UI (migration 323)
+### Settings a node admin can change from the UI (migration 324)
 
 These env variables can also be set from Node admin → Configuration. The value is
 stored in `internal.node_settings`:

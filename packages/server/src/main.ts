@@ -1228,7 +1228,7 @@ export async function main(): Promise<void> {
     // this one flag in `desktop.ts`; a server install takes neither branch.
     if (isDesktopProfile()) sidecar = await bootDesktopSidecar();
 
-    // Node settings stored from Node admin → Configuration (migration 323):
+    // Node settings stored from Node admin → Configuration (migration 324):
     // written into the env, where the operator left a variable unset, BEFORE
     // anything reads config. Env > stored > default; see node-settings.ts.
     const settingsDb = process.env.TM8_DATABASE_URL?.trim();

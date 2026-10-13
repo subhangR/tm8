@@ -3482,7 +3482,7 @@ export interface NodeAccountListView {
 
 /**
  * Where a config knob's effective value came from. `db` is a node setting
- * stored from Node admin → Configuration (migration 323) and applied at boot.
+ * stored from Node admin → Configuration (migration 324) and applied at boot.
  */
 export type ConfigSource = 'env' | 'db' | 'persona' | 'profile' | 'default' | 'code';
 
@@ -4138,7 +4138,7 @@ export interface UpdateSpaceInput extends CommandContext {
    * Default 30. Writable through `spaces.update` by a space admin.
    */
   sessionAutoCloseMinutes?: number;
-  /** 323: who can discover the space. */
+  /** 324: who can discover the space. */
   visibility?: 'private' | 'public';
 }
 
@@ -4684,7 +4684,7 @@ export interface SpaceSummary {
   /**
    * 01 §2: `public` lists the space in discovery; `private` (the default) does
    * not. Optional so an older node's response still validates. Writable
-   * through `spaces.update` by a space admin (migration 323).
+   * through `spaces.update` by a space admin (migration 324).
    */
   visibility?: 'private' | 'public';
   /**

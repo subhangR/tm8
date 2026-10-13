@@ -1,6 +1,6 @@
 /**
  * Node admin → Configuration. A curated set of node settings is editable
- * (`node.settings.set`, migration 323); everything else is read-only, grouped.
+ * (`node.settings.set`, migration 324); everything else is read-only, grouped.
  *
  * What the server decides and this screen only reports:
  *   - precedence env > stored > default — a variable the server environment

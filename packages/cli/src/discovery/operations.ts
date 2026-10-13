@@ -4322,7 +4322,7 @@ function exposureFor(operation: OperationName): Exposure {
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
-  // Re-measured for node settings (+node.settings.set, 323) — RECOMPUTED, not adjusted.
+  // Re-measured for node settings (+node.settings.set, 324) — RECOMPUTED, not adjusted.
   // Re-measured for MW W1.2 (+workspace.list) — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command) and Spec D (+workspace.get|drafts.patch) on main 0edaefe41 — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command, the Workspace remote bridge) — RECOMPUTED, not adjusted.

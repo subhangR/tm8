@@ -149,7 +149,7 @@ function fakePort(over: Partial<SettingsPort> = {}): SettingsPort {
  */
 const LIVE_VERBS = [
   /^Space profile$/,
-  // Node/space config lane (323): both nav rows open sections whose controls
+  // Node/space config lane (324): both nav rows open sections whose controls
   // call real commands (spacePassword.setRequired, styleDefault.set,
   // interactionProfile.setDefault); the fake port passes no space-defaults
   // port, so the bodies draw their refused/absent states.

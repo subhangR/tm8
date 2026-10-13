@@ -1,5 +1,5 @@
 /**
- * 323 against a real Postgres: `internal.node_settings`, its two doors, the
+ * 324 against a real Postgres: `internal.node_settings`, its two doors, the
  * auto-owner lockout guard, and `w2_update_space`'s new `visibility` key.
  *
  * Pinned here:
@@ -26,9 +26,9 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 300_000 });
 
-const ADMIN = 'ns-323-admin';
-const NO_PASSWORD_ADMIN = 'ns-323-nopw';
-const MEMBER = 'ns-323-member';
+const ADMIN = 'ns-324-admin';
+const NO_PASSWORD_ADMIN = 'ns-324-nopw';
+const MEMBER = 'ns-324-member';
 
 let database: W1ScratchDatabase;
 let facadeDb: Db;
@@ -45,7 +45,7 @@ async function as<T>(
     await client.query('set local role tm8_app');
     await client.query(
       `select set_config('tm8.identity_id',$1,true),set_config('tm8.actor_id','',true),
-              set_config('tm8.node_admin',$2,true),set_config('tm8.request_id','req-323',true),
+              set_config('tm8.node_admin',$2,true),set_config('tm8.request_id','req-324',true),
               set_config('tm8.auth_kind',$3,true)`,
       [identityId, String(opts.nodeAdmin ?? false), opts.authKind ?? 'browser'],
     );
@@ -69,11 +69,11 @@ const claims = (identityId: string): DbClaims => ({
   identityId,
   nodeAdmin: true,
   authKind: 'browser',
-  requestId: 'req-323',
+  requestId: 'req-324',
 });
 
 beforeAll(async () => {
-  database = await createW1ScratchDatabase('node_settings_323');
+  database = await createW1ScratchDatabase('node_settings_324');
   database.apply(migrationFiles());
   facadeDb = createDb(database.url);
   spaceId = await database.transaction(async (client) => {
@@ -106,7 +106,7 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-describe('323 node settings doors', () => {
+describe('324 node settings doors', () => {
   it('stores, lists and clears a setting for a node admin', async () => {
     await set(ADMIN, 'TM8_SESSION_CAP', '32');
     const listed = await as(ADMIN, { nodeAdmin: true }, (q) => q('select public.node_settings_list() r'));
@@ -129,7 +129,7 @@ describe('323 node settings doors', () => {
   });
 });
 
-describe('323 lockout guard', () => {
+describe('324 lockout guard', () => {
   it('refuses turning off loopback sign-in for an admin without a password', async () => {
     expect(await sqlState(set(NO_PASSWORD_ADMIN, 'TM8_NODE_MODE', 'multi'))).toBe('42501');
     expect(await sqlState(set(NO_PASSWORD_ADMIN, 'TM8_DISABLE_AUTO_OWNER', 'true'))).toBe('42501');
@@ -167,7 +167,7 @@ describe('323 lockout guard', () => {
   });
 });
 
-describe('323 boot read', () => {
+describe('324 boot read', () => {
   it('reads what the doors stored, as the graph owner', async () => {
     await set(ADMIN, 'TM8_PROJECT_ROOTS', '/srv/projects');
     const rows = await readStoredNodeSettings(database.url);
@@ -175,17 +175,17 @@ describe('323 boot read', () => {
   });
 });
 
-describe('323 space visibility', () => {
+describe('324 space visibility', () => {
   it('w2_update_space writes visibility and refuses an unknown value', async () => {
     const result = await as(ADMIN, {}, (q) =>
-      q(`select public.w2_update_space($1, '{"visibility":"public"}'::jsonb, 'ns-323-vis-1') r`, [spaceId]));
+      q(`select public.w2_update_space($1, '{"visibility":"public"}'::jsonb, 'ns-324-vis-1') r`, [spaceId]));
     expect((result[0]!.r as { space: { visibility: string } }).space.visibility).toBe('public');
     expect(await sqlState(as(ADMIN, {}, (q) =>
-      q(`select public.w2_update_space($1, '{"visibility":"secret"}'::jsonb, 'ns-323-vis-2')`, [spaceId])))).toBe('22023');
+      q(`select public.w2_update_space($1, '{"visibility":"secret"}'::jsonb, 'ns-324-vis-2')`, [spaceId])))).toBe('22023');
   });
 });
 
-describe('323 node-credential fallback default', () => {
+describe('324 node-credential fallback default', () => {
   const policy = async () =>
     (await as(MEMBER, {}, (q) => q('select public.read_node_credential_policy() r')))[0]!.r as Record<string, boolean>;
   const pinMode = (mode: string) => database.transaction(async (client) => {

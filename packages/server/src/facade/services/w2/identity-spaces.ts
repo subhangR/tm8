@@ -465,7 +465,7 @@ export class W2IdentitySpacesService {
       // their vocabulary and refuses anything else with 22023, so the
       // allow-list here only decides which keys are forwarded.
       // 301 adds the auto-close window (Spec D1 Q3), validated by the RPC too.
-      // 323 adds visibility (private | public), validated by the RPC too.
+      // 324 adds visibility (private | public), validated by the RPC too.
       ['name', 'description', 'githubRepo', 'sessionShareDefault', 'sessionDriveDefault', 'sessionAutoCloseMinutes', 'visibility']
         .filter((key) => Object.prototype.hasOwnProperty.call(body, key))
         .map((key) => [key, body[key]]),

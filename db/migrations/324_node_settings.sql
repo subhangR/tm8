@@ -1,4 +1,4 @@
--- 323: node settings (Node admin → Configuration) and space visibility.
+-- 324: node settings (Node admin → Configuration) and space visibility.
 --
 -- 1. internal.node_settings — the curated server env knobs a node admin may
 --    set from the UI (packages/server/src/configs/node-settings.ts). The
@@ -205,7 +205,7 @@ begin
       using errcode = '22023';
   end if;
 
-  -- 323: who can discover the space (01 §2); the same vocabulary as create.
+  -- 324: who can discover the space (01 §2); the same vocabulary as create.
   if p_patch ? 'visibility'
      and (jsonb_typeof(p_patch -> 'visibility') <> 'string'
           or p_patch ->> 'visibility' not in ('private','public')) then

@@ -1,6 +1,6 @@
 /**
  * NODE SETTINGS — the curated env knobs a node admin may set from
- * Node admin → Configuration (migration 323, `internal.node_settings`).
+ * Node admin → Configuration (migration 324, `internal.node_settings`).
  *
  * PRECEDENCE (decided here, shown in the UI): env > stored > default.
  *   - A variable the operator set in the server's environment wins. The stored
@@ -190,7 +190,7 @@ export async function readStoredNodeSettings(databaseUrl: string): Promise<Array
     return result.rows;
   } catch (error) {
     await client.query('rollback').catch(() => undefined);
-    // A database without migration 323 yet: no overrides, not a failed boot.
+    // A database without migration 324 yet: no overrides, not a failed boot.
     if ((error as { code?: string }).code === '42P01') return [];
     throw error;
   } finally {
