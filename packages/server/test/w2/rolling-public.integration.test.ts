@@ -194,6 +194,8 @@ const G14_NET_NEW_OPERATIONS = [
   'spaces.menu.update',
   // task 01a0d350: Settings -> Configs read, registered beside G14.
   'spaces.configs',
+  // Node settings (323/324): the curated node-setting write, registered beside it.
+  'node.settings.set',
 ] as const;
 
 const TRANCHE_V3_NET_NEW_OPERATIONS = [
@@ -729,7 +731,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // The facade baseline is 268 including tools, read markers and credential selection. MCP handlers add only when the
     // runtime bridge is mounted in this fixture.
     // Spec D1 (301): +1 entities.commands.release. MEASURED.
-    expect(registry.size).toBe(268 + mountedMcpOperations);
+    expect(registry.size).toBe(269 /* +1 node.settings.set (node settings, 323). MEASURED. */ + mountedMcpOperations);
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
   });
