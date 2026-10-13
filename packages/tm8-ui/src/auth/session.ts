@@ -342,6 +342,9 @@ export async function createServerAccount(
       body: { username: handle, password, displayName: name.trim() },
     });
   } catch (err) {
+    if (err instanceof CollabError && err.code === 'conflict') {
+      return { ok: false, failure: { kind: 'account-exists', handle } };
+    }
     return { ok: false, failure: failureFrom(err, 'signup') };
   }
 

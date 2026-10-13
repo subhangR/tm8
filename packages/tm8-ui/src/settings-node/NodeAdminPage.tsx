@@ -270,13 +270,18 @@ function accountsPort(
           : Promise.reject(new Error('Accounts are not available on this node.')),
       ),
     ...(wrapped ? { admin: wrapped } : {}),
-    spaces: () => seam.spaces(),
-    createInvite: (spaceId, role) =>
-      seam.commands.createInvite(spaceId, {
-        role,
-        maxUses: 1,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      }),
+    // Optional on the seam's narrower test doubles; the section hides what it lacks.
+    ...(typeof seam.spaces === 'function' ? { spaces: () => seam.spaces() } : {}),
+    ...(typeof seam.commands?.createInvite === 'function'
+      ? {
+          createInvite: (spaceId: SpaceId, role: 'admin' | 'member') =>
+            seam.commands.createInvite(spaceId, {
+              role,
+              maxUses: 1,
+              expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            }),
+        }
+      : {}),
     viewerAccountId: viewer.accountId,
     // Lane D A7: shared links point at the node's published origin when it
     // has one, not at whatever (possibly loopback) origin the admin is on.
