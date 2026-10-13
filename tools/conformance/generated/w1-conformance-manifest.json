@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:527a376d04e641936fd86e67099a0fc993cb6fe872aa7e115f0a9795921eba40",
+  "catalogDigest": "sha256:e818d746967229562c66a61fc7e3f2a7c85edd8fa8ebe9e0221b15dded43db41",
   "catalog": {
-    "total": 375,
-    "v1": 373,
+    "total": 376,
+    "v1": 374,
     "reserved": 2,
-    "http": 373,
+    "http": 374,
     "ws": 1,
-    "registerableV1Http": 371,
+    "registerableV1Http": 372,
     "methods": {
       "GET": 124,
       "POST": 183,
       "PATCH": 21,
       "DELETE": 23,
-      "PUT": 22,
+      "PUT": 23,
       "WS": 2
     },
     "kinds": {
       "read": 130,
-      "command": 243,
+      "command": 244,
       "stream": 2
     },
-    "uniqueNames": 375,
-    "uniqueBindings": 374
+    "uniqueNames": 376,
+    "uniqueBindings": 375
   },
   "reservedOperations": [
     "search.query",
@@ -2588,6 +2588,13 @@
         "source": "server-router"
       },
       {
+        "operation": "node.settings.set",
+        "method": "PUT",
+        "path": "/v2/node/settings/:name",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "node.pathGrants.list",
         "method": "GET",
         "path": "/v2/node/path-grants",
@@ -3029,7 +3036,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 343
+    "unimplementedV1Http": 344
   },
   "schemas": {
     "additive": {
@@ -8938,6 +8945,23 @@
           "node",
           "credentials",
           "policy",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.settings.set",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.settings.set",
+        "intentTags": [
+          "node",
+          "settings",
           "set"
         ],
         "inputSchemaRef": null,

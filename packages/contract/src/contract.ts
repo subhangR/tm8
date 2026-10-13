@@ -3551,6 +3551,17 @@ export interface NodeSettingSetResult {
   restartPending: boolean;
 }
 
+/**
+ * A node setup risk the Configuration page flags (setup audit, doc 01a1359a):
+ * computed server-side from the effective env and the node policies.
+ */
+export interface NodeConfigWarning {
+  id: 'single_mode_published' | 'preview_same_origin' | 'project_roots_unset' | 'node_credential_fallback';
+  text: string;
+  /** The settings that change it. */
+  settings: string[];
+}
+
 /** One teammate's or one interaction profile's knobs. */
 export interface ConfigSubjectView {
   id: EntityId;
@@ -3565,7 +3576,9 @@ export interface ConfigSubjectView {
  */
 export interface SpaceConfigsView {
   spaceId: SpaceId;
-  node: { visible: true; knobs: ConfigKnobView[] } | { visible: false; reason: string };
+  node:
+    | { visible: true; knobs: ConfigKnobView[]; warnings?: NodeConfigWarning[] }
+    | { visible: false; reason: string };
   cli: ConfigKnobView[];
   code: ConfigKnobView[];
   teammates: ConfigSubjectView[];

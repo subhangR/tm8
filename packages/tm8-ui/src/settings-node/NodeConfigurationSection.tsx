@@ -65,7 +65,8 @@ export function NodeConfigurationSection({ load, save, onOpenCredentials }: Node
   }, [load, revision]);
   const reload = useCallback(() => setRevision((value) => value + 1), []);
   const { value, error } = state;
-  const knobs = value?.node.visible ? value.node.knobs : [];
+  const node = value?.node.visible ? value.node : null;
+  const knobs = node ? node.knobs : [];
   const editable = knobs.filter((knob) => knob.setting);
   const readOnly = knobs.filter((knob) => !knob.setting);
   const pending = editable.filter((knob) => knob.setting!.restartPending);
@@ -80,6 +81,26 @@ export function NodeConfigurationSection({ load, save, onOpenCredentials }: Node
         <p role="alert">{value.node.reason}</p>
       ) : (
         <>
+          {node?.warnings && node.warnings.length > 0 && (
+            <section aria-label="Setup warnings" className="node-config__warnings">
+              <h3>Check these</h3>
+              <ul>
+                {node.warnings.map((warning) => (
+                  <li key={warning.id} data-warning={warning.id}>
+                    {warning.text}
+                    {warning.id === 'node_credential_fallback' && onOpenCredentials && (
+                      <>
+                        {' '}
+                        <button type="button" className="node-config__link" onClick={onOpenCredentials}>
+                          Open Node credentials
+                        </button>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {pending.length > 0 && (
             <p role="status" className="node-config__pending">
               Restart the server to apply: {pending.map((knob) => knob.name).join(', ')}.

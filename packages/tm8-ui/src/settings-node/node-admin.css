@@ -109,3 +109,13 @@
   background: transparent;
   border-radius: 6px;
 }
+.node-config__warnings {
+  border: 1px solid var(--pn-line);
+  border-left: 4px solid #b45309;
+  border-radius: 6px;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+}
+.node-config__warnings h3 {
+  margin: 4px 0;
+}

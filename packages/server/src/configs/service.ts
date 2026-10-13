@@ -11,6 +11,7 @@ import type {
   ConfigKnobView,
   ConfigSubjectView,
   ConfigValue,
+  NodeConfigWarning,
   NodeSettingSetResult,
   NodeSettingState,
   SpaceConfigsView,
@@ -118,6 +119,59 @@ export function nodeKnobs(
       ...(NODE_CREDENTIAL_KEYS.has(knob.name) ? { managedIn: 'node_credentials' as const } : {}),
     };
   });
+}
+
+const PROVIDER_KEY: Readonly<Record<string, string>> = {
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  github: 'GH_TOKEN',
+};
+
+/**
+ * Setup risks worth a banner, from the EFFECTIVE env (after the boot overlay)
+ * and the node-credential policy as launches read it (`read_node_credential_policy`,
+ * where an absent provider is already resolved for the node mode).
+ */
+export function nodeWarnings(
+  env: NodeJS.ProcessEnv,
+  nodePolicy: Readonly<Record<string, boolean>> | null,
+): NodeConfigWarning[] {
+  const set = (name: string) => (env[name]?.trim() ?? '') !== '';
+  const warnings: NodeConfigWarning[] = [];
+  const mode = env.TM8_NODE_MODE?.trim().toLowerCase() || 'single';
+  const published = ['TM8_PUBLIC_ORIGIN', 'TM8_ALLOWED_HOSTNAMES', 'TM8_ALLOWED_ORIGINS'].filter(set);
+  if (mode === 'single' && published.length > 0) {
+    warnings.push({
+      id: 'single_mode_published',
+      text: `This node runs in single mode, where a request from loopback is the owner, but it is published beyond loopback (${published.join(', ')}). A shared node should run TM8_NODE_MODE=multi.`,
+      settings: ['TM8_NODE_MODE', ...published],
+    });
+  }
+  if (env.TM8_PUBLIC_ORIGIN?.trim().toLowerCase().startsWith('https:') && !set('TM8_PREVIEW_PUBLIC_ORIGIN')) {
+    warnings.push({
+      id: 'preview_same_origin',
+      text: 'Artifact previews are served from the same origin as the app (TM8_PUBLIC_ORIGIN). Set TM8_PREVIEW_PUBLIC_ORIGIN to a separate origin so a preview cannot act as the signed-in user.',
+      settings: ['TM8_PREVIEW_PUBLIC_ORIGIN'],
+    });
+  }
+  if (!set('TM8_PROJECT_ROOTS')) {
+    warnings.push({
+      id: 'project_roots_unset',
+      text: 'TM8_PROJECT_ROOTS is unset, so node admins browse the whole filesystem (/) when linking a project.',
+      settings: ['TM8_PROJECT_ROOTS'],
+    });
+  }
+  if (nodePolicy) {
+    const allowed = Object.keys(PROVIDER_KEY).filter((provider) => nodePolicy[provider] !== false);
+    if (allowed.length > 0) {
+      warnings.push({
+        id: 'node_credential_fallback',
+        text: `Members who have not connected their own key run agents on this node's own login for: ${allowed.map((p) => `${p}${nodePolicy[p] === undefined ? ' (default)' : ''}`).join(', ')}. Change it in Node credentials.`,
+        settings: allowed.map((p) => PROVIDER_KEY[p]!),
+      });
+    }
+  }
+  return warnings;
 }
 
 export function cliKnobs(): ConfigKnobView[] {
@@ -308,7 +362,7 @@ export class ConfigsService {
 
   async read(caller: ConfigsCaller, spaceId: string): Promise<SpaceConfigsView> {
     const nodeVisible = this.canSeeNode(caller);
-    const { teammates, profiles, stored } = await this.db.tx(caller.claims, async (q) => {
+    const { teammates, profiles, stored, nodePolicy } = await this.db.tx(caller.claims, async (q) => {
       const space = await q.query<{ id: string }>('select id from public.spaces where id = $1', [spaceId]);
       if (!space[0]) throw new CollabError('not_found', `space ${spaceId} not found`);
       const teammates = await q.query<TeammateRow>(
@@ -332,12 +386,17 @@ export class ConfigsService {
       );
       // Node admin and human only, like the env it sits beside.
       const stored = nodeVisible ? await storedSettings(q) : {};
-      return { teammates, profiles, stored };
+      const nodePolicy = nodeVisible
+        ? (await q.query<{ policy: Record<string, boolean> | null }>(
+            'select public.read_node_credential_policy() as policy',
+          ))[0]?.policy ?? {}
+        : null;
+      return { teammates, profiles, stored, nodePolicy };
     });
     return {
       spaceId,
       node: nodeVisible
-        ? { visible: true, knobs: nodeKnobs(this.env, stored, this.boot()) }
+        ? { visible: true, knobs: nodeKnobs(this.env, stored, this.boot()), warnings: nodeWarnings(this.env, nodePolicy) }
         : { visible: false, reason: NODE_CONFIG_HIDDEN },
       cli: cliKnobs(),
       code: codeKnobs(),

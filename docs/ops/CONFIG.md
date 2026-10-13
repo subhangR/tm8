@@ -3,8 +3,9 @@
 **Owner:** Ops (Argo). **Status:** live from W0.
 **Companion docs:** `docs/ops/SIDECAR-PACKAGING.md` (how the Postgres sidecar ships and is managed — R15).
 
-There is no installed desktop app (AM-1/T-D21). tm8 is **a server plus a web UI**, so
-"start the app" means "start tm8-server". This document is the normative reference for
+tm8 is **a server plus a web UI**, so "start the app" means "start tm8-server". The
+desktop app (`apps/desktop`) wraps the same server with its own bundled Postgres
+(`TM8_DESKTOP=1`). This document is the normative reference for
 how that is configured and how the dev and prod stacks stay out of each other's way —
 and out of live maestro's way.
 
@@ -75,6 +76,51 @@ Two tooling-only variables:
 |---|---|---|
 | `TM8_MIGRATION_DATABASE_URL` | — | Where `tools/ci/migrations-check.sh` applies the sequence. Falls back to `DATABASE_URL`, then to the sidecar on `TM8_PG_PORT`. |
 | `NO_COLOR` | — | Set to anything to strip ANSI colour from the launchers and CI. |
+
+### Every variable, and the Configuration page
+
+The complete list, with defaults and the file that reads each one, is
+`packages/server/src/configs/registry.ts`. Node admin → Configuration renders it,
+grouped, with the running value and where it came from.
+
+### Settings a node admin can change from the UI (migration 323)
+
+These env variables can also be set from Node admin → Configuration. The value is
+stored in `internal.node_settings`:
+
+`TM8_SESSION_CAP`, `TM8_TERMINAL_CAP`, `TM8_WORKTREE_CAP`, `TM8_NODE_MODE`,
+`TM8_DISABLE_AUTO_OWNER`, `TM8_SPACE_SESSIONS`, `TM8_AUTH_MAX_ATTEMPTS`,
+`TM8_AUTH_ATTEMPT_WINDOW_MS`, `TM8_AUTH_MAX_FAILURES`, `TM8_AUTH_FAILURE_WINDOW_MS`,
+`TM8_PROJECT_ROOTS`.
+
+- **Precedence: env > stored > default.** A variable set in the server environment
+  wins. A stored value applies only where the environment leaves the variable unset.
+  Because the environment wins, you can always recover without the database: if a
+  stored value locks people out, set the variable and restart.
+- **Every stored value applies at the next restart.** At boot the server reads the
+  table before it reads its config. The page marks a setting "Restart needed" until
+  the server is running the stored value.
+- **Lockout guard.** Storing `TM8_NODE_MODE=multi` or `TM8_DISABLE_AUTO_OWNER=true`
+  turns off loopback sign-in at the next restart. The server refuses that write in
+  two cases: when the request came through the loopback auto-owner, and when the
+  admin's own account has no password.
+- Provider keys are never stored as settings. They stay in the environment, and
+  Node admin → Node credentials decides whether members may fall back to them.
+
+### Setup-critical variables for a shared node
+
+| Variable | Default | Why it matters |
+|---|---|---|
+| `TM8_NODE_MODE` | `single` | In `single` mode a loopback request is the owner. Use `multi` on any node other people reach. |
+| `TM8_PUBLIC_ORIGIN` | — | The https origin people use to reach the node, through your reverse proxy. |
+| `TM8_ALLOWED_HOSTNAMES` / `TM8_ALLOWED_ORIGINS` | — | Extra Host names and browser origins the node accepts. |
+| `TM8_PREVIEW_PUBLIC_ORIGIN` | — | A separate origin for artifact previews. Without it, an https node serves previews from the app's own origin. |
+| `TM8_PROJECT_ROOTS` | unset = `/` | The directories node admins browse when linking a project. |
+| `TM8_REMOTE_SPACE_LINKS` | off | Links to spaces on other servers. |
+
+Node credential fallback: on a `multi` node, members who connected no key of their
+own do **not** use the node's login unless a node admin allows it in Node
+credentials. A `single` node allows it by default.
 
 ### Containers (TM8-CONTAINERS-DESIGN §10.1)
 

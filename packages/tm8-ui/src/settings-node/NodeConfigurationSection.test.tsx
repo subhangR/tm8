@@ -113,6 +113,26 @@ describe('NodeConfigurationSection', () => {
     );
   });
 
+  it('lists the server\'s setup warnings', async () => {
+    const open = vi.fn();
+    const withWarnings: SpaceConfigsView = {
+      ...view([]),
+      node: {
+        visible: true,
+        knobs: [],
+        warnings: [
+          { id: 'single_mode_published', text: 'This node runs in single mode.', settings: ['TM8_NODE_MODE'] },
+          { id: 'node_credential_fallback', text: 'Members run on the node login.', settings: ['GH_TOKEN'] },
+        ],
+      },
+    };
+    render(<NodeConfigurationSection load={async () => withWarnings} onOpenCredentials={open} />);
+    const region = await screen.findByRole('region', { name: 'Setup warnings' });
+    expect(within(region).getByText('This node runs in single mode.')).toBeTruthy();
+    fireEvent.click(within(region).getByRole('button', { name: 'Open Node credentials' }));
+    expect(open).toHaveBeenCalled();
+  });
+
   it('points provider keys at Node credentials instead of editing them', async () => {
     const open = vi.fn();
     const key = knob({
