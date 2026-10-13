@@ -121,7 +121,7 @@ function matchRegex(regex: RegExp, key: string): string {
   // start `tm8`. The sweep needs a value that satisfies it, or the generated
   // body arrives as a 400 and reads as a handler refusal.
   if (source.includes('tm8c_')) return 'tm8c_w5surface';
-  // 323: an account setup link's `tm8a_` token, same reasoning.
+  // 324: an account setup link's `tm8a_` token, same reasoning.
   if (source.includes('tm8a_')) return 'tm8a_w5surface';
   // 284: style foundations and refs (`builtin:<slug>`, alone or in an
   // alternation with personal:/space:<uuid>). A REAL built-in, because the

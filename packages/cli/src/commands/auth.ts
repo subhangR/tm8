@@ -657,7 +657,7 @@ function storeIssuedPass(
 }
 
 /**
- * `tm8 auth setup resolve --token <tm8a_…>` — `auth.setup.resolve` (323): what
+ * `tm8 auth setup resolve --token <tm8a_…>` — `auth.setup.resolve` (324): what
  * a one-time setup link is for. Claim-free.
  */
 async function authSetupResolve(cmd: CommandContext): Promise<ExitCode> {
@@ -677,7 +677,7 @@ async function authSetupResolve(cmd: CommandContext): Promise<ExitCode> {
 
 /**
  * `tm8 auth setup redeem --token <tm8a_…> --password <password>` —
- * `auth.setup.redeem` (323): choose your password with a one-time setup link
+ * `auth.setup.redeem` (324): choose your password with a one-time setup link
  * and sign in. Claim-free: the token is the authorization.
  */
 async function authSetupRedeem(cmd: CommandContext): Promise<ExitCode> {

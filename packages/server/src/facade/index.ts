@@ -263,7 +263,7 @@ export function registerFacadeHandlers(
   registerChatDefaultsHandlers(registry, facade);
   // spaces.leave / spaces.members.remove / accounts.disable (G6, migration 232).
   registerMembershipHandlers(registry, facade, deps.membership ?? {});
-  // node.accounts.create/reset/nodeAdmin.set/memberships.add + accounts.enable (323).
+  // node.accounts.create/reset/nodeAdmin.set/memberships.add + accounts.enable (324).
   registerNodeAccountHandlers(registry, facade, deps.membership ?? {});
   // node.metrics.get: host CPU/memory/load/disk for the desktop status strip (node admin).
   registerNodeMetricsHandlers(registry, facade);

@@ -848,7 +848,7 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<NodeAccountListView>('node.accounts.list');
     },
 
-    // -- account administration (323) ---------------------------------------
+    // -- account administration (324) ---------------------------------------
     // Human node admin; `node.*`/`accounts.*` ride the gate pass under enforce.
 
     nodeAccountsCreate(input: Omit<NodeAccountCreateInput, 'clientMutationId'>): Promise<NodeAccountCreateResult> {

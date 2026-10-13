@@ -139,7 +139,7 @@ export const OPERATIONS = [
   { name: 'spaces.members.spacePassword.lock',  method: 'POST', path: '/v2/spaces/:spaceId/members/:memberId/space-password/lock',  kind: 'command', status: 'v1' },
   // Node admin turns an account off: every session refused, launched work contained (232).
   { name: 'accounts.disable',      method: 'POST',  path: '/v2/accounts/:accountId/disable',             kind: 'command', status: 'v1' },
-  // ...and back on (323). Sessions revoked by the disable stay revoked.
+  // ...and back on (324). Sessions revoked by the disable stay revoked.
   { name: 'accounts.enable',       method: 'POST',  path: '/v2/accounts/:accountId/enable',              kind: 'command', status: 'v1' },
   // Space links (W6, migrations 250/251). Every write is human-only in SQL;
   // list is open to every home member and carries no secret.
@@ -613,7 +613,7 @@ export const OPERATIONS = [
   // capability and must not land in a URL. Claiming an account SIGNS YOU IN, so
   // the result is `auth.login`'s shape plus the space you joined.
   { name: 'auth.invite.signup',                          method: 'POST',   path: '/v2/auth/invite/signup',                                             kind: 'command', status: 'v1' },
-  // Setup links (323): an admin-created or reset account's one-time `tm8a_…`
+  // Setup links (324): an admin-created or reset account's one-time `tm8a_…`
   // link. CLAIM-FREE like the invite pair — the token is the authorization —
   // and POST for both so the token travels in a body, never a URL path.
   // Redeeming sets the password and SIGNS YOU IN (`auth.login`'s result).
@@ -722,7 +722,7 @@ export const OPERATIONS = [
   { name: 'node.pathGrants.create',                      method: 'POST',   path: '/v2/node/path-grants',                                               kind: 'command', status: 'v1' },
   { name: 'node.pathGrants.revoke',                      method: 'POST',   path: '/v2/node/path-grants/:grantId/revoke',                               kind: 'command', status: 'v1' },
   { name: 'node.accounts.list',                          method: 'GET',    path: '/v2/node/accounts',                                                  kind: 'read',    status: 'v1' },
-  // Account administration (323, task 01a13574): create without a password
+  // Account administration (324, task 01a13574): create without a password
   // and hand back a one-time setup link; reset (clear the credential, revoke
   // sessions, new link); grant or revoke node admin (never the owner, never
   // the last admin); put an account into a space. Human node admin, in TS and SQL.

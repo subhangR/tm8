@@ -626,7 +626,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       mine: () => ops.myPathGrants(),
     },
 
-    // -- account administration (323) ----------------------------------------
+    // -- account administration (324) ----------------------------------------
 
     nodeAccounts: {
       list: () => ops.nodeAccountsList(),

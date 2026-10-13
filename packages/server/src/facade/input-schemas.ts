@@ -314,7 +314,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // Claim-free like resolve; `.strict()` is again the only control, refusing a
   // stray actorId/clientMutationId this handler has no identity to check.
   'auth.invite.signup': AuthInviteSignupInputSchema,
-  // 323: claim-free like the invite pair; the token is the only authorization.
+  // 324: claim-free like the invite pair; the token is the only authorization.
   'auth.setup.resolve': AuthSetupResolveInputSchema,
   'auth.setup.redeem': AuthSetupRedeemInputSchema,
 
@@ -347,7 +347,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'node.credentials.policy.set': NodeCredentialsPolicySetInputSchema,
   'node.pathGrants.create': PathGrantCreateInputSchema,
   'node.pathGrants.revoke': PathGrantRevokeInputSchema,
-  // 323: account administration, human node admin in TS and SQL.
+  // 324: account administration, human node admin in TS and SQL.
   'node.accounts.create': NodeAccountCreateInputSchema,
   'node.accounts.reset': NodeAccountResetInputSchema,
   'node.accounts.nodeAdmin.set': NodeAccountNodeAdminSetInputSchema,

@@ -3,7 +3,7 @@
  * person in, beside the claim (1a) and invite (1h) frames:
  *
  *   1r · setup link   — a node admin created (or reset) the account and sent a
- *                       one-time `#setup=tm8a_…` link (323). Choose a password,
+ *                       one-time `#setup=tm8a_…` link (324). Choose a password,
  *                       and you are signed in (`auth.setup.redeem`).
  *   1s · invite signup — a space invite opened by someone with no account.
  *                       Create one with the invite (`auth.invite.signup`, 141)

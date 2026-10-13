@@ -516,7 +516,7 @@ export interface NodeClaim {
   claimed: boolean;
   mode: 'single' | 'multi';
   signupPath: 'claim' | 'invite' | 'admin';
-  /** `TM8_PUBLIC_ORIGIN`, when the node publishes one (323). */
+  /** `TM8_PUBLIC_ORIGIN`, when the node publishes one (324). */
   publicOrigin?: string;
 }
 
@@ -626,7 +626,7 @@ export async function claimNodeOnServer(
   }
 }
 
-/* ── one-time account setup links (323) ─────────────────────────────────── */
+/* ── one-time account setup links (324) ─────────────────────────────────── */
 
 /** `auth.setup.resolve` — what a `#setup=` link is for. Claim-free. */
 export async function resolveSetupLink(token: string): Promise<AuthSetupResolveResult> {

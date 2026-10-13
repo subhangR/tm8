@@ -78,7 +78,7 @@ export const RATE_LIMITED_AUTH_OPS: ReadonlySet<string> = new Set([
   'auth.claim.reissue',
   'auth.invite.resolve',
   'auth.invite.signup',
-  // 323: a setup link is a guessable bearer secret, like an invite code.
+  // 324: a setup link is a guessable bearer secret, like an invite code.
   'auth.setup.resolve',
   'auth.setup.redeem',
   // W5 (K2): the space password. Its principal is the authenticated caller in

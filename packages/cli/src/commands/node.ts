@@ -197,7 +197,7 @@ const CREATE_USAGE =
   'usage: tm8 node account create <username> [--display-name <name>] [--email <email>] [--node-admin] [--join-space <space-id> --role admin|member] [--expires-hours <1-720>]';
 
 /**
- * `node account create <username>` — `node.accounts.create` (323). The account
+ * `node account create <username>` — `node.accounts.create` (324). The account
  * gets NO password: the result carries a one-time setup link the person opens
  * to choose their own.
  */
@@ -238,7 +238,7 @@ async function nodeAccountCreate(cmd: CommandContext): Promise<ExitCode> {
 const RESET_USAGE = 'usage: tm8 node account reset <account-id|username> --yes [--expires-hours <1-720>]';
 
 /**
- * `node account reset <account> --yes` — `node.accounts.reset` (323): clear the
+ * `node account reset <account> --yes` — `node.accounts.reset` (324): clear the
  * password, revoke every session, and issue a new one-time setup link. Never
  * the node owner, never yourself (use `tm8 auth password`).
  */
@@ -263,7 +263,7 @@ async function nodeAccountReset(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-/** `node account enable <account>` — `accounts.enable` (323), the inverse of disable. */
+/** `node account enable <account>` — `accounts.enable` (324), the inverse of disable. */
 async function nodeAccountEnable(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['mutation-id']);
   const who = cmd.args[0];
@@ -281,7 +281,7 @@ const ADMIN_USAGE = 'usage: tm8 node account admin <account-id|username> grant|r
 
 /**
  * `node account admin <account> grant|revoke` — `node.accounts.nodeAdmin.set`
- * (323). The owner is never changed; the last node admin is never revoked.
+ * (324). The owner is never changed; the last node admin is never revoked.
  */
 async function nodeAccountAdmin(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['mutation-id']);
@@ -300,7 +300,7 @@ async function nodeAccountAdmin(cmd: CommandContext): Promise<ExitCode> {
 
 const ADD_TO_SPACE_USAGE = 'usage: tm8 node account add-to-space <account-id|username> <space-id> --role admin|member';
 
-/** `node account add-to-space <account> <space-id>` — `node.accounts.memberships.add` (323). */
+/** `node account add-to-space <account> <space-id>` — `node.accounts.memberships.add` (324). */
 async function nodeAccountAddToSpace(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['role', 'mutation-id']);
   const [who, spaceId] = cmd.args;

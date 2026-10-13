@@ -1,5 +1,5 @@
 /**
- * Account administration (migration 323): `tm8 node account create|reset|enable|admin|add-to-space`
+ * Account administration (migration 324): `tm8 node account create|reset|enable|admin|add-to-space`
  * and `tm8 auth setup resolve|redeem`.
  *
  * Same loopback-stub harness as node-path-grant.test.ts: each cell asserts the

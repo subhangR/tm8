@@ -1,5 +1,5 @@
 -- =============================================================================
--- 323 — node-admin account administration: admin-created accounts with a
+-- 324 — node-admin account administration: admin-created accounts with a
 -- one-time setup link, reset, enable, node-admin grant/revoke, and a direct
 -- add-account-to-space path (task 01a13574, audit doc 01a13570 §1 gaps 1-7).
 --
@@ -55,7 +55,7 @@ create index if not exists account_setup_tokens_live_idx
   on public.account_setup_tokens(account_id) where used_at is null;
 
 comment on table public.account_setup_tokens is
-  'One-time account setup links (323), sha256 hashes only. Single-use and '
+  'One-time account setup links (324), sha256 hashes only. Single-use and '
   'expiring; at most one live row per account.';
 
 -- ENABLE, not FORCE: the functions below run as the table's owner

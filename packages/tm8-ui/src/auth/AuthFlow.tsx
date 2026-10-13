@@ -60,7 +60,7 @@ export const AUTH_FRAMES: readonly AuthFrameDef[] = [
 
 /**
  * Frames the LIVE gate needs that the oracle never drew: the two link-only
- * ways in (323 setup link, 141 invite signup). Kept out of `AUTH_FRAMES` so
+ * ways in (324 setup link, 141 invite signup). Kept out of `AUTH_FRAMES` so
  * the board and its oracle-order tests stay the oracle's seventeen.
  */
 export const LIVE_AUTH_FRAMES: readonly AuthFrameDef[] = [

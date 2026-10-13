@@ -600,7 +600,7 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['enable', 'account', 'restore', 'unban', 'reactivate', 'admin'],
     notes: ['the caller must be an authenticated human node admin on a session not pinned to a space'],
   },
-  // ── account administration (migration 323) ───────────────────────────────
+  // ── account administration (migration 324) ───────────────────────────────
   'node.accounts.create': {
     cmd: ['node', 'account', 'create'],
     syn: 'tm8 node account create <username> [--display-name <name>] [--email <email>] [--node-admin] [--join-space <space-id> --role admin|member] [--expires-hours <1-720>]',
@@ -4457,7 +4457,7 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
-  // Re-measured for 323 (+node.accounts.create|reset|nodeAdmin.set|memberships.add, accounts.enable,
+  // Re-measured for 324 (+node.accounts.create|reset|nodeAdmin.set|memberships.add, accounts.enable,
   // auth.setup.resolve|redeem) — RECOMPUTED by test/discovery-operations.test.ts, not adjusted.
   // Re-measured for Craft L3 (+workspace.crafts.list|get|command) — RECOMPUTED, not adjusted.
   'sha256:6eb2bdca2bb65a9fb2f0e60481b0f9610457a4f0af40f636a4ce0e0c5c1fdf26';

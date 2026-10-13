@@ -682,7 +682,7 @@ export async function claimNode(
   );
 }
 
-/* ── account setup links (323, task 01a13574) ────────────────────────────── */
+/* ── account setup links (324, task 01a13574) ────────────────────────────── */
 
 /**
  * The setup token: `tm8a_` + 32 random bytes, the claim token's generator.

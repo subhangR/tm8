@@ -80,7 +80,7 @@ export interface AuthSessionState {
    * a viewer which one it is actually performing.
    */
   claimNode(token: string, name: string, password: string): Promise<boolean>;
-  /** `auth.setup.redeem` (323): choose a password with a node admin's one-time link, and sign in. */
+  /** `auth.setup.redeem` (324): choose a password with a node admin's one-time link, and sign in. */
   redeemSetup(token: string, password: string): Promise<boolean>;
   /** `auth.invite.signup` (141): create an account by redeeming an invite, and sign in. */
   inviteSignup(code: string, name: string, password: string, spacePassword?: string): Promise<boolean>;
@@ -331,7 +331,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
     [refresh],
   );
 
-  // The two link-authorized sign-ups (323 setup link, 141 invite): the link
+  // The two link-authorized sign-ups (324 setup link, 141 invite): the link
   // is the authorization, and success signs you in like a login.
   const runLinkAct = useCallback(
     async (act: () => Promise<{ ok: true } | { ok: false; failure: AuthFailure }>) => {

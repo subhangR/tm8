@@ -1,5 +1,5 @@
 /**
- * Node-admin account administration (migration 323, task 01a13574; audit doc
+ * Node-admin account administration (migration 324, task 01a13574; audit doc
  * 01a13570 §1).
  *
  *   · node.accounts.create          — a passwordless account + a one-time setup link,

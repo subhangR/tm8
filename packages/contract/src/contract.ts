@@ -2598,7 +2598,7 @@ export interface AuthClaimStatusResult {
    */
   projectIsolation: ProjectIsolation;
   /**
-   * `TM8_PUBLIC_ORIGIN` when the operator set one (323): where links handed to
+   * `TM8_PUBLIC_ORIGIN` when the operator set one (324): where links handed to
    * other people (setup links, invite links) should point. Absent: unknown, and
    * a client falls back to the origin it is on — which may be loopback.
    */
@@ -3479,11 +3479,11 @@ export interface NodeAccountView {
   status: 'active' | 'disabled';
   /** Node admin or owner: already holds every root implicitly. */
   isNodeAdmin?: boolean;
-  /** The node owner (323). Never reset, demoted or disabled by an admin. */
+  /** The node owner (324). Never reset, demoted or disabled by an admin. */
   isOwner?: boolean;
-  /** Whether a password is set (323). False: created or reset, link not yet redeemed. */
+  /** Whether a password is set (324). False: created or reset, link not yet redeemed. */
   hasPassword?: boolean;
-  /** When the account's live setup link expires (323); absent when there is none. */
+  /** When the account's live setup link expires (324); absent when there is none. */
   setupExpiresAt?: string;
 }
 
@@ -3493,7 +3493,7 @@ export interface NodeAccountListView {
 }
 
 // ---------------------------------------------------------------------------
-// Node-admin account administration (migration 323, task 01a13574).
+// Node-admin account administration (migration 324, task 01a13574).
 //
 // An admin creates an account WITHOUT a password and gets a one-time SETUP
 // LINK: single use, expiring, stored only as a sha256 (the `tm8c_` claim

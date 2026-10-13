@@ -11,7 +11,7 @@
  *
  * SEVEN ARE CLAIM-FREE, and that is a property to preserve rather
  * than an omission to tidy up: `auth.login`, `auth.claim`, `auth.claim.status`,
- * `auth.invite.resolve`, `auth.invite.signup` and 323's `auth.setup.resolve` /
+ * `auth.invite.resolve`, `auth.invite.signup` and 324's `auth.setup.resolve` /
  * `auth.setup.redeem` are reachable on a node where
  * the caller has no credential — the bootstrap hole every other operation is
  * spared from needing. `auth.claim.reissue` is the sixth first-run operation but
@@ -501,7 +501,7 @@ function authClaimStatus(deps: FacadeDeps): OperationHandler {
       // A node admin can still provision through `auth.signup`, but the primary
       // route for a new person on a claimed node is redeeming an invite.
       signupPath: claimed ? 'invite' : 'claim',
-      // 323: where shared links should point. Not a secret: it is the
+      // 324: where shared links should point. Not a secret: it is the
       // address the operator publishes the node at.
       ...(deps.config.publicOrigin ? { publicOrigin: deps.config.publicOrigin } : {}),
     };
@@ -677,7 +677,7 @@ function authInviteSignup(deps: FacadeDeps): OperationHandler {
 }
 
 /**
- * `auth.setup.resolve` (323) — what a setup link is for. CLAIM-FREE like
+ * `auth.setup.resolve` (324) — what a setup link is for. CLAIM-FREE like
  * `auth.invite.resolve`; every dead or unknown link answers `invalid`, so a
  * link's state is not enumerable.
  */
@@ -699,7 +699,7 @@ function authSetupResolve(deps: FacadeDeps): OperationHandler {
 }
 
 /**
- * `auth.setup.redeem` (323) — choose your password with a one-time setup link
+ * `auth.setup.redeem` (324) — choose your password with a one-time setup link
  * and be signed in. CLAIM-FREE: the token is the authorization, burned inside
  * `redeem_account_setup`. A browser call carries the session cookie, like
  * `auth.claim` and `auth.invite.signup`.

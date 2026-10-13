@@ -2737,7 +2737,7 @@ export const PathGrantRevokeInputSchema: z.ZodType<PathGrantRevokeInput> = z.obj
   clientMutationId: z.string().min(1).optional(),
 }).strict();
 
-/* ── node-admin account administration (323) ──────────────────────────── */
+/* ── node-admin account administration (324) ──────────────────────────── */
 
 const SetupExpiresInHoursSchema = z.number().int().min(1).max(720);
 const AdminSpaceRoleSchema = z.enum(['admin', 'member']);

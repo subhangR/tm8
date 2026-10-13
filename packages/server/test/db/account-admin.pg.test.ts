@@ -1,5 +1,5 @@
 /**
- * Node-admin account administration (migration 323, task 01a13574) against a
+ * Node-admin account administration (migration 324, task 01a13574) against a
  * REAL PostgreSQL with every migration applied, called as `tm8_app` under each
  * caller's claims — the SQL half of the two-layer check.
  *

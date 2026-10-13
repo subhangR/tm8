@@ -496,7 +496,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
          * Every other operation keeps refusing: presenting an invalid token
          * to a session-bearing call is still a refusal, not a downgrade.
          */
-        // 323: the setup link is the reset path, so it is EXACTLY the case
+        // 324: the setup link is the reset path, so it is EXACTLY the case
         // above — a reset revoked the cookie this browser still sends. The
         // invite signup and the setup preview stand on their body the same way.
         const exchange = CREDENTIAL_EXCHANGE_OPS.has(match.opName ?? '');
