@@ -23,6 +23,7 @@
  *   `revoke_auth_session` carry their own `require_*` guards in SQL.
  */
 import {
+  ACCOUNT_SETUP_TOKEN_PREFIX,
   CollabError,
   type AuthSessionListing,
   type AuthSessionsRevokeResult,
@@ -670,6 +671,136 @@ export async function claimNode(
       password: input.password,
       ...(input.kind ? { kind: input.kind } : {}),
       label: 'first-run claim',
+    },
+    requestId,
+  );
+}
+
+/* ── account setup links (323, task 01a13574) ────────────────────────────── */
+
+/**
+ * The setup token: `tm8a_` + 32 random bytes, the claim token's generator.
+ * The plaintext goes back to the admin exactly once; the database holds its
+ * sha256 (`account_setup_tokens.token_hash`).
+ */
+export function generateAccountSetupToken(): { token: string; tokenHash: string } {
+  const secret = generateSecret();
+  return { token: `${ACCOUNT_SETUP_TOKEN_PREFIX}${secret}`, tokenHash: hashToken(secret) };
+}
+
+function setupTokenHash(token: string): string | null {
+  if (!token.startsWith(ACCOUNT_SETUP_TOKEN_PREFIX)) return null;
+  return hashToken(token.slice(ACCOUNT_SETUP_TOKEN_PREFIX.length));
+}
+
+export interface AdminCreateAccountInput {
+  username: string;
+  displayName?: string | null;
+  email?: string | null;
+  isNodeAdmin?: boolean;
+  spaceId?: string | null;
+  role?: 'admin' | 'member' | null;
+  expiresAt: string;
+}
+
+export interface AdminCreatedAccount {
+  token: string;
+  account: AccountRowJson;
+  expiresAt: string;
+  spaceId?: string;
+  memberId?: string;
+  role?: 'admin' | 'member';
+}
+
+/**
+ * `admin_create_account` under the CALLER's claims: SQL re-checks human node
+ * admin, creates the passwordless account (and membership), and records the
+ * token hash, in one transaction.
+ */
+export async function adminCreateAccount(
+  db: Db,
+  claims: DbClaims,
+  input: AdminCreateAccountInput,
+): Promise<AdminCreatedAccount> {
+  const { token, tokenHash } = generateAccountSetupToken();
+  const created = await db.rpc<Omit<AdminCreatedAccount, 'token'> | null>(claims, 'admin_create_account', [
+    `id_${randomUUID()}`,
+    input.username,
+    input.displayName ?? null,
+    input.email ?? null,
+    input.isNodeAdmin ?? false,
+    tokenHash,
+    input.expiresAt,
+    input.spaceId ?? null,
+    input.role ?? null,
+  ]);
+  if (!created) throw new CollabError('upstream_unavailable', 'admin_create_account returned no row');
+  return { ...created, token };
+}
+
+export interface AdminResetAccount {
+  token: string;
+  accountId: string;
+  username: string;
+  expiresAt: string;
+  revokedSessionCount: number;
+  identityId: string;
+}
+
+/** `admin_reset_account`: clear the credential, revoke sessions, new link. */
+export async function adminResetAccount(
+  db: Db,
+  claims: DbClaims,
+  accountId: string,
+  expiresAt: string,
+): Promise<AdminResetAccount> {
+  const { token, tokenHash } = generateAccountSetupToken();
+  const reset = await db.rpc<Omit<AdminResetAccount, 'token'> | null>(claims, 'admin_reset_account', [
+    accountId,
+    tokenHash,
+    expiresAt,
+  ]);
+  if (!reset) throw new CollabError('upstream_unavailable', 'admin_reset_account returned no row');
+  return { ...reset, token };
+}
+
+/** CLAIM-FREE: what a setup link is for, or null for any dead or unknown link. */
+export async function previewAccountSetup(
+  db: Db,
+  token: string,
+): Promise<{ username: string; displayName?: string; purpose: 'create' | 'reset'; expiresAt: string } | null> {
+  const hash = setupTokenHash(token);
+  if (!hash) return null;
+  return db.rpc({}, 'preview_account_setup', [hash]);
+}
+
+/**
+ * Redeem a setup link: set the credential, burn the token, then sign in by
+ * delegating to `loginWithPassword` — `claimNode`'s pattern and reasoning.
+ * CLAIM-FREE; every guard (live, unexpired, single use, active account) is
+ * inside `redeem_account_setup` under a row lock.
+ */
+export async function redeemAccountSetup(
+  db: Db,
+  input: { token: string; password: string; kind?: 'browser' | 'cli' },
+  requestId?: string,
+): Promise<IssuedLogin> {
+  const hash = setupTokenHash(input.token);
+  if (!hash) throw new CollabError('unauthenticated', 'invalid, used or expired setup link');
+  const passwordHash = await hasher.hash(input.password);
+  const account = await db.rpc<AccountRowJson | null>({}, 'redeem_account_setup', [
+    hash,
+    hasher.algorithm,
+    passwordHash,
+  ]);
+  if (!account) throw new CollabError('upstream_unavailable', 'redeem_account_setup returned no row');
+  return loginWithPassword(
+    db,
+    {
+      username: account.username,
+      password: input.password,
+      ...(input.kind ? { kind: input.kind } : {}),
+      label: 'setup link',
     },
     requestId,
   );

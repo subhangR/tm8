@@ -3473,11 +3473,157 @@ export interface NodeAccountView {
   status: 'active' | 'disabled';
   /** Node admin or owner: already holds every root implicitly. */
   isNodeAdmin?: boolean;
+  /** The node owner (323). Never reset, demoted or disabled by an admin. */
+  isOwner?: boolean;
+  /** Whether a password is set (323). False: created or reset, link not yet redeemed. */
+  hasPassword?: boolean;
+  /** When the account's live setup link expires (323); absent when there is none. */
+  setupExpiresAt?: string;
 }
 
 /** `node.accounts.list` — node admin. */
 export interface NodeAccountListView {
   accounts: NodeAccountView[];
+}
+
+// ---------------------------------------------------------------------------
+// Node-admin account administration (migration 323, task 01a13574).
+//
+// An admin creates an account WITHOUT a password and gets a one-time SETUP
+// LINK: single use, expiring, stored only as a sha256 (the `tm8c_` claim
+// token's discipline). The person opens it, chooses their password
+// (`auth.setup.redeem`) and is signed in. A reset clears the credential,
+// revokes every session and issues a new link. All human node-admin only,
+// checked by the facade and again in SQL.
+//
+// The setup token is a secret, so create and reset sit OUTSIDE the command
+// ledger: a replay would have to store the plaintext to answer it. They accept
+// `clientMutationId` (the rule `commandAcceptsClientMutationId` states) and
+// ignore it.
+// ---------------------------------------------------------------------------
+
+/** The setup token's wire prefix, beside `tm8s_` (session) and `tm8c_` (claim). */
+export const ACCOUNT_SETUP_TOKEN_PREFIX = 'tm8a_';
+
+/** How long a setup link lives unless the admin says otherwise. */
+export const ACCOUNT_SETUP_DEFAULT_HOURS = 72;
+/** The longest a setup link may live: thirty days. */
+export const ACCOUNT_SETUP_MAX_HOURS = 720;
+
+/** A space role an admin can place an account into. Owner is the space's own act. */
+export type AdminSpaceRole = 'admin' | 'member';
+
+/** `node.accounts.create` — node admin. */
+export interface NodeAccountCreateInput {
+  username: string;
+  displayName?: string;
+  email?: string;
+  isNodeAdmin?: boolean;
+  /** Add the account to this space at once; `role` is then required. */
+  spaceId?: SpaceId;
+  role?: AdminSpaceRole;
+  /** Setup-link lifetime, 1..720 hours; default 72. */
+  expiresInHours?: number;
+  clientMutationId?: string;
+}
+
+/**
+ * The one-time link, as create and reset return it. `setupToken` is returned
+ * exactly once and is not recoverable; `setupUrl` is the node's public origin
+ * with the token in the FRAGMENT (`/#setup=…`), so it never reaches an access
+ * log or a `Referer` — the claim link's rule.
+ */
+export interface NodeAccountSetupLink {
+  setupToken: string;
+  setupUrl: string;
+  expiresAt: string;
+}
+
+export interface NodeAccountCreateResult extends NodeAccountSetupLink {
+  account: NodeAccountView;
+  /** Present when the account was added to a space. */
+  membership?: { spaceId: SpaceId; memberId: EntityId; role: AdminSpaceRole };
+}
+
+/** `node.accounts.reset` — node admin. Never the owner, never yourself. */
+export interface NodeAccountResetInput {
+  expiresInHours?: number;
+  clientMutationId?: string;
+}
+
+export interface NodeAccountResetResult extends NodeAccountSetupLink {
+  accountId: string;
+  username: string;
+  /** Live sessions revoked by the reset. */
+  revokedSessionCount: number;
+}
+
+/** `accounts.enable` — the inverse of `accounts.disable`. */
+export interface AccountsEnableInput {
+  clientMutationId: string;
+}
+
+export interface AccountEnableResult {
+  accountId: string;
+  status: 'active';
+}
+
+/** `node.accounts.nodeAdmin.set` — never the owner; never the last node admin. */
+export interface NodeAccountNodeAdminSetInput {
+  isNodeAdmin: boolean;
+  clientMutationId?: string;
+}
+
+export interface NodeAccountNodeAdminSetResult {
+  accountId: string;
+  isNodeAdmin: boolean;
+}
+
+/** `node.accounts.memberships.add` — put an account into a space, node admin. */
+export interface NodeAccountMembershipAddInput {
+  spaceId: SpaceId;
+  role: AdminSpaceRole;
+  clientMutationId?: string;
+}
+
+export interface NodeAccountMembershipAddResult {
+  accountId: string;
+  spaceId: SpaceId;
+  memberId: EntityId;
+  /** The membership's role — the existing one when `created` is false. */
+  role: string;
+  /** False when the account was already an active member (left unchanged). */
+  created: boolean;
+}
+
+/**
+ * `auth.setup.resolve` — what a setup link is for, before it is redeemed.
+ * CLAIM-FREE; POST so the token travels in the body. An unknown, used,
+ * expired or disabled-account link all answer `{ status: 'invalid' }`.
+ */
+export interface AuthSetupResolveInput {
+  token: string;
+}
+
+export type AuthSetupResolveResult =
+  | {
+      status: 'valid';
+      username: string;
+      displayName?: string;
+      purpose: 'create' | 'reset';
+      expiresAt: string;
+    }
+  | { status: 'invalid' };
+
+/**
+ * `auth.setup.redeem` — choose your password with a setup link, and be signed
+ * in. CLAIM-FREE: the token is the authorization. The result is
+ * `auth.login`'s.
+ */
+export interface AuthSetupRedeemInput {
+  token: string;
+  password: string;
+  kind?: 'browser' | 'cli';
 }
 
 /** Where a config knob's effective value came from. */

@@ -61,7 +61,7 @@ export const DEFAULT_AUTH_RATE_LIMITS: AuthRateLimits = {
 };
 
 /**
- * The credential-guessing surface. Five of these are claim-free (reachable
+ * The credential-guessing surface. Seven of these are claim-free (reachable
  * with no credential at all), which is exactly why they need a volume bound;
  * `auth.password.change` is here for the walk-up case — a live session must
  * not be able to grind out the CURRENT password it was asked for.
@@ -78,6 +78,9 @@ export const RATE_LIMITED_AUTH_OPS: ReadonlySet<string> = new Set([
   'auth.claim.reissue',
   'auth.invite.resolve',
   'auth.invite.signup',
+  // 323: a setup link is a guessable bearer secret, like an invite code.
+  'auth.setup.resolve',
+  'auth.setup.redeem',
   // W5 (K2): the space password. Its principal is the authenticated caller in
   // one space — see IDENTITY_SCOPE_FIELD.
   'auth.space.enter',

@@ -1,7 +1,7 @@
 /**
  * auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
  *
- * Thirteen operations, and the seam is deliberately thin: every authorization
+ * Eighteen operations (fifteen `auth.*`, three space-password), and the seam is deliberately thin: every authorization
  * decision except the scrypt comparison lives inside the SECURITY DEFINER
  * RPCs (`ensure_account`'s F1 node-admin gate, `revoke_auth_session`'s
  * self-or-admin gate, `resolve_auth_session`'s revocation/expiry/status
@@ -9,9 +9,10 @@
  * `signup_via_invite`/`revoke_account_sessions_except`). The handlers bind the
  * right claims and translate shapes.
  *
- * FIVE OF THE TEN ARE CLAIM-FREE, and that is a property to preserve rather
+ * SEVEN ARE CLAIM-FREE, and that is a property to preserve rather
  * than an omission to tidy up: `auth.login`, `auth.claim`, `auth.claim.status`,
- * `auth.invite.resolve` and `auth.invite.signup` are reachable on a node where
+ * `auth.invite.resolve`, `auth.invite.signup` and 323's `auth.setup.resolve` /
+ * `auth.setup.redeem` are reachable on a node where
  * the caller has no credential — the bootstrap hole every other operation is
  * spared from needing. `auth.claim.reissue` is the sixth first-run operation but
  * is NOT claim-free: it admits only the loopback auto-owner, because the token
@@ -56,6 +57,9 @@ import type {
   SpacePasswordResetInput,
   SpacePasswordSetRequiredInput,
   SpacePasswordSetRequiredResult,
+  AuthSetupRedeemInput,
+  AuthSetupResolveInput,
+  AuthSetupResolveResult,
 } from '@tm8/contract';
 import { AuthSessionsListInputSchema } from '@tm8/contract';
 import { chmod, writeFile } from 'node:fs/promises';
@@ -80,6 +84,8 @@ import {
   listAuthSessions,
   loginWithPassword,
   nodeIsClaimed,
+  previewAccountSetup,
+  redeemAccountSetup,
   resolveBearerIdentity,
   revokeListedAuthSession,
   signupAccount,
@@ -668,6 +674,53 @@ function authInviteSignup(deps: FacadeDeps): OperationHandler {
 }
 
 /**
+ * `auth.setup.resolve` (323) — what a setup link is for. CLAIM-FREE like
+ * `auth.invite.resolve`; every dead or unknown link answers `invalid`, so a
+ * link's state is not enumerable.
+ */
+function authSetupResolve(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const body = ctx.body as AuthSetupResolveInput;
+    const preview = await previewAccountSetup(deps.db, body.token);
+    const result: AuthSetupResolveResult = preview
+      ? {
+          status: 'valid',
+          username: preview.username,
+          ...(preview.displayName ? { displayName: preview.displayName } : {}),
+          purpose: preview.purpose,
+          expiresAt: new Date(preview.expiresAt).toISOString(),
+        }
+      : { status: 'invalid' };
+    return json(result, { headers: { 'cache-control': 'no-store' } });
+  };
+}
+
+/**
+ * `auth.setup.redeem` (323) — choose your password with a one-time setup link
+ * and be signed in. CLAIM-FREE: the token is the authorization, burned inside
+ * `redeem_account_setup`. A browser call carries the session cookie, like
+ * `auth.claim` and `auth.invite.signup`.
+ */
+function authSetupRedeem(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const body = ctx.body as AuthSetupRedeemInput;
+    const issued = await redeemAccountSetup(
+      deps.db,
+      { token: body.token, password: body.password, ...(body.kind ? { kind: body.kind } : {}) },
+      ctx.requestId,
+    );
+    const result: AuthLoginResult = { token: issued.token, account: issued.account, session: issued.session };
+    if ((body.kind ?? 'browser') !== 'browser') return result;
+    return json(result, {
+      headers: {
+        'cache-control': 'no-store',
+        'set-cookie': sessionCookie(issued.token, issued.session.expiresAt),
+      },
+    });
+  };
+}
+
+/**
  * `auth.sessions.list` (plan W4, 232) — the caller's own sessions, or with
  * `?spaceId=` every session pinned to that space. Who may see what is
  * `list_auth_sessions`' decision under the caller's claims (humans only; space
@@ -791,6 +844,8 @@ export function registerW2AuthHandlers(
     'auth.password.change': authPasswordChange(deps),
     'auth.invite.resolve': authInviteResolve(deps),
     'auth.invite.signup': authInviteSignup(deps),
+    'auth.setup.resolve': authSetupResolve(deps),
+    'auth.setup.redeem': authSetupRedeem(deps),
     'spaces.spacePassword.setRequired': spacesSpacePasswordSetRequired(deps, auth.sockets),
     'spaces.members.spacePassword.reset': spacesMembersSpacePasswordReset(deps, auth.sockets),
     'spaces.members.spacePassword.lock': spacesMembersSpacePasswordLock(deps, auth.sockets),

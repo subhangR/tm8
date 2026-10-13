@@ -87,6 +87,7 @@ import {
 } from './handlers/w2/project-folder-uploads.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
 import { registerPathGrantHandlers } from './handlers/w2/path-grants.js';
+import { registerNodeAccountHandlers } from './handlers/w2/node-accounts.js';
 import { registerW2ContainerHandlers } from './handlers/w2/containers.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
@@ -262,6 +263,8 @@ export function registerFacadeHandlers(
   registerChatDefaultsHandlers(registry, facade);
   // spaces.leave / spaces.members.remove / accounts.disable (G6, migration 232).
   registerMembershipHandlers(registry, facade, deps.membership ?? {});
+  // node.accounts.create/reset/nodeAdmin.set/memberships.add + accounts.enable (323).
+  registerNodeAccountHandlers(registry, facade, deps.membership ?? {});
   // node.metrics.get: host CPU/memory/load/disk for the desktop status strip (node admin).
   registerNodeMetricsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.

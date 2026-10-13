@@ -29,10 +29,11 @@ import type { RequestIdentity, SpaceSessionsMode } from './types.js';
 
 /**
  * Node-admin operation namespaces a gate session keeps (K6: node admin is gate
- * admin). `gate.*` (`gate.folders.*`) checks `isGateAdmin` — node admin AND
+ * admin). `accounts.*` (disable/enable) is node admin in SQL, which a pinned
+ * session never holds — so without it here they were unreachable under enforce. `gate.*` (`gate.folders.*`) checks `isGateAdmin` — node admin AND
  * unpinned — so a gate session is the only caller that can ever pass it.
  */
-const GATE_NODE_ADMIN_PREFIXES: readonly string[] = ['node.', 'serverConnections.', 'gate.'];
+const GATE_NODE_ADMIN_PREFIXES: readonly string[] = ['node.', 'serverConnections.', 'gate.', 'accounts.'];
 
 /** Non-`auth.*` ops a gate session needs to find, make or join a space. */
 const GATE_SPACE_ENTRY_OPS: ReadonlySet<string> = new Set([

@@ -26,6 +26,7 @@ import type {
   AuthClaimStatusResult,
   AuthInviteSignupResult,
   AuthLoginResult,
+  AuthSetupResolveResult,
   AuthLogoutResult,
   AuthPasswordChangeResult,
   AuthSessionGetResult,
@@ -612,31 +613,84 @@ async function authInviteSignup(cmd: CommandContext): Promise<ExitCode> {
   );
 
   // Signing up signs you in, so store the pass exactly like login/claim do.
-  let storedTo: string | undefined;
-  let storeFailure: string | undefined;
-  if (!cmd.options.bool('print-token')) {
-    const store = credentialStoreFor();
-    if (store) {
-      const origin = credentialOrigin(cmd.ctx.baseUrl.value);
-      try {
-        // W3: pins minted from the previous gate are keyed to it and would
-        // never be read again; revoke and forget them rather than leave them.
-        revokeSpaceCredentials(cmd, dropSpaceCredentials(store, origin));
-        store.set(origin, data.token, {
-          username: data.account.username,
-          expiresAt: data.session.expiresAt,
-        });
-        storedTo = `${origin} (${store.kind})`;
-      } catch (err) {
-        storeFailure = err instanceof Error ? err.message : String(err);
-      }
-    }
-  }
+  const { storedTo, storeFailure } = storeIssuedPass(cmd, data);
 
   cmd.out.data(data, (result) => {
     const lines = [
       `joined space ${result.spaceId} as ${renderAccount(result.account)}`,
     ];
+    if (storedTo) {
+      lines.push(`credential stored for ${storedTo}`);
+    } else {
+      if (storeFailure) lines.push(`warning: could not store the credential (${storeFailure})`);
+      lines.push('', '# Shown exactly once:', `export TM8_AGENT_TOKEN=${result.token}`);
+    }
+    return lines.join('\n');
+  });
+  return EXIT_OK;
+}
+
+/**
+ * Store a pass a sign-in-shaped result just minted (invite signup, setup
+ * redeem), unless `--print-token` asked for it on stdout instead.
+ */
+function storeIssuedPass(
+  cmd: CommandContext,
+  data: { token: string; account: { username: string }; session: { expiresAt: string } },
+): { storedTo?: string; storeFailure?: string } {
+  if (cmd.options.bool('print-token')) return {};
+  const store = credentialStoreFor();
+  if (!store) return {};
+  const origin = credentialOrigin(cmd.ctx.baseUrl.value);
+  try {
+    // W3: pins minted from the previous gate are keyed to it and would
+    // never be read again; revoke and forget them rather than leave them.
+    revokeSpaceCredentials(cmd, dropSpaceCredentials(store, origin));
+    store.set(origin, data.token, {
+      username: data.account.username,
+      expiresAt: data.session.expiresAt,
+    });
+    return { storedTo: `${origin} (${store.kind})` };
+  } catch (err) {
+    return { storeFailure: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * `tm8 auth setup resolve --token <tm8a_…>` — `auth.setup.resolve` (323): what
+ * a one-time setup link is for. Claim-free.
+ */
+async function authSetupResolve(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('auth setup resolve', cmd.options.value('mutation-id'));
+  const usage = 'usage: tm8 auth setup resolve --token <tm8a_…>';
+  const token = cmd.options.value('token');
+  if (cmd.args.length > 0 || !token) throw new CliError(usage, EXIT_USAGE);
+  const data = await observedInvoke<AuthSetupResolveResult>(clientFor(cmd.ctx), 'auth.setup.resolve', {
+    body: { token },
+  });
+  cmd.out.data(data, (r) =>
+    r.status === 'valid'
+      ? `valid  ${r.purpose === 'reset' ? 'password reset' : 'new account'} for ${r.username}  expires ${r.expiresAt}`
+      : 'invalid: the link is unknown, used, expired, or its account is disabled — ask a node admin for a new one');
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 auth setup redeem --token <tm8a_…> --password <password>` —
+ * `auth.setup.redeem` (323): choose your password with a one-time setup link
+ * and sign in. Claim-free: the token is the authorization.
+ */
+async function authSetupRedeem(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('auth setup redeem', cmd.options.value('mutation-id'));
+  const usage = 'usage: tm8 auth setup redeem --token <tm8a_…> --password <password>';
+  const token = cmd.options.value('token');
+  if (cmd.args.length > 0 || !token) throw new CliError(usage, EXIT_USAGE);
+  const data = await observedInvoke<AuthLoginResult>(clientFor(cmd.ctx), 'auth.setup.redeem', {
+    body: { token, password: requirePassword(cmd, usage), kind: cmd.options.value('kind') ?? 'cli' },
+  });
+  const { storedTo, storeFailure } = storeIssuedPass(cmd, data);
+  cmd.out.data(data, (result) => {
+    const lines = [`password set; signed in as ${renderAccount(result.account)}`];
     if (storedTo) {
       lines.push(`credential stored for ${storedTo}`);
     } else {
@@ -658,6 +712,8 @@ export const AUTH_COMMANDS: CommandModule[] = [
   { path: ['auth', 'sessions', 'revoke'], run: authSessionsRevoke },
   { path: ['auth', 'password'], run: authPasswordChange },
   { path: ['auth', 'invite', 'signup'], run: authInviteSignup },
+  { path: ['auth', 'setup', 'resolve'], run: authSetupResolve },
+  { path: ['auth', 'setup', 'redeem'], run: authSetupRedeem },
   // Order here is irrelevant — `findCommand` is an exact Map lookup on the
   // joined path. What keeps `tm8 auth claim status` from parsing as `auth
   // claim` with a stray positional is `splitCommandPath` (args.ts:412), which

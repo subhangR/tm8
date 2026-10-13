@@ -99,6 +99,13 @@ import {
   CredentialsSpaceRekeyInputSchema,
   CredentialsSpaceRenameInputSchema,
   NodeCredentialsPolicySetInputSchema,
+  AccountsEnableInputSchema,
+  AuthSetupRedeemInputSchema,
+  AuthSetupResolveInputSchema,
+  NodeAccountCreateInputSchema,
+  NodeAccountMembershipAddInputSchema,
+  NodeAccountNodeAdminSetInputSchema,
+  NodeAccountResetInputSchema,
   PathGrantCreateInputSchema,
   PathGrantRevokeInputSchema,
   CredentialsLoginSessionStartInputSchema,
@@ -307,6 +314,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // Claim-free like resolve; `.strict()` is again the only control, refusing a
   // stray actorId/clientMutationId this handler has no identity to check.
   'auth.invite.signup': AuthInviteSignupInputSchema,
+  // 323: claim-free like the invite pair; the token is the only authorization.
+  'auth.setup.resolve': AuthSetupResolveInputSchema,
+  'auth.setup.redeem': AuthSetupRedeemInputSchema,
 
   // credentials (Tier B). All three command bodies are BOUND rather than
   // enumerated as unbound gaps, because strictness here is a security control
@@ -337,6 +347,11 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'node.credentials.policy.set': NodeCredentialsPolicySetInputSchema,
   'node.pathGrants.create': PathGrantCreateInputSchema,
   'node.pathGrants.revoke': PathGrantRevokeInputSchema,
+  // 323: account administration, human node admin in TS and SQL.
+  'node.accounts.create': NodeAccountCreateInputSchema,
+  'node.accounts.reset': NodeAccountResetInputSchema,
+  'node.accounts.nodeAdmin.set': NodeAccountNodeAdminSetInputSchema,
+  'node.accounts.memberships.add': NodeAccountMembershipAddInputSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,
@@ -357,6 +372,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'spaces.members.remove': SpacesMembersRemoveInputSchema,
   'spaces.leave': SpacesLeaveInputSchema,
   'accounts.disable': AccountsDisableInputSchema,
+  'accounts.enable': AccountsEnableInputSchema,
   // W6 (250/251): human-only in SQL; the body never carries a secret.
   'spaceLinks.add': SpaceLinksAddInputSchema,
   'spaceLinks.login': SpaceLinksLoginInputSchema,

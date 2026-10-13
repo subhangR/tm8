@@ -1,5 +1,6 @@
 /**
- * `tm8 node …` — read-only facts about the Server as a node.
+ * `tm8 node …` — facts about the Server as a node, and its node-admin writes
+ * (`node account …`, `node path-grant …`).
  *
  * Today that is one verb, `node mode`, which is SUGAR over `auth.claim.status`:
  * that operation already reports the mode, and this is a second, purpose-named
@@ -17,6 +18,11 @@
  */
 import type {
   AccountDisableResult,
+  AccountEnableResult,
+  NodeAccountCreateResult,
+  NodeAccountMembershipAddResult,
+  NodeAccountNodeAdminSetResult,
+  NodeAccountResetResult,
   AuthClaimStatusResult,
   NodeAccountListView,
   PathGrantListView,
@@ -106,7 +112,9 @@ async function nodeAccountList(cmd: CommandContext): Promise<ExitCode> {
   if (cmd.args.length > 0) throw new CliError('usage: tm8 node account list', EXIT_USAGE);
   const data = await observedInvoke<NodeAccountListView>(clientFor(cmd.ctx), 'node.accounts.list');
   cmd.out.data(data, (r) => r.accounts
-    .map((a) => `${a.accountId}  ${a.username}${a.displayName ? ` (${a.displayName})` : ''}  ${a.status}${a.isNodeAdmin ? '  node admin' : ''}`)
+    .map((a) => `${a.accountId}  ${a.username}${a.displayName ? ` (${a.displayName})` : ''}  ${a.status}`
+      + `${a.isOwner ? '  owner' : a.isNodeAdmin ? '  node admin' : ''}`
+      + `${a.hasPassword === false ? `  setup pending${a.setupExpiresAt ? ` (link expires ${a.setupExpiresAt})` : ' (no live link)'}` : ''}`)
     .join('\n'));
   return EXIT_OK;
 }
@@ -140,15 +148,7 @@ async function pathGrantAdd(cmd: CommandContext): Promise<ExitCode> {
     throw new CliError('usage: tm8 node path-grant add <account-id|username> <path> [--note <text>]', EXIT_USAGE);
   }
   const client = clientFor(cmd.ctx);
-  let accountId = who;
-  if (!UUID_RE.test(who)) {
-    const { accounts } = await observedInvoke<NodeAccountListView>(client, 'node.accounts.list');
-    const match = accounts.find((a) => a.username.toLowerCase() === who.toLowerCase());
-    if (!match) {
-      throw new CliError(`no account named ${who} on this node`, EXIT_USAGE, { hint: 'tm8 node account list' });
-    }
-    accountId = match.accountId;
-  }
+  const accountId = await resolveAccountId(cmd, who);
   const note = cmd.options.value('note');
   const data = await observedInvoke<PathGrantView>(client, 'node.pathGrants.create', {
     body: {
@@ -159,6 +159,166 @@ async function pathGrantAdd(cmd: CommandContext): Promise<ExitCode> {
     },
   });
   cmd.out.data(data, (g) => `granted  ${grantLine(g)}`);
+  return EXIT_OK;
+}
+
+/** An account id, or a username looked up through `node.accounts.list`. */
+async function resolveAccountId(cmd: CommandContext, who: string): Promise<string> {
+  if (UUID_RE.test(who)) return who;
+  const { accounts } = await observedInvoke<NodeAccountListView>(clientFor(cmd.ctx), 'node.accounts.list');
+  const match = accounts.find((a) => a.username.toLowerCase() === who.toLowerCase());
+  if (!match) {
+    throw new CliError(`no account named ${who} on this node`, EXIT_USAGE, { hint: 'tm8 node account list' });
+  }
+  return match.accountId;
+}
+
+function expiresInHours(cmd: CommandContext, usage: string): { expiresInHours?: number } {
+  const raw = cmd.options.value('expires-hours');
+  if (raw === undefined) return {};
+  const hours = Number(raw);
+  if (!Number.isInteger(hours) || hours < 1 || hours > 720) {
+    throw new CliError(`--expires-hours must be a whole number from 1 to 720\n${usage}`, EXIT_USAGE);
+  }
+  return { expiresInHours: hours };
+}
+
+function setupLinkLines(link: { setupUrl: string; expiresAt: string }): string[] {
+  return [
+    '',
+    '# One-time setup link — shown exactly once. Send it to the person; it expires',
+    `# ${link.expiresAt} and is used up when they choose their password.`,
+    link.setupUrl,
+  ];
+}
+
+const CREATE_USAGE =
+  'usage: tm8 node account create <username> [--display-name <name>] [--email <email>] [--node-admin yes] [--space <space-id> --role admin|member] [--expires-hours <1-720>]';
+
+/**
+ * `node account create <username>` — `node.accounts.create` (323). The account
+ * gets NO password: the result carries a one-time setup link the person opens
+ * to choose their own.
+ */
+async function nodeAccountCreate(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['display-name', 'email', 'node-admin', 'space', 'role', 'expires-hours', 'mutation-id']);
+  const username = cmd.args[0];
+  if (cmd.args.length !== 1 || !username) throw new CliError(CREATE_USAGE, EXIT_USAGE);
+  const space = cmd.options.value('space');
+  const role = cmd.options.value('role');
+  if ((space === undefined) !== (role === undefined)) {
+    throw new CliError(`--space and --role go together\n${CREATE_USAGE}`, EXIT_USAGE);
+  }
+  if (role !== undefined && role !== 'admin' && role !== 'member') {
+    throw new CliError(`--role must be admin or member\n${CREATE_USAGE}`, EXIT_USAGE);
+  }
+  const nodeAdmin = cmd.options.value('node-admin');
+  if (nodeAdmin !== undefined && nodeAdmin !== 'yes' && nodeAdmin !== 'no') {
+    throw new CliError(`--node-admin takes yes or no\n${CREATE_USAGE}`, EXIT_USAGE);
+  }
+  const displayName = cmd.options.value('display-name');
+  const email = cmd.options.value('email');
+  const data = await observedInvoke<NodeAccountCreateResult>(clientFor(cmd.ctx), 'node.accounts.create', {
+    body: {
+      username,
+      ...(displayName ? { displayName } : {}),
+      ...(email ? { email } : {}),
+      ...(nodeAdmin === 'yes' ? { isNodeAdmin: true } : {}),
+      ...(space && role ? { spaceId: space, role } : {}),
+      ...expiresInHours(cmd, CREATE_USAGE),
+      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+    },
+  });
+  cmd.out.data(data, (r) => [
+    `created  account ${r.account.accountId}  ${r.account.username}${r.account.isNodeAdmin ? '  node admin' : ''}`,
+    ...(r.membership ? [`added to space ${r.membership.spaceId} as ${r.membership.role}`] : []),
+    ...setupLinkLines(r),
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+const RESET_USAGE = 'usage: tm8 node account reset <account-id|username> --yes [--expires-hours <1-720>]';
+
+/**
+ * `node account reset <account> --yes` — `node.accounts.reset` (323): clear the
+ * password, revoke every session, and issue a new one-time setup link. Never
+ * the node owner, never yourself (use `tm8 auth password`).
+ */
+async function nodeAccountReset(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['yes', 'expires-hours', 'mutation-id']);
+  const who = cmd.args[0];
+  if (cmd.args.length !== 1 || !who) throw new CliError(RESET_USAGE, EXIT_USAGE);
+  if (!cmd.options.bool('yes')) {
+    throw new CliError('`tm8 node account reset` signs the account out everywhere and requires --yes', EXIT_USAGE, {
+      hint: 'non-interactive execution never prompts, and --format json is not consent',
+    });
+  }
+  const accountId = await resolveAccountId(cmd, who);
+  const data = await observedInvoke<NodeAccountResetResult>(clientFor(cmd.ctx), 'node.accounts.reset', {
+    params: { accountId },
+    body: { ...expiresInHours(cmd, RESET_USAGE), clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+  });
+  cmd.out.data(data, (r) => [
+    `reset  account ${r.accountId}  ${r.username}  sessions revoked ${r.revokedSessionCount}`,
+    ...setupLinkLines(r),
+  ].join('\n'));
+  return EXIT_OK;
+}
+
+/** `node account enable <account>` — `accounts.enable` (323), the inverse of disable. */
+async function nodeAccountEnable(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']);
+  const who = cmd.args[0];
+  if (cmd.args.length !== 1 || !who) throw new CliError('usage: tm8 node account enable <account-id|username>', EXIT_USAGE);
+  const accountId = await resolveAccountId(cmd, who);
+  const data = await observedInvoke<AccountEnableResult>(clientFor(cmd.ctx), 'accounts.enable', {
+    params: { accountId },
+    body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+  });
+  cmd.out.data(data, (r) => `enabled  account ${r.accountId}`);
+  return EXIT_OK;
+}
+
+const ADMIN_USAGE = 'usage: tm8 node account admin <account-id|username> grant|revoke';
+
+/**
+ * `node account admin <account> grant|revoke` — `node.accounts.nodeAdmin.set`
+ * (323). The owner is never changed; the last node admin is never revoked.
+ */
+async function nodeAccountAdmin(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['mutation-id']);
+  const [who, verb] = cmd.args;
+  if (cmd.args.length !== 2 || !who || (verb !== 'grant' && verb !== 'revoke')) {
+    throw new CliError(ADMIN_USAGE, EXIT_USAGE);
+  }
+  const accountId = await resolveAccountId(cmd, who);
+  const data = await observedInvoke<NodeAccountNodeAdminSetResult>(clientFor(cmd.ctx), 'node.accounts.nodeAdmin.set', {
+    params: { accountId },
+    body: { isNodeAdmin: verb === 'grant', clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+  });
+  cmd.out.data(data, (r) => `${r.isNodeAdmin ? 'granted' : 'revoked'}  node admin  account ${r.accountId}`);
+  return EXIT_OK;
+}
+
+const ADD_TO_SPACE_USAGE = 'usage: tm8 node account add-to-space <account-id|username> --space <space-id> --role admin|member';
+
+/** `node account add-to-space <account>` — `node.accounts.memberships.add` (323). */
+async function nodeAccountAddToSpace(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['space', 'role', 'mutation-id']);
+  const who = cmd.args[0];
+  const spaceId = cmd.options.value('space');
+  const role = cmd.options.value('role');
+  if (cmd.args.length !== 1 || !who || !spaceId || (role !== 'admin' && role !== 'member')) {
+    throw new CliError(ADD_TO_SPACE_USAGE, EXIT_USAGE);
+  }
+  const accountId = await resolveAccountId(cmd, who);
+  const data = await observedInvoke<NodeAccountMembershipAddResult>(clientFor(cmd.ctx), 'node.accounts.memberships.add', {
+    params: { accountId },
+    body: { spaceId, role, clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+  });
+  cmd.out.data(data, (r) => r.created
+    ? `added  account ${r.accountId}  to space ${r.spaceId} as ${r.role}  member ${r.memberId}`
+    : `already a member  account ${r.accountId}  of space ${r.spaceId} as ${r.role} (unchanged)`);
   return EXIT_OK;
 }
 
@@ -190,6 +350,11 @@ export const NODE_COMMANDS: CommandModule[] = [
   { path: ['node', 'mode'], run: nodeMode },
   { path: ['node', 'account', 'disable'], run: nodeAccountDisable },
   { path: ['node', 'account', 'list'], run: nodeAccountList },
+  { path: ['node', 'account', 'create'], run: nodeAccountCreate },
+  { path: ['node', 'account', 'reset'], run: nodeAccountReset },
+  { path: ['node', 'account', 'enable'], run: nodeAccountEnable },
+  { path: ['node', 'account', 'admin'], run: nodeAccountAdmin },
+  { path: ['node', 'account', 'add-to-space'], run: nodeAccountAddToSpace },
   { path: ['node', 'path-grant', 'list'], run: pathGrantList },
   { path: ['node', 'path-grant', 'add'], run: pathGrantAdd },
   { path: ['node', 'path-grant', 'revoke'], run: pathGrantRevoke },

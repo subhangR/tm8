@@ -103,7 +103,9 @@ import type {
   CredentialsSpaceRenameInput, CredentialsSpaceSetVisibilityInput, CredentialsSpaceShareInput, CredentialsSpaceAddMineInput, CredentialsSpaceDefaultConsentInput,
   NodeCredentialPolicyEntry, NodeCredentialStatusEntry,
   NodeCredentialsPolicySetInput, NodeCredentialsStatusView, NodeMetricsView, SpaceCredentialPolicyEntry,
-  NodeAccountListView, NodeAccountView, PathGrantCreateInput, PathGrantListView, PathGrantRevokeInput, PathGrantView,
+  NodeAccountListView, NodeAccountView, PathGrantCreateInput,
+  AccountsEnableInput, AuthSetupRedeemInput, AuthSetupResolveInput, NodeAccountCreateInput,
+  NodeAccountMembershipAddInput, NodeAccountNodeAdminSetInput, NodeAccountResetInput, PathGrantListView, PathGrantRevokeInput, PathGrantView,
   SpaceCredentialProviderName, SpaceCredentialShape, SpaceCredentialStatus, SpaceCredentialView,
   ServerOnlyCredentialProviderName, SpaceCredentialStoredProviderName,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
@@ -2705,6 +2707,9 @@ export const NodeAccountViewSchema: z.ZodType<NodeAccountView> = z.object({
   displayName: z.string().optional(),
   status: z.enum(['active', 'disabled']),
   isNodeAdmin: z.boolean().optional(),
+  isOwner: z.boolean().optional(),
+  hasPassword: z.boolean().optional(),
+  setupExpiresAt: z.string().optional(),
 }).strict();
 
 export const NodeAccountListViewSchema: z.ZodType<NodeAccountListView> = z.object({
@@ -2729,6 +2734,56 @@ export const PathGrantListViewSchema: z.ZodType<PathGrantListView> = z.object({
 
 export const PathGrantRevokeInputSchema: z.ZodType<PathGrantRevokeInput> = z.object({
   clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+/* ── node-admin account administration (323) ──────────────────────────── */
+
+const SetupExpiresInHoursSchema = z.number().int().min(1).max(720);
+const AdminSpaceRoleSchema = z.enum(['admin', 'member']);
+
+export const NodeAccountCreateInputSchema: z.ZodType<NodeAccountCreateInput> = z.object({
+  username: z.string().min(1).max(100).regex(/^\S+$/, { message: 'username must not contain whitespace' }),
+  displayName: z.string().min(1).max(200).optional(),
+  email: z.string().min(3).max(320).optional(),
+  isNodeAdmin: z.boolean().optional(),
+  spaceId: z.string().uuid().optional(),
+  role: AdminSpaceRoleSchema.optional(),
+  expiresInHours: SetupExpiresInHoursSchema.optional(),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const NodeAccountResetInputSchema: z.ZodType<NodeAccountResetInput> = z.object({
+  expiresInHours: SetupExpiresInHoursSchema.optional(),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const AccountsEnableInputSchema: z.ZodType<AccountsEnableInput> = z.object({
+  clientMutationId: z.string().trim().min(1),
+}).strict();
+
+export const NodeAccountNodeAdminSetInputSchema: z.ZodType<NodeAccountNodeAdminSetInput> = z.object({
+  isNodeAdmin: z.boolean(),
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const NodeAccountMembershipAddInputSchema: z.ZodType<NodeAccountMembershipAddInput> = z.object({
+  spaceId: z.string().uuid(),
+  role: AdminSpaceRoleSchema,
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+const AccountSetupTokenSchema = z.string().min(8).max(200).regex(/^tm8a_[A-Za-z0-9_-]+$/, {
+  message: 'setup token must look like tm8a_…',
+});
+
+export const AuthSetupResolveInputSchema: z.ZodType<AuthSetupResolveInput> = z.object({
+  token: AccountSetupTokenSchema,
+}).strict();
+
+export const AuthSetupRedeemInputSchema: z.ZodType<AuthSetupRedeemInput> = z.object({
+  token: AccountSetupTokenSchema,
+  password: AuthPasswordSchema,
+  kind: z.enum(['browser', 'cli']).optional(),
 }).strict();
 
 export const PathGrantCreateInputSchema: z.ZodType<PathGrantCreateInput> = z.object({
