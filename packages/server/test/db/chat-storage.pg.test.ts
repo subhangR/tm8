@@ -472,6 +472,48 @@ describe.sequential('TM8 Chat storage and door rules', () => {
       { seq: 2, kind: 'tool_call', payload: { id: 'call-1', name: 'repo_read_file', state: 'completed' } },
     ]);
 
+    /* WHAT THE ANSWER RAN UNDER is its turn row's claim-time stamp (276), on
+       the answer only, in flight and after. The chat row is read here as the
+       independent source: the claim copied its model onto the turn. */
+    const [chatRow] = await database.query<{ model: string; provider: string; chat_mode: string }>(
+      `select model, provider, chat_mode from public.chats where entity_id=$1`, [chatId],
+    );
+    const [turnRow] = await database.query<{ mode: string; pricing_model: string; pricing_provider: string }>(
+      `select mode, pricing_model, pricing_provider from public.chat_turns where turn_id=$1`, [claimed.turnId],
+    );
+    const claimedUnder = { model: chatRow!.model, provider: chatRow!.provider, mode: turnRow!.mode };
+    expect(midPage.items.find((message) => message.id === agentMessageId)?.ranUnder).toEqual(claimedUnder);
+    expect(projectedAgent?.ranUnder).toEqual(claimedUnder);
+    expect(page.items.filter((message) => message.id !== agentMessageId && message.ranUnder !== undefined))
+      .toEqual([]);
+
+    const ranUnderNow = async () => ((await messagesList(deps)(
+      context('messages.list', { anchorId: chatId }),
+    )) as Page<MessageView>).items.find((message) => message.id === agentMessageId)?.ranUnder;
+    try {
+      // The chat moves on (what `set_chat_model` does); the answer does not.
+      await database.query(`update public.chats set model='claude-opus-4-1' where entity_id=$1`, [chatId]);
+      expect(await ranUnderNow()).toEqual(claimedUnder);
+      /* A row from before 276 has no model of its own, and one from before 176
+         may have no mode. It falls back to its QUEUE-time pricing stamp, which
+         is exact there because the model could not move yet. It does NOT fall
+         back to `chats.model`, which 276's column comment suggests: that value
+         has just moved, and this answer never ran on it. */
+      await database.query(
+        `update public.chat_turns set model=null, provider=null, mode=null where turn_id=$1`, [claimed.turnId],
+      );
+      expect(await ranUnderNow()).toEqual({
+        model: turnRow!.pricing_model, provider: turnRow!.pricing_provider, mode: chatRow!.chat_mode,
+      });
+      expect((await ranUnderNow())?.model).not.toBe('claude-opus-4-1');
+    } finally {
+      await database.query(`update public.chats set model=$2 where entity_id=$1`, [chatId, chatRow!.model]);
+      await database.query(
+        `update public.chat_turns set model=$2, provider=$3, mode=$4 where turn_id=$1`,
+        [claimed.turnId, chatRow!.model, chatRow!.provider, turnRow!.mode],
+      );
+    }
+
     const audits = await database.query<{ verb: string; summary: Record<string, unknown> }>(
       `select verb, summary from public.activity
         where entity_id = $1 and verb = 'chat.tool_called'

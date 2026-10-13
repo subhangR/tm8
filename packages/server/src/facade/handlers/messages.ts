@@ -16,6 +16,7 @@ import {
   MessagePartSchema,
   decodeCursor,
   encodeCursor,
+  type ChatMode,
   type MessagePart,
   type MessageView,
   type Page,
@@ -78,6 +79,14 @@ export async function hydrateEntityRows(
     .map((id) => byId.get(id))
     .filter((row): row is EntityRow => row !== undefined);
 }
+
+/* Keyed by every mode, so adding one to `ChatMode` fails to compile here
+   rather than dropping its turns' labels in silence. */
+const CHAT_MODES: Readonly<Record<ChatMode, true>> = {
+  ask: true, explain: true, plan: true, build: true, orchestrate: true, craft: true,
+};
+const isChatMode = (value: string | null): value is ChatMode =>
+  value !== null && Object.hasOwn(CHAT_MODES, value);
 
 /**
  * A `MessageView` is an `EntitySummary` plus the message-specific content and
@@ -153,14 +162,55 @@ export async function toMessageViews(
    * recognise it by string-matching the sentence. Projecting the turn binding
    * here lets them suppress by identity instead.
    */
-  const inFlightRows = await q.query<{ agent_message_id: string }>(
-    `select agent_message_id
-       from public.chat_turns
-      where agent_message_id = any($1::uuid[])
-        and state in ('queued', 'running')`,
+  /*
+   * The same read carries what each answer RAN UNDER (`ranUnder`), because a
+   * chat's config only describes its next turn: the mode is picked per turn
+   * (154) and the model can change mid-chat (276). Everything past 133's
+   * binding is read through `to_jsonb(t) ->> …`, as `members.status` is in
+   * entity-read.ts: position-pinned suites run this code on a chain that
+   * stops short of 276 (or 153), and a plain column reference fails there. A
+   * missing key reads as null, and null means no label, not an error.
+   *
+   * A row from before 276 has no `model` and falls back to `pricing_model`,
+   * the chat's model stamped when the turn was queued. That is exact, because
+   * the model could not change before 276. It is NOT `chats.model`, which
+   * 276's column comment suggests: that moves with `set_chat_model`, and an
+   * old answer never ran on the new value.
+   */
+  const turnRows = await q.query<{
+    agent_message_id: string; state: string;
+    model: string | null; provider: string | null; mode: string | null; chat_id: string | null;
+  }>(
+    `select agent_message_id, state,
+            coalesce(to_jsonb(t) ->> 'model', to_jsonb(t) ->> 'pricing_model') as model,
+            coalesce(to_jsonb(t) ->> 'provider', to_jsonb(t) ->> 'pricing_provider') as provider,
+            to_jsonb(t) ->> 'mode' as mode,
+            to_jsonb(t) ->> 'chat_id' as chat_id
+       from public.chat_turns t
+      where agent_message_id = any($1::uuid[])`,
     [rows.map((r) => r.id)],
   );
-  const inFlight = new Set(inFlightRows.map((r) => r.agent_message_id));
+  const inFlight = new Set(turnRows
+    .filter((r) => r.state === 'queued' || r.state === 'running')
+    .map((r) => r.agent_message_id));
+  /* A turn queued before 176 may carry no mode of its own. It ran under its
+     chat's mode then, which is exact: `chats.chat_mode` never changes. Asked
+     only when such a row is on the page, so nothing names `public.chats` on a
+     chain that predates it: a row there has no `chat_id` either. */
+  const modeless = [...new Set(turnRows
+    .filter((r) => r.mode === null && r.chat_id !== null)
+    .map((r) => r.chat_id as string))];
+  const chatModes = new Map((modeless.length === 0 ? [] : await q.query<{ entity_id: string; chat_mode: string }>(
+    `select entity_id, chat_mode from public.chats where entity_id = any($1::uuid[])`,
+    [modeless],
+  )).map((r) => [r.entity_id, r.chat_mode]));
+  const ranUnder = new Map<string, NonNullable<MessageView['ranUnder']>>();
+  for (const row of turnRows) {
+    const mode = row.mode ?? (row.chat_id === null ? null : chatModes.get(row.chat_id) ?? null);
+    if (row.model && row.provider && isChatMode(mode)) {
+      ranUnder.set(row.agent_message_id, { model: row.model, provider: row.provider, mode });
+    }
+  }
 
   const parts = new Map<string, MessagePart[]>();
   for (const row of partRows) {
@@ -205,6 +255,7 @@ export async function toMessageViews(
         .filter((actor): actor is NonNullable<typeof actor> => actor !== undefined),
       ...(messageParts ? { parts: messageParts } : {}),
       ...(inFlight.has(row.id) ? { turnInFlight: true } : {}),
+      ...(ranUnder.has(row.id) ? { ranUnder: ranUnder.get(row.id)! } : {}),
     });
   }
   return views;

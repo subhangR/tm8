@@ -476,6 +476,13 @@ export class ToolInputError extends Error {
 }
 
 export interface Tm8ToolRouterOptions {
+  /**
+   * The mode the chat was LAUNCHED in (`TM8_CHAT_MODE`), which is not the
+   * chat's mode. That is picked per turn (154) and reaches the model as the
+   * turn's own `[mode: …]` line, while this process lives on across switches.
+   * It feeds only the permission filter, which answers the same for every
+   * mode; orchestrator.test.ts fails if that stops being true.
+   */
   mode?: ChatMode;
   projectRoot?: string;
   spaceId?: string;
@@ -496,13 +503,13 @@ export interface Tm8ToolRouterOptions {
 }
 
 export class Tm8ToolRouter {
-  private readonly mode: ChatMode;
+  private readonly launchMode: ChatMode;
   private readonly directContext: DirectToolContext;
   private readonly hiddenTools: ReadonlySet<string>;
   private readonly chatId: string | null;
 
   constructor(private readonly transport: CatalogTransport, options: Tm8ToolRouterOptions = {}) {
-    this.mode = options.mode ?? parseChatMode(undefined);
+    this.launchMode = options.mode ?? parseChatMode(undefined);
     this.hiddenTools = new Set(options.hiddenTools ?? []);
     this.chatId = options.chatId?.trim() || null;
     this.directContext = {
@@ -516,7 +523,7 @@ export class Tm8ToolRouter {
   listedTools(): readonly McpToolDefinition[] {
     return TM8_MCP_TOOLS.filter((tool) => (
       !this.hiddenTools.has(tool.name)
-      && toolPermission(this.mode, tool.name) === 'allow'
+      && toolPermission(this.launchMode, tool.name) === 'allow'
     ));
   }
 
@@ -529,22 +536,22 @@ export class Tm8ToolRouter {
         throw new ToolInputError(`${name} is replaced by a provider-native tool in this chat runtime`);
       }
       if (isDirectTool(name)) {
-        enforcePermission(this.mode, name);
+        enforcePermission(this.launchMode, name);
         return success(await callDirectTool(name, rawArguments, this.directContext));
       }
       if (name === 'tm8_overview') {
-        enforcePermission(this.mode, name);
-        return success(overview(rawArguments, this.mode, this.hiddenTools, this.chatId));
+        enforcePermission(this.launchMode, name);
+        return success(overview(rawArguments, this.launchMode, this.hiddenTools, this.chatId));
       }
       if (!isGroupName(name)) throw new ToolInputError(`unknown tm8 MCP tool: ${name}`);
       const args = expandOpArguments(objectOf(rawArguments, 'tool arguments'));
       const operation = optionalString(args.operation, 'operation');
       const directory = GROUPS[name];
-      enforcePermission(this.mode, name, operation);
+      enforcePermission(this.launchMode, name, operation);
       if (!operation) {
         return success(directoryResult(
           name,
-          directory.filter((item) => toolPermission(this.mode, name, item.operation) !== 'deny'),
+          directory.filter((item) => toolPermission(this.launchMode, name, item.operation) !== 'deny'),
         ));
       }
       const selected = directory.find((item) => item.operation === operation);
@@ -599,7 +606,7 @@ function directoryResult(name: keyof typeof GROUPS, directory: readonly Operatio
 
 function overview(
   raw: unknown,
-  mode: ChatMode,
+  launchMode: ChatMode,
   hiddenTools: ReadonlySet<string>,
   chatId: string | null,
 ): Record<string, unknown> {
@@ -618,10 +625,10 @@ function overview(
       purpose: 'durable anchored messages and threaded replies; a work session or a chat is reached'
         + ' by anchoring on ITS own entity id',
     },
-  ].filter((group) => toolPermission(mode, group.tool) === 'allow');
+  ].filter((group) => toolPermission(launchMode, group.tool) === 'allow');
   const operations = Object.entries(GROUPS).flatMap(([tool, guides]) =>
     guides
-      .filter((item) => toolPermission(mode, tool, item.operation) !== 'deny')
+      .filter((item) => toolPermission(launchMode, tool, item.operation) !== 'deny')
       .map((item) => ({ tool, operation: item.operation, summary: item.summary })));
   const terms = query?.split(/\s+/).filter(Boolean) ?? [];
   return {
@@ -629,7 +636,7 @@ function overview(
     security: {
       authority: 'requesting human claims',
       provenance: 'selected teammate actor',
-      filesystem: toolPermission(mode, 'repo_read_file') === 'allow',
+      filesystem: toolPermission(launchMode, 'repo_read_file') === 'allow',
       credentialOperations: false,
       /* B10. The credential is bound to ONE chat server-side; naming that chat
          here is a statement about the token, not a grant. Saying so is the
@@ -637,7 +644,20 @@ function overview(
       ...(chatId ? { boundChatId: chatId } : {}),
     },
     groups,
-    mode,
+    /* NOT `mode`, which this used to echo: that was the mode the chat
+       LAUNCHED in, and a chat's mode is picked per turn and switched without
+       restarting this server (154). After a mid-chat switch an agent was told
+       `[mode: build]` by its turn and `mode: ask` here. The turn's own line is
+       the one copy that is always current, so this says where to read it.
+       Only inside a chat: the line is written by the chat runtime, and a
+       non-chat lane that opts this server back in (`capabilities.launch.
+       mcpServers`) never gets one, so there this says nothing, like `chat`. */
+    ...(chatId
+      ? {
+        modeSource: 'per turn: the server-written [mode: <name>] line that opens the turn you are answering;'
+          + ' it can change from one turn to the next',
+      }
+      : {}),
     /* The chat's own id and what it means, so `messages.post` needs no
        inference: this is the address other sessions and chats post on to reach
        this chat, and the parent a coordinated worker reports back to. Absent
@@ -654,7 +674,7 @@ function overview(
       }
       : {}),
     directTools: DIRECT_TOOLS
-      .filter((tool) => !hiddenTools.has(tool.name) && toolPermission(mode, tool.name) !== 'deny')
+      .filter((tool) => !hiddenTools.has(tool.name) && toolPermission(launchMode, tool.name) !== 'deny')
       .map((tool) => ({ tool: tool.name, purpose: tool.description })),
     ...(terms.length === 0
       ? {}

@@ -9,8 +9,9 @@
  *
  * Unlike the model, though, nothing in the runtime had to change to allow this.
  * The per-turn carrier has been live since 153/154: `messages.requested_chat_mode`
- * is stamped by the server, 154's enqueue trigger copies it to
- * `chat_turns.mode`, and the claim resolves `coalesce(turn.mode,
+ * is stamped by the server, the same post queues the turn with it as
+ * `chat_turns.mode` (`w2_post_message_batch` since 176; 153's enqueue trigger
+ * before that), and the claim resolves `coalesce(turn.mode,
  * chat.chat_mode)`. `PostMessageInput.mode` already accepted it on the wire. The
  * launched system prompt is mode-INDEPENDENT by design ("input.chatMode is not
  * read here") and carries a guide to all six modes, each turn's `[mode: x]`
