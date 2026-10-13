@@ -174,6 +174,14 @@ import type {
   NodeCredentialPolicyEntry,
   NodeCredentialsStatusView,
   NodeAccountListView,
+  AccountDisableResult,
+  AccountEnableResult,
+  AdminSpaceRole,
+  NodeAccountCreateInput,
+  NodeAccountCreateResult,
+  NodeAccountMembershipAddResult,
+  NodeAccountNodeAdminSetResult,
+  NodeAccountResetResult,
   PathGrantListView,
   PathGrantView,
   NodeMetricsView,
@@ -1667,6 +1675,25 @@ export interface Seam {
     accounts(): Promise<NodeAccountListView>;
     /** Anyone: the caller's own live grants. */
     mine(): Promise<PathGrantListView>;
+  };
+
+  /**
+   * -- account administration (323, task 01a13574) -------------------------
+   *
+   * Human node admin, checked by the server and again in SQL. Create returns a
+   * ONE-TIME setup link (shown once, never recoverable); reset clears the
+   * password, signs the account out everywhere and returns a new link. The
+   * owner is never reset or demoted; the last node admin is never revoked.
+   * Optional like `pathGrants`: a seam with no node behind it has none.
+   */
+  nodeAccounts?: {
+    list(): Promise<NodeAccountListView>;
+    create(input: Omit<NodeAccountCreateInput, 'clientMutationId'>): Promise<NodeAccountCreateResult>;
+    reset(accountId: string, expiresInHours?: number): Promise<NodeAccountResetResult>;
+    disable(accountId: string): Promise<AccountDisableResult>;
+    enable(accountId: string): Promise<AccountEnableResult>;
+    setNodeAdmin(accountId: string, isNodeAdmin: boolean): Promise<NodeAccountNodeAdminSetResult>;
+    addToSpace(accountId: string, spaceId: SpaceId, role: AdminSpaceRole): Promise<NodeAccountMembershipAddResult>;
   };
 
   /**

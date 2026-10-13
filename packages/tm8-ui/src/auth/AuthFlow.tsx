@@ -29,6 +29,7 @@ import {
   FrameServerResolved,
 } from './ServerFrames';
 import { FrameAccessTokens, FrameAccountMenu } from './AccountFrames';
+import { FrameInviteSignup, FrameSetupLink } from './LinkFrames';
 import type { AuthFlowProps, AuthFrameDef, AuthFrameId, FrameProps } from './types';
 
 /**
@@ -57,6 +58,16 @@ export const AUTH_FRAMES: readonly AuthFrameDef[] = [
   { id: '1q', label: '1q access tokens', flow: 'account', overlay: false },
 ];
 
+/**
+ * Frames the LIVE gate needs that the oracle never drew: the two link-only
+ * ways in (323 setup link, 141 invite signup). Kept out of `AUTH_FRAMES` so
+ * the board and its oracle-order tests stay the oracle's seventeen.
+ */
+export const LIVE_AUTH_FRAMES: readonly AuthFrameDef[] = [
+  { id: '1r', label: '1r setup link', flow: 'sign-in', overlay: false },
+  { id: '1s', label: '1s invite signup', flow: 'invite', overlay: false },
+];
+
 const FRAME_COMPONENTS: Record<AuthFrameId, ComponentType<FrameProps>> = {
   '1a': FrameClaim,
   '1b': FrameNameServer,
@@ -75,6 +86,8 @@ const FRAME_COMPONENTS: Record<AuthFrameId, ComponentType<FrameProps>> = {
   '1n': FrameConnectFailures,
   '1p': FrameAccountMenu,
   '1q': FrameAccessTokens,
+  '1r': FrameSetupLink,
+  '1s': FrameInviteSignup,
 };
 
 /**
@@ -132,7 +145,7 @@ export function AuthFlow(props: AuthFlowProps) {
   const onThemeChange = props.onThemeChange ?? themeControl.setTheme;
 
   const Frame = FRAME_COMPONENTS[current];
-  const def = AUTH_FRAMES.find((f) => f.id === current)!;
+  const def = [...AUTH_FRAMES, ...LIVE_AUTH_FRAMES].find((f) => f.id === current)!;
 
   const body = (
     <div

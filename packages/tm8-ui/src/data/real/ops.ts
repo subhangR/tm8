@@ -66,6 +66,13 @@ import {
   type CommandResult,
   type MembershipEndResult,
   type AccountDisableResult,
+  type AccountEnableResult,
+  type AdminSpaceRole,
+  type NodeAccountCreateInput,
+  type NodeAccountCreateResult,
+  type NodeAccountMembershipAddResult,
+  type NodeAccountNodeAdminSetResult,
+  type NodeAccountResetResult,
   type ContainersCreateInput,
   type ContainersDestroyInput,
   type ContainersLifecycleInput,
@@ -839,6 +846,43 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     nodeAccountsList(): Promise<NodeAccountListView> {
       return http.call<NodeAccountListView>('node.accounts.list');
+    },
+
+    // -- account administration (323) ---------------------------------------
+    // Human node admin; `node.*`/`accounts.*` ride the gate pass under enforce.
+
+    nodeAccountsCreate(input: Omit<NodeAccountCreateInput, 'clientMutationId'>): Promise<NodeAccountCreateResult> {
+      return http.call<NodeAccountCreateResult>('node.accounts.create', {
+        body: { ...input, clientMutationId: newId('acctcreate') },
+      });
+    },
+
+    nodeAccountsReset(accountId: string, expiresInHours?: number): Promise<NodeAccountResetResult> {
+      return http.call<NodeAccountResetResult>('node.accounts.reset', {
+        params: { accountId },
+        body: { ...(expiresInHours ? { expiresInHours } : {}), clientMutationId: newId('acctreset') },
+      });
+    },
+
+    enableAccount(accountId: string): Promise<AccountEnableResult> {
+      return http.call<AccountEnableResult>('accounts.enable', {
+        params: { accountId },
+        body: { clientMutationId: newId('acctenable') },
+      });
+    },
+
+    nodeAccountsSetNodeAdmin(accountId: string, isNodeAdmin: boolean): Promise<NodeAccountNodeAdminSetResult> {
+      return http.call<NodeAccountNodeAdminSetResult>('node.accounts.nodeAdmin.set', {
+        params: { accountId },
+        body: { isNodeAdmin, clientMutationId: newId('acctadmin') },
+      });
+    },
+
+    nodeAccountsAddToSpace(accountId: string, spaceId: SpaceId, role: AdminSpaceRole): Promise<NodeAccountMembershipAddResult> {
+      return http.call<NodeAccountMembershipAddResult>('node.accounts.memberships.add', {
+        params: { accountId },
+        body: { spaceId, role, clientMutationId: newId('acctspace') },
+      });
     },
 
     myPathGrants(): Promise<PathGrantListView> {

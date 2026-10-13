@@ -462,9 +462,15 @@ export async function loginWithPassword(
   const verifier = row?.passwordHash ?? UNMATCHABLE_VERIFIER;
   const ok = await hasher.verify(input.password, verifier);
   if (!row || !row.passwordHash || !ok) throw invalidCredentials();
-  // Password proven but the account is switched off (R6). Same code, same
-  // message as a bad credential: a disabled account is not enumerable either.
-  if (row.status !== 'active') throw invalidCredentials();
+  // Password proven but the account is switched off (R6). Said plainly, and
+  // only AFTER the password check: a caller who cannot prove the password
+  // still gets the uniform refusal above, so this enumerates nothing — but the
+  // person who can stops retrying a password that was never the problem.
+  if (row.status !== 'active') {
+    throw new CollabError('forbidden', 'this account is disabled; ask a node admin to re-enable it', {
+      details: { reason: 'account_disabled' },
+    });
+  }
 
   const kind: LoginKind = input.kind ?? 'browser';
   const secret = generateSecret();

@@ -29,6 +29,8 @@ export type AuthActions = Pick<
   AuthSessionState,
   | 'createAccount'
   | 'claimNode'
+  | 'redeemSetup'
+  | 'inviteSignup'
   | 'signIn'
   | 'signOut'
   | 'failure'
@@ -48,6 +50,10 @@ export type AuthActions = Pick<
    * defect this lane removed from the gate.
    */
   nodeClaim: NodeClaim | null;
+  /** A `#setup=` token this page was opened with (323), read once at mount; null when none. */
+  setupToken: string | null;
+  /** The invite code parked above the gate (`capturePendingJoin`); null when none. */
+  inviteCode: string | null;
 };
 
 export const AuthActionsContext = createContext<AuthActions | null>(null);

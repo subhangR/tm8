@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:527a376d04e641936fd86e67099a0fc993cb6fe872aa7e115f0a9795921eba40",
+  "catalogDigest": "sha256:6eb2bdca2bb65a9fb2f0e60481b0f9610457a4f0af40f636a4ce0e0c5c1fdf26",
   "catalog": {
-    "total": 375,
-    "v1": 373,
+    "total": 382,
+    "v1": 380,
     "reserved": 2,
-    "http": 373,
+    "http": 380,
     "ws": 1,
-    "registerableV1Http": 371,
+    "registerableV1Http": 378,
     "methods": {
       "GET": 124,
-      "POST": 183,
+      "POST": 189,
       "PATCH": 21,
       "DELETE": 23,
-      "PUT": 22,
+      "PUT": 23,
       "WS": 2
     },
     "kinds": {
-      "read": 130,
-      "command": 243,
+      "read": 131,
+      "command": 249,
       "stream": 2
     },
-    "uniqueNames": 375,
-    "uniqueBindings": 374
+    "uniqueNames": 382,
+    "uniqueBindings": 381
   },
   "reservedOperations": [
     "search.query",
@@ -652,6 +652,13 @@
         "operation": "accounts.disable",
         "method": "POST",
         "path": "/v2/accounts/:accountId/disable",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "accounts.enable",
+        "method": "POST",
+        "path": "/v2/accounts/:accountId/enable",
         "status": "registered",
         "source": "server-router"
       },
@@ -2371,6 +2378,20 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.setup.resolve",
+        "method": "POST",
+        "path": "/v2/auth/setup/resolve",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.setup.redeem",
+        "method": "POST",
+        "path": "/v2/auth/setup",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "auth.claim",
         "method": "POST",
         "path": "/v2/auth/claim",
@@ -2612,6 +2633,34 @@
         "operation": "node.accounts.list",
         "method": "GET",
         "path": "/v2/node/accounts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.accounts.create",
+        "method": "POST",
+        "path": "/v2/node/accounts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.accounts.reset",
+        "method": "POST",
+        "path": "/v2/node/accounts/:accountId/reset",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.accounts.nodeAdmin.set",
+        "method": "PUT",
+        "path": "/v2/node/accounts/:accountId/node-admin",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "node.accounts.memberships.add",
+        "method": "POST",
+        "path": "/v2/node/accounts/:accountId/memberships",
         "status": "registered",
         "source": "server-router"
       },
@@ -3029,7 +3078,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 343
+    "unimplementedV1Http": 350
   },
   "schemas": {
     "additive": {
@@ -4271,6 +4320,22 @@
         "intentTags": [
           "accounts",
           "disable"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "accounts.enable",
+        "noun": "account",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/accounts.enable",
+        "intentTags": [
+          "accounts",
+          "enable"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -8408,6 +8473,40 @@
         "publicComposite": null
       },
       {
+        "operation": "auth.setup.resolve",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.setup.resolve",
+        "intentTags": [
+          "auth",
+          "setup",
+          "resolve"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.setup.redeem",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.setup.redeem",
+        "intentTags": [
+          "auth",
+          "setup",
+          "redeem"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "auth.claim",
         "noun": "auth",
         "exposure": "public",
@@ -9010,6 +9109,76 @@
           "node",
           "accounts",
           "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.accounts.create",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.accounts.create",
+        "intentTags": [
+          "node",
+          "accounts",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.accounts.reset",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.accounts.reset",
+        "intentTags": [
+          "node",
+          "accounts",
+          "reset"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.accounts.nodeAdmin.set",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.accounts.nodeAdmin.set",
+        "intentTags": [
+          "node",
+          "accounts",
+          "admin",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "node.accounts.memberships.add",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/node.accounts.memberships.add",
+        "intentTags": [
+          "node",
+          "accounts",
+          "memberships",
+          "add"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

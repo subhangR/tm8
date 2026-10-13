@@ -2295,6 +2295,7 @@ export const AuthClaimStatusResultSchema: z.ZodType<AuthClaimStatusResult> = z.o
   mode: z.enum(['single', 'multi']),
   signupPath: z.enum(['claim', 'invite', 'admin']),
   projectIsolation: z.enum(['shared', 'isolated']),
+  publicOrigin: z.string().optional(),
 }).strict();
 
 export const AuthClaimReissueResultSchema: z.ZodType<AuthClaimReissueResult> = z.object({

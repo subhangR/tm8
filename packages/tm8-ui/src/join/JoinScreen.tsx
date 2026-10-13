@@ -35,13 +35,12 @@
  * `{"status":"revoked","spaceName":"tm8"}`. This component renders that shape
  * as given and never fills a gap it was handed on purpose.
  *
- * WHY REDEEMING STILL NEEDS AN ACCOUNT, stated on screen rather than
- * discovered: `redeem_invite` opens with `internal.require_identity()`, so a
- * code cannot make you somebody. `auth.invite.signup` — invite-bound account
- * creation — is named in the same doc's §6 and does not exist, and
- * `auth.signup` is node-admin gated. A stranger with no account on this node
- * genuinely cannot finish, and the honest thing is to name the missing step
- * rather than loop them through a sign-in that cannot work.
+ * WHY THIS SCREEN NEEDS AN ACCOUNT: `redeem_invite` opens with
+ * `internal.require_identity()`, so a code cannot make you somebody here. A
+ * stranger with no account never reaches this screen signed out: the gate
+ * opens on "create your account to join" (auth/LinkFrames.tsx, frame 1s),
+ * which calls `auth.invite.signup` (141) — the account, the membership and the
+ * invite's use in one step — and then this screen finds them already a member.
  */
 import { useEffect, useState } from 'react';
 import type { InvitePreview, InviteRedemption, SpaceId } from '@tm8/contract';

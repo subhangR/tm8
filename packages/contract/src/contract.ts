@@ -2597,6 +2597,12 @@ export interface AuthClaimStatusResult {
    * flag of its own; an unreadable policy answers `isolated`.
    */
   projectIsolation: ProjectIsolation;
+  /**
+   * `TM8_PUBLIC_ORIGIN` when the operator set one (323): where links handed to
+   * other people (setup links, invite links) should point. Absent: unknown, and
+   * a client falls back to the origin it is on — which may be loopback.
+   */
+  publicOrigin?: string;
 }
 
 /**

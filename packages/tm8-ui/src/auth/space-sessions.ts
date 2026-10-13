@@ -59,7 +59,7 @@ const GATE_SPACE_ENTRY_OPS: ReadonlySet<string> = new Set([
   'spaces.create',
   'spaces.invites.redeem',
 ]);
-const GATE_PREFIXES: readonly string[] = ['auth.', 'node.', 'serverConnections.'];
+const GATE_PREFIXES: readonly string[] = ['auth.', 'node.', 'serverConnections.', 'accounts.'];
 
 export function isGateOperation(op: OperationName | undefined): boolean {
   if (op === undefined) return false;

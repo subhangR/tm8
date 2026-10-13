@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
-  NodeAccountListView,
   SpaceConfigsView,
   SpaceId,
 } from '@tm8/contract';
@@ -10,6 +9,8 @@ import { FilesystemAccessSection } from '../settings-credentials/FilesystemAcces
 import { filesystemAccessPortFromSeam } from '../settings-credentials/filesystem-access-port';
 import { spaceCredentialsPortFromSeam } from '../settings-credentials/space-port';
 import { SectionFrame } from '../settings-space/SectionFrame';
+import { AccountsSection, type AccountsPort } from './AccountsSection';
+import { readCachedNodeClaim } from '../auth/session';
 import { valueLabel } from '../settings-space/ConfigsSection';
 import '../settings-space/settings.css';
 import './node-admin.css';
@@ -236,14 +237,7 @@ function NodeContents({
           ? { browse: (path?: string) => guard(() => filesystem.browse!(path)) }
           : {}),
       },
-      accounts: () =>
-        guard(() =>
-          seam.pathGrants
-            ? seam.pathGrants.accounts()
-            : Promise.reject(
-                new Error('Accounts are not available on this node.'),
-              ),
-        ),
+      accounts: accountsPort(seam, viewer, guard),
       configuration: () => guard(() => seam.spaceConfigs(spaceId as SpaceId)),
     };
   }, [seam, spaceId, viewer, onDenied]);
@@ -251,8 +245,43 @@ function NodeContents({
     return <NodeCredentialsSection port={ports.credentials} nodeOnly />;
   if (section === 'filesystem')
     return <FilesystemAccessSection port={ports.filesystem} />;
-  if (section === 'accounts') return <Accounts load={ports.accounts} />;
+  if (section === 'accounts') return <AccountsSection port={ports.accounts} />;
   return <Configuration load={ports.configuration} />;
+}
+
+/** The Accounts section's port: every call re-checks node admin first (`guard`). */
+function accountsPort(
+  seam: Seam,
+  viewer: IdentityView,
+  guard: <T>(read: () => Promise<T>) => Promise<T>,
+): AccountsPort {
+  const admin = seam.nodeAccounts;
+  const wrapped = admin && (Object.fromEntries(
+    Object.entries(admin).map(([name, fn]) => [
+      name,
+      (...args: unknown[]) => guard(() => (fn as (...a: unknown[]) => Promise<unknown>)(...args)),
+    ]),
+  ) as unknown as NonNullable<Seam['nodeAccounts']>);
+  return {
+    load: () =>
+      guard(() =>
+        seam.pathGrants
+          ? seam.pathGrants.accounts()
+          : Promise.reject(new Error('Accounts are not available on this node.')),
+      ),
+    ...(wrapped ? { admin: wrapped } : {}),
+    spaces: () => seam.spaces(),
+    createInvite: (spaceId, role) =>
+      seam.commands.createInvite(spaceId, {
+        role,
+        maxUses: 1,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
+    viewerAccountId: viewer.accountId,
+    // Lane D A7: shared links point at the node's published origin when it
+    // has one, not at whatever (possibly loopback) origin the admin is on.
+    origin: readCachedNodeClaim()?.publicOrigin ?? window.location.origin,
+  };
 }
 
 function useRead<T>(load: () => Promise<T>) {
@@ -272,37 +301,6 @@ function useRead<T>(load: () => Promise<T>) {
     };
   }, [load]);
   return state;
-}
-function Accounts({ load }: { load: () => Promise<NodeAccountListView> }) {
-  const { value, error } = useRead(load);
-  return (
-    <SectionFrame title="Accounts">
-      <p>
-        Accounts registered on this node. To provision an account, use{' '}
-        <code>tm8 auth signup</code> from a node-admin CLI session, then invite
-        the person to a space.
-      </p>
-      {error ? (
-        <p role="alert">Accounts could not be read: {error}</p>
-      ) : !value ? (
-        <p role="status">Reading accounts…</p>
-      ) : !value.accounts.length ? (
-        <p>No accounts found.</p>
-      ) : (
-        <ul className="node-admin__list">
-          {value.accounts.map((account) => (
-            <li key={account.accountId}>
-              <strong>{account.displayName || account.username}</strong>
-              <span>
-                {account.username} · {account.status} ·{' '}
-                {account.isNodeAdmin ? 'Node admin or owner' : 'Account'}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </SectionFrame>
-  );
 }
 function Configuration({ load }: { load: () => Promise<SpaceConfigsView> }) {
   const { value, error } = useRead(load);

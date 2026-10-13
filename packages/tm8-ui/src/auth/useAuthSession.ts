@@ -15,6 +15,8 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthSessionContext } from './gate-context';
 import {
   claimNodeOnServer,
+  inviteSignupOnServer,
+  redeemSetupOnServer,
   createServerAccount,
   fetchAutoOwnerSession,
   isAutoOwnerSuppressed,
@@ -78,6 +80,10 @@ export interface AuthSessionState {
    * a viewer which one it is actually performing.
    */
   claimNode(token: string, name: string, password: string): Promise<boolean>;
+  /** `auth.setup.redeem` (323): choose a password with a node admin's one-time link, and sign in. */
+  redeemSetup(token: string, password: string): Promise<boolean>;
+  /** `auth.invite.signup` (141): create an account by redeeming an invite, and sign in. */
+  inviteSignup(code: string, name: string, password: string, spacePassword?: string): Promise<boolean>;
   signIn(handle: string, password: string): Promise<boolean>;
   signOut(): void;
   clearFailure(): void;
@@ -325,6 +331,36 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
     [refresh],
   );
 
+  // The two link-authorized sign-ups (323 setup link, 141 invite): the link
+  // is the authorization, and success signs you in like a login.
+  const runLinkAct = useCallback(
+    async (act: () => Promise<{ ok: true } | { ok: false; failure: AuthFailure }>) => {
+      setBusy(true);
+      setFailure(null);
+      try {
+        const result = await act();
+        if (!result.ok) {
+          setFailure(result.failure);
+          return false;
+        }
+        refresh();
+        return true;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh],
+  );
+  const redeemSetup = useCallback(
+    (token: string, password: string) => runLinkAct(() => redeemSetupOnServer(token, password)),
+    [runLinkAct],
+  );
+  const inviteSignup = useCallback(
+    (code: string, name: string, password: string, spacePassword?: string) =>
+      runLinkAct(() => inviteSignupOnServer(code, name, password, spacePassword)),
+    [runLinkAct],
+  );
+
   const signOut = useCallback(() => {
     setServerIdentity(null);
     setIdentityError(null);
@@ -356,6 +392,8 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       checkingLoopback,
       createAccount,
       claimNode,
+      redeemSetup,
+      inviteSignup,
       signIn,
       signOut,
       clearFailure,
@@ -370,6 +408,8 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       checkingLoopback,
       createAccount,
       claimNode,
+      redeemSetup,
+      inviteSignup,
       signIn,
       signOut,
       clearFailure,

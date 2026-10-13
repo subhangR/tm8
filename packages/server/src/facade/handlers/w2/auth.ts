@@ -501,6 +501,9 @@ function authClaimStatus(deps: FacadeDeps): OperationHandler {
       // A node admin can still provision through `auth.signup`, but the primary
       // route for a new person on a claimed node is redeeming an invite.
       signupPath: claimed ? 'invite' : 'claim',
+      // 323: where shared links should point. Not a secret: it is the
+      // address the operator publishes the node at.
+      ...(deps.config.publicOrigin ? { publicOrigin: deps.config.publicOrigin } : {}),
     };
     return result;
   };

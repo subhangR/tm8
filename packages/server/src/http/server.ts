@@ -73,11 +73,21 @@ import {
 
 const FILE_UPLOAD_SUPPORT_PATH = /^\/v2\/files\/uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/content$/;
 
+/** Operations that stand on the credential in their body; a dead session carrier is stripped (see below). */
+const CREDENTIAL_EXCHANGE_OPS: ReadonlySet<string> = new Set([
+  'auth.login',
+  'auth.signup',
+  'auth.invite.signup',
+  'auth.setup.resolve',
+  'auth.setup.redeem',
+]);
+
 /**
  * The WS side of the frame, kept behind a structural type so the HTTP
  * pipeline never imports the event block directly — the socket
  * implementation is swappable (see ../events/ws-server.ts).
  */
+
 export interface UpgradeTarget {
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> | void;
   closeAll?(): void;
@@ -486,7 +496,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
          * Every other operation keeps refusing: presenting an invalid token
          * to a session-bearing call is still a refusal, not a downgrade.
          */
-        const exchange = match.opName === 'auth.login' || match.opName === 'auth.signup';
+        // 323: the setup link is the reset path, so it is EXACTLY the case
+        // above — a reset revoked the cookie this browser still sends. The
+        // invite signup and the setup preview stand on their body the same way.
+        const exchange = CREDENTIAL_EXCHANGE_OPS.has(match.opName ?? '');
         const unauthenticated = err instanceof Error && (err as { code?: string }).code === 'unauthenticated';
         /*
          * `auth.space.enter` (W3) is the one call where an explicit

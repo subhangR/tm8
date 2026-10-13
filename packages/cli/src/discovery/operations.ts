@@ -578,7 +578,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── node accounts (G6, migration 232) ──────────────────────────────────
   'accounts.disable': {
     cmd: ['node', 'account', 'disable'],
-    syn: 'tm8 node account disable <account-id> --yes [--mutation-id <id>]',
+    syn: 'tm8 node account disable <account-id|username> --yes [--mutation-id <id>]',
     sum: 'Disable an account on this Server: every session it holds is revoked and its agent sessions stop',
     authz: 'server',
     input: 'bound',

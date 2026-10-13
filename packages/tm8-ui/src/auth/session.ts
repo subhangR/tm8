@@ -32,6 +32,7 @@
 import { CollabError } from '@tm8/contract';
 import type {
   AuthLoginResult,
+  AuthSetupResolveResult,
   AuthSessionGetResult,
   AuthSignupResult,
 } from '@tm8/contract';
@@ -341,9 +342,6 @@ export async function createServerAccount(
       body: { username: handle, password, displayName: name.trim() },
     });
   } catch (err) {
-    if (err instanceof CollabError && err.code === 'conflict') {
-      return { ok: false, failure: { kind: 'account-exists', handle } };
-    }
     return { ok: false, failure: failureFrom(err, 'signup') };
   }
 
@@ -515,6 +513,8 @@ export interface NodeClaim {
   claimed: boolean;
   mode: 'single' | 'multi';
   signupPath: 'claim' | 'invite' | 'admin';
+  /** `TM8_PUBLIC_ORIGIN`, when the node publishes one (323). */
+  publicOrigin?: string;
 }
 
 /** Per-server, so switching servers cannot show one node's state for another. */
@@ -620,6 +620,75 @@ export async function claimNodeOnServer(
     return storePass(serverId, claimed);
   } catch (err) {
     return { ok: false, failure: failureFrom(err, 'login') };
+  }
+}
+
+/* ── one-time account setup links (323) ─────────────────────────────────── */
+
+/** `auth.setup.resolve` — what a `#setup=` link is for. Claim-free. */
+export async function resolveSetupLink(token: string): Promise<AuthSetupResolveResult> {
+  const { client } = bareClientForActiveServer();
+  return client.call<AuthSetupResolveResult>('auth.setup.resolve', { body: { token: token.trim() } });
+}
+
+/**
+ * `auth.setup.redeem` — choose your password with the link a node admin sent,
+ * and sign in. The token is the authorization, so this works from any device;
+ * the pass is stored exactly as `signInToServer` stores one.
+ */
+export async function redeemSetupOnServer(token: string, password: string): Promise<AuthResult<GateAccount>> {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { ok: false, failure: { kind: 'password-too-short', min: MIN_PASSWORD_LENGTH } };
+  }
+  // Bare: a reset revoked this browser's pass, and presenting it would refuse
+  // the exchange before the token is read (see `bareClientForActiveServer`).
+  const { client, serverId } = bareClientForActiveServer();
+  try {
+    const issued = await client.call<AuthLoginResult>('auth.setup.redeem', {
+      body: { token: token.trim(), password, kind: 'browser' },
+    });
+    return storePass(serverId, issued);
+  } catch (err) {
+    return { ok: false, failure: failureFrom(err, 'signup') };
+  }
+}
+
+/**
+ * `auth.invite.signup` — redeem an invite that CREATES the account, then sign
+ * in (141, design D5). The code is the authorization; the result carries a
+ * pass like a login.
+ */
+export async function inviteSignupOnServer(
+  code: string,
+  name: string,
+  password: string,
+  spacePassword?: string,
+): Promise<AuthResult<GateAccount>> {
+  const handle = handleFrom(name);
+  if (!handle) return { ok: false, failure: { kind: 'name-required' } };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { ok: false, failure: { kind: 'password-too-short', min: MIN_PASSWORD_LENGTH } };
+  }
+  // Bare: a reset revoked this browser's pass, and presenting it would refuse
+  // the exchange before the token is read (see `bareClientForActiveServer`).
+  const { client, serverId } = bareClientForActiveServer();
+  try {
+    const issued = await client.call<AuthLoginResult>('auth.invite.signup', {
+      body: {
+        code,
+        username: handle,
+        password,
+        displayName: name.trim(),
+        kind: 'browser',
+        ...(spacePassword ? { spacePassword } : {}),
+      },
+    });
+    return storePass(serverId, issued);
+  } catch (err) {
+    if (err instanceof CollabError && err.code === 'conflict') {
+      return { ok: false, failure: { kind: 'account-exists', handle } };
+    }
+    return { ok: false, failure: failureFrom(err, 'signup') };
   }
 }
 

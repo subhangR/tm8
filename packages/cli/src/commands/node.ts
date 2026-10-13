@@ -65,7 +65,7 @@ async function nodeMode(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
- * `node account disable <account-id> --yes` — `accounts.disable` (G6, T15).
+ * `node account disable <account-id|username> --yes` — `accounts.disable` (G6, T15).
  *
  * The one WRITE under `node`: disabling an account is a node-admin act, not a
  * Space one. Every session of the account is revoked in the same transaction
@@ -73,15 +73,16 @@ async function nodeMode(cmd: CommandContext): Promise<ExitCode> {
  * Refused for yourself and for the node owner.
  */
 async function nodeAccountDisable(cmd: CommandContext): Promise<ExitCode> {
-  const accountId = cmd.args[0];
-  if (cmd.args.length !== 1 || !accountId) {
-    throw new CliError('usage: tm8 node account disable <account-id> --yes', EXIT_USAGE);
+  const who = cmd.args[0];
+  if (cmd.args.length !== 1 || !who) {
+    throw new CliError('usage: tm8 node account disable <account-id|username> --yes', EXIT_USAGE);
   }
   if (!cmd.options.bool('yes')) {
     throw new CliError('`tm8 node account disable` is destructive and requires --yes', EXIT_USAGE, {
       hint: 'non-interactive execution never prompts, and --format json is not consent',
     });
   }
+  const accountId = await resolveAccountId(cmd, who);
   const data = await observedInvoke<AccountDisableResult>(clientFor(cmd.ctx), 'accounts.disable', {
     params: { accountId },
     body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },

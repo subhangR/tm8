@@ -626,6 +626,18 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       mine: () => ops.myPathGrants(),
     },
 
+    // -- account administration (323) ----------------------------------------
+
+    nodeAccounts: {
+      list: () => ops.nodeAccountsList(),
+      create: (input) => ops.nodeAccountsCreate(input),
+      reset: (accountId, expiresInHours) => ops.nodeAccountsReset(accountId, expiresInHours),
+      disable: (accountId) => ops.disableAccount(accountId),
+      enable: (accountId) => ops.enableAccount(accountId),
+      setNodeAdmin: (accountId, isNodeAdmin) => ops.nodeAccountsSetNodeAdmin(accountId, isNodeAdmin),
+      addToSpace: (accountId, spaceId, role) => ops.nodeAccountsAddToSpace(accountId, spaceId, role),
+    },
+
     // -- space links (W6) ----------------------------------------------------
 
     spaceLinks: {

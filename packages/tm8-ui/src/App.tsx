@@ -51,7 +51,7 @@ export function App() {
   const [pendingJoin] = useState<string | null>(() => capturePendingJoin());
 
   return (
-    <AuthGate signedOutBanner={<JoinBanner pending={pendingJoin !== null} />}>
+    <AuthGate signedOutBanner={<JoinBanner pending={pendingJoin !== null} />} inviteCode={pendingJoin}>
       {pendingMcpCallback ? <McpOAuthCallback callback={pendingMcpCallback} /> : <ConnectedGateApp pendingJoin={pendingJoin} />}
     </AuthGate>
   );

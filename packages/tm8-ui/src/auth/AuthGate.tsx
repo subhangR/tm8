@@ -26,6 +26,7 @@ import { AuthFlow } from './AuthFlow';
 import { useAuthSession } from './useAuthSession';
 import { AuthActionsContext, AuthSessionContext, type AuthActions } from './gate-context';
 import { fetchNodeClaim, readCachedNodeClaim, type NodeClaim } from './session';
+import { readSetupTokenFromUrl } from './LinkFrames';
 import type { AuthFrameId, AuthIdentity } from './types';
 
 /**
@@ -88,6 +89,12 @@ export interface AuthGateProps {
    * in, the reason you were asked has stopped being news.
    */
   signedOutBanner?: ReactNode;
+  /**
+   * The invite code parked above the gate (`capturePendingJoin`). With one, a
+   * signed-out viewer opens on "create your account to join" (1s) — the code
+   * can create the account (`auth.invite.signup`) — with sign-in one click away.
+   */
+  inviteCode?: string | null;
 }
 
 export function AuthGate({
@@ -96,8 +103,11 @@ export function AuthGate({
   onSignedIn,
   initialFrame,
   signedOutBanner,
+  inviteCode = null,
 }: AuthGateProps) {
   const session = useAuthSession({ resolveIdentity });
+  // Read once at mount and scrubbed from the URL; see LinkFrames.
+  const [setupToken] = useState<string | null>(() => readSetupTokenFromUrl());
 
   // Initialised SYNCHRONOUSLY from the per-server cache, for the same reason
   // the stored pass is (`useAuthSession`'s docblock): a first paint that shows
@@ -151,7 +161,11 @@ export function AuthGate({
     () => ({
       createAccount: session.createAccount,
       claimNode: session.claimNode,
+      redeemSetup: session.redeemSetup,
+      inviteSignup: session.inviteSignup,
       nodeClaim,
+      setupToken,
+      inviteCode,
       signIn: session.signIn,
       signOut: session.signOut,
       clearFailure: session.clearFailure,
@@ -163,7 +177,11 @@ export function AuthGate({
     [
       session.createAccount,
       session.claimNode,
+      session.redeemSetup,
+      session.inviteSignup,
       nodeClaim,
+      setupToken,
+      inviteCode,
       session.signIn,
       session.signOut,
       session.clearFailure,
@@ -218,11 +236,14 @@ export function AuthGate({
   // with the app. A warm browser (not cold at mount) skips the blank entirely
   // and shows its cached card at once; if the loopback probe then says
   // auto-owner, `status` flips it into the app.
-  if (!initialFrame && coldAtMount && (!claimSettled || session.checkingLoopback)) return null;
+  // A setup link or a parked invite names its own card, so it needs no claim
+  // answer to paint: the link, not the node's state, is what was clicked.
+  const linkFrame: AuthFrameId | null = setupToken ? '1r' : inviteCode ? '1s' : null;
+  if (!initialFrame && !linkFrame && coldAtMount && (!claimSettled || session.checkingLoopback)) return null;
 
   // Which card to show is the NODE's answer (`auth.claim.status`), not this
   // browser's inference — see `defaultSignedOutFrame`.
-  const frame = initialFrame ?? defaultSignedOutFrame(nodeClaim);
+  const frame = initialFrame ?? linkFrame ?? defaultSignedOutFrame(nodeClaim);
 
   return (
     <AuthActionsContext.Provider value={actions}>

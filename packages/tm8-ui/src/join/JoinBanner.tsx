@@ -24,9 +24,9 @@ export function JoinBanner({ pending }: JoinBannerProps) {
   if (!pending) return null;
   return (
     <div className="join-banner" data-testid="join-banner">
-      <span>You’ve been invited to a space — sign in to accept.</span>
+      <span>You’ve been invited to a space — create your account or sign in to accept.</span>
       <span className="join-banner__sub">
-        your invite is held until you do; a code cannot create an account by itself
+        your invite is held until you do; new here, it creates your account as you join
       </span>
     </div>
   );

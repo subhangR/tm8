@@ -18,7 +18,9 @@ export type AuthFrameId =
   | '1d' | '1e' | '1f' | '1g'
   | '1h' | '1j' | '1i'
   | '1k' | '1l' | '1o' | '1m' | '1n'
-  | '1p' | '1q';
+  | '1p' | '1q'
+  // Live-gate frames with no oracle drawing (LinkFrames.tsx, `LIVE_AUTH_FRAMES`).
+  | '1r' | '1s';
 
 export type AuthFlowName = 'first-run' | 'sign-in' | 'invite' | 'server' | 'account';
 

@@ -164,6 +164,8 @@ export const LOGIN = {
   passwordAction: 'Sign in',
   busyAction: 'Signing in…',
   toCreateAnother: 'create another account',
+  /* GATE COPY — not oracle: shown when an invite is held (LinkFrames 1s). */
+  toCreateWithInvite: 'new here? create your account with the invite',
   tokenAction: 'Sign in with token',
   toToken: 'use an access token instead',
   toPassword: 'use a password instead',
@@ -175,7 +177,7 @@ export const LOGIN = {
      true of THIS node: sign-in mints a session (auth.login), and a new
      account here is a node-admin act, not self-serve. */
   gateFooter:
-    'No self-serve signup here — a node admin creates accounts. Signing in starts a session on this node (auth.login).',
+    'No self-serve signup here — a node admin creates your account and sends you a setup link, or a space invite lets you create one. Signing in starts a session on this node (auth.login).',
 } as const;
 
 /**

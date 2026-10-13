@@ -65,10 +65,14 @@ export function FrameLogin(_props: FrameProps) {
   // oracle's specimen — the pass this mints is per server, and a viewer
   // pointed at a named connection is authenticating THERE.
   const serverId = actions ? readActiveServerId() : null;
-  const mayCreateAccount = Boolean(actions && serverId && canUseLoopbackAutoOwner(
+  // A multi-user node has no auto-owner to authorize a loopback signup
+  // (Lane D A1: the link led to a 401), so it is offered on single nodes only.
+  const mayCreateAccount = Boolean(actions && serverId && actions.nodeClaim?.mode !== 'multi' && canUseLoopbackAutoOwner(
     serverId,
     globalThis.location?.hostname ?? '',
   ));
+  // A held invite CAN create the account (`auth.invite.signup`): offer that.
+  const inviteHeld = Boolean(actions?.inviteCode);
 
   return (
     <AuthStage meta={actions ? SERVER.localMeta : SERVER.secureMeta}>
@@ -147,7 +151,7 @@ export function FrameLogin(_props: FrameProps) {
                   auto-owner path. Remote and relayed nodes require operator
                   provisioning, so advertising this there leads to a refusal
                   the viewer cannot resolve. */}
-              {mayCreateAccount ? (
+              {inviteHeld || mayCreateAccount ? (
                 <>
                   <span className="auth-switch__sep" aria-hidden>
                     ·
@@ -156,9 +160,9 @@ export function FrameLogin(_props: FrameProps) {
                     type="button"
                     className="auth-link"
                     data-nav="frame"
-                    onClick={() => _props.onFrameChange?.('1a')}
+                    onClick={() => _props.onFrameChange?.(inviteHeld ? '1s' : '1a')}
                   >
-                    {LOGIN.toCreateAnother}
+                    {inviteHeld ? LOGIN.toCreateWithInvite : LOGIN.toCreateAnother}
                   </button>
                 </>
               ) : null}
