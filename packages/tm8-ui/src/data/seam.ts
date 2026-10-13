@@ -291,6 +291,7 @@ import type {
   SpaceKindCounts,
   SpaceSettingsView,
   SpaceConfigsView,
+  NodeSettingSetResult,
   AuthSessionsListResult,
   AuthSessionsRevokeResult,
   ChatDefault,
@@ -685,6 +686,12 @@ export interface Seam {
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
   /** Settings → Configs (`spaces.configs`): every config knob, read-only. Node env for node admins only. */
   spaceConfigs(spaceId: SpaceId): Promise<SpaceConfigsView>;
+  /**
+   * Node admin → Configuration (`node.settings.set`): store or clear (`null`)
+   * one curated node setting for the next restart. Absent on a seam without a
+   * server (the fixture).
+   */
+  setNodeSetting?(name: string, value: string | null): Promise<NodeSettingSetResult>;
   /**
    * Settings → Sessions (`auth.sessions.list`, W4). `null` = the caller's own
    * sessions; a space id = the sessions pinned to that space (space admins

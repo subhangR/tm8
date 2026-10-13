@@ -154,7 +154,8 @@ describe('323 lockout guard', () => {
     const viaAutoOwner = { claims: claims(ADMIN), authKind: 'browser', viaAutoOwner: true };
     await expect(service.setNodeSetting(viaAutoOwner, 'TM8_DISABLE_AUTO_OWNER', 'true')).rejects.toBeInstanceOf(CollabError);
     const listed = await as(ADMIN, { nodeAdmin: true }, (q) => q('select public.node_settings_list() r'));
-    expect(listed[0]!.r).not.toHaveProperty('TM8_DISABLE_AUTO_OWNER');
+    // Still the 'false' stored above: the refused write changed nothing.
+    expect((listed[0]!.r as Record<string, { value: string }>).TM8_DISABLE_AUTO_OWNER!.value).toBe('false');
 
     // A normal write reports the restart it needs.
     const result = await service.setNodeSetting(

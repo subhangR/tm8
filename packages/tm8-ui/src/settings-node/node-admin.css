@@ -74,3 +74,38 @@
   justify-content: flex-end;
   margin-bottom: 0;
 }
+.node-config__pending {
+  color: var(--pn-warn, #b45309);
+  font-weight: 600;
+}
+.node-config__group > summary {
+  cursor: pointer;
+  padding: 8px 0;
+  font-weight: 600;
+}
+.node-config__editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.node-config__editor input,
+.node-config__editor select {
+  font: inherit;
+  min-width: 220px;
+  padding: 6px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+.node-config__editor button,
+.node-config__link {
+  font: inherit;
+  cursor: pointer;
+  padding: 6px 10px;
+  color: inherit;
+  border: 1px solid var(--pn-line);
+  background: transparent;
+  border-radius: 6px;
+}

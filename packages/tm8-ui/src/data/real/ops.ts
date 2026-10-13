@@ -205,6 +205,7 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type NodeSettingSetResult,
   type AuthSessionsListResult,
   type AuthSessionsRevokeResult,
   type ChatDefault,
@@ -995,6 +996,13 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     spaceConfigs(spaceId: SpaceId): Promise<SpaceConfigsView> {
       return http.call<SpaceConfigsView>('spaces.configs', { params: { spaceId } });
+    },
+
+    setNodeSetting(name: string, value: string | null): Promise<NodeSettingSetResult> {
+      return http.call<NodeSettingSetResult>('node.settings.set', {
+        params: { name },
+        body: { value, clientMutationId: newId('nodesetting') },
+      });
     },
 
     chatDefaults(spaceId: SpaceId): Promise<ChatDefaultsView> {

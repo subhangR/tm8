@@ -77,6 +77,7 @@ import {
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceConfigsView,
+  type NodeSettingSetResult,
   type AuthSessionsListResult,
   type ChatDefault,
   type ChatDefaultsView,
@@ -371,6 +372,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
+    setNodeSetting: (name: string, value: string | null): Promise<NodeSettingSetResult> =>
+      ops.setNodeSetting(name, value),
     authSessions: (spaceId: SpaceId | null): Promise<AuthSessionsListResult> => ops.authSessions(spaceId),
     chatDefaults: (spaceId: SpaceId): Promise<ChatDefaultsView> => ops.chatDefaults(spaceId),
     setChatDefaults: (spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> =>

@@ -111,6 +111,7 @@
 }
 
 .set-configs__source--env,
+.set-configs__source--db,
 .set-configs__source--persona,
 .set-configs__source--profile {
   border-color: var(--pn-brand-2);

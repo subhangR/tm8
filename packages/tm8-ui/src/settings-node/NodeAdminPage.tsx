@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   NodeAccountListView,
-  SpaceConfigsView,
   SpaceId,
 } from '@tm8/contract';
 import type { IdentityView, Seam } from '../data/seam';
@@ -10,7 +9,7 @@ import { FilesystemAccessSection } from '../settings-credentials/FilesystemAcces
 import { filesystemAccessPortFromSeam } from '../settings-credentials/filesystem-access-port';
 import { spaceCredentialsPortFromSeam } from '../settings-credentials/space-port';
 import { SectionFrame } from '../settings-space/SectionFrame';
-import { valueLabel } from '../settings-space/ConfigsSection';
+import { NodeConfigurationSection } from './NodeConfigurationSection';
 import '../settings-space/settings.css';
 import './node-admin.css';
 
@@ -173,6 +172,10 @@ export function NodeAdminPage({
             section={section}
             viewer={current.viewer!}
             onDenied={retry}
+            onSection={(id) => {
+              setSection(id);
+              onSectionChange?.(id);
+            }}
           />
         </>
       )}
@@ -186,12 +189,14 @@ function NodeContents({
   section,
   viewer,
   onDenied,
+  onSection,
 }: {
   seam: Seam;
   spaceId: string;
   section: NodeAdminSection;
   viewer: IdentityView;
   onDenied: () => void;
+  onSection: (section: NodeAdminSection) => void;
 }) {
   // Each privileged operation checks the authoritative identity again. A changed
   // session cannot keep using controls drawn from the previous identity.
@@ -245,6 +250,9 @@ function NodeContents({
               ),
         ),
       configuration: () => guard(() => seam.spaceConfigs(spaceId as SpaceId)),
+      saveSetting: seam.setNodeSetting
+        ? (name: string, value: string | null) => guard(() => seam.setNodeSetting!(name, value))
+        : undefined,
     };
   }, [seam, spaceId, viewer, onDenied]);
   if (section === 'credentials')
@@ -252,7 +260,13 @@ function NodeContents({
   if (section === 'filesystem')
     return <FilesystemAccessSection port={ports.filesystem} />;
   if (section === 'accounts') return <Accounts load={ports.accounts} />;
-  return <Configuration load={ports.configuration} />;
+  return (
+    <NodeConfigurationSection
+      load={ports.configuration}
+      save={ports.saveSetting}
+      onOpenCredentials={() => onSection('credentials')}
+    />
+  );
 }
 
 function useRead<T>(load: () => Promise<T>) {
@@ -300,57 +314,6 @@ function Accounts({ load }: { load: () => Promise<NodeAccountListView> }) {
             </li>
           ))}
         </ul>
-      )}
-    </SectionFrame>
-  );
-}
-function Configuration({ load }: { load: () => Promise<SpaceConfigsView> }) {
-  const { value, error } = useRead(load);
-  return (
-    <SectionFrame title="Configuration">
-      <p>
-        Server environment and code constants. Environment changes take effect
-        after restarting the server. Secret values are never displayed.
-      </p>
-      {error ? (
-        <p role="alert">Configuration could not be read: {error}</p>
-      ) : !value ? (
-        <p role="status">Reading configuration…</p>
-      ) : (
-        <>
-          {!value.node.visible && <p role="alert">{value.node.reason}</p>}
-          {[
-            {
-              title: 'Node environment',
-              knobs: value.node.visible ? value.node.knobs : [],
-            },
-            { title: 'Code constants', knobs: value.code },
-          ].map(({ title, knobs }) => (
-            <section key={title}>
-              <h3>{title}</h3>
-              <ul className="node-admin__list">
-                {knobs.map((knob) => (
-                  <li key={knob.name}>
-                    <strong>{knob.name}</strong>
-                    <code>{valueLabel(knob.value)}</code>
-                    <p>{knob.summary}</p>
-                    <span>
-                      Source: {knob.source}
-                      {knob.default !== null
-                        ? ` · Default: ${knob.default}`
-                        : ''}
-                    </span>
-                    <span>
-                      {knob.change === 'env'
-                        ? `Set ${knob.name} in the server environment and restart.`
-                        : 'Requires a code change.'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </>
       )}
     </SectionFrame>
   );

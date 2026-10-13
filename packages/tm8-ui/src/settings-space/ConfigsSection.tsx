@@ -35,6 +35,7 @@ export function valueLabel(value: ConfigValue): string {
 
 const SOURCE_LABEL: Record<ConfigKnobView['source'], string> = {
   env: 'env',
+  db: 'stored setting',
   persona: 'persona',
   profile: 'profile',
   default: 'default',
