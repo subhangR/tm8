@@ -62,13 +62,18 @@ const TOKEN = 'tm8s_00000000-0000-4000-8000-000000000000.secret';
 
 function forwarder(opts: { open?: () => Promise<string>; allowLoopback?: boolean } = {}) {
   const stale: string[] = [];
-  const servers = { get: async () => ({ baseUrl }) } as unknown as DbServerStore;
+  const reach: string[] = [];
+  const servers = {
+    get: async () => ({ baseUrl, reachStatus: 'unknown' }),
+    markReach: async (_c: DbClaims, serverId: string, status: string) => { reach.push(`${serverId}:${status}`); },
+  } as unknown as DbServerStore;
   const links = {
     openRemote: opts.open ?? (async () => TOKEN),
     markStale: async (_c: DbClaims, linkId: string, status: string) => { stale.push(`${linkId}:${status}`); },
   } as unknown as DbSpaceLinkStore;
   return {
     stale,
+    reach,
     fw: new HttpsRemoteInvokeForwarder({ servers, links, client: { allowLoopback: opts.allowLoopback ?? true } }),
   };
 }
@@ -142,8 +147,17 @@ describe('HttpsRemoteInvokeForwarder', () => {
   it('a spawn op gets the long budget; a slow ordinary op times out as offline', async () => {
     expect(REMOTE_SPAWN_TIMEOUT_MS).toBeGreaterThan(60_000);
     reply = (res) => setTimeout(() => marked(res, 200, { data: { result: {}, auditId: 'a' } }), 300);
-    const { fw } = forwarder();
+    const { fw, reach } = forwarder();
     expect(await fw.forward({ ...request(), timeoutMs: 100 })).toEqual({ kind: 'offline', reason: 'timeout' });
     expect((await fw.forward(request('execution.spawn'))).kind).toBe('ok');
+    // What each call saw is recorded on the server entity, so a down target reads as down.
+    expect(reach).toEqual(['srv-1:offline', 'srv-1:reachable']);
+  });
+
+  it('a target the guard refuses is recorded unreachable on the server', async () => {
+    const { fw, reach } = forwarder({ allowLoopback: false });
+    expect(await fw.forward(request())).toMatchObject({ kind: 'unreachable' });
+    expect(reach).toEqual(['srv-1:unreachable']);
+    expect(seen).toHaveLength(0);
   });
 });

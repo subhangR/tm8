@@ -223,6 +223,17 @@ describe('--space help names links', () => {
   });
 });
 
+describe('help names how the CLI finds its node (E8)', () => {
+  it('USAGE and `tm8 --help` both name TM8_BASE_URL, config.json baseUrl and the connect guide', async () => {
+    for (const text of [USAGE, (await tm8(['--help'])).stdout]) {
+      expect(text).toContain('TM8_BASE_URL=<url>');
+      expect(text).toContain('"baseUrl": "<url>"');
+      expect(text).toContain('TM8_CONFIG_PATH');
+      expect(text).toContain('docs/ops/CONNECT-CLI-TO-REMOTE-NODE.md');
+    }
+  });
+});
+
 describe('help --query synonyms', () => {
   it('expands create-task, teammates and other-space', () => {
     expect(tokenize('create-task')).toEqual(expect.arrayContaining(['create', 'task']));

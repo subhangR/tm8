@@ -55,6 +55,27 @@ export function isNonPublicAddress(address: string): boolean {
   return true;
 }
 
+// The private networks an operator may opt in to (`allowPrivate`): RFC 1918,
+// RFC 6598 shared space (Tailscale's 100.64.0.0/10) and IPv6 unique-local
+// (Tailscale's fd7a:115c:a1e0::/48 sits in it). Loopback, link-local (cloud
+// metadata lives at 169.254.169.254), multicast and reserved ranges are never
+// in this list, so no opt-in reaches them.
+const PRIVATE_NETWORK_IPV4 = new BlockList();
+const PRIVATE_NETWORK_IPV6 = new BlockList();
+for (const [network, prefix] of [
+  ['10.0.0.0', 8], ['100.64.0.0', 10], ['172.16.0.0', 12], ['192.168.0.0', 16],
+] as const) PRIVATE_NETWORK_IPV4.addSubnet(network, prefix, 'ipv4');
+PRIVATE_NETWORK_IPV6.addSubnet('fc00::', 7, 'ipv6');
+
+/** True for a LAN / VPN address an operator may opt in to (see `allowPrivate`). */
+export function isPrivateNetworkAddress(address: string): boolean {
+  const normalized = address.replace(/^\[|\]$/g, '').split('%')[0]!.toLowerCase();
+  const family = isIP(normalized);
+  if (family === 4) return PRIVATE_NETWORK_IPV4.check(normalized, 'ipv4');
+  if (family === 6) return PRIVATE_NETWORK_IPV6.check(normalized, 'ipv6');
+  return false;
+}
+
 /**
  * Refuses a URL that is not plain HTTP(S), carries embedded credentials, or
  * resolves to ANY non-public address (one private answer among public ones is
@@ -62,7 +83,12 @@ export function isNonPublicAddress(address: string): boolean {
  */
 export async function resolvePublicAddresses(
   url: URL,
-  options: { protocols?: readonly string[]; resolve?: HostResolver } = {},
+  options: {
+    protocols?: readonly string[];
+    resolve?: HostResolver;
+    /** Also accept LAN / VPN addresses (`isPrivateNetworkAddress`). An explicit operator opt-in only. */
+    allowPrivate?: boolean;
+  } = {},
 ): Promise<ResolvedAddress[]> {
   const protocols = options.protocols ?? ['http:', 'https:'];
   if (!protocols.includes(url.protocol) || url.username || url.password) {
@@ -78,7 +104,9 @@ export async function resolvePublicAddresses(
   } catch {
     throw new OutboundGuardError('dns', 'host could not be resolved');
   }
-  if (addresses.length === 0 || addresses.some(({ address }) => isNonPublicAddress(address))) {
+  const refused = (address: string) =>
+    isNonPublicAddress(address) && !(options.allowPrivate === true && isPrivateNetworkAddress(address));
+  if (addresses.length === 0 || addresses.some(({ address }) => refused(address))) {
     throw new OutboundGuardError('non_public', 'URL resolves to a local or private address');
   }
   return addresses;

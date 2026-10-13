@@ -74,6 +74,14 @@ describe('named Server connections', () => {
         body,
       });
       res.setHeader('content-type', 'application/json');
+      if (req.url?.endsWith('/probe')) {
+        // servers.probe: the NODE's answer, here one that could not reach a LAN peer.
+        res.end(JSON.stringify({
+          data: { server: { ...connection(remoteUrl), reachStatus: 'unreachable' }, outcome: 'unreachable', reason: 'non_public_address' },
+          requestId: 'registry-probe',
+        }));
+        return;
+      }
       res.statusCode = req.method === 'POST' ? 201 : 200;
       res.end(JSON.stringify({ data: connection(remoteUrl), requestId: 'registry-request' }));
     });
@@ -124,13 +132,17 @@ describe('named Server connections', () => {
     expect(stderr).toBe('');
   });
 
-  it('health-checks B before adding it to a Space on A (servers.add, W8)', async () => {
+  it('adds B to a Space on A, then has A (not this machine) check it can reach B (servers.add + servers.probe)', async () => {
     expect(await run([
       'server', 'add', 'work', '--url', remoteUrl, '--username', 'operator',
       '--mutation-id', 'mutation-add-work', '--format', 'json',
     ])).toBe(0);
-    expect(remoteSeen).toMatchObject([{ method: 'GET', path: '/health' }]);
-    expect(registrySeen).toHaveLength(1);
+    // Nothing from this machine: a check from here said nothing about the node's own route.
+    expect(remoteSeen).toEqual([]);
+    expect(registrySeen.map(({ method, path }) => [method, path])).toEqual([
+      ['POST', '/v2/servers'],
+      ['POST', '/v2/servers/00000000-0000-4000-8000-000000000001/probe'],
+    ]);
     expect(registrySeen[0]).toMatchObject({
       method: 'POST',
       path: '/v2/servers',
@@ -142,8 +154,26 @@ describe('named Server connections', () => {
         clientMutationId: 'mutation-add-work',
       },
     });
-    expect(JSON.parse(stdout)).toMatchObject({ name: 'work', baseUrl: remoteUrl });
+    expect(JSON.parse(stdout)).toMatchObject({
+      name: 'work', baseUrl: remoteUrl, reachStatus: 'unreachable',
+      probe: { outcome: 'unreachable', reason: 'non_public_address' },
+    });
     expect(stderr).toBe('');
+  });
+
+  it('server add names the private-address opt-in when the node could not reach a LAN peer', async () => {
+    expect(await run(['server', 'add', 'work', '--url', remoteUrl, '--format', 'human'])).toBe(0);
+    expect(stdout).toContain('check: unreachable from this node (non_public_address)');
+    expect(stdout).toContain('TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1');
+  });
+
+  it('server probe resolves a name, then asks the node (servers.probe)', async () => {
+    expect(await run(['server', 'probe', 'work', '--format', 'json'])).toBe(0);
+    expect(registrySeen.map(({ method, path }) => [method, path])).toEqual([
+      ['GET', '/v2/server-connections/work'],
+      ['POST', '/v2/servers/00000000-0000-4000-8000-000000000001/probe'],
+    ]);
+    expect(JSON.parse(stdout)).toMatchObject({ outcome: 'unreachable', reason: 'non_public_address' });
   });
 
   it('passes --space through to servers.add', async () => {

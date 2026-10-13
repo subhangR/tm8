@@ -23,6 +23,7 @@ import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
 import { DbServerStore } from '../../../remote/server-store.js';
+import { remoteLinkClientOptionsOf } from '../../../remote/link-client.js';
 import { requireHumanLinkSession } from './space-links.js';
 
 export interface ServerHandlerDeps {
@@ -43,7 +44,10 @@ export function registerServerHandlers(
   deps: FacadeDeps,
   servers: ServerHandlerDeps,
 ): void {
-  const store = servers.store ?? new DbServerStore({ db: deps.db, dataDir: servers.dataDir });
+  // The probe runs under this node's link policy, so it answers what a link would see.
+  const store = servers.store ?? new DbServerStore({
+    db: deps.db, dataDir: servers.dataDir, client: remoteLinkClientOptionsOf(deps.config),
+  });
   const claimsOf = async (ctx: RequestContext) => {
     const claims = claimsFor(await deps.owner(), ctx);
     if (!claims.identityId) throw new CollabError('unauthenticated', 'no identity resolved for this request');

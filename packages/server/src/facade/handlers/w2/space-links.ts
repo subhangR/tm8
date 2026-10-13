@@ -48,7 +48,8 @@ import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
 import type { DbClaims } from '../../../db/types.js';
 import { DbSpaceLinkStore } from '../../../credentials/space-link-store.js';
-import type { RemoteLinkClientOptions } from '../../../remote/link-client.js';
+import { remoteLinkClientOptionsOf, type RemoteLinkClientOptions } from '../../../remote/link-client.js';
+import { DbServerStore } from '../../../remote/server-store.js';
 import { claimRemoteLink, loadOrCreateRemoteNodeId, revokeRemoteLink } from '../../../remote/link-pairing.js';
 import { SPACE_LINK_REMOTE_DISABLED, createSpaceLinkInvokeHandlers, type SpaceLinkInvokeOptions } from './space-link-invoke.js';
 import { createRemoteSpaceLinkRoute, type RemoteSpaceLinkRoute, type RemoteSpaceLinkRouteOptions } from './space-link-remote-route.js';
@@ -114,6 +115,7 @@ export function registerSpaceLinkHandlers(
   links: SpaceLinkHandlerDeps,
 ): void {
   const store = links.store ?? new DbSpaceLinkStore({ db: deps.db, dataDir: links.dataDir });
+  const servers = new DbServerStore({ db: deps.db, dataDir: links.dataDir });
   const claimsOf = async (ctx: RequestContext) => {
     const claims = claimsFor(await deps.owner(), ctx);
     if (!claims.identityId) throw new CollabError('unauthenticated', 'no identity resolved for this request');
@@ -125,7 +127,7 @@ export function registerSpaceLinkHandlers(
 
   const remoteOn = deps.config.remoteSpaceLinks === true;
   const client: RemoteLinkClientOptions = {
-    ...(deps.config.remoteSpaceLinksAllowLoopback === true ? { allowLoopback: true } : {}),
+    ...remoteLinkClientOptionsOf(deps.config),
     ...links.remote?.client,
   };
 
@@ -149,7 +151,8 @@ export function registerSpaceLinkHandlers(
     if (!pairingCode) {
       if (remoteOn && (await store.remoteContext(claims, linkId)).targetServerId) {
         throw new CollabError('invalid_input',
-          'this link targets a space on another server: pass the pairing code from `spaceLinks.inbound.grant` there',
+          'this link targets a space on another server: sign in with a pairing code. A member of the target space '
+          + 'creates one on that server (Settings → Space links → Grant access, or `tm8 link grant <home-space-id>`)',
           { details: { reason: 'space_link_pairing_required' } });
       }
       return store.login(claims, linkId, { relogin, clientMutationId });
@@ -159,13 +162,20 @@ export function registerSpaceLinkHandlers(
     if (!context.targetServerId || !context.baseUrl) {
       throw new CollabError('invalid_input', 'this link targets a space on this server: sign in without a pairing code');
     }
+    const targetServerId = context.targetServerId;
     const claimed = await claimRemoteLink({
       baseUrl: context.baseUrl,
       pairingCode,
       homeSpaceId: context.homeSpaceId,
       homeServerId: await loadOrCreateRemoteNodeId(links.dataDir),
       homeBaseUrl: deps.config.publicOrigin ?? null,
-    }, client);
+    }, client).catch(async (error: unknown) => {
+      // A target that could not be reached reads as such on its server entity (best effort).
+      const reason = error instanceof CollabError ? error.details?.['reason'] : undefined;
+      const reach = reason === 'space_link_unreachable' ? 'unreachable' : reason === 'space_link_offline' ? 'offline' : null;
+      if (reach) await servers.markReach(claims, targetServerId, reach).catch(() => undefined);
+      throw error;
+    });
     if (claimed.targetSpaceId.toLowerCase() !== context.targetSpaceId.toLowerCase()) {
       // The code was granted for another space: end what was just minted, store nothing.
       await revokeRemoteLink({ baseUrl: context.baseUrl, token: claimed.token }, client).catch(() => false);

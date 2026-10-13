@@ -120,6 +120,36 @@ describe('T27 — a loopback-only or private target is unreachable, and nothing 
     expect(seen).toHaveLength(0);
   });
 
+  it('allowPrivate (operator opt-in) admits LAN and Tailscale answers, never loopback or link-local', async () => {
+    const seen: RequestOptions[] = [];
+    const transport = transportTo(stubPort, seen);
+    for (const address of ['10.0.0.8', '192.168.1.20', '172.20.0.5', '100.101.102.103']) {
+      expect((await guardedHttpsRequest(
+        { url: `https://${HOST}/health`, method: 'GET' },
+        { transport, allowPrivate: true, resolve: async () => [{ address, family: 4 }] },
+      )).kind).toBe('response');
+    }
+    expect((await guardedHttpsRequest(
+      { url: `https://${HOST}/health`, method: 'GET' },
+      { transport, allowPrivate: true, resolve: async () => [{ address: 'fd7a:115c:a1e0::1', family: 6 }] },
+    )).kind).toBe('response');
+    expect(seen).toHaveLength(5);
+    for (const address of ['127.0.0.1', '169.254.169.254', '0.0.0.0']) {
+      expect(await guardedHttpsRequest(
+        { url: `https://${HOST}/health`, method: 'GET' },
+        { transport, allowPrivate: true, resolve: async () => [{ address, family: 4 }] },
+      )).toEqual({ kind: 'unreachable', reason: 'non_public_address' });
+    }
+    expect(await guardedHttpsRequest({ url: 'https://[::1]/health', method: 'GET' }, { transport, allowPrivate: true }))
+      .toEqual({ kind: 'unreachable', reason: 'non_public_address' });
+    // Off (the default) the same LAN answer is refused.
+    expect(await guardedHttpsRequest(
+      { url: `https://${HOST}/health`, method: 'GET' },
+      { transport, resolve: async () => [{ address: '192.168.1.20', family: 4 }] },
+    )).toEqual({ kind: 'unreachable', reason: 'non_public_address' });
+    expect(seen).toHaveLength(5);
+  });
+
   it('POSITIVE: a public-resolving HTTPS host is admitted, pinned to the checked address, and answers', async () => {
     const seen: RequestOptions[] = [];
     const result = await guardedHttpsRequest(

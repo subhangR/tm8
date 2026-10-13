@@ -224,6 +224,14 @@ export function useServerRegistry(): ServerRegistryState {
     });
     if (!parsed.success) throw new Error('local tm8 returned an invalid Server connection');
     const added = toUiServer(parsed.data);
+    // The NODE checks it too (servers.probe) and records `reachStatus`: what a
+    // space link from this node will see, which the browser's own check below
+    // cannot tell. Best effort; the answer shows on the server's panel.
+    void jsonData(`/v2/servers/${encodeURIComponent(String(server.id))}/probe`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ clientMutationId: crypto.randomUUID() }),
+    }).catch(() => undefined);
     setServers((current) => [...current.filter((server) => server.id !== added.id), added]);
     setActiveId(added.id);
     persistActiveServer(added.id);

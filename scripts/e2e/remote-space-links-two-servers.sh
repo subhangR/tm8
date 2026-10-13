@@ -90,7 +90,8 @@ echo "1. grant, claim"
 GRANT=$(cli "$P2" link grant "$A" --label "s1 e2e" --allow-spawn --space "$B")
 CODE=$(grep -o 'tm8pair_[A-Za-z0-9_-]*' <<<"$GRANT") || fail "no pairing code printed"
 ok "grant printed a pairing code"
-cli "$P1" server add s2 --url "http://127.0.0.1:$P2" --space "$A" >/dev/null
+# The reachability check runs on S1 (servers.probe), not in this shell.
+need "$(cli "$P1" server add s2 --url "http://127.0.0.1:$P2" --space "$A")" "check: reachable from this node" "server add checks from the node"
 need "$(cli "$P1" link add "$B" --target-server s2 --alias b --space "$A")" "signed_out" "link add"
 need "$(cli "$P1" link login b --pairing-code "$CODE" --space "$A")" "signed_in" "login with the code"
 ok "claimed: S1 row signed in"
@@ -147,8 +148,7 @@ echo "6. S1 logout revokes on S2"
 cli "$P2" link restore "$L2" --space "$B" >/dev/null
 CODE=$(cli "$P2" link grant "$A" --allow-spawn --space "$B" | grep -o 'tm8pair_[A-Za-z0-9_-]*')
 cli "$P1" link login b --pairing-code "$CODE" --space "$A" >/dev/null
-LINK1=$(q1 "select link_id from space_link_tokens limit 1")
-curl -s -X POST "http://127.0.0.1:$P1/v2/space-links/$LINK1/logout" -H 'content-type: application/json' -d '{"clientMutationId":"e2e-logout"}' >/dev/null
+need "$(cli "$P1" link logout b --space "$A")" "signed out" "tm8 link logout"
 need "$(q2 "select count(*) from auth_sessions where kind = 'link' and revoked_at is null")" "^0$" "S2 sessions after logout"
 ok "S1 logout ended the session on S2"
 

@@ -14,7 +14,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CollabError } from '@tm8/contract';
 import type { SpaceLinkView } from '@tm8/contract';
-import { SpaceLinksSection } from './SpaceLinksSection';
+import type { ServerView, SpaceLinksInboundGrantResult } from '@tm8/contract';
+import { SpaceLinksSection, spaceLinkFailureOf } from './SpaceLinksSection';
 import { spaceLinksPortFromSeam, type SpaceLinksPort } from './port';
 
 // Every sentence describes only what ships: since W7b the switch is enforced.
@@ -213,5 +214,81 @@ describe('Space links — a row opens its own panel (task 01a0e24d)', () => {
     render(<SpaceLinksSection port={fakePort([link()])} onOpen={onOpen} />);
     fireEvent.click(await screen.findByTestId('space-link-open-link-1'));
     expect(onOpen).toHaveBeenCalledWith('link-1');
+  });
+});
+
+describe('W9c — a link to a space on another server', () => {
+  const server = (over: Partial<ServerView> = {}): ServerView => ({
+    id: 'srv-1', homeSpaceId: 'space-1', name: 'lab', baseUrl: 'https://lab.example', username: null,
+    reachStatus: 'reachable', reachCheckedAt: '2026-10-13T10:00:00.000Z', legacyConnectionId: null,
+    createdAt: '2026-10-13T09:00:00.000Z', updatedAt: '2026-10-13T09:00:00.000Z', mine: null, ...over,
+  });
+  const remoteLink = () => link({ targetServerId: 'srv-1' as never, targetSpaceName: null, targetSpaceId: 'space-b' });
+
+  function remotePort(srv: ServerView) {
+    return {
+      ...fakePort([remoteLink()]),
+      servers: {
+        list: vi.fn(async () => [srv]),
+        probe: vi.fn(async () => ({ server: srv, outcome: 'offline' as const, reason: 'connect_refused' })),
+      },
+    } satisfies SpaceLinksPort;
+  }
+
+  it('signs in with the pasted pairing code, and not without one', async () => {
+    const port = remotePort(server());
+    render(<SpaceLinksSection port={port} />);
+    const signIn = await screen.findByRole('button', { name: 'Sign in to space-b' });
+    // Control: no code, no call.
+    expect((signIn as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('space-link-code-link-1'), { target: { value: ' tm8p_abc ' } });
+    await act(async () => { fireEvent.click(signIn); });
+    expect(port.login).toHaveBeenCalledWith('link-1', 'tm8p_abc');
+    expect((await screen.findByTestId('space-links-notice')).textContent).toBe('Signed in to space-b.');
+  });
+
+  it('shows the server it is on, and Unreachable when this node could not reach it; Check asks the node', async () => {
+    const port = remotePort(server({ reachStatus: 'unreachable' }));
+    render(<SpaceLinksSection port={port} />);
+    expect((await screen.findByTestId('space-link-reach-link-1')).textContent).toBe('Unreachable from this node');
+    expect(screen.getByTestId('space-link-server-link-1').textContent).toContain('lab (https://lab.example)');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check lab is reachable' })); });
+    expect(port.servers.probe).toHaveBeenCalledWith('srv-1');
+    expect((await screen.findByTestId('space-link-failure-link-1')).textContent).toMatch(/did not answer/);
+  });
+
+  it('a reachable server shows no warning (control)', async () => {
+    render(<SpaceLinksSection port={remotePort(server())} />);
+    await screen.findByTestId('space-link-server-link-1');
+    expect(screen.queryByTestId('space-link-reach-link-1')).toBeNull();
+  });
+
+  it('adds a link against a chosen server', async () => {
+    const port = remotePort(server());
+    render(<SpaceLinksSection port={port} />);
+    fireEvent.change(await screen.findByLabelText('Server the space is on'), { target: { value: 'srv-1' } });
+    fireEvent.change(screen.getByLabelText('Target space id'), { target: { value: 'space-b' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Add link' })); });
+    expect(port.add).toHaveBeenCalledWith('space-b', 'srv-1');
+  });
+
+  it('never shows the internal op name: the pairing-required refusal reads in plain words', () => {
+    const err = new CollabError('invalid_input', 'pass the pairing code from `spaceLinks.inbound.grant` there',
+      { details: { reason: 'space_link_pairing_required' } });
+    const words = spaceLinkFailureOf(err);
+    expect(words).not.toMatch(/spaceLinks\./);
+    expect(words).toMatch(/pairing code/);
+  });
+
+  it('Grant access makes a pairing code and shows it once', async () => {
+    const granted = { pairingCode: 'tm8p_once', pairingExpiresAt: '2026-10-13T10:10:00.000Z', targetSpaceId: 'space-1' } as SpaceLinksInboundGrantResult;
+    const grant = vi.fn(async () => granted);
+    const port = { ...fakePort([]), inbound: { list: vi.fn(async () => []), audit: vi.fn(async () => []), revoke: vi.fn(), restore: vi.fn(), grant } };
+    render(<SpaceLinksSection port={port as unknown as SpaceLinksPort} />);
+    fireEvent.change(await screen.findByLabelText('Home space id on the other server'), { target: { value: 'space-a' } });
+    fireEvent.change(screen.getByLabelText('Label for the other server'), { target: { value: 'laptop' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Make pairing code' })); });
+    expect(grant).toHaveBeenCalledWith('space-a', { homeLabel: 'laptop' });
+    expect((await screen.findByTestId('space-links-grant-code')).textContent).toContain('tm8p_once');
   });
 });

@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest';
 import {
   AGENT_GAP_RETRY_MS,
   IMPLICIT_LOCAL_BASE_URL,
+  desktopDiscoveryPath,
+  loadDesktopDiscovery,
   loadLocalConfig,
   requireSpace,
   resolveContext,
@@ -156,5 +158,44 @@ describe('requireSpace', () => {
 
   it('returns the resolved Space when there is one', () => {
     expect(requireSpace(resolveContext({ globals: globals(['--space', 'sp_9']), session: {}, config: {} }))).toBe('sp_9');
+  });
+});
+
+describe('step 3b — the desktop app discovery file', () => {
+  const env = { XDG_CONFIG_HOME: '/cfg' } as NodeJS.ProcessEnv;
+  const file = (body: string): ConfigIo => ({
+    readFile: (path) => {
+      if (path !== '/cfg/tm8/desktop-node.json') throw new Error(`ENOENT ${path}`);
+      return body;
+    },
+  });
+  const live = JSON.stringify({ baseUrl: 'http://127.0.0.1:4619', pid: 11, appPid: 10, startedAt: 'x' });
+
+  it('lives beside the config, under XDG_CONFIG_HOME', () => {
+    expect(desktopDiscoveryPath(env)).toBe('/cfg/tm8/desktop-node.json');
+  });
+
+  it('reads the base URL while the app that wrote it is alive', () => {
+    expect(loadDesktopDiscovery(env, file(live), (pid) => pid === 10)).toBe('http://127.0.0.1:4619');
+  });
+
+  it('is absent when the app is gone, the file is missing, or it is malformed', () => {
+    expect(loadDesktopDiscovery(env, file(live), () => false)).toBeUndefined();
+    expect(loadDesktopDiscovery(env, { readFile: () => { throw new Error('ENOENT'); } }, () => true)).toBeUndefined();
+    expect(loadDesktopDiscovery(env, file('{not json'), () => true)).toBeUndefined();
+    expect(loadDesktopDiscovery(env, file(JSON.stringify({ baseUrl: 'file:///x', appPid: 10 })), () => true)).toBeUndefined();
+    expect(loadDesktopDiscovery(env, file(JSON.stringify({ baseUrl: 'http://127.0.0.1:1' })), () => true)).toBeUndefined();
+  });
+
+  it('fills the base URL after config and before the implicit local Server', () => {
+    const desktopBaseUrl = 'http://127.0.0.1:4619';
+    expect(resolveContext({ globals: globals([]), desktopBaseUrl }).baseUrl)
+      .toEqual({ value: desktopBaseUrl, source: 'desktop' });
+    expect(resolveContext({ globals: globals([]), config: { baseUrl: 'http://config.local' }, desktopBaseUrl }).baseUrl)
+      .toEqual({ value: 'http://config.local', source: 'config' });
+    expect(resolveContext({ globals: globals([]), session: { baseUrl: 'http://s.local' }, desktopBaseUrl }).baseUrl)
+      .toEqual({ value: 'http://s.local', source: 'session' });
+    expect(resolveContext({ globals: globals([]) }).baseUrl)
+      .toEqual({ value: IMPLICIT_LOCAL_BASE_URL, source: 'implicit-local' });
   });
 });

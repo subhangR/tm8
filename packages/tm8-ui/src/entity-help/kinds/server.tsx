@@ -180,20 +180,24 @@ export const SERVER_HELP: KindHelpModule = {
           <p>
             A new server reads <em>Not checked yet</em>. <strong>Check reachability</strong> on its panel sends an
             unauthenticated request to its <code>/health</code> and records one of three answers: reachable,
-            unreachable, or offline. Unreachable means the guard refused the address, for example a private network or
-            bad TLS. Offline means the connection was refused, reset, or got no answer in time. The time of the check is kept beside the verdict, so
-            a stale green is visibly stale.
+            unreachable, or offline. The check runs on this node, not in your browser, so it answers what a space
+            link will see. Unreachable means the guard refused the address, for example a private network
+            (allowed only with <code>TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1</code>) or bad TLS. Offline means the
+            connection was refused, reset, or got no answer in time. A call through a link records the same answer,
+            so a server that goes down reads as down. The time of the check is kept beside the verdict, so a stale
+            green is visibly stale.
           </p>
         ),
       },
       {
         eyebrow: 'The rule',
-        title: 'Remote forwarding is off in this build',
+        title: 'Remote forwarding is a node setting, off by default',
         body: (
           <p>
-            An agent here cannot act on a server <em>through</em> this node. Every remote call is refused with{' '}
-            <code>remote_links_disabled</code>, and turning that on is a code change, not a setting. The record is
-            real and the address is real. What this node will not do is carry work across it on your behalf.
+            An agent here can act on a space on this server only through a space link, and only when this node runs
+            with <code>TM8_REMOTE_SPACE_LINKS=on</code>. Off, every remote call is refused with{' '}
+            <code>space_link_remote_disabled</code>. The other server needs the same switch, and a member there makes
+            the pairing code you sign in with.
           </p>
         ),
       },

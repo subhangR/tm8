@@ -310,7 +310,6 @@ const COMMANDLESS_OPERATIONS = [
       'servers.adopt',
       'servers.get',
       'servers.list',
-      'servers.probe',
       // #646: the launch-sheet preview is a read the composer calls; its row
       // records "effective CLI is deferred", so it is commandless by decision.
       'skills.preview',
@@ -320,9 +319,7 @@ const COMMANDLESS_OPERATIONS = [
       // reached through `--space`, and relogin/logout/remove/setSpawn stay
       // settings-only for scope.
       'spaceLinks.invoke',
-      'spaceLinks.logout',
       'spaceLinks.relogin',
-      'spaceLinks.remove',
       'spaceLinks.setSpawn',
       // W5: the space password setting and member reset/lock are space-settings
       // operations for a human admin. Commandless by decision.

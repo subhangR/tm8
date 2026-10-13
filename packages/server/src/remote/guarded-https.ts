@@ -14,7 +14,10 @@
  *     whole-request timeout, both bounded by `timeoutMs`.
  *
  * `transport` and `resolve` are injectable for tests only: the guard itself
- * (protocol, credentials, address policy) is not.
+ * (protocol, credentials, address policy) is not. The one widening is the
+ * operator's `allowPrivate` (`TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE`): LAN and
+ * VPN ranges (RFC 1918, Tailscale's 100.64/10, IPv6 ULA) become reachable,
+ * still HTTPS-only and pinned; loopback and link-local never do.
  */
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 import type { ClientRequest, IncomingMessage } from 'node:http';
@@ -48,6 +51,8 @@ export type GuardedResult =
 export type HttpsTransport = (options: RequestOptions) => ClientRequest;
 
 export interface GuardedHttpsOptions {
+  /** Operator opt-in: also reach LAN / VPN addresses (`isPrivateNetworkAddress`). */
+  allowPrivate?: boolean;
   resolve?: HostResolver;
   transport?: HttpsTransport;
 }
@@ -84,6 +89,7 @@ export async function guardedHttpsRequest(
   try {
     [pinned] = await resolvePublicAddresses(url, {
       protocols: ['https:'],
+      ...(options.allowPrivate === true ? { allowPrivate: true } : {}),
       ...(options.resolve ? { resolve: options.resolve } : {}),
     });
   } catch (error) {

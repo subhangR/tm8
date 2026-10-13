@@ -3,8 +3,9 @@
 **Owner:** Ops (Argo). **Status:** live from W0.
 **Companion docs:** `docs/ops/SIDECAR-PACKAGING.md` (how the Postgres sidecar ships and is managed — R15).
 
-There is no installed desktop app (AM-1/T-D21). tm8 is **a server plus a web UI**, so
-"start the app" means "start tm8-server". This document is the normative reference for
+tm8 is **a server plus a web UI**, so "start the app" means "start tm8-server". The macOS
+desktop app (`apps/desktop`) is the same server and UI in an Electron shell; its settings
+file, fixed port, CLI discovery and remote-node mode are in `docs/ops/DESKTOP.md`. This document is the normative reference for
 how that is configured and how the dev and prod stacks stay out of each other's way —
 and out of live maestro's way.
 
@@ -75,6 +76,13 @@ Two tooling-only variables:
 |---|---|---|
 | `TM8_MIGRATION_DATABASE_URL` | — | Where `tools/ci/migrations-check.sh` applies the sequence. Falls back to `DATABASE_URL`, then to the sidecar on `TM8_PG_PORT`. |
 | `NO_COLOR` | — | Set to anything to strip ANSI colour from the launchers and CI. |
+
+### Space links across servers
+
+Off by default. `TM8_REMOTE_SPACE_LINKS=on` (on both nodes) lets a space link reach a space on
+another tm8 server. `TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1` also lets this node reach a peer on a
+LAN or Tailscale address (still HTTPS only). Setup, the pairing-code sign-in, and what each refusal
+means are in [`REMOTE-SPACE-LINKS.md`](REMOTE-SPACE-LINKS.md).
 
 ### Containers (TM8-CONTAINERS-DESIGN §10.1)
 

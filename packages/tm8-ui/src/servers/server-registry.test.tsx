@@ -169,7 +169,7 @@ describe('useServerRegistry revalidation', () => {
 });
 
 describe('useServerRegistry addServer (W8, 261)', () => {
-  it('adds through servers.add (POST /v2/servers) with the Space, never the read-only 044 route', async () => {
+  it('adds through servers.add (POST /v2/servers) with the Space, never the read-only 044 route, then asks the node to probe it', async () => {
     const state: { connections: Connection[] } = { connections: [] };
     const list = mockFetch(state);
     const posts: Array<{ url: string; body: unknown }> = [];
@@ -199,8 +199,10 @@ describe('useServerRegistry addServer (W8, 261)', () => {
       added = await result.current.addServer({ name: 'Staging', baseUrl: 'http://127.0.0.1:8887/x', spaceId: 'space-1' });
     });
 
-    expect(posts).toHaveLength(1);
+    // servers.add, then the node's own reachability check (servers.probe).
+    await waitFor(() => expect(posts).toHaveLength(2), WAIT);
     expect(posts[0]!.url).toBe('/v2/servers');
+    expect(posts[1]!.url).toBe(`/v2/servers/${STAGING.id}/probe`);
     expect(posts[0]!.body).toMatchObject({ spaceId: 'space-1', name: 'staging', baseUrl: 'http://127.0.0.1:8887' });
     expect(added?.id).toBe('staging');
     expect(result.current.servers.map((server) => server.id)).toEqual(['local', 'staging']);

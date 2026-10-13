@@ -160,6 +160,13 @@ export interface ServerConfig {
    */
   readonly remoteSpaceLinksAllowLoopback?: boolean;
   /**
+   * `TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1`: the remote-link client and the
+   * server reachability probe may reach HTTPS targets on LAN / VPN addresses
+   * (RFC 1918, Tailscale's 100.64.0.0/10, IPv6 ULA). Default off: public
+   * addresses only. Loopback and link-local stay refused either way.
+   */
+  readonly remoteSpaceLinksAllowPrivate?: boolean;
+  /**
    * Upper bound on the Postgres pool (`TM8_DB_POOL_MAX`). Default 8.
    *
    * This number IS the node's read concurrency: the pool queues past it and
@@ -610,6 +617,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     ...(envBoolean(env.TM8_REMOTE_SPACE_LINKS, 'TM8_REMOTE_SPACE_LINKS', false) ? { remoteSpaceLinks: true } : {}),
     ...(envBoolean(env.TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK, 'TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK', false)
       ? { remoteSpaceLinksAllowLoopback: true } : {}),
+    ...(envBoolean(env.TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE, 'TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE', false)
+      ? { remoteSpaceLinksAllowPrivate: true } : {}),
     // `multi` implies the kill switch. The explicit env var still wins when it
     // asks for MORE restriction (a hardened single-player node), and can never
     // ask for less: `||` here means no combination of the two can produce a

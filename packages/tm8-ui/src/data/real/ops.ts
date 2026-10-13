@@ -41,6 +41,7 @@ import {
   type SpaceLinkAuditEntry,
   type SpaceLinkInboundAuditEntry,
   type SpaceLinkInboundView,
+  type SpaceLinksInboundGrantResult,
   type CrossSpaceRef,
   type CrossSpaceRefRemoved,
   type CreateInviteInput,
@@ -853,20 +854,38 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SpaceLinkView[]>('spaceLinks.list', { params: { spaceId } });
     },
 
-    spaceLinksAdd(spaceId: SpaceId, targetSpaceId: string): Promise<SpaceLinkView> {
+    spaceLinksAdd(spaceId: SpaceId, targetSpaceId: string, targetServerId?: EntityId): Promise<SpaceLinkView> {
       return http.call<SpaceLinkView>('spaceLinks.add', {
         params: { spaceId },
-        body: { targetSpaceId, clientMutationId: newId('splink') },
+        body: { targetSpaceId, ...(targetServerId ? { targetServerId } : {}), clientMutationId: newId('splink') },
       });
     },
 
     spaceLinksMutate(
       op: 'spaceLinks.login' | 'spaceLinks.relogin' | 'spaceLinks.logout' | 'spaceLinks.remove',
       linkId: EntityId,
+      pairingCode?: string,
     ): Promise<SpaceLinkView> {
       return http.call<SpaceLinkView>(op, {
         params: { linkId },
-        body: { clientMutationId: newId('splinkop') },
+        body: { ...(pairingCode ? { pairingCode } : {}), clientMutationId: newId('splinkop') },
+      });
+    },
+
+    /** W9c, on the TARGET: a single-use pairing code for a space on another server. */
+    spaceLinksInboundGrant(
+      spaceId: SpaceId,
+      homeSpaceId: string,
+      options: { homeLabel?: string; allowSpawn?: boolean } = {},
+    ): Promise<SpaceLinksInboundGrantResult> {
+      return http.call<SpaceLinksInboundGrantResult>('spaceLinks.inbound.grant', {
+        params: { spaceId },
+        body: {
+          homeSpaceId,
+          ...(options.homeLabel ? { homeLabel: options.homeLabel } : {}),
+          ...(options.allowSpawn ? { allowSpawn: true } : {}),
+          clientMutationId: newId('splinkgrant'),
+        },
       });
     },
 
@@ -943,6 +962,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     // -- remote servers (`servers.*`, W8) -------------------------------------
     // remove is human-only server-side; no answer carries a gate token.
+
+    /** Bare array: every live server of the space (no secret). */
+    serversList(spaceId: SpaceId): Promise<ServerView[]> {
+      return http.call<ServerView[]>('servers.list', { params: { spaceId } });
+    },
 
     serversGet(serverId: EntityId): Promise<ServerView> {
       return http.call<ServerView>('servers.get', { params: { serverId } });

@@ -19,6 +19,7 @@
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import type { Output } from '../output.js';
 import type { OptionBag } from '../args.js';
+import { CONNECT_HELP_LINES } from '../connect-help.js';
 import {
   commandHelp,
   nounHelp,
@@ -83,6 +84,8 @@ function renderRoot(dto: RootHelp): string {
     '',
     'global options',
     ...dto.globalOptions.map((o) => `  ${pad(o.option, optWidth)}  ${o.summary}`),
+    '',
+    ...CONNECT_HELP_LINES,
     '',
     'discovery',
     ...Object.values(dto.discovery).map((d) => `  ${d}`),

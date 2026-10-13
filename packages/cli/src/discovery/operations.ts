@@ -949,8 +949,8 @@ const ROWS: Record<OperationName, Row> = {
   //
   // `tm8 link list|add|login|audit` (commands/link.ts). The writes are refused
   // to agent and link sessions twice (the handler guard and the strict SQL
-  // gate); the CLI adds no check and no bypass. relogin/logout/remove/setSpawn
-  // stay command-less for scope. `list` is open and secret-free.
+  // gate); the CLI adds no check and no bypass. `tm8 link logout|remove` act on
+  // the caller's own row; relogin/setSpawn stay command-less for scope. `list` is open and secret-free.
   'spaceLinks.list': {
     cmd: ['link', 'list'],
     syn: 'tm8 link list',
@@ -996,22 +996,27 @@ const ROWS: Record<OperationName, Row> = {
     reason: 'human_settings_only',
   },
   'spaceLinks.logout': {
-    cmd: null,
+    cmd: ['link', 'logout'],
+    syn: 'tm8 link logout <alias|link-id> [--mutation-id <id>]',
     sum: 'Sign out of a linked Space: your stored session is revoked and forgotten — human sessions only',
     authz: 'server',
     input: 'bound',
     side: 'durable',
     tags: ['link', 'logout', 'revoke', 'cross-space'],
-    reason: 'human_settings_only',
+    notes: [
+      'an agent is refused by the Server; it asks its human to run this',
+      'a link to another server also asks that server to end the session it minted (best effort)',
+    ],
   },
   'spaceLinks.remove': {
-    cmd: null,
+    cmd: ['link', 'remove'],
+    syn: 'tm8 link remove <alias|link-id> [--mutation-id <id>]',
     sum: 'Remove your own row on a linked Space; the link stays for other Members — human sessions only',
     authz: 'server',
     input: 'bound',
     side: 'durable',
     tags: ['link', 'remove', 'cross-space'],
-    reason: 'human_settings_only',
+    notes: ['an agent is refused by the Server; it asks its human to run this'],
   },
   'spaceLinks.setSpawn': {
     cmd: null,
@@ -1277,12 +1282,15 @@ const ROWS: Record<OperationName, Row> = {
   'servers.add': {
     cmd: ['server', 'add'],
     syn: 'tm8 server add <name> --url <base-url> [--space <space-id>] [--username <username>] [--mutation-id <id>]',
-    sum: 'Add a tm8 Server to a Space after checking its health endpoint — human sessions only',
+    sum: 'Add a tm8 Server to a Space, then have THIS node check it can reach it — human sessions only',
     authz: 'space',
     input: 'bound',
     side: 'durable',
     tags: ['remote', 'server', 'space'],
-    notes: ['without --space, the server joins your first Space'],
+    notes: [
+      'without --space, the server joins your first Space',
+      'the reachability check runs on the node (servers.probe), not on your machine: it is what a space link will see',
+    ],
   },
   'servers.adopt': {
     cmd: null,
@@ -1305,13 +1313,15 @@ const ROWS: Record<OperationName, Row> = {
     notes: ['refused while a space link still targets it; a node-local 044 route cannot be removed'],
   },
   'servers.probe': {
-    cmd: null,
-    sum: 'Check a tm8 Server is reachable through the SSRF-guarded client and record the answer',
+    cmd: ['server', 'probe'],
+    syn: 'tm8 server probe <name|id> [--mutation-id <id>]',
+    sum: 'Check from the node that a tm8 Server is reachable through the SSRF-guarded client, and record the answer',
     authz: 'server',
     input: 'bound',
     tags: ['remote', 'server', 'health'],
-    reason: 'human_settings_only',
-    notes: ['a loopback-only or private address is unreachable; a refused, reset or silent one is offline'],
+    notes: [
+      'a loopback-only or private address is unreachable unless the node sets TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1 (LAN, Tailscale); a refused, reset or silent one is offline',
+    ],
   },
   'spaces.list': {
     cmd: ['space', 'list'],

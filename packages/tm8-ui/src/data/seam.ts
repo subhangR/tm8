@@ -184,6 +184,7 @@ import type {
   SpaceLinkAuditEntry,
   SpaceLinkInboundAuditEntry,
   SpaceLinkInboundView,
+  SpaceLinksInboundGrantResult,
   CrossSpaceRef,
   CrossSpaceRefRemoved,
   OpRequestView,
@@ -1680,10 +1681,12 @@ export interface Seam {
    */
   spaceLinks: {
     list(spaceId: SpaceId): Promise<SpaceLinkView[]>;
-    add(spaceId: SpaceId, targetSpaceId: string): Promise<SpaceLinkView>;
-    login(linkId: EntityId): Promise<SpaceLinkView>;
+    /** `targetServerId` (W9c): a `server` of this space when the target lives on another server. */
+    add(spaceId: SpaceId, targetSpaceId: string, targetServerId?: EntityId): Promise<SpaceLinkView>;
+    /** `pairingCode` (W9c): required for a link to another server, refused for a local one. */
+    login(linkId: EntityId, pairingCode?: string): Promise<SpaceLinkView>;
     /** Replaces the stored session; the old one is revoked. */
-    relogin(linkId: EntityId): Promise<SpaceLinkView>;
+    relogin(linkId: EntityId, pairingCode?: string): Promise<SpaceLinkView>;
     /** Revokes the viewer's session and forgets the stored bytes. */
     logout(linkId: EntityId): Promise<SpaceLinkView>;
     /** Deletes the viewer's own row; the link stays for other members. */
@@ -1708,6 +1711,16 @@ export interface Seam {
       audit(spaceId: SpaceId, linkId?: EntityId): Promise<SpaceLinkInboundAuditEntry[]>;
       revoke(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
       restore(spaceId: SpaceId, linkId: EntityId): Promise<SpaceLinkInboundView>;
+      /**
+       * W9c: let a space on ANOTHER server act in `spaceId` as the caller.
+       * The answer carries a single-use pairing code, shown once; the member
+       * pastes it into Sign in on the home server. Human-only.
+       */
+      grant(
+        spaceId: SpaceId,
+        homeSpaceId: string,
+        options?: { homeLabel?: string; allowSpawn?: boolean },
+      ): Promise<SpaceLinksInboundGrantResult>;
     };
   };
 
@@ -1742,6 +1755,8 @@ export interface Seam {
    * a gate token — `mine` is the caller's gate-session metadata only.
    */
   servers: {
+    /** Every live server of a space, with its last recorded `reachStatus`. */
+    list(spaceId: SpaceId): Promise<ServerView[]>;
     get(serverId: EntityId): Promise<ServerView>;
     /** Reachability through the SSRF-guarded client; the answer is recorded. */
     probe(serverId: EntityId): Promise<ServerProbeView>;

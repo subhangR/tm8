@@ -91,6 +91,7 @@ import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { HttpsRemoteInvokeForwarder } from './remote/link-forwarder.js';
 import { DbServerStore } from './remote/server-store.js';
+import { remoteLinkClientOptionsOf } from './remote/link-client.js';
 import { DbSpaceLinkStore } from './credentials/space-link-store.js';
 import type { RemoteSpaceLinkRoute } from './facade/handlers/w2/space-link-remote-route.js';
 import { directoryTargetResolver } from './remote/directory-resolver.js';
@@ -457,7 +458,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   if (db) {
     if (config.remoteSpaceLinks === true) {
       console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
-        config.remoteSpaceLinksAllowLoopback === true ? ' — DEV loopback targets allowed' : ''}`);
+        config.remoteSpaceLinksAllowLoopback === true ? ' — DEV loopback targets allowed' : ''}${
+        config.remoteSpaceLinksAllowPrivate === true ? ' — LAN/VPN (private) targets allowed' : ''}`);
     }
     const mcpBindings = new McpSessionBindings(db);
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
@@ -498,7 +500,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             remoteInvokeForwarder: new HttpsRemoteInvokeForwarder({
               servers: new DbServerStore({ db, dataDir }),
               links: new DbSpaceLinkStore({ db, dataDir }),
-              client: config.remoteSpaceLinksAllowLoopback === true ? { allowLoopback: true } : {},
+              client: remoteLinkClientOptionsOf(config),
             }),
             onRemoteSpaceLinkRoute: (route: RemoteSpaceLinkRoute) => { remoteSpaceLinkRoute = route; },
           }

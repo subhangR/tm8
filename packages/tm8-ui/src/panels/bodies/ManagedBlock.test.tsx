@@ -160,7 +160,7 @@ describe('ac_6 — no widened masking', () => {
   });
 });
 
-describe('ac_7 — the server panel says remote forwarding is off, and why', () => {
+describe('ac_7 — the server panel says when remote forwarding works, and what turns it on', () => {
   it('renders the notice with its reason', async () => {
     const server: ServerView = {
       id: SERVER, homeSpaceId: FIXTURE_SPACE_ID, name: 'Lab box', baseUrl: 'https://lab.example', username: null,
@@ -168,9 +168,9 @@ describe('ac_7 — the server panel says remote forwarding is off, and why', () 
     };
     const view = await mount(detailOf('server', SERVER), portWith(rowsOf(['servers.probe']), server));
     const notice = view.getByTestId('managed-notice');
-    expect(notice.textContent).toMatch(/Remote forwarding is off/);
-    expect(notice.textContent).toMatch(/remote_links_disabled/);
-    expect(notice.textContent).toMatch(/code change, not a setting/);
+    expect(notice.textContent).toMatch(/TM8_REMOTE_SPACE_LINKS=on/);
+    expect(notice.textContent).toMatch(/TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1/);
+    expect(notice.textContent).toMatch(/asks this node, not your browser/);
     expect(view.getByTestId('managed-fact-reachStatus').textContent).toContain('Not checked yet');
     expect(view.getByTestId('managed-verb-servers.probe').tagName).toBe('BUTTON');
   });

@@ -32,7 +32,7 @@ import {
   type OptionBag,
   type ParsedInvocation,
 } from './args.js';
-import { loadLocalConfig, resolveContext, sessionContextFromEnv, type CliContext } from './context.js';
+import { loadDesktopDiscovery, loadLocalConfig, resolveContext, sessionContextFromEnv, type CliContext } from './context.js';
 import {
   credentialOrigin,
   credentialStoreFor,
@@ -53,6 +53,7 @@ import { createOutput, processStreams, type Output } from './output.js';
 import { journal } from './journal.js';
 import { setActiveLink } from './space-link-active.js';
 import { CLI_VERSION } from './discovery/help.js';
+import { CONNECT_HELP_LINES } from './connect-help.js';
 import { isCommandPath } from './discovery/operations.js';
 
 export const VERSION = CLI_VERSION;
@@ -93,6 +94,8 @@ global options
   --format human|json|jsonl stdout shape; human renders the same DTO as json
   --timeout <seconds>       per-request timeout, in SECONDS
   --no-color  --quiet
+
+${CONNECT_HELP_LINES.join('\n')}
 
 discovery
   tm8 help [<noun> [<verb>]]
@@ -223,6 +226,7 @@ async function dispatch(
     globals,
     session: sessionContextFromEnv(),
     config: loadLocalConfig(),
+    desktopBaseUrl: loadDesktopDiscovery(),
   });
 
   // Humans authenticate from the per-server credential store (doc 13 §4.1),

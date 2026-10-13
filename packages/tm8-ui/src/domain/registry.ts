@@ -2641,16 +2641,16 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'createdBy' }] },
     }),
-    // The managed panel (task 01a0e24d). The notice is server truth no verb
-    // can change: `DisabledRemoteInvokeForwarder` refuses every remote invoke
-    // with `remote_links_disabled`, and there is no runtime switch (ac_7).
+    // The managed panel (task 01a0e24d). The notice is node config no verb
+    // can change: unless the node runs with `TM8_REMOTE_SPACE_LINKS=on`,
+    // `DisabledRemoteInvokeForwarder` refuses every remote invoke (W9c).
     panel: {
       archetype: 'generic',
       blocks: [{ block: 'managed', label: 'SERVER' }],
       managed: {
         source: 'servers',
         notices: [
-          'Remote forwarding is off: agents here cannot act on this server through a link. This build refuses every remote call (remote_links_disabled), and turning it on is a code change, not a setting.',
+          'Agents here act on this server only through a space link, and only when this node runs with TM8_REMOTE_SPACE_LINKS=on. A LAN or Tailscale address also needs TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1. Check reachability asks this node, not your browser.',
         ],
         facts: [
           { key: 'name', label: 'Name' },

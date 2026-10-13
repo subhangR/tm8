@@ -11,7 +11,10 @@
  *   3. POSTs `{op, params, query, input}` to the target's
  *      `REMOTE_SPACE_LINK_PATHS.invoke` with the session as bearer and the
  *      via chain, through the guarded client (link-client.ts);
- *   4. maps the answer. 401 is the target no longer honouring the session:
+ *   4. records what the call saw on the server entity (`reachStatus`): an
+ *      unreachable or offline target reads as such in every UI until a call
+ *      or a probe gets through again. Best effort; it never changes the result;
+ *   5. maps the answer. 401 is the target no longer honouring the session:
  *      THIS module marks the home row `signed_out` (one owner, no retry). A
  *      404 without the route's marker is an older or switched-off target:
  *      `unsupported`, and the row is left alone.
@@ -75,6 +78,10 @@ export class HttpsRemoteInvokeForwarder implements RemoteInvokeForwarder {
         ?? (SPACE_LINK_SPAWN_OPS.includes(request.op) ? REMOTE_SPAWN_TIMEOUT_MS : REMOTE_INVOKE_TIMEOUT_MS),
     }, client ?? {});
 
+    const reach = result.kind === 'response' ? 'reachable' : result.kind;
+    if (reach !== server.reachStatus) {
+      await servers.markReach(request.claims, request.serverId, reach).catch(() => undefined);
+    }
     if (result.kind !== 'response') return result;
     const marked = isRemoteLinkAnswer(result.body);
     if (result.status === 404 && !marked) return { kind: 'unsupported' };

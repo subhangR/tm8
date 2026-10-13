@@ -1443,6 +1443,18 @@ export function createFixtureSeam(): FixtureSeam {
     if (!server) throw new CollabError('not_found', `server ${id} not found`);
     return server;
   };
+  /** The server's W9c rule: a link to another server signs in with a pairing code, a local one without. */
+  const remoteSignIn = (linkId: string, pairingCode: string | undefined): string => {
+    const link = spaceLinksState.find((l) => l.id === linkId);
+    if (link?.targetServerId && !pairingCode) {
+      throw new CollabError('invalid_input', 'this link targets a space on another server: sign in with a pairing code',
+        { details: { reason: 'space_link_pairing_required' } });
+    }
+    if (link && !link.targetServerId && pairingCode) {
+      throw new CollabError('invalid_input', 'this link targets a space on this server: sign in without a pairing code');
+    }
+    return linkId;
+  };
   const spaceLinkById = (id: string): SpaceLinkView => {
     const link = spaceLinksState.find((l) => l.id === id);
     if (!link) throw new CollabError('not_found', `space link ${id} not found`);
@@ -6094,12 +6106,13 @@ export function createFixtureSeam(): FixtureSeam {
       async list(spaceId) {
         return clone(spaceLinksState.filter((l) => l.homeSpaceId === spaceId));
       },
-      async add(spaceId, targetSpaceId) {
+      async add(spaceId, targetSpaceId, targetServerId) {
         const existing = spaceLinksState.find((l) => l.homeSpaceId === spaceId && l.targetSpaceId === targetSpaceId);
         if (existing) return clone(existing);
+        if (targetServerId !== undefined) serverById(targetServerId);
         const link: SpaceLinkView = {
           id: `0f1e2d3c-0000-4000-8000-${String(Date.now()).padStart(12, '0').slice(-12)}`,
-          homeSpaceId: spaceId, targetSpaceId, targetServerId: null, targetSpaceName: null,
+          homeSpaceId: spaceId, targetSpaceId, targetServerId: targetServerId ?? null, targetSpaceName: null,
           createdAt: tick(),
           statusSummary: { signedIn: 0, signedOut: 0, left: 0, unreachable: 0 },
           mine: null,
@@ -6108,8 +6121,8 @@ export function createFixtureSeam(): FixtureSeam {
         spaceLinksState.push(link);
         return clone(link);
       },
-      async login(linkId) { return signLink(linkId, 'signed_in'); },
-      async relogin(linkId) { return signLink(linkId, 'signed_in'); },
+      async login(linkId, pairingCode) { return signLink(remoteSignIn(linkId, pairingCode), 'signed_in'); },
+      async relogin(linkId, pairingCode) { return signLink(remoteSignIn(linkId, pairingCode), 'signed_in'); },
       async logout(linkId) { return signLink(linkId, 'signed_out'); },
       async remove(linkId) {
         const link = spaceLinkById(linkId);
@@ -6149,6 +6162,23 @@ export function createFixtureSeam(): FixtureSeam {
           link.revokedByMemberId = null;
           return clone(link);
         },
+        async grant(spaceId, homeSpaceId, options) {
+          const link: SpaceLinkInboundView = {
+            id: `0f1e2d3c-0000-4000-8000-${String(Date.now()).padStart(12, '0').slice(-12)}`,
+            homeSpaceId, homeSpaceName: options?.homeLabel ?? null, targetSpaceId: spaceId, createdAt: tick(),
+            revokedAt: null, revokedByMemberId: null, lastCallAt: null,
+            remoteHome: { spaceId: homeSpaceId, label: options?.homeLabel ?? null, serverId: null, baseUrl: null },
+            holders: [{
+              targetMemberId: ada.id, displayName: ada.displayName, status: 'signed_out',
+              allowSpawn: options?.allowSpawn ?? false, spawnBudget: 0, expiresAt: null, lastUsedAt: null,
+            }],
+          };
+          spaceLinksInboundState.push(link);
+          return {
+            link: clone(link), targetSpaceId: spaceId,
+            pairingCode: 'tm8p_fixture-pairing-code', pairingExpiresAt: new Date(Date.parse(tick()) + 10 * 60_000).toISOString(),
+          };
+        },
       },
     },
 
@@ -6176,6 +6206,9 @@ export function createFixtureSeam(): FixtureSeam {
     },
 
     servers: {
+      async list(spaceId) {
+        return clone(serversState.filter((x) => x.homeSpaceId === spaceId));
+      },
       async get(serverId) {
         return clone(serverById(serverId));
       },

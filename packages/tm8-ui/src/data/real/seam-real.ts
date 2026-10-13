@@ -630,9 +630,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
     spaceLinks: {
       list: (spaceId) => ops.spaceLinksList(spaceId),
-      add: (spaceId, targetSpaceId) => ops.spaceLinksAdd(spaceId, targetSpaceId),
-      login: (linkId) => ops.spaceLinksMutate('spaceLinks.login', linkId),
-      relogin: (linkId) => ops.spaceLinksMutate('spaceLinks.relogin', linkId),
+      add: (spaceId, targetSpaceId, targetServerId) => ops.spaceLinksAdd(spaceId, targetSpaceId, targetServerId),
+      login: (linkId, pairingCode) => ops.spaceLinksMutate('spaceLinks.login', linkId, pairingCode),
+      relogin: (linkId, pairingCode) => ops.spaceLinksMutate('spaceLinks.relogin', linkId, pairingCode),
       logout: (linkId) => ops.spaceLinksMutate('spaceLinks.logout', linkId),
       remove: (linkId) => ops.spaceLinksMutate('spaceLinks.remove', linkId),
       setSpawn: (linkId, allowSpawn, spawnBudget) => ops.spaceLinksSetSpawn(linkId, allowSpawn, spawnBudget),
@@ -642,6 +642,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         audit: (spaceId, linkId) => ops.spaceLinksInboundAudit(spaceId, linkId),
         revoke: (spaceId, linkId) => ops.spaceLinksInboundMutate('spaceLinks.inbound.revoke', spaceId, linkId),
         restore: (spaceId, linkId) => ops.spaceLinksInboundMutate('spaceLinks.inbound.restore', spaceId, linkId),
+        grant: (spaceId, homeSpaceId, options) => ops.spaceLinksInboundGrant(spaceId, homeSpaceId, options),
       },
     },
 
@@ -661,6 +662,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       remove: (entityId, refId) => ops.crossSpaceRefsRemove(entityId, refId),
     },
     servers: {
+      list: (spaceId) => ops.serversList(spaceId),
       get: (serverId) => ops.serversGet(serverId),
       probe: (serverId) => ops.serversProbe(serverId),
       remove: (serverId) => ops.serversRemove(serverId),

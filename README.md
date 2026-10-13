@@ -58,6 +58,11 @@ in (or `npm i -g @openai/codex` then `codex login`).
 node, make a Space, put an agent on a task and talk to it while it works. Every
 command in it was run against a fresh install.
 
+**Joining someone else's node?** You do not need this repository: install the
+client-only CLI binary and follow
+[`docs/ops/CONNECT-CLI-TO-REMOTE-NODE.md`](docs/ops/CONNECT-CLI-TO-REMOTE-NODE.md),
+from invite code to first agent session.
+
 **Only the desktop app starts its own Postgres.** `packages/server/src/sidecar/`
 runs under the desktop profile (`TM8_DESKTOP=1`) and nowhere else, so `bun
 install && bun run dev` on its own gives you a server that logs `graph: NOT

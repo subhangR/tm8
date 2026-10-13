@@ -4,6 +4,7 @@
  *   1. explicit `--space` / `--as`
  *   2. session-injected context (what the PTY host set on spawn)
  *   3. local CLI configuration
+ *   3b. (base URL only) a running tm8 desktop app's discovery file
  *   4. the Phase-1 implicit local Server, where allowed
  *
  * Two rules make this honest rather than convenient:
@@ -34,7 +35,7 @@ import type { GlobalOptions } from './args.js';
 import { type OutputFormat, OUTPUT_FORMATS } from './output.js';
 
 /** Which of the four steps produced a value. Rendered in diagnostics. */
-export type ContextSource = 'flag' | 'session' | 'config' | 'implicit-local';
+export type ContextSource = 'flag' | 'session' | 'config' | 'desktop' | 'implicit-local';
 
 export interface Resolved<T> {
   value: T;
@@ -196,10 +197,55 @@ export function loadLocalConfig(
   return config;
 }
 
+/**
+ * Step 3b: the tm8 desktop app picks its own port and writes where it
+ * listens to `~/.config/tm8/desktop-node.json` (apps/desktop/src/main.cjs).
+ * Same directory rule as the local config, but NOT moved by `TM8_CONFIG_PATH`:
+ * the app writes one place.
+ */
+export function desktopDiscoveryPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(env.XDG_CONFIG_HOME?.trim() || join(homedir(), '.config'), 'tm8', 'desktop-node.json');
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM: it exists, it is just not ours to signal.
+    return (err as { code?: unknown }).code === 'EPERM';
+  }
+}
+
+/**
+ * The desktop app's base URL, or undefined. A missing, malformed or stale file
+ * (the app that wrote it is gone) is absent, never an error: a crashed app
+ * cannot delete its file, and must not send the CLI to a dead port.
+ */
+export function loadDesktopDiscovery(
+  env: NodeJS.ProcessEnv = process.env,
+  io: ConfigIo = defaultConfigIo,
+  isAlive: (pid: number) => boolean = processAlive,
+): string | undefined {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(io.readFile(desktopDiscoveryPath(env))) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (raw === null || typeof raw !== 'object') return undefined;
+  const { baseUrl, appPid } = raw as Record<string, unknown>;
+  if (typeof baseUrl !== 'string' || !/^https?:\/\//.test(baseUrl)) return undefined;
+  if (typeof appPid !== 'number' || !Number.isInteger(appPid) || appPid <= 0 || !isAlive(appPid)) return undefined;
+  return baseUrl;
+}
+
 export interface ResolveContextInput {
   globals: GlobalOptions;
   session?: SessionContext;
   config?: LocalConfig;
+  /** Step 3b: a running desktop app's base URL (`loadDesktopDiscovery`). */
+  desktopBaseUrl?: string | undefined;
   /** Present only so the caller can decide whether `--format` was defaulted. */
   formatExplicit?: boolean;
 }
@@ -227,6 +273,7 @@ export function resolveContext(input: ResolveContextInput): CliContext {
 
   const baseUrl =
     pick(undefined, session.baseUrl, config.baseUrl) ??
+    (input.desktopBaseUrl !== undefined ? { value: input.desktopBaseUrl, source: 'desktop' } as const : undefined) ??
     ({ value: IMPLICIT_LOCAL_BASE_URL, source: 'implicit-local' } as const);
 
   return {

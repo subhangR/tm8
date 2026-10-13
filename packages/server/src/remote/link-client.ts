@@ -7,6 +7,8 @@
  * http(s) on a loopback literal be reached directly, so two servers on one
  * machine can link. The guard itself is not changed or bypassed for any other
  * address: a non-loopback URL takes the guarded path whatever the switch says.
+ * `TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1` widens the guard's address policy
+ * to LAN / VPN ranges (`allowPrivate`); it stays HTTPS-only and pinned.
  */
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -23,6 +25,8 @@ import {
 export interface RemoteLinkClientOptions {
   /** Dev only: reach a loopback http(s) base URL directly. */
   allowLoopback?: boolean;
+  /** Operator opt-in: the guarded client also reaches LAN / VPN addresses (RFC 1918, Tailscale). */
+  allowPrivate?: boolean;
   /** Tests only: the guard's resolver and transport. */
   https?: GuardedHttpsOptions;
   timeoutMs?: number;
@@ -36,6 +40,17 @@ export interface RemoteLinkPost {
   bearer?: string;
   via?: readonly string[];
   timeoutMs?: number;
+}
+
+/** The client policy this node's config asks for (`TM8_REMOTE_SPACE_LINKS_ALLOW_*`). */
+export function remoteLinkClientOptionsOf(config: {
+  remoteSpaceLinksAllowLoopback?: boolean;
+  remoteSpaceLinksAllowPrivate?: boolean;
+}): RemoteLinkClientOptions {
+  return {
+    ...(config.remoteSpaceLinksAllowLoopback === true ? { allowLoopback: true } : {}),
+    ...(config.remoteSpaceLinksAllowPrivate === true ? { allowPrivate: true } : {}),
+  };
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
@@ -68,13 +83,37 @@ export async function postRemoteLink(request: RemoteLinkPost, options: RemoteLin
   const body = JSON.stringify(request.body ?? {});
   const timeoutMs = request.timeoutMs ?? options.timeoutMs ?? GUARDED_TOTAL_TIMEOUT_MS;
   if (options.allowLoopback && isLoopbackBaseUrl(request.baseUrl)) {
-    return loopbackPost(url, headers, body, timeoutMs);
+    return loopbackRequest(url, 'POST', headers, body, timeoutMs);
   }
-  return guardedHttpsRequest({ url, method: 'POST', headers, body, timeoutMs }, options.https ?? {});
+  return guardedHttpsRequest({ url, method: 'POST', headers, body, timeoutMs }, guardOptions(options));
+}
+
+/**
+ * An unauthenticated GET of a server's `/health`, under the same policy as
+ * every link call (the reachability probe and `servers.add`'s check).
+ */
+export async function getRemoteHealth(baseUrl: string, options: RemoteLinkClientOptions = {}): Promise<GuardedResult> {
+  const url = remoteLinkUrl(new URL(baseUrl).origin, '/health');
+  const headers = { accept: 'application/json', 'user-agent': 'tm8-remote-space-link/1' };
+  const timeoutMs = options.timeoutMs ?? GUARDED_TOTAL_TIMEOUT_MS;
+  if (options.allowLoopback && isLoopbackBaseUrl(baseUrl)) {
+    return loopbackRequest(url, 'GET', headers, undefined, timeoutMs);
+  }
+  return guardedHttpsRequest({ url, method: 'GET', headers, timeoutMs }, guardOptions(options));
+}
+
+function guardOptions(options: RemoteLinkClientOptions): GuardedHttpsOptions {
+  return { ...options.https, ...(options.allowPrivate === true ? { allowPrivate: true } : {}) };
 }
 
 /** The dev path: same result shape, timeouts and body cap as the guarded client. */
-function loopbackPost(raw: string, headers: Record<string, string>, body: string, timeoutMs: number): Promise<GuardedResult> {
+function loopbackRequest(
+  raw: string,
+  method: 'GET' | 'POST',
+  headers: Record<string, string>,
+  body: string | undefined,
+  timeoutMs: number,
+): Promise<GuardedResult> {
   const url = new URL(raw);
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
   return new Promise<GuardedResult>((resolveResult) => {
@@ -92,8 +131,8 @@ function loopbackPost(raw: string, headers: Record<string, string>, body: string
       hostname: url.hostname.replace(/^\[|\]$/g, ''),
       port: url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80),
       path: `${url.pathname}${url.search}`,
-      method: 'POST',
-      headers: { ...headers, 'content-length': String(Buffer.byteLength(body)) },
+      method,
+      headers: body === undefined ? headers : { ...headers, 'content-length': String(Buffer.byteLength(body)) },
       agent: false,
     });
     const connectTimer = setTimeout(() => {

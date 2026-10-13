@@ -370,6 +370,46 @@ jobs:
         env:
           TM8_MIGRATION_DATABASE_URL: postgres://tm8:tm8@localhost:5442/postgres
 
+  # The client-only CLI (E8): one self-contained binary per target, built with
+  # scripts/build-cli-client.sh (`bun build --compile`) and uploaded so a member can
+  # install the CLI without cloning the monorepo (docs/ops/CONNECT-CLI-TO-REMOTE-NODE.md).
+  # Both targets cross-compile on one linux runner; only linux-x64 is smoke-run.
+  # Not in ci-ok's needs: it ships an artifact, it gates nothing.
+  cli-binary:
+    name: cli binary (client-only)
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tm8-setup
+      - name: Build linux-x64 and darwin-arm64
+        run: |
+          scripts/build-cli-client.sh --target bun-linux-x64
+          scripts/build-cli-client.sh --target bun-darwin-arm64
+      - name: Smoke-run linux-x64 outside the checkout
+        run: |
+          cd "$RUNNER_TEMP"
+          "$GITHUB_WORKSPACE/dist-client/tm8-linux-x64" --version
+          "$GITHUB_WORKSPACE/dist-client/tm8-linux-x64" --help | grep -q 'TM8_BASE_URL'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tm8-cli-linux-x64
+          path: |
+            dist-client/tm8-linux-x64
+            dist-client/tm8-linux-x64.sha256
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tm8-cli-darwin-arm64
+          path: |
+            dist-client/tm8-darwin-arm64
+            dist-client/tm8-darwin-arm64.sha256
+          retention-days: 14
+          if-no-files-found: error
+
   # The one check to require. `if: always()` — never `!cancelled()`, under which a
   # cancelled run leaves this job skipped, and a skipped check reads as passing.
   # The verdict is tools/ci/ci-ok.sh (table-tested in ci-scripts): red unless

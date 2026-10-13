@@ -254,6 +254,29 @@ async function linkLogin(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
+ * Sign out of a link, or remove your own row from it. Both act on the
+ * caller's OWN sign-in only; for a link to another server the home node also
+ * asks the target to end the session it minted (best effort).
+ */
+function linkOwnRowWrite(remove: boolean) {
+  const command = remove ? 'link remove' : 'link logout';
+  return async (cmd: CommandContext): Promise<ExitCode> => {
+    assertKnownOptions(cmd, ['mutation-id']);
+    const ref = requireArg(cmd.args[0], command, `the <alias|link-id> to ${remove ? 'remove yourself from' : 'sign out of'}`);
+    return scrubbed(async () => {
+      const view = await observedInvoke<SpaceLinkView>(clientFor(cmd.ctx), remove ? 'spaceLinks.remove' : 'spaceLinks.logout', {
+        params: { linkId: await linkIdFor(cmd, ref) },
+        body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
+      });
+      cmd.out.data(scrubSecrets(view), (dto) => remove
+        ? `removed your sign-in row: ${renderLink(dto)} (the link stays for other Members)`
+        : `signed out: ${renderLink(dto)}`);
+      return EXIT_OK;
+    });
+  };
+}
+
+/**
  * W9c, on the TARGET server: let a Space on another server act here as you.
  * Prints the pairing code — deliberately unscrubbed, it is the point of the
  * command. It is single use, expires in minutes, and only its hash is stored.
@@ -385,6 +408,8 @@ export const LINK_COMMANDS: CommandModule[] = [
   { path: ['link', 'list'], run: linkList },
   { path: ['link', 'add'], run: linkAdd },
   { path: ['link', 'login'], run: linkLogin },
+  { path: ['link', 'logout'], run: linkOwnRowWrite(false) },
+  { path: ['link', 'remove'], run: linkOwnRowWrite(true) },
   { path: ['link', 'audit'], run: linkAudit },
   { path: ['link', 'inbound'], run: linkInbound },
   { path: ['link', 'inbound-audit'], run: linkInboundAudit },

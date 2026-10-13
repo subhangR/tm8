@@ -1,11 +1,10 @@
 import {
-  CONTRACT_VERSION,
   ServerConnectionBaseUrlSchema,
   type ServerConnection,
+  type ServerProbeView,
   type ServerView,
 } from '@tm8/contract';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
-import { ProtocolError, TransportError } from '../errors.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
@@ -25,45 +24,33 @@ function render(connection: Pick<ServerConnection, 'name' | 'baseUrl' | 'usernam
   ].join('\n');
 }
 
-async function requireHealthyTm8Server(baseUrl: string, timeoutMs = 15_000): Promise<void> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let response: Response;
-  try {
-    response = await fetch(new URL('/health', baseUrl), {
-      headers: { accept: 'application/json' },
-      signal: controller.signal,
-    });
-  } catch (error) {
-    throw new TransportError(
-      `GET /health failed for ${baseUrl}: ${error instanceof Error ? error.message : String(error)}`,
-      error,
-    );
-  } finally {
-    clearTimeout(timer);
+/** Words for a probe result: what the NODE saw when it tried to reach the server. */
+function renderReach(probe: ServerProbeView): string {
+  if (probe.outcome === 'response') {
+    return probe.reason === 'not_tm8'
+      ? 'reachable from this node, but it did not answer as a tm8 Server (/health)'
+      : 'reachable from this node';
   }
-  const text = await response.text();
-  let body: unknown;
-  try {
-    body = text ? JSON.parse(text) as unknown : undefined;
-  } catch {
-    body = undefined;
+  const why = probe.reason ? ` (${probe.reason})` : '';
+  return `${probe.outcome} from this node${why}`;
+}
+
+/** A next step for a probe that did not get through, or undefined. */
+function reachHint(probe: ServerProbeView): string | undefined {
+  if (probe.reason === 'non_public_address') {
+    return 'the node only reaches public HTTPS addresses by default; for a LAN or Tailscale peer its operator sets TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1 (docs/ops/REMOTE-SPACE-LINKS.md)';
   }
-  const health = body as Record<string, unknown> | undefined;
-  if (!response.ok || health?.ok !== true || health.server !== 'tm8-server') {
-    throw new ProtocolError(
-      `${baseUrl} did not answer as a healthy tm8 Server`,
-      response.status,
-      body ?? text,
-    );
-  }
-  if (health.contractVersion !== CONTRACT_VERSION) {
-    throw new ProtocolError(
-      `${baseUrl} uses contract ${String(health.contractVersion)}; this CLI requires ${CONTRACT_VERSION}`,
-      response.status,
-      body,
-    );
-  }
+  if (probe.reason === 'invalid_url') return 'space links need an https:// base URL';
+  if (probe.reason === 'tls') return 'the server\'s TLS certificate was refused: it needs a certificate the node trusts';
+  if (probe.outcome === 'offline') return 'check the server is up and that this node can route to it, then run `tm8 server probe <name>`';
+  return undefined;
+}
+
+async function probeServer(cmd: CommandContext, serverId: string): Promise<ServerProbeView> {
+  return observedInvoke<ServerProbeView>(clientFor(cmd.ctx), 'servers.probe', {
+    params: { serverId },
+    body: { clientMutationId: resolveMutationId(undefined) },
+  });
 }
 
 async function serverList(cmd: CommandContext): Promise<ExitCode> {
@@ -94,7 +81,6 @@ async function serverAdd(cmd: CommandContext): Promise<ExitCode> {
     throw new CliError(`--url is not a valid tm8 Server base URL: ${parsed.error.issues[0]?.message ?? 'invalid URL'}`, EXIT_USAGE);
   }
   const baseUrl = new URL(parsed.data).origin;
-  await requireHealthyTm8Server(baseUrl, cmd.ctx.timeoutMs);
 
   // W8 (261): a server is an entity in a Space; 044's table is read-only.
   // `servers.add` takes no actor: it is human-only.
@@ -110,7 +96,29 @@ async function serverAdd(cmd: CommandContext): Promise<ExitCode> {
   if (username !== undefined) body.username = username;
 
   const data = await observedInvoke<ServerView>(clientFor(cmd.ctx), 'servers.add', { body });
-  cmd.out.data(data, render);
+  // Reachability is checked BY THE NODE (servers.probe): a check from this
+  // machine said nothing about whether the node, which makes every link call,
+  // can reach it. A failed check leaves the server added and says why.
+  const probe = await probeServer(cmd, data.id);
+  const hint = reachHint(probe);
+  cmd.out.data({ ...probe.server, probe: { outcome: probe.outcome, ...(probe.reason ? { reason: probe.reason } : {}) } },
+    (server) => [render(server), `check: ${renderReach(probe)}`, ...(hint ? [`hint: ${hint}`] : [])].join('\n'));
+  return EXIT_OK;
+}
+
+async function serverIdFor(cmd: CommandContext, target: string): Promise<string> {
+  // A name resolves through the directory (ambiguous names refuse there).
+  return UUID.test(target)
+    ? target
+    : (await observedInvoke<ServerConnection>(clientFor(cmd.ctx), 'serverConnections.get', { params: { name: target } })).id;
+}
+
+async function serverProbe(cmd: CommandContext): Promise<ExitCode> {
+  const target = oneName(cmd, 'server probe');
+  const probe = await probeServer(cmd, await serverIdFor(cmd, target));
+  const hint = reachHint(probe);
+  cmd.out.data(probe, (p) => [`${p.server.name}: ${p.server.baseUrl}`, `check: ${renderReach(p)}`,
+    ...(hint ? [`hint: ${hint}`] : [])].join('\n'));
   return EXIT_OK;
 }
 
@@ -121,12 +129,8 @@ async function serverRemove(cmd: CommandContext): Promise<ExitCode> {
   if (!cmd.options.bool('yes')) {
     throw new CliError('tm8 server remove removes the server for every Member of its Space; pass --yes to confirm', EXIT_USAGE);
   }
-  const client = clientFor(cmd.ctx);
-  // A name resolves through the directory (ambiguous names refuse there).
-  const serverId = UUID.test(target)
-    ? target
-    : (await observedInvoke<ServerConnection>(client, 'serverConnections.get', { params: { name: target } })).id;
-  const data = await observedInvoke<ServerView>(client, 'servers.remove', {
+  const serverId = await serverIdFor(cmd, target);
+  const data = await observedInvoke<ServerView>(clientFor(cmd.ctx), 'servers.remove', {
     params: { serverId },
     body: { clientMutationId: resolveMutationId(cmd.options.value('mutation-id')) },
   });
@@ -139,4 +143,5 @@ export const SERVER_COMMANDS: CommandModule[] = [
   { path: ['server', 'add'], run: serverAdd },
   { path: ['server', 'get'], run: serverGet },
   { path: ['server', 'remove'], run: serverRemove },
+  { path: ['server', 'probe'], run: serverProbe },
 ];

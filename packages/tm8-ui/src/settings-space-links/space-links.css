@@ -142,3 +142,20 @@
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
+
+/* W9c: a remote link's server that this node could not reach. */
+.set-spl__unreachable {
+  color: var(--pn-ink-1);
+  font-weight: 600;
+}
+
+.set-spl__grant {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.set-spl__code {
+  font-family: var(--pn-font-mono, ui-monospace, monospace);
+  user-select: all;
+}

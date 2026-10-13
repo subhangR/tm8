@@ -16,6 +16,11 @@
  *     `nodeIntegration`, and no desktop-only branch (AM-7/T-D24).
  *  4. Ask the child to shut down on quit, and stop waiting after 5 s.
  *
+ * Four operator knobs, all from ONE settings file (`readSettings`,
+ * docs/ops/DESKTOP.md): a fixed HTTP port, chosen `TM8_*` server env, and a
+ * remote node to open instead of starting the local one. Where the local node
+ * listens is published for the CLI (`writeDiscovery`).
+ *
  * There is NO IPC spawn surface here. Sessions are spawned server-side, by the
  * server, exactly as they are for a browser client — that half of T-D21 was not
  * reversed.
@@ -23,7 +28,9 @@
 
 const { app, BrowserWindow, shell, dialog } = require('electron');
 const { fork } = require('node:child_process');
-const { existsSync } = require('node:fs');
+const { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } = require('node:fs');
+const net = require('node:net');
+const os = require('node:os');
 const path = require('node:path');
 
 const PG_VERSION = '18.6.0';
@@ -38,6 +45,29 @@ const TRAFFIC_LIGHTS = { x: 12, y: 8 };
 /** Grace period for the child's own shutdown chain before SIGKILL (plan §B.5). */
 const SHUTDOWN_GRACE_MS = 5_000;
 
+/**
+ * The HTTP port the local node asks for first. A STABLE port is what keeps a
+ * sign-in: the renderer's localStorage is per origin, and the origin includes
+ * the port, so an ephemeral port per launch started every launch signed out.
+ * (Electron's default session is the persistent one under userData — no
+ * `partition` is set below — so a stable origin is all that was missing.)
+ * 4619 is referenced nowhere else in the repo (4610/4611 dev, 4620/4621 the
+ * documented second stack). Busy → an ephemeral port, said in the log.
+ */
+const DEFAULT_PORT = 4619;
+/** Budget for the remote node's `/health` before its window is shown. */
+const REMOTE_HEALTH_TIMEOUT_MS = 10_000;
+
+/**
+ * `TM8_*` keys a settings file may NOT set: the shell owns them (layout,
+ * Postgres, port) or they are another process's identity (an agent lane's
+ * token, session and target). Everything else starting `TM8_` passes.
+ */
+const SHELL_OWNED_ENV = new Set([
+  'TM8_DATA_DIR', 'TM8_REPO_ROOT', 'TM8_UI_DIR', 'TM8_DESKTOP', 'TM8_PORT',
+  'TM8_AGENT_TOKEN', 'TM8_SESSION_ID', 'TM8_MANIFEST_PATH', 'TM8_BASE_URL', 'TM8_SPACE_ID', 'TM8_ACTOR_ID',
+]);
+
 // Must precede `app.getPath('userData')` or an unpackaged run would write to
 // ~/Library/Application Support/Electron and a packaged one to .../tm8 — i.e.
 // `electron .` would not be testing the app's real data directory.
@@ -49,6 +79,8 @@ let win = null;
 let child = null;
 let quitting = false;
 let loadedApp = false;
+/** Set once the local node reported ready; the discovery file names it. */
+let discoveryWritten = false;
 
 /**
  * Where the tm8 tree lives, unpackaged and packaged alike.
@@ -190,7 +222,157 @@ function inheritedEnv() {
   return env;
 }
 
-function startServer() {
+/**
+ * `<userData>/desktop.json` (macOS: ~/Library/Application Support/tm8/desktop.json):
+ *
+ *   { "port": 4619, "env": { "TM8_REMOTE_SPACE_LINKS": "on" }, "remoteUrl": "https://tm8.example.com" }
+ *
+ * Every key is optional. A missing file is the defaults; a malformed file or
+ * key is reported (log + status line) and ignored — never a failed launch.
+ */
+function readSettings(dataDir) {
+  const file = path.join(dataDir, 'desktop.json');
+  const settings = { port: DEFAULT_PORT, env: {}, remoteUrl: null, problems: [] };
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return settings;
+    settings.problems.push(`${file} is not readable JSON (${err instanceof Error ? err.message : String(err)}); using defaults`);
+    return settings;
+  }
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    settings.problems.push(`${file} must hold a JSON object; using defaults`);
+    return settings;
+  }
+  if (raw.port !== undefined) {
+    if (Number.isInteger(raw.port) && raw.port > 0 && raw.port < 65536) settings.port = raw.port;
+    else settings.problems.push(`"port" must be 1-65535; using ${DEFAULT_PORT}`);
+  }
+  if (raw.env !== undefined) {
+    if (raw.env === null || typeof raw.env !== 'object' || Array.isArray(raw.env)) {
+      settings.problems.push('"env" must be an object of TM8_* strings; ignored');
+    } else {
+      for (const [key, value] of Object.entries(raw.env)) {
+        if (!key.startsWith('TM8_') || SHELL_OWNED_ENV.has(key) || key.startsWith('TM8_PG_')) {
+          settings.problems.push(`"env.${key}" is not settable here; ignored`);
+        } else if (typeof value !== 'string') {
+          settings.problems.push(`"env.${key}" must be a string; ignored`);
+        } else {
+          settings.env[key] = value;
+        }
+      }
+    }
+  }
+  if (raw.remoteUrl !== undefined && raw.remoteUrl !== null && raw.remoteUrl !== '') {
+    let url = null;
+    try {
+      url = new URL(String(raw.remoteUrl));
+    } catch {
+      url = null;
+    }
+    if (url && (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password) {
+      settings.remoteUrl = url.origin;
+    } else {
+      settings.problems.push('"remoteUrl" must be an http(s) URL without credentials; starting the local node instead');
+    }
+  }
+  return settings;
+}
+
+/** True when nothing listens on 127.0.0.1:<port> right now. */
+function portFree(port) {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen(port, '127.0.0.1', () => probe.close(() => resolve(true)));
+  });
+}
+
+/** Where the CLI looks for this app (packages/cli/src/context.ts `desktopDiscoveryPath`). */
+function discoveryPath() {
+  const configHome = process.env.XDG_CONFIG_HOME?.trim() || path.join(os.homedir(), '.config');
+  return path.join(configHome, 'tm8', 'desktop-node.json');
+}
+
+/**
+ * Publish the local node for the CLI. `appPid` is THIS process: the CLI
+ * ignores the file once it is dead, so a crash cannot strand it on a dead port.
+ */
+function writeDiscovery(url) {
+  try {
+    const file = discoveryPath();
+    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    writeFileSync(file, `${JSON.stringify({
+      baseUrl: new URL(url).origin,
+      pid: child?.pid ?? null,
+      appPid: process.pid,
+      startedAt: new Date().toISOString(),
+    }, null, 2)}\n`, { mode: 0o600 });
+    discoveryWritten = true;
+  } catch (err) {
+    console.warn(`tm8: could not write ${discoveryPath()}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Remove the discovery file, only if it still names this process. */
+function removeDiscovery() {
+  if (!discoveryWritten) return;
+  discoveryWritten = false;
+  try {
+    const file = discoveryPath();
+    const current = JSON.parse(readFileSync(file, 'utf8'));
+    if (current && current.appPid === process.pid) unlinkSync(file);
+  } catch {
+    // Already gone, or rewritten by another app: not ours to delete.
+  }
+}
+
+/** Remote mode: no local server, no Postgres — check the node answers, then open it. */
+async function openRemote(remoteUrl) {
+  setStatus(`Connecting to ${remoteUrl}…`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REMOTE_HEALTH_TIMEOUT_MS);
+  try {
+    const response = await fetch(new URL('/health', remoteUrl), {
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || body?.server !== 'tm8-server') {
+      throw new Error(`${remoteUrl}/health answered ${response.status} and is not a tm8 server`);
+    }
+  } catch (err) {
+    fatal(
+      `Could not reach ${remoteUrl}`,
+      `${err instanceof Error ? err.message : String(err)}\n\n` +
+        'Fix or remove "remoteUrl" in desktop.json (docs/ops/DESKTOP.md) and relaunch.',
+    );
+    return;
+  } finally {
+    clearTimeout(timer);
+  }
+  loadedApp = true;
+  win?.loadURL(remoteUrl).catch((err) => fatal('The remote tm8 node could not be loaded', String(err)));
+}
+
+async function start() {
+  const settings = readSettings(app.getPath('userData'));
+  for (const problem of settings.problems) console.warn(`tm8: desktop.json: ${problem}`);
+  if (settings.problems.length > 0) setStatus('Starting tm8…', `desktop.json: ${settings.problems.join('; ')}`);
+  if (settings.remoteUrl) {
+    await openRemote(settings.remoteUrl);
+    return;
+  }
+  let port = settings.port;
+  if (!(await portFree(port))) {
+    console.warn(`tm8: port ${port} is in use — using an ephemeral port; sign-ins will not carry over to the next launch`);
+    port = 0;
+  }
+  startServer(settings.env, port);
+}
+
+function startServer(extraEnv, port) {
   const layout = resolveLayout();
 
   if (!existsSync(layout.serverEntry)) {
@@ -210,6 +392,8 @@ function startServer() {
     return;
   }
 
+  /** Set by a `failed` EADDRINUSE report: the exit handler restarts on port 0. */
+  let retryEphemeral = false;
   child = fork(layout.serverEntry, [], {
     // A pure Node runtime. Electron's own binary IS the node here — this is
     // what makes it unnecessary to ship a second Node, and it is also what
@@ -220,6 +404,8 @@ function startServer() {
     execArgv: ['--enable-source-maps'],
     env: {
       ...inheritedEnv(),
+      // Operator-chosen TM8_* from desktop.json; every shell-owned key below wins.
+      ...extraEnv,
       ELECTRON_RUN_AS_NODE: '1',
       TM8_DESKTOP: '1',
       TM8_DATA_DIR: layout.dataDir,
@@ -231,8 +417,8 @@ function startServer() {
       // Socket only. The port number then names `.s.PGSQL.<port>` inside our
       // own 0700 data dir and cannot collide with the developer's cluster.
       TM8_PG_LISTEN_ADDRESSES: '',
-      // Ephemeral HTTP port; the child tells us which one it got.
-      TM8_PORT: '0',
+      // The stable port (0: ephemeral); the child tells us which one it got.
+      TM8_PORT: String(port),
       // The Electron main process has no TTY, so colour codes would be noise.
       NO_COLOR: '1',
     },
@@ -246,10 +432,17 @@ function startServer() {
     if (msg === null || typeof msg !== 'object' || msg.type !== 'tm8:desktop') return;
     if (msg.phase === 'ready' && typeof msg.url === 'string') {
       loadedApp = true;
+      writeDiscovery(msg.url);
       win?.loadURL(msg.url).catch((err) => fatal('tm8 started but the window could not load it', String(err)));
       return;
     }
     if (msg.phase === 'failed') {
+      // The port was free when probed and taken before listen(): one retry, ephemeral.
+      if (port !== 0 && /EADDRINUSE/.test(String(msg.message ?? ''))) {
+        console.warn(`tm8: port ${port} was taken during startup — retrying on an ephemeral port`);
+        retryEphemeral = true;
+        return;
+      }
       fatal(msg.message ?? 'tm8 failed to start', msg.detail);
       return;
     }
@@ -258,7 +451,12 @@ function startServer() {
 
   child.on('exit', (code, signal) => {
     child = null;
+    removeDiscovery();
     if (quitting) return;
+    if (retryEphemeral) {
+      startServer(extraEnv, 0);
+      return;
+    }
     fatal(
       'The tm8 server stopped',
       `It exited with ${signal !== null ? `signal ${signal}` : `code ${code}`}. See the log above for detail.`,
@@ -328,13 +526,14 @@ if (!app.requestSingleInstanceLock()) {
       if (existsSync(icon)) app.dock?.setIcon(icon);
     }
     createWindow();
-    startServer();
+    void start();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
   });
 
   app.on('window-all-closed', () => app.quit());
+  app.on('will-quit', () => removeDiscovery());
 
   app.on('before-quit', (event) => {
     if (quitting || child === null) return;
