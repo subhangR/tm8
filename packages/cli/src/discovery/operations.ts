@@ -603,7 +603,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── account administration (migration 323) ───────────────────────────────
   'node.accounts.create': {
     cmd: ['node', 'account', 'create'],
-    syn: 'tm8 node account create <username> [--display-name <name>] [--email <email>] [--node-admin yes] [--space <space-id> --role admin|member] [--expires-hours <1-720>]',
+    syn: 'tm8 node account create <username> [--display-name <name>] [--email <email>] [--node-admin] [--join-space <space-id> --role admin|member] [--expires-hours <1-720>]',
     sum: 'Create an account with no password and get a one-time setup link the person opens to choose their own',
     authz: 'server',
     input: 'bound',
@@ -612,7 +612,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'the caller must be an authenticated human node admin on a session not pinned to a space',
       'the setup link is single use, expires (default 72 hours), and is stored only as a hash — it is shown exactly once',
-      '--space and --role put the account straight into one space as admin or member',
+      '--join-space and --role put the account straight into one space as admin or member',
     ],
   },
   'node.accounts.reset': {
@@ -640,7 +640,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'node.accounts.memberships.add': {
     cmd: ['node', 'account', 'add-to-space'],
-    syn: 'tm8 node account add-to-space <account-id|username> --space <space-id> --role admin|member',
+    syn: 'tm8 node account add-to-space <account-id|username> <space-id> --role admin|member',
     sum: 'Put an account into a space with a role, without an invite',
     authz: 'server',
     input: 'bound',

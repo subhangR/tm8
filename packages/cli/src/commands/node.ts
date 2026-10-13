@@ -194,7 +194,7 @@ function setupLinkLines(link: { setupUrl: string; expiresAt: string }): string[]
 }
 
 const CREATE_USAGE =
-  'usage: tm8 node account create <username> [--display-name <name>] [--email <email>] [--node-admin yes] [--space <space-id> --role admin|member] [--expires-hours <1-720>]';
+  'usage: tm8 node account create <username> [--display-name <name>] [--email <email>] [--node-admin] [--join-space <space-id> --role admin|member] [--expires-hours <1-720>]';
 
 /**
  * `node account create <username>` — `node.accounts.create` (323). The account
@@ -202,20 +202,17 @@ const CREATE_USAGE =
  * to choose their own.
  */
 async function nodeAccountCreate(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['display-name', 'email', 'node-admin', 'space', 'role', 'expires-hours', 'mutation-id']);
+  assertKnownOptions(cmd, ['display-name', 'email', 'node-admin', 'join-space', 'role', 'expires-hours', 'mutation-id']);
   const username = cmd.args[0];
   if (cmd.args.length !== 1 || !username) throw new CliError(CREATE_USAGE, EXIT_USAGE);
-  const space = cmd.options.value('space');
+  // `--space` is the global space selector, so the space to join has its own flag.
+  const space = cmd.options.value('join-space');
   const role = cmd.options.value('role');
   if ((space === undefined) !== (role === undefined)) {
-    throw new CliError(`--space and --role go together\n${CREATE_USAGE}`, EXIT_USAGE);
+    throw new CliError(`--join-space and --role go together\n${CREATE_USAGE}`, EXIT_USAGE);
   }
   if (role !== undefined && role !== 'admin' && role !== 'member') {
     throw new CliError(`--role must be admin or member\n${CREATE_USAGE}`, EXIT_USAGE);
-  }
-  const nodeAdmin = cmd.options.value('node-admin');
-  if (nodeAdmin !== undefined && nodeAdmin !== 'yes' && nodeAdmin !== 'no') {
-    throw new CliError(`--node-admin takes yes or no\n${CREATE_USAGE}`, EXIT_USAGE);
   }
   const displayName = cmd.options.value('display-name');
   const email = cmd.options.value('email');
@@ -224,7 +221,7 @@ async function nodeAccountCreate(cmd: CommandContext): Promise<ExitCode> {
       username,
       ...(displayName ? { displayName } : {}),
       ...(email ? { email } : {}),
-      ...(nodeAdmin === 'yes' ? { isNodeAdmin: true } : {}),
+      ...(cmd.options.bool('node-admin') ? { isNodeAdmin: true } : {}),
       ...(space && role ? { spaceId: space, role } : {}),
       ...expiresInHours(cmd, CREATE_USAGE),
       clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
@@ -301,15 +298,14 @@ async function nodeAccountAdmin(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-const ADD_TO_SPACE_USAGE = 'usage: tm8 node account add-to-space <account-id|username> --space <space-id> --role admin|member';
+const ADD_TO_SPACE_USAGE = 'usage: tm8 node account add-to-space <account-id|username> <space-id> --role admin|member';
 
-/** `node account add-to-space <account>` — `node.accounts.memberships.add` (323). */
+/** `node account add-to-space <account> <space-id>` — `node.accounts.memberships.add` (323). */
 async function nodeAccountAddToSpace(cmd: CommandContext): Promise<ExitCode> {
-  assertKnownOptions(cmd, ['space', 'role', 'mutation-id']);
-  const who = cmd.args[0];
-  const spaceId = cmd.options.value('space');
+  assertKnownOptions(cmd, ['role', 'mutation-id']);
+  const [who, spaceId] = cmd.args;
   const role = cmd.options.value('role');
-  if (cmd.args.length !== 1 || !who || !spaceId || (role !== 'admin' && role !== 'member')) {
+  if (cmd.args.length !== 2 || !who || !spaceId || (role !== 'admin' && role !== 'member')) {
     throw new CliError(ADD_TO_SPACE_USAGE, EXIT_USAGE);
   }
   const accountId = await resolveAccountId(cmd, who);
