@@ -34,7 +34,8 @@ OUT=${OUT:-$ROOT/dist-client/tm8${TARGET:+-${TARGET#bun-}}}
 [[ $OUT = /* ]] || OUT=$PWD/$OUT
 
 command -v bun >/dev/null || { echo "build-cli-client: bun is required (https://bun.sh)" >&2; exit 1; }
-[[ -e $ROOT/packages/cli/node_modules/@tm8/contract ]] \
+# The workspace link may sit beside the CLI or be hoisted to the root (CI's install).
+[[ -e $ROOT/packages/cli/node_modules/@tm8/contract || -e $ROOT/node_modules/@tm8/contract ]] \
   || { echo "build-cli-client: run \`bun install\` in $ROOT first" >&2; exit 1; }
 
 # The workspace packages resolve through their package.json exports, i.e.

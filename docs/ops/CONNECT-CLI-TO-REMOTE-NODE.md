@@ -14,7 +14,7 @@ its contract: about 60 MB on macOS, 115 MB on Linux). There is no download host 
 two ways:
 
 **From CI.** Every CI run that touches the CLI uploads `tm8-cli-linux-x64` and
-`tm8-cli-darwin-arm64` as workflow artifacts (job `cli-binary`, kept 14 days).
+`tm8-cli-darwin-arm64` as workflow artifacts (built by the `test-cli` job, kept 14 days).
 Download the one for your machine from the run's Summary page. Each zip holds
 the binary and its `.sha256`.
 
