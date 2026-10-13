@@ -4457,8 +4457,10 @@ export const CATALOG_DIGEST =
   // Re-measured for MW W2.1 (+workspace.create|update|reorder|delete|switch) — RECOMPUTED, not adjusted.
   // Re-measured for MW W3.1 (+workspace.prompts.resolve) — RECOMPUTED, not adjusted.
   // Re-measured for the MW W4 merge of origin/main (+execution.gitCheckouts|gitCheckoutDiff) — RECOMPUTED, not adjusted.
+  // Re-measured for 323 (+node.accounts.create|reset|nodeAdmin.set|memberships.add, accounts.enable,
+  // auth.setup.resolve|redeem) — RECOMPUTED by test/discovery-operations.test.ts, not adjusted.
   // Re-measured for Craft L3 (+workspace.crafts.list|get|command) — RECOMPUTED, not adjusted.
-  'sha256:527a376d04e641936fd86e67099a0fc993cb6fe872aa7e115f0a9795921eba40';
+  'sha256:6eb2bdca2bb65a9fb2f0e60481b0f9610457a4f0af40f636a4ce0e0c5c1fdf26';
 
 export const GRAMMAR_VERSION = '2';
 
