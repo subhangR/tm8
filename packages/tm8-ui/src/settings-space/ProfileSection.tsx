@@ -124,7 +124,8 @@ export function ProfileSection({ space, heading, onSave, defaults }: {
                reason the short form is safe to show. */
             title={createdExact || undefined}
           />
-          <Field label="Visibility" value={space.visibility ? VISIBILITY_LABEL[space.visibility] : null} />
+          {/* Only when the server reports it: an older node's absence is not "Not set". */}
+          {space.visibility && <Field label="Visibility" value={VISIBILITY_LABEL[space.visibility]} />}
           <Field label="Space id" value={space.id} mono />
         </dl>
 
