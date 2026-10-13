@@ -187,6 +187,22 @@ describe('step 3b — the desktop app discovery file', () => {
     expect(loadDesktopDiscovery(env, file(JSON.stringify({ baseUrl: 'http://127.0.0.1:1' })), () => true)).toBeUndefined();
   });
 
+  it('accepts only a loopback origin: a file naming any other host is ignored', () => {
+    const at = (baseUrl: string) => file(JSON.stringify({ baseUrl, appPid: 10 }));
+    expect(loadDesktopDiscovery(env, at('http://localhost:4619/'), () => true)).toBe('http://localhost:4619');
+    expect(loadDesktopDiscovery(env, at('http://[::1]:4619'), () => true)).toBe('http://[::1]:4619');
+    for (const elsewhere of ['https://evil.example', 'http://10.0.0.5:4619', 'http://127.0.0.2:4619',
+      'http://user:pw@127.0.0.1:4619', 'http://localhost.evil.example']) {
+      expect(loadDesktopDiscovery(env, at(elsewhere), () => true), elsewhere).toBeUndefined();
+    }
+  });
+
+  it('is ignored whenever an agent token is set, so the token never follows the file', () => {
+    expect(loadDesktopDiscovery({ ...env, TM8_AGENT_TOKEN: 'tm8a_x' }, file(live), () => true)).toBeUndefined();
+    // Control: the same file without the token is read.
+    expect(loadDesktopDiscovery(env, file(live), () => true)).toBe('http://127.0.0.1:4619');
+  });
+
   it('fills the base URL after config and before the implicit local Server', () => {
     const desktopBaseUrl = 'http://127.0.0.1:4619';
     expect(resolveContext({ globals: globals([]), desktopBaseUrl }).baseUrl)

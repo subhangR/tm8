@@ -21,6 +21,12 @@ Set them like any other `TM8_*` variable: in the service env file, in `.env.loca
 desktop app, in the `env` block of its settings file ([`DESKTOP.md`](DESKTOP.md)). Each node
 prints `remote space links: ON` at boot when the switch is on, and says which opt-ins are set.
 
+**Only turn on `ALLOW_PRIVATE` for members you trust.** With it on, any human member who can
+add a server to a space can point this node at any host and port on its private network and
+learn from `server add` / `tm8 server probe` (reachable, offline, refused) whether something
+answers there. It is a network scan from inside your LAN, run by this node. Requests stay
+HTTPS-only, unauthenticated and capped, but on a node with untrusted members leave it off.
+
 **Tailscale.** `tailscale cert` / `tailscale serve` give the target a real certificate on its
 `*.ts.net` name. That name resolves to a 100.x address, so the home node needs
 `TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE=1`.

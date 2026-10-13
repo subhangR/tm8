@@ -59,13 +59,17 @@ const DEFAULT_PORT = 4619;
 const REMOTE_HEALTH_TIMEOUT_MS = 10_000;
 
 /**
- * `TM8_*` keys a settings file may NOT set: the shell owns them (layout,
- * Postgres, port) or they are another process's identity (an agent lane's
- * token, session and target). Everything else starting `TM8_` passes.
+ * The ONLY `TM8_*` keys a settings file may set: the node's network and access
+ * switches, and its log level. An allow-list, not a deny-list, so a key that
+ * points the server elsewhere (TM8_DATABASE_URL, TM8_DELIVERY_DATABASE_URL,
+ * TM8_DATA_DIR, TM8_BIND, the dev-only loopback switch) or carries another
+ * process's identity (TM8_AGENT_TOKEN, TM8_SESSION_ID) can never get in.
+ * The shell's own layout keys are written after these anyway.
  */
-const SHELL_OWNED_ENV = new Set([
-  'TM8_DATA_DIR', 'TM8_REPO_ROOT', 'TM8_UI_DIR', 'TM8_DESKTOP', 'TM8_PORT',
-  'TM8_AGENT_TOKEN', 'TM8_SESSION_ID', 'TM8_MANIFEST_PATH', 'TM8_BASE_URL', 'TM8_SPACE_ID', 'TM8_ACTOR_ID',
+const SETTABLE_ENV = new Set([
+  'TM8_NODE_MODE', 'TM8_PUBLIC_ORIGIN', 'TM8_ALLOWED_HOSTNAMES', 'TM8_ALLOWED_ORIGINS',
+  'TM8_REMOTE_SPACE_LINKS', 'TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE',
+  'TM8_SPACE_SESSIONS', 'TM8_DISABLE_AUTO_OWNER', 'TM8_LOG_LEVEL',
 ]);
 
 // Must precede `app.getPath('userData')` or an unpackaged run would write to
@@ -254,7 +258,7 @@ function readSettings(dataDir) {
       settings.problems.push('"env" must be an object of TM8_* strings; ignored');
     } else {
       for (const [key, value] of Object.entries(raw.env)) {
-        if (!key.startsWith('TM8_') || SHELL_OWNED_ENV.has(key) || key.startsWith('TM8_PG_')) {
+        if (!SETTABLE_ENV.has(key)) {
           settings.problems.push(`"env.${key}" is not settable here; ignored`);
         } else if (typeof value !== 'string') {
           settings.problems.push(`"env.${key}" must be a string; ignored`);

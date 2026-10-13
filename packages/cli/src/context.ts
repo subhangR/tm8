@@ -217,16 +217,25 @@ function processAlive(pid: number): boolean {
   }
 }
 
+/** The only hosts the desktop app listens on; a file naming any other is not the app's. */
+const DESKTOP_LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
 /**
  * The desktop app's base URL, or undefined. A missing, malformed or stale file
  * (the app that wrote it is gone) is absent, never an error: a crashed app
  * cannot delete its file, and must not send the CLI to a dead port.
+ *
+ * Two guards, because the file is user-writable and the CLI may hold a bearer:
+ * only a loopback http(s) origin is accepted, and with `TM8_AGENT_TOKEN` set
+ * the file is ignored outright, so an agent's token never follows it anywhere
+ * (an agent's node comes from its session env, never from a file).
  */
 export function loadDesktopDiscovery(
   env: NodeJS.ProcessEnv = process.env,
   io: ConfigIo = defaultConfigIo,
   isAlive: (pid: number) => boolean = processAlive,
 ): string | undefined {
+  if (env.TM8_AGENT_TOKEN?.trim()) return undefined;
   let raw: unknown;
   try {
     raw = JSON.parse(io.readFile(desktopDiscoveryPath(env))) as unknown;
@@ -235,9 +244,17 @@ export function loadDesktopDiscovery(
   }
   if (raw === null || typeof raw !== 'object') return undefined;
   const { baseUrl, appPid } = raw as Record<string, unknown>;
-  if (typeof baseUrl !== 'string' || !/^https?:\/\//.test(baseUrl)) return undefined;
+  if (typeof baseUrl !== 'string') return undefined;
+  let origin: URL;
+  try {
+    origin = new URL(baseUrl);
+  } catch {
+    return undefined;
+  }
+  if ((origin.protocol !== 'http:' && origin.protocol !== 'https:') || origin.username || origin.password
+    || !DESKTOP_LOOPBACK_HOSTS.has(origin.hostname)) return undefined;
   if (typeof appPid !== 'number' || !Number.isInteger(appPid) || appPid <= 0 || !isAlive(appPid)) return undefined;
-  return baseUrl;
+  return origin.origin;
 }
 
 export interface ResolveContextInput {

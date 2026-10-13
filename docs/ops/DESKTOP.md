@@ -21,7 +21,7 @@ defaults below.
 | Key | Default | What it does |
 |---|---|---|
 | `port` | `4619` | The HTTP port the local node asks for. If something already listens there, the app uses a random port for that launch and says so in its log. |
-| `env` | `{}` | Extra `TM8_*` settings for the local server (strings only), e.g. `TM8_REMOTE_SPACE_LINKS`, `TM8_NODE_MODE`. See `docs/ops/CONFIG.md` and the Node admin Configuration page for what each one does. |
+| `env` | `{}` | Extra `TM8_*` settings for the local server (strings only), from the allow-list below, e.g. `TM8_REMOTE_SPACE_LINKS`, `TM8_NODE_MODE`. See `docs/ops/CONFIG.md` and the Node admin Configuration page for what each one does. |
 | `remoteUrl` | none | Open this tm8 node instead of starting the local one (see below). Only the origin is used. |
 
 A malformed file, or a bad key in it, is reported in the log and on the startup status
@@ -30,13 +30,18 @@ the file. Settings are read once at launch.
 
 ### Which `env` keys are allowed
 
-Any key that starts with `TM8_`, except the ones the app sets itself or that belong to
-another process:
+Only these nine. Every other key is reported and ignored:
 
-- set by the app: `TM8_DATA_DIR`, `TM8_REPO_ROOT`, `TM8_UI_DIR`, `TM8_DESKTOP`, `TM8_PORT`
-  (use `port`), every `TM8_PG_*`;
-- identity of an agent session: `TM8_AGENT_TOKEN`, `TM8_SESSION_ID`, `TM8_MANIFEST_PATH`,
-  `TM8_BASE_URL`, `TM8_SPACE_ID`, `TM8_ACTOR_ID`.
+- network and access: `TM8_NODE_MODE`, `TM8_PUBLIC_ORIGIN`, `TM8_ALLOWED_HOSTNAMES`,
+  `TM8_ALLOWED_ORIGINS`, `TM8_SPACE_SESSIONS`, `TM8_DISABLE_AUTO_OWNER`;
+- links to other servers: `TM8_REMOTE_SPACE_LINKS`, `TM8_REMOTE_SPACE_LINKS_ALLOW_PRIVATE`
+  ([`REMOTE-SPACE-LINKS.md`](REMOTE-SPACE-LINKS.md));
+- `TM8_LOG_LEVEL`.
+
+It is an allow-list on purpose. A key that would point the server at another database or
+data directory (`TM8_DATABASE_URL`, `TM8_DELIVERY_DATABASE_URL`, `TM8_DATA_DIR`), widen
+where it listens (`TM8_BIND`), or carry another session's identity (`TM8_AGENT_TOKEN`,
+`TM8_SESSION_ID`, …) cannot be set here. The port is `port`, not `TM8_PORT`.
 
 The app still ignores every `TM8_*` variable in the environment it was launched from. A
 terminal inside a tm8 agent lane carries that lane's token and server, and the app must
