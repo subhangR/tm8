@@ -262,6 +262,7 @@ export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
   CHROME_RECORD_NAME: 'the label launch.harness records --no-chrome under, not a setting',
   TRUSTED_CONTROL_TYPES: 'the closed vocabulary of control envelope types',
   DISCOVERY_PROMPT_FORM: 'prompt wording, shown on the Prompts page',
+  COORDINATION_INSTRUCTION_CHAT: 'prompt wording (the chat-coordinator sentence), shown on the Prompts page',
   COORDINATOR_KINDS: 'the closed vocabulary of coordinator anchors',
   ZERO_COST: 'the zero value of Jev cost accounting',
 };
