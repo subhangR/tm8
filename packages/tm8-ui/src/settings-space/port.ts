@@ -36,6 +36,7 @@
  * `removeMember` and `leaveSpace` are the two verbs; like the others, they
  * carry no client-side authorization.
  */
+import { spaceDefaultsPortFromSeam, type SpaceDefaultsPort } from '../data/space-defaults-port';
 import type {
   CommandResult,
   CreateInviteInput,
@@ -192,13 +193,15 @@ export function defaultInviteRole(): string {
 }
 
 /** The profile fields exposed by space administration. */
-export type SpaceProfilePatch = Pick<UpdateSpaceInput, 'name' | 'description' | 'githubRepo' | 'sessionAutoCloseMinutes'>;
+export type SpaceProfilePatch = Pick<UpdateSpaceInput, 'name' | 'description' | 'githubRepo' | 'sessionAutoCloseMinutes' | 'visibility'>;
 
 /** Bound-space reads and supported, server-authorized settings writes. */
 export interface SettingsPort {
   saveMenu?(payload: MenuConfigPayload, expectedRevision: number): Promise<ResolvedMenu>;
   /** Updates only the bound space, with server authorization. */
   updateSpace?(patch: SpaceProfilePatch): Promise<SpaceSummary>;
+  /** Default channel, default profile, space password, default style (`data/space-defaults-port.ts`). */
+  spaceDefaults?: SpaceDefaultsPort;
   /** The space this settings view is about; `null` when the id is not in `spaces()`. */
   loadSpace(): Promise<SpaceSummary | null>;
   /** Human members as entities. The role is on `state`, not on a separate DTO. */
@@ -381,6 +384,7 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId, opts: Setting
   const { signOut } = opts;
   return {
     ...(signOut ? { signOutHere: () => signOut() } : {}),
+    spaceDefaults: spaceDefaultsPortFromSeam(seam, spaceId),
 
     async loadSpace() {
       const all = await seam.spaces();

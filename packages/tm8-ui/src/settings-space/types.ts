@@ -16,6 +16,8 @@ import type { SettingsPort } from './port';
  */
 export type SettingsSectionId =
   | 'profile'
+  | 'space-access'
+  | 'interaction-profiles'
   | 'account'
   | 'my-sessions'
   | 'members'
@@ -59,6 +61,10 @@ export interface SettingsSectionDef {
  */
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'profile', label: 'Space profile', heading: 'Space profile' },
+  /* Space-wide defaults with their own server commands: the space-password
+     requirement and the default style. Beside the profile: both are about
+     the space as a whole. */
+  { id: 'space-access', label: 'Access & style', heading: 'Access & style' },
   { id: 'account', label: 'Your profile', heading: 'Your profile' },
   /* W4 — the account half of settings: every place YOU are signed in, beside
      "Your profile" because both are about the person, not the space. */
@@ -87,6 +93,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      beside it because the two state OPPOSITE scopes at their tops: Models is
      this browser, Chat defaults is the whole space. */
   { id: 'chat-defaults', label: 'Chat defaults', heading: 'Chat defaults' },
+  /* The governance list (settings-governance) and the space default profile.
+     After chat defaults: both decide how this space's agents behave. */
+  { id: 'interaction-profiles', label: 'Interaction profiles', heading: 'Interaction profiles' },
   /* Agent credentials — the viewer's OWN logins, built in
      `settings-credentials/` and injected through `sections`. It sits beside
      Models because both answer "what can I launch with", and directly after it

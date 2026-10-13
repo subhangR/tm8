@@ -4674,6 +4674,11 @@ export interface SpaceSummary {
    * through `spaces.update` by a space admin (migration 323).
    */
   visibility?: 'private' | 'public';
+  /**
+   * 268 (W5 K2): members need a space password to enter. Written only through
+   * `spaces.spacePassword.setRequired`. Optional so an older node validates.
+   */
+  requireSpacePassword?: boolean;
 }
 
 /** GET /v2/spaces/:spaceId/navigation */

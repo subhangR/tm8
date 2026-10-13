@@ -292,6 +292,7 @@ import type {
   SpaceSettingsView,
   SpaceConfigsView,
   NodeSettingSetResult,
+  SpacePasswordSetRequiredResult,
   AuthSessionsListResult,
   AuthSessionsRevokeResult,
   ChatDefault,
@@ -692,6 +693,18 @@ export interface Seam {
    * server (the fixture).
    */
   setNodeSetting?(name: string, value: string | null): Promise<NodeSettingSetResult>;
+  /**
+   * Space defaults a space admin sets (Settings → Space profile / Space
+   * defaults / Interaction profiles). Optional: a seam without a server omits
+   * them and the controls render refused. Each `expectedSettingsRevision` is
+   * `SpaceSettingsView.settingsRevision`.
+   */
+  setDefaultChannel?(spaceId: SpaceId, channelId: EntityId | null, expectedSettingsRevision: number): Promise<unknown>;
+  setDefaultInteractionProfile?(spaceId: SpaceId, profileId: EntityId | null, expectedSettingsRevision: number): Promise<unknown>;
+  /** `spaces.spacePassword.setRequired` — turning it on needs the caller's own space password unless they have one. */
+  setSpacePasswordRequired?(spaceId: SpaceId, required: boolean, password?: string): Promise<SpacePasswordSetRequiredResult>;
+  /** `spaces.styleDefault.set` — human space admin; `expectedRevision` guarded (0 = no row). */
+  setStyleDefault?(spaceId: SpaceId, defaultStyle: string, expectedRevision: number): Promise<SpaceStyleDefaultView>;
   /**
    * Settings → Sessions (`auth.sessions.list`, W4). `null` = the caller's own
    * sessions; a space id = the sessions pinned to that space (space admins

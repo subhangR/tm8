@@ -39,7 +39,7 @@ export const SETTINGS_NAV_GROUPS: readonly { id: string; label: string; rows: re
   {
     id: 'team',
     label: 'Team',
-    rows: [space('profile'), space('members'), space('invites', 'space-admin'), space('sessions', 'space-admin'), space('sharing')],
+    rows: [space('profile'), space('space-access', 'space-admin'), space('members'), space('invites', 'space-admin'), space('sessions', 'space-admin'), space('sharing')],
   },
   { id: 'work-setup', label: 'Work setup', rows: [space('axes'), space('workflows'), space('kinds'), space('menu'), space('configs')] },
   {
@@ -48,6 +48,7 @@ export const SETTINGS_NAV_GROUPS: readonly { id: string; label: string; rows: re
     rows: [
       space('models'),
       space('chat-defaults'),
+      space('interaction-profiles'),
       space('connectors'),
       space('credentials'),
       space('space-credentials'),

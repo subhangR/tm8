@@ -5,8 +5,8 @@ import { SettingsShell } from './SettingsShell';
 import type { SettingsShellProps, SettingsSectionId } from './types';
 
 export const SPACE_ADMIN_SECTIONS: readonly SettingsSectionId[] = [
-  'profile', 'members', 'invites', 'sessions', 'sharing', 'axes', 'workflows',
-  'chat-defaults', 'space-credentials', 'space-links', 'projects', 'menu', 'kinds', 'configs', 'danger',
+  'profile', 'space-access', 'members', 'invites', 'sessions', 'sharing', 'axes', 'workflows',
+  'chat-defaults', 'interaction-profiles', 'space-credentials', 'space-links', 'projects', 'menu', 'kinds', 'configs', 'danger',
 ];
 
 /** Resolve authorization before any privileged section (including injected content) mounts. */

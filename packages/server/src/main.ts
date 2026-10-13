@@ -258,7 +258,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // Decision 29: pin this node's project-folders policy (owner role, before
   // anything serves). A failed write refuses boot; see projects/node-policy.ts.
   if (config.databaseUrl) {
-    const folders = await writeNodePolicy(config.databaseUrl, gatePosture(config));
+    const folders = await writeNodePolicy(config.databaseUrl, gatePosture(config), config.nodeMode ?? 'single');
     console.log(`  project folders: ${folders === 'shared' ? 'shared across spaces (loopback-only node)' : 'one space per folder'}`);
   }
   // Say who the loopback socket trusts. An ssh -L tunnel lands on 127.0.0.1

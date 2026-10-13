@@ -374,6 +374,14 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     spaceConfigs: (spaceId: SpaceId): Promise<SpaceConfigsView> => ops.spaceConfigs(spaceId),
     setNodeSetting: (name: string, value: string | null): Promise<NodeSettingSetResult> =>
       ops.setNodeSetting(name, value),
+    setDefaultChannel: (spaceId: SpaceId, channelId: EntityId | null, revision: number) =>
+      ops.setDefaultChannel(spaceId, channelId, revision),
+    setDefaultInteractionProfile: (spaceId: SpaceId, profileId: EntityId | null, revision: number) =>
+      ops.setDefaultInteractionProfile(spaceId, profileId, revision),
+    setSpacePasswordRequired: (spaceId: SpaceId, required: boolean, password?: string) =>
+      ops.setSpacePasswordRequired(spaceId, required, password),
+    setStyleDefault: (spaceId: SpaceId, defaultStyle: string, revision: number) =>
+      ops.setStyleDefault(spaceId, defaultStyle, revision),
     authSessions: (spaceId: SpaceId | null): Promise<AuthSessionsListResult> => ops.authSessions(spaceId),
     chatDefaults: (spaceId: SpaceId): Promise<ChatDefaultsView> => ops.chatDefaults(spaceId),
     setChatDefaults: (spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> =>

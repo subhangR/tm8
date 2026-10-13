@@ -45,6 +45,8 @@ export interface SpaceRow {
   session_autoclose_minutes?: number | null;
   /** 01 §2: who can discover the space. Absent on a row fixture that never read it. */
   visibility?: string | null;
+  /** 268 (W5 K2): whether members need a space password to enter. */
+  require_space_credential?: boolean | null;
 }
 
 export function toSpaceSummary(row: SpaceRow): SpaceSummary {
@@ -76,6 +78,9 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
       : {}),
     ...(row.visibility === 'private' || row.visibility === 'public'
       ? { visibility: row.visibility }
+      : {}),
+    ...(typeof row.require_space_credential === 'boolean'
+      ? { requireSpacePassword: row.require_space_credential }
       : {}),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
   };
@@ -127,7 +132,7 @@ export function toSpaceSummary(row: SpaceRow): SpaceSummary {
 export const SPACE_COLUMNS = `
   s.id, s.name, s.description, s.github_repo, s.created_at,
   s.session_share_default, s.session_drive_default, s.session_autoclose_minutes,
-  s.visibility,
+  s.visibility, s.require_space_credential,
   (select count(*)::text from public.members member_count_row
     where member_count_row.space_id = s.id
       and member_count_row.status = 'active') as member_count`;

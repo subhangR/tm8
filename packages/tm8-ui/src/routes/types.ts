@@ -19,7 +19,7 @@ export const SETTINGS_ROUTE_SECTIONS = [
   'projects', 'menu', 'connectors', 'credentials', 'configs', 'space-credentials', 'space-links',
   'profile', 'account', 'my-sessions', 'members', 'invites', 'sessions', 'sharing',
   'axes', 'workflows', 'models', 'chat-defaults', 'kinds', 'danger',
-  'node-credentials', 'filesystem-access',
+  'node-credentials', 'filesystem-access', 'space-access', 'interaction-profiles',
 ] as const;
 export type SettingsRouteSection = (typeof SETTINGS_ROUTE_SECTIONS)[number];
 export const NODE_ADMIN_ROUTE_SECTIONS = ['credentials', 'filesystem', 'accounts', 'configuration'] as const;

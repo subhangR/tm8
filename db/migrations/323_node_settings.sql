@@ -16,12 +16,44 @@
 --    admin making the change can still sign in afterwards. The facade refuses
 --    the same write from the auto-owner arm itself (configs-handlers.ts).
 --
--- 3. w2_update_space accepts `visibility` (private | public), 302's body plus
+-- 3. The node-credential fallback default (setup audit C5, doc 01a1359a): on
+--    a multi-mode node an ABSENT node_credential_policies row now reads as
+--    NOT allowed, so a member who connected no key does not silently run on
+--    the operator's own login. Single-mode nodes keep "absent = allowed". The
+--    mode is pinned at boot in internal.node_policy('node_mode') beside 234's
+--    project_folders key; an explicit row always wins, and Node credentials
+--    sets one.
+--
+-- 4. w2_update_space accepts `visibility` (private | public), 302's body plus
 --    that one key.
 
 set local lock_timeout = '5s';
 
 set role tm8_graph_owner;
+
+create or replace function internal.node_mode()
+returns text language sql stable security definer
+set search_path = internal, pg_temp as $$
+  select coalesce((select value from internal.node_policy where key = 'node_mode'), 'single')
+$$;
+revoke all on function internal.node_mode() from public;
+
+-- 206's body, with the multi-mode default filled in for absent providers.
+create or replace function public.read_node_credential_policy()
+returns jsonb
+language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+begin
+  perform internal.require_identity();
+  return coalesce((select jsonb_object_agg(provider, allow_node)
+                     from public.node_credential_policies), '{}'::jsonb)
+      || case when internal.node_mode() = 'multi'
+              then coalesce((select jsonb_object_agg(p, false)
+                               from unnest(array['anthropic', 'openai', 'github']) p
+                              where not exists (select 1 from public.node_credential_policies n
+                                                 where n.provider = p)), '{}'::jsonb)
+              else '{}'::jsonb end;
+end
+$$;
 
 create table internal.node_settings (
   name                  text primary key,

@@ -13,6 +13,8 @@ import { MenuEditor } from './MenuEditor';
 import { AxesSection } from './AxesSection';
 import { WorkflowsSection } from './WorkflowsSection';
 import { ProfileSection } from './ProfileSection';
+import { SpaceAccessSection } from './SpaceAccessSection';
+import { InteractionProfilesSection } from './InteractionProfilesSection';
 import { DangerSection } from './DangerSection';
 import { ConfigsSection } from './ConfigsSection';
 import { SessionsSection } from './SessionsSection';
@@ -266,6 +268,7 @@ function SectionBody({
   if (injected !== undefined) return <>{injected}</>;
 
   const def = SETTINGS_SECTIONS.find((s) => s.id === id)!;
+  const isSpaceAdmin = !!data.identity?.memberships.some((m) => m.spaceId === data.space?.id && (m.role === ownerRoleRef() || m.role === 'admin'));
 
   switch (id) {
     case 'members':
@@ -348,8 +351,30 @@ function SectionBody({
       );
     case 'profile':
       return <ProfileSection space={data.space} heading={def.heading}
-        {...(data.identity?.memberships.some((m) => m.spaceId === data.space?.id && (m.role === ownerRoleRef() || m.role === 'admin')) && port.updateSpace
+        {...(port.spaceDefaults ? { defaults: port.spaceDefaults } : {})}
+        {...(isSpaceAdmin && port.updateSpace
           ? { onSave: async (patch) => { onSpaceWritten(await port.updateSpace!(patch)); } } : {})} />;
+    case 'space-access':
+      return (
+        <SpaceAccessSection
+          heading={def.heading}
+          space={data.space}
+          {...(port.spaceDefaults ? { port: port.spaceDefaults } : {})}
+          canEdit={isSpaceAdmin}
+          onSpaceChanged={() => {
+            void port.loadSpace().then((space) => { if (space) onSpaceWritten(space); }, () => undefined);
+          }}
+        />
+      );
+    case 'interaction-profiles':
+      return (
+        <InteractionProfilesSection
+          heading={def.heading}
+          spaceName={data.space?.name ?? ''}
+          {...(port.spaceDefaults ? { port: port.spaceDefaults } : {})}
+          canEdit={isSpaceAdmin}
+        />
+      );
     case 'account':
       return (
         <IdentityProfileSection

@@ -206,6 +206,7 @@ import {
   type SpaceSettingsView,
   type SpaceConfigsView,
   type NodeSettingSetResult,
+  type SpacePasswordSetRequiredResult,
   type AuthSessionsListResult,
   type AuthSessionsRevokeResult,
   type ChatDefault,
@@ -996,6 +997,42 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     spaceConfigs(spaceId: SpaceId): Promise<SpaceConfigsView> {
       return http.call<SpaceConfigsView>('spaces.configs', { params: { spaceId } });
+    },
+
+    setDefaultChannel(spaceId: SpaceId, channelId: EntityId | null, expectedSettingsRevision: number): Promise<unknown> {
+      return http.call<unknown>('spaces.defaultChannel.set', {
+        params: { spaceId },
+        body: { channelId, expectedSettingsRevision, clientMutationId: newId('defaultchannel') },
+      });
+    },
+
+    setDefaultInteractionProfile(
+      spaceId: SpaceId,
+      profileId: EntityId | null,
+      expectedSettingsRevision: number,
+    ): Promise<unknown> {
+      return http.call<unknown>('spaces.interactionProfile.setDefault', {
+        params: { spaceId },
+        body: { profileId, expectedSettingsRevision, clientMutationId: newId('profiledefault') },
+      });
+    },
+
+    setSpacePasswordRequired(
+      spaceId: SpaceId,
+      required: boolean,
+      password?: string,
+    ): Promise<SpacePasswordSetRequiredResult> {
+      return http.call<SpacePasswordSetRequiredResult>('spaces.spacePassword.setRequired', {
+        params: { spaceId },
+        body: { required, ...(password ? { password } : {}) },
+      });
+    },
+
+    setStyleDefault(spaceId: SpaceId, defaultStyle: string, expectedRevision: number): Promise<SpaceStyleDefaultView> {
+      return http.call<SpaceStyleDefaultView>('spaces.styleDefault.set', {
+        params: { spaceId },
+        body: { defaultStyle, expectedRevision, clientMutationId: newId('styledefault') },
+      });
     },
 
     setNodeSetting(name: string, value: string | null): Promise<NodeSettingSetResult> {

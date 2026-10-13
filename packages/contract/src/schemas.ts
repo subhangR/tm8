@@ -5231,6 +5231,7 @@ export const SpaceSummarySchema: z.ZodType<SpaceSummary> = z.object({
   sessionDriveDefault: WorkSessionDriveModeSchema.optional(),
   sessionAutoCloseMinutes: z.number().int().min(0).max(10080).optional(),
   visibility: z.enum(['private', 'public']).optional(),
+  requireSpacePassword: z.boolean().optional(),
   createdAt: IsoTimestamp,
 }).strict();
 

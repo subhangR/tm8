@@ -1,8 +1,9 @@
 /** Space profile and server-backed editing. Without an authorized onSave callback,
  * the same section remains read-only for legacy/member settings. */
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import type { SpaceProfilePatch } from './port';
-import type { SpaceSummary } from '@tm8/contract';
+import type { EntitySummary, SpaceSummary } from '@tm8/contract';
+import type { SpaceDefaultsPort, SpaceDefaultsSnapshot } from '../data/space-defaults-port';
 import { DisabledAction } from '../panels';
 import { absTime, shortDate } from '../kit';
 import { SectionAbsent, SectionFrame } from './SectionFrame';
@@ -63,7 +64,19 @@ function Field({
   );
 }
 
-export function ProfileSection({ space, heading, onSave }: { space: SpaceSummary | null; heading: string; onSave?: (patch: SpaceProfilePatch) => Promise<void> }) {
+/** `private` is the default: only members see the space. */
+export const VISIBILITY_LABEL: Record<'private' | 'public', string> = {
+  private: 'Private — only members can find it',
+  public: 'Public — listed for anyone on this node to discover',
+};
+
+export function ProfileSection({ space, heading, onSave, defaults }: {
+  space: SpaceSummary | null;
+  heading: string;
+  onSave?: (patch: SpaceProfilePatch) => Promise<void>;
+  /** The default-channel read and write; absent ⇒ the row is not shown. */
+  defaults?: SpaceDefaultsPort;
+}) {
   if (space === null) {
     return (
       <SectionFrame title={heading} bodyTestId="profile-body">
@@ -111,8 +124,11 @@ export function ProfileSection({ space, heading, onSave }: { space: SpaceSummary
                reason the short form is safe to show. */
             title={createdExact || undefined}
           />
+          <Field label="Visibility" value={space.visibility ? VISIBILITY_LABEL[space.visibility] : null} />
           <Field label="Space id" value={space.id} mono />
         </dl>
+
+        {defaults && <DefaultChannelField port={defaults} canEdit={!!onSave} />}
 
         <div className="set-space-profile__actions">
           {onSave ? <SpaceProfileForm key={space.id} space={space} onSave={onSave} /> :
@@ -129,6 +145,7 @@ function SpaceProfileForm({ space, onSave }: { space: SpaceSummary; onSave: (pat
   const [repo, setRepo] = useState(space.githubRepo ?? '');
   const [minutes, setMinutes] = useState(String(space.sessionAutoCloseMinutes ?? 30));
   const [minutesChanged, setMinutesChanged] = useState(false);
+  const [visibility, setVisibility] = useState(space.visibility ?? 'private');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -151,6 +168,8 @@ function SpaceProfileForm({ space, onSave }: { space: SpaceSummary; onSave: (pat
         ...(space.sessionAutoCloseMinutes !== undefined || minutesChanged
           ? { sessionAutoCloseMinutes: autoClose }
           : {}),
+        // Sent only when this server reports visibility, or the admin changed it.
+        ...(space.visibility !== undefined || visibility !== 'private' ? { visibility } : {}),
       });
       setSaved(true);
     } catch (cause) {
@@ -195,10 +214,105 @@ function SpaceProfileForm({ space, onSave }: { space: SpaceSummary; onSave: (pat
             }} />
         </label>
         <p>Close completed sessions after this many idle minutes. Set 0 to never close them automatically.</p>
+        <label>
+          Visibility
+          <select value={visibility} onChange={(event) => {
+            setVisibility(event.target.value as 'private' | 'public');
+            setSaved(false);
+          }}>
+            <option value="private">{VISIBILITY_LABEL.private}</option>
+            <option value="public">{VISIBILITY_LABEL.public}</option>
+          </select>
+        </label>
         <button type="submit">{pending ? 'Saving…' : 'Save space details'}</button>
       </fieldset>
       {error && <p role="alert">{error}</p>}
       {saved && <p role="status">Space details saved.</p>}
     </form>
+  );
+}
+
+/**
+ * The space's default channel (`spaces.defaultChannel.set`, settings-revision
+ * guarded): where a member lands when they open the space.
+ */
+function DefaultChannelField({ port, canEdit }: { port: SpaceDefaultsPort; canEdit: boolean }) {
+  const [state, setState] = useState<{ defaults?: SpaceDefaultsSnapshot; channels?: EntitySummary[]; error?: string }>({});
+  const [revision, setRevision] = useState(0);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void Promise.all([port.loadDefaults(), port.loadChannels()]).then(
+      ([defaults, channels]) => {
+        if (!live) return;
+        setState({ defaults, channels });
+        setDraft(defaults.defaultChannelId ?? '');
+      },
+      (cause: unknown) => live && setState({ error: cause instanceof Error ? cause.message : String(cause) }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [port, revision]);
+  const set = port.setDefaultChannel;
+  const { defaults, channels } = state;
+  const current = defaults?.defaultChannelId ?? null;
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!set || !defaults) return;
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await set(draft === '' ? null : draft, defaults.revision);
+      setSaved(true);
+      setRevision((value) => value + 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="set-space-profile__form" aria-label="Default channel">
+      <h4>Default channel</h4>
+      {state.error ? (
+        <p role="alert">The default channel could not be read: {state.error}</p>
+      ) : !defaults || !channels ? (
+        <p role="status">Reading channels…</p>
+      ) : !canEdit || !set ? (
+        <p>
+          {current === null
+            ? 'No default channel is set.'
+            : `Members open ${channels.find((c) => c.id === current)?.title ?? current} first.`}
+        </p>
+      ) : (
+        <form onSubmit={submit}>
+          <fieldset disabled={busy}>
+            <label>
+              Channel members open first
+              <select value={draft} onChange={(event) => {
+                setDraft(event.target.value);
+                setSaved(false);
+              }}>
+                <option value="">No default channel</option>
+                {current !== null && !channels.some((c) => c.id === current) && (
+                  <option value={current}>{current} (not readable)</option>
+                )}
+                {channels.map((c) => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" disabled={draft === (current ?? '')}>Save default channel</button>
+          </fieldset>
+        </form>
+      )}
+      {error && <p role="alert">{error}</p>}
+      {saved && <p role="status">Default channel saved.</p>}
+    </section>
   );
 }

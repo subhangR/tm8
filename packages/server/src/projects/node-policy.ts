@@ -42,7 +42,18 @@ export function projectFoldersPolicy(posture: GatePosture): 'shared' | 'one_spac
  * not the claims pool: every `Db.tx` drops to `tm8_app`, which is exactly the
  * role this table refuses. Throws on failure; the caller must not serve.
  */
-export async function writeNodePolicy(databaseUrl: string, posture: GatePosture): Promise<'shared' | 'one_space'> {
+export const NODE_MODE_POLICY_KEY = 'node_mode';
+
+/**
+ * `nodeMode`, when given, is pinned beside the folders policy (migration 323):
+ * on a `multi` node an absent node-credential policy reads as NOT allowed, so
+ * members do not silently run on the operator's own login.
+ */
+export async function writeNodePolicy(
+  databaseUrl: string,
+  posture: GatePosture,
+  nodeMode?: 'single' | 'multi',
+): Promise<'shared' | 'one_space'> {
   const value = projectFoldersPolicy(posture);
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
@@ -54,6 +65,13 @@ export async function writeNodePolicy(databaseUrl: string, posture: GatePosture)
        on conflict (key) do update set value = excluded.value, updated_at = now()`,
       [PROJECT_FOLDERS_POLICY_KEY, value],
     );
+    if (nodeMode) {
+      await client.query(
+        `insert into internal.node_policy (key, value) values ($1, $2)
+         on conflict (key) do update set value = excluded.value, updated_at = now()`,
+        [NODE_MODE_POLICY_KEY, nodeMode],
+      );
+    }
     await client.query('commit');
     return value;
   } catch (error) {

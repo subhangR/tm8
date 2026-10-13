@@ -184,3 +184,25 @@ describe('323 space visibility', () => {
       q(`select public.w2_update_space($1, '{"visibility":"secret"}'::jsonb, 'ns-323-vis-2')`, [spaceId])))).toBe('22023');
   });
 });
+
+describe('323 node-credential fallback default', () => {
+  const policy = async () =>
+    (await as(MEMBER, {}, (q) => q('select public.read_node_credential_policy() r')))[0]!.r as Record<string, boolean>;
+  const pinMode = (mode: string) => database.transaction(async (client) => {
+    await client.query('set local role tm8_graph_owner');
+    await client.query(
+      `insert into internal.node_policy (key, value) values ('node_mode', $1)
+       on conflict (key) do update set value = excluded.value`, [mode]);
+  });
+
+  it('absent reads as allowed on a single node and as refused on a multi node; a row always wins', async () => {
+    await pinMode('single');
+    expect(await policy()).toEqual({});
+    await pinMode('multi');
+    expect(await policy()).toEqual({ anthropic: false, openai: false, github: false });
+    await as(ADMIN, { nodeAdmin: true }, (q) => q(`select public.set_node_credential_policy('github', true)`));
+    expect(await policy()).toEqual({ anthropic: false, openai: false, github: true });
+    await as(ADMIN, { nodeAdmin: true }, (q) => q(`select public.set_node_credential_policy('github', null)`));
+    await pinMode('single');
+  });
+});
