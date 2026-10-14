@@ -1,5 +1,5 @@
 {
-  "help": "Drive a real screen and record the result as a c:test_run entity with its screenshots attached.\n\nweb: Chromium (Chrome for Testing 156) in a locked-down container on the tm8 host, driven by callstack's agent-device. --profiles desktop,iphone,pixel sets viewport and user agent; iphone and pixel are Chromium at that size, not the phone.\nandroid, ios: a real emulator or simulator from a device cloud (--provider limrun with the limrun_api_key secret) or behind an agent-device proxy (--provider proxy, --proxy-url and the proxy_token secret). Without one the run is recorded as blocked, with the evidence, never faked.\n\nExample: tm8 tool run device-test --target https://tm8-hub.com/ --expect-text \"one live graph\" --profiles desktop,iphone,pixel --task <task-id>\n\nExit status: 0 passed, 1 failed, 2 error (the harness, not the product), 3 blocked, 64 bad arguments; a batch exits with its worst result. See tools/device-test/README.md.",
+  "help": "Drive a real screen and record the result as a c:test_run entity with its screenshots attached.\n\nweb: Chromium (Chrome for Testing 156) in a gVisor sandbox on the tm8 host, driven by callstack's agent-device. --profiles desktop,iphone,pixel sets viewport and user agent; iphone and pixel are Chromium at that size, not the phone.\nandroid, ios: a real emulator or simulator from a device cloud (--provider limrun with the limrun_api_key secret) or behind an agent-device proxy (--provider proxy, --proxy-url and the proxy_token secret). Without one the run is recorded as blocked, with the evidence, never faked.\n\nExample: tm8 tool run device-test --target https://tm8-hub.com/ --expect-text \"one live graph\" --profiles desktop,iphone,pixel --task <task-id>\n\nExit status: 0 passed, 1 failed, 2 error (the harness, not the product), 3 blocked, 64 bad arguments; a batch exits with its worst result. See tools/device-test/README.md.",
   "tm8Access": "write",
   "timeoutSeconds": 3600,
   "inputs": [
@@ -18,7 +18,9 @@
     {"name": "allow_domains", "type": "string", "env": "DEVICE_TEST_ALLOW_DOMAINS",
      "description": "Web only: more domains the page may load from, comma-separated (*.example.com allowed). The target's own domain is always allowed; everything else is refused."},
     {"name": "network", "type": "enum", "options": ["bridge", "host"], "default": "bridge", "env": "DEVICE_TEST_NETWORK",
-     "description": "host lets the browser reach services on this machine (127.0.0.1); bridge does not."},
+     "description": "host lets the browser reach services on this machine (127.0.0.1); bridge does not. host needs sandbox runc."},
+    {"name": "sandbox", "type": "enum", "options": ["gvisor", "runc"], "default": "gvisor", "env": "DEVICE_TEST_SANDBOX",
+     "description": "gvisor gives each container a kernel of its own, so a browser exploit meets gVisor, not the host's kernel. runc is Docker's default runtime, with a seccomp profile for Chrome."},
     {"name": "provider", "type": "enum", "options": ["none", "limrun", "proxy"], "default": "none", "env": "DEVICE_TEST_PROVIDER",
      "description": "android and ios: where the device runs."},
     {"name": "proxy_url", "type": "string", "env": "DEVICE_TEST_PROXY_URL",

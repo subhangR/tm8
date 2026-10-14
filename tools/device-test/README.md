@@ -5,7 +5,7 @@ and records each run as a `c:test_run` entity with its screenshots attached. A t
 something in the graph that a person or an agent can open, not a line in a log.
 
     platform   the screen                                          on this host
-    web        Chromium (Chrome for Testing 156) in a container    runs here
+    web        Chromium (Chrome for Testing 156) in gVisor         runs here
     android    a Limrun emulator, or a device behind a proxy       blocked: no /dev/kvm
     ios        a Limrun simulator, or a Mac behind a proxy         blocked: iOS needs macOS
 
@@ -81,23 +81,45 @@ agent-device's `website/docs/docs/replay-e2e.md`. The script can use these varia
   `v1.64.0-noble` image, pinned by digest. The agent-device 0.21.27 and agent-browser 0.27.1
   tarballs are checked against the sha512 of the bytes that were reviewed, and installed with
   `--ignore-scripts`.
+- **Each run gets a kernel of its own.** `--sandbox gvisor`, the default, starts the container
+  with gVisor's `runsc` runtime. Chromium has to run with `--no-sandbox`, because its own
+  sandbox needs privileges the container does not have. The container is therefore the
+  boundary, and under gVisor a browser exploit from an untrusted page reaches gVisor, not this
+  host's kernel. `--sandbox runc` uses Docker's default runtime instead. If `runsc` is not
+  registered with Docker, the run is an `error` and suggests `--sandbox runc`. On this host a
+  gVisor run takes about 30 s per profile, against 10 s under runc.
 - **The container is locked down:**
   - `--cap-drop ALL` and `no-new-privileges`, running as the caller's uid
   - 3 GB of memory, 2 CPUs and 1024 processes
   - the spec mounted read-only, with only the run's output directory writable
-- **The browser can only reach the target.** agent-browser's allow-list admits the target's
-  domain and its subdomains. Anything else is refused unless `--allow-domains` adds it. The
-  default `--network bridge` cannot reach this host's loopback. Use `--network host` to test a
-  local server.
+- **The browser is held to the target.** agent-browser's allow-list admits the target's domain
+  and its subdomains. Anything else is refused unless `--allow-domains` adds it, and that
+  includes an IP literal such as `http://172.17.0.1/`. The default `--network bridge` cannot reach
+  this host's loopback. To test a local server, pass `--network host --sandbox runc`: under
+  Docker's host network a gVisor container gets no network at all here (`ENETUNREACH`), so the
+  tool refuses that pair before it starts.
 - **Secrets are passed by name**, as `docker run -e NAME`. Their values never appear in argv or
   in a run record.
 
-### Why web runs use a seccomp profile
+The allow-list does not stop two things, both measured on this host:
+
+- A container on the bridge can open TCP to the host's bridge address (`172.17.0.1`). Ports 22,
+  443 and 25432 answered.
+- The list matches names, not addresses. `http://localtest.me:8999/` resolves to loopback, and
+  the browser connected (`ERR_CONNECTION_REFUSED`) instead of refusing the address.
+
+The allow-list is a browser rule, not a firewall. Closing both gaps needs an egress proxy that
+refuses private addresses, on an internal Docker network. That is a follow-up; this tool does
+not do it.
+
+### Why runc web runs use a seccomp profile
 
 This host's CPU advertises memory protection keys (`pku`, `ospke`), but they fault under
-Hyper-V. Every Chrome 156 child process dies of a protection-key page fault (error-code bit 5).
-Web runs therefore use Docker's default seccomp profile with one change: `pkey_alloc` answers
-`ENOSPC`. Chrome and V8 then run without keys, as they would on a CPU that has none.
+Hyper-V. Under runc, every Chrome 156 child process dies of a protection-key page fault
+(error-code bit 5). runc web runs therefore use Docker's default seccomp profile with one change:
+`pkey_alloc` answers `ENOSPC`. Chrome and V8 then run without keys, as they would on a CPU that
+has none. gVisor implements the system calls itself and gives Chrome no keys, so gVisor runs need
+no profile.
 
 The default profile is embedded in `device_test.py` (Docker 29.7.2), and the tests pin its
 sha256. `--print-seccomp` prints the exact profile a web run gets.
@@ -125,11 +147,28 @@ A person binds a secret. Agent sessions cannot (`requireHumanSession`):
 
     printf %s "$KEY" | tm8 tool secret set device-test limrun_api_key --value-stdin
 
-Without a provider or its credential, the run is recorded `blocked`, with the evidence. A
-provider that refuses the connection also gives `blocked`.
+A remote run takes four steps, and each one names the run's session:
 
-The Limrun and proxy paths are unit-tested against fakes. They have not yet driven a real
-device, because no credential exists in this Space yet.
+1. `connect` saves the connection. It does not contact the proxy.
+2. `open` leases a device. This is where the provider is first reached.
+3. `replay` runs the check.
+4. `disconnect` releases the device.
+
+A replay cannot lease a device itself. A command under another session name looks for devices
+inside the container (`DEVICE_NOT_FOUND`).
+
+The run is recorded `blocked`, with the evidence, when there is no provider, no credential, or a
+provider that refuses at step 1 or step 2. The blocker carries agent-device's error code. A
+divergence after the lease is the product: `failed`.
+
+The proxy path has run end to end against a real agent-device 0.21.27 proxy with no device
+behind it, both in gVisor on this host. Every case was recorded `blocked` at the lease:
+
+    Android             DEVICE_NOT_FOUND: No devices found
+    Android, bad token  UNAUTHORIZED: Invalid proxy token
+    iOS                 UNSUPPORTED_PLATFORM: Apple tools are only available on macOS
+
+Neither path has driven a real device yet. No Limrun key, Mac or KVM host is in this Space.
 
 agent-device also supports BrowserStack, AWS Device Farm and TestMu AI, but this tool does not
 yet. Adding one means a branch in `MOBILE_SCRIPT`, `provider_problem` and `provider_env`.

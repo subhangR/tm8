@@ -44,6 +44,13 @@ DIVERGED = {'success': False, 'error': {
                                                     'Skip to content, tm8 home, Claim a free seat.'}}}}}
 NO_SESSION = {'success': False, 'error': {'code': 'SESSION_NOT_FOUND', 'message': 'No active session. Run open first.',
                                           'details': {'dispatched': 'no'}}}
+# What `open` (the lease) printed through a real agent-device 0.21.27 proxy with no device behind it.
+NO_DEVICE = {'success': False, 'error': {'code': 'DEVICE_NOT_FOUND', 'message': 'No devices found',
+                                         'hint': 'Verify the target device is booted/connected and selectors match.',
+                                         'details': {'selector': {}}}}
+BAD_TOKEN = {'success': False, 'error': {'code': 'UNAUTHORIZED', 'message': 'Invalid proxy token',
+                                         'hint': 'Refresh daemon metadata and retry the command.',
+                                         'details': {'requestId': '2e2c17f745df89dd'}}}
 
 SCRUBBED = ('DEVICE_TEST_', 'LIMRUN_', 'LIM_', 'AGENT_DEVICE_', 'TM8_RUN_DIR')
 
@@ -177,6 +184,7 @@ class TargetTest(unittest.TestCase):
             ['--target', 'https://a.com/', '--profiles', 'tablet'],
             ['--target', 'https://a.com/', '--app', __file__],
             ['--target', 'https://a.com/', '--expect-text', 'a\nb'],
+            ['--target', 'http://127.0.0.1:17777/', '--network', 'host'],
         ]
         for argv in cases:
             with clean_env(), self.subTest(argv=argv), self.assertRaises(ValueError):
@@ -184,7 +192,8 @@ class TargetTest(unittest.TestCase):
 
     def test_plan_accepts_loopback_on_host_network(self):
         with clean_env():
-            p = dt.plan(dt.parse_args(['--target', 'http://127.0.0.1:17777/', '--network', 'host', '--profiles', 'pixel']))
+            p = dt.plan(dt.parse_args(['--target', 'http://127.0.0.1:17777/', '--network', 'host', '--sandbox', 'runc',
+                                       '--profiles', 'pixel']))
         self.assertEqual(p.domains, ['127.0.0.1'])
         self.assertEqual([profile.name for profile in p.profiles], ['pixel'])
 
@@ -216,16 +225,26 @@ class ContainerTest(unittest.TestCase):
     def test_hardening_and_secrets_by_name(self):
         with clean_env(LIMRUN_API_KEY='sk-test-value', LIMRUN_REGION='eu'):
             inherited = dt.provider_env('android', 'limrun')
-            argv = dt.container_argv('n', 'bridge', '/x/seccomp.json', [('/s', '/specs', 'ro')], [('A', 'b')], inherited,
-                                     'true', ['arg'])
+            argv = dt.container_argv('n', 'runc', 'bridge', '/x/seccomp.json', [('/s', '/specs', 'ro')], [('A', 'b')],
+                                     inherited, 'true', ['arg'])
         self.assertEqual(inherited, ['LIMRUN_API_KEY', 'LIMRUN_REGION'])
         joined = ' '.join(argv)
-        for flag in ('--cap-drop ALL', '--security-opt no-new-privileges', '--security-opt seccomp=/x/seccomp.json',
+        for flag in ('--runtime runc', '--cap-drop ALL', '--security-opt no-new-privileges', '--security-opt seccomp=/x/seccomp.json',
                      '--pids-limit 1024', '--memory 3g', '--network bridge', '-v /s:/specs:ro', '-e A=b',
                      '-e LIMRUN_API_KEY', f'--user {os.getuid()}:{os.getgid()}'):
             self.assertIn(flag, joined)
         self.assertNotIn('sk-test-value', joined)
         self.assertEqual(argv[argv.index(dt.IMAGE) + 1:], ['bash', '-c', 'true', 'device-test', 'arg'])
+
+    def test_every_mobile_command_names_the_session_and_open_leases_before_replay(self):
+        commands = [line.strip() for line in dt.MOBILE_SCRIPT.splitlines() if 'agent-device ' in line]
+        verbs = [re.search(r'agent-device (\w+)', line).group(1) for line in commands]
+        self.assertEqual(verbs, ['connect', 'connect', 'open', 'replay', 'disconnect'])
+        for line in commands:
+            self.assertIn('--session "$session"', line)
+        self.assertIn('exit 90', dt.MOBILE_SCRIPT)
+        self.assertIn('rc=91', dt.MOBILE_SCRIPT)
+        self.assertEqual(set(dt.PROVIDER_STEPS), {90, 91})
 
     def test_proxy_sees_only_its_token(self):
         with clean_env(LIMRUN_API_KEY='k', AGENT_DEVICE_DAEMON_AUTH_TOKEN='t'):
@@ -240,6 +259,21 @@ class ContainerTest(unittest.TestCase):
                 dt.check_mount('--app', bad)
             with self.assertRaises(ValueError):
                 dt.check_mount('--app', os.path.join(tmp, 'missing'))
+
+
+class DockerProblemTest(unittest.TestCase):
+    def problem(self, runtime, code=0, stdout='', stderr=''):
+        probe = subprocess.CompletedProcess([], code, stdout, stderr)
+        with mock.patch.object(dt.shutil, 'which', return_value='/usr/bin/docker'), \
+                mock.patch.object(dt, 'docker', return_value=probe):
+            return dt.docker_problem(runtime)
+
+    def test_the_runtime_must_be_registered(self):
+        runtimes = json.dumps({'io.containerd.runc.v2': {'path': 'runc'}, 'runc': {'path': 'runc'}})
+        self.assertIsNone(self.problem('runc', stdout=runtimes))
+        self.assertIn('--sandbox runc', self.problem('runsc', stdout=runtimes))
+        self.assertIsNone(self.problem('runsc', stdout=json.dumps({'runc': {}, 'runsc': {'path': '/usr/bin/runsc'}})))
+        self.assertIn('docker is unavailable: no daemon', self.problem('runsc', code=1, stderr='no daemon'))
 
 
 class ProviderTest(unittest.TestCase):
@@ -427,21 +461,27 @@ class MainTest(unittest.TestCase):
         report = json.loads(pathlib.Path(self.tmp.name, 'report.json').read_text())
         self.assertEqual(report[0]['result'], 'blocked')
 
-    def test_web_run_records_screenshots_and_verdict(self):
-        recorder, seen = FakeRecorder(), {}
+    def web_main(self, *extra):
+        """A passing web run with the container faked: the recorder, the exit code and each container's argv."""
+        recorder, argvs = FakeRecorder(), []
 
         def fake_container(argv, name, timeout):
             out = next(a.split(':')[0] for a in argv if a.endswith(':/out:rw'))
-            seen.setdefault('argv', argv)
+            argvs.append(argv)
             pathlib.Path(out, '01-loaded.png').write_bytes(b'\x89PNG')
             pathlib.Path(out, '02-full-page.png').write_bytes(b'\x89PNG')
             pathlib.Path(out, 'replay.json').write_text(json.dumps({**PASSED, 'data': {**PASSED['data'], 'replayed': 7}}))
             return 0, 4321, ''
 
-        with clean_env(), mock.patch.object(dt, 'docker_problem', return_value=None), \
+        with clean_env(), mock.patch.object(dt, 'docker_problem', return_value=None) as problem, \
                 mock.patch.object(dt, 'ensure_image'), mock.patch.object(dt, 'run_container', side_effect=fake_container):
-            code = quiet_main(['--target', 'https://tm8-hub.com/', '--expect-text', 'one live graph', '--profiles',
-                               'desktop,pixel', '--task', 'task-1', '--out', self.tmp.name], recorder)
+            code = quiet_main(['--target', 'https://tm8-hub.com/', '--expect-text', 'one live graph', '--task', 'task-1',
+                               '--out', self.tmp.name, *extra], recorder)
+        self.runtime_checked = problem.call_args.args[0]
+        return recorder, code, argvs
+
+    def test_web_run_records_screenshots_and_verdict(self):
+        recorder, code, argvs = self.web_main('--profiles', 'desktop,pixel')
         self.assertEqual(code, 0)
         self.assertEqual(len(recorder.created), 2)
         self.assertEqual({fields['result'] for _, fields, _ in recorder.created}, {'queued'})
@@ -454,11 +494,66 @@ class MainTest(unittest.TestCase):
         self.assertEqual(len(recorder.uploads), 4)
         self.assertEqual(recorder.posts[0][2], ['file-1', 'file-2', 'file-3', 'file-4'])
         self.assertIn('2 passed', recorder.posts[0][1])
-        argv = seen['argv']
-        seccomp = argv[argv.index('--security-opt', argv.index('no-new-privileges')) + 1].split('=', 1)[1]
-        self.assertEqual(json.loads(pathlib.Path(seccomp).read_text()), dt.chrome_seccomp_profile())
+        argv = argvs[0]
         self.assertIn('AGENT_BROWSER_ALLOWED_DOMAINS=tm8-hub.com,*.tm8-hub.com', argv)
         self.assertIn('EXPECT_TEXT=one live graph', argv)
+
+    def test_web_runs_in_gvisor_by_default(self):
+        recorder, code, argvs = self.web_main()
+        self.assertEqual((code, self.runtime_checked), (0, 'runsc'))
+        self.assertEqual(argvs[0][argvs[0].index('--runtime') + 1], 'runsc')
+        self.assertFalse([a for a in argvs[0] if a.startswith('seccomp=')])
+        fields = recorder.updates[-1][2]
+        self.assertEqual(fields['provider'], 'tm8 host, gVisor sandbox')
+        self.assertTrue(fields['runner'].endswith(f'{dt.IMAGE} · runsc'))
+        self.assertIn('in a gVisor sandbox', recorder.posts[0][1])
+
+    def test_runc_web_runs_get_the_chrome_seccomp_profile(self):
+        recorder, code, argvs = self.web_main('--sandbox', 'runc')
+        self.assertEqual((code, self.runtime_checked), (0, 'runc'))
+        argv = argvs[0]
+        self.assertEqual(argv[argv.index('--runtime') + 1], 'runc')
+        seccomp = argv[argv.index('--security-opt', argv.index('no-new-privileges')) + 1].split('=', 1)[1]
+        self.assertEqual(json.loads(pathlib.Path(seccomp).read_text()), dt.chrome_seccomp_profile())
+        self.assertEqual(recorder.updates[-1][2]['provider'], 'tm8 host, runc container')
+        self.assertIn('seccomp profile less pkey_alloc', recorder.posts[0][1])
+
+    def test_a_provider_that_refuses_is_blocked_and_a_divergence_is_failed(self):
+        cases = [
+            (90, 'connect', {'success': False, 'error': {'code': 'INVALID_ARGS', 'message': 'Invalid --daemon-base-url'}},
+             'blocked', 'agent-device connect failed: INVALID_ARGS: Invalid --daemon-base-url'),
+            (91, 'lease', NO_DEVICE, 'blocked', 'agent-device open (the device lease) failed: DEVICE_NOT_FOUND: No devices found'),
+            (91, 'lease', BAD_TOKEN, 'blocked', 'failed: UNAUTHORIZED: Invalid proxy token'),
+            (91, 'lease', None, 'blocked', 'failed: no detail'),
+            (1, 'replay', DIVERGED, 'failed', 'step 3 (spec line 4)'),
+        ]
+        for code, output, reply, result, detail in cases:
+            with self.subTest(code=code, reply=reply and reply['error']['code']):
+                recorder, argvs = FakeRecorder(), []
+
+                def fake_container(argv, name, timeout):
+                    argvs.append(argv)
+                    if reply:
+                        out = next(a.split(':')[0] for a in argv if a.endswith(':/out:rw'))
+                        pathlib.Path(out, f'{output}.json').write_text(json.dumps(reply))
+                    return code, 1000, ''
+
+                with clean_env(AGENT_DEVICE_DAEMON_AUTH_TOKEN='t'), \
+                        mock.patch.object(dt, 'docker_problem', return_value=None), mock.patch.object(dt, 'ensure_image'), \
+                        mock.patch.object(dt, 'run_container', side_effect=fake_container):
+                    exit_code = quiet_main(['--platform', 'android', '--target', 'https://tm8-hub.com/', '--provider', 'proxy',
+                                            '--proxy-url', 'https://proxy.example/agent-device',
+                                            '--out', tempfile.mkdtemp(dir=self.tmp.name)], recorder)
+                fields = recorder.updates[-1][2]
+                self.assertEqual((exit_code, fields['result']), (dt.EXIT_CODES[result], result))
+                self.assertIn(detail, fields['blocker' if result == 'blocked' else 'failure'])
+                argv = argvs[0]
+                self.assertEqual(argv[argv.index('--runtime') + 1], 'runsc')
+                image = argv.index(dt.IMAGE)
+                self.assertEqual(argv[image + 4:image + 9], ['device-test', 'android', 'proxy', '/specs/android-check.ad',
+                                                             'android-run'])
+                self.assertIn('AGENT_DEVICE_DAEMON_AUTH_TOKEN', argv)
+                self.assertNotIn('AGENT_DEVICE_DAEMON_AUTH_TOKEN=t', argv)
 
     def test_a_missing_engine_is_an_error_not_a_verdict(self):
         recorder = FakeRecorder()

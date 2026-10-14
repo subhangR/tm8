@@ -6,7 +6,7 @@ Each run drives one screen and records itself as a `c:test_run` entity with its 
 attached, so a test is a thing in the graph that a person or an agent can open, not a line in
 a log.
 
-  web      Chromium (Chrome for Testing 156) in a locked-down container on this host, driven by
+  web      Chromium (Chrome for Testing 156) in a gVisor sandbox on this host, driven by
            agent-device's web backend (agent-browser). A profile sets the viewport and user
            agent: `iphone` and `pixel` are Chromium at that size, not the phone.
   android  a real emulator or simulator in a device cloud (Limrun), or behind an agent-device
@@ -89,6 +89,14 @@ WORKDIR /work
 IMAGE = 'tm8-device-test-engine:' + hashlib.sha256(ENGINE_DOCKERFILE.encode()).hexdigest()[:12]
 RUNNER_SHA = hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()
 
+# Chromium runs with --no-sandbox, because its own sandbox needs privileges the container does not
+# have, so the container is the boundary. gVisor gives it a kernel of its own: a browser exploit
+# from an untrusted page meets gVisor, not this host's kernel, and Chrome needs no seccomp change.
+# Docker's --network host gives a gVisor container no network at all on the tm8 host (ENETUNREACH,
+# loopback included), so a run that must reach this machine uses runc.
+SANDBOXES = {'gvisor': 'runsc', 'runc': 'runc'}
+SANDBOX_NAMES = {'gvisor': 'gVisor sandbox', 'runc': 'runc container'}
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -119,22 +127,32 @@ WEB_SCRIPT = r'''set -u
 spec=$1 session=$2; shift 2
 exec agent-device replay "$spec" --platform web --session "$session" --json "$@" > /out/replay.json 2> /out/replay.log
 '''
+# Every command names one session: without --session, connect makes a fresh remote session, and a
+# command under any other name looks for devices inside this container. connect only saves the
+# connection, and a replay cannot lease a device, so `open` takes the lease first: that is where
+# the provider is first reached, and where an unreachable or refusing provider shows.
 # A replay that diverges closes its session; `disconnect` then releases the provider. If the
-# container is killed first, Limrun ends the idle instance itself: keep-alive stays off.
+# container is killed first, the provider ends the idle lease itself: keep-alive stays off.
 MOBILE_SCRIPT = r'''set -u
 platform=$1 provider=$2 spec=$3 session=$4; shift 4
 if [ "$provider" = proxy ]; then
-  agent-device connect proxy --daemon-base-url "$DEVICE_TEST_PROXY_URL" --json > /out/connect.json 2> /out/connect.log
+  agent-device connect proxy --daemon-base-url "$DEVICE_TEST_PROXY_URL" --session "$session" --json > /out/connect.json 2> /out/connect.log
 else
-  agent-device connect limrun --platform "$platform" --json > /out/connect.json 2> /out/connect.log
+  agent-device connect limrun --platform "$platform" --session "$session" --json > /out/connect.json 2> /out/connect.log
 fi
 [ $? -eq 0 ] || exit 90
-agent-device replay "$spec" --platform "$platform" --session "$session" --json "$@" > /out/replay.json 2> /out/replay.log
-rc=$?
-agent-device disconnect --json > /out/disconnect.json 2>&1
+if agent-device open --platform "$platform" --session "$session" --json > /out/lease.json 2> /out/lease.log; then
+  agent-device replay "$spec" --platform "$platform" --session "$session" --json "$@" > /out/replay.json 2> /out/replay.log
+  rc=$?
+else
+  rc=91
+fi
+agent-device disconnect --session "$session" --json > /out/disconnect.json 2>&1
 exit $rc
 '''
-CONNECT_FAILED = 90
+# The exit codes of MOBILE_SCRIPT's provider steps: the step, its output file and what a failure means.
+PROVIDER_STEPS = {90: ('connect', 'connect', 'The device provider refused the connection'),
+                  91: ('open (the device lease)', 'lease', 'The device provider did not lease a device')}
 LIMRUN_INSTANCE_ENV = {'android': ['LIM_ANDROID_INSTANCE_URL', 'LIM_ANDROID_INSTANCE_TOKEN', 'LIM_ANDROID_INSTANCE_ADB_URL'],
                        'ios': ['LIM_IOS_INSTANCE_URL', 'LIM_IOS_INSTANCE_TOKEN']}
 PROXY_TOKEN_ENV = 'AGENT_DEVICE_DAEMON_AUTH_TOKEN'
@@ -378,14 +396,23 @@ def docker(args, timeout, **kwargs):
     return subprocess.run(['docker', *args], capture_output=True, text=True, timeout=timeout, **kwargs)
 
 
-def docker_problem():
+def docker_problem(runtime):
     if not shutil.which('docker'):
         return 'docker is not installed on this host'
     try:
-        probe = docker(['version', '--format', '{{.Server.Version}}'], 30)
+        probe = docker(['info', '--format', '{{json .Runtimes}}'], 30)
     except subprocess.TimeoutExpired:
         return 'docker did not answer within 30s'
-    return None if probe.returncode == 0 else f'docker is unavailable: {probe.stderr.strip()[:300]}'
+    if probe.returncode != 0:
+        return f'docker is unavailable: {probe.stderr.strip()[:300]}'
+    try:
+        runtimes = json.loads(probe.stdout)
+    except ValueError:
+        runtimes = {}
+    if runtime in runtimes:
+        return None
+    return f'Docker on this host has no {runtime} runtime' + (
+        ': install gVisor, or pass --sandbox runc to use Docker\'s default runtime' if runtime == 'runsc' else '')
 
 
 def ensure_image(log_path, timeout):
@@ -400,9 +427,9 @@ def ensure_image(log_path, timeout):
         raise RuntimeError(f'engine image build failed (exit {build.returncode}); see {log_path}')
 
 
-def container_argv(name, network, seccomp, mounts, pairs, inherited, script, args):
+def container_argv(name, runtime, network, seccomp, mounts, pairs, inherited, script, args):
     """No capabilities, no new privileges, this user's uid, bounded memory, CPU and processes."""
-    argv = ['run', '--rm', '--init', '--name', name, '--user', f'{os.getuid()}:{os.getgid()}',
+    argv = ['run', '--rm', '--init', '--runtime', runtime, '--name', name, '--user', f'{os.getuid()}:{os.getgid()}',
             '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges']
     if seccomp:
         argv += ['--security-opt', f'seccomp={seccomp}']
@@ -597,10 +624,12 @@ def execute(recorder, run, argv, name, timeout, steps_total, variables):
     replay = read_text(os.path.join(run.out_dir, 'replay.json'))
     if code is None:
         outcome = Outcome('error', f'The run timed out after {timeout}s', steps_total, failure=stderr)
-    elif code == CONNECT_FAILED:
-        refused = parse_replay(read_text(os.path.join(run.out_dir, 'connect.json')), 0, variables).failure
-        outcome = Outcome('blocked', 'The device provider refused the connection', steps_total,
-                          blocker=f'agent-device connect failed: {refused or stderr.strip()[:500] or "no detail"}')
+    elif code in PROVIDER_STEPS:
+        step, output, summary = PROVIDER_STEPS[code]
+        reply = parse_replay(read_text(os.path.join(run.out_dir, f'{output}.json')), 0, variables)
+        refused = (reply.summary.removeprefix('agent-device ') if reply.failure else
+                   read_text(os.path.join(run.out_dir, f'{output}.log')).strip()[:500] or stderr.strip()[:500])
+        outcome = Outcome('blocked', summary, steps_total, blocker=f'agent-device {step} failed: {refused or "no detail"}')
     elif replay:
         outcome = parse_replay(replay, steps_total, variables)
     else:
@@ -609,7 +638,7 @@ def execute(recorder, run, argv, name, timeout, steps_total, variables):
     finish(recorder, run, outcome, duration_ms)
 
 
-def verdict_message(runs, target, expect_text):
+def verdict_message(runs, target, expect_text, sandbox):
     counts = {}
     for run in runs:
         counts[run.outcome.result] = counts.get(run.outcome.result, 0) + 1
@@ -626,8 +655,10 @@ def verdict_message(runs, target, expect_text):
         if o.result != 'passed':
             lines.append(f'  {(o.failure or o.blocker or o.summary)[:600]}')
     if any(run.fields['platform'] == 'web' for run in runs):
-        lines += ['', f'Engine: {ENGINE}, in a container with no capabilities, no new privileges and Docker\'s default '
-                      'seccomp profile less pkey_alloc. `iphone` and `pixel` are Chromium at that size and user agent, '
+        box = ('a gVisor sandbox with no capabilities and no new privileges' if sandbox == 'gvisor' else
+               'a runc container with no capabilities, no new privileges and Docker\'s default seccomp profile less '
+               'pkey_alloc')
+        lines += ['', f'Engine: {ENGINE}, in {box}. `iphone` and `pixel` are Chromium at that size and user agent, '
                       'not the phone.']
     return '\n'.join(lines)
 
@@ -658,6 +689,8 @@ def build_parser():
                    help='web only: more domains the page may load from, comma-separated (*.example.com allowed)')
     p.add_argument('--network', choices=['bridge', 'host'], default=env_default('DEVICE_TEST_NETWORK', 'bridge'),
                    help='host lets the browser reach services on this machine (127.0.0.1); bridge does not')
+    p.add_argument('--sandbox', choices=list(SANDBOXES), default=env_default('DEVICE_TEST_SANDBOX', 'gvisor'),
+                   help="gvisor gives each container a kernel of its own; runc is Docker's default runtime")
     p.add_argument('--provider', choices=['none', 'limrun', 'proxy'], default=env_default('DEVICE_TEST_PROVIDER', 'none'),
                    help='android and ios: where the device runs')
     p.add_argument('--proxy-url', default=env_default('DEVICE_TEST_PROXY_URL'),
@@ -671,7 +704,7 @@ def build_parser():
     p.add_argument('--record', action=argparse.BooleanOptionalAction, default=env_bool('DEVICE_TEST_RECORD', True),
                    help='write runs to tm8 (default); --no-record keeps everything local')
     p.add_argument('--print-dockerfile', action='store_true', help='print the engine Dockerfile and exit')
-    p.add_argument('--print-seccomp', action='store_true', help='print the seccomp profile web runs use and exit')
+    p.add_argument('--print-seccomp', action='store_true', help='print the seccomp profile web runs use under runc and exit')
     return p
 
 
@@ -692,6 +725,8 @@ def plan(args):
         if args.platform == 'web' or not args.suite:
             raise ValueError('--app needs --platform android or ios and a --suite that installs and opens it')
         app = check_mount('--app', args.app)
+    if args.network == 'host' and args.sandbox == 'gvisor':
+        raise ValueError('--network host needs --sandbox runc: a gVisor container on the host network has no network')
     profiles, domains = [], []
     if args.platform == 'web':
         names = [name.strip() for name in args.profiles.split(',') if name.strip()]
@@ -701,7 +736,7 @@ def plan(args):
         profiles = [PROFILES[name] for name in dict.fromkeys(names)]
         domains = allowed_domains(host, args.allow_domains.split(','))
         if is_loopback(host) and args.network != 'host':
-            raise ValueError(f'{host} is this machine: pass --network host so the browser can reach it')
+            raise ValueError(f'{host} is this machine: pass --network host --sandbox runc so the browser can reach it')
     elif is_loopback(host):
         raise ValueError(f'a remote device cannot reach {host} on this machine; test a URL it can reach')
     if args.timeout < 0:
@@ -714,12 +749,12 @@ def plan(args):
 def make_runs(args, p):
     common = {'platform': args.platform, 'result': 'queued', 'target': args.target, 'engine': ENGINE,
               'suite': args.suite or f'built-in {args.platform} check' + (f' for "{p.expect}"' if p.expect else ''),
-              'runner': f'tools/device-test {RUNNER_SHA[:12]} · {IMAGE}',
+              'runner': f'tools/device-test {RUNNER_SHA[:12]} · {IMAGE} · {SANDBOXES[args.sandbox]}',
               **({'revision': args.revision} if args.revision else {})}
     if args.platform == 'web':
         return [Run(profile.name, f'web · {p.host} · {profile.name}',
                     {**common, 'device': profile.device, 'viewport': f'{profile.width}×{profile.height}',
-                     'provider': 'tm8 host, local container'})
+                     'provider': f'tm8 host, {SANDBOX_NAMES[args.sandbox]}'})
                 for profile in p.profiles]
     device = DEVICES.get(args.provider, {}).get(args.platform, 'none reachable')
     return [Run(args.platform, f'{args.platform} · {p.host} · {PROVIDER_NAMES[args.provider]}',
@@ -768,7 +803,7 @@ def main(argv=None, recorder=None):
             reason = provider_problem(args.platform, args.provider, args.proxy_url, p.app)
             blocked = blocked_text(args.platform, reason) if reason else None
         if not blocked:
-            problem = docker_problem()
+            problem = docker_problem(SANDBOXES[args.sandbox])
         if not blocked and not problem:
             try:
                 ensure_image(os.path.join(base, 'engine-build.log'), max(timeout, 1200))
@@ -794,16 +829,19 @@ def main(argv=None, recorder=None):
                 pairs = [('AGENT_BROWSER_ALLOWED_DOMAINS', ','.join(p.domains))]
                 if profile.user_agent:
                     pairs.append(('AGENT_BROWSER_USER_AGENT', profile.user_agent))
-                seccomp = os.path.join(base, 'seccomp-chrome.json')
-                with open(seccomp, 'w') as handle:
-                    json.dump(chrome_seccomp_profile(), handle)
-                argv = container_argv(name, args.network, seccomp, run_mounts, pairs, [], WEB_SCRIPT,
-                                      [f'/specs/{p.spec_name}', f'web-{run.label}', *replay_vars(run_vars)])
+                seccomp = None
+                if args.sandbox == 'runc':
+                    seccomp = os.path.join(base, 'seccomp-chrome.json')
+                    with open(seccomp, 'w') as handle:
+                        json.dump(chrome_seccomp_profile(), handle)
+                argv = container_argv(name, SANDBOXES[args.sandbox], args.network, seccomp, run_mounts, pairs, [],
+                                      WEB_SCRIPT, [f'/specs/{p.spec_name}', f'web-{run.label}', *replay_vars(run_vars)])
             else:
                 if p.app:
                     run_mounts.append((p.app, f'/app/{os.path.basename(p.app)}', 'ro'))
                     run_vars['APP'] = f'/app/{os.path.basename(p.app)}'
-                argv = container_argv(name, args.network, None, run_mounts, [('DEVICE_TEST_PROXY_URL', args.proxy_url)],
+                argv = container_argv(name, SANDBOXES[args.sandbox], args.network, None, run_mounts,
+                                      [('DEVICE_TEST_PROXY_URL', args.proxy_url)],
                                       provider_env(args.platform, args.provider), MOBILE_SCRIPT,
                                       [args.platform, args.provider, f'/specs/{p.spec_name}', f'{args.platform}-run',
                                        *replay_vars(run_vars)])
@@ -814,7 +852,7 @@ def main(argv=None, recorder=None):
 
         if args.task:
             attachments = [file_id for run in runs for file_id in run.file_ids][:12]
-            recorder.post(args.task, verdict_message(runs, args.target, p.expect), attachments)
+            recorder.post(args.task, verdict_message(runs, args.target, p.expect, args.sandbox), attachments)
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
         print(f'device-test: {error}', file=sys.stderr)
         return EXIT_CODES['error']
