@@ -1,0 +1,22 @@
+[
+  {"name": "platform", "type": "enum", "required": true, "values": ["web", "android", "ios"]},
+  {"name": "result", "type": "enum", "required": true, "values": ["queued", "running", "passed", "failed", "error", "blocked"]},
+  {"name": "target", "type": "text"},
+  {"name": "device", "type": "text"},
+  {"name": "viewport", "type": "text"},
+  {"name": "provider", "type": "text"},
+  {"name": "engine", "type": "text"},
+  {"name": "suite", "type": "text"},
+  {"name": "revision", "type": "text"},
+  {"name": "runner", "type": "text"},
+  {"name": "steps_total", "type": "number"},
+  {"name": "steps_passed", "type": "number"},
+  {"name": "steps_failed", "type": "number"},
+  {"name": "screenshots", "type": "number"},
+  {"name": "duration_ms", "type": "number"},
+  {"name": "started_at", "type": "date"},
+  {"name": "finished_at", "type": "date"},
+  {"name": "summary", "type": "text"},
+  {"name": "failure", "type": "text"},
+  {"name": "blocker", "type": "text"}
+]
