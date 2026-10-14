@@ -301,10 +301,11 @@ class BlockedTextTest(unittest.TestCase):
 
     def test_android_without_kvm_gives_the_host_facts(self):
         with mock.patch.object(dt.os.path, 'exists', return_value=False), \
-                mock.patch.object(dt, 'local_device_facts', return_value=['/dev/kvm absent', 'a Hyper-V guest']):
+                mock.patch.object(dt, 'local_device_facts',
+                                  return_value=['/dev/kvm absent', 'a virtual machine without nested virtualization']):
             text = dt.blocked_text('android', 'no device provider chosen')
-        self.assertIn('an Android emulator needs KVM, which this host does not have (/dev/kvm absent; a Hyper-V guest).',
-                      text)
+        self.assertIn('an Android emulator needs KVM, which this host does not have '
+                      '(/dev/kvm absent; a virtual machine without nested virtualization).', text)
         self.assertIn('Options: Limrun Android', text)
 
     def test_ios_names_the_host_system_and_no_kvm_facts(self):
@@ -315,11 +316,23 @@ class BlockedTextTest(unittest.TestCase):
         self.assertIn('iOS Simulators need macOS with Xcode, and this host runs Linux 6.8.0.', text)
         self.assertIn('Options: Limrun iOS', text)
 
-    def test_the_hypervisor_is_named(self):
-        detected = subprocess.CompletedProcess(['systemd-detect-virt'], 0, 'microsoft\n', '')
-        with mock.patch.object(dt.shutil, 'which', return_value='/usr/bin/systemd-detect-virt'), \
-                mock.patch.object(dt.subprocess, 'run', return_value=detected):
-            self.assertIn('a Hyper-V guest', dt.local_device_facts())
+    def test_a_guest_without_vmx_or_svm_has_no_nested_virtualization(self):
+        # This host: KVM with Hyper-V enlightenments, so CPUID says "Microsoft". The facts never
+        # name a hypervisor, only what the CPU shows.
+        cpuinfo = mock.mock_open(read_data='processor\t: 0\nflags\t\t: fpu sse2 hypervisor pku ospke\n')
+        with mock.patch.object(dt.os.path, 'exists', return_value=False), \
+                mock.patch.object(dt, 'open', cpuinfo, create=True):
+            facts = dt.local_device_facts()
+        self.assertEqual(facts[:3], ['/dev/kvm absent', 'no vmx or svm CPU flag',
+                                     'a virtual machine without nested virtualization'])
+
+    def test_bare_metal_is_not_called_a_virtual_machine(self):
+        cpuinfo = mock.mock_open(read_data='flags\t\t: fpu sse2 svm\n')
+        with mock.patch.object(dt.os.path, 'exists', return_value=True), \
+                mock.patch.object(dt, 'open', cpuinfo, create=True):
+            facts = dt.local_device_facts()
+        self.assertEqual(facts[:2], ['/dev/kvm present', 'CPU virtualization flags: svm'])
+        self.assertFalse([fact for fact in facts if 'virtual machine' in fact])
 
 
 class CliTest(unittest.TestCase):

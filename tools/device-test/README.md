@@ -114,9 +114,9 @@ not do it.
 
 ### Why runc web runs use a seccomp profile
 
-This host's CPU advertises memory protection keys (`pku`, `ospke`), but they fault under
-Hyper-V. Under runc, every Chrome 156 child process dies of a protection-key page fault
-(error-code bit 5). runc web runs therefore use Docker's default seccomp profile with one change:
+This host's virtual CPU advertises memory protection keys (`pku`, `ospke`), yet under runc every
+Chrome 156 child process dies of a protection-key page fault (error-code bit 5). runc web runs
+therefore use Docker's default seccomp profile with one change:
 `pkey_alloc` answers `ENOSPC`. Chrome and V8 then run without keys, as they would on a CPU that
 has none. gVisor implements the system calls itself and gives Chrome no keys, so gVisor runs need
 no profile.
@@ -128,8 +128,10 @@ sha256. `--print-seccomp` prints the exact profile a web run gets.
 
 This host cannot run either one:
 
-- An Android emulator needs KVM. This host is a Hyper-V guest with no `/dev/kvm` and no
-  `vmx` or `svm` CPU flag.
+- An Android emulator needs KVM. This host is a virtual machine without nested virtualization:
+  no `/dev/kvm` and no `vmx` or `svm` CPU flag. It is a QEMU/KVM guest (DMI "Red Hat KVM",
+  `kvm-clock`, virtio devices) that advertises Hyper-V enlightenments, which is why
+  `systemd-detect-virt` and `lscpu` say "Microsoft". Blocked runs report only what the CPU shows.
 - iOS Simulators need macOS with Xcode, and this host runs Linux.
 
 The device therefore comes from somewhere else:

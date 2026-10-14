@@ -10,9 +10,10 @@ a log.
            agent-device's web backend (agent-browser). A profile sets the viewport and user
            agent: `iphone` and `pixel` are Chromium at that size, not the phone.
   android  a real emulator or simulator in a device cloud (Limrun), or behind an agent-device
-  ios      proxy on a Mac or a KVM host. This host can run neither: it is a Hyper-V guest
-           without /dev/kvm, and iOS Simulators need macOS. Without a provider credential the
-           run is recorded as `blocked`, with that evidence, instead of being faked.
+  ios      proxy on a Mac or a KVM host. This host can run neither: it is a virtual machine
+           without nested virtualization (no /dev/kvm), and iOS Simulators need macOS. Without a
+           provider credential the run is recorded as `blocked`, with that evidence, instead of
+           being faked.
 
 Stdlib only and self-contained: the engine Dockerfile, the built-in checks and the seccomp
 profile are embedded, because tm8 stores a tool as this one file and runs it with `python3 -I`.
@@ -256,9 +257,9 @@ def check_mount(name, path):
 def chrome_seccomp_profile():
     """Docker's default profile with one change: pkey_alloc answers ENOSPC ("no keys left").
 
-    This host's CPU advertises memory protection keys (pku, ospke) but faults on them under
-    Hyper-V, so every Chrome 156 child process dies of protection-key page faults (error code
-    bit 5). When pkey_alloc fails, Chrome and V8 run without keys, as on a CPU that has none.
+    This host's virtual CPU advertises memory protection keys (pku, ospke), yet under runc every
+    Chrome 156 child process dies of protection-key page faults (error code bit 5). When
+    pkey_alloc fails, Chrome and V8 run without keys, as on a CPU that has none.
     Every other syscall keeps Docker's own answer.
     """
     profile = json.loads(DOCKER_DEFAULT_SECCOMP)
@@ -272,10 +273,6 @@ def chrome_seccomp_profile():
 
 # ---------------------------------------------------------------------------------------- devices
 
-# systemd-detect-virt names a hypervisor by its vendor.
-GUEST_NAMES = {'microsoft': 'Hyper-V', 'oracle': 'VirtualBox'}
-
-
 def local_device_facts():
     """What this host could offer a local emulator or simulator: evidence for a blocked run."""
     facts = ['/dev/kvm present' if os.path.exists('/dev/kvm') else '/dev/kvm absent']
@@ -284,13 +281,13 @@ def local_device_facts():
             flags = next((line.split(':', 1)[1].split() for line in cpuinfo if line.startswith('flags')), [])
         virt = [flag for flag in ('vmx', 'svm') if flag in flags]
         facts.append(f'CPU virtualization flags: {", ".join(virt)}' if virt else 'no vmx or svm CPU flag')
+        # The CPU sets this flag under any hypervisor. Do not name the hypervisor: the vendor that
+        # CPUID and systemd-detect-virt report is the interface it emulates (KVM with Hyper-V
+        # enlightenments says "Microsoft", as this host does), not what it is.
+        if 'hypervisor' in flags:
+            facts.append('a virtual machine' if virt else 'a virtual machine without nested virtualization')
     except OSError:
         pass
-    detect = shutil.which('systemd-detect-virt')
-    if detect:
-        guest = subprocess.run([detect], capture_output=True, text=True, timeout=10).stdout.strip()
-        if guest and guest != 'none':
-            facts.append(f'a {GUEST_NAMES.get(guest, guest)} guest')
     facts.append(f'{host_platform.system()} {host_platform.release()}')
     return facts
 
