@@ -49,6 +49,7 @@ function task(description: string): EntityDetail {
 let started = 0;
 const startTerminal = vi.fn(async () => ({ entity: { id: `term-${++started}` } }));
 const terminate = vi.fn(async () => ({}));
+const dispatch = vi.fn(async (_input: { subjectId: string; note: string }) => ({ taskId: 'task-1', dispatcherSpawned: true }));
 
 function gateFor(d: EntityDetail) {
   return {
@@ -56,7 +57,7 @@ function gateFor(d: EntityDetail) {
       detailOf: () => d,
       messagesOf: () => undefined,
       reconcileCommand: () => undefined,
-      seam: { commands: { startTerminal, terminate } },
+      seam: { commands: { startTerminal, terminate, dispatch } },
     },
   } as unknown as WorkspaceGateHandles;
 }
@@ -82,6 +83,7 @@ beforeEach(() => {
   started = 0;
   startTerminal.mockClear();
   terminate.mockClear();
+  dispatch.mockClear();
 });
 afterEach(cleanup);
 
@@ -114,7 +116,7 @@ describe('the phone button', () => {
     await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
     expect(window.localStorage.getItem('tm8.phoneLive.trusted')).toBe(COMMAND);
     act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
-    await waitFor(() => expect(sent).toEqual([`term-1:${COMMAND}\r`]));
+    await waitFor(() => expect(sent).toEqual([`term-1:clear; ${COMMAND}\r`]));
   });
 
   it('once confirmed, starts at once; Android restarts as Android; closing ends the terminal', async () => {
@@ -129,7 +131,7 @@ describe('the phone button', () => {
     await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-2'));
     expect(terminate).toHaveBeenCalledWith('term-1', expect.objectContaining({ force: true }));
     act(() => outputHandlers.forEach((h) => h('term-2', '$ ')));
-    await waitFor(() => expect(sent[1]).toBe('term-2:/w/bin/jm-live android shopping\r'));
+    await waitFor(() => expect(sent[1]).toBe('term-2:clear; /w/bin/jm-live android shopping\r'));
 
     fireEvent.click(view.getByTestId('phone-live-close'));
     expect(view.queryByTestId('phone-live')).toBeNull();
@@ -154,7 +156,8 @@ describe('the phone button', () => {
     const screen = view.getByTestId('fake-terminal');
     expect(screen.textContent).toBe(AGENT);
     expect(screen.getAttribute('data-live')).toBe('false');
-    expect(view.getByTestId('phone-live-watching').textContent).toContain('Android');
+    expect(view.getByTestId('phone-live-watching').textContent).toContain('Test running');
+    expect(view.getByTestId('phone-live').textContent).toContain('Pixel 9 Pro');
     expect(startTerminal).not.toHaveBeenCalled();
 
     fireEvent.click(view.getByTestId('phone-live-close'));
@@ -166,5 +169,19 @@ describe('the phone button', () => {
     expect(again.queryByTestId('phone-live')).toBeNull();
     fireEvent.click(again.getByTestId('tws-phone-live'));
     expect(again.getByTestId('fake-terminal').textContent).toBe(AGENT);
+  });
+
+  it('sends what the viewer types to an agent on this task, in their words', async () => {
+    const view = render(<Strip d={task('Testing.')} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    expect(view.getByTestId('phone-live-idle')).toBeTruthy();
+    fireEvent.change(view.getByTestId('phone-live-ask'), { target: { value: 'check the login journey' } });
+    fireEvent.click(view.getByTestId('phone-live-ask-send'));
+    await waitFor(() => expect(view.getByTestId('phone-live-ask-sent')).toBeTruthy());
+    const input = dispatch.mock.calls[0]![0];
+    expect(input.subjectId).toBe('task-1');
+    expect(input.note).toContain('check the login journey');
+    expect(input.note).toContain('live-terminal: <terminal-id> iphone');
+    expect(startTerminal).not.toHaveBeenCalled();
   });
 });
