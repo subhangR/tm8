@@ -15,10 +15,14 @@
  * never run without the viewer having pressed Start on it: that would let one
  * member run a command as another.
  *
- * ASKING FOR A TEST is the side panel's box: the viewer types or pastes what to
- * test, in plain words, and it goes to the space's dispatcher on this task
- * (`execution.dispatch`); the agent it picks writes the cases and runs them, and
- * the phone shows that run the moment its `live-terminal:` line lands.
+ * WRITE & RUN is the side panel's box: the viewer types or pastes what to test,
+ * in plain words, and it runs IN THIS PHONE, not in a new session. The app's
+ * task carries `live-ask: <command>`; pressing the button runs that command in
+ * the phone's terminal, and once it prints `READY-FOR-CASES` the viewer's words
+ * go in as ONE base64 line, so nothing typed can ever reach the shell as a
+ * command. The runner reads the app's source, writes the cases and runs them on
+ * the screen. The phone remembers that task per space, so the box works from
+ * any tab once the task has been opened.
  *
  * WATCHING A TEST THAT IS ALREADY RUNNING needs no command at all. An agent that
  * runs a test in a terminal of its own writes `live-terminal: <terminal-id>
@@ -46,6 +50,11 @@ const OLD_COMMAND_KEY = 'tm8.phoneLive.command';
 const DEVICE_KEY = 'tm8.phoneLive.device';
 const DEVICE_WORD = /\b(iphone|pixel|android)\b/i;
 const SEEN_KEY = 'tm8.phoneLive.seen';
+const ASK_LINE = /^[ \t]*live-ask:[ \t]*(\S[^\r\n]*)$/im;
+const APP_LINE = /^[ \t]*live-app:[ \t]*(\S[^\r\n]*)$/im;
+const ASK_TRUSTED_KEY = 'tm8.phoneLive.askTrusted';
+const APP_TASK_KEY = 'tm8.phoneLive.appTask:';
+export const READY_MARKER = 'READY-FOR-CASES';
 const LIVE_TERMINAL_LINE = /^[ \t]*live-terminal:[ \t]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[ \t]+(iphone|android|pixel))?[ \t]*$/im;
 
 export type PhoneWatch = { terminalId: string; device: PhoneDevice };
@@ -59,6 +68,29 @@ export function liveTerminalOf(detail: EntityDetail | null | undefined, liveScre
   const match = LIVE_TERMINAL_LINE.exec(description);
   if (!match?.[1]) return null;
   return { terminalId: match[1], device: match[2] === 'android' || match[2] === 'pixel' ? 'android' : 'iphone' };
+}
+
+function lineOf(detail: EntityDetail | null | undefined, line: RegExp): string | null {
+  if (!detail || detail.deletedAt || detail.category === 'done' || detail.category === 'cancelled') return null;
+  const description = (detail.content as { description?: unknown } | null | undefined)?.description;
+  if (typeof description !== 'string') return null;
+  const value = line.exec(description)?.[1]?.trim();
+  return value && value.length <= 500 ? value : null;
+}
+
+/** The task's write-and-run command (`live-ask:`) and the app it tests (`live-app:`, display only). */
+export function askCommandOf(detail: EntityDetail | null | undefined): string | null {
+  return lineOf(detail, ASK_LINE);
+}
+export function appNameOf(detail: EntityDetail | null | undefined): string | null {
+  return lineOf(detail, APP_LINE);
+}
+
+/** UTF-8 text as one base64 line: the only shape the viewer's words take on the way into the terminal. */
+export function base64Line(text: string): string {
+  let binary = '';
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }
 
 /** The command with its device word swapped for the chosen one (`jm-live iphone …` → `jm-live android …`). */
@@ -133,24 +165,11 @@ export function PhoneLiveButton({ detail }: { detail: EntityDetail | null | unde
   );
 }
 
-type Run = { device: PhoneDevice; command: string; terminalId: string | null; error: string | null };
-type Ask = { state: 'sending' } | { state: 'sent'; spawned: boolean } | { state: 'failed'; error: string };
+/* `cases`: the viewer's words for a write-and-run, sent once the runner asks for them. */
+type Run = { device: PhoneDevice; command: string; terminalId: string | null; error: string | null; cases?: string };
 
 const DEVICE_NAME: Record<PhoneDevice, string> = { iphone: 'iPhone 16 Pro Max', android: 'Pixel 9 Pro' };
 const DEVICE_ENGINE: Record<PhoneDevice, string> = { iphone: 'WebKit (Safari engine)', android: 'Chromium' };
-
-/** What the dispatched agent is told, around the viewer's own words. */
-export function testRequestNote(request: string, device: PhoneDevice): string {
-  return [
-    `App test request from the live phone (${DEVICE_NAME[device]}):`,
-    '',
-    request.trim(),
-    '',
-    `Write these as app test cases and run them on the ${device === 'iphone' ? 'iPhone' : 'Android'} screen so the phone in tm8 shows the run:`,
-    `while it runs, keep a line \`live-terminal: <terminal-id> ${device}\` in this task's description, and remove it when the run ends.`,
-    "The task's description says how its app is tested.",
-  ].join('\n');
-}
 
 export function PhoneLiveDialog({
   detail,
@@ -171,7 +190,27 @@ export function PhoneLiveDialog({
   const device = watch?.device ?? chosen;
   const [run, setRun] = useState<Run | null>(null);
   const [request, setRequest] = useState('');
-  const [ask, setAsk] = useState<Ask | null>(null);
+  /* The app this phone writes and runs tests for: this tab's task when it carries
+     `live-ask:`, else the one remembered for the space. */
+  const space = String(detail?.spaceId ?? spaceId ?? '');
+  const ownAsk = askCommandOf(detail);
+  const [appTaskId] = useState<string | null>(() => (ownAsk ? detail!.id : readStored(APP_TASK_KEY + space)));
+  const [, setTick] = useState(0);
+  const appDetail = ownAsk ? detail : appTaskId ? (gate.data.detailOf(appTaskId as EntityId) ?? null) : null;
+  const askCommand = ownAsk ?? askCommandOf(appDetail);
+  const appName = appNameOf(appDetail);
+  useEffect(() => {
+    if (ownAsk && detail) writeStored(APP_TASK_KEY + space, detail.id);
+    if (ownAsk || !appTaskId || appDetail) return;
+    gate.data.refetchDetail(appTaskId as EntityId);
+    let tries = 0;
+    const poll = window.setInterval(() => {
+      setTick((t) => t + 1);
+      if (++tries >= 15) window.clearInterval(poll);
+    }, 1000);
+    return () => window.clearInterval(poll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appTaskId, Boolean(appDetail)]);
   const terminalRef = useRef<LiveTerminalHandle>(null);
   const runRef = useRef<Run | null>(null);
   runRef.current = run;
@@ -183,10 +222,10 @@ export function PhoneLiveDialog({
       .catch(() => undefined);
   };
 
-  const start = (command: string, on: PhoneDevice) => {
+  const start = (command: string, on: PhoneDevice, cases?: string) => {
     if (!commands || !command.trim()) return;
     stop(runRef.current?.terminalId ?? null);
-    const next: Run = { device: on, command: commandForDevice(command.trim(), on), terminalId: null, error: null };
+    const next: Run = { device: on, command: commandForDevice(command.trim(), on), terminalId: null, error: null, ...(cases ? { cases } : {}) };
     setRun(next);
     void commands
       .startTerminal({
@@ -230,17 +269,29 @@ export function PhoneLiveDialog({
   /* Type the command once the shell has said something (its prompt). */
   const terminalId = run?.terminalId ?? null;
   const runCommand = run?.command ?? '';
+  const runCases = run?.cases ?? null;
   useEffect(() => {
     if (!terminalId) return;
     let sent = false;
+    let casesSent = false;
+    let tail = '';
     const send = () => {
       if (sent) return;
       sent = true;
       terminalRef.current?.send(`clear; ${runCommand}\r`);
     };
     let settle: number | undefined;
-    const off = ptyTransport.onOutput((id) => {
-      if (id !== terminalId || settle !== undefined) return;
+    const off = ptyTransport.onOutput((id, data) => {
+      if (id !== terminalId) return;
+      /* The runner asks for the cases; until then they are never typed. */
+      if (sent && runCases !== null && !casesSent) {
+        tail = (tail + data).slice(-200);
+        if (tail.includes(READY_MARKER)) {
+          casesSent = true;
+          terminalRef.current?.send(`${base64Line(runCases)}\r`);
+        }
+      }
+      if (settle !== undefined) return;
       settle = window.setTimeout(send, 400);
     });
     const fallback = window.setTimeout(send, 5000);
@@ -249,7 +300,7 @@ export function PhoneLiveDialog({
       window.clearTimeout(fallback);
       if (settle !== undefined) window.clearTimeout(settle);
     };
-  }, [terminalId, runCommand]);
+  }, [terminalId, runCommand, runCases]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -263,7 +314,7 @@ export function PhoneLiveDialog({
     if (next === chosen || watch) return;
     setDevice(next);
     writeStored(DEVICE_KEY, next);
-    if (run) start(run.command, next);
+    if (run) start(run.command, next, run.cases);
   };
 
   const runTaskTest = () => {
@@ -272,22 +323,11 @@ export function PhoneLiveDialog({
     start(taskCommand, device);
   };
 
-  const askAgent = () => {
+  const writeAndRun = () => {
     const text = request.trim();
-    if (!text || !detail || !commands?.dispatch) return;
-    setAsk({ state: 'sending' });
-    commands
-      .dispatch({
-        clientMutationId: `phone-live-ask:${detail.id}:${Date.now()}`,
-        spaceId: (detail.spaceId ?? spaceId) as never,
-        subjectId: detail.id as EntityId,
-        note: testRequestNote(text, device).slice(0, 4000),
-      })
-      .then((result) => {
-        setAsk({ state: 'sent', spawned: result.dispatcherSpawned });
-        setRequest('');
-      })
-      .catch((error: unknown) => setAsk({ state: 'failed', error: error instanceof Error ? error.message : String(error) }));
+    if (!text || !askCommand) return;
+    writeStored(ASK_TRUSTED_KEY, askCommand);
+    start(askCommand, device, text);
   };
 
   const screen = watch ? (
@@ -307,7 +347,7 @@ export function PhoneLiveDialog({
   ) : (
     <div className="phl-idle" data-testid="phone-live-idle">
       <span className="phl-idle__big">No test running</span>
-      <span>Run the task's test or ask an agent →</span>
+      <span>Run the task's test, or write your own →</span>
     </div>
   );
 
@@ -418,12 +458,17 @@ export function PhoneLiveDialog({
             className="phl-section"
             onSubmit={(e) => {
               e.preventDefault();
-              askAgent();
+              writeAndRun();
             }}
           >
             <label className="phl-h" htmlFor="phl-ask">
-              Ask an agent to test
+              Write &amp; run tests
             </label>
+            {appName ? (
+              <p className="phl-note" data-testid="phone-live-app">
+                App: <strong>{appName}</strong>
+              </p>
+            ) : null}
             <textarea
               id="phl-ask"
               className="phl-ask"
@@ -436,22 +481,21 @@ export function PhoneLiveDialog({
             <button
               type="submit"
               className="phl-start"
-              disabled={!request.trim() || !detail || !commands?.dispatch || ask?.state === 'sending'}
+              disabled={!request.trim() || !askCommand || !commands || Boolean(watch)}
               data-testid="phone-live-ask-send"
             >
-              {ask?.state === 'sending' ? 'Sending…' : '✦ Write & run these tests'}
+              ✦ Write &amp; run on this phone
             </button>
-            {ask?.state === 'sent' ? (
-              <p className="phl-note" role="status" data-testid="phone-live-ask-sent">
-                Sent to an agent{ask.spawned ? ' (starting one now)' : ''}. It writes the cases and runs them — this phone
-                shows the run as soon as it starts.
-              </p>
-            ) : ask?.state === 'failed' ? (
-              <p className="phl-note phl-note--error" role="alert">
-                {ask.error}
+            {askCommand ? (
+              <p className="phl-note">
+                Reads the app's source, writes these as test cases and runs them here — about a minute to write, then
+                live. Runs <code>{commandForDevice(askCommand, device)}</code> as you, on this node.
               </p>
             ) : (
-              <p className="phl-note">An agent turns these into test cases and runs them here, on this phone.</p>
+              <p className="phl-note" data-testid="phone-live-ask-none">
+                Not connected to an app yet: open the app's test task once (its description has a <code>live-ask:</code>{' '}
+                line) and the phone remembers it for this space.
+              </p>
             )}
           </form>
         </aside>

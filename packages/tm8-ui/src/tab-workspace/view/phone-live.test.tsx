@@ -57,6 +57,7 @@ function gateFor(d: EntityDetail) {
       detailOf: () => d,
       messagesOf: () => undefined,
       reconcileCommand: () => undefined,
+      refetchDetail: () => undefined,
       seam: { commands: { startTerminal, terminate, dispatch } },
     },
   } as unknown as WorkspaceGateHandles;
@@ -171,17 +172,34 @@ describe('the phone button', () => {
     expect(again.getByTestId('fake-terminal').textContent).toBe(AGENT);
   });
 
-  it('sends what the viewer types to an agent on this task, in their words', async () => {
+  it('writes and runs the viewer\'s cases in the phone: the words go in as one base64 line, only when asked', async () => {
+    const ASK = '/w/bin/jm-ask iphone';
+    const view = render(<Strip d={task(`App tests.\nlive-ask: ${ASK}\nlive-app: tharakeshua/app_jo`)} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    expect(view.getByTestId('phone-live-app').textContent).toContain('tharakeshua/app_jo');
+    const words = 'Search "wood sage"; rm -rf ~';
+    fireEvent.change(view.getByTestId('phone-live-ask'), { target: { value: words } });
+    fireEvent.click(view.getByTestId('phone-live-ask-send'));
+    await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
+    act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
+    await waitFor(() => expect(sent).toEqual([`term-1:clear; ${ASK}\r`]));
+    act(() => outputHandlers.forEach((h) => h('term-1', 'Write & run tests\r\n')));
+    expect(sent).toHaveLength(1);
+    act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-')));
+    act(() => outputHandlers.forEach((h) => h('term-1', 'CASES\r\n')));
+    const line = Buffer.from(words, 'utf8').toString('base64');
+    await waitFor(() => expect(sent).toEqual([`term-1:clear; ${ASK}\r`, `term-1:${line}\r`]));
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('remembers the app task for the space, and says so when none is connected', () => {
     const view = render(<Strip d={task('Testing.')} />);
     fireEvent.click(view.getByTestId('tws-phone-live'));
-    expect(view.getByTestId('phone-live-idle')).toBeTruthy();
-    fireEvent.change(view.getByTestId('phone-live-ask'), { target: { value: 'check the login journey' } });
-    fireEvent.click(view.getByTestId('phone-live-ask-send'));
-    await waitFor(() => expect(view.getByTestId('phone-live-ask-sent')).toBeTruthy());
-    const input = dispatch.mock.calls[0]![0];
-    expect(input.subjectId).toBe('task-1');
-    expect(input.note).toContain('check the login journey');
-    expect(input.note).toContain('live-terminal: <terminal-id> iphone');
-    expect(startTerminal).not.toHaveBeenCalled();
+    expect(view.getByTestId('phone-live-ask-none')).toBeTruthy();
+    expect((view.getByTestId('phone-live-ask-send') as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    const app = render(<Strip d={task('live-ask: /w/bin/jm-ask iphone')} />);
+    fireEvent.click(app.getByTestId('tws-phone-live'));
+    expect(window.localStorage.getItem('tm8.phoneLive.appTask:space-phone')).toBe('task-1');
   });
 });
