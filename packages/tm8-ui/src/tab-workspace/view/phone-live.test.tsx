@@ -106,20 +106,20 @@ describe('the phone button', () => {
     const view = render(<Strip d={task(`live: ${COMMAND}`)} />);
     fireEvent.click(view.getByTestId('tws-phone-live'));
     const dialog = view.getByTestId('phone-live');
-    expect((view.getByTestId('phone-live-command') as HTMLTextAreaElement).value).toBe(COMMAND);
+    expect(view.getByTestId('phone-live-command').textContent).toBe(COMMAND);
     expect(dialog.textContent).toContain('From the task');
     expect(startTerminal).not.toHaveBeenCalled();
 
     fireEvent.click(view.getByTestId('phone-live-start'));
     await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
-    expect(window.localStorage.getItem('tm8.phoneLive.command')).toBe(COMMAND);
+    expect(window.localStorage.getItem('tm8.phoneLive.trusted')).toBe(COMMAND);
     act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
     await waitFor(() => expect(sent).toEqual([`term-1:${COMMAND}\r`]));
   });
 
   it('once confirmed, starts at once; Android restarts as Android; closing ends the terminal', async () => {
-    window.localStorage.setItem('tm8.phoneLive.command', COMMAND);
-    const view = render(<Strip d={task('')} />);
+    window.localStorage.setItem('tm8.phoneLive.trusted', COMMAND);
+    const view = render(<Strip d={task(`live: ${COMMAND}`)} />);
     fireEvent.click(view.getByTestId('tws-phone-live'));
     await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
     act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
@@ -134,6 +134,17 @@ describe('the phone button', () => {
     fireEvent.click(view.getByTestId('phone-live-close'));
     expect(view.queryByTestId('phone-live')).toBeNull();
     expect(terminate).toHaveBeenCalledWith('term-2', expect.objectContaining({ force: true }));
+  });
+
+  it('never runs a remembered command the task does not carry, and drops the old free-text one', () => {
+    window.localStorage.setItem('tm8.phoneLive.command', 'check the login journey');
+    window.localStorage.setItem('tm8.phoneLive.trusted', COMMAND);
+    const view = render(<Strip d={task('Testing.')} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    expect(view.getByTestId('phone-live-empty')).toBeTruthy();
+    expect(view.queryByTestId('phone-live-command')).toBeNull();
+    expect(startTerminal).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem('tm8.phoneLive.command')).toBeNull();
   });
 
   it('pops up by itself on a running test, view-only, and closing leaves the agent terminal running', () => {

@@ -141,7 +141,8 @@
   background: var(--pn-card);
   color: var(--pn-ink);
   font-family: var(--pn-mono, monospace);
-  resize: vertical;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 .phl-note { margin: 0; color: var(--pn-ink-3); }
 .phl-screen > .phl-note { display: flex; align-items: center; justify-content: center; }

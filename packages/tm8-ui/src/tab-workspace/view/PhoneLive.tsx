@@ -8,10 +8,10 @@
  * `terminal/inlineImages.ts`). Closing the phone or switching the device ends
  * that terminal.
  *
- * WHAT RUNS IS THE VIEWER'S OWN COMMAND. The first time, the phone shows the
- * command — prefilled from the task's `live:` line when it has one — and the
- * viewer presses Start; from then on it is remembered on this device and the
- * phone starts at once. A task's line is content any member can write, so it is
+ * WHAT RUNS IS ONLY THE TASK'S OWN TEST. The phone shows the task's `live:`
+ * command and the viewer presses Run; from then on that exact command starts at
+ * once on this device. There is no free-text box: it read like a chat prompt,
+ * and what people typed into it ran as a shell command. A task's line is content any member can write, so it is
  * never run without the viewer having pressed Start on it: that would let one
  * member run a command as another.
  *
@@ -34,7 +34,10 @@ import './phone-live.css';
 
 export type PhoneDevice = 'iphone' | 'android';
 
-const COMMAND_KEY = 'tm8.phoneLive.command';
+/* The task command this viewer pressed Run on. The older free-text key held
+   whatever was typed into the phone (English included) and is dropped. */
+const COMMAND_KEY = 'tm8.phoneLive.trusted';
+const OLD_COMMAND_KEY = 'tm8.phoneLive.command';
 const DEVICE_KEY = 'tm8.phoneLive.device';
 const DEVICE_WORD = /\b(iphone|pixel|android)\b/i;
 const SEEN_KEY = 'tm8.phoneLive.seen';
@@ -141,9 +144,9 @@ export function PhoneLiveDialog({
 }) {
   const { gate, spaceId } = useWorkspace();
   const commands = gate.data.seam?.commands;
-  const confirmed = readStored(COMMAND_KEY);
+  /* Runs at once only when it is the very command this viewer ran before. */
+  const trusted = taskCommand !== null && readStored(COMMAND_KEY) === taskCommand;
   const [device, setDevice] = useState<PhoneDevice>(() => (readStored(DEVICE_KEY) === 'android' ? 'android' : 'iphone'));
-  const [draft, setDraft] = useState(() => confirmed ?? taskCommand ?? '');
   const [run, setRun] = useState<Run | null>(null);
   const terminalRef = useRef<LiveTerminalHandle>(null);
   const runRef = useRef<Run | null>(null);
@@ -178,9 +181,13 @@ export function PhoneLiveDialog({
       });
   };
 
-  /* A command the viewer pressed Start on before starts at once. */
   useEffect(() => {
-    if (confirmed) start(confirmed, device);
+    try {
+      window.localStorage.removeItem(OLD_COMMAND_KEY);
+    } catch {
+      /* storage refused */
+    }
+    if (trusted && taskCommand) start(taskCommand, device);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -219,10 +226,9 @@ export function PhoneLiveDialog({
   };
 
   const confirmAndStart = () => {
-    const command = draft.trim();
-    if (!command) return;
-    writeStored(COMMAND_KEY, command);
-    start(command, device);
+    if (!taskCommand) return;
+    writeStored(COMMAND_KEY, taskCommand);
+    start(taskCommand, device);
   };
 
   return (
@@ -252,12 +258,11 @@ export function PhoneLiveDialog({
               className="phl-text"
               onClick={() => {
                 stop(run.terminalId);
-                setDraft(run.command);
                 setRun(null);
               }}
               data-testid="phone-live-change"
             >
-              Command
+              Stop
             </button>
           ) : null}
         </>
@@ -282,27 +287,26 @@ export function PhoneLiveDialog({
               {run.error}
             </p>
           ) : null}
-          <label className="phl-label" htmlFor="phl-command">
-            Test command
-          </label>
-          <textarea
-            id="phl-command"
-            className="phl-command"
-            rows={4}
-            value={draft}
-            spellCheck={false}
-            placeholder="the command that runs the app test, e.g. jm-live iphone shopping"
-            onChange={(e) => setDraft(e.target.value)}
-            data-testid="phone-live-command"
-          />
-          <p className="phl-note">
-            {draft && draft === taskCommand && draft !== confirmed
-              ? 'From the task. Check it — it runs as you, on this node.'
-              : 'Runs as you, on this node. Remembered on this device.'}
-          </p>
-          <button type="submit" className="phl-start" disabled={!draft.trim() || !commands} data-testid="phone-live-start">
-            ▶ Start
-          </button>
+          {taskCommand ? (
+            <>
+              <p className="phl-label">Run this task's app test on the {device === 'iphone' ? 'iPhone' : 'Android'}</p>
+              <code className="phl-command" data-testid="phone-live-command">
+                {commandForDevice(taskCommand, device)}
+              </code>
+              <p className="phl-note">From the task — check it: it runs as you, on this node.</p>
+              <button type="submit" className="phl-start" disabled={!commands} data-testid="phone-live-start">
+                ▶ Run test
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="phl-label">No test is running on this task.</p>
+              <p className="phl-note" data-testid="phone-live-empty">
+                When an agent runs an app test here, this phone pops up and shows it live. Ask the agent on this task
+                to run the tests.
+              </p>
+            </>
+          )}
         </form>
       )}
     </PhoneShell>
