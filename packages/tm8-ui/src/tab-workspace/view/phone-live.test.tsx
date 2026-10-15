@@ -17,9 +17,9 @@ const outputHandlers: Array<(id: string, data: string) => void> = [];
 vi.mock('../../terminal', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   isLiveTerminalEnabled: () => true,
-  LiveTerminal: forwardRef<{ send(data: string): void }, { sessionId: string }>(function FakeTerminal({ sessionId }, ref) {
+  LiveTerminal: forwardRef<{ send(data: string): void }, { sessionId: string; live?: boolean }>(function FakeTerminal({ sessionId, live }, ref) {
     useImperativeHandle(ref, () => ({ send: (data: string) => sent.push(`${sessionId}:${data}`) }));
-    return <div data-testid="fake-terminal">{sessionId}</div>;
+    return <div data-testid="fake-terminal" data-live={String(live)}>{sessionId}</div>;
   }),
 }));
 vi.mock('../../terminal/pty/ptyTransport.js', () => ({
@@ -76,6 +76,7 @@ function Strip({ d }: { d: EntityDetail }) {
 
 beforeEach(() => {
   window.localStorage.clear();
+  window.sessionStorage.clear();
   sent.length = 0;
   outputHandlers.length = 0;
   started = 0;
@@ -133,5 +134,26 @@ describe('the phone button', () => {
     fireEvent.click(view.getByTestId('phone-live-close'));
     expect(view.queryByTestId('phone-live')).toBeNull();
     expect(terminate).toHaveBeenCalledWith('term-2', expect.objectContaining({ force: true }));
+  });
+
+  it('pops up by itself on a running test, view-only, and closing leaves the agent terminal running', () => {
+    const AGENT = '01a1415b-7663-7de8-9f14-1fd8cf826883';
+    const view = render(<Strip d={task(`Testing.\nlive-terminal: ${AGENT} android`)} />);
+    expect(view.getByTestId('tws-phone-live').getAttribute('data-live')).toBe('true');
+    const screen = view.getByTestId('fake-terminal');
+    expect(screen.textContent).toBe(AGENT);
+    expect(screen.getAttribute('data-live')).toBe('false');
+    expect(view.getByTestId('phone-live-watching').textContent).toContain('Android');
+    expect(startTerminal).not.toHaveBeenCalled();
+
+    fireEvent.click(view.getByTestId('phone-live-close'));
+    expect(view.queryByTestId('phone-live')).toBeNull();
+    expect(terminate).not.toHaveBeenCalled();
+
+    cleanup();
+    const again = render(<Strip d={task(`live-terminal: ${AGENT}`)} />);
+    expect(again.queryByTestId('phone-live')).toBeNull();
+    fireEvent.click(again.getByTestId('tws-phone-live'));
+    expect(again.getByTestId('fake-terminal').textContent).toBe(AGENT);
   });
 });

@@ -62,7 +62,20 @@
 }
 .phl-text:hover,
 .phl-close:hover { color: var(--pn-ink); }
-.phl-devices + .phl-close { margin-left: auto; }
+.phl-devices + .phl-close,
+.phl-watching + .phl-close { margin-left: auto; }
+.phl-watching {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 22px;
+  border-radius: 999px;
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+  font-weight: 600;
+}
+.phl-watching .tws-astrip-phone__dot { top: 50%; left: 9px; right: auto; margin-top: -3.5px; }
 
 /* The phone: a dark bezel, a notch (iPhone) or a punch-hole (Android), the
    screen, and the home bar. The screen is the terminal, edge to edge. */
