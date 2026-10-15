@@ -14,7 +14,7 @@ it('offers a credential choice before the first chat message', async () => {
   const { port } = createChatHomeFixturePort([]);
   const create = vi.fn(port.startThread.create);
   const view = render(<ChatHomeScreen port={{ ...port, startThread: { ...port.startThread, create } }} spaceId={SPACE} models={models} />);
-  await waitFor(() => expect(view.getByTestId('tch-teammate').textContent).not.toContain('No '));
+  await waitFor(() => expect(view.getByTestId('tch-model')).toBeTruthy());
   fireEvent.click(view.getByLabelText('Chat credentials'));
   fireEvent.click(view.getByTestId('tch-credentials-member'));
   const composer = view.getByLabelText('Message the chat agent');

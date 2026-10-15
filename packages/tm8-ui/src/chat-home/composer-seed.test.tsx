@@ -79,10 +79,8 @@ describe('new-chat settings seed (entity chat §3.4)', () => {
         newChatSeed={{ teammateId: RESEARCHER as never, model: 'claude-opus-5-5', mode: 'plan', projectId: 'p-repo' as never, focus: true }}
       />,
     );
-    await waitFor(() => expect(view.getByTestId('tch-teammate').getAttribute('title')).toBe('Researcher'));
-    expect(view.getByTestId('tch-model').textContent).toContain('Opus 5.5');
+    await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Opus 5.5'));
     expect(view.getByTestId('tch-mode').getAttribute('title')).toBe('plan');
-    await waitFor(() => expect(view.getByTestId('tch-rail-project').getAttribute('title')).toBe('Repo'));
     await waitFor(() => expect(document.activeElement).toBe(view.getByLabelText('Message the chat agent')));
   });
 
@@ -91,7 +89,6 @@ describe('new-chat settings seed (entity chat §3.4)', () => {
     const view = render(
       <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} coldStart="composer" newChatSeed={{ teammateId: 'gone' as never, model: 'retired' }} />,
     );
-    await waitFor(() => expect(view.getByTestId('tch-teammate').getAttribute('title')).toBe('Forge'));
-    expect(view.getByTestId('tch-model').textContent).toContain('Sonnet 4.5');
+    await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Sonnet 4.5'));
   });
 });

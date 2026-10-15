@@ -724,7 +724,7 @@ button.tch-entity-chip:hover {
 .tch-composer-wrap {
   flex: none;
   width: min(760px, calc(100% - 32px));
-  margin: 0 auto var(--pn-space-3);
+  margin: 0 auto var(--pn-space-2);
   /* A query container, so the foot degrades by the COMPOSER's width, not the
      viewport's — the pane beside a 380px column and an open aside is far
      narrower than the window. The skill popover is unaffected: its containing
@@ -781,7 +781,7 @@ button.tch-entity-chip:hover {
   margin-top: auto;
 }
 .tch-conversation[data-empty] .tch-composer-wrap {
-  margin: 0 auto auto;
+  margin: auto auto var(--pn-space-2);
 }
 
 /* NO TRAY-ONLY VARIANT ANY MORE. A `[data-chrome='tray']` rule made this wrap
@@ -1410,9 +1410,11 @@ button.tch-entity-chip:hover {
    the top of the canvas that the old header panel and chip rows were taking. */
 .tch-picks {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 5px;
   min-width: 0;
+  flex-shrink: 1;
   margin-left: var(--pn-space-1);
 }
 /* THE TRIGGERS ARE THE FOOT'S SHOCK ABSORBER, so every link in the chain has
@@ -1886,7 +1888,7 @@ button.tch-entity-chip:hover {
   margin-top: 0;
 }
 .cv2-root[data-shell='mobile'] .tch-conversation .tch-composer-wrap {
-  margin: auto auto var(--pn-space-3);
+  margin: auto auto var(--pn-space-2);
 }
 
 /* Full-bleed but for one gutter: at 390px the desktop's 32px inset spends 8%

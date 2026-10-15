@@ -28,13 +28,17 @@
   box-shadow: var(--pn-sh-md);
 }
 
-.ri-card:focus-within { border-color: var(--pn-brand); }
+.ri-card:focus-within { border-color: var(--pn-line-2); }
 
 .ri-card textarea {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  min-height: 58px;
+  /* ONE LINE AT REST, GROWING TO FOUR. `ComposerCard` sizes the field to its
+     content; past four lines it scrolls. */
+  min-height: 0;
+  max-height: calc(4 * 1.45em + 15px);
+  overflow-y: auto;
   resize: none;
   border: 0;
   outline: 0;
@@ -54,6 +58,7 @@
 .cv2-root .mobile-frame .ri-card textarea {
   font-size: 16px;
   line-height: 1.4;
+  max-height: calc(4 * 1.4em + 15px);
 }
 
 .ri-card textarea::placeholder { color: var(--pn-ink-4); }
@@ -201,7 +206,7 @@
 }
 .cv2-root:not([data-shell='mobile']) .ri-card textarea {
   min-height: 0;
-  max-height: 40vh;
+  max-height: calc(4 * 1.5em + 14px);
   overflow-y: auto;
   padding: 7px 6px;
   font-size: var(--pn-fs-body);
@@ -429,7 +434,7 @@
    So the row wraps, and the floor is restated at 44 so it is not a number that
    quietly stopped being true. */
 .cv2-root[data-shell='mobile'] .ri-card__foot {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   row-gap: var(--pn-space-1);
   min-height: var(--mobile-touch-min);
 }

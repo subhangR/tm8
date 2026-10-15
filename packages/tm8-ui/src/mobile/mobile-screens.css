@@ -1544,11 +1544,10 @@
 }
 .cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card textarea {
   min-height: 44px;
-  height: 44px;
   padding: 10px 8px;
 }
 .cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card textarea:focus {
-  height: 72px;
+  max-height: calc(4 * 1.4em + 20px);
 }
 .cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card__foot {
   flex-wrap: nowrap;
