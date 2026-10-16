@@ -205,6 +205,7 @@
 }
 .phl-note { margin: 0; font-size: 12px; color: var(--pn-ink-3); }
 .phl-note--error { color: var(--pn-danger, var(--pn-ink)); }
+.phl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .phl-start,
 .phl-secondary {
   align-self: flex-start;

@@ -192,6 +192,18 @@ describe('the phone button', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it('explore & deep test sends an empty line, which the runner takes as "explore on your own"', async () => {
+    const ASK = '/w/bin/jm-ask iphone';
+    const view = render(<Strip d={task(`live-ask: ${ASK}`)} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    fireEvent.click(view.getByTestId('phone-live-explore'));
+    await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
+    act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
+    await waitFor(() => expect(sent).toEqual([`term-1:clear; ${ASK}\r`]));
+    act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-CASES\r\n')));
+    await waitFor(() => expect(sent).toEqual([`term-1:clear; ${ASK}\r`, 'term-1:\r']));
+  });
+
   it('remembers the app task for the space, and says so when none is connected', () => {
     const view = render(<Strip d={task('Testing.')} />);
     fireEvent.click(view.getByTestId('tws-phone-live'));

@@ -22,7 +22,8 @@
  * go in as ONE base64 line, so nothing typed can ever reach the shell as a
  * command. The runner reads the app's source, writes the cases and runs them on
  * the screen. The phone remembers that task per space, so the box works from
- * any tab once the task has been opened.
+ * any tab once the task has been opened. With no words (Explore & deep test)
+ * the runner crawls every screen it can reach and writes a deep suite itself.
  *
  * WATCHING A TEST THAT IS ALREADY RUNNING needs no command at all. An agent that
  * runs a test in a terminal of its own writes `live-terminal: <terminal-id>
@@ -225,7 +226,7 @@ export function PhoneLiveDialog({
   const start = (command: string, on: PhoneDevice, cases?: string) => {
     if (!commands || !command.trim()) return;
     stop(runRef.current?.terminalId ?? null);
-    const next: Run = { device: on, command: commandForDevice(command.trim(), on), terminalId: null, error: null, ...(cases ? { cases } : {}) };
+    const next: Run = { device: on, command: commandForDevice(command.trim(), on), terminalId: null, error: null, ...(cases !== undefined ? { cases } : {}) };
     setRun(next);
     void commands
       .startTerminal({
@@ -323,9 +324,10 @@ export function PhoneLiveDialog({
     start(taskCommand, device);
   };
 
-  const writeAndRun = () => {
-    const text = request.trim();
-    if (!text || !askCommand) return;
+  /* No words = explore & deep test: the runner crawls the app and writes its own suite. */
+  const writeAndRun = (explore = false) => {
+    const text = explore ? '' : request.trim();
+    if ((!text && !explore) || !askCommand) return;
     writeStored(ASK_TRUSTED_KEY, askCommand);
     start(askCommand, device, text);
   };
@@ -478,18 +480,30 @@ export function PhoneLiveDialog({
               onChange={(e) => setRequest(e.target.value)}
               data-testid="phone-live-ask"
             />
-            <button
-              type="submit"
-              className="phl-start"
-              disabled={!request.trim() || !askCommand || !commands || Boolean(watch)}
-              data-testid="phone-live-ask-send"
-            >
-              ✦ Write &amp; run on this phone
-            </button>
+            <div className="phl-actions">
+              <button
+                type="submit"
+                className="phl-start"
+                disabled={!request.trim() || !askCommand || !commands || Boolean(watch)}
+                data-testid="phone-live-ask-send"
+              >
+                ✦ Write &amp; run
+              </button>
+              <button
+                type="button"
+                className="phl-secondary"
+                disabled={!askCommand || !commands || Boolean(watch)}
+                data-testid="phone-live-explore"
+                title="Taps through every screen, checks each one, then writes and runs a deep test suite — about 15 minutes"
+                onClick={() => writeAndRun(true)}
+              >
+                🔍 Explore &amp; deep test
+              </button>
+            </div>
             {askCommand ? (
               <p className="phl-note">
-                Reads the app's source, writes these as test cases and runs them here — about a minute to write, then
-                live. Runs <code>{commandForDevice(askCommand, device)}</code> as you, on this node.
+                Write &amp; run turns your words into tests (about a minute, then live). Explore &amp; deep test needs no
+                words: it taps through every screen, then writes and runs 20+ deep cases and a report (~15 min). Runs <code>{commandForDevice(askCommand, device)}</code> as you, on this node.
               </p>
             ) : (
               <p className="phl-note" data-testid="phone-live-ask-none">
