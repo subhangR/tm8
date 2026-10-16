@@ -40,6 +40,20 @@ export function focusLinksList(): boolean {
   return true;
 }
 
+/**
+ * Open the navigator's All kinds popover (`l ;`), by CLICKING the control the
+ * pointer clicks. The popover's open state is the `Navigator`'s own, and a
+ * second path that set it would be a second opinion about what is open — the
+ * same reason `work.launch` clicks the panel's button instead of re-running
+ * the verb. `false` ⇒ no navigator on screen (the flag is off).
+ */
+export function clickAllKinds(): boolean {
+  const button = document.querySelector<HTMLButtonElement>('[data-testid="tws-nav-allkinds"]');
+  if (!button) return false;
+  button.click();
+  return true;
+}
+
 /** Click the first launch verb inside `root`, as the pointer would. */
 export function clickLaunch(root: ParentNode): boolean {
   for (const ref of LAUNCH_PRIMARIES) {
@@ -167,6 +181,12 @@ export function handleWorkKey(
             ?.focus(),
         );
       }
+      return true;
+    }
+    case 'work.nav.kinds': {
+      /* The merged navigator's own door (§5). With the flag off there is no
+         such control, and the key says so rather than doing nothing. */
+      if (!clickAllKinds()) notify('All kinds is part of the new left navigator.');
       return true;
     }
     case 'work.tab.fullscreen':

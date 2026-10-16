@@ -41,6 +41,7 @@
 import { activeTabId, isEligible, scopeKey } from './selectors';
 import type { WorkspaceRuntime } from './dispatch';
 import { DEFAULT_BROWSER_KIND } from './store';
+import { browserBounds } from '../view/navigatorFlag';
 import {
   isFileTabPath,
   isFileTabProjectId,
@@ -285,7 +286,7 @@ function validPrefs(raw: unknown): { scope?: TabScope; repair?: KindId[]; layout
       expanded: l.expanded === true,
       browserWidth: isFinite(l.browserWidth)
         ? clamp(l.browserWidth, LAYOUT_BOUNDS.browserWidth)
-        : LAYOUT_BOUNDS.browserWidth.initial,
+        : browserBounds().initial,
       chatWidth: isFinite(l.chatWidth) ? clamp(l.chatWidth, LAYOUT_BOUNDS.chatWidth) : LAYOUT_BOUNDS.chatWidth.initial,
     };
   }

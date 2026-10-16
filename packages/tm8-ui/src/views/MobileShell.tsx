@@ -737,6 +737,7 @@ export function MobileShell(props: MobileShellProps) {
           {drawerOpen ? (
             <MobileDrawer
               spaceLabel={props.spaceLabel ?? 'tm8'}
+              spaceId={spaceId}
               activeTarget={activeTarget}
               navigateTo={navigateTo}
               countsFor={data.countsFor}

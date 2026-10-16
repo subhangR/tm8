@@ -112,6 +112,14 @@ describe('hold to pin', () => {
 });
 
 describe('pinned section', () => {
+  it('the six default pins are Pinned, in order', () => {
+    mount();
+    const pinned = Array.from(
+      screen.getByTestId('tws-rail-pinned').querySelectorAll<HTMLElement>('[data-kind]'),
+    ).map((b) => b.dataset.kind);
+    expect(pinned).toEqual(['chat', 'task', 'work_session', 'doc', 'artifact', 'team_member']);
+  });
+
   it('a pinned kind moves to Pinned and leaves the list', () => {
     mount();
     const pinned = within(screen.getByTestId('tws-rail-pinned'));
@@ -159,7 +167,10 @@ describe('the kind list', () => {
     const kinds = Array.from(list.querySelectorAll<HTMLElement>('[data-kind]')).map((b) => b.dataset.kind);
     const pins = getRailStore(SPACE).getState().pins;
     expect(kinds).toEqual(homeRootKinds().map((config) => config.kind).filter((k) => !pins.includes(k)));
-    expect(kinds).toContain('doc');
+    /* `doc` is a DEFAULT PIN now (design doc 01a1465d-a2b7 decision 1), so
+       the unpinned kind this asserts is one the defaults do not take. */
+    expect(kinds).toContain('story');
+    expect(kinds).not.toContain('doc');
     /* Not only the kinds Work's browser holds: the admin and code kinds too. */
     expect(kinds).toEqual(expect.arrayContaining(['commit', 'credential', 'memory', 'loop']));
     for (const label of ['Work', 'Library', 'Agents & People', 'Code']) {

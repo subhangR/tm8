@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { fireEvent, render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 
 import { MobileDrawer } from './MobileDrawer';
+import { NAVIGATOR_STORAGE_KEY } from '../tab-workspace/view/navigatorFlag';
+import { resetRailStores } from '../tab-workspace/runtime/railStore';
 import { MobileThreadsSheet } from './MobileThreadsSheet';
 import { MobileSurfaceProvider } from './surface';
 import type { ChatThreadSummary } from '../chat-home/types';
@@ -252,5 +254,70 @@ describe('MobileDrawer — the Chats section', () => {
     /* A counted zero DOES draw: "no conversations" is a fact about the space. */
     const counted = mountDrawer({ chatCount: 0 });
     expect(counted.getByTestId('mobile-drawer-chats').textContent).toBe('Conversations0');
+  });
+});
+
+/**
+ * THE NAVIGATOR'S DRAWER (design doc 01a1465d-a2b7 §8), behind
+ * `tm8.ui.navigator`: the navigator's TOP HALF and nothing else — New, the
+ * same pins in the same `railStore` order, and All kinds.
+ *
+ * STILL NO LIST IN THE DRAWER (ruling 7). The pin rows are doors to a
+ * full-screen list, which is what the kind rows above have always been — the
+ * test that would catch a regression to the inline list is `chatsRows`'s exact
+ * list above, and it is unchanged.
+ */
+describe('MobileDrawer — the navigator drawer (§8)', () => {
+  const SPACE = 'space-drawer-nav';
+  beforeEach(() => {
+    window.localStorage.clear();
+    resetRailStores();
+    window.localStorage.setItem(NAVIGATOR_STORAGE_KEY, '1');
+  });
+  afterEach(() => window.localStorage.clear());
+
+  const rowNames = (root: ParentNode) =>
+    Array.from(root.querySelectorAll('.mdrawer__row')).map((row) => row.textContent ?? '');
+
+  it('shows New, the pins and All kinds — and folds every other band away', () => {
+    const view = mountDrawer({ spaceId: SPACE });
+    const pinnedHeading = Array.from(view.baseElement.querySelectorAll('.mdrawer__label')).find(
+      (el) => el.textContent === 'Pinned',
+    );
+    expect(pinnedHeading).toBeTruthy();
+    const pinned = rowNames(pinnedHeading!.parentElement!);
+    expect(pinned).toEqual(['Chats', 'Tasks', 'Sessions', 'Docs', 'Artifacts', 'Teammates']);
+    /* The bands are not GONE, they are behind the disclosure: a phone drawer
+       is the only door to Inbox, Board, Craft, Graph and Files. */
+    const labels = () =>
+      Array.from(view.baseElement.querySelectorAll('.mdrawer__label')).map((el) => el.textContent);
+    expect(labels()).not.toContain('Destinations');
+    fireEvent.click(view.getByTestId('mobile-drawer-all-kinds'));
+    expect(labels()).toContain('Destinations');
+    expect(view.baseElement.querySelector('.mdrawer__row[aria-current]')).toBeNull();
+  });
+
+  it('a pin navigates to that kind and dismisses — never a list in here', () => {
+    const navigateTo = vi.fn();
+    const onDismiss = vi.fn();
+    const view = mountDrawer({ spaceId: SPACE, navigateTo, onDismiss });
+    const pinnedHeading = Array.from(view.baseElement.querySelectorAll('.mdrawer__label')).find(
+      (el) => el.textContent === 'Pinned',
+    )!;
+    const tasks = Array.from(pinnedHeading.parentElement!.querySelectorAll<HTMLButtonElement>('.mdrawer__row')).find(
+      (row) => row.textContent === 'Tasks',
+    )!;
+    fireEvent.click(tasks);
+    expect(navigateTo).toHaveBeenCalledWith({ type: 'kind', ref: 'task' });
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('with the flag off the four bands render as today', () => {
+    window.localStorage.removeItem(NAVIGATOR_STORAGE_KEY);
+    const view = mountDrawer({ spaceId: SPACE });
+    const labels = Array.from(view.baseElement.querySelectorAll('.mdrawer__label')).map((el) => el.textContent);
+    expect(labels).toContain('Destinations');
+    expect(labels).not.toContain('Pinned');
+    expect(view.queryByTestId('mobile-drawer-all-kinds')).toBeNull();
   });
 });

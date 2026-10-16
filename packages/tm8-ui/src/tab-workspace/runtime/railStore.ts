@@ -13,11 +13,39 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { homeRailPinnedKinds, type KindConfig } from '../../domain';
 
-export const DEFAULT_WORKSPACE_RAIL_PINS: readonly string[] = ['chat', 'task', 'work_session'];
+/**
+ * THE DEFAULT PINS (Subhang, 2026-10-16, design doc 01a1465d-a2b7 decision 1):
+ * Chats, Tasks, Sessions, Docs, Artifacts, Teammates, in that order. Every
+ * other kind is reached through All kinds and is not drawn by default. This is
+ * also what `l 1`…`l 9` count, in this order.
+ */
+export const DEFAULT_WORKSPACE_RAIL_PINS: readonly string[] = [
+  'chat',
+  'task',
+  'work_session',
+  'doc',
+  'artifact',
+  'team_member',
+];
 export const railPinsKey = (spaceId: string) => `tm8.workspace.rail-pins:${spaceId}`;
 export const RAIL_OPEN_KEY = 'tm8.workspace.rail-open';
 export const RAIL_EXPANDED_KEY = 'tm8.workspace.rail-expanded';
 export const railLiftedKey = (spaceId: string) => `tm8.workspace.rail-lifted:${spaceId}`;
+/**
+ * A NEW KEY, NOT `rail-expanded` REUSED (§11 risk 3). ⌘\ used to WIDEN the
+ * 48px rail to 200px labels; in the navigator it COLLAPSES a 300px column to
+ * the 48px strip. The two flags mean opposite things, so a viewer who had
+ * widened the rail would land in the navigator collapsed — the stored `true`
+ * read as the other state. A separate key leaves both readings intact and lets
+ * the flag go back and forth without either preference inverting.
+ *
+ * `null` (nothing stored) is NOT `false`: it means nobody has chosen, so the
+ * surface's own default applies — expanded in Work, collapsed in Craft (§9
+ * phase 1). The first ⌘\ anywhere writes a real boolean and ends that.
+ */
+export const NAV_COLLAPSED_KEY = 'tm8.workspace.nav-collapsed';
+/** Whether the pinned rows are folded into one icon strip (§3A). Remembered. */
+export const NAV_PINS_FOLDED_KEY = 'tm8.workspace.nav-pins-folded';
 
 export interface RailState {
   pins: readonly string[];
@@ -26,9 +54,15 @@ export interface RailState {
   expanded: boolean;
   /** Kinds drawn first in the list, most recently unpinned first (Subhang, 2026-10-07). */
   lifted: readonly string[];
+  /** The navigator's collapsed state; `null` ⇒ unchosen, the surface's default wins. */
+  collapsed: boolean | null;
+  /** The navigator's pinned rows folded to one icon strip; `null` ⇒ unchosen. */
+  pinsFolded: boolean | null;
   togglePin(kind: string): boolean;
   setOpen(sectionId: string, open: boolean): void;
   setExpanded(expanded: boolean): void;
+  setCollapsed(collapsed: boolean): void;
+  setPinsFolded(folded: boolean): void;
 }
 export type RailStore = StoreApi<RailState>;
 
@@ -80,6 +114,17 @@ export function loadWorkspaceRailLifted(spaceId: string): readonly string[] {
 
 export function loadWorkspaceRailExpanded(): boolean {
   return read(RAIL_EXPANDED_KEY) === true;
+}
+
+/** `null` when nothing was ever stored — see `NAV_COLLAPSED_KEY`. */
+export function loadNavCollapsed(): boolean | null {
+  const parsed = read(NAV_COLLAPSED_KEY);
+  return typeof parsed === 'boolean' ? parsed : null;
+}
+
+export function loadNavPinsFolded(): boolean | null {
+  const parsed = read(NAV_PINS_FOLDED_KEY);
+  return typeof parsed === 'boolean' ? parsed : null;
 }
 
 /**
@@ -141,6 +186,8 @@ export function createRailStore(spaceId: string): RailStore {
     open: loadWorkspaceRailOpen(),
     expanded: loadWorkspaceRailExpanded(),
     lifted: loadWorkspaceRailLifted(spaceId),
+    collapsed: loadNavCollapsed(),
+    pinsFolded: loadNavPinsFolded(),
     /** Returns true when the kind is pinned afterwards. Unpinning lifts it to the top of the list. */
     togglePin(kind) {
       const { pins, lifted } = get();
@@ -163,6 +210,20 @@ export function createRailStore(spaceId: string): RailStore {
     setExpanded(expanded) {
       persist({ expanded }, () => write(RAIL_EXPANDED_KEY, expanded));
       set({ expanded });
+    },
+    /* NOT ROUTED THROUGH `persist`: the workspace's stored rail record has no
+       field for either (Spec D's `workspace.rail.set` patch is pins / open /
+       expanded / lifted). Widening the contract for a flagged surface would
+       put a field on every persisted workspace for a column that may not
+       ship; these stay local until the navigator lands, and then move with
+       the same one-time import `legacyRail` already does. */
+    setCollapsed(collapsed) {
+      write(NAV_COLLAPSED_KEY, collapsed);
+      set({ collapsed });
+    },
+    setPinsFolded(pinsFolded) {
+      write(NAV_PINS_FOLDED_KEY, pinsFolded);
+      set({ pinsFolded });
     },
   }));
 }

@@ -77,6 +77,16 @@ export type KeyCommand =
   | 'work.craft.toggle'
   /** Focus the Work browser; `ref` (optional) is the kind to show in it first. */
   | 'work.browser.focus'
+  /**
+   * Open the navigator's All kinds popover (design doc 01a1465d-a2b7 §5, §7).
+   *
+   * `l ;` AND NOT ⌘K. §7 offered ⌘K "if it isn't already taken by the command
+   * palette" — it is (`palette.mod-k`, and `/` is the palette's guaranteed
+   * path on the platforms where the browser owns ⌘K). Kinds stay searchable
+   * from the palette, which already lists every one of them, and the
+   * navigator's own door is this chord.
+   */
+  | 'work.nav.kinds'
   | 'work.tab.next'
   | 'work.tab.prev'
   /** `ref` is the 1-based position; `9` is the LAST tab, as in every browser. */
@@ -469,6 +479,8 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'work.craft', layer: 'global', keys: 'd', label: 'Toggle Craft mode', command: 'work.craft.toggle', guaranteed: true, match: plain('d') },
   ...LIST_CHORDS,
   ...LIST_PIN_CHORDS,
+  /* `l ;` — All kinds, under the same `l` lead every list door uses. */
+  { id: 'l.allkinds', layer: 'global', keys: 'l ;', label: 'All kinds', command: 'work.nav.kinds', guaranteed: true, match: listChord(';') },
   { id: 'work.tab.next', layer: 'global', keys: ']', label: 'Next tab', command: 'work.tab.next', guaranteed: true, match: plain(']') },
   { id: 'work.tab.prev', layer: 'global', keys: '[', label: 'Previous tab', command: 'work.tab.prev', guaranteed: true, match: plain('[') },
   ...TAB_NTH,

@@ -349,7 +349,15 @@ function withShortcutHints(platform: Platform, views: PaletteView[]): PaletteVie
 const NO_WORKSPACE_LIST = createWorkspaceListStore();
 
 /** Work keyboard commands that take you TO Work when pressed elsewhere. */
-const WORK_FROM_ANYWHERE: ReadonlySet<string> = new Set(['work.create', 'work.newTab', 'list.create', 'work.browser.focus']);
+const WORK_FROM_ANYWHERE: ReadonlySet<string> = new Set([
+  'work.create',
+  'work.newTab',
+  'list.create',
+  'work.browser.focus',
+  /* All kinds is a door to a kind's LIST, so it makes sense from anywhere for
+     the same reason `l t` does: it lands on Work and opens there. */
+  'work.nav.kinds',
+]);
 
 /**
  * `Ctrl+]` from outside a terminal: back into the terminal on screen. xterm
@@ -2842,6 +2850,12 @@ export function GateApp(props: GateAppProps = {}) {
           panel={railConfig ? menuRailEl : settingsNavEl ?? craftPanel ?? (observing ? 'host' : null)}
           strip={observing}
           goToWork={goToWork}
+          /* CRAFT PHASE 1 (design doc 01a1465d-a2b7 §9): `CraftSidePanel` is a
+             working surface, not a list, so it keeps its own column and the
+             merged navigator starts as the 48px strip beside it — Craft looks
+             exactly as it does today. Phase 2 puts the craft's pages and
+             chats in the slot and is explicitly out of scope. */
+          {...(craftFramed ? { panelPlacement: 'column' as const, navCollapsedDefault: true } : {})}
         >
         <div className="shell-body">
           {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the

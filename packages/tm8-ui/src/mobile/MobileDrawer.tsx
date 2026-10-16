@@ -75,10 +75,12 @@
  * `false` when it could not count at all, which is how the ☰ tells "everything
  * is read" apart from "nobody could say".
  */
-import { useCallback, useEffect, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { KindIcon, collectionKinds, getKind, homeRailGroups, type KindArt } from '../domain';
+import { KindIcon, collectionKinds, getKind, homeRailGroups, type KindArt, type KindConfig } from '../domain';
+import { isNavigatorEnabled } from '../tab-workspace/view/navigatorFlag';
+import { loadWorkspaceRailPins, workspacePinnedKinds } from '../tab-workspace/runtime/railStore';
 import { VectorIcon } from '../kit';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import type { EntityKind, MenuViewRef } from '@tm8/contract';
@@ -242,6 +244,13 @@ export interface MobileDrawerProps {
   /** The name to put on that row. */
   readonly accountName?: string | undefined;
 
+  /**
+   * The Space, for the navigator drawer's pins (§8: the SAME `railStore` order
+   * as the desktop column — the two shells read one preference, as they read
+   * one kind table). Absent ⇒ the default pins.
+   */
+  readonly spaceId?: string | undefined;
+
   readonly onDismiss: () => void;
 }
 
@@ -249,6 +258,14 @@ export function MobileDrawer(props: MobileDrawerProps) {
   useCustomKindsVersion();
   const { sheetHost } = useMobileSurface();
   const { activeTarget, navigateTo, onDismiss } = props;
+  const navigator = useMemo(() => isNavigatorEnabled(), []);
+  const [allKindsOpen, setAllKindsOpen] = useState(false);
+  /* Read, not subscribed: the drawer is mounted for the moment it is open, and
+     pinning happens on the desktop column. */
+  const pinnedKinds = useMemo(
+    () => (props.spaceId ? workspacePinnedKinds(loadWorkspaceRailPins(props.spaceId)) : []),
+    [props.spaceId],
+  );
 
   /* Escape closes it, bound at the document exactly as `MobileSheet` binds its
      own — a phone has no Escape, but the shell is driven by a keyboard in every
@@ -380,83 +397,105 @@ export function MobileDrawer(props: MobileDrawerProps) {
             </li>
           </Section>
 
-          {/* ── DESTINATIONS ──────────────────────────────────────────────
-              The view refs, in the desktop rail's order and wearing the
-              desktop rail's words and marks. */}
-          <Section label="Destinations">
-            {DESTINATION_REFS.map((ref) => (
-              <ViewRow key={ref} viewRef={ref} activeTarget={activeTarget} onGo={go} />
-            ))}
-          </Section>
+          {/* ── NEW · PINS · ALL KINDS, or the four bands ────────────────
+              THE MERGED NAVIGATOR'S DRAWER (design doc 01a1465d-a2b7 §8).
+              With `tm8.ui.navigator` on the drawer carries the navigator's TOP
+              HALF and nothing else: the New verbs above, the same pins in the
+              same `railStore` order, and All kinds.
 
-          {/* ── ENTITIES ──────────────────────────────────────────────────
-              `homeRailGroups()` IS the desktop Home rail: same groups, same
-              order, same membership, resolved against the live registry. A
-              kind added to the registry appears here for free and in the same
-              place it appears on a desktop — which is the whole of ruling 2
-              expressed as a function call rather than as a list somebody has
-              to remember to update. */}
-          {homeRailGroups().map((group) => (
-            <Section key={group.id} label={group.label}>
-              {group.kinds.map((config) => {
-                const target: MenuTarget = { type: 'kind', ref: config.kind };
-                const counts = props.countsFor(config.kind);
-                return (
-                  <li key={config.kind}>
-                    <button
-                      type="button"
-                      className="mdrawer__row"
-                      aria-current={sameTarget(activeTarget, target) ? 'page' : undefined}
-                      onClick={() => go(target)}
-                    >
-                      <span className="mdrawer__mark" aria-hidden>
-                        <KindIcon kind={config.kind} size={16} />
-                      </span>
-                      <span className="mdrawer__name">{config.labelPlural}</span>
-                      {/*
-                        ABSENT IS NOT ZERO. `counts` is undefined for a kind the
-                        node could not count, and there the row draws no number
-                        at all rather than a `0` nobody established. A zero that
-                        WAS counted is also not drawn — it is the resting state
-                        of every row, and 19 zeroes is noise, not information.
-                      */}
-                      {counts && counts.unseen > 0 ? (
-                        <span
-                          className="mdrawer__count"
-                          aria-label={`${counts.unseen} unread`}
-                        >
-                          {counts.unseen}
-                        </span>
-                      ) : null}
-                      {/*
-                        THE KIND TOTAL, WHICH USED TO BE `662` IN THE LIST'S OWN
-                        BAR. It came off that bar with the chrome collapse, and
-                        this is where it lands rather than nowhere: here it is
-                        one of a column of totals against nineteen kinds, which
-                        is the only reading that makes a total useful. Wedged in
-                        the corner of a 390px band it was a number with nothing
-                        to compare it to.
+              THE LIST IS STILL NOT IN HERE (ruling 7, Sep 15). A pin NAVIGATES
+              to that kind's full-screen list and dismisses, which is what every
+              row in this drawer has always done — §8 says so in the same words
+              the ruling does.
 
-                        Same absent-is-not-zero rule as the unread count above,
-                        and the same reason — the node may not have counted this
-                        kind at all. A counted zero DOES draw here, unlike
-                        unread: "0 tasks" is a fact about the space, where "0
-                        unread" is the resting state of everything.
-                      */}
-                      {counts ? (
-                        <span
-                          className="mdrawer__total"
-                          aria-label={`${counts.total} ${config.labelPlural.toLowerCase()}`}
-                        >
-                          {counts.total}
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </Section>
-          ))}
+              ALL KINDS IS A DISCLOSURE, NOT A REPLACEMENT. The desktop's All
+              kinds is a popover over a column that still has a footer; a phone
+              drawer is the ONLY door to Inbox, Board, Craft, Graph and Files,
+              so folding them away for good would remove five destinations to
+              tidy up one. They move inside the disclosure, closed by default:
+              the resting drawer is New + pins + All kinds, and nothing became
+              unreachable. */}
+          {navigator ? (
+            <>
+              <Section label="Pinned">
+                {pinnedKinds.map((config) => (
+                  <KindRow
+                    key={config.kind}
+                    config={config}
+                    counts={props.countsFor(config.kind)}
+                    activeTarget={activeTarget}
+                    onGo={go}
+                  />
+                ))}
+              </Section>
+              <div className="mdrawer__section">
+                <button
+                  type="button"
+                  className="mdrawer__row mdrawer__row--verb"
+                  aria-expanded={allKindsOpen}
+                  data-testid="mobile-drawer-all-kinds"
+                  onClick={() => setAllKindsOpen((open) => !open)}
+                >
+                  <span className="mdrawer__mark" aria-hidden>
+                    {allKindsOpen ? '▾' : '▸'}
+                  </span>
+                  <span className="mdrawer__name">All kinds</span>
+                </button>
+              </div>
+              {allKindsOpen ? (
+                <>
+                  <Section label="Destinations">
+                    {DESTINATION_REFS.map((ref) => (
+                      <ViewRow key={ref} viewRef={ref} activeTarget={activeTarget} onGo={go} />
+                    ))}
+                  </Section>
+                  {homeRailGroups().map((group) => (
+                    <Section key={group.id} label={group.label}>
+                      {group.kinds.map((config) => (
+                        <KindRow
+                          key={config.kind}
+                          config={config}
+                          counts={props.countsFor(config.kind)}
+                          activeTarget={activeTarget}
+                          onGo={go}
+                        />
+                      ))}
+                    </Section>
+                  ))}
+                </>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {/* ── DESTINATIONS ──────────────────────────────────────────
+                  The view refs, in the desktop rail's order and wearing the
+                  desktop rail's words and marks. */}
+              <Section label="Destinations">
+                {DESTINATION_REFS.map((ref) => (
+                  <ViewRow key={ref} viewRef={ref} activeTarget={activeTarget} onGo={go} />
+                ))}
+              </Section>
+
+              {/* ── ENTITIES ──────────────────────────────────────────────
+                  `homeRailGroups()` IS the desktop Home rail: same groups, same
+                  order, same membership, resolved against the live registry. A
+                  kind added to the registry appears here for free and in the
+                  same place it appears on a desktop. */}
+              {homeRailGroups().map((group) => (
+                <Section key={group.id} label={group.label}>
+                  {group.kinds.map((config) => (
+                    <KindRow
+                      key={config.kind}
+                      config={config}
+                      counts={props.countsFor(config.kind)}
+                      activeTarget={activeTarget}
+                      onGo={go}
+                    />
+                  ))}
+                </Section>
+              ))}
+            </>
+          )}
         </div>
 
         {/* ── THE FOOT ───────────────────────────────────────────────────
@@ -539,6 +578,79 @@ function ViewRow({
           <VectorIcon paths={presentation.art} size={16} />
         </span>
         <span className="mdrawer__name">{presentation.label}</span>
+      </button>
+    </li>
+  );
+}
+
+/**
+ * ONE KIND ROW — mark, name, unread, total. Lifted out of the Entities bands
+ * unchanged when the merged navigator's drawer (§8) needed the SAME row under
+ * Pinned: two copies would be two answers to absent-is-not-zero, which the
+ * head spends four paragraphs establishing.
+ */
+function KindRow({
+  config,
+  counts,
+  activeTarget,
+  onGo,
+}: {
+  config: KindConfig;
+  counts: { total: number; unseen: number } | undefined;
+  activeTarget: MenuTarget | null;
+  onGo: (target: MenuTarget) => void;
+}) {
+  const target: MenuTarget = { type: 'kind', ref: config.kind };
+  return (
+    <li>
+      <button
+        type="button"
+        className="mdrawer__row"
+        aria-current={sameTarget(activeTarget, target) ? 'page' : undefined}
+        onClick={() => onGo(target)}
+      >
+        <span className="mdrawer__mark" aria-hidden>
+          <KindIcon kind={config.kind} size={16} />
+        </span>
+        <span className="mdrawer__name">{config.labelPlural}</span>
+        {/*
+          ABSENT IS NOT ZERO. `counts` is undefined for a kind the
+          node could not count, and there the row draws no number
+          at all rather than a `0` nobody established. A zero that
+          WAS counted is also not drawn — it is the resting state
+          of every row, and 19 zeroes is noise, not information.
+        */}
+        {counts && counts.unseen > 0 ? (
+          <span
+            className="mdrawer__count"
+            aria-label={`${counts.unseen} unread`}
+          >
+            {counts.unseen}
+          </span>
+        ) : null}
+        {/*
+          THE KIND TOTAL, WHICH USED TO BE `662` IN THE LIST'S OWN
+          BAR. It came off that bar with the chrome collapse, and
+          this is where it lands rather than nowhere: here it is
+          one of a column of totals against nineteen kinds, which
+          is the only reading that makes a total useful. Wedged in
+          the corner of a 390px band it was a number with nothing
+          to compare it to.
+
+          Same absent-is-not-zero rule as the unread count above,
+          and the same reason — the node may not have counted this
+          kind at all. A counted zero DOES draw here, unlike
+          unread: "0 tasks" is a fact about the space, where "0
+          unread" is the resting state of everything.
+        */}
+        {counts ? (
+          <span
+            className="mdrawer__total"
+            aria-label={`${counts.total} ${config.labelPlural.toLowerCase()}`}
+          >
+            {counts.total}
+          </span>
+        ) : null}
       </button>
     </li>
   );
