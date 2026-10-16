@@ -417,6 +417,18 @@ describe('space links through MCP (task 01a14650)', () => {
       .toBe('spaceLinks.login is human-only: ask your human to run `tm8 link login <alias|link-id>`');
   });
 
+  // The same invariant tools.ts guards at module load. Asserted here as well so
+  // a bad curation edit shows up first as a red test, not as an MCP server that
+  // will not boot.
+  it('curates spaceLinks reads only: every mapped spaceLinks op is kind read and not humanOnly', () => {
+    const curated = MCP_MAPPED_OPERATIONS.filter((op) => op.startsWith('spaceLinks.'));
+    expect(curated.length).toBeGreaterThan(0);
+    for (const op of curated) {
+      expect(getOperation(op).kind, op).toBe('read');
+      expect(getOperation(op).humanOnly, op).not.toBe(true);
+    }
+  });
+
   it('does not curate spaceLinks.invoke: routing into a linked Space is not on this surface yet', () => {
     expect(MCP_MAPPED_OPERATIONS).not.toContain('spaceLinks.invoke');
     expect(MCP_MAPPED_OPERATIONS.filter((op) => op.startsWith('spaceLinks.')).sort())
