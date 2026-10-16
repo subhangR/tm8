@@ -22,6 +22,7 @@ import {
   type DirectToolContext,
 } from './direct-tools.js';
 import { DIRECT_TOOL_NAMES, parseChatMode, toolPermission } from './modes.js';
+import { humanOnlyLinkRefusal, isSpaceLinkOperation, linkSafe } from './space-links.js';
 
 export const GRAPH_TOOL_NAMES = [
   'tm8_overview',
@@ -112,6 +113,18 @@ const READ_GUIDES = [
   }),
   guide('events.poll', 'Page durable space events after a sequence.', {
     params: { spaceId: '<space-id>' }, query: { since: '0', limit: '50' },
+  }),
+  /* Space links (W6/W7): reads open to every home member, agents included.
+     Without them a model cannot tell which Spaces this one links to — the
+     space_link entity deliberately carries no row facts. Results are scrubbed
+     (space-links.ts); every link write stays human-only and off this surface. */
+  guide('spaceLinks.list', 'List this Space\'s links to other Spaces: link id, targetSpaceId, and your own row '
+    + '(mine.status signed_in|signed_out|left|unreachable, alias, expiresAt, allowSpawn). '
+    + 'Adding or signing in to a link is human-only.', {
+    params: { spaceId: '<home-space-id>' },
+  }),
+  guide('spaceLinks.audit', 'Page the calls made through one link from this Space (your own rows; every row for a home admin).', {
+    params: { linkId: '<link-id>' }, query: { limit: '50' },
   }),
 ] as const satisfies readonly OperationGuide[];
 
@@ -549,7 +562,10 @@ export class Tm8ToolRouter {
       }
       const selected = directory.find((item) => item.operation === operation);
       if (!selected) {
-        throw new ToolInputError(`${operation} is not available through ${name}; call ${name} with {} for its directory`);
+        throw new ToolInputError(
+          humanOnlyLinkRefusal(operation)
+            ?? `${operation} is not available through ${name}; call ${name} with {} for its directory`,
+        );
       }
       const options = invokeOptions(args, selected.operation);
       const data = await this.transport.invoke(selected.operation, options);
@@ -557,7 +573,7 @@ export class Tm8ToolRouter {
         schemaVersion: 'tm8.mcp.result.v1',
         tool: name,
         operation: selected.operation,
-        data,
+        data: isSpaceLinkOperation(selected.operation) ? linkSafe(data) : data,
       });
     } catch (error) {
       return failure(error);
@@ -939,6 +955,14 @@ for (const operation of MCP_MAPPED_OPERATIONS) getOperation(operation);
 for (const operation of MCP_MAPPED_OPERATIONS) {
   if (operation.startsWith('credentials.') || operation.startsWith('mcp.credentials.') || operation.startsWith('mcp.oauth.') || operation.startsWith('auth.')) {
     throw new Error(`credential/auth operation leaked into MCP curation: ${operation}`);
+  }
+}
+
+// Space links: reads only. Every write is human-only, and invoke (routing into
+// a linked Space) is not curated here.
+for (const operation of MCP_MAPPED_OPERATIONS) {
+  if (isSpaceLinkOperation(operation) && getOperation(operation).kind !== 'read') {
+    throw new Error(`space-link write leaked into MCP curation: ${operation}`);
   }
 }
 
