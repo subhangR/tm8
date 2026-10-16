@@ -234,8 +234,13 @@ const WORKSPACE_TABS_TAB_ID = 'workspace-tabs';
 const SETTINGS_GROUP_ID = 'settings';
 const VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'craft', 'graph', SETTINGS_GROUP_ID];
 const VIEW_GROUP_LABEL: Record<string, string> = {
-  /* Home (formerly Work; Craft redesign §2, 2026-10-10): the tabs view. */
-  [WORKSPACE_TABS_TAB_ID]: 'Home',
+  /*
+   * WORK, named Work again (coordinator, 2026-10-16). The Craft redesign
+   * renamed this mode to "Home" while a Home DASHBOARD still existed beside
+   * it; with the dashboard removed (bccf73741) the mode selector was the only
+   * thing still called Home, and it named a workspace, not a home.
+   */
+  [WORKSPACE_TABS_TAB_ID]: 'Work',
   craft: 'Craft',
   graph: 'Observe',
   [SETTINGS_GROUP_ID]: 'Settings',
@@ -2036,12 +2041,13 @@ export function GateApp(props: GateAppProps = {}) {
   const projectNames = useProjectNames(data.seam, data.spaceId);
   const paletteViews = useMemo<PaletteView[]>(
     () => withShortcutHints(kbPlatform, [
-      /* D31: the three modes lead, in selector order. Home and the old Work
-         are retired on the desktop and have no row; `route:work` is Work,
-         which is route-only (no MenuTarget names it). */
+      /* D31: the three modes lead, in selector order. The Home dashboard and
+         the old Work are retired on the desktop and have no row; `route:work`
+         is Work, which is route-only (no MenuTarget names it). Its label is
+         `VIEW_GROUP_LABEL`'s — one word for the mode in both doors. */
       ...(threeModes
         ? [
-            { id: 'route:work', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
+            { id: 'route:work', label: 'Work', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
             { id: 'view:craft', label: 'Craft', glyph: <VectorIcon paths={VIEW_ART.craft} /> },
             { id: 'view:graph', label: 'Observe', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
             { id: 'view:settings', label: 'Settings', glyph: <VectorIcon paths={VIEW_ART.settings} /> },

@@ -607,13 +607,13 @@ describe('detail screens keep what you were looking at', () => {
     const openedText = await settled();
     expect(openedText.length).toBeGreaterThan(0);
 
-    // LEAVE — Home is a different branch of GateApp's view ternary, so
+    // LEAVE — Work is a different branch of GateApp's view ternary, so
     // EntityView really unmounts. That is the step that used to destroy the
-    // selection, and the assertion below is that it no longer does. The Home
+    // selection, and the assertion below is that it no longer does. The Work
     // TAB is the door now that the rail is gone; it is the same branch either
-    // way.
+    // way. (The mode was labelled "Home" until the Home dashboard was removed.)
     fireEvent.click(within(view.getByRole('tablist', { name: 'Screens' }))
-      .getByRole('tab', { name: 'Home' }));
+      .getByRole('tab', { name: 'Work' }));
     await waitFor(() => expect(view.queryByTestId('entity-view')).toBeNull());
 
     // COME BACK.

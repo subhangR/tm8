@@ -191,15 +191,21 @@ describe('who is NOT redirected', () => {
   });
 });
 
-describe('the selector is Home · Craft · Observe · Settings', () => {
-  it('in Home: the view menu lists exactly the four modes, Home current', async () => {
+/*
+ * WORK, NOT HOME (coordinator, 2026-10-16). The Craft redesign labelled this
+ * mode "Home" while a Home DASHBOARD still existed beside it; the dashboard is
+ * removed (bccf73741), so the selector names the workspace again and "Home" is
+ * the retired word here — which is why it joins the retired list below.
+ */
+describe('the selector is Work · Craft · Observe · Settings', () => {
+  it('in Work: the view menu lists exactly the four modes, Work current', async () => {
     const view = mount(at('/work'));
     await waitFor(() => view.getByTestId('tab-workspace'));
     const trigger = view.getByTestId('tws-view-select');
-    expect(trigger.textContent).toContain('Home');
+    expect(trigger.textContent).toContain('Work');
     fireEvent.click(trigger);
     const rows = within(view.getByRole('menu', { name: 'Views' })).getAllByRole('menuitemradio');
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Home', 'Craft', 'Observe', 'Settings']);
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Craft', 'Observe', 'Settings']);
     expect(rows[0]!.getAttribute('aria-checked')).toBe('true');
   });
 
@@ -208,13 +214,13 @@ describe('the selector is Home · Craft · Observe · Settings', () => {
     const tabs = await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
     const pill = within(tabs).getByTestId('top-view-switcher');
     expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim())).toEqual([
-      'Home',
+      'Work',
       'Craft',
       'Observe',
       'Settings',
     ]);
     const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
-    for (const retired of ['Work', 'Workspace', 'Board', 'Design', 'Graph']) expect(labels).not.toContain(retired);
+    for (const retired of ['Home', 'Workspace', 'Board', 'Design', 'Graph']) expect(labels).not.toContain(retired);
   });
 
   it('the tab scope button leads the tab strip, before every tab (Craft redesign §2)', async () => {
@@ -259,12 +265,12 @@ describe('the palette', () => {
     const view = mount(target);
     await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
     const palette = await openPalette(view);
-    fireEvent.change(palette.querySelector('input') as HTMLInputElement, { target: { value: 'Home' } });
+    fireEvent.change(palette.querySelector('input') as HTMLInputElement, { target: { value: 'Work' } });
     const row = await waitFor(() => {
       const found = [...palette.querySelectorAll<HTMLElement>('[data-testid="palette-row"]')].find(
-        (n) => n.querySelector('.pal__row-label')?.textContent === 'Home',
+        (n) => n.querySelector('.pal__row-label')?.textContent === 'Work',
       );
-      if (!found) throw new Error('no Home row');
+      if (!found) throw new Error('no Work row');
       return found;
     });
     fireEvent.click(row);
@@ -277,7 +283,7 @@ describe('the palette', () => {
     const view = mount(at('/graph'));
     await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
     const palette = await openPalette(view);
-    for (const retired of ['Work', 'Workspace']) {
+    for (const retired of ['Home', 'Workspace']) {
       fireEvent.change(palette.querySelector('input') as HTMLInputElement, { target: { value: retired } });
       await settle(40);
       expect(rowLabels(palette)).not.toContain(retired);
