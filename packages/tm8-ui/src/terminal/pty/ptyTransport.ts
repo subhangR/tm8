@@ -743,17 +743,17 @@ export const ptyTransport = {
     return _attachModes.get(id);
   },
 
+  /** Why this session's socket last closed (code + server reason), or null if it never has. */
+  lastClose(id: string): { code: number; reason: string; at: number } | null {
+    return _lastClose.get(id) ?? null;
+  },
+
   /**
    * Input sent but not yet handed to the network, in bytes; -1 when the
    * socket is not open. A bulk sender (the phone's build upload) paces on it,
    * so a slow uplink cannot bunch its frames into one of the server's
    * per-second input windows.
    */
-  /** Why this session's socket last closed (code + server reason), or null if it never has. */
-  lastClose(id: string): { code: number; reason: string; at: number } | null {
-    return _lastClose.get(id) ?? null;
-  },
-
   inputBacklog(id: string): number {
     const ws = _sockets.get(id);
     return ws && ws.readyState === WebSocket.OPEN ? ws.bufferedAmount : -1;
