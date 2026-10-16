@@ -49,26 +49,27 @@ function task(description: string): EntityDetail {
 let started = 0;
 const startTerminal = vi.fn(async () => ({ entity: { id: `term-${++started}` } }));
 const terminate = vi.fn(async () => ({}));
+const query = vi.fn(async (_input: unknown) => ({ page: { items: [] as unknown[] } }));
 const dispatch = vi.fn(async (_input: { subjectId: string; note: string }) => ({ taskId: 'task-1', dispatcherSpawned: true }));
 
-function gateFor(d: EntityDetail) {
+function gateFor(d: EntityDetail, others: Record<string, EntityDetail> = {}) {
   return {
     data: {
-      detailOf: () => d,
+      detailOf: (id: string) => others[id] ?? d,
       messagesOf: () => undefined,
       reconcileCommand: () => undefined,
       refetchDetail: () => undefined,
-      seam: { commands: { startTerminal, terminate, dispatch } },
+      seam: { query, commands: { startTerminal, terminate, dispatch } },
     },
   } as unknown as WorkspaceGateHandles;
 }
 
-function Strip({ d }: { d: EntityDetail }) {
+function Strip({ d, others }: { d: EntityDetail; others?: Record<string, EntityDetail> }) {
   const runtime = useEmbeddedRuntime('viewer-phone', 'space-phone');
   const chrome = useEntityChromeValue(null);
   const tab = embeddedTab(runtime, d.id, d.kind);
   return (
-    <EmbeddedWorkspace runtime={runtime} gate={gateFor(d)}>
+    <EmbeddedWorkspace runtime={runtime} gate={gateFor(d, others)}>
       <EntityChromeContext.Provider value={chrome}>
         <ActionStrip tab={tab} />
       </EntityChromeContext.Provider>
@@ -85,6 +86,8 @@ beforeEach(() => {
   startTerminal.mockClear();
   terminate.mockClear();
   dispatch.mockClear();
+  query.mockClear();
+  query.mockImplementation(async () => ({ page: { items: [] } }));
 });
 afterEach(cleanup);
 
@@ -213,5 +216,21 @@ describe('the phone button', () => {
     const app = render(<Strip d={task('live-ask: /w/bin/jm-ask iphone')} />);
     fireEvent.click(app.getByTestId('tws-phone-live'));
     expect(window.localStorage.getItem('tm8.phoneLive.appTask:space-phone')).toBe('task-1');
+  });
+
+  it('finds the space\'s app task by itself, and shows the test an agent runs on it', async () => {
+    const AGENT = '01a1415b-7663-7de8-9f14-1fd8cf826883';
+    const app = { ...task(`Jo Malone.\nlive-app: tharakeshua/app_jo\nlive-ask: /w/bin/jm-ask iphone\nlive-terminal: ${AGENT} iphone`), id: 'app-task' } as EntityDetail;
+    query.mockImplementation(async () => ({
+      page: { items: [{ id: 'other', excerpt: 'Nothing here.' }, { id: 'app-task', excerpt: 'Jo Malone. live-app: tharakeshua/app_jo live-ask: /w/bin/jm-ask iphone' }] },
+    }));
+    const view = render(<Strip d={task('Some other task.')} others={{ 'app-task': app }} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    await waitFor(() => expect(view.getByTestId('phone-live-app').textContent).toContain('tharakeshua/app_jo'));
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({ kinds: ['task'], filters: { axes: { type: ['test'] } } }));
+    expect(window.localStorage.getItem('tm8.phoneLive.appTask:space-phone')).toBe('app-task');
+    expect(view.getByTestId('fake-terminal').textContent).toBe(AGENT);
+    expect(view.getByTestId('fake-terminal').getAttribute('data-live')).toBe('false');
+    expect(startTerminal).not.toHaveBeenCalled();
   });
 });

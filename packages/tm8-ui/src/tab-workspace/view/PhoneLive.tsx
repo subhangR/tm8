@@ -21,8 +21,11 @@
  * the phone's terminal, and once it prints `READY-FOR-CASES` the viewer's words
  * go in as ONE base64 line, so nothing typed can ever reach the shell as a
  * command. The runner reads the app's source, writes the cases and runs them on
- * the screen. The phone remembers that task per space, so the box works from
- * any tab once the task has been opened. With no words (Explore & deep test)
+ * the screen. The phone remembers that task per space; until it has one it
+ * looks for it: the space's `type: test` tasks whose description starts with a
+ * `live-ask:` line. So the box works from any tab, and a test an agent is
+ * running on that task shows on every phone (view-only) until the viewer starts
+ * their own. With no words (Explore & deep test)
  * the runner crawls every screen it can reach and writes a deep suite itself.
  *
  * WATCHING A TEST THAT IS ALREADY RUNNING needs no command at all. An agent that
@@ -195,11 +198,30 @@ export function PhoneLiveDialog({
      `live-ask:`, else the one remembered for the space. */
   const space = String(detail?.spaceId ?? spaceId ?? '');
   const ownAsk = askCommandOf(detail);
-  const [appTaskId] = useState<string | null>(() => (ownAsk ? detail!.id : readStored(APP_TASK_KEY + space)));
+  const [appTaskId, setAppTaskId] = useState<string | null>(() => (ownAsk ? detail!.id : readStored(APP_TASK_KEY + space)));
   const [, setTick] = useState(0);
   const appDetail = ownAsk ? detail : appTaskId ? (gate.data.detailOf(appTaskId as EntityId) ?? null) : null;
   const askCommand = ownAsk ?? askCommandOf(appDetail);
   const appName = appNameOf(appDetail);
+  /* Not remembered yet: find the space's app task. */
+  useEffect(() => {
+    if (appTaskId || !space || !gate.data.seam?.query) return;
+    let live = true;
+    void gate.data.seam
+      .query({ spaceId: space as never, kinds: ['task'], filters: { axes: { type: ['test'] } }, limit: 50 } as never)
+      .then((result) => {
+        const found = result.page.items.find((item) => !item.deletedAt && /(^|\s)live-ask:\s*\S/.test(item.excerpt ?? ''));
+        if (live && found) {
+          writeStored(APP_TASK_KEY + space, found.id);
+          setAppTaskId(found.id);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [space]);
   useEffect(() => {
     if (ownAsk && detail) writeStored(APP_TASK_KEY + space, detail.id);
     if (ownAsk || !appTaskId || appDetail) return;
@@ -215,6 +237,8 @@ export function PhoneLiveDialog({
   const terminalRef = useRef<LiveTerminalHandle>(null);
   const runRef = useRef<Run | null>(null);
   runRef.current = run;
+  /* What the screen watches: this task's running test, else the app task's while the viewer runs nothing. */
+  const shown = watch ?? (run || ownAsk ? null : liveTerminalOf(appDetail, true));
 
   const stop = (terminalId: string | null) => {
     if (!terminalId || !commands) return;
@@ -332,10 +356,11 @@ export function PhoneLiveDialog({
     start(askCommand, device, text);
   };
 
-  const screen = watch ? (
+  const screenDevice = shown?.device ?? device;
+  const screen = shown ? (
     isLiveTerminalEnabled() ? (
-      <FitScreen key={watch.terminalId}>
-        <LiveTerminal sessionId={watch.terminalId} serverBaseUrl={gate.serverBaseUrl} live={false} />
+      <FitScreen key={shown.terminalId}>
+        <LiveTerminal sessionId={shown.terminalId} serverBaseUrl={gate.serverBaseUrl} live={false} />
       </FitScreen>
     ) : (
       <p className="phl-idle">The live terminal is switched off in this browser.</p>
@@ -353,7 +378,7 @@ export function PhoneLiveDialog({
     </div>
   );
 
-  const status = watch
+  const status = shown
     ? 'Test running'
     : run?.error
       ? null
@@ -364,7 +389,7 @@ export function PhoneLiveDialog({
   return createPortal(
     <div className="cv2-root phl-scrim" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="phl" role="dialog" aria-modal="true" aria-label="Live phone screen" data-testid="phone-live">
-        <div className={`phl-phone phl-phone--${device}`}>
+        <div className={`phl-phone phl-phone--${screenDevice}`}>
           <div className="phl-screen">
             {/* The status bar the page sits under: the run draws only Safari's viewport, below it. */}
             <div className="phl-status" aria-hidden="true">
@@ -401,7 +426,7 @@ export function PhoneLiveDialog({
                 key={d}
                 type="button"
                 role="radio"
-                aria-checked={device === d}
+                aria-checked={screenDevice === d}
                 disabled={Boolean(watch) && device !== d}
                 className="phl-device"
                 data-testid={`phone-live-${d}`}
@@ -412,7 +437,7 @@ export function PhoneLiveDialog({
             ))}
           </div>
           <p className="phl-spec">
-            {DEVICE_NAME[device]} screen · {DEVICE_ENGINE[device]} — emulated, not a physical device
+            {DEVICE_NAME[screenDevice]} screen · {DEVICE_ENGINE[screenDevice]} — emulated, not a physical device
           </p>
 
           {run?.error ? (
@@ -507,8 +532,8 @@ export function PhoneLiveDialog({
               </p>
             ) : (
               <p className="phl-note" data-testid="phone-live-ask-none">
-                Not connected to an app yet: open the app's test task once (its description has a <code>live-ask:</code>{' '}
-                line) and the phone remembers it for this space.
+                Not connected to an app yet: this space has no live test task (a <code>type: test</code> task whose
+                description starts with a <code>live-ask:</code> line). Opening one connects the phone.
               </p>
             )}
           </form>

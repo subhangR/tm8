@@ -218,7 +218,8 @@
 }
 .phl-start { background: var(--pn-run); color: var(--pn-card); }
 .phl-secondary { background: var(--pn-line); color: var(--pn-ink); }
-.phl-start:disabled { opacity: 0.5; cursor: default; }
+.phl-start:disabled,
+.phl-secondary:disabled { opacity: 0.5; cursor: default; }
 
 /* A narrow window: the panel goes under a smaller phone, and the whole popup scrolls. */
 @media (max-width: 760px) {
