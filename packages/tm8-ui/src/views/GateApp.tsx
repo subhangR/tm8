@@ -102,7 +102,6 @@ import { BootLoader, VectorIcon, usePanelFlag } from '../kit';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import {
   authoredFromHollowReason,
-  homeActivityLoadEarlierReason,
   presenceHollowReason,
 } from '../fixtures';
 import type { IdentityView, Seam } from '../data/seam';
@@ -122,9 +121,6 @@ import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, signOut, useAuth
 import { spaceSessionFor } from '../auth/space-sessions';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
-import { ChatHomeSurface } from '../chat-home';
-import { HomeView } from './HomeView';
-import { rememberHomeRoot } from '../stores/homeRegionStore';
 import { kindBySlug, slugOfKind } from '../domain';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
@@ -215,10 +211,9 @@ const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
 const LEGACY_BAR = topBarVersion() === 'legacy';
 const TopBar = LEGACY_BAR ? SpaceTabBarLegacy : SpaceTabBar;
 /**
- * The screen a viewer with no remembered place lands on (single-home ruling,
- * 2026-08-14): the merged Home page. A viewer's OWN remembered place still
- * wins — `last-place` is consulted first — so this changes first boots and
- * fresh spaces, not anyone's established habit.
+ * The PHONE's landing with no remembered place: its chat screen (D16). The
+ * desktop Home dashboard is removed (navigator design, decision 2) — every
+ * desktop arrival at `dashboard` lands in the workspace (Work) instead.
  */
 const HOME_TARGET: MenuTarget = { type: 'view', ref: 'dashboard' };
 
@@ -291,21 +286,25 @@ function FramedBody({
  * 029/180/184/186 still seed them, and their removal is a later cleanup.
  */
 const RETIRED_GROUP_IDS: readonly string[] = ['chats', 'work', 'board'];
-/** The pre-D31 selector, for the legacy desktop (`shell/desktop-modes.ts`). */
-const LEGACY_VIEW_GROUP_ORDER: readonly string[] = ['chats', WORKSPACE_TABS_TAB_ID, 'work', BOARD_V2_TAB_ID, 'graph'];
+/**
+ * The pre-D31 selector, for the legacy desktop (`shell/desktop-modes.ts`),
+ * minus Home: the Home dashboard is removed on every desktop, so its group
+ * (`chats`) is hidden here too.
+ */
+const LEGACY_VIEW_GROUP_ORDER: readonly string[] = [WORKSPACE_TABS_TAB_ID, 'work', BOARD_V2_TAB_ID, 'graph'];
 const LEGACY_VIEW_GROUP_ART: Record<string, readonly string[]> = {
-  chats: VIEW_ART.dashboard,
   [WORKSPACE_TABS_TAB_ID]: VIEW_ART.workspace,
   work: VIEW_ART.workspace,
   [BOARD_V2_TAB_ID]: VIEW_ART.board,
   graph: VIEW_ART.graph,
 };
 function legacyViewTabs(groups: readonly { id: string; label: string }[]): { viewTabs: ShellTab[]; shellTabs: ShellTab[] } {
-  const tabs: ShellTab[] = groups.map((group) => ({ id: group.id, label: group.label }));
+  const tabs: ShellTab[] = groups
+    .filter((group) => group.id !== 'chats')
+    .map((group) => ({ id: group.id, label: group.label }));
   const workIndex = tabs.findIndex((tab) => tab.id === 'work');
   tabs.splice(workIndex >= 0 ? workIndex + 1 : Math.min(1, tabs.length), 0, { id: BOARD_V2_TAB_ID, label: 'Board' });
-  const homeIndex = tabs.findIndex((tab) => tab.id === 'chats');
-  tabs.splice(homeIndex + 1, 0, { id: WORKSPACE_TABS_TAB_ID, label: 'Workspace' });
+  tabs.unshift({ id: WORKSPACE_TABS_TAB_ID, label: 'Workspace' });
   const viewTabs = LEGACY_VIEW_GROUP_ORDER.flatMap((id) => {
     const tab = tabs.find((t) => t.id === id);
     return tab ? [{ ...tab, glyph: <VectorIcon paths={LEGACY_VIEW_GROUP_ART[id]} size={13} /> }] : [];
@@ -630,10 +629,6 @@ export function GateApp(props: GateAppProps = {}) {
    * profile starts.
    */
   const [menuCollapsed, setMenuCollapsed] = usePanelFlag('menu-rail-collapsed', true);
-  /* Home's focus mode — icon rail + column A collapsed as one (task 01a00ac2).
-     It lives up here rather than in `HomeView` because Mod+\ is handled on the
-     window, and the shortcut and the chevron must write the SAME state. */
-  const [homeFocus, setHomeFocus] = usePanelFlag('home-focus', false);
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   /* `null` = the credential status has not been read yet, so the flow has not
@@ -772,9 +767,6 @@ export function GateApp(props: GateAppProps = {}) {
     () => unroutableTarget ?? landing?.target ?? null,
     [unroutableTarget, landing],
   );
-
-  /** Home. Named once because both the render branch and Mod+\ ask for it. */
-  const onDashboard = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
 
   /**
    * EVERY user navigation goes through here, so there is no second write path
@@ -1205,11 +1197,12 @@ export function GateApp(props: GateAppProps = {}) {
     const stored = readLastTarget(nodeKey, data.spaceId);
     /* D31: the desktop lands on Work — with nothing remembered, with Work
        remembered, and with a retired view (Home, the old Work, Board)
-       remembered. The phone keeps Home as its landing (D16). */
-    if (
-      threeModes &&
-      (!stored || stored.type === 'work' || (stored.type === 'view' && RETIRED_VIEW_REFS.has(stored.ref)))
-    ) {
+       remembered. Home is gone from every desktop, so the legacy desktop
+       treats a remembered `dashboard` the same way. The phone keeps its chat
+       screen as its landing (D16). */
+    const retired =
+      stored?.type === 'view' && (threeModes ? RETIRED_VIEW_REFS.has(stored.ref) : stored.ref === 'dashboard');
+    if (shell !== 'mobile' && (!stored || stored.type === 'work' || retired)) {
       setUnroutableTarget(null);
       navStore.setState((s) => ({ view: WORK_VIEW, history: 'replace', revision: s.revision + 1 }));
       return;
@@ -1470,14 +1463,6 @@ export function GateApp(props: GateAppProps = {}) {
           screenStackStore
             .getState()
             .open(screenKeyOf.kind(LIVE_COUNT_KIND), sessionId as EntityId);
-        } else if (activeTarget?.type === 'view' && activeTarget.ref === 'dashboard') {
-          /* Route-owned now (task 01a00932 D1): the session ROOTS the centre
-             trail and the address flips to the sessions root. */
-          rememberHomeRoot(data.spaceId, LIVE_COUNT_KIND);
-          navStore
-            .getState()
-            .navigate({ view: 'home', root: { type: 'kind', slug: slugOfKind(LIVE_COUNT_KIND) ?? '' } });
-          navStore.getState().openCenter(sessionId as EntityId);
         } else {
           navigateTo(WORKSPACE_TARGET);
           nav.push(sessionId);
@@ -1489,14 +1474,12 @@ export function GateApp(props: GateAppProps = {}) {
           /* THE NOTICE NAMES WHERE THE SESSION ACTUALLY IS, per shell. It said
              "in the workspace" unconditionally, which on a phone pointed at the
              one screen this build refuses — a true-sounding sentence sending a
-             reader somewhere that does not exist for them. Three arms because
-             there are three destinations, not because there are three shells. */
+             reader somewhere that does not exist for them. Two arms because
+             there are two destinations, one per shell. */
           body:
             shell === 'mobile'
               ? 'The new session is open in Sessions.'
-              : activeTarget?.type === 'view' && activeTarget.ref === 'dashboard'
-                ? 'The live terminal is open here in Home.'
-                : 'The live terminal is open in the workspace.',
+              : 'The live terminal is open in the workspace.',
           ttlMs: 6000,
         });
       })
@@ -1746,14 +1729,7 @@ export function GateApp(props: GateAppProps = {}) {
       // differently — losing a shipped shortcut would be its own regression.
       if (event.key === '\\' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        /* ON HOME THE KEY MEANS HOME'S LEFT SIDE (task 01a00ac2). `dashboard`
-           is a RAILLESS view — no menu rail is drawn there at all — so the
-           binding was toggling a flag with nothing on screen behind it, which
-           is a shipped shortcut that does nothing where it is pressed. The
-           rail it CAN mean there is Home's own, and the ruled focus toggle
-           takes it with column A. Everywhere else the key is unchanged. */
-        if (onDashboard) setHomeFocus((collapsed) => !collapsed);
-        else setMenuCollapsed((collapsed) => !collapsed);
+        setMenuCollapsed((collapsed) => !collapsed);
         return;
       }
       const result = kb.handle({
@@ -1768,7 +1744,7 @@ export function GateApp(props: GateAppProps = {}) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [paletteOpen, shortcutsOpen, promptsOpen, launch, onDashboard, setHomeFocus, setMenuCollapsed]);
+  }, [paletteOpen, shortcutsOpen, promptsOpen, launch, setMenuCollapsed]);
 
   /**
    * Kind refs resolve through the DOMAIN REGISTRY (§15.2) — shell never maps a
@@ -1867,17 +1843,6 @@ export function GateApp(props: GateAppProps = {}) {
    * half-wired. The object stays so a later override (`readParts`) has a place.
    */
   const chatBridge = useMemo(() => ({}), []);
-
-  const homeSlots = useMemo(
-    () =>
-      data.launch.capacity
-        ? {
-            used: data.launch.capacity.slotsTotal - data.launch.capacity.slotsFree,
-            total: data.launch.capacity.slotsTotal,
-          }
-        : undefined,
-    [data.launch.capacity],
-  );
 
   // The same grammar for VOICE: "Voice" is a label, the space's voice_channel
   // entities are the rows. The glyph comes from the REGISTRY row (as
@@ -2042,7 +2007,6 @@ export function GateApp(props: GateAppProps = {}) {
     }),
     [],
   );
-  void homeActivityLoadEarlierReason; // D7.1 — consumed by HomeView at fan-out.
 
   /* Palette data. Results search WHAT THE APP HAS READ (the hydrated kind
      caches) — honest scope for the fixture path; a seam-side text search is
@@ -2083,7 +2047,7 @@ export function GateApp(props: GateAppProps = {}) {
             { id: 'view:settings', label: 'Settings', glyph: <VectorIcon paths={VIEW_ART.settings} /> },
           ]
         : [
-            { id: 'view:dashboard', label: 'Home', glyph: <VectorIcon paths={VIEW_ART.dashboard} /> },
+            /* No Home row: the Home dashboard is removed on every desktop. */
             { id: 'route:work', label: 'Workspace', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
             { id: 'view:workspace', label: 'Work', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
             { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
@@ -2279,10 +2243,11 @@ export function GateApp(props: GateAppProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [notices.push],
   );
-  /* D31: the tm8 mark goes to the desktop's landing, Work. */
+  /* D31: the tm8 mark goes to the desktop's landing, Work (legacy desktop
+     too, now that Home is gone); the phone's is its chat screen. */
   const goHomeTarget = useCallback(
-    () => (threeModes ? navStore.getState().navigate(WORK_VIEW) : navigateTo(HOME_TARGET)),
-    [threeModes, navigateTo],
+    () => (shell !== 'mobile' ? navStore.getState().navigate(WORK_VIEW) : navigateTo(HOME_TARGET)),
+    [shell, navigateTo],
   );
   const openInboxView = useCallback(() => navigateTo({ type: 'view', ref: 'inbox' }), [navigateTo]);
 
@@ -2321,7 +2286,10 @@ export function GateApp(props: GateAppProps = {}) {
    * writes land before this effect runs, so the entity opens as a Work tab.
    */
   const desktopRedirect = useMemo<WorkRedirect | null>(() => {
-    if (!threeModes) return null;
+    /* The legacy desktop keeps its old Work and Board, but not Home: the Home
+       dashboard is removed (navigator design, decision 2), so `/home` and
+       every stored or linked `dashboard` lands in Work on every desktop. */
+    if (!threeModes && (shell === 'mobile' || navView.view !== 'home')) return null;
     const state = navStore.getState();
     const redirect = workRedirectOf({ ...routeOf(state), target: navView });
     if (!redirect?.onlyForWorkKinds) return redirect;
@@ -2331,7 +2299,7 @@ export function GateApp(props: GateAppProps = {}) {
     if (navView.view === 'kind') return isWorkspaceKind(kindBySlug(navView.slug)?.kind) ? redirect : null;
     if (navView.view === 'entity') return isWorkspaceKind(data.detailOf(navView.entityId)?.kind) ? redirect : null;
     return null;
-  }, [threeModes, navView, data]);
+  }, [threeModes, shell, navView, data]);
   useEffect(() => {
     if (!desktopRedirect || !data.spaceId || !viewerMemberId) return;
     const state = navStore.getState();
@@ -2441,7 +2409,7 @@ export function GateApp(props: GateAppProps = {}) {
            * DEF-004 — THE LAUNCH FLOW, HANDED TO THE PHONE.
            *
            * The identical set this component already passes three times on the
-           * desktop branch below (WorkspaceView, HomeView, EntityView). The
+           * desktop branch below (WorkspaceView, EntityView). The
            * phone branch had none of them, so `EntityView`'s launch port never
            * received `onFullOptions`, a row's `Run ▸` had no sheet to open, and
            * `launchSubjectId` was never set on the one screen a phone can
@@ -2743,12 +2711,12 @@ export function GateApp(props: GateAppProps = {}) {
     >
       <div className="shell-root">
         {desktopRedirect && !(data.authRequired || data.bootError) ? (
-          /* D31: a retired address is redirecting into Home this frame; the
+          /* D31: a retired address is redirecting into Work this frame; the
              retired screen is never mounted on the way. A boot that failed
              never resolves the redirect (it waits on the viewer), so it falls
-             through to the boot cards below — bare /home is the canonical
-             Home address, so a sign-in lands there routinely. */
-          <BootLoader label="opening Home" />
+             through to the boot cards below — bare /home is still the
+             default address, so a sign-in lands there routinely. */
+          <BootLoader label="opening the workspace" />
         ) : navView.view === 'tabs' && (data.ready || !(data.authRequired || data.bootError)) ? (
           /* WORK (tabs view, Spec A §2–§3): full-bleed, and the ONLY view
              that renders WITHOUT the top bar — its own left header and rail
@@ -3224,119 +3192,6 @@ export function GateApp(props: GateAppProps = {}) {
                   ttlMs: 6000,
                 })
               }
-            />
-          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
-            /* THE MERGED SINGLE HOME (task 01a0027d, 2026-08-14): the chat
-               surface stays the hero — solo, thread sidebar hidden — with the
-               NEEDS YOU strip, the glance rails and the presence row beneath.
-               The existing dashboard route stays stable while its centre is
-               replaced wholesale (the same D65 posture as every view swap). */
-            <HomeView
-              /* GateData satisfies HomeScreenData structurally — the same
-                 narrow port src/home was built against. */
-              data={data}
-              reasons={reasons}
-              serverBaseUrl={activeServer.routeBaseUrl}
-              viewerMemberId={viewerMemberId}
-              onNotice={notices.push}
-              focus={homeFocus}
-              onToggleFocus={() => setHomeFocus((collapsed) => !collapsed)}
-              onSpawn={async (input) => {
-                /* D11: a spawn committed on Home STAYS on Home — the session
-                   takes region B and the column flips to the sessions root. */
-                const sessionId = await data.spawn(input);
-                /* Route-owned now (task 01a00932 D1). */
-                rememberHomeRoot(data.spaceId, LIVE_COUNT_KIND);
-                navStore
-                  .getState()
-                  .navigate({ view: 'home', root: { type: 'kind', slug: slugOfKind(LIVE_COUNT_KIND) ?? '' } });
-                navStore.getState().openCenter(sessionId as EntityId);
-              }}
-              onOpenWorkspace={() => navigateTo(WORKSPACE_TARGET)}
-              /* D12: the ONE route out of Home — region C's explicit header
-                 action. Chips never navigate; this button does. */
-              onOpenInWorkspace={(id) => {
-                navigateTo(WORKSPACE_TARGET);
-                nav.push(id);
-              }}
-              /* D11/D14: the launch-sheet singleton, mounted over Home while
-                 it holds a subject — Run on a task row opens it here. */
-              onLaunchOpen={(id) => launch.open(id)}
-              launchSubjectId={launch.subjectId}
-              launchRefusal={launchRefusal}
-              launchInFlight={launching}
-              onLaunchCancel={() => {
-                setLaunchRefusal(null);
-                launch.close();
-              }}
-              onLaunchSubmit={submitLaunch}
-              onLaunchDispatch={submitDispatch}
-              /* THE CHAT SLOT, placed by Home itself (entity chat §3.1): its
-                 third column, or an overlay under ~1200px. The shell's dock
-                 stands aside on Home — see `surfaceHostsChatSlot`. */
-              chatSlot={<EntityChatSlot {...chatSlotProps} />}
-              chat={(openEntity, regions) => (
-                <ChatHomeSurface
-                  seam={data.seam}
-                  spaceId={data.spaceId}
-                  nodeKey={nodeKey}
-                  bridge={chatBridge}
-                  /* THE DEFAULT-CHANNEL SUBSTITUTION IS GONE (176).
-                     It read: "the space id is NOT an entity and messages.post
-                     404s on it (measured), so bare-home chats anchor to the
-                     seeded default channel". Both halves were true and the
-                     workaround is no longer needed — a chat anchors its own
-                     transcript, so bare Home passes no subject at all rather
-                     than borrowing a channel's identity for every conversation
-                     that had nothing to do with it. A contextual host (Craft)
-                     passes `aboutId`, which the server writes as an edge. */
-                  /* One read per space, shared with every other rich input in
-                     the shell — see `useGateData`. */
-                  skillOptions={data.skillOptions}
-                  /* The root column (tasks 01a006f8/01a00932): every kind
-                     root mounts the workspace's own list through
-                     `renderRootList`; there is NO New session button (D2) —
-                     a session is created by RUNNING a task, whose Run lives
-                     on the hosted tile itself. */
-                  renderRootList={regions.renderRootList}
-                  newChatRequest={regions.newChatRequest}
-                  root={regions.root}
-                  onRoot={regions.onRoot}
-                  kindCell={regions.kindCell}
-                  rootKindOptions={regions.rootKindOptions}
-                  selectedEntityId={regions.selectedEntityId}
-                  onSelectEntity={regions.onSelectEntity}
-                  onShowChat={regions.onShowChat}
-                  onNewEntity={regions.onNewEntity}
-                  newEntityUnavailable={regions.newEntityUnavailable}
-                  onCreateKind={regions.onCreateKind}
-                  createKindUnavailable={regions.createKindUnavailable}
-                  routeThreadId={regions.routeThreadId}
-                  onThreadSelected={regions.onThreadSelected}
-                  /* `?about=` — the subject "Chat about this" bound before it
-                     navigated here. Absent for a bare Home chat, which is the
-                     ordinary case; see `HomeView`'s prop for why it rides the
-                     address rather than component state. */
-                  {...(regions.aboutId ? { aboutId: regions.aboutId } : {})}
-                  stage={regions.stage}
-                  onStageChange={regions.onStageChange}
-                  /* The fleet's Transcript link lands on the session's own
-                     panel, on its Transcript surface — this screen links to
-                     that renderer and never repeats it. */
-                  onOpenTranscript={openEntity}
-                  centerOverride={regions.centerOverride}
-                  slots={homeSlots}
-                  viewerName={data.viewerActor?.displayName}
-                  viewerId={data.viewerActor?.id}
-                  /* IN PLACE, not away (user report 2026-08-16): a chip inside
-                     a conversation you are still having opens the entity in
-                     Home's own column. Leaving for the workspace is the right
-                     handoff for a screen you are DONE with — Git's lanes,
-                     Messages' "go to the entity this lives on" — and the wrong
-                     one for a reference mid-thread. */
-                  onOpenEntity={openEntity}
-                />
-              )}
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&

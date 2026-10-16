@@ -286,7 +286,9 @@ describe('workflow columns', () => {
 
 describe('the client-appended tab', () => {
   it('is the only Board tab, sits after Work, opens v2, and reads current there', async () => {
-    const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/home`)} />);
+    /* Starts on Graph: `/home` is the tabs view now (the Home dashboard is
+       gone), which draws its own header rather than the screens tab row. */
+    const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/graph`)} />);
     await waitFor(() => view.getByTestId('space-tab-bar'));
     const tabs = view.getAllByRole('tab').map((t) => t.textContent);
     expect(tabs.filter((label) => label === 'Board')).toHaveLength(1);

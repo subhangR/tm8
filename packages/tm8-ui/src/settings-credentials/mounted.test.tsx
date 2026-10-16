@@ -192,21 +192,6 @@ describe('the section is REACHABLE from the shell a human already opens', () => 
   });
 
   /**
-   * THE REMOVAL, PINNED. Home's two credential sections overran the page box
-   * and painted over the chat; they are gone and must not come back by being
-   * re-imported. This asserts the absence at the import level rather than the
-   * markup level, because a re-import is the first step back either way.
-   */
-  it('Home mounts no credential surface and cannot reach the credentials seam', () => {
-    const home = readFileSync(join(process.cwd(), 'src/home-page/HomePage.tsx'), 'utf8');
-
-    expect(home).not.toMatch(/<CredentialsProviderBlock\b/);
-    expect(home).not.toMatch(/<ProviderRail\b/);
-    expect(home).not.toContain('credentialsPortFromSeam');
-    expect(home).not.toMatch(/data\.seam\.credentials\./);
-  });
-
-  /**
    * THE LINK THAT ACTUALLY SHIPS THE FLOW — the same rule the section's own
    * reachability test states above. A guided flow nothing mounts is four
    * surfaces' worth of precedent for building something unreachable.

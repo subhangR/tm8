@@ -108,7 +108,6 @@ describe('a server round trip keeps your place', () => {
   it('boots to Work for a viewer with no remembered place (D31)', async () => {
     const view = mount();
     await waitFor(() => view.getByTestId('tab-workspace'));
-    expect(view.queryByTestId('home-page')).toBeNull();
     expect(view.queryByTestId('workspace-grid')).toBeNull();
     view.unmount();
   });
