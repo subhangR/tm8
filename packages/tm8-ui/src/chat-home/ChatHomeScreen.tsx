@@ -50,7 +50,6 @@ import {
   MODE_SPECS,
   ModeOptionsSlot,
   ModelEffortPicker,
-  ThreadRail,
   coordinatorModelChoices,
   crewBrief,
   modeConflict,
@@ -2803,7 +2802,7 @@ export function ChatHomeScreen({
                     ))}
                   </span>
                 ) : null}
-                {/* THE PER-TURN ROW: mode (loud) · teammate (face) · model+effort
+                {/* THE PER-TURN ROW: mode (loud) · model+effort
                     (quiet) · one fixed ⚙ slot. Nothing here appears or
                     disappears when the mode changes (ac_12). */}
                 <span className="tch-picks">
@@ -2824,16 +2823,6 @@ export function ChatHomeScreen({
                       emptyNote="No chat mode is available."
                     />
                   ) : null}
-                  <ComposerSelect
-                    label="Chat teammate"
-                    testId="tch-teammate"
-                    options={teammateOptions}
-                    value={shownTeammateId}
-                    onChange={(id) => setTeammateId(id as EntityId)}
-                    disabled={pinned}
-                    emptyNote="No agent teammate is available in this space."
-                    note={roster.note}
-                  />
                   <ModelEffortPicker
                     label="Chat model"
                     testId="tch-model"
@@ -2906,20 +2895,6 @@ export function ChatHomeScreen({
                   </button>
                 )}
               </>}
-            />
-            {/* UNDER THE COMPOSER = THIS THREAD. Quieter than the row; stays
-                in place after the first send and compacts (the project locks,
-                permissions stays live). The conflict strip sits in the gap. */}
-            <ThreadRail
-              projects={projects}
-              projectChoice={projectChoice}
-              onProjectChange={setProjectChoice}
-              projectLocked={pinned}
-              lockedProjectLabel={lockedProjectLabel}
-              permission={permission}
-              onPermissionChange={setPermissionChoice}
-              permissionSource={permissionSource}
-              conflict={conflict}
             />
             {newThread && shownMode === 'orchestrate' ? (
               <CrewPanel

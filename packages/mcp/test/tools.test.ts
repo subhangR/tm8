@@ -322,3 +322,104 @@ describe('forms through MCP (FORMS-DESIGN §9)', () => {
     }
   });
 });
+
+describe('space links through MCP (task 01a14650)', () => {
+  const HOME = '01a14645-b4ca-712e-a5c3-2de97bdb9c82';
+  const LINK = '01a14646-55ec-762f-b67f-ffaed2d7d101';
+  const TARGET = '01a0fb3d-558e-7d92-b370-d0601112607a';
+  const view = (mine: Record<string, unknown>) => ({
+    id: LINK,
+    homeSpaceId: HOME,
+    targetSpaceId: TARGET,
+    targetServerId: null,
+    targetSpaceName: null,
+    createdAt: '2026-10-16T19:52:57.066Z',
+    statusSummary: { signedIn: 1, signedOut: 0, left: 0, unreachable: 0 },
+    mine,
+  });
+
+  it('lists the home Space\'s links from an agent: id, target, alias and status, no session id', async () => {
+    const transport = new RecordingTransport();
+    transport.result = [view({
+      memberId: '01a14645-b4cb-7d2c-a1dd-ff5294d2d98d',
+      status: 'signed_in',
+      allowSpawn: true,
+      spawnBudget: 3,
+      alias: 'tm8-dev',
+      sessionId: 'a622880c-c664-4950-99eb-2b54212330bd',
+      expiresAt: '2027-01-14T19:53:05.807Z',
+      lastUsedAt: null,
+    })];
+    const result = await new Tm8ToolRouter(transport, { mode: 'build' }).call('tm8_read', {
+      operation: 'spaceLinks.list',
+      params: { spaceId: HOME },
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(transport.calls).toEqual([{ operation: 'spaceLinks.list', options: { params: { spaceId: HOME } } }]);
+    const [link] = result.structuredContent.data as Array<ReturnType<typeof view>>;
+    expect(link).toMatchObject({
+      id: LINK,
+      targetSpaceId: TARGET,
+      mine: { alias: 'tm8-dev', status: 'signed_in', expiresAt: '2027-01-14T19:53:05.807Z', allowSpawn: true },
+    });
+    expect(link!.mine).not.toHaveProperty('sessionId');
+  });
+
+  it('scrubs a token-shaped string from any spaceLinks result before it reaches the model', async () => {
+    const transport = new RecordingTransport();
+    const secret = `tm8s_${'A'.repeat(40)}`;
+    transport.result = [view({ status: 'signed_in', alias: 'tm8-dev', note: `stored ${secret}` })];
+    const result = await new Tm8ToolRouter(transport).call('tm8_read', {
+      operation: 'spaceLinks.list',
+      params: { spaceId: HOME },
+    });
+
+    const text = result.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
+    expect(text).not.toContain(secret);
+    expect(text).toContain('[redacted]');
+    // Ids and timestamps are not token-shaped and survive.
+    expect(text).toContain(LINK);
+    expect(text).toContain(TARGET);
+  });
+
+  it('reads one link\'s audit', async () => {
+    const transport = new RecordingTransport();
+    transport.result = [];
+    const result = await new Tm8ToolRouter(transport).call('tm8_read', {
+      operation: 'spaceLinks.audit',
+      params: { linkId: LINK },
+    });
+    expect(result.isError).toBeUndefined();
+    expect(transport.calls.map((call) => call.operation)).toEqual(['spaceLinks.audit']);
+  });
+
+  it('keeps every human-only link write off the agent surface and names what the human runs', async () => {
+    const humanOnly = OPERATIONS.filter((op) => op.name.startsWith('spaceLinks.') && op.humanOnly === true);
+    expect(humanOnly.map((op) => op.name)).toEqual(expect.arrayContaining([
+      'spaceLinks.add', 'spaceLinks.login', 'spaceLinks.relogin', 'spaceLinks.logout',
+      'spaceLinks.remove', 'spaceLinks.setSpawn',
+      'spaceLinks.inbound.revoke', 'spaceLinks.inbound.restore', 'spaceLinks.inbound.grant',
+    ]));
+    for (const op of humanOnly) {
+      expect(MCP_MAPPED_OPERATIONS, op.name).not.toContain(op.name);
+      for (const tool of ['tm8_read', 'tm8_act', 'tm8_delegate', 'tm8_messages']) {
+        const transport = new RecordingTransport();
+        const result = await new Tm8ToolRouter(transport).call(tool, { operation: op.name, params: {} });
+        expect(result.isError, `${tool} ${op.name}`).toBe(true);
+        expect(transport.calls).toEqual([]);
+        const message = (result.structuredContent.error as { message: string }).message;
+        expect(message).toContain(`${op.name} is human-only: ask your human to`);
+      }
+    }
+    const login = await new Tm8ToolRouter(new RecordingTransport()).call('tm8_act', { operation: 'spaceLinks.login' });
+    expect((login.structuredContent.error as { message: string }).message)
+      .toBe('spaceLinks.login is human-only: ask your human to run `tm8 link login <alias|link-id>`');
+  });
+
+  it('does not curate spaceLinks.invoke: routing into a linked Space is not on this surface yet', () => {
+    expect(MCP_MAPPED_OPERATIONS).not.toContain('spaceLinks.invoke');
+    expect(MCP_MAPPED_OPERATIONS.filter((op) => op.startsWith('spaceLinks.')).sort())
+      .toEqual(['spaceLinks.audit', 'spaceLinks.list']);
+  });
+});

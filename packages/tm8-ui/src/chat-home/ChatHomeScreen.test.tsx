@@ -238,7 +238,7 @@ describe('Chat Home', () => {
     // change is a field on the next POST and costs the running child nothing —
     // no relaunch, no operation, no row to write. `mode-switch.test.tsx` covers
     // the carrying.
-    expect((view.getByLabelText('Chat teammate') as HTMLButtonElement).disabled).toBe(true);
+    expect(view.queryByLabelText('Chat teammate')).toBeNull();
     expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(false);
     expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(false);
     expect(view.getByLabelText('Chat mode').textContent).toContain('plan');
@@ -260,13 +260,9 @@ describe('Chat Home', () => {
 
     await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
     fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    /* R4: a NEW thread's teammate, mode and model are all drop-ups on the
-       composer's own foot — there is no configuration panel above it. */
-    fireEvent.click(view.getByLabelText('Chat teammate'));
-    expect(
-      within(view.getByTestId('tch-teammate-menu')).getAllByRole('option').length,
-    ).toBeGreaterThan(0);
-    fireEvent.keyDown(view.getByLabelText('Chat teammate'), { key: 'Escape' });
+    /* R4: a NEW thread's mode and model are drop-ups on the composer's own
+       foot; the teammate is the space default and has no picker. */
+    await waitFor(() => expect(view.getByLabelText('Chat model')).toBeTruthy());
 
     fireEvent.click(view.getByLabelText('Chat model'));
     /* The coordinator runs claude-code only: the codex row is DRAWN, disabled,

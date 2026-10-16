@@ -33,26 +33,20 @@ async function openNewChat(port: ChatHomePort, extra: Partial<Parameters<typeof 
   const view = render(<ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} newMutationId={(p) => `${p}:t`} {...extra} />);
   await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
   fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-  await waitFor(() => expect(view.getByLabelText('Chat teammate')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('Chat model')).toBeTruthy());
   return view;
 }
 
 describe('composer acceptance', () => {
-  it('ac_1 · per-turn row inside the box, thread rail under it, at different weights', async () => {
+  it('ac_1 · one per-turn row inside the box: no teammate picker, no thread rail under it', async () => {
     const view = await openNewChat(portWith().port);
     const composer = view.container.querySelector('.tch-composer')!;
     expect(within(composer as HTMLElement).getByLabelText('Chat mode')).toBeTruthy();
-    expect(within(composer as HTMLElement).getByLabelText('Chat teammate')).toBeTruthy();
     expect(within(composer as HTMLElement).getByLabelText('Chat model')).toBeTruthy();
     expect(within(composer as HTMLElement).getByLabelText('Add to this turn')).toBeTruthy();
-    const rail = view.getByTestId('tch-rail');
-    expect(composer.contains(rail)).toBe(false);
-    expect(within(rail).getByLabelText('Project').closest('.tch-pick')?.classList.contains('tch-pick--quiet')).toBe(true);
-    expect(within(rail).getByLabelText('Permissions').closest('.tch-pick')?.classList.contains('tch-pick--quiet')).toBe(true);
-    expect(rail.textContent).toContain('where changes land');
-    expect(rail.textContent).toContain('how far without asking');
+    expect(view.queryByLabelText('Chat teammate')).toBeNull();
+    expect(view.queryByTestId('tch-rail')).toBeNull();
   });
-
   it('ac_2 · the mode menu is Read / Shape / Act with consequence captions, Act emphasised', async () => {
     const view = await openNewChat(portWith().port);
     fireEvent.click(view.getByLabelText('Chat mode'));
@@ -77,102 +71,7 @@ describe('composer acceptance', () => {
     expect(within(view.getByTestId('tch-model-effort')).queryAllByRole('radio')).toHaveLength(0);
   });
 
-  it('ac_4 · project is offered only in the empty state, sends without it, and locks after', async () => {
-    const { port, controls } = portWith({
-      listProjects: async () => [{ id: '019f0000-0000-7000-8000-00000000b001' as EntityId, name: 'tm8-web' }],
-    });
-    const view = await openNewChat(port);
-    fireEvent.click(view.getByLabelText('Project'));
-    expect(view.getByTestId('tch-rail-project-menu').textContent).toContain('tm8-web');
-    fireEvent.keyDown(view.getByLabelText('Project'), { key: 'Escape' });
-    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'hello' } });
-    fireEvent.click(view.getByRole('button', { name: /send/i }));
-    await waitFor(() => expect(controls.roots).toHaveLength(1));
-    expect(controls.roots[0]).toMatchObject({ workdirMode: 'scratch' });
-    expect(controls.roots[0]).not.toHaveProperty('projectId');
-    await waitFor(() => expect(view.getByTestId('tch-rail-project-locked')).toBeTruthy());
-    expect(view.queryByLabelText('Project')).toBeNull();
-    // ac_5 · permissions stays live on the configured thread.
-    expect((view.getByLabelText('Permissions') as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it('ac_4b · a chosen project is sent as the write-once binding', async () => {
-    const { port, controls } = portWith({
-      listProjects: async () => [{ id: '019f0000-0000-7000-8000-00000000b001' as EntityId, name: 'tm8-web' }],
-    });
-    const view = await openNewChat(port);
-    await waitFor(() => { fireEvent.click(view.getByLabelText('Project')); expect(view.getByTestId('tch-rail-project-019f0000-0000-7000-8000-00000000b001')).toBeTruthy(); });
-    fireEvent.click(view.getByTestId('tch-rail-project-019f0000-0000-7000-8000-00000000b001'));
-    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'hello' } });
-    fireEvent.click(view.getByRole('button', { name: /send/i }));
-    await waitFor(() => expect(controls.roots).toHaveLength(1));
-    expect(controls.roots[0]).toMatchObject({ workdirMode: 'project', projectId: '019f0000-0000-7000-8000-00000000b001' });
-  });
-
-  it('B2 · a project chosen in one space does not ride into a chat started after a space switch', async () => {
-    const SPACE_B = '019f0000-0000-7000-8000-000000000091';
-    const PROJECT_A = '019f0000-0000-7000-8000-00000000b001' as EntityId;
-    const PROJECT_B = '019f0000-0000-7000-8000-00000000b002' as EntityId;
-    const { port, controls } = portWith({
-      listProjects: async (spaceId) => spaceId === SPACE_ID
-        ? [{ id: PROJECT_A, name: 'alpha-repo' }]
-        : [{ id: PROJECT_B, name: 'beta-repo' }],
-    });
-    const view = await openNewChat(port);
-    await waitFor(() => { fireEvent.click(view.getByLabelText('Project')); expect(view.getByTestId(`tch-rail-project-${PROJECT_A}`)).toBeTruthy(); });
-    fireEvent.click(view.getByTestId(`tch-rail-project-${PROJECT_A}`));
-    expect(view.getByLabelText('Project').textContent).toContain('alpha-repo');
-
-    view.rerender(<ChatHomeScreen port={port} spaceId={SPACE_B} models={MODELS} newMutationId={(p) => `${p}:t`} />);
-    await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
-    fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    await waitFor(() => expect(view.getByLabelText('Project')).toBeTruthy());
-    expect(view.getByLabelText('Project').textContent).not.toContain('alpha-repo');
-
-    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'hello from B' } });
-    fireEvent.click(view.getByRole('button', { name: /send/i }));
-    await waitFor(() => expect(controls.roots).toHaveLength(1));
-    expect(controls.roots[0]).toMatchObject({ spaceId: SPACE_B, workdirMode: 'scratch' });
-    expect(controls.roots[0]).not.toHaveProperty('projectId');
-  });
-
-  it('ac_6 · BUILD under Read-only is surfaced between composer and rail with a one-click raise', async () => {
-    const view = await openNewChat(portWith().port);
-    fireEvent.click(view.getByLabelText('Permissions'));
-    fireEvent.click(view.getByTestId('tch-rail-permission-read-only'));
-    expect(view.queryByTestId('tch-rail-conflict')).toBeNull();
-    fireEvent.click(view.getByLabelText('Chat mode'));
-    fireEvent.click(view.getByTestId('tch-mode-build'));
-    const strip = view.getByTestId('tch-rail-conflict');
-    expect(strip.textContent).toContain('Read-only');
-    // Physically in the gap: inside the rail element, before its row.
-    expect(view.getByTestId('tch-rail').firstElementChild).toBe(strip);
-    fireEvent.click(view.getByTestId('tch-rail-raise'));
-    expect(view.queryByTestId('tch-rail-conflict')).toBeNull();
-    expect(view.getByLabelText('Permissions').textContent).toContain('Ask first');
-  });
-
-  it('ac_7 · orchestrate filters to coordinators and preselects one; degrades to everyone with a note', async () => {
-    const view = await openNewChat(portWith().port);
-    fireEvent.click(view.getByLabelText('Chat mode'));
-    fireEvent.click(view.getByTestId('tch-mode-orchestrate'));
-    await waitFor(() => expect(view.getByLabelText('Chat teammate').textContent).toContain('Conductor'));
-    fireEvent.click(view.getByLabelText('Chat teammate'));
-    const rows = within(view.getByTestId('tch-teammate-menu')).getAllByRole('option');
-    expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining('Conductor')]);
-    view.unmount();
-
-    const noCoordinators = portWith({ listTeammates: async () => TEAMMATES.filter((t) => t.mode !== 'coordinator') }).port;
-    const view2 = await openNewChat(noCoordinators);
-    fireEvent.click(view2.getByLabelText('Chat mode'));
-    fireEvent.click(view2.getByTestId('tch-mode-orchestrate'));
-    fireEvent.click(view2.getByLabelText('Chat teammate'));
-    const menu = view2.getByTestId('tch-teammate-menu');
-    expect(within(menu).getAllByRole('option')).toHaveLength(2);
-    expect(menu.textContent).toContain('No coordinator teammate exists');
-  });
-
-  it('ac_8 + ac_9 + ac_10 · crew rows take any model incl. codex; worker access is capped; coordinator list says why codex is out', async () => {
+  it('ac_8 + ac_10 · crew rows take any model incl. codex; coordinator list says why codex is out', async () => {
     const { port, controls } = portWith();
     const view = await openNewChat(port);
     fireEvent.click(view.getByLabelText('Chat mode'));
@@ -197,21 +96,7 @@ describe('composer acceptance', () => {
     expect(view.getByTestId('tch-model-gpt-5.6-sol').textContent).toContain('Claude Code only');
     fireEvent.keyDown(view.getByLabelText('Chat model'), { key: 'Escape' });
 
-    // ac_9: under Ask first, Auto is not selectable for a worker; a stale pick is capped in the brief.
-    // (Conductor's own permission_mode is acceptEdits, so the derived ceiling was Auto — lower it first.)
-    expect(view.getByLabelText('Permissions').textContent).toContain('Auto');
-    fireEvent.click(view.getByLabelText('Permissions'));
-    fireEvent.click(view.getByTestId('tch-rail-permission-ask-first'));
-    fireEvent.click(view.getByLabelText('Worker 1 options'));
-    const access = view.getByTestId('tch-crew-w1-access') as HTMLSelectElement;
-    const auto = [...access.options].find((o) => o.value === 'acceptEdits')!;
-    expect(auto.disabled).toBe(true);
-    expect(auto.textContent).toContain('ceiling');
-    fireEvent.change(access, { target: { value: 'plan' } });
-    fireEvent.keyDown(view.getByLabelText('Worker 1 options'), { key: 'Escape' });
-
     // The brief is visible before send and rides the opening turn.
-    expect(view.getByTestId('tch-crew-brief').textContent).toContain('accessMode plan');
     expect(view.getByTestId('tch-crew-brief').textContent).toContain('model gpt-5.6-sol via codex');
     fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'Ship the release.' } });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
@@ -220,17 +105,6 @@ describe('composer acceptance', () => {
     expect(controls.roots[0]!.body).toContain('Crew for this thread');
     expect(controls.roots[0]!.body).toContain('effort xhigh');
     expect(controls.roots[0]!.mode).toBe('orchestrate');
-  });
-
-  it('ac_11 · a node that projects no teammate role gets an unfiltered roster and says so', async () => {
-    const port = portWith({ listTeammates: async () => TEAMMATES.map(({ id, label }) => ({ id, label })) }).port;
-    const view = await openNewChat(port);
-    fireEvent.click(view.getByLabelText('Chat mode'));
-    fireEvent.click(view.getByTestId('tch-mode-orchestrate'));
-    fireEvent.click(view.getByLabelText('Chat teammate'));
-    const menu = view.getByTestId('tch-teammate-menu');
-    expect(within(menu).getAllByRole('option')).toHaveLength(3);
-    expect(menu.textContent).toContain('does not project teammate roles');
   });
 
   it('ac_12 · the row’s controls are the same set in every mode; ⚙ badges the non-default count', async () => {
@@ -253,15 +127,6 @@ describe('composer acceptance', () => {
     expect(view.getByTestId('tch-mode-options-badge').textContent).toBe('2');
     // Sanity: the policy under the crew panel reflects the ⚙.
     expect(view.getByTestId('tch-crew-policy').textContent).toContain('auto-dispatch');
-  });
-
-  it('the teammate’s standing permission sets the default rung and says so', async () => {
-    const view = await openNewChat(portWith().port);
-    fireEvent.click(view.getByLabelText('Chat teammate'));
-    fireEvent.click(view.getByTestId('tch-teammate-019f0000-0000-7000-8000-00000000a003'));
-    expect(view.getByLabelText('Permissions').textContent).toContain('Read-only');
-    fireEvent.click(view.getByLabelText('Permissions'));
-    expect(view.getByTestId('tch-rail-permission-menu').textContent).toContain('Fast Fixer defaults to Read-only');
   });
 
   it('/build on an empty input selects the mode instead of sending', async () => {

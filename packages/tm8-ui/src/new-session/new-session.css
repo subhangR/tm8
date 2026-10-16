@@ -109,7 +109,7 @@
 
 .nsx-composer:focus-within { border-color: var(--pn-line-2); }
 /* The card itself holds focus after Esc: its letters are live, so say so. */
-.nsx-composer:focus { outline: none; border-color: var(--pn-brand); }
+.nsx-composer:focus { outline: none; border-color: var(--pn-line-2); }
 
 .nsx-composer[data-busy] { border-color: color-mix(in srgb, var(--pn-brand) 45%, var(--pn-line-2)); }
 
