@@ -34,11 +34,26 @@
  * with the task open and attaches to that terminal VIEW-ONLY. Nothing runs as
  * the viewer, and closing the phone leaves the agent's terminal alone. Closed
  * once, it stays closed for that terminal; the strip's button reopens it.
+ *
+ * WHAT THE SCREEN SHOWS. The runner streams frames as inline images and tells
+ * the run as user vars (`phoneRun.ts`). The phone draws the latest frame as a
+ * real `<img>` at the screen's own resolution — the terminal grid would blur
+ * it — lists the cases as they run, and once the run is done offers the
+ * report: every case's outcome, why a failure failed, and its last screen.
+ *
+ * TEST A BUILD. The app task's `live-install: <command>` runs an uploaded .apk
+ * or .ipa: the file is saved on the app task (so anyone can see what was
+ * tested), and its bytes go to the runner through this phone's own terminal,
+ * after it prints `READY-FOR-BUILD`, as base64 lines (paced under the PTY's
+ * input limit) — never as a command. The runner checks the build and installs
+ * it on a real device when one is connected.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { EntityDetail, EntityId } from '@tm8/contract';
-import { LiveTerminal, isLiveTerminalEnabled, type LiveTerminalHandle } from '../../terminal';
+import { LiveTerminal, isLiveTerminalEnabled, type LiveTerminalHandle, type ScreenSignal } from '../../terminal';
+import { createFileUploadTask, safeUploadReason } from '../../files/upload';
+import { EMPTY_RUN, explainFailure, formatMs, reduceRun, reportHtml, type PhoneRunState } from './phoneRun';
 import { ptyTransport } from '../../terminal/pty/ptyTransport.js';
 import { getKind } from '../../domain';
 import { liveCommandOf } from '../../panels/detail/LiveScreenButton';
@@ -56,6 +71,12 @@ const DEVICE_WORD = /\b(iphone|pixel|android)\b/i;
 const SEEN_KEY = 'tm8.phoneLive.seen';
 const ASK_LINE = /^[ \t]*live-ask:[ \t]*(\S[^\r\n]*)$/im;
 const APP_LINE = /^[ \t]*live-app:[ \t]*(\S[^\r\n]*)$/im;
+const INSTALL_LINE = /^[ \t]*live-install:[ \t]*(\S[^\r\n]*)$/im;
+export const BUILD_MARKER = 'READY-FOR-BUILD';
+/* 150 MB: at the PTY's paced ~380 KB/s of base64 that is about nine minutes. */
+export const BUILD_MAX_BYTES = 150 * 1024 * 1024;
+const BUILD_LINE_BYTES = 3000; // 4000 base64 characters per line
+const BUILD_LINES_PER_TICK = 12; // 48 KB per 125 ms: under the PTY's 512 KB/s and 64 KB per frame
 const ASK_TRUSTED_KEY = 'tm8.phoneLive.askTrusted';
 const APP_TASK_KEY = 'tm8.phoneLive.appTask:';
 export const READY_MARKER = 'READY-FOR-CASES';
@@ -88,6 +109,21 @@ export function askCommandOf(detail: EntityDetail | null | undefined): string | 
 }
 export function appNameOf(detail: EntityDetail | null | undefined): string | null {
   return lineOf(detail, APP_LINE);
+}
+/** The task's build-install command (`live-install:`): runs an uploaded .apk/.ipa. */
+export function installCommandOf(detail: EntityDetail | null | undefined): string | null {
+  return lineOf(detail, INSTALL_LINE);
+}
+
+/** Which phone a build is for, from its name; null when it is neither an APK nor an IPA. */
+export function buildDevice(name: string): PhoneDevice | null {
+  return /\.apk$/i.test(name) ? 'android' : /\.ipa$/i.test(name) ? 'iphone' : null;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
 }
 
 /** UTF-8 text as one base64 line: the only shape the viewer's words take on the way into the terminal. */
@@ -170,7 +206,10 @@ export function PhoneLiveButton({ detail }: { detail: EntityDetail | null | unde
 }
 
 /* `cases`: the viewer's words for a write-and-run, sent once the runner asks for them. */
-type Run = { device: PhoneDevice; command: string; terminalId: string | null; error: string | null; cases?: string };
+type Run = { device: PhoneDevice; command: string; terminalId: string | null; error: string | null; cases?: string; build?: File };
+type RunAction = ScreenSignal | { type: 'reset' };
+export const runReducer = (state: PhoneRunState, action: RunAction): PhoneRunState =>
+  action.type === 'reset' ? EMPTY_RUN : reduceRun(state, action);
 
 const DEVICE_NAME: Record<PhoneDevice, string> = { iphone: 'iPhone 16 Pro Max', android: 'Pixel 9 Pro' };
 const DEVICE_ENGINE: Record<PhoneDevice, string> = { iphone: 'WebKit (Safari engine)', android: 'Chromium' };
@@ -202,6 +241,7 @@ export function PhoneLiveDialog({
   const [, setTick] = useState(0);
   const appDetail = ownAsk ? detail : appTaskId ? (gate.data.detailOf(appTaskId as EntityId) ?? null) : null;
   const askCommand = ownAsk ?? askCommandOf(appDetail);
+  const installCommand = installCommandOf(ownAsk ? detail : appDetail);
   const appName = appNameOf(appDetail);
   /* Not remembered yet: find the space's app task. */
   useEffect(() => {
@@ -235,6 +275,11 @@ export function PhoneLiveDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appTaskId, Boolean(appDetail)]);
   const terminalRef = useRef<LiveTerminalHandle>(null);
+  const [screenRun, dispatch] = useReducer(runReducer, EMPTY_RUN);
+  const [peek, setPeek] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [sending, setSending] = useState<{ sent: number; total: number } | null>(null);
+  const [saved, setSaved] = useState<{ name: string; note: string; error?: boolean } | null>(null);
   const runRef = useRef<Run | null>(null);
   runRef.current = run;
   /* What the screen watches: this task's running test, else the app task's while the viewer runs nothing. */
@@ -247,10 +292,19 @@ export function PhoneLiveDialog({
       .catch(() => undefined);
   };
 
-  const start = (command: string, on: PhoneDevice, cases?: string) => {
+  const start = (command: string, on: PhoneDevice, cases?: string, build?: File) => {
     if (!commands || !command.trim()) return;
     stop(runRef.current?.terminalId ?? null);
-    const next: Run = { device: on, command: commandForDevice(command.trim(), on), terminalId: null, error: null, ...(cases !== undefined ? { cases } : {}) };
+    setSending(null);
+    setReportOpen(false);
+    const next: Run = {
+      device: on,
+      command: commandForDevice(command.trim(), on),
+      terminalId: null,
+      error: null,
+      ...(cases !== undefined ? { cases } : {}),
+      ...(build ? { build } : {}),
+    };
     setRun(next);
     void commands
       .startTerminal({
@@ -295,11 +349,33 @@ export function PhoneLiveDialog({
   const terminalId = run?.terminalId ?? null;
   const runCommand = run?.command ?? '';
   const runCases = run?.cases ?? null;
+  const runBuild = run?.build ?? null;
   useEffect(() => {
     if (!terminalId) return;
     let sent = false;
     let casesSent = false;
+    let buildSent = false;
+    let cancelled = false;
     let tail = '';
+    /* The build's bytes, as base64 lines after a header line, paced under the PTY's input limit. */
+    const sendBuild = async (file: File) => {
+      const header = base64Line(JSON.stringify({ name: file.name, size: file.size }));
+      terminalRef.current?.send(`${header}\r`);
+      let offset = 0;
+      setSending({ sent: 0, total: file.size });
+      while (offset < file.size && !cancelled) {
+        const end = Math.min(file.size, offset + BUILD_LINE_BYTES * BUILD_LINES_PER_TICK);
+        const bytes = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+        let chunk = '';
+        for (let i = 0; i < bytes.length; i += BUILD_LINE_BYTES) chunk += `${bytesToBase64(bytes.subarray(i, i + BUILD_LINE_BYTES))}\r`;
+        if (cancelled) return;
+        terminalRef.current?.send(chunk);
+        offset = end;
+        setSending({ sent: offset, total: file.size });
+        await new Promise((resolve) => window.setTimeout(resolve, 125));
+      }
+      if (!cancelled) terminalRef.current?.send('END\r');
+    };
     const send = () => {
       if (sent) return;
       sent = true;
@@ -316,16 +392,24 @@ export function PhoneLiveDialog({
           terminalRef.current?.send(`${base64Line(runCases)}\r`);
         }
       }
+      if (sent && runBuild && !buildSent) {
+        tail = (tail + data).slice(-200);
+        if (tail.includes(BUILD_MARKER)) {
+          buildSent = true;
+          void sendBuild(runBuild);
+        }
+      }
       if (settle !== undefined) return;
       settle = window.setTimeout(send, 400);
     });
     const fallback = window.setTimeout(send, 5000);
     return () => {
+      cancelled = true;
       off();
       window.clearTimeout(fallback);
       if (settle !== undefined) window.clearTimeout(settle);
     };
-  }, [terminalId, runCommand, runCases]);
+  }, [terminalId, runCommand, runCases, runBuild]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -356,17 +440,47 @@ export function PhoneLiveDialog({
     start(askCommand, device, text);
   };
 
+  /* A build: saved on the app task for the record, and its bytes run through this phone. */
+  const testBuild = (file: File) => {
+    const on = buildDevice(file.name);
+    if (!on || !installCommand) return;
+    if (file.size > BUILD_MAX_BYTES) {
+      setSaved({ name: file.name, note: `is ${Math.round(file.size / 1048576)} MB; the most this phone takes is ${BUILD_MAX_BYTES / 1048576} MB.`, error: true });
+      return;
+    }
+    setDevice(on);
+    writeStored(DEVICE_KEY, on);
+    start(installCommand, on, undefined, file);
+    const files = gate.data.seam?.files;
+    if (!files) return;
+    setSaved({ name: file.name, note: 'saving to the app task…' });
+    const anchor = (appTaskId ?? detail?.id) as EntityId | undefined;
+    createFileUploadTask({ files, file, spaceId: space as never, ...(anchor ? { anchorId: anchor } : {}) })
+      .result.then(() => setSaved({ name: file.name, note: 'saved on the app task, so everyone can see which build was tested.' }))
+      .catch((cause: unknown) => setSaved({ name: file.name, note: `not saved: ${safeUploadReason(cause)}`, error: true }));
+  };
+
+  /* The screen this phone shows changed: its run starts fresh. */
+  const screenTerminalId = shown?.terminalId ?? run?.terminalId ?? null;
+  useEffect(() => {
+    dispatch({ type: 'reset' });
+    setPeek(false);
+    setReportOpen(false);
+  }, [screenTerminalId]);
+
+  const download = () => downloadReport(screenRun, { app: appName, asked: run?.cases?.trim() || null });
+
   const screenDevice = shown?.device ?? device;
   const screen = shown ? (
     isLiveTerminalEnabled() ? (
       <FitScreen key={shown.terminalId}>
-        <LiveTerminal sessionId={shown.terminalId} serverBaseUrl={gate.serverBaseUrl} live={false} />
+        <LiveTerminal sessionId={shown.terminalId} serverBaseUrl={gate.serverBaseUrl} live={false} onScreenSignal={dispatch} />
       </FitScreen>
     ) : (
       <p className="phl-idle">The live terminal is switched off in this browser.</p>
     )
   ) : run?.terminalId && isLiveTerminalEnabled() ? (
-    <LiveTerminal ref={terminalRef} sessionId={run.terminalId} serverBaseUrl={gate.serverBaseUrl} live />
+    <LiveTerminal ref={terminalRef} sessionId={run.terminalId} serverBaseUrl={gate.serverBaseUrl} live onScreenSignal={dispatch} />
   ) : run && !run.error ? (
     <p className="phl-idle" role="status">
       Starting…
@@ -402,6 +516,9 @@ export function PhoneLiveDialog({
               </svg>
             </div>
             {screen}
+            {screenRun.frame && !peek ? (
+              <img className="phl-frame" src={screenRun.frame} alt="The app's screen, live" data-testid="phone-live-frame" />
+            ) : null}
           </div>
           <div className="phl-island" aria-hidden="true" />
         </div>
@@ -443,6 +560,14 @@ export function PhoneLiveDialog({
           {run?.error ? (
             <p className="phl-note phl-note--error" role="alert">
               {run.error}
+            </p>
+          ) : null}
+
+          <RunCases run={screenRun} peek={peek} onPeek={() => setPeek((p) => !p)} onReport={() => setReportOpen(true)} onDownload={download} />
+
+          {sending && sending.sent < sending.total ? (
+            <p className="phl-note" role="status" data-testid="phone-live-sending">
+              Sending the build to the phone… {Math.floor((sending.sent / sending.total) * 100)}%
             </p>
           ) : null}
 
@@ -537,8 +662,47 @@ export function PhoneLiveDialog({
               </p>
             )}
           </form>
+
+          <section className="phl-section" data-testid="phone-live-build">
+            <h3 className="phl-h">Install &amp; test an app build</h3>
+            {installCommand ? (
+              <>
+                <label className={`phl-secondary phl-file${!commands || watch ? ' phl-file--off' : ''}`}>
+                  📦 Upload .apk / .ipa
+                  <input
+                    type="file"
+                    accept=".apk,.ipa,application/vnd.android.package-archive"
+                    disabled={!commands || Boolean(watch)}
+                    data-testid="phone-live-build-input"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      if (file) testBuild(file);
+                    }}
+                  />
+                </label>
+                {saved ? (
+                  <p className={`phl-note${saved.error ? ' phl-note--error' : ''}`} data-testid="phone-live-build-saved">
+                    <strong>{saved.name}</strong> {saved.note}
+                  </p>
+                ) : null}
+                <p className="phl-note">
+                  An .apk opens on Android, an .ipa on iPhone. The phone checks the build (app id, version, signing, which
+                  devices it runs on), then installs and opens it on a real device from the space's device cloud. Runs{' '}
+                  <code>{installCommand}</code> as you, on this node.
+                </p>
+              </>
+            ) : (
+              <p className="phl-note" data-testid="phone-live-build-none">
+                Not set up for this app: its test task needs a <code>live-install:</code> line.
+              </p>
+            )}
+          </section>
         </aside>
       </div>
+      {reportOpen ? (
+        <RunReport run={screenRun} app={appName} asked={run?.cases?.trim() || null} onClose={() => setReportOpen(false)} onDownload={download} />
+      ) : null}
     </div>,
     document.body,
   );
@@ -588,6 +752,195 @@ function FitScreen({ children }: { children: ReactNode }) {
   return (
     <div ref={boxRef} className="phl-fit">
       {children}
+    </div>
+  );
+}
+
+/** The report, downloaded as one self-contained HTML file. */
+export function downloadReport(run: PhoneRunState, meta: { app: string | null; asked: string | null }) {
+  const html = reportHtml(run, meta);
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `test-report-${run.runName ?? new Date().toISOString().slice(0, 19)}.html`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+const CASE_MARK: Record<string, string> = { planned: '○', run: '…', ok: '✔', fail: '✘' };
+
+/** The run's cases as they go, then its outcome and the report buttons. */
+export function RunCases({
+  run,
+  peek,
+  onPeek,
+  onReport,
+  onDownload,
+}: {
+  run: PhoneRunState;
+  peek: boolean;
+  onPeek(): void;
+  onReport(): void;
+  onDownload(): void;
+}) {
+  if (!run.cases.length && !run.status && !run.frame) return null;
+  const passed = run.cases.filter((c) => c.state === 'ok').length;
+  const failed = run.cases.filter((c) => c.state === 'fail').length;
+  return (
+    <section className="phl-section phl-run" data-testid="phone-live-run">
+      <div className="phl-run__head">
+        <h3 className="phl-h">Test cases{run.cases.length ? ` · ${run.cases.length}` : ''}</h3>
+        {run.frame || peek ? (
+          <button type="button" className="phl-link" onClick={onPeek} data-testid="phone-live-peek">
+            {peek ? 'Show the screen' : 'Show the log'}
+          </button>
+        ) : null}
+      </div>
+      {run.status && !run.done ? (
+        <p className={`phl-now phl-now--${run.tone}`} role="status" data-testid="phone-live-now">
+          {run.status}
+        </p>
+      ) : null}
+      {run.cases.length ? (
+        <ol className="phl-cases" data-testid="phone-live-cases">
+          {run.cases.map((c, i) => (
+            <li key={i} className={`phl-case phl-case--${c.state}`} data-state={c.state}>
+              <span className="phl-case__mark" aria-hidden="true">
+                {CASE_MARK[c.state]}
+              </span>
+              <span className="phl-case__name">{c.name}</span>
+              <span className="phl-case__ms">{c.state === 'run' ? 'running' : formatMs(c.ms)}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {run.done ? (
+        <div className={`phl-done phl-done--${run.done.passed && failed === 0 ? 'ok' : 'fail'}`} data-testid="phone-live-done">
+          <strong>{run.done.passed && failed === 0 ? 'All cases passed' : `${failed} of ${run.cases.length} failed`}</strong>
+          <span>
+            {passed} passed · {failed} failed · {formatMs(run.done.ms)}
+          </span>
+          <div className="phl-actions">
+            <button type="button" className="phl-start" onClick={onReport} data-testid="phone-live-report">
+              📋 View test report
+            </button>
+            <button type="button" className="phl-secondary" onClick={onDownload} data-testid="phone-live-download">
+              Download
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** The structured report: the summary, then every case's outcome, why, and its last screen as evidence. */
+export function RunReport({
+  run,
+  app,
+  asked,
+  onClose,
+  onDownload,
+}: {
+  run: PhoneRunState;
+  app: string | null;
+  asked: string | null;
+  onClose(): void;
+  onDownload(): void;
+}) {
+  const passed = run.cases.filter((c) => c.state === 'ok').length;
+  const failed = run.cases.filter((c) => c.state === 'fail').length;
+  const notRun = run.cases.length - passed - failed;
+  const ok = Boolean(run.done?.passed) && failed === 0;
+  /* Escape closes the report, not the window under it. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+  return (
+    <div className="phl-report-scrim" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="phl-report" role="dialog" aria-modal="true" aria-label="Test report" data-testid="phone-live-report-view">
+        <header className="phl-report__head">
+          <div>
+            <h2>Test report{run.title ? ` · ${run.title}` : ''}</h2>
+            <p className="phl-note">
+              {[app, run.device, run.startedAt ? new Date(run.startedAt).toLocaleString() : null, run.runName ? `run ${run.runName}` : null]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          </div>
+          <button type="button" className="phl-secondary" onClick={onDownload}>
+            Download
+          </button>
+          <button type="button" className="phl-close" aria-label="Close report" onClick={onClose}>
+            ✕
+          </button>
+        </header>
+        {asked ? (
+          <p className="phl-report__asked">
+            <strong>Asked to test:</strong> {asked}
+          </p>
+        ) : null}
+        <div className="phl-report__sum">
+          <div className={ok ? 'is-ok' : 'is-fail'}>
+            <b>{ok ? 'PASSED' : 'FAILED'}</b>verdict
+          </div>
+          <div>
+            <b>{passed}</b>passed
+          </div>
+          <div>
+            <b>{failed}</b>failed
+          </div>
+          {notRun ? (
+            <div>
+              <b>{notRun}</b>not run
+            </div>
+          ) : null}
+          <div>
+            <b>{formatMs(run.done?.ms) || '—'}</b>time
+          </div>
+        </div>
+        <ol className="phl-report__cases">
+          {run.cases.map((c, i) => (
+            <li key={i} className={`phl-rcase phl-rcase--${c.state}`} data-testid="phone-live-report-case">
+              <div className="phl-rcase__text">
+                <h3>
+                  {i + 1}. {c.name}
+                </h3>
+                <p className="phl-rcase__verdict">
+                  {c.state === 'ok' ? 'PASSED' : c.state === 'fail' ? 'FAILED' : c.state === 'run' ? 'DID NOT FINISH' : 'NOT RUN'}
+                  {c.ms !== undefined ? ` · ${formatMs(c.ms)}` : ''}
+                  {c.group ? ` · ${c.group}` : ''}
+                </p>
+                {c.state === 'ok' ? <p>Every check in this case held: the app showed what the case expected.</p> : null}
+                {c.state === 'fail' ? (
+                  <>
+                    <p>
+                      <strong>Why:</strong> {explainFailure(c.error)}
+                    </p>
+                    {c.error ? <pre className="phl-rcase__error">{c.error}</pre> : null}
+                  </>
+                ) : null}
+                {c.state === 'planned' ? <p>The run stopped before this case started.</p> : null}
+                {c.file ? (
+                  <p className="phl-note">
+                    Evidence on the node: runs/{run.runName}/{c.file}
+                  </p>
+                ) : null}
+              </div>
+              {c.shot ? <img className="phl-rcase__shot" src={c.shot} alt={`Screen at the end of case ${i + 1}`} /> : null}
+            </li>
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }

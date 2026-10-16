@@ -20,6 +20,9 @@ const xterm = vi.hoisted(() => {
       registerOscHandler: vi.fn((_ident: number, _handler: (data: string) => boolean) => ({
         dispose: vi.fn(),
       })),
+      registerCsiHandler: vi.fn((_id: { final: string }, _handler: (params: (number | number[])[]) => boolean) => ({
+        dispose: vi.fn(),
+      })),
     };
     hasSelection = vi.fn(() => false);
     getSelection = vi.fn(() => '');
@@ -160,7 +163,7 @@ describe('LiveTerminal OSC 52', () => {
   it('refuses a copy parsed while replayed scrollback is in flight, then honours live output', () => {
     const { getByTestId } = render(<LiveTerminal sessionId="osc52-session" live />);
     const terminal = xterm.instances[0]!;
-    const [ident, osc52] = terminal.parser.registerOscHandler.mock.calls[0]!;
+    const [ident, osc52] = terminal.parser.registerOscHandler.mock.calls.find(([id]) => id === 52)!;
     expect(ident).toBe(52);
 
     // Hold the replay write open: xterm parses it asynchronously, and every

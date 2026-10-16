@@ -10,15 +10,22 @@ import type { EntityDetail } from '@tm8/contract';
 import { ActionStrip, EmbeddedWorkspace, EntityChromeContext, embeddedTab, useEmbeddedRuntime, useEntityChromeValue } from '../embed';
 import type { WorkspaceGateHandles } from './context';
 import { commandForDevice } from './PhoneLive';
+import { normalizeRepo } from './WebTest';
+import type { ScreenSignal } from '../../terminal';
 
 const sent: string[] = [];
+const signalTo: Record<string, (signal: ScreenSignal) => void> = {};
 const outputHandlers: Array<(id: string, data: string) => void> = [];
 
 vi.mock('../../terminal', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   isLiveTerminalEnabled: () => true,
-  LiveTerminal: forwardRef<{ send(data: string): void }, { sessionId: string; live?: boolean }>(function FakeTerminal({ sessionId, live }, ref) {
+  LiveTerminal: forwardRef<
+    { send(data: string): void },
+    { sessionId: string; live?: boolean; onScreenSignal?: (signal: ScreenSignal) => void }
+  >(function FakeTerminal({ sessionId, live, onScreenSignal }, ref) {
     useImperativeHandle(ref, () => ({ send: (data: string) => sent.push(`${sessionId}:${data}`) }));
+    if (onScreenSignal) signalTo[sessionId] = onScreenSignal;
     return <div data-testid="fake-terminal" data-live={String(live)}>{sessionId}</div>;
   }),
 }));
@@ -59,7 +66,7 @@ function gateFor(d: EntityDetail, others: Record<string, EntityDetail> = {}) {
       messagesOf: () => undefined,
       reconcileCommand: () => undefined,
       refetchDetail: () => undefined,
-      seam: { query, commands: { startTerminal, terminate, dispatch } },
+      seam: { query, commands: { startTerminal, terminate, dispatch }, files: {} },
     },
   } as unknown as WorkspaceGateHandles;
 }
@@ -82,6 +89,7 @@ beforeEach(() => {
   window.sessionStorage.clear();
   sent.length = 0;
   outputHandlers.length = 0;
+  for (const id of Object.keys(signalTo)) delete signalTo[id];
   started = 0;
   startTerminal.mockClear();
   terminate.mockClear();
@@ -232,5 +240,110 @@ describe('the phone button', () => {
     expect(view.getByTestId('fake-terminal').textContent).toBe(AGENT);
     expect(view.getByTestId('fake-terminal').getAttribute('data-live')).toBe('false');
     expect(startTerminal).not.toHaveBeenCalled();
+  });
+});
+
+const b64 = (value: unknown) => Buffer.from(typeof value === 'string' ? value : JSON.stringify(value), 'utf8').toString('base64');
+const userVar = (name: string, value: unknown): ScreenSignal => ({ type: 'var', name, base64: b64(value) });
+const JPEG = '/9j/4AAQSkZJRgABAQ';
+
+describe('what the screen shows', () => {
+  it('draws the frame as an image, lists the cases as they run, then the report says why one failed', async () => {
+    const ASK = '/w/bin/jm-ask iphone';
+    const view = render(<Strip d={task(`live-ask: ${ASK}`)} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    fireEvent.change(view.getByTestId('phone-live-ask'), { target: { value: 'Search works; cart badge' } });
+    fireEvent.click(view.getByTestId('phone-live-ask-send'));
+    await waitFor(() => expect(signalTo['term-1']).toBeTypeOf('function'));
+    const emit = (signal: ScreenSignal) => act(() => signalTo['term-1']!(signal));
+    emit({ type: 'frame', src: `data:image/jpeg;base64,${JPEG}` });
+    expect(view.getByTestId('phone-live-frame').getAttribute('src')).toContain(JPEG);
+    emit(userVar('tm8run', { title: 'Your cases', device: 'iPhone 16 Pro Max', run: 'live-1', planned: ['Search works', 'Cart badge'] }));
+    emit(userVar('tm8step', { i: 0, name: 'Search works', state: 'run' }));
+    let cases = view.getByTestId('phone-live-cases').querySelectorAll('li');
+    expect([...cases].map((c) => c.getAttribute('data-state'))).toEqual(['run', 'planned']);
+    emit(userVar('tm8step', { i: 0, name: 'Search works', state: 'ok', ms: 1200, file: '01-search.png' }));
+    emit(userVar('tm8step', { i: 1, name: 'Cart badge', state: 'fail', ms: 20500, error: "locator.tap: Timeout 20000ms exceeded.\nwaiting for getByTestId('add-to-bag')" }));
+    emit({ type: 'var', name: 'tm8shot.1', base64: JPEG });
+    emit(userVar('tm8done', { passed: false, total: 2, failed: 1, ms: 21700 }));
+    cases = view.getByTestId('phone-live-cases').querySelectorAll('li');
+    expect([...cases].map((c) => c.getAttribute('data-state'))).toEqual(['ok', 'fail']);
+    expect(view.getByTestId('phone-live-done').textContent).toContain('1 of 2 failed');
+
+    fireEvent.click(view.getByTestId('phone-live-report'));
+    const report = view.getByTestId('phone-live-report-view');
+    const rows = view.getAllByTestId('phone-live-report-case');
+    expect(rows[0]!.textContent).toContain('PASSED');
+    expect(rows[1]!.textContent).toContain('FAILED');
+    expect(rows[1]!.textContent).toContain('could not tap the element (add-to-bag)');
+    expect(rows[1]!.querySelector('img')?.getAttribute('src')).toContain(JPEG);
+    expect(report.textContent).toContain('runs/live-1/01-search.png');
+
+    /* A new screen (a clear) drops the stale frame. */
+    emit({ type: 'clear' });
+    expect(view.queryByTestId('phone-live-frame')).toBeNull();
+  });
+});
+
+describe('testing an app build', () => {
+  it('runs the task\'s install command and sends the file only when the runner asks, as base64 lines', async () => {
+    const INSTALL = '/w/bin/jm-install android';
+    const view = render(<Strip d={task(`live-ask: /w/bin/jm-ask iphone\nlive-install: ${INSTALL}`)} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    const bytes = new Uint8Array([80, 75, 3, 4, 1, 2, 3]);
+    const file = new File([bytes], 'shop.apk', { type: 'application/vnd.android.package-archive' });
+    fireEvent.change(view.getByTestId('phone-live-build-input'), { target: { files: [file] } });
+    await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
+    expect(view.getByTestId('phone-live-android').getAttribute('aria-checked')).toBe('true');
+    act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
+    await waitFor(() => expect(sent).toEqual([`term-1:clear; ${INSTALL}\r`]));
+    act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-BUILD\r\n')));
+    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 2000 });
+    expect(sent[1]).toBe(`term-1:${b64({ name: 'shop.apk', size: 7 })}\r`);
+    expect(sent[2]).toBe(`term-1:${Buffer.from(bytes).toString('base64')}\r`);
+  });
+
+  it('says so when the app is not set up for builds', () => {
+    const view = render(<Strip d={task('live-ask: /w/bin/jm-ask iphone')} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    expect(view.getByTestId('phone-live-build-none')).toBeTruthy();
+  });
+});
+
+describe('the website tester', () => {
+  it('takes a GitHub repository in the forms people paste, and nothing else', () => {
+    expect(normalizeRepo('https://github.com/acme/shop')).toBe('https://github.com/acme/shop');
+    expect(normalizeRepo('github.com/acme/shop.git')).toBe('https://github.com/acme/shop');
+    expect(normalizeRepo('acme/shop')).toBe('https://github.com/acme/shop');
+    expect(normalizeRepo('https://github.com/acme/shop/tree/main/web')).toBe('https://github.com/acme/shop');
+    expect(normalizeRepo('https://gitlab.com/acme/shop')).toBeNull();
+    expect(normalizeRepo('acme/shop; rm -rf ~')).toBeNull();
+    expect(normalizeRepo('https://github.com/../x')).toBeNull();
+  });
+
+  it('runs the task\'s live-web command and sends the repo and cases as one base64 line when asked', async () => {
+    const WEB = '/w/bin/web-test';
+    const view = render(<Strip d={task(`Websites.\nlive-web: ${WEB}`)} />);
+    fireEvent.click(view.getByTestId('tws-web-test'));
+    expect(view.getByTestId('web-test')).toBeTruthy();
+    expect((view.getByTestId('web-test-explore') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(view.getByTestId('web-test-repo'), { target: { value: 'gitlab.com/x/y' } });
+    expect(view.getByTestId('web-test-repo-bad')).toBeTruthy();
+    fireEvent.change(view.getByTestId('web-test-repo'), { target: { value: 'acme/shop' } });
+    fireEvent.change(view.getByTestId('web-test-ask'), { target: { value: 'Add to cart; $(reboot)' } });
+    fireEvent.click(view.getByTestId('web-test-send'));
+    await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
+    act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
+    await waitFor(() => expect(sent).toEqual([`term-1:clear; ${WEB}\r`]));
+    act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-CASES\r\n')));
+    const line = b64({ repo: 'https://github.com/acme/shop', cases: 'Add to cart; $(reboot)' });
+    await waitFor(() => expect(sent).toEqual([`term-1:clear; ${WEB}\r`, `term-1:${line}\r`]));
+    expect(window.localStorage.getItem('tm8.webTest.repo')).toBe('https://github.com/acme/shop');
+  });
+
+  it('says so when the space has no website test task', () => {
+    const view = render(<Strip d={task('Nothing.')} />);
+    fireEvent.click(view.getByTestId('tws-web-test'));
+    expect(view.getByTestId('web-test-none')).toBeTruthy();
   });
 });
