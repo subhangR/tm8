@@ -9,13 +9,38 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import type { EntityDetail } from '@tm8/contract';
 import { ActionStrip, EmbeddedWorkspace, EntityChromeContext, embeddedTab, useEmbeddedRuntime, useEntityChromeValue } from '../embed';
 import type { WorkspaceGateHandles } from './context';
-import { commandForDevice } from './PhoneLive';
+import { commandForDevice, sharedInstallCommand } from './PhoneLive';
 import { normalizeRepo } from './WebTest';
 import type { ScreenSignal } from '../../terminal';
 
 const sent: string[] = [];
 const sentAt: number[] = [];
 let backlog = 0;
+let lastClose: { code: number; reason: string; at: number } | null = null;
+/*
+ * A fake test node behind the terminal, doing what jm-install does: it takes the
+ * header, keeps numbered lines in order (skipping resends and anything past a
+ * gap), confirms its count with the OSC the phone waits for, and answers '?'.
+ */
+const node = { on: false, header: false, kept: [] as string[], lose: 0, said: '' };
+const ack = () => window.setTimeout(() => outputHandlers.forEach((h) => h('term-1', `\x1b]7777;tm8ack=${node.kept.length}\x07`)), 0);
+function receive(data: string) {
+  if (!node.on) return;
+  if (node.lose > 0) {
+    node.lose -= 1;
+    return;
+  }
+  for (const line of data.split('\r').filter(Boolean)) {
+    if (!node.header) node.header = true;
+    else if (line === 'END') window.setTimeout(() => outputHandlers.forEach((h) => h('term-1', node.said || '\x1b[32m✔\x1b[0m saved \x1b[2mbuilds/x.apk\x1b[0m\r\n')), 0);
+    else if (line === '?') ack();
+    else {
+      const [idx, b64] = line.split(':');
+      if (b64 !== undefined && Number(idx) === node.kept.length) node.kept.push(b64);
+    }
+  }
+  ack();
+}
 const signalTo: Record<string, (signal: ScreenSignal) => void> = {};
 const outputHandlers: Array<(id: string, data: string) => void> = [];
 
@@ -26,7 +51,7 @@ vi.mock('../../terminal', async (importOriginal) => ({
     { send(data: string): void },
     { sessionId: string; live?: boolean; onScreenSignal?: (signal: ScreenSignal) => void }
   >(function FakeTerminal({ sessionId, live, onScreenSignal }, ref) {
-    useImperativeHandle(ref, () => ({ send: (data: string) => (sentAt.push(performance.now()), sent.push(`${sessionId}:${data}`)) }));
+    useImperativeHandle(ref, () => ({ send: (data: string) => (sentAt.push(performance.now()), sent.push(`${sessionId}:${data}`), receive(data)) }));
     if (onScreenSignal) signalTo[sessionId] = onScreenSignal;
     return <div data-testid="fake-terminal" data-live={String(live)}>{sessionId}</div>;
   }),
@@ -34,6 +59,7 @@ vi.mock('../../terminal', async (importOriginal) => ({
 vi.mock('../../terminal/pty/ptyTransport.js', () => ({
   ptyTransport: {
     inputBacklog: () => backlog,
+    lastClose: () => lastClose,
     onOutput: (handler: (id: string, data: string) => void) => {
       outputHandlers.push(handler);
       return () => outputHandlers.splice(outputHandlers.indexOf(handler), 1);
@@ -93,6 +119,8 @@ beforeEach(() => {
   sent.length = 0;
   sentAt.length = 0;
   backlog = 0;
+  lastClose = null;
+  Object.assign(node, { on: false, header: false, kept: [], lose: 0, said: '' });
   outputHandlers.length = 0;
   for (const id of Object.keys(signalTo)) delete signalTo[id];
   started = 0;
@@ -310,50 +338,92 @@ describe('testing an app build', () => {
     expect(view.getByTestId('phone-live-android').getAttribute('aria-checked')).toBe('true');
     act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
     await waitFor(() => expect(sent).toEqual([`term-1:clear; ${INSTALL}\r`]));
+    node.on = true;
     act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-BUILD\r\n')));
     await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 2000 });
-    expect(sent[1]).toBe(`term-1:${b64({ name: 'shop.apk', size: 7 })}\r`);
-    expect(sent[2]).toBe(`term-1:${Buffer.from(bytes).toString('base64')}\r`);
+    expect(sent[1]).toBe(`term-1:${b64({ name: 'shop.apk', size: 7, v: 2 })}\r`);
+    expect(sent[2]).toBe(`term-1:0:${Buffer.from(bytes).toString('base64')}\r`);
+    await waitFor(() => expect(view.getByTestId('phone-live-upload').getAttribute('data-phase')).toBe('done'));
   });
 
-  it('paces a big build so no second carries more than the server takes, and says how long is left', async () => {
-    const INSTALL = '/w/bin/jm-install android';
-    const view = render(<Strip d={task(`live-ask: /w/bin/jm-ask iphone\nlive-install: ${INSTALL}`)} />);
+  const startBuild = async (bytes: Uint8Array) => {
+    const view = render(<Strip d={task('live-ask: /w/bin/jm-ask iphone\nlive-install: /w/bin/jm-install android')} />);
     fireEvent.click(view.getByTestId('tws-phone-live'));
-    const bytes = new Uint8Array(700 * 1024).map((_, i) => i % 251);
     fireEvent.change(view.getByTestId('phone-live-build-input'), { target: { files: [new File([bytes], 'big.apk')] } });
     await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
     act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
     await waitFor(() => expect(sent).toHaveLength(1));
+    node.on = true;
     act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-BUILD\r\n')));
-    await waitFor(() => expect(view.getByTestId('phone-live-sending').textContent).toMatch(/min left/));
-    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 6000 });
-    /* Every rolling second stays under 400 KB of input (the server closes the terminal past 512 KB). */
-    for (let i = 2; i < sent.length - 1; i++) {
-      const inWindow = sent.slice(2, sent.length - 1).filter((_, k) => sentAt[k + 2]! > sentAt[i]! - 1000 && sentAt[k + 2]! <= sentAt[i]!);
-      expect(inWindow.reduce((t, d) => t + d.length - 'term-1:'.length, 0)).toBeLessThanOrEqual(400 * 1024);
-    }
-    const lines = sent.slice(2, -1).join('').replaceAll('term-1:', '').split('\r').filter(Boolean);
-    expect(Buffer.concat(lines.map((l) => Buffer.from(l, 'base64')))).toEqual(Buffer.from(bytes));
-  }, 10_000);
+    return view;
+  };
+  const keptBytes = () => Buffer.concat(node.kept.map((l) => Buffer.from(l, 'base64')));
 
-  it('stops, instead of queueing the rest, when the connection drops mid-build', async () => {
-    const view = render(<Strip d={task('live-ask: /w/bin/jm-ask iphone\nlive-install: /w/bin/jm-install android')} />);
-    fireEvent.click(view.getByTestId('tws-phone-live'));
-    fireEvent.change(view.getByTestId('phone-live-build-input'), { target: { files: [new File([new Uint8Array(200 * 1024)], 'big.apk')] } });
-    await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
-    act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
-    await waitFor(() => expect(sent).toHaveLength(1));
+  it('sends a big build only as fast as the test node confirms it, and tracks it live to the end', async () => {
+    const bytes = new Uint8Array(700 * 1024).map((_, i) => i % 251);
+    const view = await startBuild(bytes);
+    await waitFor(() => expect(view.getByTestId('phone-live-sending').textContent).toMatch(/of 0\.7 MB · \d+% .*min left/));
+    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 8000 });
+    /* Every rolling second stays under 288 KB of input (the server closes the terminal past 512 KB). */
+    const frames = sent.map((d, k) => ({ at: sentAt[k]!, bytes: d.length - 'term-1:'.length }));
+    for (const f of frames) expect(frames.filter((g) => g.at > f.at - 1000 && g.at <= f.at).reduce((t, g) => t + g.bytes, 0)).toBeLessThanOrEqual(288 * 1024);
+    expect(keptBytes()).toEqual(Buffer.from(bytes));
+    await waitFor(() => expect(view.getByTestId('phone-live-upload').getAttribute('data-phase')).toBe('done'));
+    expect(view.getByTestId('phone-live-upload-log').textContent).toMatch(/Saved on the test node/);
+  }, 12_000);
+
+  it('rides out a dropped connection: logs why, resumes from what the node kept, and finishes', async () => {
+    const bytes = new Uint8Array(120 * 1024).map((_, i) => (i * 7) % 253);
+    const view = await startBuild(bytes);
+    await waitFor(() => expect(node.kept.length).toBeGreaterThan(8));
+    /* The connection drops and takes the frame in flight with it. */
+    node.lose = 1;
+    lastClose = { code: 1008, reason: 'input limit exceeded', at: Date.now() };
     backlog = -1;
-    act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-BUILD\r\n')));
-    await waitFor(() => expect(view.getByTestId('phone-live-build-saved').textContent).toMatch(/connection to the phone dropped/));
-    expect(sent.some((d) => d.endsWith('END\r'))).toBe(false);
+    await waitFor(() => expect(view.getByTestId('phone-live-upload').getAttribute('data-phase')).toBe('reconnecting'));
+    expect(view.getByTestId('phone-live-upload-log').textContent).toMatch(/Connection dropped at .*input limit exceeded, code 1008/);
+    backlog = 0;
+    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 8000 });
+    expect(keptBytes()).toEqual(Buffer.from(bytes));
+    expect(view.getByTestId('phone-live-upload-log').textContent).toMatch(/Reconnected\. Resuming from/);
+    await waitFor(() => expect(view.getByTestId('phone-live-upload').getAttribute('data-phase')).toBe('done'));
+  }, 12_000);
+
+  it('shows what the test node said when the build did not arrive, and offers to try again', async () => {
+    node.said = '\x1b[31mThe build did not arrive: received 5 bytes, expected 9\x1b[0m\r\n';
+    const view = await startBuild(new Uint8Array(9));
+    await waitFor(() => expect(view.getByTestId('phone-live-upload').getAttribute('data-phase')).toBe('failed'));
+    expect(view.getByTestId('phone-live-upload-log').textContent).toMatch(/The test node said: received 5 bytes, expected 9/);
+    fireEvent.click(view.getByTestId('phone-live-upload-retry'));
+    await waitFor(() => expect(view.queryByTestId('phone-live-upload')).toBeNull());
   });
 
-  it('says so when the app is not set up for builds', () => {
+  it('installs any app\'s build through the shared installer when its task names none, keyed by the task id', () => {
+    expect(sharedInstallCommand('01a14085-4ebd-71f0-a2dd-869b744f2300')).toBe('/home/tm8/prod-data/phone-tools/bin/phone-install android app-869b744f2300');
+    expect(sharedInstallCommand(null)).toBe('/home/tm8/prod-data/phone-tools/bin/phone-install android uploads');
     const view = render(<Strip d={task('live-ask: /w/bin/jm-ask iphone')} />);
     fireEvent.click(view.getByTestId('tws-phone-live'));
-    expect(view.getByTestId('phone-live-build-none')).toBeTruthy();
+    expect(view.getByTestId('phone-live-build-input')).toBeTruthy();
+    expect(document.body.textContent).toContain('phone-install android app-');
+  });
+
+  it('lists every app in the space and lets the viewer pick which one the phone tests', async () => {
+    query.mockImplementation(async () => ({
+      page: {
+        items: [
+          { id: 'app-a', title: 'Shop A', excerpt: 'live-ask: /w/bin/a-ask iphone' },
+          { id: 'app-b', title: 'Game B', excerpt: 'live-app: acme/game' },
+          { id: 'other', title: 'Not an app', excerpt: 'Nothing here.' },
+        ],
+      },
+    }));
+    const view = render(<Strip d={task('Some other task.')} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    const pick = (await waitFor(() => view.getByTestId('phone-live-app-pick'))) as HTMLSelectElement;
+    expect([...pick.options].map((o) => o.textContent)).toEqual(['Shop A', 'Game B', 'Another app (builds only)']);
+    expect(pick.value).toBe('app-a');
+    fireEvent.change(pick, { target: { value: 'app-b' } });
+    expect(window.localStorage.getItem('tm8.phoneLive.appTask:space-phone')).toBe('app-b');
   });
 });
 

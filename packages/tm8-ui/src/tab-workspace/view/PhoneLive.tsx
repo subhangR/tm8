@@ -77,21 +77,56 @@ export const BUILD_MARKER = 'READY-FOR-BUILD';
 /* 250 MB: at the paced ~300 KB/s of build that is about fifteen minutes; a 100 MB build takes about six. */
 export const BUILD_MAX_BYTES = 250 * 1024 * 1024;
 const BUILD_LINE_BYTES = 3000; // 4000 base64 characters per line
-const BUILD_LINES_PER_SEND = 12; // 48 KB a frame: under the PTY's 64 KB per frame
+const BUILD_LINES_PER_SEND = 8; // 32 KB a frame: under the PTY's 64 KB per frame
 /*
- * The server closes a terminal that sends more than 512 KB of input in one of
- * its one-second windows. Keeping every rolling second at 400 KB of base64
- * (~300 KB of build) holds every window under that whatever the timers do,
- * and waiting for the socket to drain keeps a slow uplink from bunching it.
+ * The server closes a terminal that takes more than 512 KB of input in one of
+ * its one-second windows, and it counts bytes when they ARRIVE: pacing what the
+ * browser sends is not enough, because a stalled link delivers everything the
+ * OS had buffered in one burst. So the runner confirms each numbered line it
+ * keeps (an OSC the terminal does not draw) and at most BUILD_WINDOW_LINES are
+ * ever unconfirmed. Whatever arrives in one second is then at most two windows
+ * (one resent after a stall) plus a second of sending: 2 x 96 + 288 = 480 KB.
  */
-const BUILD_BYTES_PER_SECOND = 400 * 1024;
+const BUILD_WINDOW_LINES = 24;
+const BUILD_BYTES_PER_SECOND = 288 * 1024;
 const BUILD_MAX_BACKLOG = 64 * 1024;
+/** No confirmation for this long while lines are in flight: ask the runner where it got to and resend from there. */
+const BUILD_STALL_MS = 8000;
+/** A dropped connection reconnects by itself; the upload resumes if it is back within this. */
+const BUILD_RECONNECT_MS = 3 * 60_000;
+const BUILD_ACK = /\x1b\]7777;tm8ack=(\d+)\x07/g;
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))/g;
+
+/** One build on its way to the phone: what the tracker under the screen shows, with its own log. */
+export type BuildUpload = {
+  name: string;
+  sent: number;
+  total: number;
+  bps: number;
+  phase: 'starting' | 'sending' | 'reconnecting' | 'checking' | 'done' | 'failed';
+  log: string[];
+};
+const mb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
+const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 /** Bigger builds are tested but not attached to the task: the web proxy refuses uploads over 64 MB. */
 const BUILD_ATTACH_MAX_BYTES = 60 * 1024 * 1024;
 /** Seconds left to send `remaining` bytes of build at the paced rate. */
 export const buildSecondsLeft = (remaining: number) => Math.ceil((remaining * 4) / 3 / BUILD_BYTES_PER_SECOND);
 const ASK_TRUSTED_KEY = 'tm8.phoneLive.askTrusted';
 const APP_TASK_KEY = 'tm8.phoneLive.appTask:';
+/*
+ * Any app's build installs through this node's shared installer when its task
+ * names no `live-install:` of its own: builds are kept per app, keyed by the
+ * app task's id (never by text a member wrote, since this is typed into a shell).
+ */
+const SHARED_INSTALL = '/home/tm8/prod-data/phone-tools/bin/phone-install';
+export function sharedInstallCommand(appTaskId: string | null): string {
+  return `${SHARED_INSTALL} android ${appTaskId ? `app-${appTaskId.replace(/[^0-9a-f]/gi, '').slice(-12)}` : 'uploads'}`;
+}
+/** A space's app task: a test task whose description names how the phone tests it. */
+const APP_TASK = /(^|\s)live-(ask|install|app):\s*\S/;
 export const READY_MARKER = 'READY-FOR-CASES';
 const LIVE_TERMINAL_LINE = /^[ \t]*live-terminal:[ \t]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[ \t]+(iphone|android|pixel))?[ \t]*$/im;
 
@@ -126,6 +161,48 @@ export function appNameOf(detail: EntityDetail | null | undefined): string | nul
 /** The task's build-install command (`live-install:`): runs an uploaded .apk/.ipa. */
 export function installCommandOf(detail: EntityDetail | null | undefined): string | null {
   return lineOf(detail, INSTALL_LINE);
+}
+
+const UPLOAD_PHASE: Record<BuildUpload['phase'], string> = {
+  starting: 'Waiting for the test node…',
+  sending: 'Uploading',
+  reconnecting: 'Connection dropped. Resuming by itself…',
+  checking: 'Checking the file…',
+  done: 'Uploaded',
+  failed: 'Upload failed',
+};
+
+/** The build's upload, live: a bar, how much and how fast, and a log that opens by itself when something goes wrong. */
+export function UploadTrack({ upload, onRetry }: { upload: BuildUpload; onRetry: (() => void) | null }) {
+  const pct = upload.total ? Math.floor((upload.sent / upload.total) * 100) : 0;
+  const moving = upload.phase === 'starting' || upload.phase === 'sending' || upload.phase === 'reconnecting';
+  const left = upload.bps > 0 ? (upload.total - upload.sent) / upload.bps : buildSecondsLeft(upload.total - upload.sent);
+  return (
+    <section className={`phl-upload phl-upload--${upload.phase}`} data-testid="phone-live-upload" data-phase={upload.phase}>
+      <p className="phl-upload__head">
+        <strong>{upload.name}</strong>
+        <span>{UPLOAD_PHASE[upload.phase]}</span>
+      </p>
+      <progress className="phl-upload__bar" max={upload.total || 1} value={upload.sent} aria-label="Upload progress" />
+      <p className="phl-note" role="status" data-testid="phone-live-sending">
+        {mb(upload.sent)} of {mb(upload.total)} · {pct}%{upload.bps > 0 ? ` · ${Math.round(upload.bps / 1024)} KB/s` : ''}
+        {moving ? ` · about ${Math.max(1, Math.ceil(left / 60))} min left — keep this window open` : ''}
+      </p>
+      <details className="phl-upload__log" open={upload.phase === 'failed' || upload.phase === 'reconnecting'}>
+        <summary>Upload log</summary>
+        <ol data-testid="phone-live-upload-log">
+          {upload.log.map((line, i) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ol>
+      </details>
+      {upload.phase === 'failed' && onRetry ? (
+        <button type="button" className="phl-secondary" data-testid="phone-live-upload-retry" onClick={onRetry}>
+          Try again
+        </button>
+      ) : null}
+    </section>
+  );
 }
 
 /** Which phone a build is for, from its name; null when it is neither an APK nor an IPA. */
@@ -254,19 +331,28 @@ export function PhoneLiveDialog({
   const [, setTick] = useState(0);
   const appDetail = ownAsk ? detail : appTaskId ? (gate.data.detailOf(appTaskId as EntityId) ?? null) : null;
   const askCommand = ownAsk ?? askCommandOf(appDetail);
-  const installCommand = installCommandOf(ownAsk ? detail : appDetail);
+  const installCommand = installCommandOf(ownAsk ? detail : appDetail) ?? sharedInstallCommand(ownAsk ? detail!.id : appTaskId);
+  /* Every app the space has: the phone tests whichever one the viewer picks. */
+  const [apps, setApps] = useState<Array<{ id: string; title: string }>>([]);
+  const pickApp = (id: string) => {
+    writeStored(APP_TASK_KEY + space, id);
+    setAppTaskId(id || null);
+  };
   const appName = appNameOf(appDetail);
-  /* Not remembered yet: find the space's app task. */
+  /* The space's app tasks; the first one is the default until the viewer picks. */
   useEffect(() => {
-    if (appTaskId || !space || !gate.data.seam?.query) return;
+    if (!space || !gate.data.seam?.query) return;
     let live = true;
     void gate.data.seam
       .query({ spaceId: space as never, kinds: ['task'], filters: { axes: { type: ['test'] } }, limit: 50 } as never)
       .then((result) => {
-        const found = result.page.items.find((item) => !item.deletedAt && /(^|\s)live-ask:\s*\S/.test(item.excerpt ?? ''));
-        if (live && found) {
-          writeStored(APP_TASK_KEY + space, found.id);
-          setAppTaskId(found.id);
+        if (!live) return;
+        const found = result.page.items.filter((item) => !item.deletedAt && APP_TASK.test(item.excerpt ?? ''));
+        setApps(found.map((item) => ({ id: item.id, title: item.title ?? item.id })));
+        const first = found.find((item) => /(^|\s)live-ask:\s*\S/.test(item.excerpt ?? '')) ?? found[0];
+        if (first && !readStored(APP_TASK_KEY + space)) {
+          writeStored(APP_TASK_KEY + space, first.id);
+          setAppTaskId(first.id);
         }
       })
       .catch(() => undefined);
@@ -291,7 +377,7 @@ export function PhoneLiveDialog({
   const [screenRun, dispatch] = useReducer(runReducer, EMPTY_RUN);
   const [peek, setPeek] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const [sending, setSending] = useState<{ sent: number; total: number } | null>(null);
+  const [sending, setSending] = useState<BuildUpload | null>(null);
   const [saved, setSaved] = useState<{ name: string; note: string; error?: boolean } | null>(null);
   const runRef = useRef<Run | null>(null);
   runRef.current = run;
@@ -370,41 +456,106 @@ export function PhoneLiveDialog({
     let buildSent = false;
     let cancelled = false;
     let tail = '';
-    /* The build's bytes, as base64 lines after a header line, paced under the PTY's input limit. */
+    /* The test node's side of the build transfer: lines it confirmed, and whether it has finished. */
+    const build = { acked: -1, over: false, ackTail: '', textTail: '' };
+    /* The build's bytes, as numbered base64 lines after a header line, sent only as fast as the runner confirms them. */
     const sendBuild = async (file: File) => {
-      const header = base64Line(JSON.stringify({ name: file.name, size: file.size }));
-      terminalRef.current?.send(`${header}\r`);
-      let offset = 0;
+      const lineCount = Math.ceil(file.size / BUILD_LINE_BYTES);
+      const header = `${base64Line(JSON.stringify({ name: file.name, size: file.size, v: 2 }))}\r`;
       const recent: { at: number; bytes: number }[] = [];
-      setSending({ sent: 0, total: file.size });
-      while (offset < file.size && !cancelled) {
-        const end = Math.min(file.size, offset + BUILD_LINE_BYTES * BUILD_LINES_PER_SEND);
-        const bytes = new Uint8Array(await file.slice(offset, end).arrayBuffer());
-        let chunk = '';
-        for (let i = 0; i < bytes.length; i += BUILD_LINE_BYTES) chunk += `${bytesToBase64(bytes.subarray(i, i + BUILD_LINE_BYTES))}\r`;
-        /* Wait until the socket has drained and the last second has room for this frame. */
-        for (;;) {
-          if (cancelled) return;
-          const backlog = ptyTransport.inputBacklog(terminalId);
-          if (backlog < 0) {
-            /* Never queue the rest: a reconnect would flush it in one burst, with a gap the runner cannot use. */
-            setSending(null);
-            setSaved({ name: file.name, note: 'did not finish sending: the connection to the phone dropped. Try again.', error: true });
+      const started = performance.now();
+      const confirmed = () => Math.min(file.size, Math.max(build.acked, 0) * BUILD_LINE_BYTES);
+      const note = (patch: Partial<BuildUpload>, line?: string) =>
+        setSending((was) => (was ? { ...was, ...patch, log: line ? [...was.log, `${clock()}  ${line}`].slice(-60) : was.log } : was));
+      const put = (text: string) => {
+        terminalRef.current?.send(text);
+        recent.push({ at: performance.now(), bytes: text.length });
+      };
+      let next = 0;
+      let seen = -1;
+      let progressAt = started;
+      let droppedAt: number | null = null;
+      let headerTries = 1;
+      let resync = false;
+      setSending({ name: file.name, sent: 0, total: file.size, bps: 0, phase: 'starting', log: [`${clock()}  Sending ${file.name} (${mb(file.size)})`] });
+      put(header);
+      while (!cancelled && !build.over) {
+        const now = performance.now();
+        const backlog = ptyTransport.inputBacklog(terminalId);
+        if (backlog < 0) {
+          if (droppedAt === null) {
+            droppedAt = now;
+            const why = ptyTransport.lastClose(terminalId);
+            const reason = why ? ` (server said: ${why.reason || 'nothing'}, code ${why.code})` : '';
+            note({ phase: 'reconnecting' }, `Connection dropped at ${mb(confirmed())}${reason}. Reconnecting…`);
+          } else if (now - droppedAt > BUILD_RECONNECT_MS) {
+            note({ phase: 'failed' }, 'The connection did not come back within 3 minutes.');
             return;
           }
-          const now = performance.now();
-          while (recent.length && now - recent[0]!.at >= 1000) recent.shift();
-          const used = recent.reduce((t, r) => t + r.bytes, 0);
-          if (backlog <= BUILD_MAX_BACKLOG && used + chunk.length <= BUILD_BYTES_PER_SECOND) break;
-          const wait = used + chunk.length > BUILD_BYTES_PER_SECOND && recent.length ? 1000 - (now - recent[0]!.at) + 5 : 50;
-          await new Promise((resolve) => window.setTimeout(resolve, wait));
+          await sleep(250);
+          continue;
         }
-        terminalRef.current?.send(chunk);
-        recent.push({ at: performance.now(), bytes: chunk.length });
-        offset = end;
-        setSending({ sent: offset, total: file.size });
+        if (droppedAt !== null) {
+          droppedAt = null;
+          resync = true; // some lines may have been lost with the old connection
+          note({ phase: build.acked < 0 ? 'starting' : 'sending' }, `Reconnected. Resuming from ${mb(confirmed())}.`);
+        }
+        if (build.acked !== seen) {
+          seen = build.acked;
+          progressAt = now;
+          if (seen === 0 && next === 0) note({ phase: 'sending' }, 'The test node is ready and receiving.');
+          note({ sent: confirmed(), bps: confirmed() / Math.max(1, (now - started) / 1000) });
+        }
+        if (build.acked >= lineCount) {
+          put('END\r');
+          note({ sent: file.size, phase: 'checking' }, 'All sent. The test node is checking the file…');
+          return;
+        }
+        if (resync || ((build.acked < 0 || next > build.acked) && now - progressAt > BUILD_STALL_MS)) {
+          if (build.acked < 0) {
+            if (headerTries >= 4) {
+              note({ phase: 'failed' }, 'The test node never answered. Its install script may be out of date.');
+              return;
+            }
+            headerTries += 1;
+            put(header);
+            note({}, 'No answer from the test node yet. Asking again.');
+          } else {
+            put('?\r');
+            if (!resync) note({}, `Nothing confirmed for ${BUILD_STALL_MS / 1000}s. Resending from ${mb(confirmed())}.`);
+          }
+          resync = false;
+          next = Math.max(build.acked, 0);
+          progressAt = now;
+          continue;
+        }
+        if (build.acked < 0) {
+          await sleep(50);
+          continue;
+        }
+        if (next < build.acked) next = build.acked;
+        const room = BUILD_WINDOW_LINES - (next - build.acked);
+        if (next >= lineCount || room <= 0 || backlog > BUILD_MAX_BACKLOG) {
+          await sleep(25);
+          continue;
+        }
+        const count = Math.min(BUILD_LINES_PER_SEND, room, lineCount - next);
+        while (recent.length && now - recent[0]!.at >= 1000) recent.shift();
+        const used = recent.reduce((t, r) => t + r.bytes, 0);
+        const size = count * (BUILD_LINE_BYTES / 3 * 4 + 12);
+        if (used + size > BUILD_BYTES_PER_SECOND) {
+          await sleep(recent.length ? 1000 - (now - recent[0]!.at) + 5 : 50);
+          continue;
+        }
+        const from = next * BUILD_LINE_BYTES;
+        const bytes = new Uint8Array(await file.slice(from, Math.min(file.size, from + count * BUILD_LINE_BYTES)).arrayBuffer());
+        if (cancelled || build.over || ptyTransport.inputBacklog(terminalId) < 0) continue;
+        let chunk = '';
+        for (let k = 0; k < count; k++) chunk += `${next + k}:${bytesToBase64(bytes.subarray(k * BUILD_LINE_BYTES, (k + 1) * BUILD_LINE_BYTES))}\r`;
+        if (next === build.acked) progressAt = performance.now();
+        put(chunk);
+        next += count;
       }
-      if (!cancelled) terminalRef.current?.send('END\r');
     };
     const send = () => {
       if (sent) return;
@@ -427,6 +578,22 @@ export function PhoneLiveDialog({
         if (tail.includes(BUILD_MARKER)) {
           buildSent = true;
           void sendBuild(runBuild);
+        }
+      } else if (buildSent && !build.over) {
+        build.ackTail = (build.ackTail + data).slice(-96);
+        for (const m of build.ackTail.matchAll(BUILD_ACK)) build.acked = Math.max(build.acked, Number(m[1]));
+        /* How the runner ended the transfer, in its own words. */
+        build.textTail = (build.textTail + data.replace(ANSI, '')).slice(-600);
+        const failed = /The build did not arrive: ([^\r\n]*)/.exec(build.textTail);
+        if (failed || /saved builds\//.test(build.textTail)) {
+          build.over = true;
+          setSending((was) =>
+            was
+              ? failed
+                ? { ...was, phase: 'failed', log: [...was.log, `${clock()}  The test node said: ${failed[1]!.trim()}`] }
+                : { ...was, sent: was.total, phase: 'done', log: [...was.log, `${clock()}  Saved on the test node. Installing it on the phone…`] }
+              : was,
+          );
         }
       }
       if (settle !== undefined) return;
@@ -571,6 +738,26 @@ export function PhoneLiveDialog({
             </button>
           </header>
 
+          {!ownAsk && apps.length > 0 ? (
+            <label className="phl-app">
+              <span className="phl-h">App</span>
+              <select
+                value={appTaskId ?? ''}
+                disabled={Boolean(watch) || Boolean(sending && sending.phase !== 'done' && sending.phase !== 'failed')}
+                data-testid="phone-live-app-pick"
+                onChange={(e) => pickApp(e.target.value)}
+              >
+                {appTaskId && !apps.some((a) => a.id === appTaskId) ? <option value={appTaskId}>{appName ?? 'This space’s app'}</option> : null}
+                {apps.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.title}
+                  </option>
+                ))}
+                <option value="">Another app (builds only)</option>
+              </select>
+            </label>
+          ) : null}
+
           <div className="phl-devices" role="radiogroup" aria-label="Device">
             {(['iphone', 'android'] as const).map((d) => (
               <button
@@ -599,11 +786,11 @@ export function PhoneLiveDialog({
 
           <RunCases run={screenRun} peek={peek} onPeek={() => setPeek((p) => !p)} onReport={() => setReportOpen(true)} onDownload={download} />
 
-          {sending && sending.sent < sending.total ? (
-            <p className="phl-note" role="status" data-testid="phone-live-sending">
-              Sending the build to the phone… {Math.floor((sending.sent / sending.total) * 100)}% · about{' '}
-              {Math.max(1, Math.ceil(buildSecondsLeft(sending.total - sending.sent) / 60))} min left — keep this window open
-            </p>
+          {sending ? (
+            <UploadTrack
+              upload={sending}
+              onRetry={run?.build && installCommand ? () => start(installCommand, run.device, undefined, run.build) : null}
+            />
           ) : null}
 
           {!watch ? (
@@ -700,7 +887,7 @@ export function PhoneLiveDialog({
 
           <section className="phl-section" data-testid="phone-live-build">
             <h3 className="phl-h">Install &amp; test an app build</h3>
-            {installCommand ? (
+            {
               <>
                 <label className={`phl-secondary phl-file${!commands || watch ? ' phl-file--off' : ''}`}>
                   📦 Upload .apk / .ipa
@@ -727,11 +914,7 @@ export function PhoneLiveDialog({
                   <code>{installCommand}</code> as you, on this node.
                 </p>
               </>
-            ) : (
-              <p className="phl-note" data-testid="phone-live-build-none">
-                Not set up for this app: its test task needs a <code>live-install:</code> line.
-              </p>
-            )}
+            }
           </section>
         </aside>
       </div>

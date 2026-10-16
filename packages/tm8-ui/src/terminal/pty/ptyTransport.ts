@@ -75,6 +75,8 @@ const _attachModes = new Map<string, 'view' | 'drive'>();
 const _connecting = new Set<string>();
 /** Invalidates a late grant response after close/reopen of the same id. */
 const _connectGenerations = new Map<string, number>();
+/** The last close each session's socket saw, so a caller can say WHY it dropped. */
+const _lastClose = new Map<string, { code: number; reason: string; at: number }>();
 const _pendingSends = new Map<string, { frames: Array<string | Uint8Array>; bytes: number }>();
 /** Fail-closed after queue overflow until a socket successfully opens. */
 const _overflowLatched = new Set<string>();
@@ -430,6 +432,7 @@ function _wireSocket(id: string, ws: WebSocket, requirePublicProtocol: boolean):
 
   ws.onclose = (ev) => {
     if (_sockets.get(id) === ws) _sockets.delete(id);
+    _lastClose.set(id, { code: ev.code, reason: ev.reason, at: Date.now() });
 
     // INTENTIONAL SUSPEND: triggered by suspend() for an offscreen terminal. Do
     // NOT reconnect and do NOT tear down resume state — resume() reopens at the
@@ -746,6 +749,11 @@ export const ptyTransport = {
    * so a slow uplink cannot bunch its frames into one of the server's
    * per-second input windows.
    */
+  /** Why this session's socket last closed (code + server reason), or null if it never has. */
+  lastClose(id: string): { code: number; reason: string; at: number } | null {
+    return _lastClose.get(id) ?? null;
+  },
+
   inputBacklog(id: string): number {
     const ws = _sockets.get(id);
     return ws && ws.readyState === WebSocket.OPEN ? ws.bufferedAmount : -1;
