@@ -126,12 +126,14 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // being asserted independently of it.
     // The View switcher (task 01a0dc6d, 2026-09-26): the four VIEWS lead the
     // row inside one pill, and Craft/Settings/Help follow as plain tabs.
+    // Home (the `chats` group) left the row with the Home dashboard: its
+    // `dashboard` view now lands in the workspace on every desktop.
     expect(labels).toEqual([
-      'Home', 'Workspace', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
+      'Workspace', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
     ]);
     const pill = within(tabs).getByTestId('top-view-switcher');
     expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim()))
-      .toEqual(['Home', 'Workspace', 'Work', 'Board', 'Graph']);
+      .toEqual(['Workspace', 'Work', 'Board', 'Graph']);
 
     // The rail is absent as a matter of design, so none of its furniture is
     // half-rendered either — a stray group or divider would mean a rail came
@@ -394,7 +396,7 @@ describe('THE GATE — composed T0-1 master screen', () => {
       await waitFor(() => view.getByTestId('workspace-grid'));
       const select = await waitFor(() => view.getByTestId('top-view-switcher-select') as HTMLSelectElement);
       expect([...select.options].filter((o) => !o.disabled).map((o) => o.textContent))
-        .toEqual(['Home', 'Workspace', 'Work', 'Board', 'Graph']);
+        .toEqual(['Workspace', 'Work', 'Board', 'Graph']);
 
       fireEvent.change(select, { target: { value: 'graph' } });
       await waitFor(() => view.getByTestId('graph-screen'));

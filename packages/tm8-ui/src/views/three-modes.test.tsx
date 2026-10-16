@@ -81,7 +81,6 @@ describe('the default landing is Home', () => {
     const view = mount(target);
     await waitFor(() => view.getByTestId('tab-workspace'));
     await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home`));
-    expect(view.queryByTestId('home-page')).toBeNull();
   });
 
   it('keeps /tabs and /work as permanent aliases, rewritten in place to /home', async () => {
@@ -101,7 +100,6 @@ describe('retired desktop addresses land in Work (replace history)', () => {
     const view = mount(target);
     await waitFor(() => view.getByTestId('tab-workspace'));
     await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home`));
-    expect(view.queryByTestId('home-page')).toBeNull();
   });
 
   it('/home/k/{slug} → Work with that kind in the browser', async () => {
@@ -169,14 +167,27 @@ describe('who is NOT redirected', () => {
     await settle(200);
     expect(view.queryByTestId('tab-workspace')).toBeNull();
     expect(target.getHash()).toBe(`#/s/${SPACE}/home`);
+    /* The phone's /home is its chat screen, never the removed desktop Home. */
+    await waitFor(() => view.getByTestId('chat-home-screen'));
+    expect(view.queryByTestId('home-rail')).toBeNull();
   });
 
-  it('the legacy desktop keeps Home', async () => {
+  it('the legacy desktop does NOT keep Home: the dashboard is removed, /home is the tabs view', async () => {
     storage.set(DESKTOP_MODES_KEY, 'legacy');
     const target = at('/home');
     const view = mount(target);
-    await waitFor(() => view.getByTestId('home-page'));
-    expect(target.getHash()).toBe(`#/s/${SPACE}/home`);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/home(\\?|$)`));
+  });
+
+  it('the legacy desktop restores a remembered Home as Work', async () => {
+    storage.set(DESKTOP_MODES_KEY, 'legacy');
+    storage.set(
+      'tm8.last-place.v1.local',
+      JSON.stringify({ spaceId: SPACE, targets: { [SPACE]: { type: 'view', ref: 'dashboard' } } }),
+    );
+    const view = render(<GateApp />);
+    await waitFor(() => view.getByTestId('tab-workspace'));
   });
 });
 
@@ -289,7 +300,6 @@ describe('Work is a remembered place', () => {
     );
     const view = render(<GateApp />);
     await waitFor(() => view.getByTestId('tab-workspace'));
-    expect(view.queryByTestId('home-page')).toBeNull();
   });
 
   it('entering Work writes it to last-place', async () => {
