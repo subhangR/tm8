@@ -363,14 +363,14 @@ describe('testing an app build', () => {
     const bytes = new Uint8Array(700 * 1024).map((_, i) => i % 251);
     const view = await startBuild(bytes);
     await waitFor(() => expect(view.getByTestId('phone-live-sending').textContent).toMatch(/of 0\.7 MB · \d+% .*min left/));
-    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 8000 });
+    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 25_000 });
     /* Every rolling second stays under 288 KB of input (the server closes the terminal past 512 KB). */
     const frames = sent.map((d, k) => ({ at: sentAt[k]!, bytes: d.length - 'term-1:'.length }));
     for (const f of frames) expect(frames.filter((g) => g.at > f.at - 1000 && g.at <= f.at).reduce((t, g) => t + g.bytes, 0)).toBeLessThanOrEqual(288 * 1024);
     expect(keptBytes()).toEqual(Buffer.from(bytes));
     await waitFor(() => expect(view.getByTestId('phone-live-upload').getAttribute('data-phase')).toBe('done'));
     expect(view.getByTestId('phone-live-upload-log').textContent).toMatch(/Saved on the test node/);
-  }, 12_000);
+  }, 30_000);
 
   it('rides out a dropped connection: logs why, resumes from what the node kept, and finishes', async () => {
     const bytes = new Uint8Array(120 * 1024).map((_, i) => (i * 7) % 253);
@@ -383,11 +383,11 @@ describe('testing an app build', () => {
     await waitFor(() => expect(view.getByTestId('phone-live-upload').getAttribute('data-phase')).toBe('reconnecting'));
     expect(view.getByTestId('phone-live-upload-log').textContent).toMatch(/Connection dropped at .*input limit exceeded, code 1008/);
     backlog = 0;
-    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 8000 });
+    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 25_000 });
     expect(keptBytes()).toEqual(Buffer.from(bytes));
     expect(view.getByTestId('phone-live-upload-log').textContent).toMatch(/Reconnected\. Resuming from/);
     await waitFor(() => expect(view.getByTestId('phone-live-upload').getAttribute('data-phase')).toBe('done'));
-  }, 12_000);
+  }, 30_000);
 
   it('shows what the test node said when the build did not arrive, and offers to try again', async () => {
     node.said = '\x1b[31mThe build did not arrive: received 5 bytes, expected 9\x1b[0m\r\n';

@@ -60,6 +60,7 @@ import { getKind } from '../../domain';
 import { liveCommandOf } from '../../panels/detail/LiveScreenButton';
 import { useWorkspace } from './context';
 import './phone-live.css';
+import { clockTime } from '../../kit/time';
 
 export type PhoneDevice = 'iphone' | 'android';
 
@@ -108,7 +109,7 @@ export type BuildUpload = {
   log: string[];
 };
 const mb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
-const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const clock = () => clockTime(Date.now(), { seconds: true });
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 /** Bigger builds are tested but not attached to the task: the web proxy refuses uploads over 64 MB. */
 const BUILD_ATTACH_MAX_BYTES = 60 * 1024 * 1024;
