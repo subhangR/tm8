@@ -8,14 +8,14 @@
   flex-direction: column;
   border-radius: 12px;
   overflow: hidden;
-  background: #202124;
+  background: var(--pn-x-term-bg);
   box-shadow: 0 0 0 1px color-mix(in srgb, black 70%, white), 0 24px 60px var(--pn-scrim);
 }
-.wbt-bar { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 12px; background: #2d2e31; }
+.wbt-bar { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 12px; background: color-mix(in srgb, var(--pn-x-term-bg) 88%, white); }
 .wbt-dots { display: flex; gap: 6px; }
-.wbt-dots i { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
-.wbt-dots i:nth-child(2) { background: #febc2e; }
-.wbt-dots i:nth-child(3) { background: #28c840; }
+.wbt-dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--pn-block); }
+.wbt-dots i:nth-child(2) { background: var(--pn-wait); }
+.wbt-dots i:nth-child(3) { background: var(--pn-run); }
 .wbt-url {
   flex: 1;
   min-width: 0;
@@ -24,8 +24,8 @@
   text-overflow: ellipsis;
   padding: 4px 12px;
   border-radius: 999px;
-  background: #1b1c1e;
-  color: #c4c7c5;
+  background: color-mix(in srgb, var(--pn-x-term-bg) 80%, black);
+  color: var(--pn-x-term-fg);
   font-size: 12px;
 }
 /* 1280 x 800, the runner's viewport, so the frame fills it exactly. */

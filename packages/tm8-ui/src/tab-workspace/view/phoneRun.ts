@@ -190,11 +190,11 @@ ${c.shot ? `<img src="${c.shot}" alt="Screen at the end of case ${i + 1}">` : ''
     })
     .join('\n');
   return `<!doctype html><html><head><meta charset="utf-8"><title>Test report · ${escapeHtml(run.title ?? 'phone run')}</title>
-<style>body{font:14px/1.45 system-ui,sans-serif;margin:24px auto;max-width:980px;color:#1d1d1f;padding:0 16px}
-h1{font-size:22px;margin:0 0 4px}.sum{display:flex;gap:16px;margin:16px 0 24px;flex-wrap:wrap}.sum div{padding:10px 16px;border-radius:10px;background:#f2f2f4}
+<style>body{font:14px/1.45 system-ui,sans-serif;margin:24px auto;max-width:980px;color:rgb(29,29,31);padding:0 16px}
+h1{font-size:22px;margin:0 0 4px}.sum{display:flex;gap:16px;margin:16px 0 24px;flex-wrap:wrap}.sum div{padding:10px 16px;border-radius:10px;background:rgb(242,242,244)}
 .sum b{display:block;font-size:20px}.case{display:flex;gap:20px;justify-content:space-between;border-top:1px solid #ddd;padding:16px 0}
-.case h2{font-size:16px;margin:0 0 4px}.verdict{font-weight:700;margin:0}.ok .verdict{color:#18794e}.fail .verdict{color:#c62828}.planned .verdict{color:#777}
-.why{margin:8px 0}pre{white-space:pre-wrap;background:#f6f6f8;padding:8px;border-radius:6px;font-size:12px;max-height:160px;overflow:auto}
+.case h2{font-size:16px;margin:0 0 4px}.verdict{font-weight:700;margin:0}.ok .verdict{color:rgb(24,121,78)}.fail .verdict{color:rgb(198,40,40)}.planned .verdict{color:#777}
+.why{margin:8px 0}pre{white-space:pre-wrap;background:rgb(246,246,248);padding:8px;border-radius:6px;font-size:12px;max-height:160px;overflow:auto}
 .file{color:#777;font-size:12px}img{width:220px;border-radius:12px;border:1px solid #ddd;flex:none;align-self:flex-start}</style></head><body>
 <h1>Test report${run.title ? ` · ${escapeHtml(run.title)}` : ''}</h1>
 <p>${escapeHtml(meta.app ?? 'App')} · ${escapeHtml(run.device ?? '')} · ${escapeHtml(run.startedAt ?? '')}${run.runName ? ` · run ${escapeHtml(run.runName)}` : ''}</p>
