@@ -20,6 +20,7 @@ import type { EntityDetail, EntityId } from '@tm8/contract';
 import { LiveTerminal, isLiveTerminalEnabled, type LiveTerminalHandle } from '../../terminal';
 import { ptyTransport } from '../../terminal/pty/ptyTransport.js';
 import { EMPTY_RUN } from './phoneRun';
+import type { ReportFormat } from './reportFiles';
 import { READY_MARKER, RunCases, RunReport, base64Line, downloadReport, runReducer } from './PhoneLive';
 import { useWorkspace } from './context';
 import './phone-live.css';
@@ -230,7 +231,7 @@ export function WebTestDialog({ detail, onClose }: { detail: EntityDetail | null
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, reportOpen]);
 
-  const download = () => downloadReport(screenRun, { app: run?.repo ?? null, asked: run?.cases || null });
+  const download = (format: ReportFormat) => downloadReport(screenRun, { app: run?.repo ?? null, asked: run?.cases || null }, format);
 
   const screen =
     run?.terminalId && isLiveTerminalEnabled() ? (

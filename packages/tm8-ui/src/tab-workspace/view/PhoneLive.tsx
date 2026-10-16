@@ -54,6 +54,7 @@ import type { EntityDetail, EntityId } from '@tm8/contract';
 import { LiveTerminal, isLiveTerminalEnabled, type LiveTerminalHandle, type ScreenSignal } from '../../terminal';
 import { createFileUploadTask, safeUploadReason } from '../../files/upload';
 import { EMPTY_RUN, explainFailure, formatMs, reduceRun, reportHtml, type PhoneRunState } from './phoneRun';
+import { REPORT_MIME, reportDocx, reportPdf, type ReportFormat, type ReportMeta } from './reportFiles';
 import { ptyTransport } from '../../terminal/pty/ptyTransport.js';
 import { getKind } from '../../domain';
 import { liveCommandOf } from '../../panels/detail/LiveScreenButton';
@@ -468,7 +469,7 @@ export function PhoneLiveDialog({
     setReportOpen(false);
   }, [screenTerminalId]);
 
-  const download = () => downloadReport(screenRun, { app: appName, asked: run?.cases?.trim() || null });
+  const download = (format: ReportFormat) => downloadReport(screenRun, { app: appName, asked: run?.cases?.trim() || null }, format);
 
   const screenDevice = shown?.device ?? device;
   const screen = shown ? (
@@ -757,16 +758,34 @@ function FitScreen({ children }: { children: ReactNode }) {
 }
 
 /** The report, downloaded as one self-contained HTML file. */
-export function downloadReport(run: PhoneRunState, meta: { app: string | null; asked: string | null }) {
-  const html = reportHtml(run, meta);
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+/** Saves the report as a PDF or a Word document (`reportFiles.ts`), or the plain HTML page. */
+export function downloadReport(run: PhoneRunState, meta: ReportMeta, format: ReportFormat | 'html' = 'pdf') {
+  const blob =
+    format === 'html'
+      ? new Blob([reportHtml(run, meta)], { type: 'text/html' })
+      : new Blob([(format === 'pdf' ? reportPdf : reportDocx)(run, meta) as BlobPart], { type: REPORT_MIME[format] });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `test-report-${run.runName ?? new Date().toISOString().slice(0, 19)}.html`;
+  a.download = `test-report-${(run.runName ?? new Date().toISOString().slice(0, 19)).replace(/[^\w.-]+/g, '-')}.${format}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** The report as a file: a PDF, or a Word document to edit. */
+function DownloadButtons({ onDownload }: { onDownload(format: ReportFormat): void }) {
+  return (
+    <span className="phl-downloads">
+      <button type="button" className="phl-secondary" onClick={() => onDownload('pdf')} data-testid="phone-live-download-pdf">
+        ⬇ PDF
+      </button>
+      <button type="button" className="phl-secondary" onClick={() => onDownload('docx')} data-testid="phone-live-download-docx">
+        ⬇ Word
+      </button>
+    </span>
+  );
 }
 
 const CASE_MARK: Record<string, string> = { planned: '○', run: '…', ok: '✔', fail: '✘' };
@@ -783,7 +802,7 @@ export function RunCases({
   peek: boolean;
   onPeek(): void;
   onReport(): void;
-  onDownload(): void;
+  onDownload(format: ReportFormat): void;
 }) {
   if (!run.cases.length && !run.status && !run.frame) return null;
   const passed = run.cases.filter((c) => c.state === 'ok').length;
@@ -826,9 +845,7 @@ export function RunCases({
             <button type="button" className="phl-start" onClick={onReport} data-testid="phone-live-report">
               📋 View test report
             </button>
-            <button type="button" className="phl-secondary" onClick={onDownload} data-testid="phone-live-download">
-              Download
-            </button>
+            <DownloadButtons onDownload={onDownload} />
           </div>
         </div>
       ) : null}
@@ -848,7 +865,7 @@ export function RunReport({
   app: string | null;
   asked: string | null;
   onClose(): void;
-  onDownload(): void;
+  onDownload(format: ReportFormat): void;
 }) {
   const passed = run.cases.filter((c) => c.state === 'ok').length;
   const failed = run.cases.filter((c) => c.state === 'fail').length;
@@ -877,9 +894,7 @@ export function RunReport({
                 .join(' · ')}
             </p>
           </div>
-          <button type="button" className="phl-secondary" onClick={onDownload}>
-            Download
-          </button>
+          <DownloadButtons onDownload={onDownload} />
           <button type="button" className="phl-close" aria-label="Close report" onClick={onClose}>
             ✕
           </button>

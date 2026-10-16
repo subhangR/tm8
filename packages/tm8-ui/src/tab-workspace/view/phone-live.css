@@ -305,3 +305,4 @@
 .phl-rcase--run .phl-rcase__verdict { color: var(--pn-ink-3); }
 .phl-rcase__error { white-space: pre-wrap; font-size: 11.5px; max-height: 140px; overflow: auto; padding: 8px; border-radius: 6px; background: var(--pn-line); }
 .phl-rcase__shot { width: 200px; flex: none; align-self: flex-start; border-radius: 10px; border: 1px solid var(--pn-line); }
+.phl-downloads { display: inline-flex; gap: 6px; flex-wrap: wrap; }

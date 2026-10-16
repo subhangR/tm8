@@ -279,6 +279,14 @@ describe('what the screen shows', () => {
     expect(rows[1]!.querySelector('img')?.getAttribute('src')).toContain(JPEG);
     expect(report.textContent).toContain('runs/live-1/01-search.png');
 
+    /* The report saves as a PDF and as a Word document. */
+    const saved: Blob[] = [];
+    const createObjectURL = vi.fn((b: Blob) => (saved.push(b), 'blob:report'));
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    fireEvent.click(view.getAllByTestId('phone-live-download-pdf')[0]!);
+    fireEvent.click(view.getAllByTestId('phone-live-download-docx')[0]!);
+    expect(saved.map((b) => b.type)).toEqual(['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
+
     /* A new screen (a clear) drops the stale frame. */
     emit({ type: 'clear' });
     expect(view.queryByTestId('phone-live-frame')).toBeNull();
