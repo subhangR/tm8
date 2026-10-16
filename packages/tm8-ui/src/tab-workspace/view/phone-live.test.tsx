@@ -14,6 +14,8 @@ import { normalizeRepo } from './WebTest';
 import type { ScreenSignal } from '../../terminal';
 
 const sent: string[] = [];
+const sentAt: number[] = [];
+let backlog = 0;
 const signalTo: Record<string, (signal: ScreenSignal) => void> = {};
 const outputHandlers: Array<(id: string, data: string) => void> = [];
 
@@ -24,13 +26,14 @@ vi.mock('../../terminal', async (importOriginal) => ({
     { send(data: string): void },
     { sessionId: string; live?: boolean; onScreenSignal?: (signal: ScreenSignal) => void }
   >(function FakeTerminal({ sessionId, live, onScreenSignal }, ref) {
-    useImperativeHandle(ref, () => ({ send: (data: string) => sent.push(`${sessionId}:${data}`) }));
+    useImperativeHandle(ref, () => ({ send: (data: string) => (sentAt.push(performance.now()), sent.push(`${sessionId}:${data}`)) }));
     if (onScreenSignal) signalTo[sessionId] = onScreenSignal;
     return <div data-testid="fake-terminal" data-live={String(live)}>{sessionId}</div>;
   }),
 }));
 vi.mock('../../terminal/pty/ptyTransport.js', () => ({
   ptyTransport: {
+    inputBacklog: () => backlog,
     onOutput: (handler: (id: string, data: string) => void) => {
       outputHandlers.push(handler);
       return () => outputHandlers.splice(outputHandlers.indexOf(handler), 1);
@@ -88,6 +91,8 @@ beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   sent.length = 0;
+  sentAt.length = 0;
+  backlog = 0;
   outputHandlers.length = 0;
   for (const id of Object.keys(signalTo)) delete signalTo[id];
   started = 0;
@@ -309,6 +314,40 @@ describe('testing an app build', () => {
     await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 2000 });
     expect(sent[1]).toBe(`term-1:${b64({ name: 'shop.apk', size: 7 })}\r`);
     expect(sent[2]).toBe(`term-1:${Buffer.from(bytes).toString('base64')}\r`);
+  });
+
+  it('paces a big build so no second carries more than the server takes, and says how long is left', async () => {
+    const INSTALL = '/w/bin/jm-install android';
+    const view = render(<Strip d={task(`live-ask: /w/bin/jm-ask iphone\nlive-install: ${INSTALL}`)} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    const bytes = new Uint8Array(700 * 1024).map((_, i) => i % 251);
+    fireEvent.change(view.getByTestId('phone-live-build-input'), { target: { files: [new File([bytes], 'big.apk')] } });
+    await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
+    act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-BUILD\r\n')));
+    await waitFor(() => expect(view.getByTestId('phone-live-sending').textContent).toMatch(/min left/));
+    await waitFor(() => expect(sent.at(-1)).toBe('term-1:END\r'), { timeout: 6000 });
+    /* Every rolling second stays under 400 KB of input (the server closes the terminal past 512 KB). */
+    for (let i = 2; i < sent.length - 1; i++) {
+      const inWindow = sent.slice(2, sent.length - 1).filter((_, k) => sentAt[k + 2]! > sentAt[i]! - 1000 && sentAt[k + 2]! <= sentAt[i]!);
+      expect(inWindow.reduce((t, d) => t + d.length - 'term-1:'.length, 0)).toBeLessThanOrEqual(400 * 1024);
+    }
+    const lines = sent.slice(2, -1).join('').replaceAll('term-1:', '').split('\r').filter(Boolean);
+    expect(Buffer.concat(lines.map((l) => Buffer.from(l, 'base64')))).toEqual(Buffer.from(bytes));
+  }, 10_000);
+
+  it('stops, instead of queueing the rest, when the connection drops mid-build', async () => {
+    const view = render(<Strip d={task('live-ask: /w/bin/jm-ask iphone\nlive-install: /w/bin/jm-install android')} />);
+    fireEvent.click(view.getByTestId('tws-phone-live'));
+    fireEvent.change(view.getByTestId('phone-live-build-input'), { target: { files: [new File([new Uint8Array(200 * 1024)], 'big.apk')] } });
+    await waitFor(() => expect(view.getByTestId('fake-terminal').textContent).toBe('term-1'));
+    act(() => outputHandlers.forEach((h) => h('term-1', '$ ')));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    backlog = -1;
+    act(() => outputHandlers.forEach((h) => h('term-1', 'READY-FOR-BUILD\r\n')));
+    await waitFor(() => expect(view.getByTestId('phone-live-build-saved').textContent).toMatch(/connection to the phone dropped/));
+    expect(sent.some((d) => d.endsWith('END\r'))).toBe(false);
   });
 
   it('says so when the app is not set up for builds', () => {

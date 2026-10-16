@@ -74,10 +74,22 @@ const ASK_LINE = /^[ \t]*live-ask:[ \t]*(\S[^\r\n]*)$/im;
 const APP_LINE = /^[ \t]*live-app:[ \t]*(\S[^\r\n]*)$/im;
 const INSTALL_LINE = /^[ \t]*live-install:[ \t]*(\S[^\r\n]*)$/im;
 export const BUILD_MARKER = 'READY-FOR-BUILD';
-/* 150 MB: at the PTY's paced ~380 KB/s of base64 that is about nine minutes. */
-export const BUILD_MAX_BYTES = 150 * 1024 * 1024;
+/* 250 MB: at the paced ~300 KB/s of build that is about fifteen minutes; a 100 MB build takes about six. */
+export const BUILD_MAX_BYTES = 250 * 1024 * 1024;
 const BUILD_LINE_BYTES = 3000; // 4000 base64 characters per line
-const BUILD_LINES_PER_TICK = 12; // 48 KB per 125 ms: under the PTY's 512 KB/s and 64 KB per frame
+const BUILD_LINES_PER_SEND = 12; // 48 KB a frame: under the PTY's 64 KB per frame
+/*
+ * The server closes a terminal that sends more than 512 KB of input in one of
+ * its one-second windows. Keeping every rolling second at 400 KB of base64
+ * (~300 KB of build) holds every window under that whatever the timers do,
+ * and waiting for the socket to drain keeps a slow uplink from bunching it.
+ */
+const BUILD_BYTES_PER_SECOND = 400 * 1024;
+const BUILD_MAX_BACKLOG = 64 * 1024;
+/** Bigger builds are tested but not attached to the task: the web proxy refuses uploads over 64 MB. */
+const BUILD_ATTACH_MAX_BYTES = 60 * 1024 * 1024;
+/** Seconds left to send `remaining` bytes of build at the paced rate. */
+export const buildSecondsLeft = (remaining: number) => Math.ceil((remaining * 4) / 3 / BUILD_BYTES_PER_SECOND);
 const ASK_TRUSTED_KEY = 'tm8.phoneLive.askTrusted';
 const APP_TASK_KEY = 'tm8.phoneLive.appTask:';
 export const READY_MARKER = 'READY-FOR-CASES';
@@ -363,17 +375,34 @@ export function PhoneLiveDialog({
       const header = base64Line(JSON.stringify({ name: file.name, size: file.size }));
       terminalRef.current?.send(`${header}\r`);
       let offset = 0;
+      const recent: { at: number; bytes: number }[] = [];
       setSending({ sent: 0, total: file.size });
       while (offset < file.size && !cancelled) {
-        const end = Math.min(file.size, offset + BUILD_LINE_BYTES * BUILD_LINES_PER_TICK);
+        const end = Math.min(file.size, offset + BUILD_LINE_BYTES * BUILD_LINES_PER_SEND);
         const bytes = new Uint8Array(await file.slice(offset, end).arrayBuffer());
         let chunk = '';
         for (let i = 0; i < bytes.length; i += BUILD_LINE_BYTES) chunk += `${bytesToBase64(bytes.subarray(i, i + BUILD_LINE_BYTES))}\r`;
-        if (cancelled) return;
+        /* Wait until the socket has drained and the last second has room for this frame. */
+        for (;;) {
+          if (cancelled) return;
+          const backlog = ptyTransport.inputBacklog(terminalId);
+          if (backlog < 0) {
+            /* Never queue the rest: a reconnect would flush it in one burst, with a gap the runner cannot use. */
+            setSending(null);
+            setSaved({ name: file.name, note: 'did not finish sending: the connection to the phone dropped. Try again.', error: true });
+            return;
+          }
+          const now = performance.now();
+          while (recent.length && now - recent[0]!.at >= 1000) recent.shift();
+          const used = recent.reduce((t, r) => t + r.bytes, 0);
+          if (backlog <= BUILD_MAX_BACKLOG && used + chunk.length <= BUILD_BYTES_PER_SECOND) break;
+          const wait = used + chunk.length > BUILD_BYTES_PER_SECOND && recent.length ? 1000 - (now - recent[0]!.at) + 5 : 50;
+          await new Promise((resolve) => window.setTimeout(resolve, wait));
+        }
         terminalRef.current?.send(chunk);
+        recent.push({ at: performance.now(), bytes: chunk.length });
         offset = end;
         setSending({ sent: offset, total: file.size });
-        await new Promise((resolve) => window.setTimeout(resolve, 125));
       }
       if (!cancelled) terminalRef.current?.send('END\r');
     };
@@ -454,6 +483,10 @@ export function PhoneLiveDialog({
     start(installCommand, on, undefined, file);
     const files = gate.data.seam?.files;
     if (!files) return;
+    if (file.size > BUILD_ATTACH_MAX_BYTES) {
+      setSaved({ name: file.name, note: 'is kept on the test node with its run (builds over 60 MB are not attached to the task).' });
+      return;
+    }
     setSaved({ name: file.name, note: 'saving to the app task…' });
     const anchor = (appTaskId ?? detail?.id) as EntityId | undefined;
     createFileUploadTask({ files, file, spaceId: space as never, ...(anchor ? { anchorId: anchor } : {}) })
@@ -568,7 +601,8 @@ export function PhoneLiveDialog({
 
           {sending && sending.sent < sending.total ? (
             <p className="phl-note" role="status" data-testid="phone-live-sending">
-              Sending the build to the phone… {Math.floor((sending.sent / sending.total) * 100)}%
+              Sending the build to the phone… {Math.floor((sending.sent / sending.total) * 100)}% · about{' '}
+              {Math.max(1, Math.ceil(buildSecondsLeft(sending.total - sending.sent) / 60))} min left — keep this window open
             </p>
           ) : null}
 
