@@ -5,7 +5,7 @@
  * marked ADDITIVE and never change the meaning of a Spec B field.
  */
 
-/** A CoreEntityKind restricted to the D7 allow-list (`WORKSPACE_KINDS`). */
+/** A CoreEntityKind restricted to the D7 allow-list (`WORKSPACE_KINDS`), or a custom `c:*` kind. */
 export type KindId = string;
 /** Stable UI id (uuid), never the entity id. */
 export type TabId = string;
@@ -13,6 +13,12 @@ export type TabId = string;
 /**
  * The D7 allow-list: the kinds the Workspace browser offers and a tab may
  * hold. The space may support fewer; the browser filters at render time.
+ *
+ * EVERY KIND OPENS IN WORK (task 01a14c16, 2026-10-18): a kind left off this
+ * list fell back to the legacy detail shell from the rail, lists, search and
+ * links, so the list is now every core kind but `craft` — a craft opens Craft
+ * mode, its own screen — and `isWorkspaceKind` takes every custom `c:*` kind.
+ * The generic entity adapter renders any kind through its registry panel.
  */
 export const WORKSPACE_KINDS = [
   'task',
@@ -31,11 +37,32 @@ export const WORKSPACE_KINDS = [
   'skill',
   'tool',
   'channel',
+  'graph',
+  'loop',
+  'memory',
+  'spell',
+  'message',
+  'voice_channel',
+  'member',
+  'interaction_profile',
+  'commit',
+  'worktree',
+  'container',
+  'mcp_server',
+  'credential',
+  'space_link',
+  'server',
+  'style',
 ] as const;
-export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
+export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number] | `c:${string}`;
+
+/** A space's own kind (`c:<slug>`; `c:*` is the UI registry's fallback row, not a kind). */
+function isCustomKind(kind: string): boolean {
+  return kind.startsWith('c:') && kind.length > 2 && kind !== 'c:*';
+}
 
 export function isWorkspaceKind(kind: unknown): kind is WorkspaceKind {
-  return typeof kind === 'string' && (WORKSPACE_KINDS as readonly string[]).includes(kind);
+  return typeof kind === 'string' && ((WORKSPACE_KINDS as readonly string[]).includes(kind) || isCustomKind(kind));
 }
 
 export type TabScope =

@@ -884,6 +884,50 @@
 .cv2-root .pn-blueprint > .crf-viewport {
   min-width: var(--pn-bp-floor, 0);
 }
+/*
+ * THE GRAPH TAKES THE BODY (task 01a14c16). The kind is a `frame`, so the
+ * blueprint is the body's only section: it grows into every pixel, drops the
+ * section's padding and rule and the fold-shaped box, and in a Workspace tab
+ * the body's padding goes too — the canvas meets the tab strip and the
+ * screen's bottom edge, as the drawing's does. The camera fits the fold.
+ */
+.cv2-root .pn-body > .pn-section[data-testid='block-blueprint'] {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+.cv2-root .tws-panel .pn-body:has(> .pn-section[data-testid='block-blueprint']) {
+  padding: 0;
+}
+.cv2-root .pn-section[data-testid='block-blueprint'] > .pn-blueprint {
+  flex: 1 1 auto;
+  aspect-ratio: auto;
+  min-height: 240px;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+.cv2-root .pn-section[data-testid='block-blueprint'] > .pn-blueprint > .crf-viewport {
+  min-width: 0;
+}
+.cv2-root .pn-blueprint--mermaid {
+  align-items: center;
+  justify-content: center;
+  padding: var(--pn-space-4);
+  overflow: auto;
+}
+.cv2-root .pn-blueprint__empty {
+  margin: auto;
+  padding: var(--pn-space-6);
+  max-width: var(--pn-read-measure);
+  text-align: center;
+  font-size: var(--pn-fs-body);
+  color: var(--pn-ink-3);
+}
 .cv2-root .pn-blueprint__note {
   flex: none;
   margin: 0;

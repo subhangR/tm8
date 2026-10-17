@@ -20,7 +20,7 @@ import type { EntitySummary } from '@tm8/contract';
 import { KindIcon } from '../../domain';
 import { NEW_KINDS, NEW_MAIN_COUNT } from '../../keyboard';
 import { getKindAdapter } from '../adapters/registry';
-import { WORKSPACE_KINDS, type KindId, type TabId } from '../runtime/types';
+import type { KindId, TabId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import { useFreshGlow, useRetainLeaving } from '../../domain/useFreshGlow';
 import { openProjectFile } from '../adapters/projectFile';
@@ -42,6 +42,18 @@ export interface ChooserProps {
 }
 
 const RECENT_LIMIT = 8;
+
+/**
+ * The kinds Search and Recent hydrate and read: `WORKSPACE_KINDS` as it stood
+ * before every kind opened in Work (task 01a14c16), plus graphs. Each kind
+ * here costs a list read on every New tab, so the admin and code kinds that
+ * joined the allow-list then (commits, credentials, worktrees, messages…) stay
+ * out of it; they are a ⌘K search or a rail list away.
+ */
+const CHOOSER_KINDS: readonly KindId[] = [
+  'task', 'team_member', 'work_session', 'chat', 'doc', 'artifact', 'drawing', 'collection',
+  'story', 'form', 'file', 'pull_request', 'project', 'skill', 'tool', 'channel', 'graph',
+];
 const RESULT_LIMIT = 12;
 
 type NewEntry = (typeof NEW_KINDS)[number];
@@ -68,7 +80,7 @@ export function Chooser({ tabId, variant, restoreSlot, afterRecent }: ChooserPro
   const { rowsFor, ensureKind } = gate.data;
 
   useEffect(() => {
-    for (const kind of WORKSPACE_KINDS) ensureKind(kind);
+    for (const kind of CHOOSER_KINDS) ensureKind(kind);
   }, [ensureKind]);
 
   // The chooser tab autofocuses its search; the empty start surface does not
@@ -81,7 +93,7 @@ export function Chooser({ tabId, variant, restoreSlot, afterRecent }: ChooserPro
   const liveRows = useMemo(() => {
     const seen = new Set<string>();
     const all: EntitySummary[] = [];
-    for (const kind of WORKSPACE_KINDS) {
+    for (const kind of CHOOSER_KINDS) {
       for (const row of rowsFor(kind)(undefined)) {
         if (seen.has(row.id) || row.deletedAt) continue;
         seen.add(row.id);
