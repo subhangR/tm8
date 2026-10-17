@@ -9,6 +9,7 @@
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { useStore } from 'zustand';
+import { browserBounds } from '../view/navigatorFlag';
 import { LAYOUT_BOUNDS, type WorkspaceState } from './types';
 
 export type WorkspaceStore = StoreApi<WorkspaceState>;
@@ -38,7 +39,9 @@ export function initialWorkspaceState(viewerId: string, spaceId: string): Worksp
     rememberedActive: {},
     layout: {
       expanded: false,
-      browserWidth: LAYOUT_BOUNDS.browserWidth.initial,
+      /* 300 with the navigator on, the browser's own 320 with it off —
+         `browserBounds()` is the one place that knows which column renders. */
+      browserWidth: browserBounds().initial,
       chatWidth: LAYOUT_BOUNDS.chatWidth.initial,
     },
     browsers: {

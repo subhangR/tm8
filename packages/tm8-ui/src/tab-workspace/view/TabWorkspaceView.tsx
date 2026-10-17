@@ -16,8 +16,10 @@ import { getWorkspaceListStore } from '../bridge/workspaceList';
 import { NOTICE_TTL_MS } from '../../shell';
 import { PanelResizer } from '../../kit/PanelResizer';
 import { VectorIcon } from '../../kit/VectorIcon';
-import { isWorkspaceKind, LAYOUT_BOUNDS, type KindId } from '../runtime/types';
+import { isWorkspaceKind, type KindId } from '../runtime/types';
 import { Browser } from './Browser';
+import { Navigator } from './Navigator';
+import { browserBounds, isNavigatorEnabled } from './navigatorFlag';
 import { ContentHost } from './ContentHost';
 import { useWorkspaceStore } from '../runtime/store';
 import { WorkspaceProvider, useWorkspace, type WorkspaceContextValue, type WorkspaceGateHandles } from './context';
@@ -46,6 +48,14 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
   /* The icon rail's expanded flag pushes the browser: 48 → 200px. The width
      transition runs only around a toggle, never during a browser drag. */
   const railExpanded = useStore(getRailStore(spaceId), (s) => s.expanded);
+  /* THE MERGED NAVIGATOR (`tm8.ui.navigator`, design doc 01a1465d-a2b7): one
+     column in place of the rail + browser pair. Read once per mount — a flag
+     that changed under a live view would swap the whole left side mid-session,
+     and the flag is set from the console before a reload. */
+  const navigator = useMemo(() => isNavigatorEnabled(), []);
+  const navCollapsedStored = useStore(getRailStore(spaceId), (s) => s.collapsed);
+  const navCollapsed = navigator && (navCollapsedStored ?? false);
+  const bounds = useMemo(() => browserBounds(), []);
   const [railAnimating, setRailAnimating] = useState(false);
   const railMounted = useRef(false);
   useEffect(() => {
@@ -141,6 +151,9 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
 
   const style = {
     '--tws-browser-w': `${layout.browserWidth}px`,
+    /* The navigator rides the same persisted width (§10: the stored field is
+       still `browserWidth`), and the collapsed strip is the rail's 48px. */
+    '--tws-nav-w': navCollapsed ? 'var(--tws-rail-w-collapsed)' : `${layout.browserWidth}px`,
     '--tws-rail-w': railExpanded ? 'var(--tws-rail-w-expanded)' : 'var(--tws-rail-w-collapsed)',
   } as CSSProperties;
   return (
@@ -148,6 +161,8 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
       <div
         className="tws-root"
         data-expanded={layout.expanded || undefined}
+        data-nav={navigator || undefined}
+        data-nav-collapsed={navCollapsed || undefined}
         data-rail-expanded={railExpanded || undefined}
         data-rail-animating={railAnimating || undefined}
         style={style}
@@ -155,18 +170,27 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
       >
         {layout.expanded ? null : <LeftHeader />}
         <TabStrip leading={layout.expanded ? <RestoreNavigation /> : undefined} />
-        {layout.expanded ? null : <WorkspaceRail />}
-        {layout.expanded ? null : <Browser />}
-        {layout.expanded ? null : (
-          <div className="tws-resizer">
+        {/* ONE COLUMN OR TWO. With the navigator on, the kind's list is the
+            navigator's lower slot (§2); with it off, the rail and the browser
+            are the two columns they have always been. */}
+        {layout.expanded ? null : navigator ? (
+          <Navigator slot={<Browser />} />
+        ) : (
+          <>
+            <WorkspaceRail />
+            <Browser />
+          </>
+        )}
+        {layout.expanded || navCollapsed ? null : (
+          <div className={navigator ? 'tws-resizer tws-nav-resizer' : 'tws-resizer'}>
             <PanelResizer
               side="left"
-              label="Work browser"
+              label={navigator ? 'Navigator' : 'Work browser'}
               width={layout.browserWidth}
-              minWidth={LAYOUT_BOUNDS.browserWidth.min}
-              maxWidth={LAYOUT_BOUNDS.browserWidth.max}
+              minWidth={bounds.min}
+              maxWidth={bounds.max}
               onResize={setBrowserWidth}
-              onReset={() => setBrowserWidth(LAYOUT_BOUNDS.browserWidth.initial)}
+              onReset={() => setBrowserWidth(bounds.initial)}
             />
           </div>
         )}

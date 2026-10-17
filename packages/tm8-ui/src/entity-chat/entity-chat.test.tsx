@@ -16,6 +16,7 @@ import {
   chatsAboutFrom,
   eventTouchesChatsAbout,
   openEntityChat,
+  surfaceHostsChatSlot,
   switcherCaption,
   type ChatAboutRow,
 } from './index';
@@ -268,5 +269,14 @@ describe('EntityChatSlot — the host the layouts place', () => {
     await waitFor(() => expect(screen.getByTestId('entity-chat-switcher').textContent).toContain('Chat 2 of 2'));
     // The subject chip fell back to one entity read.
     await waitFor(() => expect(screen.getByTestId('entity-chat-subject').textContent).toContain('Task A'));
+  });
+});
+
+describe('surfaceHostsChatSlot', () => {
+  it('is true for Work only — the Home dashboard is gone, and the dock covers every other surface', () => {
+    expect(surfaceHostsChatSlot({ view: 'workspace' })).toBe(true);
+    expect(surfaceHostsChatSlot({ view: 'home' })).toBe(false);
+    expect(surfaceHostsChatSlot({ view: 'inbox' })).toBe(false);
+    expect(surfaceHostsChatSlot({ view: 'feed' })).toBe(false);
   });
 });

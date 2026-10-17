@@ -94,6 +94,14 @@ export interface ShellFrameValue {
   selectKind(kind: string): void;
   /** A rail source press: Work shows that source in its browser; elsewhere it goes to Work with it. */
   selectSource(sourceId: string): void;
+  /**
+   * ＋ New, for the navigator's own New control (§5). In Work this is the
+   * `workspace.drafts.open` the list toolbar's ＋ already ran; on a framed
+   * screen there is no mounted Work runtime, so it QUEUES the shell's
+   * `work.create` and navigates — the mechanism `keys.ts` already uses for a
+   * command that makes sense from anywhere.
+   */
+  createKind(kind: string): void;
   /** Width of the column beside the rail (Work's browser, a screen's panel). */
   panelWidth: number;
 }
@@ -125,6 +133,7 @@ function WorkspaceFrame({ value, children }: { value: WorkspaceContextValue; chi
         dispatch({ command: 'workspace.browser.set', args: { browserId: 'main', kind }, source: 'click' });
       },
       selectSource: (sourceId) => sources.getState().setSource(sourceId),
+      createKind: (kind) => dispatch({ command: 'workspace.drafts.open', args: { kind }, source: 'click' }),
     }),
     [gate, spaceId, currentKind, currentSource, panelWidth, dispatch, sources],
   );

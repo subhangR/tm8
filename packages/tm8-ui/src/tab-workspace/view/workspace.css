@@ -912,3 +912,41 @@
 .tws-content:focus {
   outline: none;
 }
+
+/*
+ * THE NAVIGATOR'S GRID (design doc 01a1465d-a2b7 §4, §10), behind
+ * `tm8.ui.navigator`. TWO columns instead of three: the one navigator column
+ * and the content. Added as an OVERRIDE on `[data-nav]` rather than edited
+ * into the base rule above, because the flag promises that with it off the
+ * three-column grid above is byte-for-byte what renders.
+ */
+.tws-root[data-nav] {
+  /* 300px default, 240–480 by the resizer (§4); `--tws-browser-w` is the
+     persisted field the width still rides on (see `navigatorFlag.ts`). */
+  grid-template-columns: var(--tws-nav-w, 300px) minmax(0, 1fr);
+  grid-template-areas:
+    'header strip'
+    'nav content';
+}
+/* Full screen still hides the whole navigator, as it does today. */
+.tws-root[data-nav][data-expanded] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'strip'
+    'content';
+}
+/* The header spans the navigator's width; the mark stays centred on x = 24 and
+   the space switcher keeps the browser's 12px inset off the column edge. */
+.tws-root[data-nav] .tws-space-slot {
+  margin-left: var(--pn-space-3);
+}
+/* The resizer sits on the navigator | content hairline. The class is the
+   navigator's own: `AppFrame` can have a SECOND resizer for a panel column
+   beside the navigator (Craft), and the two must not claim one track. */
+.tws-root[data-nav] .tws-nav-resizer {
+  grid-area: nav;
+}
+/* The hosted list's own column border is the navigator's, not the browser's. */
+.tws-root[data-nav] .tws-nav {
+  border-right: 1px solid var(--pn-line);
+}

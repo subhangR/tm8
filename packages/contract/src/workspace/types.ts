@@ -201,8 +201,22 @@ export interface RailPrefs {
   lifted?: string[];
 }
 
+/*
+ * `browserWidth` IS THE LEFT COLUMN'S WIDTH, and since the merged navigator
+ * (design doc 01a1465d-a2b7 §4, §11 risk 6) that column is 240–480 with a
+ * 300px default rather than 280–480 at 320. The FIELD name stays: every
+ * persisted workspace carries `browserWidth`, and renaming it would strand
+ * them all for a column that is still behind a flag. The clamp here is the
+ * UNION of both states, so a stored 240 survives a read with the flag off and
+ * a server validating `workspace.layout.set` accepts it from either.
+ *
+ * The old column's own min / initial did NOT move — with the flag off the
+ * browser still starts at 320 and stops at 280. That pair lives in the UI
+ * (`tab-workspace/view/navigatorFlag.ts`), which is the only place that can
+ * know which column is on screen.
+ */
 export const LAYOUT_BOUNDS = {
-  browserWidth: { min: 280, max: 480, initial: 320 },
+  browserWidth: { min: 240, max: 480, initial: 300 },
   chatWidth: { min: 320, max: 640, initial: 380 },
 } as const;
 

@@ -99,8 +99,8 @@ function lastPlaceEntry(): [string, { spaceId: string | null; targets: Record<st
  */
 async function rememberTarget(target: unknown): Promise<void> {
   const first = mount();
-  /* Revision 11: a viewer with no memory lands on the merged Home. */
-  await waitFor(() => first.getByTestId('home-page'));
+  /* A viewer with no memory lands in the workspace (the Home dashboard is gone). */
+  await waitFor(() => first.getByTestId('tab-workspace'));
   /* Any real navigation will do — this is what writes the record. Tasks rides
      the Workspace caret on the WORK TAB now (revision 12), so switch tab
      first. The caret is an EXPANDED-rail control and the rail boots collapsed,

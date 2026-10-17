@@ -37,6 +37,7 @@ const { EMPTY_BROWSER_KIND_STATE } = workspaceCommands.browser;
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import { useListCursor } from './listCursor';
+import { isNavigatorEnabled } from './navigatorFlag';
 import './browser.css';
 
 const BROWSER_ID = 'main';
@@ -154,6 +155,16 @@ function EntityBrowser() {
   /* Bumped to remount the panel with the current remembered state (Clear
      search, Retry); the kind is the other half of the key. */
   const [generation, setGeneration] = useState(0);
+  /*
+   * ＋ New AND THE KIND ▾ LEAVE THE TOOLBAR with the navigator on (§5): New is
+   * the first thing in the column (`NavNew`) and the kind is chosen in ONE
+   * place, the pins. Keeping the box here would put the ＋ twice on screen and
+   * a second kind picker over the same selection — the "one selection, two
+   * views of it" hazard `EntityListPanel`'s `selectorSlot` comment names.
+   *
+   * `workspace.drafts.open` is unchanged; only who draws the button moves.
+   */
+  const navigator = useMemo(() => isNavigatorEnabled(), []);
 
   useEffect(() => data.ensureKind(kind), [data, kind]);
 
@@ -300,7 +311,7 @@ function EntityBrowser() {
           /* Row 1: the panel's own search, then the dotted new box —
              [+ | kind icon ▾]: the + creates the current kind, the icon
              half is the kind menu. */
-          toolbarEnd={
+          toolbarEnd={navigator ? undefined : (
             <NewBox
               noun={noun}
               disabledReason={disabledReason}
@@ -321,7 +332,7 @@ function EntityBrowser() {
                 />
               }
             />
-          }
+          )}
           {...source}
           members={data.members}
           ctx={ctx}
