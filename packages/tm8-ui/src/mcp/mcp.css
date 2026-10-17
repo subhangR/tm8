@@ -73,11 +73,15 @@
 .mcp-picker button:focus-visible,
 .mcp-equipment button:focus-visible,
 .mcp-settings a:focus-visible,
-.mcp-settings input:focus-visible,
-.mcp-settings select:focus-visible,
-.mcp-settings textarea:focus-visible {
+.mcp-settings select:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: 2px;
+}
+/* Text fields tint their own border instead of drawing an outline box. */
+.mcp-settings input:not([type='checkbox'], [type='radio']):focus-visible,
+.mcp-settings textarea:focus-visible {
+  outline: none;
+  border-color: var(--pn-brand);
 }
 
 .mcp-settings button[type='submit'],

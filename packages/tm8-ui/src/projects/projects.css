@@ -88,7 +88,11 @@
   font: 12px/1.4 var(--pn-ui);
 }
 
-.project-onboard input:focus-visible,
+.project-onboard input:not([type='checkbox'], [type='radio']):focus-visible {
+  outline: none;
+  border-color: var(--pn-brand);
+}
+
 .project-onboard button:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: 2px;

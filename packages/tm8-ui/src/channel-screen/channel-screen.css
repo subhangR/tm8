@@ -1189,8 +1189,6 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-upload button,
   .chs-mention-list button,
   .chs-mention-picker button,
-  .chs-mention-picker input,
-  .chs-composer__input,
   .chs-ref-chip,
   .chs-mention-inline,
   .chs-parent__jump,
@@ -1201,6 +1199,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   outline: 3px solid var(--pn-brand);
   outline-offset: 2px;
 }
+/* Text fields mark focus with the caret, not a second gold box. */
+:where(.chs-mention-picker input, .chs-composer__input):focus-visible { outline: none; }
 
 /* --- the thread split (slice 2) -------------------------------------------
  *

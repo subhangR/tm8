@@ -64,3 +64,21 @@ body {
 .cv2-root .cv2-root {
   zoom: 1;
 }
+
+/* ---------------------------------------------------------------------------
+   TEXT FIELDS DRAW NO FOCUS BOX. The caret already says where focus is; an
+   outline on a textarea/input that sits inside a composer or card read as a
+   second box inside the container (user report, 2026-10-17). Focus on a field
+   may show only as a tint on its own border or its container's
+   `:focus-within`. Zero specificity beyond `.cv2-root`, so any component rule
+   still wins; buttons, links and cards keep their keyboard rings. Wildcard
+   `X :focus-visible` ring rules must exclude text fields the same way
+   (see workspace.css, scope.css, story-tree.css). */
+.cv2-root :where(
+  textarea,
+  input:not([type='button'], [type='submit'], [type='reset'], [type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='image']),
+  [contenteditable]:not([contenteditable='false']),
+  [role='textbox']
+):where(:focus, :focus-visible) {
+  outline: none;
+}

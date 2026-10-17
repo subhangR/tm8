@@ -819,7 +819,9 @@
 .tws-menu-row:hover {
   background: var(--pn-hover);
 }
-.tws-root :focus-visible {
+/* Text-entry fields are excluded: a caret already marks focus, and an inset
+   brand outline drew a second gold box inside every textarea/input. */
+.tws-root :focus-visible:where(:not(textarea, input:not([type='button'], [type='submit'], [type='reset'], [type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='image']), [contenteditable]:not([contenteditable='false']), [role='textbox'])) {
   outline: 2px solid var(--pn-brand);
   outline-offset: -2px;
 }
