@@ -35,7 +35,7 @@ import { workspaceCommands } from '@tm8/contract/workspace';
 
 const { EMPTY_BROWSER_KIND_STATE } = workspaceCommands.browser;
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
-import { useWorkspace, useWorkspaceState } from './context';
+import { useShellFrame, useWorkspace, useWorkspaceState } from './context';
 import { useListCursor } from './listCursor';
 import { isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
 import { VectorIcon } from '../../kit/VectorIcon';
@@ -146,8 +146,10 @@ const SEARCH_ART = ['M7 2.75a4.25 4.25 0 1 1 0 8.5a4.25 4.25 0 1 1 0-8.5', 'M10.
  * opens the app's own search — the palette `/` opens — never a box inline in
  * the column; ▯ collapses the panel, leaving the rail.
  */
-function PanelTop({ searchable = false }: { searchable?: boolean }) {
-  const { spaceId, gate } = useWorkspace();
+export function PanelTop({ searchable = false }: { searchable?: boolean }) {
+  /* The shell frame, not the workspace: the framed modes (Settings, …) draw
+     this same row with no Work runtime mounted. */
+  const { spaceId, gate } = useShellFrame();
   const collapse = () => getRailStore(spaceId).getState().setCollapsed(true);
   return (
     <div className="tws-paneltop" data-testid="tws-paneltop">

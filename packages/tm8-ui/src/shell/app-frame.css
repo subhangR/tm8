@@ -151,3 +151,19 @@
 .tws-root[data-nav] .tws-nav-resizer {
   grid-area: nav;
 }
+
+/*
+ * THE PINNED-ONLY RAIL'S SHELL (`tm8.ui.navigator = 'rail'`), for a mode that
+ * passes `pinnedMode`: Work's layout (workspace.css `[data-pinned-rail]`) —
+ * the rail and the panel run the full height, and only the content column has
+ * the top band over it. Collapsed, the panel's track is zero.
+ */
+.tws-root.app-frame[data-pinned-rail]:not([data-expanded]) {
+  grid-template-columns: var(--tws-rail-w) var(--tws-browser-w, 320px) minmax(0, 1fr) auto;
+  grid-template-areas:
+    'rail browser top top'
+    'rail browser content strip';
+}
+.tws-root.app-frame[data-pinned-rail][data-panel-collapsed]:not([data-expanded]) {
+  grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr) auto;
+}
