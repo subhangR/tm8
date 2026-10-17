@@ -592,6 +592,15 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
       select 1 from public.entities cp
        where cp.id = e.parent_id and cp.deleted_at is null and ${madeHere('cp')}
     )`);
+    /* 330: a launched session's "parent" is its launcher (`launched_by`), not
+       parent_id — so a session launched by a session made here is that
+       session's child, not a root of its own. */
+    where.push(`not exists (
+      select 1 from public.edges lbp
+        join public.entities cp on cp.id = lbp.dst_id
+       where lbp.src_id = e.id and lbp.type = 'launched_by'
+         and cp.deleted_at is null and ${madeHere('cp')}
+    )`);
   }
 
   if (f.inFlightForActorId) {
