@@ -154,7 +154,7 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
   dispatched_by: {
     src: ['work_session'],
     dst: ['work_session'],
-    description: 'Deprecated: a spawned session\'s parentId names the session that spawned it.',
+    description: 'Deprecated: use launched_by (that chat or session started this session).',
     acyclic: false,
   },
   disputes: {
@@ -199,6 +199,12 @@ export const EDGE_KINDS: Readonly<Record<string, EdgeKinds>> = {
     dst: ['worktree'],
     description: 'This entity is associated with that worktree.',
     acyclic: false,
+  },
+  launched_by: {
+    src: ['work_session'],
+    dst: ['chat', 'work_session'],
+    description: 'Launched by: that chat or session started this session.',
+    acyclic: true,
   },
   likes: {
     src: ['member'],

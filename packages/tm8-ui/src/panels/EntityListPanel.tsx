@@ -105,7 +105,7 @@ import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
 import { TileLinkCounts } from './list/TileLinkCounts';
-import { hasTileLinkCounts } from '../domain';
+import { hasTileLinkCounts, treeParentOf } from '../domain';
 import { TILE_LINK_GROUPS, UNCOUNTED_LINK_GROUPS } from '../domain/tile-counts';
 import { TileSignal, UrgentMark, isUrgent, signalIsAvatar } from './list/TileSignal';
 import { SessionDetails } from './list/SessionDetails';
@@ -4279,7 +4279,9 @@ function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): T
   const present = new Set(rows.map((row) => row.id));
   const childrenOf = new Map<string | null, EntitySummary[]>();
   for (const row of rows) {
-    const parent = row.parentId && present.has(row.parentId) ? row.parentId : null;
+    // 330: a session nests under its launcher (`launched_by`), not a parent.
+    const up = treeParentOf(row);
+    const parent = up && present.has(up) ? up : null;
     childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), row]);
   }
 
@@ -4364,7 +4366,10 @@ function resolvePulses(
   // this page is a root here, and the route must agree with what is drawn.
   const present = new Set(rows.map((row) => row.id));
   const parents = new Map<string, string | null>(
-    rows.map((row) => [row.id, row.parentId && present.has(row.parentId) ? row.parentId : null]),
+    rows.map((row) => {
+      const up = treeParentOf(row);
+      return [row.id, up && present.has(up) ? up : null];
+    }),
   );
   const parentOf = (id: string) => parents.get(id);
 
@@ -4778,8 +4783,9 @@ export function Tile({
     };
     const sessionWord = sessionRowWord(row.state, verdict, wordCtx);
     const lineTwo = sessionLineTwo(row.state, verdict, wordCtx);
-    const crumb = crumbs && row.parentId && depth === 0
-      ? crossTabBreadcrumb(crumbs.rowOf(row.parentId), crumbs.tabId)
+    const launcher = treeParentOf(row);
+    const crumb = crumbs && launcher && depth === 0
+      ? crossTabBreadcrumb(crumbs.rowOf(launcher), crumbs.tabId)
       : null;
     return (
       <MaestroSessionTile

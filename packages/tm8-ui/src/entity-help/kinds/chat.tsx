@@ -283,6 +283,8 @@ export const CHAT_HELP: KindHelpModule = {
         'Every message this chat’s agent posts is stamped with the chat as its source. The stamp comes from the agent’s own credential, never from the request, so it cannot be claimed falsely.',
       'about:incoming': 'Another chat or a memory that is about this chat.',
       'authored_from:outgoing': 'The work session the chat was made during, recorded by the server.',
+      'launched_by:incoming':
+        'Launched sessions: the sessions this chat spawned, with their live status. They are not its children; the server records a launched_by edge at spawn, and the sessions report back here.',
     },
     spotlight: ['message', 'artifact', 'memory', 'form'],
   },

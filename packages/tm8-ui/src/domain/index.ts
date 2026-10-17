@@ -157,6 +157,7 @@ export {
   sessionVerbsOf,
   withGrace,
 } from './session-outcome';
+export { launchedByOf, treeParentOf } from './launched-by';
 export type {
   GroupBulk,
   InterruptedGroup,

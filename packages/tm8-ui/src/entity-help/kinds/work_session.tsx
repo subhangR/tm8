@@ -278,7 +278,7 @@ export const WORK_SESSION_HELP: KindHelpModule = {
         A session is the busiest junction in the graph. Look first for <strong>working on</strong> (its tasks) and{' '}
         <strong>acting as</strong> (the teammate responsible for it). Then comes where it runs: its project, its
         worktree lane, and the credential and container it runs on. Last are the edges the server draws as it works,
-        like who it messaged, what was created in it and who dispatched it.
+        like who it messaged, what was created in it and who launched it.
       </p>
     ),
     notes: {
@@ -286,8 +286,8 @@ export const WORK_SESSION_HELP: KindHelpModule = {
       participates_in: 'The teammate responsible for this session.',
       in_project: 'The Space’s project whose folder the session works in.',
       in_worktree: 'The isolated lane it works in, on its own tm8/<worktree-id> branch.',
-      'dispatched_by:outgoing': 'The dispatcher session that chose the teammate and spawned this one. Its reasoning is a message on the task.',
-      'dispatched_by:incoming': 'Sessions this dispatcher spawned.',
+      'launched_by:outgoing': 'The chat or session that launched this one. Recorded by the server at spawn; it is where this session reports.',
+      'launched_by:incoming': 'Sessions this one launched, with their live status.',
       messaged: 'Drawn by the server from message deliveries: which sessions this one addressed, and which addressed it.',
       'authored_from:incoming': 'Everything made during this session, recorded by the server: messages, forms, memories, artifacts, commits, pull requests and docs.',
       runs_on: 'The credential this session runs on. Written only by the credential binding, never by hand.',

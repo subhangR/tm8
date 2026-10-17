@@ -672,3 +672,50 @@ describe('ConnectionsTab — the Timeline reading (task 01a115b8)', () => {
     expect(ids()).toContain('peer-session');
   });
 });
+
+describe('ConnectionsTab — a chat\'s launched sessions (330, task 01a14a9e)', () => {
+  const at = '2026-10-17T10:00:00.000Z';
+  const session = (id: string, title: string, status: string) =>
+    ({ ...peer(id, title, 'work_session'), state: { kind: 'work_session', status } }) as unknown as EntitySummary;
+  const running = session('peer-running', 'Worker A', 'running');
+  const exited = session('peer-exited', 'Worker B', 'exited');
+  const sections = (root: HTMLElement) =>
+    [...root.querySelectorAll('[data-testid="pn-link-section"]')].map((s) => s.getAttribute('data-section'));
+
+  function chatDetail() {
+    // A chat: its launched sessions arrive as INCOMING launched_by, each also
+    // carrying the authored_from the spawn records; it has no children.
+    return detailWith(
+      [],
+      [
+        timedGroup('launched_by', 'launched_by (incoming)', 'incoming', [
+          { id: 'l1', peer: running, createdAt: at },
+          { id: 'l2', peer: exited, createdAt: at },
+        ]),
+        timedGroup('authored_from', 'authored_from (incoming)', 'incoming', [{ id: 'a1', peer: running, createdAt: at }]),
+      ],
+    );
+  }
+
+  it('lists them first, open, under "Launched sessions", with their live status', () => {
+    const { container } = render(<ConnectionsTab detail={chatDetail()} />);
+    expect(sections(container)[0]).toBe('launched');
+    const launched = container.querySelector('[data-section="launched"]')!;
+    expect(launched.getAttribute('data-open')).toBe('true');
+    expect(launched.textContent).toContain('Launched sessions');
+    expect([...launched.querySelectorAll('[data-peer-id]')].map((n) => n.getAttribute('data-peer-id')).sort())
+      .toEqual(['peer-exited', 'peer-running']);
+    // Each row draws the session's own state.
+    expect(launched.querySelector('[data-peer-id="peer-running"] .pn-status')!.textContent).toBe('live');
+    expect(launched.querySelector('[data-peer-id="peer-exited"] .pn-status')!.textContent).toBe('exited');
+    // Filed once: its authored_from provenance does not pull it into Sessions.
+    expect(container.querySelectorAll('[data-peer-id="peer-running"]')).toHaveLength(1);
+  });
+
+  it('reads "Launched by" from the launched session\'s side', () => {
+    const chat = peer('peer-chat', 'Planning chat', 'chat');
+    const detail = detailWith([timedGroup('launched_by', 'launched_by', 'outgoing', [{ id: 'l3', peer: chat, createdAt: at }])], []);
+    const { container } = renderTimeline(<ConnectionsTab detail={detail} />);
+    expect([...container.querySelectorAll('.pn-peers__rel')].map((n) => n.textContent)).toEqual(['Launched by']);
+  });
+});

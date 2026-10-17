@@ -32,6 +32,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import type { DurableWorkspaceEvent, EntityId, EntitySummary } from '@tm8/contract';
 import { KindIcon } from '../../domain/KindIcon';
 import { getKind } from '../../domain/registry';
+import { treeParentOf } from '../../domain/launched-by';
 import { foldChatLedger, kindWord } from '../ledger';
 import type { ChatTurn } from '../types';
 import {
@@ -355,11 +356,11 @@ export function CreatedHereStrip({
         }
         return next ?? prev;
       });
-      /* Something new may have been made here: the parent is this chat, or
-         an agent just created it. Re-asking the server is the only honest
+      /* Something new may have been made here: this chat launched it (330:
+         `launched_by`, or a legacy parent), or an agent just created it. Re-asking the server is the only honest
          way to know — the event does not carry provenance. */
       const fresh = Date.now() - Date.parse(entity.createdAt) < 120_000;
-      if (entity.parentId === chatId || (fresh && entity.createdBy.isAgent)) scheduleRoots();
+      if (treeParentOf(entity) === chatId || (fresh && entity.createdBy.isAgent)) scheduleRoots();
     });
     return () => {
       off();

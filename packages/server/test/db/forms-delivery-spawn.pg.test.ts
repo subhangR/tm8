@@ -179,7 +179,8 @@ const newId = async (): Promise<string> => (await sql(`select internal.new_id():
 
 /**
  * A session as execution.spawn leaves one: its teammate (participates_in), its task
- * (working_on), its parent, and a recorded manifest carrying its posture.
+ * (working_on), its launcher (launched_by, 330 — not a parent), and a recorded
+ * manifest carrying its posture.
  */
 async function newSession(opts: {
   status?: string;
@@ -190,14 +191,20 @@ async function newSession(opts: {
 } = {}): Promise<string> {
   const id = await newId();
   const teammate = opts.teammate ?? w.teammate;
-  await sql(`insert into public.entities(id, space_id, kind, visibility, created_by, parent_id)
-             values ($1, $2, 'work_session', 'space', $3, $4)`, [id, w.space, teammate, opts.parent ?? null]);
+  await sql(`insert into public.entities(id, space_id, kind, visibility, created_by)
+             values ($1, $2, 'work_session', 'space', $3)`, [id, w.space, teammate]);
   await sql(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at,
                                               workdir_mode, mode, model, agent_tool)
              values ($1, 'Requester', $2, 'space', now(), 'scratch', 'worker', 'claude-opus-5-5', 'claude-code')`,
     [id, opts.status ?? 'running']);
   await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
              values ($1, $2, $3, 'participates_in', $2)`, [w.space, teammate, id]);
+  if (opts.parent) {
+    // The spawn writer records launched_by; the guard refuses any other writer.
+    await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
+               select $1, $2, $3, 'launched_by', $4 from (select internal.w1_set_writer('spawn')) w`,
+      [w.space, id, opts.parent, teammate]);
+  }
   if (opts.task) {
     await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
                values ($1, $2, $3, 'working_on', $3)`, [w.space, id, opts.task]);

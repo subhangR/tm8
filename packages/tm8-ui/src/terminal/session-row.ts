@@ -1,4 +1,5 @@
 import type { ActorSummary, EntitySummary, WorkSessionStatus } from '@tm8/contract';
+import { treeParentOf } from '../domain/launched-by';
 
 /**
  * SessionRow — the narrow view-model the live-session bar and the roster
@@ -83,7 +84,8 @@ export function toSessionRow(summary: EntitySummary, meta?: string): SessionRow 
     recordedStatus: status,
     startedAt,
     exitedAt,
-    parentSessionId: summary.parentId,
+    // 330: the launcher (`launched_by`), with the legacy parent as fallback.
+    parentSessionId: treeParentOf(summary),
     sessionState: summary.state,
   };
 }
