@@ -249,6 +249,14 @@
   height: 36px;
   padding: var(--pn-space-1) var(--pn-space-2) 0 var(--tws-browser-inset);
 }
+/* The new box inside the one-row list header (pinned-only rail): it keeps
+   its own size and never shrinks; the title is what ellipsises. */
+.cv2-root .tws-browser .lp__headtools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
 .cv2-root .tws-browser .tch-rootbar {
   flex: none;
   margin: 0;

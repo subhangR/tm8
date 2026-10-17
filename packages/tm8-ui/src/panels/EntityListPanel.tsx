@@ -424,6 +424,12 @@ export interface EntityListPanelProps {
   toolbarStart?: ReactNode;
   toolbarEnd?: ReactNode;
   /**
+   * `chrome="toolbar"`: draw `toolbarStart` / `toolbarEnd` INSIDE the one-row
+   * list header, ahead of the title, instead of on a row of their own
+   * (the pinned-only rail, Subhang 2026-10-17: "single line").
+   */
+  toolbarInline?: boolean;
+  /**
    * OPT-IN ROW LEAD (Workspace browser): no disclosure chevron slot on any
    * anatomy. The leading icon is the kind icon tinted by status (sessions keep
    * their agent tile), carries the child count as a subscript, and IS the
@@ -1057,7 +1063,7 @@ export function EntityListPanel(input: EntityListPanelProps) {
             that lands (task 01a1469d), it keeps its own row, and the row is
             not drawn at all on the surfaces that pass neither slot.
           */}
-          {props.toolbarStart || props.toolbarEnd ? (
+          {!props.toolbarInline && (props.toolbarStart || props.toolbarEnd) ? (
             <div className="lp__toolrow">
               {props.toolbarStart}
               {props.toolbarEnd}
@@ -1077,6 +1083,12 @@ export function EntityListPanel(input: EntityListPanelProps) {
             and search is the 🔍 that expands over the title.
           */}
           <div className="lp__head" data-testid="list-head">
+            {props.toolbarInline && (props.toolbarStart || props.toolbarEnd) ? (
+              <div className="lp__headtools">
+                {props.toolbarStart}
+                {props.toolbarEnd}
+              </div>
+            ) : null}
             <h2 className="lp__headtitle">
               <span className="lp__headname">{config.labelPlural}</span>
               {/* The visible population, from the same `tabCounts` the tier
