@@ -3911,6 +3911,13 @@
       opacity var(--pn-dur-base) var(--pn-ease-standard),
       transform var(--pn-dur-base) var(--pn-ease-out);
   }
+  /* THE ⋯ STOPS SHORT OF THE CHEVRON. The opener is absolute at `right: 6px`
+     and the ⋯ was the row's last in-flow item, so on hover the chevron faded
+     in exactly on top of it: the ⋯ could not be clicked, and the two marks
+     sliding over each other read as the row glitching. 22px chevron + 4px. */
+  .cv2-root:not([data-shell='mobile']) :is(.lp__tile, .pn-tt, .pn-st):has(:is(.lp__rowaction--ind, .pn-tt__ind, .pn-st__btn--ind)) .lp__rowmenu {
+    margin-right: 26px;
+  }
   /* The container's backing, which the three anatomies already vary by state
      (hover / selected / details open), inherited through `display: contents`. */
   .cv2-root:not([data-shell='mobile']) :is(.lp__rowaction--ind, .pn-tt__ind, .pn-st__btn--ind):not(:hover) {
@@ -6075,7 +6082,14 @@
 .cv2-root:not([data-shell='mobile']) .lp__row1 > .lp__rowaction--ind {
   margin-block: -2px;
 }
-.cv2-root .lp__rowmenu { position: relative; flex: none; display: none; }
+/* ZERO LAYOUT HEIGHT, the button centred over it (Subhang, 2026-10-17: "when
+   I hover over tiles the whole list is glitching"). On hover the ⋯ trades
+   places with the time; the 22px button was taller than a row's ~21px content
+   box, so the hovered row grew ~4px and pushed every row under it down, and
+   sweeping the pointer down the list made the whole list jump. With no height
+   of its own the slot can never change a row's height; the button overflows
+   it evenly into the row's own padding. */
+.cv2-root .lp__rowmenu { position: relative; flex: none; display: none; height: 0; align-items: center; overflow: visible; }
 /* The door, not a verb — same 22px box as `.lp__rowaction` so the row's
    trailing slot measures the same whichever is in it, but quieter at rest:
    it is punctuation until you reach for it. */
