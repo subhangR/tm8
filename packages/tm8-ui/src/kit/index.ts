@@ -25,7 +25,14 @@ export { ActorRef } from './ActorRef';
 export { AvatarStack } from './AvatarStack';
 export { VRule, HRule } from './Hairline';
 export { BootLoader } from './BootLoader';
-export { RibbonMark, RIBBON_LOOP_SECONDS, type RibbonMotion } from './RibbonMark';
+export {
+  RibbonMark,
+  RIBBON_LOOP_SECONDS,
+  ribbonPhase,
+  useRibbonClock,
+  type RibbonFinish,
+  type RibbonMotion,
+} from './RibbonMark';
 export {
   Markdown,
   MARKDOWN_COMPONENTS,

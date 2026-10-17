@@ -159,6 +159,19 @@
   --pn-x-dia-6: #B04F6D;
   --pn-x-dia-7: #7159AC;
   --pn-x-dia-8: #64707B;
+
+  /* The tm8 mark's two poles (BootLoader, BrandMark). Monochrome by
+     decision — the mark left the brass palette for black / white / silver
+     (task 01a14b96, variant "Eclipse × Moon phase"). REST is the pole the mark
+     starts and ends its loop on, TURN the one it reaches at the turnaround.
+     The dark theme swaps them below: the two themes are exact polar
+     opposites, black→white on light paper and white→black on dark, so the
+     move is always a full swing of contrast rather than a fade to grey.
+     Silver is the still BrandMark's single mid-tone metal — mid-ramp so
+     `shade` in RibbonMark has room to walk it both ways. */
+  --pn-x-mark-rest: #0C0D0F;
+  --pn-x-mark-turn: #F8F9FA;
+  --pn-x-mark-silver: #6F737B;
 }
 
 /* Dark counterparts. The terminal blacks do NOT flip — that is the whole
@@ -193,6 +206,9 @@
   --pn-x-dia-6: #D47E9B;
   --pn-x-dia-7: #A997DB;
   --pn-x-dia-8: #98A2AD;
+  /* The mark's poles, swapped — see the light block. */
+  --pn-x-mark-rest: #F8F9FA;
+  --pn-x-mark-turn: #0C0D0F;
 }
 
 /* Game atlas: fixed toy-town art direction, shared by WebGL and studio UI.
