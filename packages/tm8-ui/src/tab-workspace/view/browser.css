@@ -249,19 +249,30 @@
   height: 36px;
   padding: var(--pn-space-1) var(--pn-space-2) 0 var(--tws-browser-inset);
 }
-/* The pinned-only rail's panel top row: tm8 · ⌕ · «, in the strip's band
-   height so it lines up with the tabs across the column edge. Searching, the
-   box takes the row and « stays at its end. */
+/* The pinned-only rail's panel top row: tm8 · ⌕ · ▯. Searching, the box
+   takes the row and ▯ stays at its end. */
 .cv2-root .tws-browser .tws-paneltop {
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--pn-space-1);
   box-sizing: border-box;
-  height: var(--tws-header-h, 32px);
-  padding: 0 var(--pn-space-1) 0 6px;
-  border-bottom: 1px solid var(--tws-band-line, var(--pn-line));
-  background: var(--tws-band, var(--pn-paper));
+  /* ON THE PANEL'S OWN SURFACE (Subhang 2026-10-17): no band fill, no
+     hairline — the title is part of the column, not a box above it. It sits
+     a little lower, and its edges are the widget's below: the stack's 10px
+     gutter on both sides. */
+  height: 44px;
+  margin: var(--pn-space-2) 10px 0;
+  padding: 0;
+  background: transparent;
+}
+/* The wordmark's text and the last icon's glyph sit ON the gutter: their
+   hover boxes hang outside it rather than pushing them in. */
+.cv2-root .tws-browser .tws-paneltop > :first-child.tws-paneltop__mark {
+  margin-left: calc(-1 * var(--pn-space-1));
+}
+.cv2-root .tws-browser .tws-paneltop > .tws-icon-btn:last-child {
+  margin-right: -6px;
 }
 .cv2-root .tws-browser .tws-paneltop .tws-icon-btn {
   width: var(--tws-band-ctl, 28px);
