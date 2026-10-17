@@ -7,7 +7,9 @@
  *     origin is its spawn parent;
  *   - `createdIn` returns roots only (a child of something made here is left
  *     to its parent's subtree), never messages, and reaches a session's own
- *     sub-sessions through its parent.
+ *     sub-sessions through its parent;
+ *   - the rollup (task 01a14a91): what a session spawned under the origin made,
+ *     at any depth, is made there too.
  */
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
@@ -182,5 +184,26 @@ describe('327 created here', () => {
       await c.query(`delete from public.edges where src_id = $1 and type = 'authored_from'`, [id['oldSession']]);
     });
     expect(await createdIn('chat')).toEqual(['oldSession', 'session', 'task']);
+  });
+
+  it('createdIn rolls up what the sessions spawned under it made', async () => {
+    await asOwner(async (c) => {
+      const ids = (await c.query<{ ids: string[] }>(
+        `select array(select internal.new_id() from generate_series(1, 3)) ids`)).rows[0]!.ids;
+      ['workerTask', 'workerChild', 'subWorkerTask'].forEach((n, i) => { id[n] = ids[i]!; });
+      for (const [name, parent, position] of [['workerTask', null, 3], ['workerChild', 'workerTask', 4], ['subWorkerTask', null, 5]] as const) {
+        await c.query(`insert into public.entities(id, space_id, kind, parent_id, position, created_by)
+                       values ($1,$2,'task',$3,$4,$5)`, [id[name], id['space'], parent ? id[parent] : null, position, id['persona']]);
+        await c.query(`insert into public.tasks(entity_id, title) values ($1, $2)`, [id[name], name]);
+      }
+    });
+    expect(await record('workerTask', 'session')).toBeTruthy();
+    expect(await record('workerChild', 'session')).toBeTruthy();
+    expect(await record('subWorkerTask', 'subSession')).toBeTruthy();
+    // A child's outputs are roots of the chat, but never their own children.
+    expect(await createdIn('chat')).toEqual(['oldSession', 'session', 'subWorkerTask', 'task', 'workerTask']);
+    expect(await createdIn('session')).toEqual(['subSession', 'subWorkerTask', 'workerTask']);
+    expect(await createdIn('subSession')).toEqual(['subWorkerTask']);
+    expect(await createdIn('otherChat')).toEqual([]);
   });
 });

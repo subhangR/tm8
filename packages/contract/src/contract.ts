@@ -1274,6 +1274,8 @@ export interface CollectionQuery {
      * pre-327 spawn is not lost). An entity whose parent was ALSO made there
      * is not a root and is left to the parent's subtree. Messages and forms
      * never count: every post in a chat carries `authored_from` too.
+     * Rollup (task 01a14a91): what a session spawned under it (at any depth)
+     * made counts as made here as well.
      */
     createdIn?: EntityId;
     /**

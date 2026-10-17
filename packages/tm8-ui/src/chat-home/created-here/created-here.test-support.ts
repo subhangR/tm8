@@ -1,5 +1,5 @@
 import type { DurableWorkspaceEvent, EntityId, EntitySummary } from '@tm8/contract';
-import type { CreatedHereReader } from './reader';
+import type { ChatTag, CreatedHereReader } from './reader';
 
 const SPACE = '019f0000-0000-7000-8000-000000000090';
 
@@ -32,7 +32,7 @@ export function madeSummary(partial: Partial<EntitySummary> & { id: string; kind
 
 export interface FakeReader extends CreatedHereReader {
   emit(event: DurableWorkspaceEvent): void;
-  calls: { roots: number; children: string[]; stop: string[]; message: [string, string][] };
+  calls: { roots: number; children: string[]; stop: string[]; message: [string, string][]; tag: string[]; untag: string[]; search: string[] };
 }
 
 /** An in-memory reader: `roots` and `children` answer from the given maps. */
@@ -40,15 +40,24 @@ export function fakeCreatedHereReader(input: {
   roots?: readonly EntitySummary[];
   children?: Record<string, readonly EntitySummary[]>;
   reads?: readonly EntitySummary[];
+  /** What each session made (`outputs`). */
+  outputs?: Record<string, readonly EntitySummary[]>;
+  /** Tags already on the chat; `tag`/`untag` edit this list. */
+  tags?: ChatTag[];
+  /** What the attach search finds, for any text. */
+  searchable?: readonly EntitySummary[];
+  /** Make `tag` refuse with this message. */
+  refuseTag?: string;
 }): FakeReader {
   const listeners = new Set<(event: DurableWorkspaceEvent) => void>();
-  const calls: FakeReader['calls'] = { roots: 0, children: [], stop: [], message: [] };
+  const calls: FakeReader['calls'] = { roots: 0, children: [], stop: [], message: [], tag: [], untag: [], search: [] };
+  const tags: ChatTag[] = input.tags ?? [];
   const reads = new Map((input.reads ?? []).map((item) => [item.id, item]));
   return {
     calls,
     async roots() {
       calls.roots += 1;
-      return input.roots ?? [];
+      return [...(input.roots ?? [])];
     },
     async children(id: EntityId) {
       calls.children.push(id);
@@ -71,6 +80,30 @@ export function fakeCreatedHereReader(input: {
     },
     async peek() {
       return [{ source: 'assistant' as const, text: 'Running the focused tests now.' }];
+    },
+    async outputs(id: EntityId) {
+      return [...(input.outputs?.[id] ?? [])];
+    },
+    async tags() {
+      return [...tags];
+    },
+    async tag(_chatId, entityId) {
+      calls.tag.push(entityId);
+      if (input.refuseTag) throw new Error(input.refuseTag);
+      const entity = (input.searchable ?? []).find((item) => item.id === entityId);
+      if (!entity) return null;
+      const tag = { edgeId: `edge-${entityId}`, entity };
+      tags.push(tag);
+      return tag;
+    },
+    async untag(edgeId) {
+      calls.untag.push(edgeId);
+      const at = tags.findIndex((tag) => tag.edgeId === edgeId);
+      if (at >= 0) tags.splice(at, 1);
+    },
+    async search({ text }) {
+      calls.search.push(text);
+      return input.searchable ?? [];
     },
     emit(event) {
       for (const listener of listeners) listener(event);

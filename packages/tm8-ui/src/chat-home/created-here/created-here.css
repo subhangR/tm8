@@ -43,7 +43,8 @@
 
 .tch-made__kinds,
 .tch-made__live,
-.tch-made__toggle {
+.tch-made__toggle,
+.tch-made__attach {
   background: var(--pn-paper);
 }
 
@@ -81,6 +82,8 @@
 
 .tch-made__kind:focus-visible,
 .tch-made__toggle:focus-visible,
+.tch-made__attach:focus-visible,
+.tch-made__pick:focus-visible,
 .tch-made__twisty:focus-visible,
 .tch-made__title:focus-visible,
 .tch-made__act:focus-visible,
@@ -137,6 +140,69 @@
 }
 
 .tch-made__toggle:hover { color: var(--pn-ink); }
+
+/* `+`: attach any entity to this chat (an `attached_to` tag). Same berth as
+   the toggle, so the line keeps one rhythm. */
+.tch-made__attach {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-label) / 1 var(--pn-ui);
+  cursor: pointer;
+}
+
+.tch-made__attach:hover,
+.tch-made__attach[aria-expanded='true'] { color: var(--pn-ink); }
+
+.tch-made__attachbox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: 2px var(--pn-space-2) var(--pn-space-2);
+  overscroll-behavior: contain;
+}
+
+.tch-made__attachbox .tch-made__search { flex: none; }
+
+.tch-made__picks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tch-made__pick {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  width: 100%;
+  min-height: 22px;
+  padding: 0 var(--pn-space-1);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink);
+  font: var(--pn-fs-label) var(--pn-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tch-made__pick:hover:not(:disabled) { background: var(--pn-surface); }
+.tch-made__pick:disabled { color: var(--pn-ink-3); cursor: default; }
+
+.tch-made__picktitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tch-made__toggle[aria-expanded='true'] { transform: rotate(180deg); }
 
 /* -- the frame's inside --------------------------------------------------- */

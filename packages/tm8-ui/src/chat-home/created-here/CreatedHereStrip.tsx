@@ -19,6 +19,14 @@
  * Kinds appear only when this chat made a root of that kind; with none at all
  * the strip renders nothing. Open/closed and the selected kind are remembered
  * per chat. Rows update live from the workspace event stream.
+ *
+ * ROLLUP AND TAGS (task 01a14a91). What a session spawned from this chat made
+ * is made here too: the server rolls it into `createdIn`, the strip hangs each
+ * session's outputs under it, and a rolled-up root says `from <session>`. Any
+ * other entity joins by a TAG — one `attached_to` edge, entity -> chat — that
+ * a human adds with `+` (search, pick) and removes from the row, and that an
+ * agent writes with `tm8 edge create <id> attached_to <chat>`. Tags and child
+ * outputs land live from the edge events.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactElement } from 'react';
 import type { DurableWorkspaceEvent, EntityId, EntitySummary } from '@tm8/contract';
@@ -41,7 +49,7 @@ import {
   type MadeMemory,
   type MadeStatus,
 } from './created-here-model';
-import type { CreatedHereReader } from './reader';
+import type { ChatTag, CreatedHereReader } from './reader';
 import './created-here.css';
 
 /** Ids the transcript says this chat created, read one by one — capped. */
@@ -53,6 +61,10 @@ const EXPAND_ALL_CAP = 400;
 /** Search and the All/Running/Done filter appear past this many roots. */
 const TOOLS_AT = 4;
 const HIDDEN_CHILD_KINDS = new Set(['message', 'form']);
+/** Sessions whose outputs are read up front, for the `from <session>` line. */
+const OUTPUTS_CAP = 20;
+/** The attach search waits this long after the last keystroke. */
+const SEARCH_DEBOUNCE_MS = 200;
 
 export interface CreatedHereStripProps {
   chatId: EntityId;
@@ -69,6 +81,12 @@ export interface CreatedHereStripProps {
 }
 
 type ChildState = readonly EntitySummary[] | 'loading' | 'failed';
+
+interface AttachState {
+  text: string;
+  results: readonly EntitySummary[] | 'loading' | 'failed' | null;
+  error: string | null;
+}
 
 function defaultStorage(): Storage | null {
   try {
@@ -99,8 +117,12 @@ export function CreatedHereStrip({
   const [filter, setFilter] = useState<MadeFilter>('all');
   const [peek, setPeek] = useState<{ id: string; lines: readonly { source: string; text: string }[] | 'loading' | 'failed' } | null>(null);
   const [compose, setCompose] = useState<{ id: string; draft: string; state: 'idle' | 'sending' | 'failed' } | null>(null);
+  const [tags, setTags] = useState<readonly ChatTag[]>([]);
+  const [outputs, setOutputs] = useState<ReadonlyMap<string, readonly EntitySummary[]>>(new Map());
+  const [attach, setAttach] = useState<AttachState | null>(null);
   const childrenRef = useRef(children);
   childrenRef.current = children;
+  const outputsAsked = useRef(new Set<string>());
 
   /* A new chat brings its own memory; nothing of the last one carries over. */
   useEffect(() => {
@@ -113,6 +135,10 @@ export function CreatedHereStrip({
     setFilter('all');
     setPeek(null);
     setCompose(null);
+    setTags([]);
+    setOutputs(new Map());
+    setAttach(null);
+    outputsAsked.current = new Set();
     // `store` is stable per mount; the chat id is what changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
@@ -139,6 +165,19 @@ export function CreatedHereStrip({
   useEffect(() => {
     void loadRoots();
   }, [loadRoots]);
+
+  const loadTags = useCallback(async () => {
+    if (!reader?.tags) return;
+    try {
+      setTags(await reader.tags(chatId));
+    } catch {
+      // Tags are additive; a failed read leaves the made roots alone.
+    }
+  }, [reader, chatId]);
+
+  useEffect(() => {
+    void loadTags();
+  }, [loadTags]);
 
   const ledgerIds = useMemo(() => {
     if (!turns || turns.length === 0) return [] as string[];
@@ -175,7 +214,17 @@ export function CreatedHereStrip({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reader, ledgerKey, knownKey]);
 
-  const roots = useMemo(() => rootsOf([...serverRoots, ...ledgerReads], chatId), [serverRoots, ledgerReads, chatId]);
+  const madeRoots = useMemo(() => rootsOf([...serverRoots, ...ledgerReads], chatId), [serverRoots, ledgerReads, chatId]);
+  /* A tag is a root of its own kind, after what was made here. An entity both
+     made here and tagged draws once, as made; its tag still removes. */
+  const tagOf = useMemo(() => new Map(tags.map((tag) => [tag.entity.id, tag])), [tags]);
+  const roots = useMemo(() => {
+    const made = new Set(madeRoots.map((root) => root.id));
+    const tagged = tags
+      .map((tag) => tag.entity)
+      .filter((entity) => !entity.deletedAt && entity.id !== chatId && !made.has(entity.id) && !HIDDEN_CHILD_KINDS.has(entity.kind));
+    return [...madeRoots, ...tagged];
+  }, [madeRoots, tags, chatId]);
   const kinds = useMemo(() => kindsOf(roots), [roots]);
   const kind = memory.kind && kinds.some((k) => k.kind === memory.kind) ? memory.kind : (kinds[0]?.kind ?? null);
 
@@ -197,6 +246,47 @@ export function CreatedHereStrip({
     [reader],
   );
 
+  /* What each spawned session made: its outputs hang under it, and a rolled-up
+     root names the session it came from. Read once per session, capped. */
+  const sessionRootKey = roots.filter((root) => root.kind === 'work_session').map((root) => root.id).slice(0, OUTPUTS_CAP).join(',');
+  useEffect(() => {
+    const read = reader?.outputs;
+    if (!read || sessionRootKey === '') return;
+    for (const id of sessionRootKey.split(',')) {
+      if (outputsAsked.current.has(id)) continue;
+      outputsAsked.current.add(id);
+      void read(id as EntityId).then(
+        (items) => setOutputs((prev) => new Map(prev).set(id, items)),
+        () => undefined,
+      );
+    }
+  }, [reader, sessionRootKey]);
+
+  const sessionTitles = useMemo(
+    () => new Map(roots.filter((root) => root.kind === 'work_session').map((root) => [root.id, root.title])),
+    [roots],
+  );
+  const madeBy = useMemo(() => {
+    const by = new Map<string, string>();
+    for (const [session, items] of outputs) for (const item of items) if (!by.has(item.id)) by.set(item.id, session);
+    return by;
+  }, [outputs]);
+
+  /* A session's rows are its hierarchy children plus what it made; an output
+     whose parent is also listed stays in that parent's subtree. */
+  const childrenOf = useCallback(
+    (id: string): ChildState | undefined => {
+      const kids = children.get(id);
+      const outs = outputs.get(id);
+      if (!outs || outs.length === 0) return kids;
+      const listed = Array.isArray(kids) ? (kids as readonly EntitySummary[]) : [];
+      const byId = new Map<string, EntitySummary>();
+      for (const item of [...listed, ...outs]) if (!item.deletedAt && !byId.has(item.id)) byId.set(item.id, item);
+      return [...byId.values()].filter((item) => item.parentId === id || !item.parentId || !byId.has(item.parentId));
+    },
+    [children, outputs],
+  );
+
   /* ── live updates ──────────────────────────────────────────────────── */
   const refresh = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -207,6 +297,28 @@ export function CreatedHereStrip({
       refresh.current = setTimeout(() => void loadRoots(), 600);
     };
     const off = subscribe((event: DurableWorkspaceEvent) => {
+      if (event.type === 'edge.upsert' || event.type === 'edge.deleted') {
+        const { edge } = event;
+        const removed = event.type === 'edge.deleted';
+        if (edge.type === 'attached_to' && edge.target.id === chatId) {
+          setTags((prev) => {
+            const rest = prev.filter((tag) => tag.edgeId !== edge.id);
+            return removed ? rest : [...rest, { edgeId: edge.id, entity: edge.source }];
+          });
+        } else if (edge.type === 'authored_from' && !HIDDEN_CHILD_KINDS.has(edge.source.kind)) {
+          /* Something was made in this chat or in one of its sessions: the
+             server decides whether it is a root here, and a session that is
+             already drawn gains (or loses) the output under it. */
+          setOutputs((prev) => {
+            const list = prev.get(edge.target.id);
+            if (!list) return prev;
+            const rest = list.filter((item) => item.id !== edge.source.id);
+            return new Map(prev).set(edge.target.id, removed ? rest : [...rest, edge.source]);
+          });
+          scheduleRoots();
+        }
+        return;
+      }
       if (event.type !== 'entity.upsert' && event.type !== 'entity.deleted') return;
       const entity = event.entity;
       if (HIDDEN_CHILD_KINDS.has(entity.kind)) return;
@@ -216,6 +328,20 @@ export function CreatedHereStrip({
           : list;
       setServerRoots((prev) => patch(prev));
       setLedgerReads((prev) => patch(prev));
+      setTags((prev) =>
+        prev.some((tag) => tag.entity.id === entity.id)
+          ? prev.map((tag) => (tag.entity.id === entity.id ? { ...tag, entity } : tag))
+          : prev,
+      );
+      setOutputs((prev) => {
+        let next: Map<string, readonly EntitySummary[]> | null = null;
+        for (const [session, list] of prev) {
+          if (!list.some((item) => item.id === entity.id)) continue;
+          next ??= new Map(prev);
+          next.set(session, patch(list));
+        }
+        return next ?? prev;
+      });
       setChildren((prev) => {
         let next: Map<string, ChildState> | null = null;
         for (const [parent, state] of prev) {
@@ -251,10 +377,10 @@ export function CreatedHereStrip({
     (summary: EntitySummary): boolean => {
       if (!needle) return true;
       if (summary.title.toLowerCase().includes(needle)) return true;
-      const kids = children.get(summary.id);
+      const kids = childrenOf(summary.id);
       return Array.isArray(kids) && (kids as readonly EntitySummary[]).some(matches);
     },
-    [needle, children],
+    [needle, childrenOf],
   );
   const shownRoots = useMemo(
     () => kindRoots.filter((root) => passesFilter(statusOf(root), filter) && matches(root)),
@@ -269,14 +395,14 @@ export function CreatedHereStrip({
     const walk = (items: readonly EntitySummary[]) => {
       for (const item of items) {
         drawn.push(item.id);
-        const kids = children.get(item.id);
+        const kids = childrenOf(item.id);
         if (open.has(item.id) && Array.isArray(kids)) walk(kids as readonly EntitySummary[]);
       }
     };
     walk(shownRoots);
     const pending = drawn.filter((id) => !children.has(id)).slice(0, PREFETCH_CAP);
     for (const id of pending) void loadChildren(id);
-  }, [memory.expanded, reader, shownRoots, open, children, loadChildren]);
+  }, [memory.expanded, reader, shownRoots, open, children, childrenOf, loadChildren]);
 
   const toggleNode = useCallback(
     async (id: string, all: boolean) => {
@@ -334,7 +460,55 @@ export function CreatedHereStrip({
     }
   }, [reader, compose]);
 
-  if (!reader || roots.length === 0 || kind === null) return null;
+  /* ── tagging ───────────────────────────────────────────────────────── */
+  const canAttach = Boolean(reader?.tag && reader?.search);
+  const attachText = attach?.text.trim() ?? '';
+  useEffect(() => {
+    const search = reader?.search;
+    if (!search || attachText === '') return;
+    setAttach((prev) => (prev ? { ...prev, results: 'loading' } : prev));
+    const timer = setTimeout(() => {
+      search({ spaceId, text: attachText }).then(
+        (items) => setAttach((prev) => (prev && prev.text.trim() === attachText ? { ...prev, results: items.filter((item) => item.id !== chatId) } : prev)),
+        () => setAttach((prev) => (prev && prev.text.trim() === attachText ? { ...prev, results: 'failed' } : prev)),
+      );
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [reader, spaceId, chatId, attachText]);
+
+  const attachEntity = useCallback(
+    async (entity: EntitySummary) => {
+      if (!reader?.tag) return;
+      try {
+        const tag = await reader.tag(chatId, entity.id);
+        if (tag) setTags((prev) => [...prev.filter((t) => t.edgeId !== tag.edgeId), tag]);
+        else void loadTags();
+        setAttach(null);
+        remember({ kind: entity.kind, expanded: true });
+      } catch (error) {
+        const reason = error instanceof Error && error.message ? error.message : 'the server refused it';
+        setAttach((prev) => (prev ? { ...prev, error: `Not attached: ${reason}` } : prev));
+      }
+    },
+    [reader, chatId, loadTags, remember],
+  );
+
+  const removeTag = useCallback(
+    async (tag: ChatTag) => {
+      if (!reader?.untag) return;
+      setTags((prev) => prev.filter((t) => t.edgeId !== tag.edgeId));
+      try {
+        await reader.untag(tag.edgeId);
+      } catch {
+        setTags((prev) => (prev.some((t) => t.edgeId === tag.edgeId) ? prev : [...prev, tag]));
+      }
+    },
+    [reader],
+  );
+
+  const hasTurns = (turns?.length ?? 0) > 0;
+  if (!reader) return null;
+  if (roots.length === 0 && !(canAttach && (hasTurns || attach !== null))) return null;
 
   const expanded = memory.expanded;
   const nowMs = now();
@@ -342,12 +516,15 @@ export function CreatedHereStrip({
   const renderRows = (items: readonly EntitySummary[], depth: number): ReactElement[] =>
     items.map((item) => {
       const status = statusOf(item);
-      const kids = children.get(item.id);
+      const kids = childrenOf(item.id);
       const list = Array.isArray(kids) ? (kids as readonly EntitySummary[]) : null;
       const hasKids = list ? list.length > 0 : kids === undefined || kids === 'loading';
       const isOpen = open.has(item.id) && hasKids;
-      const byline = sessionByline(item, modelLabel);
+      const from = depth === 0 ? madeBy.get(item.id) : undefined;
+      const fromTitle = from ? sessionTitles.get(from) : undefined;
+      const byline = sessionByline(item, modelLabel) ?? (fromTitle ? `from ${fromTitle}` : null);
       const isSession = item.kind === 'work_session';
+      const tag = depth === 0 && reader.untag ? tagOf.get(item.id) : undefined;
       const twisty = (event: MouseEvent<HTMLButtonElement>) => {
         event.stopPropagation();
         void toggleNode(item.id, event.altKey);
@@ -372,7 +549,7 @@ export function CreatedHereStrip({
           <div
             className="tch-made__row"
             data-closed={status.closed || undefined}
-            data-acts={isSession || undefined}
+            data-acts={isSession || tag !== undefined || undefined}
             style={{ paddingLeft: `calc(${depth} * var(--tch-made-indent))` }}
             tabIndex={0}
             onKeyDown={onRowKey}
@@ -411,6 +588,7 @@ export function CreatedHereStrip({
               {item.title || getKind(item.kind).label}
             </button>
             {byline ? <span className="tch-made__by">{byline}</span> : null}
+            {tag ? <span className="tch-made__by" data-testid="created-here-tagged">tagged</span> : null}
             {list && list.length > 0 ? (
               <span className="tch-made__count" title={`${list.length} under it`}>{list.length}</span>
             ) : null}
@@ -444,6 +622,11 @@ export function CreatedHereStrip({
                     Stop
                   </button>
                 ) : null}
+                {tag ? <UntagButton tag={tag} title={item.title} onRemove={removeTag} /> : null}
+              </span>
+            ) : tag ? (
+              <span className="tch-made__acts">
+                <UntagButton tag={tag} title={item.title} onRemove={removeTag} />
               </span>
             ) : null}
           </div>
@@ -536,6 +719,20 @@ export function CreatedHereStrip({
             ) : null}
           </span>
         ) : null}
+        {canAttach ? (
+          <button
+            type="button"
+            className="tch-made__attach"
+            data-testid="created-here-attach"
+            aria-expanded={attach !== null}
+            aria-label="Attach an entity to this chat"
+            title="Attach an entity to this chat"
+            onClick={() => setAttach(attach ? null : { text: '', results: null, error: null })}
+          >
+            <span aria-hidden>+</span>
+          </button>
+        ) : null}
+        {kind !== null ? (
         <button
           type="button"
           className="tch-made__toggle"
@@ -546,8 +743,55 @@ export function CreatedHereStrip({
         >
           <span aria-hidden>⌃</span>
         </button>
+        ) : null}
       </div>
-      {expanded ? (
+      {attach ? (
+        <div className="tch-made__attachbox" data-testid="created-here-attach-panel">
+          <input
+            className="tch-made__search"
+            type="search"
+            autoFocus
+            value={attach.text}
+            placeholder="Find an entity to attach"
+            aria-label="Find an entity to attach to this chat"
+            onChange={(event) => {
+              const text = event.target.value;
+              setAttach({ text, results: text.trim() ? attach.results : null, error: null });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setAttach(null);
+            }}
+          />
+          {attach.error ? <p className="tch-made__quiet" role="alert">{attach.error}</p> : null}
+          {attach.results === 'loading' ? <p className="tch-made__quiet">Searching…</p>
+            : attach.results === 'failed' ? <p className="tch-made__quiet">The search failed.</p>
+            : attach.results && attach.results.length === 0 ? <p className="tch-made__quiet">Nothing found.</p>
+            : attach.results ? (
+              <ul className="tch-made__picks" aria-label="Entities to attach">
+                {attach.results.map((entity) => {
+                  const here = roots.some((root) => root.id === entity.id);
+                  return (
+                    <li key={entity.id}>
+                      <button
+                        type="button"
+                        className="tch-made__pick"
+                        data-testid="created-here-attach-result"
+                        disabled={here}
+                        title={here ? 'Already in this chat' : `Attach ${entity.title} to this chat`}
+                        onClick={() => void attachEntity(entity)}
+                      >
+                        <KindIcon kind={entity.kind} size={12} className="tch-made__kindmark" />
+                        <span className="tch-made__picktitle">{entity.title || getKind(entity.kind).label}</span>
+                        {here ? <span className="tch-made__quiet">here</span> : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+        </div>
+      ) : null}
+      {expanded && kind !== null ? (
         <div className="tch-made__body" data-testid="created-here-body">
           {kindRoots.length >= TOOLS_AT ? (
             <div className="tch-made__tools">
@@ -585,6 +829,21 @@ export function CreatedHereStrip({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function UntagButton({ tag, title, onRemove }: { tag: ChatTag; title: string; onRemove: (tag: ChatTag) => Promise<void> }) {
+  return (
+    <button
+      type="button"
+      className="tch-made__act"
+      data-testid="created-here-untag"
+      aria-label={`Remove ${title} from this chat`}
+      title="Remove it from this chat (the entity stays)"
+      onClick={() => void onRemove(tag)}
+    >
+      Remove
+    </button>
   );
 }
 

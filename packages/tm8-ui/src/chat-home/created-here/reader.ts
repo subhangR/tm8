@@ -18,7 +18,29 @@ export interface CreatedHereReader {
   stop?(sessionId: EntityId): Promise<void>;
   message?(sessionId: EntityId, body: string): Promise<void>;
   peek?(sessionId: EntityId): Promise<readonly { source: 'user' | 'assistant'; text: string }[]>;
+  /** What a session made (`authored_from` into it), so its outputs hang under
+   *  it and a rolled-up root can say which session it came from. */
+  outputs?(sessionId: EntityId): Promise<readonly EntitySummary[]>;
+  /** Entities tagged to the chat: `<entity> attached_to <chat>`, with the edge
+   *  id that removes the tag. */
+  tags?(chatId: EntityId): Promise<readonly ChatTag[]>;
+  tag?(chatId: EntityId, entityId: EntityId): Promise<ChatTag | null>;
+  untag?(edgeId: string): Promise<void>;
+  /** The attach picker's search: every word in the title. */
+  search?(input: { spaceId: SpaceId | string; text: string }): Promise<readonly EntitySummary[]>;
 }
+
+/** One manual tag on a chat. */
+export interface ChatTag {
+  edgeId: string;
+  entity: EntitySummary;
+}
+
+/** The tag edge (task 01a14a91): reuses the canonical "context or input"
+ *  meaning, entity -> chat. Its registry row takes any destination. */
+export const CHAT_TAG_EDGE = 'attached_to';
+
+const SEARCH_LIMIT = 12;
 
 const PAGE = 200;
 
@@ -64,6 +86,27 @@ export function createdHereReaderFromSeam(seam: Seam): CreatedHereReader {
     },
     async message(sessionId, body) {
       await seam.commands.postMessage({ clientMutationId: mutationId('message', sessionId), anchorIds: [sessionId], body });
+    },
+    async outputs(sessionId) {
+      const page = await seam.connections(sessionId, { types: ['authored_from'], direction: 'incoming', limit: PAGE });
+      return page.items.map((edge) => edge.source).filter((item) => item.kind !== 'message' && item.kind !== 'form');
+    },
+    async tags(chatId) {
+      const page = await seam.connections(chatId, { types: [CHAT_TAG_EDGE], direction: 'incoming', limit: PAGE });
+      return page.items.map((edge) => ({ edgeId: edge.id, entity: edge.source }));
+    },
+    async tag(chatId, entityId) {
+      const result = await seam.commands.createEdge({
+        clientMutationId: mutationId('tag', entityId), srcId: entityId, dstId: chatId, type: CHAT_TAG_EDGE,
+      });
+      return result.edge ? { edgeId: result.edge.id, entity: result.edge.source } : null;
+    },
+    async untag(edgeId) {
+      await seam.commands.deleteEdge(edgeId, { clientMutationId: mutationId('untag', edgeId) });
+    },
+    async search({ spaceId, text }) {
+      const result = await seam.query({ spaceId: spaceId as SpaceId, filters: { words: text }, limit: SEARCH_LIMIT });
+      return result.page.items;
     },
     async peek(sessionId) {
       const page = await seam.transcript(sessionId, { last: 6 });

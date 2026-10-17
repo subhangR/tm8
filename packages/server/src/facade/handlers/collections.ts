@@ -575,11 +575,17 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     // or session); a session also counts by its spawn parent, which pre-327
     // spawns carry without the edge. Roots only: a child whose parent was
     // made here too belongs to that parent's subtree.
+    //
+    // ROLLUP (task 01a14a91): what a session spawned here made counts too, so
+    // a doc a child worker wrote shows in the chat's strip. The origin set is
+    // the origin plus every work session under it by spawn parent (bounded
+    // depth); the array is uncorrelated, so it is computed once per query.
     const origin = p.add(assertUuid(f.createdIn, 'filters.createdIn'));
+    const origins = sessionTreeIds(origin);
     const madeHere = (alias: string) => `(exists (
         select 1 from public.edges ca
-         where ca.src_id = ${alias}.id and ca.type = 'authored_from' and ca.dst_id = ${origin}
-      ) or (${alias}.kind = 'work_session' and ${alias}.parent_id = ${origin}))`;
+         where ca.src_id = ${alias}.id and ca.type = 'authored_from' and ca.dst_id = any(${origins})
+      ) or ${spawnedDirectlyBy(alias, origin)})`;
     where.push(`e.kind not in ('message', 'form')`);
     where.push(madeHere('e'));
     where.push(`not exists (
@@ -1013,4 +1019,29 @@ export function collectionsRemoveItem(deps: FacadeDeps): OperationHandler {
       return toCommandResult(q, raw, owner.identityId);
     });
   };
+}
+
+/*
+ * SPAWN LINEAGE, said once (task 01a14a91). The created-here rollup reads "the
+ * sessions spawned by X" through these two fragments only, so moving lineage
+ * off `parent_id` (task 01a14a9e, a `spawned_by` edge) changes them and
+ * nothing else. Both take a bound SQL parameter or column expression.
+ */
+
+/** `<alias>` is a work session spawned directly by `origin`. */
+function spawnedDirectlyBy(alias: string, origin: string): string {
+  return `(${alias}.kind = 'work_session' and ${alias}.parent_id = ${origin})`;
+}
+
+/** `origin` plus every work session spawned under it, at any depth (bounded):
+ *  an uncorrelated uuid[] the planner computes once per query. */
+function sessionTreeIds(origin: string): string {
+  return `array(
+        with recursive tree(id, depth) as (
+          select ${origin}::uuid, 0
+          union all
+          select s.id, tree.depth + 1
+            from public.entities s join tree on s.parent_id = tree.id
+           where s.kind = 'work_session' and s.deleted_at is null and tree.depth < 8
+        ) select id from tree)`;
 }
