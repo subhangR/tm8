@@ -1371,8 +1371,8 @@ export interface Seam {
      * `completed`. The claim check runs first (`claims_open`, listing each
      * task still working), then the receipt rule (`receipt_required` /
      * `receipt_not_on_anchor`); refusals arrive as `invariant_violation` with
-     * `details.reason`, verbatim. `closeProcess` also closes a live process as
-     * `exited_clean`. The result carries `outcome` beside the usual patches.
+     * `details.reason`, verbatim. A live process then closes as `exited_clean`
+     * unless `closeProcess: false`. The result carries `outcome` beside the usual patches.
      */
     completeSession(id: EntityId, input: ExecutionCompleteInput): Promise<SessionCompleteResult>;
     /**

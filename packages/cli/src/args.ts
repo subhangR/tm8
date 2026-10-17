@@ -88,7 +88,8 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'stop',                // session terminate --stop — end the work without completing (Spec D1)
   'complete',            // session terminate --complete — complete the work, then close
   'mark-lost',           // session terminate --mark-lost — record a process that is gone
-  'close-process',       // session complete --close-process
+  'close-process',       // session complete --close-process (closes even with live launched sessions)
+  'keep-process',        // session complete --keep-process — leave the process open
   'keep-open',           // tool run — retain the interactive shell after tool exit
   'grant-only',          // session attach --grant-only
   'presence',            // event watch --presence

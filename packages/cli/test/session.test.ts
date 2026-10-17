@@ -571,6 +571,14 @@ describe('session complete', () => {
     expect(body()).toMatchObject({ receiptMessageId: receipt, closeProcess: true });
   });
 
+  it('--keep-process sends closeProcess false; with --close-process it is a usage error', async () => {
+    const r = await drive(['session', 'complete', SESSION, '--keep-process']);
+    expect(r.code).toBe(0);
+    expect(body()).toMatchObject({ closeProcess: false });
+    const both = await drive(['session', 'complete', SESSION, '--keep-process', '--close-process']);
+    expect(both.code).not.toBe(0);
+  });
+
   it('inside a session the id defaults to TM8_SESSION_ID', async () => {
     const r = await drive(['session', 'complete'], { TM8_SESSION_ID: SESSION });
     expect(r.code).toBe(0);

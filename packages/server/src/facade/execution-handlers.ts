@@ -2374,6 +2374,13 @@ const CLOSED_AFTER_COMPLETION: { endedKind: WorkSessionEndedKind; endedReason: s
   endedReason: 'Closed after the session completed its work.',
 };
 
+/**
+ * How long an agent's own `session complete` waits before its process closes:
+ * long enough for the reply to reach its CLI, short enough that the sessions
+ * list moves the row within a couple of seconds.
+ */
+export const SELF_CLOSE_DELAY_MS = 1_000;
+
 async function assembleCommandResult(
   db: Db,
   claims: DbClaims,
@@ -3964,8 +3971,17 @@ function registerHandlers(
   /**
    * execution.complete (Spec D1 §4.1). All the rules — claim check, receipt,
    * claim ends, the outcome event — are `public.complete_work_session`'s, so
-   * the CLI, the row tick and any later caller cannot disagree. `closeProcess`
-   * then closes a still-live process as `exited_clean`: the work is done.
+   * the CLI, the row tick and any later caller cannot disagree. Then the
+   * still-live process closes as `exited_clean`: the work is done.
+   *
+   * CLOSED AT ONCE (task 01a14b35). The process used to stay open until the
+   * auto-close job's window (30 min by default), so a finished agent sat in
+   * Running as "Finished, still open". Now it closes here unless the caller
+   * says `closeProcess: false`, or the session still has live sessions it
+   * launched (their reports land in its terminal — the auto-close job's own
+   * rule, which then closes it later). An agent completing ITSELF gets its
+   * reply first: the close follows `SELF_CLOSE_DELAY_MS` later, so its CLI
+   * prints the receipt instead of dying mid-call.
    */
   registry.register('execution.complete', async (ctx) => {
     const owner = await resolveOwner();
@@ -3976,14 +3992,61 @@ function registerHandlers(
     const raw = await db.rpc<RpcCommandResult & { outcome?: unknown }>(claims, 'complete_work_session', [
       sessionId, input.receiptMessageId ?? null, envelope.actorId ?? null, envelope.clientMutationId ?? null,
     ]);
-    if (input.closeProcess === true && (await sessionProcessLive(claims, sessionId))) {
-      await rethrowing(() =>
-        spawnService.terminate(claims, sessionId, { clientMutationId: null, ...CLOSED_AFTER_COMPLETION }),
-      );
+    if (await closesOnCompletion(claims, sessionId, input.closeProcess)) {
+      if (claims.workSessionId === sessionId) {
+        scheduleSelfClose(claims, sessionId);
+      } else {
+        await rethrowing(() =>
+          spawnService.terminate(claims, sessionId, { clientMutationId: null, ...CLOSED_AFTER_COMPLETION }),
+        );
+      }
     }
     const assembled = (await assembleCommandResult(db, claims, raw, owner.identityId)) as Record<string, unknown>;
     return json({ ...assembled, outcome: raw.outcome ?? null });
   });
+
+  /**
+   * Does completing this session close its process now? Only a live one.
+   * `closeProcess: true` always does; `false` never does; absent closes an
+   * agent session that launched no session still alive.
+   */
+  async function closesOnCompletion(claims: DbClaims, sessionId: string, closeProcess: boolean | undefined): Promise<boolean> {
+    if (closeProcess === false) return false;
+    const rows = await db.query<{ status: string; session_kind: string; launched_live: boolean }>(
+      claims,
+      `select ws.status, ws.session_kind,
+              exists (select 1 from public.edges lb
+                        join public.entities ce on ce.id = lb.src_id and ce.deleted_at is null
+                        join public.work_sessions cws on cws.entity_id = ce.id
+                       where lb.dst_id = ws.entity_id and lb.type = 'launched_by'
+                         and cws.status in ('spawning', 'running', 'idle')) launched_live
+         from public.work_sessions ws where ws.entity_id = $1`,
+      [sessionId],
+    );
+    const row = rows[0];
+    if (!row || !['spawning', 'running', 'idle'].includes(row.status)) return false;
+    if (closeProcess === true) return true;
+    return row.session_kind === 'agent' && row.launched_live !== true;
+  }
+
+  /**
+   * The self-completion close, after the reply. Re-reads the outcome first: a
+   * claim taken in between reopened the session, and then it stays. Never
+   * throws — a failure leaves the process to the auto-close job.
+   */
+  function scheduleSelfClose(claims: DbClaims, sessionId: string): void {
+    const timer = setTimeout(() => {
+      void (async () => {
+        if ((await sessionOutcome(claims, sessionId)) !== 'completed') return;
+        if (!(await sessionProcessLive(claims, sessionId))) return;
+        await spawnService.terminate(claims, sessionId, { clientMutationId: null, ...CLOSED_AFTER_COMPLETION });
+      })().catch((error: unknown) => {
+        console.warn(`[tm8:complete] closing session ${sessionId} after its completion failed: ${
+          error instanceof Error ? error.message : String(error)}`);
+      });
+    }, SELF_CLOSE_DELAY_MS);
+    timer.unref?.();
+  }
 
   async function sessionOutcome(claims: DbClaims, sessionId: string): Promise<'open' | 'completed' | 'stopped'> {
     const rows = await db.query<{ outcome: string }>(

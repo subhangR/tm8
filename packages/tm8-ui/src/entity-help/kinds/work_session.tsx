@@ -78,7 +78,7 @@ function Heartbeat() {
       </div>
       <ul className="ehs-sess__verbs" aria-label="What a person can do about it">
         <li className="ehs-in" style={at(2900)}>
-          <span className="ehs-chip ehs-chip--brass">✓ tick</span> files it under Done. The process keeps running.
+          <span className="ehs-chip ehs-chip--brass">✓ tick</span> files it under Done and closes the process.
         </li>
         <li className="ehs-in" style={at(3150)}>
           <span className="ehs-chip ehs-chip--block">terminate</span> ends the process. It files under Done because it

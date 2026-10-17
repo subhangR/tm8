@@ -6,15 +6,16 @@
  *     stop_work_session first, `complete` runs complete_work_session first and
  *     closes the process as exited_clean.
  *   execution.terminate on a COMPLETED session only closes the process.
- *   execution.complete calls complete_work_session; `closeProcess` closes a
- *     live process afterwards, and is a no-op on an ended one.
+ *   execution.complete calls complete_work_session, then closes a live agent
+ *     process (task 01a14b35) unless `closeProcess: false` or it still has
+ *     live launched sessions; the session's OWN call closes after the reply.
  *
  * The SQL rules themselves are proven in test/db/session-outcome-301.pg.test.ts.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getOperation, type OperationName } from '@tm8/contract';
-import { registerExecutionHandlers } from '../../src/facade/execution-handlers.js';
+import { registerExecutionHandlers, SELF_CLOSE_DELAY_MS } from '../../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
@@ -30,12 +31,14 @@ const OWNER: LoopbackOwner = {
   isOwner: true,
 };
 
+interface Row { outcome: string; status: string; kind?: string; launchedLive?: boolean }
+
 /** Answers the session's stored outcome/status; records every RPC with its args. */
 class ScriptedDb implements Db {
   readonly rpcs: Array<{ fn: string; args: readonly unknown[] }> = [];
   /** RPCs that raise, as the DB does on a refusal (e.g. the claim check). */
   readonly refuse = new Map<string, Error>();
-  constructor(private readonly row: { outcome: string; status: string }) {}
+  constructor(private readonly row: Row) {}
   private record(fn: string, args: readonly unknown[]): void {
     this.rpcs.push({ fn, args });
     const refusal = this.refuse.get(fn.replace(/^public\./, ''));
@@ -53,6 +56,9 @@ class ScriptedDb implements Db {
   }
   private answer(sql: string): unknown[] {
     if (/select ws\.outcome/.test(sql)) return [{ outcome: this.row.outcome }];
+    if (/select ws\.status, ws\.session_kind/.test(sql)) {
+      return [{ status: this.row.status, session_kind: this.row.kind ?? 'agent', launched_live: this.row.launchedLive ?? false }];
+    }
     if (/select ws\.status/.test(sql)) return [{ status: this.row.status }];
     return [];
   }
@@ -81,7 +87,7 @@ class Pty {
   }
 }
 
-function harness(row: { outcome: string; status: string }, live = true) {
+function harness(row: Row, live = true) {
   const registry = new HandlerRegistry();
   const db = new ScriptedDb(row);
   const pty = new Pty(live);
@@ -94,7 +100,11 @@ function harness(row: { outcome: string; status: string }, live = true) {
   return { registry, db, pty };
 }
 
-function ctx(op: 'execution.terminate' | 'execution.complete', body: Record<string, unknown>): RequestContext {
+function ctx(
+  op: 'execution.terminate' | 'execution.complete',
+  body: Record<string, unknown>,
+  identity: RequestContext['identity'] = { kind: 'auto-owner', identityId: OWNER.identityId } as never,
+): RequestContext {
   const opName = op as OperationName;
   return {
     op: getOperation(opName)!,
@@ -103,16 +113,21 @@ function ctx(op: 'execution.terminate' | 'execution.complete', body: Record<stri
     query: new URLSearchParams(),
     body: { clientMutationId: 'cmid-d1', ...body },
     requestId: 'req-d1',
-    identity: { kind: 'auto-owner', identityId: OWNER.identityId } as never,
+    identity,
     headers: {},
     method: 'POST',
     path: `/v2/entities/${SESSION}/commands/x`,
   };
 }
 
-async function call(h: ReturnType<typeof harness>, op: 'execution.terminate' | 'execution.complete', body: Record<string, unknown>) {
+async function call(
+  h: ReturnType<typeof harness>,
+  op: 'execution.terminate' | 'execution.complete',
+  body: Record<string, unknown>,
+  identity?: RequestContext['identity'],
+) {
   const handler = h.registry.get(op as OperationName)!;
-  return handler(ctx(op, body));
+  return handler(ctx(op, body, identity));
 }
 
 const fns = (h: ReturnType<typeof harness>) => h.db.rpcs.map((r) => r.fn.replace(/^public\./, ''));
@@ -185,10 +200,56 @@ describe('execution.terminate — the work is the caller’s choice while it is 
 });
 
 describe('execution.complete (§4.1)', () => {
-  it('S1: calls complete_work_session and leaves a live process running', async () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('closes a live agent process at once, as exited_clean (task 01a14b35)', async () => {
     const h = harness({ outcome: 'open', status: 'running' });
     await call(h, 'execution.complete', {});
+    expect(fns(h)[0]).toBe('complete_work_session');
+    expect(h.pty.kills).toBe(1);
+    expect(transitionOf(h)).toContain('exited_clean');
+  });
+
+  it('S1: closeProcess false calls complete_work_session and leaves the process running', async () => {
+    const h = harness({ outcome: 'open', status: 'running' });
+    await call(h, 'execution.complete', { closeProcess: false });
     expect(fns(h)).toEqual(['complete_work_session']);
+    expect(h.pty.kills).toBe(0);
+  });
+
+  it('a session with live launched sessions stays open; closeProcess true closes it anyway', async () => {
+    const kept = harness({ outcome: 'open', status: 'idle', launchedLive: true });
+    await call(kept, 'execution.complete', {});
+    expect(kept.pty.kills).toBe(0);
+    const forced = harness({ outcome: 'open', status: 'idle', launchedLive: true });
+    await call(forced, 'execution.complete', { closeProcess: true });
+    expect(forced.pty.kills).toBe(1);
+    expect(transitionOf(forced)).toContain('exited_clean');
+  });
+
+  it('a non-agent session (a tool run) is only closed when asked', async () => {
+    const h = harness({ outcome: 'open', status: 'running', kind: 'tool' });
+    await call(h, 'execution.complete', {});
+    expect(h.pty.kills).toBe(0);
+  });
+
+  it('the session completing ITSELF gets its reply first, then its process closes', async () => {
+    vi.useFakeTimers();
+    const h = harness({ outcome: 'completed', status: 'running' });
+    const self = { kind: 'bearer', identityId: 'agent-identity', workSessionId: SESSION } as never;
+    await call(h, 'execution.complete', {}, self);
+    expect(h.pty.kills).toBe(0);
+    await vi.advanceTimersByTimeAsync(SELF_CLOSE_DELAY_MS);
+    await vi.waitFor(() => expect(transitionOf(h)).toContain('exited_clean'));
+    expect(h.pty.kills).toBe(1);
+  });
+
+  it('a self-close finds the session reopened and leaves it running', async () => {
+    vi.useFakeTimers();
+    const h = harness({ outcome: 'open', status: 'running' });
+    const self = { kind: 'bearer', identityId: 'agent-identity', workSessionId: SESSION } as never;
+    await call(h, 'execution.complete', {}, self);
+    await vi.advanceTimersByTimeAsync(SELF_CLOSE_DELAY_MS);
     expect(h.pty.kills).toBe(0);
   });
 
@@ -199,9 +260,12 @@ describe('execution.complete (§4.1)', () => {
     expect(transitionOf(h)).toContain('exited_clean');
   });
 
-  it('closeProcess on an already-ended process writes nothing more', async () => {
+  it('an already-ended process writes nothing more', async () => {
     const h = harness({ outcome: 'open', status: 'exited' }, false);
     await call(h, 'execution.complete', { closeProcess: true });
     expect(fns(h)).toEqual(['complete_work_session']);
+    const plain = harness({ outcome: 'open', status: 'exited' }, false);
+    await call(plain, 'execution.complete', {});
+    expect(fns(plain)).toEqual(['complete_work_session']);
   });
 });

@@ -5195,7 +5195,7 @@ export function createFixtureSeam(): FixtureSeam {
           s.state.outcomeSource = 'operator';
           s.state.receiptMessageId = receipt;
         }
-        if (input.closeProcess === true && ['spawning', 'running', 'idle'].includes(s.state.status)) {
+        if (input.closeProcess !== false && ['spawning', 'running', 'idle'].includes(s.state.status)) {
           s.state.status = 'exited';
           s.state.endedKind = 'exited_clean';
           s.state.exitedAt = tick();

@@ -258,6 +258,24 @@ describe('§5.3.1 case 12 — about 10 s of grace before a row leaves Running', 
     expect(result.current.map((r) => r.id)).toEqual(['a']);
   });
 
+  it('a row whose process the store records as ended leaves at once (task 01a14b35)', () => {
+    const a = { id: 'a' };
+    const b = { id: 'b' };
+    const ended = new Set<string>();
+    const { result, rerender } = renderHook(({ rows }) => useRunningGrace(rows, true, undefined, (id) => ended.has(id)), {
+      initialProps: { rows: [a, b] as readonly { id: string }[] },
+    });
+    ended.add('b');
+    rerender({ rows: [a] });
+    expect(result.current.map((r) => r.id)).toEqual(['a']);
+    // A row still recorded live keeps its grace, and drops the moment its end lands.
+    rerender({ rows: [] });
+    expect(result.current.map((r) => r.id)).toEqual(['a']);
+    ended.add('a');
+    rerender({ rows: [] });
+    expect(result.current).toEqual([]);
+  });
+
   it('the LAST row leaving Running still gets its grace', () => {
     const a = { id: 'a' };
     const { result, rerender } = renderHook(({ rows }) => useRunningGrace(rows, true), {

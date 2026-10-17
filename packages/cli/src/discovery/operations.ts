@@ -3030,7 +3030,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'execution.complete': {
     cmd: ['session', 'complete'],
-    syn: 'tm8 session complete [<work-session-id>] [--receipt <message-id>] [--close-process] [--mutation-id <id>]',
+    syn: 'tm8 session complete [<work-session-id>] [--receipt <message-id>] [--keep-process | --close-process] [--mutation-id <id>]',
     sum: 'Mark a session\'s work completed: claim check, then the close-out message as its receipt',
     authz: 'session',
     input: 'bound',
@@ -3041,12 +3041,12 @@ const ROWS: Record<OperationName, Row> = {
       'every claim must be done, in_review, blocked, or released with `tm8 task release --note`; otherwise invariant_violation / claims_open lists them',
       'the receipt is --receipt, or the latest message the session wrote on its anchor; none → receipt_required',
       'remaining in_review/blocked claims end with session_completed and the receipt as their hand-off',
-      'completion is a status marker: the session may keep messaging and working; claiming a new task (or `tm8 session resume`) reopens it, logged',
-      'the process keeps running unless --close-process',
+      'the process then closes (exited_clean) — run from inside the session, right after the reply; claiming a new task or `tm8 session resume` reopens it, logged',
+      '--keep-process leaves the process open; it stays open too while sessions it launched are still live (auto-close closes it later), unless --close-process',
     ],
     examples: [
       'tm8 message send --to <task-id> "<close-out>" && tm8 session complete',
-      'tm8 session complete <work-session-id> --receipt <message-id> --close-process',
+      'tm8 session complete <work-session-id> --receipt <message-id> --keep-process',
     ],
   },
   'execution.streams.attach': {

@@ -647,12 +647,13 @@ async function sessionResume(cmd: CommandContext): Promise<ExitCode> {
 
 /**
  * `tm8 session complete [<work-session-id>] [--receipt <message-id>]
- * [--close-process]` (Spec D1 §4.1). Settles the session's OUTCOME as
+ * [--keep-process | --close-process]` (Spec D1 §4.1). Settles the session's OUTCOME as
  * completed: every claim must be done, in review, blocked or released first
  * (`claims_open` lists the rest), and a close-out message on the anchor is the
  * receipt — the latest one unless `--receipt` names it. Run from inside a
  * session, the id defaults to that session (`TM8_SESSION_ID`). The process
- * keeps running unless `--close-process`.
+ * then closes (the server answers first) unless `--keep-process`, or it still
+ * has live sessions it launched — `--close-process` closes it anyway.
  */
 async function sessionComplete(cmd: CommandContext): Promise<ExitCode> {
   const id = cmd.args[0] ?? cmd.ctx.sessionId;
@@ -666,7 +667,15 @@ async function sessionComplete(cmd: CommandContext): Promise<ExitCode> {
   };
   const receipt = cmd.options.value('receipt');
   if (receipt !== undefined) body.receiptMessageId = receipt;
-  if (cmd.options.bool('close-process')) body.closeProcess = true;
+  const keep = cmd.options.bool('keep-process');
+  const close = cmd.options.bool('close-process');
+  if (keep && close) {
+    throw new CliError('--keep-process and --close-process are exclusive', EXIT_USAGE, {
+      hint: 'the process closes by default; --keep-process leaves it open',
+    });
+  }
+  if (close) body.closeProcess = true;
+  if (keep) body.closeProcess = false;
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.complete', {

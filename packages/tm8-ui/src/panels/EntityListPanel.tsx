@@ -3800,8 +3800,12 @@ function Band({
   /* §5.3.1 case 12: a row that just left Running lingers ~10 s. Gated on the
      tab alone ('running' is a session tab id only), not on the rows: gating on
      "every row is a session" switched grace off exactly when the last running
-     row left, so that row vanished at once. */
-  const graced = useRunningGrace(rows, tabId === 'running');
+     row left, so that row vanished at once. A row whose process the store
+     records as ended gets none: it closed, it is not flickering. */
+  const livenessOf = props.livenessOf;
+  const graced = useRunningGrace(rows, tabId === 'running', undefined, livenessOf
+    ? (id) => livenessOf(id) === 'not-running'
+    : undefined);
   const visible = matching(graced, query ?? '');
   const sessionRows = visible.length > 0 && visible.every((r) => isSessionState(r.state));
   const attentionIds = attentionIdsOf(visible, props, config);

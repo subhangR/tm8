@@ -6581,14 +6581,16 @@ export interface ExecutionTerminateInput extends CommandContext {
  * (Spec D1 §4.1). Settles the outcome as `completed`: the claim check first
  * (`claims_open`, listing each task still working), then the receipt rule
  * (`receipt_required` / `receipt_not_on_anchor`), then every remaining claim
- * ends with `session_completed`. The process is untouched unless
- * `closeProcess`, which then terminates it as `exited_clean`. Idempotent on an
- * already-completed session; refused on a stopped one (`session_stopped`).
- * Completion is a status marker: the session keeps working, and a later claim
- * reopens it.
+ * ends with `session_completed`. Then a live process closes at once as
+ * `exited_clean` — after the reply when the session completes itself — unless
+ * `closeProcess: false`, or the session still has live sessions it launched
+ * (the auto-close job closes it later). Idempotent on an already-completed
+ * session; refused on a stopped one (`session_stopped`). Completion is a
+ * status marker: a later claim or a resume reopens the session.
  */
 export interface ExecutionCompleteInput extends CommandContext {
   receiptMessageId?: string;
+  /** Absent ⇒ close a live agent process; `false` keeps it open; `true` always closes. */
   closeProcess?: boolean;
 }
 
