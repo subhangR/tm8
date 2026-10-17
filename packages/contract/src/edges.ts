@@ -44,6 +44,8 @@ export const CANONICAL_EDGES: readonly CanonicalEdge[] = [
     how: 'recorded at spawn' },
   { meaning: 'Made during a session', type: 'authored_from', direction: 'entity → session or chat', writtenBy: 'server',
     how: 'recorded when a session creates, posts or links it' },
+  { meaning: 'Launched by', type: 'launched_by', direction: 'session → the chat or session that started it', writtenBy: 'server',
+    how: 'recorded when a chat or session spawns it (330); never a parentId' },
   { meaning: 'Completed by', type: 'completed_by', direction: 'task → member or teammate', writtenBy: 'server',
     how: 'recorded by tm8 task complete' },
   { meaning: 'Launch task', type: 'derived_from', direction: 'task → the story or session it launches', writtenBy: 'server',
@@ -54,6 +56,6 @@ export const CANONICAL_EDGES: readonly CanonicalEdge[] = [
 
 /** Edge types an agent must never hand-write: deprecated, or replaced by a canonical meaning. */
 export const NON_CANONICAL_EDGES: Readonly<Record<string, string>> = {
-  dispatched_by: 'deprecated: a session\'s parent is the session that spawned it',
+  dispatched_by: 'deprecated: replaced by launched_by, which the server records at spawn',
   created_in: 'retired: merged into authored_from, which the server records',
 };

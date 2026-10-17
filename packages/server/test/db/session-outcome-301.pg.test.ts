@@ -769,10 +769,16 @@ describe('301 — completed_sessions_to_close (Q3)', () => {
     await setWindow(30);
   });
 
-  it('never closes a session that still has running children (D2 follow-on)', async () => {
+  it('never closes a session that still has running sessions it launched (D2 follow-on, 330)', async () => {
     const parent = await completedAgo('ac-parent', 60);
     const child = await spawn([await createTask('ac-child')]);
-    await database.query(`update public.entities set parent_id = $2 where id = $1`, [child, parent]);
+    // 330: lineage is the `launched_by` edge, recorded by the spawn writer.
+    await database.transaction(async (c) => {
+      await c.query(`select internal.w1_set_writer('spawn')`);
+      await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
+                     select e.space_id, e.id, $2, 'launched_by', e.created_by from public.entities e where e.id = $1`,
+        [child, parent]);
+    });
     expect(await due()).not.toContain(parent);
   });
 });

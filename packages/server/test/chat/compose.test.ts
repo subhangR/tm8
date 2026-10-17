@@ -278,7 +278,7 @@ describe('chat launch composition', () => {
     expect(base).toContain('you reach a session or another chat with messages.post on ITS id');
     // 4. Workers: the parent relation and the return address, which is what
     //    makes `mode: 'coordinated-worker'` mean something to this chat.
-    expect(base).toContain(`Workers you spawn have you as their parent and report to you at ${CHAT}`);
+    expect(base).toContain(`Workers you spawn are launched by you (a launched_by edge, not a parent) and report to you at ${CHAT}`);
 
     // The id is the chat's, not a stale root-message id: change the chat and
     // every one of the four moves with it. A prompt that hard-coded one of them

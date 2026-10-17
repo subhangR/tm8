@@ -572,8 +572,8 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
 
   if (f.createdIn) {
     // 327: "made here" is the server-recorded `authored_from` (entity -> chat
-    // or session); a session also counts by its spawn parent, which pre-327
-    // spawns carry without the edge. Roots only: a child whose parent was
+    // or session); a session also counts by its launcher (`launched_by`, 330),
+    // which pre-327 spawns carry without authored_from. Roots only: a child whose parent was
     // made here too belongs to that parent's subtree.
     //
     // ROLLUP (task 01a14a91): what a session spawned here made counts too, so
@@ -1030,18 +1030,36 @@ export function collectionsRemoveItem(deps: FacadeDeps): OperationHandler {
 
 /** `<alias>` is a work session spawned directly by `origin`. */
 function spawnedDirectlyBy(alias: string, origin: string): string {
-  return `(${alias}.kind = 'work_session' and ${alias}.parent_id = ${origin})`;
+  /* 330: lineage is the `launched_by` edge (session -> launcher). parent_id is
+     kept as a fallback for any row migrate_launched_by has not converted. */
+  return `(${alias}.kind = 'work_session' and (exists (
+        select 1 from public.edges lb
+         where lb.src_id = ${alias}.id and lb.type = 'launched_by' and lb.dst_id = ${origin}
+      ) or ${alias}.parent_id = ${origin}))`;
 }
 
-/** `origin` plus every work session spawned under it, at any depth (bounded):
- *  an uncorrelated uuid[] the planner computes once per query. */
+/** `origin` plus every work session launched under it, at any depth (bounded),
+ *  through `launched_by` edges (330) or a legacy parent_id: an uncorrelated
+ *  uuid[] the planner computes once per query. */
 function sessionTreeIds(origin: string): string {
   return `array(
         with recursive tree(id, depth) as (
           select ${origin}::uuid, 0
           union all
-          select s.id, tree.depth + 1
-            from public.entities s join tree on s.parent_id = tree.id
-           where s.kind = 'work_session' and s.deleted_at is null and tree.depth < 8
+          select c.id, tree.depth + 1
+            from tree
+            join lateral (
+              select lb.src_id as id
+                from public.edges lb
+                join public.entities s on s.id = lb.src_id
+               where lb.dst_id = tree.id and lb.type = 'launched_by'
+                 and s.kind = 'work_session' and s.deleted_at is null
+              union
+              select s.id
+                from public.entities s
+               where s.parent_id = tree.id
+                 and s.kind = 'work_session' and s.deleted_at is null
+            ) c on true
+           where tree.depth < 8
         ) select id from tree)`;
 }

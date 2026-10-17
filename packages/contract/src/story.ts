@@ -40,7 +40,8 @@ import { WeightedProgressSchema, type TaskProgress, type WeightedProgress } from
  * `follows_up` (Design Rules §2.3, P0b). `authored_from` is followed except from
  * a message or form source (`internal.story_walk_skips`, 308), so a session's
  * messages never flood a story. `created_in` was merged into `authored_from`
- * (308) and `dispatched_by` is deprecated (303). The SQL twin is `internal.story_followed_edge_types()`;
+ * (308) and `dispatched_by` is deprecated (303; replaced by `launched_by`, 330, which
+ * the walk does not need: a launched session's `authored_from` names its launcher). The SQL twin is `internal.story_followed_edge_types()`;
  * db/test/canonical_edges.test.mjs asserts the two agree.
  */
 export const STORY_FOLLOWED_EDGE_TYPES = [
@@ -76,6 +77,7 @@ export const STORY_EDGE_FAMILY: Readonly<Record<string, StoryEdgeFamily>> = {
   depends_on: 'blocks',
   blocks: 'blocks',
   dispatched_by: 'team',
+  launched_by: 'team',
   coordinates: 'team',
 };
 
@@ -301,7 +303,7 @@ export interface StorySession {
   /** Tasks it is `working_on` that are in the story. */
   taskIds: string[];
   rootIds: string[];
-  /** The session that spawned it: its parent session, when that is in the story (303: no longer `dispatched_by`). */
+  /** The session that launched it (its `launched_by` edge, 330), when that is in the story. */
   dispatchedById: string | null;
 }
 

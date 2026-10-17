@@ -656,6 +656,8 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     outcomeSource: WorkSessionOutcomeSourceSchema.nullable().optional(),
     outcomeNote: z.string().nullable().optional(),
     offeredTaskIds: z.array(z.string()).optional(),
+    // 330: the chat or session that launched it (its `launched_by` edge).
+    launchedBy: z.string().nullable().optional(),
     // The persona this run acts as, from its latest `participates_in` edge.
     // Absent = a node that predates the field; explicit null = a run with no
     // persona, which renders the tool alone. See the DTO note in contract.ts.
@@ -4947,6 +4949,7 @@ export const EntityContextV2ViewSchema: z.ZodType<EntityContextV2View> = z.objec
   outcome: NullableString,
   receiptMessageId: NullableString,
   tasks: z.array(ContextRefSchema).optional(),
+  launchedSessions: z.array(ContextRefSchema).optional(),
   runtimeState: NullableString,
   turnState: NullableString,
   turnCount: z.number().int().nonnegative().nullable().optional(),

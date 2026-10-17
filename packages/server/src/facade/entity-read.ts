@@ -150,6 +150,9 @@ export const ENTITY_COLUMNS = `
       and not exists (select 1 from public.edges oc
                        where oc.src_id = ws.entity_id and oc.dst_id = sh.source_entity_id
                          and oc.type = 'working_on')) end as ws_offered_task_ids,
+  -- 330: who launched it — the launched_by edge, not parent_id.
+  case when ws.entity_id is null then null else (select lb.dst_id::text from public.edges lb
+    where lb.src_id = ws.entity_id and lb.type = 'launched_by' limit 1) end as ws_launched_by,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -568,6 +571,7 @@ export interface EntityRow {
   ws_outcome_source?: string | null;
   ws_outcome_note?: string | null;
   ws_offered_task_ids?: string[] | null;
+  ws_launched_by?: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -1997,6 +2001,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // 299 (Spec D1 §3): the outcome of the WORK, beside the process facts.
         ...outcomeFacts(row),
         ...(Array.isArray(row.ws_offered_task_ids) ? { offeredTaskIds: row.ws_offered_task_ids } : {}),
+        ...(row.ws_launched_by !== undefined ? { launchedBy: row.ws_launched_by } : {}),
         // The persona, via the SAME resolver that attributes this session's
         // messages — `loadActors` keyed by the session's own id already does
         // the `participates_in` hop. A session with no persona resolves to a

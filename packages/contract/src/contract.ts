@@ -518,6 +518,13 @@ export type CoreEntityState =
        */
       offeredTaskIds?: string[];
       /**
+       * 330: the chat or session that launched this one — its `launched_by`
+       * edge. Lineage is an edge, not `parentId` (a chat is not a session's
+       * parent). Absent = a node that predates the field; null = launched by
+       * a person, with no chat or session behind it.
+       */
+      launchedBy?: string | null;
+      /**
        * WHO IS RUNNING THIS SESSION — the persona resolved through the
        * session's most recent `participates_in` edge, the SAME hop
        * `loadActors` attributes messages by. Carried on the summary so a
@@ -8268,6 +8275,12 @@ export interface EntityContextV2View {
   outcome?: string | null;
   receiptMessageId?: string | null;
   tasks?: EntityContextRef[];
+  /**
+   * 330 (chat and work_session): the sessions this one launched — their
+   * `launched_by` edges — live first. Not `children`: a launched session has
+   * no parent.
+   */
+  launchedSessions?: EntityContextRef[];
   // chat
   runtimeState?: string | null;
   turnState?: string | null;

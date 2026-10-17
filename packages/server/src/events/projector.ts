@@ -283,6 +283,7 @@ interface SummaryRow {
   ws_outcome_source?: string | null;
   ws_outcome_note?: string | null;
   ws_offered_task_ids?: string[] | null;
+  ws_launched_by?: string | null;
   file_name: string | null;
   file_mime_type: string | null;
   file_size_bytes: string | number | null;
@@ -481,6 +482,9 @@ select
       and not exists (select 1 from public.edges oc
                        where oc.src_id = ws.entity_id and oc.dst_id = sh.source_entity_id
                          and oc.type = 'working_on')) end as ws_offered_task_ids,
+  -- 330: who launched it — the launched_by edge, not parent_id.
+  case when ws.entity_id is null then null else (select lb.dst_id::text from public.edges lb
+    where lb.src_id = ws.entity_id and lb.type = 'launched_by' limit 1) end as ws_launched_by,
   ws.skills as ws_skills,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
@@ -1432,6 +1436,7 @@ export class PgEntityProjector implements EntityProjector {
           // 299 — the outcome facts, the same helper as entity-read.
           ...outcomeFacts(r),
           ...(Array.isArray(r.ws_offered_task_ids) ? { offeredTaskIds: r.ws_offered_task_ids } : {}),
+          ...(r.ws_launched_by !== undefined ? { launchedBy: r.ws_launched_by } : {}),
         };
       case 'file':
         return {

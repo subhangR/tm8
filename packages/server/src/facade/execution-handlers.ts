@@ -1325,7 +1325,12 @@ export class DbGraphPort implements GraphPort {
         agent_config_dir: string | null;
         node_id: string | null;
       }>(
-        `select ws.entity_id, e.space_id, e.parent_id, ws.project_id, ws.workdir_mode,
+        // 330: the coordinator a resumed session reports to is its launcher
+        // (`launched_by`), not parent_id — a chat is not a session's parent.
+        `select ws.entity_id, e.space_id,
+                (select lb.dst_id from public.edges lb
+                  where lb.src_id = ws.entity_id and lb.type = 'launched_by' limit 1) as parent_id,
+                ws.project_id, ws.workdir_mode,
                 ws.workdir_path, ws.mode, ws.model, ws.agent_tool, ws.title,
                 ws.status, ws.native_session_id, ws.agent_config_dir, ws.node_id
            from public.work_sessions ws
@@ -3623,8 +3628,8 @@ function registerHandlers(
       sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
     } }, request));
 
-    // 327: a session records the chat or session that spawned it (its parent)
-    // as `authored_from`, like every other entity a session or chat makes, so
+    // 327: a session records the chat or session that launched it (its
+    // `launched_by`, 330) as `authored_from`, like every other entity a session or chat makes, so
     // "created here" is one edge for every kind. Never at the spawn's expense.
     const spawnOrigin = ctx.identity.workSessionId ?? ctx.identity.runtimeChatId;
     if (spawnOrigin && parentSessionId === spawnOrigin) {
@@ -3651,9 +3656,9 @@ function registerHandlers(
       }
     }
 
-    // Spawned-by is the new session's parent_id (resolved above; it defaults
-    // to the calling session). 303 deprecated the `dispatched_by` edge that
-    // used to repeat it for dispatcher-mode spawners (Design Rules §2.3).
+    // Launched-by is the `launched_by` edge execution_spawn writes (330) from
+    // the parent resolved above (it defaults to the calling session or chat).
+    // The session gets no parentId: a chat is not a session's parent.
 
     // A dispatcher launched on tasks was told to route them in its first
     // turn; the durable request is stored on each task now that the session
