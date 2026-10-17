@@ -173,10 +173,12 @@ export function AppFrame({
       data-testid="app-frame-panel"
       data-host={panel === 'host' || undefined}
       data-in-nav={inSlot || undefined}
-      ref={panel === 'host' ? setPanelHost : undefined}
+      ref={panel === 'host' && !pinnedRail ? setPanelHost : undefined}
     >
       {pinnedRail ? <PanelTop searchable /> : null}
-      {panel === 'host' ? null : panel}
+      {/* A portal host under PanelTop gets its own box (Observe's controls):
+          portalled children would otherwise land beside the row, not below it. */}
+      {panel !== 'host' ? panel : pinnedRail ? <div className="app-frame-panel-host" ref={setPanelHost} /> : null}
     </div>
   ) : null;
   const frame = useMemo<ShellFrameValue>(

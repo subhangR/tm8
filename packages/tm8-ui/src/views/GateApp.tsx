@@ -2831,6 +2831,7 @@ export function GateApp(props: GateAppProps = {}) {
              chats in the slot and is explicitly out of scope. */
           {...(craftFramed ? { panelPlacement: 'column' as const, navCollapsedDefault: true } : {})}
           {...(settingsFramed ? { pinnedMode: 'settings' } : {})}
+          {...(observing ? { pinnedMode: 'graph' } : {})}
         >
         <div className="shell-body">
           {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the

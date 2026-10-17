@@ -167,3 +167,11 @@
 .tws-root.app-frame[data-pinned-rail][data-panel-collapsed]:not([data-expanded]) {
   grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr) auto;
 }
+/* Observe: the screen's portalled controls, below PanelTop. */
+.app-frame-panel-host {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
