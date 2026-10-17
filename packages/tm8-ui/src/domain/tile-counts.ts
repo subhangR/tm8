@@ -78,10 +78,23 @@ function countOf(counters: EntityCounters, key: string): number | null {
   return n > 0 ? n : null;
 }
 
-/** The counts line's content, in `TILE_LINK_GROUPS` order, zeros and absences dropped. */
-export function tileLinkCountsOf(counters: EntityCounters): TileLinkCount[] {
+/**
+ * The groups this client knows the server does NOT count yet (no column on
+ * `entity_counters`). The viewer can still choose them — the choice is kept —
+ * and the settings menu says plainly that nothing will show until they are
+ * counted.
+ */
+export const UNCOUNTED_LINK_GROUPS: ReadonlySet<string> = new Set(['prs', 'artifacts', 'drawings']);
+
+/**
+ * The counts line's content, in `TILE_LINK_GROUPS` order, zeros and absences
+ * dropped — and any group the viewer turned off (`hidden`, by group id: the
+ * List settings menu's per-link switches, Subhang 2026-10-17).
+ */
+export function tileLinkCountsOf(counters: EntityCounters, hidden?: ReadonlySet<string>): TileLinkCount[] {
   const out: TileLinkCount[] = [];
   for (const group of TILE_LINK_GROUPS) {
+    if (hidden?.has(group.id)) continue;
     const count = countOf(counters, group.counter);
     if (count !== null) out.push({ group, count });
   }
@@ -93,6 +106,6 @@ export function tileLinkCountsOf(counters: EntityCounters): TileLinkCount[] {
  * the element, because a JSX element is truthy even when it renders null and
  * the tile's own geometry (29px vs ~43px) depends on the answer.
  */
-export function hasTileLinkCounts(counters: EntityCounters): boolean {
-  return TILE_LINK_GROUPS.some((group) => countOf(counters, group.counter) !== null);
+export function hasTileLinkCounts(counters: EntityCounters, hidden?: ReadonlySet<string>): boolean {
+  return TILE_LINK_GROUPS.some((group) => !hidden?.has(group.id) && countOf(counters, group.counter) !== null);
 }

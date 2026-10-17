@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { TILE_LINK_GROUPS } from '../../domain/tile-counts';
 
 /**
  * ROW VIEW — which facts a list row draws, chosen by the viewer from the
@@ -42,7 +43,13 @@ export type RowFacet =
   /** The counts line: Docs · PRs · Artifacts · Drawings · Memories. */
   | 'counts'
   /** The done-of-total bar, on the kinds whose registry row declares one. */
-  | 'progress';
+  | 'progress'
+  /**
+   * ONE LINK GROUP ON THE COUNTS LINE (`links:docs`, `links:prs`, …): the List
+   * settings menu's per-link switches (Subhang 2026-10-17). Hidden ⇒ that
+   * group's count is not drawn; the line itself stays under `counts`.
+   */
+  | `links:${string}`;
 
 /** The tile anatomies the registry declares (`list.tile.anatomy`). */
 export type RowAnatomy = 'standard' | 'control-card' | 'session-tree';
@@ -65,7 +72,22 @@ export const ROW_FACETS: readonly RowFacetSpec[] = [
   { id: 'counts', label: 'Counts line', anatomies: ALL },
 ];
 
-const FACET_IDS: ReadonlySet<string> = new Set(ROW_FACETS.map((spec) => spec.id));
+/** The counts line's per-group facet, by `TILE_LINK_GROUPS` id. */
+export function linkFacet(groupId: string): RowFacet {
+  return `links:${groupId}`;
+}
+
+const FACET_IDS: ReadonlySet<string> = new Set([
+  ...ROW_FACETS.map((spec) => spec.id),
+  ...TILE_LINK_GROUPS.map((group) => linkFacet(group.id)),
+]);
+
+/** The link-group ids a row view hides (`links:docs` ⇒ `docs`). */
+export function hiddenLinkGroups(hidden: ReadonlySet<RowFacet>): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const facet of hidden) if (facet.startsWith('links:')) out.add(facet.slice('links:'.length));
+  return out;
+}
 
 export function facetsForAnatomy(anatomy: RowAnatomy | undefined): readonly RowFacetSpec[] {
   const resolved = anatomy ?? 'standard';

@@ -28,13 +28,16 @@ export function TileLinkCounts({
   counters,
   entityId,
   onOpenGroup,
+  hiddenGroups,
 }: {
   counters: EntityCounters;
   entityId: string;
+  /** Group ids the viewer turned off in List settings; those counts are not drawn. */
+  hiddenGroups?: ReadonlySet<string>;
   /** Present ⇒ each count is a button that opens its group in the detail panel. */
   onOpenGroup?: (entityId: string, groupKind: string) => void;
 }) {
-  const counts = tileLinkCountsOf(counters);
+  const counts = tileLinkCountsOf(counters, hiddenGroups);
   if (counts.length === 0) return null;
 
   return (

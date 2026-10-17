@@ -467,6 +467,13 @@
   width: 16px;
   height: 16px;
 }
+/* "not counted yet" on a link switch the server cannot fill: muted, at the
+   row's end, so the switch reads as real but honest. */
+.cv2-root .tws-browser .lp__opthint {
+  margin-left: auto;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-micro);
+}
 /* Group by (pinned-only rail): a quiet heading over each group's rows, on
    the stack's 10px gutter — the name, then the count of rows on screen. */
 .cv2-root .tws-browser .lp__grouphead {
