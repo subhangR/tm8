@@ -354,19 +354,27 @@
   flex: 1;
 }
 /* The pinned-only rail's New chat · New task (Subhang 2026-10-18, option B
-   "paper tile"): two identical black-and-white tiles on the list header's
-   10px gutter. Paper fill, a hairline edge all round and a soft under-shadow;
-   pressed, a tile sinks a pixel and its shadow turns inward. Black and white
-   only — no brass, whatever the style — and the ink flips in the dark theme. */
+   "paper tile", then joined and shrunk): one black-and-white paper tile split
+   into two halves by a hairline. Paper fill, a hairline edge all round and a
+   soft under-shadow; pressed, a half's shadow turns inward and its mark and
+   label sink a pixel. Black and white only — no brass, whatever the style —
+   and the ink flips in the dark theme. */
 .cv2-root .tws-browser .tws-quicknew {
   --tws-qn-ink: black;
   --tws-qn-paper: white;
   --tws-qn-fill: var(--tws-qn-paper);
   --tws-qn-shade: black;
+  --tws-qn-edge: color-mix(in srgb, var(--tws-qn-ink) 18%, transparent);
   flex: none;
   display: flex;
-  gap: 10px;
   margin: var(--pn-space-2) 10px 10px;
+  overflow: hidden;
+  background: var(--tws-qn-fill);
+  border: 1px solid var(--tws-qn-edge);
+  border-radius: 8px;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--tws-qn-ink) 10%, transparent),
+    0 2px 6px -3px color-mix(in srgb, var(--tws-qn-shade) 30%, transparent);
 }
 /* Dark: the tile lifts a shade off the panel, and its shadows need more black
    to read against it. */
@@ -381,38 +389,41 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
-  height: 32px;
+  height: 28px;
   padding: 0 var(--pn-space-2);
-  background: var(--tws-qn-fill);
-  border: 1px solid color-mix(in srgb, var(--tws-qn-ink) 18%, transparent);
-  border-radius: 9px;
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--tws-qn-ink) 10%, transparent),
-    0 2px 6px -3px color-mix(in srgb, var(--tws-qn-shade) 30%, transparent);
+  background: transparent;
+  border: 0;
   color: var(--tws-qn-ink);
   font: inherit;
+  font-size: var(--pn-fs-sm);
   font-weight: 600;
   cursor: pointer;
   transition:
-    transform 120ms ease-out,
     box-shadow 120ms ease-out,
-    background-color 120ms ease,
-    border-color 120ms ease;
+    background-color 120ms ease;
+}
+.cv2-root .tws-browser .tws-quicknew__btn + .tws-quicknew__btn {
+  border-left: 1px solid var(--tws-qn-edge);
 }
 .cv2-root .tws-browser .tws-quicknew__btn:hover:not([aria-disabled='true']) {
-  border-color: color-mix(in srgb, var(--tws-qn-ink) 40%, transparent);
+  background: color-mix(in srgb, var(--tws-qn-ink) 4%, transparent);
 }
 .cv2-root .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']) {
-  transform: translateY(1px);
-  background: color-mix(in srgb, var(--tws-qn-ink) 5%, var(--tws-qn-paper));
+  background: color-mix(in srgb, var(--tws-qn-ink) 6%, transparent);
   box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tws-qn-shade) 22%, transparent);
 }
 .cv2-root[data-theme='dark'] .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']),
 [data-theme='dark'] .cv2-root .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']) {
-  background: color-mix(in srgb, var(--tws-qn-ink) 4%, var(--tws-qn-paper));
+  background: color-mix(in srgb, var(--tws-qn-paper) 30%, transparent);
   box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tws-qn-shade) 70%, transparent);
+}
+.cv2-root .tws-browser .tws-quicknew__btn > span {
+  transition: transform 120ms ease-out;
+}
+.cv2-root .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']) > span {
+  transform: translateY(1px);
 }
 .cv2-root .tws-browser .tws-quicknew__btn[aria-disabled='true'] {
   opacity: 0.4;
@@ -428,12 +439,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Inside the tile's clip, so the ring is drawn inward. */
 .cv2-root .tws-browser .tws-quicknew__btn:focus-visible {
   outline: 2px solid var(--tws-qn-ink);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .cv2-root .tws-browser .tws-quicknew__btn {
+  .cv2-root .tws-browser .tws-quicknew__btn,
+  .cv2-root .tws-browser .tws-quicknew__btn > span {
     transition: none;
   }
 }

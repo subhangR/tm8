@@ -202,8 +202,8 @@ const QUICK_NEW_KINDS = ['chat', 'task'] as const satisfies readonly KindId[];
  * NEW CHAT · NEW TASK (pinned-only rail, Subhang 2026-10-17): one row at the
  * head of every list, side by side. Each opens the same draft the list's own
  * ＋ opens for that kind; a kind the registry refuses dims with its reason.
- * Two identical black-and-white paper tiles (Subhang 2026-10-18, option B),
- * each wearing its kind's mark.
+ * One black-and-white paper tile split in two (Subhang 2026-10-18, option B,
+ * joined), each half wearing its kind's mark.
  */
 function QuickNew() {
   const { dispatch } = useWorkspace();
@@ -228,7 +228,7 @@ function QuickNew() {
             }}
           >
             <span className="tws-quicknew__glyph" aria-hidden>
-              <VectorIcon paths={KIND_ART[kind]} size={16} strokeWidth={1.5} />
+              <VectorIcon paths={KIND_ART[kind]} size={14} strokeWidth={1.5} />
             </span>
             <span className="tws-quicknew__label">{label}</span>
           </button>
