@@ -14,6 +14,15 @@ body {
   overflow: hidden;
 }
 
+/* No trackpad swipe-back (Subhang, 2026-10-18): a horizontal two-finger
+   scroll that reaches an edge — panning the craft blueprint, a wide table —
+   was taken as the browser's history gesture and left the page. The app has
+   its own back; the root never hands horizontal overscroll to the browser. */
+html,
+body {
+  overscroll-behavior-x: none;
+}
+
 /* ---------------------------------------------------------------------------
    ROOT SCALE — USER-RULED EXPERIMENT, NOT A LAW (2026-07-28).
 
