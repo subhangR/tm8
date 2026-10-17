@@ -15,7 +15,7 @@ import { cloneElement, isValidElement, useCallback, useEffect, useLayoutEffect, 
 import { useAttentionOptional } from '../../attention';
 import { needsMeListSource } from '../../attention/needs-me';
 import type { EntityId } from '@tm8/contract';
-import { getKind, isHomeRootKind, resolveAction, type ActionRef } from '../../domain';
+import { getKind, isHomeRootKind, KIND_ART, resolveAction, type ActionRef } from '../../domain';
 import { composeListActions, useChatAbout } from '../../views/useChatAbout';
 import { useLaunchPort } from '../../views/useLaunchPort';
 import { usePanelPrimaries } from '../../views/usePanelPrimaries';
@@ -195,15 +195,15 @@ export function PanelTop({ searchable = false }: { searchable?: boolean }) {
   );
 }
 
-/** ＋, on `VectorIcon`'s 16×16 grid (as the navigator's New). */
-const PLUS_ART = ['M8 3.25v9.5', 'M3.25 8h9.5'];
 /** The two kinds every list column can start, whatever it is listing. */
-const QUICK_NEW_KINDS: readonly KindId[] = ['chat', 'task'];
+const QUICK_NEW_KINDS = ['chat', 'task'] as const satisfies readonly KindId[];
 
 /**
  * NEW CHAT · NEW TASK (pinned-only rail, Subhang 2026-10-17): one row at the
  * head of every list, side by side. Each opens the same draft the list's own
  * ＋ opens for that kind; a kind the registry refuses dims with its reason.
+ * Black-and-white keycaps (Subhang 2026-10-18, options D + E): chat leads in
+ * solid ink, task follows outlined; each wears its kind's mark.
  */
 function QuickNew() {
   const { dispatch } = useWorkspace();
@@ -228,7 +228,7 @@ function QuickNew() {
             }}
           >
             <span className="tws-quicknew__glyph" aria-hidden>
-              <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.6} />
+              <VectorIcon paths={KIND_ART[kind]} size={16} strokeWidth={1.5} />
             </span>
             <span className="tws-quicknew__label">{label}</span>
           </button>

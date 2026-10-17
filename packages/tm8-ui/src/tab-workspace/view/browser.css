@@ -353,47 +353,65 @@
 .cv2-root .tws-browser .tws-paneltop__spacer {
   flex: 1;
 }
-/* The pinned-only rail's New chat · New task: one row of two equal halves,
-   joined, in the navigator New button's look, on the list header's 10px
-   gutter. */
+/* The pinned-only rail's New chat · New task (Subhang 2026-10-18, options
+   D + E): two black-and-white keycaps on the list header's 10px gutter. Chat
+   leads in solid ink, task follows outlined; both stand on a 3px ink base and
+   sink onto it when pressed. Black and white only — no brass, whatever the
+   style — and the ink flips in the dark theme. */
 .cv2-root .tws-browser .tws-quicknew {
+  --tws-qn-ink: black;
+  --tws-qn-paper: white;
   flex: none;
   display: flex;
-  margin: var(--pn-space-2) 10px var(--pn-space-1);
+  gap: 10px;
+  margin: var(--pn-space-2) 10px 10px;
+}
+.cv2-root[data-theme='dark'] .tws-browser .tws-quicknew,
+[data-theme='dark'] .cv2-root .tws-browser .tws-quicknew {
+  --tws-qn-ink: white;
+  --tws-qn-paper: black;
 }
 .cv2-root .tws-browser .tws-quicknew__btn {
   flex: 1 1 0;
   display: flex;
   align-items: center;
-  gap: var(--pn-space-2);
+  justify-content: center;
+  gap: 7px;
   min-width: 0;
-  height: 28px;
+  height: 32px;
   padding: 0 var(--pn-space-2);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  color: var(--pn-ink);
+  background: var(--tws-qn-paper);
+  border: 1.5px solid var(--tws-qn-ink);
+  border-radius: 9px;
+  box-shadow: 0 3px 0 var(--tws-qn-ink);
+  color: var(--tws-qn-ink);
   font: inherit;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
+  transition: transform 80ms ease, box-shadow 80ms ease, background-color 120ms ease;
 }
+/* The lead: solid ink, paper type. */
 .cv2-root .tws-browser .tws-quicknew__btn:first-child {
-  border-radius: var(--pn-r-sm) 0 0 var(--pn-r-sm);
-}
-.cv2-root .tws-browser .tws-quicknew__btn + .tws-quicknew__btn {
-  border-left: 0;
-  border-radius: 0 var(--pn-r-sm) var(--pn-r-sm) 0;
+  background: var(--tws-qn-ink);
+  color: var(--tws-qn-paper);
 }
 .cv2-root .tws-browser .tws-quicknew__btn:hover {
-  background: var(--pn-hover);
+  background: color-mix(in srgb, var(--tws-qn-ink) 8%, var(--tws-qn-paper));
+}
+.cv2-root .tws-browser .tws-quicknew__btn:first-child:hover {
+  background: color-mix(in srgb, var(--tws-qn-ink) 86%, var(--tws-qn-paper));
+}
+.cv2-root .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--tws-qn-ink);
 }
 .cv2-root .tws-browser .tws-quicknew__btn[aria-disabled='true'] {
-  color: var(--pn-ink-3);
+  opacity: 0.4;
   cursor: default;
 }
 .cv2-root .tws-browser .tws-quicknew__glyph {
   flex: none;
   display: inline-flex;
-  color: var(--pn-brand);
 }
 .cv2-root .tws-browser .tws-quicknew__label {
   min-width: 0;
@@ -402,8 +420,13 @@
   white-space: nowrap;
 }
 .cv2-root .tws-browser .tws-quicknew__btn:focus-visible {
-  outline: 2px solid var(--pn-brand);
-  outline-offset: -2px;
+  outline: 2px solid var(--tws-qn-ink);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .tws-browser .tws-quicknew__btn {
+    transition: none;
+  }
 }
 /* The new box's kind menu shows every row's ＋ at once, not on hover: the
    column is a "make one of these" door as much as a switcher. A refused row's
