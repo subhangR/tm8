@@ -253,6 +253,41 @@ describe('the list header, one row', () => {
     expect(container.querySelector('.lp__searchrow')).toBeNull();
   });
 
+  /**
+   * THE SHIPPING COMPOSITION, once the navigator lands (task 01a1469d). Its
+   * `Browser` passes `toolbarEnd={navigator ? undefined : <NewBox/>}`, because
+   * §5 moves ࿰b New to the top of the navigator column so the kind is chosen
+   * in ONE place. With both slots absent the create row is not drawn at all
+   * and the list's chrome is exactly the one header band — which is the whole
+   * point of the change, and is worth a test rather than an inference from
+   * two files that do not import each other.
+   */
+  it('draws no create row at all when the host passes neither toolbar slot', () => {
+    const { container } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([taskGuideLines])} ctx={ctx} chrome="toolbar" />,
+    );
+    expect(container.querySelector('.lp__toolrow')).toBeNull();
+    expect(container.querySelectorAll('[data-testid="list-head"]').length).toBe(1);
+  });
+
+  it('keeps the host create row when a slot IS passed (the flag-off shell)', () => {
+    const { container } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={rowsFor([taskGuideLines])}
+        ctx={ctx}
+        chrome="toolbar"
+        toolbarEnd={<span data-testid="host-new-box">New</span>}
+      />,
+    );
+    const toolrow = container.querySelector('.lp__toolrow')!;
+    expect(toolrow).not.toBeNull();
+    expect(toolrow.querySelector('[data-testid="host-new-box"]')).not.toBeNull();
+    /* And the header is still ONE row below it — the create row is the host's,
+       not a second band of list chrome. */
+    expect(container.querySelectorAll('[data-testid="list-head"]').length).toBe(1);
+  });
+
   it('the tier dropdown names the open tier and switches on pick', () => {
     const { container } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor([taskGuideLines])} ctx={ctx} chrome="toolbar" />,
