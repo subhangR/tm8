@@ -774,7 +774,8 @@
   min-width: 0;
 }
 
-/* The funnel: 28×28, borderless, a 16px icon in --pn-ink-3. */
+/* The funnel: 24×24, borderless, a 14px icon in --pn-ink-3 (Subhang
+   2026-10-18: the 28px box and 16px icon read too big beside the kind name). */
 .cv2-root .tws-browser .lp__filterbar--merged {
   flex: none;
   position: static;
@@ -782,9 +783,9 @@
 .cv2-root .tws-browser .lp__funnel {
   position: relative;
   box-sizing: border-box;
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
   padding: 0;
   justify-content: center;
   border: 0;
@@ -794,29 +795,23 @@
   box-shadow: none;
 }
 .cv2-root .tws-browser .lp__funnel svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 .cv2-root .tws-browser .lp__funnel:hover,
 .cv2-root .tws-browser .lp__funnel[aria-expanded='true'] {
   background: var(--pn-hover);
 }
-/* Anything not at its default: brand-soft fill, brand-2 icon, and the count. */
+/* Anything not at its default: ONLY the icon takes the accent — no fill, no
+   glow, no count. The count still rides the button's aria-label. */
 .cv2-root .tws-browser .lp__funnel:has(.lp__chip-count) {
-  background: var(--pn-brand-soft);
   color: var(--pn-brand-2);
 }
+.cv2-root .tws-browser .lp__funnel:has(.lp__chip-count):not(:hover, [aria-expanded='true']) {
+  background: transparent;
+}
 .cv2-root .tws-browser .lp__funnel .lp__chip-count {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  font-family: var(--pn-mono);
-  font-size: var(--pn-fs-fine);
-  background: var(--pn-brand-2);
-  color: var(--pn-card);
+  display: none;
 }
 .cv2-root .tws-browser .lp__funnel:focus-visible {
   outline: 2px solid var(--pn-brand);
