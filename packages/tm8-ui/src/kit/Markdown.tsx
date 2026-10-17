@@ -318,6 +318,10 @@ const COMPONENTS: Components = {
   },
 };
 
+/** The default element table, for a host override that handles one case of
+ *  a tag (the chat's id-in-a-code-span chip) and hands the rest back. */
+export const MARKDOWN_COMPONENTS: Readonly<Components> = COMPONENTS;
+
 export interface MarkdownProps {
   onOpenEntity?: (id: string) => void;
   /** The markdown source. Empty renders nothing, not an empty paragraph. */

@@ -28,6 +28,7 @@ export { BootLoader } from './BootLoader';
 export { RibbonMark, RIBBON_LOOP_SECONDS, type RibbonMotion } from './RibbonMark';
 export {
   Markdown,
+  MARKDOWN_COMPONENTS,
   headingsIn,
   MD_HEADING_ATTR,
   type DocHeading,

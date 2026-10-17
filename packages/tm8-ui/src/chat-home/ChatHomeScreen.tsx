@@ -72,7 +72,7 @@ import {
   type PermissionRung,
 } from './composer';
 import { EntityTray } from './EntityTray';
-import { LedgerHostProvider } from './LedgerCards';
+import { LedgerHostProvider } from './ledger-host';
 import { StageExit } from './StageExit';
 import { CreatedHereStrip } from './created-here/CreatedHereStrip';
 import type { CreatedHereReader } from './created-here/reader';
