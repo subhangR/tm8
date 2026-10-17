@@ -249,6 +249,17 @@
   height: 36px;
   padding: var(--pn-space-1) var(--pn-space-2) 0 var(--tws-browser-inset);
 }
+/* The pinned-only rail's ＋ New {kind} at the head of the list column: the
+   navigator's own control, set on the list header's 10px gutter. */
+.cv2-root .tws-browser > .tws-nav-new {
+  margin: var(--pn-space-2) 10px var(--pn-space-1);
+}
+/* The tooltip anchor wraps the main button; it takes the row's width so the
+   button runs the full column, with the ▾ at the end. */
+.cv2-root .tws-browser > .tws-nav-new > .tws-tip-anchor {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .cv2-root .tws-browser .tch-rootbar {
   flex: none;
   margin: 0;

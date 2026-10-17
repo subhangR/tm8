@@ -15,7 +15,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useAttentionOptional } from '../../attention';
 import { needsMeListSource } from '../../attention/needs-me';
 import type { EntityId } from '@tm8/contract';
-import { getKind, isHomeRootKind, resolveAction, type ActionRef } from '../../domain';
+import { getKind, isHomeRootKind, resolveAction, type ActionRef, type KindConfig } from '../../domain';
 import { composeListActions, useChatAbout } from '../../views/useChatAbout';
 import { useLaunchPort } from '../../views/useLaunchPort';
 import { usePanelPrimaries } from '../../views/usePanelPrimaries';
@@ -37,7 +37,8 @@ const { EMPTY_BROWSER_KIND_STATE } = workspaceCommands.browser;
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import { useListCursor } from './listCursor';
-import { isNavigatorEnabled } from './navigatorFlag';
+import { isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
+import { NavNew } from './Navigator';
 import './browser.css';
 
 const BROWSER_ID = 'main';
@@ -128,6 +129,10 @@ export function Browser() {
   return <EntityBrowser />;
 }
 
+/* `NavNew` names the first pin only when no kind is current, which never
+   happens in the browser: the browser always has a kind. */
+const NO_PINS: readonly KindConfig[] = [];
+
 function EntityBrowser() {
   const { dispatch, gate, store } = useWorkspace();
   const { data } = gate;
@@ -165,6 +170,10 @@ function EntityBrowser() {
    * `workspace.drafts.open` is unchanged; only who draws the button moves.
    */
   const navigator = useMemo(() => isNavigatorEnabled(), []);
+  /* THE PINNED-ONLY RAIL (`tm8.ui.navigator = 'rail'`): the navigator's own
+     ＋ New {kind} heads the list column instead of the toolbar's new box, so
+     the rail picks the kind and the column creates it. */
+  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
 
   useEffect(() => data.ensureKind(kind), [data, kind]);
 
@@ -288,6 +297,7 @@ function EntityBrowser() {
       data-narrow={narrow || undefined}
       data-scrolled={scroll.scrolled || undefined}
     >
+      {pinnedRail ? <NavNew collapsed={false} pinned={NO_PINS} /> : null}
       <div
         className="tws-browser-list"
         ref={listRef}
@@ -311,7 +321,7 @@ function EntityBrowser() {
           /* Row 1: the panel's own search, then the dotted new box —
              [+ | kind icon ▾]: the + creates the current kind, the icon
              half is the kind menu. */
-          toolbarEnd={navigator ? undefined : (
+          toolbarEnd={navigator || pinnedRail ? undefined : (
             <NewBox
               noun={noun}
               disabledReason={disabledReason}
