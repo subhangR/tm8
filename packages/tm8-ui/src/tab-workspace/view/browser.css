@@ -353,23 +353,28 @@
 .cv2-root .tws-browser .tws-paneltop__spacer {
   flex: 1;
 }
-/* The pinned-only rail's New chat · New task (Subhang 2026-10-18, options
-   D + E): two black-and-white keycaps on the list header's 10px gutter. Chat
-   leads in solid ink, task follows outlined; both stand on a 3px ink base and
-   sink onto it when pressed. Black and white only — no brass, whatever the
-   style — and the ink flips in the dark theme. */
+/* The pinned-only rail's New chat · New task (Subhang 2026-10-18, option B
+   "paper tile"): two identical black-and-white tiles on the list header's
+   10px gutter. Paper fill, a hairline edge all round and a soft under-shadow;
+   pressed, a tile sinks a pixel and its shadow turns inward. Black and white
+   only — no brass, whatever the style — and the ink flips in the dark theme. */
 .cv2-root .tws-browser .tws-quicknew {
   --tws-qn-ink: black;
   --tws-qn-paper: white;
+  --tws-qn-fill: var(--tws-qn-paper);
+  --tws-qn-shade: black;
   flex: none;
   display: flex;
   gap: 10px;
   margin: var(--pn-space-2) 10px 10px;
 }
+/* Dark: the tile lifts a shade off the panel, and its shadows need more black
+   to read against it. */
 .cv2-root[data-theme='dark'] .tws-browser .tws-quicknew,
 [data-theme='dark'] .cv2-root .tws-browser .tws-quicknew {
   --tws-qn-ink: white;
   --tws-qn-paper: black;
+  --tws-qn-fill: color-mix(in srgb, var(--tws-qn-ink) 8%, var(--tws-qn-paper));
 }
 .cv2-root .tws-browser .tws-quicknew__btn {
   flex: 1 1 0;
@@ -380,30 +385,34 @@
   min-width: 0;
   height: 32px;
   padding: 0 var(--pn-space-2);
-  background: var(--tws-qn-paper);
-  border: 1.5px solid var(--tws-qn-ink);
+  background: var(--tws-qn-fill);
+  border: 1px solid color-mix(in srgb, var(--tws-qn-ink) 18%, transparent);
   border-radius: 9px;
-  box-shadow: 0 3px 0 var(--tws-qn-ink);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--tws-qn-ink) 10%, transparent),
+    0 2px 6px -3px color-mix(in srgb, var(--tws-qn-shade) 30%, transparent);
   color: var(--tws-qn-ink);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 80ms ease, box-shadow 80ms ease, background-color 120ms ease;
+  transition:
+    transform 120ms ease-out,
+    box-shadow 120ms ease-out,
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
-/* The lead: solid ink, paper type. */
-.cv2-root .tws-browser .tws-quicknew__btn:first-child {
-  background: var(--tws-qn-ink);
-  color: var(--tws-qn-paper);
-}
-.cv2-root .tws-browser .tws-quicknew__btn:hover {
-  background: color-mix(in srgb, var(--tws-qn-ink) 8%, var(--tws-qn-paper));
-}
-.cv2-root .tws-browser .tws-quicknew__btn:first-child:hover {
-  background: color-mix(in srgb, var(--tws-qn-ink) 86%, var(--tws-qn-paper));
+.cv2-root .tws-browser .tws-quicknew__btn:hover:not([aria-disabled='true']) {
+  border-color: color-mix(in srgb, var(--tws-qn-ink) 40%, transparent);
 }
 .cv2-root .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']) {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--tws-qn-ink);
+  transform: translateY(1px);
+  background: color-mix(in srgb, var(--tws-qn-ink) 5%, var(--tws-qn-paper));
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tws-qn-shade) 22%, transparent);
+}
+.cv2-root[data-theme='dark'] .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']),
+[data-theme='dark'] .cv2-root .tws-browser .tws-quicknew__btn:active:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--tws-qn-ink) 4%, var(--tws-qn-paper));
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tws-qn-shade) 70%, transparent);
 }
 .cv2-root .tws-browser .tws-quicknew__btn[aria-disabled='true'] {
   opacity: 0.4;

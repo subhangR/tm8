@@ -202,8 +202,8 @@ const QUICK_NEW_KINDS = ['chat', 'task'] as const satisfies readonly KindId[];
  * NEW CHAT · NEW TASK (pinned-only rail, Subhang 2026-10-17): one row at the
  * head of every list, side by side. Each opens the same draft the list's own
  * ＋ opens for that kind; a kind the registry refuses dims with its reason.
- * Black-and-white keycaps (Subhang 2026-10-18, options D + E): chat leads in
- * solid ink, task follows outlined; each wears its kind's mark.
+ * Two identical black-and-white paper tiles (Subhang 2026-10-18, option B),
+ * each wearing its kind's mark.
  */
 function QuickNew() {
   const { dispatch } = useWorkspace();
