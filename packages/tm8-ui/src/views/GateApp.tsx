@@ -78,6 +78,7 @@ import {
   CraftHeaderSwitcher,
   CraftScreen,
   CraftsHome,
+  CraftsHomePanel,
   craftSourceFromSeam,
   craftsSourceFromSeam,
   craftTabsKey,
@@ -2682,11 +2683,17 @@ export function GateApp(props: GateAppProps = {}) {
   /* The craft's chats and sessions fill the second panel. */
   const craftFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
   /* THE PINNED-ONLY RAIL (task 01a14a17-34f6): Craft draws Work's shell. The
-     panel is the craft's chats and sessions while a craft is open; the
-     Crafts home has none — its card grid, filter and New craft are the list
-     (task 01a14b46: nothing on screen twice). */
+     panel is the craft's chats and sessions while a craft is open. The Crafts
+     home has a panel too, or it drew no PanelTop and read as the old shell
+     (prod, 2026-10-18): the same conversation shell with nothing selected,
+     not the crafts list again (task 01a14b46: nothing on screen twice). */
   const craftPinned = craftFramed && isPinnedRailEnabled();
-  const craftPanel = craftFramed && navView.view === 'craft' && navView.craftId ? 'host' : null;
+  const craftPanel =
+    craftFramed && navView.view === 'craft' && navView.craftId
+      ? 'host'
+      : craftPinned
+        ? <CraftsHomePanel source={craftsSource} onOpenCraft={(craftId) => navigateCraft({ craftId })} onNotice={craftNotice} />
+        : null;
 
   const workspaceGate: WorkspaceGateHandles = {
     data,
