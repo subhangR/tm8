@@ -322,6 +322,34 @@
   align-items: center;
   margin-left: auto;
 }
+/* The kind's row anchors the list-settings popover, so it hangs under the
+   row at the column's width (the popover rule above expects its row to be
+   the containing block). */
+.cv2-root .tws-browser .lp__searchline ~ .lp__head {
+  position: relative;
+}
+/* Group by (pinned-only rail): a quiet heading over each group's rows, on
+   the stack's 10px gutter — the name, then the count of rows on screen. */
+.cv2-root .tws-browser .lp__grouphead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: var(--pn-space-3) 10px var(--pn-space-1);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cv2-root .tws-browser .lp__group:first-child .lp__grouphead {
+  margin-top: var(--pn-space-1);
+}
+.cv2-root .tws-browser .lp__groupcount {
+  font-family: var(--pn-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--pn-ink-4);
+}
 /* The pinned-only rail's search line: the full search bar (28 high, one
    focus ring on the wrapper, as the old toolbar row's), then the funnel and
    the ⋯, on the stack's 10px gutter. */

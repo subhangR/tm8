@@ -46,9 +46,9 @@
   font-size: var(--pn-fs-label);
 }
 
-/* ---- the pinned-only rail's lead: [mode ▾] | [workspace ▾] ----
-   The left header keeps the mark and the space; the mode and its switcher
-   start the strip, a hairline between them and another before the tabs. */
+/* ---- the pinned-only rail's lead: [workspace ▾] ----
+   The mode ends the left header; its switcher starts the strip, with a
+   hairline before the tabs. */
 .tws-ts-modes {
   display: flex;
   align-items: flex-start;
@@ -64,13 +64,7 @@
   padding-left: 0;
 }
 .tws-ts-modes .tws-mode-switcher-slot::before {
-  content: '';
-  align-self: center;
-  width: 1px;
-  height: 16px;
-  margin: 0 var(--pn-space-2);
-  padding: 0;
-  background: var(--tws-band-line, var(--pn-line));
+  content: none;
 }
 .tws-ts-leading {
   display: flex;

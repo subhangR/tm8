@@ -33,7 +33,6 @@ import type { Source, TabId, TabRecord } from '../runtime/types';
 import { ConfirmDiscard } from './ConfirmDiscard';
 import { useWorkspace, useWorkspaceState } from './context';
 import { ScopePicker } from './ScopePicker';
-import { ViewSelector } from './LeftHeader';
 import { isPinnedRailEnabled } from './navigatorFlag';
 import { openSideSection, sidePatch, sideSectionOfSubview } from './sideSection';
 import { entityMenuItems, readTranscriptText, type TabMenuItem } from './tabEntityMenu';
@@ -491,8 +490,9 @@ export function TabStrip({ leading }: TabStripProps = {}) {
   const tabs = useWorkspaceState(useShallow(visibleTabs));
   const active = useWorkspaceState(activeTabId);
   const expanded = useWorkspaceState((s) => s.layout.expanded);
-  /* The pinned-only rail's strip: `[mode ▾] | [workspace ▾]` lead the tabs,
-     and the tab scope (`Mixed ▾`) is not drawn (Subhang 2026-10-17). */
+  /* The pinned-only rail's strip: the workspace switcher leads the tabs (the
+     mode sits at the end of the left header), and the tab scope (`Mixed ▾`)
+     is not drawn (Subhang 2026-10-17). */
   const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -910,7 +910,6 @@ export function TabStrip({ leading }: TabStripProps = {}) {
           small tab stuck to the browser's edge, ahead of the tabs it scopes. */}
       {pinnedRail ? (
         <div className="tws-ts-modes" data-testid="tws-ts-modes">
-          <ViewSelector variant="label" />
           {gate.modeSwitcherSlot ? (
             <div className="tws-mode-switcher-slot" data-testid="tws-mode-switcher-slot">
               {gate.modeSwitcherSlot}

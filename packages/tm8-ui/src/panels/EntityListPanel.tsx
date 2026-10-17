@@ -108,6 +108,7 @@ import { TileLinkCounts } from './list/TileLinkCounts';
 import { hasTileLinkCounts } from '../domain';
 import { TileSignal, UrgentMark, isUrgent, signalIsAvatar } from './list/TileSignal';
 import { facetsForAnatomy, useRowView } from './list/row-view';
+import { groupOf, groupOptionsFor, rootsOnly, useListPrefs, type ListGroupBy } from './list/list-prefs';
 import {
   routeMessagePulse,
   type PulseSegment,
@@ -988,6 +989,9 @@ export function EntityListPanel(input: EntityListPanelProps) {
       onLens={setLensId}
       merged
       glyph={props.toolbarInline ? 'settings' : 'funnel'}
+      allInOne={props.toolbarInline}
+      /* The tiers are tabs in that layout, so status is not a filter too. */
+      {...(props.toolbarInline && tierRow ? { omitFilterIds: ['status'] } : {})}
     />
   ) : null;
   /* The `⋯` half of the same component — View and Sort. One `FilterRow`
@@ -2262,6 +2266,8 @@ function FilterRow({
   merged = false,
   section = 'narrow',
   glyph = 'funnel',
+  allInOne = false,
+  omitFilterIds,
 }: {
   config: KindConfig;
   /** Which of the four is open. Held by the panel — see `ListPicker`. */
@@ -2301,6 +2307,14 @@ function FilterRow({
   section?: 'narrow' | 'view';
   /** The merged narrowing trigger's mark: the funnel, or settings sliders. */
   glyph?: 'funnel' | 'settings';
+  /**
+   * ONE "LIST SETTINGS" MENU (pinned-only rail, Subhang 2026-10-17): the
+   * narrowing trigger also carries Sort, Group by and View (with Show
+   * sub-items), and there is no `⋯`. Only read when `merged`.
+   */
+  allInOne?: boolean;
+  /** Filter specs not offered here (the status filter where tiers are tabs). */
+  omitFilterIds?: readonly string[];
 }) {
   const setPicker = onPicker;
   const barRef = useRef<HTMLDivElement>(null);
@@ -2329,6 +2343,9 @@ function FilterRow({
   const view = useRowView(config.kind);
   const viewFacets = facetsForAnatomy(config.list.tile.anatomy);
   const hiddenFacetCount = viewFacets.filter((spec) => view.hidden.has(spec.id)).length;
+  const listPrefs = useListPrefs(config.kind);
+  const groupOptions = groupOptionsFor(config.kind);
+  const filterSpecs = omitFilterIds ? config.list.filters.filter((spec) => !omitFilterIds.includes(spec.id)) : config.list.filters;
 
   const active = config.list.filters.flatMap((spec) =>
     (selected[spec.id] ?? []).flatMap((optionId) => {
@@ -2384,7 +2401,7 @@ function FilterRow({
   /* The option lists, one per narrowing menu below. */
   const filterOptions = (
     <>
-          {config.list.filters.map((spec) => (
+          {filterSpecs.map((spec) => (
             <div key={spec.id}>
               <div className="lp__filtergroup">{merged ? spec.label : spec.label.toUpperCase()}</div>
               {spec.options.map((option) => {
@@ -2541,13 +2558,14 @@ function FilterRow({
     const changed =
       section === 'view'
         ? hiddenFacetCount + sortChanged
-        : activeFilterCount + selectedPeople.length + (lensSet ? 1 : 0);
+        : activeFilterCount + selectedPeople.length + (lensSet ? 1 : 0) +
+          (allInOne ? hiddenFacetCount + sortChanged + listPrefs.changed : 0);
 
     /* `⋯` and the funnel must not share a picker key, or opening one would
        read as the other being open. `view` is already in `ListPicker`. */
     const key: ListPicker = section === 'view' ? 'view' : 'filters';
     const open = picker === key;
-    const label = section === 'view' ? 'View and sort' : 'Filters';
+    const label = section === 'view' ? 'View and sort' : allInOne ? 'List settings' : 'Filters';
     const body =
       section === 'view' ? (
         <>
@@ -2566,7 +2584,7 @@ function FilterRow({
         </>
       ) : (
         <>
-          {config.list.filters.length > 0 ? (
+          {filterSpecs.length > 0 ? (
             <section className="lp__funnelsection" aria-label="Filter">
               <div className="t-eyebrow">Filter</div>
               {filterOptions}
@@ -2582,6 +2600,53 @@ function FilterRow({
             <section className="lp__funnelsection" aria-label={membership.label}>
               <div className="t-eyebrow">{membership.label}</div>
               {setsOptions}
+            </section>
+          ) : null}
+          {allInOne && current ? (
+            <section className="lp__funnelsection" aria-label="Sort">
+              <div className="t-eyebrow">Sort</div>
+              {sortOptions}
+            </section>
+          ) : null}
+          {allInOne && groupOptions.length > 1 ? (
+            <section className="lp__funnelsection" aria-label="Group by">
+              <div className="t-eyebrow">Group by</div>
+              {groupOptions.map((option) => {
+                const on = listPrefs.groupBy === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={on}
+                    className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                    data-group-by={option.id}
+                    onClick={() => listPrefs.setGroupBy(option.id as ListGroupBy)}
+                  >
+                    {option.label}
+                    {on ? <span className="lp__filtercheck">✓</span> : null}
+                  </button>
+                );
+              })}
+            </section>
+          ) : null}
+          {allInOne && (viewFacets.length > 0 || config.list.tree) ? (
+            <section className="lp__funnelsection" aria-label="View">
+              <div className="t-eyebrow">View</div>
+              {viewOptions}
+              {config.list.tree ? (
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={listPrefs.subItems}
+                  className={listPrefs.subItems ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                  data-testid="list-subitems-toggle"
+                  onClick={() => listPrefs.setSubItems(!listPrefs.subItems)}
+                >
+                  <span className="lp__optbox" aria-hidden data-on={listPrefs.subItems ? 'yes' : 'no'} />
+                  <span className="lp__optlabel">Show sub-items</span>
+                </button>
+              ) : null}
             </section>
           ) : null}
         </>
@@ -2629,6 +2694,11 @@ function FilterRow({
                     for (const { spec, option } of active) onToggleOption(spec.id, option.id, spec.multi ?? false);
                     for (const actorId of selectedPeople) onTogglePerson(actorId);
                     if (lensSet) onLens(null);
+                    if (allInOne) {
+                      if (hiddenFacetCount > 0) view.reset();
+                      if (defaultSort && current && current.key !== defaultSort) onSort(defaultSort);
+                      if (listPrefs.changed > 0) listPrefs.reset();
+                    }
                   }}
                 >
                   Reset
@@ -3884,7 +3954,29 @@ function TreeRows({
     leadMode ? { latchReveal: true } : undefined,
   );
 
-  const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
+  /* The pinned-only rail's list settings (`list-prefs.ts`): sub-items hidden ⇒
+     the roots alone, flat; Group by ⇒ the roots under one heading per group.
+     Every other host keeps the tree exactly as before. */
+  const listPrefs = useListPrefs(config.kind);
+  const inlinePrefs = Boolean(props.toolbarInline);
+  const showSubItems = !inlinePrefs || listPrefs.subItems;
+  const groupBy: ListGroupBy = inlinePrefs ? listPrefs.groupBy : 'none';
+  const shownRows = useMemo(() => (showSubItems ? rows : rootsOnly(rows)), [rows, showSubItems]);
+  const roots = useMemo(
+    () => buildTileTree(shownRows, Boolean(config.list.tree) && showSubItems),
+    [shownRows, config.list.tree, showSubItems],
+  );
+  const groups = useMemo(() => {
+    if (groupBy === 'none') return null;
+    const byKey = new Map<string, { key: string; label: string; rank: number; nodes: TileTreeNode[] }>();
+    for (const node of roots) {
+      const group = groupOf(node.row, groupBy);
+      const entry = byKey.get(group.key) ?? { ...group, nodes: [] };
+      entry.nodes.push(node);
+      byKey.set(group.key, entry);
+    }
+    return [...byKey.values()].sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
+  }, [roots, groupBy]);
 
   /**
    * Live session traffic — delegation, completion and messages — resolved
@@ -3896,8 +3988,8 @@ function TreeRows({
    * by the selection routes as the open row it is drawn as.
    */
   const pulse = useMemo(
-    () => resolvePulses(rows, disclosure.isExpanded, props.messagePulses, config),
-    [rows, disclosure, props.messagePulses, config],
+    () => resolvePulses(shownRows, disclosure.isExpanded, props.messagePulses, config),
+    [shownRows, disclosure, props.messagePulses, config],
   );
 
   const renderNode = (node: TileTreeNode): React.ReactNode => {
@@ -3977,7 +4069,17 @@ function TreeRows({
 
   return (
     <div className={treeClass(config)} role={config.list.tree ? 'tree' : 'list'}>
-      {roots.map(renderNode)}
+      {groups
+        ? groups.map((group) => (
+            <div key={group.key} className="lp__group" role="group" aria-label={group.label} data-testid="list-group">
+              <div className="lp__grouphead" aria-hidden>
+                <span className="lp__groupname">{group.label}</span>
+                <span className="lp__groupcount">{group.nodes.length}</span>
+              </div>
+              {group.nodes.map(renderNode)}
+            </div>
+          ))
+        : roots.map(renderNode)}
       {/* LAST, and out of flow. The layer measures against this container, so
           it must be a child of it; rendering it after the rows keeps it above
           them without a stacking context that would trap the row menus.

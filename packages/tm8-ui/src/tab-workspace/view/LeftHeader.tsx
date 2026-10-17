@@ -22,8 +22,9 @@ export function LeftHeader() {
   const switcher = isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
     ? cloneElement(gate.switcherSlot, { collapsed: narrow, quiet: true })
     : gate.switcherSlot;
-  /* The pinned-only rail keeps the mark and the space here; the mode and its
-     switcher lead the tab strip instead (`TabStrip`). */
+  /* The pinned-only rail: the mark, the space and — at the far end, over the
+     list column — the mode. The mode's own switcher (workspaces) leads the
+     tab strip instead (`TabStrip`), across the column edge. */
   const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
   return (
     <header className="tws-left-header" data-testid="tws-left-header">
@@ -35,7 +36,13 @@ export function LeftHeader() {
       <div className="tws-space-slot" data-narrow={narrow || undefined}>
         {switcher}
       </div>
-      {pinnedRail ? null : <ViewSelector variant="label" />}
+      {pinnedRail ? (
+        <div className="tws-left-mode" data-testid="tws-left-mode">
+          <ViewSelector variant="label" />
+        </div>
+      ) : (
+        <ViewSelector variant="label" />
+      )}
       {!pinnedRail && gate.modeSwitcherSlot ? <div className="tws-mode-switcher-slot" data-testid="tws-mode-switcher-slot">{gate.modeSwitcherSlot}</div> : null}
     </header>
   );

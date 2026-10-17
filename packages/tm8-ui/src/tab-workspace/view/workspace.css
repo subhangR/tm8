@@ -80,6 +80,17 @@
 .tws-left-header .tws-view-select {
   padding-left: var(--pn-space-2);
 }
+/* The pinned-only rail's mode, at the far end of the left header (over the
+   list column), right before the column edge. No middle dot: nothing sits
+   beside it. */
+.tws-left-mode {
+  display: flex;
+  flex: none;
+  margin-left: auto;
+}
+.tws-left-header .tws-left-mode .tws-view-select::before {
+  content: none;
+}
 .tws-left-header .tws-view-select::before,
 .tws-mode-switcher-slot::before {
   content: '·';
