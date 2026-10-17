@@ -49,6 +49,7 @@ import { FormQuestionRowSchema, FormSectionRowSchema, FormSettingsSchema, FormSt
 import { EntityContextStorySchema, StoryContentSchema, StoryStateSchema } from './story.js';
 import { CraftContentSchema, CraftStateSchema, EntityContextCraftPageSchema } from './craft.js';
 import { TaskProgressSchema } from './progress.js';
+import type { ChatCredentialDisplay, ChatCredentialIntent, ChatRuntimeState } from './chat-runtime.js';
 import {
   SELECTION_HEADER_KINDS,
   SELECTION_HEADER_SOURCES,
@@ -777,6 +778,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('chat'),
     credentialSelection: z.lazy(() => ChatCredentialSelectionSchema).optional(),
+    credentialIntent: z.lazy(() => ChatCredentialIntentSchema).optional(),
+    reasoningEffort: z.lazy(() => ChatReasoningEffortSchema).nullable().optional(),
+    configRevision: z.number().int().positive().optional(),
+    runtime: z.lazy(() => ChatRuntimeStateSchema).optional(),
     teammateId: EntityIdSchema,
     model: z.string().min(1),
     provider: z.string().min(1),
@@ -1467,7 +1472,13 @@ export const MessagePartSchema: z.ZodType<MessagePart> = z.discriminatedUnion('k
   z.object({
     seq: z.number().int().nonnegative(),
     kind: z.literal('text'),
-    payload: z.object({ text: z.string() }).strict(),
+    payload: z.object({
+      text: z.string(),
+      itemId: z.string().min(1).optional(),
+      revision: z.number().int().nonnegative().optional(),
+      operation: z.enum(['append', 'replace']).optional(),
+      phase: z.enum(['commentary', 'final', 'unknown']).optional(),
+    }).strict(),
     createdAt: IsoTimestamp,
   }).strict(),
   z.object({
@@ -1517,11 +1528,63 @@ export const ChatCredentialSelectionSchema: z.ZodType<ChatCredentialSelection> =
 }).strict().refine(input => !input.credentialId || input.source === 'space', {
   message: 'credentialId is only valid with source space',
 });
+
+export const ChatReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+
+export const ChatCredentialIntentSchema: z.ZodType<ChatCredentialIntent> = z.object({
+  defaultChoice: z.object({ source: z.enum(['auto', 'member', 'space', 'node']) }).strict(),
+  byProvider: z.object({
+    anthropic: ChatCredentialSelectionSchema.optional(),
+    openai: ChatCredentialSelectionSchema.optional(),
+    kimi: ChatCredentialSelectionSchema.optional(),
+    groq: ChatCredentialSelectionSchema.optional(),
+  }).strict(),
+}).strict();
+
+export const ChatCredentialDisplaySchema: z.ZodType<ChatCredentialDisplay> = z.object({
+  provider: z.enum(['anthropic', 'openai', 'kimi', 'groq']),
+  source: z.enum(['member', 'space', 'node']),
+  credentialId: EntityIdSchema.optional(),
+  label: z.string().optional(),
+  resolutionReason: z.enum(['personal_default', 'member', 'space_default', 'node', 'pinned']),
+}).strict();
+
+export const ChatRuntimeStateSchema: z.ZodType<ChatRuntimeState> = z.object({
+  schemaVersion: z.literal(1),
+  configRevision: z.number().int().positive(),
+  activeTurn: z.object({
+    turnId: EntityIdSchema,
+    configRevision: z.number().int().positive(),
+    generation: z.number().int().positive().nullable(),
+    model: z.string().min(1), provider: z.string().min(1), agentTool: z.string().min(1),
+    reasoningEffort: ChatReasoningEffortSchema.nullable(),
+    status: z.enum(['preparing', 'running', 'cancelling', 'interrupted', 'failed']),
+    credential: ChatCredentialDisplaySchema.optional(),
+  }).strict().nullable(),
+  runtime: z.object({
+    generation: z.number().int().positive().nullable(),
+    phase: z.enum(['starting', 'ready', 'running', 'stopping', 'stopped', 'failed', 'unknown']),
+    continuity: z.enum(['native_verified', 'portable_verified', 'pending', 'unavailable']),
+    observedAt: IsoTimestamp.nullable(),
+  }).strict(),
+  pendingForNextClaim: z.boolean(),
+}).strict();
+
+const chatConfigMutationShape = {
+  expectedConfigRevision: z.number().int().positive().optional(),
+  clientMutationId: z.string().min(1).max(240).optional(),
+};
+const hasPinnedMutationRevision = (input: { clientMutationId?: string; expectedConfigRevision?: number }) =>
+  input.clientMutationId === undefined || input.expectedConfigRevision !== undefined;
 export const SetChatCredentialsInputSchema: z.ZodType<SetChatCredentialsInput> = z.object({
   credentialSelection: ChatCredentialSelectionSchema,
-}).strict();
+  ...chatConfigMutationShape,
+}).strict().refine(hasPinnedMutationRevision, { message: 'clientMutationId requires expectedConfigRevision', path: ['expectedConfigRevision'] });
 export const SetChatCredentialsResultSchema: z.ZodType<SetChatCredentialsResult> = z.object({
   chatId: EntityIdSchema, credentialSelection: ChatCredentialSelectionSchema,
+  configRevision: z.number().int().positive().optional(),
+  credentialIntent: ChatCredentialIntentSchema.optional(),
+  appliesAt: z.literal('next_claim').optional(),
 }).strict();
 
 /** 328: the Coordinator's team on a chat turn — a field, never body text. */
@@ -1537,6 +1600,7 @@ const ChatTurnTeamSchema = z.object({
 export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
   mcpSelections: McpSelectionsSchema.optional(),
   credentialSelection: ChatCredentialSelectionSchema.optional(),
+  reasoningEffort: ChatReasoningEffortSchema.nullable().optional(),
   spaceId: SpaceIdSchema,
   teammateId: EntityIdSchema,
   model: z.string().min(1),
@@ -1574,12 +1638,21 @@ export const StartChatResultSchema: z.ZodType<StartChatResult> = z.lazy(() => z.
  */
 export const SetChatModelInputSchema: z.ZodType<SetChatModelInput> = z.object({
   model: z.string().min(1),
-}).strict() as z.ZodType<SetChatModelInput>;
+  reasoningEffort: ChatReasoningEffortSchema.nullable().optional(),
+  credentialSelection: ChatCredentialSelectionSchema.optional(),
+  ...chatConfigMutationShape,
+}).strict().refine(hasPinnedMutationRevision, { message: 'clientMutationId requires expectedConfigRevision', path: ['expectedConfigRevision'] });
 
 export const SetChatModelResultSchema: z.ZodType<SetChatModelResult> = z.object({
   chatId: EntityIdSchema,
   model: z.string().min(1),
   provider: z.string().min(1),
+  agentTool: z.string().min(1).optional(),
+  reasoningEffort: ChatReasoningEffortSchema.nullable().optional(),
+  credentialSelection: ChatCredentialSelectionSchema.optional(),
+  credentialIntent: ChatCredentialIntentSchema.optional(),
+  configRevision: z.number().int().positive().optional(),
+  appliesAt: z.literal('next_claim').optional(),
 }).strict() as z.ZodType<SetChatModelResult>;
 
 export const ChatTurnFrameSchema: z.ZodType<ChatTurnFrame> = z.discriminatedUnion('type', [

@@ -13,6 +13,17 @@ import {
 import type { ChatThreadDetail, ChatTurn } from './types';
 
 describe('rich turn projection', () => {
+  it('replaces a native item snapshot after deltas and ignores stale revisions', () => {
+    const projected = projectTurnParts([
+      { seq: 0, kind: 'text', itemId: 'item-a', operation: 'append', revision: 1, text: 'Hel' },
+      { seq: 1, kind: 'text', itemId: 'item-a', operation: 'append', revision: 2, text: 'lo' },
+      { seq: 2, kind: 'text', itemId: 'item-b', operation: 'append', revision: 1, text: 'Other' },
+      { seq: 3, kind: 'text', itemId: 'item-a', operation: 'replace', revision: 3, phase: 'final', text: 'Hello!' },
+      { seq: 4, kind: 'text', itemId: 'item-a', operation: 'replace', revision: 2, text: 'stale' },
+    ]);
+    expect(projected.map(part => part.kind === 'text' ? part.text : '')).toEqual(['Hello!', 'Other']);
+    expect(projected[0]).toMatchObject({ seq: 0, itemId: 'item-a', revision: 3, phase: 'final' });
+  });
   it('updates one tool card from later append-only state parts', () => {
     const assistant = CHAT_HOME_FIXTURE_THREAD.turns[1]!;
     const projected = projectTurnParts(assistant.parts);

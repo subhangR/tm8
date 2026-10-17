@@ -13,8 +13,9 @@ export function credentialSelection(value: string): ChatCredentialSelection {
     : { source: value as ChatCredentialSelection['source'] };
 }
 
-export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled, backendKeyOnly, inline = false }: {
+export function ChatCredentialPicker({ port, spaceId, model, value, onChange, disabled, backendKeyOnly, inline = false }: {
   port: ChatHomePort; spaceId: SpaceId | string; value: ChatCredentialSelection;
+  model?: string;
   onChange: (selection: ChatCredentialSelection) => void; disabled: boolean; backendKeyOnly: boolean;
   /** A labelled native select, for a host that is itself a popover (the composer's settings). */
   inline?: boolean;
@@ -27,7 +28,7 @@ export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled,
     setCredentials([]);
     setNote(null);
     const load = () => {
-      void portRef.current.credentialOptions?.(spaceId).then(
+      void portRef.current.credentialOptions?.(spaceId, model).then(
         rows => { if (live) { setCredentials(rows); setNote(null); } },
         () => { if (live) setNote('Could not read space credentials. You can retry by reopening this chat.'); },
       );
@@ -35,7 +36,7 @@ export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled,
     load();
     window.addEventListener('focus', load);
     return () => { live = false; window.removeEventListener('focus', load); };
-  }, [spaceId]);
+  }, [spaceId, model]);
   const reason = backendKeyOnly ? 'This model requires your own connected provider key' : undefined;
   const options: ComposerSelectOption[] = [
     { id: 'auto', label: 'Auto', hint: 'Your default → connected login → space default → allowed server login' },
@@ -63,5 +64,5 @@ export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled,
   return <ComposerSelect label="Chat credentials" testId="tch-credentials" options={options}
     value={credentialValue(value)} onChange={next => onChange(credentialSelection(next))}
     disabled={disabled} emptyNote="No credentials available."
-    note={note ?? 'Changes apply to the next turn. Switching accounts may reset model context; saved messages remain.'} tall />;
+    note={note ?? 'Changes apply to the next turn. The conversation carries across models and accounts.'} tall />;
 }

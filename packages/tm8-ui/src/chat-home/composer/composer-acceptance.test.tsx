@@ -128,7 +128,7 @@ describe('composer acceptance', () => {
     expect(within(view.getByTestId('tch-model-effort')).queryAllByRole('slider')).toHaveLength(0);
   });
 
-  it('ac_8 + ac_10 · crew rows take any model incl. codex; coordinator list says why codex is out', async () => {
+  it('ac_8 + ac_10 · crew rows and the coordinator take any model incl. codex', async () => {
     const { port, controls } = portWith();
     const view = await openNewChat(port);
     pickRole(view, 'dispatcher');
@@ -145,11 +145,10 @@ describe('composer acceptance', () => {
     expect(view.getByLabelText('Worker 2 model').textContent).toContain('GPT 5.6');
     fireEvent.click(view.getByTestId('tch-crew-w2-model-effort-xhigh'));
 
-    // ac_10: the coordinator list draws the same model disabled, with the reason.
+    // ac_10: the chat harness registry admits Codex for the coordinator too.
     fireEvent.keyDown(view.getByLabelText('Worker 2 model'), { key: 'Escape' });
     fireEvent.click(view.getByLabelText('Chat model'));
-    expect(view.getByTestId('tch-model-gpt-5.6-sol').getAttribute('aria-disabled')).toBe('true');
-    expect(view.getByTestId('tch-model-gpt-5.6-sol').textContent).toContain('Claude Code only');
+    expect(view.getByTestId('tch-model-gpt-5.6-sol').getAttribute('aria-disabled')).toBeNull();
     fireEvent.keyDown(view.getByLabelText('Chat model'), { key: 'Escape' });
 
     // The brief is visible before send and rides the opening turn.

@@ -21,6 +21,7 @@ export * from './skill-reference.js';
 export * from './launch-suggest.js';
 export * from './launch-defaults.js';
 export * from './chat-defaults.js';
+export * from './chat-runtime.js';
 export * from './membership.js';
 export * from './space-links.js';
 export * from './cross-space-refs.js';

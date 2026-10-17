@@ -238,7 +238,7 @@ function ModelMenu({
         {availability.disabledReason ? (
           <span className="tch-effort__why" role="note">{availability.disabledReason}</span>
         ) : (
-          <EffortSlider stops={availability.stops} value={effort} onChange={onEffortChange} testId={`${testId}-effort`} />
+          <EffortSlider stops={availability.stops} value={effort} onChange={onEffortChange} testId={`${testId}-effort`} disabled={disabled} />
         )}
       </div>
     </div>
@@ -252,12 +252,15 @@ function ModelMenu({
  * the thumb on that notch. Labels under the notches are clickable; the thumb
  * takes ← → ↑ ↓ Home End.
  */
-export function EffortSlider({ stops, value, onChange, testId }: {
+export function EffortSlider({ stops, value, onChange: change, testId, disabled = false }: {
   stops: readonly LaunchModelEffort[];
   value: LaunchModelEffort | null;
   onChange: (effort: LaunchModelEffort) => void;
   testId: string;
+  /** A setting write is in flight: the stops stay visible but inert. */
+  disabled?: boolean;
 }) {
+  const onChange = (next: LaunchModelEffort) => { if (!disabled) change(next); };
   const track = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<number | null>(null);
   const last = Math.max(1, stops.length - 1);
@@ -344,6 +347,7 @@ export function EffortSlider({ stops, value, onChange, testId }: {
             className="tch-slider__label"
             data-testid={`${testId}-${stop}`}
             aria-pressed={stop === value}
+            disabled={disabled}
             style={{ left: `${(i / last) * 100}%` }}
             onClick={() => onChange(stop)}
           >
