@@ -134,6 +134,7 @@ export function WorkspaceRail() {
       aria-label="Work rail"
       data-testid="tws-rail"
       data-rail-expanded={expanded || undefined}
+      data-pinned-only={pinnedOnly || undefined}
     >
       <div
         ref={topRef}

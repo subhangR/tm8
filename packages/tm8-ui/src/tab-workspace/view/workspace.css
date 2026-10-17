@@ -293,6 +293,17 @@
 .tws-rail-rest {
   display: contents;
 }
+/* A little tighter in the pinned-only rail (Subhang, 2026-10-17): 8px
+   between icons instead of 12. A hairline keeps 12px either side (8px gap +
+   4px margin), so the groups still read apart. */
+.tws-rail[data-pinned-only] .tws-rail-top,
+.tws-rail[data-pinned-only] .tws-rail-group {
+  gap: var(--pn-space-2);
+}
+.tws-rail[data-pinned-only] .tws-rail-top > .tws-rail-rule,
+.tws-rail[data-pinned-only] .tws-rail-rest > .tws-rail-rule {
+  margin-block: var(--pn-space-1);
+}
 .tws-rail-group,
 .tws-rail-bottom {
   display: flex;
