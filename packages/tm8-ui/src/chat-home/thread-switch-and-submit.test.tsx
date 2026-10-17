@@ -11,7 +11,7 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
-import { ChatHomeScreen } from './ChatHomeScreen';
+import { ChatHomeScreen, NO_TEAMMATE_REFUSAL } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatHomePort, ChatModelOption, ChatThreadDetail } from './types';
 import { fakeCreatedHereReader, madeSummary } from './created-here/created-here.test-support';
@@ -330,14 +330,14 @@ describe('the refusal belongs to a NEW chat', () => {
     const port: ChatHomePort = { ...fixture.port, async listTeammates() { return []; } };
     const view = mount(port);
     await openedOn(view, 'Plan the launch sequence');
-    expect(view.queryByText('No agent teammate is available in this space.')).toBeNull();
+    expect(view.queryByText(NO_TEAMMATE_REFUSAL)).toBeNull();
     fireEvent.change(composer(view), { target: { value: 'Carry on.' } });
     fireEvent.click(view.getByRole('button', { name: /send/i }));
     await waitFor(() => expect(fixture.controls.posts).toHaveLength(1));
 
     // …and a NEW chat is still refused, because it would name nobody.
     fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    expect(view.getByText('No agent teammate is available in this space.')).toBeTruthy();
+    expect(view.getByText(NO_TEAMMATE_REFUSAL)).toBeTruthy();
   });
 
   it('a model the catalog stops listing does not refuse new chats beside a picker full of models', async () => {

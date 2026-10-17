@@ -118,6 +118,8 @@ import type {
 import '../panels/honesty/honesty.css';
 import './chat-home.css';
 
+/** The send refusal for a new chat in a space with no agent teammate. */
+export const NO_TEAMMATE_REFUSAL = 'No agent teammate in this space yet — add one to start a chat.';
 /** The send refusal while the connectors are not ready (loading, or an account to choose). */
 const MCP_REFUSAL = 'Choose a connected account for each connector.';
 
@@ -1415,7 +1417,10 @@ export function ChatHomeScreen({
     activeConfig !== null
       ? null
       : teammateId === ''
-        ? 'No agent teammate is available in this space.'
+        /* NOT A CLAIM UNTIL THE ROSTER IS READ (prod, 2026-10-18): the empty
+           pick before `listTeammates` lands said "no teammate" in a space with
+           twenty, and the line was gone by the time a teammate answered. */
+        ? (loading ? 'Reading this space\u2019s teammates\u2026' : NO_TEAMMATE_REFUSAL)
         : !selectedModel
           ? 'No model is available from the launch catalog.'
           : null;
@@ -2308,6 +2313,7 @@ export function ChatHomeScreen({
   }, [port, selectedRootId]);
 
   const compactComposer = composerLayout === 'compact';
+  const refusalShown = refusal !== null && !loading && !(compactComposer && refusal === MCP_REFUSAL);
   /* Send (■ Stop mid-turn): the toolbar's last control, or — compact — the
      field's, so the toolbar row can be ＋ · role · model alone. */
   const sendControl = (
@@ -2875,7 +2881,6 @@ export function ChatHomeScreen({
             {/* Compact: the picker keeps its readiness work here but draws in ＋. */}
             {newThread && <McpPicker teamMemberId={teammateId ?? undefined} targetId={aboutId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={busy} headless={compactComposer} />}
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
-            {refusal && !(compactComposer && refusal === MCP_REFUSAL) ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
             {phase === 'stopped-continuable' ? (
               <p className="tch-continuable" role="status">
                 Turn stopped · this thread is continuable. Send another message to resume.
@@ -2883,13 +2888,21 @@ export function ChatHomeScreen({
             ) : null}
             <ComposerCard
               className={compactComposer ? 'tch-composer tch-composer--compact' : 'tch-composer'}
-              above={<AttachmentChips attachments={attachments} testId="tch-attachments" />}
+              above={<>
+                {/* Why Send is refused, in muted ink inside the card; the same
+                    words are Send's tooltip. Not while the opening read runs:
+                    that is a wait, not a reason. */}
+                {refusalShown
+                  ? <p className="tch-refusal" id="tch-compose-refusal" data-testid="tch-compose-refusal">{refusal}</p>
+                  : null}
+                <AttachmentChips attachments={attachments} testId="tch-attachments" />
+              </>}
               field={<>
                 <textarea
                   ref={composer}
                   value={draft}
                   aria-label="Message the chat agent"
-                  aria-describedby={refusal ? 'tch-compose-refusal' : undefined}
+                  aria-describedby={refusalShown ? 'tch-compose-refusal' : undefined}
                   /* READ-ONLY WHILE OUR WRITE IS IN FLIGHT, NOT DISABLED. A
                      disabled field is blurred by the browser, so every Enter
                      dropped focus to <body> and the next message needed a

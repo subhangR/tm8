@@ -152,6 +152,8 @@ describe('a new chat continues in place after its first Send', () => {
     const { store, arrive } = mount();
     expect(screen.getByTestId('tws-draft-chat')).toBeTruthy();
     expect(lifecycle.mounts).toBe(1);
+    // The composer is the chat's own create door: no draft Cancel bar under it.
+    expect(screen.queryByTestId('tws-draft-cancel')).toBeNull();
     const composer = screen.getByTestId('fake-composer');
     composer.focus();
 
@@ -170,6 +172,8 @@ describe('a new chat continues in place after its first Send', () => {
     act(() => arrive(chatDetail));
     expect(screen.getByTestId('fake-panel').contains(screen.getByTestId('fake-chat'))).toBe(true);
     expectNoLoading();
+    // …under no empty title row: the tab's label names the chat.
+    expect(screen.queryByTestId('tws-titlebar')).toBeNull();
 
     act(() => {
       fireEvent.click(screen.getByTestId('fake-stream'));

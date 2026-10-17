@@ -2243,6 +2243,9 @@ const ROWS: readonly KindConfig[] = [
       archetype: 'conversation',
       conversation: 'chat-thread',
       composition: 'chat',
+      /* The thread IS the tab (Subhang, 2026-10-18): the 36px title row sat
+         empty over the transcript, and the tab's own label names the chat. */
+      titleBar: false,
     },
   },
 

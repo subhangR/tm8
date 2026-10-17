@@ -609,7 +609,7 @@ function LaunchDraftBody({ values, onValues, onCreated, onCancel, onSubmitting, 
 // chat: the chat-start flow
 // ---------------------------------------------------------------------------
 
-function ChatDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
+function ChatDraftBody({ tab, onValues, onCreated }: DraftHostProps) {
   const { gate, spaceId } = useWorkspace();
   const nodeKey = nodeKeyOf(gate.serverBaseUrl);
   const noun = getKindAdapter(tab.kind).noun.toLowerCase();
@@ -643,10 +643,10 @@ function ChatDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
   );
   return (
     // The composer keeps its own draft in the chat store (Spec B §8); any
-    // keystroke marks this draft tab dirty.
+    // keystroke marks this draft tab dirty. No Cancel bar: the composer is
+    // the chat's own create door, and closing the tab discards the draft.
     <div className="tws-draft-chat" data-testid="tws-draft-chat" onInput={() => onValues({})}>
       <KeptChatDraft tabId={tabId} surface={surface} />
-      <DraftActions onCancel={onCancel} submitting={tab.submitting} />
     </div>
   );
 }
