@@ -108,6 +108,7 @@ import { TileLinkCounts } from './list/TileLinkCounts';
 import { hasTileLinkCounts } from '../domain';
 import { TILE_LINK_GROUPS, UNCOUNTED_LINK_GROUPS } from '../domain/tile-counts';
 import { TileSignal, UrgentMark, isUrgent, signalIsAvatar } from './list/TileSignal';
+import { SessionDetails } from './list/SessionDetails';
 import { facetsForAnatomy, hiddenLinkGroups, linkFacet, useRowView } from './list/row-view';
 import { groupOf, groupOptionsFor, rootsOnly, useListPrefs, type ListGroupBy } from './list/list-prefs';
 import {
@@ -3789,6 +3790,9 @@ function Band({
   const groups = sessionRows
     ? groupSessionRows(tabId, visible, (r) => r.state, (r) => ({ claims: props.linkedClaimsOf?.(r.id) }))
     : null;
+  const bulkGroups = props.onSessionBulk
+    ? (groups ?? []).filter((group) => group.label !== null && group.bulk !== null)
+    : [];
 
   if (label && collapsed) {
     // A collapsed section reduces to ONE clickable line pinned at the bottom —
@@ -3871,24 +3875,34 @@ function Band({
             }
           />
         )
-      ) : groups && groups.length > 1 || (groups?.[0]?.label ?? null) !== null ? (
-        groups!.map((group) => (
-          <Fragment key={group.id}>
-            {group.label ? (
-              <SessionGroupHeader
-                label={group.label}
-                bulk={group.bulk}
-                ids={group.rows.map((r) => r.id)}
-                onBulk={props.onSessionBulk}
-              />
-            ) : null}
-            {group.rows.length > 0 ? (
-              <TreeRows rows={group.rows} props={props} config={config} attentionIds={attentionIds} />
-            ) : null}
-          </Fragment>
-        ))
       ) : (
-        <TreeRows rows={visible} props={props} config={config} attentionIds={attentionIds} />
+        <>
+          {/* THE TREE IS NEVER BROKEN UP (Subhang, 2026-10-17: "the tree
+              structure of the sessions should always be maintained"). The
+              tab's groups used to render as separate lists — "Finished, still
+              open (N)" under Running, one list per reason under Interrupted —
+              and a tree only nests a row whose parent is in the SAME list, so
+              every group split re-rooted the children it took. The groups now
+              keep only their bulk verbs, as a strip above ONE tree; which
+              state a row is in is the row's own coloured signal. */}
+          {/* A group earns a line only when it carries a verb this host can
+              run: a bare "Finished, still open (1)" over one tree reads as a
+              header for every row below it. */}
+          {bulkGroups.length > 0 ? (
+            <div className="lp__sgroups" data-testid="session-groups">
+              {bulkGroups.map((group) => (
+                <SessionGroupHeader
+                  key={group.id}
+                  label={group.label!}
+                  bulk={group.bulk}
+                  ids={group.rows.map((r) => r.id)}
+                  onBulk={props.onSessionBulk}
+                />
+              ))}
+            </div>
+          ) : null}
+          <TreeRows rows={visible} props={props} config={config} attentionIds={attentionIds} />
+        </>
       )}
 
       {/* PAGING IS THE BAND'S, because the query is the band's. Rendered after
@@ -4807,6 +4821,7 @@ export function Tile({
                 label: sessionWord.word,
                 reason: sessionWord.reason,
                 streaming,
+                case: sessionWord.case,
               }}
             />
           ) : undefined
@@ -4839,12 +4854,6 @@ export function Tile({
             </span>
           </span>
         )}
-        /* EXPAND-ONLY on this anatomy (`MaestroSessionTile` gates the block on
-           `detailsExpanded`), which is why the linked tasks survive the cut:
-           §6 removes facts from the COLLAPSED row and keeps them "on hover or
-           selection, or in the detail panel". Path-suppressed as before: a
-           session expanded under a task must not offer that task back. */
-        tasks={(props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false))}
         /* The lane line is cut from the collapsed row (§6: the branch and the
            worktree are detail-panel facts) and so is its worktree door, which
            was the last of the inline relation accordion on this anatomy. */
@@ -4872,7 +4881,28 @@ export function Tile({
             anatomyActions={own}
           />
         )}
-        detail={<EntityControlStrip row={row} props={props} config={config} omitArchive={oneSurface} />}
+        /* THE EXPANDED SESSION — its own facts, then the D67 strip (compact
+           chips) for state and archive. Linked tasks are path-suppressed as
+           before: a session expanded under a task must not offer that task
+           back. Links are drawn whatever the View's counts switch says: the
+           switch thins the COLLAPSED row, and an expanded row is asking. */
+        detail={
+          <SessionDetails
+            id={row.id}
+            state={row.state}
+            word={sessionWord}
+            tasks={(props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false))}
+            links={hasTileLinkCounts(row.counters) ? (
+              <TileLinkCounts
+                counters={row.counters}
+                entityId={row.id}
+                {...(props.onOpenLinks ? { onOpenGroup: props.onOpenLinks } : {})}
+              />
+            ) : null}
+            {...(props.onSelect ? { onOpenTask: props.onSelect } : {})}
+            controls={<EntityControlStrip row={row} props={props} config={config} variant="chips" omitArchive={oneSurface} />}
+          />
+        }
       />
     );
   }

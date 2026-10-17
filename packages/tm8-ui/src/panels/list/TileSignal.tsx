@@ -63,6 +63,8 @@ export interface SessionSignalFacts {
   reason?: string | null;
   /** Bytes moving right now: the live dot pulses. */
   streaming?: boolean;
+  /** `SessionWord.case`, so a colour can single out one case (Finished, still open). */
+  case?: string;
 }
 
 export function TileSignal({
@@ -81,7 +83,7 @@ export function TileSignal({
     /* No word yet means no claim yet: an unresolved row must not read as a
        finished run, which is the one wrong answer available here. */
     if (!session) return null;
-    const { icon, tone, label, reason, streaming } = session;
+    const { icon, tone, label, reason, streaming, case: sessionCase } = session;
     /*
      * THREE SHAPES, AND THE ICON COLUMN ALONE DOES NOT GIVE THEM.
      *
@@ -93,14 +95,21 @@ export function TileSignal({
      * the one thing a sessions list exists to tell you, and it took a test to
      * notice because both renderings look deliberate.
      */
-    const ended = icon === 'check' || icon === 'ring-x' || icon === 'square' || icon === 'ring';
+    const ended = icon === 'check' || icon === 'ring-x' || icon === 'square';
     const shape = ended ? 'outcome' : tone === 'run' ? 'live' : 'waiting';
     const glyph = icon === 'check' ? '✓' : icon === 'ring-x' ? '✕' : '▪';
+    /* THE COLOUR IS THE STATE (Subhang, 2026-10-17). The shape says live,
+       waiting or ended; the tone class colours it — green working, amber
+       waiting on someone, grey idle at its prompt or stopped, blue ready to
+       complete or finished-but-open, red crashed — so no two states a reader
+       has to tell apart share a dot. `ring` (ended, not completed) is a
+       hollow amber ring rather than a glyph: it is waiting on a person. */
     return (
       <span
         className={`lp__signal lp__signal--${shape} lp__signal--tone-${tone}`}
         data-signal={shape}
         data-session-icon={icon}
+        data-session-case={sessionCase}
         data-streaming={shape === 'live' && streaming ? 'true' : undefined}
         title={reason ?? label}
       >

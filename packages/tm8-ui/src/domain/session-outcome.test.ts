@@ -279,6 +279,16 @@ describe('§5.3.1 awkward cases', () => {
     expect(sessionVerbsOf(s, 'live')).toContain('complete-session');
   });
 
+  it('an idle process with work still claimed reads "Idle", not Working — grey, not the running green', () => {
+    const s = session({ status: 'idle' });
+    const w = sessionRowWord(s, 'live', { ...ctx, claims: [claim({ status: 'working' })], activityAt: ago(5 * MIN) })!;
+    expect([w.case, w.word, w.tone]).toEqual(['idle', 'Idle 5m', 'idle']);
+    // Unknown claims (no context) are idle too: the process says so.
+    expect(sessionRowWord(s, 'live', ctx)!.tone).toBe('idle');
+    // A running process is still Working.
+    expect(sessionRowWord(session({ status: 'running' }), 'live', { ...ctx, claims: [claim({ status: 'working' })] })!.word).toBe('Working');
+  });
+
   it('case 3 — a one-shot worker that exited cleanly with no working claim: "Finished, not closed out", grouped first with Complete all', () => {
     const finished = session({ status: 'exited', endedKind: 'exited_clean' });
     const crashed = session({ status: 'failed', endedKind: 'crashed' });

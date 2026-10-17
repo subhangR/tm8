@@ -34,7 +34,6 @@ export function MaestroSessionTile({
   word,
   lineTwo,
   crumb,
-  tasks,
   lane,
   badges,
   childCount,
@@ -107,7 +106,6 @@ export function MaestroSessionTile({
   lineTwo?: string | null;
   /** §5.3.1 case 7: "↳ under Coordinator X (Completed)". */
   crumb?: string | null;
-  tasks: readonly EntitySummary[];
   /**
    * The ONE lane line (107): `⎇ branch · [worktree|shared|scratch]`, from the
    * session's summary lane facts. Renders beside the PR chips; absent when
@@ -150,7 +148,7 @@ export function MaestroSessionTile({
    * either side having to know how the other draws.
    */
   rowMenu?: (verbs: ReactNode) => ReactNode;
-  /** D67 — the shared state/archive strip, rendered inside this tile's expand. */
+  /** The expanded block (`SessionDetails`), drawn while details are open. */
   detail?: ReactNode;
 }) {
   const { oneSurface } = useMobileSurface();
@@ -350,25 +348,11 @@ export function MaestroSessionTile({
         </div>
       ) : null}
 
-      {detailsExpanded && tasks.length > 0 ? (
-        <div className="pn-st__tasklines">
-          {tasks.map((task) => {
-            const taskState = task.state as unknown as { status?: string };
-            return (
-              <div key={task.id} className="pn-st__taskline" title={`${task.title} (${taskState.status ?? 'work item'})`}>
-                <StatusGlyph kind={taskState.status ?? 'open'} size={13} />
-                <span className="pn-st__tasklineLabel">{task.title}</span>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {/* D67 — the state + archive strip, on the SAME disclosure as the task
-          lines. Gated on `detailsExpanded` alone, NOT on `tasks.length`: a
-          session with no linked task still has an archive control, and hanging
-          it off the task list would make it vanish for exactly the rows a user
-          is most likely to be tidying up. */}
+      {/* THE EXPANDED SESSION (Subhang, 2026-10-17). `detail` is the host's
+          `SessionDetails` — status, model, teammate, branch, times, tasks,
+          links, id, and the D67 state/archive strip at its foot. The tile
+          used to draw the task lines itself above a bare D67 strip; the host
+          now owns the whole block so the facts come from one place. */}
       {detailsExpanded ? detail : null}
     </div>
   );

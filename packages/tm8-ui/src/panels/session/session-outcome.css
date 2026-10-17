@@ -214,6 +214,15 @@
   cursor: default;
 }
 
+/* Spec D1 §5.3 — the session tab groups' bulk verbs, as one strip above the
+   tab's single tree (the groups no longer split the tree). */
+.lp__sgroups {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--pn-line);
+}
 /* Spec D1 §5.3 — the session tab groups and their bulk verbs. */
 .lp__sgroup {
   display: flex;
@@ -255,3 +264,47 @@
   font: inherit;
   padding: 0;
 }
+
+/* THE EXPANDED SESSION (SessionDetails, 2026-10-17): a status line, then a
+   two-column fact list — label left, value right — then the D67 chips. */
+.pn-sd {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 8px 8px 30px;
+  padding: 8px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm, 6px);
+  background: var(--pn-card);
+  cursor: default;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+}
+.pn-sd__status { display: flex; flex-direction: column; gap: 2px; padding-left: 8px; border-left: 3px solid var(--pn-ink-4); }
+.pn-sd__status--run { border-left-color: var(--pn-run); }
+.pn-sd__status--wait { border-left-color: var(--pn-wait); }
+.pn-sd__status--block { border-left-color: var(--pn-block); }
+.pn-sd__status--idle { border-left-color: var(--pn-idle); }
+.pn-sd__status--done { border-left-color: var(--pn-info); }
+.pn-sd__status--done[data-session-case='completed'] { border-left-color: var(--pn-run); }
+.pn-sd__statusword { font-weight: 600; color: var(--pn-ink); }
+.pn-sd__reason { color: var(--pn-ink-3); line-height: 1.35; }
+.pn-sd__facts { display: grid; grid-template-columns: max-content minmax(120px, 1fr); column-gap: 12px; row-gap: 4px; margin: 0; }
+.pn-sd__fact { display: contents; }
+.pn-sd__fact > dt { color: var(--pn-ink-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; line-height: 18px; }
+.pn-sd__fact > dd { margin: 0; min-width: 0; line-height: 18px; overflow-wrap: anywhere; }
+.pn-sd__model { font-family: var(--pn-mono); color: var(--pn-ink); }
+.pn-sd__mono { font-family: var(--pn-mono); }
+.pn-sd__muted { color: var(--pn-ink-3); }
+.pn-sd__tasks { display: flex; flex-direction: column; gap: 2px; }
+.pn-sd__task { display: flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+button.pn-sd__task { cursor: pointer; }
+button.pn-sd__task:hover .pn-sd__tasktitle { text-decoration: underline; }
+.pn-sd__taskstatus { flex: none; font-size: 10px; padding: 0 5px; border-radius: 8px; background: var(--pn-idle-soft); color: var(--pn-ink-2); }
+.pn-sd__taskstatus--working, .pn-sd__taskstatus--in_progress { background: var(--pn-run-soft); color: var(--pn-run); }
+.pn-sd__taskstatus--blocked { background: var(--pn-block-soft); color: var(--pn-block); }
+.pn-sd__taskstatus--in_review { background: var(--pn-info-soft); color: var(--pn-info); }
+.pn-sd__taskstatus--done, .pn-sd__taskstatus--completed { background: var(--pn-run-soft); color: var(--pn-run); }
+.pn-sd__tasktitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-sd__id { padding: 0; border: 0; background: none; color: var(--pn-ink-2); font: inherit; font-family: var(--pn-mono); font-size: 10.5px; cursor: pointer; text-align: left; }
+.pn-sd__controls { padding-top: 6px; border-top: 1px solid var(--pn-line); }

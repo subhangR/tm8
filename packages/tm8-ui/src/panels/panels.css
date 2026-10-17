@@ -4743,12 +4743,6 @@
 /* Nested inside a tile that already drew the hairline and the fill, the strip
    is a continuation rather than a second card. */
 .cv2-root .pn-tt__meta .lp__rowdetail,
-.cv2-root .pn-st__tasklines + .lp__rowdetail {
-  padding-left: 0;
-  padding-right: 0;
-  background: none;
-}
-
 .cv2-root .lp__rowdetail-line {
   display: flex;
   align-items: center;
@@ -6012,6 +6006,17 @@
   border: 2px solid currentColor;
   box-sizing: border-box;
 }
+/* THE SESSION SIGNAL'S COLOUR IS ITS STATE (Subhang, 2026-10-17: "the status
+   reflects on the colour icon"). The shape (dot · ring · glyph) says live,
+   waiting or ended; the tone picks the colour, so Working, Idle, Ready and
+   Finished-but-open no longer share one green dot. */
+.cv2-root .lp__signal--tone-idle { color: var(--pn-idle); }
+.cv2-root .lp__signal--waiting.lp__signal--tone-done { color: var(--pn-info); }
+.cv2-root .lp__signal--outcome { font-size: 11px; font-weight: 700; }
+.cv2-root .lp__signal--outcome.lp__signal--tone-done { color: var(--pn-run); }
+.cv2-root .lp__signal--outcome[data-session-case='finished_open'] { color: var(--pn-info); }
+.cv2-root .lp__signal--outcome.lp__signal--tone-block { color: var(--pn-block); }
+.cv2-root .lp__signal--outcome.lp__signal--tone-idle { color: var(--pn-idle); }
 .cv2-root .lp__signal--done { color: var(--pn-run); }
 .cv2-root .lp__signal--failed { color: var(--pn-block); }
 .cv2-root .lp__signal--busy { color: var(--pn-run); }
