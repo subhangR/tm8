@@ -23,9 +23,9 @@ import { RibbonMark, ribbonPhase, useRibbonClock, type RibbonMotion } from './Ri
  * than a generic arc. See `RibbonMark` for the port and for what it costs.
  *
  * It wears the `eclipse` finish (black and white, split by a travelling
- * terminator, each half swinging to the opposite pole over the loop), and the
- * letters swing with it: black → white → black on light, the exact reverse on
- * dark, reaching the far pole at the turnaround. They ride the ribbon's own clock rather than a CSS animation of
+ * terminator, each half swinging halfway to the opposite pole over the loop),
+ * and the letters swing with it: black → mid-grey → black on light, the exact
+ * reverse on dark, reaching the halfway point at the turnaround. They ride the ribbon's own clock rather than a CSS animation of
  * the same length, because a CSS clock starts when the element mounts and the
  * ribbon's starts when the first mark subscribes — two clocks that would drift
  * apart by however long boot took to paint. The phase is written straight to

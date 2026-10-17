@@ -298,13 +298,15 @@
      drifts right of the letters it belongs to. */
   margin-right: -0.04em;
   /* Moon phase: BootLoader writes --kit-boot-phase (0 at rest, 1 at the
-     turnaround) from the ribbon's clock, and the letters swing pole to pole
-     with the band — black → white on light, white → black on dark, because
-     the theme swaps the two tokens. Rest is the pole that contrasts with the
-     paper, so a still frame (reduced motion, first paint) always reads. */
+     turnaround) from the ribbon's clock, and the letters swing with the band
+     — black toward white on light, white toward black on dark, because the
+     theme swaps the two tokens. HALFWAY only (50%, RibbonMark's POLE_SWING):
+     a full swing reached the paper's own colour and the letters vanished.
+     Rest is the pole that contrasts with the paper, so a still frame (reduced
+     motion, first paint) always reads. */
   color: color-mix(
     in srgb,
-    var(--pn-x-mark-turn) calc(var(--kit-boot-phase, 0) * 100%),
+    var(--pn-x-mark-turn) calc(var(--kit-boot-phase, 0) * 50%),
     var(--pn-x-mark-rest)
   );
 }

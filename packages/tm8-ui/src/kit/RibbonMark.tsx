@@ -171,10 +171,11 @@ const smoothstep = (e0: number, e1: number, x: number) => {
      terminator that travels the length of the ribbon once per loop. Being a
      Möbius band it has one side, so the terminator never has a back to hide
      on — every stretch of band flips pole as it passes.
-   - MOON PHASE. The halves also swing: each one travels all the way to the
-     opposite pole, arriving exactly at the turnaround where the spin hands
-     over to the rewind, and swings back by the seam, so the loop stays
-     seamless. A full swing, black to white — never a fade to grey.
+   - MOON PHASE. The halves also swing: each one travels HALFWAY to the
+     opposite pole (`POLE_SWING`), arriving exactly at the turnaround where
+     the spin hands over to the rewind, and swings back by the seam, so the
+     loop stays seamless. Half, not all the way: a full swing took each half
+     (and the letters) to the paper's own colour, where they vanished.
    - A thin silver seam runs along the terminator, so the hand-over reads as a
      line of light rather than a smear.
 
@@ -207,8 +208,11 @@ function lightPole(c: V3, k: number): V3 {
   return mixV(c, [l, l, l], LIGHT_SHARE);
 }
 
+/** How far toward the opposite pole a half travels at the turnaround. */
+export const POLE_SWING = 0.5;
+
 function eclipseFill(rest: V3, turn: V3, k: number, u: number, T: number, total: number): V3 {
-  const ph = ribbonPhase(T, total);
+  const ph = POLE_SWING * ribbonPhase(T, total);
   const toneA = mixV(rest, turn, ph);
   const toneB = mixV(turn, rest, ph);
   // Signed distance to the terminator, which advances one band-length per loop.
