@@ -53,7 +53,6 @@ import {
   type SessionClaim,
   toRowFacts,
   VIEWER_ACTOR,
-  allKinds,
   collectionKinds,
   countLabel,
   getKind,
@@ -185,23 +184,12 @@ function seedFilters(config: KindConfig, seed: unknown): ListFilterState | null 
   return { selected, selectedPeople, sortKey, lensId };
 }
 
-/**
- * The live-session kind for the tile's LEADING relation chip, selected by
- * CAPABILITY (the one kind with a `liveTreatment`), never by name — the same
- * §15.2 rule WorkspaceView uses for its empty-centre roster.
- */
-const SESSION_CHIP_KIND = allKinds().find((kind) => kind.list.liveTreatment != null)?.kind;
-
-/**
- * A relation chip may expand only into a real collection kind — registry
- * DATA, so the message tallies (whose `human-message` / `agent-message`
- * badge kinds resolve to no collection) stay counts, exactly the v1 ruling.
- */
-const EXPANDABLE_KINDS: ReadonlySet<string> = new Set(
-  collectionKinds().map((config) => config.kind),
-);
-const isExpandableKind = (kind: string): boolean => EXPANDABLE_KINDS.has(kind);
-const NO_LINKED: readonly EntitySummary[] = Object.freeze([]);
+/* GONE WITH THE RELATION ACCORDION (task 01a1469f): `SESSION_CHIP_KIND` named
+   the kind the leading sessions chip opened, and `EXPANDABLE_KINDS` /
+   `isExpandableKind` decided which count badges were doors into an inline
+   group. No tile expands anything inline any more — a count opens its group in
+   the detail panel (§6) — so all three are deleted rather than left as
+   plausible-looking helpers nobody calls. */
 /* The `⋯` half of `FilterRow` renders no People and no lens; frozen empties
    keep its props stable across renders rather than new arrays every time. */
 const NO_PEOPLE: readonly ActorSummary[] = Object.freeze([]);
@@ -292,14 +280,18 @@ export interface EntityListPanelProps {
   /** Real `working_on` targets for session tiles, projected by the shell. */
   linkedTasksOf?: (id: string) => readonly EntitySummary[];
   /**
-   * The inverse projection: `working_on` SOURCES per target, from the same
-   * gate-graph edges. This is what lets a task tile carry its sessions chip
-   * BEFORE anyone hydrates the row's connections — the workspace already
-   * holds these edges, so the count is free and live (user ruling
-   * 2026-08-16: sessions ride the tile, leading position).
+   * STILL DECLARED, NO LONGER READ BY A TILE (task 01a1469f). Both fed chips
+   * §6 cut: `linkedSessionsOf` the leading sessions chip, `linkedPullRequestsOf`
+   * the PR chips. They stay on the props because four hosts pass them
+   * (`WorkspaceView`, `Browser`, `EntityView`, `ChannelView`) and
+   * `linkedPullRequestsOf` is live data the DETAIL panel still renders —
+   * removing them here would be a four-file change that buys nothing and
+   * would have to be undone the day a row wants either fact again.
+   *
+   * Named as unread rather than left looking wired: a prop a reader assumes
+   * drives something is worse than one that says it does not.
    */
   linkedSessionsOf?: (id: string) => readonly EntitySummary[];
-  /** Tracked PR facts from the graph/entity projection, live by entity id. */
   linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
 
   /**
