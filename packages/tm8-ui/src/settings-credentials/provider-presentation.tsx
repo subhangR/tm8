@@ -3,12 +3,16 @@
  * person can recognise. Keep every provider-specific presentation fact here:
  * callers look up an entry and never branch on an id themselves.
  *
- * The marks are deliberately restrained geometry rather than copies of vendor
- * logos. Every stroke/fill follows `currentColor`, so the same inline SVG works
- * in both themes without an image asset or an icon-library dependency.
+ * Claude Code and Codex are AGENT TOOLS as well as credential providers, so
+ * their marks are drawn by the shared `kit/AgentToolIcon` (the real logos) — the same
+ * drawing the Sessions list and launch surfaces use. The remaining marks are
+ * restrained geometry. Every stroke/fill follows `currentColor`, so the same
+ * inline SVG works in both themes without an image asset or an icon-library
+ * dependency.
  */
 import type { ComponentType, SVGProps } from 'react';
 import type { CredentialProviderName } from '@tm8/contract';
+import { AgentToolIcon } from '../kit/AgentToolIcon';
 
 type ProviderMark = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -42,32 +46,13 @@ const markProps = {
   focusable: 'false',
 } as const;
 
-function ClaudeCodeMark(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} {...markProps}>
-      <path
-        d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <circle cx="12" cy="12" r="2.15" fill="currentColor" />
-    </svg>
-  );
+// The two agent tools draw through the shared AgentToolIcon, at the card's size.
+function ClaudeCodeMark() {
+  return <AgentToolIcon tool="claude-code" size={22} />;
 }
 
-function CodexMark(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} {...markProps}>
-      <path
-        d="m12 3 7.5 4.35v8.65L12 20.4 4.5 16V7.35L12 3Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path d="m9 9-3 3 3 3M15 9l3 3-3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+function CodexMark() {
+  return <AgentToolIcon tool="codex" size={22} />;
 }
 
 function GitHubMark(props: SVGProps<SVGSVGElement>) {

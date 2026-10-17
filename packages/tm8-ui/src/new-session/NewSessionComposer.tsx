@@ -21,7 +21,7 @@ import {
   type LaunchTeammate,
   type WorkdirMode,
 } from '../domain/launch';
-import { Avatar } from '../kit';
+import { AgentToolIcon, Avatar } from '../kit';
 import { useDismissable } from '../panels/useDismissable';
 import { TITLE_MAX } from './prompt-title';
 import { LAUNCH_KEYS } from '../keyboard';
@@ -845,7 +845,7 @@ export function NewSessionComposer({
               aria-label={`Model: ${modelLabel}`}
               onClick={stopThen(() => toggle('model'))}
             >
-              <span className="nsx-tool__glyph" aria-hidden="true">✳</span>
+              <span className="nsx-tool__glyph" aria-hidden="true"><AgentToolIcon tool={teammate?.agentTool ?? null} size={14} /></span>
               <span>{modelLabel}</span>
             </button>
             {open === 'model' ? (

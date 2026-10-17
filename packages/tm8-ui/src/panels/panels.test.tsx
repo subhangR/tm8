@@ -562,7 +562,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // The tool did not move out of the slot, it moved INTO the corner: two
     // sessions on the same tool are now told apart by whose face is on them.
     expect(slot?.getAttribute('data-teammate-id')).toBe('tm_fable');
-    expect(slot?.querySelector('.pn-agent__tool')?.textContent).toBe('✦');
+    // Codex is drawn as its real mark (an SVG), not the ✦ glyph it used to be.
+    expect(slot?.querySelector('.pn-agent__tool svg[data-tool-kind="codex"]')).not.toBeNull();
     expect(slot?.querySelector('.kit-avatar')?.getAttribute('aria-label')).toBe('Fable · codex');
     // No children on this row, so the third corner stays EMPTY rather than
     // printing a zero — having no sub-sessions is not a count of them.
@@ -612,7 +613,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const slot = container.querySelector('[data-agent-kind]');
     expect(slot?.querySelector('.kit-avatar')).toBeNull();
-    expect(slot?.querySelector('.pn-agent__mark')?.textContent).toBe('✳');
+    expect(slot?.querySelector('.pn-agent__mark svg[data-tool-kind="claude"]')).not.toBeNull();
     expect(slot?.getAttribute('aria-label')).toBe('claude-code');
   });
 
@@ -873,7 +874,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
     const tile = getByTestId('list-tile');
-    expect(tile.querySelector('[data-agent-kind="codex"] .pn-agent__mark')?.textContent).toBe('✦');
+    expect(tile.querySelector('[data-agent-kind="codex"] .pn-agent__mark svg[data-tool-kind="codex"]')).not.toBeNull();
     expect(tile.querySelector('img')).toBeNull();
     /* THE MODEL NAME IS CUT FROM THE ROW (task 01a1469f, design doc 01a1465d
        §6: "removed from tiles: model"). The glyph above it stays — the agent

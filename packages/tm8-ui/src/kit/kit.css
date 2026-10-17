@@ -530,3 +530,9 @@
     animation: none;
   }
 }
+
+/* AgentToolIcon — the one drawing of an agent tool. The logos fill with
+   currentColor; Claude takes its own orange, Codex inherits the ink around
+   it. Glyph fallbacks (gemini, hermes, terminal, unknown) size from the font. */
+.kit-tool { flex: 0 0 auto; display: inline-block; vertical-align: middle; line-height: 1; }
+svg.kit-tool--claude { color: var(--pn-x-claude, var(--pn-brand)); }

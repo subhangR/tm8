@@ -3340,7 +3340,10 @@
 .cv2-root .pn-agent { width: 17px; height: 17px; flex: 0 0 auto; display: grid; place-items: center; background: transparent; border: 0; cursor: pointer; }
 .cv2-root .pn-agent__mark { color: var(--pn-ink-4); font-size: 14px; line-height: 1; opacity: 0.72; transition: color var(--pn-dur-base), opacity var(--pn-dur-base), transform var(--pn-dur-base); }
 .cv2-root .pn-agent[data-agent-kind='claude'] .pn-agent__mark { color: var(--pn-brand); }
-.cv2-root .pn-agent[data-agent-kind='codex'] .pn-agent__mark { color: white; filter: drop-shadow(0 0 1px var(--pn-ink-3)); }
+.cv2-root .pn-agent[data-agent-kind='codex'] .pn-agent__mark { color: var(--pn-ink); }
+/* The marks are AgentToolIcon's: the logos are SVG and need the slot's box
+   to centre, the glyph fallbacks keep the font size above. */
+.cv2-root .pn-agent__mark { display: inline-grid; place-items: center; }
 .cv2-root .pn-agent--live .pn-agent__mark { opacity: 1; }
 .cv2-root .pn-agent--streaming .pn-agent__mark { animation: pn-agent-glitter 1.65s ease-in-out infinite; }
 @keyframes pn-agent-glitter {
@@ -3364,6 +3367,7 @@
      colour rule per tool. */
   text-shadow: 0 0 2px var(--pn-card), 0 0 2px var(--pn-card), 0 0 2px var(--pn-card);
 }
+.cv2-root .pn-agent__tool svg { filter: drop-shadow(0 0 1px var(--pn-card)) drop-shadow(0 0 1px var(--pn-card)); }
 /* `.lp__kids` is the SAME pill on every other tree anatomy (`ChildCountBadge`):
    the task tile's status dot and the standard tile's status/kind mark. One rule,
    so a parent row reads the same whatever its kind. Both slots are 16-17px and

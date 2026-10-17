@@ -46,6 +46,10 @@
      fresh literal. (T0-2 spec AMBIGUITY 2: the two values may be drift rather
      than intent — resolving that is an integration-time question, and keeping
      both named is what makes it answerable.) */
+  /* The Claude spark's own orange (kit/AgentToolIcon.tsx). A vendor's brand
+     colour, not a palette step, so it re-themes by not re-theming: the
+     mark is Claude's in both themes. */
+  --pn-x-claude: #D97757;
   --pn-x-term-bg: #0D0B08;
   --pn-x-term-live-bg: #131009;
 

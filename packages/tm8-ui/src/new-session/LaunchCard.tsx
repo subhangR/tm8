@@ -26,7 +26,7 @@ import {
   type LaunchTeammate,
   type WorkdirMode,
 } from '../domain/launch';
-import { Avatar } from '../kit';
+import { AgentToolIcon, Avatar } from '../kit';
 import type { ComposerWorkdir } from './NewSessionComposer';
 import './launch-card.css';
 
@@ -891,7 +891,7 @@ export function LaunchCardShell(props: LaunchCardShellProps & {
             title={[modelName, toolWord].filter(Boolean).join(' · ')}
             onClick={stop(() => toggle('model'))}
           >
-            <span className="lcd-glyph" aria-hidden="true">✳</span>
+            <span className="lcd-glyph" aria-hidden="true"><AgentToolIcon tool={current?.agentTool ?? null} size={14} /></span>
             <b>{vendor ? <span className="lcd-vendor">{vendor}</span> : null}{modelName.slice(vendor.length)}</b>
             {toolWord ? <span className="lcd-meta">{toolWord}</span> : null}
             {jevModel && !jevModel.current ? <span className="lcd3-jevmark" title="Jev suggests a model — in this menu">✦</span> : null}

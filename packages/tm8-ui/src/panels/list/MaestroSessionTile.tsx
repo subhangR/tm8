@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { useMobileSurface } from '../../mobile/surface';
 import { RowLead, leadTooltip } from './RowLead';
 import { Avatar } from '../../kit/Avatar';
+import { AgentToolIcon, agentToolKind } from '../../kit/AgentToolIcon';
 import { copyToClipboard } from '../../terminal/domUtils';
 import { useFreshGlow } from '../../domain/useFreshGlow';
 import type { SessionIcon, SessionWord } from '../../domain';
@@ -388,21 +389,10 @@ export function MaestroSessionTile({
  * centred exactly as before and only the count rides the corner.
  */
 function AgentTile({ tool, shell, teammate, childCount, live, streaming, title, processDot = null }: { tool: string | null; shell?: boolean; teammate: ActorSummary | null; childCount: number; live: boolean; streaming: boolean; title: string; processDot?: SessionWord['dot'] }) {
-  // A vanilla terminal is not an agent whose tool we failed to record, and the
-  // fallback below would have called it one — `(tool || 'agent')`, glyph and
-  // aria-label alike. It gets its own mark instead.
-  const normalized = shell ? 'shell' : tool === 'claude-code' ? 'claude' : (tool || 'agent').toLowerCase();
-  const label = normalized === 'shell'
-    ? '▮'
-    : normalized === 'claude'
-    ? '✳'
-    : normalized === 'codex'
-      ? '✦'
-      : normalized === 'gemini'
-        ? '✧'
-        : normalized === 'hermes'
-          ? '✣'
-          : '✦';
+  // A vanilla terminal is not an agent whose tool we failed to record, and a
+  // `(tool || 'agent')` fallback would have called it one, mark and aria-label
+  // alike. It gets its own mark instead.
+  const normalized = agentToolKind(tool, { shell });
   const toolName = shell ? 'terminal' : tool || 'agent';
   // A shell has no persona by construction; guarding on it as well as on
   // `teammate` keeps a stray edge from dressing a terminal as an agent.
@@ -440,7 +430,9 @@ function AgentTile({ tool, shell, teammate, childCount, live, streaming, title, 
       ) : null}
       {/* Keeps `pn-agent__mark` in both shapes so the per-tool colour, live
           and streaming rules stay one set of selectors. */}
-      <span className={`pn-agent__mark${persona ? ' pn-agent__tool' : ''}`} aria-hidden>{label}</span>
+      <span className={`pn-agent__mark${persona ? ' pn-agent__tool' : ''}`} aria-hidden>
+        <AgentToolIcon tool={tool} shell={shell} size={persona ? 9 : 13} />
+      </span>
       {childCount > 0 ? (
         <span className="pn-agent__kids" aria-hidden>{childCount}</span>
       ) : null}
