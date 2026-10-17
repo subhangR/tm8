@@ -268,10 +268,14 @@ function StripMenu({
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Keep the menu on screen.
+    // Keep the menu on screen. `at` and the rect are VIEWPORT pixels, but a
+    // fixed box inside the shell's `zoom` (the display-scale setting) has its
+    // left/top multiplied by that zoom — so the clamped point is divided back
+    // by it, or at 110% the menu lands 10% further right and runs off-screen.
     const r = el.getBoundingClientRect();
-    const x = Math.max(8, Math.min(at.x, window.innerWidth - r.width - 8));
-    const y = Math.max(8, Math.min(at.y, window.innerHeight - r.height - 8));
+    const zoom = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
+    const x = Math.max(8, Math.min(at.x, window.innerWidth - r.width - 8)) / zoom;
+    const y = Math.max(8, Math.min(at.y, window.innerHeight - r.height - 8)) / zoom;
     setPos({ x, y });
     el.querySelector<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])')?.focus();
   }, [at]);
