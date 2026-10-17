@@ -288,6 +288,11 @@
 .tws-rail-top::-webkit-scrollbar {
   display: none;
 }
+/* The pinned-only rail's folded rest (`tm8.ui.navigator = 'rail'`): a wrapper
+   for the fold alone, so its rules and groups keep the top's own 12px gaps. */
+.tws-rail-rest {
+  display: contents;
+}
 .tws-rail-group,
 .tws-rail-bottom {
   display: flex;

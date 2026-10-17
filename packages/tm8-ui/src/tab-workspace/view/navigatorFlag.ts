@@ -52,6 +52,24 @@ export function isNavigatorEnabled(): boolean {
 }
 
 /**
+ * THE PINNED-ONLY RAIL — `tm8.ui.navigator = 'rail'` (Subhang, 2026-10-17).
+ * The other arrangement of the same left side: the icon rail stays as its own
+ * column beside the list, but draws ONLY the pinned kinds; every other kind
+ * and source folds behind one "More kinds" row. `isNavigatorEnabled()` reads
+ * false for it, so the grid, the browser's ＋ New and every other surface are
+ * the two-column shell exactly as it ships with the flag off.
+ */
+export function resolvePinnedRailEnabled(env: NavigatorEnv, storedFlag: string | null): boolean {
+  const envFlag = env.VITE_TM8_UI_NAVIGATOR;
+  if (envFlag != null && envFlag !== '') return envFlag === 'rail';
+  return storedFlag === 'rail';
+}
+
+export function isPinnedRailEnabled(): boolean {
+  return resolvePinnedRailEnabled(import.meta.env as unknown as NavigatorEnv, readStoredFlag());
+}
+
+/**
  * WIDTH BOUNDS FOR THE COLUMN THAT IS ACTUALLY ON SCREEN.
  *
  * `LAYOUT_BOUNDS.browserWidth` in the contract widened to {240, 480, 300} —

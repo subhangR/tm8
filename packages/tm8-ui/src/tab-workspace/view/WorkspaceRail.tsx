@@ -29,7 +29,7 @@
  * Stories, Sessions, Chats (`useRailCounts`). Collapsed: a run-tinted corner
  * badge. Expanded: the number right-aligned in the row.
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { homeRootKinds, type KindConfig } from '../../domain';
 import { VectorIcon } from '../../kit/VectorIcon';
@@ -40,6 +40,7 @@ import { isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts
 import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART } from './railArt';
 import { RailAttention, RailUser } from './RailStatus';
 import { useCustomKindsVersion } from '../../data/custom-kinds';
+import { isPinnedRailEnabled } from './navigatorFlag';
 /* MOVED, NOT FORKED (`railParts.tsx`): the merged navigator draws the same
    kind rows, the same hold, the same tooltips and the same ⌘\ listener. */
 import {
@@ -53,6 +54,19 @@ import {
 } from './railParts';
 export { HOLD_MS, useHold } from './railParts';
 
+/** The More kinds ⋯ — three dots on `VectorIcon`'s 16×16 grid (as Navigator's). */
+const MORE_ART = ['M4 8h.01', 'M8 8h.01', 'M12 8h.01'];
+/** Whether the pinned-only rail's More kinds fold is open. Remembered, per device. */
+const RAIL_MORE_OPEN_KEY = 'tm8.workspace.rail-more-open';
+
+function readMoreOpen(): boolean {
+  try {
+    return window.localStorage.getItem(RAIL_MORE_OPEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function WorkspaceRail() {
   const customKinds = useCustomKindsVersion();
   const { spaceId, currentKind: browserKind, currentSource, selectSource, gate } = useShellFrame();
@@ -63,10 +77,23 @@ export function WorkspaceRail() {
   const [announcement, setAnnouncement] = useState('');
   const counts: RailCounts = useRailCounts();
   const topRef = useRef<HTMLDivElement>(null);
+  /* PINNED ONLY (`tm8.ui.navigator = 'rail'`): the rail draws the pins, and
+     every other kind and source waits behind one More kinds row, folded by
+     default. Read once per mount, as the navigator flag is. */
+  const pinnedOnly = useMemo(() => isPinnedRailEnabled(), []);
+  const [moreOpen, setMoreOpen] = useState(readMoreOpen);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RAIL_MORE_OPEN_KEY, moreOpen ? '1' : '0');
+    } catch {
+      // No storage ⇒ the fold lasts as long as the page.
+    }
+  }, [moreOpen]);
+  const showRest = !pinnedOnly || moreOpen;
 
   const pinned = useMemo(() => workspacePinnedKinds(pins), [pins, customKinds]);
   const railRef = useRef<HTMLElement>(null);
-  const more = useScrollHints(topRef, pinned.length > 0);
+  const more = useScrollHints(topRef, `${pinned.length}:${showRest}`);
   /* EVERY KIND (Subhang, 2026-10-10): the whole Home population, no Work
      filter. A pinned kind MOVES to Pinned and leaves the list; an unpinned
      one comes back at the TOP of the list, most recent first (2026-10-07). */
@@ -119,25 +146,50 @@ export function WorkspaceRail() {
             <div className="tws-rail-group" role="group" aria-label="Pinned" data-testid="tws-rail-pinned">
               {pinned.map((config) => kindButton(config, 'pinned'))}
             </div>
-            <hr className="tws-rail-rule" />
+            {pinnedOnly ? null : <hr className="tws-rail-rule" />}
           </>
         ) : null}
-        <div className="tws-rail-group" role="group" aria-label="Kinds" data-testid="tws-rail-kinds">
-          {kinds.map((config) => kindButton(config, 'list'))}
-        </div>
-        {/* Non-entity browser sources (Project files), from their registry. */}
-        <hr className="tws-rail-rule" />
-        <div className="tws-rail-group" role="group" aria-label="Sources" data-testid="tws-rail-sources">
-          {browserSources().map((source) => (
-            <SourceButton
-              key={source.id}
-              source={source}
-              current={source.id === currentSource}
-              expanded={expanded}
-              onSelect={selectSource}
-            />
-          ))}
-        </div>
+        {pinnedOnly ? (
+          <div className="tws-rail-group" role="group" aria-label="More" data-testid="tws-rail-more">
+            <RailTip label={expanded ? null : moreOpen ? 'Fewer kinds' : 'More kinds'}>
+              <button
+                type="button"
+                className="tws-rail-btn tws-rail-kind"
+                aria-expanded={moreOpen}
+                aria-controls="tws-rail-rest"
+                aria-label={moreOpen ? 'Fewer kinds' : 'More kinds'}
+                data-testid="tws-rail-more-toggle"
+                onClick={() => setMoreOpen((open) => !open)}
+              >
+                <span className="tws-rail-icon">
+                  <VectorIcon paths={MORE_ART} size={16} strokeWidth={2} />
+                </span>
+                {expanded ? <span className="tws-rail-label">{moreOpen ? 'Fewer kinds' : 'More kinds'}</span> : null}
+              </button>
+            </RailTip>
+          </div>
+        ) : null}
+        {showRest ? (
+          <div id="tws-rail-rest" className="tws-rail-rest">
+            {pinnedOnly ? <hr className="tws-rail-rule" /> : null}
+            <div className="tws-rail-group" role="group" aria-label="Kinds" data-testid="tws-rail-kinds">
+              {kinds.map((config) => kindButton(config, 'list'))}
+            </div>
+            {/* Non-entity browser sources (Project files), from their registry. */}
+            <hr className="tws-rail-rule" />
+            <div className="tws-rail-group" role="group" aria-label="Sources" data-testid="tws-rail-sources">
+              {browserSources().map((source) => (
+                <SourceButton
+                  key={source.id}
+                  source={source}
+                  current={source.id === currentSource}
+                  expanded={expanded}
+                  onSelect={selectSource}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
       <hr className="tws-rail-rule" />
       {/* THE THREE (Subhang, 2026-10-07): Needs you, you, expand. The avatar
