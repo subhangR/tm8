@@ -47,6 +47,7 @@ import { isPinnedRailEnabled } from '../tab-workspace/view/navigatorFlag';
 import { CraftSidePanel } from './CraftSidePanel';
 import { GraphPage, type ToolNote } from './GraphPage';
 import { CraftOverview } from './CraftOverview';
+import { CraftNameField } from './CraftNameField';
 import { CraftTabStrip } from './CraftTabStrip';
 import { CraftPageTabs } from './CraftPageTabs';
 import { craftWorkspacesPortOf, useCraftWorkspace } from './useCraftWorkspace';
@@ -456,7 +457,7 @@ export function CraftScreen(props: CraftScreenProps) {
           ) : null
         ) : createPortal(
           <div className="dsn-frame-top" data-testid="dsn-head">
-            <span className="dsn-frame-top__title">{title || 'Untitled craft'}</span>
+            <CraftTitle className="dsn-frame-top__title" title={title} canRename={handle.state === 'ready'} onRename={handle.rename} />
           </div>,
           frameTop,
         )
@@ -468,7 +469,7 @@ export function CraftScreen(props: CraftScreenProps) {
         <span className="crf-head__sep" aria-hidden>·</span>
         {/* Switching crafts is the top bar's job now (CraftHeaderSwitcher). */}
         <h1 className="dsn-title" data-testid="dsn-title">
-          {title}
+          <CraftTitle title={title} canRename={handle.state === 'ready'} onRename={handle.rename} />
         </h1>
         <span className="crf-head__fill" />
       </header>}
@@ -600,6 +601,39 @@ function GraphChrome({ page, runtime, onOpenEntity }: { page: CraftPageRow; runt
     <div hidden className="dsn-graph-chrome" data-testid="dsn-graph-chrome">
       <EntityTabBody tab={tab} adapter={getKindAdapter(page.kind)} onOpenEntity={(id) => onOpenEntity(id as EntityId)} onClose={noop} />
     </div>
+  );
+}
+
+/** The craft's name in its own header: press it to rename (Subhang 2026-10-18). */
+function CraftTitle({ title, canRename, onRename, className }: { title: string; canRename: boolean; onRename(title: string): Promise<boolean>; className?: string }) {
+  const [renaming, setRenaming] = useState(false);
+  const shown = title || 'Untitled craft';
+  if (renaming) {
+    return (
+      <CraftNameField
+        initial={shown}
+        label="Rename craft"
+        className="dsn-title__rename"
+        testId="dsn-title-rename"
+        onCommit={(name) => {
+          setRenaming(false);
+          void onRename(name);
+        }}
+        onCancel={() => setRenaming(false)}
+      />
+    );
+  }
+  if (!canRename) return <span className={className}>{title}</span>;
+  return (
+    <button
+      type="button"
+      className={className ? `dsn-title__btn ${className}` : 'dsn-title__btn'}
+      title="Rename craft"
+      data-testid="dsn-title-btn"
+      onClick={() => setRenaming(true)}
+    >
+      {shown}
+    </button>
   );
 }
 

@@ -7,10 +7,11 @@ export type { BlueprintCard, BlueprintLine, BlueprintView, RefTitles } from './b
 export { BlueprintCanvas } from './BlueprintCanvas';
 export { CraftsHome } from './CraftsHome';
 export type { CraftsHomeProps } from './CraftsHome';
-export { CraftsHomePanel } from './CraftsHomePanel';
 export { craftsSourceFromSeam, fixtureCraftsSource } from './crafts-source';
 export type { CraftCard, CraftsSource, FixtureCraft } from './crafts-source';
 export { CraftHeaderSwitcher } from './CraftHeaderSwitcher';
 export type { CraftHeaderSwitcherProps } from './CraftHeaderSwitcher';
 export { craftTabsKey, clearCraftOpenTabs, localOpenCraftsPort, serverOpenCraftsPort } from './craft-open-tabs';
 export type { OpenCraftsPort } from './craft-open-tabs';
+export { lastCraftKey, readLastCraft, writeLastCraft } from './last-craft';
+export type { LastCraft } from './last-craft';

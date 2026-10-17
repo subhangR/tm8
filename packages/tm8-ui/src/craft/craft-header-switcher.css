@@ -136,3 +136,9 @@
 .tws-root .tws-mode-switcher-slot .crf-hsw--solo .shell-switcher__trigger--quiet {
   max-width: 240px;
 }
+
+/* The name, being renamed in place of the trigger. */
+.crf-hsw__rename {
+  flex: 0 1 220px;
+  height: 26px;
+}

@@ -10,9 +10,14 @@
  * craft (from here, from a card, from a link) adds a tab; × closes it. Closing
  * never deletes a craft; crafts stay shared in the space, the tab row is the
  * viewer's own (`craft-open-tabs.ts` says where it is kept).
+ *
+ * RENAME (Subhang 2026-10-18): on a craft, the menu's last row is "Rename
+ * craft", and double-clicking the name does the same — the name becomes a
+ * field in place.
  */
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { EntityId } from '@tm8/contract';
+import { CraftNameField } from './CraftNameField';
 import type { CraftCard, CraftsSource } from './crafts-source';
 import { neighbourAfterClose, useOpenCraftTabs, type OpenCraftsPort } from './craft-open-tabs';
 import './craft-header-switcher.css';
@@ -31,15 +36,17 @@ export interface CraftHeaderSwitcherProps {
    * the band's tabs are the craft's PAGES and Home is the dropdown's first row.
    */
   openTabs?: boolean | undefined;
+  onNotice?: ((text: string) => void) | undefined;
 }
 
 const HOME_LABEL = 'Home';
 const UNTITLED = 'Untitled craft';
 
-export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpenHome, onOpenCraft, openTabs = true }: CraftHeaderSwitcherProps) {
+export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpenHome, onOpenCraft, openTabs = true, onNotice }: CraftHeaderSwitcherProps) {
   const tabs = useOpenCraftTabs(openCrafts);
-  const cards = useCraftCards(source);
+  const [cards, setCards] = useCraftCards(source);
   const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -106,10 +113,36 @@ export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpen
   };
 
   const selectedLabel = currentCraftId ? titleOf(currentCraftId) : HOME_LABEL;
+  const currentCard = currentCraftId ? cards?.find((card) => card.id === currentCraftId) ?? null : null;
+  /* Another craft on screen ends a rename in flight. */
+  useEffect(() => setRenaming(false), [currentCraftId]);
+
+  const rename = async (card: CraftCard, name: string) => {
+    if (name === card.title) return;
+    setCards((all) => all?.map((c) => (c.id === card.id ? { ...c, title: name } : c)) ?? all);
+    try {
+      await source.rename(card.id, name, card.version);
+    } catch (error) {
+      onNotice?.(error instanceof Error ? `Could not rename the craft: ${error.message}` : 'Could not rename the craft.');
+      source.list().then((list) => setCards(list), () => undefined);
+    }
+  };
 
   return (
     <div className={openTabs ? "shell-switcher crf-hsw" : "shell-switcher crf-hsw crf-hsw--solo"} ref={rootRef} data-testid="craft-switcher">
-      <button
+      {renaming && currentCard ? (
+        <CraftNameField
+          initial={currentCard.title || UNTITLED}
+          label="Rename craft"
+          className="crf-hsw__rename"
+          testId="craft-switcher-rename"
+          onCommit={(name) => {
+            setRenaming(false);
+            void rename(currentCard, name);
+          }}
+          onCancel={() => setRenaming(false)}
+        />
+      ) : <button
         ref={triggerRef}
         type="button"
         className="shell-switcher__trigger shell-switcher__trigger--quiet crf-hsw__trigger"
@@ -119,10 +152,15 @@ export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpen
         title={`Craft: ${selectedLabel}`}
         data-testid="craft-switcher-trigger"
         onClick={() => setOpen((was) => !was)}
+        onDoubleClick={() => {
+          if (!currentCard) return;
+          setOpen(false);
+          setRenaming(true);
+        }}
       >
         <span className="shell-switcher__space">{selectedLabel}</span>
         <span className="shell-switcher__caret" aria-hidden="true">▾</span>
-      </button>
+      </button>}
 
       {open ? (
         <div className="shell-switcher__pop crf-hsw__pop" role="menu" aria-label="Switch craft" data-testid="craft-switcher-pop" onKeyDown={onListKeyDown}>
@@ -158,6 +196,25 @@ export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpen
               </button>
             ))
           )}
+          {currentCard ? (
+            <>
+              <div className="crf-hsw__sep" role="separator" />
+              <button
+                type="button"
+                role="menuitem"
+                data-craft-row=""
+                data-testid="craft-switcher-rename-item"
+                className="shell-switcher__space-row crf-hsw__row"
+                onClick={() => {
+                  setOpen(false);
+                  setRenaming(true);
+                }}
+              >
+                <span className="crf-hsw__name">Rename craft</span>
+                <span className="crf-hsw__meta">{currentCard.title || UNTITLED}</span>
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -208,7 +265,7 @@ export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpen
 }
 
 /** The space's crafts, kept current; `null` until the first read answers. */
-function useCraftCards(source: CraftsSource): readonly CraftCard[] | null {
+function useCraftCards(source: CraftsSource) {
   const [cards, setCards] = useState<readonly CraftCard[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -224,5 +281,5 @@ function useCraftCards(source: CraftsSource): readonly CraftCard[] | null {
       off();
     };
   }, [source]);
-  return cards;
+  return [cards, setCards] as const;
 }

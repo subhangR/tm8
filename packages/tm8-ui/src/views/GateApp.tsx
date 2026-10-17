@@ -78,10 +78,12 @@ import {
   CraftHeaderSwitcher,
   CraftScreen,
   CraftsHome,
-  CraftsHomePanel,
   craftSourceFromSeam,
   craftsSourceFromSeam,
   craftTabsKey,
+  lastCraftKey,
+  readLastCraft,
+  writeLastCraft,
   localOpenCraftsPort,
   serverOpenCraftsPort,
   type CraftTarget,
@@ -1690,7 +1692,7 @@ export function GateApp(props: GateAppProps = {}) {
     }
     if (command === 'work.craft.toggle') {
       if (navView.view === 'craft') navStore.getState().navigate(WORK_VIEW);
-      else navigateTo({ type: 'view', ref: 'craft' as never });
+      else openCraftMode();
       return;
     }
     if (command.startsWith('work.') || command === 'list.create') {
@@ -2193,8 +2195,43 @@ export function GateApp(props: GateAppProps = {}) {
         : null,
     [data.menu.config, activeGroup],
   );
+  /* THE LAST CRAFT (Subhang 2026-10-18): Craft on the rail reopens the craft
+     and page you were last in, in this space, on this device. Nothing
+     remembered, or the craft is gone, lands on the full-screen Crafts home. */
+  const lastCraftStoreKey = lastCraftKey(nodeKey, data.spaceId);
+  useEffect(() => {
+    if (navView.view !== 'craft') return;
+    writeLastCraft(lastCraftStoreKey, navView.craftId ? { craftId: navView.craftId, pageId: navView.pageId } : null);
+  }, [navView, lastCraftStoreKey]);
+  const openCraftMode = useCallback(() => {
+    const last = readLastCraft(lastCraftStoreKey);
+    const home = () => navigateTo({ type: 'view', ref: 'craft' as never });
+    if (!last) return home();
+    const from = navStore.getState().view;
+    data.seam.entity(last.craftId).then(
+      () => {
+        /* A click elsewhere while the read was out wins. */
+        if (navStore.getState().view !== from) return;
+        navStore.getState().navigate({ view: 'craft', craftId: last.craftId, ...(last.pageId ? { pageId: last.pageId } : {}) });
+      },
+      (error: unknown) => {
+        if (navStore.getState().view !== from) return;
+        if ((error as { code?: unknown } | null)?.code !== 'not_found') {
+          /* Unreadable for now, not gone: the craft says so and offers Retry. */
+          navStore.getState().navigate({ view: 'craft', craftId: last.craftId });
+          return;
+        }
+        writeLastCraft(lastCraftStoreKey, null);
+        home();
+      },
+    );
+  }, [lastCraftStoreKey, data.seam, navigateTo]);
   const openTab = useCallback(
     (id: string) => {
+      if (id === 'craft') {
+        openCraftMode();
+        return;
+      }
       if (id === BOARD_V2_TAB_ID) {
         /* Route-only destination — no MenuTarget exists for it, so it cannot
            go through `navigateTo` (which would refuse a target with no
@@ -2211,7 +2248,7 @@ export function GateApp(props: GateAppProps = {}) {
       const target = group ? primaryTargetOfGroup(group) : id === SETTINGS_GROUP_ID ? { type: 'view' as const, ref: 'settings' as const } : null;
       if (target) navigateTo(target);
     },
-    [data.menu.config, navigateTo],
+    [data.menu.config, navigateTo, openCraftMode],
   );
   /* The Workspace (tabs) view's handles — stable, so its context does not
      churn its runtime wiring on every GateApp render. */
@@ -2577,6 +2614,7 @@ export function GateApp(props: GateAppProps = {}) {
       onOpenHome={() => navigateCraft({})}
       onOpenCraft={openCraft}
       openTabs={!isPinnedRailEnabled()}
+      onNotice={craftNotice}
     />
   ) : null;
   const modeSwitcherEl: ReactNode = threeModes
@@ -2689,16 +2727,11 @@ export function GateApp(props: GateAppProps = {}) {
   const craftFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
   /* THE PINNED-ONLY RAIL (task 01a14a17-34f6): Craft draws Work's shell. The
      panel is the craft's chats and sessions while a craft is open. The Crafts
-     home has a panel too, or it drew no PanelTop and read as the old shell
-     (prod, 2026-10-18): the same conversation shell with nothing selected,
-     not the crafts list again (task 01a14b46: nothing on screen twice). */
+     home is FULL-SCREEN (Subhang 2026-10-18): no second panel beside it — a
+     "Craft chats" shell with nothing selected read as half empty. The band
+     still leads with the crafts ▾ switcher. */
   const craftPinned = craftFramed && isPinnedRailEnabled();
-  const craftPanel =
-    craftFramed && navView.view === 'craft' && navView.craftId
-      ? 'host'
-      : craftPinned
-        ? <CraftsHomePanel source={craftsSource} onOpenCraft={(craftId) => navigateCraft({ craftId })} onNotice={craftNotice} />
-        : null;
+  const craftPanel = craftFramed && navView.view === 'craft' && navView.craftId ? 'host' : null;
 
   const workspaceGate: WorkspaceGateHandles = {
     data,

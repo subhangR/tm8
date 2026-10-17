@@ -343,3 +343,23 @@
   border-left: 1px solid var(--pn-line);
   background: var(--pn-surface);
 }
+
+/* The craft's name in its header: a quiet button that becomes a field. */
+.dsn-title__btn {
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  color: inherit;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+.dsn-title__btn:hover { border-color: var(--pn-line-2); }
+.dsn-title__btn:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.dsn-title__rename { width: min(320px, 50vw); height: 26px; font-weight: 600; }

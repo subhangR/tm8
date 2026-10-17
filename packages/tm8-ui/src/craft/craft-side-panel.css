@@ -80,11 +80,6 @@
 .crf-side__body[hidden] {
   display: none;
 }
-/* The Crafts home's panel: nothing selected, so the Craft mark sits centred. */
-.crf-side__body--home {
-  align-items: center;
-  justify-content: center;
-}
 .crf-side__session {
   flex: 1;
   min-height: 0;
