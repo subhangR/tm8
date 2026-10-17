@@ -43,10 +43,12 @@ export function EntitySeenProvider({ commands, refreshCounts, scope, children }:
 export const useMarkEntitySeen = () => useContext(SeenContext);
 
 /** Only list selection uses this wrapper; generic entity navigation does not. */
-export function useEntityListSelection(select: ((id: string) => void) | undefined) {
+export function useEntityListSelection(select: ((id: string, kind?: string) => void) | undefined) {
   const mark = useMarkEntitySeen();
-  const activate = useCallback((id: string) => {
-    select?.(id);
+  /* `kind` passes through: a list's nested launched row is not its kind (331). */
+  const activate = useCallback((id: string, kind?: string) => {
+    if (kind === undefined) select?.(id);
+    else select?.(id, kind);
     mark(id);
   }, [select, mark]);
   return select ? activate : undefined;

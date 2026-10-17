@@ -2233,6 +2233,11 @@ const ROWS: readonly KindConfig[] = [
       // is optional, not required.
       quickStart: 'chat-about',
       inlineEdit: { title: true },
+      /* The sessions a chat launched nest under it (Subhang 2026-10-17, "for
+         now": a chat has no sub-chats yet). Data stays as 330 left it — the
+         `launched_by` edge, no parent_id — read in `domain/launched-by.ts`. */
+      tree: { by: 'hierarchy', guideLines: true },
+      launches: 'work_session',
     }),
     panel: {
       archetype: 'conversation',

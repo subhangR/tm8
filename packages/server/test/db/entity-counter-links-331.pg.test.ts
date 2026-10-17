@@ -12,6 +12,9 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { CollectionQuery } from '@tm8/contract';
+import type { Querier } from '../../src/db/types.js';
+import { queryCollection } from '../../src/facade/handlers/collections.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
 interface Fixture {
@@ -27,6 +30,7 @@ interface Fixture {
   drawing: string;
   memory: string;
   message: string;
+  session3: string;
 }
 
 interface Counts {
@@ -35,6 +39,7 @@ interface Counts {
   prs: number;
   artifacts: number;
   drawings: number;
+  sessions: number;
 }
 
 let database: W1ScratchDatabase;
@@ -42,7 +47,7 @@ let fixture: Fixture;
 
 async function counters(entity: string): Promise<Counts> {
   const [row] = await database.query<Counts>(
-    `select docs, memories, prs, artifacts, drawings from public.entity_counters where entity_id = $1`,
+    `select docs, memories, prs, artifacts, drawings, sessions from public.entity_counters where entity_id = $1`,
     [entity],
   );
   return {
@@ -51,10 +56,11 @@ async function counters(entity: string): Promise<Counts> {
     prs: Number(row!.prs),
     artifacts: Number(row!.artifacts),
     drawings: Number(row!.drawings),
+    sessions: Number(row!.sessions),
   };
 }
 
-const zero: Counts = { docs: 0, memories: 0, prs: 0, artifacts: 0, drawings: 0 };
+const zero: Counts = { docs: 0, memories: 0, prs: 0, artifacts: 0, drawings: 0, sessions: 0 };
 
 async function asOwner<T>(fn: (client: import('pg').PoolClient) => Promise<T>): Promise<T> {
   return database.transaction(async (client) => {
@@ -63,11 +69,43 @@ async function asOwner<T>(fn: (client: import('pg').PoolClient) => Promise<T>): 
   });
 }
 
-// `authored_from` is recorder-owned (308), so the fixture writes as that
-// recorder, exactly as public.record_authored_from does.
+const IDENTITY = 'links331-member';
+
+/** `filters.launchedBy` (331): the sessions these launchers started, by fixture name. */
+async function launchedBy(...launchers: (keyof Fixture)[]): Promise<string[]> {
+  const query: CollectionQuery = {
+    spaceId: fixture.space as CollectionQuery['spaceId'],
+    filters: { launchedBy: launchers.map((name) => fixture[name]) as never },
+    limit: 50,
+  };
+  const result = await database.transaction(async (client) => {
+    await client.query('set local role tm8_app');
+    await client.query(
+      `select set_config('tm8.identity_id', $1, true), set_config('tm8.actor_id', '', true),
+              set_config('tm8.node_admin', 'false', true), set_config('tm8.auth_kind', 'browser', true),
+              set_config('tm8.request_id', 'req-links-331', true)`,
+      [IDENTITY],
+    );
+    const q: Querier = {
+      query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> =>
+        (await client.query(sql, [...params])).rows as R[],
+      rpc: async () => {
+        throw new Error('no rpc in this read');
+      },
+    };
+    return queryCollection(q, query, IDENTITY);
+  });
+  const names = new Map(Object.entries(fixture).map(([name, value]) => [value, name]));
+  return result.page.items.map((item) => names.get(item.id) ?? item.id).sort();
+}
+
+// `authored_from` is recorder-owned (308) and `launched_by` spawn-owned
+// (330), so the fixture writes as those writers, exactly as the server does.
+const WRITER: Record<string, string> = { authored_from: 'entity_recorder', launched_by: 'spawn' };
+
 async function edge(src: string, dst: string, type: string): Promise<void> {
   await asOwner(async (client) => {
-    if (type === 'authored_from') await client.query(`select internal.w1_set_writer('entity_recorder')`);
+    if (WRITER[type]) await client.query(`select internal.w1_set_writer($1)`, [WRITER[type]]);
     await client.query(
       `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, $4, $5)`,
       [fixture.space, src, dst, type, fixture.member],
@@ -77,7 +115,7 @@ async function edge(src: string, dst: string, type: string): Promise<void> {
 
 async function unedge(src: string, dst: string, type: string): Promise<void> {
   await asOwner(async (client) => {
-    if (type === 'authored_from') await client.query(`select internal.w1_set_writer('entity_recorder')`);
+    if (WRITER[type]) await client.query(`select internal.w1_set_writer($1)`, [WRITER[type]]);
     await client.query(`delete from public.edges where src_id = $1 and dst_id = $2 and type = $3`, [src, dst, type]);
   });
 }
@@ -98,7 +136,8 @@ beforeAll(async () => {
                 internal.new_id()::text "session2", internal.new_id()::text "chat",
                 internal.new_id()::text "doc", internal.new_id()::text "pr",
                 internal.new_id()::text "artifact", internal.new_id()::text "drawing",
-                internal.new_id()::text "memory", internal.new_id()::text "message"`,
+                internal.new_id()::text "memory", internal.new_id()::text "message",
+                internal.new_id()::text "session3"`,
       )
     ).rows[0]!;
     await client.query(
@@ -113,9 +152,9 @@ beforeAll(async () => {
          ($2, $1, 'member', 0, $2), ($3, $1, 'task', 1, $2), ($4, $1, 'work_session', 2, $2),
          ($5, $1, 'work_session', 3, $2), ($6, $1, 'chat', 4, $2), ($7, $1, 'doc', 5, $2),
          ($8, $1, 'pull_request', 6, $2), ($9, $1, 'artifact', 7, $2), ($10, $1, 'drawing', 8, $2),
-         ($11, $1, 'memory', 9, $2), ($12, $1, 'message', 10, $2)`,
+         ($11, $1, 'memory', 9, $2), ($12, $1, 'message', 10, $2), ($13, $1, 'work_session', 11, $2)`,
       [ids.space, ids.member, ids.task, ids.session, ids.session2, ids.chat, ids.doc, ids.pr,
-        ids.artifact, ids.drawing, ids.memory, ids.message],
+        ids.artifact, ids.drawing, ids.memory, ids.message, ids.session3],
     );
     await client.query(
       `insert into public.members(entity_id, space_id, identity_id, role, display_name)
@@ -143,6 +182,14 @@ beforeAll(async () => {
       [ids.space, ids.session, ids.doc, ids.pr, ids.artifact, ids.memory, ids.drawing, ids.chat,
         ids.member, ids.message, ids.session2],
     );
+    // Launches: the chat launched the session, the session launched
+    // session2 (which ALSO records authored_from to it, 327) and session3.
+    await client.query(`select internal.w1_set_writer('spawn')`);
+    await client.query(
+      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values
+         ($1, $2, $3, 'launched_by', $6), ($1, $4, $2, 'launched_by', $6), ($1, $5, $2, 'launched_by', $6)`,
+      [ids.space, ids.session, ids.chat, ids.session2, ids.session3, ids.member],
+    );
     await client.query(`select internal.w1_set_writer(null)`);
     return ids;
   });
@@ -156,11 +203,20 @@ afterAll(async () => {
 
 describe('331 — the backfill', () => {
   it('counts what a session created, once per peer even when it also attached or remembers it', async () => {
-    expect(await counters(fixture.session)).toEqual({ docs: 1, memories: 1, prs: 1, artifacts: 1, drawings: 0 });
+    expect(await counters(fixture.session)).toEqual({
+      docs: 1, memories: 1, prs: 1, artifacts: 1, drawings: 0, sessions: 2,
+    });
   });
 
   it('counts what a chat created, and not its messages', async () => {
-    expect(await counters(fixture.chat)).toEqual({ ...zero, drawings: 1 });
+    expect(await counters(fixture.chat)).toEqual({ ...zero, drawings: 1, sessions: 1 });
+  });
+
+  it('filters.launchedBy lists the sessions the given launchers started', async () => {
+    expect(await launchedBy('chat')).toEqual(['session']);
+    expect(await launchedBy('session')).toEqual(['session2', 'session3']);
+    expect(await launchedBy('chat', 'session')).toEqual(['session', 'session2', 'session3']);
+    expect(await launchedBy('task')).toEqual([]);
   });
 
   it("leaves a task's counts as they were", async () => {
@@ -194,6 +250,25 @@ describe('331 — the trigger', () => {
     await edge(fixture.pr, fixture.session, 'authored_from');
     expect((await counters(fixture.session)).prs).toBe(1);
     expect((await counters(fixture.task)).prs).toBe(1);
+  });
+
+  it('a launched session counts once on its launcher, through launched_by alone', async () => {
+    // session2 also holds authored_from -> session; dropping launched_by
+    // still uncounts it, and the authored_from alone never counted it.
+    await unedge(fixture.session2, fixture.session, 'launched_by');
+    expect((await counters(fixture.session)).sessions).toBe(1);
+    await edge(fixture.session2, fixture.session, 'launched_by');
+    expect((await counters(fixture.session)).sessions).toBe(2);
+    // A launched_by re-pointed from the chat to session2 nets out.
+    await asOwner(async (client) => {
+      await client.query(`select internal.w1_set_writer('spawn')`);
+      await client.query(
+        `update public.edges set dst_id = $3 where src_id = $1 and dst_id = $2 and type = 'launched_by'`,
+        [fixture.session3, fixture.session, fixture.session2],
+      );
+    });
+    expect((await counters(fixture.session)).sessions).toBe(1);
+    expect((await counters(fixture.session2)).sessions).toBe(1);
   });
 
   it('a message or a launched session authored_from moves nothing', async () => {

@@ -770,6 +770,12 @@ export interface ListConfig {
    * animates the wire those draw.
    */
   tree?: { by: 'hierarchy'; guideLines: boolean; messagePulse?: boolean };
+  /**
+   * THE ROWS THIS LIST'S ROWS LAUNCHED, nested under them (331). Names the
+   * kind loaded alongside the list (`work_session`) through
+   * `launchedRowsFilter`; each drawn with ITS kind's anatomy. Needs `tree`.
+   */
+  launches?: string;
   tile: {
     badges: readonly TileBadgeSpec[];
     /**

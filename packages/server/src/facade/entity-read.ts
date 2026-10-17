@@ -111,6 +111,7 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.prs, 0)       as prs,
   coalesce(ec.artifacts, 0) as artifacts,
   coalesce(ec.drawings, 0)  as drawings,
+  coalesce(ec.sessions, 0)  as sessions,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
   t.start_date,
@@ -508,6 +509,8 @@ export interface EntityRow {
   prs?: number;
   artifacts?: number;
   drawings?: number;
+  /** Launched sessions (331), optional for the same reason. */
+  sessions?: number;
   task_title: string | null;
   task_description: string | null;
   task_axes: Record<string, string> | null;
@@ -2651,6 +2654,7 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
       ...(row.prs === undefined ? {} : { prs: row.prs }),
       ...(row.artifacts === undefined ? {} : { artifacts: row.artifacts }),
       ...(row.drawings === undefined ? {} : { drawings: row.drawings }),
+      ...(row.sessions === undefined ? {} : { sessions: row.sessions }),
       viewerReaction: ctx.viewerReactions.get(row.id) ?? null,
     },
     state: stateOf(row, ctx),

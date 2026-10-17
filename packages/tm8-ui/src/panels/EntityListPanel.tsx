@@ -105,7 +105,7 @@ import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
 import { TileLinkCounts } from './list/TileLinkCounts';
-import { hasTileLinkCounts, treeParentOf } from '../domain';
+import { hasTileLinkCounts, launchedRowsFilter, treeParentOf } from '../domain';
 import { TILE_LINK_GROUPS, UNCOUNTED_LINK_GROUPS } from '../domain/tile-counts';
 import { TileSignal, UrgentMark, isUrgent, signalIsAvatar } from './list/TileSignal';
 import { SessionDetails } from './list/SessionDetails';
@@ -243,6 +243,11 @@ export interface EntityListPanelProps {
    * shell. `sort` absent ⇒ the server's own default.
    */
   rowsFor: (filter: QueryFilter, sort?: SortKey) => readonly EntitySummary[];
+  /**
+   * Rows of ANOTHER kind, for the rows this list's rows launched (331,
+   * `list.launches`: the chat list's sessions). Absent ⇒ nothing nests.
+   */
+  rowsForKind?: (kind: string) => (filter: QueryFilter, sort?: SortKey) => readonly EntitySummary[];
   /**
    * Paging truth for the SAME (filter, sort) the rows came from.
    *
@@ -450,7 +455,8 @@ export interface EntityListPanelProps {
    * Absent ⇒ `'chevron'`: every anatomy as before (Home, Work, Board).
    */
   rowLead?: 'chevron' | 'icon';
-  onSelect?: (id: string) => void;
+  /** `kind` is the ROW's kind: a nested launched row (331) is not the list's. */
+  onSelect?: (id: string, kind?: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
   /**
    * Which of the header verbs this host can actually PERFORM.
@@ -4074,7 +4080,7 @@ function attentionIdsOf(
  * row at the wrong indent.
  */
 function TreeRows({
-  rows,
+  rows: listRows,
   props,
   config,
   attentionIds,
@@ -4097,6 +4103,21 @@ function TreeRows({
    * See `kit/useTreeDisclosure` for why the set is safe to persist and how the
    * selection is kept visible without being written to storage.
    */
+  /* THE ROWS THESE ROWS LAUNCHED (331): a chat's sessions, loaded for the
+     listed launchers and nested under them by `treeParentOf`. */
+  const launches = config.list.tree ? config.list.launches : undefined;
+  const launchedFilter = useMemo(
+    () => (launches ? launchedRowsFilter(listRows.map((row) => row.id)) : null),
+    [launches, listRows],
+  );
+  const launched =
+    launches && launchedFilter && props.rowsForKind
+      ? props.rowsForKind(launches)(launchedFilter as QueryFilter)
+      : NO_ROWS;
+  const rows = useMemo(
+    () => (launched.length === 0 ? listRows : [...listRows, ...launched.filter((row) => !listRows.some((r) => r.id === row.id))]),
+    [listRows, launched],
+  );
   const revealed = useMemo(() => ancestorPath(rows, props.selectedId), [rows, props.selectedId]);
   const leadMode = props.rowLead === 'icon';
   const disclosure = useTreeDisclosure(
@@ -4161,7 +4182,7 @@ function TreeRows({
               else event.currentTarget.parentElement?.closest<HTMLElement>('[role="treeitem"]')?.focus();
             } else if (event.key === 'Enter') {
               if (target !== event.currentTarget && !target.hasAttribute('data-lead-toggle')) return;
-              props.onSelect?.(node.row.id);
+              selectRow(props, node.row);
             } else {
               return;
             }
@@ -4191,7 +4212,8 @@ function TreeRows({
           row={node.row}
           depth={node.depth}
           props={props}
-          config={config}
+          /* A launched row (a chat's session) is drawn as ITS kind. */
+          config={node.row.kind === config.kind ? config : getKind(node.row.kind)}
           attention={attentionIds?.has(node.row.id) ?? false}
           childCount={node.children.length}
           expanded={!isCollapsed}
@@ -4279,6 +4301,16 @@ interface TileTreeNode {
  * parent roots its child instead of hiding it. The `seen` guard also keeps a
  * malformed parent cycle visible as roots rather than recursing forever.
  */
+/**
+ * Opens a row. A row of ANOTHER kind than the list's (a chat's launched
+ * session, 331) names its kind, so the host opens it as what it is; a row of
+ * the list's own kind is opened by id alone, as it always was.
+ */
+function selectRow(props: EntityListPanelProps, row: EntitySummary): void {
+  if (row.kind === props.kind) props.onSelect?.(row.id);
+  else props.onSelect?.(row.id, row.kind);
+}
+
 function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): TileTreeNode[] {
   if (!hierarchical) return rows.map((row) => ({ row, children: [], depth: 0 }));
 
@@ -4879,7 +4911,7 @@ export function Tile({
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
-        onSelect={() => props.onSelect?.(row.id)}
+        onSelect={() => selectRow(props, row)}
         actions={(own) => (
           <RowActionCluster
             row={row}
@@ -4941,7 +4973,7 @@ export function Tile({
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
-        onSelect={() => props.onSelect?.(row.id)}
+        onSelect={() => selectRow(props, row)}
         status={{
           label: statusWord ?? 'no status',
           title: statusTitle,
@@ -5154,7 +5186,7 @@ export function Tile({
       data-details={detailsExpanded ? 'open' : undefined}
       data-streaming={streaming ? 'true' : 'false'}
     >
-      <div className="lp__tile-main" onClick={() => props.onSelect?.(row.id)}>
+      <div className="lp__tile-main" onClick={() => selectRow(props, row)}>
         {/*
           LINE 1 OF THE QUIET ROW (§6, approved 2026-10-16):
 
@@ -5224,7 +5256,7 @@ export function Tile({
             aria-current={selected ? 'true' : undefined}
             onClick={(event) => {
               event.stopPropagation();
-              props.onSelect?.(row.id);
+              selectRow(props, row);
             }}
           >
             {row.title}

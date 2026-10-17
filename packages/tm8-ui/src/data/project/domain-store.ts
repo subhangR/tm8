@@ -408,7 +408,7 @@ export function createDomainStore(
 export type Membership = 'in' | 'out' | 'unknown';
 
 /** The filter clauses this module can decide. Everything else ⇒ 'unknown'. */
-const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'sessionOutcome', 'category']);
+const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'sessionOutcome', 'category', 'launchedBy']);
 
 export function membershipOf(filter: unknown, summary: EntitySummary): Membership {
   const clauses: Record<string, unknown> =
@@ -435,6 +435,9 @@ export function membershipOf(filter: unknown, summary: EntitySummary): Membershi
      clause is decidable here exactly like the status axes — an absent
      category never matches a present clause (`NULL = any(...)` semantics). */
   if (!matchesAxis(clauses.category, summary.category)) return 'out';
+  /* 331: the launcher rides the session's state (`launchedBy`, 330), so a
+     session launched from a listed chat arrives live. */
+  if (!matchesAxis(clauses.launchedBy, state.launchedBy)) return 'out';
 
   return 'in';
 }

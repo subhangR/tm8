@@ -1,4 +1,5 @@
--- 331 — TILE COUNT FACTS, PART THREE: count what a session or chat CREATED.
+-- 331 — TILE COUNT FACTS, PART THREE: count what a session or chat CREATED
+-- and the sessions it LAUNCHED.
 --
 -- A session's tile showed almost nothing: what a session makes is recorded
 -- as `authored_from` (entity -> the session or chat that created it, written
@@ -15,7 +16,10 @@
 --   * prs        — pull_requests the holder `tracks` (329) OR that are
 --                  `authored_from` the holder;
 --   * memories   — memories the holder `remembers` (108) OR that are
---                  `authored_from` the holder.
+--                  `authored_from` the holder;
+--   * sessions   — NEW: work_sessions `launched_by` the holder (330), so a
+--                  chat's tile, and a session that launched sub-sessions,
+--                  say how many sessions they started.
 --
 -- So a doc a session both created and attached counts once, and a PR it
 -- created and also tracks counts once. `authored_from` only ever ends at a
@@ -33,7 +37,11 @@
 -- iff nothing else already did.
 --
 -- Peer kinds stay tested against the PEER ROW, so `authored_from` from a
--- message (every chat post) or from a session (its launcher) moves nothing.
+-- message (every chat post) or from a session (its launcher) moves nothing:
+-- a launched session is counted through `launched_by` alone.
+
+alter table public.entity_counters
+  add column if not exists sessions integer not null default 0;
 
 -- --- the classifier ---------------------------------------------------------
 
@@ -53,6 +61,12 @@ begin
       holder := p_dst_id;
       peer := p_src_id;
     end if;
+  elsif p_type = 'launched_by' then
+    select pe.kind into k from public.entities pe where pe.id = p_src_id;
+    if k = 'work_session' then
+      holder := p_dst_id;
+      peer := p_src_id;
+    end if;
   elsif p_type in ('tracks','remembers') then
     select pe.kind into k from public.entities pe where pe.id = p_dst_id;
     if (p_type = 'tracks' and k = 'pull_request') or (p_type = 'remembers' and k = 'memory') then
@@ -63,7 +77,7 @@ begin
   if peer is not null then
     grp := case k when 'doc' then 'docs' when 'artifact' then 'artifacts'
                   when 'drawing' then 'drawings' when 'pull_request' then 'prs'
-                  when 'memory' then 'memories' end;
+                  when 'memory' then 'memories' when 'work_session' then 'sessions' end;
   end if;
 end
 $$;
@@ -77,8 +91,9 @@ language sql stable set search_path = public, internal, pg_temp as $$
     select 1 from public.edges e
      where e.id <> p_except
        and ((e.src_id = p_peer and e.dst_id = p_holder
-             and (e.type = 'authored_from'
-                  or (e.type = 'attached_to' and p_grp in ('docs','artifacts','drawings'))))
+             and ((e.type = 'authored_from' and p_grp <> 'sessions')
+                  or (e.type = 'attached_to' and p_grp in ('docs','artifacts','drawings'))
+                  or (e.type = 'launched_by' and p_grp = 'sessions')))
          or (e.src_id = p_holder and e.dst_id = p_peer
              and ((e.type = 'tracks' and p_grp = 'prs')
                   or (e.type = 'remembers' and p_grp = 'memories')))))
@@ -111,6 +126,7 @@ begin
            artifacts = case when g.grp = 'artifacts' then greatest(artifacts + g.delta, 0) else artifacts end,
            drawings  = case when g.grp = 'drawings'  then greatest(drawings + g.delta, 0)  else drawings end,
            memories  = case when g.grp = 'memories'  then greatest(memories + g.delta, 0)  else memories end,
+           sessions  = case when g.grp = 'sessions'  then greatest(sessions + g.delta, 0)  else sessions end,
            updated_at = now()
      where entity_id = g.holder;
   end loop;
@@ -130,7 +146,7 @@ with links as (
   select c.holder, c.peer, c.grp
     from public.edges ed
     cross join lateral internal.link_counter_group(ed.type, ed.src_id, ed.dst_id) c
-   where ed.type in ('attached_to','authored_from','tracks','remembers')
+   where ed.type in ('attached_to','authored_from','launched_by','tracks','remembers')
      and c.grp is not null
 ), recount as (
   select holder,
@@ -138,17 +154,18 @@ with links as (
          count(distinct peer) filter (where grp = 'prs')::integer       as prs,
          count(distinct peer) filter (where grp = 'artifacts')::integer as artifacts,
          count(distinct peer) filter (where grp = 'drawings')::integer  as drawings,
-         count(distinct peer) filter (where grp = 'memories')::integer  as memories
+         count(distinct peer) filter (where grp = 'memories')::integer  as memories,
+         count(distinct peer) filter (where grp = 'sessions')::integer  as sessions
     from links
    group by holder
 )
 update public.entity_counters ec
    set docs = r.docs, prs = r.prs, artifacts = r.artifacts,
-       drawings = r.drawings, memories = r.memories, updated_at = now()
+       drawings = r.drawings, memories = r.memories, sessions = r.sessions, updated_at = now()
   from recount r
  where ec.entity_id = r.holder
-   and (ec.docs, ec.prs, ec.artifacts, ec.drawings, ec.memories)
-       is distinct from (r.docs, r.prs, r.artifacts, r.drawings, r.memories);
+   and (ec.docs, ec.prs, ec.artifacts, ec.drawings, ec.memories, ec.sessions)
+       is distinct from (r.docs, r.prs, r.artifacts, r.drawings, r.memories, r.sessions);
 
 comment on column public.entity_counters.docs is
   'Distinct docs attached_to or authored_from this entity. Trigger-owned (331 '
@@ -165,3 +182,6 @@ comment on column public.entity_counters.drawings is
 comment on column public.entity_counters.memories is
   'Distinct memories this entity remembers or that are authored_from it. '
   'Trigger-owned (331 edges_link_counters), rebuildable, never written by an RPC.';
+comment on column public.entity_counters.sessions is
+  'Work sessions launched_by this entity. Trigger-owned (331 '
+  'edges_link_counters), rebuildable, never written by an RPC.';

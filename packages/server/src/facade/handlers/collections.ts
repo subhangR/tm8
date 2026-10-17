@@ -603,6 +603,17 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     )`);
   }
 
+  if (f.launchedBy) {
+    // 331: the sessions these chats or sessions LAUNCHED (`launched_by`, 330)
+    // — the chat list nests them under their launcher. Kind-narrowing: only a
+    // work_session carries the edge.
+    where.push(`exists (
+      select 1 from public.edges lb
+       where lb.src_id = e.id and lb.type = 'launched_by'
+         and lb.dst_id = any(${p.add(assertUuids(f.launchedBy, 'filters.launchedBy'))}::uuid[])
+    )`);
+  }
+
   if (f.inFlightForActorId) {
     // "In flight for me" = pulled or being worked on by an actor in my scope,
     // and not finished. Actor scope is the member row plus the personas it

@@ -1122,6 +1122,7 @@ export function EntityView(props: EntityViewProps) {
       <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
+          rowsForKind={data.rowsFor}
           /* ATTENTION v2: "Needs me" reads the attention queue (needs-me.ts). */
           {...needsMeListSource(attentionApi, kind, data, {
             rowsFor: data.rowsFor(kind),

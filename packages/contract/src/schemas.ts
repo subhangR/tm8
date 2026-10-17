@@ -444,6 +444,8 @@ export const EntityCountersSchema: z.ZodType<EntityCounters> = z.object({
   prs: z.number().int().nonnegative().optional(),
   artifacts: z.number().int().nonnegative().optional(),
   drawings: z.number().int().nonnegative().optional(),
+  // 331: launched sessions, same terms.
+  sessions: z.number().int().nonnegative().optional(),
   viewerReaction: z.enum(['like', 'dislike', 'star']).nullable(),
 }).strict();
 
@@ -1311,6 +1313,7 @@ const CollectionFiltersSchema = z.object({
   mentionedActorId: EntityIdSchema.optional(),
   workedByActorId: EntityIdSchema.optional(),
   createdIn: EntityIdSchema.optional(),
+  launchedBy: z.array(EntityIdSchema).max(200).optional(),
   inFlightForActorId: EntityIdSchema.optional(),
   needsActorId: EntityIdSchema.optional(),
   sessionStatus: z.array(WorkSessionStatusSchema).optional(),

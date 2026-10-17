@@ -10,6 +10,7 @@ import {
   memoryTokens,
   prTransplant,
   profileHouseStyle,
+  sessionLive,
   taskGuideLines,
   teamMemberForge,
 } from '../fixtures';
@@ -363,6 +364,58 @@ describe('the list header, one row', () => {
     /* The funnel does not repeat it in this layout. */
     fireEvent.click(getByTestId('filter-trigger'));
     expect(getByTestId('filter-menu').querySelector('[data-testid="list-links-section"]')).toBeNull();
+  });
+
+  /* THE CHAT LIST (task 01a14af9, part A/C): a chat's tile draws its counts
+     line, including the sessions it launched, and those sessions nest under it
+     as session tiles, read through `rowsForKind` with the bounded
+     `launchedBy` filter, and open as sessions. */
+  it('a chat tile shows its counts and nests the sessions it launched', () => {
+    const chat = withCounters(chatLaunchPlan, { docs: 1, prs: 1, sessions: 2 });
+    const launched = [1, 2].map((n) => ({
+      ...sessionLive,
+      id: `ses-launched-${n}`,
+      title: `Launched ${n}`,
+      parentId: null,
+      state: { ...sessionLive.state, launchedBy: chat.id },
+    })) as EntitySummary[];
+    const asked: unknown[] = [];
+    const rowsForKind = (kind: string) => (filter: QueryFilter) => {
+      asked.push({ kind, filter });
+      return kind === 'work_session' ? launched : [];
+    };
+    const onSelect = vi.fn();
+    const { container } = render(
+      <EntityListPanel
+        kind="chat"
+        rowsFor={rowsFor([chat])}
+        rowsForKind={rowsForKind}
+        ctx={ctx}
+        chrome="toolbar"
+        onSelect={onSelect}
+      />,
+    );
+    expect(asked).toContainEqual({ kind: 'work_session', filter: { launchedBy: [chat.id] } });
+    const counts = container.querySelector<HTMLElement>('.lp__tile-counts')!;
+    expect([...counts.querySelectorAll('[data-count-kind]')].map((el) => el.getAttribute('data-count-kind'))).toEqual([
+      'docs',
+      'prs',
+      'sessions',
+    ]);
+
+    /* Collapsed by default, like every tree; the chevron opens it. */
+    expect(container.querySelector('[data-testid="list-tile-children"]')).toBeNull();
+    const toggle = container.querySelector<HTMLElement>('[data-testid="list-tile"] [aria-expanded]')!;
+    fireEvent.click(toggle);
+    const children = container.querySelector<HTMLElement>('[data-testid="list-tile-children"]')!;
+    expect(children.textContent).toContain('Launched 1');
+    expect(children.textContent).toContain('Launched 2');
+
+    /* Drawn with the SESSION anatomy, and opened as a session. */
+    const child = children.querySelector<HTMLElement>('[data-session-node="ses-launched-1"]')!;
+    expect(child).not.toBeNull();
+    fireEvent.click(child);
+    expect(onSelect).toHaveBeenCalledWith('ses-launched-1', 'work_session');
   });
 
   it('search expands on the glyph, narrows the list, and Esc clears before it closes', () => {

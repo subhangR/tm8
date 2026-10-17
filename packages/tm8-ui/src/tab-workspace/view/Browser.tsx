@@ -348,8 +348,9 @@ function EntityBrowser() {
      back as `requires_user_choice`, which RevealPrompt renders from
      `store.pending`. */
   const openRow = useCallback(
-    (entityId: string) => {
-      dispatch({ command: 'workspace.tabs.open', args: { kind, entityId }, source: 'click' });
+    /* `rowKind`: a launched session nested in the chat list opens as a session. */
+    (entityId: string, rowKind?: string) => {
+      dispatch({ command: 'workspace.tabs.open', args: { kind: rowKind ?? kind, entityId }, source: 'click' });
     },
     [dispatch, kind],
   );
@@ -430,6 +431,8 @@ function EntityBrowser() {
         <EntityListPanel
           key={`${kind}:${generation}`}
           kind={kind}
+          /* 331: the chat list nests the sessions each chat launched. */
+          rowsForKind={data.rowsFor}
           /* The new box below draws the kind control and + New. */
           selectorSlot="host"
           mode="list"

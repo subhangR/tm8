@@ -197,6 +197,8 @@ export interface EntityCounters {
   prs?: number;
   artifacts?: number;
   drawings?: number;
+  /** Work sessions this entity launched (`launched_by`, 331), same law. */
+  sessions?: number;
   /** Server-computed from the caller's reaction edge — always present (DEV-10). */
   viewerReaction: 'like' | 'dislike' | 'star' | null;
 }
@@ -1285,6 +1287,12 @@ export interface CollectionQuery {
      * made counts as made here as well.
      */
     createdIn?: EntityId;
+    /**
+     * Additive (331, the chat list's launched sessions): work_sessions whose
+     * `launched_by` edge (330) names ANY of these chats or sessions. Bounded
+     * (at most 200 ids) — it is one list page's launchers, never a space.
+     */
+    launchedBy?: EntityId[];
     /**
      * Facade-defined server-preset expansions BEYOND the doc'd filter list
      * (flagged upstream): they make the `getHome` preset queries reproducible

@@ -6,7 +6,7 @@ import type { EntityCounters } from '@tm8/contract';
  * 2026-10-16).
  *
  * ONE CONSTANT, FIXED ORDER. `TILE_LINK_GROUPS` is the whole vocabulary and
- * the whole order: Docs · PRs · Artifacts · Drawings · Memories. It is one
+ * the whole order: Docs · PRs · Artifacts · Drawings · Memories · Sessions. It is one
  * constant on purpose — the fifth slot (Memories) is the one Subhang may want
  * swapped for Files, and that swap must be a one-line edit here rather than a
  * hunt through two components and three tests. Nothing downstream may
@@ -47,7 +47,7 @@ export interface TileLinkGroup {
 }
 
 /**
- * THE FIVE GROUPS. Swap the fifth entry for
+ * THE GROUPS (five link kinds, plus launched sessions since 331). Swap the fifth entry for
  * `{ id: 'files', counter: 'files', kind: 'file', label: 'file' }` and the
  * tiles, the counts line and the detail-panel door all follow.
  */
@@ -57,6 +57,9 @@ export const TILE_LINK_GROUPS: readonly TileLinkGroup[] = [
   { id: 'artifacts', counter: 'artifacts', kind: 'artifact', label: 'artifact' },
   { id: 'drawings', counter: 'drawings', kind: 'drawing', label: 'drawing' },
   { id: 'memories', counter: 'memories', kind: 'memory', label: 'memory' },
+  /* The sessions this entity LAUNCHED (`launched_by`, migration 331) — on a
+     chat's tile and on a session that started sub-sessions. */
+  { id: 'sessions', counter: 'sessions', kind: 'work_session', label: 'session' },
 ];
 
 /** One group with a number worth drawing. */

@@ -596,6 +596,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       'sections',
       'categories',
       'tree',
+      /* Opened 2026-10-17 (331, task 01a14af9): the rows a list's rows
+         LAUNCHED, nested under them — the chat list's sessions. */
+      'launches',
       'tile',
       'liveCount',
       'quickCreate',

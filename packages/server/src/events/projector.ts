@@ -224,6 +224,8 @@ interface SummaryRow {
   prs?: number | null;
   artifacts?: number | null;
   drawings?: number | null;
+  /** Launched sessions (331), optional for the same reason. */
+  sessions?: number | null;
   task_title: string | null;
   task_description: string | null;
   work_status: string | null;
@@ -424,7 +426,7 @@ select
   e.status_category,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,
-  c.prs, c.artifacts, c.drawings,
+  c.prs, c.artifacts, c.drawings, c.sessions,
   t.title            as task_title,
   t.description      as task_description,
   t.work_status, t.priority, t.axes, t.due_date, t.start_date,
@@ -1021,6 +1023,7 @@ export class PgEntityProjector implements EntityProjector {
       prs: r.prs ?? 0,
       artifacts: r.artifacts ?? 0,
       drawings: r.drawings ?? 0,
+      sessions: r.sessions ?? 0,
       viewerReaction,
     };
 

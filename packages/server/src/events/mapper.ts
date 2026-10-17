@@ -731,6 +731,8 @@ export class WorkspaceEventMapper {
           ...(p['prs'] === undefined ? {} : { prs: Number(p['prs'] ?? 0) }),
           ...(p['artifacts'] === undefined ? {} : { artifacts: Number(p['artifacts'] ?? 0) }),
           ...(p['drawings'] === undefined ? {} : { drawings: Number(p['drawings'] ?? 0) }),
+          // 331's launched sessions; pre-331 payloads omit it.
+          ...(p['sessions'] === undefined ? {} : { sessions: Number(p['sessions'] ?? 0) }),
           // Viewer-scoped and absent from the counters row. `null` is the
           // contract's "no reaction from this viewer", which is the correct
           // answer whenever we have not resolved one.

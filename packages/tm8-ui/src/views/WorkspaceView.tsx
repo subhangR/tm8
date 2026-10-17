@@ -864,6 +864,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               loadMore: data.loadMore(leftKind),
             })}
             boardFor={data.boardFor(leftKind) as never}
+            rowsForKind={data.rowsFor}
             mode={leftLayout}
             members={data.members}
             ctx={ctx}
@@ -1086,6 +1087,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               loadMore: data.loadMore(rightKind),
             })}
             boardFor={data.boardFor(rightKind) as never}
+            rowsForKind={data.rowsFor}
             mode={rightLayout}
             members={data.members}
             ctx={ctx}

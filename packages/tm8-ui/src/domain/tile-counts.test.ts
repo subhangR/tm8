@@ -24,13 +24,14 @@ const counters = (patch: Record<string, unknown> = {}): EntityCounters =>
   }) as EntityCounters;
 
 describe('TILE_LINK_GROUPS — one constant, one order', () => {
-  it('is Docs · PRs · Artifacts · Drawings · Memories, in that order', () => {
+  it('is Docs · PRs · Artifacts · Drawings · Memories · Sessions, in that order', () => {
     expect(TILE_LINK_GROUPS.map((group) => group.id)).toEqual([
       'docs',
       'prs',
       'artifacts',
       'drawings',
       'memories',
+      'sessions',
     ]);
   });
 

@@ -157,7 +157,7 @@ export {
   sessionVerbsOf,
   withGrace,
 } from './session-outcome';
-export { launchedByOf, treeParentOf } from './launched-by';
+export { LAUNCHERS_PER_READ, launchedByOf, launchedRowsFilter, treeParentOf } from './launched-by';
 export type {
   GroupBulk,
   InterruptedGroup,

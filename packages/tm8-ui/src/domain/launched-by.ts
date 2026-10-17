@@ -20,3 +20,20 @@ export function launchedByOf(state: unknown): string | null {
 export function treeParentOf(row: Pick<EntitySummary, 'parentId' | 'state'>): string | null {
   return launchedByOf(row.state) ?? row.parentId ?? null;
 }
+
+/**
+ * THE LAUNCHED ROWS A LIST NESTS (331). A list whose registry row declares
+ * `list.launches` (today: the chat list, `work_session`) also loads the rows
+ * its own rows LAUNCHED and hangs each under its launcher via `treeParentOf`.
+ * This is the one read for it — the filter, the bound and the id order — so a
+ * later change (chats with sub-chats) is an edit here.
+ *
+ * Bounded: one page of launchers, at most LAUNCHERS_PER_READ ids, sorted so
+ * the read's cache key does not churn with the list's order.
+ */
+export const LAUNCHERS_PER_READ = 100;
+
+export function launchedRowsFilter(launcherIds: readonly string[]): { launchedBy: string[] } | null {
+  if (launcherIds.length === 0) return null;
+  return { launchedBy: [...new Set(launcherIds)].sort().slice(0, LAUNCHERS_PER_READ) };
+}
