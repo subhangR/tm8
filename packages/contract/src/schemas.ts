@@ -1304,6 +1304,7 @@ const CollectionFiltersSchema = z.object({
   inReviewForActorId: EntityIdSchema.optional(),
   mentionedActorId: EntityIdSchema.optional(),
   workedByActorId: EntityIdSchema.optional(),
+  createdIn: EntityIdSchema.optional(),
   inFlightForActorId: EntityIdSchema.optional(),
   needsActorId: EntityIdSchema.optional(),
   sessionStatus: z.array(WorkSessionStatusSchema).optional(),
@@ -1514,6 +1515,16 @@ export const SetChatCredentialsResultSchema: z.ZodType<SetChatCredentialsResult>
   chatId: EntityIdSchema, credentialSelection: ChatCredentialSelectionSchema,
 }).strict();
 
+/** 328: the Coordinator's team on a chat turn — a field, never body text. */
+const ChatTurnTeamSchema = z.object({
+  members: z.array(z.object({
+    name: z.string().min(1).max(120),
+    teammateId: EntityIdSchema.optional(),
+    model: z.string().min(1).max(120).optional(),
+    effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
+  }).strict()).min(1).max(32),
+}).strict();
+
 export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
   mcpSelections: McpSelectionsSchema.optional(),
   credentialSelection: ChatCredentialSelectionSchema.optional(),
@@ -1527,6 +1538,7 @@ export const StartChatInputSchema: z.ZodType<StartChatInput> = z.object({
   body: z.string().min(1).max(10000),
   attachmentIds: z.array(EntityIdSchema).max(16).optional(),
   aboutId: EntityIdSchema.nullable().optional(),
+  team: ChatTurnTeamSchema.optional(),
   clientMutationId: z.string().min(1),
 })
   .strict()
@@ -3132,6 +3144,7 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   attachmentIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   pokeSessionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   mode: z.enum(['ask', 'explain', 'plan', 'build', 'orchestrate', 'craft']).optional(),
+  team: ChatTurnTeamSchema.optional(),
 }).strict();
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =

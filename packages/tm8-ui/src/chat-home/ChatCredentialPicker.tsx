@@ -12,9 +12,11 @@ export function credentialSelection(value: string): ChatCredentialSelection {
     : { source: value as ChatCredentialSelection['source'] };
 }
 
-export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled, backendKeyOnly }: {
+export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled, backendKeyOnly, inline = false }: {
   port: ChatHomePort; spaceId: SpaceId | string; value: ChatCredentialSelection;
   onChange: (selection: ChatCredentialSelection) => void; disabled: boolean; backendKeyOnly: boolean;
+  /** A labelled native select, for a host that is itself a popover (the composer's settings). */
+  inline?: boolean;
 }) {
   const portRef = useRef(port); portRef.current = port;
   const [credentials, setCredentials] = useState<readonly { id: string; label: string }[]>([]);
@@ -44,6 +46,22 @@ export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled,
   // A saved reference remains visible if it is later revoked or unreadable.
   if (value.credentialId && !credentials.some(row => row.id === value.credentialId)) {
     options.push({ id: credentialValue(value), label: 'Selected space credential', disabledReason: 'Unavailable or no longer accessible' });
+  }
+  if (inline) {
+    return (
+      <label className="tch-optform__row">
+        <span className="tch-optform__label">Credentials</span>
+        <select aria-label="Chat credentials" data-testid="tch-credentials" value={credentialValue(value)}
+          disabled={disabled} title={note ?? undefined}
+          onChange={event => onChange(credentialSelection(event.target.value))}>
+          {options.map(option => (
+            <option key={option.id} value={option.id} disabled={Boolean(option.disabledReason)} title={option.disabledReason ?? option.hint}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
   }
   return <ComposerSelect label="Chat credentials" testId="tch-credentials" options={options}
     value={credentialValue(value)} onChange={next => onChange(credentialSelection(next))}

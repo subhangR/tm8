@@ -18,6 +18,7 @@ import {
 } from './fleet/use-fleet-entities';
 import type { ChatEntityResolver } from './EntityChip';
 import type { ChatHomeScreenProps } from './ChatHomeScreen';
+import { createdHereReaderFromSeam } from './created-here/reader';
 
 const SplitChatHomeScreen = lazy(async () => {
   const module = await import('./ChatHomeScreen');
@@ -123,6 +124,8 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     () => (id, opts) => seam.connections(id, opts),
     [seam],
   );
+  /** The created-here strip's reads and session verbs, over the same seam. */
+  const createdHere = useMemo(() => createdHereReaderFromSeam(seam), [seam]);
   const models = modelCatalog(nodeKey).map((model) => ({
     model: model.model,
     label: model.label,
@@ -140,6 +143,7 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     readEntity,
     livenessOf,
     connections,
+    createdHere,
     onOpenEntity,
     attach,
     assetHref: seam.files.downloadHref,

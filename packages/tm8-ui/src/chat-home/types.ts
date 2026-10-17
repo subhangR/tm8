@@ -104,6 +104,8 @@ export interface ChatTeammateOption {
   mode?: TeamMemberMode | null;
   /** `team_members.permission_mode` — free text; the rail derives its default rung from it. */
   permissionMode?: string | null;
+  /** The teammate's own model, when the node projects it. */
+  model?: string | null;
 }
 
 /**
@@ -310,6 +312,8 @@ export interface ChatThreadDetail {
  * message existed that was not yet a chat) has nothing left to express.
  */
 export interface ChatCreateInput {
+  /** The Coordinator's team (328): a turn field the server renders into the prompt, never body text. */
+  team?: import('@tm8/contract').ChatTurnTeam;
   credentialSelection?: ChatCredentialSelection;
   mcpSelections?: import("../mcp/port").McpSelection[];
   spaceId: SpaceId | string;
@@ -345,6 +349,8 @@ export interface ChatCreateInput {
 }
 
 export interface ChatPostInput {
+  /** The Coordinator's team (328): a turn field the server renders into the prompt, never body text. */
+  team?: import('@tm8/contract').ChatTurnTeam;
   chatId: EntityId;
   body: string;
   clientMutationId: string;

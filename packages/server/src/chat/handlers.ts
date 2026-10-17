@@ -22,6 +22,7 @@ import { loadEntitySummariesByIds } from '../facade/entity-read.js';
 import type { OperationHandler } from '../http/types.js';
 import type { ChatOrchestrator } from './orchestrator.js';
 import { refuseChatRuntimeBearer } from './scope.js';
+import { stampChatTurnTeam } from './turn-team.js';
 
 export interface ChatHandlerDeps {
   readonly orchestrator: ChatOrchestrator;
@@ -109,6 +110,10 @@ function startChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler
       if (input.mcpSelections !== undefined) {
         await q.rpc('save_chat_mcp_selections', [stored.chatId, JSON.stringify(input.mcpSelections)]);
       }
+      // 328: the opening turn's team, on the turn and never in the body. Not on
+      // a replay (`stored.chatId !== chatId`): that turn was stamped, or not, the
+      // first time.
+      if (stored.chatId === chatId) await stampChatTurnTeam(q, [stored.messageId], input.team);
       if (input.credentialSelection !== undefined && stored.chatId === chatId) {
         await q.rpc('set_chat_credentials', [stored.chatId, JSON.stringify(input.credentialSelection)]);
       }

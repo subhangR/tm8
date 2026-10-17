@@ -239,9 +239,9 @@ describe('Chat Home', () => {
     // no relaunch, no operation, no row to write. `mode-switch.test.tsx` covers
     // the carrying.
     expect(view.queryByLabelText('Chat teammate')).toBeNull();
-    expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(false);
+    expect((view.getByTestId('tch-settings') as HTMLButtonElement).disabled).toBe(false);
     expect((view.getByLabelText('Chat model') as HTMLButtonElement).disabled).toBe(false);
-    expect(view.getByLabelText('Chat mode').textContent).toContain('plan');
+    expect(view.getByTestId('tch-settings-role').getAttribute('data-mode')).toBe('plan');
     // The pinned state is the disabled triggers themselves — the foot carries
     // controls, not copy (user ruling 2026-08-18).
     expect(view.queryByText('pinned for this thread')).toBeNull();
@@ -272,8 +272,8 @@ describe('Chat Home', () => {
     expect(codexRow.textContent).toContain('Claude Code only');
     fireEvent.click(codexRow);
     fireEvent.click(view.getByTestId('tch-model-claude-sonnet-4-5'));
-    fireEvent.click(view.getByLabelText('Chat mode'));
-    fireEvent.click(view.getByTestId('tch-mode-build'));
+    fireEvent.click(view.getByTestId('tch-settings'));
+    fireEvent.click(view.getByTestId('tch-settings-worker'));
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Audit the release blockers.' },
     });
@@ -298,7 +298,7 @@ describe('Chat Home', () => {
     expect(view.getByTestId('tch-send-working')).toBeTruthy();
   });
 
-  it('offers Explain and persists it in the write-once chat configuration', async () => {
+  it('still reaches Explain through `/explain` and persists it in the chat configuration', async () => {
     const { port, controls } = createChatHomeFixturePort();
     const view = render(
       <ChatHomeScreen
@@ -311,10 +311,13 @@ describe('Chat Home', () => {
 
     await waitFor(() => expect(view.getByRole('button', { name: /new chat/i })).toBeTruthy());
     fireEvent.click(view.getByRole('button', { name: /new chat/i }));
-    fireEvent.click(view.getByLabelText('Chat mode'));
-    fireEvent.click(view.getByTestId('tch-mode-explain'));
+    /* The ⚙ offers three roles; the finer server modes stay reachable by slash. */
+    const box = await waitFor(() => view.getByLabelText('Message the chat agent'));
+    fireEvent.change(box, { target: { value: '/explain' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
     // The trigger states the selection without being opened.
-    expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
+    expect(view.getByTestId('tch-settings-role').getAttribute('data-mode')).toBe('explain');
+    expect(view.getByTestId('tch-settings-role').textContent).toBe('Coordinator');
     fireEvent.change(view.getByLabelText('Message the chat agent'), {
       target: { value: 'Explain the request flow with a diagram.' },
     });
@@ -326,9 +329,9 @@ describe('Chat Home', () => {
     // stays live afterwards: the thread's default is not a lock, it is just what
     // a turn runs under when nobody redirects that turn.
     await waitFor(() => {
-      expect((view.getByLabelText('Chat mode') as HTMLButtonElement).disabled).toBe(false);
+      expect((view.getByTestId('tch-settings') as HTMLButtonElement).disabled).toBe(false);
     });
-    expect(view.getByLabelText('Chat mode').textContent).toContain('explain');
+    expect(view.getByTestId('tch-settings-role').getAttribute('data-mode')).toBe('explain');
     expect(view.queryByText('pinned for this thread')).toBeNull();
   });
 

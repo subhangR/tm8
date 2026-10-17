@@ -1,0 +1,372 @@
+/* ==========================================================================
+   CREATED HERE — the strip on top of the chat composer (CreatedHereStrip).
+
+   A FIELDSET, NOT A BOX: the strip is a hairline, and the kind chips sit IN
+   it like a legend, on the page's own paper so the line breaks around them.
+   Collapsed, the line is all there is. Expanded, the same line becomes the
+   top of a frame and the tree hangs inside it, open at the bottom where the
+   composer meets it. Narrower than the composer, so it reads as a tab on it.
+   Every colour is a token: light and dark come from the theme.
+   ========================================================================== */
+
+.tch-made {
+  --tch-made-rule: 22px;
+  --tch-made-indent: 16px;
+  --tch-made-radius: 14px;
+  position: relative;
+  /* Inset past the composer's 20px corners, so both sides land on its
+     straight top edge. */
+  width: calc(100% - 48px);
+  min-height: 16px;
+  margin: calc(var(--tch-made-rule) / 2) auto 0;
+  /* The bracket: the line, turning down at both ends into the composer's top
+     edge. Same stroke as the composer's own border; no bottom, the composer
+     is the bottom. */
+  border: 1px solid var(--pn-line);
+  border-bottom: 0;
+  border-radius: var(--tch-made-radius) var(--tch-made-radius) 0 0;
+  font-family: var(--pn-ui);
+  color: var(--pn-ink-2);
+}
+
+.tch-made[data-expanded] { background: var(--pn-paper); }
+
+/* The line's content row, lifted so its middle sits ON the border. */
+.tch-made__rule {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  height: var(--tch-made-rule);
+  margin-top: calc(var(--tch-made-rule) / -2 - 1px);
+  padding: 0 var(--pn-space-3);
+}
+
+.tch-made__kinds,
+.tch-made__live,
+.tch-made__toggle {
+  background: var(--pn-paper);
+}
+
+.tch-made__kinds {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 var(--pn-space-1);
+}
+
+.tch-made__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--pn-r-pill);
+  background: none;
+  color: var(--pn-ink-3);
+  font: 500 var(--pn-fs-micro) / 1 var(--pn-ui);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-out), color var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.tch-made__kind:hover { background: var(--pn-hover); color: var(--pn-ink); }
+
+/* Collapsed, every chip is the same muted icon + count. Only an open strip
+   says which kind it is showing, and quietly. */
+.tch-made[data-expanded] .tch-made__kind[aria-selected='true'] {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.tch-made__kind:focus-visible,
+.tch-made__toggle:focus-visible,
+.tch-made__twisty:focus-visible,
+.tch-made__title:focus-visible,
+.tch-made__act:focus-visible,
+.tch-made__filter:focus-visible,
+.tch-made__row:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+.tch-made__n { min-width: 1ch; }
+
+/* The stretch of bare line between the chips and the right-hand summary. */
+.tch-made__gap { flex: 1; }
+
+.tch-made__live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-1);
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-micro) / 1 var(--pn-ui);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tch-made__running { display: inline-flex; align-items: center; gap: 4px; color: var(--pn-run); }
+.tch-made__waiting { display: inline-flex; align-items: center; gap: 3px; color: var(--pn-wait); font-weight: 600; }
+
+.tch-made__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-run);
+  animation: tch-made-pulse 1.6s var(--pn-ease-standard) infinite;
+}
+
+@keyframes tch-made-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--pn-run-soft); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 3px var(--pn-run-soft); }
+}
+
+.tch-made__toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-micro) / 1 var(--pn-ui);
+  cursor: pointer;
+  transition: transform var(--pn-dur-fast) var(--pn-ease-out), color var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.tch-made__toggle:hover { color: var(--pn-ink); }
+.tch-made__toggle[aria-expanded='true'] { transform: rotate(180deg); }
+
+/* -- the frame's inside --------------------------------------------------- */
+.tch-made__body {
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 2px var(--pn-space-2) var(--pn-space-2);
+  overscroll-behavior: contain;
+}
+
+.tch-made__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 2px 0 var(--pn-space-1);
+}
+
+.tch-made__search {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font: var(--pn-fs-label) var(--pn-ui);
+}
+
+.tch-made__search:focus { border-color: var(--pn-brand); }
+
+.tch-made__filters { display: inline-flex; gap: 2px; }
+
+.tch-made__filter {
+  height: 22px;
+  padding: 0 var(--pn-space-2);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-micro) var(--pn-ui);
+  cursor: pointer;
+}
+
+.tch-made__filter:hover { color: var(--pn-ink); }
+.tch-made__filter[aria-checked='true'] { background: var(--pn-hover); color: var(--pn-ink); }
+
+.tch-made__tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tch-made__node { min-width: 0; }
+
+.tch-made__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 26px;
+  padding-right: var(--pn-space-1);
+  border-radius: var(--pn-r-sm);
+  font-size: var(--pn-fs-label);
+}
+
+.tch-made__row:hover,
+.tch-made__row:focus-within { background: var(--pn-hover); }
+
+.tch-made__row[data-closed] .tch-made__title,
+.tch-made__row[data-closed] .tch-made__by,
+.tch-made__row[data-closed] .tch-made__kindmark { color: var(--pn-ink-4); }
+
+.tch-made__twisty {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: none;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-sm) / 1 var(--pn-ui);
+  cursor: pointer;
+  transition: transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.tch-made__twisty:hover { color: var(--pn-ink); }
+.tch-made__twisty[data-open] { transform: rotate(90deg); }
+
+.tch-made__mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 12px;
+  color: var(--pn-ink-4);
+  font: 600 var(--pn-fs-fine) / 1 var(--pn-ui);
+}
+
+.tch-made__mark[data-mark='running'] { color: var(--pn-run); animation: tch-made-blink 1.6s var(--pn-ease-standard) infinite; }
+.tch-made__mark[data-mark='done'] { color: var(--pn-ink-3); }
+.tch-made__mark[data-mark='waiting'] { color: var(--pn-wait); font-size: var(--pn-fs-label); }
+.tch-made__mark[data-mark='failed'] { color: var(--pn-block); }
+
+@keyframes tch-made-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.tch-made__kindmark { flex: none; color: var(--pn-ink-3); }
+
+.tch-made__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tch-made__title:hover:not(:disabled) { text-decoration: underline; text-decoration-color: var(--pn-line-2); text-underline-offset: 3px; }
+.tch-made__title:disabled { cursor: default; }
+
+.tch-made__by {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tch-made__count {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-hover);
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-fine) / 16px var(--pn-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.tch-made__age {
+  flex: none;
+  margin-left: auto;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Session verbs: there when the row is hovered or focused, gone otherwise. */
+.tch-made__acts {
+  display: none;
+  flex: none;
+  gap: 2px;
+}
+
+.tch-made__row:hover .tch-made__acts,
+.tch-made__row:focus-within .tch-made__acts { display: inline-flex; }
+.tch-made__row[data-acts]:hover .tch-made__age,
+.tch-made__row[data-acts]:focus-within .tch-made__age { display: none; }
+.tch-made__row:hover .tch-made__acts { margin-left: auto; }
+
+.tch-made__act {
+  height: 20px;
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font: var(--pn-fs-micro) var(--pn-ui);
+  cursor: pointer;
+}
+
+.tch-made__act:hover,
+.tch-made__act[aria-pressed='true'] { border-color: var(--pn-line-2); color: var(--pn-ink); }
+.tch-made__act--stop:hover { border-color: var(--pn-block); color: var(--pn-block); }
+
+.tch-made__peek {
+  margin: 2px 0 var(--pn-space-1);
+  padding: var(--pn-space-1) var(--pn-space-2);
+  border-left: 2px solid var(--pn-line-2);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-micro);
+}
+
+.tch-made__peekline {
+  display: -webkit-box;
+  margin: 0 0 2px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tch-made__peekline[data-source='user'] { color: var(--pn-ink-3); }
+
+.tch-made__compose {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  margin: 2px 0 var(--pn-space-1);
+}
+
+.tch-made__input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font: var(--pn-fs-label) var(--pn-ui);
+}
+
+.tch-made__input:focus { border-color: var(--pn-brand); }
+
+.tch-made__quiet { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
+.tch-made__empty { margin: var(--pn-space-1) 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-made__dot,
+  .tch-made__mark[data-mark='running'] { animation: none; }
+}

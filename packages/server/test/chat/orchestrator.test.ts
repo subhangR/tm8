@@ -88,6 +88,10 @@ class FakeDb implements Db {
    */
   about: { id: string; kind: string; title: string; hidden?: boolean } | null = null;
   readonly aboutIdentities: (string | undefined)[] = [];
+  /** The turn's team (328) as `chat_turn_team` returns it; null = default team. */
+  team: unknown = null;
+  /** Make `chat_turn_team` fail as a pre-328 database would (undefined_function). */
+  teamMissing = false;
   private nextClaim = 0;
   private readonly claimedTurns: readonly Record<string, unknown>[];
 
@@ -159,6 +163,10 @@ class FakeDb implements Db {
       this.contexts.push([rpcClaims.identityId, ...args]);
       this.events.push('context');
       return undefined as T;
+    }
+    if (name === 'chat_turn_team') {
+      if (this.teamMissing) throw Object.assign(new Error('function chat_turn_team does not exist'), { code: '42883' });
+      return this.team as T;
     }
     if (name === 'mark_chat_runtime_state') {
       this.states.push(String(args[1]));
@@ -950,10 +958,12 @@ describe('TM8 Chat durable orchestration', () => {
 
     function subjectRig(claims: readonly Record<string, unknown>[]) {
       const events: string[] = [];
+      const errors: unknown[] = [];
       const db = new FakeDb(claims, events);
       const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
       const orchestrator = new ChatOrchestrator({
         db,
+        onError: (error) => errors.push(error),
         runtime,
         publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
         resolveLaunchConfig: async () => ({
@@ -963,7 +973,7 @@ describe('TM8 Chat durable orchestration', () => {
           allowedTools: ['messages.post'],
         }),
       });
-      return { db, orchestrator, runtime };
+      return { db, orchestrator, runtime, errors };
     }
 
     it('names the subject right after the mode line, before the speaker line', async () => {
@@ -983,6 +993,27 @@ describe('TM8 Chat durable orchestration', () => {
       ].join('\n'));
       // Read as the configuring human, whoever spoke.
       expect(db.aboutIdentities).toEqual([IDENTITY]);
+    });
+
+    it('puts the team line (328) after the mode line, from the turn — not the body', async () => {
+      const { db, orchestrator, runtime } = subjectRig([claim('cold')]);
+      db.team = { members: [{ name: 'Worker', model: 'Claude Sonnet 5', effort: 'low' }] };
+      db.about = { id: SUBJECT, kind: 'task', title: 'Ship the chat button' };
+      await orchestrator.wake(CHAT, IDENTITY);
+      expect(runtime.turns[0]).toBe([
+        '[mode: ask]',
+        '[team: Worker (Claude Sonnet 5/low)]',
+        `[about task ${SUBJECT} ${DOT} "Ship the chat button"]`,
+        'human prompt verbatim',
+      ].join('\n'));
+    });
+
+    it('a database without 328 sends the turn without a team line, and reports nothing', async () => {
+      const { db, orchestrator, runtime, errors } = subjectRig([claim('cold')]);
+      db.teamMissing = true;
+      await orchestrator.wake(CHAT, IDENTITY);
+      expect(runtime.turns[0]).toBe('[mode: ask]\nhuman prompt verbatim');
+      expect(errors).toEqual([]);
     });
 
     it('adds no line to a chat with no about link, or one whose subject is gone', async () => {

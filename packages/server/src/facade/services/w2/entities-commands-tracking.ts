@@ -1240,16 +1240,19 @@ function acceptanceCriteria(
 
 /**
  * "Made during a session" (Design Rules §2.3): `authored_from`, entity ->
- * work_session, recorded by the SERVER from the caller's verified work session
- * (the bearer token), never asserted by a client (308; it replaces the CLI's
- * unverified `created_in`). The RPC records only when that session is live and
- * its participating teammate created the entity, so it is a no-op for a human
- * caller, a foreign entity, or an entity that already has one.
+ * work_session or chat, recorded by the SERVER from the caller's verified work
+ * session or chat runtime (the bearer token), never asserted by a client (308;
+ * it replaces the CLI's unverified `created_in`; 327 adds chats). The RPC
+ * records only when that origin's teammate created the entity, so it is a
+ * no-op for a human caller, a foreign entity, or an entity that already has
+ * one. It is what the chat's created-here strip reads (`filters.createdIn`).
  */
-async function recordAuthoredFrom(q: Querier, ctx: RequestContext, entityId: string | undefined | null): Promise<void> {
-  const workSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null;
-  if (!workSessionId || !entityId) return;
-  await q.rpc('record_authored_from', [entityId, workSessionId]);
+export async function recordAuthoredFrom(q: Querier, ctx: RequestContext, entityId: string | undefined | null): Promise<void> {
+  const originId = ctx.identity.kind === 'bearer'
+    ? ctx.identity.workSessionId ?? ctx.identity.runtimeChatId ?? null
+    : null;
+  if (!originId || !entityId) return;
+  await q.rpc('record_authored_from', [entityId, originId]);
 }
 
 async function attachInitialConnections(

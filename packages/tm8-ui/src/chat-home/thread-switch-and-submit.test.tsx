@@ -14,6 +14,7 @@ import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './ChatHomeScreen';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './fixtures';
 import type { ChatHomePort, ChatModelOption, ChatThreadDetail } from './types';
+import { fakeCreatedHereReader, madeSummary } from './created-here/created-here.test-support';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
 const MODELS: ChatModelOption[] = [
@@ -56,7 +57,7 @@ async function openedOn(view: ReturnType<typeof mount>, expected: string) {
 
 describe('switching threads', () => {
   it('the outgoing thread’s phase, title, pins and ledger do not carry into the one being opened', async () => {
-    // A built something, so its ledger panel has a row to (wrongly) carry over.
+    // A built something, so its created-here strip has a row to (wrongly) carry over.
     const first = structuredClone(CHAT_HOME_FIXTURE_THREAD);
     first.turns.push({
       messageId: '019f0000-0000-7000-8000-0000000000e3' as EntityId,
@@ -78,10 +79,18 @@ describe('switching threads', () => {
       },
     };
     const view = render(
-      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} onOpenEntity={() => {}} />,
+      <ChatHomeScreen
+        port={port}
+        spaceId={SPACE_ID}
+        models={MODELS}
+        onOpenEntity={() => {}}
+        createdHere={fakeCreatedHereReader({
+          reads: [madeSummary({ id: '01a00000-00aa-7000-8000-0000000000a1', kind: 'task', title: 'Only in A' })],
+        })}
+      />,
     );
     await openedOn(view, 'Plan the launch sequence');
-    expect(view.getByTestId('ledger-panel')).toBeTruthy();
+    await waitFor(() => expect(view.getByTestId('created-here')).toBeTruthy());
     act(() => {
       fixture.controls.emit({
         type: 'chat.turn.delta', chatId: A, messageId: TURN, seq: 0,
@@ -98,9 +107,9 @@ describe('switching threads', () => {
     // B's own row speaks for it from the first frame (D26): title, teammate, mode.
     expect(title(view)).toBe('Retire the flaky migration');
     expect(view.container.querySelector('.tch-title span')?.textContent).toBe('with Researcher');
-    expect(view.getByTestId('tch-mode').textContent).toContain('ask');
+    expect(view.getByTestId('tch-settings-role').getAttribute('data-mode')).toBe('ask');
     // A's entities are not offered as B's.
-    expect(view.queryByTestId('ledger-panel')).toBeNull();
+    expect(view.queryByTestId('created-here')).toBeNull();
 
     act(() => releaseB?.());
     await openedOn(view, 'Retire the flaky migration');

@@ -6,10 +6,10 @@
  * here fails when the wiring fails, not only when a widget does.
  */
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from '../ChatHomeScreen';
-import { createChatHomeFixturePort } from '../fixtures';
+import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from '../fixtures';
 import type { ChatHomePort, ChatModelOption, ChatTeammateOption } from '../types';
 
 const SPACE_ID = '019f0000-0000-7000-8000-000000000090';
@@ -37,25 +37,49 @@ async function openNewChat(port: ChatHomePort, extra: Partial<Parameters<typeof 
   return view;
 }
 
+const modeOf = (view: ReturnType<typeof render>) =>
+  view.getByTestId('tch-settings-role').getAttribute('data-mode');
+
+function pickRole(view: ReturnType<typeof render>, role: 'worker' | 'coordinator' | 'dispatcher') {
+  fireEvent.click(view.getByTestId('tch-settings'));
+  fireEvent.click(view.getByTestId(`tch-settings-${role}`));
+}
+
+/** The toolbar's controls, by accessible name, in DOM order. */
+const toolbarOf = (view: ReturnType<typeof render>) =>
+  [...view.container.querySelector('.tch-composer')!.querySelectorAll('button[aria-label]')]
+    .map((b) => b.getAttribute('aria-label')!);
+
 describe('composer acceptance', () => {
-  it('ac_1 · one per-turn row inside the box: no teammate picker, no thread rail under it', async () => {
+  afterEach(() => localStorage.clear());
+
+  it('ac_1 · one toolbar under the field: [+][⚙ role][👥 N] … [model·effort][send]', async () => {
     const view = await openNewChat(portWith().port);
-    const composer = view.container.querySelector('.tch-composer')!;
-    expect(within(composer as HTMLElement).getByLabelText('Chat mode')).toBeTruthy();
-    expect(within(composer as HTMLElement).getByLabelText('Chat model')).toBeTruthy();
-    expect(within(composer as HTMLElement).getByLabelText('Add to this turn')).toBeTruthy();
+    expect(toolbarOf(view)).toEqual(['Add to this turn', 'Chat settings', 'Coordinator team', 'Chat model', 'Send']);
+    // Teammate, credentials, mode options, project and permissions all live in the ⚙ panel now.
     expect(view.queryByLabelText('Chat teammate')).toBeNull();
+    expect(view.queryByLabelText('Chat credentials')).toBeNull();
     expect(view.queryByTestId('tch-rail')).toBeNull();
+    fireEvent.click(view.getByTestId('tch-settings'));
+    for (const label of ['Chat teammate', 'Project', 'Permissions', 'Chat credentials']) {
+      expect(view.getByLabelText(label)).toBeTruthy();
+    }
   });
-  it('ac_2 · the mode menu is Read / Shape / Act with consequence captions, Act emphasised', async () => {
+
+  it('ac_2 · the ⚙ offers exactly Worker / Coordinator / Dispatcher, each over its server mode', async () => {
     const view = await openNewChat(portWith().port);
-    fireEvent.click(view.getByLabelText('Chat mode'));
-    const menu = view.getByTestId('tch-mode-menu');
-    const groups = [...menu.querySelectorAll('.tch-pickmenu__group')].map((el) => el.textContent);
-    expect(groups).toEqual(['Read', 'Shape', 'Act']);
-    expect(menu.querySelector('.tch-pickmenu__group[data-emphasis]')?.textContent).toBe('Act');
-    expect(view.getByTestId('tch-mode-build').textContent).toContain('edits files and the graph for real');
-    expect(view.getByTestId('tch-mode-ask').textContent).toContain('changes nothing');
+    expect(view.getByTestId('tch-settings-role').textContent).toBe('Coordinator');
+    fireEvent.click(view.getByTestId('tch-settings'));
+    const roles = within(view.getByRole('radiogroup', { name: 'Chat mode' })).getAllByRole('radio');
+    expect(roles.map((r) => r.querySelector('.tch-pickmenu__name')!.textContent)).toEqual(['Worker', 'Coordinator', 'Dispatcher']);
+    expect(view.getByTestId('tch-settings-worker').textContent).toContain('edits files');
+    fireEvent.click(view.getByTestId('tch-settings-worker'));
+    expect(view.getByTestId('tch-settings-role').textContent).toBe('Worker');
+    expect(modeOf(view)).toBe('build');
+    pickRole(view, 'dispatcher');
+    expect(modeOf(view)).toBe('orchestrate');
+    pickRole(view, 'coordinator');
+    expect(modeOf(view)).toBe('ask');
   });
 
   it('ac_3 · effort lives in the model popover and is disabled with a reason where unsupported', async () => {
@@ -63,9 +87,9 @@ describe('composer acceptance', () => {
     expect(view.queryByLabelText('Reasoning effort')).toBeNull();
     fireEvent.click(view.getByLabelText('Chat model'));
     const effort = view.getByTestId('tch-model-effort');
-    expect(within(effort).getAllByRole('radio').map((r) => r.textContent)).toEqual(['fast', 'balanced', 'deep', 'max']);
+    expect(within(effort).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Low', 'Medium', 'High', 'Max']);
     fireEvent.click(view.getByTestId('tch-model-effort-max'));
-    expect(view.getByLabelText('Chat model').textContent).toContain('max');
+    expect(view.getByLabelText('Chat model').textContent).toContain('Max');
     fireEvent.click(view.getByTestId('tch-model-house-model'));
     expect(view.getByTestId('tch-model-effort').textContent).toContain('does not declare effort stops');
     expect(within(view.getByTestId('tch-model-effort')).queryAllByRole('radio')).toHaveLength(0);
@@ -74,8 +98,7 @@ describe('composer acceptance', () => {
   it('ac_8 + ac_10 · crew rows take any model incl. codex; coordinator list says why codex is out', async () => {
     const { port, controls } = portWith();
     const view = await openNewChat(port);
-    fireEvent.click(view.getByLabelText('Chat mode'));
-    fireEvent.click(view.getByTestId('tch-mode-orchestrate'));
+    pickRole(view, 'dispatcher');
     const crew = await waitFor(() => view.getByTestId('tch-crew'));
     fireEvent.click(within(crew).getByTestId('tch-crew-add'));
     fireEvent.click(within(crew).getByTestId('tch-crew-add'));
@@ -107,24 +130,18 @@ describe('composer acceptance', () => {
     expect(controls.roots[0]!.mode).toBe('orchestrate');
   });
 
-  it('ac_12 · the row’s controls are the same set in every mode; ⚙ badges the non-default count', async () => {
+  it('ac_12 · only the team chip comes and goes with the role; mode options ride the ⚙ panel', async () => {
     const view = await openNewChat(portWith().port);
-    const controlsOf = () =>
-      [...view.container.querySelector('.tch-composer')!.querySelectorAll('button[aria-label]')]
-        .map((b) => b.getAttribute('aria-label')!.replace(/^(ask|explain|plan|craft|build|orchestrate) options$/, '⚙'))
-        .sort();
-    const before = controlsOf();
-    expect(before).toContain('⚙');
-    for (const mode of ['explain', 'plan', 'craft', 'build', 'orchestrate']) {
-      fireEvent.click(view.getByLabelText('Chat mode'));
-      fireEvent.click(view.getByTestId(`tch-mode-${mode}`));
-      expect(controlsOf()).toEqual(before);
-    }
-    expect(view.queryByTestId('tch-mode-options-badge')).toBeNull();
-    fireEvent.click(view.getByLabelText('orchestrate options'));
+    const coordinator = toolbarOf(view);
+    pickRole(view, 'worker');
+    const worker = toolbarOf(view);
+    pickRole(view, 'dispatcher');
+    expect(toolbarOf(view)).toEqual(worker);
+    expect(coordinator.filter((label) => label !== 'Coordinator team')).toEqual(worker);
+
+    fireEvent.click(view.getByTestId('tch-settings'));
     fireEvent.change(view.getByTestId('tch-mode-options-autonomy'), { target: { value: 'auto-dispatch' } });
     fireEvent.change(view.getByTestId('tch-mode-options-parallelism'), { target: { value: '6' } });
-    expect(view.getByTestId('tch-mode-options-badge').textContent).toBe('2');
     // Sanity: the policy under the crew panel reflects the ⚙.
     expect(view.getByTestId('tch-crew-policy').textContent).toContain('auto-dispatch');
   });
@@ -135,8 +152,110 @@ describe('composer acceptance', () => {
     const field = view.getByLabelText('Message the chat agent');
     fireEvent.change(field, { target: { value: '/build' } });
     fireEvent.keyDown(field, { key: 'Enter' });
-    expect(view.getByLabelText('Chat mode').textContent).toContain('build');
+    expect(modeOf(view)).toBe('build');
+    expect(view.getByTestId('tch-settings-role').textContent).toBe('Worker');
     expect((field as HTMLTextAreaElement).value).toBe('');
     expect(controls.roots).toHaveLength(0);
+  });
+
+  it('the send button is muted while the draft is empty', async () => {
+    const view = await openNewChat(portWith().port);
+    const send = view.getByRole('button', { name: 'Send' });
+    expect(send.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'hi' } });
+    expect(send.getAttribute('aria-disabled')).toBe('false');
+  });
+});
+
+describe('the Coordinator team chip', () => {
+  afterEach(() => localStorage.clear());
+  const [BUILDER, CONDUCTOR] = TEAMMATES;
+
+  it('shows 👥 1 by default — the generic worker — and only in Coordinator mode', async () => {
+    const view = await openNewChat(portWith().port);
+    expect(view.getByTestId('tch-team-count').textContent).toBe('1');
+    pickRole(view, 'worker');
+    expect(view.queryByTestId('tch-team')).toBeNull();
+    pickRole(view, 'dispatcher');
+    expect(view.queryByTestId('tch-team')).toBeNull();
+    pickRole(view, 'coordinator');
+    expect(view.getByTestId('tch-team')).toBeTruthy();
+  });
+
+  it('ticked teammates and added models move above the search, count, and ride the turn as a team field', async () => {
+    const { port, controls } = portWith({
+      listTeammates: async () => TEAMMATES.map((t) => (t.id === CONDUCTOR!.id ? { ...t, model: 'claude-sonnet-5' } : t)),
+    });
+    const view = await openNewChat(port);
+    fireEvent.click(view.getByTestId('tch-team'));
+    const picker = view.getByTestId('tch-team-picker');
+    const picked = () => picker.querySelector('.tch-teampick__picked')!;
+    const list = () => picker.querySelector('.tch-teampick__list')!;
+    expect(list().textContent).toContain('Conductor');
+
+    fireEvent.click(view.getByTestId(`tch-team-${CONDUCTOR!.id}`));
+    expect(picked().textContent).toContain('Conductor');
+    expect(list().textContent).not.toContain('Conductor');
+    // A ticked teammate defaults to its own model at Medium.
+    expect((view.getByTestId(`tch-team-${CONDUCTOR!.id}-model`) as HTMLSelectElement).value).toBe('claude-sonnet-5');
+    expect((view.getByTestId(`tch-team-${CONDUCTOR!.id}-effort`) as HTMLSelectElement).value).toBe('medium');
+    fireEvent.change(view.getByTestId(`tch-team-${CONDUCTOR!.id}-effort`), { target: { value: 'high' } });
+
+    fireEvent.click(view.getByTestId('tch-team-add-model'));
+    fireEvent.change(view.getByTestId('tch-team-added-0-effort'), { target: { value: 'low' } });
+    expect(view.getByTestId('tch-team-count').textContent).toBe('3');
+    expect(view.getByTestId('tch-team').getAttribute('title')).toContain('Conductor (Claude Sonnet 5/high)');
+
+    // Unticking moves it back down.
+    fireEvent.click(view.getByTestId(`tch-team-${BUILDER!.id}`));
+    fireEvent.click(view.getByTestId(`tch-team-${BUILDER!.id}`));
+    expect(list().textContent).toContain('Builder');
+    expect(view.getByTestId('tch-team-count').textContent).toBe('3');
+
+    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'Plan the release.' } });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(controls.roots).toHaveLength(1));
+    // The body is the human's words only; the team rides as a turn field (328).
+    expect(controls.roots[0]!.body).toBe('Plan the release.');
+    expect(controls.roots[0]!.team).toEqual({ members: [
+      { name: 'Worker', model: 'Claude Sonnet 5', effort: 'medium' },
+      { name: 'Worker', model: 'Claude Sonnet 5', effort: 'low' },
+      { name: 'Conductor', teammateId: CONDUCTOR!.id, model: 'Claude Sonnet 5', effort: 'high' },
+    ] });
+  });
+
+  it('a default team sends no team field', async () => {
+    const { port, controls } = portWith();
+    const view = await openNewChat(port);
+    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'Hello.' } });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(controls.roots).toHaveLength(1));
+    expect(controls.roots[0]!.body).toBe('Hello.');
+    expect(controls.roots[0]).not.toHaveProperty('team');
+  });
+
+  it('an open chat sends the team on each turn, and never in the body', async () => {
+    const { port, controls } = portWith();
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} routeThreadId={CHAT_HOME_FIXTURE_THREAD.summary.rootId} />,
+    );
+    await waitFor(() => expect(view.getByTestId('tch-settings-role').getAttribute('data-mode')).toBe('plan'));
+    fireEvent.click(view.getByTestId('tch-team'));
+    fireEvent.click(view.getByTestId(`tch-team-${BUILDER!.id}`));
+    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'Next step.' } });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(controls.posts).toHaveLength(1));
+    expect(controls.posts[0]!.body).toBe('Next step.');
+    expect(controls.posts[0]!.team?.members.map((m) => m.name)).toEqual(['Worker', 'Builder']);
+  });
+
+  it('the pick persists across a remount', async () => {
+    const first = await openNewChat(portWith().port);
+    fireEvent.click(first.getByTestId('tch-team'));
+    fireEvent.click(first.getByTestId(`tch-team-${BUILDER!.id}`));
+    expect(first.getByTestId('tch-team-count').textContent).toBe('2');
+    first.unmount();
+    const view = await openNewChat(portWith().port);
+    expect(view.getByTestId('tch-team-count').textContent).toBe('2');
   });
 });

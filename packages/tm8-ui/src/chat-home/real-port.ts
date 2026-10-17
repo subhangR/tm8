@@ -144,6 +144,7 @@ export function createChatHomePortFromSeam(
         // absent is passed through as absent so no filter pretends to know.
         ...(state && 'mode' in state ? { mode: state.mode ?? null } : {}),
         ...(state && 'permissionMode' in state ? { permissionMode: state.permissionMode ?? null } : {}),
+        ...(state?.model ? { model: state.model } : {}),
       };
     });
   };
@@ -390,6 +391,7 @@ export function createChatHomePortFromSeam(
           ...(input.mcpSelections !== undefined ? { mcpSelections: input.mcpSelections } : {}),
           ...(input.title ? { title: input.title } : {}),
           ...(input.aboutId ? { aboutId: input.aboutId } : {}),
+          ...(input.team ? { team: input.team } : {}),
           /* Omitted rather than sent empty: the server validates the array when
              it is present, and an empty one is a claim about files nobody
              staged. */
@@ -433,6 +435,8 @@ export function createChatHomePortFromSeam(
         // is said, and sending shownMode unconditionally would instead write a
         // requested_chat_mode onto every turn nobody redirected.
         ...(input.mode ? { mode: input.mode } : {}),
+        // 328: the Coordinator's team, only when it is not the default.
+        ...(input.team ? { team: input.team } : {}),
       });
       return { messageId: messageIdFrom(result) };
     },

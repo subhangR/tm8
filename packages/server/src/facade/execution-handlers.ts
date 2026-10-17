@@ -3623,6 +3623,18 @@ function registerHandlers(
       sessionId: ctx.identity.workSessionId ?? ctx.identity.runtimeChatId,
     } }, request));
 
+    // 327: a session records the chat or session that spawned it (its parent)
+    // as `authored_from`, like every other entity a session or chat makes, so
+    // "created here" is one edge for every kind. Never at the spawn's expense.
+    const spawnOrigin = ctx.identity.workSessionId ?? ctx.identity.runtimeChatId;
+    if (spawnOrigin && parentSessionId === spawnOrigin) {
+      try {
+        await db.tx(claims, (q) => q.rpc('record_authored_from', [result.sessionId, spawnOrigin]));
+      } catch (error) {
+        console.warn(`[tm8:spawn] authored_from not recorded for ${result.sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     // The Ask Jev run this launch came from (§6: per-launch cost). Only after
     // a SUCCESSFUL spawn, and never at its expense: the session is live, so a
     // run that is absent, in another space or someone else's is logged, not

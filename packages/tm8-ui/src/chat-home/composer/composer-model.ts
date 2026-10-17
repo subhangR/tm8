@@ -17,7 +17,7 @@
  * functions are total over missing data: an older node that projects no
  * `mode` yields an unfiltered roster, never an empty one.
  */
-import type { ChatMode, ChatWorkdirMode, EntityId, LaunchModelEffort, TeamMemberMode } from '@tm8/contract';
+import type { ChatMode, ChatTurnTeam, ChatTurnTeamMember, ChatWorkdirMode, EntityId, LaunchModelEffort, TeamMemberMode } from '@tm8/contract';
 import type { ChatModelOption, ChatTeammateOption } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +57,160 @@ export function modeSpec(mode: ChatMode): ModeSpec {
   const spec = MODE_SPECS.find((entry) => entry.id === mode);
   if (!spec) throw new Error(`unknown chat mode: ${mode}`);
   return spec;
+}
+
+// ---------------------------------------------------------------------------
+// The three composer roles — what the ⚙ button offers in place of six modes
+// ---------------------------------------------------------------------------
+
+export type ComposerRole = 'worker' | 'coordinator' | 'dispatcher';
+
+export interface ComposerRoleSpec {
+  id: ComposerRole;
+  label: string;
+  /** The server-side mode a pick of this role sends. */
+  mode: ChatMode;
+  consequence: string;
+}
+
+/**
+ * THREE ROLES OVER SIX SERVER MODES. The wire still speaks `ChatMode`, so a
+ * role is a label over the mode it sends: Worker → `build`, Coordinator →
+ * `ask`, Dispatcher → `orchestrate`. The other read/shape modes (explain,
+ * plan, craft) still exist server-side and a thread already in one shows as
+ * Coordinator; picking Coordinator sends `ask`.
+ */
+export const COMPOSER_ROLES: readonly ComposerRoleSpec[] = [
+  { id: 'worker', label: 'Worker', mode: 'build', consequence: 'does the work itself — edits files and the graph' },
+  { id: 'coordinator', label: 'Coordinator', mode: 'ask', consequence: 'talks it through and hands work to the team' },
+  { id: 'dispatcher', label: 'Dispatcher', mode: 'orchestrate', consequence: 'splits the work and dispatches worker sessions' },
+];
+
+export function roleOfMode(mode: ChatMode): ComposerRole {
+  if (mode === 'build') return 'worker';
+  if (mode === 'orchestrate') return 'dispatcher';
+  return 'coordinator';
+}
+
+export function roleSpec(role: ComposerRole): ComposerRoleSpec {
+  return COMPOSER_ROLES.find((entry) => entry.id === role)!;
+}
+
+// ---------------------------------------------------------------------------
+// The Coordinator's team — who it may hand work to
+// ---------------------------------------------------------------------------
+
+/** One owner on the team, with the model and effort it is handed work at. */
+export interface TeamSlot {
+  model: string | null;
+  effort: LaunchModelEffort | null;
+}
+
+/** A model-only worker added with `+ Add model` — no teammate, removable. */
+export interface TeamWorkerSlot extends TeamSlot {
+  id: string;
+}
+
+/** A picked teammate; `null` model means the teammate's own configured one. */
+export interface TeamMateSlot extends TeamSlot {
+  teammateId: string;
+}
+
+/**
+ * The generic `worker` is ALWAYS on the team (it is what `tm8 execution spawn`
+ * gets without a teammate) and always counted; `workers` are extra model-only
+ * workers and `teammates` the Space's teammates picked on top, in pick order.
+ */
+export interface ComposerTeam {
+  worker: TeamSlot;
+  workers: readonly TeamWorkerSlot[];
+  teammates: readonly TeamMateSlot[];
+}
+
+export const TEAM_DEFAULT_EFFORT: LaunchModelEffort = 'medium';
+
+export const EMPTY_TEAM: ComposerTeam = { worker: { model: null, effort: null }, workers: [], teammates: [] };
+
+/** Only the always-on generic worker, at the chat's model and default effort. */
+export function teamIsDefault(team: ComposerTeam): boolean {
+  return team.workers.length === 0 && team.teammates.length === 0
+    && team.worker.model === null && team.worker.effort === null;
+}
+
+export function teamSize(team: ComposerTeam): number {
+  return 1 + team.workers.length + team.teammates.length;
+}
+
+/** `Claude Opus 5.5 (1M)` → `Opus 5.5 1M`: short enough for a select in a popover. */
+export function shortModelLabel(label: string): string {
+  return label.replace(/^Claude\s+/i, '').replace(/\s*\(([^)]*)\)/g, ' $1').trim();
+}
+
+function modelLabel(models: readonly ChatModelOption[], id: string | null | undefined): string | null {
+  if (!id) return null;
+  return models.find((model) => model.model === id)?.label ?? id;
+}
+
+/** The model a slot runs: its own pick, else the fallback (the chat's model, a teammate's own). */
+export function slotModel(slot: TeamSlot, fallback: string | null | undefined): string | null {
+  return slot.model ?? fallback ?? null;
+}
+
+export function slotEffort(slot: TeamSlot): LaunchModelEffort {
+  return slot.effort ?? TEAM_DEFAULT_EFFORT;
+}
+
+/** Every owner as `Name (Model/effort)`: the generic worker, added workers, then teammates. */
+export function teamMembers(
+  team: ComposerTeam,
+  teammates: readonly ChatTeammateOption[],
+  models: readonly ChatModelOption[],
+  defaultModel: string | null = null,
+): string[] {
+  const describe = (name: string, slot: TeamSlot, fallback: string | null | undefined) => {
+    const model = modelLabel(models, slotModel(slot, fallback));
+    return `${name} (${[model, slotEffort(slot)].filter(Boolean).join('/')})`;
+  };
+  const names = [describe('Worker', team.worker, defaultModel)];
+  for (const slot of team.workers) names.push(describe('Worker', slot, defaultModel));
+  for (const slot of team.teammates) {
+    const teammate = teammates.find((entry) => entry.id === slot.teammateId);
+    if (!teammate) continue;
+    names.push(describe(teammate.label, slot, teammate.model));
+  }
+  return names;
+}
+
+/**
+ * THE TEAM AS A TURN FIELD (328) — how the Coordinator learns its team. The
+ * server stores it beside the turn and writes the `[team: …]` line into the
+ * agent's prompt, so it never shows in the body or the transcript. `null` for
+ * the default team (`teamIsDefault`): a lone generic worker on the chat's own
+ * model tells the agent nothing, so nothing is sent.
+ */
+export function teamPayload(
+  team: ComposerTeam,
+  teammates: readonly ChatTeammateOption[],
+  models: readonly ChatModelOption[],
+  defaultModel: string | null = null,
+): ChatTurnTeam | null {
+  if (teamIsDefault(team)) return null;
+  const member = (name: string, slot: TeamSlot, fallback: string | null | undefined, teammateId?: string): ChatTurnTeamMember => {
+    const model = modelLabel(models, slotModel(slot, fallback));
+    return {
+      name,
+      ...(teammateId ? { teammateId: teammateId as EntityId } : {}),
+      ...(model ? { model } : {}),
+      effort: slotEffort(slot),
+    };
+  };
+  const members = [member('Worker', team.worker, defaultModel)];
+  for (const slot of team.workers) members.push(member('Worker', slot, defaultModel));
+  for (const slot of team.teammates) {
+    const teammate = teammates.find((entry) => entry.id === slot.teammateId);
+    if (teammate) members.push(member(teammate.label, slot, teammate.model, teammate.id));
+  }
+  return { members };
 }
 
 /** `/build` on an empty input selects a mode. Returns null for anything else. */
@@ -270,12 +424,12 @@ export function workerModelChoices(models: readonly ChatModelOption[]): ModelCho
 }
 
 export const EFFORT_LABELS: Record<LaunchModelEffort, { short: string; band: string }> = {
-  low: { short: 'fast', band: 'quickest · cheapest' },
-  medium: { short: 'balanced', band: 'moderate latency' },
-  high: { short: 'deep', band: 'slower · more thorough' },
-  xhigh: { short: 'deeper', band: 'long-running · costly' },
-  max: { short: 'max', band: 'longest · most costly' },
-  ultra: { short: 'ultra', band: 'longest · most costly' },
+  low: { short: 'Low', band: 'fast · cheapest' },
+  medium: { short: 'Medium', band: 'moderate latency' },
+  high: { short: 'High', band: 'slower · more thorough' },
+  xhigh: { short: 'XHigh', band: 'long-running · costly' },
+  max: { short: 'Max', band: 'longest · most costly' },
+  ultra: { short: 'Ultra', band: 'longest · most costly' },
 };
 
 export interface EffortAvailability {

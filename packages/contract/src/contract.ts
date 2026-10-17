@@ -27,6 +27,7 @@ import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
 import type { CraftContent, CraftState, EntityContextCraftPage } from './craft.js';
+import type { LaunchModelEffort } from './launch-models.js';
 import type { WorkspacePrompt, WorkspaceSummary, WorkspaceSummaryCauseKind, WorkspaceWindowCap } from './workspace-bridge.js';
 import type { TaskProgress } from './progress.js';
 import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
@@ -1260,6 +1261,15 @@ export interface CollectionQuery {
      */
     workedByActorId?: EntityId;
     /**
+     * Additive (327, the chat's created-here strip): the ROOTS made in this
+     * chat or work session — entities whose server-recorded `authored_from`
+     * names it (a session also counts when it is the session's parent, so a
+     * pre-327 spawn is not lost). An entity whose parent was ALSO made there
+     * is not a root and is left to the parent's subtree. Messages and forms
+     * never count: every post in a chat carries `authored_from` too.
+     */
+    createdIn?: EntityId;
+    /**
      * Facade-defined server-preset expansions BEYOND the doc'd filter list
      * (flagged upstream): they make the `getHome` preset queries reproducible
      * on re-execution. Actor scope = the actor's member + owned team_members.
@@ -1553,6 +1563,8 @@ export interface StartChatInput {
   attachmentIds?: EntityId[];
   /** The entity this chat is about; written as an `about` edge. */
   aboutId?: EntityId | null;
+  /** The opening turn's Coordinator team (328) — see `PostMessageInput.team`. */
+  team?: ChatTurnTeam;
   clientMutationId: string;
 }
 
@@ -3803,6 +3815,28 @@ export interface PostMessageInput extends CommandContext {
    * enqueued chat turn runs under it (else the thread's default mode applies).
    */
   mode?: ChatMode;
+  /**
+   * Optional per-turn Coordinator team chosen at send time. Only meaningful
+   * when the post targets a chat thread: the Server stores it beside the turn
+   * and writes it into the agent's prompt as a `[team: …]` line, so it never
+   * appears in the message body or the transcript. Omitted ⇒ no team line.
+   */
+  team?: ChatTurnTeam;
+}
+
+/** One owner a Coordinator may hand work to: a teammate, or a model-only worker. */
+export interface ChatTurnTeamMember {
+  /** Display name — the teammate's name, or `Worker` for a model-only worker. */
+  name: string;
+  /** Present for a picked teammate. */
+  teammateId?: EntityId;
+  /** Model label as the composer shows it, e.g. `Claude Opus 5.5 (1M)`. */
+  model?: string;
+  effort?: LaunchModelEffort;
+}
+
+export interface ChatTurnTeam {
+  members: ChatTurnTeamMember[];
 }
 
 /** Accepted only at the versioned input migration boundary. */

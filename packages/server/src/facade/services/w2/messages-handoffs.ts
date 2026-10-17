@@ -41,6 +41,7 @@ import {
   type DeliveryDisposition,
   type MessageDeliveryPort,
 } from './message-dispatch.js';
+import { stampChatTurnTeam } from '../../../chat/turn-team.js';
 
 export interface ReservedMessageDelivery {
   readonly deliveryId: string;
@@ -508,6 +509,8 @@ export class W2MessagesHandoffsService {
         // the self-guard is keyed on it — is what stops a chat waking itself.
         sourceChatId,
       ]);
+      // 328: the Coordinator's team rides the TURN, never the body.
+      await stampChatTurnTeam(q, result.messageIds, input.team);
       // FOUR target classes come back from here, not one: the anchor when it
       // IS a work_session (072), the session being answered (076), the caller's
       // explicit pokes (099), and — since 121 — every LIVE session with a

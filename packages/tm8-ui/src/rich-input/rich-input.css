@@ -167,29 +167,28 @@
 .ri-card__foot .ri-foot-gap { flex: 1 1 auto; min-width: 0; }
 
 /**
- * THE SINGLE-LINE PILL (user ruling 2026-10-14: "a narrow single-line chat
- * composer, like ChatGPT"). On a desktop-width shell the card is ONE row —
- * ＋ first, the field taking the slack, the host's controls and Send after it
- * — fully rounded, a filled card in dark and a white card with a hairline
- * and soft shadow in light (both from tokens). It grows only when it must:
- * the field gets taller as its text wraps (`ComposerCard` sizes it), and the
- * controls drop to a second line only when the row cannot hold them.
+ * TEXT ON TOP, TOOLBAR UNDERNEATH (user ruling 2026-10-17, task 01a14a32 —
+ * replaces the 2026-10-14 single-line pill). On a desktop-width shell the card
+ * is always two rows: attachment chips (when any), then the field across the
+ * full width, then one toolbar — ＋ and the host's controls at the left, the
+ * slack, then Send at the right edge. The field grows with its text up to
+ * `max-height` before it scrolls (`ComposerCard` sizes it), and Send can
+ * never be pushed off the edge because the field no longer shares its row.
  *
- * `display: contents` on the foot is what puts its controls on the field's
- * line without a second DOM for the same controls; every `.ri-card__foot …`
- * descendant rule still matches. The phone keeps the two-row card: its foot
- * scrolls sideways by ruling (chat-home.css), which a shared line cannot.
+ * `display: contents` on the foot lets its items sit in the card's own flex
+ * row after the field; every `.ri-card__foot …` descendant rule still matches.
+ * The phone keeps its own card: its foot scrolls sideways by ruling.
  */
 .cv2-root:not([data-shell='mobile']) .ri-card {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  column-gap: 2px;
-  min-height: 52px;
+  align-items: center;
+  column-gap: 4px;
+  row-gap: 2px;
   box-sizing: border-box;
-  padding: 7px 8px 7px 10px;
+  padding: 8px 8px 8px 10px;
   border-color: var(--pn-line);
-  border-radius: 26px;
+  border-radius: 20px;
   box-shadow: var(--pn-sh-sm);
 }
 .cv2-root[data-theme='dark']:not([data-shell='mobile']) .ri-card,
@@ -197,39 +196,31 @@
   border-color: transparent;
 }
 .cv2-root:not([data-shell='mobile']) .ri-card:focus-within { border-color: var(--pn-line-2); }
-.cv2-root:not([data-shell='mobile']) .ri-card > .ri-attachments { flex: 0 0 100%; order: -1; padding: 2px 4px 6px; }
-.cv2-root:not([data-shell='mobile']) .ri-card > .ri-host {
-  flex: 1 1 12rem;
-  min-width: 0;
-  order: 1;
-  align-self: center;
-}
+.cv2-root:not([data-shell='mobile']) .ri-card > .ri-attachments { flex: 0 0 100%; padding: 2px 2px 4px; }
+.cv2-root:not([data-shell='mobile']) .ri-card > .ri-host { flex: 0 0 100%; min-width: 0; }
 .cv2-root:not([data-shell='mobile']) .ri-card textarea {
   min-height: 0;
-  max-height: calc(4 * 1.5em + 14px);
+  max-height: min(40vh, calc(12 * 1.5em + 12px));
   overflow-y: auto;
-  padding: 7px 6px;
+  padding: 4px 4px 6px;
   font-size: var(--pn-fs-body);
   line-height: 1.5;
 }
 .cv2-root:not([data-shell='mobile']) .ri-card__foot { display: contents; }
-.cv2-root:not([data-shell='mobile']) .ri-card__foot > * { order: 2; align-self: center; }
-/* ＋ leads the line, before the field, where the reference draws it. */
-.cv2-root:not([data-shell='mobile']) .ri-card__foot > .ri-attach,
-.cv2-root:not([data-shell='mobile']) .ri-card__foot > .tch-attach { order: 0; }
-/* The field is the slack now; a spacer would only push Send onto its own line. */
-.cv2-root:not([data-shell='mobile']) .ri-card__foot > .ri-foot-gap { display: none; }
+.cv2-root:not([data-shell='mobile']) .ri-card__foot > * { align-self: center; }
+.cv2-root:not([data-shell='mobile']) .ri-card__foot > .ri-foot-gap { display: block; }
 .cv2-root:not([data-shell='mobile']) .ri-card .ri-send { border-radius: var(--pn-r-pill); padding: 7px 13px; }
 
-/* OPEN: the text wrapped, so the field takes the whole first row and the
-   controls fall to a row of their own under it — ＋ at the left, Send at the
-   right — and the pill relaxes to a rounded box (`ComposerCard` sets the
-   attribute, and clears it when the draft is emptied). */
-.cv2-root:not([data-shell='mobile']) .ri-card[data-open] { border-radius: 24px; row-gap: 4px; }
-.cv2-root:not([data-shell='mobile']) .ri-card[data-open] > .ri-host { flex-basis: 100%; order: 0; }
-.cv2-root:not([data-shell='mobile']) .ri-card[data-open] .ri-card__foot > .ri-attach,
-.cv2-root:not([data-shell='mobile']) .ri-card[data-open] .ri-card__foot > .tch-attach { order: 1; }
-.cv2-root:not([data-shell='mobile']) .ri-card[data-open] .ri-card__foot > .ri-foot-gap { display: block; }
+/* THE FIELD HAS NO BOX OF ITS OWN. The card is the composer's one frame, so
+   the textarea never draws a border, outline or ring on focus — whatever a
+   broader field rule might add. Scoped to the card; the focus cue is the
+   card's own border above. */
+.ri-card textarea:focus,
+.ri-card textarea:focus-visible {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
 
 .ri-popover {
   position: absolute;
@@ -345,35 +336,51 @@
 
 .ri-attachments__list {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 6px;
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+/* A FILE IS A CHIP: name, a state mark only when it is not simply ready, ×. */
 .ri-attachment {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
+  gap: 6px;
+  max-width: 240px;
+  padding: 3px 4px 3px 9px;
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-paper);
   font-size: 11px;
   color: var(--pn-ink-3);
 }
-.ri-attachment[data-phase='failed'] { border-color: var(--pn-block); }
-.ri-attachment__name { color: var(--pn-ink-2); overflow-wrap: anywhere; }
+.ri-attachment[data-phase='failed'] { border-color: var(--pn-block); max-width: 100%; }
+.ri-attachment__name { min-width: 0; overflow: hidden; color: var(--pn-ink-2); text-overflow: ellipsis; white-space: nowrap; }
+.ri-attachment__state { flex: none; color: var(--pn-ink-4); }
+.ri-attachment__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .ri-attachment__error { color: var(--pn-block); }
 .ri-attachment button {
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
+  flex: none;
+  border: 0;
+  border-radius: var(--pn-r-pill);
   background: transparent;
   color: var(--pn-ink-3);
-  font-size: 10px;
-  padding: 1px 7px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 5px;
   cursor: pointer;
 }
+.ri-attachment button:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.ri-attachment__retry { text-decoration: underline; }
 
 /* ── the prose field (`ProseField`) ──────────────────────────────────────
    A textarea, its popover, and one line beneath for what the uploads are

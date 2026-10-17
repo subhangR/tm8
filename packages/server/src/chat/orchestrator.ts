@@ -9,7 +9,7 @@ import {
 } from '@tm8/contract';
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
-import { chatModeLine } from './compose.js';
+import { chatModeLine, chatTeamLine } from './compose.js';
 import type { ChatTurnPublisher } from './publisher.js';
 import type {
   AgentRuntime,
@@ -262,12 +262,22 @@ async function aboutLine(db: Db, turn: ClaimedTurn): Promise<string | null> {
   });
 }
 
-function promptFor(turn: ClaimedTurn, about: string | null): string {
+/**
+ * The team line (328): read from the TURN, not the body, so the composer's 👥
+ * pick reaches the agent without ever showing in the transcript. Read as the
+ * configuring human, like the subject line.
+ */
+async function teamLine(db: Db, turn: ClaimedTurn): Promise<string | null> {
+  const team = await db.rpc<unknown>(claims(turn.requesterIdentityId), 'chat_turn_team', [turn.turnId]);
+  return chatTeamLine(team);
+}
+
+function promptFor(turn: ClaimedTurn, about: string | null, team: string | null = null): string {
   // The mode line leads every turn — it is the per-turn selector the mode-
   // neutral system prompt defers to, and turn.chatMode is the effective mode
   // (the turn's own override, else the chat default; resolved in SQL).
   const mode = chatModeLine(turn.chatMode);
-  const subject = about ? [about] : [];
+  const subject = [...(team ? [team] : []), ...(about ? [about] : [])];
   const files = attachmentLines(turn);
   const attribution = attributionLine(turn);
   const from = attribution ? [attribution] : [];
@@ -440,6 +450,22 @@ export class ChatOrchestrator {
    * onError and the turn goes out without the line, rather than failing a turn
    * the human is waiting on.
    */
+  /**
+   * The team is context too, and best-effort the same way. A node whose
+   * database predates 328 has no `chat_turn_team` yet: that is not an error
+   * worth reporting on every turn, just a turn without the line.
+   */
+  private async readTeam(turn: ClaimedTurn): Promise<string | null> {
+    try {
+      return await teamLine(this.options.db, turn);
+    } catch (error) {
+      const failure = error as { code?: string; details?: { sqlstate?: string } } | null;
+      // 42883 undefined_function: raw from pg, or preserved by db/errors.ts.
+      if (failure?.code !== '42883' && failure?.details?.sqlstate !== '42883') this.options.onError?.(error);
+      return null;
+    }
+  }
+
   private async readAbout(turn: ClaimedTurn): Promise<string | null> {
     try {
       return await aboutLine(this.options.db, turn);
@@ -509,7 +535,8 @@ export class ChatOrchestrator {
     try {
       const threadId = await this.ensureRuntime(turn);
       const about = await this.readAbout(turn);
-      for await (const item of this.options.runtime.sendTurn(threadId, { text: promptFor(turn, about) })) {
+      const team = await this.readTeam(turn);
+      for await (const item of this.options.runtime.sendTurn(threadId, { text: promptFor(turn, about, team) })) {
         // F6 (PR188 review): claude emits an empty thinking block on some
         // turns; persisting it draws an empty "Thinking" disclosure. Skip it —
         // absence of thought is not a part.

@@ -570,6 +570,24 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     )`);
   }
 
+  if (f.createdIn) {
+    // 327: "made here" is the server-recorded `authored_from` (entity -> chat
+    // or session); a session also counts by its spawn parent, which pre-327
+    // spawns carry without the edge. Roots only: a child whose parent was
+    // made here too belongs to that parent's subtree.
+    const origin = p.add(assertUuid(f.createdIn, 'filters.createdIn'));
+    const madeHere = (alias: string) => `(exists (
+        select 1 from public.edges ca
+         where ca.src_id = ${alias}.id and ca.type = 'authored_from' and ca.dst_id = ${origin}
+      ) or (${alias}.kind = 'work_session' and ${alias}.parent_id = ${origin}))`;
+    where.push(`e.kind not in ('message', 'form')`);
+    where.push(madeHere('e'));
+    where.push(`not exists (
+      select 1 from public.entities cp
+       where cp.id = e.parent_id and cp.deleted_at is null and ${madeHere('cp')}
+    )`);
+  }
+
   if (f.inFlightForActorId) {
     // "In flight for me" = pulled or being worked on by an actor in my scope,
     // and not finished. Actor scope is the member row plus the personas it
