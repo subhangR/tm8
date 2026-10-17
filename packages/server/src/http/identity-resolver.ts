@@ -21,7 +21,7 @@ import type { Db } from '../db/types.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 import { TOKEN_PREFIX } from '../identity/crypto.js';
 import { refuseLinkSessionOnTransport } from '../identity/link-bearer.js';
-import { resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
+import { isInvalidTokenError, resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { readTm8SessionCookie } from './session-cookie.js';
 import { autoOwnerResolver } from './security.js';
 import type { IdentityResolver, RequestIdentity, SpaceSessionsMode } from './types.js';
@@ -59,7 +59,24 @@ export function createSessionIdentityResolver(
   return async (headers, context) => {
     const header = headers.authorization;
     const authorization = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
-    const cookie = readTm8SessionCookie(headers) ?? '';
+    let cookie = readTm8SessionCookie(headers) ?? '';
+    // A COOKIE THIS NODE DOES NOT KNOW IS NO COOKIE. Cookies are scoped by
+    // host, never by port, so every tm8 node on 127.0.0.1 (7778, a scratch
+    // server, a lane's preview) receives the cookie whichever of them signed
+    // the browser in last. Treating that foreign or dead token as a failed
+    // sign-in put a password card in front of the loopback owner on every new
+    // local node. It names no principal here, so dropping it grants nothing a
+    // caller could not get by not sending it. An invalid `Authorization` is
+    // still refused below: that carrier is chosen, not ambient.
+    let cookieSession: ResolvedAuthSession | undefined;
+    if (cookie.startsWith(TOKEN_PREFIX) && cookie !== authorization) {
+      try {
+        cookieSession = await resolveBearerIdentity(db, cookie);
+      } catch (error) {
+        if (!isInvalidTokenError(error)) throw error;
+        cookie = '';
+      }
+    }
     // Authorization remains the CLI/agent carrier. A browser cookie is the
     // only credential a native WebSocket can send without putting a secret
     // in its URL. If both are present, they must name the same token: a
@@ -74,7 +91,7 @@ export function createSessionIdentityResolver(
     }
     const raw = authorization || cookie;
     if (raw.startsWith(TOKEN_PREFIX)) {
-      const session = await resolveBearerIdentity(db, raw);
+      const session = raw === cookie && cookieSession ? cookieSession : await resolveBearerIdentity(db, raw);
       // 256 (W7p, layer (i)): a `link` session's token is never accepted on
       // a wire — every transport resolves through this closure. It is refused
       // HERE, not in the shared `resolveBearerIdentity`, which
