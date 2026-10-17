@@ -112,7 +112,7 @@ describe('the chat composer shows no warning tone', () => {
 
   it('the composer’s status lines and popovers are styled in ink, not amber', () => {
     const sheet = rules();
-    for (const selector of ['.tch-refusal', '.tch-continuable', '.tch-phase']) {
+    for (const selector of ['.tch-refusal', '.tch-phase']) {
       const rule = sheet.find((entry) => entry.selectors.includes(selector));
       expect(rule, `no rule for ${selector}`).toBeDefined();
       expect(rule!.body).not.toMatch(WARNING_TONE);

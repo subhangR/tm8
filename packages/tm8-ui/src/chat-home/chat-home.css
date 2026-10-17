@@ -867,11 +867,6 @@ button.tch-entity-chip:hover {
   font-size: var(--pn-fs-fine);
 }
 
-.tch-continuable {
-  margin: 0 0 7px;
-  color: var(--pn-ink-3);
-  font: var(--pn-fs-fine) var(--pn-mono);
-}
 
 
 /* The card shell (border, field, foot geometry) is `ComposerCard`'s —

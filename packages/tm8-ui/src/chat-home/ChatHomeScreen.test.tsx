@@ -401,7 +401,9 @@ describe('Chat Home', () => {
     fireEvent.click(view.getByRole('button', { name: /stop/i }));
 
     await waitFor(() => expect(view.getByText('Stopped · continuable')).toBeTruthy());
-    expect(view.getByText(/this thread is continuable/i)).toBeTruthy();
+    // No separate "Turn stopped · continuable" line above the composer; the
+    // phase label above is the one statement of it.
+    expect(view.queryByText(/this thread is continuable/i)).toBeNull();
     expect((view.getByLabelText('Message the chat agent') as HTMLTextAreaElement).disabled).toBe(false);
     expect(controls.interrupts).toEqual(['019f0000-0000-7000-8000-000000000010']);
     expect(view.getByText('I found the current context before the turn was stopped.')).toBeTruthy();

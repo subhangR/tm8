@@ -2881,11 +2881,9 @@ export function ChatHomeScreen({
             {/* Compact: the picker keeps its readiness work here but draws in ＋. */}
             {newThread && <McpPicker teamMemberId={teammateId ?? undefined} targetId={aboutId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={busy} headless={compactComposer} />}
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
-            {phase === 'stopped-continuable' ? (
-              <p className="tch-continuable" role="status">
-                Turn stopped · this thread is continuable. Send another message to resume.
-              </p>
-            ) : null}
+            {/* No "Turn stopped · continuable" line above the composer (Subhang,
+                2026-10-18): the composer's own phase label already says it, and
+                sending a message is how anyone continues. */}
             <ComposerCard
               className={compactComposer ? 'tch-composer tch-composer--compact' : 'tch-composer'}
               above={<>
