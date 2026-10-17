@@ -739,8 +739,8 @@ function SendControl({
     );
   }
   return (
-    <button type="button" className="chs-composer__send" disabled={busy || empty} onClick={onClick}>
-      {busy ? '…' : <>Send <span aria-hidden>↑</span></>}
+    <button type="button" className="chs-composer__send" aria-label="Send" disabled={busy || empty} onClick={onClick}>
+      {busy ? '…' : <span aria-hidden>↑</span>}
     </button>
   );
 }

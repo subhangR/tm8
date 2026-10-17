@@ -14,9 +14,10 @@
  * its own `.tch-*` classes, not to the Chat Home grid, so importing the sheet
  * here is what lets a host outside Chat Home render a turn correctly.
  */
-import type { ChatMode, EntityId } from '@tm8/contract';
+import type { ReactNode } from 'react';
+import type { ChatMode, EntityId, Mention } from '@tm8/contract';
 import { actorName } from '../domain';
-import { Avatar, Markdown, Timestamp } from '../kit';
+import { Avatar, Markdown, Timestamp, type MarkdownComponents } from '../kit';
 import { chatMarkdownSource } from '../channel-screen/feed-model';
 import { MessageAttachments } from '../files/MessageAttachments';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
@@ -39,6 +40,10 @@ export function ChatTurn({
   assetHref,
   ledger,
   toolNote,
+  mentions,
+  markdownComponents,
+  bylineEnd,
+  footer,
 }: {
   turn: ChatTurnModel;
   /** The thread's mode, drawn as the byline chip. Absent — a work-session
@@ -58,6 +63,17 @@ export function ChatTurn({
   /** The whole thread's ledger fold, for cross-turn memory in the lines. */
   ledger?: ChatLedger | undefined;
   toolNote?: TurnPartsProps['toolNote'];
+  /** The message's canonical mentions, so `@name` in the body renders as the
+   *  mention it is (the channel feed's `chatMarkdownSource` preparation). */
+  mentions?: readonly Mention[] | undefined;
+  /** Tag overrides for the body — the channel feed rebuilds mention links. */
+  markdownComponents?: MarkdownComponents | undefined;
+  /** HOST CHROME after the timestamp — a channel's "edited", "saving…" or a
+   *  delivery problem. Small facts, never a second byline. */
+  bylineEnd?: ReactNode;
+  /** HOST CHROME after the parts — a channel's thread footer, context line or
+   *  reply preview. The turn itself stays chat's. */
+  footer?: ReactNode;
 }) {
   const label = (turn.author ? actorName(turn.author) : null) ?? (turn.role === 'assistant' ? 'Agent' : 'You');
   const actorId = turn.author?.id ?? `chat-${turn.role}`;
@@ -160,6 +176,7 @@ export function ChatTurn({
           <span className="tch-mode-chip" title={`This answer ran in ${mode} mode`}>{mode}</span>
         ) : null}
         <Timestamp at={turn.createdAt} />
+        {bylineEnd}
       </header>
       {bodyIsContent && turn.body ? (
         /* A typed message is MARKDOWN, exactly as the channel feed already
@@ -168,7 +185,8 @@ export function ChatTurn({
            uses (empty mention list): a lone newline stays a line break, a
            fenced block keeps its bytes. */
         <Markdown
-          source={chatMarkdownSource(turn.body, []).source}
+          source={chatMarkdownSource(turn.body, mentions ?? []).source}
+          {...(markdownComponents ? { components: markdownComponents } : {})}
           className="tch-user-body"
           testId="chat-user-body"
         />
@@ -204,6 +222,7 @@ export function ChatTurn({
            closes the calls it abandoned. */
         settled={!live}
       />
+      {footer}
     </article>
   );
 }

@@ -41,7 +41,9 @@
   flex-direction: column;
   min-height: 0;
   height: 100%;
-  background: var(--pn-card);
+  /* Chat's paper (`.tch-conversation`), so a bubble's card fill reads against
+     it in both themes — on a card-coloured feed the bubble vanished in dark. */
+  background: var(--pn-paper);
   color: var(--pn-ink-2);
   font-family: var(--pn-ui);
   container-type: inline-size;
@@ -58,13 +60,16 @@
    * So the measure is a TOKEN, inherited by both, and centring is what the
    * token buys. `min(…, 100%)` and not a clamp: at narrow widths — the ~360px
    * thread pane, the 440px phone container — it degrades to 100% and the
-   * existing container rules keep their say. 1100px answers "widen it
-   * properly"; it lives here so re-tuning it is one number.
+   * existing container rules keep their say. The number lives here so
+   * re-tuning it is one edit.
    *
    * `.chs-text`'s 70ch is UNTOUCHED and is a different measure: this one
    * places the column, that one keeps the line readable inside it.
    */
-  --chs-measure: min(1100px, 100%);
+  /* CHAT'S COLUMN (Subhang, 2026-10-18: the channel view looks like the chat
+     view). `.tch-transcript` reads at 760px; the feed and its composer card
+     ride the same rail so a channel and a chat sit identically in a pane. */
+  --chs-measure: min(760px, 100%);
   /* The reading surface's own top edge — the hub above it has no bottom rule,
      and without this the feed scrolls straight into the hub's chips. */
   border-top: 1px solid var(--pn-line);
@@ -1595,3 +1600,100 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   min-inline-size: var(--mobile-touch-min);
   min-height: var(--mobile-touch-min);
 }
+
+/* ==========================================================================
+   CHAT PARITY (task 01a14c1e) — a message row is chat's own `ChatTurn`
+   (`chat-home.css` draws it); these rules only seat it in the feed and give
+   the channel-only chrome the turn's 26px avatar gutter.
+   ========================================================================== */
+
+/* A turn carries its own rhythm (`.tch-turn` margin) and chat has no row
+   hover tint, so the feed's row box steps aside for it. */
+.chs-row--turn {
+  margin-top: 0;
+  padding: 0;
+}
+.chs-row--turn:hover,
+.chs-row--turn:focus-within { background: none; }
+.chs-row__turn:focus { outline: none; }
+.chs-row__turn:focus-visible { outline: 2px solid var(--pn-focus, var(--pn-brand)); outline-offset: 2px; border-radius: var(--pn-r-sm); }
+/* The hover bar sits over the byline's far corner, clear of the bubble. */
+.chs-row--turn .chs-actions { top: -10px; right: 0; }
+
+/* Channel facts under the turn, in the bubble's gutter and on its side. */
+.chs-turn-chrome {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  margin: 4px 0 0 26px;
+}
+.chs-turn-chrome:empty { display: none; }
+.chs-row--turn[data-own] .chs-turn-chrome { margin-left: 0; align-items: flex-end; }
+.chs-turn-chrome .chs-text--pending {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-sm);
+}
+.tch-turn__byline .chs-byline__edited { font-size: var(--pn-fs-tick); color: var(--pn-ink-4); }
+
+/* The paging provenance stays in the accessibility tree, not on the page:
+   chat states no read metadata above its first turn. */
+.chs-provenance {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* THE COMPOSER, AS CHAT'S: no bar behind the card, no key-hint line, and a
+   round ↑ send — the same 32px circle `.tch-composer .tch-send` draws. */
+.chs-composer {
+  border-top: none;
+  background: transparent;
+}
+.chs-composer__hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.cv2-root .chs-composer .chs-composer__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+  font: 600 16px/1 var(--pn-ui);
+  cursor: pointer;
+}
+/* A finger still gets the 44px floor; only the pointer gets chat's 32px. */
+@media (pointer: coarse) {
+  .cv2-root .chs-composer .chs-composer__send { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+}
+.cv2-root .chs-composer .chs-composer__send:disabled {
+  opacity: 1;
+  background: var(--pn-line);
+  color: var(--pn-ink-4);
+  cursor: default;
+}
+
+/* Chat's dock offsets against `.tch-transcript`'s 24px bottom padding; the
+   feed pads 12px, so the pill sits the same 4px off the composer edge. */
+.chs-feed > .tch-dock { bottom: calc(4px - var(--pn-space-3)); }

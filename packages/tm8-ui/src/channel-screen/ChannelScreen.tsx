@@ -13,6 +13,7 @@ import type { DownloadHref } from '../files/FilesScreen';
 import { TurnGraph } from './LiveToolGraph';
 import { segmentTurnGraphs, type TurnSegment } from './live-graph-model';
 import { ThreadPane } from './ThreadPane';
+import { TranscriptDock } from '../chat-home/LiveTurnStatus';
 import { dayLabel as formatDay, dayStart } from '../kit/time';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
 import { isUnresolvedFeedPage } from './chat-mutations';
@@ -201,6 +202,9 @@ export function ChannelScreen({
     nearNewest: boolean;
   } | null>(null);
   const [newItemCount, setNewItemCount] = useState(0);
+  /* The reader has scrolled up off the newest message — chat's "away", which
+     is what shows the Jump to latest pill. */
+  const [away, setAway] = useState(false);
   const [localReplyTo, setLocalReplyTo] = useState<MessageView | null>(null);
   /*
    * THE COMPOSER SPLIT. In threads mode the channel composer posts ROOTS
@@ -227,7 +231,7 @@ export function ChannelScreen({
       segment.kind === 'item' ? { kind: 'single' as const, item: segment.item } : segment,
     );
   }, [anchorId, page, turnGraphs]);
-  const plan = useMemo(() => planRows(units, newSinceItemId, threads), [units, newSinceItemId, threads]);
+  const plan = useMemo(() => planRows(units), [units]);
   const loadedMessages = useMemo(() => new Map(
     (page?.items ?? [])
       .filter((item): item is Extract<FeedItem, { itemKind: 'message' }> => item.itemKind === 'message')
@@ -239,13 +243,16 @@ export function ChannelScreen({
   const rememberScroll = useCallback(() => {
     const element = feedElement.current;
     if (!element) return;
+    const nearNewest = element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
+    setAway(!nearNewest);
+    if (nearNewest) setNewItemCount(0);
     scrollSnapshot.current = {
       first: itemIds[0] ?? null,
       last: itemIds[itemIds.length - 1] ?? null,
       count: itemIds.length,
       height: element.scrollHeight,
       top: element.scrollTop,
-      nearNewest: element.scrollHeight - element.scrollTop - element.clientHeight <= 48,
+      nearNewest,
     };
   }, [itemIds]);
 
@@ -392,21 +399,6 @@ export function ChannelScreen({
         onScroll={rememberScroll}
       >
         <div className="chs-feed__spacer" aria-hidden />
-        {newItemCount > 0 ? (
-          <button
-            type="button"
-            className="chs-new-items"
-            aria-live="polite"
-            onClick={() => {
-              const element = feedElement.current;
-              if (element) element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
-              setNewItemCount(0);
-              rememberScroll();
-            }}
-          >
-            {`${newItemCount} new ${newItemCount === 1 ? 'item' : 'items'} · jump to newest`}
-          </button>
-        ) : null}
         {refreshedFromNewest ? (
           <p className="chs-notice" data-testid="chs-refreshed">
             history refreshed from newest — the cursor expired · your draft is untouched
@@ -472,7 +464,6 @@ export function ChannelScreen({
                   <FeedRowGroupWithMark
                     mark={newSinceItemId === row.firstId}
                     group={row.group}
-                    clustered={row.clustered}
                     anchorId={anchorId}
                     onPost={onPost}
                     onOpenEntity={onOpenEntity}
@@ -489,6 +480,21 @@ export function ChannelScreen({
             ))}
           </ul>
         )}
+        {/* CHAT'S JUMP PILL — the same `TranscriptDock` the chat thread pins
+            under its last turn, shown once the reader scrolls up and counting
+            what arrived since. A channel has no live turn to report. */}
+        <TranscriptDock
+          turn={null}
+          parts={[]}
+          away={away}
+          unseen={newItemCount}
+          onJump={() => {
+            const element = feedElement.current;
+            if (element) element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+            setNewItemCount(0);
+            rememberScroll();
+          }}
+        />
       </div>
 
       <Composer
@@ -550,16 +556,12 @@ export function ChannelScreen({
 /**
  * The chat's render plan — where the presentation-only chrome is decided.
  *
- * A DAY DIVIDER goes before the first row of each calendar day. A row is
- * CLUSTERED (no repeated byline) when it continues the author run directly
- * above it: same author, same day, within seven minutes, and carrying no
- * facts of its own that live in the byline — a reply target, an edit, a
- * pending state or any delivery facet all break the run, because collapsing
- * a row would otherwise hide the place those facts are shown.
+ * A DAY DIVIDER goes before the first row of each calendar day. Every
+ * message draws its own byline, as a chat turn does — the author-run
+ * clustering of the old feed grammar went with it.
  *
  * A `turn` unit plans as its own row when its fold touched anything, and as
- * NOTHING when it did not — but either way it breaks the author run, exactly
- * as the raw activity rows it stands in for always did.
+ * NOTHING when it did not.
  */
 type PlanUnit =
   | ReturnType<typeof groupByOperation>[number]
@@ -569,7 +571,6 @@ type RowPlan =
   | {
       kind: 'row';
       group: ReturnType<typeof groupByOperation>[number];
-      clustered: boolean;
       dayLabel: string | null;
       firstId: string;
     }
@@ -580,19 +581,11 @@ type RowPlan =
       firstId: string;
     };
 
-const CLUSTER_WINDOW_MS = 7 * 60 * 1000;
-
-function planRows(
-  units: readonly PlanUnit[],
-  newSinceItemId: string | null,
-  threads = false,
-): RowPlan[] {
+function planRows(units: readonly PlanUnit[]): RowPlan[] {
   const out: RowPlan[] = [];
-  let previous: FeedItem | null = null;
   let previousDay: number | null = null;
   for (const unit of units) {
     if (unit.kind === 'turn') {
-      previous = null;
       if (unit.model.touches.length === 0) continue;
       const day = dayStart(unit.createdAt);
       const dayLabel = day !== null && day !== previousDay ? formatDay(unit.createdAt) : null;
@@ -604,45 +597,15 @@ function planRows(
     const first = group.kind === 'operation' ? group.items[0] : group.item;
     const day = dayStart(first.createdAt);
     const dayLabel = day !== null && day !== previousDay ? formatDay(first.createdAt) : null;
-    const clustered = !dayLabel
-      && newSinceItemId !== first.itemId
-      && group.kind === 'single'
-      && continuesRun(previous, group.item, threads);
-    out.push({ kind: 'row', group, clustered, dayLabel, firstId: first.itemId });
+    out.push({ kind: 'row', group, dayLabel, firstId: first.itemId });
     previousDay = day ?? previousDay;
-    previous = group.kind === 'operation' ? group.items[group.items.length - 1] : group.item;
   }
   return out;
-}
-
-function continuesRun(previous: FeedItem | null, current: FeedItem, threads: boolean): boolean {
-  if (!previous || previous.itemKind !== 'message' || current.itemKind !== 'message') return false;
-  const a = previous.message;
-  const b = current.message;
-  if (a.state.redactedAt || b.state.redactedAt) return false;
-  /*
-   * The reply-target guard exists because a reply's byline area carries its
-   * ParentPreview, and collapsing the row would hide it. In THREADS MODE that
-   * fact is gone twice over: the feed is roots-only (no `rootMessageId` ever)
-   * and ParentPreview is not drawn — while `parentId` on a channel message is
-   * the ENTITY parent (the channel itself, in fixture and anchor-parented
-   * data), which read here as "this is a reply" and stopped every root from
-   * ever clustering into an author run.
-   */
-  if (!threads && (b.parentId || b.state.rootMessageId)) return false;
-  if (b.state.editedAt || b.pending) return false;
-  if (current.delivery.length > 0) return false;
-  const authorA = a.state.author?.id ?? a.createdBy?.id ?? null;
-  const authorB = b.state.author?.id ?? b.createdBy?.id ?? null;
-  if (!authorA || authorA !== authorB) return false;
-  const delta = new Date(current.createdAt).getTime() - new Date(previous.createdAt).getTime();
-  return Number.isFinite(delta) && delta >= 0 && delta <= CLUSTER_WINDOW_MS;
 }
 
 function FeedRowGroupWithMark({
   mark,
   group,
-  clustered,
   anchorId,
   onPost,
   onOpenEntity,
@@ -656,7 +619,6 @@ function FeedRowGroupWithMark({
 }: {
   mark: boolean;
   group: ReturnType<typeof groupByOperation>[number];
-  clustered: boolean;
   anchorId: EntityId;
   onPost?: (input: ChannelPostInput) => Promise<void> | void;
   onOpenEntity?: (id: EntityId) => void;
@@ -674,7 +636,6 @@ function FeedRowGroupWithMark({
       <FeedRowGroup
         group={group}
         anchorId={anchorId}
-        clustered={clustered}
         viewerActorId={viewerActorId}
         handlers={{
           onOpenEntity,

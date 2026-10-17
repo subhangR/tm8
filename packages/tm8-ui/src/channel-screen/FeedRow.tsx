@@ -15,6 +15,8 @@ import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels
  */
 import { TurnParts } from '../chat-home/TurnParts';
 import { turnPartFromMessagePart } from '../chat-home/wire';
+import { ChatTurn } from '../chat-home/ChatTurn';
+import { chatTurnFromMessage } from './feed-to-turns';
 import { MessageAttachments } from '../files/MessageAttachments';
 import type { DownloadHref } from '../files/FilesScreen';
 import {
@@ -96,14 +98,11 @@ export interface FeedRowHandlers {
 export function FeedRowGroup({
   group,
   anchorId,
-  clustered = false,
   handlers,
   viewerActorId,
 }: {
   group: FeedGroup;
   anchorId: EntityId;
-  /** This row continues the author run above it — no repeated byline. */
-  clustered?: boolean;
   handlers: FeedRowHandlers;
   /** The viewer, for own-message sidedness (user ruling 2026-08-18: own
    *  messages right-in-a-bubble, everyone else left). Absent ⇒ every row
@@ -117,7 +116,6 @@ export function FeedRowGroup({
     <FeedRow
       item={group.item}
       anchorId={anchorId}
-      clustered={clustered}
       handlers={handlers}
       viewerActorId={viewerActorId}
     />
@@ -127,43 +125,163 @@ export function FeedRowGroup({
 function FeedRow({
   item,
   anchorId,
-  clustered,
   handlers,
   viewerActorId,
 }: {
   item: FeedItem;
   anchorId: EntityId;
-  clustered: boolean;
   handlers: FeedRowHandlers;
   viewerActorId?: string | undefined;
 }) {
+  if (item.itemKind === 'message' && !item.message.state.redactedAt) {
+    return (
+      <ChatFeedRow item={item} anchorId={anchorId} handlers={handlers} viewerActorId={viewerActorId} />
+    );
+  }
   const isMessage = item.itemKind === 'message';
   const author = isMessage ? item.message.state.author ?? item.message.createdBy : null;
   const own = viewerActorId !== undefined && author?.id === viewerActorId;
-  const cls = [
-    'chs-row',
-    clustered ? 'chs-row--follow' : '',
-    isMessage ? '' : 'chs-row--activity',
-  ].filter(Boolean).join(' ');
+  const cls = isMessage ? 'chs-row' : 'chs-row chs-row--activity';
   return (
     <li className={cls} data-own={own || undefined}>
       <article
         className="chs-row__grid"
         {...(isMessage ? { 'data-feed-message-id': item.message.id, tabIndex: -1 } : {})}
       >
-        <Gutter item={item} clustered={clustered} />
+        <Gutter item={item} />
         <div className="chs-row__body">
           {isMessage ? (
-            <MessageContent item={item} anchorId={anchorId} clustered={clustered} handlers={handlers} />
+            <Tombstone message={item.message} handlers={handlers} />
           ) : (
             <ActivityContent item={item} anchorId={anchorId} handlers={handlers} />
           )}
         </div>
-        {isMessage && !item.message.state.redactedAt ? (
-          <RowActions item={item} handlers={handlers} />
-        ) : null}
       </article>
     </li>
+  );
+}
+
+/**
+ * A MESSAGE ROW IS A CHAT TURN (Subhang, 2026-10-18: "the channel view should
+ * look and behave the same as the chat view"). Byline, bubble, sidedness,
+ * markdown, attachments and parts are chat's own `ChatTurn`; what only a
+ * channel has rides in its two slots — the byline facts (edited, saving, a
+ * delivery that has not landed) and the footer (context, linked sessions,
+ * reply preview, trailing mentions, multi-target delivery, thread footer).
+ * Tombstones, activity and mutation groups keep the feed grammar below:
+ * chat has no counterpart for them.
+ *
+ * Every row draws its byline, as chat does — the old author-run clustering
+ * was the T10 grammar this replaces.
+ */
+function ChatFeedRow({
+  item,
+  anchorId,
+  handlers,
+  viewerActorId,
+}: {
+  item: Extract<FeedItem, { itemKind: 'message' }>;
+  anchorId: EntityId;
+  handlers: FeedRowHandlers;
+  viewerActorId?: string | undefined;
+}) {
+  const { message, delivery } = item;
+  const author = message.state.author ?? message.createdBy;
+  const own = viewerActorId !== undefined && author?.id === viewerActorId;
+  const { mentions } = message.content;
+  const { inlined } = chatMarkdownSource(message.content.body, mentions);
+  const trailing = mentions.filter((m) => !inlined.has(mentionKey(m)));
+  const summary = deliverySummaryLine(delivery);
+  const single = delivery.length === 1 ? delivery[0] : null;
+  const parentMessageId = message.parentId ?? message.state.rootMessageId;
+  const parts = message.parts ?? [];
+  return (
+    <li className="chs-row chs-row--turn" data-own={own || undefined}>
+      <div className="chs-row__turn" data-feed-message-id={message.id} tabIndex={-1}>
+        <ChatTurn
+          turn={chatTurnFromMessage(message)}
+          /* No viewer ⇒ no row is anyone's own (never the role guess). */
+          viewerId={viewerActorId ?? NO_VIEWER}
+          live={message.turnInFlight === true}
+          onOpenEntity={handlers.onOpenEntity}
+          assetHref={handlers.downloadHref}
+          mentions={mentions}
+          markdownComponents={mentionComponents(mentions, handlers.onOpenEntity)}
+          bylineEnd={(
+            <>
+              {message.state.editedAt ? (
+                <span className="chs-byline__edited" title={`Edited ${accessibleDateTime(message.state.editedAt)}`}>
+                  edited
+                </span>
+              ) : null}
+              {message.pending ? <Pill tone="idle">saving…</Pill> : null}
+              {/* Delivered is the expected outcome and says nothing; only a
+                  delivery that has not landed earns a badge. */}
+              {single && single.status !== 'delivered' ? <DeliveryBadge status={single.status} /> : null}
+            </>
+          )}
+          footer={(
+            <div className="chs-turn-chrome">
+              {message.turnInFlight && parts.length === 0 ? (
+                <p className="chs-text--pending" data-testid="chs-turn-pending" aria-live="polite">
+                  Working&hellip;
+                </p>
+              ) : null}
+              <ContextLine item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
+              <LinkedSessions item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
+              {/* NOT drawn in threads mode: the feed is roots-only, and in the
+                  thread pane the parent is pinned at the top. Inside a pane the
+                  preview renders only for a parent ON the branch — `parentId`
+                  is the ENTITY parent, which can be the channel itself. */}
+              {parentMessageId && !handlers.threads
+                && parentMessageId !== handlers.pinnedParentId
+                && (handlers.pinnedParentId === undefined
+                  || handlers.loadedMessages?.get(parentMessageId) != null) ? (
+                <ParentPreview
+                  id={parentMessageId}
+                  parent={handlers.loadedMessages?.get(parentMessageId) ?? null}
+                  onOpenEntity={handlers.onOpenEntity}
+                  onFocusMessage={handlers.onFocusMessage}
+                />
+              ) : null}
+              {trailing.length > 0 ? <TrailingMentions mentions={trailing} onOpenEntity={handlers.onOpenEntity} /> : null}
+              {summary && delivery.length > 1 ? <TargetList summary={summary} rows={delivery} /> : null}
+              <ThreadFooter message={message} handlers={handlers} />
+            </div>
+          )}
+        />
+      </div>
+      <RowActions item={item} handlers={handlers} />
+    </li>
+  );
+}
+
+const NO_VIEWER = '\u0000no-viewer';
+
+function TrailingMentions({
+  mentions,
+  onOpenEntity,
+}: {
+  mentions: readonly Mention[];
+  onOpenEntity?: ((id: EntityId) => void) | undefined;
+}) {
+  return (
+    <ul className="chs-mentions" aria-label="Mentions">
+      {mentions.map((mention) => (
+        <li key={`${mention.kind}:${mention.entityId}`}>
+          {onOpenEntity ? (
+            <button
+              type="button"
+              className="chs-ref-chip"
+              aria-label={`Open mention ${mention.display}`}
+              onClick={() => onOpenEntity(mention.entityId)}
+            >
+              @{mention.display}
+            </button>
+          ) : <span className="chs-ref-chip">@{mention.display}</span>}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -172,8 +290,8 @@ function FeedRow({
  * provenance — humans round, agents rounded-square). Follow rows and activity
  * rows: the timestamp, so every row still answers "when" without a byline.
  */
-function Gutter({ item, clustered }: { item: FeedItem; clustered: boolean }) {
-  if (item.itemKind === 'message' && !clustered) {
+function Gutter({ item }: { item: FeedItem }) {
+  if (item.itemKind === 'message') {
     const author = item.message.state.author ?? item.message.createdBy;
     return (
       <div className="chs-gutter">
@@ -254,104 +372,25 @@ function OpenThreadButton({
 // Messages
 // ---------------------------------------------------------------------------
 
-function MessageContent({
-  item,
-  anchorId,
-  clustered,
-  handlers,
-}: {
-  item: Extract<FeedItem, { itemKind: 'message' }>;
-  anchorId: EntityId;
-  clustered: boolean;
-  handlers: FeedRowHandlers;
-}) {
-  const { message, delivery } = item;
+function Tombstone({ message, handlers }: { message: MessageView; handlers: FeedRowHandlers }) {
   const author = message.state.author ?? message.createdBy;
-
-  if (message.state.redactedAt) {
-    /*
-     * S14 — the tombstone. It keeps its PLACE (so replies below it still make
-     * sense) and states who removed it and when, where that is permitted. The
-     * body is not rendered from any cached copy: "the former title is not
-     * recovered from cache" is the same law one level down.
-     */
-    return (
-      <>
-        <p className="chs-tomb" data-testid="chs-tombstone">
-          {`⌀ message${author?.displayName ? ` from ${author.displayName}` : ''} redacted · ${clockTime(
-            message.state.redactedAt,
-          )} — replies keep their place`}
-        </p>
-        {/* "Replies keep their place" must stay TRUE in a roots-only feed:
-            with the branch hidden behind the root, a redacted root without a
-            footer would orphan every reply under it. */}
-        <ThreadFooter message={message} handlers={handlers} />
-      </>
-    );
-  }
-
-  const summary = deliverySummaryLine(delivery);
-  const single = delivery.length === 1 ? delivery[0] : null;
-  const parentMessageId = message.parentId ?? message.state.rootMessageId;
-
+  const redactedAt = message.state.redactedAt!;
+  /*
+   * S14 — the tombstone. It keeps its PLACE (so replies below it still make
+   * sense) and states who removed it and when, where that is permitted. The
+   * body is not rendered from any cached copy: "the former title is not
+   * recovered from cache" is the same law one level down.
+   */
   return (
     <>
-      {!clustered ? (
-        <div className="chs-byline">
-          <span className="chs-byline__who">{author ? actorName(author) : 'unknown'}</span>
-          {author?.isAgent ? <span className="chs-byline__kind">agent</span> : null}
-          <time
-            className="chs-byline__time"
-            dateTime={message.createdAt}
-            aria-label={accessibleDateTime(message.createdAt)}
-          >
-            {clockTime(message.createdAt)}
-          </time>
-          {message.state.editedAt ? (
-            <span className="chs-byline__edited" title={`Edited ${accessibleDateTime(message.state.editedAt)}`}>
-              edited
-            </span>
-          ) : null}
-          {message.pending ? <Pill tone="idle">saving…</Pill> : null}
-          {single ? <DeliveryBadge status={single.status} /> : null}
-        </div>
-      ) : null}
-
-      <ContextLine item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
-
-      <LinkedSessions item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
-
-      {/* NOT drawn in threads mode. ParentPreview existed because replies
-          were drawn where their parent wasn't; a roots-only feed has no such
-          row, and in the thread pane the parent is pinned at the top by
-          construction. The session surface (threads off) still draws replies
-          inline and keeps it.
-
-          INSIDE A PANE (`pinnedParentId` set) the preview renders ONLY for a
-          parent that is actually ON the branch: `MessageView.parentId` is the
-          ENTITY parent, which fixture data (and any anchor-parented message)
-          points at the CHANNEL — previewing that as "in reply to <channel>"
-          under every row was the first thing the browser run showed. */}
-      {parentMessageId && !handlers.threads
-        && parentMessageId !== handlers.pinnedParentId
-        && (handlers.pinnedParentId === undefined
-          || handlers.loadedMessages?.get(parentMessageId) != null) ? (
-        <ParentPreview
-          id={parentMessageId}
-          parent={handlers.loadedMessages?.get(parentMessageId) ?? null}
-          onOpenEntity={handlers.onOpenEntity}
-          onFocusMessage={handlers.onFocusMessage}
-        />
-      ) : null}
-
-      <MessageBody
-        message={message}
-        onOpenEntity={handlers.onOpenEntity}
-        downloadHref={handlers.downloadHref}
-      />
-
-      {summary && delivery.length > 1 ? <TargetList summary={summary} rows={delivery} /> : null}
-
+      <p className="chs-tomb" data-testid="chs-tombstone">
+        {`⌀ message${author?.displayName ? ` from ${author.displayName}` : ''} redacted · ${clockTime(
+          redactedAt,
+        )} — replies keep their place`}
+      </p>
+      {/* "Replies keep their place" must stay TRUE in a roots-only feed:
+          with the branch hidden behind the root, a redacted root without a
+          footer would orphan every reply under it. */}
       <ThreadFooter message={message} handlers={handlers} />
     </>
   );
@@ -426,134 +465,6 @@ function ThreadFooter({
         {content}
       </button>
     </div>
-  );
-}
-
-/**
- * The body — MARKDOWN, with the message's canonical mentions rendered IN PLACE.
- *
- * The body was always markdown; until this rendered it, a heading came out as
- * a literal `##`, a table as a row of pipes, and a code fence as one run-on
- * line. It goes through `kit/Markdown` now, which is the same renderer the doc
- * surfaces use — so it inherits that file's two safety rulings for free: no
- * raw HTML (a message body is untrusted text other members read) and no remote
- * image fetched on open.
- *
- * A mention whose `@display` token appears in the text becomes an inline
- * control right where it was typed; only mentions the text does NOT carry fall
- * through to trailing chips. Rendering both — the token in the text and a chip
- * repeating it below — was the duplication the screenshot complained about.
- * `chatMarkdownSource` performs the split and the `a` override below turns its
- * links back into controls.
- */
-function MessageBody({
-  message,
-  onOpenEntity,
-  downloadHref,
-}: {
-  message: MessageView;
-  onOpenEntity?: (id: EntityId) => void;
-  downloadHref?: DownloadHref | undefined;
-}) {
-  /*
-   * PARTS RENDER EVERYWHERE; ONLY CHAT CAN WRITE THEM.
-   *
-   * `MessageView.parts` is on the ORDINARY message type and the shared loader
-   * attaches it (`facade/handlers/messages.ts:120-166`), which `entities.feed`
-   * reaches through `loadMessageViewsByIds`. So this surface has been HANDED
-   * parts since before it could draw them, and threw them away — the
-   * `turnInFlight` docblock (contract.ts:854-863) was written for a
-   * parts-aware surface that did not exist yet.
-   *
-   * ONE BRANCH, HERE, IS THE WHOLE CHANGE. This function is the single body
-   * seam for both columns: the feed column and the thread pane both render
-   * through `FeedRowGroup`. Parts ride on REPLIES and a channel's feed column
-   * is roots-only, so in practice this lights up in the thread pane first —
-   * but putting the branch here rather than in `ThreadPane` means a session's
-   * flat, replies-inline read gets it for free and no second renderer exists.
-   *
-   * THE TWO "TURN" CONCEPTS DO NOT COLLAPSE, and this is not the place that
-   * pretends they do. `append_chat_message_part` (migration 104:355) is the
-   * only writer and raises P0002 for any message with no `chat_turns` row, so
-   * A SESSION CAN NEVER EMIT PARTS. `parts?.length` is therefore a real
-   * discriminator, not a heuristic: present ⇒ a chat turn wrote them.
-   */
-  const parts = message.parts;
-  if (parts && parts.length > 0) {
-    return (
-      <TurnParts
-        parts={parts.map(turnPartFromMessagePart)}
-        {...(onOpenEntity ? { onOpenEntity } : {})}
-        /* Only the claimed turn can still be running; a turn whose runtime
-           died before writing `done` must not pulse here forever. */
-        settled={!message.turnInFlight}
-      />
-    );
-  }
-
-  /*
-   * AN IN-FLIGHT TURN WITH NO PARTS YET HAS NO CONTENT TO SHOW. The stored
-   * body is the claim placeholder ('Agent turn in progress.'), not something
-   * the agent said — contract.ts:857-859 is explicit. Drawing it as prose
-   * would put words in the agent's mouth, so say what is true instead.
-   */
-  if (message.turnInFlight) {
-    return (
-      <p className="chs-text chs-text--pending" data-testid="chs-turn-pending" aria-live="polite">
-        Working&hellip;
-      </p>
-    );
-  }
-
-  const { body, mentions, attachments } = message.content;
-  const { source, inlined } = chatMarkdownSource(body, mentions);
-  const trailing = mentions.filter((m) => !inlined.has(mentionKey(m)));
-
-  return (
-    <>
-      <Markdown
-        source={source}
-        className="chs-text"
-        testId="chs-text"
-        components={mentionComponents(mentions, onOpenEntity)}
-      />
-      {trailing.length > 0 || attachments.length > 0 ? (
-        <div className="chs-references">
-          {trailing.length > 0 ? (
-            <ul className="chs-mentions" aria-label="Mentions">
-              {trailing.map((mention) => (
-                <li key={`${mention.kind}:${mention.entityId}`}>
-                  {onOpenEntity ? (
-                    <button
-                      type="button"
-                      className="chs-ref-chip"
-                      aria-label={`Open mention ${mention.display}`}
-                      onClick={() => onOpenEntity(mention.entityId)}
-                    >
-                      @{mention.display}
-                    </button>
-                  ) : <span className="chs-ref-chip">@{mention.display}</span>}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {/*
-            THE SAME COMPONENT THE CHAT TRANSCRIPT DRAWS. This row was a text
-            chip and nothing else, so an uploaded screenshot was never a
-            picture on either surface; sharing the implementation is what makes
-            the inline thumbnail land on both from one place. The chip face and
-            its styling are the ones that were here — moved, not restyled — and
-            a feed with no bytes resolver still renders exactly what it did.
-          */}
-          <MessageAttachments
-            attachments={attachments}
-            downloadHref={downloadHref}
-            onOpenEntity={onOpenEntity}
-            testId="chs-message-attachments"
-          />
-        </div>
-      ) : null}
-    </>
   );
 }
 
