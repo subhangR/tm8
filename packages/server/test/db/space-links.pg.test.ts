@@ -72,7 +72,7 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   // MCP connector consent and persisted chat selections are human-only writes.
   'create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamp with time zone,boolean,integer)': CREDENTIAL_MANAGEMENT,
   'save_chat_mcp_selections(uuid,jsonb)': CREDENTIAL_MANAGEMENT,
-  'set_chat_credentials(uuid,jsonb)': CREDENTIAL_MANAGEMENT, // 314
+  'set_chat_configuration(uuid,bigint,jsonb,text)': CREDENTIAL_MANAGEMENT, // 332: set_chat_credentials (314) now delegates here
   'mark_entity_seen(uuid,text)': SEEN_STATE, // 313
   'claim_space_credential(uuid)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
   'clear_my_space_credential_default(uuid,text)': CREDENTIAL_MANAGEMENT, // W10b (255, #869)
@@ -111,8 +111,12 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   // public.disable_account wraps it and calls it first, so the gate still runs
   // before anything the wrapper does. The caller is the core.
   'internal.disable_account_core(uuid,text)': IDENTITY_WIDE,
-  'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text)': AUTH_MINTING,
-  'revoke_agent_runtime_session(uuid)': AUTH_MINTING,
+  // 332 keeps the original human-only bodies private for nongeneration grants;
+  // the public 314 signatures delegate to them and call no gate themselves.
+  'internal.chat_mint_legacy_314(uuid,uuid,text,timestamp with time zone,text)': AUTH_MINTING,
+  'internal.chat_revoke_legacy_314(uuid)': AUTH_MINTING,
+  'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text,jsonb)': AUTH_MINTING,
+  'revoke_agent_runtime_session(uuid,bigint,bigint,uuid)': AUTH_MINTING,
   'leave_space(uuid,text)': PENDING,
   'remove_space_member(uuid,uuid,text)': PENDING,
   'start_chat(uuid,uuid,uuid,text,text,text,text,text,uuid,uuid,text,text,text,uuid[],uuid,text)': PENDING,
@@ -372,13 +376,13 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(37); // +3 tool secret writers (318) +1 set_chat_credentials (314)
     expect(labels.filter((l) => l === SEEN_STATE)).toHaveLength(1); // mark_entity_seen (313)
-    expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(6);
+    expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(8); // +2 generation-fenced mint/revoke overloads (332)
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(12); // +4 W9c (301): add_remote, grant_remote, remote context, store_remote
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
-    expect(labels).toHaveLength(68); // -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+    expect(labels).toHaveLength(70); // +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

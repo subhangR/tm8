@@ -2503,9 +2503,11 @@ describe('claim-free resolvers — returned keys pinned (W3)', () => {
 });
 
 // MEASURED against the migrated scratch database (233). `spaceId` is 226's.
+// runtimeEpoch / runtimeNativeGeneration (332): chat generation stamps, null on human sessions.
 const RESOLVE_AUTH_SESSION_KEYS = [
   'accountId', 'actingAsTeamMemberId', 'apiScope', 'displayName', 'expiresAt', 'identityId', 'isNodeAdmin',
-  'isOwner', 'kind', 'label', 'runtimeChatId', 'runtimeMemberId', 'runtimeThreadRootId',
+  'isOwner', 'kind', 'label', 'runtimeChatId', 'runtimeEpoch', 'runtimeMemberId',
+  'runtimeNativeGeneration', 'runtimeThreadRootId',
   'sessionId', 'spaceId', 'username', 'viaLinkId', 'workSessionId',
 ]; // + viaLinkId (256, W7p): the link a session descends from; null on both rows here.
 const RESOLVE_ACCOUNT_CREDENTIAL_KEYS = [
