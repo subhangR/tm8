@@ -26,6 +26,8 @@ export const CANONICAL_EDGES: readonly CanonicalEdge[] = [
     how: 'tm8 edge create <task-id> produces <output-id>' },
   { meaning: 'Context or input', type: 'attached_to', direction: 'entity → the task (or entity) it gives context to', writtenBy: 'agent',
     how: 'tm8 entity create … --attach-to <task-id>, or tm8 edge create <entity-id> attached_to <task-id>' },
+  { meaning: 'Tagged to a chat', type: 'attached_to', direction: 'entity → the chat it belongs with; it then shows in that chat\'s strip', writtenBy: 'agent',
+    how: 'tm8 edge create <entity-id> attached_to <chat-id> (what a session spawned from the chat makes shows there already)' },
   { meaning: 'Follow-up of', type: 'follows_up', direction: 'new task → origin task (or new session → earlier session)', writtenBy: 'agent',
     how: 'tm8 edge create <new-task-id> follows_up <origin-task-id>' },
   { meaning: 'Prerequisite', type: 'depends_on', direction: 'task → the task it waits on', writtenBy: 'agent',
