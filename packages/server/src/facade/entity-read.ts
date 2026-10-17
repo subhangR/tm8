@@ -2131,10 +2131,12 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
           ...(row.chat_credential_intent ? { credentialIntent: row.chat_credential_intent } : {}),
           ...(row.chat_runtime_public ? { runtime: row.chat_runtime_public } : {}),
         } : {}),
-        teammateId: row.chat_teammate_id ?? '',
-        model: row.chat_model ?? '',
-        provider: row.chat_provider ?? '',
-        agentTool: row.chat_agent_tool ?? '',
+        // A deleted chat's row is hidden by `chats_select`: fall back to values
+        // the contract accepts. MIRRORS the projector twin.
+        teammateId: row.chat_teammate_id ?? row.created_by,
+        model: row.chat_model ?? 'unknown',
+        provider: row.chat_provider ?? 'unknown',
+        agentTool: row.chat_agent_tool ?? 'unknown',
         mode: (row.chat_mode ?? 'ask') as ChatMode,
         workdirMode: (row.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
         projectId: row.chat_project_id,

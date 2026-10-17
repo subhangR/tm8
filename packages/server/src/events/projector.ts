@@ -1605,10 +1605,15 @@ export class PgEntityProjector implements EntityProjector {
             ...(r.chat_credential_intent ? { credentialIntent: r.chat_credential_intent } : {}),
             ...(r.chat_runtime_public ? { runtime: r.chat_runtime_public } : {}),
           } : {}),
-          teammateId: r.chat_teammate_id ?? '',
-          model: r.chat_model ?? '',
-          provider: r.chat_provider ?? '',
-          agentTool: r.chat_agent_tool ?? '',
+          // The `chats_select` policy hides a DELETED chat's row, so an edge
+          // naming a deleted chat (330's launched_by backfill made hundreds)
+          // reads nulls here. Empty strings fail the WorkspaceEvent contract
+          // and wedge the space's feed at that seq; fall back to values the
+          // contract accepts. MIRRORED in entity-read.ts stateOf.
+          teammateId: r.chat_teammate_id ?? r.created_by,
+          model: r.chat_model ?? 'unknown',
+          provider: r.chat_provider ?? 'unknown',
+          agentTool: r.chat_agent_tool ?? 'unknown',
           mode: (r.chat_mode ?? 'ask') as ChatMode,
           workdirMode: (r.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
           projectId: r.chat_project_id,
