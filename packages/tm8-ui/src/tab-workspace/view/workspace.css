@@ -321,21 +321,31 @@
 .tws-rail[data-pinned-only] {
   overflow: visible;
 }
-/* The pinned-only rail's head: the space monogram, then the four modes. The
+/* The pinned-only rail's head: the tm8 mark, then the four modes. The
    rail runs the full height, so the head starts in the strip's band. */
-.tws-rail-space {
+.tws-rail-logo {
   display: flex;
   flex: none;
   justify-content: center;
+  align-items: center;
   width: var(--tws-rail-w-collapsed);
+  height: 36px;
 }
-/* Widened, the space reads in full: name and caret, left-aligned with the
-   rows' labels. */
-.tws-rail[data-rail-expanded] .tws-rail-space {
-  justify-content: flex-start;
-  width: auto;
-  min-width: 0;
-  padding: 0 6px;
+.tws-rail-logo__btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tws-rail-logo__btn:hover {
+  background: var(--pn-hover);
 }
 .tws-rail-modes {
   flex: none;

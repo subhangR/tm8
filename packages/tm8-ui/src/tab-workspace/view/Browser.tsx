@@ -11,7 +11,7 @@
  * Every write goes through `workspace.browser.set`; nothing here touches tabs
  * or scope except a row click (`tabs.open`) and + New (`drafts.open`).
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { cloneElement, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useAttentionOptional } from '../../attention';
 import { needsMeListSource } from '../../attention/needs-me';
 import type { EntityId } from '@tm8/contract';
@@ -39,7 +39,6 @@ import { useWorkspace, useWorkspaceState } from './context';
 import { useListCursor } from './listCursor';
 import { isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
 import { VectorIcon } from '../../kit/VectorIcon';
-import { BrandMark } from '../../kit/BrandMark';
 import { getRailStore } from '../runtime/railStore';
 import './browser.css';
 
@@ -141,12 +140,12 @@ const SEARCH_ART = ['M7 2.75a4.25 4.25 0 1 1 0 8.5a4.25 4.25 0 1 1 0-8.5', 'M10.
 /**
  * THE PANEL'S TOP ROW (pinned-only rail, Subhang 2026-10-17):
  *
- *     tm8                         [⌕] [«]
+ *     Space: transfer-e2e-scratch-2 ▾    [⌕] [▯]
  *
- * The tm8 mark moved here from the left header (the rail runs the full
- * height now). The ⌕ opens a search box over the row — the list's own search,
- * held in the browser's state and handed down — and « collapses the panel,
- * leaving the rail.
+ * The space switcher is the panel's title (the tm8 mark heads the rail). The
+ * ⌕ opens a search box over the row — the list's own search, held in the
+ * browser's state and handed down — and ▯ collapses the panel, leaving the
+ * rail.
  */
 function PanelTop({ search }: { search?: { query: string; onQuery(query: string): void; placeholder: string } }) {
   const { spaceId, gate } = useWorkspace();
@@ -186,9 +185,12 @@ function PanelTop({ search }: { search?: { query: string; onQuery(query: string)
         </div>
       ) : (
         <>
-          <button type="button" className="tws-paneltop__mark" aria-label="Home" title="Home" onClick={gate.goHome}>
-            <BrandMark />
-          </button>
+          <div className="tws-paneltop__space" data-testid="tws-paneltop-space">
+            <span className="tws-paneltop__label">Space:</span>
+            {isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
+              ? cloneElement(gate.switcherSlot, { collapsed: false, quiet: true })
+              : gate.switcherSlot}
+          </div>
           <span className="tws-paneltop__spacer" />
           {search ? (
             <button

@@ -29,7 +29,7 @@
  * Stories, Sessions, Chats (`useRailCounts`). Collapsed: a run-tinted corner
  * badge. Expanded: the number right-aligned in the row.
  */
-import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { homeRootKinds, type KindConfig } from '../../domain';
 import { VectorIcon } from '../../kit/VectorIcon';
@@ -40,6 +40,7 @@ import { isRailCountKind, useRailCounts, type RailCounts } from './useRailCounts
 import { RAIL_COLLAPSE_ART, RAIL_EXPAND_ART } from './railArt';
 import { RailAttention, RailUser } from './RailStatus';
 import { useCustomKindsVersion } from '../../data/custom-kinds';
+import { BrandMark } from '../../kit/BrandMark';
 import { isPinnedRailEnabled } from './navigatorFlag';
 /* MOVED, NOT FORKED (`railParts.tsx`): the merged navigator draws the same
    kind rows, the same hold, the same tooltips and the same ⌘\ listener. */
@@ -124,12 +125,7 @@ export function WorkspaceRail() {
     [railStore],
   );
   useCollapseKey(pinnedOnly ? togglePanel : toggleExpanded);
-  /* The space switcher at the rail's head: a monogram while the rail is
-     narrow, the space's full name once it is widened. Its own popover lists
-     every space. */
-  const spaceSwitcher = isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
-    ? cloneElement(gate.switcherSlot, { collapsed: !expanded, quiet: true })
-    : gate.switcherSlot;
+
 
   const kindButton = (config: KindConfig, placement: 'pinned' | 'list') => (
     <KindButton
@@ -168,8 +164,12 @@ export function WorkspaceRail() {
     >
       {pinnedOnly ? (
         <>
-          <div className="tws-rail-space" data-testid="tws-rail-space">
-            {spaceSwitcher}
+          {/* The tm8 mark heads the rail (the space switcher is the panel's
+              title now). */}
+          <div className="tws-rail-logo" data-testid="tws-rail-logo">
+            <button type="button" className="tws-rail-logo__btn" aria-label="Home" title="Home" onClick={gate.goHome}>
+              <BrandMark />
+            </button>
           </div>
           {/* THE MODES (Work · Craft · Observe · Settings), icons only, above
               the pins: the left header's mode menu, laid out as the rail. */}

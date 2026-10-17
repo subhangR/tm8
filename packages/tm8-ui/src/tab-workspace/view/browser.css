@@ -268,9 +268,7 @@
 }
 /* The wordmark's text and the last icon's glyph sit ON the gutter: their
    hover boxes hang outside it rather than pushing them in. */
-.cv2-root .tws-browser .tws-paneltop > :first-child.tws-paneltop__mark {
-  margin-left: calc(-1 * var(--pn-space-1));
-}
+
 .cv2-root .tws-browser .tws-paneltop > .tws-icon-btn:last-child {
   margin-right: -6px;
 }
@@ -279,23 +277,23 @@
   min-width: var(--tws-band-ctl, 28px);
   height: var(--tws-band-ctl, 28px);
 }
-/* The panel's title, as ChatGPT's: the tm8 wordmark at title size in full
-   ink, not the band's small grey mark. */
-.cv2-root .tws-browser .tws-paneltop__mark {
-  display: inline-flex;
+/* The panel's title is the space switcher (Subhang 2026-10-17): the space's
+   name at title size, its own popover listing every space. It takes what the
+   row leaves after the icons, and the name ellipsises first. */
+.cv2-root .tws-browser .tws-paneltop__space {
+  display: flex;
   align-items: center;
-  height: var(--tws-band-ctl, 28px);
-  padding: 0 var(--pn-space-1);
-  border: 0;
-  border-radius: var(--pn-r-sm);
-  background: none;
-  color: var(--pn-ink);
-  font-size: 17px;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 15px;
   font-weight: 600;
-  cursor: pointer;
 }
-.cv2-root .tws-browser .tws-paneltop__mark:hover {
-  background: var(--pn-hover);
+/* "Space:" — says what the name is, in the muted ink, never truncated. */
+.cv2-root .tws-browser .tws-paneltop__label {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-weight: 500;
 }
 .cv2-root .tws-browser .tws-paneltop__spacer {
   flex: 1;
