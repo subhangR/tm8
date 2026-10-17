@@ -361,6 +361,17 @@ describe('the list header, one row', () => {
       getByTestId('list-more-menu').querySelector('[data-link-group="docs"]')!.getAttribute('aria-checked'),
     ).toBe('true');
     expect(getByTestId('list-more-trigger').querySelector('.lp__chip-count')).toBeNull();
+    /* A REAL press inside the `⋯` menu keeps it open: the funnel's own
+       outside-press dismiss used to close it on pointerdown, before the
+       option's click landed (jsdom's bare click never showed it). */
+    const docsOpt = getByTestId('list-more-menu').querySelector<HTMLElement>('[data-link-group="docs"]')!;
+    fireEvent.pointerDown(docsOpt);
+    fireEvent.mouseDown(docsOpt);
+    fireEvent.click(docsOpt);
+    expect(
+      getByTestId('list-more-menu').querySelector('[data-link-group="docs"]')!.getAttribute('aria-checked'),
+    ).toBe('false');
+    fireEvent.click(getByTestId('list-more-clear-all'));
     /* The funnel does not repeat it in this layout. */
     fireEvent.click(getByTestId('filter-trigger'));
     expect(getByTestId('filter-menu').querySelector('[data-testid="list-links-section"]')).toBeNull();

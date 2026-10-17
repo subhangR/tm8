@@ -429,9 +429,12 @@
 /* The kind's row anchors the list-settings popover, so it hangs under the
    row at the column's width (the popover rule above expects its row to be
    the containing block). */
-.cv2-root .tws-browser .lp__head--stack {
+.cv2-root .tws-browser .lp__head--stack,
+.cv2-root .tws-browser .lp__head {
   position: relative;
 }
+/* (The default layout's one-row head anchors the funnel and the `⋯` the same
+   way; without it both popovers hung off `.tws-root`, below the viewport.) */
 /* The pinned-only rail's status words sit closer (4px apart, no side pad,
    not 12px + 2px) so they keep fitting in a narrower column before the row
    falls back to marks (Subhang 2026-10-17: "threshold even lower"). */

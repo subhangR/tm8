@@ -2436,7 +2436,13 @@ function FilterRow({
    */
   const { oneSurface, sheetHost } = useMobileSurface();
   const inSheet = oneSurface && sheetHost !== null;
-  useDismissable(!inSheet && picker !== null, barRef, useCallback(() => setPicker(null), [setPicker]));
+  /* EACH TRIGGER DISMISSES ITS OWN MENU. The funnel and the `⋯` are two
+     FilterRows over ONE `picker`; when both listened for any open picker, a
+     pointerdown inside the `⋯` menu was "outside" the funnel's bar, and the
+     funnel closed the `⋯` before the option's click landed. */
+  const mine =
+    picker !== null && (section === 'view' ? picker === 'view' : !merged || picker !== 'view');
+  useDismissable(!inSheet && mine, barRef, useCallback(() => setPicker(null), [setPicker]));
   const sort = config.list.sort;
   const current = sort.find((s) => s.key === sortKey) ?? sort[0];
   /* VIEW — which facts each row draws (row-view.ts). Only the facets this
