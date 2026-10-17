@@ -432,6 +432,21 @@
 .cv2-root .tws-browser .lp__head--stack {
   position: relative;
 }
+/* The pinned-only rail's status words sit closer (4px apart, no side pad,
+   not 12px + 2px) so they keep fitting in a narrower column before the row
+   falls back to marks (Subhang 2026-10-17: "threshold even lower"). */
+.cv2-root .tws-browser .lp__head--stack ~ .lp__tierrow:not([data-marks]) {
+  gap: var(--pn-space-1);
+}
+.cv2-root .tws-browser .lp__head--stack ~ .lp__tierrow:not([data-marks]) .lp__tab {
+  padding: 0;
+  gap: 3px;
+}
+/* An alerting count (sessions' Interrupted) is WHITE on its red pill in both
+   themes — the column's muted count ink must not reach it. */
+.cv2-root .tws-browser .lp__tab .lp__tab-count--alert {
+  color: #fff;
+}
 /* Status tabs as marks when the column is too narrow for their words: each
    tab is its status mark and its count, the row shares the width evenly. */
 .cv2-root .tws-browser .lp__tierrow[data-marks] {
