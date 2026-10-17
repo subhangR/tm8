@@ -37,6 +37,18 @@
   overflow: hidden;
   position: relative;
 }
+/* THE PINNED-ONLY RAIL'S GRID (Subhang 2026-10-17): the rail runs the full
+   height and the list panel too — its own top row holds the tm8 mark — so
+   only the content column has the strip over it. Collapsed, the panel's track
+   is zero and the rail sits against the content. */
+.tws-root[data-pinned-rail]:not([data-expanded]) {
+  grid-template-areas:
+    'rail browser strip'
+    'rail browser content';
+}
+.tws-root[data-pinned-rail][data-panel-collapsed]:not([data-expanded]) {
+  grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr);
+}
 .tws-root[data-rail-animating] {
   transition: grid-template-columns var(--pn-dur-base) var(--pn-ease-standard);
 }
@@ -303,6 +315,26 @@
    for the fold alone, so its rules and groups keep the top's own 12px gaps. */
 .tws-rail-rest {
   display: contents;
+}
+/* The space menu hangs out of the rail over the panel: the rail must not
+   clip it (its scrolling top group keeps its own clip). */
+.tws-rail[data-pinned-only] {
+  overflow: visible;
+}
+/* The pinned-only rail's head: the space monogram, then the four modes. The
+   rail runs the full height, so the head starts in the strip's band. */
+.tws-rail-space {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  width: var(--tws-rail-w-collapsed);
+}
+.tws-rail-modes {
+  flex: none;
+}
+.tws-rail-modes .tws-rail-icon svg {
+  width: 18px;
+  height: 18px;
 }
 /* A little tighter in the pinned-only rail (Subhang, 2026-10-17): 8px
    between icons instead of 12. A hairline keeps 12px either side (8px gap +

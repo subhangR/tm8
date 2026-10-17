@@ -249,6 +249,63 @@
   height: 36px;
   padding: var(--pn-space-1) var(--pn-space-2) 0 var(--tws-browser-inset);
 }
+/* The pinned-only rail's panel top row: tm8 · ⌕ · «, in the strip's band
+   height so it lines up with the tabs across the column edge. Searching, the
+   box takes the row and « stays at its end. */
+.cv2-root .tws-browser .tws-paneltop {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  box-sizing: border-box;
+  height: var(--tws-header-h, 32px);
+  padding: 0 var(--pn-space-1) 0 6px;
+  border-bottom: 1px solid var(--tws-band-line, var(--pn-line));
+  background: var(--tws-band, var(--pn-paper));
+}
+.cv2-root .tws-browser .tws-paneltop .tws-icon-btn {
+  width: var(--tws-band-ctl, 28px);
+  min-width: var(--tws-band-ctl, 28px);
+  height: var(--tws-band-ctl, 28px);
+}
+.cv2-root .tws-browser .tws-paneltop__spacer {
+  flex: 1;
+}
+.cv2-root .tws-browser .tws-paneltop__search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  min-width: 0;
+  height: var(--tws-band-ctl, 28px);
+  padding: 0 var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+.cv2-root .tws-browser .tws-paneltop__search:focus-within {
+  border-color: var(--pn-line-2);
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.cv2-root .tws-browser .tws-paneltop__glyph {
+  display: inline-flex;
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .tws-paneltop__input,
+.cv2-root .tws-browser .tws-paneltop__input:focus {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--pn-ink);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+}
+.cv2-root .tws-browser .tws-paneltop__input::-webkit-search-cancel-button {
+  display: none;
+}
 /* The pinned-only rail's New chat · New task: one row of two equal halves,
    joined, in the navigator New button's look, on the list header's 10px
    gutter. */
@@ -325,7 +382,7 @@
 /* The kind's row anchors the list-settings popover, so it hangs under the
    row at the column's width (the popover rule above expects its row to be
    the containing block). */
-.cv2-root .tws-browser .lp__searchline ~ .lp__head {
+.cv2-root .tws-browser .lp__head--stack {
   position: relative;
 }
 /* Group by (pinned-only rail): a quiet heading over each group's rows, on

@@ -29,7 +29,7 @@
  * Stories, Sessions, Chats (`useRailCounts`). Collapsed: a run-tinted corner
  * badge. Expanded: the number right-aligned in the row.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { homeRootKinds, type KindConfig } from '../../domain';
 import { VectorIcon } from '../../kit/VectorIcon';
@@ -106,10 +106,29 @@ export function WorkspaceRail() {
     return rest.map((config, i) => ({ config, i })).sort((a, b) => rank(a.config.kind) - rank(b.config.kind) || a.i - b.i).map((x) => x.config);
   }, [pinned, lifted, customKinds]);
 
-  const openKind = useOpenKind();
+  const openKindNow = useOpenKind();
+  /* Pinned-only: a kind pressed while the panel is collapsed brings it back
+     on that kind — the rail picks, the panel shows. */
+  const openKind = useCallback(
+    (kind: string) => {
+      if (pinnedOnly && railStore.getState().collapsed) railStore.getState().setCollapsed(false);
+      openKindNow(kind);
+    },
+    [pinnedOnly, railStore, openKindNow],
+  );
   const togglePin = useTogglePin(railRef, setAnnouncement);
   const toggleExpanded = useCallback(() => railStore.getState().setExpanded(!railStore.getState().expanded), [railStore]);
-  useCollapseKey(toggleExpanded);
+  /* ⌘\ collapses the PANEL in the pinned-only layout (the rail never hides). */
+  const togglePanel = useCallback(
+    () => railStore.getState().setCollapsed(!(railStore.getState().collapsed ?? false)),
+    [railStore],
+  );
+  useCollapseKey(pinnedOnly ? togglePanel : toggleExpanded);
+  /* The space switcher as a monogram at the rail's head; its own popover lists
+     every space. */
+  const spaceSwitcher = isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
+    ? cloneElement(gate.switcherSlot, { collapsed: true, quiet: true })
+    : gate.switcherSlot;
 
   const kindButton = (config: KindConfig, placement: 'pinned' | 'list') => (
     <KindButton
@@ -136,6 +155,33 @@ export function WorkspaceRail() {
       data-rail-expanded={expanded || undefined}
       data-pinned-only={pinnedOnly || undefined}
     >
+      {pinnedOnly ? (
+        <>
+          <div className="tws-rail-space" data-testid="tws-rail-space">
+            {spaceSwitcher}
+          </div>
+          {/* THE MODES (Work · Craft · Observe · Settings), icons only, above
+              the pins: the left header's mode menu, laid out as the rail. */}
+          <div className="tws-rail-group tws-rail-modes" role="group" aria-label="Modes" data-testid="tws-rail-modes">
+            {gate.viewTabs.map((tab) => (
+              <RailTip key={tab.id} label={expanded ? null : tab.label}>
+                <button
+                  type="button"
+                  className="tws-rail-btn tws-rail-kind"
+                  aria-label={tab.label}
+                  aria-current={tab.id === gate.activeViewTabId ? 'page' : undefined}
+                  data-mode={tab.id}
+                  onClick={() => gate.onSelectViewTab(tab.id)}
+                >
+                  <span className="tws-rail-icon">{tab.glyph}</span>
+                  {expanded ? <span className="tws-rail-label">{tab.label}</span> : null}
+                </button>
+              </RailTip>
+            ))}
+          </div>
+          <hr className="tws-rail-rule" />
+        </>
+      ) : null}
       <div
         ref={topRef}
         className="tws-rail-top"

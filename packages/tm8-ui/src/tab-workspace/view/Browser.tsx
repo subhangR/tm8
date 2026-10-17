@@ -39,6 +39,9 @@ import { useWorkspace, useWorkspaceState } from './context';
 import { useListCursor } from './listCursor';
 import { isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
 import { VectorIcon } from '../../kit/VectorIcon';
+import { BrandMark } from '../../kit/BrandMark';
+import { getRailStore } from '../runtime/railStore';
+import { RAIL_COLLAPSE_ART } from './railArt';
 import './browser.css';
 
 const BROWSER_ID = 'main';
@@ -119,14 +122,99 @@ export function Browser() {
   const { spaceId } = useWorkspace();
   const sources = useMemo(() => getBrowserSourceStore(spaceId), [spaceId]);
   const source = getBrowserSource(useStore(sources, (s) => s.source));
+  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
   if (source) {
     return (
       <section className="tws-browser" aria-label={source.label} data-testid="tws-browser" data-source={source.id}>
+        {pinnedRail ? <PanelTop /> : null}
         <source.Panel />
       </section>
     );
   }
   return <EntityBrowser />;
+}
+
+/** The ⌕ on `VectorIcon`'s 16×16 grid: a ring and its handle. */
+const SEARCH_ART = ['M7 2.75a4.25 4.25 0 1 1 0 8.5a4.25 4.25 0 1 1 0-8.5', 'M10.25 10.25L13.25 13.25'];
+
+/**
+ * THE PANEL'S TOP ROW (pinned-only rail, Subhang 2026-10-17):
+ *
+ *     tm8                         [⌕] [«]
+ *
+ * The tm8 mark moved here from the left header (the rail runs the full
+ * height now). The ⌕ opens a search box over the row — the list's own search,
+ * held in the browser's state and handed down — and « collapses the panel,
+ * leaving the rail.
+ */
+function PanelTop({ search }: { search?: { query: string; onQuery(query: string): void; placeholder: string } }) {
+  const { spaceId, gate } = useWorkspace();
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const showing = Boolean(search) && (open || (search?.query ?? '') !== '');
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+  const collapse = () => getRailStore(spaceId).getState().setCollapsed(true);
+  return (
+    <div className="tws-paneltop" data-testid="tws-paneltop" data-searching={showing || undefined}>
+      {showing && search ? (
+        <div className="tws-paneltop__search" role="search">
+          <span className="tws-paneltop__glyph" aria-hidden>
+            <VectorIcon paths={SEARCH_ART} size={16} />
+          </span>
+          <input
+            ref={inputRef}
+            type="search"
+            className="tws-paneltop__input"
+            placeholder={search.placeholder}
+            aria-label={search.placeholder}
+            value={search.query}
+            data-testid="list-search"
+            onChange={(event) => search.onQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape') return;
+              event.preventDefault();
+              search.onQuery('');
+              setOpen(false);
+            }}
+            onBlur={() => {
+              if (search.query === '') setOpen(false);
+            }}
+          />
+        </div>
+      ) : (
+        <>
+          <button type="button" className="tws-icon-btn tws-paneltop__mark" aria-label="Home" title="Home" onClick={gate.goHome}>
+            <BrandMark />
+          </button>
+          <span className="tws-paneltop__spacer" />
+          {search ? (
+            <button
+              type="button"
+              className="tws-icon-btn"
+              aria-label={search.placeholder}
+              title={search.placeholder}
+              data-testid="tws-paneltop-search"
+              onClick={() => setOpen(true)}
+            >
+              <VectorIcon paths={SEARCH_ART} size={16} />
+            </button>
+          ) : null}
+        </>
+      )}
+      <button
+        type="button"
+        className="tws-icon-btn"
+        aria-label="Collapse panel"
+        title="Collapse panel"
+        data-testid="tws-paneltop-collapse"
+        onClick={collapse}
+      >
+        <VectorIcon paths={RAIL_COLLAPSE_ART} size={16} />
+      </button>
+    </div>
+  );
 }
 
 /** ＋, on `VectorIcon`'s 16×16 grid (as the navigator's New). */
@@ -345,6 +433,9 @@ function EntityBrowser() {
       data-narrow={narrow || undefined}
       data-scrolled={scroll.scrolled || undefined}
     >
+      {pinnedRail ? (
+        <PanelTop search={{ query: kindState.query, onQuery: onQueryChange, placeholder: `Search ${nounPlural.toLowerCase()}` }} />
+      ) : null}
       {pinnedRail ? <QuickNew /> : null}
       <div
         className="tws-browser-list"
@@ -426,6 +517,7 @@ function EntityBrowser() {
           compact
           initialQuery={kindState.query}
           onQueryChange={onQueryChange}
+          {...(pinnedRail ? { query: kindState.query, searchInHost: true } : {})}
           initialFilters={kindState.filters}
           onFiltersChange={onFiltersChange}
           bodyRef={scroll.ref}

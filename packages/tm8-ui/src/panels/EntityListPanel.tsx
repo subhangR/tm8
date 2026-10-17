@@ -402,6 +402,13 @@ export interface EntityListPanelProps {
    */
   initialQuery?: string;
   onQueryChange?: (query: string) => void;
+  /**
+   * The HOST draws the search box (the pinned-only rail's panel top row) and
+   * hands the text down: the panel follows `query` whenever it changes and
+   * draws no search row of its own. Absent ⇒ the panel owns its search.
+   */
+  query?: string;
+  searchInHost?: boolean;
   initialFilters?: unknown;
   onFiltersChange?: (filters: ListFilterState) => void;
   /** The scroll box (`.lp__body`), for a host that remembers scroll. */
@@ -800,7 +807,11 @@ export function EntityListPanel(input: EntityListPanelProps) {
   const [sortKey, setSortKey] = useState(
     seed?.sortKey ?? list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key,
   );
-  const [query, setQuery] = useState(props.initialQuery ?? '');
+  const [query, setQuery] = useState(props.query ?? props.initialQuery ?? '');
+  /* A host-drawn search box leads; the panel follows it. */
+  useEffect(() => {
+    if (props.query !== undefined) setQuery(props.query);
+  }, [props.query]);
   // §1.1: route-held when the host passes it. `props.mode` null-ish means "the
   // route says nothing", which reads the registry default. There is no local
   // state behind it any more — with the switcher gone nothing inside the panel
@@ -857,8 +868,11 @@ export function EntityListPanel(input: EntityListPanelProps) {
   useEffect(() => {
     if (reportedQuery.current === query) return;
     reportedQuery.current = query;
+    /* A host-drawn search box already holds the text; reporting it back would
+       race the next keystroke and bounce between the two. */
+    if (props.searchInHost) return;
     onQueryChange?.(query);
-  }, [query, onQueryChange]);
+  }, [query, onQueryChange, props.searchInHost]);
   const reportedFilters = useRef<ListFilterState>({ selected, selectedPeople, sortKey, lensId });
   useEffect(() => {
     const prev = reportedFilters.current;
@@ -1102,15 +1116,17 @@ export function EntityListPanel(input: EntityListPanelProps) {
              * have them. There is no `⋯` in this layout.
              */
             <>
-              <div className="lp__searchline" data-testid="list-searchline">
-                <SearchRow
-                  config={config}
-                  query={query}
-                  onQuery={setQuery}
-                  inputRef={props.searchInputRef}
-                />
-              </div>
-              <div className="lp__head" data-testid="list-head">
+              {props.searchInHost ? null : (
+                <div className="lp__searchline" data-testid="list-searchline">
+                  <SearchRow
+                    config={config}
+                    query={query}
+                    onQuery={setQuery}
+                    inputRef={props.searchInputRef}
+                  />
+                </div>
+              )}
+              <div className="lp__head lp__head--stack" data-testid="list-head">
                 <h2 className="lp__headtitle">
                   {/* The name only (Subhang 2026-10-17): each tier's count is
                       on its tab. */}
