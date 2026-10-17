@@ -37,7 +37,7 @@ const { EMPTY_BROWSER_KIND_STATE } = workspaceCommands.browser;
 import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import { useListCursor } from './listCursor';
-import { isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
+import { isNavigatorEnabled } from './navigatorFlag';
 import './browser.css';
 
 const BROWSER_ID = 'main';
@@ -165,8 +165,6 @@ function EntityBrowser() {
    * `workspace.drafts.open` is unchanged; only who draws the button moves.
    */
   const navigator = useMemo(() => isNavigatorEnabled(), []);
-  /* The pinned-only rail draws the new box inside the one-row header. */
-  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
 
   useEffect(() => data.ensureKind(kind), [data, kind]);
 
@@ -313,7 +311,6 @@ function EntityBrowser() {
           /* Row 1: the panel's own search, then the dotted new box —
              [+ | kind icon ▾]: the + creates the current kind, the icon
              half is the kind menu. */
-          toolbarInline={pinnedRail}
           toolbarEnd={navigator ? undefined : (
             <NewBox
               noun={noun}
