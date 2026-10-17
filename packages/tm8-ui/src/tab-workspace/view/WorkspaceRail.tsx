@@ -139,8 +139,18 @@ export function WorkspaceRail() {
       isPinned={placement === 'pinned'}
       current={config.kind === browserKind}
       expanded={expanded}
-      count={isRailCountKind(config.kind) ? counts[config.kind] : undefined}
-      unseen={gate.data?.countsFor?.(config.kind)?.unseen}
+      /* PINNED-ONLY: ONE NUMBER ON THE WHOLE RAIL (Subhang 2026-10-17) — the
+         running sessions on Sessions. No unseen badges, no other counts. */
+      count={
+        pinnedOnly
+          ? config.kind === 'work_session'
+            ? counts.work_session
+            : undefined
+          : isRailCountKind(config.kind)
+            ? counts[config.kind]
+            : undefined
+      }
+      unseen={pinnedOnly ? undefined : gate.data?.countsFor?.(config.kind)?.unseen}
       onSelect={openKind}
       onTogglePin={togglePin}
     />
