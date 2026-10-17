@@ -41,7 +41,6 @@ import { isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
 import { VectorIcon } from '../../kit/VectorIcon';
 import { BrandMark } from '../../kit/BrandMark';
 import { getRailStore } from '../runtime/railStore';
-import { RAIL_COLLAPSE_ART } from './railArt';
 import './browser.css';
 
 const BROWSER_ID = 'main';
@@ -134,6 +133,8 @@ export function Browser() {
   return <EntityBrowser />;
 }
 
+/** The sidebar toggle: a panel outline with its left column drawn in. */
+const SIDEBAR_ART = ['M2.5 3.5h11v9h-11z', 'M6 3.5v9'];
 /** The ⌕ on `VectorIcon`'s 16×16 grid: a ring and its handle. */
 const SEARCH_ART = ['M7 2.75a4.25 4.25 0 1 1 0 8.5a4.25 4.25 0 1 1 0-8.5', 'M10.25 10.25L13.25 13.25'];
 
@@ -185,7 +186,7 @@ function PanelTop({ search }: { search?: { query: string; onQuery(query: string)
         </div>
       ) : (
         <>
-          <button type="button" className="tws-icon-btn tws-paneltop__mark" aria-label="Home" title="Home" onClick={gate.goHome}>
+          <button type="button" className="tws-paneltop__mark" aria-label="Home" title="Home" onClick={gate.goHome}>
             <BrandMark />
           </button>
           <span className="tws-paneltop__spacer" />
@@ -211,7 +212,7 @@ function PanelTop({ search }: { search?: { query: string; onQuery(query: string)
         data-testid="tws-paneltop-collapse"
         onClick={collapse}
       >
-        <VectorIcon paths={RAIL_COLLAPSE_ART} size={16} />
+        <VectorIcon paths={SIDEBAR_ART} size={16} />
       </button>
     </div>
   );

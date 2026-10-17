@@ -124,10 +124,11 @@ export function WorkspaceRail() {
     [railStore],
   );
   useCollapseKey(pinnedOnly ? togglePanel : toggleExpanded);
-  /* The space switcher as a monogram at the rail's head; its own popover lists
+  /* The space switcher at the rail's head: a monogram while the rail is
+     narrow, the space's full name once it is widened. Its own popover lists
      every space. */
   const spaceSwitcher = isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
-    ? cloneElement(gate.switcherSlot, { collapsed: true, quiet: true })
+    ? cloneElement(gate.switcherSlot, { collapsed: !expanded, quiet: true })
     : gate.switcherSlot;
 
   const kindButton = (config: KindConfig, placement: 'pinned' | 'list') => (

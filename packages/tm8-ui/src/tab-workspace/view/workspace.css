@@ -329,6 +329,14 @@
   justify-content: center;
   width: var(--tws-rail-w-collapsed);
 }
+/* Widened, the space reads in full: name and caret, left-aligned with the
+   rows' labels. */
+.tws-rail[data-rail-expanded] .tws-rail-space {
+  justify-content: flex-start;
+  width: auto;
+  min-width: 0;
+  padding: 0 6px;
+}
 .tws-rail-modes {
   flex: none;
 }
