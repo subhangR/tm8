@@ -52,7 +52,9 @@ import {
   ModeOptionRows,
   ModelEffortPicker,
   TeamChip,
+  TeamPicker,
   ThreadSettingsFields,
+  teamSize,
   coordinatorModelChoices,
   roleOfMode,
   roleSpec,
@@ -307,6 +309,12 @@ export interface ChatHomeScreenProps {
    */
   soloConversation?: boolean;
   /**
+   * `'compact'` (Craft's 2nd panel on the pinned rail): the composer is at
+   * most two rows — the field with Send, then ＋, the role and the model. The
+   * Coordinator's team moves behind ＋. Absent ⇒ the one full toolbar row.
+   */
+  composerLayout?: 'compact' | undefined;
+  /**
    * WHAT A COLD START OPENS. `'latest'` (the default, ruled 2026-08-15) opens
    * the space's most recent conversation so the pane is never empty.
    * `'composer'` opens the new-conversation composer instead, and is what the
@@ -437,6 +445,7 @@ export function ChatHomeScreen({
   routeThreadId,
   onThreadSelected,
   soloConversation = false,
+  composerLayout,
   coldStart = 'latest',
   onThreadsChange,
   onSelectionChange,
@@ -2251,6 +2260,60 @@ export function ChatHomeScreen({
     }
   }, [port, selectedRootId]);
 
+  const compactComposer = composerLayout === 'compact';
+  /* Send (■ Stop mid-turn): the toolbar's last control, or — compact — the
+     field's, so the toolbar row can be ＋ · role · model alone. */
+  const sendControl = (
+    phase === 'streaming' ? (
+      /* The agent-running state lives ON the send button: ■ is
+         Stop (and so is Esc in the field). Enter still queues a
+         send — the server accepts turns while one runs — so only
+         the button changes role mid-turn, not the composer.
+         Unavailable ≠ invisible: with no interrupt operation on
+         this node the ■ stays, disabled with its reason, so a
+         running turn never looks unstoppable by design. */
+      port.interrupt ? (
+        <button
+          type="button"
+          className="tch-send tch-send--working"
+          data-testid="tch-send-working"
+          aria-label="Agent is working — stop this turn"
+          title="Stop this turn (Esc)"
+          onClick={() => void interrupt()}
+        >
+          <span className="tch-send__stop" aria-hidden />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="tch-send tch-send--working"
+          data-testid="tch-send-working"
+          aria-disabled="true"
+          aria-label="Agent is working"
+          title="Agent is working — no chat interrupt operation is exposed on this node; the turn ends on its own"
+        >
+          <SendMark />
+        </button>
+      )
+    ) : (
+      <button
+        type="button"
+        className="tch-send"
+        aria-label="Send"
+        aria-disabled={sendDisabled}
+        onClick={() => void send()}
+        title={
+          refusal
+          ?? (attachments.blocked
+            ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
+            : 'Send (Enter)')
+        }
+      >
+        <ComposerIcon name="arrowUp" />
+      </button>
+    )
+  );
+
   return (
     <main
       className={`tch-root${soloConversation ? ' tch-root--solo' : ''}`}
@@ -2771,7 +2834,7 @@ export function ChatHomeScreen({
               </p>
             ) : null}
             <ComposerCard
-              className="tch-composer"
+              className={compactComposer ? 'tch-composer tch-composer--compact' : 'tch-composer'}
               above={<AttachmentChips attachments={attachments} testId="tch-attachments" />}
               field={<>
                 <textarea
@@ -2822,6 +2885,7 @@ export function ChatHomeScreen({
                   emptyText="No matching skills"
                   testId="tch-skill-picker"
                 />
+                {compactComposer ? sendControl : null}
               </>}
               foot={<>
                 {/* ＋ = what this turn can DRAW ON (files, skills). The
@@ -2834,6 +2898,22 @@ export function ChatHomeScreen({
                     setEnabledSkills((current) =>
                       current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id])}
                   {...(skillOptions ? { onBrowseSkills: () => rich.openTrigger('/') } : {})}
+                  {...(compactComposer && shownRole === 'coordinator'
+                    ? {
+                        extra: (
+                          <TeamPicker
+                            team={shownTeam}
+                            onChange={chooseTeam}
+                            teammates={teammates}
+                            models={models}
+                            workerChoices={workerChoices}
+                            defaultModel={shownModelId || null}
+                            testId="tch-team"
+                          />
+                        ),
+                        extraLabel: `Coordinator team · ${teamSize(shownTeam)}`,
+                      }
+                    : {})}
                 />
                 {enabledSkills.length ? (
                   <span className="tch-turnpills" data-testid="tch-turnpills">
@@ -2892,7 +2972,7 @@ export function ChatHomeScreen({
                       : modeLocked ? 'this chat is still starting' : null
                   }
                 />
-                {shownRole === 'coordinator' ? (
+                {shownRole === 'coordinator' && !compactComposer ? (
                   <TeamChip
                     team={shownTeam}
                     onChange={chooseTeam}
@@ -2918,54 +2998,7 @@ export function ChatHomeScreen({
                   disabled={modelLockReason !== null}
                   {...(modelLockReason ? { disabledReason: modelLockReason } : {})}
                 />
-                {phase === 'streaming' ? (
-                  /* The agent-running state lives ON the send button: ■ is
-                     Stop (and so is Esc in the field). Enter still queues a
-                     send — the server accepts turns while one runs — so only
-                     the button changes role mid-turn, not the composer.
-                     Unavailable ≠ invisible: with no interrupt operation on
-                     this node the ■ stays, disabled with its reason, so a
-                     running turn never looks unstoppable by design. */
-                  port.interrupt ? (
-                    <button
-                      type="button"
-                      className="tch-send tch-send--working"
-                      data-testid="tch-send-working"
-                      aria-label="Agent is working — stop this turn"
-                      title="Stop this turn (Esc)"
-                      onClick={() => void interrupt()}
-                    >
-                      <span className="tch-send__stop" aria-hidden />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="tch-send tch-send--working"
-                      data-testid="tch-send-working"
-                      aria-disabled="true"
-                      aria-label="Agent is working"
-                      title="Agent is working — no chat interrupt operation is exposed on this node; the turn ends on its own"
-                    >
-                      <SendMark />
-                    </button>
-                  )
-                ) : (
-                  <button
-                    type="button"
-                    className="tch-send"
-                    aria-label="Send"
-                    aria-disabled={sendDisabled}
-                    onClick={() => void send()}
-                    title={
-                      refusal
-                      ?? (attachments.blocked
-                        ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
-                        : 'Send (Enter)')
-                    }
-                  >
-                    <ComposerIcon name="arrowUp" />
-                  </button>
-                )}
+                {compactComposer ? null : sendControl}
               </>}
             />
             {newThread && shownMode === 'orchestrate' ? (

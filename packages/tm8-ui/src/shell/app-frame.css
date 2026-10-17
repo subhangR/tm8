@@ -167,6 +167,10 @@
 .tws-root.app-frame[data-pinned-rail][data-panel-collapsed]:not([data-expanded]) {
   grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr) auto;
 }
+/* A pinned mode with no panel at all (the Crafts home): no empty column. */
+.tws-root.app-frame[data-pinned-rail][data-panel='none']:not([data-expanded]) {
+  grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr) auto;
+}
 /* Observe: the screen's portalled controls, below PanelTop. */
 .app-frame-panel-host {
   display: flex;

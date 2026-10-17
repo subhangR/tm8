@@ -69,6 +69,7 @@ export interface ChatHomeSurfaceProps {
   onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
   /** Craft's solo conversation + the two publishes a hosted picker needs. */
   soloConversation?: ChatHomeScreenProps['soloConversation'];
+  composerLayout?: ChatHomeScreenProps['composerLayout'];
   coldStart?: ChatHomeScreenProps['coldStart'];
   onThreadsChange?: ChatHomeScreenProps['onThreadsChange'];
   onSelectionChange?: ChatHomeScreenProps['onSelectionChange'];

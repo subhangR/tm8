@@ -2909,3 +2909,25 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   color: var(--pn-ink-2);
   font: inherit;
 }
+
+/* THE COMPACT COMPOSER (Craft's 2nd panel on the pinned rail): two rows at
+   most — the field with Send, then ＋ · role · model. */
+.tch-composer--compact .ri-host {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--pn-space-2);
+}
+.tch-composer--compact .ri-host > textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tch-composer--compact .ri-host > .tch-send {
+  flex: none;
+}
+.tch-composer--compact .ri-card__foot {
+  flex-wrap: nowrap;
+}
+/* The Coordinator's team, folded into ＋. */
+.tch-addmenu__extra > summary {
+  cursor: pointer;
+}

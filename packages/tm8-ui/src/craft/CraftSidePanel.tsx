@@ -14,6 +14,11 @@
  *    the craft. ＋ New session spawns on the craft with its default teammate
  *    (`craftSpawnInput`), records the session ABOUT the craft, and shows the
  *    new terminal.
+ *  · PINNED RAIL (`pinned`, task 01a14b46): ONE header row —
+ *      [chats] [▾ chats and sessions]                  [+]
+ *    no craft title (the band's switcher names the craft), and [+] is a
+ *    small menu: New chat, New session. The chat's empty state is one line
+ *    and two example chips, and its composer is two rows.
  *  · The chat pane stays mounted while a session is shown, so its thread list
  *    keeps feeding the dropdown and its draft survives the round trip.
  */
@@ -52,6 +57,8 @@ export interface CraftSidePanelProps {
   toolNote?: ((call: ToolNoteCall) => ReactNode) | undefined;
   onOpenEntity(id: EntityId): void;
   onNotice?: ((text: string) => void) | undefined;
+  /** The pinned rail: one header row, [+] menu, compact empty state and composer. */
+  pinned?: boolean | undefined;
 }
 
 /** What the body shows: a chat (null = the new-chat composer) or a session. */
@@ -189,10 +196,12 @@ export function CraftSidePanel(props: CraftSidePanelProps) {
 
   return (
     <section className="crf-side" aria-label={`${props.title || 'Craft'} chats and sessions`} data-testid="crf-side">
-      <header className="crf-side__head" data-testid="crf-side-head">
-        <h2 className="crf-side__title" data-testid="crf-side-title" title={props.title}>
-          {props.title || 'Untitled craft'}
-        </h2>
+      <header className="crf-side__head" data-testid="crf-side-head" data-pinned={props.pinned || undefined}>
+        {props.pinned ? null : (
+          <h2 className="crf-side__title" data-testid="crf-side-title" title={props.title}>
+            {props.title || 'Untitled craft'}
+          </h2>
+        )}
         <div className="crf-side__bar">
           <span className="crf-side__icon" title="Chats and sessions" aria-hidden data-testid="crf-side-chats-icon">
             <KindIcon kind="chat" size={16} />
@@ -205,26 +214,37 @@ export function CraftSidePanel(props: CraftSidePanelProps) {
             onOpen={refreshSessions}
             onPick={(item) => (item.type === 'chat' ? showChat(item.id) : showSession(item.id))}
           />
-          <button
-            type="button"
-            className="dsn-btn crf-side__new"
-            data-testid="crf-new-chat"
-            title="New chat"
-            onClick={() => showChat(null)}
-          >
-            ＋ New chat
-          </button>
-          <button
-            type="button"
-            className="dsn-btn crf-side__new"
-            data-testid="crf-new-session"
-            title={spawnRefusal ?? 'New session'}
-            disabled={spawnRefusal !== null || spawning}
-            aria-busy={spawning || undefined}
-            onClick={newSession}
-          >
-            ＋ New session
-          </button>
+          {props.pinned ? (
+            <NewMenu
+              spawnRefusal={spawnRefusal}
+              spawning={spawning}
+              onNewChat={() => showChat(null)}
+              onNewSession={newSession}
+            />
+          ) : (
+            <>
+              <button
+                type="button"
+                className="dsn-btn crf-side__new"
+                data-testid="crf-new-chat"
+                title="New chat"
+                onClick={() => showChat(null)}
+              >
+                ＋ New chat
+              </button>
+              <button
+                type="button"
+                className="dsn-btn crf-side__new"
+                data-testid="crf-new-session"
+                title={spawnRefusal ?? 'New session'}
+                disabled={spawnRefusal !== null || spawning}
+                aria-busy={spawning || undefined}
+                onClick={newSession}
+              >
+                ＋ New session
+              </button>
+            </>
+          )}
         </div>
       </header>
       <div className="crf-side__body" hidden={selection.type !== 'chat'} data-testid="crf-side-chat">
@@ -247,6 +267,7 @@ export function CraftSidePanel(props: CraftSidePanelProps) {
           requestedThreadId={requestedThreadId}
           onThreadsChange={onThreadsChange}
           onSelectionChange={adoptSelection}
+          compact={props.pinned}
         />
       </div>
       {selection.type === 'session' ? (
@@ -303,6 +324,88 @@ function SessionBody({
         onOpenEntity={(id) => onOpenEntity(id as EntityId)}
         onClose={onClose}
       />
+    </div>
+  );
+}
+
+/** [+]: the one door to a new chat or a new session (the pinned rail). */
+function NewMenu({
+  spawnRefusal,
+  spawning,
+  onNewChat,
+  onNewSession,
+}: {
+  spawnRefusal: string | null;
+  spawning: boolean;
+  onNewChat(): void;
+  onNewSession(): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+  return (
+    <div className="crf-side__newmenu" ref={wrapRef}>
+      <button
+        type="button"
+        className="crf-side__plus"
+        aria-label="New chat or session"
+        title="New chat or session"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-testid="crf-side-new"
+        aria-busy={spawning || undefined}
+        onClick={() => setOpen((was) => !was)}
+      >
+        <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden>
+          <path d="M8 3v10M3 8h10" />
+        </svg>
+      </button>
+      {open ? (
+        <div className="cts-menu pn-overflow__menu crf-side__menu" role="menu" aria-label="New" data-testid="crf-side-new-menu">
+          <button
+            type="button"
+            role="menuitem"
+            className="pn-overflow__item cts-menu__kind"
+            data-testid="crf-new-chat"
+            onClick={() => {
+              setOpen(false);
+              onNewChat();
+            }}
+          >
+            <KindIcon kind="chat" size={14} /> New chat
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="pn-overflow__item cts-menu__kind"
+            data-testid="crf-new-session"
+            title={spawnRefusal ?? undefined}
+            disabled={spawnRefusal !== null || spawning}
+            onClick={() => {
+              setOpen(false);
+              onNewSession();
+            }}
+          >
+            <KindIcon kind="work_session" size={14} /> New session
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

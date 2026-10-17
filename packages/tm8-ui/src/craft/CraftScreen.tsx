@@ -43,10 +43,12 @@ import {
 } from '../tab-workspace/embed';
 import { HostedEntityColumn } from '../views/hostedEntityColumn';
 import { useFrameSlots } from '../shell/AppFrame';
+import { isPinnedRailEnabled } from '../tab-workspace/view/navigatorFlag';
 import { CraftSidePanel } from './CraftSidePanel';
 import { GraphPage, type ToolNote } from './GraphPage';
 import { CraftOverview } from './CraftOverview';
 import { CraftTabStrip } from './CraftTabStrip';
+import { CraftPageTabs } from './CraftPageTabs';
 import { craftWorkspacesPortOf, useCraftWorkspace } from './useCraftWorkspace';
 import { useCraft, type CraftHandle } from './useCraft';
 import type { CraftPageRow, CraftSource, NewPageKind } from './craft-source';
@@ -115,6 +117,11 @@ export function CraftScreen(props: CraftScreenProps) {
   const { seam, spaceId, nodeKey, source, craftId, pageId, onNavigate, gate, panelHost, onNotice, framed = false } = props;
   const frame = useFrameSlots();
   const frameTop = frame.top;
+  /* THE PINNED RAIL (task 01a14b46): the band is the only chrome — the
+     craft switcher, then the pages as tabs and [+]. No page row, no card
+     header, no inset frame; the page's controls are in the right strip. */
+  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
+  const pinned = framed && pinnedRail;
   const runtime = useEmbeddedRuntime(props.viewerId ?? 'viewer', spaceId);
   const expanded = useStore(runtime.store, (s) => s.layout.expanded);
 
@@ -201,7 +208,10 @@ export function CraftScreen(props: CraftScreenProps) {
     if (!tabs.loaded || handle.state !== 'ready' || routedRef.current === pageId) return;
     routedRef.current = pageId;
     if (!pageId) {
-      activateTab(craftId);
+      /* Pinned: a craft opens on its first page; the Overview is in [+]. */
+      const first = pinned ? handle.pages[0] : undefined;
+      if (first) void openTab(first.kind, first.id);
+      else activateTab(craftId);
       return;
     }
     const page = handle.pages.find((row) => row.id === pageId);
@@ -292,6 +302,7 @@ export function CraftScreen(props: CraftScreenProps) {
         gate={gate}
         runtime={runtime}
         controlsSlot={controlsSlot}
+        pinned={pinned}
         onAsk={seedPrompt}
         onOpenEntity={openEntity}
         onToolNote={publishToolNote}
@@ -301,7 +312,7 @@ export function CraftScreen(props: CraftScreenProps) {
       <CraftOverview
         tab={ownerTab}
         pages={handle.pages}
-        panel={{ seam, source, gate, runtime, onOpenPage: selectPage, onAsk: seedPrompt, onOpenEntity: openEntity, onNotice }}
+        panel={{ seam, source, gate, runtime, onOpenPage: selectPage, onAsk: seedPrompt, onOpenEntity: openEntity, onNotice, ...(pinned ? { frameless: true, controlsSlot } : {}) }}
         onOpenEntity={openEntity}
         onClose={() => onNavigate({})}
       />
@@ -327,6 +338,7 @@ export function CraftScreen(props: CraftScreenProps) {
       toolNote={toolNote ?? undefined}
       onOpenEntity={openEntity}
       onNotice={onNotice}
+      pinned={pinned}
     />
   );
   const chatPane = (
@@ -369,7 +381,7 @@ export function CraftScreen(props: CraftScreenProps) {
 
   const pagesSection = (
     <section className="dsn-main" aria-label={`Pages of ${title || 'the craft'}`} data-testid="dsn-main">
-      {handle.state === 'ready' ? (
+      {handle.state === 'ready' && !pinned ? (
         <CraftTabStrip
           tabs={tabs.tabs}
           activeTabId={tabs.activeTab.id}
@@ -424,12 +436,30 @@ export function CraftScreen(props: CraftScreenProps) {
   const screen = (
     <div className="crf-root dsn-root" data-testid="craft-screen">
       {framed ? (
-        frameTop ? createPortal(
+        !frameTop ? null : pinned ? (
+          /* The craft's name is the band's switcher; the band adds only the pages. */
+          handle.state === 'ready' ? createPortal(
+            <CraftPageTabs
+              craftId={craftId}
+              pages={handle.pages}
+              activePageId={activePage?.id ?? null}
+              craftTitle={title}
+              updated={handle.updated}
+              onSelect={(page) => selectPage(page.id)}
+              onOverview={() => activateTab(craftId)}
+              onNew={onNewPage}
+              onAddExisting={(id) => void handle.addExisting(id).then((ok) => ok && selectPage(id))}
+              onRemovePage={(id) => void handle.remove(id)}
+              candidates={(text) => source.candidates(text)}
+            />,
+            frameTop,
+          ) : null
+        ) : createPortal(
           <div className="dsn-frame-top" data-testid="dsn-head">
             <span className="dsn-frame-top__title">{title || 'Untitled craft'}</span>
           </div>,
           frameTop,
-        ) : null
+        )
       ) : <header className="crf-head dsn-head" data-testid="dsn-head">
         {chatToggle}
         <button type="button" className="dsn-crumb" data-testid="dsn-back" onClick={() => onNavigate({})}>
@@ -482,6 +512,8 @@ interface PageBodyProps {
   runtime: WorkspaceRuntime;
   /** The strip TOP's kind slot (or the lite strip without a Workspace host). */
   controlsSlot: HTMLElement | null;
+  /** The pinned rail: a page's Find and Open are strip buttons too. */
+  pinned?: boolean | undefined;
   onAsk(text: string): void;
   onOpenEntity(id: EntityId): void;
   onToolNote(note: ToolNote | null): void;
@@ -501,6 +533,8 @@ function PageBody(props: PageBodyProps) {
           seam={seam}
           graphId={page.id}
           controlsSlot={props.controlsSlot}
+          stripFind={props.pinned}
+          onOpen={props.pinned && gate ? () => gate.navigateView({ view: 'entity', entityId: page.id, origin: null }) : undefined}
           onAsk={props.onAsk}
           onOpenEntity={props.onOpenEntity}
           onToolNote={props.onToolNote}

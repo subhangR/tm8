@@ -11,7 +11,9 @@
  *
  * THE VIEW SWITCHER AND THE FINDINGS CHIP are this page's controls, so they
  * portal into the action strip's TOP section (`controlsSlot`); the craft's
- * shared verbs sit in its BOTTOM.
+ * shared verbs sit in its BOTTOM. With `stripFind`, "Find a node" is a strip
+ * button too (the canvas's box shows only once summoned), and `onOpen` adds
+ * the page's Open.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -46,9 +48,13 @@ export interface GraphPageProps {
   onOpenEntity(id: EntityId): void;
   /** Publishes the transcript note for calls that wrote THIS graph (null on unmount). */
   onToolNote?: ((note: ToolNote | null) => void) | undefined;
+  /** "Find a node" is a strip button; the canvas's find box shows only when summoned. */
+  stripFind?: boolean | undefined;
+  /** Present ⇒ the strip carries Open (the page on its own). */
+  onOpen?: (() => void) | undefined;
 }
 
-export function GraphPage({ seam, graphId, controlsSlot, onAsk, onOpenEntity, onToolNote }: GraphPageProps) {
+export function GraphPage({ seam, graphId, controlsSlot, onAsk, onOpenEntity, onToolNote, stripFind = false, onOpen }: GraphPageProps) {
   const [detail, setDetail] = useState<EntityDetail | null>(null);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [refTitles, setRefTitles] = useState<RefTitles>(new Map());
@@ -59,6 +65,8 @@ export function GraphPage({ seam, graphId, controlsSlot, onAsk, onOpenEntity, on
   const prevViewRef = useRef<{ version: number; view: BlueprintView } | null>(null);
   const [pickedNode, setNodeKey] = useState<string | null>(null);
   const [viewChoice, setViewChoice] = useState<CraftViewId>('flow');
+  /* Each strip Find press summons the canvas's find box (a new value). */
+  const [findRequest, setFindRequest] = useState(0);
 
   const readRow = useCallback(async () => {
     try {
@@ -207,6 +215,20 @@ export function GraphPage({ seam, graphId, controlsSlot, onAsk, onOpenEntity, on
   const controls = controlsSlot
     ? createPortal(
         <div className="dsn-graph-controls" data-testid="dsn-graph-controls">
+          {stripFind && isEntityGraph && (view?.cards.length ?? 0) > 0 && viewId !== 'outline' && viewId !== 'table' ? (
+            <button
+              type="button"
+              className="tws-astrip-btn"
+              aria-label="Find a node"
+              data-tip="Find a node (f)"
+              data-testid="dsn-graph-find"
+              onClick={() => setFindRequest((n) => n + 1)}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M7 2.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 0 1 0-9zM10.3 10.3l3.2 3.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            </button>
+          ) : null}
           <ViewSwitcher options={viewOptions} value={viewId} onChange={setViewChoice} orientation="vertical" />
           <FindingsChip
             findings={findings}
@@ -215,6 +237,20 @@ export function GraphPage({ seam, graphId, controlsSlot, onAsk, onOpenEntity, on
               if (first) setNodeKey(first.nodes[0]!);
             }}
           />
+          {onOpen ? (
+            <button
+              type="button"
+              className="tws-astrip-btn"
+              aria-label="Open"
+              data-tip="Open this page on its own"
+              data-testid="dsn-graph-open"
+              onClick={onOpen}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M9.5 2.5h4v4M13.5 2.5l-6 6M11.5 9.5v4h-9v-9h4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          ) : null}
         </div>,
         controlsSlot,
       )
@@ -269,6 +305,7 @@ export function GraphPage({ seam, graphId, controlsSlot, onAsk, onOpenEntity, on
                   selectedKey={selectedNode}
                   onSelect={setNodeKey}
                   marked={marked}
+                  findRequest={stripFind ? findRequest : undefined}
                 />
               )}
             </>

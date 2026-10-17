@@ -55,6 +55,8 @@ export interface CraftChatPaneProps {
   onThreadsChange(scoped: readonly ChatThreadSummary[], all: readonly ChatThreadSummary[]): void;
   /** The selection the chat surface resolved. */
   onSelectionChange(id: EntityId | null): void;
+  /** The pinned rail: a one-line empty state and a two-row composer. */
+  compact?: boolean | undefined;
 }
 
 export function CraftChatPane({
@@ -73,6 +75,7 @@ export function CraftChatPane({
   requestedThreadId,
   onThreadsChange,
   onSelectionChange,
+  compact = false,
 }: CraftChatPaneProps) {
   /* The SAME port `ChatHomeSurface` builds from this seam — a pure factory. */
   const port = useMemo(() => createChatHomePortFromSeam(seam, bridge), [seam, bridge]);
@@ -115,7 +118,8 @@ export function CraftChatPane({
           aboutId={craftId}
           pinnedMode="craft"
           composerSeed={composerSeed}
-          newThreadIntro={<CraftChatIntro onPrompt={onPrompt} />}
+          newThreadIntro={<CraftChatIntro onPrompt={onPrompt} compact={compact} />}
+          composerLayout={compact ? 'compact' : undefined}
           toolNote={toolNote}
           skillOptions={skillOptions}
           onOpenEntity={onOpenEntity}
@@ -135,7 +139,24 @@ export function CraftChatPane({
  * The new-chat intro in a craft — in place of the generic greeting, it says
  * what this agent does here. The examples land in the composer, unsent.
  */
-export function CraftChatIntro({ onPrompt }: { onPrompt(text: string): void }) {
+export function CraftChatIntro({ onPrompt, compact = false }: { onPrompt(text: string): void; compact?: boolean }) {
+  if (compact) {
+    /* One line, then the examples as small chips that fill the composer. */
+    return (
+      <div className="crf-intro crf-intro--compact" data-testid="crf-chat-intro">
+        <p>Describe the work; the craft agent builds the pages.</p>
+        <ul className="crf-intro__chips">
+          {EXAMPLE_PROMPTS.slice(0, 2).map((prompt) => (
+            <li key={prompt}>
+              <button type="button" className="crf-intro__chip" data-testid="crf-example" title={prompt} onClick={() => onPrompt(prompt)}>
+                {prompt}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
   return (
     <div className="crf-intro" data-testid="crf-chat-intro">
       <h1>Start a craft</h1>

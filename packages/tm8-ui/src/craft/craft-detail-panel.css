@@ -113,3 +113,29 @@
 .dsn-entity[hidden] {
   display: none;
 }
+
+/* FRAMELESS (the pinned rail): no card, no header, no inset. The pages run
+   edge to edge, split by a hairline; one page fills the tab. */
+.cdp[data-frameless] {
+  gap: 0;
+  padding: 0;
+}
+.cdp[data-frameless] .cdp-page {
+  background: var(--pn-card);
+  border: none;
+  border-bottom: 1px solid var(--pn-line);
+  border-radius: 0;
+}
+.cdp[data-frameless] .cdp-page:last-child {
+  border-bottom: none;
+}
+.cdp[data-frameless] .cdp-page:only-child {
+  flex: 1;
+  min-height: 0;
+}
+.cdp[data-frameless] .cdp-page:only-child .cdp-page__body {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  resize: none;
+}

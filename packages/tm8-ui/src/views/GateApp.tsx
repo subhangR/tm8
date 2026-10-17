@@ -78,7 +78,6 @@ import {
   CraftHeaderSwitcher,
   CraftScreen,
   CraftsHome,
-  CraftsNav,
   craftSourceFromSeam,
   craftsSourceFromSeam,
   craftTabsKey,
@@ -2571,6 +2570,7 @@ export function GateApp(props: GateAppProps = {}) {
       currentCraftId={navView.view === 'craft' ? navView.craftId ?? null : null}
       onOpenHome={() => navigateCraft({})}
       onOpenCraft={openCraft}
+      openTabs={!isPinnedRailEnabled()}
     />
   ) : null;
   const modeSwitcherEl: ReactNode = threeModes
@@ -2681,16 +2681,12 @@ export function GateApp(props: GateAppProps = {}) {
 
   /* The craft's chats and sessions fill the second panel. */
   const craftFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
-  /* THE PINNED-ONLY RAIL (task 01a14a17-34f6): Craft draws Work's shell, and
-     its panel is never empty — the craft's chats and sessions while a craft
-     is open, the crafts list on the Crafts home. */
+  /* THE PINNED-ONLY RAIL (task 01a14a17-34f6): Craft draws Work's shell. The
+     panel is the craft's chats and sessions while a craft is open; the
+     Crafts home has none — its card grid, filter and New craft are the list
+     (task 01a14b46: nothing on screen twice). */
   const craftPinned = craftFramed && isPinnedRailEnabled();
-  const craftPanel =
-    craftFramed && navView.view === 'craft' && navView.craftId
-      ? 'host'
-      : craftPinned
-        ? <CraftsNav crafts={craftsSource} source={craftSource} onNavigate={navigateCraft} onNotice={craftNotice} />
-        : null;
+  const craftPanel = craftFramed && navView.view === 'craft' && navView.craftId ? 'host' : null;
 
   const workspaceGate: WorkspaceGateHandles = {
     data,

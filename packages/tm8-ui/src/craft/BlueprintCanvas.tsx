@@ -86,6 +86,12 @@ export interface BlueprintCanvasProps {
   marked?: { cards: ReadonlySet<string>; lines: ReadonlySet<string> } | undefined;
   /** Full chrome (find, minimap, legend, focus). Off for the panel's inline block. */
   chrome?: boolean | undefined;
+  /**
+   * Present ⇒ "Find a node" lives in the host's strip: the find box is hidden
+   * until summoned (each new value, or the f key) and leaves on Escape or blur
+   * while empty. Absent ⇒ the box always floats over the canvas.
+   */
+  findRequest?: number | undefined;
 }
 
 export function BlueprintCanvas({
@@ -98,6 +104,7 @@ export function BlueprintCanvas({
   onOpenEntity,
   marked,
   chrome = true,
+  findRequest,
 }: BlueprintCanvasProps) {
   const uid = useId().replace(/:/g, '');
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +117,20 @@ export function BlueprintCanvas({
   const [hoverLine, setHoverLine] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [query, setQuery] = useState('');
+  const findSummoned = findRequest !== undefined;
+  const [findOpen, setFindOpen] = useState(false);
+  /* Bumped to focus the box once it is on screen. */
+  const [findFocus, setFindFocus] = useState(0);
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    setFindFocus((n) => n + 1);
+  }, []);
+  useEffect(() => {
+    if (findRequest) openFind();
+  }, [findRequest, openFind]);
+  useEffect(() => {
+    if (findFocus) findRef.current?.focus();
+  }, [findFocus]);
   const [matchIndex, setMatchIndex] = useState(0);
   const drag = useRef<{ id: number; x: number; y: number; from: Camera; moved: boolean } | null>(null);
   const [panning, setPanning] = useState(false);
@@ -346,7 +367,7 @@ export function BlueprintCanvas({
       case '/':
         if (!chrome) return;
         event.preventDefault();
-        findRef.current?.focus();
+        openFind();
         return;
       case '.':
         if (!chrome || !selected) return;
@@ -532,7 +553,7 @@ export function BlueprintCanvas({
         </g>
       </svg>
 
-      {chrome ? (
+      {chrome && (!findSummoned || findOpen) ? (
         <div className="crf-find" role="search">
           <span className="crf-find__glyph" aria-hidden>⌕</span>
           <input
@@ -555,8 +576,12 @@ export function BlueprintCanvas({
                 event.preventDefault();
                 event.stopPropagation();
                 setQuery('');
+                if (findSummoned) setFindOpen(false);
                 rootRef.current?.focus();
               }
+            }}
+            onBlur={() => {
+              if (findSummoned && !query.trim()) setFindOpen(false);
             }}
           />
           {query.trim() ? (

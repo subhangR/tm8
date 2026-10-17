@@ -26,12 +26,17 @@ export interface CraftHeaderSwitcherProps {
   currentCraftId: EntityId | null;
   onOpenHome(): void;
   onOpenCraft(id: EntityId): void;
+  /**
+   * Draw the open-craft tabs after the trigger. Off on the pinned rail, where
+   * the band's tabs are the craft's PAGES and Home is the dropdown's first row.
+   */
+  openTabs?: boolean | undefined;
 }
 
 const HOME_LABEL = 'Home';
 const UNTITLED = 'Untitled craft';
 
-export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpenHome, onOpenCraft }: CraftHeaderSwitcherProps) {
+export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpenHome, onOpenCraft, openTabs = true }: CraftHeaderSwitcherProps) {
   const tabs = useOpenCraftTabs(openCrafts);
   const cards = useCraftCards(source);
   const [open, setOpen] = useState(false);
@@ -103,7 +108,7 @@ export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpen
   const selectedLabel = currentCraftId ? titleOf(currentCraftId) : HOME_LABEL;
 
   return (
-    <div className="shell-switcher crf-hsw" ref={rootRef} data-testid="craft-switcher">
+    <div className={openTabs ? "shell-switcher crf-hsw" : "shell-switcher crf-hsw crf-hsw--solo"} ref={rootRef} data-testid="craft-switcher">
       <button
         ref={triggerRef}
         type="button"
@@ -156,7 +161,7 @@ export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpen
         </div>
       ) : null}
 
-      <div className="crf-hsw__tabs" ref={stripRef} role="tablist" aria-label="Open crafts" data-testid="craft-tabs">
+      {openTabs ? <div className="crf-hsw__tabs" ref={stripRef} role="tablist" aria-label="Open crafts" data-testid="craft-tabs">
         <button
           type="button"
           role="tab"
@@ -197,7 +202,7 @@ export function CraftHeaderSwitcher({ source, openCrafts, currentCraftId, onOpen
             </div>
           );
         })}
-      </div>
+      </div> : null}
     </div>
   );
 }

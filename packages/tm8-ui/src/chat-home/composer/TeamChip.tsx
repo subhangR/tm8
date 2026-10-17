@@ -84,7 +84,8 @@ function addedWorkerId(): string {
   return `w${Date.now().toString(36)}${addedSeq}`;
 }
 
-function TeamPicker({ team, onChange, teammates, models, workerChoices, defaultModel, testId }: Required<TeamChipProps>) {
+/** The team picker itself: the chip's popover, or — compact composer — a section of ＋. */
+export function TeamPicker({ team, onChange, teammates, models, workerChoices, defaultModel, testId }: Required<TeamChipProps>) {
   const [query, setQuery] = useState('');
   const picked = new Set(team.teammates.map((slot) => slot.teammateId));
   const unpicked = useMemo(() => {

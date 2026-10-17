@@ -25,6 +25,11 @@
  *  · A page that is itself a craft is a compact live section: its title and
  *    its pages as chips. Open (or a chip) takes it to its own tab.
  *
+ * FRAMELESS (the pinned rail): no card, no header, no inset — the pages
+ * run edge to edge, split by a hairline. Their names are the band's tabs,
+ * so nothing here repeats them; the first graph's controls (Find, view,
+ * findings, Open) go to the strip's `controlsSlot`.
+ *
  * Live by the same events as the rest of the screen: the page list is the
  * caller's `useDesign` read, a graph re-reads on its patch event, an entity
  * body is the Workspace runtime's, and a nested craft runs its own read.
@@ -61,6 +66,10 @@ export interface CraftDetailPanelProps {
   onAsk(text: string): void;
   onOpenEntity(id: EntityId): void;
   onNotice?: ((text: string) => void) | undefined;
+  /** No card frame and no header: each page fills the width (the pinned rail). */
+  frameless?: boolean | undefined;
+  /** Frameless: the strip's top section, where the first graph's controls go. */
+  controlsSlot?: HTMLElement | null | undefined;
 }
 
 const noop = () => undefined;
@@ -72,6 +81,35 @@ export function isCraftPage(page: Pick<CraftPageRow, 'kind'>): boolean {
 
 export function CraftDetailPanel(props: CraftDetailPanelProps) {
   const { pages } = props;
+  if (props.frameless) {
+    const firstGraph = pages.find((page) => page.kind === 'graph')?.id;
+    return (
+      <div className="cdp" data-frameless="" data-testid="craft-detail-panel" aria-label="All pages">
+        {pages.map((page) => (
+          <section
+            key={page.id}
+            className="cdp-page"
+            data-testid="craft-detail-page"
+            data-page-id={page.id}
+            data-kind={page.kind}
+            data-compact={isCraftPage(page) ? 'true' : undefined}
+            aria-label={page.title}
+          >
+            <div className="cdp-page__body">
+              <EntityChromeContext.Provider value={null}>
+                <SectionBody
+                  {...props}
+                  page={page}
+                  controlsSlot={page.id === firstGraph ? props.controlsSlot ?? null : null}
+                  stripFind={page.id === firstGraph}
+                />
+              </EntityChromeContext.Provider>
+            </div>
+          </section>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="cdp" data-testid="craft-detail-panel" aria-label="All pages">
       {pages.map((page) => (
@@ -118,7 +156,7 @@ function PageSection(props: CraftDetailPanelProps & { page: CraftPageRow }) {
   );
 }
 
-function SectionBody(props: CraftDetailPanelProps & { page: CraftPageRow; controlsSlot: HTMLElement | null }) {
+function SectionBody(props: CraftDetailPanelProps & { page: CraftPageRow; controlsSlot: HTMLElement | null; stripFind?: boolean }) {
   const { page, seam, gate, runtime } = props;
   if (page.kind === 'graph') {
     return (
@@ -126,6 +164,8 @@ function SectionBody(props: CraftDetailPanelProps & { page: CraftPageRow; contro
         seam={seam}
         graphId={page.id}
         controlsSlot={props.controlsSlot}
+        stripFind={props.stripFind}
+        onOpen={props.stripFind ? () => props.onOpenPage(page.id) : undefined}
         onAsk={props.onAsk}
         onOpenEntity={props.onOpenEntity}
       />

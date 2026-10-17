@@ -127,3 +127,12 @@
 .crf-hsw__tab-close:hover {
   color: var(--pn-ink);
 }
+
+/* The pinned rail: no open-craft tabs. The switcher is as wide as the craft's
+   name and the band's page tabs take the rest. */
+.crf-hsw--solo {
+  flex: 0 1 auto;
+}
+.tws-root .tws-mode-switcher-slot .crf-hsw--solo .shell-switcher__trigger--quiet {
+  max-width: 240px;
+}
