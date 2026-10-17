@@ -285,6 +285,53 @@
   gap: var(--pn-space-1);
   flex: 0 1 auto;
   min-width: 0;
+  /* "Space: tm8 ▾" reads as ONE line and is ONE hover target (Subhang
+     2026-10-17: inline, no box). The 6px pad gives the hover fill room; the
+     negative margin keeps "Space:" on the widget's left edge. */
+  height: 32px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+}
+.cv2-root .tws-browser .tws-paneltop__space:hover,
+.cv2-root .tws-browser .tws-paneltop__space:has(.shell-switcher__trigger[aria-expanded='true']) {
+  background: var(--pn-hover);
+}
+/* The name is plain text: none of the switcher's own box, fill or shadow. */
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--pn-ink);
+}
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__trigger:hover,
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__trigger:focus-visible {
+  background: none;
+}
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__trigger:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__space {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A ▾ you can see: the label's size, the muted ink. */
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__caret {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  line-height: 1;
 }
 /* "Space:" — says what the name is: smaller than the name, muted, never
    truncated. The NAME is the title (Subhang 2026-10-17). */

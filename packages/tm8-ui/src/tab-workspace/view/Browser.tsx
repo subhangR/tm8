@@ -151,7 +151,15 @@ function PanelTop({ searchable = false }: { searchable?: boolean }) {
   const collapse = () => getRailStore(spaceId).getState().setCollapsed(true);
   return (
     <div className="tws-paneltop" data-testid="tws-paneltop">
-      <div className="tws-paneltop__space" data-testid="tws-paneltop-space">
+      <div
+        className="tws-paneltop__space"
+        data-testid="tws-paneltop-space"
+        /* ONE TARGET: the "Space:" word opens the same menu its name does. */
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('.shell-switcher')) return;
+          event.currentTarget.querySelector<HTMLButtonElement>('.shell-switcher__trigger')?.click();
+        }}
+      >
         <span className="tws-paneltop__label">Space:</span>
         {isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
           ? cloneElement(gate.switcherSlot, { collapsed: false, quiet: true })
