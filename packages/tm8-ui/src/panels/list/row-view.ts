@@ -30,9 +30,7 @@ export type RowFacet =
   | 'progress'
   | 'prs'
   | 'sessions_chip'
-  | 'docs_memories'
-  | 'human_messages'
-  | 'agent_messages'
+  | 'outputs'
   | 'forms';
 
 /** The tile anatomies the registry declares (`list.tile.anatomy`). */
@@ -67,9 +65,10 @@ export const ROW_FACETS: readonly RowFacetSpec[] = [
   { id: 'forms', label: 'Pending forms', anatomies: ['session-tree'] },
   { id: 'sessions_chip', label: 'Linked sessions', anatomies: ALL },
   { id: 'prs', label: 'Pull requests', anatomies: ['control-card', 'session-tree'] },
-  { id: 'docs_memories', label: 'Docs & memories', anatomies: ALL },
-  { id: 'human_messages', label: 'Member messages', anatomies: ALL },
-  { id: 'agent_messages', label: 'Agent messages', anatomies: ALL },
+  /* 327: one switch for the count badges (docs, artifacts, drawings,
+     memories). The PR count answers to `prs` with the PR chips. Message
+     tallies left the tile, and their two switches with them. */
+  { id: 'outputs', label: 'Docs, artifacts, drawings & memories', anatomies: ALL },
 ];
 
 const FACET_IDS: ReadonlySet<string> = new Set(ROW_FACETS.map((spec) => spec.id));
@@ -81,13 +80,10 @@ export function facetsForAnatomy(anatomy: RowAnatomy | undefined): readonly RowF
 
 /**
  * Whether a tile count badge survives the view, by the facet the badge's own
- * data names (`TileCountBadge.facet`). The undivided pre-109 total is hidden
- * only when BOTH message facets are, since it is both.
+ * data names (`TileCountBadge.facet`).
  */
 export function countBadgeVisible(facet: TileCountFacet, hidden: ReadonlySet<RowFacet>): boolean {
-  return facet === 'messages'
-    ? !(hidden.has('human_messages') && hidden.has('agent_messages'))
-    : !hidden.has(facet);
+  return !hidden.has(facet);
 }
 
 // ---- the store ------------------------------------------------------------

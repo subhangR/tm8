@@ -211,6 +211,17 @@ describe.sequential('the canonical subject set — SQL side and 208 (real Postgr
         language sql stable as 'select null::jsonb';
       grant execute on function internal.task_progress(uuid) to tm8_app;
       reset role;`);
+    // 327 (tile linked counts): the shared summary SELECT reads five
+    // `entity_counters` columns. 327 itself cannot apply on this partial chain
+    // (it rewrites 308's recorder and reads 176's chats), so — like the shims
+    // above — only the read columns. DELETE this shim if this suite ever
+    // applies the chain through 327.
+    await database.query(`alter table public.entity_counters
+      add column if not exists linked_docs integer not null default 0,
+      add column if not exists linked_pull_requests integer not null default 0,
+      add column if not exists linked_artifacts integer not null default 0,
+      add column if not exists linked_drawings integer not null default 0,
+      add column if not exists linked_memories integer not null default 0`);
   }, 300_000);
 
   afterAll(async () => {

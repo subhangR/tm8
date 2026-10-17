@@ -79,6 +79,7 @@ import { loadTaskLiveSessionBadges } from '../tracking/live-session-projection.j
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
 // The ONE narrowing of the status columns, shared with `events/projector.ts`.
 import { categoryFragment, narrowWorkStatus } from './status.js';
+import { linkedCountsOf } from './linked-counts.js';
 import { loadStoryPage } from './story-page.js';
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,12 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.agent_messages, 0) as agent_messages,
   coalesce(ec.docs, 0)     as docs,
   coalesce(ec.memories, 0) as memories,
+  -- 327: the tile's five linked/produced counts.
+  coalesce(ec.linked_docs, 0)          as linked_docs,
+  coalesce(ec.linked_pull_requests, 0) as linked_pull_requests,
+  coalesce(ec.linked_artifacts, 0)     as linked_artifacts,
+  coalesce(ec.linked_drawings, 0)      as linked_drawings,
+  coalesce(ec.linked_memories, 0)      as linked_memories,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
   t.start_date,
@@ -498,6 +505,12 @@ export interface EntityRow {
   /** Link counters (108); optional keeps legacy row fixtures source-compatible. */
   docs?: number;
   memories?: number;
+  /** 327; optional on the same rule as the 108 pair. */
+  linked_docs?: number;
+  linked_pull_requests?: number;
+  linked_artifacts?: number;
+  linked_drawings?: number;
+  linked_memories?: number;
   task_title: string | null;
   task_description: string | null;
   task_axes: Record<string, string> | null;
@@ -2636,6 +2649,7 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
       // an invented 0 would be a different (wrong) claim.
       ...(row.docs === undefined ? {} : { docs: row.docs }),
       ...(row.memories === undefined ? {} : { memories: row.memories }),
+      ...linkedCountsOf(row as unknown as Record<string, unknown>),
       viewerReaction: ctx.viewerReactions.get(row.id) ?? null,
     },
     state: stateOf(row, ctx),

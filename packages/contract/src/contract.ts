@@ -189,8 +189,25 @@ export interface EntityCounters {
    */
   docs?: number;
   memories?: number;
+  /**
+   * What this entity produced or has linked (327): DISTINCT live peers of
+   * each kind, over authored_from / attached_to (in) and produces / tracks /
+   * remembers (out); a task adds what its sessions made inside their claims.
+   * The tile's meta line. Optional on the same rule as `docs`: absent means
+   * this server never counted, and a client renders nothing.
+   */
+  linked?: EntityLinkedCounts;
   /** Server-computed from the caller's reaction edge — always present (DEV-10). */
   viewerReaction: 'like' | 'dislike' | 'star' | null;
+}
+
+/** The five tile counts (327), in the order a tile draws them. */
+export interface EntityLinkedCounts {
+  docs: number;
+  pullRequests: number;
+  artifacts: number;
+  drawings: number;
+  memories: number;
 }
 
 export interface EntitySummary {

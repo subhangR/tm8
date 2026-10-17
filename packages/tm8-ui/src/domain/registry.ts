@@ -1054,7 +1054,7 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['docFormat', 'childCount', 'activityAt'] },
     list: baseList({
       tree: { by: 'hierarchy', guideLines: true },
-      tile: { badges: [{ source: 'docFormat' }, { source: 'childCount' }, { source: 'messages' }] },
+      tile: { badges: [{ source: 'docFormat' }, { source: 'childCount' }] },
       // A doc's default is when it was last EDITED, not last touched — the
       // only kind that inverts the pair, which is why it lists them itself.
       sort: [BY_UPDATED, also(BY_ACTIVITY), BY_CREATED, BY_POSITION],
@@ -1147,7 +1147,7 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['channelTopic', 'unread', 'workingAgents'] },
     list: baseList({
       tree: { by: 'hierarchy', guideLines: true },
-      tile: { badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }] },
+      tile: { badges: [{ source: 'unread' }, { source: 'workingAgents' }] },
       inlineEdit: { title: true },
       assignControl: CHANNEL_MEMBER_CONTROL,
     }),
@@ -1374,7 +1374,7 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['prState', 'repository', 'activityAt'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'prState' }, { source: 'repository' }, { source: 'messages' }] },
+      tile: { badges: [{ source: 'prState' }, { source: 'repository' }] },
     }),
     panel: {
       archetype: 'generic',
@@ -1679,7 +1679,7 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'messages' }] },
+      tile: { badges: [] },
       // A FACT KIND (migration 152 `kind_seeds_done`): born `done` as a
       // resolution predicate, with no lifecycle to project. No tab row.
       categories: null,
@@ -1769,7 +1769,7 @@ const ROWS: readonly KindConfig[] = [
       // The generic placeholder flow CAN mint a graph: title + the 'entity'
       // default type is a valid empty blueprint the craft chat then grows.
       quickCreate: true,
-      tile: { badges: [{ source: 'messages' }] },
+      tile: { badges: [] },
     }),
     /*
      * GENERIC, WITH THE CANVAS FIRST — this reverses the P1 ruling that the
@@ -1833,7 +1833,7 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       quickCreate: true,
       inlineEdit: { title: true },
-      tile: { badges: [{ source: 'messages' }] },
+      tile: { badges: [] },
     }),
     panel: {
       archetype: 'generic',
@@ -1894,7 +1894,7 @@ const ROWS: readonly KindConfig[] = [
       // read as "many root stories". Children start collapsed.
       tree: { by: 'hierarchy', guideLines: true },
       tile: {
-        badges: [{ source: 'messages' }],
+        badges: [],
         // 307: the points-weighted percent and done/total points at the
         // row's right edge — the same `weighted` the story page's ring reads.
         // Child stories carry their own bar on their own rows.
@@ -1953,7 +1953,7 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: true,
-      tile: { badges: [{ source: 'messages' }] },
+      tile: { badges: [] },
       inlineEdit: { title: true },
     }),
     panel: {
@@ -2006,7 +2006,7 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'messages' }] },
+      tile: { badges: [] },
     }),
     panel: {
       archetype: 'generic',
@@ -2195,7 +2195,6 @@ const ROWS: readonly KindConfig[] = [
           { source: 'model' },
           { source: 'chatMode' },
           { source: 'chatLastTurnAt' },
-          { source: 'messages' },
         ],
       },
       // The header verb is the ONE door a chat is actually born through, and
@@ -2432,7 +2431,7 @@ const ROWS: readonly KindConfig[] = [
       // The scheduled-work form writes the required schedule and first
       // `nextRunAt`; the placeholder-only generic flow cannot create a loop.
       quickCreate: true,
-      tile: { badges: [{ source: 'messages' }] },
+      tile: { badges: [] },
     }),
     /*
      * GENERIC, because a loop is the one kind a human OPERATES rather than

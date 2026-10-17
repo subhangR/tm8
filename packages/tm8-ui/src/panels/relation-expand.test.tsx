@@ -303,12 +303,10 @@ describe('the sessions chip and the inline group', () => {
     expect(labels).not.toContain(ownerTask.title);
   });
 
-  it('message tallies stay counts — no door on an anchored kind', () => {
+  it('message tallies are not drawn on a tile (327)', () => {
     mount();
     // taskUuidTitle carries the legacy neutral message total (87).
-    const badge = document.querySelector('[data-count-kind="message"]');
-    expect(badge).not.toBeNull();
-    expect(badge!.tagName).toBe('SPAN');
+    expect(document.querySelector('[data-count-kind="message"]')).toBeNull();
   });
 
   it('traverses through STANDARD-anatomy tiles too — a doc row carries the band', () => {

@@ -3917,7 +3917,6 @@ export function Tile({
   /* The viewer's `View ▾` choice for THIS row's kind (row-view.ts) — a
      session nested under a task follows the Sessions list's choice. */
   const view = useRowView(config.kind);
-  const countVisible = (facet: TileCountFacet): boolean => countBadgeVisible(facet, view.hidden);
   /* Forms this session asked the viewer to answer (decision 11). One batched
      read serves every tile in the list — see `forms/pending.ts`. */
   const pendingFormsRead = usePendingForms(sessionTree ? row.id : null);
@@ -4083,6 +4082,10 @@ export function Tile({
   // Session tiles carry the same chip slot: the index resolves a session's
   // PRs through its working_on task's tracks edges.
   const linkedPullRequests = (controlCard || sessionTree) && view.shows('prs') ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
+  /* 327: where the row draws PR chips, the PR COUNT badge would say the
+     same thing twice; the chips (state, CI) win. */
+  const countVisible = (facet: TileCountFacet): boolean =>
+    countBadgeVisible(facet, view.hidden) && !(facet === 'prs' && linkedPullRequests.length > 0);
 
   /**
    * The LEADING sessions chip (user ruling 2026-08-16: "sessions also, at the
@@ -4138,7 +4141,6 @@ export function Tile({
         ) : null}
         <TileCountBadges
           counters={row.counters}
-          humanAuthors={row.badges.humanMessageAuthors}
           openKind={openRelation?.kind ?? null}
           onToggleKind={props.connectionsOf ? toggleRelation : undefined}
           expandableKind={isExpandableKind}

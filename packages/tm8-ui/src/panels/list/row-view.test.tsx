@@ -55,11 +55,10 @@ describe('row view store', () => {
     for (const spec of ROW_FACETS) expect(spec.anatomies.length).toBeGreaterThan(0);
   });
 
-  it('maps count badges to facets; the legacy total hides only when both message facets do', () => {
-    expect(countBadgeVisible('docs_memories', new Set(['docs_memories']))).toBe(false);
-    expect(countBadgeVisible('human_messages', new Set(['agent_messages']))).toBe(true);
-    expect(countBadgeVisible('messages', new Set(['human_messages']))).toBe(true);
-    expect(countBadgeVisible('messages', new Set(['human_messages', 'agent_messages']))).toBe(false);
+  it('maps count badges to facets', () => {
+    expect(countBadgeVisible('outputs', new Set(['outputs']))).toBe(false);
+    expect(countBadgeVisible('outputs', new Set(['prs']))).toBe(true);
+    expect(countBadgeVisible('prs', new Set(['prs']))).toBe(false);
   });
 });
 

@@ -1,53 +1,75 @@
 import type { EntityCounters } from '@tm8/contract';
 
 /**
- * TILE COUNT BADGES (108) — the registry data behind the glyph+count badges
- * a tile shows for what an entity CARRIES: docs, memories, messages. This
- * lives in `domain/` because the kind words are the point (§15.2: no
- * component knows a kind) — the component renders whatever this answers and
- * learns nothing about kinds.
+ * TILE COUNT BADGES — the registry data behind the glyph+count badges a tile
+ * shows for what an entity PRODUCED or HAS LINKED. This lives in `domain/`
+ * because the kind words are the point (§15.2: no component knows a kind) —
+ * the component renders whatever this answers and learns nothing about kinds.
+ *
+ * 327 (owner ruling, chat 77ae261d, 2026-10-16): five counts, always in this
+ * order — Docs · PRs · Artifacts · Drawings · Memories — from the server's
+ * `counters.linked`. Message tallies left the tile entirely.
  *
  * HONESTY RULES, both directions of nothing:
- *   · zero produces NO row — a count badge exists to say something is here;
- *   · ABSENT (`docs`/`memories` missing from a pre-108 server's counters)
- *     also produces no row — absence is "never counted", not zero.
+ *   · zero produces NO badge — a count badge exists to say something is here;
+ *   · ABSENT (`linked` missing from a pre-327 server's counters) falls back to
+ *     108's attached docs / held memories, and absent THOSE produce nothing —
+ *     absence is "never counted", not zero.
  */
 export interface TileCountBadge {
-  /** The badge's identity in the row (`data-count-kind`); the split message
-      tallies keep their own ids here, distinct from any registry kind. */
+  /** The badge's identity in the row (`data-count-kind`), a registry kind. */
   kind: string;
-  /**
-   * The registry kind whose drawn mark (KindIcon) the badge wears. Carried
-   * as DATA so the component never maps a badge id to a kind itself —
-   * `human-message` → the message mark is a §15.2 fact and it lives here.
-   */
+  /** The registry kind whose drawn mark (KindIcon) the badge wears. */
   icon: string;
   /**
-   * THE EDGE RELATION THE COUNT IS DERIVED FROM — migration 108's own
-   * trigger semantics, restated as client data: `docs` counts inbound
-   * `attached_to` from docs; `memories` counts outbound `remembers` to
-   * memories. The badge's inline relation group filters by EXACTLY this,
-   * so the number on the chip and the rows under it are one claim — a doc
-   * linked by some OTHER edge type is a different fact and must not appear
-   * under a chip that never counted it (PR #272 review, blocking 1).
+   * THE EDGE RELATION THE COUNT IS DERIVED FROM, when it is exactly one —
+   * 108's fallback pair: `docs` counts inbound `attached_to` from docs;
+   * `memories` counts outbound `remembers` to memories. The badge's inline
+   * relation group filters by EXACTLY this, so the number on the chip and the
+   * rows under it are one claim (PR #272 review, blocking 1).
    */
   relation?: { type: string; direction: 'incoming' | 'outgoing' };
+  /**
+   * 327: the number is the SERVER's, over several edge types and (on a task)
+   * its sessions' outputs, so the host must not replace it with a count of the
+   * row's own hydrated edges — that read sees only direct links.
+   */
+  serverCounted?: true;
   count: number;
   /** Singular noun for the title; the renderer pluralises. */
   label: string;
-  /** Human messages receive the visual attention treatment requested by 112. */
-  emphasis?: 'human';
   /**
    * The viewer's row-view switch that hides this badge (`panels/list/row-view.ts`).
-   * Data here so the view never maps a badge id to a kind itself. `messages`
-   * is the undivided pre-109 total, which both message switches cover.
+   * Data here so the view never maps a badge id to a kind itself.
    */
   facet: TileCountFacet;
 }
 
-export type TileCountFacet = 'docs_memories' | 'human_messages' | 'agent_messages' | 'messages';
+export type TileCountFacet = 'outputs' | 'prs';
+
+const LINKED_ORDER = [
+  { key: 'docs', kind: 'doc', label: 'doc', facet: 'outputs' },
+  { key: 'pullRequests', kind: 'pull_request', label: 'pull request', facet: 'prs' },
+  { key: 'artifacts', kind: 'artifact', label: 'artifact', facet: 'outputs' },
+  { key: 'drawings', kind: 'drawing', label: 'drawing', facet: 'outputs' },
+  { key: 'memories', kind: 'memory', label: 'memory', facet: 'outputs' },
+] as const;
 
 export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
+  const linked = counters.linked;
+  if (linked) {
+    return LINKED_ORDER
+      .filter((spec) => linked[spec.key] > 0)
+      .map((spec) => ({
+        kind: spec.kind,
+        icon: spec.kind,
+        serverCounted: true as const,
+        count: linked[spec.key],
+        label: spec.label,
+        facet: spec.facet,
+      }));
+  }
+  // Rolling compatibility: a pre-327 server counted only these two.
   const badges: TileCountBadge[] = [];
   if (typeof counters.docs === 'number' && counters.docs > 0) {
     badges.push({
@@ -56,7 +78,7 @@ export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
       relation: { type: 'attached_to', direction: 'incoming' },
       count: counters.docs,
       label: 'doc',
-      facet: 'docs_memories',
+      facet: 'outputs',
     });
   }
   if (typeof counters.memories === 'number' && counters.memories > 0) {
@@ -66,19 +88,8 @@ export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
       relation: { type: 'remembers', direction: 'outgoing' },
       count: counters.memories,
       label: 'memory',
-      facet: 'docs_memories',
+      facet: 'outputs',
     });
-  }
-  if (typeof counters.humanMessages === 'number' && counters.humanMessages > 0) {
-    badges.push({ kind: 'human-message', icon: 'message', count: counters.humanMessages, label: 'human message', emphasis: 'human', facet: 'human_messages' });
-  }
-  if (typeof counters.agentMessages === 'number' && counters.agentMessages > 0) {
-    badges.push({ kind: 'agent-message', icon: 'message', count: counters.agentMessages, label: 'agent message', facet: 'agent_messages' });
-  }
-  // Rolling compatibility: an older server cannot truthfully split the total.
-  // Preserve its existing neutral badge until its projection includes 109.
-  if (counters.humanMessages === undefined && counters.agentMessages === undefined && counters.messages > 0) {
-    badges.push({ kind: 'message', icon: 'message', count: counters.messages, label: 'message', facet: 'messages' });
   }
   return badges;
 }

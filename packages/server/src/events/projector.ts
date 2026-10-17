@@ -66,6 +66,7 @@ import {
   WorkStatusDriftError,
 } from '../facade/status.js';
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from '../facade/message-author-projection.js';
+import { linkedCountsOf } from '../facade/linked-counts.js';
 import {
   loadLinkedPullRequestBadges,
   projectForgeFacts,
@@ -220,6 +221,12 @@ interface SummaryRow {
   /** Link counters (108); optional keeps pre-108 row fixtures source-compatible. */
   docs?: number | null;
   memories?: number | null;
+  /** 327; optional on the same rule. */
+  linked_docs?: number | null;
+  linked_pull_requests?: number | null;
+  linked_artifacts?: number | null;
+  linked_drawings?: number | null;
+  linked_memories?: number | null;
   task_title: string | null;
   task_description: string | null;
   work_status: string | null;
@@ -419,6 +426,7 @@ select
   e.status_category,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,
+  c.linked_docs, c.linked_pull_requests, c.linked_artifacts, c.linked_drawings, c.linked_memories,
   t.title            as task_title,
   t.description      as task_description,
   t.work_status, t.priority, t.axes, t.due_date, t.start_date,
@@ -1009,6 +1017,8 @@ export class PgEntityProjector implements EntityProjector {
       // and projects 0 like its five elders.
       docs: r.docs ?? 0,
       memories: r.memories ?? 0,
+      // 327 — the same helper the read path uses.
+      ...linkedCountsOf(r as unknown as Record<string, unknown>),
       viewerReaction,
     };
 

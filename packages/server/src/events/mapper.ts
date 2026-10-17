@@ -41,6 +41,7 @@ import type { Querier } from '../db/types.js';
 import { OffContractEventError, assertWorkspaceEvent } from './emitter.js';
 import type { EntityProjector } from './projector.js';
 import { RUNS_ON } from '../facade/services/w2/runs-on-visibility.js';
+import { linkedCountsOf } from '../facade/linked-counts.js';
 
 /**
  * A row of `public.workspace_events`, exactly as node-postgres returns it.
@@ -727,6 +728,8 @@ export class WorkspaceEventMapper {
           // into a claim of emptiness. The contract marks both optional.
           ...(p['docs'] === undefined ? {} : { docs: Number(p['docs'] ?? 0) }),
           ...(p['memories'] === undefined ? {} : { memories: Number(p['memories'] ?? 0) }),
+          // 327, spread-when-present on the same replay rule.
+          ...linkedCountsOf(p),
           // Viewer-scoped and absent from the counters row. `null` is the
           // contract's "no reaction from this viewer", which is the correct
           // answer whenever we have not resolved one.

@@ -462,9 +462,11 @@ export function buildWorld(tag = 'w', { url = APP_URL } = {}) {
     `select public.create_project('proj-${tag}', '/tmp/tm8-test-${tag}-${spaceA.space.id}', null, 'trusted')`,
     { ...opts, claims: claimsFor(idA, null, true) },
   );
-  ok(`select public.link_project(${uuid(spaceA.space.id)}, ${uuid(project.project.id)})`, {
+  // 234 dropped `link_project`; `link_project_w2` is its successor, and it
+  // reads the folder through projects_select, which only a gate admin passes.
+  ok(`select public.link_project_w2(${uuid(spaceA.space.id)}, ${uuid(project.project.id)}, null, null)`, {
     ...opts,
-    claims: claimsFor(idA, memberA),
+    claims: claimsFor(idA, memberA, true),
   });
 
   return {

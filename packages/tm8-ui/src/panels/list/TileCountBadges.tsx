@@ -1,27 +1,11 @@
-import type { EntityBadges, EntityCounters } from '@tm8/contract';
+import type { EntityCounters } from '@tm8/contract';
 import { KindIcon, tileCountBadgesOf } from '../../domain';
 import type { TileCountFacet } from '../../domain/tile-counts';
-import { VectorIcon } from '../../kit';
 
 /**
- * THE PERSON MARK — a filled head-and-shoulders silhouette, the familiar
- * Octicons `person` glyph shape (MIT) authored directly on this kit's own
- * 16×16 grid rather than rescaled, since Octicons already ships at 16×16.
- * The human-message badge used to draw a face-avatar stack (up to three
- * portraits) beside its count; a tile row is not the place to recognize
- * WHO posted, only that a human did and how many times, so one quiet glyph
- * replaces the stack the same way `WORKTREE_MARK` replaced a word in
- * `git/SessionLane.tsx` — same house rule, same reasoning.
- */
-const PERSON_MARK = [
-  'M10.3 5a2.3 2.3 0 1 1 -4.6 0 2.3 2.3 0 1 1 4.6 0Z',
-  'M2 14A6 5.5 0 0 1 14 14Z',
-];
-
-/**
- * TILE COUNT BADGES (108): glyph+count for what an entity carries — docs,
- * memories, messages — beside the PR chips in a tile's badge sub-row. One
- * vocabulary for task AND session tiles.
+ * TILE COUNT BADGES (108, 327): glyph+count for what an entity produced or
+ * has linked — docs, PRs, artifacts, drawings, memories — beside the PR chips
+ * in a tile's badge sub-row. One vocabulary for task AND session tiles.
  *
  * WHICH counts, and both honesty rules (zero renders nothing; a pre-108
  * server's ABSENT counts also render nothing), live in
@@ -33,8 +17,8 @@ const PERSON_MARK = [
  * DOOR: when the host supplies `onToggleKind` and its `expandableKind`
  * predicate admits the badge's kind, the badge renders as a button that
  * opens that kind's relation group under the tile. Which kinds expand is the
- * HOST's judgment from registry data (a real collection kind expands; the
- * message tallies stay counts) — this component keeps knowing no kind.
+ * HOST's judgment from registry data (a real collection kind expands) — this
+ * component keeps knowing no kind.
  */
 export function hasTileCounts(counters: EntityCounters, visible?: (facet: TileCountFacet) => boolean): boolean {
   // A JSX element is truthy even when it renders null, so mounts ask this
@@ -42,9 +26,8 @@ export function hasTileCounts(counters: EntityCounters, visible?: (facet: TileCo
   return tileCountBadgesOf(counters).some((badge) => visible?.(badge.facet) ?? true);
 }
 
-export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind, expandableKind, controlsId, countOf, visible }: {
+export function TileCountBadges({ counters, openKind, onToggleKind, expandableKind, controlsId, countOf, visible }: {
   counters: EntityCounters;
-  humanAuthors?: EntityBadges['humanMessageAuthors'];
   /** The kind whose relation group is open under this tile, if any. */
   openKind?: string | null;
   /**
@@ -65,7 +48,9 @@ export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind
    * never disagree, including the deterministic path-suppression case.
    * `undefined` ⇒ not computable yet (unhydrated): the counter remains the
    * DISCOVERY value. An override of ZERO removes the badge entirely — a
-   * door onto a group the path has emptied is a door onto a lie.
+   * door onto a group the path has emptied is a door onto a lie. A
+   * `serverCounted` badge (327) is never overridden: its number spans edges
+   * and sessions the row's own read does not hold.
    */
   countOf?: (kind: string, relation?: { type: string; direction: 'incoming' | 'outgoing' }) => number | undefined;
   /**
@@ -76,38 +61,24 @@ export function TileCountBadges({ counters, humanAuthors, openKind, onToggleKind
 }) {
   const badges = tileCountBadgesOf(counters)
     .filter((badge) => visible?.(badge.facet) ?? true)
-    .map((badge) => ({ badge, shown: countOf?.(badge.kind, badge.relation) ?? badge.count }))
+    .map((badge) => ({
+      badge,
+      shown: (badge.serverCounted ? undefined : countOf?.(badge.kind, badge.relation)) ?? badge.count,
+    }))
     .filter(({ shown }) => shown > 0);
   if (badges.length === 0) return null;
 
   return (
     <span className="pn-st__counts" data-testid="tile-count-badges">
       {badges.map(({ badge, shown }) => {
-        const isHuman = badge.emphasis === 'human';
-        // The human badge's icon carries its own tooltip — the author names
-        // when known, so a hover answers "who" as well as "how many" without
-        // drawing a single extra pixel for it.
-        const authorNames = isHuman && humanAuthors
-          ? humanAuthors.actors.map((actor) => actor.displayName)
-          : [];
-        const authorOverflow = isHuman && humanAuthors ? Math.max(humanAuthors.total - authorNames.length, 0) : 0;
-        const personTitle = authorNames.length > 0
-          ? [...authorNames, authorOverflow > 0 ? `+${authorOverflow} more` : null].filter(Boolean).join(', ')
-          : undefined;
         const body = (
           <>
-            {isHuman
-              ? <VectorIcon paths={PERSON_MARK} filled size={12} title={personTitle} />
-              : <KindIcon kind={badge.icon} size={12} />}
+            <KindIcon kind={badge.icon} size={12} />
             {shown}
           </>
         );
         const open = openKind === badge.kind;
-        const classes = [
-          'pn-st__count',
-          badge.emphasis === 'human' ? 'pn-st__count--human' : '',
-          open ? 'pn-st__count--open' : '',
-        ].filter(Boolean).join(' ');
+        const classes = open ? 'pn-st__count pn-st__count--open' : 'pn-st__count';
         const plural = `${shown} ${badge.label}${shown === 1 ? '' : 's'}`;
         return onToggleKind && expandableKind?.(badge.kind) ? (
           <button

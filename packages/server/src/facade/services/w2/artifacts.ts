@@ -30,6 +30,7 @@ import type { Querier } from '../../../db/types.js';
 import type { W2BlobStore } from '../../../files/w2-blob-store.js';
 import { buildDeterministicZip } from '../../../files/zip.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
+import { recordAuthoredFrom } from './authored-from.js';
 import { raw } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, requireParam, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -257,6 +258,9 @@ export class W2ArtifactsService {
         input.position ?? null,
         input.clientMutationId,
       ]);
+      // 327: provenance from the verified bearer when the client named no
+      // session (the RPC already linked one it did name; this is then a no-op).
+      await recordAuthoredFrom(q, ctx, rpc.entity?.id);
       // An authored header rides the create's transaction (headers design §3.1).
       const warnings = input.header && rpc.entity?.id
         ? headerWarnings(await setEntityHeader(q, rpc.entity.id, input.header, 0, envelope.actorId ?? null,

@@ -52,6 +52,7 @@ import {
   type HeaderRpcResult,
 } from '../../../headers/write.js';
 import type { RequestContext } from '../../../http/types.js';
+import { recordAuthoredFrom } from './authored-from.js';
 import { claimsFor, commandEnvelope, limitOf, requireParam, requireUuidParam } from '../../context.js';
 import { resolveEntityReadId } from '../../entity-read-id.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -1236,20 +1237,6 @@ function acceptanceCriteria(
       ...(done ? { doneAt } : {}),
     };
   });
-}
-
-/**
- * "Made during a session" (Design Rules §2.3): `authored_from`, entity ->
- * work_session, recorded by the SERVER from the caller's verified work session
- * (the bearer token), never asserted by a client (308; it replaces the CLI's
- * unverified `created_in`). The RPC records only when that session is live and
- * its participating teammate created the entity, so it is a no-op for a human
- * caller, a foreign entity, or an entity that already has one.
- */
-async function recordAuthoredFrom(q: Querier, ctx: RequestContext, entityId: string | undefined | null): Promise<void> {
-  const workSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null;
-  if (!workSessionId || !entityId) return;
-  await q.rpc('record_authored_from', [entityId, workSessionId]);
 }
 
 async function attachInitialConnections(
