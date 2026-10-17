@@ -661,6 +661,9 @@ function guardFlagsIn(syntax: string): Array<{ flag: string; required: boolean }
  * hide whichever of them drifted.
  */
 const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
+  // 332: both carry an optional expectedConfigRevision guard.
+  'chat.setCredentials': 'SetChatCredentialsInputSchema',
+  'chat.setModel': 'SetChatModelInputSchema',
   'tools.update': 'ToolUpdateInputSchema',
   'tools.config.set': 'ToolConfigSetInputSchema',
   'tools.config.unset': 'ToolConfigUnsetInputSchema',
@@ -834,6 +837,9 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // A DTO with no guard must report NONE, or Direction A can never fail.
     expect(guardFieldsOf('SavedViewInputSchema')).toEqual([]);
     expect(guardFieldsOf('SendHandoffInputSchema')).toEqual([]);
+    for (const schema of ['SetChatCredentialsInputSchema', 'SetChatModelInputSchema']) {
+      expect(guardFieldsOf(schema)).toEqual([{ field: 'expectedConfigRevision', required: false }]);
+    }
   });
 
   it('every guard-bearing contract DTO is reachable from the operation map', () => {
