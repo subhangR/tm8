@@ -2931,3 +2931,13 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-addmenu__extra > summary {
   cursor: pointer;
 }
+/* The connectors picker (or its load failure), drawn in ＋ by the compact composer. */
+.tch-addmenu__connectors {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--pn-line);
+  font-size: var(--pn-fs-label);
+}
+.tch-addmenu__connectors .mcp-error {
+  margin: 0 0 4px;
+}

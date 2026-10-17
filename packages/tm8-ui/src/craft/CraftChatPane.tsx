@@ -15,6 +15,8 @@ import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from '../chat-home/
 import { ChatHomeSurface } from '../chat-home/ChatHomeSurface';
 import type { ChatThreadSummary } from '../chat-home/types';
 import type { TriggerOption } from '../rich-input';
+import { VIEW_ART } from '../domain';
+import { VectorIcon } from '../kit';
 import type { ToolNoteCall } from './turn-notes';
 
 export const EXAMPLE_PROMPTS: readonly string[] = [
@@ -141,19 +143,11 @@ export function CraftChatPane({
  */
 export function CraftChatIntro({ onPrompt, compact = false }: { onPrompt(text: string): void; compact?: boolean }) {
   if (compact) {
-    /* One line, then the examples as small chips that fill the composer. */
+    /* The mode's own mark and its name — nothing else (the composer says the rest). */
     return (
       <div className="crf-intro crf-intro--compact" data-testid="crf-chat-intro">
-        <p>Describe the work; the craft agent builds the pages.</p>
-        <ul className="crf-intro__chips">
-          {EXAMPLE_PROMPTS.slice(0, 2).map((prompt) => (
-            <li key={prompt}>
-              <button type="button" className="crf-intro__chip" data-testid="crf-example" title={prompt} onClick={() => onPrompt(prompt)}>
-                {prompt}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <VectorIcon paths={VIEW_ART.craft} size={40} strokeWidth={1.1} className="crf-intro__mark" />
+        <p className="crf-intro__name">Craft</p>
       </div>
     );
   }

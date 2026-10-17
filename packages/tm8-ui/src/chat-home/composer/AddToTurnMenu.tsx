@@ -34,6 +34,8 @@ export interface AddToTurnMenuProps {
   /** One more section, folded under `extraLabel` (the compact composer's Coordinator team). */
   extra?: ReactNode;
   extraLabel?: string;
+  /** Present ⇒ the connectors picker (or its load failure) in place of the no-catalog note. */
+  connectors?: ReactNode;
 }
 
 export function AddToTurnMenu({
@@ -46,6 +48,7 @@ export function AddToTurnMenu({
   testId = 'tch-add',
   extra,
   extraLabel,
+  connectors,
 }: AddToTurnMenuProps) {
   const filesReason = 'uploading isn’t wired on this surface — this chat was mounted without an attachment port';
   const pick = (accept: string | undefined, close: () => void) => {
@@ -146,9 +149,13 @@ export function AddToTurnMenu({
               {extra}
             </details>
           ) : null}
-          <p className="tch-addmenu__foot" role="note">
-            MCP servers: this node exposes no MCP catalog to chat yet.
-          </p>
+          {connectors ? (
+            <div className="tch-addmenu__connectors" data-testid={`${testId}-connectors`}>{connectors}</div>
+          ) : (
+            <p className="tch-addmenu__foot" role="note">
+              MCP servers: this node exposes no MCP catalog to chat yet.
+            </p>
+          )}
         </div>
       )}
     </ComposerPopover>

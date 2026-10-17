@@ -128,51 +128,22 @@
   cursor: default;
 }
 
-/* The compact empty state: one line, two small example chips. It never
-   sizes the column: the chips ellipsise inside whatever width it has. */
+/* The compact empty state: the Craft mark, large and muted, and its name. */
 .tch-welcome--host:has(> .crf-intro--compact) {
   width: 100%;
   min-width: 0;
 }
 .crf-intro--compact {
-  width: 100%;
-  max-width: none;
-  min-width: 0;
-  contain: inline-size;
-  padding: 0 var(--pn-space-3);
-  box-sizing: border-box;
-}
-.crf-intro--compact p {
-  margin: 0 0 var(--pn-space-2);
-}
-.crf-intro__chips {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--pn-space-1);
+  gap: var(--pn-space-2);
+  max-width: none;
+  color: var(--pn-ink-4, var(--pn-ink-3));
+}
+.crf-intro--compact .crf-intro__name {
   margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.crf-intro__chips > li {
-  max-width: 100%;
-}
-.crf-intro__chip {
-  display: block;
-  max-width: 100%;
-  padding: 2px var(--pn-space-2);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: 999px;
-  font: inherit;
-  font-size: var(--pn-fs-label);
-  color: var(--pn-ink-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.crf-intro__chip:hover {
-  border-color: var(--pn-brand);
-  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-ink-3);
 }

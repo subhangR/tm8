@@ -32,9 +32,12 @@ export function usableDefaults(catalog: McpCatalog): McpSelection[] {
  * blocks the launch for a selection that cannot work; loading, refreshing and an
  * unreadable catalog never block it, because the server resolves defaults itself.
  */
-export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, disabled = false }: {
+export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, disabled = false, headless = false, retryClassName }: {
   targetId?: string; teamMemberId?: string; value: McpSelection[] | undefined;
   onChange(value: McpSelection[] | undefined): void; onReady?(ready: boolean): void; disabled?: boolean;
+  /** Keep the readiness and default-trimming work, draw nothing (the picker is drawn elsewhere, e.g. in ＋). */
+  headless?: boolean;
+  retryClassName?: string;
 }) {
   const { catalog, error, loading, port, refresh } = useMcpCatalog(targetId, teamMemberId);
   const id = useId();
@@ -47,8 +50,8 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, di
     onChange(trimmed.current);
   }, [unusableDefaults, catalog, onChange]);
   useLayoutEffect(() => { onReady?.(!port || !!error || (!!catalog && !problem)); }, [port, catalog, error, problem, onReady]);
-  if (!port) return null;
-  if (!catalog) return error ? <p className="mcp-error" role="alert">{error} <button type="button" onClick={refresh}>Retry connectors</button></p> : null;
+  if (!port || headless) return null;
+  if (!catalog) return error ? <p className="mcp-error" role="alert">{error} <button type="button" className={retryClassName} onClick={refresh}>Retry connectors</button></p> : null;
   if (!catalog.canAttach) return null;
   const attachable = catalog.servers.filter(server => server.canAttach);
   if (attachable.length === 0 && !problem) return null;

@@ -116,6 +116,9 @@ import type {
 import '../panels/honesty/honesty.css';
 import './chat-home.css';
 
+/** The send refusal while the connectors are not ready (loading, or an account to choose). */
+const MCP_REFUSAL = 'Choose a connected account for each connector.';
+
 /** Per-thread composer drafts kept by the host (`composerDrafts`). */
 export interface ComposerDraftStore {
   read(threadKey: string): string | undefined;
@@ -1403,7 +1406,7 @@ export function ChatHomeScreen({
         : !selectedModel
           ? 'No model is available from the launch catalog.'
           : null;
-  const refusal = startUnavailable ?? selectionUnavailable ?? (newThread && !mcpReady ? "Choose a connected account for each connector." : null);
+  const refusal = startUnavailable ?? selectionUnavailable ?? (newThread && !mcpReady ? MCP_REFUSAL : null);
 
   /**
    * THE THREAD'S THREE WRITE-ONCE FACTS, as the composer's drop-ups read them.
@@ -2825,9 +2828,10 @@ export function ChatHomeScreen({
                 ) : null}
               </>
             ) : null}
-            {newThread && <McpPicker teamMemberId={teammateId ?? undefined} targetId={aboutId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={busy} />}
+            {/* Compact: the picker keeps its readiness work here but draws in ＋. */}
+            {newThread && <McpPicker teamMemberId={teammateId ?? undefined} targetId={aboutId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={busy} headless={compactComposer} />}
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
-            {refusal ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
+            {refusal && !(compactComposer && refusal === MCP_REFUSAL) ? <p className="tch-refusal" id="tch-compose-refusal">{refusal}</p> : null}
             {phase === 'stopped-continuable' ? (
               <p className="tch-continuable" role="status">
                 Turn stopped · this thread is continuable. Send another message to resume.
@@ -2912,6 +2916,20 @@ export function ChatHomeScreen({
                           />
                         ),
                         extraLabel: `Coordinator team · ${teamSize(shownTeam)}`,
+                      }
+                    : {})}
+                  {...(compactComposer && newThread
+                    ? {
+                        connectors: (
+                          <McpPicker
+                            teamMemberId={teammateId ?? undefined}
+                            targetId={aboutId ?? undefined}
+                            value={mcpSelections}
+                            onChange={setMcpSelections}
+                            disabled={busy}
+                            retryClassName="tch-addmenu__row"
+                          />
+                        ),
                       }
                     : {})}
                 />
