@@ -61,9 +61,33 @@ describe('composer acceptance', () => {
     expect(view.queryByLabelText('Chat credentials')).toBeNull();
     expect(view.queryByTestId('tch-rail')).toBeNull();
     fireEvent.click(view.getByTestId('tch-settings'));
-    for (const label of ['Chat teammate', 'Project', 'Permissions', 'Chat credentials']) {
-      expect(view.getByLabelText(label)).toBeTruthy();
+    // One row grammar: label, value, › — and no native selects anywhere in the panel.
+    for (const id of ['tch-settings-teammate', 'tch-settings-permission', 'tch-credentials']) {
+      expect(view.getByTestId(id).getAttribute('aria-haspopup')).toBe('menu');
     }
+    // A project this surface cannot change is a read-only row: no submenu.
+    expect(view.getByTestId('tch-settings-project-locked').getAttribute('aria-haspopup')).toBeNull();
+    expect(view.getByTestId('tch-settings-menu').querySelector('select')).toBeNull();
+    // A toggle is a switch.
+    expect(view.getByTestId('tch-mode-options-webSearch').getAttribute('role')).toBe('switch');
+  });
+
+  it('a settings row opens a submenu that the keyboard drives, and Esc closes only the submenu', async () => {
+    const view = await openNewChat(portWith().port);
+    fireEvent.click(view.getByTestId('tch-settings'));
+    const row = view.getByTestId('tch-settings-permission');
+    fireEvent.keyDown(row, { key: 'Enter' });
+    const menu = view.getByTestId('tch-settings-permission-menu');
+    expect(within(menu).getAllByRole('menuitemradio').map((o) => o.querySelector('.tch-submenu__name')!.textContent))
+      .toEqual(['Read-only', 'Ask first', 'Auto']);
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    fireEvent.click(view.getByTestId('tch-settings-permission-auto'));
+    expect(view.queryByTestId('tch-settings-permission-menu')).toBeNull();
+    expect(view.getByTestId('tch-settings-permission-value').textContent).toBe('Auto');
+    fireEvent.click(row);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(view.queryByTestId('tch-settings-permission-menu')).toBeNull();
+    expect(view.getByTestId('tch-settings-menu')).toBeTruthy();
   });
 
   it('ac_2 · the ⚙ offers exactly Worker / Coordinator / Dispatcher, each over its server mode', async () => {
@@ -71,8 +95,9 @@ describe('composer acceptance', () => {
     expect(view.getByTestId('tch-settings-role').textContent).toBe('Coordinator');
     fireEvent.click(view.getByTestId('tch-settings'));
     const roles = within(view.getByRole('radiogroup', { name: 'Chat mode' })).getAllByRole('radio');
-    expect(roles.map((r) => r.querySelector('.tch-pickmenu__name')!.textContent)).toEqual(['Worker', 'Coordinator', 'Dispatcher']);
-    expect(view.getByTestId('tch-settings-worker').textContent).toContain('edits files');
+    expect(roles.map((r) => r.querySelector('.tch-menu__modename')!.textContent)).toEqual(['Worker', 'Coordinator', 'Dispatcher']);
+    expect(view.getByTestId('tch-settings-worker').textContent).toContain('does the work');
+    expect(view.getByTestId('tch-settings-worker').getAttribute('title')).toContain('edits files');
     fireEvent.click(view.getByTestId('tch-settings-worker'));
     expect(view.getByTestId('tch-settings-role').textContent).toBe('Worker');
     expect(modeOf(view)).toBe('build');
@@ -87,12 +112,20 @@ describe('composer acceptance', () => {
     expect(view.queryByLabelText('Reasoning effort')).toBeNull();
     fireEvent.click(view.getByLabelText('Chat model'));
     const effort = view.getByTestId('tch-model-effort');
-    expect(within(effort).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Low', 'Medium', 'High', 'Max']);
+    // A slider over THIS model's stops, with a clickable label per notch.
+    expect(within(effort).getAllByRole('button').map((r) => r.textContent)).toEqual(['Low', 'Medium', 'High', 'Max']);
     fireEvent.click(view.getByTestId('tch-model-effort-max'));
     expect(view.getByLabelText('Chat model').textContent).toContain('Max');
+    expect(view.getByTestId('tch-model-effort-now').textContent).toBe('Max');
+    expect(view.getByTestId('tch-model-effort-hint').textContent).toBe('slowest · most thorough');
+    // Arrow keys step notch by notch.
+    const thumb = within(effort).getByRole('slider');
+    fireEvent.keyDown(thumb, { key: 'ArrowLeft' });
+    expect(view.getByTestId('tch-model-effort-now').textContent).toBe('High');
+    expect(thumb.getAttribute('aria-valuetext')).toBe('High');
     fireEvent.click(view.getByTestId('tch-model-house-model'));
     expect(view.getByTestId('tch-model-effort').textContent).toContain('does not declare effort stops');
-    expect(within(view.getByTestId('tch-model-effort')).queryAllByRole('radio')).toHaveLength(0);
+    expect(within(view.getByTestId('tch-model-effort')).queryAllByRole('slider')).toHaveLength(0);
   });
 
   it('ac_8 + ac_10 · crew rows take any model incl. codex; coordinator list says why codex is out', async () => {
@@ -140,8 +173,10 @@ describe('composer acceptance', () => {
     expect(coordinator.filter((label) => label !== 'Coordinator team')).toEqual(worker);
 
     fireEvent.click(view.getByTestId('tch-settings'));
-    fireEvent.change(view.getByTestId('tch-mode-options-autonomy'), { target: { value: 'auto-dispatch' } });
-    fireEvent.change(view.getByTestId('tch-mode-options-parallelism'), { target: { value: '6' } });
+    fireEvent.click(view.getByTestId('tch-mode-options-autonomy'));
+    fireEvent.click(view.getByTestId('tch-mode-options-autonomy-auto-dispatch'));
+    fireEvent.click(view.getByTestId('tch-mode-options-parallelism'));
+    fireEvent.click(view.getByTestId('tch-mode-options-parallelism-6'));
     // Sanity: the policy under the crew panel reflects the ⚙.
     expect(view.getByTestId('tch-crew-policy').textContent).toContain('auto-dispatch');
   });

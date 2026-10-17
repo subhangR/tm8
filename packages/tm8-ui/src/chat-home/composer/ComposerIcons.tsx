@@ -51,7 +51,7 @@ export function ComposerIcon({ name, size = 16, className }: { name: ComposerIco
       paths={COMPOSER_ICON_ART[name]}
       size={size}
       strokeWidth={1.5}
-      className={className ? `tch-icon ${className}` : 'tch-icon'}
+      className={['tch-icon', className].filter(Boolean).join(' ')}
     />
   );
 }

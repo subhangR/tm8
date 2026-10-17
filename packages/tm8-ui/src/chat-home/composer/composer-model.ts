@@ -427,10 +427,10 @@ export function workerModelChoices(models: readonly ChatModelOption[]): ModelCho
 
 export const EFFORT_LABELS: Record<LaunchModelEffort, { short: string; band: string }> = {
   low: { short: 'Low', band: 'fast · cheapest' },
-  medium: { short: 'Medium', band: 'moderate latency' },
-  high: { short: 'High', band: 'slower · more thorough' },
-  xhigh: { short: 'XHigh', band: 'long-running · costly' },
-  max: { short: 'Max', band: 'longest · most costly' },
+  medium: { short: 'Medium', band: 'balanced · moderate latency' },
+  high: { short: 'High', band: 'slower · deeper reasoning' },
+  xhigh: { short: 'XHigh', band: 'long-running · more thorough' },
+  max: { short: 'Max', band: 'slowest · most thorough' },
   ultra: { short: 'Ultra', band: 'longest · most costly' },
 };
 

@@ -8,13 +8,14 @@ import type { ChatCredentialSelection } from '@tm8/contract';
 
 afterEach(cleanup);
 
-/** Credentials live in the composer's ⚙ panel as a native select. */
+/** Credentials are a row in the composer's ⚙ panel, picked from its submenu. */
 function chooseCredential(view: ReturnType<typeof render>, value: string) {
   fireEvent.click(view.getByTestId('tch-settings'));
-  fireEvent.change(view.getByLabelText('Chat credentials'), { target: { value } });
+  fireEvent.click(view.getByTestId('tch-credentials'));
+  fireEvent.click(view.getByTestId(`tch-credentials-${value}`));
 }
 const credentialOf = (view: ReturnType<typeof render>) =>
-  (view.getByLabelText('Chat credentials') as HTMLSelectElement).value;
+  view.getByTestId('tch-credentials-value').textContent;
 const SPACE = '019f0000-0000-7000-8000-000000000090';
 const models = [{ model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' }];
 
@@ -41,7 +42,7 @@ it('saves a credential change on an existing chat, including during a turn', asy
   await waitFor(() => expect(setCredentials).toHaveBeenCalledWith({
     chatId: CHAT_HOME_FIXTURE_THREAD.summary.rootId, credentialSelection: { source: 'node' },
   }));
-  await waitFor(() => expect(credentialOf(view)).toBe('node'));
+  await waitFor(() => expect(credentialOf(view)).toBe('Server'));
 });
 
 it('keeps the prior selection and shows a policy refusal', async () => {
@@ -51,7 +52,7 @@ it('keeps the prior selection and shows a policy refusal', async () => {
   await waitFor(() => expect(view.getByTestId('tch-model').textContent).toContain('Sonnet'));
   chooseCredential(view, 'node');
   await waitFor(() => expect(view.getByText('Server credential forbidden')).toBeTruthy());
-  expect(credentialOf(view)).toBe('auto');
+  expect(credentialOf(view)).toBe('Auto');
 });
 
 it('lists named space credentials and prevents backend models from choosing a server account', async () => {
