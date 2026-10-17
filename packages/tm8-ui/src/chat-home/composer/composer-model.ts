@@ -70,6 +70,8 @@ export interface ComposerRoleSpec {
   label: string;
   /** The server-side mode a pick of this role sends. */
   mode: ChatMode;
+  /** Two or three words for the compact ⚙ row. */
+  hint: string;
   consequence: string;
 }
 
@@ -81,9 +83,9 @@ export interface ComposerRoleSpec {
  * Coordinator; picking Coordinator sends `ask`.
  */
 export const COMPOSER_ROLES: readonly ComposerRoleSpec[] = [
-  { id: 'worker', label: 'Worker', mode: 'build', consequence: 'does the work itself — edits files and the graph' },
-  { id: 'coordinator', label: 'Coordinator', mode: 'ask', consequence: 'talks it through and hands work to the team' },
-  { id: 'dispatcher', label: 'Dispatcher', mode: 'orchestrate', consequence: 'splits the work and dispatches worker sessions' },
+  { id: 'worker', label: 'Worker', mode: 'build', hint: 'does the work', consequence: 'does the work itself — edits files and the graph' },
+  { id: 'coordinator', label: 'Coordinator', mode: 'ask', hint: 'plans with you', consequence: 'talks it through and hands work to the team' },
+  { id: 'dispatcher', label: 'Dispatcher', mode: 'orchestrate', hint: 'runs workers', consequence: 'splits the work and dispatches worker sessions' },
 ];
 
 export function roleOfMode(mode: ChatMode): ComposerRole {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChatCredentialSelection, EntityId, SpaceId } from '@tm8/contract';
 import { ComposerSelect, type ComposerSelectOption } from './ComposerSelect';
 import type { ChatHomePort } from './types';
+import { PickRow } from './composer/MenuRows';
 
 export function credentialValue(selection: ChatCredentialSelection): string {
   return selection.credentialId ? `space:${selection.credentialId}` : selection.source;
@@ -49,18 +50,14 @@ export function ChatCredentialPicker({ port, spaceId, value, onChange, disabled,
   }
   if (inline) {
     return (
-      <label className="tch-optform__row">
-        <span className="tch-optform__label">Credentials</span>
-        <select aria-label="Chat credentials" data-testid="tch-credentials" value={credentialValue(value)}
-          disabled={disabled} title={note ?? undefined}
-          onChange={event => onChange(credentialSelection(event.target.value))}>
-          {options.map(option => (
-            <option key={option.id} value={option.id} disabled={Boolean(option.disabledReason)} title={option.disabledReason ?? option.hint}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <PickRow label="Credentials" ariaLabel="Chat credentials" testId="tch-credentials"
+        choices={options.map(option => ({
+          id: option.id, label: option.label,
+          ...(option.hint ? { hint: option.hint } : {}),
+          ...(option.disabledReason ? { disabledReason: option.disabledReason } : {}),
+        }))}
+        value={credentialValue(value)} onPick={next => onChange(credentialSelection(next))}
+        disabledReason={disabled ? 'credentials cannot change right now' : null} />
     );
   }
   return <ComposerSelect label="Chat credentials" testId="tch-credentials" options={options}

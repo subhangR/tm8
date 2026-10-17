@@ -9,6 +9,7 @@
  * reason; permissions stays live for the life of the thread.
  */
 import type { ChatProjectOption } from '../types';
+import { Initial, PickRow, StaticRow } from './MenuRows';
 import {
   PERMISSION_RUNGS,
   SCRATCH_PROJECT_ID,
@@ -43,58 +44,58 @@ export function ThreadSettingsFields({
   onProjectChange,
   permission,
   onPermissionChange,
-  permissionSource,
+
   locked,
   lockedProjectLabel,
 }: ThreadSettingsFieldsProps) {
   const projectValue = projectChoice || SCRATCH_PROJECT_ID;
+  const teammate = teammates.find((entry) => entry.id === teammateId);
   return (
     <>
-      <label className="tch-optform__row">
-        <span className="tch-optform__label">Teammate</span>
-        <select
-          aria-label="Chat teammate"
-          data-testid="tch-settings-teammate"
+      {locked ? (
+        <StaticRow
+          label="Runs as"
+          value={<>{teammate ? <Initial name={teammate.label} /> : null}{teammate?.label ?? '—'}</>}
+          title={LOCKED_WHY}
+          testId="tch-settings-teammate"
+        />
+      ) : (
+        <PickRow
+          label="Runs as"
+          ariaLabel="Chat teammate"
+          choices={teammates.map((entry) => ({ id: entry.id, label: entry.label, leading: <Initial name={entry.label} /> }))}
           value={teammateId}
-          disabled={locked}
-          title={locked ? LOCKED_WHY : undefined}
-          onChange={(event) => onTeammateChange(event.target.value)}
-        >
-          {teammates.length === 0 ? <option value="">No teammate</option> : null}
-          {teammates.map((teammate) => <option key={teammate.id} value={teammate.id}>{teammate.label}</option>)}
-        </select>
-      </label>
-      <label className="tch-optform__row">
-        <span className="tch-optform__label">Project</span>
-        {locked ? (
-          <span data-testid="tch-settings-project-locked" title={LOCKED_WHY}>
-            <span aria-hidden>🔒</span> {lockedProjectLabel ?? 'Scratch'}
-          </span>
-        ) : (
-          <select
-            aria-label="Project"
-            data-testid="tch-settings-project"
-            value={projectValue}
-            title="where changes land"
-            onChange={(event) => onProjectChange(event.target.value)}
-          >
-            <option value={SCRATCH_PROJECT_ID}>Scratch</option>
-            {(projects ?? []).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </select>
-        )}
-      </label>
-      <label className="tch-optform__row">
-        <span className="tch-optform__label">Permissions</span>
-        <select
-          aria-label="Permissions"
-          data-testid="tch-settings-permission"
-          value={permission}
-          title={permissionSource ?? 'how far without asking'}
-          onChange={(event) => onPermissionChange(event.target.value as PermissionRung)}
-        >
-          {PERMISSION_RUNGS.map((rung) => <option key={rung.id} value={rung.id} title={rung.allows}>{rung.label}</option>)}
-        </select>
-      </label>
+          onPick={onTeammateChange}
+          testId="tch-settings-teammate"
+        />
+      )}
+      {locked || projects === null ? (
+        <StaticRow
+          label="Project"
+          value={locked ? lockedProjectLabel ?? 'Scratch' : 'Scratch'}
+          locked
+          title={locked ? LOCKED_WHY : 'this surface cannot list projects — the chat uses a scratch directory'}
+          testId="tch-settings-project-locked"
+        />
+      ) : (
+        <PickRow
+          label="Project"
+          choices={[
+            { id: SCRATCH_PROJECT_ID, label: 'Scratch', hint: 'a private empty directory' },
+            ...projects.map((project) => ({ id: project.id as string, label: project.name, hint: 'changes land in this repo' })),
+          ]}
+          value={projectValue}
+          onPick={onProjectChange}
+          testId="tch-settings-project"
+        />
+      )}
+      <PickRow
+        label="Permissions"
+        choices={PERMISSION_RUNGS.map((rung) => ({ id: rung.id, label: rung.label, hint: rung.allows }))}
+        value={permission}
+        onPick={(id) => onPermissionChange(id as PermissionRung)}
+        testId="tch-settings-permission"
+      />
     </>
   );
 }

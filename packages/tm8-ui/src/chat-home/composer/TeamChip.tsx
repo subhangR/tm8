@@ -17,6 +17,7 @@
 import { useMemo, useState } from 'react';
 import type { LaunchModelEffort } from '@tm8/contract';
 import type { ChatModelOption, ChatTeammateOption } from '../types';
+import { ComposerIcon } from './ComposerIcons';
 import { ComposerPopover } from './ComposerPopover';
 import {
   EFFORT_LABELS,
@@ -56,8 +57,9 @@ export function TeamChip({ team, onChange, teammates, models, workerChoices, def
       title={names.join('\n')}
       menuHeight={460}
       menuWidth={380}
+      fitViewport
       trigger={<>
-        <span className="tch-pop__gear" aria-hidden>👥</span>
+        <ComposerIcon name="team" />
         <span className="tch-pop__value" data-testid={`${testId}-count`}>{count}</span>
       </>}
     >

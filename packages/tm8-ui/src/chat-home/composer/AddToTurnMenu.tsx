@@ -18,6 +18,7 @@
  */
 import type { ChangeEvent } from 'react';
 import type { TriggerOption } from '../../rich-input';
+import { ComposerIcon } from './ComposerIcons';
 import { ComposerPopover } from './ComposerPopover';
 
 export interface AddToTurnMenuProps {
@@ -63,8 +64,9 @@ export function AddToTurnMenu({
       title="add to this turn — files, images, skills"
       menuWidth={272}
       menuHeight={360}
+      fitViewport
       className="tch-attach"
-      trigger={<span className="tch-pop__plus" aria-hidden>+</span>}
+      trigger={<ComposerIcon name="plus" />}
     >
       {(close) => (
         <div className="tch-addmenu">

@@ -7,5 +7,6 @@ export { ThreadRail } from './ThreadRail';
 export { CrewPanel } from './CrewPanel';
 export { ComposerSettings } from './ComposerSettings';
 export { TeamChip } from './TeamChip';
-export { ModeOptionsForm } from './ModeOptionsSlot';
+export { ModeOptionsForm, ModeOptionRows } from './ModeOptionsSlot';
+export { ComposerIcon } from './ComposerIcons';
 export { ThreadSettingsFields } from './ThreadSettingsFields';

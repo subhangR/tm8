@@ -6,6 +6,7 @@
  */
 import type { ChatMode } from '@tm8/contract';
 import { ComposerPopover } from './ComposerPopover';
+import { PickRow, SwitchRow, TextRow } from './MenuRows';
 import {
   MODE_OPTION_FIELDS,
   modeOptionValue,
@@ -91,5 +92,40 @@ export function ModeOptionsForm({ mode, values, onChange, testId = 'tch-mode-opt
         );
       })}
     </div>
+  );
+}
+
+/**
+ * The mode's options as ⚙-panel rows: a choice is a pick row, a toggle a
+ * switch, free text an inline field. No heading and no "defaults" note — the
+ * values are the state.
+ */
+export function ModeOptionRows({ mode, values, onChange, testId = 'tch-mode-options' }: Omit<ModeOptionsSlotProps, 'disabled'>) {
+  const set = (key: string, value: string | boolean) => onChange({ ...(values ?? {}), [key]: value });
+  return (
+    <>
+      {MODE_OPTION_FIELDS[mode].map((field) => {
+        const current = modeOptionValue(field, values);
+        const id = `${testId}-${field.key}`;
+        if (field.kind === 'toggle') {
+          return <SwitchRow key={field.key} label={field.label} checked={Boolean(current)} onChange={(next) => set(field.key, next)} testId={id} />;
+        }
+        if (field.kind === 'choice') {
+          return (
+            <PickRow
+              key={field.key}
+              label={field.label}
+              choices={field.choices.map((choice) => ({ id: choice, label: choice }))}
+              value={String(current)}
+              onPick={(next) => set(field.key, next)}
+              testId={id}
+            />
+          );
+        }
+        return (
+          <TextRow key={field.key} label={field.label} value={String(current)} placeholder={field.placeholder} onChange={(next) => set(field.key, next)} testId={id} />
+        );
+      })}
+    </>
   );
 }

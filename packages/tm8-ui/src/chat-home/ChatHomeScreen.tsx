@@ -45,9 +45,10 @@ import { ChatContextNumber, staleReason } from './ChatContextNumber';
 import { NEW_CHAT_KEY, readModeOverrides, readTeam, writeModeOverrides, writeTeam } from '../chat-defaults/composerPicks';
 import {
   AddToTurnMenu,
+  ComposerIcon,
   ComposerSettings,
   CrewPanel,
-  ModeOptionsForm,
+  ModeOptionRows,
   ModelEffortPicker,
   TeamChip,
   ThreadSettingsFields,
@@ -2854,37 +2855,39 @@ export function ChatHomeScreen({
                   role={shownRole}
                   mode={shownMode}
                   onRoleChange={chooseRole}
+                  thread={<>
+                    <ThreadSettingsFields
+                      teammates={teammateOptions}
+                      teammateId={shownTeammateId}
+                      onTeammateChange={(id) => setTeammateId(id as EntityId)}
+                      projects={projects}
+                      projectChoice={projectChoice}
+                      onProjectChange={setProjectChoice}
+                      permission={permission}
+                      onPermissionChange={setPermissionChoice}
+                      permissionSource={permissionSource}
+                      locked={pinned}
+                      lockedProjectLabel={lockedProjectLabel}
+                    />
+                    <ChatCredentialPicker port={port} spaceId={spaceId} value={shownCredential}
+                      onChange={chooseCredential}
+                      disabled={credentialsSaving || (pinned && (!selectedRootId || !port.setCredentials))}
+                      backendKeyOnly={models.find(model => model.model === shownModelId)?.provider.toLowerCase() !== 'anthropic'}
+                      inline />
+                  </>}
+                  options={
+                    <ModeOptionRows
+                      mode={shownMode}
+                      values={modeOptions[shownMode]}
+                      onChange={(values) => setModeOptions((current) => ({ ...current, [shownMode]: values }))}
+                    />
+                  }
                   roleLocked={
                     pinnedMode !== undefined
                       ? 'this host fixes the chat\u2019s mode'
                       : modeLocked ? 'this chat is still starting' : null
                   }
-                >
-                  <ThreadSettingsFields
-                    teammates={teammateOptions}
-                    teammateId={shownTeammateId}
-                    onTeammateChange={(id) => setTeammateId(id as EntityId)}
-                    projects={projects}
-                    projectChoice={projectChoice}
-                    onProjectChange={setProjectChoice}
-                    permission={permission}
-                    onPermissionChange={setPermissionChoice}
-                    permissionSource={permissionSource}
-                    locked={pinned}
-                    lockedProjectLabel={lockedProjectLabel}
-                  />
-                  <ChatCredentialPicker port={port} spaceId={spaceId} value={shownCredential}
-                    onChange={chooseCredential}
-                    disabled={credentialsSaving || (pinned && (!selectedRootId || !port.setCredentials))}
-                    backendKeyOnly={models.find(model => model.model === shownModelId)?.provider.toLowerCase() !== 'anthropic'}
-                    inline />
-                  <ModeOptionsForm
-                    title="Options"
-                    mode={shownMode}
-                    values={modeOptions[shownMode]}
-                    onChange={(values) => setModeOptions((current) => ({ ...current, [shownMode]: values }))}
-                  />
-                </ComposerSettings>
+                />
                 {shownRole === 'coordinator' ? (
                   <TeamChip
                     team={shownTeam}
@@ -2956,7 +2959,7 @@ export function ChatHomeScreen({
                         : 'Send (Enter)')
                     }
                   >
-                    <span aria-hidden>↑</span>
+                    <ComposerIcon name="arrowUp" />
                   </button>
                 )}
               </>}
