@@ -210,7 +210,10 @@ const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
    verbatim for one release so that "go back" returns the bar that was there
    rather than a reconstruction of it. See `shell/topbar-version.ts` for why the
    UI-2.0 switch is NOT this control. */
-const LEGACY_BAR = topBarVersion() === 'legacy';
+/* The pinned-rail layout (the default since 2026-10-18) owns the frame: a
+   device's old `topbar=legacy` rollback no longer brings back the top bar
+   under it — that is what left Craft and Observe on the old bar. */
+const LEGACY_BAR = !isPinnedRailEnabled() && topBarVersion() === 'legacy';
 const TopBar = LEGACY_BAR ? SpaceTabBarLegacy : SpaceTabBar;
 /**
  * The PHONE's landing with no remembered place: its chat screen (D16). The
@@ -671,7 +674,9 @@ export function GateApp(props: GateAppProps = {}) {
   /* D31: the three desktop modes, unless this device rolled back to the
      legacy desktop (`shell/desktop-modes.ts`). Never on the phone (D16). */
   const [modes] = useState(desktopModes);
-  const threeModes = shell !== 'mobile' && modes === 'three';
+  /* Under the pinned-rail layout the three modes are the rail's own icons, so
+     a stale `desktop-modes=legacy` rollback is ignored there too. */
+  const threeModes = shell !== 'mobile' && (isPinnedRailEnabled() || modes === 'three');
   const threeModesRef = useRef(threeModes);
   threeModesRef.current = threeModes;
   const navView = useNavStore((s) => s.view);

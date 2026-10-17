@@ -62,7 +62,13 @@ export function isNavigatorEnabled(): boolean {
 export function resolvePinnedRailEnabled(env: NavigatorEnv, storedFlag: string | null): boolean {
   const envFlag = env.VITE_TM8_UI_NAVIGATOR;
   if (envFlag != null && envFlag !== '') return envFlag === 'rail';
-  return storedFlag === 'rail';
+  if (storedFlag !== null) return storedFlag === 'rail';
+  /* THE DEFAULT (Subhang, 2026-10-18: "make this new UI the default"): with
+     nothing stored, the pinned-rail layout is ON. A device opts out by storing
+     any other value (`off`, or `1` for the merged navigator). The test build
+     keeps the old default so suites written against the classic rail stay
+     meaningful; the rail's own suites opt in explicitly. */
+  return env.MODE !== 'test';
 }
 
 export function isPinnedRailEnabled(): boolean {
