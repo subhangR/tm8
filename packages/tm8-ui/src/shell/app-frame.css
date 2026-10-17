@@ -167,3 +167,16 @@
 .tws-root.app-frame[data-pinned-rail][data-panel-collapsed]:not([data-expanded]) {
   grid-template-columns: var(--tws-rail-w) 0 minmax(0, 1fr) auto;
 }
+/* Craft (pinned): the band leads with the crafts switcher, and it meets the
+   panel's own hairline rather than drawing a second one. */
+.tws-root.app-frame[data-pinned-rail='craft'] .app-frame-top {
+  border-left: 0;
+}
+.tws-root.app-frame[data-pinned-rail] .app-frame-top .tws-mode-switcher-slot {
+  flex: 0 1 auto;
+  align-items: center;
+  padding-left: 0;
+}
+.tws-root.app-frame[data-pinned-rail] .app-frame-top .tws-mode-switcher-slot::before {
+  content: none;
+}
