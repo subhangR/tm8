@@ -445,7 +445,7 @@
 /* An alerting count (sessions' Interrupted) is WHITE on its red pill in both
    themes — the column's muted count ink must not reach it. */
 .cv2-root .tws-browser .lp__tab .lp__tab-count--alert {
-  color: #fff;
+  color: white;
 }
 /* Status tabs as marks when the column is too narrow for their words: each
    tab is its status mark and its count, the row shares the width evenly. */
