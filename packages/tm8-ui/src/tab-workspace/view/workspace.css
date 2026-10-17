@@ -489,6 +489,13 @@
   text-align: center;
   pointer-events: none;
 }
+/* Pinned-only rail (Subhang, 2026-10-17): new stays top-left, the in-progress
+   / running count drops to the BOTTOM-right corner, so the two never share
+   the top edge. */
+.tws-rail[data-pinned-only] .tws-rail-count-badge {
+  top: auto;
+  bottom: -2px;
+}
 .tws-rail-count {
   flex: none;
   margin-left: auto;
