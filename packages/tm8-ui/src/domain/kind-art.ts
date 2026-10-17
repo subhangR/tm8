@@ -271,11 +271,15 @@ export const KIND_ART = {
   ],
 
   /**
-   * Two-way arrows — a space link EXCHANGES with another space (250). It was a
-   * chain, and the chain is what the Links (connections) button draws, so an
-   * entity and a panel section wore one mark.
+   * Two overlapping rings — two spaces, joined (250). It was a chain, and the
+   * chain is what the Links (connections) button draws, so an entity and a
+   * panel section wore one mark. Not two-way arrows either: ⇄ is the Transfer
+   * verb's glyph, and moving an entity between spaces is not linking them.
    */
-  space_link: ['M2.8 5.6h10.4', 'M10.6 3 13.2 5.6 10.6 8.2', 'M13.2 10.4H2.8', 'M5.4 7.8 2.8 10.4 5.4 13'],
+  space_link: [
+    'M6 4.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z',
+    'M10 4.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z',
+  ],
 
   /**
    * A globe — a `server` is another tm8 node (250, used from W8). Not a rack:
