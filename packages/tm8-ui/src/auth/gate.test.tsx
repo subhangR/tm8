@@ -254,6 +254,15 @@ function installFakeAuthServer(): FakeAuthServer {
       return refusal(401, 'unauthenticated', 'authentication is required');
     }
 
+    // `auth.claim.reissue` — on-box only (the auto-owner arm, no bearer), inert
+    // on a claimed node; rotates the live token and returns it.
+    if (method === 'POST' && path === '/v2/auth/claim/reissue') {
+      if (bearer || !server.autoOwner) return refusal(403, 'forbidden', 'reissue is on-box only');
+      if (server.accounts.size > 0) return refusal(409, 'conflict', 'this node is already claimed');
+      server.claimToken = `tm8c_reissued-${server.requests.length}`;
+      return json(200, { data: { token: server.claimToken, claimUrl: '', tokenPath: null } });
+    }
+
     if (method === 'GET' && path === '/v2/auth/session') {
       const username = server.sessions.get(bearer);
       const account = username ? server.accounts.get(username) : undefined;
@@ -511,31 +520,48 @@ describe('the loopback auto-owner — no gate on the box, the whole point of D3'
     expect(screen.queryByTestId('auth-frame')).toBeNull();
   });
 
-  it('does NOT sign in on an UNCLAIMED node — the claim ceremony must win', async () => {
-    // THE REGRESSION. On first run the server resolves the credential-free
-    // loopback caller as the auto-owner (that is HOW the owner row is minted),
-    // and `auth.claim.status` still answers `claimed: false`. Signing the viewer
-    // straight into the app here buries the claim ceremony: the node never gets
-    // a password, and the first off-box login over the tailnet meets a sign-in
-    // card with no credential behind it — §1's dead end, restored by a different
-    // route. The claim card must win while `claimed` is false.
-    localStorage.removeItem(NODE_CLAIM_CACHE_KEY); // cold: no cached claim to paint from
-    server.autoOwner = { ...OWNER_ACCOUNT }; // the server WOULD resolve auto-owner…
-    // …but no account exists yet, so the fake answers `auth.claim.status` with
-    // `claimed: false` — a genuinely unclaimed node.
-    expect(server.accounts.size).toBe(0);
+  it('signs the owner in on an UNCLAIMED node too — the claim card is skippable on the box', async () => {
+    // Owner ruling 2026-10-18 ("every new server asks for username password"):
+    // the claim card used to win here, so every fresh local server stopped its
+    // owner at a name-and-password form. The claim moved into the account menu
+    // (below); a caller who is not on the box still meets the card (next test).
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+    server.autoOwner = { ...OWNER_ACCOUNT };
+    expect(server.accounts.size).toBe(0); // genuinely unclaimed
     render(<AuthGate>{APP}</AuthGate>);
-    // The CLAIM card (frame 1a), not the app, and not a silent sign-in.
+    await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
+    expect(screen.queryByTestId('auth-frame')).toBeNull();
+  });
+
+  it('still shows the claim card on an unclaimed node to a caller who is NOT on the box', async () => {
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+    server.autoOwner = null; // the auto-owner arm is off: multi mode, or a remote origin
+    render(<AuthGate>{APP}</AuthGate>);
     await waitFor(() =>
       expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a'),
     );
-    expect(screen.queryByTestId('the-app')).toBeNull();
-    // And the app never rendered on the way there — the loopback probe held the
-    // blank until the claim answer was known, so no app frame flashed first.
-    expect(screen.queryByTestId('the-app')).toBeNull();
-    // The setup token is reachable on that card — the escape the whole lane exists
-    // to keep open — so the owner can complete the claim from here.
     expect(screen.getByLabelText('SETUP TOKEN')).toBeTruthy();
+    expect(screen.queryByTestId('the-app')).toBeNull();
+  });
+
+  it('offers the claim in the account menu, with no token to copy, until the node is claimed', async () => {
+    localStorage.removeItem(NODE_CLAIM_CACHE_KEY);
+    server.autoOwner = { ...OWNER_ACCOUNT };
+    const actor = { id: 'm', kind: 'member' as const, displayName: 'The Owner', avatar: null, isAgent: false };
+    render(<AuthGate><AccountMenu actor={actor} /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('account-menu-unclaimed-dot')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('account-menu-trigger'));
+    fireEvent.click(screen.getByTestId('account-menu-set-password'));
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: PASSWORD } });
+    fireEvent.click(screen.getByRole('button', { name: 'Set password' }));
+
+    // The token came from `auth.claim.reissue` and was spent on `auth.claim`.
+    await waitFor(() => expect(server.accounts.has('sam')).toBe(true));
+    expect(server.requests.some((r) => r.path === '/v2/auth/claim/reissue')).toBe(true);
+    expect(server.claimToken).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('account-menu-unclaimed-dot')).toBeNull());
   });
 
   it('resumes auto-owner the instant the node IS claimed — the win is only deferred, not lost', async () => {

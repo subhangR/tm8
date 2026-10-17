@@ -43,7 +43,8 @@ import type { ActorSummary } from '@tm8/contract';
 import { Avatar, VectorIcon } from '../kit';
 import { VIEW_ART } from '../domain/kind-art';
 import { useTheme, type Theme } from '../theme/useTheme';
-import { useAuthActions } from './gate-context';
+import { useAuthActions, useOwnerHasNoPassword } from './gate-context';
+import { failureCopy } from './failures';
 import { ACCOUNT_MENU } from './specimen';
 
 export interface AccountMenuProps {
@@ -133,6 +134,7 @@ export function AccountMenu({
   onClose,
 }: AccountMenuProps) {
   const actions = useAuthActions();
+  const unclaimed = useOwnerHasNoPassword();
   const localTheme = useTheme();
   const theme = controlledTheme ?? localTheme.theme;
   const setTheme = onThemeChange ?? localTheme.setTheme;
@@ -316,6 +318,8 @@ export function AccountMenu({
               </button>
             ) : null}
 
+            {unclaimed ? <SetPasswordRow /> : null}
+
             {onOpenAccountScreen ? (
               <button
                 type="button"
@@ -380,6 +384,9 @@ export function AccountMenu({
           src={actor.avatar ?? null}
           className={compact ? 'auth-avatar auth-avatar--compact' : 'auth-avatar auth-avatar--sm'}
         />
+        {unclaimed ? (
+          <span className="auth-accountmenu__dot" data-testid="account-menu-unclaimed-dot" title="This server has no password yet" />
+        ) : null}
         {compact ? (
           compactName ? <span className="auth-accountmenu__name">{name}</span> : null
         ) : (
@@ -394,5 +401,88 @@ export function AccountMenu({
 
       {open ? menu : null}
     </div>
+  );
+}
+
+/**
+ * "Set a password" — the claim, offered in the menu to the loopback owner of a
+ * node nobody has claimed yet (the gate lets them in without the claim card;
+ * see `fetchAutoOwnerSession`). A name and a password: the setup token is
+ * reissued on-box by `claimFromThisMachine`, so nothing is copied from the
+ * terminal. Collapsed to one row until opened, so it nags no harder than that.
+ */
+function SetPasswordRow() {
+  const actions = useAuthActions();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  if (!actions) return null;
+  const failure = open ? actions.failure : null;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="auth-menu__row auth-menu__row--live auth-menu__row--stacked"
+        data-testid="account-menu-set-password"
+        onClick={() => {
+          actions.clearFailure();
+          setOpen(true);
+        }}
+      >
+        <span className="auth-menu__signout">
+          <span className="auth-menu__glyph" aria-hidden>
+            ⚿
+          </span>
+          Set a password
+        </span>
+        <span className="auth-menu__signout-note">
+          this server has none yet — you need one to sign in from another device
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="auth-menu__claim"
+      data-testid="account-menu-claim-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void actions.claimFromThisMachine(name, password);
+      }}
+    >
+      <input
+        className="auth-menu__claim-input"
+        aria-label="Your name"
+        placeholder="Your name"
+        autoComplete="username"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        autoFocus
+      />
+      <input
+        className="auth-menu__claim-input"
+        aria-label="Password"
+        placeholder="Password (8+ characters)"
+        type="password"
+        autoComplete="new-password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+      {failure ? (
+        <span className="auth-menu__signout-note auth-menu__note--warn" role="alert">
+          {failureCopy(failure).lead} {failureCopy(failure).body}
+        </span>
+      ) : null}
+      <span className="auth-menu__claim-actions">
+        <button type="button" className="auth-menu__claim-cancel" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+        <button type="submit" className="auth-menu__claim-save" disabled={actions.busy}>
+          Set password
+        </button>
+      </span>
+    </form>
   );
 }

@@ -15,6 +15,7 @@ import { cloneElement, isValidElement, useCallback, useRef, useState, type React
 import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../../data/seam';
 import { AttentionList, useAttentionOptional } from '../../attention';
+import { useOwnerHasNoPassword } from '../../auth/gate-context';
 import { useAnchoredPopover } from '../../kit/anchoredPopover';
 import { Avatar } from '../../kit/Avatar';
 import { VectorIcon } from '../../kit/VectorIcon';
@@ -178,6 +179,7 @@ export function RailUser({ expanded }: { expanded: boolean }) {
   const seam = gate.data?.seam;
   const name = viewer?.displayName ?? 'You';
   const settings = gate.shellTabs.find((tab) => tab.id === 'settings');
+  const noPassword = useOwnerHasNoPassword();
   return (
     <RailPopoverButton
       label={`Account: ${name}`}
@@ -195,6 +197,9 @@ export function RailUser({ expanded }: { expanded: boolean }) {
           ) : (
             <VectorIcon paths={RAIL_USER_ART} size={16} />
           )}
+          {noPassword ? (
+            <span className="tws-rail-disc__dot" data-testid="rail-user-no-password" title="This server has no password yet" />
+          ) : null}
         </span>
       }
       expanded={expanded}

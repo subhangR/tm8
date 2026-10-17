@@ -14,6 +14,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthSessionContext } from './gate-context';
 import {
+  claimFromThisMachine,
   claimNodeOnServer,
   createServerAccount,
   fetchAutoOwnerSession,
@@ -78,6 +79,11 @@ export interface AuthSessionState {
    * a viewer which one it is actually performing.
    */
   claimNode(token: string, name: string, password: string): Promise<boolean>;
+  /**
+   * The same claim from inside the app, for the loopback owner on an unclaimed
+   * node: no setup token to copy (`claimFromThisMachine` reissues one on-box).
+   */
+  claimFromThisMachine(name: string, password: string): Promise<boolean>;
   signIn(handle: string, password: string): Promise<boolean>;
   signOut(): void;
   clearFailure(): void;
@@ -229,12 +235,10 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
             isOwner: verdict.account.isOwner,
           });
         }
-      } else if (verdict.state === 'gated' || verdict.state === 'unclaimed') {
-        // The node will not sign this caller in now — either it will not vouch
-        // for a credential-free caller (`gated`: multi mode or not loopback), or
-        // it has not been claimed yet (`unclaimed`: the claim ceremony must win,
-        // see `fetchAutoOwnerSession`). Either way a warm browser that rendered
-        // the app from a stale cache is signed out HERE, exactly as a revoked
+      } else if (verdict.state === 'gated') {
+        // The node will not vouch for a credential-free caller (multi mode, or
+        // not loopback). A warm browser that rendered the app from a stale
+        // cache is signed out HERE, exactly as a revoked
         // pass closes the gate on reload — dropping it to the card the node's
         // claim status calls for (the claim card while `claimed` is false).
         setSnapshot((s) => (s.autoOwner ? { ...s, autoOwner: null } : s));
@@ -306,6 +310,25 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
     [refresh],
   );
 
+  const claimHere = useCallback(
+    async (name: string, password: string) => {
+      setBusy(true);
+      setFailure(null);
+      try {
+        const result = await claimFromThisMachine(name, password);
+        if (!result.ok) {
+          setFailure(result.failure);
+          return false;
+        }
+        refresh();
+        return true;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh],
+  );
+
   const signIn = useCallback(
     async (handle: string, password: string) => {
       setBusy(true);
@@ -356,6 +379,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       checkingLoopback,
       createAccount,
       claimNode,
+      claimFromThisMachine: claimHere,
       signIn,
       signOut,
       clearFailure,
@@ -370,6 +394,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       checkingLoopback,
       createAccount,
       claimNode,
+      claimHere,
       signIn,
       signOut,
       clearFailure,

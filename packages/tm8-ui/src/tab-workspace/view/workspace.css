@@ -393,6 +393,21 @@
   background: var(--pn-card);
   color: var(--pn-ink-2);
 }
+/* The owner's node has no password yet: "Set a password" is in this menu. */
+.tws-rail-disc[data-disc='user'] {
+  position: relative;
+}
+.tws-rail-disc__dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pn-wait);
+  box-shadow: 0 0 0 2px var(--pn-surface);
+  pointer-events: none;
+}
 .tws-rail-disc[data-disc='attention'] {
   border-color: color-mix(in srgb, var(--pn-wait) 55%, transparent);
   background: var(--pn-wait-soft);

@@ -5,6 +5,7 @@ import { AccountMenu } from './AccountMenu';
 
 vi.mock('./gate-context', () => ({
   useAuthActions: () => ({ account: { handle: 'alex', isOwner: false }, signOut: vi.fn() }),
+  useOwnerHasNoPassword: () => false,
 }));
 
 afterEach(cleanup);

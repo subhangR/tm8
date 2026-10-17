@@ -29,6 +29,7 @@ export type AuthActions = Pick<
   AuthSessionState,
   | 'createAccount'
   | 'claimNode'
+  | 'claimFromThisMachine'
   | 'signIn'
   | 'signOut'
   | 'failure'
@@ -74,4 +75,14 @@ export function useGateSession(): AuthSessionState {
     );
   }
   return value;
+}
+
+/**
+ * The loopback owner of a node nobody has claimed yet: the gate let them in
+ * without the claim card, so the account menu offers "Set a password" and the
+ * avatar that opens it carries a dot.
+ */
+export function useOwnerHasNoPassword(): boolean {
+  const actions = useAuthActions();
+  return Boolean(actions?.account?.isOwner) && actions?.nodeClaim?.claimed === false;
 }

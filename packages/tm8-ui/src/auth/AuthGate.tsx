@@ -143,6 +143,16 @@ export function AuthGate({
     };
   }, [session.status]);
 
+  // SIGNED IN, the menu's "set a password" row reads `nodeClaim`. The loopback
+  // probe wrote the cache before it let the viewer in, and a claim made from
+  // the menu rewrites it, so re-reading the cache (no request) on every sign-in
+  // change keeps that row honest without a credential-free call per page load.
+  useEffect(() => {
+    if (session.status !== 'signed-in') return;
+    const cached = readCachedNodeClaim();
+    if (cached) setNodeClaim(cached);
+  }, [session.status, session.account]);
+
   useEffect(() => {
     if (session.status === 'signed-in' && session.handle) onSignedIn?.(session.handle);
   }, [session.status, session.handle, onSignedIn]);
@@ -151,6 +161,7 @@ export function AuthGate({
     () => ({
       createAccount: session.createAccount,
       claimNode: session.claimNode,
+      claimFromThisMachine: session.claimFromThisMachine,
       nodeClaim,
       signIn: session.signIn,
       signOut: session.signOut,
@@ -163,6 +174,7 @@ export function AuthGate({
     [
       session.createAccount,
       session.claimNode,
+      session.claimFromThisMachine,
       nodeClaim,
       session.signIn,
       session.signOut,

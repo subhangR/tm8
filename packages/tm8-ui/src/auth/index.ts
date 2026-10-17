@@ -21,7 +21,7 @@ export { AuthFlow, AUTH_FRAMES, DEV_BYPASS_NOTE } from './AuthFlow';
 /* ── THE GATE (the mount contract) ─────────────────────────────────────── */
 export { AuthGate, signOut, type AuthGateProps } from './AuthGate';
 export { AccountMenu, type AccountMenuProps } from './AccountMenu';
-export { useAuthActions, useGateSession, type AuthActions } from './gate-context';
+export { useAuthActions, useGateSession, useOwnerHasNoPassword, type AuthActions } from './gate-context';
 export { useAuthSession, type AuthSessionState, type AuthStatus } from './useAuthSession';
 export {
   readActiveAccount,

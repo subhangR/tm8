@@ -1322,6 +1322,61 @@
    sign-out note is. Colour is not doing the work alone: the row only exists
    with a sentence in it, and the sentence names what is missing. */
 .cv2-root .auth-menu__note--warn { color: var(--pn-wait); }
+/* "Set a password" opened: the claim in the menu, on the row grid. */
+.cv2-root .auth-menu__claim {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px 12px;
+}
+.cv2-root .auth-menu__claim-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+  color: var(--pn-ink);
+}
+.cv2-root .auth-menu__claim-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.cv2-root .auth-menu__claim-cancel,
+.cv2-root .auth-menu__claim-save {
+  appearance: none;
+  padding: 4px 10px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root .auth-menu__claim-save {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand);
+  color: var(--pn-card);
+}
+.cv2-root .auth-menu__claim-save:disabled { opacity: 0.6; cursor: default; }
+/* The quiet nudge on the trigger while the node has no password. */
+.cv2-root .auth-accountmenu__trigger { position: relative; }
+.cv2-root .auth-accountmenu__dot {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-wait);
+  box-shadow: 0 0 0 2px var(--pn-surface);
+  pointer-events: none;
+}
 /* L419: the "phase 2" pill — the ONE refusal the oracle itself draws */
 .cv2-root .auth-menu__pill {
   font-family: var(--pn-mono);
