@@ -132,30 +132,75 @@ export function projectHistory(turns: readonly HistoricalTurn[], options: Projec
     authorityScopeDigest: options.authorityScopeDigest,
     logicalHistoryDigest: historyDigest(original),
   };
+  const fits = (text: string) => Buffer.byteLength(text, 'utf8') <= options.maxBytes;
+  const reduce = (source: readonly Evidence[], allowance: number) => source.map(record => {
+    // Partial/unknown facts survive reduction intact.
+    if (record.role === 'continuity_notice') return record;
+    const json = canonicalJson(record.content);
+    if (Buffer.byteLength(json, 'utf8') <= allowance) return record;
+    return { ...record, content: { excerpt: json.slice(0, Math.floor(allowance / 4)),
+      sourceRef: record.sourceId, sourceDigest: historyDigest(record.content),
+      treatment: 'deterministic_extract', omittedDetail: true } };
+  });
+  let kept: readonly Evidence[] = original;
   let records = original;
   let allowance = 8192;
   let rendered = PREFIX + canonicalJson(records);
-  while (Buffer.byteLength(rendered, 'utf8') > options.maxBytes && allowance >= 32) {
-    records = original.map(record => {
-      // Partial/unknown facts survive reduction intact.
-      if (record.role === 'continuity_notice') return record;
-      const source = canonicalJson(record.content);
-      if (Buffer.byteLength(source, 'utf8') <= allowance) return record;
-      return { ...record, content: { excerpt: source.slice(0, Math.floor(allowance / 4)),
-        sourceRef: record.sourceId, sourceDigest: historyDigest(record.content),
-        treatment: 'deterministic_extract', omittedDetail: true } };
-    });
+  // 1. Shrink oversized records, down to a floor that still says something.
+  while (!fits(rendered) && allowance >= 512) {
+    records = reduce(kept, allowance);
+    rendered = PREFIX + canonicalJson(records);
+    if (!fits(rendered)) allowance = Math.floor(allowance / 2);
+  }
+  // 2. A long chat outgrows the budget even so: every record keeps its source
+  // reference and digest, so hundreds of tool calls cannot fit. Drop whole
+  // turns, oldest first, behind ONE notice that names them — the newest
+  // context survives, and nothing is missing without saying so.
+  let dropped: Evidence[] = [];
+  if (!fits(rendered)) {
+    // The rendered array is additive ('[' + records joined by ',' + ']'), so
+    // each record is sized once and the cut is found without re-rendering.
+    const floor = Math.max(allowance, 512);
+    const shrunk = reduce(original, floor);
+    const sizes = shrunk.map(record => Buffer.byteLength(canonicalJson(record), 'utf8') + 1);
+    const ordinals = [...new Set(original.map(record => record.turnOrdinal))];
+    const noticeFor = (through: number, count: number): Evidence => ({ sourceId: `omitted-turns:${ordinals[0]}-${through}`,
+      role: 'continuity_notice', turnOrdinal: ordinals[0]!, content: { omittedTurns: { fromOrdinal: ordinals[0], throughOrdinal: through, count },
+        omittedDetail: true, instruction: 'Earlier turns were omitted to fit the history budget. '
+          + 'Read them through authorized tm8 tools if they matter; do not replay them.' } });
+    let remaining = Buffer.byteLength(PREFIX, 'utf8') + 2 + sizes.reduce((sum, size) => sum + size, 0);
+    let index = 0;
+    for (let cut = 1; cut < ordinals.length; cut += 1) {
+      const through = ordinals[cut - 1]!;
+      while (index < original.length && original[index]!.turnOrdinal <= through) remaining -= sizes[index++]!;
+      const notice = noticeFor(through, cut);
+      if (remaining + Buffer.byteLength(canonicalJson(notice), 'utf8') + 1 > options.maxBytes && cut < ordinals.length - 1) continue;
+      dropped = original.slice(0, index);
+      kept = [notice, ...original.slice(index)];
+      records = [notice, ...shrunk.slice(index)];
+      rendered = PREFIX + canonicalJson(records);
+      break;
+    }
+  }
+  // 3. Still over (one huge latest turn): shrink what is left to the minimum.
+  while (!fits(rendered) && allowance >= 32) {
+    records = reduce(kept, allowance);
     rendered = PREFIX + canonicalJson(records);
     allowance = Math.floor(allowance / 2);
   }
   if (Buffer.byteLength(rendered, 'utf8') > options.maxBytes) {
     throw new Error('continuity_context_overflow: required attribution and uncertainty exceed budget');
   }
+  const originals = new Set(original);
   return { schemaVersion: 1, snapshotId: options.snapshotId, coverage,
     contentHash: createHash('sha256').update(rendered).digest('hex'), renderedContext: rendered,
-    manifest: records.map((record, index) => ({ sourceId: record.sourceId,
-      treatment: record === original[index] && !omitted(record.content) ? 'included' as const : 'summarized' as const,
-      reason: record === original[index] && !omitted(record.content) ? null : 'bounded deterministic extract; details require a current authorized source read' })) };
+    manifest: [
+      ...dropped.map(record => ({ sourceId: record.sourceId, treatment: 'reference' as const,
+        reason: 'omitted to fit the history budget; details require a current authorized source read' })),
+      ...records.map(record => ({ sourceId: record.sourceId,
+        treatment: originals.has(record) && !omitted(record.content) ? 'included' as const : 'summarized' as const,
+        reason: originals.has(record) && !omitted(record.content) ? null : 'bounded deterministic extract; details require a current authorized source read' })),
+    ] };
 }
 
 /** Read existing canonical rows under current authority; no UI entity joins. */

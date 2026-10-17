@@ -43,6 +43,24 @@ describe('portable history',() => {
     expect(a).toEqual(b); expect(Buffer.byteLength(a.renderedContext)).toBeLessThanOrEqual(2048);
     expect(a.manifest.some(x => x.treatment==='summarized')).toBe(true);
   });
+  it('drops the oldest turns behind one notice when a long chat outgrows the budget (prod craft chat, 2026-10-18)',() => {
+    // 60 turns x 40 tool calls: even the smallest extract keeps a source ref per
+    // record, so shrinking alone cannot fit 32KB. Every turn used to fail with
+    // continuity_context_overflow ("Chat runtime could not prepare this turn").
+    const calls=(ordinal:number)=>Array.from({length:40},(_,i)=>[
+      {seq:i*2,kind:'tool_call',payload:{id:`c${ordinal}-${i}`,name:'shell',args:{cmd:'x'.repeat(300)},state:'completed'}},
+      {seq:i*2+1,kind:'tool_result',payload:{tool_call_id:`c${ordinal}-${i}`,content:'y'.repeat(600),is_error:false}},
+    ]).flat();
+    const turns=Array.from({length:60},(_,i)=>turn(i+1,{parts:[{seq:999,kind:'text',payload:{text:`answer ${i+1}`}},...calls(i+1)]}));
+    const result=projectHistory(turns,{...options,currentTurnOrdinal:61,maxBytes:32768});
+    expect(Buffer.byteLength(result.renderedContext)).toBeLessThanOrEqual(32768);
+    expect(result.renderedContext).toContain('omittedTurns');
+    expect(result.renderedContext).toContain('request 60');
+    expect(result.renderedContext).not.toContain('"request 1"');
+    expect(result.manifest.some(x => x.treatment==='reference' && x.sourceId==='u1')).toBe(true);
+    expect(result.coverage.throughTurnOrdinal).toBe(60);
+    expect(projectHistory(turns,{...options,currentTurnOrdinal:61,maxBytes:32768})).toEqual(result);
+  });
   it('ignores excluded future-input capture changes for semantic resume equality',() => {
     const a=projectHistory([turn(1)],options).coverage;
     expect(sameCoverage(a,{...a,captureHighWater:100})).toBe(true);
