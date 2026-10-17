@@ -382,23 +382,65 @@
   box-shadow: var(--pn-sh-sm);
 }
 
-.tch-explain__body { padding: 14px; }
-.tch-explain__heading { min-width: 0; }
-.tch-explain__heading > span {
-  display: block;
-  margin-bottom: 3px;
-  color: var(--pn-ink-4);
-  font: var(--pn-fs-tick) var(--pn-mono);
-  letter-spacing: var(--pn-track-label);
-  text-transform: uppercase;
+.tch-explain__body { padding: 12px 14px 14px; }
+/* ONE header line: glyph + title, actions at the right (proposal 01a14a8d §3).
+   No uppercase eyebrow — the kind word is the glyph's accessible name. */
+.tch-explain__heading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.tch-explain__glyph {
+  flex: none;
+  color: var(--pn-ink-3);
+  font: 12px/1 var(--pn-mono);
+}
+.tch-explain__kind {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .tch-explain__heading h3 {
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
   color: var(--pn-ink);
-  font-family: var(--pn-serif);
-  font-size: var(--pn-fs-title);
-  font-weight: 500;
+  font: 600 14px/1.3 var(--pn-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.tch-explain__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tch-explain__head .tch-explain__heading { flex: 1; }
+.tch-explain__actions { display: flex; align-items: center; gap: 2px; }
+.tch-explain__actions button {
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--pn-r-xs);
+  background: none;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-fine) var(--pn-ui);
+  cursor: pointer;
+}
+.tch-explain__actions button:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+.tch-explain__actions button + button::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--pn-ink-4);
+}
+/* A tall diagram does not take the transcript: 320px, one press from whole. */
+.tch-explain__frame {
+  max-height: 320px;
+  overflow: hidden;
+}
+.tch-explain__frame[data-expanded] { max-height: none; }
 .tch-explain__caption {
   margin: 10px 0 0;
   color: var(--pn-ink-3);
@@ -408,14 +450,8 @@
 .tch-explain__pending { padding: 18px 14px; color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
 
 .tch-explain__source {
-  margin-top: 10px;
-  color: var(--pn-ink-3);
-  font: var(--pn-fs-tick) var(--pn-mono);
-}
-.tch-explain__source summary { cursor: pointer; }
-.tch-explain__source pre {
   overflow-x: auto;
-  margin: 7px 0 0;
+  margin: 10px 0 0;
   padding: 9px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
@@ -559,7 +595,7 @@
   display: block;
   width: auto;
   max-width: 100%;
-  max-height: 460px;
+  max-height: 320px;
   margin: 12px auto 0;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
@@ -593,8 +629,7 @@
   gap: 2px;
 }
 
-.tch-ledger__reads,
-.tch-ledger__transition {
+.tch-ledger__reads {
   display: flex;
   gap: var(--pn-space-2);
   align-items: baseline;
@@ -603,8 +638,7 @@
 }
 
 /* The read line is a BUTTON (S3b): the expansion is its press destination.
-   Same sentence anatomy as its siblings above — the reset strips the button
-   chrome so the three line types keep reading as one family. */
+   The reset strips the button chrome so it keeps reading as a sentence. */
 button.tch-ledger__reads {
   padding: 0;
   border: none;
@@ -622,31 +656,6 @@ button.tch-ledger__reads:hover { color: var(--pn-ink-2); }
 .tch-ledger__readtree {
   margin: 2px 0 4px;
   padding-left: var(--pn-space-4);
-}
-
-.tch-ledger__entity {
-  max-width: 260px;
-  overflow: hidden;
-  color: var(--pn-ink-2);
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* A real button only when the host can open entities — same split, same
-   affordance family as the entity chip it replaces. */
-button.tch-ledger__open {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--pn-ink-2);
-  font: inherit;
-  cursor: pointer;
-}
-
-button.tch-ledger__open:hover {
-  color: var(--pn-brand-2);
-  text-decoration: underline;
 }
 
 .tch-entity-chip {

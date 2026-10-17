@@ -1,4 +1,4 @@
-import { Fragment, memo, useId, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, memo, useId, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { Markdown, MARKDOWN_COMPONENTS, type MarkdownComponents } from '../kit';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
@@ -248,6 +248,12 @@ export function TurnParts({
   const turnExpanded = turnOpen ?? (currentRunKey !== null && runKeys.length === 1);
   const runOpen = (key: string): boolean => turnOpen ?? key === currentRunKey;
 
+  /* The prose's id chips read the host through ONE stable ref: a text block
+     must not re-render (and remount its links) on every streaming delta just
+     because the fold's labels moved on. */
+  const proseChips = useRef<ProseChipHost>({});
+  proseChips.current = { onOpenEntity, resolveEntity, suppressEntityIds, labels: threadLedger.labels };
+
   const renderRun = (key: string, items: readonly RunItem[]) => {
     const steps = items.flatMap((item) => (item.kind === 'step' ? [item.part] : []));
     const receipt = receipts.get(key);
@@ -302,10 +308,7 @@ export function TurnParts({
             <TurnText
               key={part.seq}
               source={part.text}
-              onOpenEntity={onOpenEntity}
-              resolveEntity={resolveEntity}
-              suppressEntityIds={suppressEntityIds}
-              labels={threadLedger.labels}
+              chips={proseChips}
             />
           );
         }
@@ -351,25 +354,24 @@ export function TurnParts({
  */
 const TurnText = memo(function TurnText({
   source,
-  onOpenEntity,
-  resolveEntity,
-  suppressEntityIds,
-  labels,
+  chips,
 }: {
   source: string;
-  onOpenEntity?: ((id: EntityId) => void) | undefined;
-  resolveEntity?: ChatEntityResolver | undefined;
-  suppressEntityIds?: ReadonlySet<string> | undefined;
-  /** What the thread's fold already knows of an id, so a chip is titled on
-   *  its first paint. */
-  labels?: ChatLedger['labels'] | undefined;
+  chips: MutableRefObject<ProseChipHost>;
 }) {
-  const components = useMemo(
-    () => proseChipComponents(onOpenEntity, resolveEntity, suppressEntityIds, labels),
-    [onOpenEntity, resolveEntity, suppressEntityIds, labels],
-  );
+  const components = useMemo(() => proseChipComponents(chips), [chips]);
   return <Markdown source={source} className="tch-answer" testId="chat-turn-text" components={components} />;
 });
+
+/** What a prose chip needs from the host, read at render time. */
+interface ProseChipHost {
+  onOpenEntity?: ((id: EntityId) => void) | undefined;
+  resolveEntity?: ChatEntityResolver | undefined;
+  /** This thread's own message ids — never chipped. */
+  suppressEntityIds?: ReadonlySet<string> | undefined;
+  /** What the fold already knows of an id, so a chip is titled on first paint. */
+  labels?: ChatLedger['labels'] | undefined;
+}
 
 /**
  * AN ENTITY ID IN THE PROSE IS AN ENTITY CHIP. Agents paste the id of what
@@ -379,16 +381,12 @@ const TurnText = memo(function TurnText({
  * EXACTLY an id: a fence, or code that merely contains one, stays code. This
  * thread's own message ids stay code too (`suppressEntityIds`).
  */
-function proseChipComponents(
-  onOpenEntity: ((id: EntityId) => void) | undefined,
-  resolveEntity: ChatEntityResolver | undefined,
-  suppressEntityIds: ReadonlySet<string> | undefined,
-  labels: ChatLedger['labels'] | undefined,
-): MarkdownComponents {
+function proseChipComponents(chips: MutableRefObject<ProseChipHost>): MarkdownComponents {
   const fallback = MARKDOWN_COMPONENTS.code as (props: Record<string, unknown>) => ReactNode;
   return {
     code(props) {
       const text = String(props.children ?? '').trim();
+      const { onOpenEntity, resolveEntity, suppressEntityIds, labels } = chips.current;
       if (!props.className && isEntityIdLike(text) && !suppressEntityIds?.has(text)) {
         const known = labels?.get(text);
         return (

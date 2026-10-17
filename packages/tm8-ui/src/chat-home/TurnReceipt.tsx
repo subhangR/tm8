@@ -155,7 +155,7 @@ function ReceiptRowView({
     </>
   );
 
-  const meta = metaOf(row, kind, preview);
+  const meta = metaOf(row, kind, preview, depth);
   return (
     <li
       className="tch-rrow"
@@ -207,11 +207,16 @@ interface Fact {
 
 /**
  * The row's one or two short facts: what an edit changed, how big a content
- * create is, where a create landed when its parent is not a row here, or
- * what a link joined it to.
+ * create is, where a create landed when its parent is not a row here (a
+ * nested row's indentation already says it; the root is never said), or what
+ * a link joined it to.
  */
-function metaOf(row: ReceiptRow, kind: string | undefined, preview: LedgerPreview | undefined): Fact[] {
+function metaOf(row: ReceiptRow, kind: string | undefined, preview: LedgerPreview | undefined, depth: number): Fact[] {
   const facts: Fact[] = row.edits.map((what) => ({ text: editFact(what) }));
+  if (row.create && depth === 0) {
+    if (row.create.parentId) facts.push({ text: 'under ', relId: row.create.parentId });
+    else if (row.create.subjectId) facts.push({ text: 'on ', relId: row.create.subjectId });
+  }
   if (row.create && kind) {
     const size = sizeFact(kind, preview);
     if (size) facts.push({ text: size });
