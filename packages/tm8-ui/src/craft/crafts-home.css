@@ -97,6 +97,7 @@
 }
 
 .dsh-card {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -263,4 +264,5 @@
 .dsh-card-menu__item:hover,
 .dsh-card-menu__item:focus-visible { background: var(--pn-surface); outline: none; }
 
-.dsh-card__rename { flex: 1; font-size: var(--pn-fs-sm); font-weight: 600; }
+/* The field keeps the card's height: same line box as the name it replaces. */
+.dsh-card__rename { flex: 1; height: 22px; margin: -2px -7px; padding: 0 6px; font-size: var(--pn-fs-sm); font-weight: 600; }
