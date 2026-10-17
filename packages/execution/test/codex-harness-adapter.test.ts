@@ -315,7 +315,7 @@ describe('Codex pinned-v2 conformance', () => {
     await session.close('shutdown');
     expect(released).toBe(1);
     await expect(
-      open(input(material({ TM8_FAKE_CODEX_VERSION: 'codex/0.162.0' }))),
+      open(input(material({ TM8_FAKE_CODEX_VERSION: 'codex/0.170.0' }))),
     ).rejects.toMatchObject({ failure: { code: 'protocol_mismatch' } });
   });
 });
