@@ -35,8 +35,29 @@ interface PtyEntry {
    *  from the exact byte offset it last saw (see {@link PtyHostService.getReplay}). */
   output: OutputBuffer;
   /** Parsed terminal state used when the raw replay ring has evicted the
-   * client's resume point. */
-  state: TerminalStateMirror;
+   * client's resume point, and for the screen reads (bracketed paste, cursor
+   * band, viewport). Never touch it directly — go through
+   * {@link PtyHostService.mirrorOf}, which flushes first.
+   *
+   * FEED INVARIANT: the mirror has been fed exactly the raw bytes
+   * `[0, output.totalBytes - sendBytes)`, in order, interleaved with resizes at
+   * the offsets they happened. It is fed the coalesced frame in
+   * {@link PtyHostService.flushOutput} (same bytes, same order as the per-chunk
+   * feed it replaced) instead of on every node-pty data event, so a burst costs
+   * one parse call per frame rather than one per chunk. Every mirror read
+   * flushes first, so a read or snapshot always covers every byte the
+   * OutputBuffer counts.
+   *
+   * LAZY: `null` until first needed. It is built from the retained ring, which
+   * is only the whole stream while nothing has been evicted, so it is also
+   * built just BEFORE the first append that could evict (see onData) — never
+   * from a truncated ring. A PTY nobody reads that stays under the ring cap
+   * never parses a byte. */
+  state: TerminalStateMirror | null;
+  /** While {@link state} is unbuilt: the spawn size and every resize since,
+   *  stamped with the raw offset it happened at, so the lazy build replays the
+   *  stream at the widths it was authored at. `null` once built or disposed. */
+  lazyMirror: { cols: number; rows: number; resizes: Array<{ at: number; cols: number; rows: number }> } | null;
   subscribers: Set<FrameSink>;
   /** Sockets waiting for an asynchronous state snapshot. */
   pendingSubscribers: Map<FrameSink, PendingSubscriber>;
@@ -96,6 +117,9 @@ const DEFAULT_SEND_COALESCE_MS = 16;
 const DEFAULT_IDLE_AFTER_MS = 10_000;
 /** Force a flush when this much output accumulates inside one window. */
 const DEFAULT_SEND_COALESCE_MAX_BYTES = 64 * 1024;
+/** Resizes remembered for a not-yet-built mirror before it is simply built.
+ *  Bounds the list for a PTY that is resized a lot but never read. */
+const MAX_LAZY_MIRROR_RESIZES = 64;
 
 interface PendingPromptDelivery {
   content: string;
@@ -502,7 +526,8 @@ export class PtyHostService {
     const entry: PtyEntry = {
       proc,
       output: new OutputBuffer(this.outputCapBytes),
-      state: new TerminalStateMirror(initialCols, initialRows),
+      state: null,
+      lazyMirror: { cols: initialCols, rows: initialRows, resizes: [] },
       subscribers: new Set(),
       pendingSubscribers: new Map(),
       exited: false,
@@ -529,11 +554,17 @@ export class PtyHostService {
 
     proc.onData((data: string | Buffer) => {
       const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
-      // Ring buffers MUST stay synchronous — offset accounting, replay, and
-      // snapshot boundaries all read them in the same turn as onData. Only the
-      // socket fan-out below is coalesced.
+      // The lazy mirror is built from the ring, which is only the whole stream
+      // until its first eviction — so build it before an append that could
+      // evict, while the ring still starts at byte 0.
+      if (entry.lazyMirror && entry.output.totalBytes + chunk.length > this.outputCapBytes) {
+        this.buildMirror(entry, sessionId);
+      }
+      // The ring buffer MUST stay synchronous — offset accounting, replay, and
+      // snapshot boundaries all read it in the same turn as onData. The socket
+      // fan-out and the headless mirror are fed the coalesced frame in
+      // flushOutput, and every boundary flushes first.
       entry.output.append(chunk);
-      entry.state.append(chunk);
       // Timestamp the stream so the prompt readiness gate can wait for it to fall
       // quiet before injecting a prompt/Enter.
       entry.lastOutputAt = Date.now();
@@ -628,7 +659,7 @@ export class PtyHostService {
       // terminal status, and the transition RPC rejects exited -> idle with a
       // 23514 that would surface as a spurious error in the logs.
       this.clearIdleTimer(entry);
-      entry.state.dispose();
+      this.disposeMirror(entry);
       this.sessions.delete(sessionId);
       const queuedAtExit = this.pendingPrompts.get(sessionId);
       if (queuedAtExit) this.abandonQueuedPrompts(sessionId, queuedAtExit, 'session_exited_with_prompt_queued');
@@ -712,8 +743,10 @@ export class PtyHostService {
   async readScreen(sessionId: string): Promise<string | null> {
     const entry = this.sessions.get(sessionId);
     if (!entry || entry.exited) return null;
+    const mirror = this.mirrorOf(entry, sessionId);
+    if (!mirror) return null;
     try {
-      return await entry.state.readViewport();
+      return await mirror.readViewport();
     } catch {
       return null;
     }
@@ -1083,8 +1116,15 @@ export class PtyHostService {
     //     inside the tail's echo — but nothing can precede the head's;
     //   - a rewrite is NOT safe here — its lines were already submitted, so a
     //     second write would duplicate them. One write, then report honestly.
+    // Framing reads the parsed mode synchronously, so let the mirror catch up
+    // with everything already produced first — a just-built (lazy) mirror has
+    // not parsed the agent's `ESC[?2004h` yet.
+    await this.settleMirror(entry, sessionId);
+    if (this.sessions.get(sessionId) !== entry || entry.exited) {
+      return { outcome: 'unknown', reason: 'session_replaced_or_exited' };
+    }
     const unframedMultiline =
-      confirmArrival && body.includes('\n') && !entry.state.bracketedPaste;
+      confirmArrival && body.includes('\n') && !this.bracketedPaste(entry);
     const writeAttempts = unframedMultiline ? 1 : PROMPT_BODY_WRITE_ATTEMPTS;
     const headToken = this.computeTailToken(body, Infinity).slice(0, PROMPT_TAIL_TOKEN_MAX);
 
@@ -1182,7 +1222,7 @@ export class PtyHostService {
   private async waitForBracketedPaste(entry: PtyEntry, timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      if (entry.exited || entry.state.bracketedPaste) return entry.state.bracketedPaste;
+      if (entry.exited || this.bracketedPaste(entry)) return this.bracketedPaste(entry);
       if (Date.now() >= deadline) return false;
       await new Promise((resolve) => setTimeout(resolve, PROMPT_BODY_POLL_MS));
     }
@@ -1193,7 +1233,7 @@ export class PtyHostService {
    *  empty body still falls through to a bare Enter (old behavior). */
   private frameBody(entry: PtyEntry, body: string): string {
     if (!body) return '';
-    if (entry.state.bracketedPaste) {
+    if (this.bracketedPaste(entry)) {
       return BRACKETED_PASTE_START + body + BRACKETED_PASTE_END;
     }
     return body;
@@ -1350,9 +1390,11 @@ export class PtyHostService {
    * never blind-retries an Enter.
    */
   private async promptStillAtCursor(entry: PtyEntry, tailToken: string): Promise<boolean> {
+    const mirror = this.mirrorOf(entry);
+    if (!mirror) return false; // no screen ⇒ inconclusive ⇒ do not retry
     let region: string;
     try {
-      region = await entry.state.readCursorRegion();
+      region = await mirror.readCursorRegion();
     } catch {
       return false; // unreadable ⇒ inconclusive ⇒ do not retry
     }
@@ -1384,7 +1426,7 @@ export class PtyHostService {
       entry.proc.resize(cols, rows);
       entry.cols = cols;
       entry.rows = rows;
-      entry.state.resize(cols, rows);
+      this.resizeMirror(entry, sessionId, cols, rows);
     } catch (err) {
       this.logger.warn('PtyHostService: resize failed', {
         sessionId,
@@ -1473,7 +1515,7 @@ export class PtyHostService {
     } else {
       this.closeSubscribers(entry);
     }
-    entry.state.dispose();
+    this.disposeMirror(entry);
     this.sessions.delete(sessionId);
     return outcome;
   }
@@ -1515,10 +1557,14 @@ export class PtyHostService {
   ): Promise<{ next: number; data: Buffer; cols: number; rows: number }> | null {
     const entry = this.sessions.get(sessionId);
     if (!entry) return null;
+    // mirrorOf flushes, so the mirror's queued writes end at exactly totalBytes
+    // when `next` is read below — no await between the two.
+    const mirror = this.mirrorOf(entry, sessionId);
+    if (!mirror) return Promise.reject(new Error('terminal mirror is disposed'));
     const next = entry.output.totalBytes;
     const cols = entry.cols;
     const rows = entry.rows;
-    return entry.state.snapshot().then((data) => ({ next, data, cols, rows }));
+    return mirror.snapshot().then((data) => ({ next, data, cols, rows }));
   }
 
   /**
@@ -1815,8 +1861,8 @@ export class PtyHostService {
   }
 
   /**
-   * Deliver all coalesced output as one frame to live subscribers and append it
-   * to pending-subscriber backlogs. MUST run before any attach/replay/snapshot
+   * Deliver all coalesced output as one frame to live subscribers, the headless
+   * mirror (if built) and pending-subscriber backlogs. MUST run before any attach/replay/snapshot
    * boundary and before exit frames — a boundary taken while bytes sit in
    * sendBuf would replay those bytes AND deliver them again on the next flush.
    */
@@ -1829,6 +1875,9 @@ export class PtyHostService {
     const frame = entry.sendBuf.length === 1 ? entry.sendBuf[0]! : Buffer.concat(entry.sendBuf);
     entry.sendBuf = [];
     entry.sendBytes = 0;
+    // Same bytes, same order the per-chunk feed used; keeps the mirror's feed
+    // invariant (see PtyEntry.state) now that sendBuf is empty.
+    entry.state?.append(frame);
     for (const sink of entry.subscribers) {
       this.safeSend(sink, frame);
     }
@@ -1848,6 +1897,81 @@ export class PtyHostService {
         }
       }
     }
+  }
+
+  /**
+   * The session's headless mirror, caught up to every byte produced so far:
+   * flushes coalesced output into it, building it on first use. Null once the
+   * mirror is disposed (the PTY exited or was killed). EVERY mirror read goes
+   * through here — reading `entry.state` directly can miss up to one coalescing
+   * window of output that the OutputBuffer already counts.
+   */
+  private mirrorOf(entry: PtyEntry, sessionId?: string): TerminalStateMirror | null {
+    this.flushOutput(entry, sessionId);
+    if (entry.lazyMirror) this.buildMirror(entry, sessionId);
+    return entry.state;
+  }
+
+  /** Bracketed-paste mode as of the bytes the mirror has PARSED (see
+   *  {@link settleMirror} to wait for that to reach every byte produced). */
+  private bracketedPaste(entry: PtyEntry): boolean {
+    return this.mirrorOf(entry)?.bracketedPaste ?? false;
+  }
+
+  /** Resolve once the mirror has parsed every byte produced so far. */
+  private async settleMirror(entry: PtyEntry, sessionId?: string): Promise<void> {
+    await this.mirrorOf(entry, sessionId)?.settled();
+  }
+
+  /**
+   * Build the lazy mirror from the retained ring, replaying resizes at the
+   * offsets they happened. Exact only while the ring still starts at byte 0,
+   * which onData guarantees by building before the first append that could
+   * evict. Flushes first so the feed invariant holds with an empty sendBuf.
+   */
+  private buildMirror(entry: PtyEntry, sessionId?: string): void {
+    const plan = entry.lazyMirror;
+    if (!plan) return;
+    this.flushOutput(entry, sessionId);
+    entry.lazyMirror = null;
+    if (entry.output.startOffset !== 0) {
+      // Unreachable by construction; say so loudly rather than silently serve a
+      // mirror missing the stream's head (lost modes, wrong alt-screen state).
+      this.logger.warn('PtyHostService: terminal mirror built from an evicted ring', {
+        sessionId,
+        evicted: entry.output.startOffset,
+      });
+    }
+    const mirror = new TerminalStateMirror(plan.cols, plan.rows);
+    const { base, data } = entry.output.replayFrom(0);
+    let pos = 0;
+    for (const resize of plan.resizes) {
+      const at = Math.max(0, resize.at - base);
+      if (at > pos) mirror.append(data.subarray(pos, at));
+      pos = Math.max(pos, at);
+      mirror.resize(resize.cols, resize.rows);
+    }
+    mirror.append(data.subarray(pos));
+    entry.state = mirror;
+  }
+
+  private resizeMirror(entry: PtyEntry, sessionId: string, cols: number, rows: number): void {
+    const plan = entry.lazyMirror;
+    if (plan) {
+      plan.resizes.push({ at: entry.output.totalBytes, cols, rows });
+      if (plan.resizes.length > MAX_LAZY_MIRROR_RESIZES) this.buildMirror(entry, sessionId);
+      return;
+    }
+    // Bytes produced before the resize were authored at the old width: feed them
+    // first, exactly as the per-chunk feed did.
+    this.flushOutput(entry, sessionId);
+    entry.state?.resize(cols, rows);
+  }
+
+  private disposeMirror(entry: PtyEntry): void {
+    entry.lazyMirror = null;
+    entry.state?.dispose();
+    entry.state = null;
   }
 
   private safeSend(sink: FrameSink, data: string | Buffer): void {

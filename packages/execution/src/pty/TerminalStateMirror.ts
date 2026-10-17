@@ -20,9 +20,11 @@ const FULL_RESET = 'c';
  * Headless xterm mirror of one PTY stream.
  *
  * Output and resize operations are serialized through one promise chain so a
- * snapshot requested between two node-pty data events represents that exact
- * raw-stream boundary. Later writes queue behind the snapshot callback instead
- * of mutating the buffer while it is being serialized.
+ * snapshot represents the exact raw-stream boundary of the writes queued before
+ * it. Later writes queue behind the snapshot callback instead of mutating the
+ * buffer while it is being serialized. The mirror only knows the bytes it was
+ * given: PtyHostService feeds it coalesced frames and flushes before every read
+ * so that boundary is the OutputBuffer's `totalBytes` (see PtyEntry.state).
  */
 export class TerminalStateMirror {
   private readonly terminal: Terminal;
@@ -52,6 +54,12 @@ export class TerminalStateMirror {
           this.terminal.write(data, resolve);
         }),
     );
+  }
+
+  /** Resolve once every write and resize queued so far has been applied, so
+   *  synchronous reads ({@link bracketedPaste}) reflect them. */
+  settled(): Promise<void> {
+    return this.tail;
   }
 
   resize(cols: number, rows: number): void {
