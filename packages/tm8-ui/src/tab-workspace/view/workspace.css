@@ -922,11 +922,64 @@
  */
 .tws-root[data-nav] {
   /* 300px default, 240–480 by the resizer (§4); `--tws-browser-w` is the
-     persisted field the width still rides on (see `navigatorFlag.ts`). */
-  grid-template-columns: var(--tws-nav-w, 300px) minmax(0, 1fr);
+     persisted field the width still rides on (see `navigatorFlag.ts`).
+     THREE TRACKS, TWO COLUMNS. The middle track exists for the top row alone:
+     the header spans tracks 1–2 and the content spans 2–3, so the body is
+     still the navigator column and the content beside it, to the pixel, while
+     the header is free to run past the column into the top row over the
+     content. Sized `auto`, so it is the header's own overflow and nothing
+     else: at a width where the header fits it collapses to 0 and this grid is
+     the two-column grid it replaced. See `.tws-left-header` below for why the
+     header needed it. */
+  grid-template-columns: var(--tws-nav-w, 300px) auto minmax(0, 1fr);
   grid-template-areas:
-    'header strip'
-    'nav content';
+    'header header strip'
+    'nav content content';
+}
+/*
+ * THE HEADER READS IN FULL AT THE DEFAULT WIDTH (QA finding 1, ruled
+ * 2026-10-17).
+ *
+ * It used to span the navigator's track and nothing more, so at the 300px
+ * default its four children had 288px of content box to share and two of them
+ * ellipsised: the space name lost 24.5px (`Navigator QA` → `Naviga…`) and the
+ * mode's switcher 17.3px (`Mixed` → `M`) — measured in a browser, where
+ * `innerText` still reads the whole string and jsdom reports nothing wrong.
+ * Meanwhile ~1000px of the same row sat empty over the content. With the flag
+ * OFF the header already spans the rail AND the browser (48 + 300 = 348) and
+ * reads in full, so the truncation was the navigator's alone.
+ *
+ * The header now takes the width it needs and the strip starts after it. The
+ * cost is honest and visible: the band's right edge and the hairline under it
+ * no longer line up with the navigator | content boundary below while the
+ * header is overflowing. Narrowing the content to pad the header, or shrinking
+ * the type, would both be larger changes to a surface nobody asked us to
+ * change.
+ *
+ * CAPPED, because the space name is user data. A 60-character space must not
+ * push the tab strip off the far side of the screen, so the overhang stops at
+ * 180px and past that the switcher ellipsises again — the behaviour today,
+ * at a width where it is the only option left.
+ */
+/* `:not(.app-frame)` IS LOAD-BEARING, not tidiness. `AppFrame` (Craft,
+   Settings) renders `class="tws-root app-frame"` and sets `data-nav` too, and
+   its own `[data-nav]` grid (`app-frame.css`) already spans the header over
+   TWO tracks — 300 + 300 = 600px, which is why it never truncated and is not
+   what this fixes. Without the exclusion this `max-width` would clamp that
+   600px band to 480 and leave 120px of the header's own area unpainted. The
+   grid rule above needs no exclusion: `.tws-root.app-frame[data-nav]` is one
+   class more specific and wins on its own. */
+.tws-root[data-nav]:not(.app-frame) .tws-left-header {
+  max-width: calc(var(--tws-nav-w, 300px) + var(--tws-header-overhang-max, 180px));
+}
+/* COLLAPSED, THE OVERHANG IS ZERO. Everything but the mark is `display: none`
+   at 48px (see `navigator.css`), so the header's max-content contribution is
+   the 48px mark cell and the middle track collapses on its own — except for
+   the 12px right padding, which would hold the track open and jog the strip
+   12px off the column edge for nothing. */
+.tws-root[data-nav][data-nav-collapsed]:not(.app-frame) .tws-left-header {
+  max-width: var(--tws-nav-w, 300px);
+  padding-right: 0;
 }
 /* Full screen still hides the whole navigator, as it does today. */
 .tws-root[data-nav][data-expanded] {

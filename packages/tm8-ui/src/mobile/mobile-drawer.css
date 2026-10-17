@@ -289,6 +289,34 @@
   border-radius: var(--pn-r-pill);
 }
 
+/*
+ * THE UNREAD DOT — the navigator drawer's unread mark (§8; QA finding 4,
+ * ruled 2026-10-17). A pin draws a number for the kind total and a mark for
+ * "something here is new", because in a fresh space the two numbers are the
+ * SAME number and "Tasks 9 9" reads as one figure printed twice.
+ *
+ * IT KEEPS THE PILL'S 20px SLOT. The totals form a column down the drawer and
+ * it has to stay a column: sizing the dot to the dot would let every row with
+ * unread pull its total 14px left of every row without.
+ *
+ * The brand fill is the pill's, undimmed. Unread is still a call to act; this
+ * changes how much it says, not how loudly.
+ */
+.mdrawer__unseen-dot {
+  flex: 0 0 auto;
+  min-inline-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.mdrawer__unseen-dot::before {
+  content: '';
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-brand);
+}
+
 .mdrawer__empty {
   padding: var(--pn-space-2) var(--pn-space-3);
   font-family: var(--pn-ui);

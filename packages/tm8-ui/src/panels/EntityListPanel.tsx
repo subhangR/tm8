@@ -4355,6 +4355,18 @@ export function Tile({
   ) : null;
 
   /**
+   * THE PROGRESS METER, AND WHEN A TASK HAS ONE (§6; QA finding 3, ruled
+   * 2026-10-17). A meter is a statement about a subtree, so it is drawn only
+   * where there is one: `childCount` is the `▸ N` chip's own number, which
+   * keeps the chip and the meter one answer. The View switch still governs —
+   * a viewer who turned progress off sees none either way.
+   *
+   * Narrowed to the figure itself rather than left a boolean so the slot below
+   * can hand it straight to `TileProgressBar` without re-testing `progress`.
+   */
+  const progressShown = progress !== null && view.shows('progress') && childCount > 0 ? progress : null;
+
+  /**
    * THE ONE SIGNAL, and the kind's own declaration of which it is
    * (`list.tile.signal`). The avatar shape is drawn from the `avatar` slot the
    * badge sources already resolved — see `TileSignal`'s header for why it is
@@ -4661,13 +4673,32 @@ export function Tile({
         creator={view.shows('avatar') ? controlFacts.creator : null}
         /* No attention roll-up line here: the chip on the title row already
            says it, and the criteria count rides the progress bar alone. */
-        badges={countsLine || (progress && view.shows('progress')) ? (
+        /*
+         * LINE 2 EXISTS ONLY WHEN SOMETHING IS ON IT (§6; QA finding 3, ruled
+         * 2026-10-17). `badges` IS the second line — a non-null value is a
+         * `pn-tt__badges` band under the title — so the condition here is the
+         * row's height.
+         *
+         * `progress` is non-null for EVERY task: `taskTileProgress` returns a
+         * figure as soon as the summary carries a percent, which it does for a
+         * leaf with nothing in it. So this slot used to be non-null on every
+         * task row and every one of them drew a `0%` meter on a second line.
+         * A leaf task with no counts measured 49.4px where §6 asks for 30.
+         *
+         * `progressShown` adds the fact that makes a meter mean something:
+         * SUBTASKS. `childCount` is the same number the `▸ N` chip draws, so
+         * the meter and the chip appear and disappear together — a row that
+         * says it has children is the row that says how far they have got. A
+         * leaf task's own acceptance figure goes with it, which is §6's call:
+         * the anatomy lists counts as the one second-row fact.
+         */
+        badges={countsLine || progressShown ? (
           <>
             {/* 307: the task's weighted progress, as the standard tile draws it.
                 FIRST, before the counts: the count set varies row to row, so a
                 bar drawn after it starts at a different x on every task and
                 the column cannot be scanned. Leading, it lines up. */}
-            {progress && view.shows('progress') ? <TileProgressBar progress={progress} /> : null}
+            {progressShown ? <TileProgressBar progress={progressShown} /> : null}
             {countsLine}
           </>
         ) : null}

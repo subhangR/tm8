@@ -424,6 +424,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
                     config={config}
                     counts={props.countsFor(config.kind)}
                     activeTarget={activeTarget}
+                    unseenAs="dot"
                     onGo={go}
                   />
                 ))}
@@ -457,6 +458,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
                           config={config}
                           counts={props.countsFor(config.kind)}
                           activeTarget={activeTarget}
+                          unseenAs="dot"
                           onGo={go}
                         />
                       ))}
@@ -489,6 +491,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
                       config={config}
                       counts={props.countsFor(config.kind)}
                       activeTarget={activeTarget}
+                      /* FLAG OFF IS UNCHANGED: today's drawer keeps the numeric
+                         pill it shipped with. */
+                      unseenAs="count"
                       onGo={go}
                     />
                   ))}
@@ -593,11 +598,21 @@ function KindRow({
   config,
   counts,
   activeTarget,
+  unseenAs,
   onGo,
 }: {
   config: KindConfig;
   counts: { total: number; unseen: number } | undefined;
   activeTarget: MenuTarget | null;
+  /**
+   * HOW UNREAD IS DRAWN: `'count'` is the filled numeric pill this row has
+   * always had, `'dot'` the unnumbered mark the navigator's drawer uses (§8;
+   * QA finding 4, ruled 2026-10-17). The navigator's drawer passes `'dot'` on
+   * EVERY row it draws — Pinned and the All-kinds groups alike — so one
+   * drawer never gives two answers to "what does unread look like", which is
+   * the whole reason this component was lifted out rather than copied.
+   */
+  unseenAs: 'count' | 'dot';
   onGo: (target: MenuTarget) => void;
 }) {
   const target: MenuTarget = { type: 'kind', ref: config.kind };
@@ -621,11 +636,20 @@ function KindRow({
           of every row, and 19 zeroes is noise, not information.
         */}
         {counts && counts.unseen > 0 ? (
+          /*
+            A DOT, NOT A SECOND NUMBER, in the navigator's drawer. Unread and
+            the kind total are different facts that COINCIDE in a fresh space —
+            nine tasks, none of them seen — and drawn as two numerals they read
+            as one number printed twice ("Tasks 9 9"). The dot keeps the call to
+            act and drops the arithmetic: there is something new here, and there
+            are nine of these. The exact figure is not lost, it is undrawn —
+            `aria-label` still says "9 unread" either way.
+          */
           <span
-            className="mdrawer__count"
+            className={unseenAs === 'dot' ? 'mdrawer__unseen-dot' : 'mdrawer__count'}
             aria-label={`${counts.unseen} unread`}
           >
-            {counts.unseen}
+            {unseenAs === 'dot' ? null : counts.unseen}
           </span>
         ) : null}
         {/*

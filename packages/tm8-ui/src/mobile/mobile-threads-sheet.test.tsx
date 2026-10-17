@@ -320,4 +320,59 @@ describe('MobileDrawer — the navigator drawer (§8)', () => {
     expect(labels).not.toContain('Pinned');
     expect(view.queryByTestId('mobile-drawer-all-kinds')).toBeNull();
   });
+
+  /**
+   * ONE NUMBER PER ROW (§8; QA finding 4, ruled 2026-10-17).
+   *
+   * A pin drew the unread count and the kind total as two numerals, and in a
+   * fresh space they are the SAME number — nine tasks, none of them seen — so
+   * the row read "Tasks 9 9", one figure printed twice. Unread becomes a dot:
+   * the call to act survives, the arithmetic goes. The exact figure is undrawn,
+   * not lost; `aria-label` still says "9 unread".
+   */
+  const countsOf = (total: number, unseen: number) => () => ({ total, unseen });
+
+  it('a pin draws the unread as a dot and the total as the one number', () => {
+    const view = mountDrawer({ spaceId: SPACE, countsFor: countsOf(9, 9) });
+    const pinnedHeading = Array.from(view.baseElement.querySelectorAll('.mdrawer__label')).find(
+      (el) => el.textContent === 'Pinned',
+    )!;
+    const tasks = Array.from(pinnedHeading.parentElement!.querySelectorAll<HTMLElement>('.mdrawer__row')).find(
+      (row) => row.querySelector('.mdrawer__name')?.textContent === 'Tasks',
+    )!;
+    const dot = tasks.querySelector('.mdrawer__unseen-dot')!;
+    expect(dot).not.toBeNull();
+    // THE DOT CARRIES NO DIGIT — the whole finding is that it did.
+    expect(dot.textContent).toBe('');
+    expect(dot.getAttribute('aria-label')).toBe('9 unread');
+    expect(tasks.querySelector('.mdrawer__count')).toBeNull();
+    expect(tasks.querySelector('.mdrawer__total')?.textContent).toBe('9');
+    /* And the row's whole text is the name and ONE number. */
+    expect(tasks.textContent).toBe('Tasks9');
+  });
+
+  it('the All-kinds groups answer the same way, so one drawer has one answer', () => {
+    const view = mountDrawer({ spaceId: SPACE, countsFor: countsOf(4, 2) });
+    fireEvent.click(view.getByTestId('mobile-drawer-all-kinds'));
+    const rows = Array.from(view.baseElement.querySelectorAll<HTMLElement>('.mdrawer__row'));
+    const withCounts = rows.filter((row) => row.querySelector('.mdrawer__total'));
+    expect(withCounts.length).toBeGreaterThan(6);
+    expect(withCounts.every((row) => row.querySelector('.mdrawer__unseen-dot'))).toBe(true);
+    expect(withCounts.some((row) => row.querySelector('.mdrawer__count'))).toBe(false);
+  });
+
+  it('nothing unseen draws no mark at all — the resting state of every row', () => {
+    const view = mountDrawer({ spaceId: SPACE, countsFor: countsOf(4, 0) });
+    expect(view.baseElement.querySelector('.mdrawer__unseen-dot')).toBeNull();
+    expect(view.baseElement.querySelector('.mdrawer__total')?.textContent).toBe('4');
+  });
+
+  it('FLAG OFF KEEPS THE NUMERIC PILL — the drawer today is untouched', () => {
+    window.localStorage.removeItem(NAVIGATOR_STORAGE_KEY);
+    const view = mountDrawer({ spaceId: SPACE, countsFor: countsOf(9, 9) });
+    const rows = Array.from(view.baseElement.querySelectorAll<HTMLElement>('.mdrawer__row'));
+    const tasks = rows.find((row) => row.querySelector('.mdrawer__name')?.textContent === 'Tasks')!;
+    expect(tasks.querySelector('.mdrawer__count')?.textContent).toBe('9');
+    expect(tasks.querySelector('.mdrawer__unseen-dot')).toBeNull();
+  });
 });

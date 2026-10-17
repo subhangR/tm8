@@ -3891,12 +3891,15 @@
     overflow: visible;
   }
 
-  /* The disclosure chevron: the float the container used to carry. */
+  /* The disclosure chevron: the float the container used to carry.
+     `margin-block` back to 0: out of the flow there is no footprint to shrink,
+     and a negative top margin would drag the `top: 50%` centring 2px up. */
   .cv2-root:not([data-shell='mobile']) :is(.lp__rowaction--ind, .pn-tt__ind, .pn-st__btn--ind) {
     position: absolute;
     top: 50%;
     right: 6px;
     z-index: 2;
+    margin-block: 0;
     opacity: 0;
     pointer-events: none;
     transform: translate(3px, -50%);
@@ -6032,6 +6035,36 @@
   line-height: 1;
   color: var(--pn-ink-4);
   white-space: nowrap;
+}
+/*
+ * NOTHING IN LINE 1 MAY SET THE ROW'S HEIGHT (QA finding 2, ruled 2026-10-17).
+ *
+ * The standard row measured 34px against the task row's 30 — docs, chats and
+ * teammates visibly ragged beside tasks in a Mixed list. The cause is not a
+ * missing floor: `.lp__tile-main` and `.pn-tt__main` already share
+ * `--pn-listrow-h`. It is this 22px button.
+ *
+ * §6 moved the row's verbs behind the `⋯`, which retired the
+ * `.lp__rowactions` wrapper that used to FLOAT the cluster out of the flow, and
+ * the disclosure chevron was left a direct child of `.lp__row1`. Only
+ * `@media (hover: hover) and (pointer: fine)` takes it out again, so on
+ * anything that reports no hover — a keyboard-only device, and this
+ * project's headless Chrome, which reports `hover: none` AND `pointer: none`
+ * and therefore matches neither that query nor the coarse one — its 22px box
+ * stood in the flow and pushed the row to 22 + 12 = 34. A task row never hit
+ * this: its `pn-tt__ind` lives inside `.pn-tt__actions`, which is absolute in
+ * every environment.
+ *
+ * The 22px hit box stays; its LAYOUT footprint comes down to the 18px the lead
+ * icon already occupies, so the row lands on 30 whatever a device reports for
+ * hover. This is `.lp-lead`'s own trick (`browser.css`: "Negative margins keep
+ * its layout footprint at 18×18") and the rule `MaestroTaskTile` states for
+ * its avatars — "nothing in this row may exceed the 17px that sets a session
+ * row's height". The phone is excluded: there the chevron is the one control a
+ * closed row has and is deliberately 44px, on a row that is 44px by design.
+ */
+.cv2-root:not([data-shell='mobile']) .lp__row1 > .lp__rowaction--ind {
+  margin-block: -2px;
 }
 .cv2-root .lp__rowmenu { position: relative; flex: none; display: none; }
 /* The door, not a verb — same 22px box as `.lp__rowaction` so the row's

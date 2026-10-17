@@ -90,12 +90,26 @@ describe('story rows', () => {
   });
 });
 
+/**
+ * ON THE ROW, THE METER NEEDS A SUBTREE (§6; QA finding 3, ruled 2026-10-17).
+ *
+ * `taskTileProgress` above is unchanged and still answers for any task with a
+ * percent. What changed is the ROW: `badges` IS the second line, so a slot that
+ * was non-null on every task drew a second line on every task, and a leaf with
+ * no counts measured 49.4px where §6 asks for 30. The row now draws the meter
+ * only where the ▸ N chip is drawn, so these two cases give their parent a
+ * subtask — which is what a weighted percent is a statement about anyway. The
+ * leaf's side of the rule is `panels/list/row-line-two.test.tsx`.
+ */
 describe('the task list draws it (control card)', () => {
   it('E2 (D3): the bar, 11% and the marker on the row', async () => {
     const { EntityListPanel } = await import('../panels/index');
     const { FIXTURE_SPACE_ID } = await import('../fixtures');
     const row = { ...task({ percent: 11, earned: 1, total: 9, own: 1, openSubtasks: 1 }, { done: true }), id: 'd3', title: 'D3 root' };
-    const { container } = render(<EntityListPanel kind="task" rowsFor={() => [row]} ctx={{ spaceId: FIXTURE_SPACE_ID }} />);
+    const kid = { ...task({ percent: 0 }), id: 'd3-kid', title: 'The open subtask', parentId: 'd3' };
+    const { container } = render(
+      <EntityListPanel kind="task" rowsFor={() => [row, kid]} ctx={{ spaceId: FIXTURE_SPACE_ID }} />,
+    );
     const bar = container.querySelector('[data-testid="tile-progress"]');
     expect(bar?.textContent).toBe('11%subtasks open');
   });
@@ -110,7 +124,10 @@ describe('the task list draws it (control card)', () => {
     const { FIXTURE_SPACE_ID } = await import('../fixtures');
     const base = task({ percent: 40, earned: 2, total: 5 });
     const row = { ...base, id: 'lead', title: 'Leads', counters: { ...base.counters, messages: 3, docs: 2 } };
-    const { container } = render(<EntityListPanel kind="task" rowsFor={() => [row]} ctx={{ spaceId: FIXTURE_SPACE_ID }} />);
+    const kid = { ...base, id: 'lead-kid', title: 'Subtask', parentId: 'lead' };
+    const { container } = render(
+      <EntityListPanel kind="task" rowsFor={() => [row, kid]} ctx={{ spaceId: FIXTURE_SPACE_ID }} />,
+    );
     const bar = container.querySelector('[data-testid="tile-progress"]');
     const counts = container.querySelector('[data-testid="tile-link-counts"]');
     expect(bar).not.toBeNull();
