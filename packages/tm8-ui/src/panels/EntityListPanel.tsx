@@ -424,10 +424,10 @@ export interface EntityListPanelProps {
   toolbarStart?: ReactNode;
   toolbarEnd?: ReactNode;
   /**
-   * `chrome="toolbar"`: draw `toolbarStart` / `toolbarEnd` at the END of the
-   * one-row list header instead of on a row of their own, with the funnel
-   * moved up beside the tier — `Tasks 18 [Open ▾][⨝]  ⌕ ⋯ [+|kind ▾]`
-   * (the pinned-only rail, Subhang 2026-10-17).
+   * `chrome="toolbar"`: the pinned-only rail's stack (Subhang 2026-10-17) —
+   * the full search bar with the funnel and `⋯`, then the kind's name with
+   * `toolbarStart` / `toolbarEnd` at its end, then the lifecycle tiers as
+   * tabs. Absent ⇒ the one-row header and the host's own create row.
    */
   toolbarInline?: boolean;
   /**
@@ -1083,6 +1083,54 @@ export function EntityListPanel(input: EntityListPanelProps) {
             dropdown, the filters are the funnel, View and Sort are the `⋯`,
             and search is the 🔍 that expands over the title.
           */}
+          {props.toolbarInline ? (
+            /*
+             * THE PINNED-ONLY RAIL'S STACK (Subhang, 2026-10-17):
+             *
+             *     [⌕ Search tasks…          ] ⨝ ⋯
+             *     Tasks 358              [+|☑ ▾]
+             *     To Do · In progress · Done …
+             *
+             * The full search bar and the funnel lead; the kind's name and the
+             * host's new box share the next row; the lifecycle tiers are the
+             * tab row again, not a dropdown, for the kinds that have them.
+             */
+            <>
+              <div className="lp__searchline" data-testid="list-searchline">
+                <SearchRow
+                  config={config}
+                  query={query}
+                  onQuery={setQuery}
+                  inputRef={props.searchInputRef}
+                />
+                {funnel}
+                {more}
+              </div>
+              <div className="lp__head" data-testid="list-head">
+                <h2 className="lp__headtitle">
+                  <span className="lp__headname">{config.labelPlural}</span>
+                  {/* The kind's total: each tier's own count is on its tab. */}
+                  {kindTotal ? <span className="lp__headcount">{kindTotal}</span> : null}
+                </h2>
+                {props.toolbarStart || props.toolbarEnd ? (
+                  <div className="lp__headtools">
+                    {props.toolbarStart}
+                    {props.toolbarEnd}
+                  </div>
+                ) : null}
+              </div>
+              {tierRow && list.categories ? (
+                <CategoryTabs
+                  tabs={list.categories}
+                  activeTabId={categoryTabId}
+                  onTab={setCategoryTabId}
+                  tabLabel={(tab: StatusCategoryTab) =>
+                    tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
+                  }
+                />
+              ) : null}
+            </>
+          ) : (
           <div className="lp__head" data-testid="list-head">
             <h2 className="lp__headtitle">
               <span className="lp__headname">{config.labelPlural}</span>
@@ -1100,22 +1148,16 @@ export function EntityListPanel(input: EntityListPanelProps) {
                 }
               />
             ) : null}
-            {props.toolbarInline ? funnel : null}
             <HeaderSearch
               config={config}
               query={query}
               onQuery={setQuery}
               inputRef={props.searchInputRef}
             />
-            {props.toolbarInline ? null : funnel}
+            {funnel}
             {more}
-            {props.toolbarInline && (props.toolbarStart || props.toolbarEnd) ? (
-              <div className="lp__headtools">
-                {props.toolbarStart}
-                {props.toolbarEnd}
-              </div>
-            ) : null}
           </div>
+          )}
         </>
       ) : (
         <>

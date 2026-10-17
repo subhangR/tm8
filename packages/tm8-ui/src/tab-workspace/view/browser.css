@@ -314,12 +314,55 @@
 .cv2-root .tws-browser .lp__headtools .tch-rootopt__birth[aria-disabled='true'] {
   opacity: 0.3;
 }
-/* The new box at the end of the one-row list header: it keeps its own size;
-   the kind name is what ellipsises. */
+/* The new box at the end of the kind's row: it keeps its own size and sits
+   on the right; the kind name is what ellipsises. */
 .cv2-root .tws-browser .lp__headtools {
   flex: none;
   display: flex;
   align-items: center;
+  margin-left: auto;
+}
+/* The pinned-only rail's search line: the full search bar (28 high, one
+   focus ring on the wrapper, as the old toolbar row's), then the funnel and
+   the ⋯, on the stack's 10px gutter. */
+.cv2-root .tws-browser .lp__searchline {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: var(--pn-space-1) 10px 0;
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchrow {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 var(--pn-space-2);
+  gap: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchrow:focus-within {
+  border-color: var(--pn-line-2);
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchinput,
+.cv2-root .tws-browser .lp__searchline .lp__searchinput:focus,
+.cv2-root .tws-browser .lp__searchline .lp__searchinput:focus-visible {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  font-size: var(--pn-fs-label);
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchinput::placeholder {
+  color: var(--pn-ink-3);
+}
+.cv2-root .tws-browser .lp__searchline .lp__searchrow-glyph {
+  color: var(--pn-ink-3);
 }
 .cv2-root .tws-browser .tch-rootbar {
   flex: none;
