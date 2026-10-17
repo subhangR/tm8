@@ -440,6 +440,10 @@ export const EntityCountersSchema: z.ZodType<EntityCounters> = z.object({
   // 108, additive-optional: absent = a pre-108 node never counted, no claim.
   docs: z.number().int().nonnegative().optional(),
   memories: z.number().int().nonnegative().optional(),
+  // 329, additive-optional on the same terms as 108's pair.
+  prs: z.number().int().nonnegative().optional(),
+  artifacts: z.number().int().nonnegative().optional(),
+  drawings: z.number().int().nonnegative().optional(),
   viewerReaction: z.enum(['like', 'dislike', 'star']).nullable(),
 }).strict();
 

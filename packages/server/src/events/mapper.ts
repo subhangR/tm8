@@ -727,6 +727,10 @@ export class WorkspaceEventMapper {
           // into a claim of emptiness. The contract marks both optional.
           ...(p['docs'] === undefined ? {} : { docs: Number(p['docs'] ?? 0) }),
           ...(p['memories'] === undefined ? {} : { memories: Number(p['memories'] ?? 0) }),
+          // 329's three, on the same terms: pre-329 payloads omit them.
+          ...(p['prs'] === undefined ? {} : { prs: Number(p['prs'] ?? 0) }),
+          ...(p['artifacts'] === undefined ? {} : { artifacts: Number(p['artifacts'] ?? 0) }),
+          ...(p['drawings'] === undefined ? {} : { drawings: Number(p['drawings'] ?? 0) }),
           // Viewer-scoped and absent from the counters row. `null` is the
           // contract's "no reaction from this viewer", which is the correct
           // answer whenever we have not resolved one.

@@ -190,6 +190,13 @@ export interface EntityCounters {
    */
   docs?: number;
   memories?: number;
+  /**
+   * Tracked pull requests / attached artifacts / attached drawings (329),
+   * under the same additive-optional law as `docs`/`memories`.
+   */
+  prs?: number;
+  artifacts?: number;
+  drawings?: number;
   /** Server-computed from the caller's reaction edge — always present (DEV-10). */
   viewerReaction: 'like' | 'dislike' | 'star' | null;
 }

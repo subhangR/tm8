@@ -220,6 +220,10 @@ interface SummaryRow {
   /** Link counters (108); optional keeps pre-108 row fixtures source-compatible. */
   docs?: number | null;
   memories?: number | null;
+  /** Link counters (329), optional for the same reason. */
+  prs?: number | null;
+  artifacts?: number | null;
+  drawings?: number | null;
   task_title: string | null;
   task_description: string | null;
   work_status: string | null;
@@ -419,6 +423,7 @@ select
   e.status_category,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,
+  c.prs, c.artifacts, c.drawings,
   t.title            as task_title,
   t.description      as task_description,
   t.work_status, t.priority, t.axes, t.due_date, t.start_date,
@@ -1009,6 +1014,9 @@ export class PgEntityProjector implements EntityProjector {
       // and projects 0 like its five elders.
       docs: r.docs ?? 0,
       memories: r.memories ?? 0,
+      prs: r.prs ?? 0,
+      artifacts: r.artifacts ?? 0,
+      drawings: r.drawings ?? 0,
       viewerReaction,
     };
 

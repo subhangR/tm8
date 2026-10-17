@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityCounters } from '@tm8/contract';
-import { TILE_LINK_GROUPS, hasTileLinkCounts, tileLinkCountsOf } from './tile-counts';
+import { TILE_LINK_GROUPS, UNCOUNTED_LINK_GROUPS, hasTileLinkCounts, tileLinkCountsOf } from './tile-counts';
 
 /**
  * THE COUNTS LINE'S DATA (design doc 01a1465d §6, approved 2026-10-16).
  *
- * The interesting cases here are all about ABSENCE, because absence is the
- * normal state: three of the five counters (`prs`, `artifacts`, `drawings`)
- * are not on `EntityCounters` yet — they arrive with the auto-linking work in
- * task 01a14655-e507 — so this module's correctness is mostly "what does it do
- * with a number it has not been given", and the answer has to be "nothing",
- * never "zero".
+ * The interesting cases here are all about ABSENCE: a node older than
+ * migration 329 sends no `prs`, `artifacts` or `drawings` (and one older than
+ * 108 no `docs`/`memories`), so this module's correctness is mostly "what does
+ * it do with a number it has not been given", and the answer has to be
+ * "nothing", never "zero".
  */
 
 const counters = (patch: Record<string, unknown> = {}): EntityCounters =>
@@ -96,10 +95,16 @@ describe('tileLinkCountsOf', () => {
     expect(tileLinkCountsOf(counters({ docs: 0.4 }))).toEqual([]);
   });
 
-  it('reads the three counters the server does not send yet, when it starts sending them', () => {
-    /* Task 01a14655-e507's columns, exercised ahead of the server: the client
-       half is already correct, so the line fills in with no UI change. */
+  it('reads the three counters migration 329 added', () => {
     const got = tileLinkCountsOf(counters({ prs: 1, artifacts: 4, drawings: 2 }));
     expect(got.map((entry) => entry.group.id)).toEqual(['prs', 'artifacts', 'drawings']);
+  });
+});
+
+describe('UNCOUNTED_LINK_GROUPS', () => {
+  it('marks none of the five groups: the server counts all of them since 329', () => {
+    for (const group of TILE_LINK_GROUPS) {
+      expect(UNCOUNTED_LINK_GROUPS.has(group.id), `${group.id} still marked not counted`).toBe(false);
+    }
   });
 });

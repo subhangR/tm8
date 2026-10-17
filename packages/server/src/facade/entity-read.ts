@@ -108,6 +108,9 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.agent_messages, 0) as agent_messages,
   coalesce(ec.docs, 0)     as docs,
   coalesce(ec.memories, 0) as memories,
+  coalesce(ec.prs, 0)       as prs,
+  coalesce(ec.artifacts, 0) as artifacts,
+  coalesce(ec.drawings, 0)  as drawings,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
   t.start_date,
@@ -498,6 +501,10 @@ export interface EntityRow {
   /** Link counters (108); optional keeps legacy row fixtures source-compatible. */
   docs?: number;
   memories?: number;
+  /** Link counters (329), optional for the same reason. */
+  prs?: number;
+  artifacts?: number;
+  drawings?: number;
   task_title: string | null;
   task_description: string | null;
   task_axes: Record<string, string> | null;
@@ -2636,6 +2643,9 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
       // an invented 0 would be a different (wrong) claim.
       ...(row.docs === undefined ? {} : { docs: row.docs }),
       ...(row.memories === undefined ? {} : { memories: row.memories }),
+      ...(row.prs === undefined ? {} : { prs: row.prs }),
+      ...(row.artifacts === undefined ? {} : { artifacts: row.artifacts }),
+      ...(row.drawings === undefined ? {} : { drawings: row.drawings }),
       viewerReaction: ctx.viewerReactions.get(row.id) ?? null,
     },
     state: stateOf(row, ctx),
