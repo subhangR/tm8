@@ -68,6 +68,24 @@ const TRANSCRIPT: KindArt = ['M2.6 4h6.4', 'M2.6 6.6h4.4', 'M7 9.4h6.4', 'M9 12h
 /** The Files explorer is a TREE of files, not a second folder beside `project`. */
 const FILES: KindArt = ['M3.2 2.8h3.2', 'M4.4 2.8v8.6h3.2', 'M4.4 7.2h3.2', 'M7.6 6h5v2.4h-5z', 'M7.6 10.2h5v2.4h-5z'];
 
+/**
+ * A form is FIELDS you fill in: two labelled input boxes. No page outline, so
+ * it stops reading as `doc`'s sheet (the clipboard was a sheet with a clip).
+ */
+const FORM: KindArt = [
+  'M3.2 2.8h2.6a.6.6 0 0 1 .6.6V6a.6.6 0 0 1-.6.6H3.2a.6.6 0 0 1-.6-.6V3.4a.6.6 0 0 1 .6-.6z',
+  'M8.4 4.7h5',
+  'M3.2 9.4h2.6a.6.6 0 0 1 .6.6v2.6a.6.6 0 0 1-.6.6H3.2a.6.6 0 0 1-.6-.6V10a.6.6 0 0 1 .6-.6z',
+  'M8.4 11.3h5',
+];
+/** Alternative: one input field with a text caret. */
+const FORM_FIELD: KindArt = [
+  'M3.8 4.4h8.4a1.4 1.4 0 0 1 1.4 1.4v4.4a1.4 1.4 0 0 1-1.4 1.4H3.8a1.4 1.4 0 0 1-1.4-1.4V5.8a1.4 1.4 0 0 1 1.4-1.4z',
+  'M5.6 6.2v3.6',
+  'M4.8 6.2h1.6',
+  'M4.8 9.8h1.6',
+];
+
 const PROPOSED_KIND: Partial<Record<keyof typeof KIND_ART, KindArt>> = {
   chat: CHAT,
   message: MESSAGE,
@@ -75,6 +93,7 @@ const PROPOSED_KIND: Partial<Record<keyof typeof KIND_ART, KindArt>> = {
   craft: CRAFT,
   graph: GRAPH,
   space_link: SPACE_LINK,
+  form: FORM,
 };
 const PROPOSED_VIEW: Partial<Record<keyof typeof VIEW_ART, KindArt>> = {
   messages: MESSAGE,
@@ -101,6 +120,15 @@ const PAIRS: { name: string; a: [string, KindArt, KindArt]; b: [string, KindArt,
   { name: 'graph vs pull request', a: ['graph', KIND_ART.graph, GRAPH], b: ['pull_request', KIND_ART.pull_request, KIND_ART.pull_request] },
   { name: 'space link vs Links', a: ['space_link', KIND_ART.space_link, SPACE_LINK], b: ['Links button', STRAYS[3]!.art, STRAYS[3]!.art] },
   { name: 'Craft view vs drawing', a: ['Craft view', VIEW_ART.craft, CRAFT], b: ['drawing', KIND_ART.drawing, KIND_ART.drawing] },
+  { name: 'form vs doc', a: ['form', KIND_ART.form, FORM], b: ['doc', KIND_ART.doc, KIND_ART.doc] },
+  { name: 'form (field alt) vs doc', a: ['form', KIND_ART.form, FORM_FIELD], b: ['doc', KIND_ART.doc, KIND_ART.doc] },
+  { name: 'form (field alt) vs session', a: ['form', KIND_ART.form, FORM_FIELD], b: ['work_session', KIND_ART.work_session, KIND_ART.work_session] },
+  { name: 'form vs debug', a: ['form', KIND_ART.form, FORM], b: ['debug', SURFACE_ART.debug, SURFACE_ART.debug] },
+  { name: 'form vs task', a: ['form', KIND_ART.form, FORM], b: ['task', KIND_ART.task, KIND_ART.task] },
+  { name: 'form vs container', a: ['form', KIND_ART.form, FORM], b: ['container', KIND_ART.container, KIND_ART.container] },
+  { name: 'doc vs transcript', a: ['doc', KIND_ART.doc, KIND_ART.doc], b: ['transcript', SURFACE_ART.transcript, TRANSCRIPT] },
+  { name: 'doc vs craft', a: ['doc', KIND_ART.doc, KIND_ART.doc], b: ['craft', KIND_ART.craft, CRAFT] },
+  { name: 'doc vs worktree', a: ['doc', KIND_ART.doc, KIND_ART.doc], b: ['worktree', KIND_ART.worktree, KIND_ART.worktree] },
   { name: 'File browser vs project', a: ['File browser', VIEW_ART.files, FILES], b: ['project', KIND_ART.project, KIND_ART.project] },
 ];
 
