@@ -297,6 +297,21 @@ export function ListRootHeader(props: ListRootHeaderProps) {
                       <KindIcon kind={option.kind} />
                       {option.label}
                     </button>
+                    {/* The per-row ＋ in the one-button menu too, when the host
+                        wires it (the pinned-only rail's new box): one press
+                        opens New for that kind and lands the list on it. */}
+                    {onCreateKind ? (
+                      <RowBirth
+                        option={option}
+                        refusal={props.createKindUnavailable?.(option.kind) ?? null}
+                        onBirth={() => {
+                          setMenuOpen(false);
+                          caretRef.current?.focus();
+                          onCreateKind(option.kind);
+                          props.onPickKind(option.kind);
+                        }}
+                      />
+                    ) : null}
                   </li>
                 ))}
               </ul>

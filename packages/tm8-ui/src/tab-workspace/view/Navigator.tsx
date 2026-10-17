@@ -299,7 +299,7 @@ export function Navigator({ slot, collapsedDefault = false }: NavigatorProps) {
  * button with the registry's own reason in the tooltip rather than hiding it:
  * a verb that vanishes teaches the reader the feature does not exist.
  */
-export function NavNew({ collapsed, pinned }: { collapsed: boolean; pinned: readonly KindConfig[] }) {
+function NavNew({ collapsed, pinned }: { collapsed: boolean; pinned: readonly KindConfig[] }) {
   const { currentKind, createKind } = useShellFrame();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);

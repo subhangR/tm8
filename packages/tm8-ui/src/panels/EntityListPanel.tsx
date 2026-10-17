@@ -424,6 +424,13 @@ export interface EntityListPanelProps {
   toolbarStart?: ReactNode;
   toolbarEnd?: ReactNode;
   /**
+   * `chrome="toolbar"`: draw `toolbarStart` / `toolbarEnd` at the END of the
+   * one-row list header instead of on a row of their own, with the funnel
+   * moved up beside the tier — `Tasks 18 [Open ▾][⨝]  ⌕ ⋯ [+|kind ▾]`
+   * (the pinned-only rail, Subhang 2026-10-17).
+   */
+  toolbarInline?: boolean;
+  /**
    * OPT-IN ROW LEAD (Workspace browser): no disclosure chevron slot on any
    * anatomy. The leading icon is the kind icon tinted by status (sessions keep
    * their agent tile), carries the child count as a subscript, and IS the
@@ -1057,7 +1064,7 @@ export function EntityListPanel(input: EntityListPanelProps) {
             that lands (task 01a1469d), it keeps its own row, and the row is
             not drawn at all on the surfaces that pass neither slot.
           */}
-          {props.toolbarStart || props.toolbarEnd ? (
+          {!props.toolbarInline && (props.toolbarStart || props.toolbarEnd) ? (
             <div className="lp__toolrow">
               {props.toolbarStart}
               {props.toolbarEnd}
@@ -1093,14 +1100,21 @@ export function EntityListPanel(input: EntityListPanelProps) {
                 }
               />
             ) : null}
+            {props.toolbarInline ? funnel : null}
             <HeaderSearch
               config={config}
               query={query}
               onQuery={setQuery}
               inputRef={props.searchInputRef}
             />
-            {funnel}
+            {props.toolbarInline ? null : funnel}
             {more}
+            {props.toolbarInline && (props.toolbarStart || props.toolbarEnd) ? (
+              <div className="lp__headtools">
+                {props.toolbarStart}
+                {props.toolbarEnd}
+              </div>
+            ) : null}
           </div>
         </>
       ) : (

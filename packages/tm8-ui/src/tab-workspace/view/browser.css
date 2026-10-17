@@ -249,16 +249,77 @@
   height: 36px;
   padding: var(--pn-space-1) var(--pn-space-2) 0 var(--tws-browser-inset);
 }
-/* The pinned-only rail's ＋ New {kind} at the head of the list column: the
-   navigator's own control, set on the list header's 10px gutter. */
-.cv2-root .tws-browser > .tws-nav-new {
+/* The pinned-only rail's New chat · New task: one row of two equal halves,
+   joined, in the navigator New button's look, on the list header's 10px
+   gutter. */
+.cv2-root .tws-browser .tws-quicknew {
+  flex: none;
+  display: flex;
   margin: var(--pn-space-2) 10px var(--pn-space-1);
 }
-/* The tooltip anchor wraps the main button; it takes the row's width so the
-   button runs the full column, with the ▾ at the end. */
-.cv2-root .tws-browser > .tws-nav-new > .tws-tip-anchor {
-  flex: 1 1 auto;
+.cv2-root .tws-browser .tws-quicknew__btn {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
   min-width: 0;
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  color: var(--pn-ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.cv2-root .tws-browser .tws-quicknew__btn:first-child {
+  border-radius: var(--pn-r-sm) 0 0 var(--pn-r-sm);
+}
+.cv2-root .tws-browser .tws-quicknew__btn + .tws-quicknew__btn {
+  border-left: 0;
+  border-radius: 0 var(--pn-r-sm) var(--pn-r-sm) 0;
+}
+.cv2-root .tws-browser .tws-quicknew__btn:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .tws-browser .tws-quicknew__btn[aria-disabled='true'] {
+  color: var(--pn-ink-3);
+  cursor: default;
+}
+.cv2-root .tws-browser .tws-quicknew__glyph {
+  flex: none;
+  display: inline-flex;
+  color: var(--pn-brand);
+}
+.cv2-root .tws-browser .tws-quicknew__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .tws-browser .tws-quicknew__btn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+/* The new box's kind menu shows every row's ＋ at once, not on hover: the
+   column is a "make one of these" door as much as a switcher. A refused row's
+   ＋ stays faint and says why in its tooltip. */
+.cv2-root .tws-browser .lp__headtools .tch-rootopt__birth {
+  opacity: 0.7;
+}
+.cv2-root .tws-browser .lp__headtools .tch-rootitem:hover .tch-rootopt__birth:not([aria-disabled='true']),
+.cv2-root .tws-browser .lp__headtools .tch-rootopt__birth:focus-visible {
+  opacity: 1;
+}
+.cv2-root .tws-browser .lp__headtools .tch-rootopt__birth[aria-disabled='true'] {
+  opacity: 0.3;
+}
+/* The new box at the end of the one-row list header: it keeps its own size;
+   the kind name is what ellipsises. */
+.cv2-root .tws-browser .lp__headtools {
+  flex: none;
+  display: flex;
+  align-items: center;
 }
 .cv2-root .tws-browser .tch-rootbar {
   flex: none;

@@ -15,7 +15,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useAttentionOptional } from '../../attention';
 import { needsMeListSource } from '../../attention/needs-me';
 import type { EntityId } from '@tm8/contract';
-import { getKind, isHomeRootKind, resolveAction, type ActionRef, type KindConfig } from '../../domain';
+import { getKind, isHomeRootKind, resolveAction, type ActionRef } from '../../domain';
 import { composeListActions, useChatAbout } from '../../views/useChatAbout';
 import { useLaunchPort } from '../../views/useLaunchPort';
 import { usePanelPrimaries } from '../../views/usePanelPrimaries';
@@ -38,7 +38,7 @@ import { WORKSPACE_KINDS, type KindId } from '../runtime/types';
 import { useWorkspace, useWorkspaceState } from './context';
 import { useListCursor } from './listCursor';
 import { isNavigatorEnabled, isPinnedRailEnabled } from './navigatorFlag';
-import { NavNew } from './Navigator';
+import { VectorIcon } from '../../kit/VectorIcon';
 import './browser.css';
 
 const BROWSER_ID = 'main';
@@ -129,9 +129,48 @@ export function Browser() {
   return <EntityBrowser />;
 }
 
-/* `NavNew` names the first pin only when no kind is current, which never
-   happens in the browser: the browser always has a kind. */
-const NO_PINS: readonly KindConfig[] = [];
+/** ＋, on `VectorIcon`'s 16×16 grid (as the navigator's New). */
+const PLUS_ART = ['M8 3.25v9.5', 'M3.25 8h9.5'];
+/** The two kinds every list column can start, whatever it is listing. */
+const QUICK_NEW_KINDS: readonly KindId[] = ['chat', 'task'];
+
+/**
+ * NEW CHAT · NEW TASK (pinned-only rail, Subhang 2026-10-17): one row at the
+ * head of every list, side by side. Each opens the same draft the list's own
+ * ＋ opens for that kind; a kind the registry refuses dims with its reason.
+ */
+function QuickNew() {
+  const { dispatch } = useWorkspace();
+  return (
+    <div className="tws-quicknew" role="group" aria-label="New" data-testid="tws-quicknew">
+      {QUICK_NEW_KINDS.map((kind) => {
+        const adapter = getKindAdapter(kind);
+        const disabledReason = adapter.creatable === true ? null : adapter.creatable.disabledReason;
+        const label = `New ${adapter.noun.toLowerCase()}`;
+        return (
+          <button
+            key={kind}
+            type="button"
+            className="tws-quicknew__btn"
+            aria-disabled={disabledReason !== null || undefined}
+            title={disabledReason ?? label}
+            data-kind={kind}
+            data-testid={`tws-quicknew-${kind}`}
+            onClick={() => {
+              if (disabledReason !== null) return;
+              dispatch({ command: 'workspace.drafts.open', args: { kind }, source: 'click' });
+            }}
+          >
+            <span className="tws-quicknew__glyph" aria-hidden>
+              <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.6} />
+            </span>
+            <span className="tws-quicknew__label">{label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function EntityBrowser() {
   const { dispatch, gate, store } = useWorkspace();
@@ -170,9 +209,8 @@ function EntityBrowser() {
    * `workspace.drafts.open` is unchanged; only who draws the button moves.
    */
   const navigator = useMemo(() => isNavigatorEnabled(), []);
-  /* THE PINNED-ONLY RAIL (`tm8.ui.navigator = 'rail'`): the navigator's own
-     ＋ New {kind} heads the list column instead of the toolbar's new box, so
-     the rail picks the kind and the column creates it. */
+  /* THE PINNED-ONLY RAIL (`tm8.ui.navigator = 'rail'`): New chat and New task
+     head every list, and the new box sits at the end of the one-row header. */
   const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
 
   useEffect(() => data.ensureKind(kind), [data, kind]);
@@ -188,6 +226,16 @@ function EntityBrowser() {
     () => dispatch({ command: 'workspace.drafts.open', args: { kind }, source: 'click' }),
     [dispatch, kind],
   );
+  /* The kind menu's per-row ＋ (pinned-only rail): New for THAT kind, in one
+     press, refused with the registry's own reason where it cannot be made. */
+  const createKindDraft = useCallback(
+    (next: string) => dispatch({ command: 'workspace.drafts.open', args: { kind: next as KindId }, source: 'click' }),
+    [dispatch],
+  );
+  const createKindUnavailable = useCallback((next: string) => {
+    const creatable = getKindAdapter(next as KindId).creatable;
+    return creatable === true ? null : { cause: creatable.disabledReason, remedy: 'open its own screen to make one' };
+  }, []);
   const clearSearch = useCallback(() => {
     set({ query: '' });
     setGeneration((n) => n + 1);
@@ -297,7 +345,7 @@ function EntityBrowser() {
       data-narrow={narrow || undefined}
       data-scrolled={scroll.scrolled || undefined}
     >
-      {pinnedRail ? <NavNew collapsed={false} pinned={NO_PINS} /> : null}
+      {pinnedRail ? <QuickNew /> : null}
       <div
         className="tws-browser-list"
         ref={listRef}
@@ -321,7 +369,8 @@ function EntityBrowser() {
           /* Row 1: the panel's own search, then the dotted new box —
              [+ | kind icon ▾]: the + creates the current kind, the icon
              half is the kind menu. */
-          toolbarEnd={navigator || pinnedRail ? undefined : (
+          toolbarInline={pinnedRail}
+          toolbarEnd={navigator ? undefined : (
             <NewBox
               noun={noun}
               disabledReason={disabledReason}
@@ -339,6 +388,7 @@ function EntityBrowser() {
                   onPickKind={(next) => {
                     if (next !== kind) set({ kind: next });
                   }}
+                  {...(pinnedRail ? { onCreateKind: createKindDraft, createKindUnavailable } : {})}
                 />
               }
             />
