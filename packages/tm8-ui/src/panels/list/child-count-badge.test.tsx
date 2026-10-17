@@ -47,19 +47,31 @@ function tileTitled(container: HTMLElement, title: string): HTMLElement {
 }
 
 describe('the sub-entity count on the leading icon', () => {
-  it('a task parent carries its subtask count on the STATUS mark, beside — not under — its chevron', () => {
+  /**
+   * THE CONTROL CARD MOVED ITS COUNT TOO (task 01a1469f, design doc §6), to the
+   * same `▸ N` chip the standard tile uses — so the two anatomies answer
+   * "where are my children" identically.
+   *
+   * The invariant this case was written for SURVIVES and is restated: the
+   * count and the control that changes it are ONE element, and nothing is
+   * layered over the status mark. What it no longer asserts is the old split
+   * (a decorative subscript on the mark, a chevron two slots to its left),
+   * because that split is the defect the chip removed.
+   */
+  it('a task parent carries its subtask count on the ▸ N chip, which is the control', () => {
     const { container } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor(family(taskGuideLines, 3))} ctx={ctx} />,
     );
     const parent = tileTitled(container, 'Parent');
-    const status = parent.querySelector('.pn-tt__status');
-    expect(status?.querySelector('[data-testid="child-count"]')?.textContent).toBe('3');
-    // The chevron is the status mark's preceding SIBLING in the row, not a
-    // layer stacked on it; the count is not a second copy beside the chevron.
-    expect(status?.previousElementSibling?.classList.contains('pn-tt__arrow')).toBe(true);
+    const chip = parent.querySelector<HTMLElement>('[data-testid="child-count"]')!;
+    expect(chip.textContent).toContain('3');
+    expect(chip.tagName).toBe('BUTTON');
+    expect(chip.getAttribute('aria-label')).toBe('Expand Parent, 3 children');
+    expect(chip.previousElementSibling?.classList.contains('pn-tt__title')).toBe(true);
+    // Nothing on the status mark, and the chevron column is a spacer.
+    expect(parent.querySelector('.pn-tt__status [data-testid="child-count"]')).toBeNull();
+    expect(parent.querySelector('.pn-tt__arrow')?.getAttribute('aria-label')).toBeNull();
     expect(parent.querySelector('.pn-tt__arrowCount')).toBeNull();
-    // Decorative: the disclosure control is where the count is said.
-    expect(parent.querySelector('.pn-tt__arrow')?.getAttribute('aria-label')).toBe('Expand Parent, 3 children');
   });
 
   it('a task leaf prints no count — no sub-entities is not a count of zero', () => {
@@ -69,13 +81,28 @@ describe('the sub-entity count on the leading icon', () => {
     expect(tileTitled(container, 'Leaf').querySelector('[data-testid="child-count"]')).toBeNull();
   });
 
-  it('a standard-tile parent (doc) carries its count on the kind mark', () => {
+  /**
+   * THE STANDARD TILE MOVED ITS COUNT (task 01a1469f, design doc 01a1465d §6):
+   * `▸ N` after the title, and that chip IS the disclosure.
+   *
+   * It used to be a decorative subscript on the kind mark with a separate
+   * chevron doing the folding — the number and the control that changed it in
+   * two places, neither saying what the other did. The task and session
+   * anatomies above keep their own grammar and their own cases.
+   */
+  it('a standard-tile parent (doc) carries its count on the ▸ N chip after the title, which is the control', () => {
     const { container } = render(
       <EntityListPanel kind="doc" rowsFor={rowsFor(family(docLayoutSpec, 2))} ctx={ctx} />,
     );
     const parent = tileTitled(container, 'Parent');
-    expect(parent.querySelector('.lp__statusmark [data-testid="child-count"]')?.textContent).toBe('2');
-    expect(parent.querySelector('.lp__statusmark')?.previousElementSibling?.classList.contains('lp__disclosure')).toBe(true);
+    const chip = parent.querySelector<HTMLElement>('[data-testid="child-count"]')!;
+    expect(chip.textContent).toContain('2');
+    expect(chip.tagName).toBe('BUTTON');
+    expect(chip.getAttribute('aria-label')).toBe('Expand Parent, 2 children');
+    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    // AFTER the title, and no longer on the status mark.
+    expect(chip.previousElementSibling?.classList.contains('lp__title')).toBe(true);
+    expect(parent.querySelector('.lp__statusmark [data-testid="child-count"]')).toBeNull();
     expect(tileTitled(container, 'Leaf').querySelector('[data-testid="child-count"]')).toBeNull();
   });
 });
@@ -94,6 +121,10 @@ describe('the chevron owns a column on every tree anatomy (stylesheet contract)'
     // render test above; the rule text is the only thing a unit test can see.
     expect(block(css('./maestro-task-tile.css'), '.cv2-root .pn-tt__arrow')).not.toMatch(/position:\s*absolute/);
     expect(block(css('../panels.css'), '.cv2-root .lp__disclosure')).not.toMatch(/position:\s*absolute/);
+    /* The standard tile's own disclosure is the `▸ N` chip now, and it is laid
+       out in the row rather than layered on anything — the same invariant,
+       restated for the control that replaced it. */
+    expect(block(css('../panels.css'), '.cv2-root .lp__kidchip')).not.toMatch(/position:\s*absolute/);
   });
 
   it('the count pill is ONE rule shared with the session tile, anchored on a positioned slot', () => {

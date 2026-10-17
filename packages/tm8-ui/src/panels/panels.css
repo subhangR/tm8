@@ -5590,25 +5590,10 @@
   outline: 2px solid var(--pn-focus, var(--pn-brand-2));
   outline-offset: 1px;
 }
-/* The standard tile's relation band — its own sub-row so the 17px main-row
-   floor holds (PR #272 review, blocking 2). */
-.cv2-root .lp__tile-badges {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 0 8px 4px 26px;
-}
-/* A tree kind's row carries the 16px chevron column + 6px gap before its mark,
-   so its title — and this band, which hangs under the title — sits 22px
-   further in. */
-.cv2-root .lp__tile[data-tree='true'] .lp__tile-badges { padding-left: 48px; }
-.cv2-root .lp__related-note {
-  margin: 0;
-  padding: 2px 0 4px;
-  font-size: 11px;
-  color: var(--pn-ink-4);
-}
+/* GONE WITH THE RELATION ACCORDION (task 01a1469f): `.lp__tile-badges` was
+   the standard tile's relation band and `.lp__related-note` the group it
+   opened. The counts line that replaced it is `.lp__tile-counts`, at the
+   bottom of this file; it keeps the same 26px inset for the same reason. */
 
 
 /* --- the panel's overflow, the chip menu, and the two new chips ----------- */
@@ -5785,4 +5770,411 @@
 /* The attention pill hangs under the bar instead of under it-and-the-tabs. */
 .cv2-root .pn-panel--canvas > .att-block-dock > .att-block {
   top: calc(var(--pn-canvas-bar-h, 32px) + 2 * var(--pn-space-2));
+}
+
+/* ===========================================================================
+   THE QUIET LIST TILE AND THE ONE-ROW HEADER (task 01a1469f)
+   ===========================================================================
+   Design doc 01a1465d §5–§6, approved change list 01a14695-6b54. Everything
+   below is additive: the rules the old anatomy needed (`.lp__meta`,
+   `.lp__tag`, `.lp__word`, `.lp__tierrow`, `.lp__searchrow`) are untouched
+   because `CategoryTabs` and `SearchRow` still draw on every surface that is
+   not `chrome="toolbar"` — the phone's list screens and the `k/` collection
+   screen among them.
+   --------------------------------------------------------------------------- */
+
+/* --- the header, one row -------------------------------------------------- */
+/* ONE GUTTER (10px), the one every other row in this stack keeps. */
+.cv2-root .lp__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 5px 10px;
+  min-height: 28px;
+  box-sizing: border-box;
+}
+/* `min-width: 0` on both the h2 and its word, or a long plural ("Interaction
+   profiles") refuses to shrink and pushes the three icons off the row. The
+   WORD is the part allowed to ellipsise; the count never shrinks, because a
+   truncated number is a wrong number (the same rule `.lp__tab-word` keeps). */
+.cv2-root .lp__headtitle {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--pn-ink);
+}
+.cv2-root .lp__headname {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .lp__headcount {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-4);
+}
+
+/* --- [Open ▾] — the tier dropdown ---------------------------------------- */
+.cv2-root .lp__tiermenu { position: relative; flex: none; display: inline-flex; }
+.cv2-root .lp__tiertrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 5px;
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root .lp__tiertrigger:hover { color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .lp__tiertrigger:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .lp__tierword { white-space: nowrap; }
+.cv2-root .lp__tiercaret { font-size: 8px; line-height: 1; color: var(--pn-ink-4); }
+/* Hangs below the trigger, left-aligned with it. `.lp__filtermenu` supplies
+   the surface, the border and the scroll cap; this only places it. */
+.cv2-root .lp__tierpop { top: 24px; left: 0; right: auto; }
+
+/* --- 🔍 the expanding search --------------------------------------------- */
+/* COLLAPSED IS A WIDTH, NOT AN UNMOUNT. The field stays in the DOM so the
+   `f` command's ref keeps a target (see `HeaderSearch`); it is the BOX that
+   goes to zero. `flex-basis` animates, so the title yields the space back
+   when the field closes rather than the row reflowing in one jump. */
+.cv2-root .lp__headsearch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+.cv2-root .lp__headsearch[data-open='true'] { flex: 1 1 auto; }
+.cv2-root .lp__headsearch-glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  font-size: 13px;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+}
+.cv2-root .lp__headsearch-glyph:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .lp__headsearch-glyph:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .lp__headsearch-input {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink);
+  opacity: 0;
+  outline: none;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .lp__headsearch[data-open='true'] .lp__headsearch-input {
+  padding: 0 4px;
+  border-bottom-color: var(--pn-line);
+  opacity: 1;
+}
+/* Zero-width is enough to hide it; `visibility` would also take it out of the
+   accessibility tree, and the whole point of keeping it mounted is that `f`
+   and a screen reader can still reach it. */
+.cv2-root .lp__headsearch-input::-webkit-search-cancel-button { display: none; }
+
+/* --- ⋯ the view/sort menu ------------------------------------------------ */
+.cv2-root .lp__more-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* --- the quiet row: urgent · ▸N · signal · time · ⋯ ---------------------- */
+/* The only priority a row shows (§6). Red, before the title, and it is a
+   whole 1ch wide — a reader scanning the column finds it without reading. */
+.cv2-root .lp__urgent {
+  flex: none;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--pn-block);
+}
+
+/* ▸ N — the children, after the title. 18px tall inside a 29px row, so a
+   parent row measures exactly what a leaf row measures. */
+.cv2-root .lp__kidchip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+  padding: 0 4px 0 2px;
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  box-sizing: border-box;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .lp__kidchip:hover { color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .lp__kidchip:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .lp__kidchip-arrow {
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+  transition: transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .lp__kidchip--expanded .lp__kidchip-arrow { transform: rotate(90deg); }
+
+/* THE SIGNAL SLOT IS ALWAYS THERE, EMPTY OR NOT, and has no width of its own:
+   it is `display: contents`-like in effect (zero padding, zero min-width), so
+   a row whose kind declares no signal is not paying for an invisible column.
+   What it does buy is one place in the DOM for the one signal, which is what
+   makes "a row draws exactly one" checkable rather than hoped for. */
+.cv2-root .lp__signalslot {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+.cv2-root .lp__signal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1;
+}
+.cv2-root .lp__signal > i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cv2-root .lp__signal--live { color: var(--pn-run); }
+/* A RING, NOT A DOT (§6): waiting is not running, and the hollow centre is
+   what says so at 7px without a second colour to learn. */
+.cv2-root .lp__signal--waiting { color: var(--pn-wait); }
+.cv2-root .lp__signal--waiting > i {
+  background: transparent;
+  border: 2px solid currentColor;
+  box-sizing: border-box;
+}
+.cv2-root .lp__signal--done { color: var(--pn-run); }
+.cv2-root .lp__signal--failed { color: var(--pn-block); }
+.cv2-root .lp__signal--busy { color: var(--pn-run); }
+.cv2-root .lp__signal--idle { color: var(--pn-ink-4); }
+.cv2-root .lp__signal--idle > i { background: transparent; border: 1px solid currentColor; box-sizing: border-box; }
+.cv2-root .lp__signal--count {
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  background: var(--pn-brand);
+  border-radius: 999px;
+  box-sizing: border-box;
+  color: var(--pn-card);
+  font-weight: 600;
+}
+
+/* THE TIME, AND THE ⋯ THAT TAKES ITS PLACE. Both are `flex: none` in the same
+   trailing slot and only one is drawn at a time, so the row's width is
+   identical hovered and not — hovering a list must not reflow the list. */
+.cv2-root .lp__time {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+.cv2-root .lp__rowmenu { position: relative; flex: none; display: none; }
+/* The door, not a verb — same 22px box as `.lp__rowaction` so the row's
+   trailing slot measures the same whichever is in it, but quieter at rest:
+   it is punctuation until you reach for it. */
+.cv2-root .lp__rowmenu-trigger {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .lp__rowmenu-trigger:hover {
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border-color: var(--pn-line-2);
+}
+.cv2-root .lp__rowmenu-trigger:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+.cv2-root .lp__rowmenu[data-open='true'] .lp__rowmenu-trigger {
+  color: var(--pn-ink);
+  background: var(--pn-active);
+  border-color: var(--pn-line-2);
+}
+/* ALL THREE ANATOMY ROOTS, not just `.lp__tile`. A task row's root is `.pn-tt`
+   and a session's is `.pn-st`, so a rule keyed on the standard tile alone left
+   every task row with a `display: none` ⋯ — the verbs unreachable on a desktop
+   and the time never yielding. Found in a browser screenshot, invisible to the
+   whole jsdom suite, which is the same shape of defect `.lp__rowactions`'s own
+   enumeration comment exists for: when a rule is about THE ROW, it has to name
+   every container a row can be. */
+.cv2-root :is(.lp__tile, .pn-tt, .pn-st):is(:hover, :focus-within) .lp__time { display: none; }
+.cv2-root :is(.lp__tile, .pn-tt, .pn-st):is(:hover, :focus-within) .lp__rowmenu,
+.cv2-root .lp__rowmenu[data-open='true'] { display: inline-flex; }
+/* ON TOUCH THERE IS NO HOVER, so the trigger is drawn at rest and the time
+   keeps its place beside it — the same ruling `.lp__rowactions` carries, and
+   stated on both pointer signals for the same reason (a phone shell is also
+   reachable by user override on a fine pointer). */
+@media (pointer: coarse) {
+  .cv2-root .lp__rowmenu { display: inline-flex; }
+  .cv2-root :is(.lp__tile, .pn-tt, .pn-st):is(:hover, :focus-within) .lp__time { display: inline; }
+}
+.cv2-root[data-shell='mobile'] .lp__rowmenu { display: inline-flex; }
+/* The verbs hang off the trigger rather than sitting in the row: in the row
+   they would be the five-icon cluster again, which is what one ⋯ replaced. */
+/* SHUT IS A CSS FACT, NEVER THE `hidden` ATTRIBUTE — see the tile's comment.
+   `hidden` would beat the coarse-pointer rule below and leave a touch device
+   with no row verbs, which is the exact defect `.lp__rowactions` above records
+   having shipped once. */
+.cv2-root .lp__rowmenu-pop {
+  position: absolute;
+  top: 20px;
+  right: 0;
+  z-index: 4;
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-shadow-2, 0 4px 12px rgba(0, 0, 0, 0.16));
+}
+.cv2-root .lp__rowmenu[data-open='true'] .lp__rowmenu-pop { display: inline-flex; }
+/* ON TOUCH THE DOOR IS THE WRONG SHAPE. No hover means the `⋯` costs a tap
+   to reveal what used to be one tap away, so the verbs sit in the row at rest
+   and the trigger stands down — stated on both pointer signals, because a
+   phone shell is also reachable by user override on a fine pointer. */
+@media (pointer: coarse) {
+  .cv2-root .lp__rowmenu-trigger { display: none; }
+  .cv2-root .lp__rowmenu-pop,
+  .cv2-root .lp__rowmenu[data-open='true'] .lp__rowmenu-pop {
+    position: static;
+    display: inline-flex;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+}
+.cv2-root[data-shell='mobile'] .lp__rowmenu-trigger { display: none; }
+.cv2-root[data-shell='mobile'] .lp__rowmenu-pop {
+  position: static;
+  display: inline-flex;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+/* --- the counts line ----------------------------------------------------- */
+/* Line 2, and the only one. Same left inset as `.lp__tile-badges` had, since
+   it hangs under the title for exactly the same reason. */
+.cv2-root .lp__tile-counts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 0 8px 4px 26px;
+}
+/* The Workspace browser's 18px lead icon is wider than the 16px mark, so its
+   rows' titles — and this line, which hangs under the title — sit further in. */
+.cv2-root .lp--toolbar .lp__tile-counts { padding-left: 32px; }
+.cv2-root .lp__counts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex: 0 0 auto;
+}
+.cv2-root .lp__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--pn-ink-3);
+}
+.cv2-root .lp__count svg { flex: 0 0 auto; }
+.cv2-root .lp__count--btn { cursor: pointer; border-radius: var(--pn-r-sm); }
+.cv2-root .lp__count--btn:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.cv2-root .lp__count--btn:focus-visible {
+  outline: 2px solid var(--pn-focus, var(--pn-brand-2));
+  outline-offset: 1px;
+}
+
+/* NO MOTION WHERE MOTION WAS NEVER THE POINT. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .lp__headsearch-input,
+  .cv2-root .lp__kidchip-arrow { transition: none; }
 }

@@ -875,7 +875,12 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const tile = getByTestId('list-tile');
     expect(tile.querySelector('[data-agent-kind="codex"] .pn-agent__mark')?.textContent).toBe('✦');
     expect(tile.querySelector('img')).toBeNull();
-    expect(tile.textContent).toContain('gpt-5.6-sol');
+    /* THE MODEL NAME IS CUT FROM THE ROW (task 01a1469f, design doc 01a1465d
+       §6: "removed from tiles: model"). The glyph above it stays — the agent
+       mark is the session's kind glyph, not a word — and the model is a
+       detail-panel fact now. */
+    expect(tile.textContent).not.toContain('gpt-5.6-sol');
+    expect(tile.querySelector('.pn-st__model')).toBeNull();
     expect(tile.querySelector('.pn-st__radio')).toBeNull();
     expect(queryByText(taskGuideLines.title)).toBeNull();
     fireEvent.click(getByRole('button', { name: 'Expand details' }));
@@ -1008,7 +1013,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const tile = compact.getAllByTestId('list-tile')[0]!;
     expect(tile.querySelector('.pn-st__titleText')?.textContent).toBe(sessionStale.title);
-    expect(tile.querySelector('.pn-st__model')?.textContent).toBe(sessionStale.state.kind === 'work_session' ? sessionStale.state.model : null);
+    /* The model left the row with the quiet tile (01a1469f); what D34 is
+       actually about — that the floor adds no second TEXT ROW — is the
+       `pn-st__inforow` assertion below, and it still holds. */
+    expect(tile.querySelector('.pn-st__model')).toBeNull();
     expect(tile.querySelector('.pn-st__inforow')).toBeNull();
   });
 
@@ -1413,7 +1421,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityListPanel kind="doc" rowsFor={rowsFor([docLayoutSpec])} ctx={ctx} />,
     );
     const tile = getAllByTestId('list-tile')[0]!;
-    expect(tile.querySelector('.lp__meta')?.textContent).toContain('markdown');
+    /* THE ANATOMY IS STILL GENERAL, read off what a doc row now draws. The
+       `.lp__meta` strip this used to assert (`markdown`) is cut — design doc
+       01a1465d §6 — so the general fact is checked on the parts that stayed:
+       a status mark drawn from the kind's own glyph, and the title. A doc
+       declares no `tile.signal`, which is why its signal slot is empty. */
+    expect(tile.querySelector('.lp__meta')).toBeNull();
+    expect(tile.querySelector('.lp__statusmark .lp__kindmark')).not.toBeNull();
+    expect(tile.querySelector('.lp__title')?.textContent).toContain(docLayoutSpec.title);
+    expect(tile.querySelector('.lp__signalslot')?.children.length).toBe(0);
   });
 
   it('the seam VERDICT outranks the record status badge on a session row', () => {

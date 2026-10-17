@@ -726,6 +726,8 @@ const ROWS: readonly KindConfig[] = [
           { source: 'workingActors' },
         ],
         progress: taskTileProgress,
+        /* §6: a task's live fact is WHO HAS IT. */
+        signal: { from: 'avatar' },
       },
       primaryActions: ['run', 'coordinate'],
       filters: [assigneeFilter, taskAttentionFilter, statusFilter, readyToPullFilter],
@@ -917,6 +919,8 @@ const ROWS: readonly KindConfig[] = [
           { source: 'workingActors' },
         ],
         pulse: { signal: 'terminal-activity', gate: 'live' },
+        /* The node's verdict, never `state.status` (R-UI-5). */
+        signal: { from: 'liveness' },
       },
       /* §5.3 header: "● N running" IS the Running tab's count, and
          "⚠ M interrupted" links to the Interrupted tab. */
@@ -1147,7 +1151,10 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['channelTopic', 'unread', 'workingAgents'] },
     list: baseList({
       tree: { by: 'hierarchy', guideLines: true },
-      tile: { badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }] },
+      tile: {
+        badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }],
+        signal: { from: 'count', field: 'unreadCount', label: 'unread' },
+      },
       inlineEdit: { title: true },
       assignControl: CHANNEL_MEMBER_CONTROL,
     }),
@@ -1303,7 +1310,12 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '◆', tintBy: 'none' },
     card: { fields: ['owner', 'model', 'liveWork'] },
     list: baseList({
-      tile: { badges: [{ source: 'entityActor' }, { source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }] },
+      tile: {
+        badges: [{ source: 'entityActor' }, { source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }],
+        /* Busy is `state.liveWork` being present — the same field the card
+           reads two lines up, so the dot and the card cannot disagree. */
+        signal: { from: 'presence', field: 'liveWork' },
+      },
       inlineEdit: { title: true },
       tree: { by: 'hierarchy', guideLines: true },
     }),
@@ -1374,7 +1386,11 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['prState', 'repository', 'activityAt'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'prState' }, { source: 'repository' }, { source: 'messages' }] },
+      tile: {
+        badges: [{ source: 'prState' }, { source: 'repository' }, { source: 'messages' }],
+        /* §6 pairs PR with task: the face that owns it. */
+        signal: { from: 'avatar' },
+      },
     }),
     panel: {
       archetype: 'generic',
@@ -1899,6 +1915,8 @@ const ROWS: readonly KindConfig[] = [
         // row's right edge — the same `weighted` the story page's ring reads.
         // Child stories carry their own bar on their own rows.
         progress: storyTileProgress,
+        /* A story is work with owners, like a task. */
+        signal: { from: 'avatar' },
       },
       sort: [...DEFAULT_SORT, BY_PROGRESS],
       inlineEdit: { title: true },
@@ -2197,6 +2215,7 @@ const ROWS: readonly KindConfig[] = [
           { source: 'chatLastTurnAt' },
           { source: 'messages' },
         ],
+        signal: { from: 'count', field: 'unreadCount', label: 'unread' },
       },
       // The header verb is the ONE door a chat is actually born through, and
       // it is `chat-about` rather than `create` for the same reason

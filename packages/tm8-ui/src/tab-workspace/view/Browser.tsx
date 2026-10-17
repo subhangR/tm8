@@ -23,6 +23,8 @@ import { useRowLifecycle } from '../../views/useRowLifecycle';
 import { useSessionStart } from '../../views/useSessionStart';
 import { useMarkEntitySeen } from '../../seen-entities/EntitySeen';
 import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../../panels/EntityListPanel';
+import { requestLinkFocus } from '../../panels/list/linkFocus';
+import { sidePatch } from './sideSection';
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
 import { useStore } from 'zustand';
 import { getBrowserSource } from '../adapters/browserSources';
@@ -126,7 +128,7 @@ export function Browser() {
 }
 
 function EntityBrowser() {
-  const { dispatch, gate } = useWorkspace();
+  const { dispatch, gate, store } = useWorkspace();
   const { data } = gate;
   const kind = useWorkspaceState((s) => s.browsers.main.kind);
   const kindState = useWorkspaceState((s) => s.browsers.main.perKind[kind]) ?? EMPTY_BROWSER_KIND_STATE;
@@ -174,6 +176,39 @@ function EntityBrowser() {
     data.ensureKind(kind);
     setGeneration((n) => n + 1);
   }, [data, kind]);
+
+  /**
+   * THE COUNTS LINE'S DOOR (design doc 01a1465d §6): a click on `◇1` opens
+   * the row's tab and its side column on LINKS, narrowed to that group —
+   * never rows expanded inline under the list, which is the relation
+   * accordion this replaced.
+   *
+   * The group is handed over through `requestLinkFocus` rather than through
+   * the tab patch, because it is a request and not a persisted preference —
+   * see `linkFocus.ts`. The ORDER matters: the request is filed before the
+   * tab opens, so the Links section has it on its very first render and the
+   * reader never sees the unfiltered list flash past.
+   *
+   * `toggle: false` on the patch. The default would CLOSE a column already
+   * showing Links, so clicking a second row's count while the panel was open
+   * would have shut it — a door that closes the room it is standing in.
+   */
+  const openLinks = useCallback(
+    (entityId: string, groupKind: string) => {
+      requestLinkFocus(entityId, groupKind);
+      const result = dispatch({ command: 'workspace.tabs.open', args: { kind, entityId }, source: 'click' });
+      if (result.status !== 'applied' || !result.tabId) return;
+      const tab = result.tabId;
+      const record = store.getState().tabs[tab];
+      if (!record || record.type !== 'entity') return;
+      dispatch({
+        command: 'workspace.tabs.setUi',
+        args: { tabId: tab, patch: sidePatch(record, 'links', true, false) },
+        source: 'click',
+      });
+    },
+    [dispatch, kind, store],
+  );
 
   /* A row click opens or focuses the entity's tab. A scope-hidden tab comes
      back as `requires_user_choice`, which RevealPrompt renders from
@@ -316,6 +351,7 @@ function EntityBrowser() {
              list is not scrolled to it. */
           selectedId={selectedId}
           onSelect={openRow}
+          onOpenLinks={openLinks}
           compact
           initialQuery={kindState.query}
           onQueryChange={onQueryChange}

@@ -1,84 +1,98 @@
 import type { EntityCounters } from '@tm8/contract';
 
 /**
- * TILE COUNT BADGES (108) — the registry data behind the glyph+count badges
- * a tile shows for what an entity CARRIES: docs, memories, messages. This
- * lives in `domain/` because the kind words are the point (§15.2: no
- * component knows a kind) — the component renders whatever this answers and
- * learns nothing about kinds.
+ * THE TILE COUNTS LINE — what an entity has PRODUCED, as one line of
+ * glyph+number under a quiet row (design doc 01a1465d §6, approved
+ * 2026-10-16).
  *
- * HONESTY RULES, both directions of nothing:
- *   · zero produces NO row — a count badge exists to say something is here;
- *   · ABSENT (`docs`/`memories` missing from a pre-108 server's counters)
- *     also produces no row — absence is "never counted", not zero.
+ * ONE CONSTANT, FIXED ORDER. `TILE_LINK_GROUPS` is the whole vocabulary and
+ * the whole order: Docs · PRs · Artifacts · Drawings · Memories. It is one
+ * constant on purpose — the fifth slot (Memories) is the one Subhang may want
+ * swapped for Files, and that swap must be a one-line edit here rather than a
+ * hunt through two components and three tests. Nothing downstream may
+ * re-order, append to, or filter this list by kind.
+ *
+ * HONESTY RULES, both directions of nothing (inherited from 108):
+ *   · zero draws NOTHING — a count exists to say something is here;
+ *   · ABSENT draws nothing either, and is a DIFFERENT fact from zero. Absence
+ *     is "this server never counted", which is the normal state right now:
+ *     `prs`, `artifacts` and `drawings` are not on `EntityCounters` yet — they
+ *     arrive with the auto-linking work in task 01a14655-e507. So every
+ *     counter is read through `countOf` below, which trusts the TYPE of what
+ *     it finds rather than the shape of the interface, and a row whose counts
+ *     are all absent has no second line at all.
+ *
+ * This lives in `domain/` because the kind words are the point (§15.2: no
+ * component knows a kind) — the renderer draws whatever this answers and
+ * learns nothing about docs, PRs or memories.
  */
-export interface TileCountBadge {
-  /** The badge's identity in the row (`data-count-kind`); the split message
-      tallies keep their own ids here, distinct from any registry kind. */
+export interface TileLinkGroup {
+  /** The group's identity in the row (`data-count-kind`) and in the detail panel. */
+  id: string;
+  /**
+   * The key on `EntityCounters` this group's number is read from. A STRING,
+   * not a keyof: three of the five are not on the interface yet, and this
+   * module's whole job is to survive that honestly.
+   */
+  counter: string;
+  /**
+   * The registry kind whose drawn mark (KindIcon) the count wears, and the
+   * kind the detail panel opens when the count is clicked. Carried as DATA so
+   * no component maps a group id to a kind itself.
+   */
   kind: string;
-  /**
-   * The registry kind whose drawn mark (KindIcon) the badge wears. Carried
-   * as DATA so the component never maps a badge id to a kind itself —
-   * `human-message` → the message mark is a §15.2 fact and it lives here.
-   */
-  icon: string;
-  /**
-   * THE EDGE RELATION THE COUNT IS DERIVED FROM — migration 108's own
-   * trigger semantics, restated as client data: `docs` counts inbound
-   * `attached_to` from docs; `memories` counts outbound `remembers` to
-   * memories. The badge's inline relation group filters by EXACTLY this,
-   * so the number on the chip and the rows under it are one claim — a doc
-   * linked by some OTHER edge type is a different fact and must not appear
-   * under a chip that never counted it (PR #272 review, blocking 1).
-   */
-  relation?: { type: string; direction: 'incoming' | 'outgoing' };
-  count: number;
-  /** Singular noun for the title; the renderer pluralises. */
+  /** Singular noun for the accessible name; the renderer pluralises. */
   label: string;
-  /** Human messages receive the visual attention treatment requested by 112. */
-  emphasis?: 'human';
-  /**
-   * The viewer's row-view switch that hides this badge (`panels/list/row-view.ts`).
-   * Data here so the view never maps a badge id to a kind itself. `messages`
-   * is the undivided pre-109 total, which both message switches cover.
-   */
-  facet: TileCountFacet;
 }
 
-export type TileCountFacet = 'docs_memories' | 'human_messages' | 'agent_messages' | 'messages';
+/**
+ * THE FIVE GROUPS. Swap the fifth entry for
+ * `{ id: 'files', counter: 'files', kind: 'file', label: 'file' }` and the
+ * tiles, the counts line and the detail-panel door all follow.
+ */
+export const TILE_LINK_GROUPS: readonly TileLinkGroup[] = [
+  { id: 'docs', counter: 'docs', kind: 'doc', label: 'doc' },
+  { id: 'prs', counter: 'prs', kind: 'pull_request', label: 'pull request' },
+  { id: 'artifacts', counter: 'artifacts', kind: 'artifact', label: 'artifact' },
+  { id: 'drawings', counter: 'drawings', kind: 'drawing', label: 'drawing' },
+  { id: 'memories', counter: 'memories', kind: 'memory', label: 'memory' },
+];
 
-export function tileCountBadgesOf(counters: EntityCounters): TileCountBadge[] {
-  const badges: TileCountBadge[] = [];
-  if (typeof counters.docs === 'number' && counters.docs > 0) {
-    badges.push({
-      kind: 'doc',
-      icon: 'doc',
-      relation: { type: 'attached_to', direction: 'incoming' },
-      count: counters.docs,
-      label: 'doc',
-      facet: 'docs_memories',
-    });
+/** One group with a number worth drawing. */
+export interface TileLinkCount {
+  group: TileLinkGroup;
+  count: number;
+}
+
+/**
+ * THE DEFENSIVE READ. `counters` is typed `EntityCounters`, and three of the
+ * five keys are not declared on it — so this reads the object as a bag and
+ * accepts only a finite positive integer. A string, a null, a NaN or a
+ * negative number from a node mid-rollout is treated as ABSENT, which draws
+ * nothing, rather than as a count the reader would have to disbelieve.
+ */
+function countOf(counters: EntityCounters, key: string): number | null {
+  const value = (counters as unknown as Record<string, unknown>)[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const n = Math.trunc(value);
+  return n > 0 ? n : null;
+}
+
+/** The counts line's content, in `TILE_LINK_GROUPS` order, zeros and absences dropped. */
+export function tileLinkCountsOf(counters: EntityCounters): TileLinkCount[] {
+  const out: TileLinkCount[] = [];
+  for (const group of TILE_LINK_GROUPS) {
+    const count = countOf(counters, group.counter);
+    if (count !== null) out.push({ group, count });
   }
-  if (typeof counters.memories === 'number' && counters.memories > 0) {
-    badges.push({
-      kind: 'memory',
-      icon: 'memory',
-      relation: { type: 'remembers', direction: 'outgoing' },
-      count: counters.memories,
-      label: 'memory',
-      facet: 'docs_memories',
-    });
-  }
-  if (typeof counters.humanMessages === 'number' && counters.humanMessages > 0) {
-    badges.push({ kind: 'human-message', icon: 'message', count: counters.humanMessages, label: 'human message', emphasis: 'human', facet: 'human_messages' });
-  }
-  if (typeof counters.agentMessages === 'number' && counters.agentMessages > 0) {
-    badges.push({ kind: 'agent-message', icon: 'message', count: counters.agentMessages, label: 'agent message', facet: 'agent_messages' });
-  }
-  // Rolling compatibility: an older server cannot truthfully split the total.
-  // Preserve its existing neutral badge until its projection includes 109.
-  if (counters.humanMessages === undefined && counters.agentMessages === undefined && counters.messages > 0) {
-    badges.push({ kind: 'message', icon: 'message', count: counters.messages, label: 'message', facet: 'messages' });
-  }
-  return badges;
+  return out;
+}
+
+/**
+ * Whether the row gets a second line at all. Mounts ask this BEFORE building
+ * the element, because a JSX element is truthy even when it renders null and
+ * the tile's own geometry (29px vs ~43px) depends on the answer.
+ */
+export function hasTileLinkCounts(counters: EntityCounters): boolean {
+  return TILE_LINK_GROUPS.some((group) => countOf(counters, group.counter) !== null);
 }

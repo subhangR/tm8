@@ -100,16 +100,23 @@ describe('the task list draws it (control card)', () => {
     expect(bar?.textContent).toBe('11%subtasks open');
   });
 
-  it('the bar leads the edge chips, so it starts at the same x on every task', async () => {
+  /* The chips are the COUNTS LINE since the quiet tile (task 01a1469f): same
+     slot, same reason for the order — the count set varies row to row, so a
+     bar drawn after it would start at a different x on every task and the
+     column could not be scanned. `messages: 3` is deliberately still on the
+     row and deliberately draws nothing: the message tallies are cut. */
+  it('the bar leads the counts line, so it starts at the same x on every task', async () => {
     const { EntityListPanel } = await import('../panels/index');
     const { FIXTURE_SPACE_ID } = await import('../fixtures');
     const base = task({ percent: 40, earned: 2, total: 5 });
     const row = { ...base, id: 'lead', title: 'Leads', counters: { ...base.counters, messages: 3, docs: 2 } };
     const { container } = render(<EntityListPanel kind="task" rowsFor={() => [row]} ctx={{ spaceId: FIXTURE_SPACE_ID }} />);
     const bar = container.querySelector('[data-testid="tile-progress"]');
-    const chips = container.querySelector('[data-testid="tile-count-badges"]');
+    const counts = container.querySelector('[data-testid="tile-link-counts"]');
     expect(bar).not.toBeNull();
-    expect(chips).not.toBeNull();
-    expect(bar!.compareDocumentPosition(chips!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(counts).not.toBeNull();
+    expect(counts!.querySelector('[data-count-kind="docs"]')?.textContent).toContain('2');
+    expect(counts!.textContent).not.toContain('3');
+    expect(bar!.compareDocumentPosition(counts!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
