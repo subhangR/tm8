@@ -1,12 +1,12 @@
 /**
  * The entity action strip (Subhang, feedback round 4; design log R30): a thin,
  * full-height toolbar pinned to the right edge of an entity tab, activity-bar
- * style. Two sections:
+ * style. Three sections:
  *  - top, the kind's own actions: the body's controls (session surfaces, a
  *    frame's controls, a reader's Edit / Download, forms waiting), its own
  *    registry verbs (Edit, Terminate…, Transfer), Connectors and Attach;
- *  - bottom, a session's or chat's token reading, stacked, then the actions
- *    every kind shares: Links · Messages · Chat (each
+ *  - between them, a session's or chat's token reading, stacked;
+ *  - bottom, the actions every kind shares: Links · Messages · Chat (each
  *    opens the side column beside the body — task 01a122b9), Run, Expand ·
  *    More. A split strip (Craft) keeps Entity · Links · Messages instead.
  * The panel's verbs and controls are its own components, portalled into the
@@ -334,13 +334,17 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
         ) : null}
       </div>
 
-      {/* BOTTOM — the actions every kind shares. */}
-      <div className="tws-astrip-section tws-astrip-section--common">
-        {/* THE TOKEN READING, stacked (task 01a14b00): a session's live context
-            number, portalled here by its panel, or a chat's, published by its
-            screen. Pressing it opens the reading's details to the left. */}
+      {/* MIDDLE — THE TOKEN READING, stacked (task 01a14b00): a session's live
+          context number, portalled here by its panel, or a chat's, published by
+          its screen. It sits between the two sections, away from the icons;
+          pressing it opens the reading's details to the left. */}
+      <div className="tws-astrip-section tws-astrip-section--stats">
         <div ref={chrome?.setStatsSlot} className="tws-astrip-cluster tws-astrip-stats" data-testid="tws-astrip-stats" />
         {tab.kind === 'chat' ? <ChatStats chatId={tab.entityId} /> : null}
+      </div>
+
+      {/* BOTTOM — the actions every kind shares. */}
+      <div className="tws-astrip-section tws-astrip-section--common">
         {/* THE SIDE COLUMN'S SECTIONS (task 01a122b9): Links · Messages · Chat
             each open the column beside the body, and the lit one closes it.
             The body never changes. */}

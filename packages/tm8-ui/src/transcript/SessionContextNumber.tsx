@@ -169,17 +169,22 @@ export function ContextChip({ reading, fit, testId, rootRef }: ContextChipProps)
         aria-controls={open ? detailsId : undefined}
         onClick={() => setOpen((o) => !o)}
       >
-        {reading.lastKnown ? <span className="pn-context__mark" aria-hidden="true">~</span> : null}
         {fit === 'stack'
           ? /* One figure per line; the separators stay in the text (so the
                strip's tooltip reads one line) and leave the layout. */
             parts.map((part, i) => (
-              <span key={i} className="pn-context__line">
+              <span key={i} className="pn-context__line" data-line={i}>
+                {i === 0 && reading.lastKnown ? <span className="pn-context__mark" aria-hidden="true">~</span> : null}
                 {i > 0 ? <span className="pn-context__sep"> · </span> : null}
                 {part}
               </span>
             ))
-          : parts.join(' · ')}
+          : (
+            <>
+              {reading.lastKnown ? <span className="pn-context__mark" aria-hidden="true">~</span> : null}
+              {parts.join(' · ')}
+            </>
+          )}
       </button>
       {open ? (
         <div id={detailsId} className="pn-context__details" role="group" aria-label="Context details">

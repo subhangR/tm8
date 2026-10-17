@@ -154,9 +154,13 @@
   border: 0;
   background: none;
 }
-/* THE TOKEN READING (task 01a14b00): the context chip, one figure per line
-   in the strip's column. Its details card opens to the left, like the
-   strip's other popovers. */
+/* THE TOKEN READING (task 01a14b00): the context chip in its own middle
+   section, between the kind's icons and the shared ones, one figure per line.
+   Two groups — occupancy (used, %) over freshness (cache, age) — with room
+   between them. Its details card opens to the left, centred on it. */
+.tws-astrip-section--stats:not(:has(.pn-context)) {
+  display: none;
+}
 .tws-astrip-stats .pn-context {
   position: relative;
   display: flex;
@@ -165,23 +169,35 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 1px;
   width: 36px;
   height: auto;
-  padding: 3px 0;
-  line-height: 13px;
+  padding: var(--pn-space-2) 0;
+  line-height: 14px;
   font-size: 10px;
   white-space: nowrap;
+  border-color: var(--pn-line);
 }
-.tws-astrip-stats .pn-context__line:first-of-type {
-  color: var(--pn-ink-2);
+.tws-astrip-stats .pn-context__line[data-line='0'] {
+  color: var(--pn-ink);
+  font-size: 11px;
   font-weight: 600;
+}
+.tws-astrip-stats .pn-context__line[data-line='1'] {
+  color: var(--pn-ink-2);
+}
+.tws-astrip-stats .pn-context__line[data-line='2'] {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--pn-line);
 }
 .tws-astrip-stats .pn-context__sep {
   display: none;
 }
 .cv2-root .tws-astrip-stats .pn-context__details {
-  top: auto;
-  bottom: 0;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
   right: calc(100% + var(--pn-space-2) + 2px);
   max-width: none;
 }

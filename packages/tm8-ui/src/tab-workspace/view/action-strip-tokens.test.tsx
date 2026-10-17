@@ -71,6 +71,8 @@ describe('the action strip’s token reading', () => {
     const view = render(<Strip id="session-1" kind="work_session" session />);
     const slot = view.getByTestId('tws-astrip-stats');
     expect(view.getByTestId('tws-action-strip').contains(slot)).toBe(true);
+    // Its own section between the kind's icons and the shared ones.
+    expect(slot.parentElement?.classList.contains('tws-astrip-section--stats')).toBe(true);
     expect(slot.hidden).toBe(false);
     expect(lines(slot)).toEqual(['48k', '24%', 'c80%', expect.any(String)]);
     fireEvent.click(slot.querySelector('button')!);
