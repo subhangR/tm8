@@ -15,7 +15,8 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
-import { getKind, KindIcon } from '../../domain';
+import { getKind, KindIcon, VIEW_ART } from '../../domain';
+import { VectorIcon } from '../../kit';
 import { ChatContextNumber } from '../../chat-home/ChatContextNumber';
 import { useChatContextFeed } from '../../chat-home/chatContextFeed';
 import { McpEquipment } from '../../mcp/McpEquipment';
@@ -263,9 +264,7 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
         data-testid="tws-chat-toggle"
         onClick={() => toggleSide('chat')}
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-        </svg>
+        <KindIcon kind="chat" size={14} />
       </button>
     ) : null;
 
@@ -375,16 +374,7 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
                         />
                       </svg>
                     ) : (
-                      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                        <path
-                          d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z M5 6h6M5 8h4"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+                      <VectorIcon paths={VIEW_ART.messages} size={14} />
                     )}
                     {section === 'messages' && messages > 0 ? (
                       <span className="tws-astrip-badge" aria-hidden="true">
@@ -517,16 +507,7 @@ function ConnectorsButton({ entityId }: { entityId: string }) {
         data-testid="tws-connectors"
         onClick={() => setOpen((was) => !was)}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d="M6 1.5v3M10 1.5v3M4 4.5h8v3a4 4 0 0 1-8 0zM8 11.5v3"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <KindIcon kind="mcp_server" size={16} />
         {attached > 0 ? (
           <span className="tws-astrip-badge" aria-hidden="true">
             {attached}

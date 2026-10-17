@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 
-import { KindIcon, getKind, resolveAction, type ActionRef } from '../domain';
+import { KindIcon, actionGlyph, getKind, resolveAction, type ActionRef } from '../domain';
 import { openEntityHelp } from '../entity-help/entityHelpStore';
 import { useDismissable } from './useDismissable';
 import './list-root-header.css';
@@ -88,7 +88,7 @@ export function rootBirthDispatch(
 
 /** What a kind's ＋ half WEARS and says — a glyph, a name, and a promise. */
 interface BirthVerb {
-  glyph: string;
+  glyph: ReactNode;
   /** The `aria-label`: "New task", "Terminal". */
   label: string;
   /** The title: what pressing it will actually do. */
@@ -100,7 +100,7 @@ function birthVerbFor(option: ListRootOption): BirthVerb {
   if (action) {
     const def = resolveAction(action);
     return {
-      glyph: def.icon,
+      glyph: actionGlyph(def),
       label: def.label,
       promise: `Start a ${def.label.toLowerCase()} and open it — ${option.label.toLowerCase()} are started, not authored`,
     };

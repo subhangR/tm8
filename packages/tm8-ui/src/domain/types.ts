@@ -596,6 +596,13 @@ export interface ActionDef {
   id: ActionRef;
   label: string;
   icon: IconRef;
+  /**
+   * A DRAWN mark for the verb, on the `KIND_ART` grid. Present, it replaces
+   * `icon` wherever a surface can draw (`actionGlyph`); `icon` remains the
+   * text fallback. Set where the verb shares a kind's meaning — `chat-about`
+   * wears the chat mark, so chat is one picture everywhere.
+   */
+  art?: KindArt;
   availability(ctx: ActionContext): ActionAvailability;
   run(ctx: ActionContext): Promise<void> | void;
   /**

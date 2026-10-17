@@ -4,6 +4,7 @@ import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
 import {
   KindIcon,
+  actionGlyph,
   processControlFor,
   resolveAction,
   sessionControlsFor,
@@ -709,7 +710,7 @@ function ActionButton({
   const refusal = actionRefusal(ref_, ctx, wiring);
   if (refusal) {
     return (
-      <DisabledIconControl label={def.label} glyph={def.icon} reason={refusal}>
+      <DisabledIconControl label={def.label} glyph={actionGlyph(def)} reason={refusal}>
         {/* A marked primary is its glyph alone — `DisabledIconControl` already
             carries the label as the accessible name and draws the reason. */}
         {primary && !mark ? def.label : null}
@@ -769,10 +770,10 @@ function ActionButton({
       }}
     >
       {primary && mark ? (
-        <span aria-hidden>{def.icon}</span>
+        <span aria-hidden>{actionGlyph(def)}</span>
       ) : primary && count !== undefined ? (
         <>
-          <span aria-hidden>{def.icon} </span>
+          <span aria-hidden>{actionGlyph(def)} </span>
           {def.label}
           {count > 0 ? (
             <span className="pn-btn__count" data-testid={`panel-primary-count-${ref_}`}>
@@ -784,7 +785,9 @@ function ActionButton({
       ) : primary ? (
         def.label
       ) : (
-        `${def.icon} ${def.label}`
+        <>
+          {actionGlyph(def)} {def.label}
+        </>
       )}
     </button>
   );
@@ -915,7 +918,7 @@ export interface PanelMenuItem {
   /** Action ref or tab id — opaque to the menu, which never interprets it. */
   readonly id: string;
   readonly label: string;
-  readonly glyph?: string;
+  readonly glyph?: ReactNode;
   /** A count beside the label. `0` is a measured answer and renders. */
   readonly count?: number;
   /**
@@ -1052,7 +1055,7 @@ export function panelMenuItems(input: PanelMenuInput): PanelMenuItem[] {
       return {
         id: ref,
         label: def.label,
-        ...(def.icon ? { glyph: def.icon } : {}),
+        ...(def.icon ? { glyph: actionGlyph(def) } : {}),
         ...(typeof count === 'number' ? { count } : {}),
         ...(reason
           ? { reason: captionOf(reason) }

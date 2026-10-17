@@ -105,7 +105,7 @@ import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
 import { TileLinkCounts } from './list/TileLinkCounts';
-import { hasTileLinkCounts, launchedRowsFilter, treeParentOf } from '../domain';
+import { actionGlyph, hasTileLinkCounts, launchedRowsFilter, treeParentOf } from '../domain';
 import { TILE_LINK_GROUPS, UNCOUNTED_LINK_GROUPS } from '../domain/tile-counts';
 import { TileSignal, UrgentMark, isUrgent, signalIsAvatar } from './list/TileSignal';
 import { SessionDetails } from './list/SessionDetails';
@@ -1877,7 +1877,7 @@ function QuickStart({
       data-testid="list-quick-start"
       onClick={() => onAction?.(ref_, ctx.entityId ?? '')}
     >
-      {`${def.icon} ${def.label}`}
+      {actionGlyph(def)} {def.label}
     </button>
   );
 }

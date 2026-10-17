@@ -34,6 +34,7 @@ import { render } from '@testing-library/react';
 import type { ActorSummary, EntityDetail, EntityId } from '@tm8/contract';
 import {
   REASONS as DOMAIN_REASONS,
+  actionGlyph,
   allKinds,
   getKind,
   resolveAction,
@@ -247,7 +248,7 @@ describe('what the phone action menu contains is derived, not typed out', () => 
       const row = items.find((i) => i.id === ref);
       expect(row, `${ref} has a row`).toBeDefined();
       expect(row?.label).toBe(def.label);
-      expect(row?.glyph).toBe(def.icon);
+      expect(row?.glyph).toEqual(actionGlyph(def));
     }
   });
 

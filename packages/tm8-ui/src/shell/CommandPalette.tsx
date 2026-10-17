@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntitySummary } from '@tm8/contract';
 import type { ActionContext, ActionRef } from '../domain';
-import { KindIcon, deferredActions, getKind, resolveAction } from '../domain';
+import { KindIcon, actionGlyph, deferredActions, getKind, resolveAction } from '../domain';
 import { ReasonNote } from '../panels/honesty/ReasonNote';
 import './palette.css';
 import './shortcuts.css';
@@ -340,7 +340,7 @@ function buildRows(
   for (const ref of actions) {
     const def = resolveAction(ref);
     const availability = def.availability(ctx);
-    const row: Row = { kind: 'action', id: ref, label: def.label, glyph: def.icon };
+    const row: Row = { kind: 'action', id: ref, label: def.label, glyph: actionGlyph(def) };
     if (availability.kind === 'disabled') deferred.push({ ...row, disabled: availability.reason });
     else rows.push(row);
   }
@@ -359,7 +359,7 @@ function buildRows(
       kind: 'action',
       id: def.id,
       label: def.label,
-      glyph: def.icon,
+      glyph: actionGlyph(def),
       disabled: availability.kind === 'disabled' ? availability.reason : 'not available yet',
     });
   }

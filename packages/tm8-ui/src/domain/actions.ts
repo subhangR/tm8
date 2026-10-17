@@ -23,6 +23,7 @@ import type {
   IconRef,
 } from './types';
 import type { LaunchMode } from './launch';
+import { KIND_ART } from './kind-art';
 import {
   isProcessRecordedLive,
   isSessionState,
@@ -902,22 +903,28 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
    * five sections are about an execution — project, worktree, posture. A chat
    * is configured in its own composer, which is where this verb lands.
    */
-  'chat-about': define(
-    'chat-about',
-    /* "Chat", not "Chat about this" (design 01a0da4e §3.2): the verb now sits
-       beside Run in every detail header, where the subject is the panel it is
-       drawn on and a longer word only costs the bar its width. */
-    'Chat',
-    '❝',
-    /*
-     * A SUBJECT IS OPTIONAL. Every other entity verb refuses without one
-     * because it acts ON the row; this one opens a composer, and a composer
-     * with no subject bound is bare Home's new conversation — the honest
-     * reading of pressing it from the Chats list HEADER, which has no row.
-     * So the only gate is the operation the composer will commit.
-     */
-    (ctx) => opGate(ctx, 'chat.start') ?? AVAILABLE,
-  ),
+  'chat-about': {
+    /* DRAWN, not the ❝ it wore as text: a verb that opens a chat wears THE
+       chat mark, the same array the kind, the rail and the ActionStrip draw.
+       `icon` stays as the text fallback for string-only surfaces. */
+    art: KIND_ART.chat,
+    ...define(
+      'chat-about',
+      /* "Chat", not "Chat about this" (design 01a0da4e §3.2): the verb now sits
+         beside Run in every detail header, where the subject is the panel it is
+         drawn on and a longer word only costs the bar its width. */
+      'Chat',
+      '❝',
+      /*
+       * A SUBJECT IS OPTIONAL. Every other entity verb refuses without one
+       * because it acts ON the row; this one opens a composer, and a composer
+       * with no subject bound is bare Home's new conversation — the honest
+       * reading of pressing it from the Chats list HEADER, which has no row.
+       * So the only gate is the operation the composer will commit.
+       */
+      (ctx) => opGate(ctx, 'chat.start') ?? AVAILABLE,
+    ),
+  },
 
   /*
    * CONTAINER LIFECYCLE (Design §13.1). Each gates on its OWN catalog

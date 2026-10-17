@@ -71,7 +71,7 @@ export interface EntityFabItem {
   /** Action ref or tab id. OPAQUE to the FAB — it never interprets this. */
   readonly id: string;
   readonly label: string;
-  readonly glyph?: string;
+  readonly glyph?: ReactNode;
   /** A count beside the label, e.g. Discussion's message count. 0 renders. */
   readonly count?: number;
   /**

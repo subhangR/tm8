@@ -69,6 +69,7 @@ import type {
 import {
   KindIcon,
   PROCESS_CONTROL,
+  actionGlyph,
   SHARING_CONTROL,
   REASONS,
   getKind,
@@ -2215,11 +2216,11 @@ export function RowSharingControl({
   const headId = useId();
 
   const refuse = (reason: UnavailableReason) => (
-    <DisabledIconControl label={def.label} glyph={def.icon} reason={reason} />
+    <DisabledIconControl label={def.label} glyph={actionGlyph(def)} reason={reason} />
   );
   if (!props.onShareSession) return refuse(NOT_WIRED_REASON);
   if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
-    return <CheckingPermission label={def.label} glyph={def.icon} />;
+    return <CheckingPermission label={def.label} glyph={actionGlyph(def)} />;
   }
   const availability = def.availability({
     ...props.ctx,
@@ -2299,7 +2300,7 @@ export function RowSharingControl({
           setOpen((v) => !v);
         }}
       >
-        <span aria-hidden>{def.icon}</span>
+        <span aria-hidden>{actionGlyph(def)}</span>
       </button>
       {open && anchor
         ? createPortal(
@@ -2393,7 +2394,7 @@ export function RowAction({
 }) {
   const def = resolveAction(ref_);
   const wide = variant === 'wide';
-  const mark = glyph ?? def.icon;
+  const mark = glyph ?? actionGlyph(def);
   const ctx: ActionContext = {
     ...props.ctx,
     entityId: row.id,

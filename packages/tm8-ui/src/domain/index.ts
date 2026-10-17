@@ -92,6 +92,7 @@ export { CRAFT_KIND, craftContentOf, craftStateOf, type CraftContent, type Craft
 /** @deprecated `design` is `craft` since migration 322; use the Craft names above. */
 export { DESIGN_KIND, designContentOf, designStateOf, type DesignContent, type DesignKind, type DesignPage, type DesignState } from './design';
 export { KindIcon } from './KindIcon';
+export { actionGlyph } from './actionGlyph';
 export {
   TILE_LINK_GROUPS,
   hasTileLinkCounts,

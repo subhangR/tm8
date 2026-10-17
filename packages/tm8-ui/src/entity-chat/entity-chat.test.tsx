@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DurableWorkspaceEvent, EdgeView, EntityId, EntitySummary } from '@tm8/contract';
-import { allKinds, getKind, resolveAction, type ActionContext } from '../domain';
+import { KIND_ART, allKinds, getKind, resolveAction, type ActionContext } from '../domain';
 import { ActionBar } from '../panels/detail/chrome';
 import { navStore, resetNav } from '../stores/navStore';
 import {
@@ -96,7 +96,7 @@ describe('the Chat verb beside Run (§3.2)', () => {
     expect(resolveAction('chat-about').icon).toBe('❝');
   });
 
-  it('draws `❝ Chat · N` in the detail header when the host measured a count', () => {
+  it('draws `<chat mark> Chat · N` in the detail header when the host measured a count', () => {
     const ctx = { spaceId: SPACE, entityId: TASK } as ActionContext;
     const onAction = vi.fn();
     render(
@@ -109,7 +109,10 @@ describe('the Chat verb beside Run (§3.2)', () => {
       />,
     );
     const button = screen.getByTestId('panel-primary-chat-about');
-    expect(button.textContent).toBe('❝ Chat· 3');
+    // The verb wears THE chat mark, drawn — not the ❝ it used to wear as text.
+    const marks = [...button.querySelectorAll('svg.kit-vicon path')].map((path) => path.getAttribute('d'));
+    expect(marks).toEqual([...KIND_ART.chat]);
+    expect(button.textContent).toBe(' Chat· 3');
     expect(screen.getByTestId('panel-primary-count-chat-about').textContent).toContain('3');
     fireEvent.click(button);
     expect(onAction).toHaveBeenCalledWith('chat-about');

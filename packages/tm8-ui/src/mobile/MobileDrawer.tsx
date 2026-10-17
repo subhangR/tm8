@@ -78,7 +78,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { KindIcon, collectionKinds, getKind, homeRailGroups, type KindArt, type KindConfig } from '../domain';
+import { KIND_ART, KindIcon, collectionKinds, getKind, homeRailGroups, type KindArt, type KindConfig } from '../domain';
 import { isNavigatorEnabled } from '../tab-workspace/view/navigatorFlag';
 import { loadWorkspaceRailPins, workspacePinnedKinds } from '../tab-workspace/runtime/railStore';
 import { VectorIcon } from '../kit';
@@ -148,7 +148,9 @@ const HELP_REF: MenuViewRef = 'help';
 const PLUS_ART: KindArt = ['M8 3.25v9.5', 'M3.25 8h9.5'];
 
 /**
- * The Chats row's mark: a speech bubble with a tail, same grid.
+ * The Chats row's mark: THE chat mark, read from the shared table so the phone
+ * draws chat the way every other surface does (`kind-art.test.ts` fails on a
+ * private copy).
  *
  * NOT `KindIcon('channel')`, and the distinction is the whole reason this row
  * is not in the Entities band — a channel is an entity with a slug and a
@@ -156,7 +158,7 @@ const PLUS_ART: KindArt = ['M8 3.25v9.5', 'M3.25 8h9.5'];
  * channel's # would say they were the same population, and the Channels row
  * three sections down would then be an unexplained duplicate.
  */
-const CHAT_ART: KindArt = ['M13.2 9.4a1.6 1.6 0 0 1-1.6 1.6H6l-3 2.4V4.2a1.6 1.6 0 0 1 1.6-1.6h7a1.6 1.6 0 0 1 1.6 1.6z'];
+const CHAT_ART: KindArt = KIND_ART.chat;
 
 /**
  * The second verb's word, off the registry.
@@ -172,8 +174,8 @@ function newEntityLabel(kind: EntityKind): string {
   return config.palette?.createLabel ?? `New ${config.label.toLowerCase()}`;
 }
 
-/** The account row's mark: a head over shoulders, same grid. */
-const PERSON_ART: KindArt = ['M8 8.2a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8', 'M3.4 13.2a4.6 4.6 0 0 1 9.2 0'];
+/** The account row's mark: the `member` kind's person — you ARE a member. */
+const PERSON_ART: KindArt = KIND_ART.member;
 
 function sameTarget(a: MenuTarget | null, b: MenuTarget): boolean {
   if (!a || a.type !== b.type) return false;
