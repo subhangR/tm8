@@ -3,38 +3,38 @@
  *
  * Both surfaces that show `execution.transcript` render through this component:
  * the session panel's Transcript surface and the Debug surface's "what this
- * agent said" section. That is the whole point of it existing. Debug keeps its
- * own stats, tail-boundary and `stuck` blocks around this list, because those
- * are claims about the data rather than the turns themselves — but the turns
- * are drawn once, so the two can never disagree about what the agent said.
+ * agent said" section. Debug keeps its own stats, tail-boundary and `stuck`
+ * blocks around this list, because those are claims about the data rather than
+ * the turns themselves — but the turns are drawn once, so the two can never
+ * disagree about what the agent said.
  *
- * VISUAL PARITY WITH CHAT IS A REQUIREMENT, NOT A FLOURISH (Subhang, direct):
- * this reads as a conversation because it IS one. The bubble geometry is lifted
- * from Chat Home's `.tch-turn` block rather than imported, following the
- * precedent set when the Work tab adopted Chat Home's list header
- * (`panels/list-root-header.css:4`) — importing `chat-home.css` would drag in a
- * full-screen grid, a sidebar, a composer and a graph pane for three rules.
+ * IT LOOKS EXACTLY LIKE CHAT BECAUSE IT IS CHAT'S TURN (Subhang, 2026-10-18).
+ * Each entry is mapped onto the chat thread's own `ChatTurn` shape and drawn
+ * by `chat-home/ChatTurn` — the component Chat Home's thread uses — so the
+ * byline, the bubble, the markdown, the reading column and the spacing are the
+ * chat's by construction, in both themes. This used to be a lifted COPY of
+ * `.tch-turn`'s geometry (`.tr-turn`), and the copy had drifted: smaller type,
+ * a full-width column, its own byline.
  *
- * WHAT SIDEDNESS MEANS HERE, AND WHAT IT CANNOT MEAN. Chat Home puts the
- * VIEWER's turns on the right and decides that by author identity. A transcript
- * entry has no author — `source` is a bare `'user' | 'assistant'` binary, so
- * two humans injecting into one session are indistinguishable. The right-hand
- * side therefore means "came in as user input", NOT "was you", and the label
- * says `user`, never a display name. Same geometry, weaker and honest claim.
- *
- * ONLY THE INPUT SIDE IS A BUBBLE, which is what Chat Home does too: its
- * assistant turns render as a left reading column, because an answer is
- * something you read rather than a remark you exchange. A session agent's turn
- * routinely runs to hundreds of lines, and boxing that produces a wall of card.
- * The byline keeps the avatar and the timestamp on both sides, which is what
- * makes it read as a conversation.
+ * WHAT THE MAPPING CAN AND CANNOT CLAIM. A `SessionTranscriptEntry` is
+ * `{at, source, text, truncated}`:
+ *   - `user` → a user turn with the text as its body. It lands on the input
+ *     side the way the viewer's own message does in chat — but the byline says
+ *     `user`, never "You" or a name: two humans typing into one session are
+ *     indistinguishable here (`transcriptRoleLabel`).
+ *   - `assistant` → an agent turn whose text is one `text` PART, which is how
+ *     chat draws an answer (the reading column, not a bubble).
+ *   - No tool calls, thinking, usage or errors are drawn, because the contract
+ *     does not carry them (`SessionTranscriptEntry`: tool arguments and output
+ *     are deliberately not read). Those parts would render through the same
+ *     `TurnParts` the moment the transcript reader supplied them.
+ *   - `truncated` is said in the turn's own text, under what was kept, since a
+ *     chat turn has no byline slot for it.
  */
-import type { ReactNode } from 'react';
-import type { SessionTranscriptEntry } from '@tm8/contract';
-import { Avatar } from '../kit/Avatar';
-import { Markdown } from '../kit/Markdown';
-import { Timestamp } from '../kit/Timestamp';
-import { chatMarkdownSource } from '../channel-screen/feed-model';
+import { useMemo, type ReactNode } from 'react';
+import type { ActorSummary, EntityId, SessionTranscriptEntry } from '@tm8/contract';
+import { ChatTurn } from '../chat-home/ChatTurn';
+import type { ChatTurn as ChatTurnModel } from '../chat-home/types';
 import { transcriptRoleLabel } from './transcript-model';
 import './transcript.css';
 
@@ -55,55 +55,57 @@ export interface TranscriptTurnsProps {
   testId?: string;
 }
 
+/** Said under a turn the READ cut short — not the agent. */
+export const TRUNCATED_NOTE = '_… cut short by the transcript read, not by the agent._';
+
+/**
+ * One author per ROLE, never per person: there is no person to key on. The ids
+ * are stable so the avatar colour is too, which is what keeps the list
+ * scannable.
+ */
+const ROLE_AUTHORS: Record<SessionTranscriptEntry['source'], ActorSummary> = {
+  user: {
+    id: 'transcript-user' as EntityId,
+    kind: 'member',
+    displayName: transcriptRoleLabel('user'),
+    isAgent: false,
+  } as ActorSummary,
+  assistant: {
+    id: 'transcript-assistant' as EntityId,
+    kind: 'team_member',
+    displayName: transcriptRoleLabel('assistant'),
+    isAgent: true,
+  } as ActorSummary,
+};
+
+/** A transcript entry as the chat thread's turn shape. Exported for tests. */
+export function transcriptEntryToTurn(entry: SessionTranscriptEntry, index: number): ChatTurnModel {
+  const text = entry.truncated ? `${entry.text}\n\n${TRUNCATED_NOTE}` : entry.text;
+  const isAgent = entry.source === 'assistant';
+  return {
+    // No message id exists; position + time is unique within one accumulation
+    // and stable across a poll that only appends.
+    messageId: `transcript:${entry.at ?? 'no-time'}:${String(index)}` as EntityId,
+    role: isAgent ? 'assistant' : 'user',
+    author: ROLE_AUTHORS[entry.source],
+    // `Timestamp` renders an empty string as no time, which is the truth for
+    // a record that carried none.
+    createdAt: entry.at ?? '',
+    body: isAgent ? '' : text,
+    parts: isAgent ? [{ seq: 0, kind: 'text', text }] : [],
+  };
+}
+
 export function TranscriptTurns({ entries, head, testId }: TranscriptTurnsProps) {
+  const turns = useMemo(() => entries.map(transcriptEntryToTurn), [entries]);
   return (
     <div className="tr-turns" data-testid={testId ?? 'transcript-turns'}>
       {head}
       {/* Oldest-first, exactly as the server sends it. A tail read backwards is
           unreadable, and reversing here would fight the contract. */}
-      {entries.map((entry, i) => (
-        <TranscriptTurn key={`${entry.at ?? 'no-time'}-${String(i)}`} entry={entry} />
+      {turns.map((turn, i) => (
+        <ChatTurn key={`${turn.messageId}`} turn={turn} testId={`transcript-turn-${entries[i]!.source}`} />
       ))}
     </div>
-  );
-}
-
-function TranscriptTurn({ entry }: { entry: SessionTranscriptEntry }) {
-  const label = transcriptRoleLabel(entry.source);
-  const isInput = entry.source === 'user';
-  return (
-    <article
-      className="tr-turn"
-      data-source={entry.source}
-      // Purely visual, and named `data-input` rather than `data-self` because
-      // this side does NOT identify a person — see the docblock.
-      data-input={isInput ? 'true' : 'false'}
-    >
-      <header className="tr-turn__byline">
-        <Avatar
-          // Deterministic per ROLE, not per person: there is no person to key
-          // on, and a stable two-colour scheme is what makes the list scannable.
-          actorId={`transcript-${entry.source}`}
-          provenance={entry.source === 'assistant' ? 'agent' : 'human'}
-          label={label}
-          size={20}
-        />
-        <strong>{label}</strong>
-        <Timestamp at={entry.at} />
-        {entry.truncated ? (
-          <span className="tr-turn__truncated" title="This turn was cut short by the read, not by the agent">
-            truncated
-          </span>
-        ) : null}
-      </header>
-      {/* The same markdown path the chat surfaces use, called with no mentions:
-          a transcript carries no mention list, and passing `[]` gets the one
-          thing that matters here — a lone newline stays a line break. */}
-      <Markdown
-        source={chatMarkdownSource(entry.text, []).source}
-        className="tr-turn__body"
-        testId="transcript-turn-body"
-      />
-    </article>
   );
 }
