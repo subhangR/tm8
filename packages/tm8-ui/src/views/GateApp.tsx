@@ -2830,6 +2830,7 @@ export function GateApp(props: GateAppProps = {}) {
              exactly as it does today. Phase 2 puts the craft's pages and
              chats in the slot and is explicitly out of scope. */
           {...(craftFramed ? { panelPlacement: 'column' as const, navCollapsedDefault: true } : {})}
+          {...(settingsFramed ? { pinnedMode: 'settings' } : {})}
         >
         <div className="shell-body">
           {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the

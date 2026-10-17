@@ -215,7 +215,7 @@ export function TabWorkspaceView({ viewerId, spaceId, routeTab, routeFile, gate 
 const SIDEBAR_SHOW_ART = ['M2.5 3.5h11v9h-11z', 'M6 3.5v9', 'M3.8 6h1M3.8 8h1'];
 
 /** The pinned-only rail's way back from a collapsed panel, at the strip's head. */
-function ShowPanel({ spaceId }: { spaceId: string }) {
+export function ShowPanel({ spaceId }: { spaceId: string }) {
   return (
     <button
       type="button"

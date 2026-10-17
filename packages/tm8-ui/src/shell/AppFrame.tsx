@@ -22,7 +22,9 @@ import type { WorkspaceGateHandles } from '../tab-workspace/view/context';
 import { ShellFrameContext, type ShellFrameValue } from '../tab-workspace/view/context';
 import { LeftHeader } from '../tab-workspace/view/LeftHeader';
 import { Navigator } from '../tab-workspace/view/Navigator';
-import { browserBounds, isNavigatorEnabled } from '../tab-workspace/view/navigatorFlag';
+import { browserBounds, isNavigatorEnabled, isPinnedRailEnabled } from '../tab-workspace/view/navigatorFlag';
+import { PanelTop } from '../tab-workspace/view/Browser';
+import { ShowPanel } from '../tab-workspace/view/TabWorkspaceView';
 import { WorkspaceRail } from '../tab-workspace/view/WorkspaceRail';
 import { queueWorkKey } from '../tab-workspace/keys';
 import { getRailStore } from '../tab-workspace/runtime/railStore';
@@ -82,6 +84,13 @@ export interface AppFrameProps {
   panelPlacement?: 'slot' | 'column';
   /** With the navigator on and nothing chosen yet, start it collapsed (Craft, §9). */
   navCollapsedDefault?: boolean;
+  /**
+   * THE PINNED-ONLY RAIL'S SHELL (`tm8.ui.navigator = 'rail'`), per mode: the
+   * mode's id, set by a mode brought to Work's pinned-rail layout — full-height
+   * rail, no left header, the panel headed by Work's `PanelTop`. A mode that
+   * passes nothing keeps the frame it has.
+   */
+  pinnedMode?: string;
   children: ReactNode;
 }
 
@@ -111,12 +120,15 @@ export function AppFrame({
   goToWork,
   panelPlacement = 'slot',
   navCollapsedDefault = false,
+  pinnedMode,
   children,
 }: AppFrameProps) {
   const railExpanded = useStore(getRailStore(spaceId), (s) => s.expanded);
   const navigator = useMemo(() => isNavigatorEnabled(), []);
   const navCollapsedStored = useStore(getRailStore(spaceId), (s) => s.collapsed);
   const navCollapsed = navigator && (navCollapsedStored ?? navCollapsedDefault);
+  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []) && pinnedMode !== undefined;
+  const panelCollapsed = pinnedRail && (navCollapsedStored ?? false);
   const { min: PANEL_MIN, initial: PANEL_DEFAULT, max: PANEL_MAX } = useMemo(panelBounds, []);
   const panelPref = usePanelWidth('frame.panel', PANEL_DEFAULT, PANEL_MIN);
   const panelWidth = Math.min(Math.max(panelPref.width, PANEL_MIN), PANEL_MAX);
@@ -152,17 +164,18 @@ export function AppFrame({
     },
     [spaceId, goToWork],
   );
-  const hasPanel = panel !== null && !expanded;
+  const hasPanel = panel !== null && !expanded && !panelCollapsed;
   /* Whether the panel renders inside the navigator's lower area (§9). */
   const inSlot = navigator && hasPanel && panelPlacement === 'slot';
   const panelEl = hasPanel ? (
     <div
-      className="app-frame-panel"
+      className={pinnedRail ? 'tws-browser app-frame-panel' : 'app-frame-panel'}
       data-testid="app-frame-panel"
       data-host={panel === 'host' || undefined}
       data-in-nav={inSlot || undefined}
       ref={panel === 'host' ? setPanelHost : undefined}
     >
+      {pinnedRail ? <PanelTop searchable /> : null}
       {panel === 'host' ? null : panel}
     </div>
   ) : null;
@@ -214,10 +227,12 @@ export function AppFrame({
           data-nav-collapsed={navCollapsed || undefined}
           data-nav-panel={inSlot ? 'slot' : undefined}
           data-rail-expanded={railExpanded || undefined}
+          data-pinned-rail={pinnedRail ? pinnedMode : undefined}
+          data-panel-collapsed={panelCollapsed || undefined}
           style={style}
           data-testid="app-frame"
         >
-          {expanded ? null : <LeftHeader />}
+          {expanded || pinnedRail ? null : <LeftHeader />}
           <div className="app-frame-top" data-testid="app-frame-top">
             {expanded ? (
               <button
@@ -229,6 +244,8 @@ export function AppFrame({
               >
                 <VectorIcon paths={SIDEBAR_SHOW_ART} size={16} />
               </button>
+            ) : panelCollapsed ? (
+              <ShowPanel spaceId={spaceId} />
             ) : null}
             <div className="app-frame-top-host" ref={setTopHost} />
           </div>
@@ -253,7 +270,7 @@ export function AppFrame({
             the handle stays the panel's and the navigator keeps the 48px strip
             it starts in.
           */}
-          {expanded || (navigator && navCollapsed && !hasPanel) ? null : (
+          {expanded || panelCollapsed || (navigator && navCollapsed && !hasPanel) ? null : (
             <div className={inSlot || (navigator && !navCollapsed && !hasPanel) ? 'tws-resizer tws-nav-resizer' : 'tws-resizer'}>
               <PanelResizer
                 side="left"
