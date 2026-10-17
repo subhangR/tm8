@@ -124,7 +124,7 @@ export function Browser() {
   if (source) {
     return (
       <section className="tws-browser" aria-label={source.label} data-testid="tws-browser" data-source={source.id}>
-        {pinnedRail ? <PanelTop /> : null}
+        {pinnedRail ? <PanelTop searchable /> : null}
         <source.Panel />
       </section>
     );
@@ -142,70 +142,35 @@ const SEARCH_ART = ['M7 2.75a4.25 4.25 0 1 1 0 8.5a4.25 4.25 0 1 1 0-8.5', 'M10.
  *
  *     Space: transfer-e2e-scratch-2 ▾    [⌕] [▯]
  *
- * The space switcher is the panel's title (the tm8 mark heads the rail). The
- * ⌕ opens a search box over the row — the list's own search, held in the
- * browser's state and handed down — and ▯ collapses the panel, leaving the
- * rail.
+ * The space switcher is the panel's title (the tm8 mark heads the rail). ⌕
+ * opens the app's own search — the palette `/` opens — never a box inline in
+ * the column; ▯ collapses the panel, leaving the rail.
  */
-function PanelTop({ search }: { search?: { query: string; onQuery(query: string): void; placeholder: string } }) {
+function PanelTop({ searchable = false }: { searchable?: boolean }) {
   const { spaceId, gate } = useWorkspace();
-  const [open, setOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const showing = Boolean(search) && (open || (search?.query ?? '') !== '');
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
   const collapse = () => getRailStore(spaceId).getState().setCollapsed(true);
   return (
-    <div className="tws-paneltop" data-testid="tws-paneltop" data-searching={showing || undefined}>
-      {showing && search ? (
-        <div className="tws-paneltop__search" role="search">
-          <span className="tws-paneltop__glyph" aria-hidden>
-            <VectorIcon paths={SEARCH_ART} size={16} />
-          </span>
-          <input
-            ref={inputRef}
-            type="search"
-            className="tws-paneltop__input"
-            placeholder={search.placeholder}
-            aria-label={search.placeholder}
-            value={search.query}
-            data-testid="list-search"
-            onChange={(event) => search.onQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return;
-              event.preventDefault();
-              search.onQuery('');
-              setOpen(false);
-            }}
-            onBlur={() => {
-              if (search.query === '') setOpen(false);
-            }}
-          />
-        </div>
-      ) : (
-        <>
-          <div className="tws-paneltop__space" data-testid="tws-paneltop-space">
-            <span className="tws-paneltop__label">Space:</span>
-            {isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
-              ? cloneElement(gate.switcherSlot, { collapsed: false, quiet: true })
-              : gate.switcherSlot}
-          </div>
-          <span className="tws-paneltop__spacer" />
-          {search ? (
-            <button
-              type="button"
-              className="tws-icon-btn"
-              aria-label={search.placeholder}
-              title={search.placeholder}
-              data-testid="tws-paneltop-search"
-              onClick={() => setOpen(true)}
-            >
-              <VectorIcon paths={SEARCH_ART} size={16} />
-            </button>
-          ) : null}
-        </>
-      )}
+    <div className="tws-paneltop" data-testid="tws-paneltop">
+      <div className="tws-paneltop__space" data-testid="tws-paneltop-space">
+        <span className="tws-paneltop__label">Space:</span>
+        {isValidElement<{ collapsed?: boolean; quiet?: boolean }>(gate.switcherSlot)
+          ? cloneElement(gate.switcherSlot, { collapsed: false, quiet: true })
+          : gate.switcherSlot}
+      </div>
+      <span className="tws-paneltop__spacer" />
+      {searchable ? (
+        <button
+          type="button"
+          className="tws-icon-btn"
+          aria-label="Search"
+          title="Search  /"
+          aria-keyshortcuts="/"
+          data-testid="tws-paneltop-search"
+          onClick={() => gate.openPalette()}
+        >
+          <VectorIcon paths={SEARCH_ART} size={16} />
+        </button>
+      ) : null}
       <button
         type="button"
         className="tws-icon-btn"
@@ -437,7 +402,7 @@ function EntityBrowser() {
       data-scrolled={scroll.scrolled || undefined}
     >
       {pinnedRail ? (
-        <PanelTop search={{ query: kindState.query, onQuery: onQueryChange, placeholder: `Search ${nounPlural.toLowerCase()}` }} />
+        <PanelTop searchable />
       ) : null}
       {pinnedRail ? <QuickNew /> : null}
       <div
@@ -520,7 +485,10 @@ function EntityBrowser() {
           compact
           initialQuery={kindState.query}
           onQueryChange={onQueryChange}
-          {...(pinnedRail ? { query: kindState.query, searchInHost: true } : {})}
+          /* No inline search in this layout: ⌕ is the app's search (the
+             palette), so the list draws no search row and is never left
+             narrowed by text nobody can see. */
+          {...(pinnedRail ? { query: '', searchInHost: true } : {})}
           initialFilters={kindState.filters}
           onFiltersChange={onFiltersChange}
           bodyRef={scroll.ref}

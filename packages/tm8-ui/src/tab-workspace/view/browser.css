@@ -249,8 +249,7 @@
   height: 36px;
   padding: var(--pn-space-1) var(--pn-space-2) 0 var(--tws-browser-inset);
 }
-/* The pinned-only rail's panel top row: tm8 · ⌕ · ▯. Searching, the box
-   takes the row and ▯ stays at its end. */
+/* The pinned-only rail's panel top row: Space: <name> ▾ · ⌕ · ▯. */
 .cv2-root .tws-browser .tws-paneltop {
   flex: none;
   display: flex;
@@ -306,41 +305,6 @@
 }
 .cv2-root .tws-browser .tws-paneltop__spacer {
   flex: 1;
-}
-.cv2-root .tws-browser .tws-paneltop__search {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--pn-space-1);
-  min-width: 0;
-  height: var(--tws-band-ctl, 28px);
-  padding: 0 var(--pn-space-2);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-sm);
-}
-.cv2-root .tws-browser .tws-paneltop__search:focus-within {
-  border-color: var(--pn-line-2);
-  outline: 2px solid var(--pn-brand);
-  outline-offset: -2px;
-}
-.cv2-root .tws-browser .tws-paneltop__glyph {
-  display: inline-flex;
-  color: var(--pn-ink-3);
-}
-.cv2-root .tws-browser .tws-paneltop__input,
-.cv2-root .tws-browser .tws-paneltop__input:focus {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--pn-ink);
-  font: inherit;
-  font-size: var(--pn-fs-label);
-}
-.cv2-root .tws-browser .tws-paneltop__input::-webkit-search-cancel-button {
-  display: none;
 }
 /* The pinned-only rail's New chat · New task: one row of two equal halves,
    joined, in the navigator New button's look, on the list header's 10px
