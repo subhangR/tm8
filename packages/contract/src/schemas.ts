@@ -934,6 +934,7 @@ function entitySummaryShape() {
     // a parse failure. `EntityDetail` re-declares it REQUIRED after this
     // spread, so detail keeps the stronger guarantee it always had.
     capabilities: EntityCapabilitiesSchema.optional(),
+    childCount: z.number().int().nonnegative().optional(),
     // Additive and OPTIONAL under the same law as `capabilities`: absent means
     // "this entity has no status", which is the truth for every non-task kind
     // in this phase AND the truth a pre-column node reports. See the field's
@@ -1319,6 +1320,8 @@ const CollectionFiltersSchema = z.object({
   workedByActorId: EntityIdSchema.optional(),
   createdIn: EntityIdSchema.optional(),
   launchedBy: z.array(EntityIdSchema).max(200).optional(),
+  parentIn: z.array(EntityIdSchema).max(200).optional(),
+  idIn: z.array(EntityIdSchema).max(200).optional(),
   inFlightForActorId: EntityIdSchema.optional(),
   needsActorId: EntityIdSchema.optional(),
   sessionStatus: z.array(WorkSessionStatusSchema).optional(),

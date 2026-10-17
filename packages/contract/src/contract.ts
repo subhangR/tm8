@@ -259,6 +259,14 @@ export interface EntitySummary {
    */
   capabilities?: EntityCapabilities;
   /**
+   * Live direct-child count (`parent_id`, not deleted) — the TRUE number a
+   * list tile's child subscript draws, where the rows on screen may be one
+   * page and one status tab of them (task 01a14b92). Optional for the same
+   * rolling-node reason as `capabilities`: absent = never counted, and the
+   * tile falls back to the children it has loaded.
+   */
+  childCount?: number;
+  /**
    * Which of the four lifecycle buckets this entity currently sits in —
    * denormalized from its status onto the envelope, because this is the
    * predicate every tab, filter and rollup reads.
@@ -1297,6 +1305,19 @@ export interface CollectionQuery {
      * (at most 200 ids) — it is one list page's launchers, never a space.
      */
     launchedBy?: EntityId[];
+    /**
+     * Additive (tile children, task 01a14b92): rows whose `parent_id` is ANY
+     * of these — the children an expanded list row draws, whatever their
+     * status, so a status tab filters roots and the children ride along.
+     * Bounded like `launchedBy`: one list page's expanded rows.
+     */
+    parentIn?: EntityId[];
+    /**
+     * Additive (task 01a14b92): these rows by id — the parents a status tab
+     * shows as CONTEXT above the children that matched it, so a subtask whose
+     * parent is done is not orphaned in In progress. Bounded the same way.
+     */
+    idIn?: EntityId[];
     /**
      * Facade-defined server-preset expansions BEYOND the doc'd filter list
      * (flagged upstream): they make the `getHome` preset queries reproducible

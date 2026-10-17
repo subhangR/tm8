@@ -5,6 +5,7 @@ import { Avatar } from '../../kit';
 import { actorName } from '../../domain/actors';
 import { useMobileSurface } from '../../mobile/surface';
 import { useFreshGlow } from '../../domain/useFreshGlow';
+import { ChildCountToggle } from './ChildCountBadge';
 import './maestro-task-tile.css';
 
 export interface TaskTileProgress {
@@ -42,6 +43,10 @@ export interface MaestroTaskTileProps {
   childCount: number;
   childrenExpanded: boolean;
   onToggleChildren?: () => void;
+  /** `↑ parent`, after the title, when this root's parent is not listed. */
+  parentCrumb?: ReactNode;
+  /** Drawn only to hold subtasks that matched the tab (task 01a14b92). */
+  context?: boolean;
   onSelect?: () => void;
   status: {
     label: string;
@@ -126,6 +131,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     childCount,
     childrenExpanded,
     onToggleChildren,
+    parentCrumb,
+    context = false,
     onSelect,
     status,
     statusControl,
@@ -171,6 +178,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
       data-depth={depth}
       data-tree="true"
       data-children={childCount || undefined}
+      data-context={context ? 'true' : undefined}
       data-details={detailsExpanded ? 'open' : undefined}
       data-flow={flowOpen ? 'open' : undefined}
       data-streaming={status.streaming ? 'true' : 'false'}
@@ -184,11 +192,11 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           </span>
         ) : (
           <>
-        {/* THE CHEVRON SLOT IS A SPACER NOW. The children moved onto the
-            `▸ N` chip after the title (§6), so this keeps the column the
-            status mark lines up in and stops being a control — two controls
-            with the accessible name "Expand X, 2 children" on one row read as
-            one broken control. */}
+        {/* THE CHEVRON SLOT IS A SPACER NOW. The children are the count on
+            the status mark's corner (task 01a14b92), so this keeps the column
+            the status mark lines up in and stops being a control — two
+            controls with the accessible name "Expand X, 2 children" on one row
+            read as one broken control. */}
         <span className="pn-tt__arrow pn-tt__arrow--empty" aria-hidden>
           <ChevronRight />
         </span>
@@ -212,6 +220,17 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
             />
           )}
           <span className="pn-tt__status-text">{status.label}</span>
+          {/* The children, on the status mark's corner — the disclosure. The
+              mark itself is the state picker here, so the count is the button
+              (task 01a14b92: one rule for every tree kind, no `▸ N` chip). */}
+          {hasChildren ? (
+            <ChildCountToggle
+              count={childCount}
+              expanded={childrenExpanded}
+              rowTitle={title}
+              onToggle={onToggleChildren}
+            />
+          ) : null}
         </span>
           </>
         )}
@@ -232,26 +251,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
         </button>
 
-        {/* ▸ N — the children, collapsed, after the title (§6). The one
-            disclosure on this row: the count and the control that changes it
-            are one thing now, where they used to be a decorative subscript on
-            the status mark and a chevron two slots to its left. */}
-        {hasChildren ? (
-          <button
-            type="button"
-            className={childrenExpanded ? 'lp__kidchip lp__kidchip--expanded' : 'lp__kidchip'}
-            data-testid="child-count"
-            aria-label={`${childrenExpanded ? 'Collapse' : 'Expand'} ${title}, ${childCount} ${childCount === 1 ? 'child' : 'children'}`}
-            aria-expanded={childrenExpanded}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleChildren();
-            }}
-          >
-            <span className="lp__kidchip-arrow" aria-hidden><ChevronRight /></span>
-            {childCount > 99 ? '99+' : childCount}
-          </button>
-        ) : null}
+        {parentCrumb}
 
         <TaskProgressFigure progress={progress} />
 

@@ -5946,38 +5946,55 @@
   color: var(--pn-block);
 }
 
-/* ▸ N — the children, after the title. 18px tall inside a 29px row, so a
-   parent row measures exactly what a leaf row measures. */
-.cv2-root .lp__kidchip {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 16px;
-  padding: 0 4px 0 2px;
-  background: var(--pn-hover);
-  border: 1px solid var(--pn-line-2);
-  border-radius: 999px;
-  box-sizing: border-box;
-  font-family: var(--pn-mono);
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  color: var(--pn-ink-3);
+/* THE CHILD SUBSCRIPT AS A BUTTON (task 01a14b92) — where the leading mark is
+   a control of its own (a task's state picker) or there is no lead icon to
+   press, the count on its corner is the disclosure. Same pill as `.lp__kids`;
+   the hit area grows past it without moving it. */
+.cv2-root .lp__kids--toggle {
+  border: 0;
+  margin: 0;
+  font-family: inherit;
   cursor: pointer;
 }
-.cv2-root .lp__kidchip:hover { color: var(--pn-ink); background: var(--pn-active); }
-.cv2-root .lp__kidchip:focus-visible {
+.cv2-root .lp__kids--toggle::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+}
+.cv2-root .lp__kids--toggle[data-expanded='false'] {
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  box-shadow: 0 0 0 1px var(--pn-ink-3), 0 0 0 2.5px var(--pn-card);
+}
+.cv2-root .lp__kids--toggle:focus-visible {
   outline: 2px solid var(--pn-focus, var(--pn-brand-2));
   outline-offset: 1px;
 }
-.cv2-root .lp__kidchip-arrow {
-  display: inline-flex;
-  width: 10px;
-  height: 10px;
-  transition: transform var(--pn-dur-fast) var(--pn-ease-out);
+
+/* A CONTEXT PARENT (task 01a14b92): a parent on another tab, drawn only to
+   hold the rows under it that matched. Its status mark keeps full strength —
+   a done parent shows its tick — and its title steps back a shade. */
+.cv2-root [data-context='true'] :is(.lp__title, .pn-tt__title) {
+  color: var(--pn-ink-3);
+  font-weight: 500;
 }
-.cv2-root .lp__kidchip--expanded .lp__kidchip-arrow { transform: rotate(90deg); }
+
+/* `↑ parent` — a root whose parent is on another tab or not loaded. Quiet:
+   it is a fact about the row, not a verb competing with its title. */
+.cv2-root .lp__upcrumb {
+  flex: none;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  line-height: 14px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .lp__upcrumb:hover:not(:disabled) { color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .lp__upcrumb:disabled { cursor: default; }
 
 /* THE SIGNAL SLOT IS ALWAYS THERE, EMPTY OR NOT, and has no width of its own:
    it is `display: contents`-like in effect (zero padding, zero min-width), so
@@ -6262,8 +6279,7 @@
 
 /* NO MOTION WHERE MOTION WAS NEVER THE POINT. */
 @media (prefers-reduced-motion: reduce) {
-  .cv2-root .lp__headsearch-input,
-  .cv2-root .lp__kidchip-arrow { transition: none; }
+  .cv2-root .lp__headsearch-input { transition: none; }
 }
 
 /* --- the session row joins the quiet anatomy (ruling 2026-10-17) ---------- */

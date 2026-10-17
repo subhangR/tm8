@@ -2993,6 +2993,26 @@ export async function loadChatSubjects(
 }
 
 /**
+ * The live direct-child count on each LIST row (task 01a14b92) — the number a
+ * tile's child subscript draws, where the rows on screen are one page and one
+ * status tab of a family. Collection reads only: `entities.context` output is
+ * frozen byte-for-byte (W2.G13 goldens), so the summary assembly every read
+ * shares stays as it was. One grouped query per page.
+ */
+export async function withChildCounts(q: Querier, items: readonly EntitySummary[]): Promise<EntitySummary[]> {
+  if (items.length === 0) return [...items];
+  const rows = await q.query<{ parent_id: string; count: string }>(
+    `select parent_id, count(*)::text as count
+       from public.entities
+      where parent_id = any($1::uuid[]) and deleted_at is null
+      group by parent_id`,
+    [items.map((item) => item.id)],
+  );
+  const counts = new Map(rows.map((row) => [row.parent_id, Number(row.count)]));
+  return items.map((item) => ({ ...item, childCount: counts.get(item.id) ?? 0 }));
+}
+
+/**
  * Assemble summaries for a set of rows: batch the relations, batch the actors,
  * then map. Two passes over the rows, because `badges.blocked.waitingOn` and
  * `badges.workingActors.task` are themselves `EntitySummary`s — the first pass

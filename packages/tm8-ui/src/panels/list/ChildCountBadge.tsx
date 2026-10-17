@@ -27,3 +27,40 @@ export function ChildCountBadge({ count, expanded }: { count: number; expanded?:
     </span>
   );
 }
+
+/**
+ * THE SAME SUBSCRIPT, AS THE DISCLOSURE — for a row whose leading icon is
+ * already a control of its own (the task's status dot is its state picker),
+ * so the icon cannot also be the button. The count is the toggle there, in the
+ * same corner it is drawn in on every other row (task 01a14b92).
+ */
+export function ChildCountToggle({
+  count,
+  expanded,
+  rowTitle,
+  onToggle,
+}: {
+  count: number;
+  expanded: boolean;
+  rowTitle: string;
+  onToggle: () => void;
+}) {
+  if (count <= 0) return null;
+  return (
+    <button
+      type="button"
+      className="lp__kids lp__kids--toggle"
+      data-testid="child-count"
+      data-expanded={expanded ? 'true' : 'false'}
+      aria-label={`${expanded ? 'Collapse' : 'Expand'} ${rowTitle}, ${count} ${count === 1 ? 'child' : 'children'}`}
+      aria-expanded={expanded}
+      title={`${expanded ? 'Hide' : 'Show'} ${count} ${count === 1 ? 'child' : 'children'}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      {count > 99 ? '99+' : count}
+    </button>
+  );
+}

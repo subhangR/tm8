@@ -99,13 +99,13 @@ import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile, type TaskTileProgress } from './list/MaestroTaskTile';
 import { type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
-import { ChildCountBadge } from './list/ChildCountBadge';
+import { ChildCountToggle } from './list/ChildCountBadge';
 import { RowLead, ToneKindIcon, leadTooltip } from './list/RowLead';
 import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
 import { TileLinkCounts } from './list/TileLinkCounts';
-import { actionGlyph, hasTileLinkCounts, launchedRowsFilter, treeParentOf } from '../domain';
+import { actionGlyph, allKinds, hasTileLinkCounts, launchedRowsFilter, tileChildCount, treeParentOf } from '../domain';
 import { TILE_LINK_GROUPS, UNCOUNTED_LINK_GROUPS } from '../domain/tile-counts';
 import { TileSignal, UrgentMark, isUrgent, signalIsAvatar } from './list/TileSignal';
 import { SessionDetails } from './list/SessionDetails';
@@ -4143,11 +4143,87 @@ function TreeRows({
   const inlinePrefs = Boolean(props.toolbarInline);
   const showSubItems = !inlinePrefs || listPrefs.subItems;
   const groupBy: ListGroupBy = inlinePrefs ? listPrefs.groupBy : 'none';
-  const shownRows = useMemo(() => (showSubItems ? rows : rootsOnly(rows)), [rows, showSubItems]);
-  const roots = useMemo(
-    () => buildTileTree(shownRows, Boolean(config.list.tree) && showSubItems),
-    [shownRows, config.list.tree, showSubItems],
+  /* THE CHILDREN OF THE OPEN ROWS (task 01a14b92). A status tab and a page
+     filter the ROOTS; an open row's children ride along whatever their status,
+     read per open row so a child on another tab or page is not lost. A chat's
+     launched sessions are already loaded above. */
+  const hierarchical = Boolean(config.list.tree) && showSubItems;
+  /* THE PARENTS OF THE ROWS THAT MATCHED (Subhang, 2026-10-18: "for tasks
+     whose parent is completed, the parent also should be shown in the in
+     progress, but with a completed tick"). A row whose parent is on another
+     tab or page brings that parent — and its ancestors — in as CONTEXT: drawn
+     in place with its own status, open, holding only the rows that matched.
+     Otherwise most subtasks would sit orphaned at the top level of To do and
+     In progress. */
+  const contextLists: (readonly EntitySummary[])[] = [];
+  if (hierarchical) {
+    const readOwn = props.rowsForKind?.(config.kind) ?? props.rowsFor;
+    const have = new Set(rows.map((row) => row.id));
+    let frontier: readonly EntitySummary[] = rows;
+    for (let level = 0; level < MAX_FETCHED_DEPTH && frontier.length > 0; level += 1) {
+      const missing = [...new Set(frontier.flatMap((row) => {
+        const up = sameKindParentOf(row, config);
+        return up && !have.has(up) ? [up] : [];
+      }))].sort().slice(0, CONTEXT_PARENTS_PER_READ);
+      if (missing.length === 0) break;
+      const parents = keepOnly(readOwn({ idIn: missing } as QueryFilter), 'id', missing);
+      contextLists.push(parents);
+      for (const parent of parents) have.add(parent.id);
+      frontier = parents;
+    }
+  }
+  const contextRows = useMergedRows(rows, contextLists, placeContextParents);
+  const contextIds = useMemo(() => {
+    if (contextRows === rows) return EMPTY_IDS;
+    const own = new Set(rows.map((row) => row.id));
+    return new Set(contextRows.filter((row) => !own.has(row.id)).map((row) => row.id));
+  }, [contextRows, rows]);
+  /* A context parent starts OPEN — it is only there to hold what matched —
+     and the viewer may shut it; that choice is this list's, not persisted. */
+  const [shutContext, setShutContext] = useState<ReadonlySet<string>>(EMPTY_IDS);
+  const isOpen = useCallback(
+    (id: string) => (contextIds.has(id) ? !shutContext.has(id) : disclosure.isExpanded(id)),
+    [contextIds, shutContext, disclosure],
   );
+  const toggleOpen = useCallback(
+    (id: string) => {
+      if (!contextIds.has(id)) {
+        disclosure.toggle(id);
+        return;
+      }
+      setShutContext((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [contextIds, disclosure],
+  );
+
+  const childLists: (readonly EntitySummary[])[] = [];
+  if (hierarchical) {
+    const asked = new Set<string>();
+    let frontier: readonly EntitySummary[] = contextRows;
+    for (let level = 0; level < MAX_FETCHED_DEPTH && frontier.length > 0; level += 1) {
+      const next: EntitySummary[] = [];
+      for (const row of frontier) {
+        /* A context parent shows only what matched; reading all its
+           children would refill the tab with the rows it filtered out. */
+        if (asked.has(row.id) || contextIds.has(row.id) || !isOpen(row.id)) continue;
+        asked.add(row.id);
+        const read = childrenReadOf(row, config, props);
+        if (!read) continue;
+        const children = keepOnly(read.rowsFor(read.filter), 'treeParent', [row.id]);
+        childLists.push(children);
+        next.push(...children);
+      }
+      frontier = next;
+    }
+  }
+  const treeRows = useMergedRows(contextRows, childLists, appendNew);
+  const shownRows = useMemo(() => (showSubItems ? treeRows : rootsOnly(treeRows)), [treeRows, showSubItems]);
+  const roots = useMemo(() => buildTileTree(shownRows, hierarchical), [shownRows, hierarchical]);
   const groups = useMemo(() => {
     if (groupBy === 'none') return null;
     const byKey = new Map<string, { key: string; label: string; rank: number; nodes: TileTreeNode[] }>();
@@ -4170,13 +4246,23 @@ function TreeRows({
    * by the selection routes as the open row it is drawn as.
    */
   const pulse = useMemo(
-    () => resolvePulses(shownRows, disclosure.isExpanded, props.messagePulses, config),
-    [shownRows, disclosure, props.messagePulses, config],
+    () => resolvePulses(shownRows, isOpen, props.messagePulses, config),
+    [shownRows, isOpen, props.messagePulses, config],
   );
 
   const renderNode = (node: TileTreeNode): React.ReactNode => {
-    const isCollapsed = !disclosure.isExpanded(node.row.id);
-    const hasChildren = node.children.length > 0;
+    const isCollapsed = !isOpen(node.row.id);
+    const isContext = contextIds.has(node.row.id);
+    /* The TRUE count, not the loaded one (task 01a14b92) — the subscript says
+       how many there are, and opening the row reads them. */
+    const childCount = !hierarchical
+      ? 0
+      : isContext
+        /* A context parent holds only the rows that matched; its count says
+           what opening it shows. */
+        ? node.children.length
+        : tileChildCount(node.row, node.children.length, nestsLaunched(node.row.kind, config));
+    const hasChildren = childCount > 0;
     /* rowLead="icon": the tree item itself takes the keys — Right opens,
        Left shuts or moves to the parent, Enter opens the row. The innermost
        item handles a key and stops it, so an ancestor never acts twice. */
@@ -4186,9 +4272,9 @@ function TreeRows({
             const target = event.target as HTMLElement;
             if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
             if (event.key === 'ArrowRight') {
-              if (hasChildren && isCollapsed) disclosure.toggle(node.row.id);
+              if (hasChildren && isCollapsed) toggleOpen(node.row.id);
             } else if (event.key === 'ArrowLeft') {
-              if (hasChildren && !isCollapsed) disclosure.toggle(node.row.id);
+              if (hasChildren && !isCollapsed) toggleOpen(node.row.id);
               else event.currentTarget.parentElement?.closest<HTMLElement>('[role="treeitem"]')?.focus();
             } else if (event.key === 'Enter') {
               if (target !== event.currentTarget && !target.hasAttribute('data-lead-toggle')) return;
@@ -4225,11 +4311,13 @@ function TreeRows({
           /* A launched row (a chat's session) is drawn as ITS kind. */
           config={node.row.kind === config.kind ? config : getKind(node.row.kind)}
           attention={attentionIds?.has(node.row.id) ?? false}
-          childCount={node.children.length}
+          childCount={childCount}
           expanded={!isCollapsed}
-          onToggleChildren={hasChildren ? () => disclosure.toggle(node.row.id) : undefined}
+          onToggleChildren={hasChildren ? () => toggleOpen(node.row.id) : undefined}
+          context={isContext}
+          {...(node.parentOutside ? { parentOutside: node.parentOutside } : {})}
         />
-        {hasChildren && !isCollapsed ? (
+        {node.children.length > 0 && !isCollapsed ? (
           <div
             className="lp__children"
             role="group"
@@ -4273,6 +4361,38 @@ function TreeRows({
 }
 
 /**
+ * `↑ parent` — a root that is not really a root (task 01a14b92). Its parent is
+ * on another status tab or not loaded, so the row says it belongs somewhere
+ * and opens that parent, rather than passing for a top-level row.
+ */
+function ParentCrumb({
+  parentId,
+  rowTitle,
+  onOpen,
+}: {
+  parentId: string;
+  rowTitle: string;
+  onOpen?: ((id: string) => void) | undefined;
+}) {
+  return (
+    <button
+      type="button"
+      className="lp__upcrumb"
+      data-testid="parent-crumb"
+      title="Open the parent — it is on another tab or not loaded"
+      aria-label={`Open the parent of ${rowTitle}`}
+      disabled={!onOpen}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen?.(parentId);
+      }}
+    >
+      ↑ parent
+    </button>
+  );
+}
+
+/**
  * The session caret, as an SVG. The default tile drew `›` — a typographic arrow
  * sits on its own font's baseline, so it landed at a different optical height
  * from the same caret in the session and task lists, which draw a path in a
@@ -4293,6 +4413,32 @@ function TileChevron() {
   );
 }
 
+/**
+ * A ROW WHOSE TREE CHILDREN ARE THE SESSIONS IT LAUNCHED — a chat, a session
+ * (`treeParentOf`, 330/331). Its children are counted by `counters.sessions`,
+ * not `childCount`, and drawn by nesting.
+ */
+const LAUNCHED_KINDS: ReadonlySet<string> = new Set(
+  allKinds().flatMap((kind) => (kind.list.launches ? [kind.list.launches] : [])),
+);
+
+export function nestsLaunched(kind: string, config: KindConfig): boolean {
+  if (!config.list.tree) return false;
+  return LAUNCHED_KINDS.has(kind) || Boolean(getKind(kind).list.launches);
+}
+
+/**
+ * NEST, DON'T COUNT (task 01a14b92). A launcher's sessions are its children:
+ * the lead icon's subscript counts them and expanding draws them. The counts
+ * line's `sessions N` was the same `launched_by` edge said a second time, with
+ * a second click meaning, so a tree row drops it. The counter stays on the
+ * server for the detail panel.
+ */
+function withoutLaunchedCount(hidden: ReadonlySet<string>, kind: string, config: KindConfig): ReadonlySet<string> {
+  if (!nestsLaunched(kind, config)) return hidden;
+  return new Set([...hidden, 'sessions']);
+}
+
 /** Control cards are an attached column; every other anatomy stays gapped. */
 function treeClass(config: KindConfig): string {
   if (config.list.tile.anatomy === 'control-card') return 'lp__tree lp__tree--control';
@@ -4304,6 +4450,132 @@ interface TileTreeNode {
   row: EntitySummary;
   children: TileTreeNode[];
   depth: number;
+  /**
+   * A root that HAS a parent, which is not in this list — on another status
+   * tab, or not loaded (task 01a14b92). The tile says so with `↑ parent`
+   * instead of passing itself off as a top-level row.
+   */
+  parentOutside?: string;
+}
+
+/** How deep open rows are followed when reading their children. */
+const MAX_FETCHED_DEPTH = 8;
+
+/**
+ * Which read answers an open row's children: a launcher's sessions by
+ * `launched_by`, every other tree row by `parent_id`. Null where the list
+ * already holds them (a chat's sessions, `list.launches`) or no read exists.
+ */
+function childrenReadOf(
+  row: EntitySummary,
+  config: KindConfig,
+  props: EntityListPanelProps,
+): { rowsFor: (filter: QueryFilter) => readonly EntitySummary[]; filter: QueryFilter } | null {
+  if (row.kind !== config.kind && !LAUNCHED_KINDS.has(row.kind)) return null;
+  if (getKind(row.kind).list.launches) return null;
+  const rowsFor = props.rowsForKind?.(row.kind) ?? (row.kind === props.kind ? props.rowsFor : null);
+  if (!rowsFor) return null;
+  const filter = (LAUNCHED_KINDS.has(row.kind) ? { launchedBy: [row.id] } : { parentIn: [row.id] }) as QueryFilter;
+  return { rowsFor, filter };
+}
+
+const EMPTY_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * The rows of a read that ARE what was asked for — by id, or by tree parent.
+ * The node already filters; a host whose `rowsFor` predates `idIn`/`parentIn`
+ * would hand back its whole list, and every row would become a context parent
+ * or a child. Cached per source array so an unchanged read keeps one identity.
+ */
+const kept = new WeakMap<readonly EntitySummary[], Map<string, readonly EntitySummary[]>>();
+
+function keepOnly(
+  list: readonly EntitySummary[],
+  by: 'id' | 'treeParent',
+  ids: readonly string[],
+): readonly EntitySummary[] {
+  const key = `${by}:${ids.join(',')}`;
+  const forList = kept.get(list) ?? new Map<string, readonly EntitySummary[]>();
+  kept.set(list, forList);
+  const hit = forList.get(key);
+  if (hit) return hit;
+  const wanted = new Set(ids);
+  const out = list.filter((row) => wanted.has(by === 'id' ? row.id : (treeParentOf(row) ?? '')));
+  const result = out.length === list.length ? list : out;
+  forList.set(key, result);
+  return result;
+}
+
+/** One read's bound, as `launchedRowsFilter`'s — the contract caps `idIn` at 200. */
+const CONTEXT_PARENTS_PER_READ = 100;
+
+/** A row's `parent_id` parent when the list nests by it (not a launcher). */
+function sameKindParentOf(row: EntitySummary, config: KindConfig): string | null {
+  /* The session anatomy says it its own way (`↳ under <parent>`, D1 §5.3). */
+  if (config.list.tile.anatomy === 'session-tree') return null;
+  if (row.kind !== config.kind || !row.parentId) return null;
+  return treeParentOf(row) === row.parentId ? row.parentId : null;
+}
+
+type RowMerge = (base: readonly EntitySummary[], extra: readonly EntitySummary[]) => readonly EntitySummary[];
+
+/** Extra rows after the list's own, in arrival order. */
+const appendNew: RowMerge = (base, extra) => [...base, ...extra];
+
+/**
+ * Context parents IN PLACE: each is drawn where the first row under it was,
+ * so a subtask's position in the list (activity order) is still where its
+ * family appears, not at the bottom.
+ */
+const placeContextParents: RowMerge = (base, extra) => {
+  const byId = new Map(extra.map((row) => [row.id, row]));
+  const placed = new Set<string>();
+  const out: EntitySummary[] = [];
+  for (const row of base) {
+    const chain: EntitySummary[] = [];
+    let up = row.parentId ? byId.get(row.parentId) : undefined;
+    while (up && !placed.has(up.id)) {
+      chain.unshift(up);
+      placed.add(up.id);
+      up = up.parentId ? byId.get(up.parentId) : undefined;
+    }
+    out.push(...chain, row);
+  }
+  for (const row of extra) if (!placed.has(row.id)) out.push(row);
+  return out;
+};
+
+/**
+ * The list's rows plus rows read for the tree (context parents, open rows'
+ * children), deduplicated, with a STABLE identity while none of the inputs
+ * changed: every memo and effect below keys on the array, and a fresh one per
+ * render would recompute them all.
+ */
+function useMergedRows(
+  base: readonly EntitySummary[],
+  extras: readonly (readonly EntitySummary[])[],
+  merge: RowMerge,
+): readonly EntitySummary[] {
+  const memo = useRef<{ base: readonly EntitySummary[]; extras: readonly (readonly EntitySummary[])[]; out: readonly EntitySummary[] } | null>(null);
+  const prev = memo.current;
+  if (prev && prev.base === base && prev.extras.length === extras.length && prev.extras.every((list, i) => list === extras[i])) {
+    return prev.out;
+  }
+  let out: readonly EntitySummary[] = base;
+  if (extras.some((list) => list.length > 0)) {
+    const seen = new Set(base.map((row) => row.id));
+    const fresh: EntitySummary[] = [];
+    for (const list of extras) {
+      for (const row of list) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        fresh.push(row);
+      }
+    }
+    if (fresh.length > 0) out = merge(base, fresh);
+  }
+  memo.current = { base, extras, out };
+  return out;
 }
 
 /**
@@ -4345,7 +4617,14 @@ function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): T
     };
   };
 
-  const roots = (childrenOf.get(null) ?? []).map((row) => attach(row, 0));
+  const roots = (childrenOf.get(null) ?? []).map((row) => {
+    const node = attach(row, 0);
+    /* Only a `parent_id` parent: a launched session's launcher has its own
+       crumb on the session anatomy. */
+    return row.parentId && !present.has(row.parentId) && treeParentOf(row) === row.parentId
+      ? { ...node, parentOutside: row.parentId }
+      : node;
+  });
   for (const row of rows) {
     if (!seen.has(row.id)) roots.push(attach(row, 0));
   }
@@ -4532,6 +4811,8 @@ export function Tile({
   childCount = 0,
   expanded = false,
   onToggleChildren,
+  parentOutside,
+  context = false,
   path,
 }: {
   row: EntitySummary;
@@ -4542,6 +4823,14 @@ export function Tile({
   childCount?: number;
   expanded?: boolean;
   onToggleChildren?: () => void;
+  /** This root's parent, when the parent is not in the list (`↑ parent`). */
+  parentOutside?: string;
+  /**
+   * A parent drawn only to hold rows that matched this tab (a done task above
+   * its in-progress subtasks). Its own status mark says what it is; the row is
+   * quieter so it reads as the frame, not as a match.
+   */
+  context?: boolean;
   /**
    * The relation-traversal path: every entity id this tile hangs UNDER via
    * open relation groups, so an edge pointing back at an ancestor is
@@ -4718,7 +5007,7 @@ export function Tile({
    */
   /* The per-link switches (List settings): a group the viewer turned off is
      not drawn, and a row whose only counts are hidden ones has no line. */
-  const hiddenGroups = hiddenLinkGroups(view.hidden);
+  const hiddenGroups = withoutLaunchedCount(hiddenLinkGroups(view.hidden), row.kind, config);
   const showCounts = view.shows('counts') && hasTileLinkCounts(row.counters, hiddenGroups);
   const countsLine = showCounts ? (
     <TileLinkCounts
@@ -4732,8 +5021,8 @@ export function Tile({
   /**
    * THE PROGRESS METER, AND WHEN A TASK HAS ONE (§6; QA finding 3, ruled
    * 2026-10-17). A meter is a statement about a subtree, so it is drawn only
-   * where there is one: `childCount` is the `▸ N` chip's own number, which
-   * keeps the chip and the meter one answer. The View switch still governs —
+   * where there is one: `childCount` is the lead icon's child subscript, which
+   * keeps the subscript and the meter one answer. The View switch still governs —
    * a viewer who turned progress off sees none either way.
    *
    * Narrowed to the figure itself rather than left a boolean so the slot below
@@ -4771,32 +5060,9 @@ export function Tile({
       onToggle={onToggleChildren}
     />
   ) : null;
-  /**
-   * THE SAME ICON, WITHOUT THE TOGGLE — for the standard anatomy only.
-   *
-   * §6 moves the children onto a `▸ N` chip after the title and makes THAT
-   * the disclosure. On the Workspace browser the lead icon was already a
-   * disclosure, so drawing both would put two controls with the same
-   * accessible name ("Expand Parent, 2 children") on one row — the exact
-   * ambiguity `lp__rowaction--ind`'s comment warns about one slot over.
-   *
-   * USED BY THE STANDARD TILE AND THE CONTROL CARD, which both moved their
-   * disclosure onto the chip. `MaestroSessionTile` is the one anatomy that
-   * keeps the lead as its control: a session's sub-session count rides the
-   * agent mark, which §6 keeps as "the session glyph tinted by its state", and
-   * rebuilding that tree's grammar was not asked for. The difference is real
-   * and named rather than hidden — see the close-out on 01a1469f.
-   */
-  const leadQuiet = leadMode ? (
-    <RowLead
-      icon={leadIcon}
-      rowTitle={row.title}
-      tooltip={leadTooltip(statusTitle, getKind(row.kind).label)}
-      childCount={0}
-      expanded={expanded}
-    />
+  const parentCrumb = parentOutside ? (
+    <ParentCrumb parentId={parentOutside} rowTitle={row.title} onOpen={props.onSelect} />
   ) : null;
-
   if (sessionTree) {
     const state = row.state as unknown as Record<string, unknown>;
     const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
@@ -4946,10 +5212,11 @@ export function Tile({
             state={row.state}
             word={sessionWord}
             tasks={(props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false))}
-            links={hasTileLinkCounts(row.counters) ? (
+            links={hasTileLinkCounts(row.counters, hiddenGroups) ? (
               <TileLinkCounts
                 counters={row.counters}
                 entityId={row.id}
+                hiddenGroups={hiddenGroups}
                 {...(props.onOpenLinks ? { onOpenGroup: props.onOpenLinks } : {})}
               />
             ) : null}
@@ -4964,12 +5231,9 @@ export function Tile({
   if (controlCard && controlFacts) {
     return (
       <MaestroTaskTile
-        /* `leadQuiet`, NOT `lead`: the ▸ N chip is this row's disclosure now,
-           so the lead must stop being a second one AND stop drawing the count
-           on its corner. Caught in a screenshot — the number rendered twice,
-           once as a circled subscript on the icon and once in the chip, which
-           no jsdom assertion could see. */
-        lead={leadQuiet ?? undefined}
+        /* The lead icon IS the disclosure and wears the count on its corner
+           (task 01a14b92: one rule for every tree kind, no `▸ N` chip). */
+        lead={lead ?? undefined}
         rootRef={tileRef}
         id={row.id}
         title={row.title}
@@ -4983,6 +5247,8 @@ export function Tile({
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
+        parentCrumb={parentCrumb ?? undefined}
+        context={context}
         onSelect={() => selectRow(props, row)}
         status={{
           label: statusWord ?? 'no status',
@@ -5078,8 +5344,8 @@ export function Tile({
          * A leaf task with no counts measured 49.4px where §6 asks for 30.
          *
          * `progressShown` adds the fact that makes a meter mean something:
-         * SUBTASKS. `childCount` is the same number the `▸ N` chip draws, so
-         * the meter and the chip appear and disappear together — a row that
+         * SUBTASKS. `childCount` is the same number the lead icon's subscript draws, so
+         * the meter and the subscript appear and disappear together — a row that
          * says it has children is the row that says how far they have got. A
          * leaf task's own acceptance figure goes with it, which is §6's call:
          * the anatomy lists counts as the one second-row fact.
@@ -5188,6 +5454,7 @@ export function Tile({
       data-depth={depth}
       data-tree={config.list.tree ? 'true' : undefined}
       data-children={childCount > 0 ? childCount : undefined}
+      data-context={context ? 'true' : undefined}
       data-flow={flowRef ? 'open' : undefined}
       /* The task tile has carried this since #435; the standard anatomy needed
          it for the same reason. The phone drops the row's verbs while the row
@@ -5200,7 +5467,7 @@ export function Tile({
         {/*
           LINE 1 OF THE QUIET ROW (§6, approved 2026-10-16):
 
-              [status mark]  Title ……  [▸ N]  [one signal]  [time]
+              [status mark]  Title ……  [one signal]  [time]
 
           and nothing else. What used to sit between the title and the right
           edge — the mono meta strip (model, agent tool, share and drive mode,
@@ -5214,7 +5481,7 @@ export function Tile({
           a sighted reader a hover and costs a screen-reader user nothing.
         */}
         <div className="lp__row1">
-          {leadQuiet ?? (
+          {lead ?? (
           <span
             className={`lp__statusmark lp__statusmark--${statusTone}`}
             title={statusTitle}
@@ -5240,6 +5507,16 @@ export function Tile({
                 cut, hiding this would delete the status from the accessible
                 row entirely — the one thing §6 says to keep. */}
             {statusWord ? <span className="sr-only">{statusWord}</span> : null}
+            {/* The children, on the mark's corner — the disclosure (task
+                01a14b92). The host without the lead icon gets the same corner. */}
+            {onToggleChildren ? (
+              <ChildCountToggle
+                count={childCount}
+                expanded={expanded}
+                rowTitle={row.title}
+                onToggle={onToggleChildren}
+              />
+            ) : null}
           </span>
           )}
 
@@ -5273,31 +5550,7 @@ export function Tile({
             {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
           </button>
 
-          {/* ▸ N — THE CHILDREN, COLLAPSED, AFTER THE TITLE (§6). It is the
-              disclosure now, and the only one: the count used to ride the
-              leading mark's corner as a decorative subscript while a separate
-              chevron did the folding, so the number and the control that
-              changed it were in two places and neither said what the other
-              did. → / ← still fold from the keyboard (`useListCursor` reads
-              `aria-expanded`), which is why this is a real button with a real
-              expanded state rather than a styled span. */}
-          {childCount > 0 && onToggleChildren ? (
-            <button
-              type="button"
-              className={expanded ? 'lp__kidchip lp__kidchip--expanded' : 'lp__kidchip'}
-              data-testid="child-count"
-              aria-label={`${expanded ? 'Collapse' : 'Expand'} ${row.title}, ${childCount} ${childCount === 1 ? 'child' : 'children'}`}
-              aria-expanded={expanded}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleChildren();
-              }}
-            >
-              <span className="lp__kidchip-arrow" aria-hidden><TileChevron /></span>
-              {childCount > 99 ? '99+' : childCount}
-            </button>
-          ) : null}
-
+          {parentCrumb}
           {/* THE ONE SIGNAL. For task and PR that is the assignee avatar, which
               is why it is drawn from the `avatar` slot the badge sources already
               resolved rather than a second read of the same actor; every other
@@ -5346,7 +5599,7 @@ export function Tile({
               DELIBERATELY NOT inside the `⋯` below: the expand is not a verb,
               it is the row's second state, and the phone keeps exactly this
               one control while hiding the verbs. Also deliberately not the
-              `▸ N` chip — that means "show this row's CHILDREN" on tree kinds,
+              child subscript on the lead icon — that means "show this row's CHILDREN" on tree kinds,
               and giving one control two meanings would make a doc's expand
               ambiguous. */}
           <button

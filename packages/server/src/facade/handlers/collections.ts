@@ -37,7 +37,7 @@ import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor, commandEnvelope, limitOf, MAX_LIMIT, requireUuidParam } from '../context.js';
 import {
-  assembleSummaries, ENTITY_COLUMNS, ENTITY_FROM, MICROS, type EntityRow,
+  assembleSummaries, withChildCounts, ENTITY_COLUMNS, ENTITY_FROM, MICROS, type EntityRow,
 } from '../entity-read.js';
 import { toCommandResult, type RpcCommandResult } from './entities.js';
 import { runsOnListedFrom } from '../services/w2/runs-on-visibility.js';
@@ -614,6 +614,17 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     )`);
   }
 
+  if (f.parentIn) {
+    // Tile children (task 01a14b92): the direct children of the rows a list
+    // has expanded, by `parent_id`, whatever their status.
+    where.push(`e.parent_id = any(${p.add(assertUuids(f.parentIn, 'filters.parentIn'))}::uuid[])`);
+  }
+
+  if (f.idIn) {
+    // The parents a status tab shows as context (task 01a14b92), by id.
+    where.push(`e.id = any(${p.add(assertUuids(f.idIn, 'filters.idIn'))}::uuid[])`);
+  }
+
   if (f.inFlightForActorId) {
     // "In flight for me" = pulled or being worked on by an actor in my scope,
     // and not finished. Actor scope is the member row plus the personas it
@@ -821,7 +832,7 @@ export async function queryCollection(
 
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const items = await assembleSummaries(q, pageRows, viewerIdentityId);
+  const items = await withChildCounts(q, await assembleSummaries(q, pageRows, viewerIdentityId));
 
   const last = pageRows[pageRows.length - 1];
   const page: Page<EntitySummary> = {

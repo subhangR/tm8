@@ -2873,6 +2873,8 @@ export function createFixtureSeam(): FixtureSeam {
            `NULL = any(...)` server semantics, mirrored. */
         if (f?.category?.length && !(s.category !== undefined && f.category.includes(s.category))) return false;
         if (f?.priority?.length && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
+        if (f?.parentIn?.length && !(s.parentId !== null && f.parentIn.includes(s.parentId))) return false;
+        if (f?.idIn?.length && !f.idIn.includes(s.id)) return false;
         if (f?.sessionStatus?.length && !(s.state.kind === 'work_session'
           && f.sessionStatus.includes(s.state.status))) return false;
         /* Spec D1: the session tabs' outcome axis. Absent outcome = open. */

@@ -408,7 +408,7 @@ export function createDomainStore(
 export type Membership = 'in' | 'out' | 'unknown';
 
 /** The filter clauses this module can decide. Everything else ⇒ 'unknown'. */
-const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'sessionOutcome', 'category', 'launchedBy']);
+const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'sessionOutcome', 'category', 'launchedBy', 'parentIn', 'idIn']);
 
 export function membershipOf(filter: unknown, summary: EntitySummary): Membership {
   const clauses: Record<string, unknown> =
@@ -438,6 +438,9 @@ export function membershipOf(filter: unknown, summary: EntitySummary): Membershi
   /* 331: the launcher rides the session's state (`launchedBy`, 330), so a
      session launched from a listed chat arrives live. */
   if (!matchesAxis(clauses.launchedBy, state.launchedBy)) return 'out';
+  /* Tile children (task 01a14b92): an expanded row's children, by parent. */
+  if (!matchesAxis(clauses.parentIn, summary.parentId ?? undefined)) return 'out';
+  if (!matchesAxis(clauses.idIn, summary.id)) return 'out';
 
   return 'in';
 }

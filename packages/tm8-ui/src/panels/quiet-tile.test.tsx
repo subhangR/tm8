@@ -377,10 +377,11 @@ describe('the list header, one row', () => {
     expect(getByTestId('filter-menu').querySelector('[data-testid="list-links-section"]')).toBeNull();
   });
 
-  /* THE CHAT LIST (task 01a14af9, part A/C): a chat's tile draws its counts
-     line, including the sessions it launched, and those sessions nest under it
-     as session tiles, read through `rowsForKind` with the bounded
-     `launchedBy` filter, and open as sessions. */
+  /* THE CHAT LIST (task 01a14af9, part A/C): the sessions a chat launched
+     nest under it as session tiles, read through `rowsForKind` with the
+     bounded `launchedBy` filter, and open as sessions. NEST, DON'T COUNT (task
+     01a14b92): the lead mark's subscript counts them, so the counts line no
+     longer says `sessions 2` for the same two rows. */
   it('a chat tile shows its counts and nests the sessions it launched', () => {
     const chat = withCounters(chatLaunchPlan, { docs: 1, prs: 1, sessions: 2 });
     const launched = [1, 2].map((n) => ({
@@ -411,12 +412,13 @@ describe('the list header, one row', () => {
     expect([...counts.querySelectorAll('[data-count-kind]')].map((el) => el.getAttribute('data-count-kind'))).toEqual([
       'docs',
       'prs',
-      'sessions',
     ]);
 
-    /* Collapsed by default, like every tree; the chevron opens it. */
+    /* Collapsed by default, like every tree; the count on the mark opens it. */
     expect(container.querySelector('[data-testid="list-tile-children"]')).toBeNull();
-    const toggle = container.querySelector<HTMLElement>('[data-testid="list-tile"] [aria-expanded]')!;
+    const toggle = container.querySelector<HTMLElement>('[data-testid="list-tile"] [data-testid="child-count"]')!;
+    expect(toggle.textContent).toBe('2');
+    expect(toggle.getAttribute('aria-label')).toBe(`Expand ${chat.title}, 2 children`);
     fireEvent.click(toggle);
     const children = container.querySelector<HTMLElement>('[data-testid="list-tile-children"]')!;
     expect(children.textContent).toContain('Launched 1');

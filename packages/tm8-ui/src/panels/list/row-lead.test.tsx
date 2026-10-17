@@ -11,15 +11,9 @@ import { EntityListPanel } from '../index';
  * anatomy; the leading icon is the expand button when (and only when) the row
  * has children, and nothing but that icon changes expansion.
  *
- * TWO GRAMMARS SINCE THE QUIET TILE (task 01a1469f, design doc 01a1465d §6):
- * the STANDARD anatomy and the CONTROL CARD moved their disclosure onto a
- * `▸ N` chip after the title, and their lead icon is now decoration; the
- * session-tree anatomy keeps the lead as its control, because a session's
- * sub-session count rides the agent mark that IS its status glyph. `DISCLOSURE`
- * below is which one each kind uses, so the cases that follow assert the
- * SHARED behaviour — a control only where there are children, a click that
- * expands without opening the row, a leaf whose icon falls through — against
- * whichever element owns it.
+ * ONE GRAMMAR (task 01a14b92, superseding the quiet tile's `▸ N` chip): on
+ * every anatomy the lead icon is the disclosure and wears the child count as
+ * a subscript on its corner. The cases below assert it against all three.
  */
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
@@ -29,14 +23,17 @@ const rowsFor =
     rows;
 
 function family(template: EntitySummary, n: number): EntitySummary[] {
-  const parent = { ...template, id: `${template.kind}-parent`, title: 'Parent', parentId: null } as EntitySummary;
+  /* The server's live child count rides every row (`childCount`); a leaf
+     says 0, so a template's own count cannot make it read as a parent. */
+  const parent = { ...template, id: `${template.kind}-parent`, title: 'Parent', parentId: null, childCount: n } as EntitySummary;
   const kids = Array.from({ length: n }, (_, index) => ({
     ...template,
     id: `${template.kind}-kid-${index}`,
     title: `Child ${index}`,
     parentId: parent.id,
+    childCount: 0,
   }) as EntitySummary);
-  const leaf = { ...template, id: `${template.kind}-leaf`, title: 'Leaf', parentId: null } as EntitySummary;
+  const leaf = { ...template, id: `${template.kind}-leaf`, title: 'Leaf', parentId: null, childCount: 0 } as EntitySummary;
   return [parent, ...kids, leaf];
 }
 
@@ -49,19 +46,13 @@ function tileTitled(container: HTMLElement, title: string): HTMLElement {
 }
 
 const leadOf = (tile: HTMLElement) => tile.querySelector<HTMLElement>('.lp-lead');
-/** The ▸ N chip — the standard anatomy's disclosure since the quiet tile. */
-const chipOf = (tile: HTMLElement) => tile.querySelector<HTMLElement>('.lp__kidchip');
-
-/** Which element owns expansion on each anatomy, under `rowLead="icon"`. */
-const DISCLOSURE = { task: 'chip', doc: 'chip', work_session: 'lead' } as const;
 
 describe.each([
   ['task', taskGuideLines],
   ['doc', docLayoutSpec],
   ['work_session', sessionLive],
 ] as const)('rowLead="icon" on a %s list', (kind, template) => {
-  const owner = DISCLOSURE[kind];
-  const control = (tile: HTMLElement) => (owner === 'chip' ? chipOf(tile) : leadOf(tile));
+  const control = leadOf;
 
   it('draws no chevron slot, and has exactly one expand control', () => {
     const { container } = render(
@@ -74,13 +65,13 @@ describe.each([
     expect(owned?.getAttribute('aria-label')).toBe('Expand Parent, 2 children');
     expect(owned?.getAttribute('aria-expanded')).toBe('false');
     /* EXACTLY ONE. Two controls carrying the same accessible name would read
-       as one broken control, which is the reason the standard tile's lead
-       icon stopped toggling when the chip took the job. */
+       as one broken control. */
     const named = [...parent.querySelectorAll('[aria-label^="Expand Parent"]')];
     expect(named).toHaveLength(1);
+    // No `▸ N` chip after the title on any anatomy.
+    expect(container.querySelector('.lp__kidchip')).toBeNull();
     // A leaf has no control at all — its icon is decoration.
     expect(leadOf(tileTitled(container, 'Leaf'))?.tagName).toBe('SPAN');
-    expect(chipOf(tileTitled(container, 'Leaf'))).toBeNull();
   });
 
   it('a click on the control expands without opening the row; a title click opens without expanding', () => {
@@ -115,11 +106,9 @@ describe('rowLead="icon" — the reveal latches', () => {
     <EntityListPanel kind="task" rowsFor={rowsFor(rows)} ctx={ctx} rowLead="icon" selectedId={selectedId} />
   );
 
-  /* Read off the ▸ N chip, which is the task row's disclosure since the quiet
-     tile — the latch itself (`useTreeDisclosure`) is unchanged. */
   it('opening a child keeps its parent expanded after another row is selected', () => {
     const view = render(panel('task-kid-0'));
-    const chip = () => chipOf(tileTitled(view.container, 'Parent'))!;
+    const chip = () => leadOf(tileTitled(view.container, 'Parent'))!;
     expect(chip().getAttribute('aria-expanded')).toBe('true');
     view.rerender(panel('task-leaf'));
     expect(chip().getAttribute('aria-expanded')).toBe('true');
@@ -127,7 +116,7 @@ describe('rowLead="icon" — the reveal latches', () => {
 
   it('one click on a revealed parent collapses it', () => {
     const view = render(panel('task-kid-0'));
-    const chip = () => chipOf(tileTitled(view.container, 'Parent'))!;
+    const chip = () => leadOf(tileTitled(view.container, 'Parent'))!;
     fireEvent.click(chip());
     expect(chip().getAttribute('aria-expanded')).toBe('false');
   });

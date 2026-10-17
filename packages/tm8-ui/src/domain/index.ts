@@ -159,6 +159,7 @@ export {
   withGrace,
 } from './session-outcome';
 export { LAUNCHERS_PER_READ, launchedByOf, launchedRowsFilter, treeParentOf } from './launched-by';
+export { tileChildCount } from './tile-children';
 export type {
   GroupBulk,
   InterruptedGroup,
