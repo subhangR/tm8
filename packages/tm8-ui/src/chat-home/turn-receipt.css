@@ -31,7 +31,7 @@
   min-height: 32px;
   padding-left: calc(var(--tch-rrow-depth) * 22px);
   color: var(--pn-ink);
-  font-size: 13px;
+  font-size: var(--pn-fs-sm);
   line-height: var(--pn-lh-snug);
 }
 
@@ -65,7 +65,7 @@ button.tch-rrow__main:focus-visible {
 
 .tch-rrow__mark {
   color: var(--pn-ink-3);
-  font: 600 12px/1 var(--pn-mono);
+  font: 600 var(--pn-fs-label)/1 var(--pn-mono);
   text-align: center;
 }
 
@@ -103,7 +103,7 @@ button.tch-rrow__main:focus-visible {
 .tch-rrow__line {
   overflow: hidden;
   color: var(--pn-ink-3);
-  font-size: var(--pn-fs-fine);
+  font-size: var(--pn-fs-micro);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -144,7 +144,7 @@ button.tch-rrow__main:focus-visible {
   justify-content: flex-end;
   padding-right: 4px;
   color: var(--pn-ink-3);
-  font-size: var(--pn-fs-fine);
+  font-size: var(--pn-fs-micro);
   white-space: nowrap;
 }
 
@@ -198,7 +198,7 @@ button.tch-rrow__main:focus-visible {
   gap: 5px;
   align-items: center;
   color: var(--pn-ink-2);
-  font-size: var(--pn-fs-fine);
+  font-size: var(--pn-fs-micro);
 }
 
 .tch-rstate__dot {
@@ -258,7 +258,7 @@ button.tch-rrow__main:focus-visible {
   background: var(--pn-card);
   color: var(--pn-ink-2);
   font: inherit;
-  font-size: var(--pn-fs-fine);
+  font-size: var(--pn-fs-micro);
   white-space: nowrap;
 }
 
@@ -368,7 +368,7 @@ button.tch-rpill:focus-visible {
   background: none;
   color: var(--pn-ink-3);
   font: inherit;
-  font-size: var(--pn-fs-fine);
+  font-size: var(--pn-fs-micro);
   cursor: pointer;
 }
 

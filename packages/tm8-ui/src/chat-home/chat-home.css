@@ -394,7 +394,7 @@
 .tch-explain__glyph {
   flex: none;
   color: var(--pn-ink-3);
-  font: 12px/1 var(--pn-mono);
+  font: var(--pn-fs-label)/1 var(--pn-mono);
 }
 .tch-explain__kind {
   position: absolute;
@@ -409,7 +409,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--pn-ink);
-  font: 600 14px/1.3 var(--pn-ui);
+  font: 600 var(--pn-fs-body)/1.3 var(--pn-ui);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -426,7 +426,7 @@
   border-radius: var(--pn-r-xs);
   background: none;
   color: var(--pn-ink-3);
-  font: var(--pn-fs-fine) var(--pn-ui);
+  font: var(--pn-fs-micro) var(--pn-ui);
   cursor: pointer;
 }
 .tch-explain__actions button:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
