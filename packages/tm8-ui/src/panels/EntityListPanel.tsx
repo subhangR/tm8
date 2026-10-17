@@ -987,6 +987,7 @@ export function EntityListPanel(input: EntityListPanelProps) {
       lensSet={lensSet}
       onLens={setLensId}
       merged
+      glyph={props.toolbarInline ? 'settings' : 'funnel'}
     />
   ) : null;
   /* The `⋯` half of the same component — View and Sort. One `FilterRow`
@@ -1087,13 +1088,14 @@ export function EntityListPanel(input: EntityListPanelProps) {
             /*
              * THE PINNED-ONLY RAIL'S STACK (Subhang, 2026-10-17):
              *
-             *     [⌕ Search tasks…          ] ⨝ ⋯
-             *     Tasks 358              [+|☑ ▾]
+             *     [⌕ Search tasks…                ]
+             *     Tasks [⚙]               [+|☑ ▾]
              *     To Do · In progress · Done …
              *
-             * The full search bar and the funnel lead; the kind's name and the
-             * host's new box share the next row; the lifecycle tiers are the
-             * tab row again, not a dropdown, for the kinds that have them.
+             * The full search bar leads; the kind's name, its one settings
+             * control and the host's new box share the next row; the lifecycle
+             * tiers are the tab row again, not a dropdown, for the kinds that
+             * have them. There is no `⋯` in this layout.
              */
             <>
               <div className="lp__searchline" data-testid="list-searchline">
@@ -1103,15 +1105,15 @@ export function EntityListPanel(input: EntityListPanelProps) {
                   onQuery={setQuery}
                   inputRef={props.searchInputRef}
                 />
-                {funnel}
-                {more}
               </div>
               <div className="lp__head" data-testid="list-head">
                 <h2 className="lp__headtitle">
+                  {/* The name only (Subhang 2026-10-17): each tier's count is
+                      on its tab. */}
                   <span className="lp__headname">{config.labelPlural}</span>
-                  {/* The kind's total: each tier's own count is on its tab. */}
-                  {kindTotal ? <span className="lp__headcount">{kindTotal}</span> : null}
                 </h2>
+                {/* ONE settings control beside the title; no `⋯` here. */}
+                {funnel}
                 {props.toolbarStart || props.toolbarEnd ? (
                   <div className="lp__headtools">
                     {props.toolbarStart}
@@ -2213,6 +2215,16 @@ function CategoryTabs({
  */
 /** A funnel — the same shape as the phone's narrowing cluster (`NarrowGlyph`). */
 const FILTER_MARK = ['M2.5 3.5H13.5L9.25 8.5V13L6.75 11.5V8.5Z'];
+/** Settings sliders — two rails with a knob each — for the pinned-only rail's
+    one list-settings control (Subhang 2026-10-17: "like a settings icon"). */
+const SETTINGS_MARK = [
+  'M2.5 5h5.5',
+  'M11.5 5h2',
+  'M9.75 3.5a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3',
+  'M2.5 11h2',
+  'M8 11h5.5',
+  'M6.25 9.5a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3',
+];
 /** A head and shoulders. */
 const PEOPLE_MARK = [
   'M10.4 5.4a2.4 2.4 0 1 1 -4.8 0a2.4 2.4 0 1 1 4.8 0Z',
@@ -2249,6 +2261,7 @@ function FilterRow({
   onLens,
   merged = false,
   section = 'narrow',
+  glyph = 'funnel',
 }: {
   config: KindConfig;
   /** Which of the four is open. Held by the panel — see `ListPicker`. */
@@ -2286,6 +2299,8 @@ function FilterRow({
    * triggers, two ideas, and the Reset in each only resets its own.
    */
   section?: 'narrow' | 'view';
+  /** The merged narrowing trigger's mark: the funnel, or settings sliders. */
+  glyph?: 'funnel' | 'settings';
 }) {
   const setPicker = onPicker;
   const barRef = useRef<HTMLDivElement>(null);
@@ -2587,7 +2602,7 @@ function FilterRow({
           {section === 'view' ? (
             <span className="lp__more-glyph" aria-hidden>⋯</span>
           ) : (
-            <VectorIcon paths={FILTER_MARK} size={16} />
+            <VectorIcon paths={glyph === 'settings' ? SETTINGS_MARK : FILTER_MARK} size={16} />
           )}
           {changed > 0 ? <span className="lp__chip-count">{changed}</span> : null}
         </button>

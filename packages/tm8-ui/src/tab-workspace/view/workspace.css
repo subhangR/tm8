@@ -843,7 +843,8 @@
 }
 /* The band's generic buttons shrink with it (task 01a11573). */
 .tws-left-header :is(.tws-icon-btn, .tws-quiet-btn),
-.tws-ts-leading :is(.tws-icon-btn, .tws-quiet-btn) {
+.tws-ts-leading :is(.tws-icon-btn, .tws-quiet-btn),
+.tws-ts-modes :is(.tws-icon-btn, .tws-quiet-btn) {
   min-width: var(--tws-band-ctl);
   height: var(--tws-band-ctl);
 }
