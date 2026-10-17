@@ -334,6 +334,37 @@ describe('the list header, one row', () => {
     ).toBe(1);
   });
 
+  /* THE PER-LINK SWITCHES IN EVERY LAYOUT (task 01a14af9): the default `⋯`
+     carries the same Links-on-rows section the rail's List settings does, and
+     a hidden link group is counted on its badge and cleared by its Reset. */
+  it('puts the Links-on-rows switches behind ⋯, counted in its badge and Reset', () => {
+    const { getByTestId } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([taskGuideLines])} ctx={ctx} chrome="toolbar" />,
+    );
+    const trigger = getByTestId('list-more-trigger');
+    fireEvent.click(trigger);
+    const links = getByTestId('list-more-menu').querySelector<HTMLElement>('[data-testid="list-links-section"]')!;
+    expect(links).not.toBeNull();
+    const docs = links.querySelector<HTMLElement>('[data-link-group="docs"]')!;
+    expect(docs.getAttribute('aria-checked')).toBe('true');
+    expect(trigger.querySelector('.lp__chip-count')).toBeNull();
+
+    fireEvent.click(docs);
+    expect(
+      getByTestId('list-more-menu').querySelector('[data-link-group="docs"]')!.getAttribute('aria-checked'),
+    ).toBe('false');
+    expect(getByTestId('list-more-trigger').querySelector('.lp__chip-count')?.textContent).toBe('1');
+
+    fireEvent.click(getByTestId('list-more-clear-all'));
+    expect(
+      getByTestId('list-more-menu').querySelector('[data-link-group="docs"]')!.getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(getByTestId('list-more-trigger').querySelector('.lp__chip-count')).toBeNull();
+    /* The funnel does not repeat it in this layout. */
+    fireEvent.click(getByTestId('filter-trigger'));
+    expect(getByTestId('filter-menu').querySelector('[data-testid="list-links-section"]')).toBeNull();
+  });
+
   it('search expands on the glyph, narrows the list, and Esc clears before it closes', () => {
     const other = { ...taskGuideLines, id: 'task-other', title: 'Something else' };
     const { container, getByTestId } = render(

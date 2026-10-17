@@ -2648,15 +2648,54 @@ function FilterRow({
   if (merged) {
     const defaultSort = sort.find((s) => s.default)?.key ?? sort[0]?.key;
     const sortChanged = current && current.key !== defaultSort ? 1 : 0;
+    /* WHICH LINKS A ROW SHOWS (Subhang 2026-10-17): one switch per group
+       on the counts line, in BOTH layouts — the rail's List settings and the
+       default `⋯` — over the same facet store. Off while the whole line is
+       off, and a group the server does not count yet says so rather than
+       looking broken. */
+    const linkGroupsHidden = hiddenLinkGroups(view.hidden).size;
+    const linksSection = viewFacets.some((spec) => spec.id === 'counts') ? (
+      <section className="lp__funnelsection" aria-label="Links on rows" data-testid="list-links-section">
+        <div className="t-eyebrow">Links on rows</div>
+        {TILE_LINK_GROUPS.map((group) => {
+          const facet = linkFacet(group.id);
+          const lineOn = view.shows('counts');
+          const on = lineOn && view.shows(facet);
+          const pending = UNCOUNTED_LINK_GROUPS.has(group.id);
+          const name = getKind(group.kind).labelPlural;
+          return (
+            <button
+              key={group.id}
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={on}
+              aria-disabled={!lineOn || undefined}
+              className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+              data-link-group={group.id}
+              title={pending ? `${name} are not counted by the server yet, so rows show none for now` : name}
+              onClick={() => {
+                if (lineOn) view.toggle(facet);
+              }}
+            >
+              <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
+              <KindIcon kind={group.kind} size={14} />
+              <span className="lp__optlabel">{name}</span>
+              {pending ? <span className="lp__opthint">not counted yet</span> : null}
+            </button>
+          );
+        })}
+      </section>
+    ) : null;
+
     /* THE BADGE COUNTS WHAT IS NOT DEFAULT — in THIS trigger's own sections,
        so a hidden avatar never puts a number on the funnel and an active
        filter never puts one on the `⋯`. A badge that counts somebody else's
        state is a badge the reader cannot act on. */
     const changed =
       section === 'view'
-        ? hiddenFacetCount + sortChanged
+        ? hiddenFacetCount + sortChanged + linkGroupsHidden
         : activeFilterCount + selectedPeople.length + (lensSet ? 1 : 0) +
-          (allInOne ? hiddenFacetCount + sortChanged + listPrefs.changed + hiddenLinkGroups(view.hidden).size : 0);
+          (allInOne ? hiddenFacetCount + sortChanged + listPrefs.changed + linkGroupsHidden : 0);
 
     /* `⋯` and the funnel must not share a picker key, or opening one would
        read as the other being open. `view` is already in `ListPicker`. */
@@ -2678,6 +2717,7 @@ function FilterRow({
               {sortOptions}
             </section>
           ) : null}
+          {linksSection}
         </>
       ) : (
         <>
@@ -2746,41 +2786,7 @@ function FilterRow({
               ) : null}
             </section>
           ) : null}
-          {/* WHICH LINKS A ROW SHOWS (Subhang 2026-10-17): one switch per group
-              on the counts line. Off while the whole line is off, and a group
-              the server does not count yet says so rather than looking broken. */}
-          {allInOne && viewFacets.some((spec) => spec.id === 'counts') ? (
-            <section className="lp__funnelsection" aria-label="Links on rows" data-testid="list-links-section">
-              <div className="t-eyebrow">Links on rows</div>
-              {TILE_LINK_GROUPS.map((group) => {
-                const facet = linkFacet(group.id);
-                const lineOn = view.shows('counts');
-                const on = lineOn && view.shows(facet);
-                const pending = UNCOUNTED_LINK_GROUPS.has(group.id);
-                const name = getKind(group.kind).labelPlural;
-                return (
-                  <button
-                    key={group.id}
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={on}
-                    aria-disabled={!lineOn || undefined}
-                    className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                    data-link-group={group.id}
-                    title={pending ? `${name} are not counted by the server yet, so rows show none for now` : name}
-                    onClick={() => {
-                      if (lineOn) view.toggle(facet);
-                    }}
-                  >
-                    <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
-                    <KindIcon kind={group.kind} size={14} />
-                    <span className="lp__optlabel">{name}</span>
-                    {pending ? <span className="lp__opthint">not counted yet</span> : null}
-                  </button>
-                );
-              })}
-            </section>
-          ) : null}
+          {allInOne ? linksSection : null}
         </>
       );
 
@@ -2819,7 +2825,7 @@ function FilterRow({
                   disabled={changed === 0}
                   onClick={() => {
                     if (section === 'view') {
-                      if (hiddenFacetCount > 0) view.reset();
+                      if (hiddenFacetCount > 0 || linkGroupsHidden > 0) view.reset();
                       if (defaultSort && current && current.key !== defaultSort) onSort(defaultSort);
                       return;
                     }
@@ -2827,7 +2833,7 @@ function FilterRow({
                     for (const actorId of selectedPeople) onTogglePerson(actorId);
                     if (lensSet) onLens(null);
                     if (allInOne) {
-                      if (hiddenFacetCount > 0 || hiddenLinkGroups(view.hidden).size > 0) view.reset();
+                      if (hiddenFacetCount > 0 || linkGroupsHidden > 0) view.reset();
                       if (defaultSort && current && current.key !== defaultSort) onSort(defaultSort);
                       if (listPrefs.changed > 0) listPrefs.reset();
                     }
