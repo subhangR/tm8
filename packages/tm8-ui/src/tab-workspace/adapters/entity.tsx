@@ -23,6 +23,7 @@ import { KindIcon, type ActionRef } from '../../domain';
 import { attachmentsFor } from '../../files/port';
 import type { ControlHost, EmbeddedChrome } from '../../panels';
 import type { PanelTab } from '../../panels/detail/chrome';
+import { KeptChatOutlet, useKeptChat } from '../../chat-home/keptChatSurface';
 import { AuxEntityPanel, type AuxPanelHost } from '../../views/auxPanel';
 import { useLaunchPort } from '../../views/useLaunchPort';
 import { useMembershipSurface } from '../../views/membershipSurface';
@@ -444,6 +445,7 @@ export function EntityTabBody({ tab, adapter, onHandle, onOpenEntity: hostOpen, 
   const data = gate.data as PullableData;
   const chrome = useEntityChrome();
   const { availability, retry } = useAvailability(data, tab.entityId);
+  const keptChat = useKeptChat(tab.entityId);
 
   /* Drilling from the body opens (or focuses) the target's own tab, carrying
      this tab on the trail (Spec A §11; `useLinkedOpen` in view/LinkedTrail). */
@@ -528,6 +530,17 @@ export function EntityTabBody({ tab, adapter, onHandle, onOpenEntity: hostOpen, 
     },
     [runtime, tab.id],
   );
+
+  /* A chat this tab's draft just started: its screen is already showing the
+     conversation, so it stays on screen while the detail loads instead of the
+     skeleton (task 01a14a83). */
+  if (availability.state === 'loading' && keptChat) {
+    return (
+      <div className="tws-body tws-panel" data-testid="tws-entity-body" data-kind={tab.kind} data-state="kept">
+        <KeptChatOutlet chatId={tab.entityId} fallback={null} />
+      </div>
+    );
+  }
 
   if (availability.state !== 'ready') {
     return (

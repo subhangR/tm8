@@ -40,6 +40,7 @@ import type { TriggerOption } from '../rich-input';
 import type { ConnectionState, Seam, SessionLiveness } from '../data/seam';
 import type { NewChatSeed } from '../chat-home/types';
 import type { ComposerDraftStore } from '../chat-home/ChatHomeScreen';
+import { KeptChatOutlet } from '../chat-home/keptChatSurface';
 
 /**
  * The chat surface behind a route boundary, exactly as the other three arms
@@ -276,20 +277,29 @@ export function chatThreadSurfaceFor(
   entityId: EntityId,
   host: ConversationSurfaceHost,
 ): ReactNode {
+  /* A chat its Workspace draft tab has just started is already on screen in
+     that tab's kept screen; show that one rather than mounting a second
+     (task 01a14a83). Anywhere else the outlet is just the fallback. */
   return (
-    <Suspense fallback={<div className="tch-load" role="status">Loading Chat…</div>}>
-      <LazyChatThreadSurface
-        seam={host.seam}
-        spaceId={host.spaceId}
-        nodeKey={host.nodeKey}
-        soloConversation
-        routeThreadId={entityId}
-        onOpenEntity={host.onOpenEntity}
-        {...(host.skillOptions ? { skillOptions: host.skillOptions } : {})}
-        {...(host.viewerName ? { viewerName: host.viewerName } : {})}
-        {...(host.viewerMemberId ? { viewerId: host.viewerMemberId } : {})}
-      />
-    </Suspense>
+    <KeptChatOutlet
+      chatId={entityId}
+      adoption={{ onOpenEntity: host.onOpenEntity, viewerName: host.viewerName, viewerId: host.viewerMemberId ?? undefined }}
+      fallback={
+        <Suspense fallback={<div className="tch-load" role="status">Loading Chat…</div>}>
+          <LazyChatThreadSurface
+            seam={host.seam}
+            spaceId={host.spaceId}
+            nodeKey={host.nodeKey}
+            soloConversation
+            routeThreadId={entityId}
+            onOpenEntity={host.onOpenEntity}
+            {...(host.skillOptions ? { skillOptions: host.skillOptions } : {})}
+            {...(host.viewerName ? { viewerName: host.viewerName } : {})}
+            {...(host.viewerMemberId ? { viewerId: host.viewerMemberId } : {})}
+          />
+        </Suspense>
+      }
+    />
   );
 }
 

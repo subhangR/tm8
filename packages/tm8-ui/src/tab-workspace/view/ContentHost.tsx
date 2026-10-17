@@ -5,6 +5,7 @@
  * tab's scroll lands on its record before the body unmounts. Workstream E.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createKeptChatStore, KeptChatProvider } from '../../chat-home/keptChatSurface';
 import { DraftHost } from '../adapters/draft';
 import { ProjectFileTab } from '../adapters/projectFile';
 import {
@@ -57,6 +58,20 @@ export function ContentHost() {
     host.focus({ preventScroll: true });
   }, [tabId]);
 
+  /* The new-chat screen a draft tab hands over, so its bind to the chat's
+     entity tab does not remount it (task 01a14a83). Dropped the moment its
+     tab is no longer the one on screen. */
+  const [keptChat] = useState(createKeptChatStore);
+  const keptTabId = tab && (tab.type === 'draft' || tab.type === 'entity') ? tab.id : null;
+  const keptEntityId = tab?.type === 'entity' ? tab.entityId : null;
+  useEffect(() => {
+    const held = keptChat.heldTabId();
+    if (held === null) return;
+    const heldChat = keptChat.heldChatId();
+    if (held !== keptTabId || (keptEntityId !== null && heldChat !== keptEntityId)) keptChat.release();
+  }, [keptChat, keptTabId, keptEntityId]);
+  useEffect(() => () => keptChat.release(), [keptChat]);
+
   const onKeyDown = useCallback((event: React.KeyboardEvent<HTMLElement>) => {
     // Only the host itself: a field, a button or a terminal inside keeps its keys.
     if (event.target !== event.currentTarget || event.defaultPrevented) return;
@@ -66,6 +81,7 @@ export function ContentHost() {
 
   return (
     <main ref={hostRef} className="tws-content" data-testid="tws-content" tabIndex={-1} onKeyDown={onKeyDown}>
+      <KeptChatProvider store={keptChat}>
       {!tab ? (
         <StartSurface />
       ) : tab.type === 'chooser' ? (
@@ -79,6 +95,7 @@ export function ContentHost() {
       ) : (
         <EntityTab key={tab.id} tab={tab} handleRef={handle} />
       )}
+      </KeptChatProvider>
     </main>
   );
 }

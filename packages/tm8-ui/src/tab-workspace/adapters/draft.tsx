@@ -33,6 +33,7 @@ import {
   type RefusedFailure,
 } from '../../authoring';
 import { ChatHomeSurface } from '../../chat-home/ChatHomeSurface';
+import { KeptChatDraft, useKeptChatStore } from '../../chat-home/keptChatSurface';
 import { subscribeDrafts } from '../runtime/draftStore';
 import { nodeKeyOf } from '../../data/launch-cache';
 import { EMPTY_HEADER_DRAFT, getKind, headerDraftHasText, headerInputOf, placeholderNameFor, type HeaderDraft } from '../../domain';
@@ -612,26 +613,39 @@ function ChatDraftBody({ tab, onValues, onCreated, onCancel }: DraftHostProps) {
   const { gate, spaceId } = useWorkspace();
   const nodeKey = nodeKeyOf(gate.serverBaseUrl);
   const noun = getKindAdapter(tab.kind).noun.toLowerCase();
+  const kept = useKeptChatStore();
+  const tabId = tab.id;
   const onThreadSelected = useCallback(
     (id: EntityId | null) => {
       // Fires on the send that creates the chat; a cold start passes null.
-      if (id) onCreated(id, noun);
+      if (!id) return;
+      /* Before the bind: the entity tab it mounts takes this same screen
+         from the keeper instead of mounting its own (task 01a14a83). */
+      kept?.bind(tabId, id);
+      onCreated(id, noun);
     },
-    [onCreated, noun],
+    [kept, tabId, onCreated, noun],
+  );
+  const { seam, skillOptions } = gate.data;
+  const surface = useMemo(
+    () => (
+      <ChatHomeSurface
+        seam={seam}
+        spaceId={spaceId}
+        nodeKey={nodeKey}
+        skillOptions={skillOptions}
+        soloConversation
+        coldStart="composer"
+        onThreadSelected={onThreadSelected}
+      />
+    ),
+    [seam, spaceId, nodeKey, skillOptions, onThreadSelected],
   );
   return (
     // The composer keeps its own draft in the chat store (Spec B §8); any
     // keystroke marks this draft tab dirty.
     <div className="tws-draft-chat" data-testid="tws-draft-chat" onInput={() => onValues({})}>
-      <ChatHomeSurface
-        seam={gate.data.seam}
-        spaceId={spaceId}
-        nodeKey={nodeKey}
-        skillOptions={gate.data.skillOptions}
-        soloConversation
-        coldStart="composer"
-        onThreadSelected={onThreadSelected}
-      />
+      <KeptChatDraft tabId={tabId} surface={surface} />
       <DraftActions onCancel={onCancel} submitting={tab.submitting} />
     </div>
   );
