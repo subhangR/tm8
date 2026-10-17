@@ -249,6 +249,11 @@ export function AppFrame({
             ) : panelCollapsed ? (
               <ShowPanel spaceId={spaceId} />
             ) : null}
+            {/* Pinned: the mode's own switcher leads the band, as the
+                workspace switcher leads Work's strip (Craft's crafts ▾). */}
+            {pinnedRail && !expanded && gate.modeSwitcherSlot ? (
+              <div className="tws-mode-switcher-slot" data-testid="tws-mode-switcher-slot">{gate.modeSwitcherSlot}</div>
+            ) : null}
             <div className="app-frame-top-host" ref={setTopHost} />
           </div>
           {expanded ? null : navigator ? (

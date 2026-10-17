@@ -78,6 +78,7 @@ import {
   CraftHeaderSwitcher,
   CraftScreen,
   CraftsHome,
+  CraftsNav,
   craftSourceFromSeam,
   craftsSourceFromSeam,
   craftTabsKey,
@@ -160,6 +161,7 @@ import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-lin
 import { readLastSpace, readLastTarget, WORK_PLACE, writeLastTarget } from './last-place';
 import { desktopModes } from '../shell/desktop-modes';
 import { AppFrame, useFrameSlots, type AppFrameProps } from '../shell/AppFrame';
+import { isPinnedRailEnabled } from '../tab-workspace/view/navigatorFlag';
 import { FullViewScreen, hasFullView } from './entity-full/FullViewScreen';
 import {
   NewSpaceProjectDialog,
@@ -2679,7 +2681,16 @@ export function GateApp(props: GateAppProps = {}) {
 
   /* The craft's chats and sessions fill the second panel. */
   const craftFramed = framed && activeTarget?.type === 'view' && activeTarget.ref === 'craft';
-  const craftPanel = craftFramed && navView.view === 'craft' && navView.craftId ? 'host' : null;
+  /* THE PINNED-ONLY RAIL (task 01a14a17-34f6): Craft draws Work's shell, and
+     its panel is never empty — the craft's chats and sessions while a craft
+     is open, the crafts list on the Crafts home. */
+  const craftPinned = craftFramed && isPinnedRailEnabled();
+  const craftPanel =
+    craftFramed && navView.view === 'craft' && navView.craftId
+      ? 'host'
+      : craftPinned
+        ? <CraftsNav crafts={craftsSource} source={craftSource} onNavigate={navigateCraft} onNotice={craftNotice} />
+        : null;
 
   const workspaceGate: WorkspaceGateHandles = {
     data,
@@ -2832,6 +2843,7 @@ export function GateApp(props: GateAppProps = {}) {
           {...(craftFramed ? { panelPlacement: 'column' as const, navCollapsedDefault: true } : {})}
           {...(settingsFramed ? { pinnedMode: 'settings' } : {})}
           {...(observing ? { pinnedMode: 'graph' } : {})}
+          {...(craftPinned ? { pinnedMode: 'craft' } : {})}
         >
         <div className="shell-body">
           {/* THE CHAT SLOT's interim host (entity chat §3.1): a sheet from the
