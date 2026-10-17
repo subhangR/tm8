@@ -1,7 +1,15 @@
 import { createRoot } from 'react-dom/client';
 import type { ActorSummary, EntityCounters, EntitySummary, QueryFilter, StatusCategory } from '@tm8/contract';
 import { EntityListPanel } from '../src/panels';
-import { FIXTURE_SPACE_ID, fixtureActors, fixtureSummaries } from '../src/fixtures';
+import {
+  FIXTURE_SPACE_ID,
+  fixtureActors,
+  fixtureSummaries,
+  sessionExited,
+  sessionFailed,
+  sessionLive,
+  sessionStale,
+} from '../src/fixtures';
 import type { ActionContext } from '../src/domain';
 import '../src/styles/tokens.css';
 import '../src/styles/canvas-extra.css';
@@ -181,7 +189,40 @@ const TOTALS: Record<string, number> = { to_do: 18, in_progress: 6, done: 131, c
  * (where most of the quiet-row code lives) was never photographed at all. The
  * Tasks panel below is the control card; the Docs panel is the standard tile.
  */
+/**
+ * THE THIRD ANATOMY. `work_session` is `session-tree`, the one tile the quiet
+ * row changed least and the only one that keeps its lead icon as its
+ * disclosure — a session's sub-session count rides the agent mark, which §6
+ * keeps as "the session glyph tinted by its state". What it DID lose is the
+ * model name, the lane line and the worktree door; what it keeps, by the
+ * ruling of 2026-10-17, is the teammate face (that mark IS the kind glyph) and
+ * the pending-forms chip (a request, not a facet).
+ *
+ * Four verdicts on screen at once, because the liveness mark is the signal and
+ * one state proves nothing about the other three.
+ */
+const SESSIONS: readonly EntitySummary[] = [
+  { ...sessionLive, id: 's-live' as EntitySummary['id'], parentId: null },
+  {
+    ...sessionStale,
+    id: 's-stale' as EntitySummary['id'],
+    parentId: null,
+    counters: counters({ docs: 2, artifacts: 1, memories: 4 }),
+  },
+  { ...sessionExited, id: 's-exited' as EntitySummary['id'], parentId: null },
+  { ...sessionFailed, id: 's-failed' as EntitySummary['id'], parentId: null },
+];
+
+/** The verdict the seam reports, by row — the signal's only honest source. */
+const VERDICTS: Record<string, string> = {
+  's-live': 'live',
+  's-stale': 'stale',
+  's-exited': 'not-running',
+  's-failed': 'not-running',
+};
+
 function rowsOf(kind: string) {
+  if (kind === 'work_session') return (): readonly EntitySummary[] => SESSIONS;
   return (filter: QueryFilter): readonly EntitySummary[] =>
     ROWS.filter(
       (r) => r.kind === kind && (!filter.category || filter.category.includes(r.category as StatusCategory)),
@@ -202,10 +243,12 @@ const onOpenLinks = (entityId: string, groupKind: string): void => {
   console.log('openLinks', entityId, groupKind);
 };
 
-function Panel({ theme, width, kind }: { theme: 'light' | 'dark'; width: number; kind: 'task' | 'doc' }) {
+const ANATOMY: Record<string, string> = { task: 'control-card', doc: 'standard', work_session: 'session-tree' };
+
+function Panel({ theme, width, kind }: { theme: 'light' | 'dark'; width: number; kind: 'task' | 'doc' | 'work_session' }) {
   return (
     <div className="harness-col">
-      <div className="harness-cap">{`${theme} · ${width}px · ${kind === 'task' ? 'control-card' : 'standard'}`}</div>
+      <div className="harness-cap">{`${theme} · ${width}px · ${ANATOMY[kind]}`}</div>
       <div
         className={SHELL ? 'cv2-root harness-panel mobile-frame' : 'cv2-root harness-panel'}
         data-theme={theme}
@@ -234,6 +277,9 @@ function Panel({ theme, width, kind }: { theme: 'light' | 'dark'; width: number;
           onSetState={() => {}}
           capabilitiesOf={() => CAPS}
           onSelect={() => {}}
+          /* The signal on a session row is the NODE's verdict, never
+             `state.status` (R-UI-5), so the harness has to supply one. */
+          livenessOf={(id) => VERDICTS[id] as never}
         />
         </div>
        </section>
@@ -245,7 +291,7 @@ function Panel({ theme, width, kind }: { theme: 'light' | 'dark'; width: number;
 function Harness() {
   return (
     <div className="harness-grid">
-      {(['task', 'doc'] as const).flatMap((kind) =>
+      {(['task', 'doc', 'work_session'] as const).flatMap((kind) =>
         (['light', 'dark'] as const).flatMap((theme) =>
           WIDTHS.map((w) => <Panel key={`${kind}-${theme}-${w}`} theme={theme} width={w} kind={kind} />),
         ),
