@@ -118,8 +118,16 @@ describe('§5.3 Running tab layout', () => {
     const onSessionVerb = vi.fn();
     const view = mount({ onSessionVerb });
     const tile = view.container.querySelector(`[data-session-node="${finished.id}"]`) as HTMLElement;
-    expect(within(tile).getByTestId('session-row-word').textContent).toBe('Finished, still open');
-    // #1123 removed the "Completed 12m ago · receipt" line: the word says it.
+    /* THE WORD IS A MARK NOW (task 01a1469f, ruling 2026-10-17): §6 allows a
+       session one signal and keeps the word for a screen reader, so the
+       assertion moves from the pill's text to the mark's accessible name and
+       its §5.1 icon. Same derivation, same string — `sessionRowWord` is
+       untouched and `session-outcome.test.ts` still holds its 34 cases. */
+    const signal = within(tile).getByTestId('session-row-signal');
+    expect(signal.textContent).toContain('Finished, still open');
+    expect(signal.querySelector('[data-session-icon]')?.getAttribute('data-session-icon')).toBe('check');
+    // #1123 removed the "Completed 12m ago · receipt" line and 01a1469f removed
+    // line 2 entirely: the mark and the row's own clock say it.
     expect(within(tile).queryByTestId('session-row-line2')).toBeNull();
     expect(within(tile).getByTestId('session-process-dot').getAttribute('data-dot')).toBe('grey');
     expect(within(tile).getByTestId('session-fixed-check')).toBeTruthy();
@@ -136,7 +144,9 @@ describe('§5.3 Running tab layout', () => {
   it('the working row says Working with a green dot, and offers Complete and Terminate', () => {
     const view = mount({ onSessionVerb: vi.fn(), onTerminate: vi.fn() });
     const tile = view.container.querySelector(`[data-session-node="${working.id}"]`) as HTMLElement;
-    expect(within(tile).getByTestId('session-row-word').textContent).toBe('Working');
+    const working_signal = within(tile).getByTestId('session-row-signal');
+    expect(working_signal.textContent).toContain('Working');
+    expect(working_signal.querySelector('[data-signal]')?.getAttribute('data-signal')).toBe('live');
     expect(within(tile).getByTestId('session-process-dot').getAttribute('data-dot')).toBe('green');
     const verbs = [...tile.querySelectorAll('[data-action]')].map((b) => b.getAttribute('data-action'));
     expect(verbs).toEqual(expect.arrayContaining(['complete-session', 'terminate']));
@@ -156,9 +166,24 @@ describe('§5.3 Interrupted tab layout (§5.3.1 cases 4, 5)', () => {
     expect(onSessionBulk).toHaveBeenCalledWith('resume-all', [restart1.id, restart2.id]);
 
     const tile = view.container.querySelector(`[data-session-node="${oom.id}"]`) as HTMLElement;
-    // Scenario 8: red "Crashed" with its reason on line 2.
-    expect(within(tile).getByTestId('session-row-word').textContent).toBe('Crashed');
-    expect(within(tile).getByTestId('session-row-line2').textContent).toBe('Crashed 5m ago: out of memory');
+    /* Scenario 8: the row still says Crashed and still carries the reason —
+       the mark's accessible name is the reason when there is one, which is
+       what `TileSignal` is handed (`word.reason ?? word.word`). Line 2 is
+       gone from the row and the sentence rides the title attribute. */
+    const crashed = within(tile).getByTestId('session-row-signal');
+    /* THREE STRINGS, THREE PLACES, and they are not interchangeable:
+         · `word.word` — "Crashed" — is the mark's readable name, so a screen
+           reader hears the outcome and not a reason clause;
+         · `word.reason` is the mark's tooltip when the case HAS one (this one
+           does not — it is null here, which is why the mark's title is the
+           word itself);
+         · `sessionLineTwo` — "Crashed 5m ago: out of memory" — is the §5.2
+           sentence, and it rides the ROW's title now that line 2 is gone. */
+    expect(crashed.textContent).toContain('Crashed');
+    expect(crashed.querySelector('[data-signal]')?.getAttribute('title')).toBe('Crashed');
+    expect(crashed.querySelector('[data-signal]')?.getAttribute('data-signal')).toBe('outcome');
+    expect(within(tile).queryByTestId('session-row-line2')).toBeNull();
+    expect(tile.querySelector('.pn-st__title')?.getAttribute('title')).toContain('Crashed 5m ago: out of memory');
     expect(within(tile).getByTestId('session-process-dot').getAttribute('data-dot')).toBe('red');
     const verbs = [...tile.querySelectorAll('[data-action]')].map((b) => b.getAttribute('data-action'));
     expect(verbs).toEqual(expect.arrayContaining(['resume', 'complete-session', 'dismiss-session']));
@@ -172,7 +197,10 @@ describe('§5.3 Completed and Stopped tabs', () => {
     const view = mount({ onResume: vi.fn() });
     fireEvent.click(view.getByRole('tab', { name: /Stopped/ }));
     const tile = view.container.querySelector(`[data-session-node="${stopped.id}"]`) as HTMLElement;
-    expect(within(tile).getByTestId('session-row-line2').textContent).toBe('Stopped by Subhang 3h ago');
+    /* §5.2's sentence left the row with line 2 (ruling 2026-10-17) and is
+       reachable on the title, where a hover still answers "who stopped it". */
+    expect(within(tile).queryByTestId('session-row-line2')).toBeNull();
+    expect(tile.querySelector('.pn-st__title')?.getAttribute('title')).toContain('Stopped by Subhang 3h ago');
     const verbs = [...tile.querySelectorAll('[data-action]')].map((b) => b.getAttribute('data-action'));
     expect(verbs).toContain('resume');
     expect(verbs).not.toContain('complete-session');

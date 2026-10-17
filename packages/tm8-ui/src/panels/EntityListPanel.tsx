@@ -4472,6 +4472,53 @@ export function Tile({
         word={sessionWord}
         lineTwo={lineTwo}
         crumb={crumb}
+        /* The quiet row's three slots, same three the other two anatomies get
+           (§6; coordinator ruling 2026-10-17). The signal is built from the
+           WORD's own derivation rather than from the verdict again — see
+           `TileSignal` — so the mark and the word can never disagree. */
+        signal={
+          sessionWord ? (
+            <TileSignal
+              row={row}
+              spec={list.tile.signal}
+              session={{
+                icon: sessionWord.icon,
+                tone: sessionWord.tone,
+                label: sessionWord.word,
+                reason: sessionWord.reason,
+                streaming,
+              }}
+            />
+          ) : undefined
+        }
+        time={<Timestamp className="lp__time" at={row.activityAt} title="last activity" />}
+        rowMenu={(verbs) => (
+          <span className="lp__rowmenu" data-open={rowMenuOpen ? 'true' : undefined}>
+            <button
+              type="button"
+              className="lp__rowmenu-trigger"
+              title="Row actions"
+              aria-label={`Actions for ${row.title}`}
+              aria-expanded={rowMenuOpen}
+              aria-haspopup="menu"
+              data-testid="row-menu-trigger"
+              onClick={(event) => {
+                event.stopPropagation();
+                setRowMenuOpen((open) => !open);
+              }}
+            >
+              <span aria-hidden>⋯</span>
+            </button>
+            <span
+              className="lp__rowmenu-pop lp__cluster"
+              role="menu"
+              data-testid="row-menu"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {verbs}
+            </span>
+          </span>
+        )}
         /* EXPAND-ONLY on this anatomy (`MaestroSessionTile` gates the block on
            `detailsExpanded`), which is why the linked tasks survive the cut:
            §6 removes facts from the COLLAPSED row and keeps them "on hover or

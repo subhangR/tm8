@@ -36,20 +36,33 @@ function field(row: EntitySummary, key: string): unknown {
 }
 
 /**
- * The session mark: what the node says, never what the record says (R-UI-5).
+ * THE SESSION MARK, FROM THE WORD'S OWN DERIVATION.
  *
- *   live      → a filled dot
- *   waiting   → a ring, for an idle process with a form pending on the viewer
- *   finished  → the outcome, ✓ or ✕
+ * §6 allows a session one signal: a live dot, a waiting ring, or the outcome.
+ * Spec D1 §5.1 ALREADY decided which of those every session case is — that is
+ * what `SessionWord.icon` is — so this takes the icon and the tone rather than
+ * re-deriving them from the seam verdict. Two derivations of "is this running"
+ * is how a mark and a word end up disagreeing on the same row, and
+ * `session-outcome.ts` has 34 assertions holding the one that exists.
  *
- * `verdict` is the seam's; `waiting` and `failed` are facts the tile already
- * computed for its own word, handed in rather than re-derived, so the mark and
- * the word cannot disagree.
+ * The WORD rides along and is drawn for a screen reader and in `title`, never
+ * as a pill: §6's rule for the status mark, applied to the anatomy whose
+ * status mark this is.
  */
 export interface SessionSignalFacts {
-  verdict: string | undefined;
-  waiting: boolean;
-  failed: boolean;
+  /** `SessionWord.icon` — spinner · ring-dot · check · square · ring-x · ring. */
+  icon: string;
+  /** `SessionWord.tone` — wait · run · done · idle · block. */
+  tone: string;
+  /**
+   * `SessionWord.word` — the SHORT readout ("Working", "Crashed"), which is
+   * what §6 means by "the word stays for screen readers".
+   */
+  label: string;
+  /** `SessionWord.reason` — the one-sentence explanation, for the tooltip. */
+  reason?: string | null;
+  /** Bytes moving right now: the live dot pulses. */
+  streaming?: boolean;
 }
 
 export function TileSignal({
@@ -65,35 +78,35 @@ export function TileSignal({
   if (!spec) return null;
 
   if (spec.from === 'liveness') {
-    const verdict = session?.verdict;
-    if (verdict === 'live') {
-      return (
-        <span className="lp__signal lp__signal--live" data-signal="live" title="Running">
-          <i aria-hidden />
-          <span className="sr-only">Running</span>
-        </span>
-      );
-    }
-    if (session?.waiting) {
-      return (
-        <span className="lp__signal lp__signal--waiting" data-signal="waiting" title="Waiting on you">
-          <i aria-hidden />
-          <span className="sr-only">Waiting on you</span>
-        </span>
-      );
-    }
-    /* A session with no verdict at all has nothing to report — an unloaded
-       liveness snapshot must not read as a finished run. */
-    if (verdict === undefined) return null;
-    const failed = session?.failed === true;
+    /* No word yet means no claim yet: an unresolved row must not read as a
+       finished run, which is the one wrong answer available here. */
+    if (!session) return null;
+    const { icon, tone, label, reason, streaming } = session;
+    /*
+     * THREE SHAPES, AND THE ICON COLUMN ALONE DOES NOT GIVE THEM.
+     *
+     * §5.1 spends `ring-dot` on FIVE cases — Working, Stale, Unverified, Ready
+     * to complete and Idle — which are not one shape: the first is a process
+     * that is UP and the rest are processes waiting on somebody. The column
+     * that separates them is the TONE (`run` for Working alone). Reading the
+     * icon by itself drew a waiting ring on every running session, which is
+     * the one thing a sessions list exists to tell you, and it took a test to
+     * notice because both renderings look deliberate.
+     */
+    const ended = icon === 'check' || icon === 'ring-x' || icon === 'square' || icon === 'ring';
+    const shape = ended ? 'outcome' : tone === 'run' ? 'live' : 'waiting';
+    const glyph = icon === 'check' ? '✓' : icon === 'ring-x' ? '✕' : '▪';
     return (
       <span
-        className={failed ? 'lp__signal lp__signal--failed' : 'lp__signal lp__signal--done'}
-        data-signal={failed ? 'failed' : 'done'}
-        title={failed ? 'Ended badly' : 'Finished'}
+        className={`lp__signal lp__signal--${shape} lp__signal--tone-${tone}`}
+        data-signal={shape}
+        data-session-icon={icon}
+        data-streaming={shape === 'live' && streaming ? 'true' : undefined}
+        title={reason ?? label}
       >
-        <span aria-hidden>{failed ? '✕' : '✓'}</span>
-        <span className="sr-only">{failed ? 'Ended badly' : 'Finished'}</span>
+        {shape === 'outcome' ? <span aria-hidden>{glyph}</span> : <i aria-hidden />}
+        {/* §6: colour and glyph only, and the word stays for a screen reader. */}
+        <span className="sr-only">{label}</span>
       </span>
     );
   }

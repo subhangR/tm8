@@ -6209,3 +6209,18 @@
   .cv2-root .lp__headsearch-input,
   .cv2-root .lp__kidchip-arrow { transition: none; }
 }
+
+/* --- the session row joins the quiet anatomy (ruling 2026-10-17) ---------- */
+/* §6's row grammar now covers all three tiles, so the trailing slot behaves
+   the same on `.pn-st` as it does on `.lp__tile` and `.pn-tt`: the time
+   yields to the `⋯` on hover and the row's width does not move. Those rules
+   are already stated above against `:is(.lp__tile, .pn-tt, .pn-st)` — this
+   block only gives the session row the one thing it still needs, which is for
+   its OWN cluster container to stop reserving space now that its verbs hang
+   off the trigger instead of sitting in it. */
+.cv2-root .pn-st__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}

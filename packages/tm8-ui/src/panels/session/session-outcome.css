@@ -173,29 +173,22 @@
   cursor: not-allowed;
 }
 
-/* Spec D1 §5.2 — the session row's word, line 2 and process dot. */
-.pn-st__word {
+/* SPEC D1 §5.2's WORD AND LINE 2 ARE NO LONGER DRAWN ON THE LIST ROW
+   (task 01a1469f, coordinator ruling 2026-10-17). `.pn-st__word` became
+   `.pn-st__signal` — a mark, with the word kept in `title` and in
+   screen-reader text, which is §6's rule for every kind's status — and line 2
+   was a restatement of the clock that now sits on line 1.
+
+   THE RULES ARE DELETED RATHER THAN LEFT. `sessionRowWord` and
+   `sessionLineTwo` are untouched and four other surfaces still call them, but
+   none of those render THESE class names: `SubtreeBody`, `detail/chrome`,
+   `SessionFallback` and `EmptyCenter` each draw the sentence in their own
+   markup. A rule nobody emits is a rule the next reader has to disprove. */
+.pn-st__signal {
   flex: 0 0 auto;
-  font-size: var(--pn-fs-fine);
-  font-weight: 600;
-  padding: 0 5px;
-  border-radius: var(--pn-r-sm);
-  white-space: nowrap;
-  color: var(--pn-ink-3);
+  display: inline-flex;
+  align-items: center;
 }
-.pn-st__word--run { color: var(--pn-run); }
-.pn-st__word--done { color: var(--pn-run); background: var(--pn-run-soft); }
-.pn-st__word--wait { color: var(--pn-wait); }
-.pn-st__word--block { color: var(--pn-block); }
-.pn-st__line2 {
-  font-size: var(--pn-fs-fine);
-  color: var(--pn-ink-3);
-  padding-left: 40px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pn-st__line2--block { color: var(--pn-block); }
 .pn-st__crumb {
   font-size: var(--pn-fs-fine);
   color: var(--pn-ink-3);

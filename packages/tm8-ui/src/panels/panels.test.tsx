@@ -897,7 +897,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const resume = getByRole('button', { name: 'Resume' });
     fireEvent.click(resume);
     expect(onResume).toHaveBeenCalledWith(exited.id);
-    expect(tile.querySelector('[data-testid="session-row-word"]')?.textContent).toBe('Ended, not completed');
+    /* The word is the mark's accessible name now (01a1469f): same derivation,
+       same string, drawn as a glyph rather than a pill. */
+    expect(tile.querySelector('[data-testid="session-row-signal"]')?.textContent).toContain('Ended, not completed');
     expect(getByRole('button', { name: 'Copy session ID' })).toBeTruthy();
   });
 
