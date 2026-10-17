@@ -436,11 +436,18 @@
    not 12px + 2px) so they keep fitting in a narrower column before the row
    falls back to marks (Subhang 2026-10-17: "threshold even lower"). */
 .cv2-root .tws-browser .lp__head--stack ~ .lp__tierrow:not([data-marks]) {
-  gap: var(--pn-space-1);
+  gap: 0;
 }
+/* EVEN SPACING, WITH A DIVIDER (Subhang 2026-10-17: "improve spacing between
+   the statuses"). Each status is its own padded segment and a hairline sits
+   between neighbours, so "Running 8 | Interrupted 30" reads as separate
+   choices rather than one run of words and numbers. */
 .cv2-root .tws-browser .lp__head--stack ~ .lp__tierrow:not([data-marks]) .lp__tab {
-  padding: 0;
-  gap: 3px;
+  padding: 0 var(--pn-space-2);
+  gap: 5px;
+}
+.cv2-root .tws-browser .lp__head--stack ~ .lp__tierrow:not([data-marks]) .lp__tab:first-child {
+  padding-left: 0;
 }
 /* An alerting count (sessions' Interrupted) is WHITE on its red pill in both
    themes — the column's muted count ink must not reach it. */
@@ -456,11 +463,30 @@
   min-width: 0;
   max-width: 100%;
 }
-.cv2-root .tws-browser .lp__tab--mark {
+/* Equal cells, each mark and count centred in its own: the gap between any
+   two statuses is then the same whatever their counts' widths. Scoped under
+   `[data-marks]` so the column's later `.lp__tab { flex: none }` cannot undo
+   it — which it did, packing the marks left and leaving the slack at the end. */
+.cv2-root .tws-browser .lp__tierrow[data-marks] .lp__tab--mark {
   flex: 1 1 0;
   justify-content: center;
-  gap: var(--pn-space-1);
+  gap: 6px;
   min-width: 0;
+  padding: 0 var(--pn-space-1);
+}
+/* The hairline between statuses, for both layouts: inset top and bottom so
+   it reads as a separator, not a cell border, and never beside the first. */
+.cv2-root .tws-browser .lp__tierrow .lp__tab + .lp__tab {
+  position: relative;
+}
+.cv2-root .tws-browser .lp__tierrow .lp__tab + .lp__tab::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--pn-line-2);
 }
 .cv2-root .tws-browser .lp__tab--mark .lp__tab-glyph {
   flex: none;
