@@ -51,7 +51,7 @@ import {
   type BlueprintViewOptions,
   type RefTitles,
 } from './blueprint-types';
-import { layoutGraph, roundedPath, type Box, type LayoutEdgeInput, type LayoutNodeInput } from './layout';
+import { curvedPath, layoutGraph, roundedPath, type Box, type LayoutEdgeInput, type LayoutNodeInput } from './layout';
 
 export * from './blueprint-types';
 
@@ -125,7 +125,8 @@ export function blueprintView(
   const rawEdges: RawEdge[] = Array.isArray(c['edges']) ? (c['edges'] as unknown[]).map((e) => (e && typeof e === 'object' ? e : {}) as RawEdge) : [];
   const storedLayout = (c['layout'] && typeof c['layout'] === 'object' ? c['layout'] : {}) as Record<string, { x?: unknown; y?: unknown }>;
   const mode = options.mode ?? 'flow';
-  const direction = options.direction ?? 'LR';
+  const direction = options.direction ?? 'TB';
+  const edgeStyle = options.edgeStyle ?? 'curved';
   const laneBy: BlueprintLaneBy = options.laneBy ?? 'assignee';
 
   // ── Nodes (first key wins; the coherence check reports duplicates) ───────────
@@ -295,6 +296,7 @@ export function blueprintView(
     direction,
     lanes: mode === 'swimlane' ? lanes.map((l) => ({ key: l.key, label: l.label })) : null,
     pad: PAD,
+    edgeStyle,
   });
 
   // ── Cards ────────────────────────────────────────────────────────────────────
@@ -364,7 +366,7 @@ export function blueprintView(
       drawnReversed,
       back: route.back,
       points: pts,
-      path: roundedPath(pts),
+      path: edgeStyle === 'curved' ? curvedPath(pts) : roundedPath(pts),
       labelBox: lb,
       findings: mine,
       severity: worst(mine),

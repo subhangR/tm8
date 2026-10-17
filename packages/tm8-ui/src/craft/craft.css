@@ -749,6 +749,10 @@
 
 .crf-fade--right { right: 0; background: linear-gradient(to right, transparent, var(--pn-paper)); }
 .crf-fade--left { left: 0; background: linear-gradient(to left, transparent, var(--pn-paper)); }
+.crf-fade--up,
+.crf-fade--down { left: 0; right: 0; width: auto; height: 28px; }
+.crf-fade--up { top: 0; bottom: auto; background: linear-gradient(to top, transparent, var(--pn-paper)); }
+.crf-fade--down { bottom: 0; top: auto; background: linear-gradient(to bottom, transparent, var(--pn-paper)); }
 
 .crf-more {
   position: absolute;
@@ -770,6 +774,10 @@
 
 .crf-more--right { right: 6px; }
 .crf-more--left { left: 6px; top: 104px; }
+/* Vertical nudges sit in the left gutter (a top-to-bottom plan is centred
+   across the pane), clear of the find box above and the key below. */
+.crf-more--up { left: 6px; top: 56px; }
+.crf-more--down { left: 6px; top: auto; bottom: 56px; }
 .crf-more:hover { color: var(--pn-brand); border-color: var(--pn-brand); }
 
 .crf-minimap {

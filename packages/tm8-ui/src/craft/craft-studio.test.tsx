@@ -196,10 +196,11 @@ describe('the canvas keyboard', () => {
     const r = render(<BlueprintCanvas view={view} ariaLabel="plan" selectedKey={null} onSelect={onSelect} onActivate={onActivate} />);
     const viewport = r.getByTestId('crf-viewport');
     fireEvent.keyDown(viewport, { key: 'ArrowRight' });
-    expect(onSelect).toHaveBeenLastCalledWith(view.cards.slice().sort((a, b) => a.rank - b.rank || a.y - b.y)[0]!.key);
+    expect(onSelect).toHaveBeenLastCalledWith(view.cards.slice().sort((a, b) => a.rank - b.rank || a.x - b.x)[0]!.key);
 
+    /* The plan flows top to bottom: ↓ is the next stage. */
     r.rerender(<BlueprintCanvas view={view} ariaLabel="plan" selectedKey="d-brief" onSelect={onSelect} onActivate={onActivate} />);
-    fireEvent.keyDown(viewport, { key: 'ArrowRight' });
+    fireEvent.keyDown(viewport, { key: 'ArrowDown' });
     expect(onSelect).toHaveBeenLastCalledWith('t-copy');
     fireEvent.keyDown(viewport, { key: 'Enter' });
     expect(onActivate).toHaveBeenCalledWith('d-brief');

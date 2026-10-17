@@ -297,12 +297,16 @@ describe('blueprintView — the orchestration view model', () => {
     expect(line('consumes')).toMatchObject({ role: 'flow', drawnReversed: true, label: 'consumed by', sentence: 't-api consumes d-spec' });
     expect(line('depends_on')).toMatchObject({ role: 'dependency', drawnReversed: true, label: 'blocks' });
     expect(line('remembers')).toMatchObject({ role: 'context' });
-    /* The arrow ends on the card the data flows INTO. */
+    /* The arrow ends on the card the data flows INTO — on its top, as the plan flows down. */
     const consumes = line('consumes');
     const api = view.cards.find((c) => c.key === 't-api')!;
     const end = consumes.points[consumes.points.length - 1]!;
-    expect(end.x).toBeCloseTo(api.x, 1);
+    expect(end.y).toBeCloseTo(api.y, 1);
     expect(consumes.path.startsWith('M ')).toBe(true);
+    /* Drawn left to right, it ends on the card's left side. */
+    const lr = blueprintView(plan(), undefined, { direction: 'LR' });
+    const lrConsumes = lr.lines.find((l) => l.type === 'consumes')!;
+    expect(lrConsumes.points[lrConsumes.points.length - 1]!.x).toBeCloseTo(lr.cards.find((c) => c.key === 't-api')!.x, 1);
   });
 
   it('marks a spec that now carries a ref as materialized, with the host\'s live status', () => {
@@ -370,13 +374,19 @@ describe('blueprintView — the orchestration view model', () => {
     const view = blueprintView(content);
     const orphan = view.cards.find((c) => c.key === 't-orphan')!;
     expect(orphan.rank).toBe(-1);
-    const flowBottom = Math.max(...view.cards.filter((c) => c.rank >= 0).map((c) => c.y + c.height));
-    expect(orphan.y).toBeGreaterThan(flowBottom);
+    /* Top to bottom, the parked strip sits beside the flow… */
+    const flowRight = Math.max(...view.cards.filter((c) => c.rank >= 0).map((c) => c.x + c.width));
+    expect(orphan.x).toBeGreaterThan(flowRight);
     expect(blueprintView(content)).toEqual(view);
+    /* …and left to right, below it. */
+    const lr = blueprintView(content, undefined, { direction: 'LR' });
+    const flowBottom = Math.max(...lr.cards.filter((c) => c.rank >= 0).map((c) => c.y + c.height));
+    expect(lr.cards.find((c) => c.key === 't-orphan')!.y).toBeGreaterThan(flowBottom);
   });
 
-  it('flows top to bottom when asked', () => {
-    const view = blueprintView(plan(), undefined, { direction: 'TB' });
+  it('flows top to bottom by default', () => {
+    const view = blueprintView(plan());
+    expect(view.direction).toBe('TB');
     const card = (k: string) => view.cards.find((c) => c.key === k)!;
     expect(card('d-spec').y).toBeGreaterThan(card('t-research').y + card('t-research').height);
   });
@@ -399,7 +409,7 @@ describe('blueprintView — regressions from drawing it', () => {
         { src: 't-research', dst: 'd-brief', type: 'produces' },
         { src: 't-copy', dst: 'd-brief', type: 'consumes' },
       ],
-    }, undefined, { mode: 'swimlane' });
+    }, undefined, { mode: 'swimlane', direction: 'LR' });
     expect(view.lanes.map((l) => l.key)).toEqual(['tm-res', 'tm-wr']);
     view.lanes.forEach((lane) => {
       const mine = view.cards.filter((c) => c.lane === lane.key);
@@ -456,12 +466,19 @@ describe('the owner-chip dock', () => {
       ...['a', 'b', 'c', 'd'].map((k) => ({ src: k, dst: 'tm', type: 'assigned_to' })),
       { src: 'b', dst: 'a', type: 'depends_on' }, { src: 'c', dst: 'a', type: 'depends_on' }, { src: 'd', dst: 'a', type: 'depends_on' },
     ];
-    const view = blueprintView({ kind: 'graph', graphType: 'entity', nodes, edges });
+    /* Left to right, a stage is a column: the chip clears the card below in it. */
+    const view = blueprintView({ kind: 'graph', graphType: 'entity', nodes, edges }, undefined, { direction: 'LR' });
     const column = view.cards.filter((c) => c.rank === 1).sort((p, q) => p.y - q.y);
     expect(column.length).toBe(3);
     for (let i = 0; i + 1 < column.length; i += 1) {
       const chipBottom = column[i]!.y + column[i]!.height + BLUEPRINT_ASSIGNEE_DOCK / 2;
       expect(column[i + 1]!.y).toBeGreaterThan(chipBottom);
     }
+    /* Top to bottom, the next stage is below: its cards clear the chip, and no route starts under it. */
+    const tb = blueprintView({ kind: 'graph', graphType: 'entity', nodes, edges });
+    const a = tb.cards.find((c) => c.key === 'a')!;
+    const aChipBottom = a.y + a.height + BLUEPRINT_ASSIGNEE_DOCK / 2;
+    tb.cards.filter((c) => c.rank === 1).forEach((c) => expect(c.y).toBeGreaterThan(aChipBottom));
+    tb.lines.forEach((l) => expect(l.points[0]!.y).toBeGreaterThanOrEqual(aChipBottom - 0.5));
   });
 });

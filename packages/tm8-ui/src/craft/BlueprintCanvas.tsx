@@ -180,8 +180,9 @@ export function BlueprintCanvas({
   /**
    * Fit a box. `floor` is the legibility floor: when fitting everything would
    * paint type too small to read, the camera holds the floor and starts at the
-   * flow's BEGINNING (the box's left edge, vertically centred when it fits) —
-   * a flowchart is read from its first stage, not from its middle.
+   * flow's BEGINNING (the box's top-left, centred on any axis that fits — the
+   * first rank of a top-to-bottom plan) — a flowchart is read from its first
+   * stage, not from its middle.
    */
   const fitTo = useCallback(
     (box: Box, floor: number): Camera | null => {
@@ -443,9 +444,17 @@ export function BlueprintCanvas({
   const viewRight = camera ? camera.x + size.w / camera.k : 0;
   const moreRight = !!camera && bounds.minX + bounds.width > viewRight + 8;
   const moreLeft = !!camera && bounds.minX < camera.x - 8;
+  /* A top-to-bottom plan overflows the other way: the same nudge, vertical. */
+  const viewBottom = camera ? camera.y + size.h / camera.k : 0;
+  const moreDown = !!camera && bounds.minY + bounds.height > viewBottom + 8;
+  const moreUp = !!camera && bounds.minY < camera.y - 8;
   const nudge = (dir: 1 | -1) => {
     if (!camera) return;
     move({ ...camera, x: camera.x + dir * (size.w / camera.k) * 0.7 });
+  };
+  const nudgeY = (dir: 1 | -1) => {
+    if (!camera) return;
+    move({ ...camera, y: camera.y + dir * (size.h / camera.k) * 0.7 });
   };
   const firstKey = readingOrder(view)[0]?.key ?? null;
   const tabKey = selected && view.cards.some((c) => c.key === selected) ? selected : firstKey;
@@ -607,6 +616,19 @@ export function BlueprintCanvas({
       {chrome && moreRight ? (
         <button type="button" className="crf-more crf-more--right" data-testid="crf-more-right" aria-label="Show more of the plan to the right" title="More to the right" onClick={() => nudge(1)}>
           <span aria-hidden>›</span>
+        </button>
+      ) : null}
+
+      {chrome && moreUp ? <div className="crf-fade crf-fade--up" aria-hidden /> : null}
+      {chrome && moreDown ? <div className="crf-fade crf-fade--down" aria-hidden /> : null}
+      {chrome && moreUp ? (
+        <button type="button" className="crf-more crf-more--up" data-testid="crf-more-up" aria-label="Show more of the plan above" title="More above" onClick={() => nudgeY(-1)}>
+          <span aria-hidden>˄</span>
+        </button>
+      ) : null}
+      {chrome && moreDown ? (
+        <button type="button" className="crf-more crf-more--down" data-testid="crf-more-down" aria-label="Show more of the plan below" title="More below" onClick={() => nudgeY(1)}>
+          <span aria-hidden>˅</span>
         </button>
       ) : null}
 
