@@ -42,6 +42,7 @@ import type { FleetRowInput } from './fleet/fleet-rows';
 import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { ChatCredentialPicker, credentialValue } from './ChatCredentialPicker';
 import { ChatContextNumber, staleReason } from './ChatContextNumber';
+import { publishChatContext } from './chatContextFeed';
 import { NEW_CHAT_KEY, readModeOverrides, readTeam, writeModeOverrides, writeTeam } from '../chat-defaults/composerPicks';
 import {
   AddToTurnMenu,
@@ -1317,6 +1318,23 @@ export function ChatHomeScreen({
   const selectedRow = selectedRootId === null
     ? undefined
     : threads.find((thread) => thread.rootId === selectedRootId);
+
+  /* THE CONTEXT NUMBER's reading (Chat Context). A live frame is the runtime
+     measuring right now; otherwise the stored reading, which is "last known"
+     unless the runtime is still running. The header draws it, and the
+     Workspace action strip reads it from the feed (`chatContextFeed`). */
+  const openChatId = openDetail?.summary.rootId ?? null;
+  const openLiveContext = openChatId === null ? undefined : liveContext.get(openChatId);
+  const openContext = openLiveContext ?? openDetail?.summary.context ?? null;
+  const openContextStale = openLiveContext ? null : staleReason(openDetail?.summary.runtimeState);
+  useEffect(() => {
+    if (openChatId === null) return;
+    publishChatContext(openChatId, openContext ? { context: openContext, stale: openContextStale } : null);
+  }, [openChatId, openContext, openContextStale]);
+  useEffect(() => {
+    if (openChatId === null) return;
+    return () => publishChatContext(openChatId, null);
+  }, [openChatId]);
   const activeConfig = openDetail?.summary.config ?? selectedRow?.config ?? null;
   const selectedModel = useMemo(
     () => models.find((model) => model.model === modelId) ?? null,
@@ -2533,22 +2551,8 @@ export function ChatHomeScreen({
                 />
               </div>
             ) : null}
-            {/* THE CONTEXT NUMBER (Chat Context). A live frame is the runtime
-                measuring right now; otherwise the stored reading, which is
-                "last known" unless the runtime is still running. */}
-            {openDetail
-              ? (() => {
-                  const live = liveContext.get(openDetail.summary.rootId);
-                  const context = live ?? openDetail.summary.context ?? null;
-                  if (!context) return null;
-                  return (
-                    <ChatContextNumber
-                      context={context}
-                      stale={live ? null : staleReason(openDetail.summary.runtimeState)}
-                    />
-                  );
-                })()
-              : null}
+            {/* THE CONTEXT NUMBER (Chat Context), read above. */}
+            {openContext ? <ChatContextNumber context={openContext} stale={openContextStale} /> : null}
           </header>
         )}
 

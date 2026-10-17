@@ -5,7 +5,8 @@
  *  - top, the kind's own actions: the body's controls (session surfaces, a
  *    frame's controls, a reader's Edit / Download, forms waiting), its own
  *    registry verbs (Edit, Terminate…, Transfer), Connectors and Attach;
- *  - bottom, the actions every kind shares: Links · Messages · Chat (each
+ *  - bottom, a session's or chat's token reading, stacked, then the actions
+ *    every kind shares: Links · Messages · Chat (each
  *    opens the side column beside the body — task 01a122b9), Run, Expand ·
  *    More. A split strip (Craft) keeps Entity · Links · Messages instead.
  * The panel's verbs and controls are its own components, portalled into the
@@ -15,6 +16,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { EntityId, SpaceId } from '@tm8/contract';
 import { getKind, KindIcon } from '../../domain';
+import { ChatContextNumber } from '../../chat-home/ChatContextNumber';
+import { useChatContextFeed } from '../../chat-home/chatContextFeed';
 import { McpEquipment } from '../../mcp/McpEquipment';
 import { useMcpCatalog } from '../../mcp/context';
 import { countMessages } from '../../panels';
@@ -105,6 +108,8 @@ function useStripTips(stats: string) {
       el.removeAttribute('title');
     }
     const open = () => {
+      /* Pressed open while the tip waited (the token reading's details). */
+      if (el.getAttribute('aria-expanded') === 'true') return;
       /* `position: fixed` inside the app's `zoom` scope takes UNZOOMED px while
          a rect reports zoomed ones; divide by the measured scale, or the tip
          drifts further from its button the lower it sits (R32.2). */
@@ -168,7 +173,7 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
   const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle');
 
   /* The session's live reading arrives as the panel's own component in the
-     hidden stats slot; the strip reads it as one line of text. */
+     stats slot; the strip also reads it as one line of text for ⋯. */
   const [stats, setStats] = useState('');
   const statsEl = chrome?.statsSlot ?? null;
   useEffect(() => {
@@ -331,6 +336,11 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
 
       {/* BOTTOM — the actions every kind shares. */}
       <div className="tws-astrip-section tws-astrip-section--common">
+        {/* THE TOKEN READING, stacked (task 01a14b00): a session's live context
+            number, portalled here by its panel, or a chat's, published by its
+            screen. Pressing it opens the reading's details to the left. */}
+        <div ref={chrome?.setStatsSlot} className="tws-astrip-cluster tws-astrip-stats" data-testid="tws-astrip-stats" />
+        {tab.kind === 'chat' ? <ChatStats chatId={tab.entityId} /> : null}
         {/* THE SIDE COLUMN'S SECTIONS (task 01a122b9): Links · Messages · Chat
             each open the column beside the body, and the lit one closes it.
             The body never changes. */}
@@ -447,11 +457,18 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
       </div>
       {tips.node}
     </div>
-    {/* The session's live reading, read as text for the Session tooltip and ⋯
-        (R32.4): outside the toolbar, hidden and inert, so nothing invisible
-        is focusable or announced. */}
-    <div ref={chrome?.setStatsSlot} className="tws-astrip-stats-source" hidden inert aria-hidden="true" />
     </>
+  );
+}
+
+/** A chat tab's context reading, as its open screen holds it (`chatContextFeed`). */
+function ChatStats({ chatId }: { chatId: string }) {
+  const entry = useChatContextFeed(chatId);
+  if (!entry) return null;
+  return (
+    <div className="tws-astrip-cluster tws-astrip-stats" data-testid="tws-astrip-chat-stats">
+      <ChatContextNumber context={entry.context} stale={entry.stale} fit="stack" />
+    </div>
   );
 }
 

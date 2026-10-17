@@ -154,8 +154,36 @@
   border: 0;
   background: none;
 }
-.tws-astrip-stats-source {
+/* THE TOKEN READING (task 01a14b00): the context chip, one figure per line
+   in the strip's column. Its details card opens to the left, like the
+   strip's other popovers. */
+.tws-astrip-stats .pn-context {
+  position: relative;
+  display: flex;
+}
+.cv2-root .tws-astrip-stats .pn-context__num {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 36px;
+  height: auto;
+  padding: 3px 0;
+  line-height: 13px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.tws-astrip-stats .pn-context__line:first-of-type {
+  color: var(--pn-ink-2);
+  font-weight: 600;
+}
+.tws-astrip-stats .pn-context__sep {
   display: none;
+}
+.cv2-root .tws-astrip-stats .pn-context__details {
+  top: auto;
+  bottom: 0;
+  right: calc(100% + var(--pn-space-2) + 2px);
+  max-width: none;
 }
 
 /* Every control in the strip: 28x28, centred, 14px icons. */
