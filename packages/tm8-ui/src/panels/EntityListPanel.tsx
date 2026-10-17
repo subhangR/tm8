@@ -4178,28 +4178,12 @@ function TreeRows({
     const own = new Set(rows.map((row) => row.id));
     return new Set(contextRows.filter((row) => !own.has(row.id)).map((row) => row.id));
   }, [contextRows, rows]);
-  /* A context parent starts OPEN — it is only there to hold what matched —
-     and the viewer may shut it; that choice is this list's, not persisted. */
-  const [shutContext, setShutContext] = useState<ReadonlySet<string>>(EMPTY_IDS);
-  const isOpen = useCallback(
-    (id: string) => (contextIds.has(id) ? !shutContext.has(id) : disclosure.isExpanded(id)),
-    [contextIds, shutContext, disclosure],
-  );
-  const toggleOpen = useCallback(
-    (id: string) => {
-      if (!contextIds.has(id)) {
-        disclosure.toggle(id);
-        return;
-      }
-      setShutContext((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
-    },
-    [contextIds, disclosure],
-  );
+  /* A context parent starts SHUT like every other row (Subhang, 2026-10-18:
+     "the task list should show COLLAPSED by default") — its subscript says how
+     many matched rows opening it shows. Opening or shutting it is a gesture
+     like any other, so it goes to the same remembered disclosure set. */
+  const isOpen = disclosure.isExpanded;
+  const toggleOpen = disclosure.toggle;
 
   const childLists: (readonly EntitySummary[])[] = [];
   if (hierarchical) {

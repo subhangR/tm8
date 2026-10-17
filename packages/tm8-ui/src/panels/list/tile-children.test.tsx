@@ -39,7 +39,7 @@ const tileTitled = (container: HTMLElement, title: string) =>
   );
 
 describe('a subtask whose parent is on another tab', () => {
-  it('draws the parent as an open CONTEXT row, with the matching subtask under it', () => {
+  it('draws the parent as a SHUT context row; opening it shows only the matching subtask', () => {
     const parent = task('t-parent', 'Done parent', null, { category: 'done', childCount: 3 });
     const kid = task('t-kid', 'Working kid', parent.id, { category: 'in_progress' });
     const { rowsFor, asked } = node([kid], [parent, kid]);
@@ -48,10 +48,13 @@ describe('a subtask whose parent is on another tab', () => {
     expect(asked).toContainEqual({ idIn: ['t-parent'] });
     const parentTile = tileTitled(container, 'Done parent')!;
     expect(parentTile.getAttribute('data-context')).toBe('true');
-    // Open, holding only what matched — its subscript says what opening shows.
+    // Collapsed by default (Subhang, 2026-10-18) — its subscript says what opening shows.
     const count = parentTile.querySelector<HTMLElement>('[data-testid="child-count"]')!;
     expect(count.textContent).toBe('1');
-    expect(count.getAttribute('aria-expanded')).toBe('true');
+    expect(count.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('[data-testid="list-tile-children"]')).toBeNull();
+
+    fireEvent.click(count);
     const children = container.querySelector<HTMLElement>('[data-testid="list-tile-children"]')!;
     expect(children.textContent).toContain('Working kid');
     // It does not read the parent's other children back into this tab.
@@ -79,6 +82,9 @@ describe('opening a row reads its children', () => {
     const { container } = render(<EntityListPanel kind="task" rowsFor={rowsFor} ctx={ctx} />);
     const count = tileTitled(container, 'Parent')!.querySelector<HTMLElement>('[data-testid="child-count"]')!;
     expect(count.textContent).toBe('2');
+    // Collapsed on first load: no children drawn, none read.
+    expect(count.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('[data-testid="list-tile-children"]')).toBeNull();
     expect(asked.some((f) => 'parentIn' in f)).toBe(false);
 
     fireEvent.click(count);
