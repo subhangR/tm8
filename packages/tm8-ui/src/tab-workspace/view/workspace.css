@@ -329,7 +329,9 @@
   justify-content: center;
   align-items: center;
   width: var(--tws-rail-w-collapsed);
-  height: 36px;
+  /* The panel's title row is 44px under the same 8px top inset, so the mark
+     shares its centre line (Subhang 2026-10-17: heights misaligned). */
+  height: 44px;
 }
 .tws-rail-logo__btn {
   display: inline-flex;
@@ -340,7 +342,7 @@
   border-radius: var(--pn-r-sm);
   background: none;
   color: var(--pn-ink);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
 }

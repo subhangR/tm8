@@ -283,17 +283,26 @@
 .cv2-root .tws-browser .tws-paneltop__space {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--pn-space-1);
   flex: 0 1 auto;
   min-width: 0;
-  font-size: 15px;
-  font-weight: 600;
 }
-/* "Space:" — says what the name is, in the muted ink, never truncated. */
+/* "Space:" — says what the name is: smaller than the name, muted, never
+   truncated. The NAME is the title (Subhang 2026-10-17). */
 .cv2-root .tws-browser .tws-paneltop__label {
   flex: none;
   color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
   font-weight: 500;
+}
+/* The switcher's own wrapper pads 6px over 4px for the header it was built
+   for; here it would sit the name a pixel below the row's centre line. */
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher {
+  padding: 0;
+}
+.cv2-root .tws-browser .tws-paneltop__space .shell-switcher__space {
+  font-size: 15px;
+  font-weight: 600;
 }
 .cv2-root .tws-browser .tws-paneltop__spacer {
   flex: 1;
