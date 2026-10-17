@@ -6107,30 +6107,61 @@
   box-shadow: var(--pn-shadow-2, 0 4px 12px rgba(0, 0, 0, 0.16));
 }
 .cv2-root .lp__rowmenu[data-open='true'] .lp__rowmenu-pop { display: inline-flex; }
-/* ON TOUCH THE DOOR IS THE WRONG SHAPE. No hover means the `⋯` costs a tap
-   to reveal what used to be one tap away, so the verbs sit in the row at rest
-   and the trigger stands down — stated on both pointer signals, because a
-   phone shell is also reachable by user override on a fine pointer. */
+/* ON A COARSE POINTER THE TRIGGER IS DRAWN AT REST, and only the trigger.
+   There is no hover to reveal it, so a `⋯` nobody can summon is a `⋯` nobody
+   has — but the POP stays behind it. Revealing the whole cluster here would
+   re-pin four controls open on every row, which is the defect
+   `mobile-screens.css` §7j′ removed from this exact tile.
+   Stated on both pointer signals because a phone shell is also reachable by
+   user override on a fine pointer. */
 @media (pointer: coarse) {
-  .cv2-root .lp__rowmenu-trigger { display: none; }
-  .cv2-root .lp__rowmenu-pop,
-  .cv2-root .lp__rowmenu[data-open='true'] .lp__rowmenu-pop {
-    position: static;
-    display: inline-flex;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-  }
+  .cv2-root .lp__rowmenu { display: inline-flex; }
 }
-.cv2-root[data-shell='mobile'] .lp__rowmenu-trigger { display: none; }
-.cv2-root[data-shell='mobile'] .lp__rowmenu-pop {
+/*
+   THE PHONE SHELL GOES FURTHER: NO `⋯` AT ALL ON A CLOSED ROW (§7j′).
+
+   The ruling (owner, 2026-08-19) is that a list is a list and a closed row
+   carries exactly ONE control — the opener — because the row's full
+   `EntityControlStrip` is one 44px tap away and is a strictly larger set of
+   verbs than any cluster. A `⋯` beside the opener would be a second door to a
+   subset of what the first door already opens.
+
+   THIS RULE EXISTS BECAUSE §7j′ CAN NO LONGER REACH THIS TILE. Those
+   selectors are written against `.lp__rowactions`, which the quiet row
+   replaced with `.lp__rowmenu-pop`; they are still in `mobile-screens.css`,
+   still green in `shell-contract.test.ts`, and now match nothing on the
+   standard tile. A regex over a stylesheet cannot tell that the DOM moved out
+   from under it — so the rule is restated here, against the names that ship.
+*/
+.cv2-root[data-shell='mobile'] .lp__tile:not([data-details='open']) .lp__rowmenu { display: none; }
+/* An OPEN row is back to a cluster of peers: the verbs sit in the flow beside
+   the opener rather than hanging off a trigger nothing can hover. */
+.cv2-root[data-shell='mobile'] .lp__tile[data-details='open'] .lp__rowmenu { display: inline-flex; }
+.cv2-root[data-shell='mobile'] .lp__tile[data-details='open'] .lp__rowmenu-trigger { display: none; }
+.cv2-root[data-shell='mobile'] .lp__tile[data-details='open'] .lp__rowmenu-pop {
   position: static;
   display: inline-flex;
   padding: 0;
   background: transparent;
   border: 0;
   box-shadow: none;
+}
+/* THE TOUCH FLOOR, WHICH ALSO MOVED. `.lp__rowactions .lp__rowaction` used to
+   grow both the verbs and the opener to 44px; the opener is a direct child of
+   the row now, so it needs the floor stated where it actually sits or the one
+   control a closed phone row has is a 22px target. */
+.cv2-root[data-shell='mobile'] .lp__row1 > .lp__rowaction--ind,
+.cv2-root[data-shell='mobile'] .lp__rowmenu .lp__rowaction,
+.cv2-root[data-shell='mobile'] .lp__rowmenu-trigger {
+  min-inline-size: var(--mobile-touch-min);
+  min-block-size: var(--mobile-touch-min);
+}
+/* And the lone opener loses its chip chrome while closed, as §7j′ ruled: a
+   bordered `--pn-card` box is right for three clustered controls and wrong for
+   one alone at 44px, where it reads louder than the title it belongs to. */
+.cv2-root[data-shell='mobile'] .lp__tile:not([data-details='open']) .lp__row1 > .lp__rowaction--ind {
+  background: none;
+  border-color: transparent;
 }
 
 /* --- the counts line ----------------------------------------------------- */

@@ -19,6 +19,17 @@ import '../src/panels/list/maestro-task-tile.css';
    been reported as a regression. The wrapper below puts the panel in the
    composition it actually ships in. */
 import '../src/tab-workspace/view/browser.css';
+/* `?shell=mobile` needs BOTH, and the first run proved why: every phone
+   override is scoped to `[data-shell='mobile']` in `mobile-screens.css`, but
+   the 44px floor those rules spend is `--mobile-touch-min`, declared on
+   `.mobile-frame` in `mobile.css`. Without the frame the custom property is
+   undefined, every `min-block-size: var(--mobile-touch-min)` is an invalid
+   declaration the engine drops, and the harness reports a 22px target for a
+   rule that is correct in the shipping shell. Measuring the harness instead of
+   the product is the failure this file exists to avoid. Both are scoped, so a
+   desktop panel here is byte-identical with them loaded. */
+import '../src/mobile/mobile.css';
+import '../src/mobile/mobile-screens.css';
 
 /**
  * THE QUIET ROW AND THE ONE-ROW HEADER, PHOTOGRAPHED (task 01a1469f).
@@ -57,6 +68,16 @@ const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 
 const TASK: EntitySummary = fixtureSummaries.find((s) => s.state.kind === 'task')!;
 const DOC: EntitySummary = fixtureSummaries.find((s) => s.kind === 'doc')!;
+
+/**
+ * `?shell=mobile` paints the phone shell, which is a DIFFERENT set of rules and
+ * not merely a narrower one: §7j′ (`mobile-screens.css`) rules that a CLOSED
+ * row carries exactly one control — the opener — because the full control
+ * strip it opens is a strictly larger set of verbs than any cluster. The quiet
+ * row has to honour that under its own class names, and a stylesheet regex
+ * cannot tell whether it does.
+ */
+const SHELL = new URLSearchParams(location.search).get('shell') === 'mobile' ? 'mobile' : undefined;
 
 const WIDTHS: readonly number[] = (() => {
   const raw = new URLSearchParams(location.search).get('w');
@@ -186,8 +207,9 @@ function Panel({ theme, width, kind }: { theme: 'light' | 'dark'; width: number;
     <div className="harness-col">
       <div className="harness-cap">{`${theme} · ${width}px · ${kind === 'task' ? 'control-card' : 'standard'}`}</div>
       <div
-        className="cv2-root harness-panel"
+        className={SHELL ? 'cv2-root harness-panel mobile-frame' : 'cv2-root harness-panel'}
         data-theme={theme}
+        data-shell={SHELL}
         style={{ width: `${width}px` }}
       >
        <section className="tws-browser" data-testid="tws-browser">

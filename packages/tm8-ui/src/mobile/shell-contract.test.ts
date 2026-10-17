@@ -32,6 +32,9 @@ const read = (path: string) => strip(readFileSync(new URL(path, import.meta.url)
 
 const shell = read('../views/MobileShell.tsx');
 const screens = read('./mobile-screens.css');
+/* The quiet row's phone rules live beside the desktop ones they amend, in
+   `panels.css` — see §7j′ below for why both files have to be read here. */
+const panels = read('../panels/panels.css');
 const frame = read('./mobile.css');
 const contract = readFileSync(new URL('./CONTRACT.md', import.meta.url), 'utf8');
 const gate = read('../views/GateApp.tsx');
@@ -511,17 +514,43 @@ describe('DEF-030 — the list chrome is a BUDGET, and it is spent in three band
 
   it('clears the row verbs off the STANDARD tile too, not just the task tile', () => {
     // §7j did this for `.pn-tt__actions` — the tasks screen and nothing else.
-    // Sessions, channels and every other kind render `.lp__rowactions`, which
+    // Sessions, channels and every other kind render the standard tile, which
     // kept Archive · Collections · Run pinned open on every row AND kept the
     // float, so on a 390px channel row the opaque backing sat on top of the
     // meta: `12 unread · 2 working` rendered as `12 unre`. Laid out, measurable
     // and covered — `overflowCount` scores 0 on it, which is why only the
     // capture found it.
+    //
+    // READ AGAINST THE NAMES THAT SHIP (task 01a1469f). The quiet row moved
+    // this cluster from `.lp__rowactions` into `.lp__rowmenu-pop` behind a
+    // `⋯`, and the opener out of the cluster into the row. The §7j′ rules in
+    // `mobile-screens.css` still PARSE and still matched this regex while
+    // matching NOTHING in the DOM — a stylesheet regex cannot tell that the
+    // markup moved out from under it, which is the whole failure mode this
+    // suite exists to catch. So the invariant is asserted twice: the legacy
+    // rules must still cover any tile that still renders `.lp__rowactions`,
+    // and the quiet row must carry the same ruling under its own names.
     expect(screens).toMatch(
       /\.lp__tile:not\(\[data-details='open'\]\) \.lp__rowactions > \*:not\(\.lp__rowaction--ind\)\s*\{\s*display:\s*none/,
     );
-    // In the flow, or the lone opener goes on covering what it sits beside.
     expect(screens).toMatch(/\.lp__rowactions,[\s\S]{0,400}position:\s*static/);
+
+    // THE QUIET ROW'S OWN HALF, in `panels.css` beside the rules it amends.
+    // A closed phone row has NO `⋯`: the opener is the one control, and the
+    // full control strip it opens is a strictly larger set of verbs.
+    expect(panels).toMatch(
+      /\[data-shell='mobile'\] \.lp__tile:not\(\[data-details='open'\]\) \.lp__rowmenu \{ display: none; \}/,
+    );
+    // An open row puts them back in the flow, not hanging off a trigger
+    // nothing on a phone can hover.
+    expect(panels).toMatch(
+      /\[data-shell='mobile'\] \.lp__tile\[data-details='open'\] \.lp__rowmenu-pop \{[\s\S]{0,200}position: static/,
+    );
+    // And the opener keeps the touch floor it used to inherit from the
+    // cluster selector that no longer reaches it.
+    expect(panels).toMatch(
+      /\[data-shell='mobile'\] \.lp__row1 > \.lp__rowaction--ind,[\s\S]{0,300}min-block-size: var\(--mobile-touch-min\)/,
+    );
   });
 
   it('keeps the opener the tile knows about, and the tile says when it is open', () => {
