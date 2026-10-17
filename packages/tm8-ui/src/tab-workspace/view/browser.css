@@ -421,6 +421,26 @@
 .cv2-root .tws-browser .lp__head--stack {
   position: relative;
 }
+/* Status tabs as marks when the column is too narrow for their words: each
+   tab is its status mark and its count, the row shares the width evenly. */
+.cv2-root .tws-browser .lp__tierrow[data-marks] {
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.cv2-root .tws-browser .lp__tab--mark {
+  flex: 1 1 0;
+  justify-content: center;
+  gap: var(--pn-space-1);
+  min-width: 0;
+}
+.cv2-root .tws-browser .lp__tab--mark .lp__tab-glyph {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
 /* Group by (pinned-only rail): a quiet heading over each group's rows, on
    the stack's 10px gutter — the name, then the count of rows on screen. */
 .cv2-root .tws-browser .lp__grouphead {

@@ -1,6 +1,6 @@
 import { useEntityListSelection } from '../seen-entities/EntitySeen';
 import { AttentionChipView, useAttentionOptional, useEntityChip } from '../attention';
-import { Fragment, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { JevPort } from '../jev/port';
 import type {
@@ -94,7 +94,7 @@ import {
   type SessionSharingPatch,
 } from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
-import { CategoryGlyph, hasCategoryGlyph } from './list/CategoryGlyph';
+import { CategoryGlyph, TabGlyph, hasCategoryGlyph, hasTabGlyph } from './list/CategoryGlyph';
 import { MobileSheet, useMobileSurface } from '../mobile';
 import { MaestroStatusGlyph, MaestroTaskTile, type TaskTileProgress } from './list/MaestroTaskTile';
 import { type LinkedPullRequestFacts } from '../pull-requests';
@@ -1149,6 +1149,7 @@ export function EntityListPanel(input: EntityListPanelProps) {
                   tabLabel={(tab: StatusCategoryTab) =>
                     tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
                   }
+                  compactWhenNarrow
                 />
               ) : null}
             </>
@@ -2156,13 +2157,66 @@ function CategoryTabs({
   activeTabId,
   onTab,
   tabLabel,
+  compactWhenNarrow = false,
 }: {
   tabs?: readonly StatusCategoryTab[];
   activeTabId: string | null;
   onTab: (id: string) => void;
   /** Already rendered — `50+` when the page is saturated, `50` when it is all. */
   tabLabel: (tab: StatusCategoryTab) => string;
+  /**
+   * MARKS WHEN THE WORDS WOULD BE CUT (pinned-only rail, Subhang 2026-10-17):
+   * once any tab's word is clipped, every tab draws its mark and count, the
+   * name moving to the tooltip and the accessible name. The row goes back to
+   * words when the column is wider again than where it switched.
+   */
+  compactWhenNarrow?: boolean;
 }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  const narrowRef = useRef(false);
+  const switchedAt = useRef(0);
+  const countsKey = (tabs ?? []).map((tab) => `${tab.id}:${tabLabel(tab)}`).join('|');
+  useLayoutEffect(() => {
+    const el = rowRef.current;
+    if (!compactWhenNarrow || !el) return;
+    /* THE ROW DOES NOT SHRINK — it keeps its words' width and the panel clips
+       it — so "cut" is measured against what its PARENT gives it, and it is
+       the parent whose resizes are watched. */
+    const parent = el.parentElement;
+    const available = () => {
+      if (!parent) return el.clientWidth;
+      const cs = getComputedStyle(el);
+      return parent.clientWidth - parseFloat(cs.marginLeft || '0') - parseFloat(cs.marginRight || '0');
+    };
+    const measure = () => {
+      const room = available();
+      if (!narrowRef.current) {
+        /* What the words NEED: first tab's left edge to the last tab's right.
+           Not `scrollWidth` — the row itself stretches to its parent. */
+        const kids = el.children;
+        const need =
+          kids.length > 0
+            ? kids[kids.length - 1]!.getBoundingClientRect().right - kids[0]!.getBoundingClientRect().left
+            : 0;
+        const clipped =
+          need > room + 1 ||
+          Array.from(el.querySelectorAll<HTMLElement>('.lp__tab-word')).some((word) => word.scrollWidth > word.clientWidth + 1);
+        if (clipped) {
+          switchedAt.current = room;
+          narrowRef.current = true;
+          setNarrow(true);
+        }
+      } else if (room > switchedAt.current + 8) {
+        narrowRef.current = false;
+        setNarrow(false);
+      }
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(parent ?? el);
+    return () => observer?.disconnect();
+  }, [compactWhenNarrow, countsKey, narrow]);
   /*
    * THE PHONE DRAWS THE MARKS AND NOT THE WORDS — owner ruling, 2026-08-19.
    *
@@ -2183,12 +2237,37 @@ function CategoryTabs({
    */
   const { oneSurface } = useMobileSurface();
   if (!tabs || tabs.length === 0) return null;
+  const marks = narrow && tabs.every((tab) => hasTabGlyph(tab.id));
   return (
-    <div className="lp__tierrow" role="tablist" aria-label="Lifecycle">
+    <div className="lp__tierrow" role="tablist" aria-label="Lifecycle" ref={rowRef} data-marks={marks || undefined}>
       {tabs.map((tab) => {
         // A kind's own tabs (skills) have no category mark, so on one surface
         // they keep their word rather than render an empty glyph.
         const glyph = oneSurface && hasCategoryGlyph(tab.id) ? tab.id : null;
+        if (marks && !glyph) {
+          const alerting = tab.alert && tabLabel(tab) !== '0';
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={tab.id === activeTabId}
+              className={tab.id === activeTabId ? 'lp__tab lp__tab--active lp__tab--mark' : 'lp__tab lp__tab--mark'}
+              onClick={() => onTab(tab.id)}
+              aria-label={`${tab.label}, ${tabLabel(tab)}`}
+              title={`${tab.label} · ${tabLabel(tab)}`}
+              data-tab-id={tab.id}
+            >
+              <TabGlyph id={tab.id} />
+              <span
+                className={alerting ? 'lp__tab-count lp__tab-count--alert' : 'lp__tab-count'}
+                data-alert={alerting ? 'true' : undefined}
+              >
+                {tabLabel(tab)}
+              </span>
+            </button>
+          );
+        }
         return (
         <button
           key={tab.id}
