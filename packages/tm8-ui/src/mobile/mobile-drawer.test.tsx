@@ -88,6 +88,25 @@ describe('MobileDrawer v3 — New chat, then collapsible trees', () => {
     expect(onNewThread).toHaveBeenCalledTimes(1);
   });
 
+  it('draws Needs you · N under New chat only when something is waiting, and opens the sheet', () => {
+    expect(mountDrawer({ onOpenAttention: NOOP, needsYouCount: 0 }).queryByTestId('mobile-drawer-needs-you')).toBeNull();
+    resetDrawerOpenState();
+    const onOpenAttention = vi.fn();
+    const onDismiss = vi.fn();
+    const view = mountDrawer({ onOpenAttention, onDismiss, needsYouCount: 3 });
+    const rows = view.getAllByTestId('mobile-drawer-needs-you');
+    const row = rows[rows.length - 1]!;
+    expect(row.textContent).toBe('Needs you3');
+    expect(row.getAttribute('aria-label')).toBe('Needs you: 3 waiting');
+    const newChat = view.getAllByTestId('mobile-drawer-new-chat').pop()!;
+    const trees = view.getAllByTestId('mobile-drawer-trees').pop()!;
+    expect(newChat.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row.compareDocumentPosition(trees) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(row);
+    expect(onOpenAttention).toHaveBeenCalledTimes(1);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
   it('Home, Work and Inbox leave the drawer; the other views wait behind All kinds', () => {
     const view = mountDrawer();
     const text = () => view.baseElement.textContent ?? '';

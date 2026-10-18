@@ -235,6 +235,15 @@ export interface MobileDrawerProps {
   /** Open one conversation in the chat screen. */
   readonly onOpenChat: (id: EntityId) => void;
 
+  /**
+   * How many attention requests are waiting — the SAME number the attention
+   * button and sheet title use (mine when any are mine, else all). The
+   * "Needs you" row draws only when this is above zero; absent ⇒ no row.
+   */
+  readonly needsYouCount?: number | undefined;
+  /** Opens the `AttentionSheet`. The chat screen has no header to carry it. */
+  readonly onOpenAttention?: (() => void) | undefined;
+
   /** Opens the conversation list — the Chats section's See all. */
   readonly onOpenChats: () => void;
   readonly onNewThread: () => void;
@@ -392,6 +401,30 @@ export function MobileDrawer(props: MobileDrawerProps) {
             <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.8} />
             <span>New chat</span>
           </button>
+
+          {/* ── NEEDS YOU ─────────────────────────────────────────────────
+              The chat screen lost its header, and with it the attention
+              button; the floating ☰ carries the dot, so the drawer it opens
+              carries the door. Drawn only when something is waiting. */}
+          {props.onOpenAttention && (props.needsYouCount ?? 0) > 0 ? (
+            <button
+              type="button"
+              className="mdrawer__row mdrawer__needs"
+              data-testid="mobile-drawer-needs-you"
+              aria-haspopup="dialog"
+              aria-label={`Needs you: ${props.needsYouCount} waiting`}
+              onClick={() => {
+                props.onOpenAttention?.();
+                onDismiss();
+              }}
+            >
+              <span className="mdrawer__needs-dot" aria-hidden />
+              <span className="mdrawer__name">Needs you</span>
+              <span className="mdrawer__needs-count" aria-hidden>
+                {props.needsYouCount}
+              </span>
+            </button>
+          ) : null}
 
           {/* ── THE TREES ─────────────────────────────────────────────────
               Chats, Sessions, Docs, Tasks — collapsed until tapped. */}

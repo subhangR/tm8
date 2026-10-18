@@ -31,6 +31,7 @@
  * honesty rule the desktop switch was repaired to follow.
  */
 import { AttentionHeaderButton, AttentionSheet } from '../attention/AttentionSheet';
+import { useAttentionOptional } from '../attention';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ActorSummary, EntityId, EntityKind, SpaceId } from '@tm8/contract';
@@ -521,6 +522,15 @@ export function MobileShell(props: MobileShellProps) {
    * Browser history still gets its ordinary push (ruling 1: Back is real
    * history and is never fought); what resets is the in-app stack Up walks.
    */
+  /* THE DRAWER'S "NEEDS YOU" COUNT — the number `AttentionHeaderButton` and
+     the sheet title draw: mine when any are mine, else all. */
+  const attention = useAttentionOptional();
+  const attentionCounts = attention ? attention.counts() : null;
+  const needsYouCount = attentionCounts
+    ? attentionCounts.mine > 0
+      ? attentionCounts.mine
+      : attentionCounts.all
+    : 0;
   const resetScreenStacks = useCallback(() => screenStackStore.getState().clearAll(), []);
   const drawerNavigateTo = useCallback(
     (target: MenuTarget) => {
@@ -736,6 +746,8 @@ export function MobileShell(props: MobileShellProps) {
                 if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
               }}
               onOpenChats={() => setChatsOpen(true)}
+              needsYouCount={needsYouCount}
+              onOpenAttention={() => setAttentionOpen(true)}
               onNewThread={() => {
                 resetScreenStacks();
                 setThreadId(null);

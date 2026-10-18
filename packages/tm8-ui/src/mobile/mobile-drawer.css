@@ -366,6 +366,45 @@
   outline-offset: 2px;
 }
 
+/* ── NEEDS YOU ───────────────────────────────────────────────────────────
+   The attention door, under New chat. It wears the wait tone, the same tone
+   the ☰'s dot takes when something is waiting on you. */
+
+.mdrawer__needs {
+  margin-block-end: var(--pn-space-1);
+}
+
+.mdrawer__needs-dot {
+  flex: 0 0 auto;
+  inline-size: 20px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.mdrawer__needs-dot::before {
+  content: '';
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-wait);
+}
+
+.mdrawer__needs-count {
+  flex: 0 0 auto;
+  min-inline-size: 22px;
+  padding-inline: var(--pn-space-1);
+  display: inline-flex;
+  justify-content: center;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border-radius: var(--pn-r-pill);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── THE TREES ───────────────────────────────────────────────────────────
    A kind header, collapsed by default; open, a branch of recent items. The
    twisty turns from `aria-expanded`, so the accessible state and the drawn
