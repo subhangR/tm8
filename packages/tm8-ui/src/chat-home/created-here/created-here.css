@@ -436,3 +436,58 @@
   .tch-made__dot,
   .tch-made__mark[data-mark='running'] { animation: none; }
 }
+
+/* --- the phone: the line fits the screen (task 01a14e1d) -------------------
+   One row of 20px chips ran off the right edge at 360/390 (the rule reached
+   x=1195 with 25 kinds) and every control was under the shell's 44px floor.
+   On the phone the line is 44px tall and each control is a 44px box that draws
+   its desktop shape inside it: a transparent border is the margin a thumb can
+   hit and `background-clip: padding-box` keeps the fill off it (the composer
+   Send disc's split, CONTRACT §6). The kinds wrap instead of running off,
+   two rows at most, the rest a vertical scroll; the summary, + and ⌃ wrap
+   under them, right-aligned, when they no longer share the line. */
+.cv2-root[data-shell='mobile'] .tch-made {
+  --tch-made-rule: var(--mobile-touch-min, 44px);
+}
+
+.cv2-root[data-shell='mobile'] .tch-made__rule {
+  flex-wrap: wrap;
+  gap: 0;
+  height: auto;
+  min-height: var(--tch-made-rule);
+  min-width: 0;
+  padding: 0 var(--pn-space-2);
+}
+
+.cv2-root[data-shell='mobile'] .tch-made__kinds {
+  flex-wrap: wrap;
+  gap: 0;
+  min-width: 0;
+  max-height: calc(2 * var(--tch-made-rule));
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cv2-root[data-shell='mobile'] .tch-made__kind,
+.cv2-root[data-shell='mobile'] .tch-made__attach,
+.cv2-root[data-shell='mobile'] .tch-made__toggle {
+  box-sizing: border-box;
+  height: var(--tch-made-rule);
+  min-width: var(--tch-made-rule);
+  /* (44 - 20) / 2: the desktop's 20px shape in the middle of the box. */
+  border: 12px solid transparent;
+  border-left-width: 0;
+  border-right-width: 0;
+  background-clip: padding-box;
+}
+
+.cv2-root[data-shell='mobile'] .tch-made__kind { justify-content: center; }
+
+.cv2-root[data-shell='mobile'] .tch-made__attach,
+.cv2-root[data-shell='mobile'] .tch-made__toggle {
+  width: var(--tch-made-rule);
+}
+
+.cv2-root[data-shell='mobile'] .tch-made__live { min-height: var(--tch-made-rule); }
