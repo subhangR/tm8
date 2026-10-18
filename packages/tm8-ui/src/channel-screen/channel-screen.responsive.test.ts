@@ -89,4 +89,24 @@ describe('Chat responsive and preference gates', () => {
     expect(active).toMatch(/background:\s*var\(--pn-brand-soft\)/);
     expect(active).toMatch(/border-color:\s*var\(--pn-brand\)/);
   });
+  it('puts phone message actions in flow under the turn, never over its byline or text', () => {
+    // Verify F6 (2026-10-18): pinned open by the 440 container block, the
+    // absolutely-positioned bar's 44px ↩ tiles covered the author and first
+    // line of every message in the phone Discussion sheet. On the phone the
+    // bar is turn chrome: static, plain, on the bubble's side.
+    const phone = /\.cv2-root\[data-shell='mobile'\] \.chs-row--turn \.chs-actions\s*\{([^}]*)\}/s.exec(css)?.[1] ?? '';
+    expect(phone).toMatch(/position:\s*static/);
+    expect(phone).toMatch(/opacity:\s*1/);
+    expect(phone).toMatch(/border:\s*none/);
+    expect(css).toMatch(
+      /\.cv2-root\[data-shell='mobile'\] \.chs-row--turn\[data-own\] \.chs-actions\s*\{[^}]*justify-content:\s*flex-end/s,
+    );
+    // The reply target keeps the 44px floor.
+    expect(css).toMatch(
+      /\.cv2-root\[data-shell='mobile'\] \.chs-row--turn \.chs-iconbtn\s*\{[^}]*min-width:\s*var\(--mobile-touch-min, 44px\);[^}]*min-height:\s*var\(--mobile-touch-min, 44px\)/s,
+    );
+    // It must come AFTER the generic turn placement, or the cascade loses it.
+    expect(css.indexOf(".cv2-root[data-shell='mobile'] .chs-row--turn .chs-actions"))
+      .toBeGreaterThan(css.indexOf('.chs-row--turn .chs-actions { top: -10px'));
+  });
 });
