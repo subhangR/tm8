@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { capOf, fieldFit } from './fieldFit';
 
 /**
  * THE ONE CHAT BOX — the card every composing surface mounts.
@@ -22,12 +23,19 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 export function ComposerCard({
   className,
   testId,
+  draft,
   above,
   field,
   foot,
 }: {
   className?: string;
   testId?: string;
+  /**
+   * The field's text. The card re-measures when THIS changes (and when its
+   * width does), not on every render: a host re-renders on every streamed
+   * token of a running turn, and each measurement is a forced reflow.
+   */
+  draft: string;
   /** Chips, reply strips, refusals — everything that rides INSIDE the card, above the field. */
   above?: ReactNode;
   /** The textarea and its popovers. */
@@ -35,22 +43,54 @@ export function ComposerCard({
   /** The one control row: host controls first, Send last. */
   foot: ReactNode;
 }) {
-  /* THE FIELD GROWS WITH ITS TEXT. The textarea is sized to its content after
-     every render — a keystroke, a paste, a cleared draft after Send all
-     re-render the host. Reset to `auto` first or it could only ever grow.
-     `max-height` in the CSS caps it; only past that does the field scroll, so
-     the first line is never scrolled out of a box too short to hold it. */
+  /* THE FIELD GROWS WITH ITS TEXT (`fieldFit`). Reset to `auto` first or it
+     could only ever grow. The cap is the stylesheet's `max-height`; past it
+     the field holds the cap and is marked `data-capped`, the one state in
+     which the phone stylesheet lets it scroll — so the first line is never
+     scrolled out of a box too short to hold it, and no scrollbar is drawn
+     beside text that fits. */
   const host = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
+  const fit = useRef(() => {
     const area = host.current?.querySelector('textarea');
     if (!area) return;
     area.style.height = 'auto';
-    area.style.height = `${area.scrollHeight}px`;
+    const next = fieldFit(area.scrollHeight, capOf(getComputedStyle(area).maxHeight));
+    area.style.height = `${next.height}px`;
+    area.toggleAttribute('data-capped', next.capped);
+    if (!next.capped) area.removeAttribute('data-scrolled');
   });
+  useLayoutEffect(() => fit.current(), [draft]);
+  /* A rotation or a resize rewraps the same text onto a different number of
+     lines. Width only: the field's own height change must not re-trigger it. */
+  useEffect(() => {
+    const el = host.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let width = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit.current();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   return (
     <div className={className ? `ri-card ${className}` : 'ri-card'} data-testid={testId}>
       {above}
-      <div className="ri-host" ref={host}>{field}</div>
+      <div
+        className="ri-host"
+        ref={host}
+        /* "More above" cue for a capped field (mockup 2c): `scroll` does not
+           bubble, so it is caught on the way down. */
+        onScrollCapture={(event) => {
+          const target = event.target;
+          if (target instanceof HTMLTextAreaElement) {
+            target.toggleAttribute('data-scrolled', target.scrollTop > 0);
+          }
+        }}
+      >
+        {field}
+      </div>
       <div className="ri-card__foot">{foot}</div>
     </div>
   );
