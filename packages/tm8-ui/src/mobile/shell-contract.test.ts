@@ -236,15 +236,19 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
     expect(drawer).not.toMatch(/'(task|work_session|channel|doc|pull_request)'/);
   });
 
-  it('names its four sections in the ruled order', () => {
-    // Ruling 3. Chats first because it is what a reader returns to; Settings
-    // and the account at the foot rather than lost at the bottom of a long
-    // scroll.
-    const order = ['"Chats"', '"Destinations"'].map((label) => drawer.indexOf(label));
+  it('draws New chat, then the trees, then the foot — in that order (mockup v3)', () => {
+    // Ruling 3 as mockup v3 redraws it (task 01a14ccc): the one verb first,
+    // the collapsible kind trees under it, Settings and the account at the foot
+    // rather than lost at the bottom of a long scroll.
+    const order = ['mobile-drawer-new-chat', 'mobile-drawer-trees', 'mdrawer__foot'].map((mark) =>
+      drawer.indexOf(mark),
+    );
     expect(order.every((at) => at >= 0)).toBe(true);
     expect(order[0]).toBeLessThan(order[1]!);
-    expect(drawer).toContain('mdrawer__foot');
+    expect(order[1]).toBeLessThan(order[2]!);
     expect(drawer).toContain('SETTINGS_REF');
+    // The tree kinds come from `domain/`, so the drawer still spells none.
+    expect(drawer).toContain('drawerTreeKinds()');
   });
 
   it('is opened by the header ☰ on EVERY screen, not on the chat screen alone', () => {
@@ -298,92 +302,57 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
     expect(drawer).not.toContain('EntityListPanel');
   });
 
-  it('holds no population of its own, conversations included', () => {
+  it('opens trees that are BOUNDED, collapsed until asked, and never a population', () => {
     /*
-     * RULING 7, APPLIED TO THE ONE SECTION THAT WAS EXEMPT FROM IT.
-     *
-     * The Chats section shipped as the thread list rendered INLINE — the exact
-     * two-pane shape the rule above refuses, tolerated because nothing else
-     * could hold it. At eight conversations it put all nineteen entity kinds
-     * below a population that grows without bound (owner report 2026-09-15,
-     * task 01a0a5f2). The list is `MobileThreadsSheet` now and the drawer keeps
-     * two fixed rows: the verb, and a door.
-     *
-     * Asserted as the ABSENCE of the thread map, because that is the thing that
-     * grows. A row count would pass while the list crept back in beside it.
+     * MOCKUP v3 REPLACES RULING 7's "no list in here" (task 01a14ccc), and
+     * keeps the reason it existed. The inline thread list was refused because
+     * it grew without bound and buried every kind below it (task 01a0a5f2).
+     * A tree section is closed until tapped, reads its rows only once open,
+     * and draws a capped handful of recent items and a See all — never the
+     * population.
      */
+    expect(drawer).toMatch(/const rows = open \? ctx\.rowsOf\(config\.kind\) : null/);
+    expect(drawer).toMatch(/\.slice\(0, DRAWER_RECENT_LIMIT\)/);
+    expect(drawer).toMatch(/children\.slice\(0, DRAWER_CHILD_LIMIT\)/);
+    // Hydrated when opened, not when the drawer mounts.
+    expect(drawer).toMatch(/if \(open\) ensureKind\(config\.kind\)/);
+    // The thread list still lives in `MobileThreadsSheet`: Chats' See all opens it.
     expect(drawer).not.toMatch(/props\.threads\.map/);
     expect(drawer).not.toContain('ChatThreadSummary');
     expect(drawer).toContain('onOpenChats');
-    expect(drawer).toContain('data-testid="mobile-drawer-chats"');
-
-    // The door is still FIRST (ruling 3): Chats, then Destinations.
-    const order = ['"Chats"', '"Destinations"'].map((label) => drawer.indexOf(label));
-    expect(order[0]).toBeGreaterThan(-1);
-    expect(order[0]).toBeLessThan(order[1]!);
-
-    /*
-     * A CONVERSATION IS NOT A KIND, and the row must not dress as one. Chats
-     * live outside `collectionKinds()` on purpose — messages are
-     * `strategy: 'anchored'`, which is why `CHATS_ROOT` is a sentinel — while
-     * `channel` IS a collection kind with its own row in the Entities band.
-     * Borrowing the channel mark here would read as one population drawn twice.
-     */
-    expect(drawer).toContain('CHAT_ART');
-    expect(drawer).not.toMatch(/KindIcon kind="channel"/);
-
-    // ABSENT IS NOT ZERO: the shell only knows the count once the chat screen
-    // has published, so the counter is spread, not defaulted.
-    const shell = read('../views/MobileShell.tsx');
-    expect(shell).toContain('threadsKnown');
-    expect(shell).toMatch(/\{\.\.\.\(threadsKnown \? \{ chatCount: threads\.length \} : \{\}\)\}/);
 
     // And the sheet is a SIBLING of the screen, like the drawer and the account
     // sheet — a list that unmounted with its screen could not survive the
     // screen change that picking a conversation causes.
+    const shell = read('../views/MobileShell.tsx');
     expect(shell).toContain('<MobileThreadsSheet');
     expect(shell).toContain('setChatsOpen');
+    // The trees read the shell's own data, not a second fetch.
+    expect(shell).toMatch(/rowsOf=\{\(kind\) => data\.rowsFor\(kind\)\(undefined\)\}/);
+    expect(shell).toContain('ensureKind={data.ensureKind}');
   });
 
-  it('keeps TWO verbs in that section, and the second reuses the create that already exists', () => {
-    /*
-     * A reader who opens the drawer to START something was only ever answered
-     * one way — a conversation. Making a task meant a kind row, a list screen
-     * and its header's ＋. The second verb is that answer, one tap in.
-     *
-     * THE ROWS ARE PINNED BY WHAT THEY ARE, NOT BY THEIR WORDS: the drawer
-     * spells no kind (§15.2, and the file's own head), so "New task" appears
-     * nowhere in it — the label is read off the registry. Asserting the
-     * string here would pin the one thing this design refuses to do.
-     */
-    expect(drawer).toContain('onNewThread');
-    expect(drawer).toContain('onNewEntity');
-    expect(drawer).toContain('data-testid="mobile-drawer-new-entity"');
-    expect(drawer).toContain('palette?.createLabel');
-    expect(drawer).not.toMatch(/['"`]New task['"`]/);
-
-    /* REFUSED, NEVER HIDDEN (R7). A verb that disappears when the seam cannot
-       create teaches the reader the feature is not there. */
-    expect(drawer).toContain('newEntityUnavailable');
-    expect(drawer).toContain("'aria-disabled'");
-
-    /*
-     * AND IT IS THE SAME CREATE, not a phone-shaped copy. `useNewTask` is what
-     * `EntityCreateControl`, Home's kind cell and the Work tab all run; a
-     * second create path here would mean two placeholder grammars, two
-     * double-press guards and two refusal vocabularies for one verb.
-     */
+  it('a drawer destination RESETS the stack to [Chat, destination] (CONTRACT §5 ruling 3)', () => {
     const shell = read('../views/MobileShell.tsx');
-    expect(shell).toContain('useNewTask');
-    expect(shell).toMatch(/from '\.\.\/authoring'/);
-    expect(shell).toContain('newEntityKind={DRAWER_CREATE_KIND}');
-    /* The kind is the SHELL'S to name — see `DRAWER_CREATE_KIND`. The drawer
-       receives it; it does not know it. */
-    expect(shell).toContain('const DRAWER_CREATE_KIND');
+    // Every drawer navigation goes through the resetting wrapper, never the raw push.
+    expect(shell).toContain('navigateTo={drawerNavigateTo}');
+    expect(shell).toMatch(/resetScreenStacks\(\);\s*navigateTo\(target\);/);
+    expect(shell).toMatch(/resetScreenStacks\(\);\s*openEntityOnPhone\(navigateTo, id, kind\);/);
+    expect(shell).toContain('screenStackStore.getState().clearAll()');
+  });
 
+  it('keeps ONE verb — New chat — and spells no kind to get it', () => {
+    // Mockup v3 draws one verb. The second (New task) left with it; a task is
+    // still one tap from the Tasks tree's See all and the list's ＋.
+    expect(drawer).toContain('onNewThread');
+    expect(drawer).toContain('data-testid="mobile-drawer-new-chat"');
+    expect(drawer).not.toContain('onNewEntity');
+    expect(drawer).not.toMatch(/['"`]New task['"`]/);
+    const shell = read('../views/MobileShell.tsx');
+    expect(shell).not.toContain('DRAWER_CREATE_KIND');
     /* A VERB ROW DISMISSES. On one surface a create that left the drawer up
        would be a press with no visible consequence. */
-    expect(shell).toMatch(/onNewEntity=\{\(\) => \{[\s\S]*?setDrawerOpen\(false\);[\s\S]*?\}\}/);
+    expect(shell).toMatch(/onNewThread=\{\(\) => \{[\s\S]*?setDrawerOpen\(false\);[\s\S]*?\}\}/);
   });
 
   it('grows its targets with real geometry, never a pseudo-element', () => {

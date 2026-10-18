@@ -280,6 +280,7 @@ export {
   type HomeRailGroup,
   type HomeRoot,
 } from './home-rail';
+export { DRAWER_TREE_KINDS, drawerTreeKinds, isDrawerChatKind } from './drawer-trees';
 
 /**
  * The MenuTarget <-> NavView mapping. Exported from the barrel because the
