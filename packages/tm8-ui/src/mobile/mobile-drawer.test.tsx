@@ -2,7 +2,7 @@
 import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DRAWER_RECENT_LIMIT, MobileDrawer, drawerForest, resetDrawerOpenState } from './MobileDrawer';
+import { DRAWER_RECENT_LIMIT, MobileDrawer, accountInitial, drawerForest, resetDrawerOpenState } from './MobileDrawer';
 import { DEFAULT_WORKSPACE_RAIL_PINS, getRailStore, resetRailStores } from '../tab-workspace/runtime/railStore';
 import { MobileSurfaceProvider } from './surface';
 import { DRAWER_TREE_KINDS, getKind } from '../domain';
@@ -243,12 +243,13 @@ describe('MobileDrawer v3 — the Pin kinds sheet', () => {
       .getAllByRole('switch')
       .find((el) => el.getAttribute('aria-checked') === 'false')!;
 
-  it('opens from the Pin kinds row at the end of Pinned, over the drawer', () => {
+  it('opens from the foot\'s Pin kinds, not from a row in Pinned, over the drawer', () => {
     const view = mountDrawer({ spaceId: SPACE });
-    const section = view.getByTestId('mobile-drawer-pinned');
     const pinKinds = view.getByTestId('mobile-drawer-pin-kinds');
-    expect(section.contains(pinKinds)).toBe(true);
-    expect(section.querySelector('ul')!.lastElementChild!.contains(pinKinds)).toBe(true);
+    /* MOVED, not copied: one trigger, in the foot, and none left in Pinned. */
+    expect(view.getAllByText('Pin kinds')).toHaveLength(1);
+    expect(view.getByTestId('mobile-drawer-foot').contains(pinKinds)).toBe(true);
+    expect(view.getByTestId('mobile-drawer-pinned').contains(pinKinds)).toBe(false);
     expect(view.queryByTestId('mobile-pin-kinds')).toBeNull();
 
     fireEvent.click(pinKinds);
@@ -336,9 +337,98 @@ describe('MobileDrawer v3 — the Pin kinds sheet', () => {
     expect(onDismiss).toHaveBeenCalled();
   });
 
-  it('draws no Pinned section without a Space', () => {
+  it('draws no Pinned section without a Space, and no Pin kinds either', () => {
     const view = mountDrawer();
     expect(view.queryByTestId('mobile-drawer-pinned')).toBeNull();
+    expect(view.queryByTestId('mobile-drawer-pin-kinds')).toBeNull();
+  });
+
+  it('draws no empty Pinned heading when nothing is pinned', () => {
+    const store = getRailStore(SPACE);
+    for (const kind of [...store.getState().pins]) store.getState().togglePin(kind);
+    const view = mountDrawer({ spaceId: SPACE });
+    expect(view.queryByTestId('mobile-drawer-pinned')).toBeNull();
+    expect(view.getByTestId('mobile-drawer-pin-kinds')).toBeTruthy();
+  });
+});
+
+describe('MobileDrawer — the foot (t-drawer-footer)', () => {
+  const SPACE = 'space-foot';
+
+  it('draws Pin kinds · Settings · Craft mode · avatar, in that order, outside the scroll', () => {
+    const view = mountDrawer({ spaceId: SPACE, onOpenAccount: NOOP, accountName: 'Subhang' });
+    const foot = view.getByTestId('mobile-drawer-foot');
+    const order = Array.from(foot.children).map((el) => el.getAttribute('data-testid'));
+    expect(order).toEqual([
+      'mobile-drawer-pin-kinds',
+      'mobile-drawer-settings',
+      'mobile-drawer-craft',
+      'mobile-drawer-account',
+    ]);
+    expect(view.baseElement.querySelector('.mdrawer__scroll')!.contains(foot)).toBe(false);
+    expect(within(foot).getByText('Craft mode')).toBeTruthy();
+  });
+
+  it('Settings goes through the drawer\'s navigate and dismisses', () => {
+    const navigateTo = vi.fn();
+    const onDismiss = vi.fn();
+    const view = mountDrawer({ navigateTo, onDismiss });
+    fireEvent.click(view.getByTestId('mobile-drawer-settings'));
+    expect(navigateTo).toHaveBeenCalledWith({ type: 'view', ref: 'settings' });
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('Craft mode is a destination: the craft view, as desktop\'s work.craft.toggle', () => {
+    const navigateTo = vi.fn();
+    const onDismiss = vi.fn();
+    const view = mountDrawer({ navigateTo, onDismiss });
+    fireEvent.click(view.getByTestId('mobile-drawer-craft'));
+    expect(navigateTo).toHaveBeenCalledWith({ type: 'view', ref: 'craft' });
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the foot destination being shown as current', () => {
+    const view = mountDrawer({ activeTarget: { type: 'view', ref: 'craft' } });
+    expect(view.getByTestId('mobile-drawer-craft').getAttribute('aria-current')).toBe('page');
+    expect(view.getByTestId('mobile-drawer-settings').getAttribute('aria-current')).toBeNull();
+  });
+
+  it('the avatar draws the name\'s initial and opens the account sheet', () => {
+    const onOpenAccount = vi.fn();
+    const onDismiss = vi.fn();
+    const view = mountDrawer({ onOpenAccount, onDismiss, accountName: 'subhang' });
+    const avatar = view.getByTestId('mobile-drawer-account');
+    expect(avatar.textContent).toBe('S');
+    expect(avatar.getAttribute('aria-label')).toBe('Account: subhang');
+    fireEvent.click(avatar);
+    expect(onOpenAccount).toHaveBeenCalledTimes(1);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws no avatar when there is no account to open', () => {
+    const view = mountDrawer();
+    expect(view.queryByTestId('mobile-drawer-account')).toBeNull();
+  });
+
+  it('Help left the foot for All kinds; Craft is drawn once, in the foot', () => {
+    const view = mountDrawer();
+    const foot = view.getByTestId('mobile-drawer-foot');
+    expect(foot.textContent).not.toContain('Help');
+    expect(view.baseElement.textContent).not.toContain('Help');
+    fireEvent.click(view.getByTestId('mobile-drawer-all-kinds'));
+    const help = view.getByRole('button', { name: 'Help' });
+    expect(foot.contains(help)).toBe(false);
+    expect(view.queryAllByRole('button', { name: /^Craft( mode)?$/ })).toHaveLength(1);
+  });
+});
+
+describe('accountInitial', () => {
+  it('takes the first letter or digit, upper-cased, and nothing from nothing', () => {
+    expect(accountInitial('subhang')).toBe('S');
+    expect(accountInitial('  @ada')).toBe('A');
+    expect(accountInitial('7of9')).toBe('7');
+    expect(accountInitial('')).toBeNull();
+    expect(accountInitial(undefined)).toBeNull();
   });
 });
 
