@@ -34,13 +34,14 @@
  *                sessions under their root, sub-docs, subtasks) has a ▸ and
  *                expands in place. "See all" opens the phone list route.
  *   Pinned       the desktop rail's pins (`railStore`), as the same trees,
- *                skipping kinds already drawn above, then a "Pin kinds" row
- *                that opens `PinKindsSheet` over the drawer.
+ *                skipping kinds already drawn above. Drawn only when something
+ *                is pinned: the door to change them is in the foot.
  *   All kinds    a disclosure, closed by default, holding every other kind and
- *                the view destinations the drawer is still the only door to.
- *                Home, Work and Inbox are NOT here: chat is home, and the
- *                mockup gives them no row.
- *   Foot         Help, Settings and the account
+ *                the view destinations the drawer is still the only door to,
+ *                Help among them. Home, Work and Inbox are NOT here: chat is
+ *                home, and the mockup gives them no row.
+ *   Foot         fixed below the scroll, four across (task t-drawer-footer):
+ *                📌 Pin kinds · ⚙ Settings · ✦ Craft mode · avatar.
  *
  * ── THIS REPLACES OWNER RULING 7 ("no list inside the drawer") ─────────────
  *
@@ -124,26 +125,37 @@ export function anyUnseen(countsFor: CountsFor): boolean | null {
  * left the drawer with mockup v3: chat is home, Work is desktop-only (Spec A
  * §2), and the ☰'s attention dot carries unread. What remains sits inside All
  * kinds so nothing that had a door lost it.
+ *
+ * Craft is not here: the foot's ✦ Craft mode is its door. Help IS here, last,
+ * as desktop's final Help tab: the v3 foot has no Help, and the phone has no
+ * top-tab row, so moving it in keeps the only Help door a phone has.
  */
-const DESTINATION_REFS: readonly MenuViewRef[] = ['board', 'craft', 'graph', 'files'];
+const DESTINATION_REFS: readonly MenuViewRef[] = ['board', 'graph', 'files', 'help'];
 
-/** The foot's destinations. Beside the account, per ruling 3. */
+/** The foot's destinations, beside the account (ruling 3). */
 const SETTINGS_REF: MenuViewRef = 'settings';
 /**
- * The phone has no top-tab row, so its Help destination remains in the foot
- * with Settings and account. This is the mobile expression of desktop's final
- * Help tab, not a second Help door in the desktop chrome.
+ * CRAFT MODE IS A DESTINATION, NOT A COMPOSER MODE (Settings/Craft mockup,
+ * section B). It does what desktop's `work.craft.toggle` does — go to the
+ * `craft` view — and never touches the chat composer's mode; the composer's
+ * own mode pill covers that.
  */
-const HELP_REF: MenuViewRef = 'help';
+const CRAFT_REF: MenuViewRef = 'craft';
 
 /** ＋, on `VectorIcon`'s 16x16 grid — drawn, so it inherits the stroke weight. */
 const PLUS_ART: KindArt = ['M8 3.25v9.5', 'M3.25 8h9.5'];
 
-/** A pushpin, for the Pin kinds row — head, needle, and the bar it hangs from. */
+/** A pushpin, for the foot's Pin kinds — head, needle, and the bar it hangs from. */
 const PIN_ART: KindArt = ['M5.5 2.75h5', 'M6.5 2.75v3.5L4.75 8.75h6.5L9.5 6.25v-3.5', 'M8 8.75v4.5'];
 
-/** The account row's mark: the `member` kind's person — you ARE a member. */
+/** The avatar's fallback mark when there is no name to take an initial from. */
 const PERSON_ART: KindArt = KIND_ART.member;
+
+/** The avatar's letter: the first letter of the name, as the mockup draws "S". */
+export function accountInitial(name: string | undefined): string | null {
+  const first = name?.trim().match(/\p{L}|\p{N}/u)?.[0];
+  return first ? first.toLocaleUpperCase() : null;
+}
 
 /** How many recent roots an open section draws before its See all. */
 export const DRAWER_RECENT_LIMIT = 5;
@@ -279,9 +291,9 @@ export interface MobileDrawerProps {
    * real answer — the chat screen has nothing page-shaped to share.
    */
   readonly share?: ReactNode;
-  /** The foot's account row. Absent ⇒ not drawn (there is nothing behind it). */
+  /** The foot's avatar. Absent ⇒ not drawn (there is nothing behind it). */
   readonly onOpenAccount?: (() => void) | undefined;
-  /** The name to put on that row. */
+  /** The name the avatar is the initial of, and its accessible name. */
   readonly accountName?: string | undefined;
 
   /**
@@ -321,7 +333,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
   const pinKindsRef = useRef<HTMLButtonElement>(null);
   const closePinSheet = useCallback(() => {
     setPinSheetOpen(false);
-    /* Focus goes back to the row that opened the sheet (§5 focus return). */
+    /* Focus goes back to the foot button that opened the sheet (§5 focus return). */
     pinKindsRef.current?.focus();
   }, []);
 
@@ -488,38 +500,23 @@ export function MobileDrawer(props: MobileDrawerProps) {
           </ul>
 
           {/* ── PINNED ────────────────────────────────────────────────────
-              The rail's pins as the same collapsible trees, and the door to
-              change them. Drawn whenever there is a Space to pin in, even
-              with nothing pinned, so the Pin kinds row is always reachable. */}
-          {props.spaceId ? (
+              The rail's pins as the same collapsible trees. Drawn only when
+              something is pinned: the door to change them is the foot's Pin
+              kinds, so an empty heading here would point at nothing. */}
+          {props.spaceId && pinnedKinds.length > 0 ? (
             <div className="mdrawer__section" data-testid="mobile-drawer-pinned">
               <h2 className="mdrawer__label">Pinned</h2>
               <ul className="mdrawer__trees">
                 {pinnedKinds.map((config) => (
                   <KindTree key={config.kind} config={config} ctx={ctx} />
                 ))}
-                <li>
-                  <button
-                    ref={pinKindsRef}
-                    type="button"
-                    className="mdrawer__row"
-                    data-testid="mobile-drawer-pin-kinds"
-                    aria-haspopup="dialog"
-                    onClick={() => setPinSheetOpen(true)}
-                  >
-                    <span className="mdrawer__mark" aria-hidden>
-                      <VectorIcon paths={PIN_ART} size={16} strokeWidth={1.4} />
-                    </span>
-                    <span className="mdrawer__name">Pin kinds</span>
-                  </button>
-                </li>
               </ul>
             </div>
           ) : null}
 
           {/* ── ALL KINDS ─────────────────────────────────────────────────
               A DISCLOSURE, NOT A REMOVAL. The drawer is the only door a phone
-              has to Board, Craft, Graph, Files and the long tail of kinds, so
+              has to Board, Graph, Files, Help and the long tail of kinds, so
               they fold away here, closed by default, rather than going. */}
           <div className="mdrawer__section">
             <button
@@ -560,40 +557,70 @@ export function MobileDrawer(props: MobileDrawerProps) {
         </div>
 
         {/* ── THE FOOT ───────────────────────────────────────────────────
-            Settings and the account, pinned below the scroll so they do not
-            travel to the bottom of a long list to be found (ruling 3). */}
+            Fixed below the scroll, never travelling with it (ruling 3, mockup
+            v3): 📌 Pin kinds · ⚙ Settings · ✦ Craft mode · avatar, four
+            across, every one a 44px target. */}
         <div className="mdrawer__foot">
           {/* COPY LINK, off the 53px header. It is a verb about the screen the
-              viewer is on, and it sits above Settings because Settings leaves
+              viewer is on, and it sits above the four because they all leave
               that screen while this one is about it. Dismissing on activation
               would race the copy, so it does not — the control says "Copied"
               in place, and the viewer closes the drawer having seen it. */}
           {props.share ? <div className="mdrawer__share">{props.share}</div> : null}
-          <ul className="mdrawer__rows">
-            <ViewRow viewRef={HELP_REF} activeTarget={activeTarget} onGo={go} />
-            <ViewRow viewRef={SETTINGS_REF} activeTarget={activeTarget} onGo={go} />
+          <div className="mdrawer__footbar" data-testid="mobile-drawer-foot">
+            {/* Opens the sheet OVER the drawer, so it does not dismiss. Without
+                a Space there are no pins to change; the cell stays, empty, so
+                the other three keep their places. */}
+            {props.spaceId ? (
+              <button
+                ref={pinKindsRef}
+                type="button"
+                className="mdrawer__footbtn"
+                data-testid="mobile-drawer-pin-kinds"
+                aria-haspopup="dialog"
+                onClick={() => setPinSheetOpen(true)}
+              >
+                <VectorIcon paths={PIN_ART} size={18} strokeWidth={1.4} />
+                <span>Pin kinds</span>
+              </button>
+            ) : (
+              <span aria-hidden />
+            )}
+            <FootLink
+              viewRef={SETTINGS_REF}
+              label={VIEW_PRESENTATION[SETTINGS_REF].label}
+              testId="mobile-drawer-settings"
+              activeTarget={activeTarget}
+              onGo={go}
+            />
+            <FootLink
+              viewRef={CRAFT_REF}
+              label="Craft mode"
+              testId="mobile-drawer-craft"
+              tone="craft"
+              activeTarget={activeTarget}
+              onGo={go}
+            />
             {/* Rendered only when the shell handed down something to open —
                 the same honest-absence rule the header's avatar follows. */}
             {props.onOpenAccount ? (
-              <li>
-                <button
-                  type="button"
-                  className="mdrawer__row"
-                  data-testid="mobile-drawer-account"
-                  aria-haspopup="dialog"
-                  onClick={() => {
-                    props.onOpenAccount?.();
-                    onDismiss();
-                  }}
-                >
-                  <span className="mdrawer__mark" aria-hidden>
-                    <VectorIcon paths={PERSON_ART} size={16} strokeWidth={1.4} />
-                  </span>
-                  <span className="mdrawer__name">{props.accountName ?? 'Account'}</span>
-                </button>
-              </li>
+              <button
+                type="button"
+                className="mdrawer__avatar"
+                data-testid="mobile-drawer-account"
+                aria-haspopup="dialog"
+                aria-label={props.accountName ? `Account: ${props.accountName}` : 'Account'}
+                onClick={() => {
+                  props.onOpenAccount?.();
+                  onDismiss();
+                }}
+              >
+                <span className="mdrawer__avatar-face" aria-hidden>
+                  {accountInitial(props.accountName) ?? <VectorIcon paths={PERSON_ART} size={16} strokeWidth={1.4} />}
+                </span>
+              </button>
             ) : null}
-          </ul>
+          </div>
         </div>
       </nav>
       {/* OVER the drawer, not instead of it. `MobileSheet` portals to the same
@@ -635,6 +662,42 @@ function ViewRow({
         <span className="mdrawer__name">{presentation.label}</span>
       </button>
     </li>
+  );
+}
+
+/**
+ * One of the foot's view destinations: the view's own mark over a short label.
+ * The label is the foot's, not `VIEW_PRESENTATION`'s, where they differ —
+ * "Craft mode" is what the mockup draws and what the button means.
+ */
+function FootLink({
+  viewRef,
+  label,
+  testId,
+  tone,
+  activeTarget,
+  onGo,
+}: {
+  viewRef: MenuViewRef;
+  label: string;
+  testId: string;
+  tone?: 'craft';
+  activeTarget: MenuTarget | null;
+  onGo: (target: MenuTarget) => void;
+}) {
+  const target: MenuTarget = { type: 'view', ref: viewRef };
+  return (
+    <button
+      type="button"
+      className="mdrawer__footbtn"
+      data-testid={testId}
+      data-tone={tone}
+      aria-current={sameTarget(activeTarget, target) ? 'page' : undefined}
+      onClick={() => onGo(target)}
+    >
+      <VectorIcon paths={VIEW_PRESENTATION[viewRef].art} size={18} />
+      <span>{label}</span>
+    </button>
   );
 }
 

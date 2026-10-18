@@ -238,8 +238,8 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
 
   it('draws New chat, then the trees, then the foot — in that order (mockup v3)', () => {
     // Ruling 3 as mockup v3 redraws it (task 01a14ccc): the one verb first,
-    // the collapsible kind trees under it, Settings and the account at the foot
-    // rather than lost at the bottom of a long scroll.
+    // the collapsible kind trees under it, and the fixed foot (Pin kinds,
+    // Settings, Craft mode, avatar) rather than lost at the bottom of a long scroll.
     const order = ['mobile-drawer-new-chat', 'mobile-drawer-trees', 'mdrawer__foot'].map((mark) =>
       drawer.indexOf(mark),
     );
@@ -247,6 +247,7 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
     expect(order[0]).toBeLessThan(order[1]!);
     expect(order[1]).toBeLessThan(order[2]!);
     expect(drawer).toContain('SETTINGS_REF');
+    expect(drawer).toContain('CRAFT_REF');
     // The tree kinds come from `domain/`, so the drawer still spells none.
     expect(drawer).toContain('drawerTreeKinds()');
   });
