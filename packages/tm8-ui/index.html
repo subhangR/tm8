@@ -5,7 +5,7 @@
     <!-- `viewport-fit=cover` lets the page paint into the display cutout and the
          home-indicator strip, which is what makes `env(safe-area-inset-*)` return
          anything other than 0. src/mobile/mobile.css already spends those insets
-         on the header and tab bar; without this attribute they are all zero and
+         on the header and bottom chrome; without this attribute they are all zero and
          an installed app renders inside letterboxed bars.
          `interactive-widget=resizes-content` (audit A4) makes Android's keyboard
          shrink the layout viewport, so `100dvh` ends at the keys and the docked
@@ -16,11 +16,14 @@
          is the element sitting directly under the status bar (it carries the
          safe-area top padding). Matching it here is what makes the status bar
          continuous with the header instead of a band of a different white.
-         Deliberately NOT paired with a prefers-color-scheme dark variant: the
-         app does not follow the OS scheme — dark is a scoped token override on
-         specific surfaces, not a document theme — so a dark status bar would sit
-         above a light paper app. -->
+         The dark variant is the default dark style's --pn-surface: with nothing
+         stored the app follows the OS, so a dark OS paints dark before any JS
+         runs. These two are only the FIRST paint — `syncThemeColor` in
+         src/theme/style-store.ts replaces them with the painted style's own
+         surface, which is what a viewer who chose a theme or a custom style
+         actually sees. -->
     <meta name="theme-color" content="#FBFAF6" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0A0A0A" />
 
     <!-- Fonts are self-hosted from /fonts (see src/styles/fonts.css); there is
          no third-party font origin left to preconnect to. -->

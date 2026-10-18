@@ -18,13 +18,15 @@ import { ConfigsSection } from './ConfigsSection';
 import { SessionsSection } from './SessionsSection';
 import { SectionAbsent, SectionFrame } from './SectionFrame';
 import { SECTION_NOT_MOUNTED } from './reasons';
-import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionId, type SettingsShellProps } from './types';
+import { DESKTOP_ONLY_SECTIONS, PHONE_SECTION_HINTS, PHONE_SETTINGS_GROUPS } from './phone-sections';
+import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionDef, type SettingsSectionId, type SettingsShellProps } from './types';
 
 export function SettingsShell({
   port,
   sections,
-  initialSection = 'members',
+  initialSection,
   onSectionChange,
+  onSectionClear,
   nodeKey = 'local',
   onAxesChanged,
   onLeftSpace,
@@ -32,8 +34,11 @@ export function SettingsShell({
   onOpenSpaceAdmin,
   onOpenNodeAdmin,
   framed = false,
+  stacked = false,
 }: SettingsShellProps) {
-  const [active, setActive] = useState<SettingsSectionId>(initialSection);
+  /* Stacked opens on the LIST unless the address named a section: a phone
+     that landed on Members & roles would hide that the list exists. */
+  const [active, setActive] = useState<SettingsSectionId | null>(initialSection ?? (stacked ? null : 'members'));
   const [data, setData] = useState<SettingsData>({
     space: null,
     members: [],
@@ -168,6 +173,119 @@ export function SettingsShell({
 
   const spaceLabel = data.space?.name ?? '—';
 
+  const loadErrorNote = loadError ? (
+    <div className="set-absent" data-testid="settings-load-error">
+      <span className="set-absent__head">{loadError}</span>
+      <span className="set-absent__why">
+        the sections below show what did load — nothing here is filled in from a cache
+      </span>
+    </div>
+  ) : null;
+
+  const sectionBody = (id: SettingsSectionId) => (
+    <SectionBody
+      id={id}
+      data={data}
+      sections={sections}
+      onGo={go}
+      port={port}
+      onProfileSaved={refreshIdentity}
+      onMembersChanged={refreshMembers}
+      {...(onLeftSpace ? { onLeftSpace } : {})}
+      onInvitesChanged={refreshInvites}
+      onMenuWritten={(menu) => setData((d) => ({ ...d, menu }))}
+      onSpaceWritten={spaceWritten}
+      onAxesChanged={refreshAxes}
+      onWorkflowsChanged={refreshWorkflows}
+      nodeKey={nodeKey}
+    />
+  );
+
+  if (stacked) {
+    /* A section the address named but this scope does not list (a member
+       following an admin's link) falls back to the list, not to a neighbour. */
+    const open = visibleSections.find((s) => s.id === active) ?? null;
+    return (
+      <div className="set-root set-root--stacked cv2-root" data-stacked="true" data-testid="settings-stacked">
+        {open ? (
+          <section className="set-stack__page" aria-label={open.heading}>
+            <button
+              type="button"
+              className="set-stack__back"
+              data-testid="settings-back"
+              aria-label="Back to Settings"
+              onClick={() => {
+                setActive(null);
+                onSectionClear?.();
+              }}
+            >
+              <span aria-hidden>‹</span>
+              <span>Settings</span>
+            </button>
+            {loadErrorNote}
+            {DESKTOP_ONLY_SECTIONS.has(open.id) ? (
+              <DesktopOnlySection def={open} />
+            ) : (
+              <div className="set-body">{sectionBody(open.id)}</div>
+            )}
+          </section>
+        ) : (
+          <nav className="set-stack" aria-label="Settings sections">
+            <span className="set-nav__eyebrow">Space · {spaceLabel}</span>
+            {loadErrorNote}
+            {onOpenSpaceAdmin ? (
+              <div className="set-stack__group">
+                <ul className="set-stack__rows">
+                  <li>
+                    <button type="button" className="set-stack__row" onClick={onOpenSpaceAdmin}>
+                      <span className="set-stack__text">
+                        <span className="set-stack__label">Space admin</span>
+                        <span className="set-stack__hint">Owner and admin settings</span>
+                      </span>
+                      <span className="set-stack__chev" aria-hidden>›</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            ) : null}
+            {PHONE_SETTINGS_GROUPS.map((group) => {
+              const rows = group.ids
+                .map((id) => visibleSections.find((s) => s.id === id))
+                .filter((s): s is SettingsSectionDef => !!s);
+              if (rows.length === 0) return null;
+              return (
+                <div key={group.title} className="set-stack__group">
+                  <h2 className="set-stack__title">{group.title}</h2>
+                  <ul className="set-stack__rows">
+                    {rows.map((s) => (
+                      <li key={s.id}>
+                        <button
+                          type="button"
+                          className={`set-stack__row${s.danger ? ' set-stack__row--danger' : ''}`}
+                          data-section={s.id}
+                          onClick={() => go(s.id)}
+                        >
+                          <span className="set-stack__text">
+                            <span className="set-stack__label">{s.label}</span>
+                            {PHONE_SECTION_HINTS[s.id] ? (
+                              <span className="set-stack__hint">{PHONE_SECTION_HINTS[s.id]}</span>
+                            ) : null}
+                          </span>
+                          {DESKTOP_ONLY_SECTIONS.has(s.id) ? <span className="set-stack__tag">desktop</span> : null}
+                          <span className="set-stack__chev" aria-hidden>›</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </nav>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="set-root cv2-root" data-framed={framed || undefined}>
       <div className="set-card">
@@ -201,32 +319,38 @@ export function SettingsShell({
         </nav>}
 
         <div className="set-body">
-          {loadError ? (
-            <div className="set-absent" data-testid="settings-load-error">
-              <span className="set-absent__head">{loadError}</span>
-              <span className="set-absent__why">
-                the sections below show what did load — nothing here is filled in from a cache
-              </span>
-            </div>
-          ) : null}
-          {visibleActive && <SectionBody
-            id={visibleActive}
-            data={data}
-            sections={sections}
-            onGo={go}
-            port={port}
-            onProfileSaved={refreshIdentity}
-            onMembersChanged={refreshMembers}
-            {...(onLeftSpace ? { onLeftSpace } : {})}
-            onInvitesChanged={refreshInvites}
-            onMenuWritten={(menu) => setData((d) => ({ ...d, menu }))}
-            onSpaceWritten={spaceWritten}
-            onAxesChanged={refreshAxes}
-            onWorkflowsChanged={refreshWorkflows}
-            nodeKey={nodeKey}
-          />}
+          {loadErrorNote}
+          {visibleActive && sectionBody(visibleActive)}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A section that lists on the phone but does not open there. It names why and
+ * hands over the address, which is the one thing a phone can usefully do with
+ * an editor it cannot draw.
+ */
+function DesktopOnlySection({ def }: { def: SettingsSectionDef }) {
+  const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
+  return (
+    <div className="mobile-empty set-stack__refusal" data-testid="settings-desktop-only" data-section={def.id}>
+      <p>“{def.label}” doesn’t have a phone layout yet.</p>
+      <p>It works on a desktop — this link opens it there.</p>
+      <button
+        type="button"
+        className="mobile-empty__out"
+        onClick={() => {
+          const href = typeof window === 'undefined' ? '' : window.location.href;
+          void (navigator.clipboard?.writeText(href) ?? Promise.reject(new Error('no clipboard'))).then(
+            () => setCopied('copied'),
+            () => setCopied('failed'),
+          );
+        }}
+      >
+        {copied === 'copied' ? 'Link copied' : copied === 'failed' ? 'Copy failed — use the address bar' : 'Copy link for desktop'}
+      </button>
     </div>
   );
 }

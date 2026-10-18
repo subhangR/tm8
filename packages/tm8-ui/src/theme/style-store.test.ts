@@ -108,6 +108,39 @@ describe('style store — first paint', () => {
   });
 });
 
+describe('theme-color follows the painted style (audit E2)', () => {
+  const metas = () => Array.from(document.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'));
+
+  beforeEach(() => {
+    for (const m of metas()) m.remove();
+    /* What index.html ships: a light tag and an OS-dark tag. */
+    document.head.insertAdjacentHTML(
+      'beforeend',
+      '<meta name="theme-color" content="#FBFAF6"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0A0A0A">',
+    );
+  });
+
+  it('collapses the first-paint pair to one tag carrying the light surface', () => {
+    installActiveStyle();
+    expect(metas()).toHaveLength(1);
+    expect(metas()[0]!.hasAttribute('media')).toBe(false);
+    expect(metas()[0]!.content).toBe(CHATGPT_LIGHT.tokens['--pn-surface']);
+  });
+
+  it('turns dark when the viewer chooses dark on a light OS, and back', () => {
+    installActiveStyle();
+    act(() => {
+      selectStyle('builtin:chatgpt-dark');
+    });
+    expect(metas()).toHaveLength(1);
+    expect(metas()[0]!.content).toBe(CHATGPT_DARK.tokens['--pn-surface']);
+    act(() => {
+      selectStyle('builtin:chatgpt-light');
+    });
+    expect(metas()[0]!.content).toBe(CHATGPT_LIGHT.tokens['--pn-surface']);
+  });
+});
+
 describe('an explicit data-theme that disagrees with the active style keeps its tokens.css ramp', () => {
   /* The review boards (`SettingsBoard`'s `Both`, GalleryPage, FilesNodeBoard)
      stamp light and dark side by side. The sheet's ACTIVE rule may only claim
