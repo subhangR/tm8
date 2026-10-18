@@ -2878,6 +2878,7 @@ export function ChatHomeScreen({
                 2026-10-18): the composer's own phase label already says it, and
                 sending a message is how anyone continues. */}
             <ComposerCard
+              draft={draft}
               className={compactComposer ? 'tch-composer tch-composer--compact' : 'tch-composer'}
               above={<>
                 {/* Why Send is refused, in muted ink inside the card; the same

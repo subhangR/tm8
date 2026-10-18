@@ -346,6 +346,7 @@ export function Composer({
           keep anchoring to `.chs-composer` (the positioned ancestor), so
           `bottom: 100%` still floats them above the whole composer. */}
       <ComposerCard
+        draft={text}
         above={<>
       {replyTo ? (
         <div className="chs-replying" data-testid="chs-replying">

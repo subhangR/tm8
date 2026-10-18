@@ -54,11 +54,33 @@
    out — no scroll to pan with, no affordance to undo it — so the user taps the
    box to write a message and the whole app is the wrong size from then on.
    This is the field the phone actually composes into (measured at 13px on the
-   Home screen at 390x844); desktop keeps 13px. */
-.cv2-root .mobile-frame .ri-card textarea {
+   Home screen at 390x844); desktop keeps 13px.
+
+   AN INTEGER LINE, AND THAT IS THE SCROLLBAR FIX (audit A2, composer-states
+   mockup §2). `16px/1.4` is a 22.4px line, and the 0.4px it rounded away
+   between `scrollHeight` and the box drew a scrollbar beside one line of
+   text. On a 22px line with 5px block padding the field is always
+   `22n + 10` — 32 at rest, 120 at the five-line cap — and `ComposerCard`
+   sizes it to exactly that. It may scroll ONLY once `ComposerCard` marks it
+   `data-capped`, and even then by touch alone: no bar is ever drawn. */
+.cv2-root[data-shell='mobile'] .ri-card textarea {
   font-size: 16px;
-  line-height: 1.4;
-  max-height: calc(4 * 1.4em + 15px);
+  line-height: 22px;
+  padding: 5px 6px;
+  max-height: calc(5 * 22px + 10px);
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.cv2-root[data-shell='mobile'] .ri-card textarea::-webkit-scrollbar { display: none; }
+.cv2-root[data-shell='mobile'] .ri-card textarea[data-capped] {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+/* "There is more above" — the 12px fade mockup 2c draws once a capped field
+   has been scrolled off its first line. */
+.cv2-root[data-shell='mobile'] .ri-card textarea[data-capped][data-scrolled] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 12px);
+  mask-image: linear-gradient(to bottom, transparent, black 12px);
 }
 
 .ri-card textarea::placeholder { color: var(--pn-ink-4); }
@@ -444,7 +466,20 @@
   flex-wrap: nowrap;
   row-gap: var(--pn-space-1);
   min-height: var(--mobile-touch-min);
+  /* The card's own padding is the inset now (below), so the row adds none:
+     4px under the field, 6px between controls, as the mockup measures it. */
+  gap: 6px;
+  margin-top: 4px;
+  padding: 0;
 }
+
+/* THE CARD'S BOX ON THE PHONE (composer-states mockup §2): 8px inset, 6px
+   under the foot, so the whole card is the field + 64 — border 2, padding
+   8 + 6, the 4px row gap and the 44px foot. 96 at one line, 184 at the cap. */
+.cv2-root[data-shell='mobile'] .ri-card {
+  padding: 8px 8px 6px;
+}
+.cv2-root[data-shell='mobile'] .ri-card .ri-attachments { padding: 0 0 4px; }
 
 /* DEF-039 — the composer's own literals. These name a pixel size rather than a
    scale step, so the token lift on `.tch-root` cannot reach them, and they

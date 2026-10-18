@@ -612,6 +612,7 @@ function TranscriptComposer({
   return (
     <ComposerCard
       testId="transcript-composer"
+      draft={text}
       above={
         <>
           {/* The shared chip vocabulary (`.ri-attachments`), used directly

@@ -973,8 +973,11 @@ describe('paging and the honest absences', () => {
     let fire: (() => void) | undefined;
     const prior = globalThis.ResizeObserver;
     globalThis.ResizeObserver = class {
-      constructor(callback: () => void) { fire = callback; }
-      observe() {}
+      private readonly callback: () => void;
+      constructor(callback: () => void) { this.callback = callback; }
+      /* The composer card watches its own width (`ComposerCard`); only the
+         feed's observer is the one under test. */
+      observe(element: Element) { if (!element.classList.contains('ri-host')) fire = this.callback; }
       unobserve() {}
       disconnect() {}
     } as unknown as typeof ResizeObserver;
@@ -1011,7 +1014,8 @@ describe('paging and the honest absences', () => {
     const observed: Element[] = [];
     const prior = globalThis.ResizeObserver;
     globalThis.ResizeObserver = class {
-      observe(element: Element) { observed.push(element); }
+      /* The composer card's own width observer is not the feed's. */
+      observe(element: Element) { if (!element.classList.contains('ri-host')) observed.push(element); }
       unobserve() {}
       disconnect() {}
     } as unknown as typeof ResizeObserver;
