@@ -294,6 +294,26 @@ export interface DomainState {
    */
   staleConnections: Record<EntityId, true>;
   /**
+   * CONTENT THAT IS KNOWN TO BE BEHIND — id → the newest version an
+   * `entity.upsert` announced while this cache still held an older read.
+   *
+   * WHY IT HAS TO EXIST. An `entity.upsert` carries an `EntitySummary` and no
+   * content, and `mergeSummary` overlays it on the cached detail to keep the
+   * heavy sections. That is right for `title`/`state`/`counters` and WRONG for
+   * `content`: the version moves forward over a body, scene or bundle that is
+   * still the previous read's. So the detail becomes a record that CLAIMS v14
+   * while holding v13's content, and every version-guarded consumer downstream
+   * reads it as current. Measured in QA: a drawing's v14 arrived with v13's
+   * scene and the yellow v14 was never drawn.
+   *
+   * It records the ANNOUNCED version, not a boolean, so a consumer re-reads
+   * once per bump rather than once per event, and a read that lands answers
+   * the mark that asked for it. A mark implies a cached detail: it is set only
+   * where one exists, cleared when a read at or past that version lands, and
+   * pruned with the detail it describes.
+   */
+  staleDetails: Record<EntityId, number>;
+  /**
    * `interaction_profile.*` invalidation tick (Phase-2 surface, no eager
    * handling — event names blocked on contract-vs-migration drift).
    */
@@ -315,8 +335,39 @@ export function initialDomainState(): DomainState {
     deliveryByMessageId: {},
     handoffsByWorkSession: {},
     staleConnections: {},
+    staleDetails: {},
     profileInvalidations: 0,
   };
+}
+
+/**
+ * Does `summary` announce content this cache does not hold? True only when a
+ * detail IS cached and its version is behind — with nothing cached there is no
+ * content to be stale, and `pull` already fills that case.
+ */
+export function detailContentIsBehind(
+  state: Pick<DomainState, 'details'>,
+  summary: EntitySummary,
+): boolean {
+  const detail = state.details[summary.id];
+  return detail !== undefined && summary.version > detail.version;
+}
+
+/**
+ * Drop marks whose detail is no longer cached, keeping "a mark implies a
+ * cached detail" true across the bounded caches' evictions. Returns the same
+ * object when nothing changed, so an unchanged slice keeps its identity and
+ * every `useSyncExternalStore` consumer below it skips the re-render.
+ */
+function pruneStaleDetails(
+  staleDetails: Record<EntityId, number>,
+  details: Record<EntityId, EntityDetail>,
+): Record<EntityId, number> {
+  const orphans = Object.keys(staleDetails).filter((id) => details[id as EntityId] === undefined);
+  if (orphans.length === 0) return staleDetails;
+  const next = { ...staleDetails };
+  for (const id of orphans) delete next[id as EntityId];
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -381,11 +432,23 @@ export function reduceEntityEvent(
 ): Partial<DomainState> {
   const current = state.entities[entity.id];
   if (current && current.version > entity.version) return {};
+  const behind = !deleted && detailContentIsBehind(state, entity);
   const next: Partial<DomainState> = mergeSummary(state, entity);
   if (deleted) {
     const details = { ...(next.details ?? state.details) };
     delete details[entity.id];
     next.details = details;
+    // The content went with the detail; there is nothing left to re-read.
+    if (state.staleDetails[entity.id] !== undefined) {
+      const staleDetails = { ...state.staleDetails };
+      delete staleDetails[entity.id];
+      next.staleDetails = staleDetails;
+    }
+  } else if (behind) {
+    // `mergeSummary` has just overlaid this version onto the PREVIOUS content.
+    // Recording the announced version is what lets an open view notice and
+    // re-read; without it the merge is silent and the panel never learns.
+    next.staleDetails = { ...state.staleDetails, [entity.id]: entity.version };
   }
   return next;
 }
@@ -597,16 +660,35 @@ export function ingestSummaries(
 ): Partial<DomainState> {
   if (list.length === 0) return {};
   const draft: CacheDraft = {};
+  let staleDetails = state.staleDetails;
   for (const s of list) {
     const current = (draft.entities ?? state.entities)[s.id];
     if (current && current.version > s.version) continue;
     touchInto((draft.entities ??= { ...state.entities }), s.id, s);
     const detail = (draft.details ?? state.details)[s.id];
-    if (detail) (draft.details ??= { ...state.details })[s.id] = { ...detail, ...s };
+    if (detail) {
+      /* THE SAME OVERLAY AS THE EVENT PATH, SO THE SAME MARK.
+         A list read and a command's `patches` are summaries too, and this
+         line keeps the heavy sections for the same reason `mergeSummary`
+         does — so it strands content the same way. Marking here is what makes
+         the fix one place instead of one per source: a doc whose new version
+         the viewer first learns from a refreshed list is as stale as one
+         learned from the socket. A command that returns its full entity
+         clears its own mark moments later in `ingestDetail`. */
+      if (s.version > detail.version) {
+        if (staleDetails === state.staleDetails) staleDetails = { ...staleDetails };
+        staleDetails[s.id] = s.version;
+      }
+      (draft.details ??= { ...state.details })[s.id] = { ...detail, ...s };
+    }
   }
   if (!draft.entities) return {};
   enforceCacheBounds(state, draft, retained);
-  return draftPatch(draft);
+  const pruned = pruneStaleDetails(staleDetails, draft.details ?? state.details);
+  return {
+    ...draftPatch(draft),
+    ...(pruned === state.staleDetails ? {} : { staleDetails: pruned }),
+  };
 }
 
 /**
@@ -682,9 +764,25 @@ export function ingestDetail(
   // to be wrong, and the caller's retained set is built from a render that
   // predates this read.
   enforceCacheBounds(state, draft, new Set([...retained, detail.id]));
+  /* THE MARK IS ANSWERED BY CONTENT, which is the whole point of it.
+     This read carries real `content` at `detail.version`, so a mark at or
+     below that version has been satisfied and is cleared — that clearing is
+     what stops the re-read being asked for twice. A mark ABOVE it is NOT:
+     the node answered with a version older than the one it announced, so the
+     entity is still behind and the record stays honest rather than being
+     wiped by a read that did not reach it. Pruned against the post-sweep
+     details so an eviction above cannot leave an orphan behind. */
+  const marked = state.staleDetails[detail.id];
+  let staleDetails = state.staleDetails;
+  if (marked !== undefined && detail.version >= marked) {
+    staleDetails = { ...staleDetails };
+    delete staleDetails[detail.id];
+  }
+  staleDetails = pruneStaleDetails(staleDetails, draft.details ?? state.details);
   return {
     ...draftPatch(draft),
     ...(draft.edgeTombstones ? { edgeTombstones: draft.edgeTombstones } : {}),
+    ...(staleDetails === state.staleDetails ? {} : { staleDetails }),
   };
 }
 
@@ -833,6 +931,7 @@ export function reduceEvents(
   let deliveryByMessageId: DomainState['deliveryByMessageId'] | undefined;
   let handoffsByWorkSession: DomainState['handoffsByWorkSession'] | undefined;
   let staleConnections: DomainState['staleConnections'] | undefined;
+  let staleDetails: DomainState['staleDetails'] | undefined;
   let profileInvalidations: number | undefined;
 
   for (const e of events) {
@@ -850,9 +949,23 @@ export function reduceEvents(
             details ??= { ...state.details };
             delete details[e.entity.id];
           }
+          if ((staleDetails ?? state.staleDetails)[e.entity.id] !== undefined) {
+            staleDetails ??= { ...state.staleDetails };
+            delete staleDetails[e.entity.id];
+          }
         } else if (detail) {
           details ??= { ...state.details };
+          // The summary's version over the previous content — see `staleDetails`.
+          const behind = e.entity.version > detail.version;
           details[e.entity.id] = { ...detail, ...e.entity };
+          if (behind) {
+            staleDetails ??= { ...state.staleDetails };
+            // LAST WRITER WINS WITHIN THE BURST, which is what "coalesced"
+            // means here: three bumps in one frame leave one mark naming the
+            // newest version, so the re-read below asks once for the version
+            // that is actually current rather than once per event.
+            staleDetails[e.entity.id] = e.entity.version;
+          }
         }
         break;
       }
@@ -1025,6 +1138,11 @@ export function reduceEvents(
       delete details[stale];
     }
   }
+  // AFTER the trim above, so a mark never outlives the detail it describes.
+  if (details) {
+    const pruned = pruneStaleDetails(staleDetails ?? state.staleDetails, details);
+    if (pruned !== (staleDetails ?? state.staleDetails)) staleDetails = pruned;
+  }
   if (messagesByAnchor) {
     // Same rule as `setBounded`: an open thread's anchor is retained and must
     // not be evicted out from under the panel rendering it.
@@ -1076,6 +1194,7 @@ export function reduceEvents(
     ...(deliveryByMessageId ? { deliveryByMessageId } : {}),
     ...(handoffsByWorkSession ? { handoffsByWorkSession } : {}),
     ...(staleConnections ? { staleConnections } : {}),
+    ...(staleDetails ? { staleDetails } : {}),
     ...(profileInvalidations === undefined ? {} : { profileInvalidations }),
   };
 }
