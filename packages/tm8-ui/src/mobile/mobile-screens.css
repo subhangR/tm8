@@ -1524,6 +1524,12 @@
   padding-block: 0;
   gap: var(--pn-space-1);
 }
+/* The forms banner sits under the surface row, beside a transcript whose flex
+   basis is its whole scrollback. Left shrinkable it took the shrink and showed
+   55px of a 138px banner; it keeps its height and its 70% cap scrolls the rest. */
+.cv2-root[data-shell='mobile'] .pn-work-session-content > .pf-banner {
+  flex-shrink: 0;
+}
 /* The header's ‹ and the Messages door ride the immersive row (the frame
    header is hidden above). At 360 the row holds ☰ · ‹ · three tabs · door, so
    it stops wrapping and the tabs give up their 76px floor and wide tracking

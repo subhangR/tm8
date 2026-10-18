@@ -156,6 +156,13 @@ export interface WorkSessionContentProps {
    * tests and any host without a bar still render.
    */
   switchSlot?: HTMLElement | null;
+  /**
+   * The phone's pending-forms banner, drawn directly under the surface row.
+   * The row is the page's top bar there (immersive hides the frame header),
+   * so a banner the panel drew above it read as sitting under the bar. Off
+   * the phone the panel keeps drawing it itself and this is ignored.
+   */
+  belowSwitch?: ReactNode;
 }
 
 /** The header's chevron and a speech bubble, on `VectorIcon`'s 16x16 grid. */
@@ -191,6 +198,7 @@ export function WorkSessionContent({
   launchContext,
   onSurfaceChange,
   switchSlot = null,
+  belowSwitch = null,
 }: WorkSessionContentProps) {
   /*
    * ONE FORK, FROM THE HOST. Not `useShellKind()` and not a media query: the
@@ -559,6 +567,7 @@ export function WorkSessionContent({
       data-arrangement={oneSurface ? 'phone' : 'desktop'}
     >
       {switchEl ? (ridesPanelBar && switchSlot ? createPortal(switchEl, switchSlot) : switchEl) : null}
+      {oneSurface ? belowSwitch : null}
 
       {/*
         A ROUTE THAT NAMED A REFUSED SURFACE GETS AN ANSWER ABOUT THAT SURFACE.

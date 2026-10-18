@@ -151,3 +151,11 @@ describe('regression guards over the whole sheet block', () => {
     expect(css).not.toMatch(/\[style\*=[^\]]*keyboard/);
   });
 });
+
+describe('the session page forms banner', () => {
+  it('keeps its height under the surface row instead of taking the transcript\'s shrink', () => {
+    /* F4: shrinkable beside a transcript whose basis is its whole scrollback,
+       the banner showed 55px of 138. Its 70% cap (pending-forms.css) scrolls. */
+    expect(block(".pn-work-session-content > .pf-banner {")).toMatch(/flex-shrink:\s*0/);
+  });
+});
