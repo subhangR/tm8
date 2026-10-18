@@ -1530,6 +1530,25 @@
 .cv2-root[data-shell='mobile'] .pn-work-session-content > .pf-banner {
   flex-shrink: 0;
 }
+/* A form row is title · meta · button on one line. At 360 the nowrap meta
+   ("2 questions · draft saved · Sep 24") kept its whole width and squeezed the
+   title to one letter. On the phone the meta drops under the title and both
+   ellipsize in the column beside the button, so the title keeps the line. */
+.cv2-root[data-shell='mobile'] .pf-banner__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--pn-space-2);
+  row-gap: 2px;
+}
+.cv2-root[data-shell='mobile'] .pf-banner__row > .pf-banner__title { grid-column: 1; grid-row: 1; }
+.cv2-root[data-shell='mobile'] .pf-banner__row > .pf-banner__meta {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root[data-shell='mobile'] .pf-banner__row > .pn-btn { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 /* The header's ‹ and the Messages door ride the immersive row (the frame
    header is hidden above). At 360 the row holds ☰ · ‹ · three tabs · door, so
    it stops wrapping and the tabs give up their 76px floor and wide tracking
