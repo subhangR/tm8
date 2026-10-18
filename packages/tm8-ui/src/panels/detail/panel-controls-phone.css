@@ -36,24 +36,19 @@
    defects this program has already filed.
 
    SO THE SECOND LINE IS WHAT GOES, NOT THE FIRST LINE'S HEIGHT. The band
-   becomes ONE row that scrolls horizontally. Every chip keeps its 44px floor
+   becomes ONE row whose chips narrow to fit (§2). Every chip keeps its 44px floor
    and its 16px type, byte for byte; what is removed is the wrap.
 
-   ── WHY A SCROLLER IS THE HONEST ANSWER HERE AND NOT A HIDDEN OVERFLOW ────
+   ── WHY SHRINKING AND NOT A SCROLLER OR A HIDDEN OVERFLOW ─────────────────
 
    CONTRACT.md §5's rule is that `overflow: hidden` on `.mobile-frame` CLIPS —
    content is destroyed past the edge while `scrollWidth − clientWidth` reads
-   zero. That is the failure mode this file must not reproduce, and a scroller
-   is its opposite: nothing is destroyed, every chip is reachable, and the
-   reader's own gesture is what reaches it. It is also the answer this shell
-   already gives to the same squeeze elsewhere — the panel's own tab strip
-   scrolls (`panel-bar-phone.css`), and the chat composer was ruled to scroll
-   rather than compress for exactly this reason.
+   zero. That is the failure mode this file must not reproduce. It first did so
+   with a sideways scroller; t-noscroll replaced that with shrinking chips (§2),
+   which is what the chat composer does with the same squeeze.
 
-   FULL-BLEED, WITH THE GUTTER MOVED INSIDE. The band's `padding-inline` moves
-   onto the scroller, so the row scrolls edge to edge (nothing is stranded half
-   under a static gutter) while the chips still start and end on the panel's
-   reading gutter at rest.
+   THE GUTTER MOVED INSIDE. The band's `padding-inline` moves onto the chip
+   row, so the chips start and end on the panel's reading gutter.
 
    ── SCOPE ────────────────────────────────────────────────────────────────
 
@@ -71,7 +66,7 @@
    trap costing a round trip: an override that looked correct in the diff,
    applied nothing, and reported a fix that was never on the page. */
 
-/* --- 1. THE BAND: LESS PADDING, AND ITS GUTTER HANDED TO THE SCROLLER ----
+/* --- 1. THE BAND: LESS PADDING, AND ITS GUTTER HANDED TO THE CHIP ROW ----
    `padding: 6px var(--pn-space-4)` becomes 4px of block padding and none
    inline. The 4px is not cosmetic trimming for its own sake — it is what keeps
    the one remaining row from reading as a boxed-in card once it is the only
@@ -82,45 +77,44 @@
   padding-inline: 0;
 }
 
-/* --- 2. ONE LINE, SCROLLED ----------------------------------------------
-   `flex-wrap: nowrap` is the whole of the height fix. The rest is what makes a
-   scroller usable:
+/* --- 2. ONE LINE, SHRUNK — NOT SCROLLED ---------------------------------
+   `flex-wrap: nowrap` is the whole of the height fix. This band USED to make
+   the one line a sideways scroller; t-noscroll took that out, because no phone
+   surface scrolls sideways any more (a chip you have to discover by swiping is
+   a chip that is not there). The chips SHRINK instead, the way the composer's
+   pills do in the composer-states mockup:
 
-     overflow-x: auto     the chips are reachable rather than clipped
-     scrollbar-width      no permanent 15px gutter on a touch surface; the
-                          shell already hides these on `.pn-tabs`
-     flex: none           a `<select>` is as wide as its widest OPTION, and
-                          inside a scroller a shrinkable one would compress to
-                          its content rather than scroll — which is the clipping
-                          failure arriving through a different property
-     overscroll-behavior  a horizontal fling inside a band must not become a
-                          back-navigation gesture at the edge of the frame */
+     flex: 0 1 auto      every chip gives up width before the row overflows.
+     min-width: 0        defeats the automatic minimum that would otherwise pin
+                         a `<select>` at the width of its widest OPTION — the
+                         select then truncates its own shown value natively.
+     overflow-x: clip    the backstop. `clip` and not `hidden`/`auto` because
+                         only `clip` is not a scroll container: no thumb and no
+                         `scrollIntoView` can pan it. The margin keeps a focus
+                         ring whole.
+
+   The 44px floor and the 16px type are untouched: a chip gets NARROWER, never
+   shorter or smaller. */
 .cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips {
   flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
+  overflow-x: clip;
+  overflow-clip-margin: 3px;
   gap: 8px;
   padding-inline: var(--pn-space-4);
 }
 
-.cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips::-webkit-scrollbar {
-  display: none;
-}
-
-/* Every chip holds its own width. See `flex: none` above for why this is the
-   difference between a scroller and a clipper. */
 .cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips > * {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /* ARCHIVE STOPS BEING PUSHED TO THE FAR END, and that is a consequence rather
    than a preference. `panels.css:3249` gives `> :last-child` a `margin-left:
    auto` so the destructive verb sits away from the pickers people use
-   constantly. In a scroller there is no free space for an auto margin to
-   absorb, so on a full band it already resolves to zero — but on a SHORT band
-   (a kind with two controls) it would resolve to the full remaining width and
-   strand Archive at the right edge of a row that is not scrolling, which reads
+   constantly. On a full band there is no free space for an auto margin to
+   absorb, so it already resolves to zero — but on a SHORT band (a kind with
+   two controls) it would resolve to the full remaining width and strand
+   Archive at the right edge, which reads
    as a different arrangement for the same band. The separation it was buying is
    bought instead by the 8px gap above, which is larger than the 6px the strip
    had. Stated rather than silently overridden: this is a deliberate loss of a

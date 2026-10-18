@@ -1,0 +1,255 @@
+/*
+ * NOTHING ON THE PHONE SCROLLS SIDEWAYS, AND NOTHING SHOWS A SCROLLBAR
+ * (task t-noscroll).
+ *
+ * Every rule here is scoped `.cv2-root[data-shell='mobile']`, so it reaches
+ * the phone shell only — `(pointer: coarse) && width < 500`, decided once by
+ * `shellFor` — and desktop does not change. The scope also buys the
+ * specificity: `(0,3,0)` beats the `.cv2-root .x` `(0,2,0)` base rules in
+ * `markdown.css`, `diff.css` and friends whatever order the bundler emits them
+ * in, so nothing here depends on import order.
+ *
+ * THE RULE, as the mockups draw it (chat v2, composer states): content that is
+ * too wide WRAPS — prose, code, ids, chip rows — and a control that is too wide
+ * SHRINKS to an ellipsis. There is no sideways scroller anywhere a thumb could
+ * find one. The shell and the vertical scrollers clip the x axis as a last line
+ * of defence, but clipping is the backstop, not the fix: the fixes are the
+ * wrap rules below, and `bun run audit:mobile` counts every element that still
+ * scrolls sideways at 360/390/430.
+ *
+ * One rule lives in its owner's file instead of here, because it replaces a
+ * phone rule that already exists rather than adding one, and two equal-
+ * specificity rules in two files would leave the winner to import order:
+ *   - the entity-strip chips: `panels/detail/panel-controls-phone.css`
+ *
+ * The composer's picks row (`.tch-picks`) belongs to t-composer, which removes
+ * its scroller in `chat-home/chat-home.css`.
+ */
+
+/* ==========================================================================
+   1. LONG WORDS BREAK
+   ========================================================================== */
+
+/*
+ * `overflow-wrap` INHERITS, so one declaration on the root reaches every
+ * entity id, URL, branch name and sha the phone draws. `anywhere` and not
+ * `break-word`: the two render the same, but only `anywhere` lowers the
+ * MIN-CONTENT width, and min-content is what a flex or grid item refuses to
+ * shrink below. With `break-word` a 36-character id inside a flex row still
+ * holds the row 36 characters wide and drags it past the right edge.
+ *
+ * It only ever breaks a word that does not fit its line. A label with
+ * `white-space: nowrap` + ellipsis is untouched.
+ */
+.cv2-root[data-shell='mobile'] {
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   2. CODE WRAPS
+   ========================================================================== */
+
+/*
+ * Every preformatted block the phone can show: markdown fences and the failed-
+ * mermaid source (transcripts, docs), the debug and governance dumps, auth
+ * evidence, and any bare `<pre>`. `pre-wrap` keeps the author's line breaks and
+ * indentation and wraps only what is longer than the screen.
+ */
+.cv2-root[data-shell='mobile'] pre,
+.cv2-root[data-shell='mobile'] .md-fence__pre,
+.cv2-root[data-shell='mobile'] .md-mermaid__source,
+.cv2-root[data-shell='mobile'] .pn-debug__pre,
+.cv2-root[data-shell='mobile'] .gov-pre,
+.cv2-root[data-shell='mobile'] .auth-evidence,
+.cv2-root[data-shell='mobile'] .tch-explain__source {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: visible;
+  max-width: 100%;
+}
+
+/* A diagram that has not rendered (or failed to) shows its source above; the
+   box around it no longer needs to scroll. */
+.cv2-root[data-shell='mobile'] .md-mermaid--failed,
+.cv2-root[data-shell='mobile'] .md-mermaid[data-phase='rendering'] {
+  overflow-x: visible;
+}
+
+/* Inline code is one word as far as the line breaker is concerned; a long path
+   in backticks is the commonest unbreakable run in a transcript. */
+.cv2-root[data-shell='mobile'] code {
+  overflow-wrap: anywhere;
+}
+
+/*
+ * THE EXPLANATION CARD'S SOURCE VIEW. Desktop gives the code column a 520px
+ * floor and the `<pre>` `min-width: max-content` so a long line scrolls the
+ * card. On the phone the column takes what is left after the gutter and the
+ * source wraps under its own line number.
+ */
+.cv2-root[data-shell='mobile'] .tch-code__scroll {
+  overflow-x: hidden;
+}
+.cv2-root[data-shell='mobile'] .tch-code__scroll pre {
+  min-width: 0;
+}
+.cv2-root[data-shell='mobile'] .tch-code__row {
+  grid-template-columns: 36px minmax(0, 1fr);
+}
+.cv2-root[data-shell='mobile'] .tch-code__source {
+  min-width: 0;
+  padding-right: var(--pn-space-2);
+  white-space: pre-wrap;
+}
+
+/*
+ * DIFFS. The desktop body is the scroller and each row is `min-width:
+ * min-content` so one long line widens all of them together. On the phone a
+ * row is the screen's width and its code wraps beside the line numbers, which
+ * stay put because they are `flex: none` siblings, not part of the text.
+ */
+.cv2-root[data-shell='mobile'] .kit-diff__body {
+  overflow-x: hidden;
+}
+.cv2-root[data-shell='mobile'] .kit-diff__row {
+  min-width: 0;
+}
+.cv2-root[data-shell='mobile'] .kit-diff__code {
+  min-width: 0;
+  white-space: pre-wrap;
+}
+.cv2-root[data-shell='mobile'] .kit-diff__hunk {
+  white-space: pre-wrap;
+}
+
+/* ==========================================================================
+   3. TABLES FIT
+   ========================================================================== */
+
+/*
+ * A markdown table on desktop scrolls inside its wrapper. On the phone it is
+ * the column's width and its cells wrap: `fixed` layout divides the width by
+ * column instead of by content, which is the only way a table with one long
+ * cell does not push the others off the edge.
+ */
+.cv2-root[data-shell='mobile'] .md-tablewrap,
+.cv2-root[data-shell='mobile'] .tool-table-scroll,
+.cv2-root[data-shell='mobile'] .crf-table-wrap {
+  overflow-x: visible;
+  max-width: 100%;
+}
+.cv2-root[data-shell='mobile'] .md-table,
+.cv2-root[data-shell='mobile'] .tool-table-scroll table,
+.cv2-root[data-shell='mobile'] .crf-table-wrap table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0;
+}
+.cv2-root[data-shell='mobile'] :is(.md-table, .tool-table-scroll table, .crf-table-wrap table) :is(th, td) {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/*
+ * THE BLUEPRINT BLOCK. Desktop holds the drawing at a legible floor and lets
+ * the box scroll sideways below it. On the phone the drawing fits the box and
+ * the canvas's own pan and zoom are the way in — the box itself is not a
+ * second, competing sideways scroller.
+ */
+.cv2-root[data-shell='mobile'] .pn-blueprint {
+  overflow-x: hidden;
+}
+.cv2-root[data-shell='mobile'] .pn-blueprint > .crf-viewport {
+  min-width: 0;
+}
+
+/* Media never sets the width of the column it sits in. Not `svg`: icons are
+   inline SVGs with a fixed size, and a percentage cap inside a shrinking flex
+   item can squeeze one to nothing. Mermaid's SVG has its own cap. */
+.cv2-root[data-shell='mobile'] :is(img, video, canvas, iframe) {
+  max-width: 100%;
+}
+
+/* ==========================================================================
+   4. NO SIDEWAYS STRIPS
+   ========================================================================== */
+
+/*
+ * THE CHANNEL TABS. Three tabs, so three equal shares of the row — the same
+ * arrangement as the task list's lifecycle marks (`mobile-screens.css` §9d)
+ * and for the same reason: a tab you have to discover by swiping is a tab
+ * that does not exist. A label too long for its share ellipsises.
+ */
+.cv2-root[data-shell='mobile'] .chv-tabs {
+  overflow-x: visible;
+}
+.cv2-root[data-shell='mobile'] .chv-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Chip rows that reach the phone through shared components. Each WRAPS onto a
+ * second line, which is what the mockup's created-entities strip does
+ * (`flex-wrap: wrap`), and a chip wider than the row ellipsises inside it.
+ */
+.cv2-root[data-shell='mobile'] .provider-rail__chips,
+.cv2-root[data-shell='mobile'] .lcd3-lane,
+.cv2-root[data-shell='mobile'] .eh-film__strip,
+.cv2-root[data-shell='mobile'] .tch-thread-list {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+/* ==========================================================================
+   5. THE SCROLLERS SCROLL ONE WAY
+   ========================================================================== */
+
+/*
+ * A box with `overflow-y: auto` and nothing said about x COMPUTES `overflow-x`
+ * to `auto` too (CSS Overflow 3: `visible` pairs with a scrolling axis as
+ * `auto`). So every vertical scroller on the phone was also a horizontal one,
+ * and a single over-wide child made the whole transcript pan sideways under a
+ * thumb. Saying `hidden` closes that on each of them: the frame, transcript,
+ * drawer and sheets, and the entity page and list bodies (`overflow: auto` on
+ * both axes in `panels.css`). `.kit-zfig__viewport` is deliberately absent —
+ * a zoomed figure is panned on purpose, in both directions.
+ */
+.cv2-root[data-shell='mobile'] .mobile-frame__content,
+.cv2-root[data-shell='mobile'] .tch-transcript,
+.cv2-root[data-shell='mobile'] .mdrawer__scroll,
+.cv2-root[data-shell='mobile'] .msheet__body,
+.cv2-root[data-shell='mobile'] .efab__list,
+.cv2-root[data-shell='mobile'] .tch-lpanel__body,
+.cv2-root[data-shell='mobile'] .pn-body,
+.cv2-root[data-shell='mobile'] .lp__body,
+.cv2-root[data-shell='mobile'] .pn-debug__scroll,
+.cv2-root[data-shell='mobile'] .sb-relation__results,
+.cv2-root[data-shell='mobile'] .pn-blueprint--mermaid {
+  overflow-x: hidden;
+}
+
+/* ==========================================================================
+   6. NO SCROLLBARS
+   ========================================================================== */
+
+/*
+ * Touch phones scroll by the content, not by a thumb on a rail, and a desktop-
+ * style gutter steals 15px from a 360px screen wherever the browser draws one
+ * (Android Chrome with a mouse attached, desktop devtools emulation). The
+ * transcript, drawer and sheets are the named three; the universal selector
+ * covers every other scroller a shared component brings with it, because
+ * `scrollbar-width` does not inherit.
+ */
+.cv2-root[data-shell='mobile'],
+.cv2-root[data-shell='mobile'] * {
+  scrollbar-width: none;
+}
+.cv2-root[data-shell='mobile']::-webkit-scrollbar,
+.cv2-root[data-shell='mobile'] *::-webkit-scrollbar {
+  display: none;
+}

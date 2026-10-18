@@ -95,12 +95,34 @@
   height: calc(100dvh - var(--mobile-keyboard-inset, 0px));
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* CLIP, with `hidden` as the fallback for engines that predate it. Both cut
+     at the frame's edge, but `hidden` is still a SCROLL CONTAINER: focusing a
+     field that sits past the right edge makes the browser scroll the frame
+     sideways to reveal it, and the whole shell shifts left with no way back.
+     `clip` has no scroll position to move (t-noscroll). */
   overflow: hidden;
+  overflow: clip;
   position: relative;
   background: var(--pn-paper);
   color: var(--pn-ink);
   padding-left: var(--mobile-safe-left);
   padding-right: var(--mobile-safe-right);
+}
+
+/*
+ * THE FRAME'S ONE COLUMN IS THE SCREEN'S WIDTH, NEVER ITS WIDEST CHILD'S.
+ *
+ * The grid declares rows only, so its single column is an implicit `auto`
+ * track — and an `auto` track floors at its items' min-content width. One
+ * unbreakable line anywhere in a screen (a `white-space: pre` block, a long
+ * id, a fixed-width table) set that floor past the viewport, every region grew
+ * to match, and the frame's clip then cut the right edge off the whole screen.
+ * `min-width: 0` on the regions drops the floor, so a wide child overflows
+ * ITSELF, where `mobile-noscroll.css` wraps it, instead of widening the shell.
+ * Columns only: the rows keep their floors (see L4 above).
+ */
+.mobile-frame > * {
+  min-width: 0;
 }
 
 /*

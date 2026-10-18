@@ -5,6 +5,11 @@
  * Run it:  bun run audit:mobile          (starts vite, measures, writes JSON + PNGs)
  *          bun run audit:mobile -- --viewport phone-390 --route tasks
  *
+ * EXIT CODE (t-noscroll): non-zero when any PHONE row scrolls sideways — the
+ * document's `scrollWidth` exceeds its `clientWidth`, or any element that a
+ * thumb can pan (`overflow-x: auto|scroll`) has `scrollWidth > clientWidth`.
+ * The other numbers are reported, not gated.
+ *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY THIS EXISTS, stated as the failure it prevents rather than the feature it
  * is: `vitest` cannot see a single defect this program fixes. jsdom loads no
@@ -135,6 +140,7 @@ const SPACE = 'sp-atelier';
  * before-number in hand.
  */
 const VIEWPORTS = [
+  { name: 'phone-360', width: 360, height: 780, deviceScaleFactor: 3, isMobile: true, hasTouch: true, expectShell: 'mobile' },
   { name: 'phone-390', width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true, expectShell: 'mobile' },
   { name: 'phone-430', width: 430, height: 932, deviceScaleFactor: 3, isMobile: true, hasTouch: true, expectShell: 'mobile' },
   { name: 'tablet-768', width: 768, height: 1024, deviceScaleFactor: 2, isMobile: true, hasTouch: true, expectShell: 'desktop' },
@@ -285,6 +291,32 @@ function measureInPage({ MIN_TAP, EPS }) {
     .filter(({ r }) => Math.min(r.width, r.height) < MIN_TAP)
     .map(({ el, r }) => ({ w: Math.round(r.width), h: Math.round(r.height), path: pathOf(el), text: (el.textContent || '').trim().slice(0, 30) }));
 
+  /*
+   * SIDEWAYS SCROLLERS (t-noscroll). The per-element right-edge count above
+   * finds content cut off; this finds content a thumb can PAN to — an element
+   * whose computed `overflow-x` lets the user scroll it and whose content is
+   * wider than its box. That is `scrollWidth > clientWidth` measured where it
+   * means something: on the scroller itself, not on the document, which the
+   * clipping frame keeps at exactly the viewport width (see the header).
+   *
+   * `hidden` and `clip` are excluded on purpose: they cannot be panned by a
+   * finger, and an ellipsis label is `hidden` with a wider scrollWidth by
+   * design. Content they cut is the right-edge count's business.
+   *
+   * `.kit-zfig__viewport` is the one exemption: a zoomed figure is panned on
+   * purpose, in both directions, by the reader who zoomed it.
+   */
+  const hScrollers = all
+    .filter((el) => {
+      if (el.scrollWidth <= el.clientWidth + EPS) return false;
+      if (el.classList.contains('kit-zfig__viewport')) return false;
+      const ox = getComputedStyle(el).overflowX;
+      return ox === 'auto' || ox === 'scroll';
+    })
+    .filter((el) => rendered(el.getBoundingClientRect()))
+    .slice(0, 12)
+    .map((el) => ({ path: pathOf(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+
   return {
     /** The reference every right edge below is compared against. */
     viewportWidth: vw,
@@ -294,6 +326,10 @@ function measureInPage({ MIN_TAP, EPS }) {
     innerWidth: window.innerWidth,
     scrollWidth: document.documentElement.scrollWidth,
     bodyScrollWidth: document.body.scrollWidth,
+    /* The t-noscroll gate: both must be clean on a phone row. */
+    docScrollsX: document.documentElement.scrollWidth > vw + EPS,
+    hScrollerCount: hScrollers.length,
+    hScrollers,
     /* THE HEADLINE. Everything above it is context. */
     overflowCount: over.length,
     worstRightEdge: Math.round(worstRight),
@@ -387,6 +423,7 @@ if (!noShots) mkdirSync(`${outDir}/screens`, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome' });
 const rows = [];
 const problems = [];
+const noscrollFailures = [];
 
 for (const vp of VIEWPORTS) {
   if (onlyViewport && vp.name !== onlyViewport) continue;
@@ -424,6 +461,10 @@ for (const vp of VIEWPORTS) {
        row and is pure fiction — see trap 2. Record the failure instead. */
     const shellOk = m.shell === vp.expectShell;
     if (!shellOk) problems.push(`${vp.name}/${route.name}: expected ${vp.expectShell} shell, got '${m.shell}' (coarsePointer=${m.coarsePointer})`);
+    /* THE GATE. A phone screen that scrolls sideways fails the run. */
+    if (vp.expectShell === 'mobile' && shellOk && (m.docScrollsX || m.hScrollerCount > 0)) {
+      noscrollFailures.push(`${vp.name}/${route.name}: scrolls sideways — document ${m.scrollWidth}/${m.viewportWidth}, ${m.hScrollerCount} panning element(s)${m.hScrollers[0] ? ` e.g. ${m.hScrollers[0].path} ${m.hScrollers[0].scrollWidth}/${m.hScrollers[0].clientWidth}` : ''}`);
+    }
     if (pageErrors.length) problems.push(`${vp.name}/${route.name}: page error — ${pageErrors[0]}`);
     /* The reference must be the width we asked the device for. If the page's own
        layout box has drifted from it, every right-edge comparison in this row is
@@ -455,6 +496,7 @@ for (const vp of VIEWPORTS) {
     console.log(
       `${vp.name.padEnd(13)} ${route.name.padEnd(10)} overflow=${String(m.overflowCount).padStart(4)}` +
       `  worstRight=${String(m.worstRightEdge).padStart(5)}  scrollW=${String(m.scrollWidth).padStart(5)}/${m.viewportWidth}` +
+      `  hScroll=${String(m.hScrollerCount).padStart(2)}` +
       `  taps<${MIN_TAP}=${String(m.tapTargetsUnderMin).padStart(3)}/${String(m.tapTargetsTotal).padStart(3)}  [${m.shell}]${flag}`,
     );
   }
@@ -479,6 +521,7 @@ const report = {
   epsilonPx: EPS,
   space: SPACE,
   problems,
+  noscrollFailures,
   rows,
 };
 writeFileSync(`${outDir}/${label}.json`, JSON.stringify(report, null, 2) + '\n');
@@ -486,4 +529,11 @@ console.log(`\nwrote ${outDir}/${label}.json  (${rows.length} rows)`);
 if (problems.length) {
   console.log(`\n${problems.length} PROBLEM(S) — rows above marked WRONG SHELL are not evidence:`);
   for (const p of problems) console.log('  ! ' + p);
+}
+if (noscrollFailures.length) {
+  console.log(`\n${noscrollFailures.length} PHONE ROW(S) SCROLL SIDEWAYS (t-noscroll gate):`);
+  for (const f of noscrollFailures) console.log('  ✗ ' + f);
+  process.exitCode = 1;
+} else {
+  console.log('\nno phone row scrolls sideways (t-noscroll gate)');
 }
