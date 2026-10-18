@@ -274,6 +274,8 @@ export function landingOfRoute(view: NavView): Landing | null {
           /* W3: the board's grouping rides `q` — the codec already parsed and
              validated it (`q.ts`), this just stops dropping it on the floor. */
           ...(view.q?.groupBy ? { groupBy: view.q.groupBy } : {}),
+          ...(view.q?.sortBy ? { sortBy: view.q.sortBy } : {}),
+          ...(view.q?.pick ? { pick: view.q.pick } : {}),
         },
         openEntity: null,
       };
@@ -389,7 +391,21 @@ export function routeViewOf(target: MenuTarget, openEntity: EntityId | null = nu
       }
       /* W3: a grouped board is shareable — the choice travels as `q.groupBy`,
          the union `q.ts` already validates on the way back in. */
-      return { view: 'kind', slug, mode, q: target.groupBy ? { v: 1, groupBy: target.groupBy } : null };
+      /* The phone list's sort and narrowing ride the same `q`. */
+      const carried = target.groupBy || target.sortBy || target.pick;
+      return {
+        view: 'kind',
+        slug,
+        mode,
+        q: carried
+          ? {
+              v: 1,
+              ...(target.groupBy ? { groupBy: target.groupBy } : {}),
+              ...(target.sortBy ? { sortBy: target.sortBy } : {}),
+              ...(target.pick ? { pick: target.pick } : {}),
+            }
+          : null,
+      };
     }
 
     case 'entity':

@@ -53,7 +53,6 @@ import {
 import { AttentionList, useAttentionOptional } from '../attention';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
 import { ConnectionsTab } from '../panels/detail/tabs';
-import { facetsForAnatomy } from '../panels/list/row-view';
 import type { ActionContext, ActionRef, CollectionMode, GroupByKey } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
@@ -73,6 +72,9 @@ import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { navStore } from '../stores/navStore';
 import { EntityFab, MobileSheet, useMobileSurface } from '../mobile';
+import { PhoneEntityList, openedFromList } from '../mobile-lists';
+import type { SortKey } from '../domain';
+import type { ListPick } from '../routes/types';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
@@ -165,6 +167,14 @@ export interface EntityViewProps {
    */
   groupBy?: GroupByKey;
   onGroupBy?(groupBy: GroupByKey): void;
+  /**
+   * The PHONE list's sort and narrowing — route state (`MenuTarget.sortBy` /
+   * `.pick`), threaded like `groupBy`. Read only on the phone shell; the
+   * desktop list keeps its own chips.
+   */
+  sortBy?: SortKey;
+  pick?: ListPick;
+  onListPick?(next: { sortBy?: SortKey; pick?: ListPick }): void;
 }
 
 /**
@@ -281,9 +291,6 @@ export function EntityView(props: EntityViewProps) {
    * sheet, and two at once is two scrims.
    */
   const [picker, setPicker] = useState<ListPicker | null>(null);
-  /* Whether the cluster is expanded. Collapsed it is one thumb-sized button;
-     four permanently-drawn pills would occlude the rows they narrow. */
-  const [dialOpen, setDialOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<PanelTab>('content');
   const [contentSurfaces, setContentSurfaces] = useState<Record<string, ContentSurface>>({});
   /** In-flight read marks, so a double click on a row is one write. */
@@ -1118,7 +1125,38 @@ export function EntityView(props: EntityViewProps) {
         unmount, which is a separate piece of work and not a side effect of
         hiding a column.
       */}
-      {oneSurface && selectedId ? null : (
+      {/*
+        THE PHONE LIST (t-lists). One row anatomy for every kind, built to the
+        phone entity-lists mockup, in place of the desktop tile list squeezed
+        to 390px. It reads through the SAME source the desktop list does —
+        `needsMeListSource` over `rowsFor` — so a "Needs me" filter means the
+        same rows on both shells. Its header carries ⚙ and ＋, which is why
+        the floating create button and the narrowing cluster below are gone
+        from this shell.
+      */}
+      {oneSurface && !selectedId ? (
+        <PhoneEntityList
+          config={config}
+          spaceId={data.spaceId}
+          {...needsMeListSource(attentionApi, kind, data, {
+            rowsFor: data.rowsFor(kind),
+            pageStateOf: data.pageStateOf(kind),
+            loadMore: data.loadMore(kind),
+          })}
+          {...(data.countsFor(kind)?.total !== undefined ? { total: data.countsFor(kind)!.total } : {})}
+          {...(data.viewerActor?.id ? { viewerActorId: data.viewerActor.id } : {})}
+          {...(props.pick !== undefined ? { pick: props.pick } : {})}
+          {...(props.sortBy !== undefined ? { sortBy: props.sortBy } : {})}
+          {...(props.onListPick ? { onPick: props.onListPick } : {})}
+          onOpen={selectFromList}
+          {...(config.list.quickCreate ? { onCreate: () => void createFlow.create() } : {})}
+          capabilitiesOf={data.capabilitiesOf}
+          onTerminate={primaries.terminate}
+          onComplete={rowLifecycle.complete}
+          onArchive={(id) => rowLifecycle.archive('archive', id)}
+        />
+      ) : null}
+      {oneSurface ? null : (
       <section className="ev-list" id="entity-view-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
@@ -1203,51 +1241,8 @@ export function EntityView(props: EntityViewProps) {
       </section>
       )}
 
-      {/*
-        ── THE FLOATING CREATE BUTTON (owner answers A–D, 2026-08-19) ────────
-        A. IN ADDITION TO THE HEADER'S ＋, not instead of it. `[◫ Kind ＋ ▾]` is
-           untouched. Two create affordances on a phone is the owner's explicit
-           choice: the header ＋ is where you look when you are ALREADY thinking
-           about the kind, and the FAB is where your thumb is when you have just
-           finished reading the list.
-
-        B. THE SAME VERB, NOT A SECOND CREATE PATH. `createFlow` is the very
-           `useNewTask` handle the header's ＋ performs, with the same
-           `onCreated` that opens the new entity with its title focused (D3).
-           Writing a second path here is how the two drift into making
-           differently-shaped entities.
-
-        C. ABSENT, NOT INERT, for a kind with no wired create. The gate is
-           `config.list.quickCreate` — REGISTRY DATA, and deliberately the same
-           expression `createSlot` is gated on six lines above, so the FAB and
-           the header ＋ can never disagree about whether this kind can be born.
-           Commits, worktrees and PRs are observed rather than authored, and a
-           refused FAB would be a permanent 56px control that exists to say no.
-           The header ＋ still refuses out loud with its reason; that sentence
-           is said once, where there is room for it.
-
-        D. ALWAYS VISIBLE. No hide-on-scroll: a control that disappears while
-           you read is a control you have to go looking for, and the list
-           reserves room for it so the last row is never trapped underneath
-           (see `.ev-fab` in `mobile-screens.css`).
-
-        ONE SURFACE ONLY. `oneSurface` is false on every desktop mount by
-        construction, so this whole branch is unreachable there — the seam's own
-        safety argument. And it is not drawn over an OPEN entity: at that point
-        the list is unmounted and the screen is the entity, where a create
-        button would make something the surface cannot show.
-      */}
-      {oneSurface && !selectedId && config.list.quickCreate ? (
-        <button
-          type="button"
-          className="ev-fab"
-          data-testid="entity-view-fab"
-          aria-label={`New ${config.label.toLowerCase()}`}
-          onClick={() => void createFlow.create()}
-        >
-          <span aria-hidden>＋</span>
-        </button>
-      ) : null}
+      {/* The phone's create is the list header's ＋ now (PhoneEntityList) —
+          the same `createFlow`, so there is still one create path. */}
 
       {/*
         ── THE ENTITY'S OWN FAB — what the phone's tab row became ────────────
@@ -1309,113 +1304,7 @@ export function EntityView(props: EntityViewProps) {
         />
       ) : null}
 
-      {/*
-        ── THE NARROWING CLUSTER ────────────────────────────────────────────
-        The four verbs that used to be `.lp__filterbar`, a permanent 101px band
-        — a fifth of a 844px phone spent on controls that are touched once a
-        session, above a list that had 478px left for its rows. They float now,
-        collapsed to ONE button, and the band is gone from the chrome.
-
-        SEPARATE FROM THE CREATE FAB, not folded into it. Create is the verb a
-        thumb reaches for constantly and it stays ONE tap; putting it behind a
-        dial would tax the common action to pay for the rare ones. It is also
-        gated differently — a kind with no wired create still filters and sorts
-        — so one control gated on both would be wrong for half the kinds.
-
-        WORDS, NOT GLYPHS, unlike the lifecycle row. Those four are one axis
-        with an obvious order, which is what makes a glyph family readable;
-        these four are unrelated verbs over unrelated vocabularies, and a
-        funnel, a face, a folder and an arrow share nothing to read.
-
-        EACH ONE IS OFFERED ONLY WHEN IT HAS SOMETHING TO SAY — the same four
-        conditions `FilterRow` renders its chips under, read off the same
-        registry data, so the cluster and the (hidden) bar cannot disagree.
-      */}
-      {oneSurface && !selectedId ? (
-        <div className="ev-narrow" data-testid="entity-view-narrow">
-          {dialOpen ? (
-            <div className="ev-narrow__dial" role="group" aria-label="Narrow the list">
-              {config.list.filters.length > 0 ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-filters"
-                  onClick={() => {
-                    setPicker('filters');
-                    setDialOpen(false);
-                  }}
-                >
-                  filter
-                </button>
-              ) : null}
-              {data.members.length > 1 ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-people"
-                  onClick={() => {
-                    setPicker('people');
-                    setDialOpen(false);
-                  }}
-                >
-                  people
-                </button>
-              ) : null}
-              {config.list.membership && rowLifecycle.membershipSets !== undefined ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-sets"
-                  onClick={() => {
-                    setPicker('sets');
-                    setDialOpen(false);
-                  }}
-                >
-                  {config.list.membership.label.toLowerCase()}
-                </button>
-              ) : null}
-              {/* Not a narrowing, but the same picker register — it opens
-                  the same sheet the desktop's `View ▾` chip hangs. */}
-              {facetsForAnatomy(config.list.tile.anatomy).length > 0 ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-view"
-                  onClick={() => {
-                    setPicker('view');
-                    setDialOpen(false);
-                  }}
-                >
-                  view
-                </button>
-              ) : null}
-              {config.list.sort.length > 0 ? (
-                <button
-                  type="button"
-                  className="ev-narrow__item"
-                  data-testid="narrow-sort"
-                  onClick={() => {
-                    setPicker('sort');
-                    setDialOpen(false);
-                  }}
-                >
-                  sort
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          <button
-            type="button"
-            className="ev-narrow__toggle"
-            data-testid="entity-view-narrow-toggle"
-            aria-expanded={dialOpen}
-            aria-label={dialOpen ? 'Close narrowing options' : 'Narrow the list'}
-            onClick={() => setDialOpen((open) => !open)}
-          >
-            <NarrowGlyph open={dialOpen} />
-          </button>
-        </div>
-      ) : null}
+      {/* The narrowing cluster is the phone list's ⚙ sheet now (PhoneEntityList). */}
 
       {/* The detail column's drag handle — the control the panel it sizes
           hangs on, exactly as in the workspace. `side="right"` because the
@@ -1458,7 +1347,15 @@ export function EntityView(props: EntityViewProps) {
         every phone screen, and the phone is where that costs the most.
       */}
       {boardMode || (oneSurface && !selectedId) ? null : (
-        <main className="ev-detail" aria-label={`${config.label} detail`} data-testid="entity-view-detail">
+        <main
+          className="ev-detail"
+          aria-label={`${config.label} detail`}
+          data-testid="entity-view-detail"
+          /* Slides in from the right only when its own list row pushed it. */
+          {...(oneSurface && selectedId && openedFromList(data.spaceId, kind, selectedId)
+            ? { 'data-phone-enter': 'push' }
+            : {})}
+        >
           {/* The empty detail column is the space-wide triage list, not a
               placeholder: every entity waiting on a human, its requests
               combined into one row. Deliberately NOT filtered to `kind` —
@@ -1641,28 +1538,3 @@ function auxSheetSize(aux: AuxTarget | null): 'default' | 'full' {
   return aux?.sort === 'tab' && aux.tab === 'discussion' ? 'full' : 'default';
 }
 
-/**
- * The narrowing cluster's own mark: a funnel closed, an ✕ open.
- *
- * SVG in a 16 viewBox with `currentColor`, the same idiom as the tile's
- * chevrons and the lifecycle row's rings, and for the same reason — a
- * typographic glyph sits on its own font's baseline, so `⌄` and `✕` land at
- * different optical heights inside one round button.
- *
- * The ✕ is right HERE and nowhere else in this cluster: this is a dismiss, and
- * the dismiss glyph is what this product already uses for one.
- */
-function NarrowGlyph({ open }: { open: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden focusable="false">
-      <path
-        d={open ? 'M4 4L12 12M12 4L4 12' : 'M2.5 3.5H13.5L9.25 8.5V13L6.75 11.5V8.5Z'}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}

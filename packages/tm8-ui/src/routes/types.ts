@@ -103,6 +103,21 @@ export interface QValue {
   filters?: QueryFilter;
   sortBy?: SortKey;
   groupBy?: GroupByKey;
+  /**
+   * The phone list's narrowing, as the CHOICES the reader made rather than the
+   * filter they compile to: `cat` is a status-tab id (or `all` / `open`), `on`
+   * is `specId:optionId` pairs from the kind's own `list.filters`. Kept as
+   * choices because a filter cannot be read back into which boxes were ticked
+   * (a tab and an archived option both write `deleted`). Additive: a build
+   * that does not know `pick` ignores it and keeps `filters`/`sortBy`.
+   */
+  pick?: ListPick;
+}
+
+/** See `QValue.pick`. */
+export interface ListPick {
+  cat?: string;
+  on?: readonly string[];
 }
 
 /**
