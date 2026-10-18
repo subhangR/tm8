@@ -7,8 +7,10 @@
  *
  * EXIT CODE (t-noscroll): non-zero when any PHONE row scrolls sideways — the
  * document's `scrollWidth` exceeds its `clientWidth`, or any element that a
- * thumb can pan (`overflow-x: auto|scroll`) has `scrollWidth > clientWidth`.
- * The other numbers are reported, not gated.
+ * thumb can pan (`overflow-x: auto|scroll`) has `scrollWidth > clientWidth`,
+ * or any rendered element's right edge lies past the viewport (clipped off by
+ * the frame, so it cannot be scrolled to either). The other numbers are
+ * reported, not gated.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY THIS EXISTS, stated as the failure it prevents rather than the feature it
@@ -420,13 +422,20 @@ const { base, stop } = await startVite();
 mkdirSync(outDir, { recursive: true });
 if (!noShots) mkdirSync(`${outDir}/screens`, { recursive: true });
 
-const browser = await chromium.launch({ channel: 'chrome' });
+/* AUDIT_CHROME: a host with no system Chrome points this at a headless shell
+   binary instead (see trap 1); it needs a single process to launch there. */
+const launchBrowser = () => process.env.AUDIT_CHROME
+  ? chromium.launch({ executablePath: process.env.AUDIT_CHROME, args: ['--no-sandbox', '--no-zygote', '--single-process', '--disable-gpu'] })
+  : chromium.launch({ channel: 'chrome' });
+let browser = null;
 const rows = [];
 const problems = [];
 const noscrollFailures = [];
 
 for (const vp of VIEWPORTS) {
   if (onlyViewport && vp.name !== onlyViewport) continue;
+  /* One browser per viewport: a single-process shell crashes on a second context. */
+  browser = await launchBrowser();
   const ctx = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: vp.deviceScaleFactor,
@@ -452,6 +461,11 @@ for (const vp of VIEWPORTS) {
        about React having committed the screen and fonts having swapped in — and
        a font swap moves every text box, which is exactly what we measure. */
     await page.waitForTimeout(1200);
+    /* A lazy screen shows "Loading …" until its chunk arrives, which on a busy
+       host is longer than any fixed settle. A loading card is not the screen. */
+    try {
+      await page.waitForFunction(() => !/^Loading\b/.test((document.body.innerText || '').trim()), null, { timeout: 90_000 });
+    } catch { /* recorded as-is; firstText shows it */ }
     try { await page.evaluate(() => document.fonts.ready); } catch { /* older engines */ }
     await page.waitForTimeout(300);
 
@@ -464,6 +478,15 @@ for (const vp of VIEWPORTS) {
     /* THE GATE. A phone screen that scrolls sideways fails the run. */
     if (vp.expectShell === 'mobile' && shellOk && (m.docScrollsX || m.hScrollerCount > 0)) {
       noscrollFailures.push(`${vp.name}/${route.name}: scrolls sideways — document ${m.scrollWidth}/${m.viewportWidth}, ${m.hScrollerCount} panning element(s)${m.hScrollers[0] ? ` e.g. ${m.hScrollers[0].path} ${m.hScrollers[0].scrollWidth}/${m.hScrollers[0].clientWidth}` : ''}`);
+    }
+    /* THE CLIP GATE (task 01a14e1d). The frame CLIPS, so a row can pass the
+       scroll gate above while its controls sit past the right edge where no
+       thumb can reach them: the created-entities strip ran to x=1195 at 360
+       and this gate's predecessor called it clean. Any rendered element right
+       of the viewport fails a phone row. */
+    if (vp.expectShell === 'mobile' && shellOk && m.overflowCount > 0) {
+      const root = m.overflowRoots[0];
+      noscrollFailures.push(`${vp.name}/${route.name}: clipped off the right edge — ${m.overflowCount} element(s), worst right ${m.worstRightEdge}/${m.viewportWidth}${root ? ` e.g. ${root.path} (right ${root.right})` : ''}`);
     }
     if (pageErrors.length) problems.push(`${vp.name}/${route.name}: page error — ${pageErrors[0]}`);
     /* The reference must be the width we asked the device for. If the page's own
@@ -501,9 +524,9 @@ for (const vp of VIEWPORTS) {
     );
   }
   await ctx.close();
+  await browser.close();
 }
 
-await browser.close();
 stop();
 
 /* A DIRTY TREE IS A PROBLEM, not a footnote: the sha in this file would name a
@@ -531,9 +554,9 @@ if (problems.length) {
   for (const p of problems) console.log('  ! ' + p);
 }
 if (noscrollFailures.length) {
-  console.log(`\n${noscrollFailures.length} PHONE ROW(S) SCROLL SIDEWAYS (t-noscroll gate):`);
+  console.log(`\n${noscrollFailures.length} PHONE ROW FAILURE(S) — scrolls sideways or clips content off the right edge (t-noscroll gate):`);
   for (const f of noscrollFailures) console.log('  ✗ ' + f);
   process.exitCode = 1;
 } else {
-  console.log('\nno phone row scrolls sideways (t-noscroll gate)');
+  console.log('\nno phone row scrolls sideways or clips content off its right edge (t-noscroll gate)');
 }
