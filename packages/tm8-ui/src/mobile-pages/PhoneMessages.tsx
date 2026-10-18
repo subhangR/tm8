@@ -82,7 +82,7 @@ export function PhoneMessages(props: PhoneMessagesProps): ReactNode {
       )}
       {onViewAll ? (
         <button type="button" className="pp-more" data-testid="phone-messages-all" onClick={onViewAll}>
-          {total > shown.length ? `View all ${total}` : 'View all'}
+          {total === 0 ? 'Open discussion' : total > shown.length ? `View all ${total}` : 'View all'}
         </button>
       ) : null}
     </section>

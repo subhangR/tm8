@@ -225,3 +225,13 @@ button.pp-msg:active {
 .pp-in-body {
   margin-top: var(--pn-space-3);
 }
+/* The body already carries the page's 16px gutter; don't add a second. */
+.pp-in-body .pp-sec__h,
+.pp-in-body .pp-quiet,
+.pp-in-body .pp-msg {
+  padding-left: 0;
+  padding-right: 0;
+}
+.pp-in-body .pp-more {
+  margin-left: -10px;
+}
