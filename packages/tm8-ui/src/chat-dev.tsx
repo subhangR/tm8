@@ -26,6 +26,7 @@ import { MobileSurfaceProvider } from './mobile';
 import { CHAT_HOME_FIXTURE_THREAD, createChatHomeFixturePort } from './chat-home/fixtures';
 import type { ChatModelOption, ChatThreadDetail } from './chat-home/types';
 import type { CockpitStage } from './routes/types';
+import type { FileUploadTask } from './files/upload';
 import './session-graph/session-graph.css';
 
 /**
@@ -107,6 +108,18 @@ function Harness() {
   const mobile = params.get('shell') === 'mobile';
   const turns = Number.parseInt(params.get('turns') ?? '', 10);
   const composer = params.get('composer') === '1';
+  /* `?attach=1`: an upload port that never lands and two skills, so the ＋
+     sheet's "Attached to this message" list has something to list
+     (`e2e/capture-plus-sheet.mjs`). */
+  const turnInputs = params.get('attach') === '1'
+    ? {
+        attach: (): FileUploadTask => ({ result: new Promise(() => {}), cancel: () => {} }),
+        skillOptions: [
+          { id: 'skill-1', display: 'triage', meta: 'sort the inbox' },
+          { id: 'skill-2', display: 'mobile-web-craft', meta: 'phone layout rules' },
+        ],
+      }
+    : {};
   const { port } = useMemo(
     () => {
       const base = empty
@@ -208,6 +221,7 @@ function Harness() {
                never had — and any measurement of the tray then describes a row
                no reader sees. */
             soloConversation
+            {...turnInputs}
           />
         </MobileSurfaceProvider>
       ) : (
@@ -218,6 +232,7 @@ function Harness() {
           viewerName="Sam"
           stage={stage}
           onStageChange={setStage}
+          {...turnInputs}
         />
       )}
     </div>

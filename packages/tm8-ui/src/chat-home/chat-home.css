@@ -2985,3 +2985,106 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-addmenu__connectors .mcp-error {
   margin: 0 0 4px;
 }
+
+/* --- THE PHONE'S ＋ SHEET (chat v2 mockup 01a14cba, t-clean-composer) ------
+
+   The card holds only the field and the foot, so what rides with the message
+   is listed here: "Attached to this message · N", one 48px row each with a ✕,
+   then the Add grid of 72px tiles, four to a row. `AddSheet` renders only on
+   the phone, so nothing below can reach the desktop menu. */
+.tch-addsheet { display: grid; gap: 0; padding: 0 2px 8px; }
+.tch-addsheet__label {
+  margin: 6px 4px;
+  color: var(--pn-ink-4);
+  font: 600 var(--pn-fs-label) var(--pn-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tch-addsheet__attached { display: grid; gap: 6px; margin: 0 0 6px; padding: 0; list-style: none; }
+.tch-addsheet__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 0 0 8px;
+  border-radius: var(--pn-r-md);
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.tch-addsheet__text { display: grid; flex: 1; min-width: 0; }
+.tch-addsheet__text b {
+  overflow: hidden;
+  font: 550 var(--pn-fs-body) var(--pn-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tch-addsheet__text i {
+  overflow: hidden;
+  color: var(--pn-ink-4);
+  font: var(--pn-fs-label) var(--pn-ui);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tch-addsheet__item[data-failed] .tch-addsheet__text i { color: var(--pn-block); }
+.tch-addsheet__x,
+.tch-addsheet__retry {
+  flex: none;
+  min-width: var(--mobile-touch-min);
+  height: var(--mobile-touch-min);
+  border: 0;
+  border-radius: var(--pn-r-pill);
+  background: transparent;
+  color: var(--pn-ink-4);
+  font: var(--pn-fs-body) var(--pn-ui);
+}
+.tch-addsheet__retry { min-width: 0; padding: 0 6px; color: var(--pn-brand); }
+.tch-addsheet__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+.tch-addsheet__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 72px;
+  padding: 0 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+  font: var(--pn-fs-label) var(--pn-ui);
+}
+.tch-addsheet__tile[aria-disabled='true'] { opacity: 0.45; }
+.tch-addsheet__icon { flex: none; font-size: var(--pn-fs-h2); line-height: 1; }
+.tch-addsheet__item .tch-addsheet__icon { font-size: var(--pn-fs-h3); }
+.tch-addsheet__back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--mobile-touch-min);
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: 600 var(--pn-fs-label) var(--pn-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tch-addsheet__sub .tch-addmenu__skill { min-height: var(--mobile-touch-min); font-size: var(--pn-fs-body); }
+
+/* The count on ＋: the mockup's 18px brand disc at the ring's top-right. */
+.cv2-root[data-shell='mobile'] .tch-attach .tch-pop__badge {
+  top: 2px;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font: 700 var(--pn-fs-micro) / 18px var(--pn-ui);
+}

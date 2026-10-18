@@ -4,6 +4,7 @@ import { EntityAttentionChip } from '../attention';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CollabError } from '@tm8/contract';
 import type { ChatCredentialSelection, ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
+import { useMobileSurface } from '../mobile';
 import { CHATS_ROOT, KindIcon, homeQuickBirthKinds, type HomeRoot } from '../domain';
 import { rememberChatStart } from '../chat-defaults/lastUsed';
 import { RibbonMark, Timestamp } from '../kit';
@@ -44,6 +45,7 @@ import { publishChatContext } from './chatContextFeed';
 import { NEW_CHAT_KEY, readModeOverrides, readTeam, writeModeOverrides, writeTeam } from '../chat-defaults/composerPicks';
 import {
   AddToTurnMenu,
+  type AttachedItem,
   ComposerIcon,
   ComposerSettings,
   CrewPanel,
@@ -623,6 +625,9 @@ export function ChatHomeScreen({
   const [effortByMode, setEffortByMode] = useState<Partial<Record<ChatMode, LaunchModelEffort>>>({});
   const [modeOptions, setModeOptions] = useState<ModeOptionsByMode>({});
   const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
+  /* THE PHONE CARD HOLDS ONLY THE FIELD AND THE FOOT (chat v2 mockup): staged
+     files, skill pills and a Coordinator's team move into the ＋ sheet. */
+  const { oneSurface: phoneCard } = useMobileSurface();
   const [projectChoice, setProjectChoice] = useState(newChatSeed?.projectId ?? '');
   const [projects, setProjects] = useState<readonly ChatProjectOption[] | null>(null);
   const [permissionChoice, setPermissionChoice] = useState<PermissionRung | null>(null);
@@ -2306,6 +2311,33 @@ export function ChatHomeScreen({
   }, [port, selectedRootId]);
 
   const compactComposer = composerLayout === 'compact';
+  /* What rides with this message, as the phone's ＋ sheet lists it (and counts
+     it on ＋). Built only there; off the phone the card draws its own chips. */
+  const attachedToTurn: AttachedItem[] = phoneCard ? [
+    ...attachments.staged.map((item): AttachedItem => ({
+      key: `file-${item.id}`,
+      icon: item.file.type.startsWith('image/') ? '🖼' : '📄',
+      name: item.file.name,
+      meta: item.phase === 'uploading' ? 'uploading…'
+        : item.phase === 'failed' ? item.reason ?? 'upload failed'
+        : `${item.file.type.startsWith('image/') ? 'image' : 'file'} · ${fileSize(item.file.size)}`,
+      failed: item.phase === 'failed',
+      removeLabel: item.phase === 'uploading' ? `Cancel uploading ${item.file.name}` : `Remove ${item.file.name}`,
+      onRemove: () => attachments.remove(item.id),
+      ...(item.phase === 'failed' ? { onRetry: () => attachments.retry(item.id) } : {}),
+    })),
+    ...enabledSkills.map((id): AttachedItem => {
+      const name = `/${skillOptions?.find((skill) => skill.id === id)?.display ?? id}`;
+      return {
+        key: `skill-${id}`,
+        icon: '⚡',
+        name,
+        meta: 'skill · this turn',
+        removeLabel: `Remove ${name}`,
+        onRemove: () => setEnabledSkills((current) => current.filter((entry) => entry !== id)),
+      };
+    }),
+  ] : [];
   const refusalShown = refusal !== null && !loading && !(compactComposer && refusal === MCP_REFUSAL);
   /* Send (■ Stop mid-turn): the toolbar's last control, or — compact — the
      field's, so the toolbar row can be ＋ · role · model alone. */
@@ -2887,7 +2919,7 @@ export function ChatHomeScreen({
                 {refusalShown
                   ? <p className="tch-refusal" id="tch-compose-refusal" data-testid="tch-compose-refusal">{refusal}</p>
                   : null}
-                <AttachmentChips attachments={attachments} testId="tch-attachments" />
+                <AttachmentChips attachments={attachments} testId="tch-attachments" list={!phoneCard} />
               </>}
               field={<>
                 <textarea
@@ -2951,7 +2983,8 @@ export function ChatHomeScreen({
                     setEnabledSkills((current) =>
                       current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id])}
                   {...(skillOptions ? { onBrowseSkills: () => rich.openTrigger('/') } : {})}
-                  {...(compactComposer && shownRole === 'coordinator'
+                  attached={attachedToTurn}
+                  {...((compactComposer || phoneCard) && shownRole === 'coordinator'
                     ? {
                         extra: (
                           <TeamPicker
@@ -2982,7 +3015,7 @@ export function ChatHomeScreen({
                       }
                     : {})}
                 />
-                {enabledSkills.length ? (
+                {enabledSkills.length && !phoneCard ? (
                   <span className="tch-turnpills" data-testid="tch-turnpills">
                     {enabledSkills.map((id) => (
                       <button
@@ -3039,7 +3072,7 @@ export function ChatHomeScreen({
                       : modeLocked ? 'this chat is still starting' : null
                   }
                 />
-                {shownRole === 'coordinator' && !compactComposer ? (
+                {shownRole === 'coordinator' && !compactComposer && !phoneCard ? (
                   <TeamChip
                     team={shownTeam}
                     onChange={chooseTeam}
@@ -3086,6 +3119,13 @@ export function ChatHomeScreen({
   );
 }
 
+
+/** "412 KB" — the size line under a staged file in the ＋ sheet. */
+function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 /* -- the two waiting marks -------------------------------------------------
 

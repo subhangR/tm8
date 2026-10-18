@@ -13,12 +13,20 @@ import type { RichInputAttachments } from './useRichInput';
 export function AttachmentChips({
   attachments,
   testId,
+  list = true,
 }: {
   attachments: RichInputAttachments | null;
   testId?: string;
+  /**
+   * `false` draws the refusal and error lines only: a host that lists the
+   * staged files elsewhere (the phone's ＋ sheet) still owes the writer the
+   * reason a paste was declined, where they are typing.
+   */
+  list?: boolean;
 }) {
   if (!attachments) return null;
-  const { staged, refusal, error } = attachments;
+  const { refusal, error } = attachments;
+  const staged = list ? attachments.staged : [];
   if (staged.length === 0 && !refusal && !error) return null;
 
   return (
