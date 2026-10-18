@@ -34,7 +34,8 @@
  *                sessions under their root, sub-docs, subtasks) has a ▸ and
  *                expands in place. "See all" opens the phone list route.
  *   Pinned       the desktop rail's pins (`railStore`), as the same trees,
- *                skipping kinds already drawn above.
+ *                skipping kinds already drawn above, then a "Pin kinds" row
+ *                that opens `PinKindsSheet` over the drawer.
  *   All kinds    a disclosure, closed by default, holding every other kind and
  *                the view destinations the drawer is still the only door to.
  *                Home, Work and Inbox are NOT here: chat is home, and the
@@ -66,7 +67,7 @@
  * `false` when it could not count at all, which is how the ☰ tells "everything
  * is read" apart from "nobody could say".
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import {
@@ -80,7 +81,7 @@ import {
   type KindArt,
   type KindConfig,
 } from '../domain';
-import { loadWorkspaceRailPins, workspacePinnedKinds } from '../tab-workspace/runtime/railStore';
+import { getRailStore, workspacePinnedKinds } from '../tab-workspace/runtime/railStore';
 import { VectorIcon } from '../kit';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import type { EntityId, EntitySummary, MenuViewRef } from '@tm8/contract';
@@ -88,6 +89,7 @@ import type { SessionLiveness } from '../data/seam';
 import { homeRowOf } from '../home/home-model';
 import { relativeTime } from '../messages/messages-model';
 import { useMobileSurface } from './surface';
+import { PinKindsSheet } from './PinKindsSheet';
 import './mobile-drawer.css';
 import { useCustomKindsVersion } from '../data/custom-kinds';
 
@@ -135,6 +137,9 @@ const HELP_REF: MenuViewRef = 'help';
 /** ＋, on `VectorIcon`'s 16x16 grid — drawn, so it inherits the stroke weight. */
 const PLUS_ART: KindArt = ['M8 3.25v9.5', 'M3.25 8h9.5'];
 
+/** A pushpin, for the Pin kinds row — head, needle, and the bar it hangs from. */
+const PIN_ART: KindArt = ['M5.5 2.75h5', 'M6.5 2.75v3.5L4.75 8.75h6.5L9.5 6.25v-3.5', 'M8 8.75v4.5'];
+
 /** The account row's mark: the `member` kind's person — you ARE a member. */
 const PERSON_ART: KindArt = KIND_ART.member;
 
@@ -169,6 +174,21 @@ function useOpen(key: string): [boolean, () => void] {
 /** Test seam: forget every remembered section. */
 export function resetDrawerOpenState(): void {
   openKeys.clear();
+}
+
+const NO_PINS: readonly string[] = [];
+const NO_SUBSCRIPTION = () => () => undefined;
+
+/**
+ * THE RAIL'S PINS, LIVE. Subscribed rather than read once, because the Pin
+ * kinds sheet flips them while this drawer is on screen underneath it — and
+ * read from the store rather than from storage, because once the node keeps
+ * the workspace the store is what holds the desktop's pins.
+ */
+function useRailPins(spaceId: string | undefined): readonly string[] {
+  const store = useMemo(() => (spaceId ? getRailStore(spaceId) : null), [spaceId]);
+  const subscribe = useMemo(() => (store ? store.subscribe.bind(store) : NO_SUBSCRIPTION), [store]);
+  return useSyncExternalStore(subscribe, () => store?.getState().pins ?? NO_PINS);
 }
 
 function sameTarget(a: MenuTarget | null, b: MenuTarget): boolean {
@@ -290,16 +310,21 @@ export function MobileDrawer(props: MobileDrawerProps) {
   const { activeTarget, navigateTo, onDismiss, onOpenEntity, onOpenChat, onOpenChats } = props;
   const [allKindsOpen, toggleAllKinds] = useOpen('all-kinds');
 
+  const [pinSheetOpen, setPinSheetOpen] = useState(false);
+  const pinKindsRef = useRef<HTMLButtonElement>(null);
+  const closePinSheet = useCallback(() => {
+    setPinSheetOpen(false);
+    /* Focus goes back to the row that opened the sheet (§5 focus return). */
+    pinKindsRef.current?.focus();
+  }, []);
+
   const treeKinds = useMemo(() => drawerTreeKinds(), []);
-  /* Read, not subscribed: the drawer is mounted for the moment it is open, and
-     pinning happens on the desktop column. Kinds already drawn as trees above
-     are skipped, so no kind is drawn twice. */
+  /* Kinds already drawn as trees above are skipped, so no kind is drawn twice. */
+  const pins = useRailPins(props.spaceId);
   const pinnedKinds = useMemo(() => {
     const shown = new Set(treeKinds.map((config) => config.kind));
-    return props.spaceId
-      ? workspacePinnedKinds(loadWorkspaceRailPins(props.spaceId)).filter((config) => !shown.has(config.kind))
-      : [];
-  }, [props.spaceId, treeKinds]);
+    return workspacePinnedKinds(pins).filter((config) => !shown.has(config.kind));
+  }, [pins, treeKinds]);
   const otherGroups = useMemo(() => {
     const shown = new Set([...treeKinds, ...pinnedKinds].map((config) => config.kind));
     return homeRailGroups()
@@ -434,13 +459,32 @@ export function MobileDrawer(props: MobileDrawerProps) {
             ))}
           </ul>
 
-          {pinnedKinds.length > 0 ? (
-            <div className="mdrawer__section">
+          {/* ── PINNED ────────────────────────────────────────────────────
+              The rail's pins as the same collapsible trees, and the door to
+              change them. Drawn whenever there is a Space to pin in, even
+              with nothing pinned, so the Pin kinds row is always reachable. */}
+          {props.spaceId ? (
+            <div className="mdrawer__section" data-testid="mobile-drawer-pinned">
               <h2 className="mdrawer__label">Pinned</h2>
               <ul className="mdrawer__trees">
                 {pinnedKinds.map((config) => (
                   <KindTree key={config.kind} config={config} ctx={ctx} />
                 ))}
+                <li>
+                  <button
+                    ref={pinKindsRef}
+                    type="button"
+                    className="mdrawer__row"
+                    data-testid="mobile-drawer-pin-kinds"
+                    aria-haspopup="dialog"
+                    onClick={() => setPinSheetOpen(true)}
+                  >
+                    <span className="mdrawer__mark" aria-hidden>
+                      <VectorIcon paths={PIN_ART} size={16} strokeWidth={1.4} />
+                    </span>
+                    <span className="mdrawer__name">Pin kinds</span>
+                  </button>
+                </li>
               </ul>
             </div>
           ) : null}
@@ -524,6 +568,10 @@ export function MobileDrawer(props: MobileDrawerProps) {
           </ul>
         </div>
       </nav>
+      {/* OVER the drawer, not instead of it. `MobileSheet` portals to the same
+          host, so this sits after the drawer in the DOM and the drawer's
+          backdrop handler never sees the sheet as its own target. */}
+      {pinSheetOpen && props.spaceId ? <PinKindsSheet spaceId={props.spaceId} onDismiss={closePinSheet} /> : null}
     </div>,
     sheetHost,
   );
