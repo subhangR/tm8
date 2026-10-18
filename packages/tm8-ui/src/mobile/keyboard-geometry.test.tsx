@@ -48,9 +48,9 @@ describe('the dock', () => {
 
 describe('the hero collapses with the keyboard up (A5)', () => {
   it('hides the mark and the caption', () => {
-    expect(chatCss).toMatch(
-      /\.mobile-frame\[data-keyboard='up'\] \.tch-welcome__mark,\s*\.cv2-root\[data-shell='mobile'\] \.mobile-frame\[data-keyboard='up'\] \.tch-welcome p \{\s*display: none;/,
-    );
+    expect(block(`${UP} .tch-welcome p`)).toMatch(/display:\s*none;/);
+    /* `important`: RibbonMark's inline `display: block` beats a plain rule. */
+    expect(block(`${UP} .tch-welcome__mark`)).toMatch(/display:\s*none !important;/);
   });
 
   it('turns the h1 into one muted 17px line', () => {

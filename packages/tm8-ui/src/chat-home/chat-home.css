@@ -1951,9 +1951,14 @@ button.tch-entity-chip:hover {
   justify-content: flex-end;
   padding-bottom: var(--pn-space-3);
 }
-.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome__mark,
 .cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome p {
   display: none;
+}
+/* `RibbonMark` draws itself with an inline `display: block`, which beats any
+   stylesheet rule but an important one: without it the mark stayed at 58px
+   with the keyboard up (capture-keyboard-geometry, once its frame matched). */
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome__mark {
+  display: none !important;
 }
 .cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome h1 {
   font-size: 17px;
