@@ -39,6 +39,7 @@ import { MobileFrame, MobileSurfaceProvider } from '../mobile';
 import { MobileAccountSheet } from '../mobile/MobileAccountSheet';
 import '../mobile/mobile-chrome.css';
 import '../mobile/mobile-screens.css';
+import '../mobile/mobile-noscroll.css';
 import { CopyLinkControl } from '../share';
 import { Avatar, BootLoader, VectorIcon } from '../kit';
 import type { Theme } from '../theme/useTheme';

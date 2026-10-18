@@ -18,6 +18,7 @@ import './rich-input/rich-input.css';
    and every rect it reports is 10% too big (44px controls measured 48.4). The
    rest of the file names `.mobile-*` classes this harness does not mount. */
 import './mobile/mobile-chrome.css';
+import './mobile/mobile-noscroll.css';
 import './chat-home/chat-home.css';
 import type { EntityId } from '@tm8/contract';
 import { ChatHomeScreen } from './chat-home/ChatHomeScreen';
