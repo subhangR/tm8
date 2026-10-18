@@ -88,8 +88,10 @@ import type { EntityId, EntitySummary, MenuViewRef } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import { homeRowOf } from '../home/home-model';
 import { relativeTime } from '../messages/messages-model';
+import { useDragDismiss } from './layerMotion';
 import { useMobileSurface } from './surface';
 import { PinKindsSheet } from './PinKindsSheet';
+import { useModalFocus } from './useModalFocus';
 import './mobile-drawer.css';
 import { useCustomKindsVersion } from '../data/custom-kinds';
 
@@ -290,6 +292,11 @@ export interface MobileDrawerProps {
   readonly spaceId?: string | undefined;
 
   readonly onDismiss: () => void;
+  /**
+   * The exit is playing (`usePresence` in the shell): the drawer stays mounted
+   * so it can leave, but it no longer holds focus or takes input.
+   */
+  readonly closing?: boolean | undefined;
 }
 
 /** What every tree in one drawer shares, threaded down once. */
@@ -332,18 +339,37 @@ export function MobileDrawer(props: MobileDrawerProps) {
       .filter((group) => group.kinds.length > 0);
   }, [treeKinds, pinnedKinds]);
 
+  const closing = props.closing === true;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  /* Focus moves to "+ New chat", Tab stays in, the screen behind is inert,
+     and focus returns to the ☰ on close (audit C3). */
+  useModalFocus(rootRef, !closing, { initial: '.mdrawer__new' });
+  /* Swipe left to close (audit C4). The exit animation starts from where the
+     finger let go. Close only: no edge-swipe opens it (`layerMotion.ts`). */
+  useDragDismiss(panelRef, {
+    direction: 'left',
+    fromControls: true,
+    enabled: !closing,
+    onDismiss: (offset, panel) => {
+      panel.style.setProperty('--mdrawer-drag', `${offset}px`);
+      panel.style.transform = '';
+      onDismiss();
+    },
+  });
+
   /* Escape closes it, bound at the document exactly as `MobileSheet` binds its
      own — a phone has no Escape, but the shell is driven by a keyboard in every
      test and on every tablet that falls the phone side of the fork. */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || closing) return;
       event.preventDefault();
       onDismiss();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onDismiss]);
+  }, [onDismiss, closing]);
 
   /* ONE PLACE THE DRAWER CLOSES ON NAVIGATION. Every row goes through `go` or
      `openItem`, so a row that forgot to dismiss is not a shape this file has.
@@ -395,13 +421,15 @@ export function MobileDrawer(props: MobileDrawerProps) {
 
   return createPortal(
     <div
+      ref={rootRef}
       className="mdrawer"
+      data-state={closing ? 'closing' : 'open'}
       data-testid="mobile-drawer"
       onClick={(event) => {
         if (event.target === event.currentTarget) onDismiss();
       }}
     >
-      <nav className="mdrawer__panel" role="dialog" aria-modal="true" aria-label="Navigation">
+      <nav ref={panelRef} className="mdrawer__panel" role="dialog" aria-modal="true" aria-label="Navigation">
         <div className="mdrawer__head">
           <span className="mdrawer__space">{props.spaceLabel}</span>
           <button

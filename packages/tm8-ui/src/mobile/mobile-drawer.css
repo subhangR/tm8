@@ -70,6 +70,52 @@
   }
 }
 
+/*
+ * THE EXIT (task t-layers). The shell keeps the drawer mounted for one
+ * `--pn-dur-base` after it closes (`usePresence`), so it slides back out the
+ * way it came instead of vanishing. A swipe hands over where the finger let
+ * go as `--mdrawer-drag`, so the exit continues the gesture rather than
+ * snapping the panel home first. While closing it takes no taps: the reader
+ * is already on their way to what they picked.
+ */
+.mdrawer[data-state='closing'] {
+  pointer-events: none;
+  animation: mdrawer-scrim-out var(--pn-dur-base) var(--pn-ease-standard) forwards;
+}
+
+.mdrawer[data-state='closing'] .mdrawer__panel {
+  animation: mdrawer-out var(--pn-dur-base) var(--pn-ease-standard) forwards;
+}
+
+@keyframes mdrawer-scrim-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes mdrawer-out {
+  from {
+    transform: translateX(var(--mdrawer-drag, 0px));
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/*
+ * SWIPE TO CLOSE (audit C4). Vertical stays the browser's, so the drawer
+ * still scrolls; horizontal comes to `useDragDismiss`. While the finger is
+ * down the panel follows it exactly, with no entry animation in the way.
+ */
+.mdrawer__panel {
+  touch-action: pan-y;
+}
+
+.mdrawer__panel[data-dragging] {
+  animation: none;
+  user-select: none;
+}
+
 /* ── THE HEAD ────────────────────────────────────────────────────────────── */
 
 .mdrawer__head {
@@ -616,7 +662,9 @@
  */
 @media (prefers-reduced-motion: reduce) {
   .mdrawer,
-  .mdrawer__panel {
+  .mdrawer__panel,
+  .mdrawer[data-state='closing'],
+  .mdrawer[data-state='closing'] .mdrawer__panel {
     animation: none;
   }
 

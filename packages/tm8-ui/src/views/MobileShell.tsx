@@ -60,6 +60,8 @@ import { HelpScreen } from '../help';
 import type { ChatThreadSummary } from '../chat-home/types';
 import type { ChatHomeL2Bridge } from '../chat-home/real-port';
 import { MobileDrawer, anyUnseen } from '../mobile/MobileDrawer';
+import { usePresence } from '../mobile/layerMotion';
+import { useOverlayEntry } from '../stores/overlayHistory';
 import { EntityChatSlot, useChatSlot } from '../entity-chat';
 import { navStore } from '../stores/navStore';
 import { MobileThreadsSheet } from '../mobile/MobileThreadsSheet';
@@ -492,6 +494,14 @@ export function MobileShell(props: MobileShellProps) {
    */
   const [drawerOpen, setDrawerOpen] = useState(false);
   /*
+   * THE DRAWER'S BACK ENTRY AND ITS EXIT (task t-layers). Android Back pops
+   * the drawer's same-URL marker and closes it; every other close goes
+   * through `closeDrawer`, which takes the marker off again. `usePresence`
+   * keeps it mounted through the slide out (none under reduced motion).
+   */
+  const closeDrawer = useOverlayEntry(drawerOpen, () => setDrawerOpen(false));
+  const drawerPresence = usePresence(drawerOpen);
+  /*
    * THE CONVERSATION LIST'S OWN SURFACE (task 01a0a5f2).
    *
    * It used to be the drawer's first section, rendered inline, and it grew
@@ -730,8 +740,9 @@ export function MobileShell(props: MobileShellProps) {
               shell state (there is still no `?thread=` route, see above), so a
               thread picked from the Docs screen has to send the viewer to the
               chat screen or the pick would silently do nothing visible. */}
-          {drawerOpen ? (
+          {drawerPresence.mounted ? (
             <MobileDrawer
+              closing={drawerPresence.closing}
               spaceLabel={props.spaceLabel ?? 'tm8'}
               spaceId={spaceId}
               activeTarget={activeTarget}
@@ -774,7 +785,7 @@ export function MobileShell(props: MobileShellProps) {
                 resetScreenStacks();
                 setThreadId(null);
                 if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
-                setDrawerOpen(false);
+                closeDrawer();
               }}
               {...(props.viewerActor
                 ? {
@@ -782,7 +793,7 @@ export function MobileShell(props: MobileShellProps) {
                     accountName: props.viewerActor.displayName,
                   }
                 : {})}
-              onDismiss={() => setDrawerOpen(false)}
+              onDismiss={closeDrawer}
             />
           ) : null}
           {/*

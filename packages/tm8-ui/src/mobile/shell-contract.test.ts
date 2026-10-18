@@ -351,8 +351,9 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
     const shell = read('../views/MobileShell.tsx');
     expect(shell).not.toContain('DRAWER_CREATE_KIND');
     /* A VERB ROW DISMISSES. On one surface a create that left the drawer up
-       would be a press with no visible consequence. */
-    expect(shell).toMatch(/onNewThread=\{\(\) => \{[\s\S]*?setDrawerOpen\(false\);[\s\S]*?\}\}/);
+       would be a press with no visible consequence. It dismisses through
+       `closeDrawer` (t-layers), which also takes the drawer's Back entry off. */
+    expect(shell).toMatch(/onNewThread=\{\(\) => \{[\s\S]*?closeDrawer\(\);[\s\S]*?\}\}/);
   });
 
   it('grows its targets with real geometry, never a pseudo-element', () => {

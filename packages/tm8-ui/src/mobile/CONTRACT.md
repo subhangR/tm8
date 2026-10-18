@@ -152,6 +152,17 @@ is cheap to reverse and will be revisited after a real-phone pass.
 8. **Messages section:** task, doc and session pages show Messages below the body and above Linked,
    with the latest 3 and "View all". Other kinds list messages under Linked.
 
+**LAYERS AND BACK (task t-layers, 2026-10-18).** The drawer and every `MobileSheet` push ONE same-URL
+history entry when they open (`stores/overlayHistory.ts`), so Android Back closes the layer instead
+of the screen under it. It is a marker, not a route: the address does not change, `hashchange` never
+fires, and nothing reacts to a route change. Closing by ✕, scrim, Escape or swipe dismisses at once
+and calls `history.back()` to take the marker off, so markers never pile up. A navigation made while a
+marker is current (a drawer destination) REPLACES it in `routes/transport.ts`, giving
+`[Chat, destination]`. The mobile shell still never touches `history` itself; the store does.
+The drawer closes by swipe left; nothing opens it by edge swipe (that edge is Android Back). Sheets
+dismiss by dragging the head down. Both share `useModalFocus`: first row focused, Tab trapped, the
+frame behind `inert`, focus returned to the opener.
+
 The tab bar was retired on 2026-08-19, so where the text below says "tab bar", read **the drawer**.
 
 **One history. The shell forks and the router does not** — `no-router-fork.test.ts` enforces it.
