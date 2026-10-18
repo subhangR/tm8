@@ -103,6 +103,17 @@
   padding-right: var(--mobile-safe-right);
 }
 
+/*
+ * A FRAME WITH NO HEADER (the chat screen, task t-topbar). The header row's
+ * track goes with it, or `main` would land in that `auto` row and stop being
+ * the thing that scrolls. The header was also what cleared the notch, so the
+ * frame takes the top inset itself.
+ */
+.mobile-frame[data-headless] {
+  grid-template-rows: 1fr auto;
+  padding-top: var(--mobile-safe-top);
+}
+
 .mobile-frame__header {
   min-height: var(--mobile-header-min);
   padding-top: var(--mobile-safe-top);

@@ -51,6 +51,13 @@ export interface MobileFrameProps {
    */
   readonly children?: ReactNode;
 
+  /**
+   * Chrome that FLOATS over the content instead of taking a row — the chat
+   * screen's ☰, which has no header to sit in (task t-topbar). A peer of the
+   * scroller rather than a child of it, so it never scrolls with the screen.
+   */
+  readonly float?: ReactNode;
+
   /** Bottom tab bar — §5.1's five destinations. Phase 3 fills it. */
   readonly tabBar?: ReactNode;
 
@@ -69,7 +76,7 @@ export interface MobileFrameProps {
   readonly notices?: ReactNode;
 }
 
-export function MobileFrame({ header, children, tabBar, sheet, notices }: MobileFrameProps) {
+export function MobileFrame({ header, children, float, tabBar, sheet, notices }: MobileFrameProps) {
   /*
    * THE KEYBOARD IS A FRAME CONCERN — shell contract, §3 of `CONTRACT.md`.
    *
@@ -106,6 +113,11 @@ export function MobileFrame({ header, children, tabBar, sheet, notices }: Mobile
          a selector for it is a presence check and the DOM stays quiet in the
          state the app is in almost all of the time. */
       {...(keyboardInset > 0 ? { 'data-keyboard': 'up' } : {})}
+      /* NO HEADER, NO HEADER ROW. The grid's first track is the header's, and a
+         frame without one would auto-place the content into that `auto` row,
+         where it sizes to its content and the frame scrolls instead of it.
+         `mobile.css` reads this to drop the track and keep the top inset. */
+      {...(header ? {} : { 'data-headless': '' })}
       /* A CUSTOM PROPERTY, NOT A HEIGHT. The frame's own height composes it in
          `mobile.css` beside `100dvh` and the safe-area tokens, so the whole
          viewport arithmetic stays readable in one place in the stylesheet
@@ -122,6 +134,8 @@ export function MobileFrame({ header, children, tabBar, sheet, notices }: Mobile
       <main className="mobile-frame__content" role="main">
         {children}
       </main>
+
+      {float}
 
       {notices ? <div className="mobile-frame__notices">{notices}</div> : null}
 

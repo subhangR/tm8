@@ -31,6 +31,7 @@
  * honesty rule the desktop switch was repaired to follow.
  */
 import { AttentionHeaderButton, AttentionSheet } from '../attention/AttentionSheet';
+import { useAttentionOptional } from '../attention';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ActorSummary, EntityId, EntityKind, SpaceId } from '@tm8/contract';
@@ -579,39 +580,66 @@ export function MobileShell(props: MobileShellProps) {
    * established. ABSENT IS NOT ZERO, and it is not "unread" either.
    */
   const unseen = anyUnseen(data.countsFor);
+  /*
+   * THE CHAT SCREEN HAS NO HEADER (task t-topbar, product ruling over audit
+   * B2), so the attention segment that lives in the header has nowhere to sit
+   * there. Its fact rides on the floating ☰ as the same dot unread does: a
+   * request waiting on YOU is a reason to open the menu. Mine only — "waiting
+   * on someone" is not a reason to interrupt the one screen with no chrome.
+   */
+  const attention = useAttentionOptional();
+  const attentionMine = attention ? attention.counts().mine : 0;
+  const menuDot = onChatScreen ? unseen === true || attentionMine > 0 : unseen === true;
+  const menuLabel = [
+    'Navigation',
+    unseen === true ? 'unread items' : null,
+    onChatScreen && attentionMine > 0 ? `${attentionMine} need you` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
-  /* The link affordance is in the header for the same reason it is in the
-     desktop tab bar: the thing being shared is THE PAGE. On a phone it matters
-     more, not less — a phone is where links are received and forwarded. */
-  const header = (
-    <div className="mobile-header" data-chrome={onChatScreen ? 'chat' : undefined}>
-      {/* ☰ — ON EVERY SCREEN NOW (owner ruling 4), because it is the only
-          navigation this shell has left. It used to appear on the chat screen
-          alone and open the conversation inventory; the drawer's FIRST section
-          is that same inventory, so nothing was taken away — the control's
-          reach was widened and its contents grew by 26 destinations.
+  /* ☰ — ON EVERY SCREEN (owner ruling 4), because it is the only navigation
+     this shell has left. In the header everywhere but chat; FLOATING over the
+     transcript on chat, where there is no header to hold it.
 
-          IT CARRIES THE UNREAD FACT. `unseen === true` draws the indicator;
-          `false` and `null` both draw nothing, and they are different states
-          for a reason the `unseen` block above states in full. */}
-      <button
-        type="button"
-        className="mobile-header__menu"
-        data-testid="mobile-drawer-menu"
-        aria-haspopup="dialog"
-        aria-expanded={drawerOpen}
-        aria-label={unseen === true ? 'Navigation, unread items' : 'Navigation'}
-        onClick={() => setDrawerOpen(true)}
-      >
-        <VectorIcon paths={MENU_ART} size={20} strokeWidth={1.6} />
-        {unseen === true ? <span className="mobile-header__dot" aria-hidden /> : null}
-      </button>
+     IT CARRIES THE UNREAD FACT. `unseen === true` draws the indicator;
+     `false` and `null` both draw nothing, and they are different states for a
+     reason the `unseen` block above states in full. */
+  const menuButton = (
+    <button
+      type="button"
+      className={onChatScreen ? 'mobile-header__menu mobile-float-menu' : 'mobile-header__menu'}
+      data-testid="mobile-drawer-menu"
+      aria-haspopup="dialog"
+      aria-expanded={drawerOpen}
+      aria-label={menuLabel}
+      onClick={() => setDrawerOpen(true)}
+    >
+      <VectorIcon paths={MENU_ART} size={20} strokeWidth={1.6} />
+      {menuDot ? (
+        <span
+          className="mobile-header__dot"
+          /* Waiting-on-you outranks unread: it wears the attention tone. */
+          {...(onChatScreen && attentionMine > 0 ? { 'data-tone': 'wait' } : {})}
+          aria-hidden
+        />
+      ) : null}
+    </button>
+  );
+
+  /* NO HEADER ON THE CHAT SCREEN (task t-topbar). The transcript runs to the
+     top edge under a floating ☰; New chat is in the drawer, and the account
+     is the drawer's foot row. Every other screen keeps the header, where the
+     title is the only thing that names the screen. */
+  const header = onChatScreen ? null : (
+    <div className="mobile-header">
+      {menuButton}
       {/* Rendered ONLY when something is open. A chevron at a screen root would
           be dead chrome that either does nothing or leaves the app; the ☰
           beside it is the navigation there. The two coexist and mean different
           things — ☰ goes to a destination, the chevron goes UP one screen —
           which is exactly the distinction the tab bar could never draw. */}
-      {showUp && !onChatScreen ? (
+      {showUp ? (
         <button
           type="button"
           className="mobile-header__back"
@@ -630,13 +658,9 @@ export function MobileShell(props: MobileShellProps) {
           <VectorIcon paths={CHEVRON_UP_ART} size={20} strokeWidth={1.6} />
         </button>
       ) : null}
-      {/* NOT ON THE CHAT SCREEN. The eyebrow + "Home" pair names a destination
-          the tab bar is already showing as current, and the screen below it is
-          a blank canvas whose whole job is to invite a first message. Two rows
-          of chrome captioning an empty page is the clutter this screen was
-          reported for. Every other screen keeps them: there the title names
-          something the tab bar cannot (a channel, an entity, a refusal). */}
-      {onChatScreen ? null : (
+      {/* The chat screen has no header at all now (see `header` above); on
+          every screen that does, the title names something nothing else on
+          the screen can (a channel, an entity, a refusal). */}
       <span className="mobile-header__titles">
         <span className="mobile-header__space">{props.spaceLabel ?? 'tm8'}</span>
         {/*
@@ -657,7 +681,6 @@ export function MobileShell(props: MobileShellProps) {
         */}
         <span className="mobile-header__title">{title}</span>
       </span>
-      )}
       {/* COPY LINK IS IN THE DRAWER NOW (owner ruling, 2026-08-19).
           It sat here beside the title, and the reasoning held — the thing being
           shared is a PAGE — but the header is 53px shared by five things and
@@ -705,7 +728,7 @@ export function MobileShell(props: MobileShellProps) {
        it conditionally, so an unfilled one leaves no dead band — see the block
        where `TABS` used to be for why it is unfilled. */
     <MobileFrame
-      header={header}
+      {...(header ? { header } : { float: menuButton })}
       notices={props.notices}
       sheet={<div className="msheet-host" ref={setSheetHost} />}
     >
