@@ -32,6 +32,7 @@ import { KindIcon, type KindConfig, type ListPageState, type SortKey } from '../
 import { VectorIcon } from '../kit';
 import { MobileSheet } from '../mobile';
 import { entityLinkUrl } from '../share';
+import { afterOverlayBack } from '../stores/overlayHistory';
 import type { ListPick } from '../routes/types';
 import {
   CAT_ALL,
@@ -84,6 +85,10 @@ export interface PhoneEntityListProps {
 /** Hold this long for the action sheet (mockup: ~450ms, cancels past 8px of travel). */
 export const HOLD_MS = 450;
 const HOLD_SLOP = 8;
+/** After the lift that ends a hold, its click is swallowed for this long. */
+const GHOST_CLICK_MS = 350;
+/** The guard never outlives this, release heard or not. */
+const GHOST_GUARD_MAX_MS = 2000;
 /** Skeletons only after this, so a fast read never flashes. */
 const SKELETON_DELAY_MS = 150;
 const HINT_KEY = 'tm8.phoneList.holdHint.v1';
@@ -293,6 +298,23 @@ export function PhoneEntityList(props: PhoneEntityListProps): ReactNode {
     requestAnimationFrame(() => back?.focus({ preventScroll: true }));
   }, [sheet]);
 
+  /*
+   * OPEN FROM THE ACTIONS SHEET: CLOSE FIRST, PUSH WHEN THE CLOSE HAS LANDED.
+   * The sheet's close takes its history marker off with `history.back()`,
+   * which lands a task later. `open` is a screen-stack push whose address the
+   * gate writes in an effect, so pushed alongside the close it would be the
+   * entry that back removes: the sheet closes and the entity never opens.
+   * This effect runs after the sheet's unmount (cleanups before effects), so
+   * the back is already in flight and the push waits for it.
+   */
+  const openAfterClose = useRef<string | null>(null);
+  useEffect(() => {
+    const id = openAfterClose.current;
+    if (sheet !== null || id === null) return;
+    openAfterClose.current = null;
+    afterOverlayBack(() => open(id));
+  }, [sheet, open]);
+
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -325,6 +347,44 @@ export function PhoneEntityList(props: PhoneEntityListProps): ReactNode {
     [rowById, hintSeen],
   );
 
+  /*
+   * THE RELEASE AFTER A HOLD IS NOT A TAP. The sheet opens under the finger,
+   * so the click that follows the lift lands on whatever the sheet put there
+   * (its Open row, or the backdrop) and the sheet closes the moment it opened.
+   * Swallow that one click: from the hold until shortly after the release.
+   */
+  const ghostGuard = useRef<(() => void) | null>(null);
+  const armGhostGuard = useCallback(() => {
+    ghostGuard.current?.();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const disarm = () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('click', swallow, true);
+      window.removeEventListener('pointerup', onRelease, true);
+      window.removeEventListener('pointercancel', onRelease, true);
+      window.removeEventListener('pointerdown', disarm, true);
+      if (ghostGuard.current === disarm) ghostGuard.current = null;
+    };
+    const swallow = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      disarm();
+    };
+    const onRelease = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(disarm, GHOST_CLICK_MS);
+    };
+    window.addEventListener('click', swallow, true);
+    window.addEventListener('pointerup', onRelease, true);
+    window.addEventListener('pointercancel', onRelease, true);
+    /* A fresh press is a real tap, whatever came before. */
+    window.addEventListener('pointerdown', disarm, true);
+    /* A release the window never hears still ends the guard. */
+    timer = setTimeout(disarm, GHOST_GUARD_MAX_MS);
+    ghostGuard.current = disarm;
+  }, []);
+  useEffect(() => () => ghostGuard.current?.(), []);
+
   const cancelHold = useCallback(() => {
     if (hold.current.timer) clearTimeout(hold.current.timer);
     hold.current.timer = null;
@@ -345,6 +405,7 @@ export function PhoneEntityList(props: PhoneEntityListProps): ReactNode {
       hold.current.timer = null;
       setPressed(null);
       navigator.vibrate?.(10);
+      armGhostGuard();
       openActions(id, el);
     }, HOLD_MS);
   };
@@ -663,8 +724,8 @@ export function PhoneEntityList(props: PhoneEntityListProps): ReactNode {
           spaceId={spaceId}
           capabilities={props.capabilitiesOf?.(sheet.row.id) ?? sheet.row.capabilities}
           onOpen={() => {
+            openAfterClose.current = sheet.row.id;
             setSheet(null);
-            open(sheet.row.id);
           }}
           onCopied={(ok) => setToast(ok ? 'Link copied' : 'Could not copy the link')}
           {...(props.onTerminate ? { onTerminate: props.onTerminate } : {})}

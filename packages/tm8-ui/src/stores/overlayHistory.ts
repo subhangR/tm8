@@ -48,6 +48,8 @@ interface Layer {
 const layers: Layer[] = [];
 /** Layers waiting for a back of ours to land before they push. */
 const queued: Layer[] = [];
+/** Work waiting for a back of ours to land (`afterOverlayBack`). */
+const settled: Array<() => void> = [];
 let backsInFlight = 0;
 let staleTimer: ReturnType<typeof setTimeout> | null = null;
 let listening = false;
@@ -79,6 +81,7 @@ function flushQueued(): void {
     const layer = queued.shift()!;
     if (layers.includes(layer)) pushMarker(layer);
   }
+  while (backsInFlight === 0 && settled.length > 0) settled.shift()!();
 }
 
 function settleBack(): void {
@@ -180,10 +183,23 @@ export function useOverlayEntry(active: boolean, onPop: () => void): () => void 
   }, []);
 }
 
+/**
+ * Run `fn` once no back of ours is in flight: now, or when its `popstate`
+ * lands. For a navigation that a layer's close would otherwise undo — one
+ * that reaches history later than the close's `history.back()` (a screen-stack
+ * push the gate writes to the address in an effect), so it cannot ride over
+ * the marker the way a synchronous router push does.
+ */
+export function afterOverlayBack(fn: () => void): void {
+  if (backsInFlight === 0) fn();
+  else settled.push(fn);
+}
+
 /** Test helper: forget every layer and in-flight back. */
 export function resetOverlayHistory(): void {
   layers.length = 0;
   queued.length = 0;
+  settled.length = 0;
   backsInFlight = 0;
   if (staleTimer) clearTimeout(staleTimer);
   staleTimer = null;
