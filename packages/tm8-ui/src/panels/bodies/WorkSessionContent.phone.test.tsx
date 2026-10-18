@@ -290,4 +290,34 @@ describe('WorkSessionContent on a phone', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show session details and navigation' }));
     expect(screen.getByTestId('session-messages-open')).toBeTruthy();
   });
+
+  /* F4: the panel drew the forms banner above this row, so with the frame
+     header hidden it read as sitting under the session's bar. The phone draws
+     it here, right after the row; the desktop panel keeps drawing its own. */
+  it('draws the forms banner directly under the surface row', () => {
+    const banner = <section data-testid="pending-forms-banner">1 form waiting</section>;
+    const view = phone(
+      <WorkSessionContent
+        sessionId={SESSION}
+        profile={null}
+        terminal={<div>native terminal</div>}
+        transcript={<div>agent transcript</div>}
+        belowSwitch={banner}
+      />,
+    );
+    const row = screen.getByRole('tablist').closest('.pn-surface-switch');
+    expect(row?.nextElementSibling).toBe(screen.getByTestId('pending-forms-banner'));
+    view.unmount();
+
+    render(
+      <WorkSessionContent
+        sessionId={SESSION}
+        profile={null}
+        terminal={<div>native terminal</div>}
+        transcript={<div>agent transcript</div>}
+        belowSwitch={banner}
+      />,
+    );
+    expect(screen.queryByTestId('pending-forms-banner')).toBeNull();
+  });
 });

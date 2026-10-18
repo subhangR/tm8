@@ -1110,6 +1110,13 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * it. Registry refusals (wrong state) still render disabled-with-reason.
    */
   const embedded = props.embeddedChrome ?? null;
+  const formsBanner = isTerminal && !isTombstone && !embedded ? (
+    <PendingFormsBanner
+      sessionId={detail.id}
+      onResume={props.liveness !== 'live' ? props.onResumeSession : undefined}
+      resuming={props.resumingSession}
+    />
+  ) : null;
   const supportedPrimaries = embedded
     ? (config.panel.primaries ?? []).filter((ref) => {
         if (embedded.omitActions?.includes(ref)) return false;
@@ -1550,14 +1557,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
 
       {/* Forms this session asked the viewer to answer, with Fill inline
           (decision 11). Resume is offered for a queued answer only where this
-          panel already offers it: a session that is not running. */}
-      {isTerminal && !isTombstone && !embedded ? (
-        <PendingFormsBanner
-          sessionId={detail.id}
-          onResume={props.liveness !== 'live' ? props.onResumeSession : undefined}
-          resuming={props.resumingSession}
-        />
-      ) : null}
+          panel already offers it: a session that is not running. The phone
+          draws it under the session's surface row instead (`formsBanner`). */}
+      {oneSurface ? null : formsBanner}
 
       {/* THE CANVAS HAS NO TAB ROW (task 01a101c5): the same end cluster floats
           over the body's top-right corner instead, so Run, Chat, Edit, ⤢ and ✕
@@ -1825,6 +1827,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     twoColumn={twoColumn}
                     railSlot={railStrip}
                     railTailSlot={railTail}
+                    formsBanner={oneSurface ? formsBanner : null}
                   />
                   {bodyConsumesSlot ? null : attachmentSlot}
                   {/* Not under a terminal: it owns the screen down to its
@@ -2116,6 +2119,8 @@ function PanelBody(
     railSlot?: ReactNode;
     /** Rail rows after the facts (the relations), two-column only. */
     railTailSlot?: ReactNode;
+    /** The phone's pending-forms banner, for the session body to draw. */
+    formsBanner?: ReactNode;
   },
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
@@ -2209,6 +2214,7 @@ function PanelBody(
         requestedSurface={props.contentSurface}
         onSurfaceChange={props.onContentSurfaceChange}
         switchSlot={props.surfaceSlot}
+        belowSwitch={props.formsBanner}
         terminal={
           /*
            * THE "transcript ↗" CHIP BECOMES REAL HERE.
