@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, renderHook } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MobileDrawer, resetDrawerOpenState } from './MobileDrawer';
@@ -165,6 +167,19 @@ describe('drawer swipe to close (audit C4)', () => {
     expect(panel.style.transform).toBe('');
   });
 
+  it('a swipe left begun on a row inside the scroll region closes it (verify F2)', () => {
+    const { host } = frame();
+    const onDismiss = vi.fn();
+    const view = render(drawer(host, { onDismiss }), { container: host });
+    const panel = view.getByRole('dialog');
+    sized(panel, 300, 700);
+    const scroll = panel.querySelector<HTMLElement>('.mdrawer__scroll')!;
+    const row = scroll.querySelector('button')!;
+    expect(row).not.toBeNull();
+    drag(panel, [250, 300], [100, 305], row);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
   it('a swipe right (the opening direction) does nothing', () => {
     const { host } = frame();
     const onDismiss = vi.fn();
@@ -173,6 +188,27 @@ describe('drawer swipe to close (audit C4)', () => {
     sized(panel, 300, 700);
     drag(panel, [50, 300], [290, 300]);
     expect(onDismiss).not.toHaveBeenCalled();
+  });
+});
+
+describe('drawer swipe survives the scroll region (verify F2)', () => {
+  /* jsdom has no touch-action, so the drag test above passes on any
+     stylesheet. In a browser a scroll container restarts the touch-action
+     chain: unless the scroller itself says `pan-y`, a horizontal swipe on a
+     row is the browser's and ends in `pointercancel`. Pin the declaration. */
+  const file = './mobile-drawer.css';
+  const css = readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const body = (sel: string) =>
+    [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter((m) => (m[1] ?? '').split(',').map((x) => x.trim()).includes(sel))
+      .map((m) => m[2] ?? '')
+      .join('\n');
+
+  it('the scroller declares touch-action: pan-y and still scrolls vertically', () => {
+    const scroll = body('.mdrawer__scroll');
+    expect(scroll).toMatch(/touch-action:\s*pan-y\s*;/);
+    expect(scroll).toMatch(/overflow-y:\s*auto/);
+    expect(body('.mdrawer__panel')).toMatch(/touch-action:\s*pan-y\s*;/);
   });
 });
 

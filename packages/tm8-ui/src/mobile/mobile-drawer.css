@@ -185,6 +185,11 @@
   padding-block: var(--pn-space-2);
   /* No visible scrollbar on the phone (mockup v3); it still scrolls. */
   scrollbar-width: none;
+  /* A scroll container starts a fresh touch-action chain, so the panel's
+     `pan-y` stops here: left as `auto`, the browser claims a horizontal
+     swipe begun on any row and sends `pointercancel`, and the drawer never
+     closes (verify F2). Vertical stays the browser's; horizontal is ours. */
+  touch-action: pan-y;
 }
 
 .mdrawer__scroll::-webkit-scrollbar {
