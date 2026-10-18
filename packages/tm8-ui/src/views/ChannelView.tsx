@@ -76,6 +76,13 @@ export interface ChannelViewProps {
   /** The viewer, for the session chat beside the feed — same identity every
    *  other EntityDetailPanel host passes. */
   viewerMemberId?: string | null;
+  /**
+   * The phone's push (t-chips, CONTRACT §4 ruling 1): a feed chip, a pinned
+   * chip or a tab row opens the entity's FULL page, one push, so Back is this
+   * channel at the scroll left. Absent (the desktop) ⇒ the aside beside the
+   * feed, unchanged.
+   */
+  onOpenEntityPage?(id: EntityId): void;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -92,6 +99,7 @@ export function ChannelView({
   onSpawn,
   onNotice,
   viewerMemberId,
+  onOpenEntityPage,
 }: ChannelViewProps) {
   const [activeTab, setActiveTab] = useState(FEED_KEY);
   /* The aside's terminal⇄chat request, per entity — the same memory
@@ -146,6 +154,9 @@ export function ChannelView({
     [channelId],
   );
   const [detailMode, setDetailMode] = useState<DetailMode>('aside');
+  /* What the channel's own surfaces open with: the page on the phone, the aside
+     here. The aside's panel keeps `setSelectedId`; on the phone it never opens. */
+  const openFromChannel = (id: EntityId) => (onOpenEntityPage ? onOpenEntityPage(id) : setSelectedId(id));
 
   /*
    * THE ASIDE IS DRAGGABLE, clamped against the feed's floor.
@@ -358,7 +369,7 @@ export function ChannelView({
               <span className="chv-eyebrow">{`PINNED · ${content.pinned.length}`}</span>
               <div className="chv-shelf__items">
                 {content.pinned.map((item) => (
-                  <button key={item.id} type="button" className="chv-chip" onClick={() => setSelectedId(item.id)}>
+                  <button key={item.id} type="button" className="chv-chip" onClick={() => openFromChannel(item.id)}>
                     <span aria-hidden><KindIcon kind={item.kind} /></span>
                     {item.title}
                   </button>
@@ -417,7 +428,7 @@ export function ChannelView({
                   attachEntityOptions={feed.attachEntityOptions}
                   onStartAttachmentUpload={feed.startAttachmentUpload}
                   onLoadEarlier={feed.loadEarlier}
-                  onOpenEntity={(id) => setSelectedId(id)}
+                  onOpenEntity={openFromChannel}
                   threads={threadsEnabled}
                   anchorTitle={anchorTitle}
                   thread={feed.thread}
@@ -431,7 +442,7 @@ export function ChannelView({
                 key={`${channelId}:${activeTab}`}
                 seam={data.seam}
                 tab={tabs.find((tab) => tab.key === activeTab) ?? null}
-                onOpen={(id) => setSelectedId(id)}
+                onOpen={openFromChannel}
               />
             )}
           </div>

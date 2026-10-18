@@ -1275,6 +1275,16 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
         reasons={reasons}
         onNotice={onNotice}
         {...(props.serverBaseUrl ? { serverBaseUrl: props.serverBaseUrl } : {})}
+        /* EVERY CHIP PUSHES THE ENTITY'S PAGE (CONTRACT §4 ruling 1), as on the
+           chat transcript: one push, no aside peek, Back is the channel. */
+        onOpenEntityPage={(id) =>
+          withEntityKind(
+            id,
+            (ref) => data.detailOf(ref)?.kind,
+            (ref) => readFleetEntity(ref, (r) => data.seam.entity(r)),
+            (ref, kind) => openEntityOnPhone(props.navigateTo, ref, kind),
+          )
+        }
       />
     );
   }
