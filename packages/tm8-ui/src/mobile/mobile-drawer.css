@@ -163,6 +163,52 @@
   padding: 0;
 }
 
+/* ── ＋ NEW CHAT ─────────────────────────────────────────────────────────────
+ *
+ * The drawer's one primary action (mockup v3): full width, filled, 46px tall,
+ * above every section. Taller than the 44px row floor on purpose — it is the
+ * thing the drawer is most often opened for.
+ */
+
+.mdrawer__primary {
+  padding: var(--pn-space-1) var(--pn-space-3) var(--pn-space-3);
+}
+
+.mdrawer__new {
+  inline-size: 100%;
+  min-block-size: max(46px, var(--mobile-touch-min));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+
+  font-family: var(--pn-ui);
+  font-weight: 650;
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-snug);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: filter var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.mdrawer__new:active {
+  filter: brightness(0.9);
+}
+
+.mdrawer__new:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
 /* ── ONE ROW ─────────────────────────────────────────────────────────────── */
 
 .mdrawer__row {

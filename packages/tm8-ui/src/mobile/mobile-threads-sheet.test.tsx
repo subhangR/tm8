@@ -107,7 +107,7 @@ describe('MobileThreadsSheet', () => {
   });
 
   it('keeps the verb reachable without reading past the list', () => {
-    /* ＋ New conversation is the first row, not the last. A viewer who opened
+    /* ＋ New chat is the first row, not the last. A viewer who opened
        this list to start something new must not have to scroll the
        conversations they are not looking for to find it. */
     const onNewThread = vi.fn();
@@ -121,8 +121,8 @@ describe('MobileThreadsSheet', () => {
       />,
     );
     const rows = view.baseElement.querySelectorAll('.mthreads__row');
-    expect(rows[0]?.textContent).toContain('New conversation');
-    fireEvent.click(view.getByText('New conversation'));
+    expect(rows[0]?.textContent).toContain('New chat');
+    fireEvent.click(view.getByText('New chat'));
     expect(onNewThread).toHaveBeenCalledTimes(1);
   });
 
@@ -183,7 +183,7 @@ function chatsRows(view: ReturnType<typeof render>): string[] {
 }
 
 describe('MobileDrawer — the Chats section', () => {
-  it('carries BOTH verbs and the door, and nothing that grows', () => {
+  it('carries the work verb and the door, and nothing that grows', () => {
     /*
      * THE WHOLE SHAPE, ASSERTED AS AN EXACT LIST rather than three presence
      * checks. Ruling 7 is a statement about what is NOT there, and a
@@ -193,7 +193,27 @@ describe('MobileDrawer — the Chats section', () => {
      * entries rather than as a passing test.
      */
     const view = mountDrawer({ chatCount: 12 });
-    expect(chatsRows(view)).toEqual(['New conversation', 'New task', 'Conversations12']);
+    expect(chatsRows(view)).toEqual(['New task', 'Conversations12']);
+  });
+
+  it('＋ New chat is the primary button above every section, and only starts a chat', () => {
+    /* Drawer mockup v3: one filled button first, reading "New chat" — not a
+       row inside Chats, and not a door to the list. It fires the shell's
+       fresh-chat verb (which clears the thread and closes the drawer) and
+       nothing else: no list sheet, no create. */
+    const onNewThread = vi.fn();
+    const onOpenChats = vi.fn();
+    const onNewEntity = vi.fn();
+    const view = mountDrawer({ onNewThread, onOpenChats, onNewEntity });
+    const button = view.getByTestId('mobile-drawer-new-chat');
+    expect(button.textContent).toBe('New chat');
+    expect(button.closest('ul')).toBeNull();
+    const first = view.baseElement.querySelector('.mdrawer__scroll > *');
+    expect(first?.contains(button)).toBe(true);
+    fireEvent.click(button);
+    expect(onNewThread).toHaveBeenCalledTimes(1);
+    expect(onOpenChats).not.toHaveBeenCalled();
+    expect(onNewEntity).not.toHaveBeenCalled();
   });
 
   it('the second verb takes its word from the registry, not from the drawer', () => {

@@ -26,8 +26,8 @@
  *
  * ── FOUR SECTIONS, IN ONE ORDER (owner ruling 3) ───────────────────────────
  *
- *   Chats        TWO VERBS — ＋ New conversation and ＋ New {kind} — and ONE
- *                row that opens the conversation list. FIRST, because it is
+ *   ＋ New chat  the primary button, above every section (drawer mockup v3).
+ *   Chats        ＋ New {kind} and ONE row that opens the conversation list. FIRST, because it is
  *                what a reader returns to. It is also where the ☰ used to lead
  *                on the chat screen, so nothing was taken away to make room
  *                for it.
@@ -327,17 +327,27 @@ export function MobileDrawer(props: MobileDrawerProps) {
               summaries the chat screen publishes back through
               `onThreadsChange` — one list with one source, now on a surface
               that can hold it. */}
+          {/* ── ＋ NEW CHAT ────────────────────────────────────────────────
+              THE drawer's primary action (drawer mockup v3), so it is drawn
+              as one: a filled button above every section rather than a row
+              inside Chats. It opens a fresh, empty chat and closes the drawer
+              — never a picker and never the conversation list, which is what
+              the Conversations row below is for. The shell's `onNewThread`
+              does the clearing, the navigating and the dismissing. */}
+          <div className="mdrawer__primary">
+            <button
+              type="button"
+              className="mdrawer__new"
+              data-testid="mobile-drawer-new-chat"
+              onClick={props.onNewThread}
+            >
+              <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.8} />
+              <span>New chat</span>
+            </button>
+          </div>
           <Section label="Chats">
             <li>
-              <button type="button" className="mdrawer__row mdrawer__row--verb" onClick={props.onNewThread}>
-                <span className="mdrawer__mark" aria-hidden>
-                  <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.6} />
-                </span>
-                <span className="mdrawer__name">New conversation</span>
-              </button>
-            </li>
-            <li>
-              {/* THE WORK VERB, beside the conversation one. Its word comes
+              {/* THE WORK VERB, beside the chat one. Its word comes
                   from the registry so the drawer and the desktop's ＋ cannot
                   come to say different things about the same create.
 
