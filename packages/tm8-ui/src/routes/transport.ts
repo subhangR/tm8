@@ -27,6 +27,12 @@ export interface RouterTarget {
    * both real implementations provide it.
    */
   historyDepth?(): number;
+  /**
+   * Walk one entry back — the phone's ‹ when the entry below is one this tab
+   * wrote (CONTRACT §5 ruling 1: Back is real history, `history.back()`).
+   * Optional for the same reason as `historyDepth`.
+   */
+  back?(): void;
 }
 
 export function createBrowserTarget(win: Window = window): RouterTarget {
@@ -47,6 +53,7 @@ export function createBrowserTarget(win: Window = window): RouterTarget {
       return () => win.removeEventListener('hashchange', handler);
     },
     historyDepth: () => win.history.length,
+    back: () => win.history.back(),
   };
 }
 

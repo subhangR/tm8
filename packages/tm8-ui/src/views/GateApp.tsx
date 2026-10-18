@@ -39,6 +39,8 @@ import type { NavPort } from '../shell/nav-port';
 import { registerNoticeSink } from '../terminal/notifications';
 import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
 import type { ScreenKey } from '../stores/screenStackStore';
+import { isDirectlyBelow } from '../stores/phoneHistory';
+import type { NavigateOptions } from './openEntityOnPhone';
 import { attachRouter, navStore, routeOf, selectAutoOpenSession, useNavStore } from '../stores/navStore';
 import { chatAboutTarget } from './useChatAbout';
 import { EntityChatDock, EntityChatSlot, openEntityChat, type EntityChatSlotProps } from '../entity-chat';
@@ -758,9 +760,14 @@ export function GateApp(props: GateAppProps = {}) {
     if (!kind) return null;
     /* The kind must have a `k/` view to collapse to. `slugOfKind` answering
        null is a FACT ABOUT THE KIND, not a broken link — see `companionOf`. */
-    if (!slugOfKind(kind)) return null;
+    if (!slugOfKind(kind)) {
+      /* THE PHONE'S GENERIC ENTITY PAGE (CONTRACT §5 ruling 7): a kind with no
+         list still has a page on the phone, so its bare link lands on it
+         rather than on a refusal. The desktop keeps its answer. */
+      return shell === 'mobile' ? { target: { type: 'entity', ref: navView.entityId, kind }, openEntity: null } : null;
+    }
     return { target: { type: 'kind', ref: kind }, openEntity: navView.entityId };
-  }, [navView, data]);
+  }, [navView, data, shell]);
 
   /*
    * ASK FOR THE KIND, ONCE, when the address named an entity and nothing in
@@ -792,15 +799,56 @@ export function GateApp(props: GateAppProps = {}) {
    * the rendered screen from diverging.
    */
   const nodeKey = nodeKeyOf(activeServer.routeBaseUrl);
-  const navigateTo = useCallback((target: MenuTarget) => {
-    const view = routeViewOf(target);
+  const navigateTo = useCallback((target: MenuTarget, opts?: NavigateOptions) => {
+    const open = opts?.open ?? null;
+    /* `open` names the entity to show ON the target, as ONE address: a kind
+       target with `open` is `e/{id}?origin={slug}`, so opening an entity is a
+       single history entry rather than the list's address followed by the
+       entity's. An `entity` target for a kind with no list goes to its bare
+       `e/{id}`, the phone's generic page. */
+    const view =
+      routeViewOf(target, open) ??
+      (open && target.type === 'entity' ? ({ view: 'entity', entityId: open, origin: null } as const) : null);
     if (!view) {
       console.error('[nav] refusing a target with no route', target);
       return;
     }
     setUnroutableTarget(null);
+    /* CONTRACT §5 ruling 6: a link to the entry directly below acts as Back.
+       Asked only for an `open` (the phone's push); nothing else changes. */
+    if (open && isDirectlyBelow(view) && routerRef.current?.back) {
+      routerRef.current.back();
+      return;
+    }
     navStore.getState().navigate(view);
     if (data.spaceId) writeLastTarget(nodeKey, data.spaceId, target);
+  }, [nodeKey, data.spaceId]);
+
+  /**
+   * BACK — `history.back()` through the transport, for the phone's ‹ when the
+   * entry below is one this tab wrote (CONTRACT §5 ruling 1). The inbound read
+   * then reconciles the screen stacks, exactly as the system Back does.
+   */
+  const goBack = useCallback(() => {
+    routerRef.current?.back?.();
+  }, []);
+
+  /**
+   * REPLACE — the phone's Up when there is nothing of ours below (a cold link:
+   * ruling 4, or the drawer's Chat floor: ruling 3). The page is swapped for
+   * its parent with no new entry, so the system Back still leaves honestly.
+   */
+  const replaceTo = useCallback((target: MenuTarget) => {
+    const view = routeViewOf(target);
+    if (!view) {
+      console.error('[nav] refusing a replace target with no route', target);
+      return;
+    }
+    setUnroutableTarget(null);
+    coldEntry.current = false;
+    if (target.type === 'kind') screenStackStore.getState().clear(screenKeyOf.kind(target.ref));
+    if (data.spaceId) writeLastTarget(nodeKey, data.spaceId, target);
+    navStore.setState((s) => ({ view, history: 'replace', revision: s.revision + 1 }));
   }, [nodeKey, data.spaceId]);
 
   /**
@@ -2461,6 +2509,8 @@ export function GateApp(props: GateAppProps = {}) {
           viewerActor={data.viewerActor}
           spaces={data.spaces}
           onStepUp={stepUpTo}
+          onBack={goBack}
+          onReplace={replaceTo}
           onSelectSpace={(id) => {
             leaveSpaceContext();
             data.selectSpace(id);

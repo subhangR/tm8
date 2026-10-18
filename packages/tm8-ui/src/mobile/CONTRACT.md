@@ -152,6 +152,15 @@ is cheap to reverse and will be revisited after a real-phone pass.
 8. **Messages section:** task, doc and session pages show Messages below the body and above Linked,
    with the latest 3 and "View all". Other kinds list messages under Linked.
 
+**HOW THE RULINGS ARE BUILT (t-nav).** `stores/phoneHistory.ts` is a projection of the one history,
+recorded by `attachRouter` (push, replace, inbound) and never by a screen; ‹ reads it: Back
+(`history.back()` via the host's `onBack`) when an entry of ours is below, replace-with-Chat over the
+drawer floor, else Up-by-replace (`onReplace`). Entries are capped at 12 and carry scroll + textarea
+drafts (`mobile/usePagePlace.ts`). Opening an entity is ONE push: `openEntityOnPhone` →
+`navigateTo(target, { open })` writes `e/{id}?origin=…` directly, and a target equal to the entry
+below is Back. Kinds outside the v1 set open `mobile-pages/PhoneEntityPage`; task/doc/session pages
+get `PhoneMessages` via the panel's `beforeLinked` slot. Edge swipe: `mobile/useEdgeSwipe.ts`.
+
 The tab bar was retired on 2026-08-19, so where the text below says "tab bar", read **the drawer**.
 
 **One history. The shell forks and the router does not** — `no-router-fork.test.ts` enforces it.

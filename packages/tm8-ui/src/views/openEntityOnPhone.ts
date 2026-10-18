@@ -50,39 +50,45 @@
  * threaded rather than re-read. A caller that genuinely does not know the kind
  * must do the read; it must not guess.
  *
- * ── THE HONEST FAILURE, WHICH IS THE HALF THAT IS EASY TO SKIP ──────────────
+ * ── ONE PUSH, ONE ENTRY (t-nav, CONTRACT §5 rulings 1, 6, 7) ───────────────
  *
- * Not every kind HAS a `k/` screen. `slugOfKind` returns null for the `special`
- * and `anchored` strategies (`voice_channel`, `message`) — by design, WLT §2.1 —
- * and `routeViewOf` then returns null, so the navigation would produce no
- * address and the push would open a stack nobody can reach or share. RULE R13's
- * lesson exactly: a control that renders, presses, and does nothing.
+ * It used to navigate to the kind's list and then seed the stack, which the
+ * gate's screen→URL sync turned into TWO history entries: the list, then the
+ * entity. Back from an entity opened off a chat chip then landed on a list the
+ * reader never saw instead of the transcript they tapped from. Now the kind
+ * target carries the entity (`{ open }`), so the router writes the one address
+ * `e/{id}?origin={slug}` and the gate's seed effect opens it on the stack.
  *
- * So this returns a BOOLEAN and the caller says so out loud. It does not
- * navigate halfway.
+ * A link whose target is the entry directly below is Back, not a push (ruling
+ * 6) — decided where history lives, in the gate's `navigateTo`.
+ *
+ * A kind with no `k/` screen (`slugOfKind` null: `message`, `voice_channel`)
+ * opens the GENERIC ENTITY PAGE at its bare `e/{id}` (ruling 7), which replaces
+ * the old "no phone screen" toast (audit E3). So every kind opens; the boolean
+ * return is kept for callers written against the old contract and is always
+ * true.
+ *
+ * THIS IS THE ONE PUSH. A chip in a transcript or strip (t-chips), an inbox
+ * row, the drawer and the attention sheet all call it.
  */
 import type { EntityId } from '@tm8/contract';
 import { slugOfKind } from '../domain';
 import type { MenuTarget } from '../shell';
-import { screenKeyOf, screenStackStore } from '../stores/screenStackStore';
+
+/** The second argument of the gate's `navigateTo`. */
+export interface NavigateOptions {
+  /** Show this entity ON the target, as one address (one history entry). */
+  readonly open?: EntityId;
+}
+
+export type PhoneNavigate = (target: MenuTarget, opts?: NavigateOptions) => void;
 
 /**
- * Navigate the phone to `kind`'s screen and seed `id` onto its stack.
- *
- * @returns `false` when this kind has no phone screen to open the entity ON, in
- * which case NOTHING has been navigated and the caller must tell the reader.
+ * Push `id`'s page onto the phone: its kind's screen with it open, or the
+ * generic entity page for a kind with no list.
  */
-export function openEntityOnPhone(
-  navigateTo: (target: MenuTarget) => void,
-  id: EntityId,
-  kind: string,
-): boolean {
-  /* The route check comes FIRST, before either half of the move. Navigating and
-     then discovering there is no address would leave the reader on a kind
-     screen they did not ask for with the thing they tapped not open — the
-     "right collection, wrong outcome" state the gate's DEF-002 comment names. */
-  if (!slugOfKind(kind)) return false;
-  navigateTo({ type: 'kind', ref: kind });
-  screenStackStore.getState().open(screenKeyOf.kind(kind), id);
+export function openEntityOnPhone(navigateTo: PhoneNavigate, id: EntityId, kind: string): boolean {
+  if (slugOfKind(kind)) navigateTo({ type: 'kind', ref: kind }, { open: id });
+  else navigateTo({ type: 'entity', ref: id, kind }, { open: id });
   return true;
 }

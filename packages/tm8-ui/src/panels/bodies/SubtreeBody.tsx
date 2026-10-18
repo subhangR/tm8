@@ -147,6 +147,8 @@ export interface SubtreeBodyProps {
    * Never a fold, never part of the empty set.
    */
   attachmentSlot?: ReactNode;
+  /** The phone page's Messages section, drawn just above LINKED (CONTRACT §5 ruling 8). */
+  beforeLinked?: ReactNode;
   /**
    * Edges the attachment strip already draws as entity tiles (the attach
    * palette's links). They are kept out of LINKED and RUNS so one link is
@@ -213,6 +215,7 @@ export function SubtreeBody({
   attach,
   onAttached,
   attachmentSlot,
+  beforeLinked,
   stripEdgeIds,
   layout,
   rail,
@@ -367,6 +370,7 @@ export function SubtreeBody({
           />
         </CollapsibleSection>
       ) : null}
+      {beforeLinked}
       <LinkedSection linked={linked} onOpenEntity={onOpenEntity} />
       {notices.length > 0 ? (
         /* NEVER folded — a folded notice is a notice that was not delivered. */
