@@ -12,8 +12,8 @@
  *          with no safe-area term, the mark and caption should be gone, and the
  *          h1 should be 17px muted.
  *
- * The harness mounts no `.mobile-frame`, so the probe marks the surface's
- * wrapper itself. `MobileFrame` sets that attribute in the app; the
+ * The harness mounts no `.mobile-frame`, so the probe wraps the surface in
+ * one (`display: contents`, inside `.cv2-root`, as the app nests it). `MobileFrame` sets that attribute in the app; the
  * keyboard-geometry unit test covers that part. This file only measures layout.
  *
  * Run it:  node e2e/capture-keyboard-geometry.mjs [--shots <dir>]
@@ -80,9 +80,17 @@ try {
     await page.evaluate(() => {
       const root = document.querySelector('.cv2-root');
       root.style.setProperty('--mobile-safe-bottom', '34px');
-      /* The frame the app would mount: one element between the root and the surface. */
+      /* The frame the app would mount: one element BETWEEN the root and the
+         surface. The surface's parent is `.cv2-root` itself, so marking the
+         parent made the root the frame and `.cv2-root .mobile-frame[...]`
+         never matched — every "up" number was the down layout. A new
+         `display: contents` wrapper is a descendant and moves nothing. */
       const surface = root.querySelector('.tch-root');
-      surface.parentElement.classList.add('mobile-frame');
+      const frame = document.createElement('div');
+      frame.className = 'mobile-frame';
+      frame.style.display = 'contents';
+      surface.before(frame);
+      frame.append(surface);
     });
     await page.waitForTimeout(150);
     const down = await read(page);
@@ -92,6 +100,9 @@ try {
     await page.evaluate(() => document.querySelector('.mobile-frame').setAttribute('data-keyboard', 'up'));
     await page.locator('.ri-card textarea').first().focus();
     await page.waitForTimeout(150);
+    /* Refuse to report an "up" row the keyboard rules did not reach. */
+    const matched = await page.evaluate(() => !!document.querySelector(".cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-composer-wrap"));
+    if (!matched) throw new Error(`phone ${width}: the data-keyboard='up' selector matches nothing — the "up" numbers would be the down layout`);
     const up = await read(page);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/kbd-up-${width}.png` });
     console.log(`\n== PHONE ${width} ==\ndown ${JSON.stringify(down)}\nup   ${JSON.stringify(up)}`);
