@@ -92,3 +92,27 @@ export function openEntityOnPhone(navigateTo: PhoneNavigate, id: EntityId, kind:
   else navigateTo({ type: 'entity', ref: id, kind }, { open: id });
   return true;
 }
+
+/**
+ * Resolve the kind for a caller that holds only an id — a transcript chip, a
+ * created-here row, a ref inside a panel body (t-chips, CONTRACT §4) — then
+ * `open` it. The kind comes from what the gate already holds, else from ONE
+ * read; it is never guessed. A failed read opens nothing (the chip stays
+ * where it was) rather than pushing a page the space cannot name.
+ */
+export function withEntityKind(
+  id: EntityId,
+  kindOf: (id: EntityId) => string | undefined,
+  read: (id: EntityId) => Promise<{ readonly kind: string }>,
+  open: (id: EntityId, kind: string) => void,
+): void {
+  const known = kindOf(id);
+  if (known) {
+    open(id, known);
+    return;
+  }
+  read(id).then(
+    (detail) => open(id, detail.kind),
+    () => undefined,
+  );
+}

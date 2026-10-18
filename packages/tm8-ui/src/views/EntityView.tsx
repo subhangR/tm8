@@ -107,6 +107,7 @@ import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
 import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 import { AuxEntityPanel } from './auxPanel';
+import { withEntityKind } from './openEntityOnPhone';
 import { representedThreadMessageCount } from './message-thread';
 import { useChatCounts } from '../entity-chat';
 
@@ -282,6 +283,30 @@ export function EntityView(props: EntityViewProps) {
     [kind], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const [aux, setAux] = useState<AuxTarget | null>(null);
+  /*
+   * A REFERENCE INSIDE THE PANEL — a body link, a chip in the discussion, a
+   * story or graph node. The desktop opens it BESIDE the subject in the aux
+   * column. The phone pushes its full page (t-chips, CONTRACT §4: no peek
+   * sheet for entities), so Back returns to this page at the scroll left.
+   */
+  const openPhonePage = props.onOpenEntityPage;
+  const openRelated = (id: EntityId) => {
+    if (oneSurface && openPhonePage) {
+      /* A ref tapped inside the Discussion or Connections sheet leaves it,
+         AFTER the push: the push replaces the sheet's history marker, so
+         closing it then takes nothing off history. Closed first, its
+         `history.back()` would land after the push and undo it. */
+      withEntityKind(id, (ref) => data.detailOf(ref)?.kind, (ref) => data.seam.entity(ref), (ref, entityKind) => {
+        openPhonePage(ref, entityKind);
+        setAux(null);
+      });
+      return;
+    }
+    setAux({ sort: 'entity', id });
+  };
+  /** For memoized callers (the board's card press), always this render's. */
+  const openRelatedRef = useRef(openRelated);
+  openRelatedRef.current = openRelated;
   /*
    * THE FOUR NARROWING CONTROLS, HELD HERE BECAUSE THEIR TRIGGERS MOVED HERE.
    *
@@ -561,7 +586,7 @@ export function EntityView(props: EntityViewProps) {
    */
   const selectFromList = useCallback((id: string) => {
     if (boardMode) {
-      openEntity(id as EntityId, (opened) => setAux({ sort: 'entity', id: opened }));
+      openEntity(id as EntityId, (opened) => openRelatedRef.current(opened));
       return;
     }
     setAux(null);
@@ -878,7 +903,7 @@ export function EntityView(props: EntityViewProps) {
         viewerMemberId: props.viewerMemberId,
         nodeKey: data.nodeKey,
         skillOptions: data.skillOptions,
-        onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+        onOpenEntity: (id) => openRelated(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
         },
@@ -892,21 +917,21 @@ export function EntityView(props: EntityViewProps) {
         viewerMemberId: props.viewerMemberId,
         nodeKey: data.nodeKey,
         skillOptions: data.skillOptions,
-        onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+        onOpenEntity: (id) => openRelated(id),
         onSwitchToTerminal: () => {
           setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
         },
       }, 'discussion')}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
-      onWatchLive={watchLiveFor(data.seam, data.reconcileCommand, (id) => setAux({ sort: 'entity', id }))}
+      onWatchLive={watchLiveFor(data.seam, data.reconcileCommand, (id) => openRelated(id))}
       sessionStatsSurface={detail ? sessionStatsSurfaceFor(data.seam, selectedId) : undefined}
       sessionContextSurface={detail ? sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       gitSurface={detail ? gitSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       changesSurface={detail ? changesSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
-      taskGitSection={taskGitSectionFor(data.seam, detail, (id) => setAux({ sort: 'entity', id: id as EntityId }))}
+      taskGitSection={taskGitSectionFor(data.seam, detail, (id) => openRelated(id as EntityId))}
       storySurface={
         detail
-          ? storySurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }), data.launch.teammates, {
+          ? storySurfaceFor(data.seam, selectedId, (id) => openRelated(id as EntityId), data.launch.teammates, {
               /* The aux column IS "beside the story" here; its subject is the
                  story's selection, so closing the column clears it. */
               selectedId: aux?.sort === 'entity' ? aux.id : null,
@@ -916,14 +941,14 @@ export function EntityView(props: EntityViewProps) {
       graphSurface={
         detail
           ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
-              setAux({ sort: 'entity', id: id as EntityId }),
+              openRelated(id as EntityId),
             )
           : undefined
       }
       crossSpaceRefsSurface={detail ? crossSpaceRefsSurfaceFor(data.seam, selectedId) : undefined}
       launchContextSurface={
         detail
-          ? launchContextSurfaceFor(data.seam, selectedId, (id) => setAux({ sort: 'entity', id: id as EntityId }))
+          ? launchContextSurfaceFor(data.seam, selectedId, (id) => openRelated(id as EntityId))
           : undefined
       }
       messages={messages}
@@ -947,7 +972,7 @@ export function EntityView(props: EntityViewProps) {
       /* THE AUX ROUTE. A reference inside the body opens BESIDE the document
          rather than replacing it — the whole point of the third column. The
          subject of the screen is only ever changed from the left list. */
-      onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+      onOpenEntity={(id) => openRelated(id as EntityId)}
       activeTab={detailTab}
       onTabChange={(tab) => {
         if (AUX_TABS.has(tab)) setAux({ sort: 'tab', tab: tab as 'discussion' | 'connections' });
@@ -1489,7 +1514,7 @@ export function EntityView(props: EntityViewProps) {
                   viewerMemberId: props.viewerMemberId,
                 }}
                 entityId={aux.id}
-                onOpenEntity={(id) => setAux({ sort: 'entity', id })}
+                onOpenEntity={(id) => openRelated(id)}
                 onClose={() => setAux(null)}
               />
             ) : detail && aux.tab === 'discussion' ? (
@@ -1517,7 +1542,7 @@ export function EntityView(props: EntityViewProps) {
                 viewerMemberId: props.viewerMemberId,
                 nodeKey: data.nodeKey,
                 skillOptions: data.skillOptions,
-                onOpenEntity: (id) => setAux({ sort: 'entity', id }),
+                onOpenEntity: (id) => openRelated(id),
                 onSwitchToTerminal: () => {
                   setContentSurfaces((current) => ({ ...current, [selectedId as EntityId]: 'terminal' }));
                 },
@@ -1526,14 +1551,14 @@ export function EntityView(props: EntityViewProps) {
               <ConnectionsTab
                 detail={detail}
                 connections={data.connectionsOf(detail.id)}
-                onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+                onOpenEntity={(id) => openRelated(id as EntityId)}
                 /* The same canvas the panel's own Connections tab offers. A
                    surface present in one column and missing from the other
                    would read as a defect in the entity rather than a choice
                    about this column — and the column is wide enough to be a
                    real second reading of the same edges. */
                 graph={graphSurfaceFor(data.seam, detail.id, data.livenessOf, (id) =>
-                  setAux({ sort: 'entity', id: id as EntityId }),
+                  openRelated(id as EntityId),
                 )}
               />
             ) : (

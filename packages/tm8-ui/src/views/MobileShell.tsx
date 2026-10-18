@@ -54,7 +54,8 @@ import { EntityView } from './EntityView';
 import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
 import { ChannelView } from './ChannelView';
 import { InboxView } from './InboxView';
-import { openEntityOnPhone, type NavigateOptions } from './openEntityOnPhone';
+import { openEntityOnPhone, withEntityKind, type NavigateOptions } from './openEntityOnPhone';
+import { readFleetEntity } from '../chat-home/fleet/use-fleet-entities';
 import { PhoneEntityPage } from '../mobile-pages';
 import { usePagePlace } from '../mobile/usePagePlace';
 import { useEdgeSwipe } from '../mobile/useEdgeSwipe';
@@ -1019,8 +1020,12 @@ function PhoneChatSheet({ shell, sheetHost }: { shell: MobileShellProps; sheetHo
   const open = (id: EntityId) => {
     navStore.getState().closeChat();
     if (id === shell.openEntity) return;
-    const kind = data.detailOf(id)?.kind;
-    if (kind) openEntityOnPhone(shell.navigateTo, id, kind);
+    withEntityKind(
+      id,
+      (ref) => data.detailOf(ref)?.kind,
+      (ref) => data.seam.entity(ref),
+      (ref, kind) => openEntityOnPhone(shell.navigateTo, ref, kind),
+    );
   };
   return createPortal(
     <div
@@ -1295,9 +1300,8 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
    * told so out loud. Silence there would be RULE R13's failure verbatim: a
    * control that renders, presses and does nothing.
    *
-   * STILL OPEN, AND NOT SILENTLY: chat's tool-call chips are the other consumer
-   * this row names. They are Lane A's surface and Lane A consumes this seam;
-   * this arm wires the inbox half only.
+   * Chat's chips are the other consumer this row named; they are wired on the
+   * `dashboard` arm below (t-chips), through the same seam.
    */
   switch (activeTarget.ref) {
     case 'inbox':
@@ -1344,6 +1348,18 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
           onSelectionChange={chat.onSelectionChange}
           viewerName={props.viewerActor?.displayName}
           {...(props.viewerActor ? { viewerId: props.viewerActor.id } : {})}
+          /* EVERY CHIP PUSHES THE ENTITY'S PAGE (t-chips, CONTRACT §4): a ref
+             or tool-call chip in the transcript, a created-here row, the
+             `about` chip. One push, so Back is the transcript at the scroll
+             left. The kind is the read the chip already made (cached). */
+          onOpenEntity={(id) =>
+            withEntityKind(
+              id,
+              (ref) => data.detailOf(ref)?.kind,
+              (ref) => readFleetEntity(ref, (r) => data.seam.entity(r)),
+              (ref, kind) => openEntityOnPhone(props.navigateTo, ref, kind),
+            )
+          }
         />
       );
     default:
