@@ -2460,6 +2460,110 @@ export function GateApp(props: GateAppProps = {}) {
   useEffect(() => {
     if (!workspaceSwitcherShown && workspaceSwitcherOpen) workspaceList.setState({ open: false });
   }, [workspaceSwitcherShown, workspaceSwitcherOpen, workspaceList]);
+  /**
+   * THE ONE SETTINGS MOUNT, for both shells. The desktop draws it in the
+   * workspace; the phone draws the same element `stacked` (a grouped list,
+   * then one section per screen) rather than a second wiring of the dozen
+   * ports below, which would drift the first time a section was added.
+   */
+  function settingsPageFor({ framed, stacked, onOpenAppearance }: { framed: boolean; stacked: boolean; onOpenAppearance?: (() => void) | undefined }) {
+    /* Node scope is `NodeAdminPage`'s, never this mount's. */
+    if (!settingsPort || (navView.view === 'settings' && navView.scope === 'node')) return null;
+    return (
+      <SettingsPage
+        /* `/settings/<section>` opens on that section — e.g. the Jev
+           launch surface's "add your TypeSafe key" link lands on
+           credentials. Keyed so arriving by a new address re-opens. */
+        key={`${data.spaceId}:${accountId}:${navView.view === 'settings' ? `${navView.scope ?? 'personal'}:${navView.section ?? 'default'}` : 'default'}`}
+        {...(navView.view === 'settings' && navView.section
+          ? { initialSection: navView.section }
+          : {})}
+        port={settingsPort}
+        admin={navView.view === 'settings' && navView.scope === 'space'}
+        framed={framed}
+        /* The phone's back verb leaves the section for the list, by address,
+           so the system back gesture and the ‹ chevron agree. */
+        {...(stacked ? {
+          stacked: true,
+          ...(onOpenAppearance ? { onOpenAppearance } : {}),
+          onSectionClear: () => navigateRouteView({ view: 'settings', section: null,
+            ...(navView.view === 'settings' && navView.scope === 'space' ? { scope: 'space' as const } : {}),
+          }),
+        } : {})}
+        identity={viewerIdentity}
+        onSectionChange={(section) => navigateRouteView({ view: 'settings', section,
+          ...(navView.view === 'settings' && navView.scope === 'space' ? { scope: 'space' as const } : {}),
+        })}
+        onOpenSpaceAdmin={adminAccess.space ? () => navigateRouteView({ view: 'settings', scope: 'space', section: null }) : undefined}
+        onOpenNodeAdmin={adminAccess.node ? () => navigateRouteView({ view: 'settings', scope: 'node', section: null }) : undefined}
+        nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
+        /* W2 -> W1/W3: an axis write must reach the workspace's own
+           pickers and board options; axis rows are not entities, so no
+           event will do it. */
+        onAxesChanged={data.refreshTaskAxes}
+        /* G6: after a leave the viewer is no longer a member, so every
+           read of this space refuses. Same pairing as every switch:
+           leave the space context, THEN drop and move. */
+        onLeftSpace={(spaceId) => {
+          leaveSpaceContext();
+          data.forgetSpace(spaceId);
+        }}
+        sections={
+          credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort || governancePort
+            ? {
+                connectors: <McpSettings />,
+                ...(governancePort ? { kinds: <CustomKindsSettings
+                  port={governancePort}
+                  spaceName={data.spaces.find((space) => space.id === data.spaceId)?.name ?? 'Space'}
+                  canCreate={adminAccess.space}
+                /> } : {}),
+                ...(spaceLinksPort
+                  ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} onOpen={openFromSettings} /> }
+                  : {}),
+                ...(spaceCredentialsPort
+                  ? {
+                      /* Status only on the phone (mockup 01a14cc4): adding,
+                         sharing and policy are desktop work. */
+                      'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} onOpen={openFromSettings} statusOnly={stacked} />,
+                      'node-credentials': <NodeCredentialsSection port={spaceCredentialsPort} />,
+                      'filesystem-access': <FilesystemAccessSection port={filesystemAccessPort} />,
+                    }
+                  : {}),
+                ...(branchesPort
+                  ? { projects: <ProjectBranchesSection port={branchesPort} /> }
+                  : {}),
+                ...(credentialsPort
+                  ? {
+                      credentials: (
+                        <CredentialsSection
+                          port={credentialsPort}
+                          sharePort={credentialsSharePort}
+                          serviceKeysPort={serviceKeysPort}
+                          serverBaseUrl={activeServer.routeBaseUrl}
+                          /* Settings is the OTHER reader of the same
+                             derivation. Without this, connecting GitHub
+                             here left the account-menu nudge still
+                             saying it was not connected until a reload.
+
+                             DERIVED FROM THE VALUE IT HANDS OVER, never
+                             re-read: `credentials.status` shells out on
+                             the node once per provider, and a refresh
+                             that called it again would double the cost
+                             of every write on this screen. */
+                          onStatusRead={(status) =>
+                            setSetupNudge(setupNudgeOf(credentialSetupState(status)))
+                          }
+                        />
+                      ),
+                    }
+                  : {}),
+              }
+            : undefined
+        }
+      />
+    );
+  }
+
   if (shell === 'mobile' && data.spaceId) {
     /* `data-shell` MARKS THE ROOT SO THE PHONE CAN DECLINE THE ZOOM LEVER.
        `app.css` puts `zoom: 1.1` on every `.cv2-root` — a user-ruled taste
@@ -2491,6 +2595,14 @@ export function GateApp(props: GateAppProps = {}) {
              dead Send on the phone's default screen — none of it true, on a
              node that serves both operations. */
           chatBridge={chatBridge}
+          /* Settings on the phone (audit E1): the desktop's own mount, drawn
+             stacked. Node admin keeps the refusal card — it is a node
+             operator's console, not something done from a phone. */
+          settingsScreen={
+            activeTarget?.type === 'view' && activeTarget.ref === 'settings'
+              ? (openAccount) => settingsPageFor({ framed: false, stacked: true, onOpenAppearance: openAccount })
+              : null
+          }
           {...(viewerMemberId ? { viewerMemberId } : {})}
           {...(data.spaces.find((sp) => sp.id === data.spaceId)?.name
             ? { spaceLabel: data.spaces.find((sp) => sp.id === data.spaceId)?.name }
@@ -3340,86 +3452,7 @@ export function GateApp(props: GateAppProps = {}) {
                 onSectionChange={(section) => navigateRouteView({ view: 'settings', scope: 'node', section })}
                 framed={settingsFramed}
               />
-            ) : <SettingsPage
-              /* `/settings/<section>` opens on that section — e.g. the Jev
-                 launch surface's "add your TypeSafe key" link lands on
-                 credentials. Keyed so arriving by a new address re-opens. */
-              key={`${data.spaceId}:${accountId}:${navView.view === 'settings' ? `${navView.scope ?? 'personal'}:${navView.section ?? 'default'}` : 'default'}`}
-              {...(navView.view === 'settings' && navView.section
-                ? { initialSection: navView.section }
-                : {})}
-              port={settingsPort}
-              admin={navView.view === 'settings' && navView.scope === 'space'}
-              framed={settingsFramed}
-              identity={viewerIdentity}
-              onSectionChange={(section) => navigateRouteView({ view: 'settings', section,
-                ...(navView.view === 'settings' && navView.scope === 'space' ? { scope: 'space' as const } : {}),
-              })}
-              onOpenSpaceAdmin={adminAccess.space ? () => navigateRouteView({ view: 'settings', scope: 'space', section: null }) : undefined}
-              onOpenNodeAdmin={adminAccess.node ? () => navigateRouteView({ view: 'settings', scope: 'node', section: null }) : undefined}
-              nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
-              /* W2 -> W1/W3: an axis write must reach the workspace's own
-                 pickers and board options; axis rows are not entities, so no
-                 event will do it. */
-              onAxesChanged={data.refreshTaskAxes}
-              /* G6: after a leave the viewer is no longer a member, so every
-                 read of this space refuses. Same pairing as every switch:
-                 leave the space context, THEN drop and move. */
-              onLeftSpace={(spaceId) => {
-                leaveSpaceContext();
-                data.forgetSpace(spaceId);
-              }}
-              sections={
-                credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort || governancePort
-                  ? {
-                      connectors: <McpSettings />,
-                      ...(governancePort ? { kinds: <CustomKindsSettings
-                        port={governancePort}
-                        spaceName={data.spaces.find((space) => space.id === data.spaceId)?.name ?? 'Space'}
-                        canCreate={adminAccess.space}
-                      /> } : {}),
-                      ...(spaceLinksPort
-                        ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} onOpen={openFromSettings} /> }
-                        : {}),
-                      ...(spaceCredentialsPort
-                        ? {
-                            'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} onOpen={openFromSettings} />,
-                            'node-credentials': <NodeCredentialsSection port={spaceCredentialsPort} />,
-                            'filesystem-access': <FilesystemAccessSection port={filesystemAccessPort} />,
-                          }
-                        : {}),
-                      ...(branchesPort
-                        ? { projects: <ProjectBranchesSection port={branchesPort} /> }
-                        : {}),
-                      ...(credentialsPort
-                        ? {
-                            credentials: (
-                              <CredentialsSection
-                                port={credentialsPort}
-                                sharePort={credentialsSharePort}
-                                serviceKeysPort={serviceKeysPort}
-                                serverBaseUrl={activeServer.routeBaseUrl}
-                                /* Settings is the OTHER reader of the same
-                                   derivation. Without this, connecting GitHub
-                                   here left the account-menu nudge still
-                                   saying it was not connected until a reload.
-
-                                   DERIVED FROM THE VALUE IT HANDS OVER, never
-                                   re-read: `credentials.status` shells out on
-                                   the node once per provider, and a refresh
-                                   that called it again would double the cost
-                                   of every write on this screen. */
-                                onStatusRead={(status) =>
-                                  setSetupNudge(setupNudgeOf(credentialSetupState(status)))
-                                }
-                              />
-                            ),
-                          }
-                        : {}),
-                    }
-                  : undefined
-              }
-            />
+            ) : settingsPageFor({ framed: settingsFramed, stacked: false })
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             (isUnbuiltViewRef(activeTarget.ref) ||

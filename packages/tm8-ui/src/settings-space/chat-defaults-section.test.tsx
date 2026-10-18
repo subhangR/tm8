@@ -24,6 +24,7 @@ import {
   type ChatDefaultsSeam,
 } from '../chat-defaults';
 import { ChatDefaultsSection } from './ChatDefaultsSection';
+import { MobileSurfaceProvider } from '../mobile/surface';
 
 afterEach(cleanup);
 
@@ -180,5 +181,75 @@ describe('resolveChatDefault — the skip-when-default rule (§3.4)', () => {
     expect(r).toMatchObject({ skip: false, teammateId: 'tm-ada', model: null });
     expect(r.problems).toEqual(['default model retired is no longer offered']);
     expect(resolveChatDefault({ teammateId: 'tm-gone', model: MODEL }, ctx).problems[0]).toMatch(/tm-gone is no longer in this space/);
+  });
+});
+
+/* The phone arrangement (mockup 01a14cc4): rows, and a sheet with the two
+   pickers. MobileSheet portals into the surface's host, so the phone mount
+   provides one, as MobileShell does. */
+function mountPhone(seam: ChatDefaultsSeam) {
+  const options: ChatDefaultsOptions = { kinds: chatDefaultKindRows(), teammates: TEAMMATES };
+  return render(
+    <MobileSurfaceProvider sheetHost={document.body}>
+      <ChatDefaultsSection
+        heading="Chat defaults"
+        nodeKey="local"
+        phone
+        wiring={{ seam, spaceId: SPACE, loadOptions: async () => options }}
+      />
+    </MobileSurfaceProvider>,
+  );
+}
+
+describe('Chat defaults — on the phone', () => {
+  it('draws one row per kind with teammate and model stacked, and no desktop table', async () => {
+    const { seam } = fakeSeam({ [FIRST.kind]: { teammateId: 'tm-draco', model: MODEL } });
+    mountPhone(seam);
+    const row = await screen.findByTestId(`chat-default-row-${FIRST.kind}`);
+    expect(screen.queryByTestId('chat-defaults-table')).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(row.textContent).toContain('Draco');
+    expect(row.textContent).toContain(modelCatalog('local')[0]!.label);
+    expect(row.getAttribute('data-complete')).toBe('true');
+    expect(screen.getByTestId('chat-defaults-rows').querySelectorAll('li')).toHaveLength(chatDefaultKindRows().length);
+  });
+
+  it('tapping a row opens a sheet with both pickers; Save writes one PATCH and closes it', async () => {
+    const { seam, setChatDefaults } = fakeSeam();
+    mountPhone(seam);
+    fireEvent.click(await screen.findByTestId(`chat-default-row-${FIRST.kind}`));
+    const sheet = await screen.findByTestId('chat-default-sheet');
+    const teammates = within(sheet).getByRole('group', { name: 'Teammate' });
+    const models = within(sheet).getByRole('group', { name: 'Model' });
+    fireEvent.click(within(teammates).getByRole('radio', { name: 'Draco' }));
+    fireEvent.click(within(models).getByRole('radio', { name: modelCatalog('local')[0]!.label }));
+    expect(setChatDefaults).not.toHaveBeenCalled();
+    fireEvent.click(within(sheet).getByTestId('chat-default-save'));
+    await waitFor(() => expect(setChatDefaults).toHaveBeenLastCalledWith(SPACE, { [FIRST.kind]: { teammateId: 'tm-draco', model: MODEL } }));
+    await waitFor(() => expect(screen.queryByTestId('chat-default-sheet')).toBeNull());
+  });
+
+  it("shows a member's refusal inside the sheet, and keeps the sheet open", async () => {
+    const { seam } = fakeSeam({}, 'Space owner/admin human principal required');
+    mountPhone(seam);
+    fireEvent.click(await screen.findByTestId(`chat-default-row-${FIRST.kind}`));
+    const sheet = await screen.findByTestId('chat-default-sheet');
+    fireEvent.click(within(within(sheet).getByRole('group', { name: 'Model' })).getByRole('radio', { name: modelCatalog('local')[0]!.label }));
+    fireEvent.click(within(sheet).getByTestId('chat-default-save'));
+    const refusal = await within(sheet).findByTestId(`chat-default-refusal-${FIRST.kind}`);
+    expect(refusal.textContent).toMatch(/owner\/admin/);
+    expect(screen.getByTestId('chat-default-sheet')).toBeTruthy();
+  });
+
+  it('a stored value that no longer resolves is shown in the row and checked in the sheet', async () => {
+    const { seam } = fakeSeam({ [FIRST.kind]: { teammateId: 'tm-gone', model: 'retired-model' } });
+    mountPhone(seam);
+    const row = await screen.findByTestId(`chat-default-row-${FIRST.kind}`);
+    expect(row.textContent).toMatch(/tm-gone \(no longer in this space\)/);
+    expect(row.textContent).toMatch(/retired-model \(no longer offered\)/);
+    fireEvent.click(row);
+    const sheet = await screen.findByTestId('chat-default-sheet');
+    expect((within(sheet).getByRole('radio', { name: /tm-gone/ }) as HTMLInputElement).checked).toBe(true);
+    expect((within(sheet).getByRole('radio', { name: /retired-model/ }) as HTMLInputElement).checked).toBe(true);
   });
 });

@@ -38,11 +38,13 @@ The cure is a tablet **arrangement**. It is not a lane item and it is not this g
 
 Four tokens on `.mobile-frame`, from `env(safe-area-inset-*)`, which resolve to `0px` on every device
 without a notch or home indicator. The frame applies them: left/right as padding on the frame,
-top on the header, bottom on the tab bar.
+top on the header, bottom on the tab bar slot (unfilled since the 2026-08-19 ruling; a screen with
+bottom chrome, like the chat composer, pads itself with `--mobile-safe-bottom`).
 
 **Compose against the tokens; never re-derive `env()`.** The notice host already does this
-(`bottom: calc(var(--mobile-safe-bottom) + var(--mobile-tabbar-min))`) and it is the pattern: a
-region that needs to sit above the tab bar and inside the inset asks the frame for both numbers.
+(`bottom: calc(var(--mobile-safe-bottom) + var(--mobile-fab-reserve))`) and it is the pattern: a
+region that needs to sit above the bottom chrome and inside the inset asks the frame for both
+numbers.
 
 **The bottom inset is zeroed while the keyboard is up** — see §3.
 
@@ -53,10 +55,16 @@ region that needs to sit above the tab bar and inside the inset asks the frame f
 - On iOS the soft keyboard **overlays** the layout viewport: `innerHeight` does not change, `dvh`
   does not change, and a bottom-anchored anything goes under the keyboard. There is no media query
   for it and `env()` has no keyboard inset. Only `visualViewport` knows.
+- **Android opts out of overlaying.** Chrome for Android has defaulted to
+  `interactive-widget=resizes-visual` since v108, so left alone its keyboard overlays the layout
+  viewport too. `index.html` sets `interactive-widget=resizes-content` (audit A4, t-safe), so Android
+  shrinks the layout viewport and `dvh` natively and the measured inset reads ≈0. iOS ignores the key
+  and takes the `visualViewport` path. Either way the frame is never shortened twice. Keyboard-up
+  geometry on Android, including OEM keyboard toolbars, is **not yet verified on a device**.
 - **`MobileFrame` measures it once** with `useKeyboardInset()` and publishes two things:
   `--mobile-keyboard-inset` (the number) and `data-keyboard="up"` (the boolean). The whole frame
-  shrinks, so header, content, notices, tab bar and sheets all stay above the keyboard **without
-  knowing the keyboard exists.**
+  shrinks, so header, content, notices and sheets all stay above the keyboard **without knowing the
+  keyboard exists.**
 
 **A LANE MUST NOT WIRE ITS OWN KEYBOARD LISTENER.** A composer, a modifier bar and a sheet that each
 subscribe to `visualViewport` and each pick their own arithmetic is three surfaces disagreeing about
@@ -182,7 +190,8 @@ Ruling 1 doesn't change this: history is written through the router, never from 
   **replace** — so a reader who followed a link taps up, lands on the list with no phantom history
   entry, and their phone's own back gesture then honestly leaves the app.
 - It is rendered **only when something is open**. A chevron at a screen root is dead chrome.
-- The **tab bar is the navigation at a screen root.** Five destinations, each a real route.
+- The **drawer is the navigation at a screen root** (owner ruling 2026-08-19 retired the five-tab
+  bar). Every row is a real route.
 - Nothing in the phone shell reads or writes `location`/`history` or builds a `Route`. Navigate with
   `navigateTo`.
 - **UP is defined for an entity screen too, and it is a SYNTHESIZED parent rather than a pop.** Only a

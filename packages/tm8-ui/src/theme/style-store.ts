@@ -39,6 +39,7 @@
 import {
   BUILTIN_STYLES,
   BUILTIN_STYLE_IDS,
+  concreteStyleTable,
   RETIRED_BUILTIN_ALIASES,
   STYLE_REGISTRY,
   StyleDocSchema,
@@ -379,7 +380,30 @@ function paint(resolved: ResolvedStyle, trustCss: boolean): void {
   } else {
     document.getElementById(EXTRA_STYLE_ELEMENT_ID)?.remove();
   }
+  syncThemeColor(resolved);
   appliedHash = key;
+}
+
+/**
+ * THE BROWSER CHROME FOLLOWS THE PAINTED STYLE (audit E2). `index.html` ships
+ * a light and a `prefers-color-scheme: dark` theme-color so the first paint is
+ * right for a viewer who follows the OS; once a style is painted it is the
+ * truth, including a viewer who chose dark on a light OS or a custom style.
+ * One tag, no `media`: two tags would let the OS scheme outvote the choice.
+ *
+ * `--pn-surface` because it is what sits under the status bar — the frame
+ * header's paper (see the comment over the tag in `index.html`).
+ */
+function syncThemeColor(resolved: ResolvedStyle): void {
+  const surface = concreteStyleTable(resolved.cssVars)['--pn-surface'];
+  if (!surface) return;
+  const tags = Array.from(document.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'));
+  const [tag, ...rest] = tags;
+  for (const extra of rest) extra.remove();
+  const meta = tag ?? document.head.appendChild(document.createElement('meta'));
+  meta.name = 'theme-color';
+  meta.removeAttribute('media');
+  meta.content = surface;
 }
 
 /**

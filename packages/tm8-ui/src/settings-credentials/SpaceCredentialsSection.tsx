@@ -94,13 +94,19 @@ export interface SpaceCredentialsSectionProps {
    * there; this screen keeps create, add and policy. Absent, no row offers it.
    */
   onOpen?: (credentialId: string) => void;
+  /**
+   * The phone's arrangement (mockup 01a14cc4, tagged "status"): readiness and
+   * each credential's state, with no add, login, share, policy or per-row
+   * verb. Those are desktop work, and the section says so.
+   */
+  statusOnly?: boolean;
 }
 
 function isLoginProvider(provider: SpaceCredentialStoredProviderName): provider is SpaceLoginProvider {
   return provider === 'anthropic' || provider === 'openai';
 }
 
-export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl, onOpen }: SpaceCredentialsSectionProps) {
+export function SpaceCredentialsSection({ port, heading = 'Space credentials', serverBaseUrl, onOpen, statusOnly = false }: SpaceCredentialsSectionProps) {
   const [viewer, setViewer] = useState<SpaceCredentialsViewer | null>(null);
   const [rows, setRows] = useState<SpaceCredentialView[] | null>(null);
   const [policy, setPolicy] = useState<CredentialsSpacePolicyView | null>(null);
@@ -157,6 +163,37 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
 
   const groups = groupByProvider(rows ?? []);
 
+  if (statusOnly) {
+    return (
+      <SectionFrame title={heading}>
+        <div className="set-spc set-spc--status" data-testid="space-credentials" data-status-only="true">
+          <p className="set-spc__lede">
+            A launch reads yours, then the space&apos;s, then the node&apos;s. Status only on a phone:
+            adding keys, logging in, sharing and policy are on desktop.
+          </p>
+          <ReadinessPanel readiness={readiness} error={readinessError} statusOnly />
+          {rows === null ? <p className="set-spc__muted">Reading…</p> : null}
+          {rows !== null
+            ? SPACE_STORED_PROVIDERS.map((provider) => (
+                <section key={provider} className="set-spc__group" data-testid={`space-cred-group-${provider}`} aria-label={SPACE_PROVIDER_NAME[provider]}>
+                  <h4 className="set-spc__group-title">{SPACE_PROVIDER_NAME[provider]}</h4>
+                  {groups[provider].length === 0 ? (
+                    <p className="set-spc__muted" data-testid={`space-cred-empty-${provider}`}>
+                      No {SPACE_PROVIDER_NAME[provider]} credential in this space yet.
+                    </p>
+                  ) : (
+                    <ul className="set-spc__list">
+                      {groups[provider].map((row) => <CredentialStatusRow key={row.id} row={row} viewer={viewer} />)}
+                    </ul>
+                  )}
+                </section>
+              ))
+            : null}
+        </div>
+      </SectionFrame>
+    );
+  }
+
   return (
     <SectionFrame title={heading}>
       <div className="set-spc" data-testid="space-credentials">
@@ -203,7 +240,7 @@ export function SpaceCredentialsSection({ port, heading = 'Space credentials', s
  * takes the member to that provider's group, where adding a key or logging in
  * lives. Nothing here disables anything.
  */
-function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadinessView | null; error: string | null }) {
+function ReadinessPanel({ readiness, error, statusOnly = false }: { readiness: CredentialsSpaceReadinessView | null; error: string | null; statusOnly?: boolean }) {
   if (error) {
     return (
       <div className="set-spc__readiness" data-testid="space-cred-readiness-error" role="status">
@@ -217,7 +254,8 @@ function ReadinessPanel({ readiness, error }: { readiness: CredentialsSpaceReadi
     group?.scrollIntoView?.({ block: 'start' });
     group?.focus();
   };
-  const connect = (provider: SpaceCredentialProviderName) => (
+  /* Status only: the connect jump lands on add/login controls that are not drawn. */
+  const connect = (provider: SpaceCredentialProviderName) => statusOnly ? null : (
     <button
       type="button"
       className="set-spc__readiness-connect"
@@ -449,6 +487,29 @@ function ProviderGroup({
         <PolicyRow provider={provider} policy={policy} viewer={viewer} port={port} onPolicy={onPolicy} />
       )}
     </section>
+  );
+}
+
+/** One credential's state and nothing to act on: the phone's status row. */
+function CredentialStatusRow({ row, viewer }: { row: SpaceCredentialView; viewer: SpaceCredentialsViewer | null }) {
+  const statusWord = row.status === 'stale' ? 'failed its last check' : row.status === 'pending' ? 'login not finished' : 'active';
+  const visibility = visibilityWord(row);
+  const sharedWithMe = isSharedWithMe(row, viewer);
+  return (
+    <li className={`set-spc__row set-spc__row--${row.status}`} data-testid={`space-cred-row-${row.id}`}>
+      <div className="set-spc__row-head">
+        <span className="set-spc__label">{row.label}</span>
+        {row.isDefault ? <span className="set-spc__badge set-spc__badge--default">default</span> : null}
+        {visibility ? <span className={`set-spc__badge set-spc__badge--${visibility}`}>{visibility}</span> : null}
+        {sharedWithMe ? <span className="set-spc__badge set-spc__badge--shared">shared with you</span> : null}
+        <span className={`set-spc__badge set-spc__badge--${row.status}`}>{statusWord}</span>
+      </div>
+      <div className="set-spc__meta">
+        <span>{row.shape === 'login' ? 'login' : row.shape === 'token' ? 'token' : 'API key'}</span>
+        {row.keyHint ? <span>ends …{row.keyHint}</span> : null}
+        <span>last used {formatWhen(row.lastUsedAt)}</span>
+      </div>
+    </li>
   );
 }
 

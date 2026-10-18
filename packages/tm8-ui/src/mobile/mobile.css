@@ -14,12 +14,12 @@
  */
 
 /*
- * SAFE-AREA TOKENS (§3.6 — nothing in this codebase handles insets today).
+ * SAFE-AREA TOKENS (§3.6).
  *
  * Declared on the frame rather than in `tokens.css` because the frame is the
  * only consumer that exists. They are TOKENS and not inline values so §7.3's
- * drop notice can sit above the tab bar and inside the inset by composing
- * against the same numbers rather than re-deriving them.
+ * drop notice can sit above the floating create button and inside the inset
+ * by composing against the same numbers rather than re-deriving them.
  *
  * `env()` resolves to 0 wherever there is no notch or home indicator, so this
  * is inert on every device that does not need it.
@@ -81,13 +81,15 @@
   /*
    * `100dvh`, NOT `100vh`. On iOS Safari `100vh` is the height the viewport
    * has with the URL bar HIDDEN, so a `100vh` shell is taller than the screen
-   * whenever the bar is showing — which is most of the time — and the tab bar
-   * ends up underneath it.
+   * whenever the bar is showing — which is most of the time — and the bottom
+   * of the shell (the composer) ends up underneath it.
    *
    * MINUS THE KEYBOARD, which `dvh` does NOT account for and no media query can
-   * see: on iOS the keyboard overlays the layout viewport rather than resizing
-   * it, so a frame sized at exactly `100dvh` puts its own tab bar — and any
-   * bottom-anchored composer — underneath the keyboard. Subtracting the
+   * see on iOS: there the keyboard overlays the layout viewport rather than
+   * resizing it, so a frame sized at exactly `100dvh` puts any bottom-anchored
+   * composer underneath the keyboard. (Android shrinks `dvh` itself, because
+   * `index.html` opts into `interactive-widget=resizes-content`; its measured
+   * inset reads ~0.) Subtracting the
    * measured inset makes the frame exactly the part of the screen that is still
    * visible, which every region below then inherits without knowing why. See
    * the block over `useKeyboardInset()` in `MobileFrame.tsx`.
@@ -146,7 +148,7 @@
 /*
  * The one scrolling surface. `min-height: 0` is required on a grid child that
  * scrolls — without it the row floors at its content height and the whole
- * frame scrolls instead, taking the tab bar off-screen. This is the floored
+ * frame scrolls instead, taking the bottom chrome off-screen. This is the floored
  * spelling of the fix, not the banned `minmax(0, 1fr)` on the track.
  */
 .mobile-frame__content {

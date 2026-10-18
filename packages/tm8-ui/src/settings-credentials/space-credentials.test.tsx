@@ -1433,3 +1433,21 @@ describe('992 — share a private credential with one member', () => {
     await screen.findByText(/not an active member of this space/);
   });
 });
+
+describe('Space credentials — status only (the phone, mockup 01a14cc4)', () => {
+  it('shows readiness and each credential’s state, with no control that writes', async () => {
+    const onOpen = vi.fn();
+    render(<SpaceCredentialsSection port={fakePort({ readiness: readinessView({ launchMissing: { openai: 'no_credential' } }) })} onOpen={onOpen} statusOnly />);
+    const section = await screen.findByTestId('space-credentials');
+    await screen.findByTestId('space-cred-group-anthropic');
+    await act(async () => {});
+    expect(section.getAttribute('data-status-only')).toBe('true');
+    expect(screen.getByTestId(`space-cred-row-${MINE_DEFAULT.id}`).textContent).toContain('Team Claude');
+    expect(screen.getByTestId(`space-cred-row-${THEIRS.id}`).textContent).toContain('failed its last check');
+    expect(screen.getByTestId('space-cred-readiness-missing-launch-openai')).toBeTruthy();
+    // Nothing to press and nothing to type: adding, login, sharing, policy and
+    // the per-row panel are desktop work.
+    expect(section.querySelectorAll('button')).toHaveLength(0);
+    expect(section.querySelectorAll('input, select, textarea')).toHaveLength(0);
+  });
+});

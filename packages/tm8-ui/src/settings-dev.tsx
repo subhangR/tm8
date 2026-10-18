@@ -6,6 +6,8 @@ import './styles/app.css';
 import './kit/kit.css';
 import './shell/shell.css';
 import './panels/panels.css';
+import './mobile/mobile-chrome.css';
+import './mobile/mobile-screens.css';
 import { createFixtureSeam, FIXTURE_SPACE_ID } from './data/fixtures/seam-fixture';
 import { SettingsShell, settingsPortFromSeam } from './settings-space';
 import type { SettingsSectionId } from './settings-space';
@@ -23,12 +25,15 @@ import { CredentialsSection, credentialsPortFromSeam, credentialsSharePortFromSe
  * the shell in a plain full-width div would reproduce nothing.
  *
  * Usage: /settings-dev.html  (?section=credentials opens Agent credentials,
- * with the fixture's TypeSafe service key block; ?theme=light for light)
+ * with the fixture's TypeSafe service key block; ?theme=light for light;
+ * ?stacked=1 draws the phone arrangement, opening on the list unless
+ * ?section= names one)
  */
 const seam = createFixtureSeam();
 const port = settingsPortFromSeam(seam, FIXTURE_SPACE_ID);
 const params = new URLSearchParams(window.location.search);
-const section = (params.get('section') ?? 'members') as SettingsSectionId;
+const stacked = params.get('stacked') === '1';
+const section = (params.get('section') ?? (stacked ? null : 'members')) as SettingsSectionId | null;
 const theme = params.get('theme') === 'light' ? 'light' : 'dark';
 const credentials = (
   <CredentialsSection
@@ -39,11 +44,20 @@ const credentials = (
 );
 
 function Harness() {
+  if (stacked) {
+    return (
+      <div className="cv2-root" data-shell="mobile" data-theme={theme}>
+        <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
+          <SettingsShell port={port} stacked {...(section ? { initialSection: section } : {})} sections={{ credentials }} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="cv2-root shell-scope" data-theme={theme}>
       <div className="shell-root">
         <div className="shell-body">
-          <SettingsShell port={port} initialSection={section} sections={{ credentials }} />
+          <SettingsShell port={port} initialSection={section ?? 'members'} sections={{ credentials }} />
         </div>
       </div>
     </div>

@@ -274,3 +274,35 @@
   border-color: var(--pn-block);
   color: var(--pn-block);
 }
+
+/* --- stacked (the phone, mockup 01a14cc4 "Members & roles") ----------------
+   Five columns leave a 360px phone about 50px for a name. Stacked, the name
+   takes the row and the age moves under it, the way the mockup draws
+   "Ada Osei / Active"; the role control and the ✕ keep their columns. The
+   column words go: each cell already names itself to assistive tech. */
+.set-root--stacked .set-members__head { display: none; }
+.set-root--stacked .set-members__row {
+  grid-template-columns:
+    22px
+    minmax(0, 1fr)
+    var(--set-members-role-w)
+    var(--set-members-x-w);
+  grid-template-areas:
+    'av who  role x'
+    'av when role x';
+  column-gap: 10px;
+  row-gap: 0;
+  min-height: 52px;
+}
+.set-root--stacked .set-members__row > :first-child { grid-area: av; }
+.set-root--stacked .set-members__who { grid-area: who; }
+.set-root--stacked .set-members__name { font-size: var(--pn-fs-title); }
+.set-root--stacked .set-members__cell--role { grid-area: role; }
+.set-root--stacked .set-members__cell--when {
+  grid-area: when;
+  justify-content: flex-start;
+  height: auto;
+}
+.set-root--stacked .set-members__cell--x { grid-area: x; }
+.set-root--stacked .set-members__error { grid-column: 1 / -1; grid-row: 3; }
+.set-root--stacked .set-members__when { font-size: var(--pn-fs-label); }

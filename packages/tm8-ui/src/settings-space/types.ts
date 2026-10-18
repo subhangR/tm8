@@ -171,6 +171,18 @@ export interface SettingsShellProps {
   /** Notified on every section change so a host can mirror it into the route. */
   onSectionChange?: (id: SettingsSectionId) => void;
   /**
+   * The phone arrangement (audit E1): a grouped list of sections, then one
+   * section per screen with a back verb. Desktop-only editors list but refuse.
+   */
+  stacked?: boolean;
+  /** Stacked only: the back verb left the section for the list. */
+  onSectionClear?: () => void;
+  /**
+   * Stacked only: opens the account sheet, where light / dark lives. Draws the
+   * list's Appearance row, which points there rather than copying it.
+   */
+  onOpenAppearance?: () => void;
+  /**
    * Which node's browser-local settings this shell edits. Defaults to the local
    * node. Only the Models section reads it today; it is a prop rather than a
    * module read so a host pointed at a named Server edits THAT node's catalog.
