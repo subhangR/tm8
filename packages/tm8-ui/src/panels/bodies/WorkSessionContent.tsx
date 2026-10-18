@@ -6,6 +6,7 @@ import { SURFACE_ART, SURFACE_LABEL } from '../../domain';
 import { VectorIcon } from '../../kit';
 import { useMobileSurface } from '../../mobile';
 import { DisabledIconControl } from '../honesty/DisabledWithReason';
+import { isDarkSurface, reportShownSurface, useShownSurface } from './sessionSurfaceShown';
 import './work-session-content-phone.css';
 
 const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
@@ -207,7 +208,7 @@ export function WorkSessionContent({
     () => (oneSurface ? [...PHONE_SURFACES] : ['terminal', 'transcript', 'changes', 'git', 'debug', 'graph', 'context']),
     [oneSurface],
   );
-  const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
+  const preferenceKey = preferenceKeyFor(viewerMemberId, sessionId);
   const initialSurface = useRef<ContentSurface | null>(null);
   if (initialSurface.current === null) {
     initialSurface.current = resolveInitialSurface({ requestedSurface, preferenceKey, oneSurface });
@@ -249,6 +250,12 @@ export function WorkSessionContent({
   const [refusalDismissed, setRefusalDismissed] = useState(false);
   const refusedSurface = refusalDismissed ? null : arrivalRefusal.current;
   const [surface, setSurface] = useState<ContentSurface>(initialSurface.current);
+  /* Told to the chrome outside this body (panel frame, title bar, action
+     strip): only the terminal surface stands in the always-dark scope. */
+  useEffect(() => {
+    reportShownSurface(sessionId, surface);
+  }, [sessionId, surface]);
+  useEffect(() => () => reportShownSurface(sessionId, null), [sessionId]);
   const [terminalMounted, setTerminalMounted] = useState(initialSurface.current === 'terminal');
   const [transcriptMounted, setTranscriptMounted] = useState(
     () => initialSurface.current === 'transcript',
@@ -663,6 +670,28 @@ export function WorkSessionContent({
         </>
       )}
     </div>
+  );
+}
+
+function preferenceKeyFor(viewerMemberId: string | null | undefined, sessionId: string): string {
+  return `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
+}
+
+/**
+ * IS THIS SESSION ON ITS TERMINAL — the surface a mounted body reports, else
+ * the one it WILL open on (the same resolution it runs at mount). The chrome
+ * around the body reads this to choose its scope; see `sessionSurfaceShown.ts`.
+ */
+export function useSessionShowsTerminal(
+  sessionId: string | null | undefined,
+  viewerMemberId: string | null | undefined,
+  requestedSurface: ContentSurface | null = null,
+): boolean {
+  const { oneSurface } = useMobileSurface();
+  const shown = useShownSurface(sessionId);
+  if (!sessionId) return false;
+  return isDarkSurface(
+    shown ?? resolveInitialSurface({ requestedSurface, preferenceKey: preferenceKeyFor(viewerMemberId, sessionId), oneSurface }),
   );
 }
 

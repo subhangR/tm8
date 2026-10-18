@@ -31,6 +31,7 @@ import type { EntityTabRecord, SideSection } from '../runtime/types';
 import { openSideSection, sidePatch } from './sideSection';
 import { PhoneLiveButton } from './PhoneLive';
 import { WebTestButton } from './WebTest';
+import { useSessionShowsTerminal } from '../../panels/bodies/WorkSessionContent';
 import { useWorkspace, useWorkspaceState } from './context';
 import './content.css';
 
@@ -165,8 +166,14 @@ export function ActionStrip({ tab, linkUrl }: ActionStripProps) {
   const kindConfig = getKind(tab.kind);
   const canvas = kindConfig.panel.composition === 'canvas';
   /* On the always-dark terminal body the strip opens the same dark token scope
-     the panel does, so it reads as part of the surface (R30). */
-  const darkBody = kindConfig.panel.archetype === 'terminal';
+     the panel does, so it reads as part of the surface (R30) — only while the
+     session shows its TERMINAL; on the transcript it follows the app theme
+     like the panel beside it (task 01a14c39). */
+  const sessionOnTerminal = useSessionShowsTerminal(
+    kindConfig.panel.archetype === 'terminal' ? tab.entityId : null,
+    gate.viewerMemberId,
+  );
+  const darkBody = kindConfig.panel.archetype === 'terminal' && sessionOnTerminal;
   const darkTheme = useAlwaysDarkTheme();
   const attachable = kindConfig.panel.archetype !== 'terminal' && kindConfig.panel.composition == null;
   const stripRef = useRef<HTMLDivElement>(null);

@@ -19,15 +19,17 @@ import {
 import { useStore } from 'zustand';
 import type { EntityId, EntityKind, ExecutionSpawnInput } from '@tm8/contract';
 import { EditEntityDialog } from '../../authoring';
-import { KindIcon, type ActionRef } from '../../domain';
+import { getKind, KindIcon, type ActionRef } from '../../domain';
 import { attachmentsFor } from '../../files/port';
 import type { ControlHost, EmbeddedChrome } from '../../panels';
 import type { PanelTab } from '../../panels/detail/chrome';
 import { KeptChatOutlet, useKeptChat } from '../../chat-home/keptChatSurface';
 import { AuxEntityPanel, type AuxPanelHost } from '../../views/auxPanel';
+import { useAlwaysDarkTheme } from '../../theme/useAlwaysDarkTheme';
 import { useLaunchPort } from '../../views/useLaunchPort';
 import { useMembershipSurface } from '../../views/membershipSurface';
 import { usePanelPrimaries } from '../../views/usePanelPrimaries';
+import { useSessionShowsTerminal } from '../../panels/bodies/WorkSessionContent';
 import { useRowLifecycle } from '../../views/useRowLifecycle';
 import { useEntityVerbs } from '../../views/useEntityVerbs';
 import type { GateData } from '../../views/useGateData';
@@ -342,9 +344,65 @@ function TabState({
   );
 }
 
+/**
+ * WHAT THE LOADING FRAME LOOKS LIKE — the loaded body's own shape, so nothing
+ * jumps or changes colour when the detail lands (task 01a14c39).
+ *
+ *  - `terminal`: a session that will open on its terminal stage. The title
+ *    bar and action strip beside it take the always-dark scope too; a light
+ *    skeleton between them read as a broken page.
+ *  - `chat`: a conversation — a chat, or a session that will open on its
+ *    transcript (which follows the app theme like chat) — turns down the
+ *    column, the composer at the foot, on the chat screen's own paper.
+ *  - `document`: everything else — lines at the reading measure.
+ *
+ * Keyed on the registry's archetype, not a kind literal (§15.2).
+ */
+type LoadingShape = 'terminal' | 'chat' | 'document';
+
+function loadingShapeOf(kind: string, sessionOnTerminal: boolean): LoadingShape {
+  const archetype = getKind(kind).panel.archetype;
+  if (archetype === 'terminal') return sessionOnTerminal ? 'terminal' : 'chat';
+  if (archetype === 'conversation') return 'chat';
+  return 'document';
+}
+
+function SkeletonRows({ shape }: { shape: LoadingShape }) {
+  if (shape === 'terminal') {
+    return (
+      <>
+        <span className="tws-skeleton-bar" style={{ width: '28%' }} />
+        <span className="tws-skeleton-bar" style={{ width: '64%' }} />
+        <span className="tws-skeleton-bar" style={{ width: '52%' }} />
+        <span className="tws-skeleton-bar" style={{ width: '36%' }} />
+      </>
+    );
+  }
+  if (shape === 'chat') {
+    return (
+      <>
+        <span className="tws-skeleton-turns">
+          <span className="tws-skeleton-bar" style={{ width: '45%' }} />
+          <span className="tws-skeleton-bar" style={{ width: '70%' }} />
+          <span className="tws-skeleton-bar" style={{ width: '55%' }} />
+        </span>
+        <span className="tws-skeleton-composer" />
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="tws-skeleton-bar" style={{ width: '60%' }} />
+      <span className="tws-skeleton-bar" style={{ width: '80%' }} />
+      <span className="tws-skeleton-bar" style={{ width: '40%' }} />
+    </>
+  );
+}
+
 function UnavailableBody({
   tab,
   adapter,
+  shape,
   availability,
   restored,
   onRetry,
@@ -352,6 +410,7 @@ function UnavailableBody({
 }: {
   tab: EntityTabRecord;
   adapter: KindAdapter;
+  shape: LoadingShape;
   availability: Exclude<Availability, { state: 'ready' }>;
   restored: boolean;
   onRetry(): void;
@@ -375,14 +434,14 @@ function UnavailableBody({
       );
     }
     return (
-      <div className="tws-skeleton" aria-busy="true" aria-label={`Loading ${noun}`} data-testid="tws-state-loading">
-        {availability.visible ? (
-          <>
-            <span className="tws-skeleton-bar" style={{ width: '60%' }} />
-            <span className="tws-skeleton-bar" style={{ width: '80%' }} />
-            <span className="tws-skeleton-bar" style={{ width: '40%' }} />
-          </>
-        ) : null}
+      <div
+        className="tws-skeleton"
+        aria-busy="true"
+        aria-label={`Loading ${noun}`}
+        data-testid="tws-state-loading"
+        data-shape={shape}
+      >
+        {availability.visible ? <SkeletonRows shape={shape} /> : null}
       </div>
     );
   }
@@ -446,6 +505,11 @@ export function EntityTabBody({ tab, adapter, onHandle, onOpenEntity: hostOpen, 
   const chrome = useEntityChrome();
   const { availability, retry } = useAvailability(data, tab.entityId);
   const keptChat = useKeptChat(tab.entityId);
+  const darkTheme = useAlwaysDarkTheme();
+  const sessionOnTerminal = useSessionShowsTerminal(
+    getKind(tab.kind).panel.archetype === 'terminal' ? tab.entityId : null,
+    gate.viewerMemberId,
+  );
 
   /* Drilling from the body opens (or focuses) the target's own tab, carrying
      this tab on the trail (Spec A §11; `useLinkedOpen` in view/LinkedTrail). */
@@ -543,11 +607,25 @@ export function EntityTabBody({ tab, adapter, onHandle, onOpenEntity: hostOpen, 
   }
 
   if (availability.state !== 'ready') {
+    /* A terminal's frame is in the always-dark scope like the panel it stands
+       in for, so its skeleton and its slow / failed states paint with the
+       same tokens as the loaded session (and follow the theme with it when the
+       style's terminal chrome does). */
+    const shape = loadingShapeOf(tab.kind, sessionOnTerminal);
+    const dark = shape === 'terminal';
     return (
-      <div className="tws-body" data-testid="tws-entity-body" data-kind={tab.kind} data-state={availability.state}>
+      <div
+        className={`${dark ? 'cv2-root ' : ''}tws-body`}
+        data-theme={dark ? darkTheme : undefined}
+        data-testid="tws-entity-body"
+        data-kind={tab.kind}
+        data-state={availability.state}
+        data-shape={shape}
+      >
         <UnavailableBody
           tab={tab}
           adapter={adapter}
+          shape={shape}
           availability={availability}
           restored={isRestoredTab(runtime, tab.id)}
           onRetry={retry}

@@ -81,7 +81,10 @@
    theme like every other tab's. The panel drops its always-dark scope for
    them (see `alwaysDark` in EntityDetailPanel), so this rule must step back
    too, or the panel stays black with light-theme ink on it. */
-.cv2-root .tws-panel > .pn-panel[data-archetype='terminal']:not([data-embedded-section='connections']):not([data-embedded-section='discussion']) {
+/* …and only while the panel is in its always-dark scope at all, which is the
+   TERMINAL surface alone (task 01a14c39): the transcript and the other
+   surfaces follow the app theme, like chat, and keep the panel's own ground. */
+.cv2-root .tws-panel > .pn-panel[data-archetype='terminal'][data-always-dark='true']:not([data-embedded-section='connections']):not([data-embedded-section='discussion']) {
   background: var(--pn-x-term-bg);
 }
 .cv2-root .tws-panel > .pn-panel[data-archetype='terminal'] .pn-terminal-stage {
@@ -611,11 +614,55 @@
   padding: var(--pn-space-6) var(--pn-space-6) 0;
   box-sizing: border-box;
 }
+/* `--pn-active`, not `--pn-hover`: on a dark card the hover step is a shade
+   off the ground and the bars all but vanished. */
 .tws-skeleton-bar {
   display: block;
   height: 12px;
   border-radius: var(--pn-r-xs);
-  background: var(--pn-hover);
+  background: var(--pn-active);
+}
+/* The loading frame paints the loaded body's ground, so the swap changes the
+   content and nothing else (task 01a14c39). A terminal's is the xterm canvas
+   that fills the loaded stage (`--pn-x-term-live-bg`, the style's xterm
+   background): this body carries the always-dark scope (see `EntityTabBody`),
+   so the token resolves to the same colour the canvas paints. */
+.tws-body[data-shape='terminal'] {
+  background: var(--pn-x-term-live-bg);
+}
+.tws-body[data-shape='chat'] {
+  background: var(--pn-paper);
+}
+/* Terminal lines: flush left at the grid's own inset, mono height. */
+.tws-skeleton[data-shape='terminal'] {
+  max-width: none;
+  margin: 0;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3) var(--pn-space-3) 0;
+}
+.tws-skeleton[data-shape='terminal'] .tws-skeleton-bar {
+  height: 10px;
+  max-width: 560px;
+}
+/* A conversation: turns down the chat's 760px column, the composer at its foot. */
+.tws-skeleton[data-shape='chat'] {
+  flex: 1;
+  max-width: min(760px, calc(100% - 32px));
+  padding: var(--pn-space-6) 0 var(--pn-space-2);
+}
+.tws-skeleton-turns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-4);
+  flex: 1;
+}
+.tws-skeleton-composer {
+  display: block;
+  flex: none;
+  height: 96px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
 }
 
 
@@ -710,7 +757,7 @@
     transition: none;
   }
 }
-.tws-entity-host:has(.pn-panel[data-archetype='terminal']) > .tws-titlebar {
+.tws-entity-host:has(.pn-panel[data-archetype='terminal'][data-always-dark='true'], .tws-body[data-shape='terminal']) > .tws-titlebar {
   background: var(--pn-x-term-bg);
 }
 .tws-titlebar__text {

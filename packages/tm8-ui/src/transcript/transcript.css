@@ -18,6 +18,10 @@
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  /* Chat's ground (`.tch-conversation`), in whichever theme is on: the
+     transcript follows the app theme and reads exactly as a chat thread does
+     (Subhang, 2026-10-18, task 01a14c39). */
+  background: var(--pn-paper);
 }
 
 /* The reading column scrolls; the composer below it does not move. Padding,

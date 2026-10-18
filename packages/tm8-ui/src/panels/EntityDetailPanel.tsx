@@ -86,7 +86,7 @@ import { GovernedBody } from './bodies/GovernedBody';
 import { MachineBody } from './bodies/MachineBody';
 import type { ManagedPort } from '../managed/port';
 import { RestrictedBody } from './bodies/RestrictedBody';
-import { WorkSessionContent } from './bodies/WorkSessionContent';
+import { useSessionShowsTerminal, WorkSessionContent } from './bodies/WorkSessionContent';
 import { AttachmentStrip } from '../files/AttachmentStrip';
 import { attachedFiles } from '../files/model';
 import type { AttachmentsPort } from '../files/port';
@@ -642,6 +642,12 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
      the host's context and never from the window: `GateApp` has already made
      the shell decision once. `false` on every desktop path by construction. */
   const { oneSurface } = useMobileSurface();
+  /* Which surface a session panel is showing: only the terminal is dark. */
+  const sessionOnTerminal = useSessionShowsTerminal(
+    props.detail && getKind(props.detail.kind).panel.archetype === 'terminal' ? props.detail.id : null,
+    props.viewerMemberId,
+    props.contentSurface ?? null,
+  );
   const {
     detail,
     host = 'stack',
@@ -931,7 +937,16 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * dark again. The workspace's own terminal background rule in
    * `tab-workspace/view/content.css` is scoped the same way.
    */
-  const alwaysDark = isTerminal && tab === 'content';
+  /*
+   * …AND ONLY WHILE THE TERMINAL SURFACE IS THE ONE ON SCREEN (Subhang,
+   * 2026-10-18, task 01a14c39): "the transcript must follow the app theme like
+   * chat does". The transcript — and every other in-panel surface — is a
+   * reading surface drawn with the app's tokens exactly as chat-home is; the
+   * frame, header and side column go with it. The terminal keeps the
+   * always-dark scope, whose theme the active style decides
+   * (`--pn-term-chrome`), so a style with a light terminal still has one.
+   */
+  const alwaysDark = isTerminal && tab === 'content' && sessionOnTerminal;
 
   /**
    * THE BODY ENDS THE PANEL — the trailing regions are off.

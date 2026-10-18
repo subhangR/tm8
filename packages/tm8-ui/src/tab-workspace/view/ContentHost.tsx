@@ -17,6 +17,7 @@ import {
 } from '../adapters/entity';
 import { getKindAdapter } from '../adapters/registry';
 import { getKind } from '../../domain';
+import { useSessionShowsTerminal } from '../../panels/bodies/WorkSessionContent';
 import { useAlwaysDarkTheme } from '../../theme/useAlwaysDarkTheme';
 import { activeTab } from '../runtime/selectors';
 import type { EntityTabRecord, TabId } from '../runtime/types';
@@ -246,7 +247,11 @@ function TitleBar({
   setSlot: (el: HTMLElement | null) => void;
 }) {
   const [hidden, setHidden] = useState(false);
-  const darkBody = getKind(tab.kind).panel.archetype === 'terminal';
+  /* Dark only over a session's TERMINAL surface; its transcript follows the
+     app theme (task 01a14c39). */
+  const { gate } = useWorkspace();
+  const isSession = getKind(tab.kind).panel.archetype === 'terminal';
+  const darkBody = useSessionShowsTerminal(isSession ? tab.entityId : null, gate.viewerMemberId);
   const darkTheme = useAlwaysDarkTheme();
   const barRef = useRef<HTMLDivElement>(null);
 

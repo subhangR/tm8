@@ -1514,6 +1514,32 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(panel.getAttribute('data-theme')).toBe('dark');
   });
 
+  it('the dark scope follows the SHOWN surface: terminal dark, transcript in the app theme (task 01a14c39)', () => {
+    // Subhang, 2026-10-18: the transcript reads exactly like chat, in whichever
+    // theme is on; the terminal stays black. The viewer's saved choice is the
+    // first paint's answer, so a transcript opens light with no dark flash.
+    const detail = fixtureDetails[sessionStale.id]!;
+    window.localStorage.setItem(`tm8:work-session-surface:v1:anonymous:${detail.id}`, 'transcript');
+    try {
+      const { getByTestId, container } = render(
+        <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
+      );
+      const panel = getByTestId('entity-detail-panel');
+      expect(panel.classList.contains('cv2-root')).toBe(false);
+      expect(panel.getAttribute('data-theme')).toBeNull();
+      expect(panel.getAttribute('data-always-dark')).toBeNull();
+
+      fireEvent.click(container.querySelector('button[data-surface="terminal"]')!);
+      expect(panel.classList.contains('cv2-root')).toBe(true);
+      expect(panel.getAttribute('data-theme')).toBe('dark');
+
+      fireEvent.click(container.querySelector('button[data-surface="transcript"]')!);
+      expect(panel.classList.contains('cv2-root')).toBe(false);
+    } finally {
+      window.localStorage.clear();
+    }
+  });
+
   it('R5 #4B: the header pill obeys the VERDICT, never the record, on a stale session', () => {
     // The record says running; the seam says stale. Rendering live green here
     // is the D6 lie that reached the user's screen at the gate.
