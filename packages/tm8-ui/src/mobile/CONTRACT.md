@@ -179,6 +179,11 @@ drafts (`mobile/usePagePlace.ts`). Opening an entity is ONE push: `openEntityOnP
 `navigateTo(target, { open })` writes `e/{id}?origin=…` directly, and a target equal to the entry
 below is Back. Kinds outside the v1 set open `mobile-pages/PhoneEntityPage`; task/doc/session pages
 get `PhoneMessages` via the panel's `beforeLinked` slot. Edge swipe: `mobile/useEdgeSwipe.ts`.
+The session page is the exception to both pieces of chrome: it is immersive (the frame header is
+hidden so the terminal keeps its height), so its surface row redraws the header's ‹ from
+`useMobileSurface().up` (the same action and label), and the terminal archetype skips the
+`beforeLinked` section, which would sit under its composer dock, for a Messages door in that row
+(`mobile/messagesDoor.ts`) that opens the Discussion sheet.
 
 The tab bar was retired on 2026-08-19, so where the text below says "tab bar", read **the drawer**.
 

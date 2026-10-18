@@ -1827,7 +1827,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     railTailSlot={railTail}
                   />
                   {bodyConsumesSlot ? null : attachmentSlot}
-                  {bodyConsumesSlot ? null : props.beforeLinked}
+                  {/* Not under a terminal: it owns the screen down to its
+                      composer dock, so this would sit below the dock, out of
+                      reach. The session draws a Messages door in its own row. */}
+                  {bodyConsumesSlot || isTerminal ? null : props.beforeLinked}
                 </>
               );
             })()}

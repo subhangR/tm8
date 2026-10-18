@@ -4,7 +4,7 @@ import type { WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import { CONTENT_SURFACES, type ContentSurface } from '../../routes';
 import { SURFACE_ART, SURFACE_LABEL } from '../../domain';
 import { VectorIcon } from '../../kit';
-import { useMobileSurface } from '../../mobile';
+import { useMessagesDoor, useMobileSurface } from '../../mobile';
 import { DisabledIconControl } from '../honesty/DisabledWithReason';
 import { isDarkSurface, reportShownSurface, useShownSurface } from './sessionSurfaceShown';
 import './work-session-content-phone.css';
@@ -158,6 +158,10 @@ export interface WorkSessionContentProps {
   switchSlot?: HTMLElement | null;
 }
 
+/** The header's chevron and a speech bubble, on `VectorIcon`'s 16x16 grid. */
+const UP_ART = ['M10.4 3.6 5.6 8l4.8 4.4'];
+const MESSAGES_ART = ['M2.5 4.2c0-.9.7-1.7 1.7-1.7h7.6c.9 0 1.7.8 1.7 1.7v5.1c0 .9-.8 1.7-1.7 1.7H7l-3 2.5V11h.2c-1 0-1.7-.8-1.7-1.7Z'];
+
 /**
  * The work-session Content switch owns presentation only: which chip is
  * selected, and which pane is mounted. Every surface is offered — the last
@@ -195,7 +199,8 @@ export function WorkSessionContent({
    * chose the shell this body is rendering inside. Off the phone this is
    * `false` and every branch it guards is unreachable by construction.
    */
-  const { oneSurface } = useMobileSurface();
+  const { oneSurface, up } = useMobileSurface();
+  const messagesDoor = useMessagesDoor();
   const [immersive, setImmersive] = useState(true);
 
   // The offered surfaces, in fixed order. On a desktop Terminal is first and is
@@ -433,6 +438,23 @@ export function WorkSessionContent({
         >
           {immersive ? '☰' : '⤢'}
         </button>
+        {/* THE HEADER'S ‹, REDRAWN HERE. Immersive hides the frame header so
+            the terminal keeps its height, and a pushed page without ‹ is a
+            page the reader can only leave by a gesture they may not know
+            (CONTRACT §5). Same action and label as the header's, beside the
+            ☰ exactly as it sits there. With details shown, the header is
+            back and carries its own. */}
+        {immersive && up ? (
+          <button
+            type="button"
+            className="pn-session-up"
+            aria-label={up.label}
+            data-testid="session-up"
+            onClick={up.run}
+          >
+            <VectorIcon paths={UP_ART} size={20} strokeWidth={1.6} />
+          </button>
+        ) : null}
         <div
           className="pn-surface-switch__tabs"
           role="tablist"
@@ -441,6 +463,27 @@ export function WorkSessionContent({
         >
           {tabs}
         </div>
+        {/* THE MESSAGES SECTION AS A DOOR (CONTRACT §5 ruling 8). Below the
+            body is under the composer dock on this page; a section above the
+            dock would take ~140px of a 520px screen from the terminal for
+            good. One 44px button with the count opens the Discussion sheet,
+            the same one "View all" opens, from either mode. */}
+        {messagesDoor ? (
+          <button
+            type="button"
+            className="pn-session-messages"
+            aria-label={messagesDoor.count > 0 ? `Messages, ${messagesDoor.count}` : 'Messages'}
+            data-testid="session-messages-open"
+            onClick={messagesDoor.open}
+          >
+            <VectorIcon paths={MESSAGES_ART} size={18} strokeWidth={1.5} />
+            {messagesDoor.count > 0 ? (
+              <span className="pn-session-messages__n" aria-hidden>
+                {messagesDoor.count > 99 ? '99+' : messagesDoor.count}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
         {/*
           THE FOUR THAT ARE NOT HERE, SAID OUT LOUD.
 
