@@ -1005,3 +1005,85 @@
   background: var(--pn-info-soft);
   color: var(--pn-info);
 }
+
+/* --- the phone's touch floor inside a section (task 01a14dcc) -------------
+   The stacked list's rows are 52px; the sections they open render the
+   desktop's controls, and the census (e2e/settings-taps-census.mjs) measured
+   ~100 of them under the 44px floor (CONTRACT §6): 17–28px fields, 20px row
+   actions, a 13px checkbox. Two treatments, by what the mockup (01a14cc4)
+   draws:
+     · fields and a form's own submit are drawn full size there (46px
+       buttons), so they simply GROW to the floor. Fields also take 16px type,
+       below which iOS zooms the page on focus.
+     · row actions (Edit / Hide, Connect / Disconnect …) and the checkbox are
+       small marks beside a row's text. They keep their drawn size and the
+       ELEMENT grows to the floor: a transparent border is the margin a thumb
+       hits, `background-clip: padding-box` keeps the fill off it, and an inset
+       shadow is the outline (the composer Send disc's split). Never a
+       pseudo-element: the census measures the element's own box (§6).
+   Members' select and ✕ live in members-section.css by the same rule. Each
+   class is named rather than a blanket `button {}` (§6 forbids that), and only
+   the phone renders `.set-root--stacked`. */
+.cv2-root.set-root--stacked :is(
+  .set-field,
+  .set-account__input,
+  .set-spl__input,
+  .cred-svc__input,
+  .set-space-profile__form input,
+  .set-space-profile__form select
+) {
+  box-sizing: border-box;
+  height: auto;
+  min-height: var(--mobile-touch-min, 44px);
+  font-size: 16px;
+}
+.cv2-root.set-root--stacked :is(.set-chip, .set-add, .set-space-profile__form button) {
+  box-sizing: border-box;
+  min-height: var(--mobile-touch-min, 44px);
+  min-width: var(--mobile-touch-min, 44px);
+}
+.cv2-root.set-root--stacked :is(.set-ghost, .cred-action) {
+  box-sizing: border-box;
+  min-height: var(--mobile-touch-min, 44px);
+  min-width: var(--mobile-touch-min, 44px);
+  /* (44 - 22) / 2 above and below a 22px drawn button. */
+  border: 0 solid transparent;
+  border-block-width: 11px;
+  /* The inner corner is the outer one less the border, so the vertical radius
+     carries the 11px back and the drawn button keeps its --pn-r-sm corner. */
+  border-radius: var(--pn-r-sm) / calc(var(--pn-r-sm) + 11px);
+  padding-block: 0;
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--pn-line-2);
+}
+.cv2-root.set-root--stacked .cred-action--primary {
+  box-shadow: inset 0 0 0 1px rgba(var(--pn-brand-rgb), 0.35);
+}
+.cv2-root.set-root--stacked .set-spl__spawn { flex-wrap: wrap; column-gap: 0; }
+/* Beside the 44px box the help squeezed the bare "Allow spawn" text node to
+   one letter per line at 360px; on its own line it reads as the label's note. */
+.cv2-root.set-root--stacked .set-spl__spawn-help { flex: 1 1 100%; }
+.cv2-root.set-root--stacked .set-spl__spawn > input[type='checkbox'] {
+  appearance: none;
+  box-sizing: border-box;
+  flex: none;
+  width: var(--mobile-touch-min, 44px);
+  height: var(--mobile-touch-min, 44px);
+  /* Pulls the label word back to the drawn box's usual 6px gap. */
+  margin: 0 -7px 0 -13px;
+  /* (44 - 18) / 2 around an 18px box. */
+  border: 13px solid transparent;
+  border-radius: 17px;
+  background: var(--pn-surface);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--pn-line-2);
+  cursor: pointer;
+}
+.cv2-root.set-root--stacked .set-spl__spawn > input[type='checkbox']:checked {
+  background-color: var(--pn-brand);
+  box-shadow: inset 0 0 0 1px var(--pn-brand), inset 0 0 0 4px var(--pn-surface);
+}
+.cv2-root.set-root--stacked .set-spl__spawn > input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -13px;
+}

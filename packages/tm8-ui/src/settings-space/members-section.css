@@ -306,3 +306,62 @@
 .set-root--stacked .set-members__cell--x { grid-area: x; }
 .set-root--stacked .set-members__error { grid-column: 1 / -1; grid-row: 3; }
 .set-root--stacked .set-members__when { font-size: var(--pn-fs-label); }
+
+/* --- the phone's touch floor (task 01a14dcc) -------------------------------
+   Stacked, the role select measured 116x24 and the ✕ 24x24: the desktop's
+   control height, under the shell's 44px floor (CONTRACT §6). The mockup draws
+   the role as a 34px pill ("admin ▾") and the ✕ stays the desktop's 24px
+   square, so each element grows to 44px and draws its old shape inside it.
+   That is the composer Send disc's split: a transparent border is the margin a
+   thumb can hit, `background-clip: padding-box` keeps the fill off it, and an
+   inset shadow (drawn at the padding edge) is the visible outline. The hit area
+   is the element's own box, never a pseudo-element: the census measures
+   `getBoundingClientRect()` of the control (§6). */
+.set-root--stacked .set-members {
+  --set-members-ctl-h: var(--mobile-touch-min, 44px);
+  --set-members-x-w: var(--mobile-touch-min, 44px);
+}
+.set-root--stacked .set-members__row { column-gap: 6px; }
+.cv2-root.set-root--stacked .set-members__cell--role > select.set-role {
+  appearance: none;
+  /* (44 - 34) / 2: the mockup's 34px pill in the middle of the 44px box. */
+  border: 5px solid transparent;
+  border-radius: 14px;
+  padding: 0 24px 0 10px;
+  background-color: var(--pn-card);
+  /* The ▾ the native arrow drew, as two gradient halves of a small triangle,
+     so it repaints with the ink token rather than a baked colour. */
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--pn-ink-3) 50%),
+    linear-gradient(135deg, var(--pn-ink-3) 50%, transparent 50%);
+  background-size: 5px 5px, 5px 5px;
+  background-position: right 14px center, right 9px center;
+  background-repeat: no-repeat;
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--pn-line-2);
+  font-size: var(--pn-fs-sm);
+  text-align-last: left;
+}
+.cv2-root.set-root--stacked .set-members__cell--role > select.set-role:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--pn-brand);
+}
+/* The locked and hollow forms keep the row's centre line at the pill's 34px;
+   they read, they are not tapped to change anything. The locked ✕ below IS
+   focusable (it discloses its reason), so it takes the full box. */
+.cv2-root.set-root--stacked .set-members__cell--role > :is(.hon-disabled, .hon-hollow-inline) {
+  height: 34px;
+}
+.cv2-root.set-root--stacked :is(.set-members__x, .set-members__cell--x > .hon-disabled) {
+  box-sizing: border-box;
+  width: var(--mobile-touch-min, 44px);
+  height: var(--mobile-touch-min, 44px);
+  /* (44 - 24) / 2 around the desktop's 24px square. */
+  border: 10px solid transparent;
+  border-radius: 14px;
+  background-clip: padding-box;
+}
+.cv2-root.set-root--stacked .set-members__x:hover {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--pn-block);
+}
