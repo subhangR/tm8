@@ -10,7 +10,8 @@
  * thumb can pan (`overflow-x: auto|scroll`) has `scrollWidth > clientWidth`,
  * or any rendered element's right edge lies past the viewport (clipped off by
  * the frame, so it cannot be scrolled to either). The other numbers are
- * reported, not gated.
+ * reported, not gated. A row that lands in the wrong shell (shell 'none' when
+ * the app fails to boot) also fails the run: its zeros are not evidence.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY THIS EXISTS, stated as the failure it prevents rather than the feature it
@@ -431,6 +432,9 @@ let browser = null;
 const rows = [];
 const problems = [];
 const noscrollFailures = [];
+/* Rows measured in the wrong shell. Unbuilt workspace packages make vite 500,
+   every row lands in shell 'none', and every gate below passed vacuously. */
+const wrongShell = [];
 
 for (const vp of VIEWPORTS) {
   if (onlyViewport && vp.name !== onlyViewport) continue;
@@ -474,7 +478,11 @@ for (const vp of VIEWPORTS) {
     /* THE REFUSAL. A row measured in the wrong shell looks exactly like a real
        row and is pure fiction — see trap 2. Record the failure instead. */
     const shellOk = m.shell === vp.expectShell;
-    if (!shellOk) problems.push(`${vp.name}/${route.name}: expected ${vp.expectShell} shell, got '${m.shell}' (coarsePointer=${m.coarsePointer})`);
+    if (!shellOk) {
+      const msg = `${vp.name}/${route.name}: expected ${vp.expectShell} shell, got '${m.shell}' (coarsePointer=${m.coarsePointer})`;
+      problems.push(msg);
+      wrongShell.push(msg);
+    }
     /* THE GATE. A phone screen that scrolls sideways fails the run. */
     if (vp.expectShell === 'mobile' && shellOk && (m.docScrollsX || m.hScrollerCount > 0)) {
       noscrollFailures.push(`${vp.name}/${route.name}: scrolls sideways — document ${m.scrollWidth}/${m.viewportWidth}, ${m.hScrollerCount} panning element(s)${m.hScrollers[0] ? ` e.g. ${m.hScrollers[0].path} ${m.hScrollers[0].scrollWidth}/${m.hScrollers[0].clientWidth}` : ''}`);
@@ -552,6 +560,10 @@ console.log(`\nwrote ${outDir}/${label}.json  (${rows.length} rows)`);
 if (problems.length) {
   console.log(`\n${problems.length} PROBLEM(S) — rows above marked WRONG SHELL are not evidence:`);
   for (const p of problems) console.log('  ! ' + p);
+}
+if (wrongShell.length) {
+  console.log(`\n${wrongShell.length} ROW(S) MEASURED THE WRONG SHELL — this run is not evidence. Shell 'none' usually means the app did not boot: build the workspace packages (\`bun run typecheck\` at the repo root) and check vite's output for a 500. First: ${wrongShell[0]}`);
+  process.exitCode = 1;
 }
 if (noscrollFailures.length) {
   console.log(`\n${noscrollFailures.length} PHONE ROW FAILURE(S) — scrolls sideways or clips content off the right edge (t-noscroll gate):`);
