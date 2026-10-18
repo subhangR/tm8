@@ -35,17 +35,17 @@
    reader every time they touch it. That trades a layout complaint for two
    defects this program has already filed.
 
-   SO THE SECOND LINE IS WHAT GOES, NOT THE FIRST LINE'S HEIGHT. The band
-   becomes ONE row whose chips narrow to fit (§2). Every chip keeps its 44px floor
-   and its 16px type, byte for byte; what is removed is the wrap.
+   SO THE CHIPS KEEP THEIR HEIGHT AND THEIR TYPE, byte for byte. The band was
+   then made ONE row whose chips narrow to fit; that shrank every label to a
+   caret, so it wraps again (§2) and the rows sit 4px apart rather than 6px.
 
    ── WHY SHRINKING AND NOT A SCROLLER OR A HIDDEN OVERFLOW ─────────────────
 
    CONTRACT.md §5's rule is that `overflow: hidden` on `.mobile-frame` CLIPS —
    content is destroyed past the edge while `scrollWidth − clientWidth` reads
    zero. That is the failure mode this file must not reproduce. It first did so
-   with a sideways scroller; t-noscroll replaced that with shrinking chips (§2),
-   which is what the chat composer does with the same squeeze.
+   with a sideways scroller; t-noscroll replaced that with shrinking chips, and
+   fix-wrap with wrapping ones (§2).
 
    THE GUTTER MOVED INSIDE. The band's `padding-inline` moves onto the chip
    row, so the chips start and end on the panel's reading gutter.
@@ -69,22 +69,26 @@
 /* --- 1. THE BAND: LESS PADDING, AND ITS GUTTER HANDED TO THE CHIP ROW ----
    `padding: 6px var(--pn-space-4)` becomes 4px of block padding and none
    inline. The 4px is not cosmetic trimming for its own sake — it is what keeps
-   the one remaining row from reading as a boxed-in card once it is the only
-   row. The hairline stays: it is what separates the axes from the body, and
+   the band from reading as a boxed-in card. The hairline stays: it is what separates the axes from the body, and
    with the tab strip gone above it, it is now the only rule doing that. */
 .cv2-root[data-shell='mobile'] .pn-controls {
   padding-block: 4px;
   padding-inline: 0;
 }
 
-/* --- 2. ONE LINE, SHRUNK — NOT SCROLLED ---------------------------------
-   `flex-wrap: nowrap` is the whole of the height fix. This band USED to make
-   the one line a sideways scroller; t-noscroll took that out, because no phone
-   surface scrolls sideways any more (a chip you have to discover by swiping is
-   a chip that is not there). The chips SHRINK instead, the way the composer's
-   pills do in the composer-states mockup:
+/* --- 2. WRAPPED, NOT SCROLLED AND NOT SHRUNK TO A LETTER ---------------
+   This band used to be one sideways scroller, and t-noscroll took that out,
+   because no phone surface scrolls sideways any more (a chip you have to
+   discover by swiping is a chip that is not there). t-noscroll then made it
+   ONE line whose chips shrink, and that cannot fit: a task's band is status,
+   priority, two dates, type, assignee, collection and gate, and status plus
+   priority alone want ~230px at 16px type. Shrunk evenly into 360-430px,
+   every chip lands at ~30px, which is the caret and nothing else (fix-wrap,
+   verify finding F5). So the strip WRAPS onto a second line again; that line
+   is the price of reading the band.
 
-     flex: 0 1 auto      every chip gives up width before the row overflows.
+     flex: 0 1 auto      a chip wider than a whole line gives up width rather
+                         than overflow it, and ellipsizes (§3).
      min-width: 0        defeats the automatic minimum that would otherwise pin
                          a `<select>` at the width of its widest OPTION — the
                          select then truncates its own shown value natively.
@@ -96,10 +100,10 @@
    The 44px floor and the 16px type are untouched: a chip gets NARROWER, never
    shorter or smaller. */
 .cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   overflow-x: clip;
   overflow-clip-margin: 3px;
-  gap: 8px;
+  gap: 4px 8px;
   padding-inline: var(--pn-space-4);
 }
 
@@ -122,4 +126,35 @@
    across a dense row — is the desktop's, where the rule is untouched. */
 .cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips > :last-child {
   margin-left: 0;
+}
+
+/* --- 3. A CHIP LABEL NEVER BREAKS MID-WORD -------------------------------
+   `mobile-noscroll.css` §1 sets `overflow-wrap: anywhere` on the whole phone
+   shell, and it inherits into this strip. `anywhere` lowers min-content to one
+   letter, so the one-line shrink t-noscroll put here had no floor to stop at: status read
+   "w/o/r/ki/n/g", one letter per line, and every chip grew into a tall column.
+   The strip opts back out (`normal` inherits into every chip and its menu), and
+   each chip keeps its label on one line and ellipsizes it instead, which is the
+   "a control that is too wide SHRINKS to an ellipsis" half of the noscroll rule.
+
+   The ellipsis sits on `.lp__chiplabel` and not on the face because the faces
+   are flex containers: their text is an anonymous flex item, and
+   `text-overflow` never reaches one. The label span is a flex item that can
+   shrink (`min-width: 0`) and clip itself. */
+.cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips {
+  overflow-wrap: normal;
+}
+
+.cv2-root[data-shell='mobile'] .pn-controls .lp__rowdetail--chips
+  :is(.lp__statesel, .pn-badge, .lp__assignbtn, .lp__dateadd, .pn-gate) {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv2-root[data-shell='mobile'] .pn-controls .lp__chiplabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

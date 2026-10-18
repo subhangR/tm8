@@ -1008,7 +1008,7 @@ function ChipMenu({
           setOpen((was) => !was);
         }}
       >
-        {current}
+        <span className="lp__chiplabel">{current}</span>
         <span className="lp__chipmenu__caret" aria-hidden>▾</span>
       </button>
       {open ? (
@@ -1482,11 +1482,13 @@ function RowAssignControl({
             ))
           : '♙'}
       </span>
-      {assigned.length === 0
-        ? control.emptyLabel
-        : assigned.length === 1
-          ? actorName(assigned[0])
-          : `${actorName(assigned[0])} +${assigned.length - 1}`}
+      <span className="lp__chiplabel">
+        {assigned.length === 0
+          ? control.emptyLabel
+          : assigned.length === 1
+            ? actorName(assigned[0])
+            : `${actorName(assigned[0])} +${assigned.length - 1}`}
+      </span>
     </span>
   );
 
@@ -1679,11 +1681,13 @@ export function RowMembershipControl({
     <span aria-hidden>{glyph}</span>
   ) : (
     <span className="pn-badge pn-badge--membership" data-testid="row-membership-face">
-      {names.length === 0
-        ? control.emptyLabel
-        : names.length === 1
-          ? names[0]
-          : `${names[0]} +${names.length - 1}`}
+      <span className="lp__chiplabel">
+        {names.length === 0
+          ? control.emptyLabel
+          : names.length === 1
+            ? names[0]
+            : `${names[0]} +${names.length - 1}`}
+      </span>
     </span>
   );
 
