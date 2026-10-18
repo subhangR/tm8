@@ -1620,6 +1620,35 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 /* The hover bar sits over the byline's far corner, clear of the bubble. */
 .chs-row--turn .chs-actions { top: -10px; right: 0; }
 
+/* THE PHONE HAS NO HOVER, so the bar cannot wait for one — and pinned open
+   over the corner (the 440 container block) its 44px tiles sat on the byline
+   and the first line of text of every message (verify F6). On the phone the
+   actions are turn chrome like the thread footer: an in-flow row under the
+   turn, on the bubble's side, drawn plain. The tile keeps its 44px target,
+   and the turn's own bottom margin moves below the row so ↩ sits against
+   the message it answers rather than floating between two. */
+.cv2-root[data-shell='mobile'] .chs-row--turn .tch-turn { margin-bottom: 0; }
+.cv2-root[data-shell='mobile'] .chs-row--turn .chs-actions {
+  position: static;
+  justify-content: flex-start;
+  margin: 0 0 12px 26px;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+.cv2-root[data-shell='mobile'] .chs-row--turn[data-own] .chs-actions {
+  justify-content: flex-end;
+  margin-left: 0;
+}
+.cv2-root[data-shell='mobile'] .chs-row--turn .chs-iconbtn {
+  min-width: var(--mobile-touch-min, 44px);
+  min-height: var(--mobile-touch-min, 44px);
+  color: var(--pn-ink-3);
+}
+
 /* Channel facts under the turn, in the bubble's gutter and on its side. */
 .chs-turn-chrome {
   display: flex;
