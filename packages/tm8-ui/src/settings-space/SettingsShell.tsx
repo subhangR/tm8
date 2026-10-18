@@ -16,7 +16,9 @@ import { ProfileSection } from './ProfileSection';
 import { DangerSection } from './DangerSection';
 import { ConfigsSection } from './ConfigsSection';
 import { SessionsSection } from './SessionsSection';
-import { SectionAbsent, SectionFrame } from './SectionFrame';
+import { SectionAbsent, SectionFrame, SectionScopeContext } from './SectionFrame';
+import { OverviewSection } from './OverviewSection';
+import { SETTINGS_SCOPE_CHIP, scopeOfSection, settingsNavRowLabel, visibleSettingsNav, type SettingsAccess } from './nav';
 import { SECTION_NOT_MOUNTED } from './reasons';
 import { DESKTOP_ONLY_SECTIONS, PHONE_READ_ONLY_TAGS, PHONE_SECTION_HINTS, PHONE_SECTION_ICONS, PHONE_SETTINGS_GROUPS, phoneLiveHint } from './phone-sections';
 import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionDef, type SettingsSectionId, type SettingsShellProps } from './types';
@@ -33,13 +35,15 @@ export function SettingsShell({
   sectionIds,
   onOpenSpaceAdmin,
   onOpenNodeAdmin,
+  onOpenNodeSection,
   framed = false,
   stacked = false,
   onOpenAppearance,
 }: SettingsShellProps) {
   /* Stacked opens on the LIST unless the address named a section: a phone
-     that landed on Members & roles would hide that the list exists. */
-  const [active, setActive] = useState<SettingsSectionId | null>(initialSection ?? (stacked ? null : 'members'));
+     that landed on Members & roles would hide that the list exists. The
+     desktop opens on the Overview for the same reason (settings redesign). */
+  const [active, setActive] = useState<SettingsSectionId | null>(initialSection ?? (stacked ? null : 'overview'));
   const [data, setData] = useState<SettingsData>({
     space: null,
     members: [],
@@ -173,6 +177,11 @@ export function SettingsShell({
   const visibleActive = visibleSections.some((s) => s.id === active) ? active : visibleSections[0]?.id;
 
   const spaceLabel = data.space?.name ?? '—';
+  /* The host hands the admin doors only to a viewer holding the role
+     (GateApp's `adminAccess`), so their presence IS the access answer — the
+     same one the frame nav is gated on. */
+  const access: SettingsAccess = { space: !!onOpenSpaceAdmin, node: !!onOpenNodeAdmin };
+  const openNode = onOpenNodeSection ?? (onOpenNodeAdmin ? () => onOpenNodeAdmin() : undefined);
 
   const loadErrorNote = loadError ? (
     <div className="set-absent" data-testid="settings-load-error">
@@ -184,8 +193,12 @@ export function SettingsShell({
   ) : null;
 
   const sectionBody = (id: SettingsSectionId) => (
+    <SectionScopeContext.Provider value={scopeOfSection(id)}>
     <SectionBody
       id={id}
+      access={access}
+      openable={visibleSections.map((s) => s.id)}
+      onOpenNode={openNode}
       data={data}
       sections={sections}
       onGo={go}
@@ -201,6 +214,7 @@ export function SettingsShell({
       nodeKey={nodeKey}
       phone={stacked}
     />
+    </SectionScopeContext.Provider>
   );
 
   if (stacked) {
@@ -318,28 +332,26 @@ export function SettingsShell({
           {onOpenSpaceAdmin && <button type="button" className="set-nav__row" onClick={onOpenSpaceAdmin}>Space admin</button>}
           {onOpenNodeAdmin && <button type="button" className="set-nav__row" onClick={onOpenNodeAdmin}>Node admin</button>}
           <span className="set-nav__eyebrow">Space · {spaceLabel}</span>
-          {visibleSections.filter((s) => !s.danger).map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className="set-nav__row"
-              aria-current={visibleActive === s.id ? 'true' : undefined}
-              onClick={() => go(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-          <div className="set-nav__spacer" />
-          {visibleSections.filter((s) => s.danger).map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className="set-nav__row set-nav__row--danger"
-              aria-current={visibleActive === s.id ? 'true' : undefined}
-              onClick={() => go(s.id)}
-            >
-              {s.label}
-            </button>
+          {legacyNavGroups(visibleSections, access).map((group) => (
+            <div key={group.id} className="set-nav__group" role="group" aria-label={group.label ?? undefined}>
+              {group.label ? (
+                <span className="set-nav__heading" title={group.description}>
+                  {group.label}
+                  {group.scope ? <span className="set-nav__scope">{SETTINGS_SCOPE_CHIP[group.scope]}</span> : null}
+                </span>
+              ) : null}
+              {group.rows.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  className={`set-nav__row${row.danger ? ' set-nav__row--danger' : ''}`}
+                  aria-current={visibleActive === row.id ? 'true' : undefined}
+                  onClick={() => go(row.id)}
+                >
+                  {row.label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>}
 
@@ -350,6 +362,38 @@ export function SettingsShell({
       </div>
     </div>
   );
+}
+
+/**
+ * The unframed shell's own nav (the legacy bar), grouped by the same scope
+ * model as the frame nav. Sections this shell lists but the model does not
+ * (the two node sections with space-shaped ids, on the unscoped legacy shell)
+ * land under Server rather than vanishing.
+ */
+function legacyNavGroups(visible: readonly SettingsSectionDef[], access: SettingsAccess) {
+  const shown = new Set(visible.map((s) => s.id));
+  const placed = new Set<SettingsSectionId>();
+  const take = (id: SettingsSectionId, label?: string) => {
+    placed.add(id);
+    const def = visible.find((s) => s.id === id)!;
+    return { id, label: label ?? def.label, danger: !!def.danger };
+  };
+  const groups: { id: string; label: string | null; description?: string; scope?: keyof typeof SETTINGS_SCOPE_CHIP; rows: ReturnType<typeof take>[] }[] = [];
+  if (shown.has('overview')) groups.push({ id: 'overview', label: null, rows: [take('overview')] });
+  /* Role gating is the shell's `sectionIds`, not the nav's: an unframed
+     shell lists every section its scope was given. */
+  for (const group of visibleSettingsNav({ space: true, node: access.node })) {
+    const rows = group.subgroups.flatMap((subgroup) => subgroup.rows)
+      .flatMap((row) => (row.target.scope === 'space' && shown.has(row.target.section) ? [take(row.target.section, settingsNavRowLabel(row))] : []));
+    if (rows.length) groups.push({ id: group.id, label: group.label, description: group.description, scope: group.scope, rows });
+  }
+  const rest = visible.filter((s) => !placed.has(s.id)).map((s) => take(s.id));
+  if (rest.length) {
+    const server = groups.find((g) => g.id === 'node');
+    if (server) server.rows.push(...rest);
+    else groups.push({ id: 'node', label: 'Server', description: 'Node admins only — reaches every space on this server.', scope: 'node', rows: rest });
+  }
+  return groups;
 }
 
 /** The space's initial, the mark it carries where it has no logo. */
@@ -387,6 +431,9 @@ function DesktopOnlySection({ def }: { def: SettingsSectionDef }) {
 
 function SectionBody({
   id,
+  access,
+  openable,
+  onOpenNode,
   data,
   sections,
   onGo,
@@ -403,6 +450,9 @@ function SectionBody({
   phone,
 }: {
   id: SettingsSectionId;
+  access: SettingsAccess;
+  openable: readonly SettingsSectionId[];
+  onOpenNode?: SettingsShellProps['onOpenNodeSection'];
   data: SettingsData;
   sections: SettingsShellProps['sections'];
   onGo: (id: SettingsSectionId) => void;
@@ -425,6 +475,8 @@ function SectionBody({
   const def = SETTINGS_SECTIONS.find((s) => s.id === id)!;
 
   switch (id) {
+    case 'overview':
+      return <OverviewSection data={data} access={access} openable={openable} onOpen={onGo} onOpenNode={onOpenNode} />;
     case 'members':
       return (
         <MembersSection

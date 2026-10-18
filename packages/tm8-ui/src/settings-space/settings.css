@@ -1087,3 +1087,109 @@
   outline: 2px solid var(--pn-brand);
   outline-offset: -13px;
 }
+
+/* --- scope chips (settings redesign, 2026-10-18) -------------------------- */
+
+/* WHO A CHANGE REACHES, on every section head and every Overview card. The
+   tone names the scope, never a judgement: info for you, idle for this
+   browser, run for the space, wait for the server — the server is the one
+   worth pausing on, because a change there reaches every space. Text always
+   carries the meaning; the tone only helps the eye find it. */
+.set-scope-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--set-scope-tone, var(--pn-ink-3)) 35%, transparent);
+  background: var(--set-scope-soft, var(--pn-hover));
+  color: var(--set-scope-tone, var(--pn-ink-3));
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.set-scope-chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.set-scope-chip[data-scope='you'] { --set-scope-tone: var(--pn-info); --set-scope-soft: var(--pn-info-soft); }
+.set-scope-chip[data-scope='browser'] { --set-scope-tone: var(--pn-ink-3); --set-scope-soft: var(--pn-idle-soft); }
+.set-scope-chip[data-scope='space'] { --set-scope-tone: var(--pn-run); --set-scope-soft: var(--pn-run-soft); }
+.set-scope-chip[data-scope='node'] { --set-scope-tone: var(--pn-wait); --set-scope-soft: var(--pn-wait-soft); }
+/* Inside a row, beside its label: same words, less ink. */
+.set-scope-chip--quiet { height: 18px; font-size: 10.5px; background: none; }
+
+/* The title and its chip share a baseline-ish centre; a long title wraps
+   before the chip is pushed off the head. */
+.set-section__title { min-width: 0; }
+
+/* --- the unframed shell's grouped nav ------------------------------------ */
+
+.set-nav__group {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+}
+.set-nav__group + .set-nav__group { margin-top: 10px; }
+.set-nav__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 14px 4px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.set-nav__scope {
+  font-family: var(--pn-ui);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--pn-ink-4);
+}
+.set-nav__row:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* NARROW: the 160px column beside the body leaves a section ~400px on a
+   small window, so below 720px the nav folds into a wrapped block of chips
+   above the body — every destination still one tap away. It WRAPS rather
+   than scrolling sideways (mobile/noscroll.test.ts), and caps its own height
+   so a short window still has room for the section. */
+@media (max-width: 720px) {
+  .set-root:not([data-framed]) .set-card { flex-direction: column; }
+  .set-root:not([data-framed]) .set-nav {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    max-height: 168px;
+    border-right: 0;
+    border-bottom: 1px solid var(--pn-line);
+  }
+  .set-root:not([data-framed]) .set-nav__eyebrow,
+  .set-root:not([data-framed]) .set-nav__heading { display: none; }
+  .set-root:not([data-framed]) .set-nav__group { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .set-root:not([data-framed]) .set-nav__group + .set-nav__group {
+    margin-top: 0;
+    padding-left: 6px;
+    border-left: 1px solid var(--pn-line);
+  }
+  .set-root:not([data-framed]) .set-nav__row { border-left: 0; border-radius: var(--pn-r-sm); padding: 5px 10px; }
+  .set-root:not([data-framed]) .set-nav__row[aria-current='true'] { padding: 5px 10px; box-shadow: inset 0 -2px 0 var(--pn-brand); }
+  .set-section__head { flex-wrap: wrap; row-gap: 6px; }
+}

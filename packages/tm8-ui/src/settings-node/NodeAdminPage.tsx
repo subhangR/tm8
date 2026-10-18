@@ -9,7 +9,7 @@ import { NodeCredentialsSection } from '../settings-credentials/NodeCredentialsS
 import { FilesystemAccessSection } from '../settings-credentials/FilesystemAccessSection';
 import { filesystemAccessPortFromSeam } from '../settings-credentials/filesystem-access-port';
 import { spaceCredentialsPortFromSeam } from '../settings-credentials/space-port';
-import { SectionFrame } from '../settings-space/SectionFrame';
+import { SectionFrame, SectionScopeContext } from '../settings-space/SectionFrame';
 import { valueLabel } from '../settings-space/ConfigsSection';
 import '../settings-space/settings.css';
 import './node-admin.css';
@@ -27,7 +27,7 @@ export interface NodeAdminPageProps {
   framed?: boolean;
 }
 const sections: Record<NodeAdminSection, string> = {
-  credentials: 'Node credentials',
+  credentials: 'Credentials & fallback',
   filesystem: 'Filesystem access',
   accounts: 'Accounts',
   configuration: 'Configuration',
@@ -166,14 +166,17 @@ export function NodeAdminPage({
           <div className="node-admin__toolbar">
             <button onClick={retry}>Refresh section</button>
           </div>
-          <NodeContents
-            key={`${revision}:${section}`}
-            seam={seam}
-            spaceId={spaceId}
-            section={section}
-            viewer={current.viewer!}
-            onDenied={retry}
-          />
+          {/* Every node section reaches every space on this server. */}
+          <SectionScopeContext.Provider value="node">
+            <NodeContents
+              key={`${revision}:${section}`}
+              seam={seam}
+              spaceId={spaceId}
+              section={section}
+              viewer={current.viewer!}
+              onDenied={retry}
+            />
+          </SectionScopeContext.Provider>
         </>
       )}
     </main>

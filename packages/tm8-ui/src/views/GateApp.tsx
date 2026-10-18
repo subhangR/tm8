@@ -2496,6 +2496,8 @@ export function GateApp(props: GateAppProps = {}) {
         })}
         onOpenSpaceAdmin={adminAccess.space ? () => navigateRouteView({ view: 'settings', scope: 'space', section: null }) : undefined}
         onOpenNodeAdmin={adminAccess.node ? () => navigateRouteView({ view: 'settings', scope: 'node', section: null }) : undefined}
+        /* The Overview's server rows open their own node page. */
+        onOpenNodeSection={adminAccess.node ? (section) => navigateRouteView({ view: 'settings', scope: 'node', section }) : undefined}
         nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
         /* W2 -> W1/W3: an axis write must reach the workspace's own
            pickers and board options; axis rows are not entities, so no

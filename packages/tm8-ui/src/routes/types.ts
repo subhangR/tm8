@@ -16,7 +16,7 @@ import type { CollectionMode, GroupByKey, QueryFilter, SortKey } from '../domain
  * (add, rotate, sign in, remove) live in those sections and nowhere else.
  */
 export const SETTINGS_ROUTE_SECTIONS = [
-  'projects', 'menu', 'connectors', 'credentials', 'configs', 'space-credentials', 'space-links',
+  'overview', 'projects', 'menu', 'connectors', 'credentials', 'configs', 'space-credentials', 'space-links',
   'profile', 'account', 'my-sessions', 'members', 'invites', 'sessions', 'sharing',
   'axes', 'workflows', 'models', 'chat-defaults', 'kinds', 'danger',
   'node-credentials', 'filesystem-access',

@@ -155,14 +155,14 @@ const LIVE_VERBS = [
   // W4: both Sessions nav rows are live — `auth.sessions.list/revoke` are real
   // executors; the fake port here passes no reader, so the bodies draw the
   // not-wired state and add no control to this sweep.
-  /^Your sessions$/,
-  /^Sessions$/,
+  /^Sign-ins & devices$/,
+  /^Member sign-ins$/,
   // 187's two space defaults — real `spaces.update` writes, one key each.
   /^Session sharing$/,
   /^(Everyone in the space|Only its owner|Everyone who can watch)$/,
   /^Task axes$/,
   /^Linked projects$/,
-  /^Menu$/,
+  /^Sidebar menu$/,
   /^Custom kinds$/,
   // Agent credentials: the NAV ROW only. Live for the `Your profile` reason,
   // not the `Models` one — the four `credentials.*` operations are real
@@ -171,7 +171,7 @@ const LIVE_VERBS = [
   // `settings-credentials/` and is not injected in this file's renders, so the
   // shell shows its honest not-mounted state here and this sweep sees no
   // control from it.
-  /^Agent credentials$/,
+  /^Agent logins$/,
   // The native MCP section is injected by GateApp; this shell owns its nav row.
   /^Connectors$/,
   /^Danger zone$/,
@@ -218,7 +218,7 @@ const LIVE_VERBS = [
   // Your profile (067): the nav row plus the FOUR live controls — live
   // because `identity.profile.update` is a real executor in seam.commands
   // (Amendment 4), the first write this surface has ever been allowed.
-  /^Your profile$/,
+  /^Profile$/,
   /^Display name$/,
   /^Avatar URL$/,
   /^Global id$/,
@@ -272,7 +272,7 @@ const LIVE_VERBS = [
   /^Node credentials$/,
   // Configs: the NAV ROW only. The section is read-only (`spaces.configs`)
   // and draws no control of its own.
-  /^Configs$/,
+  /^All configuration$/,
   // Chat defaults (entity-chat §3.4): `spaces.chatDefaults.get/set` are real
   // catalog ops on the seam. The fake port here carries no chat-defaults
   // wiring, so only the nav row renders; the per-kind pickers are held in
@@ -282,12 +282,19 @@ const LIVE_VERBS = [
   // Space links (W6): the NAV ROW only — `spaceLinks.*` are real catalog ops
   // on the seam. The body is owned by `settings-space-links/` and is not
   // injected here; its controls are held in space-links.test.tsx.
-  /^Space links$/,
+  /^Linked spaces$/,
   // Filesystem access (282): the NAV ROW only — `node.pathGrants.*`,
   // `node.accounts.list` and `identity.pathGrants.list` are real catalog ops on
   // the seam. The body is owned by `settings-credentials/` and is not injected
   // here; its controls are held in filesystem-access.test.tsx.
   /^Filesystem access$/,
+  // Overview (settings redesign): the nav row, the search box, and one row
+  // per section. Live because every one of them is NAVIGATION — it switches
+  // the section this shell shows (or asks the host to open a node page) and
+  // never asks the seam anything, the same reason the nav rows above are.
+  /^Overview$/,
+  /^Find a setting$/,
+  /^Go to .+ settings$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {
@@ -319,7 +326,7 @@ describe('the GAP ledger', () => {
 describe('T2-1a — the settings shell has no dead nav row', () => {
   it('every one of the eight destinations renders a body with content', async () => {
     const { container } = render(<SettingsShell port={fakePort()} />);
-    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    await screen.findByText(/^Settings for /);
 
     for (const section of SETTINGS_SECTIONS) {
       fireEvent.click(screen.getByRole('button', { name: section.label }));
@@ -332,7 +339,7 @@ describe('T2-1a — the settings shell has no dead nav row', () => {
 
   it('an externally-owned section says so instead of rendering blank', async () => {
     render(<SettingsShell port={fakePort()} />);
-    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    await screen.findByText(/^Settings for /);
     fireEvent.click(screen.getByRole('button', { name: 'Linked projects' }));
     expect(screen.getByTestId('section-absent').textContent).toMatch(/not mounted|another module/i);
   });
@@ -342,7 +349,7 @@ describe('T2-1a — the settings shell has no dead nav row', () => {
       projects: <p>half B lives here</p>,
     };
     render(<SettingsShell port={fakePort()} sections={sections} />);
-    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    await screen.findByText(/^Settings for /);
     fireEvent.click(screen.getByRole('button', { name: 'Linked projects' }));
     expect(screen.getByText('half B lives here')).toBeTruthy();
   });
@@ -358,7 +365,7 @@ describe('T2-1a — the settings shell has no dead nav row', () => {
 
   it('Profile shows only what SpaceSummary carries, and refuses editing', async () => {
     render(<SettingsShell port={fakePort()} />);
-    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    await screen.findByText(/^Settings for /);
     fireEvent.click(screen.getByRole('button', { name: 'Space profile' }));
     expect(screen.getByText('the workshop space')).toBeTruthy();
     const edit = screen.getByRole('button', { name: 'edit space details' });
@@ -367,7 +374,7 @@ describe('T2-1a — the settings shell has no dead nav row', () => {
 
   it('Danger zone shows both irreversible acts, both refused', async () => {
     render(<SettingsShell port={fakePort()} />);
-    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    await screen.findByText(/^Settings for /);
     fireEvent.click(screen.getByRole('button', { name: 'Danger zone' }));
     for (const name of ['transfer ownership', 'delete this space']) {
       expect(screen.getByRole('button', { name }).getAttribute('aria-disabled')).toBe('true');
@@ -376,7 +383,7 @@ describe('T2-1a — the settings shell has no dead nav row', () => {
 
   it('no enabled control on the whole shell promises an act the seam cannot do', async () => {
     const { container } = render(<SettingsShell port={fakePort()} />);
-    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    await screen.findByText(/^Settings for /);
     for (const section of SETTINGS_SECTIONS) {
       fireEvent.click(screen.getByRole('button', { name: section.label }));
       expect(sweepEnabledControls(container), `on section '${section.id}'`).toEqual([]);
@@ -864,7 +871,7 @@ describe('187 — session sharing defaults', () => {
         port={identity ? { ...port, loadIdentity: async () => identity } : port}
       />,
     );
-    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    await screen.findByText(/^Settings for /);
     fireEvent.click(screen.getByRole('button', { name: 'Session sharing' }));
     await screen.findByText('Session sharing', { selector: '.set-section__title' });
     return view;
@@ -939,7 +946,8 @@ describe('187 — session sharing defaults', () => {
 describe('E1 — stacked settings (the phone)', () => {
   it('groups every section exactly once, so a new section cannot go missing on the phone', () => {
     const grouped = PHONE_SETTINGS_GROUPS.flatMap((g) => g.ids);
-    expect([...grouped].sort()).toEqual(SETTINGS_SECTIONS.map((s) => s.id).sort());
+    // Every section but the Overview: on the phone the list IS the overview.
+    expect([...grouped].sort()).toEqual(SETTINGS_SECTIONS.filter((s) => s.id !== 'overview').map((s) => s.id).sort());
     expect(new Set(grouped).size).toBe(grouped.length);
   });
 
@@ -970,7 +978,7 @@ describe('E1 — stacked settings (the phone)', () => {
 
   it('lists a desktop-only editor with a tag and opens an honest refusal with a way out', () => {
     render(<SettingsShell port={fakePort()} stacked />);
-    const row = screen.getByRole('button', { name: /^Menu/ });
+    const row = screen.getByRole('button', { name: /^Sidebar menu/ });
     expect(within(row).getByText('desktop')).toBeTruthy();
     fireEvent.click(row);
     const refusal = screen.getByTestId('settings-desktop-only');
@@ -985,7 +993,7 @@ describe('E1 — stacked settings (the phone)', () => {
       expect(row.querySelector('.set-stack__tile'), id).toBeTruthy();
     }
     expect(within(screen.getByRole('button', { name: /^Task axes/ })).getByText('read-only')).toBeTruthy();
-    expect(within(screen.getByRole('button', { name: /^Configs/ })).getByText('read-only')).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: /^All configuration/ })).getByText('read-only')).toBeTruthy();
   });
 
   it('points Appearance at the account sheet rather than copying it', () => {

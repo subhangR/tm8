@@ -108,3 +108,39 @@
   color: var(--pn-ink-3);
   font-size: 12px;
 }
+
+/* A group's one-line description and its rows' subheadings (Settings'
+   scope groups: "Space · Everyone in this space sees these changes", then
+   "People & access" above Members). */
+.frame-nav__description {
+  padding: 0 14px 6px;
+  color: var(--pn-ink-4);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.frame-nav__subheading {
+  padding: 8px 14px 2px;
+  color: var(--pn-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+}
+/* Described groups are scope groups: a hairline says where one scope ends. */
+.frame-nav__group + .frame-nav__group[data-described] {
+  border-top: 1px solid var(--pn-line);
+  margin-top: 8px;
+  padding-top: 4px;
+}
+.frame-nav__row:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.frame-nav__filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.frame-nav__count {
+  color: var(--pn-ink-4);
+  font-size: 10.5px;
+  padding: 0 2px;
+}

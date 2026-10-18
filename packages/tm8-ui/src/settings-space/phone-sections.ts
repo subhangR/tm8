@@ -66,6 +66,8 @@ export const PHONE_READ_ONLY_TAGS: Partial<Record<SettingsSectionId, string>> = 
  */
 export type PhoneTone = 'info' | 'run' | 'brand' | 'merged' | 'wait' | 'block' | 'idle';
 export const PHONE_SECTION_ICONS: Record<SettingsSectionId, { glyph: string; tone: PhoneTone }> = {
+  /* The phone's list IS its overview, so this row is never drawn there. */
+  overview: { glyph: '◫', tone: 'idle' },
   account: { glyph: '👤', tone: 'info' },
   'my-sessions': { glyph: '🔑', tone: 'info' },
   profile: { glyph: '⌂', tone: 'run' },
