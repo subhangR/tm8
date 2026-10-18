@@ -154,7 +154,7 @@ describe('Home root column', () => {
       expect(onRoot).toHaveBeenCalledWith('chat');
       expect(onCreateKind).not.toHaveBeenCalled();
       /* The open thread gave way to the new-conversation composer. */
-      expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
+      expect(await view.findByText(/Ask anything\. The agent works with your graph/)).toBeTruthy();
       await waitFor(() => expect(document.activeElement?.tagName).toBe('TEXTAREA'));
     });
 
@@ -171,7 +171,7 @@ describe('Home root column', () => {
       fireEvent.click(rootsOf(view).getByRole('button', { name: 'Chat' }));
       expect(onShowChat).toHaveBeenCalled();
       expect(onNewEntity).not.toHaveBeenCalled();
-      expect(await view.findByText(/New conversation — pick a mode/)).toBeTruthy();
+      expect(await view.findByText(/Ask anything\. The agent works with your graph/)).toBeTruthy();
     });
 
     it('an unwired host refuses task and terminal WITH a reason, never hides them', () => {

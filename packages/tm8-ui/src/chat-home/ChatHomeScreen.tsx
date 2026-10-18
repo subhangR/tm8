@@ -2808,7 +2808,7 @@ export function ChatHomeScreen({
                   turn is reserved for wait states — see `RibbonMark`'s docblock. */}
               <RibbonMark className="tch-welcome__mark" animated={false} />
               <h1>{greetingLine(viewerName)}</h1>
-              <p>New conversation — pick a mode and a teammate, or just type. The agent uses graph tools and keeps every turn in the thread.</p>
+              <p>Ask anything. The agent works with your graph and keeps every turn in this thread.</p>
             </div>
             )
           )}
