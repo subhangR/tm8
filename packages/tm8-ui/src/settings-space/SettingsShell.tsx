@@ -18,7 +18,7 @@ import { ConfigsSection } from './ConfigsSection';
 import { SessionsSection } from './SessionsSection';
 import { SectionAbsent, SectionFrame } from './SectionFrame';
 import { SECTION_NOT_MOUNTED } from './reasons';
-import { DESKTOP_ONLY_SECTIONS, PHONE_SECTION_HINTS, PHONE_SETTINGS_GROUPS } from './phone-sections';
+import { DESKTOP_ONLY_SECTIONS, PHONE_READ_ONLY_TAGS, PHONE_SECTION_HINTS, PHONE_SECTION_ICONS, PHONE_SETTINGS_GROUPS, phoneLiveHint } from './phone-sections';
 import { SETTINGS_SECTIONS, type SettingsData, type SettingsSectionDef, type SettingsSectionId, type SettingsShellProps } from './types';
 
 export function SettingsShell({
@@ -35,6 +35,7 @@ export function SettingsShell({
   onOpenNodeAdmin,
   framed = false,
   stacked = false,
+  onOpenAppearance,
 }: SettingsShellProps) {
   /* Stacked opens on the LIST unless the address named a section: a phone
      that landed on Members & roles would hide that the list exists. */
@@ -198,6 +199,7 @@ export function SettingsShell({
       onAxesChanged={refreshAxes}
       onWorkflowsChanged={refreshWorkflows}
       nodeKey={nodeKey}
+      phone={stacked}
     />
   );
 
@@ -238,6 +240,7 @@ export function SettingsShell({
                 <ul className="set-stack__rows">
                   <li>
                     <button type="button" className="set-stack__row" onClick={onOpenSpaceAdmin}>
+                      <span className="set-stack__tile" data-tone="run" aria-hidden>⚿</span>
                       <span className="set-stack__text">
                         <span className="set-stack__label">Space admin</span>
                         <span className="set-stack__hint">Owner and admin settings</span>
@@ -257,25 +260,47 @@ export function SettingsShell({
                 <div key={group.title} className="set-stack__group">
                   <h2 className="set-stack__title">{group.title}</h2>
                   <ul className="set-stack__rows">
-                    {rows.map((s) => (
-                      <li key={s.id}>
-                        <button
-                          type="button"
-                          className={`set-stack__row${s.danger ? ' set-stack__row--danger' : ''}`}
-                          data-section={s.id}
-                          onClick={() => go(s.id)}
-                        >
+                    {rows.map((s) => {
+                      const icon = PHONE_SECTION_ICONS[s.id];
+                      const desktop = DESKTOP_ONLY_SECTIONS.has(s.id);
+                      const tag = desktop ? 'desktop' : PHONE_READ_ONLY_TAGS[s.id];
+                      const hint = phoneLiveHint(s.id, data) ?? PHONE_SECTION_HINTS[s.id];
+                      /* The space's own mark, as drawn, where the space has a name. */
+                      const glyph = s.id === 'profile' && data.space?.name ? spaceMark(data.space.name) : icon.glyph;
+                      return (
+                        <li key={s.id}>
+                          <button
+                            type="button"
+                            className={`set-stack__row${s.danger ? ' set-stack__row--danger' : ''}${desktop ? ' set-stack__row--off' : ''}`}
+                            data-section={s.id}
+                            onClick={() => go(s.id)}
+                          >
+                            <span className="set-stack__tile" data-tone={icon.tone} aria-hidden>{glyph}</span>
+                            <span className="set-stack__text">
+                              <span className="set-stack__label">{s.label}</span>
+                              {hint ? <span className="set-stack__hint" data-testid={`settings-hint-${s.id}`}>{hint}</span> : null}
+                            </span>
+                            {tag ? <span className="set-stack__tag" data-tag={tag}>{tag}</span> : null}
+                            <span className="set-stack__chev" aria-hidden>›</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                    {/* THERE IS NO APPEARANCE SECTION. Light / dark lives in the
+                        account sheet, so this row points there (↗) rather than
+                        copying it — two switches for one setting drift. */}
+                    {group.title === 'You' && onOpenAppearance ? (
+                      <li>
+                        <button type="button" className="set-stack__row" data-testid="settings-appearance" onClick={onOpenAppearance}>
+                          <span className="set-stack__tile" data-tone="idle" aria-hidden>◐</span>
                           <span className="set-stack__text">
-                            <span className="set-stack__label">{s.label}</span>
-                            {PHONE_SECTION_HINTS[s.id] ? (
-                              <span className="set-stack__hint">{PHONE_SECTION_HINTS[s.id]}</span>
-                            ) : null}
+                            <span className="set-stack__label">Appearance</span>
+                            <span className="set-stack__hint">Light / dark lives in your account menu</span>
                           </span>
-                          {DESKTOP_ONLY_SECTIONS.has(s.id) ? <span className="set-stack__tag">desktop</span> : null}
-                          <span className="set-stack__chev" aria-hidden>›</span>
+                          <span className="set-stack__chev" aria-hidden>↗</span>
                         </button>
                       </li>
-                    ))}
+                    ) : null}
                   </ul>
                 </div>
               );
@@ -327,6 +352,11 @@ export function SettingsShell({
   );
 }
 
+/** The space's initial, the mark it carries where it has no logo. */
+function spaceMark(name: string): string {
+  return ([...name.trim()][0] ?? '⌂').toUpperCase();
+}
+
 /**
  * A section that lists on the phone but does not open there. It names why and
  * hands over the address, which is the one thing a phone can usefully do with
@@ -370,6 +400,7 @@ function SectionBody({
   onAxesChanged,
   onWorkflowsChanged,
   nodeKey,
+  phone,
 }: {
   id: SettingsSectionId;
   data: SettingsData;
@@ -385,6 +416,8 @@ function SectionBody({
   onAxesChanged: () => void;
   onWorkflowsChanged: () => void;
   nodeKey: string;
+  /** The stacked phone arrangement: sections with a phone layout take it. */
+  phone: boolean;
 }) {
   const injected = sections?.[id];
   if (injected !== undefined) return <>{injected}</>;
@@ -491,7 +524,7 @@ function SectionBody({
       // Space-wide and server-stored; self-loading through the shared
       // `useChatDefaults` cache. Writes are NOT caught here — the section
       // renders the server's refusal beside the row it belongs to.
-      return <ChatDefaultsSection heading={def.heading} nodeKey={nodeKey} wiring={port.chatDefaults} />;
+      return <ChatDefaultsSection heading={def.heading} nodeKey={nodeKey} wiring={port.chatDefaults} phone={phone} />;
     case 'axes':
       /* W2 — the real registry, read off the same settings round trip as
          invites. The refusal this replaces (AXES_UNREADABLE) was measured
@@ -515,6 +548,9 @@ function SectionBody({
             onAxesChanged();
           }}
           tasksUsing={(axis) => port.tasksUsingAxis(axis)}
+          /* Read-only on the phone (mockup 01a14cc4): an axis edit changes
+             what every workflow keys on, which is desktop work. */
+          readOnly={phone}
         />
       );
     case 'workflows':

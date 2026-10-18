@@ -2418,7 +2418,7 @@ export function GateApp(props: GateAppProps = {}) {
    * then one section per screen) rather than a second wiring of the dozen
    * ports below, which would drift the first time a section was added.
    */
-  function settingsPageFor({ framed, stacked }: { framed: boolean; stacked: boolean }) {
+  function settingsPageFor({ framed, stacked, onOpenAppearance }: { framed: boolean; stacked: boolean; onOpenAppearance?: (() => void) | undefined }) {
     /* Node scope is `NodeAdminPage`'s, never this mount's. */
     if (!settingsPort || (navView.view === 'settings' && navView.scope === 'node')) return null;
     return (
@@ -2437,6 +2437,7 @@ export function GateApp(props: GateAppProps = {}) {
            so the system back gesture and the ‹ chevron agree. */
         {...(stacked ? {
           stacked: true,
+          ...(onOpenAppearance ? { onOpenAppearance } : {}),
           onSectionClear: () => navigateRouteView({ view: 'settings', section: null,
             ...(navView.view === 'settings' && navView.scope === 'space' ? { scope: 'space' as const } : {}),
           }),
@@ -2473,7 +2474,9 @@ export function GateApp(props: GateAppProps = {}) {
                   : {}),
                 ...(spaceCredentialsPort
                   ? {
-                      'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} onOpen={openFromSettings} />,
+                      /* Status only on the phone (mockup 01a14cc4): adding,
+                         sharing and policy are desktop work. */
+                      'space-credentials': <SpaceCredentialsSection port={spaceCredentialsPort} serverBaseUrl={activeServer.routeBaseUrl} onOpen={openFromSettings} statusOnly={stacked} />,
                       'node-credentials': <NodeCredentialsSection port={spaceCredentialsPort} />,
                       'filesystem-access': <FilesystemAccessSection port={filesystemAccessPort} />,
                     }
@@ -2549,7 +2552,7 @@ export function GateApp(props: GateAppProps = {}) {
              operator's console, not something done from a phone. */
           settingsScreen={
             activeTarget?.type === 'view' && activeTarget.ref === 'settings'
-              ? settingsPageFor({ framed: false, stacked: true })
+              ? (openAccount) => settingsPageFor({ framed: false, stacked: true, onOpenAppearance: openAccount })
               : null
           }
           {...(viewerMemberId ? { viewerMemberId } : {})}

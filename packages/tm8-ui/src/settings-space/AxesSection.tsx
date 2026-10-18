@@ -86,6 +86,12 @@ export interface AxesSectionProps {
   tasksUsing?: (axis: TaskAxis) => Promise<readonly EntitySummary[]>;
   /** Overrides the heading read from `SETTINGS_SECTIONS`. */
   heading?: string;
+  /**
+   * The phone's arrangement (mockup 01a14cc4): the registry is drawn, every
+   * write control is not. Editing an axis changes what every workflow keys
+   * on, so it stays a desktop act, and the section says where to do it.
+   */
+  readOnly?: boolean;
 }
 
 /** `"code, design , test"` → `['code','design','test']` — the form's one parse. */
@@ -106,6 +112,7 @@ export function AxesSection({
   onDelete,
   tasksUsing,
   heading = AXES_HEADING,
+  readOnly = false,
 }: AxesSectionProps) {
   const [failure, setFailure] = useState<{ at: FailureAt; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -199,7 +206,9 @@ export function AxesSection({
             <SectionAbsent
               testId="axes-none"
               head="This space defines no task axes."
-              why="define one below and every task gains its picker; tasks carry one value per axis"
+              why={readOnly
+                ? 'axes are defined on desktop; every task then gains a picker, one value per axis'
+                : 'define one below and every task gains its picker; tasks carry one value per axis'}
             />
           ) : (
             <>
@@ -207,11 +216,16 @@ export function AxesSection({
                   re-typed under each row. Four axes used to buy four copies of
                   the same sentence and the section read as prose with data
                   hidden in it. */}
-              <p className="set-axes__note" data-testid="axes-rule">
+              {readOnly ? (
+                <p className="set-axes__note" data-testid="axes-read-only">
+                  Read-only on a phone. Axes are created and edited on desktop, because an edit
+                  changes what every workflow keys on.
+                </p>
+              ) : <p className="set-axes__note" data-testid="axes-rule">
                 Deleting an axis, renaming one, or removing one of its values is refused while any
                 task still carries it — nothing is ever cleared or orphaned. The server owns that
                 rule, and its own words appear beside whichever control it refuses.
-              </p>
+              </p>}
 
               {ordered.map((axis) =>
                 editing === axis.id ? (
@@ -234,6 +248,7 @@ export function AxesSection({
                   <AxisRow
                     key={axis.id}
                     axis={axis}
+                    readOnly={readOnly}
                     busy={busy}
                     failure={rowFailure(axis.id)}
                     onEdit={() => {
@@ -252,7 +267,7 @@ export function AxesSection({
           {/* No group heading above this one: the form carries its own
               eyebrow, and a `Define a new axis` group over a `New axis` form
               printed the same words twice in eleven vertical pixels. */}
-          <AxisForm
+          {readOnly ? null : <AxisForm
             heading="New axis"
             create
             busy={busy}
@@ -261,7 +276,7 @@ export function AxesSection({
             // Land after the last row, like the node's own seed occupies 0.
             nextPosition={ordered.reduce((max, a) => Math.max(max, a.position + 1), 0)}
             onSubmit={(input) => void run({ where: 'create' }, () => onCreate(input))}
-          />
+          />}
         </>
       )}
     </SectionFrame>
@@ -322,12 +337,15 @@ function AxisValues({ axis }: { axis: TaskAxis }) {
 
 function AxisRow({
   axis,
+  readOnly,
   busy,
   failure,
   onEdit,
   onDelete,
 }: {
   axis: TaskAxis;
+  /** Provenance only: no edit, no delete. */
+  readOnly: boolean;
   busy: boolean;
   /** The server's refusal for THIS axis, or null. Rendered inside the row. */
   failure: string | null;
@@ -343,6 +361,7 @@ function AxisRow({
 
       <div className="set-axes__acts">
         <span className="set-axes__prov">{axis.kind === 'default' ? 'seeded' : 'manual'}</span>
+        {readOnly ? null : <>
         <button
           type="button"
           className="set-axes__act"
@@ -380,9 +399,10 @@ function AxisRow({
             delete
           </button>
         )}
+        </>}
       </div>
 
-      {axis.kind === 'default' ? (
+      {axis.kind === 'default' && !readOnly ? (
         <span className="set-axes__rownote">
           the seeded axis is structural and cannot be deleted — its values are yours to curate
         </span>

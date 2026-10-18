@@ -93,8 +93,12 @@ export interface MobileShellProps {
    * The Settings screen, built by `GateApp` from the same mount (and the same
    * ports) the desktop uses, in its `stacked` arrangement. Absent or null ⇒
    * the refusal card, which is still the truth where no port was served.
+   *
+   * A function of the shell's own account-sheet opener, because Settings has
+   * no Appearance section: its Appearance row points at `MobileAccountSheet`,
+   * where light / dark already lives, rather than copying it (mockup 01a14cc4).
    */
-  settingsScreen?: ReactNode;
+  settingsScreen?: ((openAccount: (() => void) | undefined) => ReactNode) | null;
 
   /*
    * THE ACCOUNT AFFORDANCE'S INPUTS — DEF-003.
@@ -734,6 +738,7 @@ export function MobileShell(props: MobileShellProps) {
                that a space switch cannot leave the flag behind. */
             onThreadsChange: setThreads,
             onSelectionChange: setThreadId,
+            openAccount: props.viewerActor ? () => setAccountOpen(true) : undefined,
           })}
           {/* THE DRAWER. Rendered beside the screen rather than inside it,
               exactly like the account sheet below: it portals through the
@@ -953,6 +958,8 @@ interface ChatHosting {
   /** The screen's RESOLVED selection coming back up — see the block over
    *  `threadId` for why a one-way push left "New conversation" inert. */
   readonly onSelectionChange: (rootId: EntityId | null) => void;
+  /** Opens the account sheet; absent where the shell has no viewer to show. */
+  readonly openAccount: (() => void) | undefined;
 }
 
 function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
@@ -1218,7 +1225,10 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
          members are things people do from a phone, and the desktop shell's
          sections already lay out in one column; `stacked` gives them a list
          to start from and a way back. */
-      if (props.settingsScreen) return props.settingsScreen;
+      {
+        const screen = props.settingsScreen?.(chat.openAccount);
+        if (screen) return screen;
+      }
       return <RefusalCard target={activeTarget} navigateTo={props.navigateTo} />;
     case 'dashboard':
       return (

@@ -978,6 +978,61 @@ describe('E1 — stacked settings (the phone)', () => {
     expect(within(refusal).getByRole('button', { name: 'Copy link for desktop' })).toBeTruthy();
   });
 
+  it('leads every row with its drawn tile and tags read-only and status rows', () => {
+    render(<SettingsShell port={fakePort()} stacked />);
+    for (const id of PHONE_SETTINGS_GROUPS.flatMap((g) => g.ids)) {
+      const row = document.querySelector(`[data-section="${id}"]`)!;
+      expect(row.querySelector('.set-stack__tile'), id).toBeTruthy();
+    }
+    expect(within(screen.getByRole('button', { name: /^Task axes/ })).getByText('read-only')).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: /^Configs/ })).getByText('read-only')).toBeTruthy();
+  });
+
+  it('points Appearance at the account sheet rather than copying it', () => {
+    const onOpenAppearance = vi.fn();
+    const { unmount } = render(<SettingsShell port={fakePort()} stacked onOpenAppearance={onOpenAppearance} />);
+    const row = screen.getByTestId('settings-appearance');
+    expect(row.textContent).toContain('Light / dark lives in your account menu');
+    expect(row.textContent).toContain('↗');
+    fireEvent.click(row);
+    expect(onOpenAppearance).toHaveBeenCalledTimes(1);
+    unmount();
+    // No opener (no viewer to show): no row that would do nothing.
+    render(<SettingsShell port={fakePort()} stacked />);
+    expect(screen.queryByTestId('settings-appearance')).toBeNull();
+  });
+
+  it('second lines are live where the shell already read the answer, fixed where it did not', async () => {
+    const live = { id: 'inv-1', code: 'c1', role: 'member', maxUses: 1, uses: 0, expiresAt: null, revoked: false };
+    const spent = { ...live, id: 'inv-2', code: 'c2', uses: 1 };
+    render(<SettingsShell port={fakePort({ loadInvites: async () => [live, spent] as never })} stacked />);
+    const members = specimenMembers(NOW).length;
+    expect((await screen.findByTestId('settings-hint-members')).textContent).toBe(
+      `${members} member${members === 1 ? '' : 's'} · 1 pending`,
+    );
+    expect(screen.getByTestId('settings-hint-invites').textContent).toBe('1 live');
+    expect(screen.getByTestId('settings-hint-profile').textContent).toBe('atelier');
+    expect(screen.getByTestId('settings-hint-axes').textContent).toBe('type');
+    // Connectors would need its own read to count: the fixed line stays.
+    expect(screen.getByTestId('settings-hint-connectors').textContent).toBe('MCP servers');
+  });
+
+  it('keeps the fixed line when a read was refused, never a made-up zero', async () => {
+    render(<SettingsShell port={fakePort()} stacked />);
+    // The default fake refuses the invite read, as the server does a member.
+    expect((await screen.findByTestId('settings-hint-invites')).textContent).toBe('Links that let people join');
+  });
+
+  it('opens Task axes read-only: the registry, and no write control', async () => {
+    render(<SettingsShell port={fakePort()} stacked initialSection="axes" />);
+    expect(await screen.findByTestId('axes-read-only')).toBeTruthy();
+    expect(screen.getAllByTestId('axis-row')).toHaveLength(1);
+    expect(screen.queryByTestId('axis-edit')).toBeNull();
+    expect(screen.queryByTestId('axis-delete')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create axis' })).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
   it('only lists the sections this scope shows', () => {
     render(<SettingsShell port={fakePort()} stacked sectionIds={['members', 'models']} />);
     const list = screen.getByRole('navigation', { name: 'Settings sections' });
