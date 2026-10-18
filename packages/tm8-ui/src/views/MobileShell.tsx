@@ -43,9 +43,8 @@ import { CopyLinkControl } from '../share';
 import { Avatar, BootLoader, VectorIcon } from '../kit';
 import type { Theme } from '../theme/useTheme';
 import { isUnbuiltViewRef } from './view-ref-screens';
-import { CHANNEL_KIND, getKind, placeholderNameFor, slugOfKind, type KindArt } from '../domain';
-import { placeholderTitleFor, useNewTask } from '../authoring';
-import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
+import { CHANNEL_KIND, getKind, slugOfKind, type KindArt } from '../domain';
+import { screenKeyOf, screenStackStore, useScreenStack } from '../stores/screenStackStore';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import type { DetailReasons } from '../panels';
@@ -341,20 +340,6 @@ export function useSpaceScopedChat(spaceId: SpaceId): {
   return { threads, setThreads, threadsKnown, threadId, setThreadId };
 }
 
-/**
- * WHAT THE DRAWER'S SECOND VERB MAKES.
- *
- * Named HERE and not in the drawer, because the drawer is the file that is
- * not allowed to know a kind — it reads the word off the registry from this.
- * A shell choosing a default kind is ordinary (`GateApp.DEFAULT_LEFT_KIND` is
- * the same choice for the same reason); a NAVIGATION PANEL spelling one is
- * how the two shells start drifting.
- *
- * TASK, and not chat or session: the other verb in that section already makes
- * a conversation, and a session is born by launching rather than by a ＋.
- */
-const DRAWER_CREATE_KIND: EntityKind = 'task';
-
 export function MobileShell(props: MobileShellProps) {
   const { data, activeTarget, navigateTo, spaceId } = props;
 
@@ -521,51 +506,39 @@ export function MobileShell(props: MobileShellProps) {
      shell's only job is to hold nothing else. `threadsKnown` rides along
      INSIDE it rather than sitting here, because a space switch has to clear
      it with the rows it describes — see the hook's own note. */
-  const { threads, setThreads, threadsKnown, threadId, setThreadId } =
+  const { threads, setThreads, threadId, setThreadId } =
     useSpaceScopedChat(spaceId);
   const onChatScreen = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
 
   /*
-   * ── THE DRAWER'S SECOND VERB, ON THE CREATE PATH THAT ALREADY EXISTS ─────
+   * THE DRAWER IS TOP-LEVEL NAVIGATION (CONTRACT §5 ruling 3, 2026-10-18): a
+   * drawer destination — a kind tree's item or See all, a pin, a foot row —
+   * RESETS the stack to [Chat, destination] rather than pushing on top of
+   * whatever was open. Chat is the shell's floor (the `dashboard` root), so the
+   * reset is: empty every screen's entity stack, then navigate. An item then
+   * opens as the ONLY entry on its kind's screen, so Up lands on that kind's
+   * list and the next Up on Chat, never on an entity left open before.
    *
-   * `useNewTask` is the whole flow — it is what `EntityCreateControl` runs,
-   * what Home's kind cell ＋ runs and what the Work tab's ＋ runs. Calling it
-   * here gives the phone drawer the SAME create rather than a phone-shaped
-   * copy of it: one placeholder grammar, one double-press guard, one refusal
-   * vocabulary. The oracle's shape holds unchanged — the task exists the
-   * instant you press, named "Untitled task", and the panel's inline title
-   * editor is what names it.
-   *
-   * IT LANDS ON THE NEW TASK, because on a phone it has to. The desktop can
-   * create into a list column the reader is already looking at; this shell has
-   * one surface, so a create that left the drawer's screen up would be a press
-   * with no visible consequence — the exact "I click and nothing happens"
-   * failure the authoring lane's R7 is written against. `openEntityOnPhone` is
-   * the shell's own way in, so this builds no route of its own.
+   * Browser history still gets its ordinary push (ruling 1: Back is real
+   * history and is never fought); what resets is the in-app stack Up walks.
    */
-  const newTaskConfig = getKind(DRAWER_CREATE_KIND);
-  const newTask = useNewTask({
-    spaceId,
-    kind: DRAWER_CREATE_KIND,
-    placeholderTitle: placeholderNameFor(newTaskConfig, placeholderTitleFor(newTaskConfig.label)),
-    commands: data.seam.commands,
-    onCreated: (id) => openEntityOnPhone(navigateTo, id, DRAWER_CREATE_KIND),
-  });
-  /* A REFUSAL IS SAID OUT LOUD. The drawer is gone by the time the create
-     answers, so the notice rail is the only place left that can carry it —
-     the same handling Home gives the same flow. */
-  const { onNotice } = props;
-  useEffect(() => {
-    if (newTask.state.phase !== 'refused') return;
-    onNotice({
-      id: 'mobile-drawer-new-entity-refused',
-      tone: 'error',
-      title: newTask.state.failure.cause,
-      body: newTask.state.failure.detail,
-      ttlMs: 8_000,
-    });
-    newTask.dismiss();
-  }, [newTask, onNotice]);
+  /* THE DRAWER'S "NEEDS YOU" COUNT — the number `AttentionHeaderButton` and
+     the sheet title draw: mine when any are mine, else all. */
+  const attention = useAttentionOptional();
+  const attentionCounts = attention ? attention.counts() : null;
+  const needsYouCount = attentionCounts
+    ? attentionCounts.mine > 0
+      ? attentionCounts.mine
+      : attentionCounts.all
+    : 0;
+  const resetScreenStacks = useCallback(() => screenStackStore.getState().clearAll(), []);
+  const drawerNavigateTo = useCallback(
+    (target: MenuTarget) => {
+      resetScreenStacks();
+      navigateTo(target);
+    },
+    [navigateTo, resetScreenStacks],
+  );
 
   /*
    * ── UNSEEN HAD TO SURVIVE THE TAB BAR (owner ruling 5) ──────────────────
@@ -587,8 +560,7 @@ export function MobileShell(props: MobileShellProps) {
    * request waiting on YOU is a reason to open the menu. Mine only — "waiting
    * on someone" is not a reason to interrupt the one screen with no chrome.
    */
-  const attention = useAttentionOptional();
-  const attentionMine = attention ? attention.counts().mine : 0;
+  const attentionMine = attentionCounts ? attentionCounts.mine : 0;
   const menuDot = onChatScreen ? unseen === true || attentionMine > 0 : unseen === true;
   const menuLabel = [
     'Navigation',
@@ -762,7 +734,7 @@ export function MobileShell(props: MobileShellProps) {
               spaceLabel={props.spaceLabel ?? 'tm8'}
               spaceId={spaceId}
               activeTarget={activeTarget}
-              navigateTo={navigateTo}
+              navigateTo={drawerNavigateTo}
               countsFor={data.countsFor}
               /* The header's Copy link, re-hosted. Built HERE because the
                  address is the shell's answer — `activeTarget` and the open
@@ -777,19 +749,28 @@ export function MobileShell(props: MobileShellProps) {
                   />
                 )
               }
-              /* ABSENT UNTIL THE CHAT SCREEN HAS PUBLISHED. `threads` starts
-                 `[]` here and is filled by `onThreadsChange`, so a `0` before
-                 that first publish would state a fact nobody established —
-                 the same absent-is-not-zero rule the kind counters follow. */
-              {...(threadsKnown ? { chatCount: threads.length } : {})}
-              onOpenChats={() => setChatsOpen(true)}
-              newEntityKind={DRAWER_CREATE_KIND}
-              newEntityUnavailable={newTask.unavailable}
-              onNewEntity={() => {
-                void newTask.create();
-                setDrawerOpen(false);
+              /* THE TREES READ THE SAME ROWS THE PHONE LIST DRAWS — the
+                 unfiltered read, hydrated per kind when its section opens. */
+              rowsOf={(kind) => data.rowsFor(kind)(undefined)}
+              ensureKind={data.ensureKind}
+              livenessOf={data.livenessOf}
+              onOpenEntity={(id, kind) => {
+                resetScreenStacks();
+                openEntityOnPhone(navigateTo, id, kind);
               }}
+              /* PICKING A CONVERSATION ALSO NAVIGATES, exactly as the
+                 conversation list's pick does below. Chat is the stack's
+                 floor, so a reset leaves nothing above it. */
+              onOpenChat={(id) => {
+                resetScreenStacks();
+                setThreadId(id);
+                if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
+              }}
+              onOpenChats={() => setChatsOpen(true)}
+              needsYouCount={needsYouCount}
+              onOpenAttention={() => setAttentionOpen(true)}
               onNewThread={() => {
+                resetScreenStacks();
                 setThreadId(null);
                 if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
                 setDrawerOpen(false);

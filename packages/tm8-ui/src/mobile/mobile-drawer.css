@@ -136,6 +136,12 @@
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding-block: var(--pn-space-2);
+  /* No visible scrollbar on the phone (mockup v3); it still scrolls. */
+  scrollbar-width: none;
+}
+
+.mdrawer__scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .mdrawer__section + .mdrawer__section {
@@ -161,52 +167,6 @@
   /* A `<ul>` carries discs and 40px of user-agent inline-start padding, and
      shipping that was the defect `.mobile-tabs` was written to close. */
   padding: 0;
-}
-
-/* ── ＋ NEW CHAT ─────────────────────────────────────────────────────────────
- *
- * The drawer's one primary action (mockup v3): full width, filled, 46px tall,
- * above every section. Taller than the 44px row floor on purpose — it is the
- * thing the drawer is most often opened for.
- */
-
-.mdrawer__primary {
-  padding: var(--pn-space-1) var(--pn-space-3) var(--pn-space-3);
-}
-
-.mdrawer__new {
-  inline-size: 100%;
-  min-block-size: max(46px, var(--mobile-touch-min));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--pn-space-2);
-  padding: var(--pn-space-2) var(--pn-space-3);
-
-  appearance: none;
-  -webkit-appearance: none;
-  border: 0;
-  border-radius: var(--pn-r-md);
-  background: var(--pn-brand);
-  color: var(--pn-paper);
-
-  font-family: var(--pn-ui);
-  font-weight: 650;
-  font-size: var(--pn-fs-body);
-  line-height: var(--pn-lh-snug);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  transition: filter var(--pn-dur-fast) var(--pn-ease-standard);
-}
-
-.mdrawer__new:active {
-  filter: brightness(0.9);
-}
-
-.mdrawer__new:focus-visible {
-  outline: 2px solid var(--pn-brand);
-  outline-offset: 2px;
 }
 
 /* ── ONE ROW ─────────────────────────────────────────────────────────────── */
@@ -370,6 +330,263 @@
   color: var(--pn-ink-3);
 }
 
+/* ── ＋ NEW CHAT ─────────────────────────────────────────────────────────
+   The one filled control in the drawer: the verb a reader opens it for. */
+
+.mdrawer__new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-2);
+  inline-size: calc(100% - 2 * var(--pn-space-3));
+  min-block-size: 46px;
+  margin: var(--pn-space-1) var(--pn-space-3) var(--pn-space-3);
+  padding: 0 var(--pn-space-3);
+
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+  font-family: var(--pn-ui);
+  font-weight: 600;
+  font-size: var(--pn-fs-body);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__new:active {
+  background: var(--pn-brand-2);
+}
+
+.mdrawer__new:focus-visible {
+  outline: 2px solid var(--pn-ink);
+  outline-offset: 2px;
+}
+
+/* ── NEEDS YOU ───────────────────────────────────────────────────────────
+   The attention door, under New chat. It wears the wait tone, the same tone
+   the ☰'s dot takes when something is waiting on you. */
+
+.mdrawer__needs {
+  margin-block-end: var(--pn-space-1);
+}
+
+.mdrawer__needs-dot {
+  flex: 0 0 auto;
+  inline-size: 20px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.mdrawer__needs-dot::before {
+  content: '';
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-wait);
+}
+
+.mdrawer__needs-count {
+  flex: 0 0 auto;
+  min-inline-size: 22px;
+  padding-inline: var(--pn-space-1);
+  display: inline-flex;
+  justify-content: center;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border-radius: var(--pn-r-pill);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── THE TREES ───────────────────────────────────────────────────────────
+   A kind header, collapsed by default; open, a branch of recent items. The
+   twisty turns from `aria-expanded`, so the accessible state and the drawn
+   one are one fact. */
+
+.mdrawer__trees,
+.mdrawer__branch {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mdrawer__group + .mdrawer__group {
+  margin-top: var(--pn-space-1);
+}
+
+.mdrawer__kindhead {
+  inline-size: 100%;
+  min-block-size: var(--mobile-touch-min);
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-3);
+  text-align: start;
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+
+  font-family: var(--pn-ui);
+  font-weight: 600;
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__kindhead--quiet {
+  color: var(--pn-ink-2);
+  font-weight: 500;
+}
+
+.mdrawer__kindhead:active,
+.mdrawer__expand:active {
+  background: var(--pn-active);
+}
+
+.mdrawer__kindhead[aria-current] .mdrawer__name {
+  color: var(--pn-brand);
+}
+
+.mdrawer__kindhead:focus-visible,
+.mdrawer__expand:focus-visible,
+.mdrawer__seeall:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+  border-radius: var(--pn-r-sm);
+}
+
+.mdrawer__twisty {
+  flex: 0 0 auto;
+  inline-size: 14px;
+  display: inline-flex;
+  justify-content: center;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+  transition: transform var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+[aria-expanded='true'] > .mdrawer__twisty {
+  transform: rotate(90deg);
+}
+
+/* The open branch hangs off a hairline under its header, as in the mockup. */
+.mdrawer__branch {
+  margin-inline-start: calc(var(--pn-space-3) + 6px);
+  padding-inline-start: var(--pn-space-1);
+  border-inline-start: 1px solid var(--pn-line);
+  margin-block-end: var(--pn-space-1);
+}
+
+.mdrawer__itemrow {
+  display: flex;
+  align-items: stretch;
+}
+
+/* THE ▸ IS ITS OWN TARGET — full row height, so it meets the touch floor on
+   its smaller side without stealing width from the title. */
+.mdrawer__expand,
+.mdrawer__expand-spacer {
+  flex: 0 0 auto;
+  inline-size: 32px;
+  min-block-size: var(--mobile-touch-min);
+}
+
+.mdrawer__expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__row--item {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  padding-inline: var(--pn-space-1) var(--pn-space-3);
+  border-radius: var(--pn-r-sm);
+}
+
+.mdrawer__row--item .mdrawer__title {
+  font-weight: 500;
+}
+
+.mdrawer__status {
+  flex: 0 0 auto;
+  padding: 1px var(--pn-space-2);
+  border-radius: var(--pn-r-pill);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--pn-idle);
+  background: var(--pn-idle-soft);
+}
+
+.mdrawer__status[data-tone='run'] {
+  color: var(--pn-run);
+  background: var(--pn-run-soft);
+}
+.mdrawer__status[data-tone='wait'] {
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+}
+.mdrawer__status[data-tone='block'] {
+  color: var(--pn-block);
+  background: var(--pn-block-soft);
+}
+.mdrawer__status[data-tone='info'] {
+  color: var(--pn-info);
+  background: var(--pn-info-soft);
+}
+.mdrawer__status[data-tone='brand'] {
+  color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+}
+
+.mdrawer__seeall {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  min-block-size: var(--mobile-touch-min);
+  padding: 0 var(--pn-space-3) 0 calc(32px + var(--pn-space-1));
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  text-align: start;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 500;
+  color: var(--pn-brand);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.mdrawer__branch .mdrawer__empty {
+  padding-inline-start: calc(32px + var(--pn-space-1));
+}
+
 /* ── THE FOOT ────────────────────────────────────────────────────────────── */
 
 .mdrawer__foot {
@@ -403,7 +620,8 @@
     animation: none;
   }
 
-  .mdrawer__row {
+  .mdrawer__row,
+  .mdrawer__twisty {
     transition: none;
   }
 }

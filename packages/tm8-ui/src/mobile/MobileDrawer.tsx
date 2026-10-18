@@ -24,40 +24,31 @@
  * makes a kind literal outside `domain/` a build failure, and the rule is doing
  * real work here.
  *
- * ── FOUR SECTIONS, IN ONE ORDER (owner ruling 3) ───────────────────────────
+ * ── TOP TO BOTTOM (drawer mockup v3, task 01a14ccc, 2026-10-18) ──────────
  *
- *   ＋ New chat  the primary button, above every section (drawer mockup v3).
- *   Chats        ＋ New {kind} and ONE row that opens the conversation list. FIRST, because it is
- *                what a reader returns to. It is also where the ☰ used to lead
- *                on the chat screen, so nothing was taken away to make room
- *                for it.
+ *   ＋ New chat  the one verb. A conversation is what a reader opens this
+ *                drawer to start.
+ *   Trees        Chats, Sessions, Docs, Tasks (`drawerTreeKinds()`), each a
+ *                collapsible section, COLLAPSED BY DEFAULT. Expanding one shows
+ *                its most recent items; an item with children (launched
+ *                sessions under their root, sub-docs, subtasks) has a ▸ and
+ *                expands in place. "See all" opens the phone list route.
+ *   Pinned       the desktop rail's pins (`railStore`), as the same trees,
+ *                skipping kinds already drawn above.
+ *   All kinds    a disclosure, closed by default, holding every other kind and
+ *                the view destinations the drawer is still the only door to.
+ *                Home, Work and Inbox are NOT here: chat is home, and the
+ *                mockup gives them no row.
+ *   Foot         Help, Settings and the account
  *
- *                THE SECOND VERB IS THERE because opening this drawer to
- *                START something was only ever answered one way. Making a
- *                task meant a kind row, a list screen and its header's ＋ —
- *                three taps for the thing a reader reaches for as often as a
- *                conversation. It runs the SHELL'S create (`useNewTask`, the
- *                desktop's own flow) and takes its word from the registry, so
- *                the drawer still names no kind.
+ * ── THIS REPLACES OWNER RULING 7 ("no list inside the drawer") ─────────────
  *
- *                IT USED TO BE THE LIST ITSELF, inline, and that was the one
- *                thing ruling 7 below says this drawer never does. It held
- *                while a space had three conversations; at eight it put every
- *                entity kind in the app below a population that grows without
- *                bound, and reaching Tasks meant scrolling past every
- *                conversation anyone had started (owner report 2026-09-15,
- *                task 01a0a5f2). The list moved to `MobileThreadsSheet`, whose
- *                head carries the rest of the reasoning — including why a chat
- *                thread cannot simply become a kind row in the Entities band.
- *   Destinations the view refs (Home, Inbox, Work, Board, Craft, Graph, Files)
- *   Entities     every collection kind, grouped as the desktop rail groups them
- *   Foot         Settings and the account
- *
- * ── A KIND ROW OPENS A FULL-SCREEN LIST (owner ruling 7) ───────────────────
- *
- * It navigates and dismisses. NO list is rendered inside the drawer: a panel
- * that expanded a kind into rows beside itself is a two-pane phone UI, which is
- * the arrangement the whole mobile shell exists to refuse. One surface.
+ * Ruling 7 refused a list beside the drawer because the old drawer had no
+ * bound: the inline thread list pushed every kind below a population that
+ * grows without limit (task 01a0a5f2). The trees keep that bound — each
+ * section is closed until asked, and an open one draws a handful of recent
+ * items and a See all, never the population. Tapping an item still navigates
+ * and dismisses through the one `go()`/`open()` pair below.
  *
  * ── UNSEEN HAD TO SURVIVE THE BAR (owner ruling 5) ─────────────────────────
  *
@@ -78,12 +69,24 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { KIND_ART, KindIcon, collectionKinds, getKind, homeRailGroups, type KindArt, type KindConfig } from '../domain';
-import { isNavigatorEnabled } from '../tab-workspace/view/navigatorFlag';
+import {
+  KIND_ART,
+  KindIcon,
+  collectionKinds,
+  drawerTreeKinds,
+  getKind,
+  homeRailGroups,
+  isDrawerChatKind,
+  type KindArt,
+  type KindConfig,
+} from '../domain';
 import { loadWorkspaceRailPins, workspacePinnedKinds } from '../tab-workspace/runtime/railStore';
 import { VectorIcon } from '../kit';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
-import type { EntityKind, MenuViewRef } from '@tm8/contract';
+import type { EntityId, EntitySummary, MenuViewRef } from '@tm8/contract';
+import type { SessionLiveness } from '../data/seam';
+import { homeRowOf } from '../home/home-model';
+import { relativeTime } from '../messages/messages-model';
 import { useMobileSurface } from './surface';
 import './mobile-drawer.css';
 import { useCustomKindsVersion } from '../data/custom-kinds';
@@ -112,28 +115,13 @@ export function anyUnseen(countsFor: CountsFor): boolean | null {
 }
 
 /**
- * THE DESTINATION SPINE — the view refs, in the desktop rail's own order.
- *
- * Taken from `SHIPPED_DEFAULT_MENU`'s groups rather than retyped, with two
- * deliberate departures that are both ruling 3:
- *
- *   `inbox` is INSERTED second. It is a `VIEW_PRESENTATION` ref with a finished
- *   screen and no menu group of its own (the desktop reaches it through Home);
- *   on a phone it was one of the five tabs, so leaving it out of the drawer
- *   would be the one destination this change actually removed.
- *
- *   `settings` is REMOVED from this list and drawn at the foot, where the
- *   ruling puts it beside the account.
+ * THE DESTINATIONS THE DRAWER IS STILL THE ONLY DOOR TO, in the desktop rail's
+ * order. Home (`dashboard`, the chat screen), Work (`workspace`) and Inbox
+ * left the drawer with mockup v3: chat is home, Work is desktop-only (Spec A
+ * §2), and the ☰'s attention dot carries unread. What remains sits inside All
+ * kinds so nothing that had a door lost it.
  */
-const DESTINATION_REFS: readonly MenuViewRef[] = [
-  'dashboard',
-  'inbox',
-  'workspace',
-  'board',
-  'craft',
-  'graph',
-  'files',
-];
+const DESTINATION_REFS: readonly MenuViewRef[] = ['board', 'craft', 'graph', 'files'];
 
 /** The foot's destinations. Beside the account, per ruling 3. */
 const SETTINGS_REF: MenuViewRef = 'settings';
@@ -147,41 +135,80 @@ const HELP_REF: MenuViewRef = 'help';
 /** ＋, on `VectorIcon`'s 16x16 grid — drawn, so it inherits the stroke weight. */
 const PLUS_ART: KindArt = ['M8 3.25v9.5', 'M3.25 8h9.5'];
 
-/**
- * The Chats row's mark: THE chat mark, read from the shared table so the phone
- * draws chat the way every other surface does (`kind-art.test.ts` fails on a
- * private copy).
- *
- * NOT `KindIcon('channel')`, and the distinction is the whole reason this row
- * is not in the Entities band — a channel is an entity with a slug and a
- * collection route, a conversation is an anchored message subtree. Wearing the
- * channel's # would say they were the same population, and the Channels row
- * three sections down would then be an unexplained duplicate.
- */
-const CHAT_ART: KindArt = KIND_ART.chat;
-
-/**
- * The second verb's word, off the registry.
- *
- * `palette.createLabel` is the SAME string `EntityCreateControl` renders for
- * this kind, which is the point — the drawer is not allowed a second opinion
- * about what creating a task is called. The fallback covers a kind whose row
- * carries no palette; it is built from the registry's label, still not from a
- * word written here.
- */
-function newEntityLabel(kind: EntityKind): string {
-  const config = getKind(kind);
-  return config.palette?.createLabel ?? `New ${config.label.toLowerCase()}`;
-}
-
 /** The account row's mark: the `member` kind's person — you ARE a member. */
 const PERSON_ART: KindArt = KIND_ART.member;
+
+/** How many recent roots an open section draws before its See all. */
+export const DRAWER_RECENT_LIMIT = 5;
+/** How many children an open item draws before its own See all. */
+export const DRAWER_CHILD_LIMIT = 6;
+/** Trees nest, but a phone drawer is 322px wide: three levels and stop. */
+const MAX_DEPTH = 3;
+
+/*
+ * WHAT IS OPEN, REMEMBERED FOR THE LIFE OF THE PAGE. The drawer unmounts every
+ * time it closes, so state held in it would re-collapse every section on every
+ * open — a reader who opened Sessions to watch a run would open it again each
+ * time. Collapsed is still the default: nothing is in here until a tap puts it
+ * here, and nothing is persisted across a reload.
+ */
+const openKeys = new Set<string>();
+
+function useOpen(key: string): [boolean, () => void] {
+  const [open, setOpen] = useState(() => openKeys.has(key));
+  const toggle = useCallback(() => {
+    setOpen((was) => {
+      if (was) openKeys.delete(key);
+      else openKeys.add(key);
+      return !was;
+    });
+  }, [key]);
+  return [open, toggle];
+}
+
+/** Test seam: forget every remembered section. */
+export function resetDrawerOpenState(): void {
+  openKeys.clear();
+}
 
 function sameTarget(a: MenuTarget | null, b: MenuTarget): boolean {
   if (!a || a.type !== b.type) return false;
   if (a.type === 'view' && b.type === 'view') return a.ref === b.ref;
   if (a.type === 'kind' && b.type === 'kind') return a.ref === b.ref;
   return false;
+}
+
+const byActivity = (a: EntitySummary, b: EntitySummary) =>
+  a.activityAt < b.activityAt ? 1 : a.activityAt > b.activityAt ? -1 : 0;
+
+/**
+ * ONE KIND'S LOADED ROWS AS A FOREST.
+ *
+ * A root is a row whose parent is not another loaded row of the same kind — a
+ * launched session whose root session is loaded hangs under it; one whose root
+ * is not on this page stands as a root of its own rather than vanishing.
+ * Children come from the same rows, so expanding an item costs no read.
+ */
+export function drawerForest(rows: readonly EntitySummary[]): {
+  roots: EntitySummary[];
+  childrenOf: (id: EntityId) => EntitySummary[];
+} {
+  const live = rows.filter((row) => !row.deletedAt);
+  const ids = new Set(live.map((row) => row.id));
+  const children = new Map<string, EntitySummary[]>();
+  const roots: EntitySummary[] = [];
+  for (const row of live) {
+    if (row.parentId && ids.has(row.parentId) && row.parentId !== row.id) {
+      const list = children.get(row.parentId) ?? [];
+      list.push(row);
+      children.set(row.parentId, list);
+    } else {
+      roots.push(row);
+    }
+  }
+  roots.sort(byActivity);
+  for (const list of children.values()) list.sort(byActivity);
+  return { roots, childrenOf: (id) => children.get(id) ?? [] };
 }
 
 export interface MobileDrawerProps {
@@ -195,42 +222,31 @@ export interface MobileDrawerProps {
   readonly countsFor: CountsFor;
 
   /**
-   * How many conversations the space has, for the Chats row's counter.
-   *
-   * ABSENT IS NOT ZERO here too: the shell only learns the count once the chat
-   * screen has published its threads back, so before that there is no fact and
-   * the row draws no number rather than claiming none exist.
+   * One kind's loaded rows — `GateData.rowsFor(kind)(undefined)`, the same
+   * unfiltered read the phone list draws. Read only for an OPEN section.
    */
-  readonly chatCount?: number | undefined;
-  /** Opens the conversation list. The drawer renders no list of its own. */
-  readonly onOpenChats: () => void;
-  readonly onNewThread: () => void;
+  readonly rowsOf: (kind: string) => readonly EntitySummary[];
+  /** Hydrate a kind when its section opens. Idempotent (`GateData.ensureKind`). */
+  readonly ensureKind: (kind: string) => void;
+  /** The seam's liveness verdict, so a session row says running/waiting. */
+  readonly livenessOf?: ((id: string) => SessionLiveness) | undefined;
+  /** Open one entity on the phone (`openEntityOnPhone`). */
+  readonly onOpenEntity: (id: EntityId, kind: string) => void;
+  /** Open one conversation in the chat screen. */
+  readonly onOpenChat: (id: EntityId) => void;
 
   /**
-   * THE SECOND VERB, and the kind it makes.
-   *
-   * A reader who opens this drawer to start something is as likely to be
-   * starting a piece of WORK as a conversation, and until now the only verb
-   * here made a conversation — so the other half of the answer was three taps
-   * away through a kind row and a list header. Two verbs, side by side.
-   *
-   * THE KIND TRAVELS, THE WORD DOES NOT. `onNewEntity` is the shell's create
-   * — `useNewTask`'s, the same flow the desktop's ＋ runs, not a second one —
-   * and the label is read off the registry's own `palette.createLabel` here,
-   * exactly as the kind rows below read their names. This file names no kind,
-   * and the head says why that matters.
+   * How many attention requests are waiting — the SAME number the attention
+   * button and sheet title use (mine when any are mine, else all). The
+   * "Needs you" row draws only when this is above zero; absent ⇒ no row.
    */
-  readonly newEntityKind: EntityKind;
-  readonly onNewEntity: () => void;
-  /**
-   * Why that create cannot run right now, or null/absent when it can.
-   *
-   * REFUSED, NEVER HIDDEN, and never a live button that does nothing (R7).
-   * The row stays in place, states the cause, and does not fire — a verb that
-   * vanishes when the seam is missing teaches the reader the feature does not
-   * exist.
-   */
-  readonly newEntityUnavailable?: { cause: string; remedy: string } | null | undefined;
+  readonly needsYouCount?: number | undefined;
+  /** Opens the `AttentionSheet`. The chat screen has no header to carry it. */
+  readonly onOpenAttention?: (() => void) | undefined;
+
+  /** Opens the conversation list — the Chats section's See all. */
+  readonly onOpenChats: () => void;
+  readonly onNewThread: () => void;
 
   /**
    * The header's Copy link, re-hosted in the foot beside Settings.
@@ -247,27 +263,49 @@ export interface MobileDrawerProps {
   readonly accountName?: string | undefined;
 
   /**
-   * The Space, for the navigator drawer's pins (§8: the SAME `railStore` order
-   * as the desktop column — the two shells read one preference, as they read
-   * one kind table). Absent ⇒ the default pins.
+   * The Space, for the pins (§8: the SAME `railStore` order as the desktop
+   * column — the two shells read one preference, as they read one kind
+   * table). Absent ⇒ no pins.
    */
   readonly spaceId?: string | undefined;
 
   readonly onDismiss: () => void;
 }
 
+/** What every tree in one drawer shares, threaded down once. */
+interface TreeContext {
+  readonly rowsOf: MobileDrawerProps['rowsOf'];
+  readonly ensureKind: MobileDrawerProps['ensureKind'];
+  readonly livenessOf: MobileDrawerProps['livenessOf'];
+  readonly countsFor: CountsFor;
+  readonly activeTarget: MenuTarget | null;
+  readonly now: Date;
+  readonly openItem: (row: EntitySummary) => void;
+  readonly seeAll: (config: KindConfig) => void;
+}
+
 export function MobileDrawer(props: MobileDrawerProps) {
   useCustomKindsVersion();
   const { sheetHost } = useMobileSurface();
-  const { activeTarget, navigateTo, onDismiss } = props;
-  const navigator = useMemo(() => isNavigatorEnabled(), []);
-  const [allKindsOpen, setAllKindsOpen] = useState(false);
+  const { activeTarget, navigateTo, onDismiss, onOpenEntity, onOpenChat, onOpenChats } = props;
+  const [allKindsOpen, toggleAllKinds] = useOpen('all-kinds');
+
+  const treeKinds = useMemo(() => drawerTreeKinds(), []);
   /* Read, not subscribed: the drawer is mounted for the moment it is open, and
-     pinning happens on the desktop column. */
-  const pinnedKinds = useMemo(
-    () => (props.spaceId ? workspacePinnedKinds(loadWorkspaceRailPins(props.spaceId)) : []),
-    [props.spaceId],
-  );
+     pinning happens on the desktop column. Kinds already drawn as trees above
+     are skipped, so no kind is drawn twice. */
+  const pinnedKinds = useMemo(() => {
+    const shown = new Set(treeKinds.map((config) => config.kind));
+    return props.spaceId
+      ? workspacePinnedKinds(loadWorkspaceRailPins(props.spaceId)).filter((config) => !shown.has(config.kind))
+      : [];
+  }, [props.spaceId, treeKinds]);
+  const otherGroups = useMemo(() => {
+    const shown = new Set([...treeKinds, ...pinnedKinds].map((config) => config.kind));
+    return homeRailGroups()
+      .map((group) => ({ ...group, kinds: group.kinds.filter((config) => !shown.has(config.kind)) }))
+      .filter((group) => group.kinds.length > 0);
+  }, [treeKinds, pinnedKinds]);
 
   /* Escape closes it, bound at the document exactly as `MobileSheet` binds its
      own — a phone has no Escape, but the shell is driven by a keyboard in every
@@ -282,9 +320,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onDismiss]);
 
-  /* ONE PLACE THE DRAWER CLOSES ON NAVIGATION (ruling 7). Every row goes
-     through this, so a row that forgot to dismiss is not a shape this file
-     has. */
+  /* ONE PLACE THE DRAWER CLOSES ON NAVIGATION. Every row goes through `go` or
+     `openItem`, so a row that forgot to dismiss is not a shape this file has.
+     Expanding a section or an item is the only press that keeps it open. */
   const go = useCallback(
     (target: MenuTarget) => {
       navigateTo(target);
@@ -292,6 +330,38 @@ export function MobileDrawer(props: MobileDrawerProps) {
     },
     [navigateTo, onDismiss],
   );
+  const openItem = useCallback(
+    (row: EntitySummary) => {
+      if (isDrawerChatKind(row.kind)) onOpenChat(row.id);
+      else onOpenEntity(row.id, row.kind);
+      onDismiss();
+    },
+    [onOpenChat, onOpenEntity, onDismiss],
+  );
+  const seeAll = useCallback(
+    (config: KindConfig) => {
+      /* The Chats section's See all is the conversation list, the surface a
+         thread is picked from; every other kind's is its phone list route. */
+      if (isDrawerChatKind(config.kind)) {
+        onOpenChats();
+        onDismiss();
+      } else {
+        go({ type: 'kind', ref: config.kind });
+      }
+    },
+    [go, onOpenChats, onDismiss],
+  );
+
+  const ctx: TreeContext = {
+    rowsOf: props.rowsOf,
+    ensureKind: props.ensureKind,
+    livenessOf: props.livenessOf,
+    countsFor: props.countsFor,
+    activeTarget,
+    now: new Date(),
+    openItem,
+    seeAll,
+  };
 
   /* Inert off the phone, like every other portalled surface here: with no host
      there is nowhere for a modal layer to live, and rendering in place would
@@ -320,204 +390,106 @@ export function MobileDrawer(props: MobileDrawerProps) {
         </div>
 
         <div className="mdrawer__scroll">
-          {/* ── CHATS ─────────────────────────────────────────────────────
-              First, because it is what a reader returns to (ruling 3). TWO
-              ROWS, not the list: the verb, and a door to the list. The list
-              itself is `MobileThreadsSheet`, which still renders the SAME
-              summaries the chat screen publishes back through
-              `onThreadsChange` — one list with one source, now on a surface
-              that can hold it. */}
           {/* ── ＋ NEW CHAT ────────────────────────────────────────────────
-              THE drawer's primary action (drawer mockup v3), so it is drawn
-              as one: a filled button above every section rather than a row
-              inside Chats. It opens a fresh, empty chat and closes the drawer
-              — never a picker and never the conversation list, which is what
-              the Conversations row below is for. The shell's `onNewThread`
-              does the clearing, the navigating and the dismissing. */}
-          <div className="mdrawer__primary">
+              The one verb, first, and the only filled control in the drawer. */}
+          <button
+            type="button"
+            className="mdrawer__new"
+            data-testid="mobile-drawer-new-chat"
+            onClick={props.onNewThread}
+          >
+            <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.8} />
+            <span>New chat</span>
+          </button>
+
+          {/* ── NEEDS YOU ─────────────────────────────────────────────────
+              The chat screen lost its header, and with it the attention
+              button; the floating ☰ carries the dot, so the drawer it opens
+              carries the door. Drawn only when something is waiting. */}
+          {props.onOpenAttention && (props.needsYouCount ?? 0) > 0 ? (
             <button
               type="button"
-              className="mdrawer__new"
-              data-testid="mobile-drawer-new-chat"
-              onClick={props.onNewThread}
+              className="mdrawer__row mdrawer__needs"
+              data-testid="mobile-drawer-needs-you"
+              aria-haspopup="dialog"
+              aria-label={`Needs you: ${props.needsYouCount} waiting`}
+              onClick={() => {
+                props.onOpenAttention?.();
+                onDismiss();
+              }}
             >
-              <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.8} />
-              <span>New chat</span>
+              <span className="mdrawer__needs-dot" aria-hidden />
+              <span className="mdrawer__name">Needs you</span>
+              <span className="mdrawer__needs-count" aria-hidden>
+                {props.needsYouCount}
+              </span>
             </button>
-          </div>
-          <Section label="Chats">
-            <li>
-              {/* THE WORK VERB, beside the chat one. Its word comes
-                  from the registry so the drawer and the desktop's ＋ cannot
-                  come to say different things about the same create.
+          ) : null}
 
-                  DISABLED-WITH-REASON RATHER THAN ABSENT when the seam cannot
-                  create: `aria-disabled` keeps the row in the tab order (a
-                  `disabled` attribute would take it out, D28) while the guard
-                  below is what actually stops the press. */}
-              <button
-                type="button"
-                className="mdrawer__row mdrawer__row--verb"
-                data-testid="mobile-drawer-new-entity"
-                {...(props.newEntityUnavailable
-                  ? { 'aria-disabled': true as const, title: props.newEntityUnavailable.cause }
-                  : {})}
-                onClick={() => {
-                  if (props.newEntityUnavailable) return;
-                  props.onNewEntity();
-                }}
-              >
-                <span className="mdrawer__mark" aria-hidden>
-                  <VectorIcon paths={PLUS_ART} size={16} strokeWidth={1.6} />
-                </span>
-                <span className="mdrawer__name">{newEntityLabel(props.newEntityKind)}</span>
-              </button>
-            </li>
-            <li>
-              {/* ONE ROW, SHAPED LIKE A KIND ROW — mark, name, total — so the
-                  conversations read as one more population of the space rather
-                  than as a band of the menu. It opens a full-screen list and
-                  dismisses, which is what every other row in this drawer does.
+          {/* ── THE TREES ─────────────────────────────────────────────────
+              Chats, Sessions, Docs, Tasks — collapsed until tapped. */}
+          <ul className="mdrawer__trees" data-testid="mobile-drawer-trees">
+            {treeKinds.map((config) => (
+              <KindTree key={config.kind} config={config} ctx={ctx} />
+            ))}
+          </ul>
 
-                  It does NOT go through `go()`: the sheet is not a `MenuTarget`
-                  and this drawer builds no routes. Dismissing here is the same
-                  dismissal for the same reason, written out because the shared
-                  helper cannot carry it. */}
-              <button
-                type="button"
-                className="mdrawer__row"
-                data-testid="mobile-drawer-chats"
-                aria-haspopup="dialog"
-                onClick={() => {
-                  props.onOpenChats();
-                  onDismiss();
-                }}
-              >
-                <span className="mdrawer__mark" aria-hidden>
-                  <VectorIcon paths={CHAT_ART} size={16} strokeWidth={1.4} />
-                </span>
-                <span className="mdrawer__name">Conversations</span>
-                {/* Absent is not zero — see `chatCount`. A counted zero DOES
-                    draw, exactly as a kind total does: "0 conversations" is a
-                    fact about the space and the reason the row still exists. */}
-                {props.chatCount !== undefined ? (
-                  <span className="mdrawer__total" aria-label={`${props.chatCount} conversations`}>
-                    {props.chatCount}
-                  </span>
-                ) : null}
-              </button>
-            </li>
-          </Section>
-
-          {/* ── NEW · PINS · ALL KINDS, or the four bands ────────────────
-              THE MERGED NAVIGATOR'S DRAWER (design doc 01a1465d-a2b7 §8).
-              With `tm8.ui.navigator` on the drawer carries the navigator's TOP
-              HALF and nothing else: the New verbs above, the same pins in the
-              same `railStore` order, and All kinds.
-
-              THE LIST IS STILL NOT IN HERE (ruling 7, Sep 15). A pin NAVIGATES
-              to that kind's full-screen list and dismisses, which is what every
-              row in this drawer has always done — §8 says so in the same words
-              the ruling does.
-
-              ALL KINDS IS A DISCLOSURE, NOT A REPLACEMENT. The desktop's All
-              kinds is a popover over a column that still has a footer; a phone
-              drawer is the ONLY door to Inbox, Board, Craft, Graph and Files,
-              so folding them away for good would remove five destinations to
-              tidy up one. They move inside the disclosure, closed by default:
-              the resting drawer is New + pins + All kinds, and nothing became
-              unreachable. */}
-          {navigator ? (
-            <>
-              <Section label="Pinned">
+          {pinnedKinds.length > 0 ? (
+            <div className="mdrawer__section">
+              <h2 className="mdrawer__label">Pinned</h2>
+              <ul className="mdrawer__trees">
                 {pinnedKinds.map((config) => (
-                  <KindRow
-                    key={config.kind}
-                    config={config}
-                    counts={props.countsFor(config.kind)}
-                    activeTarget={activeTarget}
-                    unseenAs="dot"
-                    onGo={go}
-                  />
+                  <KindTree key={config.kind} config={config} ctx={ctx} />
                 ))}
-              </Section>
-              <div className="mdrawer__section">
-                <button
-                  type="button"
-                  className="mdrawer__row mdrawer__row--verb"
-                  aria-expanded={allKindsOpen}
-                  data-testid="mobile-drawer-all-kinds"
-                  onClick={() => setAllKindsOpen((open) => !open)}
-                >
-                  <span className="mdrawer__mark" aria-hidden>
-                    {allKindsOpen ? '▾' : '▸'}
-                  </span>
-                  <span className="mdrawer__name">All kinds</span>
-                </button>
-              </div>
-              {allKindsOpen ? (
-                <>
-                  <Section label="Destinations">
+              </ul>
+            </div>
+          ) : null}
+
+          {/* ── ALL KINDS ─────────────────────────────────────────────────
+              A DISCLOSURE, NOT A REMOVAL. The drawer is the only door a phone
+              has to Board, Craft, Graph, Files and the long tail of kinds, so
+              they fold away here, closed by default, rather than going. */}
+          <div className="mdrawer__section">
+            <button
+              type="button"
+              className="mdrawer__kindhead mdrawer__kindhead--quiet"
+              aria-expanded={allKindsOpen}
+              data-testid="mobile-drawer-all-kinds"
+              onClick={toggleAllKinds}
+            >
+              <span className="mdrawer__twisty" aria-hidden>
+                ▸
+              </span>
+              <span className="mdrawer__name">All kinds</span>
+            </button>
+            {allKindsOpen ? (
+              <>
+                {otherGroups.map((group) => (
+                  <div key={group.id} className="mdrawer__group">
+                    <h2 className="mdrawer__label">{group.label}</h2>
+                    <ul className="mdrawer__trees">
+                      {group.kinds.map((config) => (
+                        <KindTree key={config.kind} config={config} ctx={ctx} />
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+                <div className="mdrawer__group">
+                  <h2 className="mdrawer__label">Views</h2>
+                  <ul className="mdrawer__rows">
                     {DESTINATION_REFS.map((ref) => (
                       <ViewRow key={ref} viewRef={ref} activeTarget={activeTarget} onGo={go} />
                     ))}
-                  </Section>
-                  {homeRailGroups().map((group) => (
-                    <Section key={group.id} label={group.label}>
-                      {group.kinds.map((config) => (
-                        <KindRow
-                          key={config.kind}
-                          config={config}
-                          counts={props.countsFor(config.kind)}
-                          activeTarget={activeTarget}
-                          unseenAs="dot"
-                          onGo={go}
-                        />
-                      ))}
-                    </Section>
-                  ))}
-                </>
-              ) : null}
-            </>
-          ) : (
-            <>
-              {/* ── DESTINATIONS ──────────────────────────────────────────
-                  The view refs, in the desktop rail's order and wearing the
-                  desktop rail's words and marks. */}
-              <Section label="Destinations">
-                {DESTINATION_REFS.map((ref) => (
-                  <ViewRow key={ref} viewRef={ref} activeTarget={activeTarget} onGo={go} />
-                ))}
-              </Section>
-
-              {/* ── ENTITIES ──────────────────────────────────────────────
-                  `homeRailGroups()` IS the desktop Home rail: same groups, same
-                  order, same membership, resolved against the live registry. A
-                  kind added to the registry appears here for free and in the
-                  same place it appears on a desktop. */}
-              {homeRailGroups().map((group) => (
-                <Section key={group.id} label={group.label}>
-                  {group.kinds.map((config) => (
-                    <KindRow
-                      key={config.kind}
-                      config={config}
-                      counts={props.countsFor(config.kind)}
-                      activeTarget={activeTarget}
-                      /* FLAG OFF IS UNCHANGED: today's drawer keeps the numeric
-                         pill it shipped with. */
-                      unseenAs="count"
-                      onGo={go}
-                    />
-                  ))}
-                </Section>
-              ))}
-            </>
-          )}
+                  </ul>
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
 
         {/* ── THE FOOT ───────────────────────────────────────────────────
             Settings and the account, pinned below the scroll so they do not
-            travel to the bottom of a 19-row list to be found (ruling 3). */}
+            travel to the bottom of a long list to be found (ruling 3). */}
         <div className="mdrawer__foot">
           {/* COPY LINK, off the 53px header. It is a verb about the screen the
               viewer is on, and it sits above Settings because Settings leaves
@@ -557,16 +529,6 @@ export function MobileDrawer(props: MobileDrawerProps) {
   );
 }
 
-/** One labelled band of rows. The label is a real heading for the a11y tree. */
-function Section({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="mdrawer__section">
-      <h2 className="mdrawer__label">{label}</h2>
-      <ul className="mdrawer__rows">{children}</ul>
-    </div>
-  );
-}
-
 /**
  * One view destination, named and marked by `VIEW_PRESENTATION` — the desktop
  * rail's own table, so "File browser" reads "File browser" on both shells and
@@ -601,93 +563,180 @@ function ViewRow({
 }
 
 /**
- * ONE KIND ROW — mark, name, unread, total. Lifted out of the Entities bands
- * unchanged when the merged navigator's drawer (§8) needed the SAME row under
- * Pinned: two copies would be two answers to absent-is-not-zero, which the
- * head spends four paragraphs establishing.
+ * ONE KIND AS A COLLAPSIBLE TREE — the header (mark, name, unread, total) and,
+ * once opened, its most recent roots and a See all.
  */
-function KindRow({
-  config,
-  counts,
-  activeTarget,
-  unseenAs,
-  onGo,
-}: {
-  config: KindConfig;
-  counts: { total: number; unseen: number } | undefined;
-  activeTarget: MenuTarget | null;
-  /**
-   * HOW UNREAD IS DRAWN: `'count'` is the filled numeric pill this row has
-   * always had, `'dot'` the unnumbered mark the navigator's drawer uses (§8;
-   * QA finding 4, ruled 2026-10-17). The navigator's drawer passes `'dot'` on
-   * EVERY row it draws — Pinned and the All-kinds groups alike — so one
-   * drawer never gives two answers to "what does unread look like", which is
-   * the whole reason this component was lifted out rather than copied.
-   */
-  unseenAs: 'count' | 'dot';
-  onGo: (target: MenuTarget) => void;
-}) {
+function KindTree({ config, ctx }: { config: KindConfig; ctx: TreeContext }) {
+  const [open, toggle] = useOpen(`kind:${config.kind}`);
+  const { ensureKind } = ctx;
+  /* Hydrated when OPENED, not when the drawer mounts: a closed section costs
+     no read, which is what lets every kind sit here collapsed. */
+  useEffect(() => {
+    if (open) ensureKind(config.kind);
+  }, [open, ensureKind, config.kind]);
+
+  const counts = ctx.countsFor(config.kind);
   const target: MenuTarget = { type: 'kind', ref: config.kind };
+  const bodyId = `mdrawer-tree-${config.kind}`;
+  const rows = open ? ctx.rowsOf(config.kind) : null;
+  const forest = useMemo(() => (rows ? drawerForest(rows) : null), [rows]);
+  const label = config.labelPlural;
+
   return (
-    <li>
+    <li className="mdrawer__tree" data-kind={config.kind} data-open={open ? 'true' : undefined}>
       <button
         type="button"
-        className="mdrawer__row"
-        aria-current={sameTarget(activeTarget, target) ? 'page' : undefined}
-        onClick={() => onGo(target)}
+        className="mdrawer__kindhead"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        aria-current={sameTarget(ctx.activeTarget, target) ? 'page' : undefined}
+        data-testid={`mobile-drawer-kind-${config.kind}`}
+        onClick={toggle}
       >
+        <span className="mdrawer__twisty" aria-hidden>
+          ▸
+        </span>
         <span className="mdrawer__mark" aria-hidden>
           <KindIcon kind={config.kind} size={16} />
         </span>
-        <span className="mdrawer__name">{config.labelPlural}</span>
+        <span className="mdrawer__name">{label}</span>
         {/*
-          ABSENT IS NOT ZERO. `counts` is undefined for a kind the
-          node could not count, and there the row draws no number
-          at all rather than a `0` nobody established. A zero that
-          WAS counted is also not drawn — it is the resting state
-          of every row, and 19 zeroes is noise, not information.
+          ABSENT IS NOT ZERO. `counts` is undefined for a kind the node could
+          not count, and there the header draws nothing rather than a `0`
+          nobody established. Unread draws as a DOT, never a second numeral:
+          in a fresh space unread and total coincide and "Tasks 9 9" reads as
+          one number printed twice. `aria-label` still says the figure.
         */}
         {counts && counts.unseen > 0 ? (
-          /*
-            A DOT, NOT A SECOND NUMBER, in the navigator's drawer. Unread and
-            the kind total are different facts that COINCIDE in a fresh space —
-            nine tasks, none of them seen — and drawn as two numerals they read
-            as one number printed twice ("Tasks 9 9"). The dot keeps the call to
-            act and drops the arithmetic: there is something new here, and there
-            are nine of these. The exact figure is not lost, it is undrawn —
-            `aria-label` still says "9 unread" either way.
-          */
-          <span
-            className={unseenAs === 'dot' ? 'mdrawer__unseen-dot' : 'mdrawer__count'}
-            aria-label={`${counts.unseen} unread`}
-          >
-            {unseenAs === 'dot' ? null : counts.unseen}
-          </span>
+          <span className="mdrawer__unseen-dot" aria-label={`${counts.unseen} unread`} />
         ) : null}
-        {/*
-          THE KIND TOTAL, WHICH USED TO BE `662` IN THE LIST'S OWN
-          BAR. It came off that bar with the chrome collapse, and
-          this is where it lands rather than nowhere: here it is
-          one of a column of totals against nineteen kinds, which
-          is the only reading that makes a total useful. Wedged in
-          the corner of a 390px band it was a number with nothing
-          to compare it to.
-
-          Same absent-is-not-zero rule as the unread count above,
-          and the same reason — the node may not have counted this
-          kind at all. A counted zero DOES draw here, unlike
-          unread: "0 tasks" is a fact about the space, where "0
-          unread" is the resting state of everything.
-        */}
+        {/* A counted zero DOES draw: "0 tasks" is a fact about the space. */}
         {counts ? (
-          <span
-            className="mdrawer__total"
-            aria-label={`${counts.total} ${config.labelPlural.toLowerCase()}`}
-          >
+          <span className="mdrawer__total" aria-label={`${counts.total} ${label.toLowerCase()}`}>
             {counts.total}
           </span>
         ) : null}
       </button>
+      {open && forest ? (
+        <ul className="mdrawer__branch" id={bodyId}>
+          {forest.roots.length === 0 ? (
+            <li className="mdrawer__empty">
+              {/* Nothing loaded yet is not "none": only a counted zero says so. */}
+              {counts?.total === 0 ? `No ${label.toLowerCase()} yet` : 'Loading…'}
+            </li>
+          ) : (
+            forest.roots
+              .slice(0, DRAWER_RECENT_LIMIT)
+              .map((row) => <ItemNode key={row.id} row={row} forest={forest} depth={1} ctx={ctx} />)
+          )}
+          <li>
+            <button
+              type="button"
+              className="mdrawer__seeall"
+              data-testid={`mobile-drawer-see-all-${config.kind}`}
+              onClick={() => ctx.seeAll(config)}
+            >
+              See all {label.toLowerCase()} ›
+            </button>
+          </li>
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+/** The subtitle under an item: how many children, and how recent. */
+function itemDetail(row: EntitySummary, childTotal: number, now: Date): string {
+  const parts: string[] = [];
+  if (childTotal > 0) {
+    const config = getKind(row.kind);
+    const noun = (childTotal === 1 ? config.label : config.labelPlural).toLowerCase();
+    parts.push(`${childTotal} sub-${noun}`);
+  }
+  const when = relativeTime(row.activityAt, now);
+  if (when) parts.push(when);
+  return parts.join(' · ');
+}
+
+/**
+ * ONE ITEM, and its children in place. The row body OPENS the item; the ▸ is
+ * its own control and EXPANDS it — two verbs, two targets, so opening a
+ * session that has workers never needs a second tap through its children.
+ */
+function ItemNode({
+  row,
+  forest,
+  depth,
+  ctx,
+}: {
+  row: EntitySummary;
+  forest: ReturnType<typeof drawerForest>;
+  depth: number;
+  ctx: TreeContext;
+}) {
+  const [open, toggle] = useOpen(`item:${row.id}`);
+  const children = forest.childrenOf(row.id);
+  /* The server's live child count is the TRUE number; the loaded children may
+     be one page of them. Absent ⇒ never counted, fall back to what is loaded. */
+  const childTotal = Math.max(row.childCount ?? 0, children.length);
+  const expandable = children.length > 0 && depth < MAX_DEPTH;
+  const status = homeRowOf(row, {
+    ...(ctx.livenessOf ? { liveness: ctx.livenessOf(row.id) } : {}),
+    compact: true,
+  });
+  const branchId = `mdrawer-item-${row.id}`;
+
+  return (
+    <li className="mdrawer__item" data-open={open ? 'true' : undefined}>
+      <div className="mdrawer__itemrow">
+        {expandable ? (
+          <button
+            type="button"
+            className="mdrawer__expand"
+            aria-expanded={open}
+            aria-controls={branchId}
+            aria-label={`${open ? 'Collapse' : 'Expand'} ${row.title}`}
+            onClick={toggle}
+          >
+            <span className="mdrawer__twisty" aria-hidden>
+              ▸
+            </span>
+          </button>
+        ) : (
+          <span className="mdrawer__expand-spacer" aria-hidden />
+        )}
+        <button
+          type="button"
+          className="mdrawer__row mdrawer__row--item"
+          data-testid="mobile-drawer-item"
+          onClick={() => ctx.openItem(row)}
+        >
+          <span className="mdrawer__name mdrawer__name--stacked">
+            <span className="mdrawer__title">{row.title}</span>
+            <span className="mdrawer__preview">{itemDetail(row, childTotal, ctx.now)}</span>
+          </span>
+          {status.word ? (
+            <span className="mdrawer__status" data-tone={status.tone} title={status.detail}>
+              {status.word}
+            </span>
+          ) : null}
+        </button>
+      </div>
+      {expandable && open ? (
+        <ul className="mdrawer__branch" id={branchId}>
+          {children.slice(0, DRAWER_CHILD_LIMIT).map((child) => (
+            <ItemNode key={child.id} row={child} forest={forest} depth={depth + 1} ctx={ctx} />
+          ))}
+          {childTotal > Math.min(children.length, DRAWER_CHILD_LIMIT) ? (
+            <li>
+              {/* The rest live on the parent's own page, which lists them all. */}
+              <button type="button" className="mdrawer__seeall" onClick={() => ctx.openItem(row)}>
+                See all {childTotal} ›
+              </button>
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
     </li>
   );
 }
