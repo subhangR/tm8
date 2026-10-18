@@ -10,7 +10,9 @@ import { EntityView } from '../views/EntityView';
 import { useGateData, type GateData } from '../views/useGateData';
 import { createFixtureSeam } from '../data/fixtures/seam-fixture';
 import { MobileSurfaceProvider } from '../mobile';
-import { screenStackStore } from '../stores/screenStackStore';
+import { useEffect } from 'react';
+import { screenKeyOf, screenStackStore, topOf, useScreenStackStore } from '../stores/screenStackStore';
+import { resetOverlayHistory } from '../stores/overlayHistory';
 import type { DetailReasons } from '../panels';
 import { forgetPlaces, HOLD_MS } from '.';
 
@@ -34,7 +36,16 @@ function Host({ kind }: { kind: string }) {
   );
 }
 
-function phone(kind = 'task') {
+/** The gate's screen→address sync, as the gate does it: in an effect, after the render. */
+function AddressSync({ kind }: { kind: string }) {
+  const top = useScreenStackStore((s) => topOf(s, screenKeyOf.kind(kind)));
+  useEffect(() => {
+    if (top) window.history.pushState(null, '', `#/e/${top}`);
+  }, [top]);
+  return null;
+}
+
+function phone(kind = 'task', opts: { address?: boolean } = {}) {
   const host = document.createElement('div');
   host.className = 'msheet-host';
   document.body.append(host);
@@ -42,6 +53,7 @@ function phone(kind = 'task') {
     <div className="cv2-root" data-shell="mobile">
       <MobileSurfaceProvider sheetHost={host}>
         <Host kind={kind} />
+        {opts.address ? <AddressSync kind={kind} /> : null}
       </MobileSurfaceProvider>
     </div>,
   );
@@ -129,6 +141,51 @@ describe('the phone list replaces the squeezed desktop list on the phone shell',
     expect(within(sheet).getByText('Open')).toBeTruthy();
     expect(within(sheet).getByText('Copy link')).toBeTruthy();
     expect(view.queryByTestId('entity-detail-panel')).toBeNull();
+  });
+
+  it('lifting the finger after a hold leaves the sheet open: the release click is swallowed', async () => {
+    const view = phone();
+    const row = (await rows(view))[0]!;
+    fireEvent.pointerDown(row, { button: 0, clientX: 10, clientY: 10 });
+    await act(() => new Promise((r) => setTimeout(r, HOLD_MS + 50)));
+    const sheet = await waitFor(() => document.querySelector('[data-testid="phone-list-actions"]') as HTMLElement);
+    /* The lift lands on the sheet that just opened under the finger. */
+    const openRow = within(sheet).getByText('Open');
+    fireEvent.pointerUp(openRow);
+    fireEvent.click(openRow);
+    expect(document.querySelector('[data-testid="phone-list-actions"]')).toBeTruthy();
+    expect(view.queryByTestId('entity-detail-panel')).toBeNull();
+    /* The next press is a real tap. */
+    fireEvent.pointerDown(openRow, { button: 0 });
+    fireEvent.pointerUp(openRow);
+    fireEvent.click(openRow);
+    await waitFor(() => expect(view.getByTestId('entity-detail-panel')).toBeTruthy());
+  });
+
+  it('Open in the actions sheet pushes the entity: the sheet’s Back marker does not undo it', async () => {
+    resetOverlayHistory();
+    /* A push, not a replace: it drops any forward entries, so length counts. */
+    window.history.pushState(null, '', '#/s/S/k/tasks');
+    const start = window.history.length;
+    const view = phone('task', { address: true });
+    const row = (await rows(view))[0]!;
+    const id = row.closest('[data-row-id]')!.getAttribute('data-row-id');
+    fireEvent.keyDown(row, { key: 'F10', shiftKey: true });
+    const sheet = await waitFor(() => document.querySelector('[data-testid="phone-list-actions"]') as HTMLElement);
+    expect(window.history.length).toBe(start + 1);
+    fireEvent.click(within(sheet).getByText('Open'));
+    await waitFor(() => expect(window.location.hash).toBe(`#/e/${id}`));
+    /* Let any stray back land; the entity must still be the current entry. */
+    await act(() => new Promise((r) => setTimeout(r, 100)));
+    expect(window.location.hash).toBe(`#/e/${id}`);
+    expect(view.getByTestId('entity-detail-panel')).toBeTruthy();
+    expect(document.querySelector('[data-testid="phone-list-actions"]')).toBeNull();
+    /* One entry over the list: Back returns to it. */
+    expect(window.history.length).toBe(start + 1);
+    const pop = new Promise<void>((r) => window.addEventListener('popstate', () => r(), { once: true }));
+    window.history.back();
+    await pop;
+    expect(window.location.hash).toBe('#/s/S/k/tasks');
   });
 
   it('moving the finger cancels the hold, so scrolling never opens it', async () => {
