@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, within } from '@testing-library/react';
+import { act, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DRAWER_RECENT_LIMIT, MobileDrawer, drawerForest, resetDrawerOpenState } from './MobileDrawer';
-import { resetRailStores } from '../tab-workspace/runtime/railStore';
+import { DEFAULT_WORKSPACE_RAIL_PINS, getRailStore, resetRailStores } from '../tab-workspace/runtime/railStore';
 import { MobileSurfaceProvider } from './surface';
 import { DRAWER_TREE_KINDS, getKind } from '../domain';
 import type { EntityId, EntitySummary } from '@tm8/contract';
@@ -228,6 +228,117 @@ describe('MobileDrawer v3 — New chat, then collapsible trees', () => {
     );
     expect(kinds.length).toBeGreaterThan(0);
     for (const kind of DRAWER_TREE_KINDS) expect(kinds).not.toContain(kind);
+  });
+});
+
+describe('MobileDrawer v3 — the Pin kinds sheet', () => {
+  const SPACE = 'space-pin-kinds';
+  const pinnedKindsIn = (view: ReturnType<typeof render>) =>
+    Array.from(view.getByTestId('mobile-drawer-pinned').querySelectorAll('.mdrawer__tree')).map((el) =>
+      el.getAttribute('data-kind'),
+    );
+  /* A kind the default pins leave out, so pinning it is a visible change. */
+  const unpinnedKind = () =>
+    within(document.body.querySelector('[data-testid="mobile-pin-kinds"]') as HTMLElement)
+      .getAllByRole('switch')
+      .find((el) => el.getAttribute('aria-checked') === 'false')!;
+
+  it('opens from the Pin kinds row at the end of Pinned, over the drawer', () => {
+    const view = mountDrawer({ spaceId: SPACE });
+    const section = view.getByTestId('mobile-drawer-pinned');
+    const pinKinds = view.getByTestId('mobile-drawer-pin-kinds');
+    expect(section.contains(pinKinds)).toBe(true);
+    expect(section.querySelector('ul')!.lastElementChild!.contains(pinKinds)).toBe(true);
+    expect(view.queryByTestId('mobile-pin-kinds')).toBeNull();
+
+    fireEvent.click(pinKinds);
+    const sheet = view.getByTestId('mobile-pin-kinds');
+    expect(within(sheet).getByRole('dialog', { name: 'Pin kinds' })).toBeTruthy();
+    /* The drawer stays mounted underneath, and the sheet comes after it in the
+       host — the order the z-index rule relies on. */
+    const drawer = view.getByTestId('mobile-drawer');
+    expect(drawer.compareDocumentPosition(sheet) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows the four tree kinds as always shown, and every other kind as a switch', () => {
+    const view = mountDrawer({ spaceId: SPACE });
+    fireEvent.click(view.getByTestId('mobile-drawer-pin-kinds'));
+    const sheet = view.getByTestId('mobile-pin-kinds');
+    const fixed = Array.from(sheet.querySelectorAll('li.mpins__row')).map((el) => el.getAttribute('data-kind'));
+    expect(fixed).toEqual([CHAT, SESSION, DOC, TASK]);
+    expect(within(sheet).getAllByText('always shown')).toHaveLength(4);
+    const switches = within(sheet).getAllByRole('switch');
+    expect(switches.length).toBeGreaterThan(0);
+    for (const el of switches) expect(DRAWER_TREE_KINDS).not.toContain(el.getAttribute('data-kind'));
+    /* The default rail pins read as on. */
+    for (const el of switches) {
+      const kind = el.getAttribute('data-kind')!;
+      expect(el.getAttribute('aria-checked')).toBe(String(DEFAULT_WORKSPACE_RAIL_PINS.includes(kind)));
+    }
+  });
+
+  it('a switch toggles the desktop rail pin, and Pinned follows while the sheet is open', () => {
+    const view = mountDrawer({ spaceId: SPACE });
+    fireEvent.click(view.getByTestId('mobile-drawer-pin-kinds'));
+    const toggle = unpinnedKind();
+    const kind = toggle.getAttribute('data-kind')!;
+    expect(pinnedKindsIn(view)).not.toContain(kind);
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(getRailStore(SPACE).getState().pins).toContain(kind);
+    expect(pinnedKindsIn(view)).toContain(kind);
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(getRailStore(SPACE).getState().pins).not.toContain(kind);
+    expect(pinnedKindsIn(view)).not.toContain(kind);
+  });
+
+  it('a pin made on the desktop rail shows in an open drawer', () => {
+    const view = mountDrawer({ spaceId: SPACE });
+    fireEvent.click(view.getByTestId('mobile-drawer-pin-kinds'));
+    const kind = unpinnedKind().getAttribute('data-kind')!;
+    act(() => {
+      getRailStore(SPACE).getState().togglePin(kind);
+    });
+    expect(pinnedKindsIn(view)).toContain(kind);
+  });
+
+  it('Escape closes the sheet only, and focus returns to the Pin kinds row', () => {
+    const onDismiss = vi.fn();
+    const view = mountDrawer({ spaceId: SPACE, onDismiss });
+    const pinKinds = view.getByTestId('mobile-drawer-pin-kinds');
+    fireEvent.click(pinKinds);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(view.queryByTestId('mobile-pin-kinds')).toBeNull();
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(pinKinds);
+  });
+
+  it('tapping the sheet backdrop closes the sheet, not the drawer', () => {
+    const onDismiss = vi.fn();
+    const view = mountDrawer({ spaceId: SPACE, onDismiss });
+    fireEvent.click(view.getByTestId('mobile-drawer-pin-kinds'));
+    fireEvent.click(view.getByTestId('mobile-pin-kinds'));
+    expect(view.queryByTestId('mobile-pin-kinds')).toBeNull();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('a pinned kind\'s See all resets to its phone list through the drawer\'s navigate', () => {
+    const navigateTo = vi.fn();
+    const onDismiss = vi.fn();
+    const view = mountDrawer({ spaceId: SPACE, navigateTo, onDismiss });
+    const kind = pinnedKindsIn(view)[0]!;
+    fireEvent.click(header(view, kind));
+    fireEvent.click(view.getByTestId(`mobile-drawer-see-all-${kind}`));
+    expect(navigateTo).toHaveBeenCalledWith({ type: 'kind', ref: kind });
+    expect(onDismiss).toHaveBeenCalled();
+  });
+
+  it('draws no Pinned section without a Space', () => {
+    const view = mountDrawer();
+    expect(view.queryByTestId('mobile-drawer-pinned')).toBeNull();
   });
 });
 
