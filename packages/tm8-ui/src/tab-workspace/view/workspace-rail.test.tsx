@@ -179,16 +179,18 @@ describe('the kind list', () => {
     expect(list.querySelector('[aria-expanded]')).toBeNull();
   });
 
-  it('a kind Work holds opens in the browser; any other opens its kind list', () => {
+  it('every kind opens in the browser, the admin and code kinds too (task 01a14c16)', () => {
     const { dispatch, gate } = mount();
     fireEvent.click(kindButtons('doc')[0]!);
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'doc' } }),
     );
-    expect(isWorkspaceKind('credential')).toBe(false);
+    expect(isWorkspaceKind('credential')).toBe(true);
     fireEvent.click(kindButtons('credential')[0]!);
-    expect(gate.navigateTo).toHaveBeenCalledWith({ type: 'kind', ref: 'credential' });
-    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'workspace.browser.set', args: { browserId: 'main', kind: 'credential' } }),
+    );
+    expect(gate.navigateTo).not.toHaveBeenCalled();
   });
 
   it('the craft kind opens Craft mode, not a list (Craft redesign §2)', () => {

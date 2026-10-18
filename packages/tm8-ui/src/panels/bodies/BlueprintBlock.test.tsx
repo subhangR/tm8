@@ -62,21 +62,23 @@ describe('the blueprint block', () => {
     expect(view.getByTestId('panel-blueprint-dangling').textContent).toContain('1 edge');
   });
 
-  it('renders nothing for a type it cannot draw, so the block below can speak', () => {
-    /* A `mermaid` row's body is its SOURCE (R3). An empty canvas over it would
-       claim the row has no nodes; the truth is this renderer does not speak
-       that type, and the fields block below already shows the source. */
+  it('draws a mermaid row from its source: the block is the body now', () => {
+    /* A `mermaid` row's body is its SOURCE (R3). The graph tab is the graph
+       (task 01a14c16) — no fields block under it to show the source — so the
+       block draws the diagram itself rather than an empty canvas. */
     const view = render(
       <BlueprintBlock detail={graphDetail({ kind: 'graph', graphType: 'mermaid', source: 'graph TD;' })} />,
     );
     expect(view.queryByTestId('panel-blueprint')).toBeNull();
+    expect(view.getByTestId('panel-blueprint-mermaid')).toBeTruthy();
   });
 
-  it('renders nothing for an empty blueprint rather than an empty frame', () => {
+  it('says an empty blueprint is empty rather than drawing an empty frame', () => {
     const view = render(
       <BlueprintBlock detail={graphDetail({ kind: 'graph', graphType: 'entity', nodes: [], edges: [] })} />,
     );
     expect(view.queryByTestId('panel-blueprint')).toBeNull();
+    expect(view.getByTestId('panel-blueprint-empty').textContent).toContain('empty graph');
   });
 
   it('sizes its box from the FOLD, not from a constant', () => {
@@ -106,9 +108,11 @@ describe('the blueprint block', () => {
 
   it('is DECLARED by the graph kind, which is the whole wiring', () => {
     /* The block reaches the panel because the registry asks for it, and it is
-       FIRST — the canvas is the row's body, the envelope fields sit under it.
-       No component anywhere asks what kind it is holding. */
-    const blocks = getKind('graph')?.panel.blocks ?? [];
-    expect(blocks[0]?.block).toBe('blueprint');
+       the ONLY block: the tab is the graph (task 01a14c16), a frame with no
+       title bar, as the drawing is. No component asks what kind it holds. */
+    const panel = getKind('graph')?.panel;
+    expect((panel?.blocks ?? []).map((b) => b.block)).toEqual(['blueprint']);
+    expect(panel?.composition).toBe('frame');
+    expect(panel?.titleBar).toBe(false);
   });
 });

@@ -1254,6 +1254,8 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
       // The drawing's tab IS the canvas (task 01a12506): the Excalidraw
       // viewport takes the body, its save status rides the strip.
       drawing: 'frame',
+      // The graph's tab IS the graph (task 01a14c16), as the drawing's is.
+      graph: 'frame',
       story: 'canvas',
     };
     for (const row of allKinds()) {

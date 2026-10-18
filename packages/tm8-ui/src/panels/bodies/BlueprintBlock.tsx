@@ -17,6 +17,12 @@
  * you SEE one while doing something else, so it draws and navigates and
  * nothing more. The registry keeps `edit` as the door.
  *
+ * THE TAB IS THE GRAPH (task 01a14c16, 2026-10-18). The graph kind is a
+ * `frame` with no title bar, as the drawing is, so this block is the body's
+ * only one and fills it (panels.css). With the fields block gone, it speaks
+ * for every row itself: a `mermaid` row draws its source, an empty blueprint
+ * says so. The canvas keeps its own find, zoom, minimap and legend.
+ *
  * NO KIND LITERAL (§15.2). The registry declares this block for the kind that
  * has blueprints; this file never asks what kind it is holding. It asks the
  * CONTENT what it is — a `graphType` the fold reports — which is data about
@@ -24,6 +30,7 @@
  */
 import { useMemo, type CSSProperties } from 'react';
 import type { EntityDetail } from '@tm8/contract';
+import { Mermaid } from '../../kit/Mermaid';
 import { BlueprintCanvas } from '../../craft/BlueprintCanvas';
 import { blueprintView } from '../../craft/blueprint-model';
 
@@ -45,14 +52,37 @@ export function BlueprintBlock({
   const view = useMemo(() => blueprintView(detail.content), [detail.content]);
 
   /*
-   * ONLY THE TYPE THIS BLOCK CAN DRAW. `graphType` is content-discriminated
-   * (R3): `entity` is the orchestratable blueprint and the one with a
-   * placement. A `mermaid` row's body is its SOURCE, which the fields block
-   * below already shows honestly — drawing an empty canvas over it would
-   * claim the row has no nodes, when the truth is that this renderer does not
-   * speak its type. Returning null lets the block below tell the truth.
+   * EVERY TYPE SAYS WHAT IT IS. `graphType` is content-discriminated (R3):
+   * `entity` is the orchestratable blueprint and the one with a placement; a
+   * `mermaid` row's body is its SOURCE, drawn as the diagram it describes. An
+   * empty blueprint, or a type this block does not speak, is a sentence — never
+   * an empty canvas claiming the row has no nodes, and never a blank tab.
    */
-  if (view.graphType !== 'entity' || view.cards.length === 0) return null;
+  if (view.graphType === 'mermaid') {
+    return view.source ? (
+      <div className="pn-blueprint pn-blueprint--mermaid" data-testid="panel-blueprint-mermaid">
+        <Mermaid source={view.source} testId="panel-blueprint-mermaid-svg" />
+      </div>
+    ) : (
+      <p className="pn-blueprint__empty" data-testid="panel-blueprint-empty">
+        A mermaid graph with no source yet.
+      </p>
+    );
+  }
+  if (view.graphType !== 'entity') {
+    return (
+      <p className="pn-blueprint__empty" data-testid="panel-blueprint-empty">
+        {`A ${view.graphType} graph — this view cannot draw that type yet.`}
+      </p>
+    );
+  }
+  if (view.cards.length === 0) {
+    return (
+      <p className="pn-blueprint__empty" data-testid="panel-blueprint-empty">
+        An empty graph — nothing has been drafted on it yet.
+      </p>
+    );
+  }
 
   /*
    * THE BOX IS THE FOLD'S SHAPE, NOT A CONSTANT.

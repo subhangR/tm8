@@ -16,13 +16,13 @@
  * The transcript is READ, and reading it now reaches the whole session — but
  * the turns are still a file the agent wrote, which nothing here can change.
  *
- * SCROLLING IS THE FEATURE, not chrome around it. Two rules, both in
- * `useTranscriptScroll` below:
- *   - a prepend must not move the reader. Older turns arrive ABOVE what is on
- *     screen, so the distance from the bottom is held across them; without that
- *     every page-back yanks the reader upward and walking back is unusable.
- *   - a reader at the bottom is FOLLOWING and gets pinned to the newest turn;
- *     a reader who has scrolled up is READING and is never moved.
+ * SCROLLING IS CHAT'S, plus the one rule chat does not need. Following the
+ * end, never moving a reader who scrolled up, and the `↓ Jump to latest · N
+ * new` pill are Chat Home's own `useTranscriptFollow` + `TranscriptDock`, used
+ * unchanged. What only a transcript has is page-back: older turns arrive ABOVE
+ * what is on screen, so `useTranscriptScroll` below holds the distance from the
+ * bottom across a prepend — without that every page-back yanks the reader
+ * upward and walking back is unusable.
  *
  * READ-ONLY CONTENT, LIVE INPUT. The turns cannot be edited, deleted or
  * retracted — they are a file the agent wrote. The composer is not a
@@ -41,7 +41,7 @@
  * and `execution.transcript`'s own `available:false`-with-reason draws the
  * empty state — which names the actual cause instead of hiding the tab.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type UIEvent } from 'react';
 import type React from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { EntityId, SessionTranscriptEntry } from '@tm8/contract';
@@ -74,6 +74,8 @@ import {
   extractReadableFiles,
   spliceInto,
 } from '../rich-input';
+import { TranscriptDock } from '../chat-home/LiveTurnStatus';
+import { useTranscriptFollow } from '../chat-home/live-turn-status-follow';
 import { TranscriptTurns } from './TranscriptTurns';
 import { useSessionTranscript, type OlderRead } from './useSessionTranscript';
 import { transcriptUnavailableReason, type TranscriptState } from './transcript-model';
@@ -81,16 +83,6 @@ import './transcript.css';
 
 /** Matches the Debug surface's cadence — the same file, read the same way. */
 const POLL_MS = 5_000;
-
-/**
- * How close to the bottom still counts as FOLLOWING.
- *
- * Not zero: sub-pixel layout, a fractional device pixel ratio and a scrollbar's
- * own rounding all leave a live container a pixel or two short of its own
- * `scrollHeight`, and a zero tolerance reads that as "the reader scrolled up"
- * and stops following on a surface nobody touched.
- */
-const FOLLOW_SLACK_PX = 24;
 
 /** How far above the first turn the sentinel starts asking for the next window,
  *  so the turns are usually there by the time the reader arrives at them. */
@@ -133,21 +125,30 @@ export function TranscriptSurface({
     state, entries, hasOlder, olderCount, pagedBack, older, loadOlder, resumeLive, refresh,
   } = useSessionTranscript(seam, sessionId, { intervalMs: isLive ? POLL_MS : null });
 
-  const { scrollRef, sentinelRef, follow } = useTranscriptScroll({
-    entries, olderCount, hasOlder, loadOlder,
+  const { scrollRef, onScroll, sentinelRef, follow } = useTranscriptScroll({
+    sessionId, entries, olderCount, pagedBack, hasOlder, loadOlder,
     // A stalled walk disables the sentinel for the same reason it disables the
     // button: asking again asks for identical bytes.
     busy: older.phase === 'loading' || older.phase === 'stalled',
   });
 
   const backToNewest = useCallback(() => {
-    follow();
     resumeLive();
+    follow.jumpToLatest();
   }, [follow, resumeLive]);
 
   return (
     <div className="tr-surface" data-testid="transcript-surface">
-      <div className="tr-surface__scroll" ref={scrollRef}>
+      {/* `.tch-transcript` IS CHAT'S SCROLL BOX — the same centred 760px
+          reading column and padding as the chat thread. `.tr-surface__scroll`
+          only adds what a panel body needs for it to scroll at all. */}
+      <div
+        className="tch-transcript tr-surface__scroll"
+        ref={scrollRef}
+        onScroll={onScroll}
+        /* Not a tab stop — only where "Jump to latest" puts focus back. */
+        tabIndex={-1}
+      >
         <TranscriptBody
           state={state}
           entries={entries}
@@ -164,6 +165,16 @@ export function TranscriptSurface({
             />
           }
         />
+        {/* Chat's dock: with no turn in flight (a transcript has no turn
+            clock) it is exactly the `↓ Jump to latest` pill, shown while the
+            reader is away from the end. */}
+        <TranscriptDock
+          turn={null}
+          parts={null}
+          away={follow.away}
+          unseen={follow.unseen}
+          onJump={backToNewest}
+        />
       </div>
       {/* THE CARD IS THE FRAME. This region owns PLACEMENT and SPACING and
           nothing else — no border, no second background. `ComposerCard`
@@ -172,7 +183,7 @@ export function TranscriptSurface({
           (User report 2026-08-20, with the box circled: "there is one extra
           box outside the composer not needed". Same ruling as the artifact
           panel's "the panel is the frame".) */}
-      <div className="tr-surface__foot">
+      <div className="tch-composer-wrap tr-surface__foot">
         <TranscriptComposer seam={seam} sessionId={sessionId} liveness={liveness} />
       </div>
     </div>
@@ -180,84 +191,88 @@ export function TranscriptSurface({
 }
 
 /**
- * THE SCROLL RULES, in one place because they share a container and would
- * otherwise fight each other.
+ * THE SCROLL RULES — chat's follow, plus the transcript's prepend hold.
  *
- * `prevHeight`/`prevTop` are read from the PREVIOUS commit — this effect writes
- * them at the end of every render, so on the render that prepended a window
- * they still describe the list as it was before those turns existed. That is
- * what makes `scrollHeight - scrollTop` restorable at all; there is no
- * pre-commit hook in a function component to capture it any later.
+ * FOLLOWING IS `useTranscriptFollow`, unchanged: a reader at the end stays
+ * pinned there as turns arrive, a reader who scrolled up is never moved, and
+ * `away`/`unseen` drive the same Jump pill chat shows.
  *
- * `useLayoutEffect`, not `useEffect`: the correction has to land in the same
- * frame as the nodes it corrects for, or the reader sees the list jump and then
- * jump back.
+ * THE PREPEND HOLD is the one rule added here. `prevHeight`/`prevTop` are read
+ * from the PREVIOUS commit — the effect writes them at the end of every render,
+ * so on the render that prepended a window they still describe the list as it
+ * was before those turns existed. That is what makes `scrollHeight - scrollTop`
+ * restorable at all. A prepend only happens to a reader at the top, who is away
+ * from the end, so chat's follow leaves that commit alone and the two never
+ * write the same frame.
+ *
+ * `unseen` COUNTS THE TAIL, not the accumulation: older windows are not "new",
+ * and while the reader holds them the poll is paused, so the count is frozen at
+ * the tail it had when the walk began.
  *
  * NOTHING HERE IS PROVABLE IN VITEST. jsdom has no layout — every element
- * reports `scrollHeight: 0` — so these rules are verified in a real browser and
- * the unit tests below only pin the behaviour that survives without layout:
- * which reads are made, and what the boundary says.
+ * reports `scrollHeight: 0` — so these rules are verified in a real browser
+ * (`transcript-dev.html`) and the unit tests only pin the behaviour that
+ * survives without layout: which reads are made, and what the boundary says.
  */
 function useTranscriptScroll({
+  sessionId,
   entries,
   olderCount,
+  pagedBack,
   hasOlder,
   loadOlder,
   busy,
 }: {
+  sessionId: EntityId;
   entries: readonly SessionTranscriptEntry[];
   olderCount: number;
+  pagedBack: boolean;
   hasOlder: boolean;
   loadOlder: () => void;
   busy: boolean;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const elementRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  // A reader who has not scrolled yet is at the newest turn, which is where a
-  // transcript should open — so following is the starting posture, not a state
-  // that has to be earned by a scroll event.
-  const following = useRef(true);
+  const tailCount = useRef(entries.length);
+  if (!pagedBack) tailCount.current = entries.length;
+
+  const follow = useTranscriptFollow({
+    threadKey: sessionId,
+    content: entries,
+    tail: null,
+    itemCount: tailCount.current,
+    visible: true,
+  });
+
+  const followRef = follow.ref;
+  const scrollRef = useCallback((element: HTMLDivElement | null) => {
+    elementRef.current = element;
+    followRef(element);
+  }, [followRef]);
+
   const prevOlder = useRef(olderCount);
   const prevHeight = useRef(0);
   const prevTop = useRef(0);
 
-  const onScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    prevTop.current = el.scrollTop;
-    prevHeight.current = el.scrollHeight;
-    following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      el.removeEventListener('scroll', onScroll);
-    };
-  }, [onScroll]);
+  const followScroll = follow.onScroll;
+  const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    prevTop.current = event.currentTarget.scrollTop;
+    prevHeight.current = event.currentTarget.scrollHeight;
+    followScroll(event);
+  }, [followScroll]);
 
   useLayoutEffect(() => {
-    const el = scrollRef.current;
+    const el = elementRef.current;
     if (!el) return;
     if (olderCount > prevOlder.current) {
       // A PREPEND. Hold the distance from the bottom: everything that was on
       // screen stays exactly where the reader left it, and the new turns fill
       // the space above.
       el.scrollTop = prevTop.current + (el.scrollHeight - prevHeight.current);
-    } else if (following.current) {
-      el.scrollTop = el.scrollHeight;
     }
     prevOlder.current = olderCount;
     prevHeight.current = el.scrollHeight;
     prevTop.current = el.scrollTop;
-    // RE-DERIVE `following` FROM THE ELEMENT, not only from scroll events.
-    // The flag is a cache of a geometric fact, and a cache that only a scroll
-    // event can invalidate goes stale the moment the position moves without
-    // one — including the moves this effect just made. Reading it back here
-    // costs nothing and keeps the next render's decision honest.
-    following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
   }, [entries, olderCount]);
 
   /*
@@ -276,7 +291,7 @@ function useTranscriptScroll({
   }, [loadOlder]);
 
   useEffect(() => {
-    const root = scrollRef.current;
+    const root = elementRef.current;
     const target = sentinelRef.current;
     if (!root || !target || !hasOlder || busy) return;
     if (typeof IntersectionObserver === 'undefined') return;
@@ -292,12 +307,7 @@ function useTranscriptScroll({
     };
   }, [hasOlder, busy]);
 
-  /** Go back to following the newest turn — what a reader means by "live". */
-  const follow = useCallback(() => {
-    following.current = true;
-  }, []);
-
-  return { scrollRef, sentinelRef, follow };
+  return { scrollRef, onScroll, sentinelRef, follow };
 }
 
 /**

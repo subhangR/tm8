@@ -93,7 +93,7 @@ import { HelpScreen } from '../help';
 import { NewSessionScreen } from '../new-session';
 import { createKeyboardController, hintFor, NEW_KINDS, type KeyboardController, type KeyCommand, type Platform } from '../keyboard';
 import { ShortcutsOverlay } from '../shell/ShortcutsOverlay';
-import { allKinds, CHANNEL_KIND, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
+import { allKinds, CHANNEL_KIND, CRAFT_KIND, KindIcon, VIEW_ART, landingOfRoute, navViewOfName, routeViewOf } from '../domain';
 import type { Landing } from '../domain/nav-targets';
 import type { NavView } from '../routes';
 import { emptyPanels, workRedirectOf, type WorkRedirect } from '../routes';
@@ -2369,6 +2369,21 @@ export function GateApp(props: GateAppProps = {}) {
     navStore.getState().hydrate({ spaceId: state.spaceId, target: to, panels: emptyPanels() });
   }, [desktopRedirect, data.spaceId, viewerMemberId]);
 
+  /* A CRAFT OPENS CRAFT MODE (task 01a14c16): every other kind opens as a
+     Work tab, and the one kind Work leaves out has its own screen, so an
+     `e/{id}` naming a craft — a link, a pasted URL, a Work tab's drill — lands
+     there rather than on the legacy entity shell. A replace, like the Work
+     redirect above, so Back does not bounce. */
+  const craftEntityId =
+    threeModes && navView.view === 'entity' && data.detailOf(navView.entityId)?.kind === CRAFT_KIND
+      ? navView.entityId
+      : null;
+  useEffect(() => {
+    if (!craftEntityId) return;
+    const state = navStore.getState();
+    state.hydrate({ spaceId: state.spaceId, target: { view: 'craft', craftId: craftEntityId }, panels: emptyPanels() });
+  }, [craftEntityId]);
+
   /* D31 audit bug: Work was never remembered, so a reload or a space switch
      never came back to it. Every way into Work passes through this route. */
   useEffect(() => {
@@ -2995,11 +3010,12 @@ export function GateApp(props: GateAppProps = {}) {
             <FramedGraphScreen
               data={data}
               /* The peek aside's door into Work: the entity opens as a tab. */
-              onOpenInWork={(id) =>
-                isWorkspaceKind(data.detailOf(id)?.kind)
-                  ? navStore.getState().navigate({ view: 'tabs', tab: id })
-                  : nav.push(id)
-              }
+              onOpenInWork={(id) => {
+                const kind = data.detailOf(id)?.kind;
+                if (isWorkspaceKind(kind)) navStore.getState().navigate({ view: 'tabs', tab: id });
+                else if (kind === CRAFT_KIND) openCraft(id);
+                else nav.push(id);
+              }}
               serverBaseUrl={activeServer.routeBaseUrl}
               reasons={reasons}
               nodes={data.graph.nodes}
@@ -3607,6 +3623,11 @@ export function GateApp(props: GateAppProps = {}) {
               } else if (viewerMemberId) {
                 inWorkspace = openInWorkspace(viewerMemberId, data.spaceId, kind, id);
               }
+            }
+            /* A craft opens Craft mode, its own screen (task 01a14c16). */
+            if (!inWorkspace && kind === CRAFT_KIND && threeModes) {
+              openCraft(id as EntityId);
+              inWorkspace = true;
             }
             if (!inWorkspace) nav.push?.(id as EntityId);
             setPaletteOpen(false);

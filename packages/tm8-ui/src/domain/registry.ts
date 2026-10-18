@@ -1806,7 +1806,19 @@ const ROWS: readonly KindConfig[] = [
      */
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'blueprint' }, { block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK],
+      /*
+       * THE TAB IS THE GRAPH (task 01a14c16, owner ruling 2026-10-18): only
+       * the canvas, with its own find, zoom, minimap and legend — the way a
+       * drawing's tab is the drawing. A `frame` takes the attachment strip
+       * and footer off, `titleBar: false` the title row. Nothing is stranded:
+       * GRAPH held only `graphType`, which the block now speaks for (a mermaid
+       * row draws its source); COLLECTIONS' `contains` edges are listed under
+       * Links in the side column, as Messages and Chat are; Edit, Run and the
+       * ⋯ menu ride the action strip.
+       */
+      composition: 'frame',
+      titleBar: false,
+      blocks: [{ block: 'blueprint' }],
       /* §15.1: declared fields must be reachable — edit is the door. */
       primaries: ['edit'],
     },
