@@ -29,16 +29,54 @@ export interface RouterTarget {
   historyDepth?(): number;
 }
 
+/**
+ * THE OVERLAY MARKER (CONTRACT §5, task t-layers, 2026-10-18).
+ *
+ * An open drawer or sheet pushes ONE same-URL history entry whose state carries
+ * this key (`stores/overlayHistory.ts`), so Android Back dismisses the layer
+ * instead of leaving the screen. It is not a route: the address does not
+ * change, `hashchange` never fires for it, and the codec never sees it.
+ *
+ * The router has to know about it in exactly two places, both below:
+ *
+ *   - A PUSH made while the marker is the current entry REPLACES it. Tapping a
+ *     drawer destination navigates while the drawer's marker is on top; a
+ *     plain push would bury the marker, and the next Back would land on a
+ *     same-URL entry that does nothing. Replacing gives `[chat, destination]`,
+ *     which is the history a reader expects.
+ *   - A REPLACE (a settle) keeps the marker's state, so a settle that lands
+ *     while a sheet is open does not silently strip the entry Back is about to
+ *     dismiss.
+ */
+export const OVERLAY_STATE_KEY = 'tm8Overlay';
+
+/** The overlay id a history state names, or null for an ordinary entry. */
+export function overlayIdOf(state: unknown): string | null {
+  if (!state || typeof state !== 'object') return null;
+  const id = (state as Record<string, unknown>)[OVERLAY_STATE_KEY];
+  return typeof id === 'string' ? id : null;
+}
+
 export function createBrowserTarget(win: Window = window): RouterTarget {
   return {
     getHash: () => win.location.hash || '#/',
     setHash: (hash, opts = {}) => {
+      const onMarker = overlayIdOf(win.history.state) !== null;
       if (opts.replace) {
         // replaceState keeps the settle out of the back stack (LLD §6 history
         // discipline: normalization never creates a history entry).
-        win.history.replaceState(null, '', hash);
+        win.history.replaceState(onMarker ? win.history.state : null, '', hash);
       } else if (win.location.hash !== hash) {
-        win.location.hash = hash;
+        if (onMarker) {
+          // The push consumes the overlay marker (see OVERLAY_STATE_KEY).
+          // replaceState fires no hashchange, so send the one a push would
+          // have, for the listeners that are not this router.
+          const oldURL = win.location.href;
+          win.history.replaceState(null, '', hash);
+          win.dispatchEvent(new HashChangeEvent('hashchange', { oldURL, newURL: win.location.href }));
+        } else {
+          win.location.hash = hash;
+        }
       }
     },
     subscribe: (cb) => {

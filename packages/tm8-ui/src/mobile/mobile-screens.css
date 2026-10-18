@@ -919,6 +919,18 @@
   border-bottom: 1px solid var(--pn-line);
 }
 
+/* DRAG TO DISMISS (audit D1). The head is the handle; the body keeps its own
+   scroll. `touch-action: none` hands the head's vertical drag to
+   `useDragDismiss` instead of to the page. */
+.msheet__head {
+  touch-action: none;
+}
+
+.msheet__panel[data-dragging] {
+  animation: none;
+  user-select: none;
+}
+
 .msheet__grip {
   position: absolute;
   top: 7px;

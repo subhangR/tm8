@@ -36,5 +36,5 @@ export type { WorkRedirect } from './codec';
 export { decodeQ, encodeQ } from './q';
 export { redirect } from './redirects';
 export type { DeferredFeature, RedirectOutcome } from './redirects';
-export { createBrowserTarget, createMemoryTarget } from './transport';
+export { OVERLAY_STATE_KEY, createBrowserTarget, createMemoryTarget, overlayIdOf } from './transport';
 export type { MemoryTarget, RouterTarget } from './transport';
