@@ -1524,6 +1524,55 @@
   padding-block: 0;
   gap: var(--pn-space-1);
 }
+/* The header's ‹ and the Messages door ride the immersive row (the frame
+   header is hidden above). At 360 the row holds ☰ · ‹ · three tabs · door, so
+   it stops wrapping and the tabs give up their 76px floor and wide tracking
+   rather than pushing the door onto a second row the terminal would pay for. */
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] > .pn-surface-switch {
+  flex-wrap: nowrap;
+  padding-inline: 4px;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .pn-surface-switch__tabs {
+  flex-wrap: nowrap;
+  gap: 2px;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .pn-surface-switch__tab {
+  min-width: 0;
+  padding-inline: 7px;
+  letter-spacing: 0.02em;
+}
+.cv2-root[data-shell='mobile'] .pn-session-up,
+.cv2-root[data-shell='mobile'] .pn-session-messages {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  background: transparent;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root[data-shell='mobile'] .pn-session-messages {
+  margin-inline-start: auto;
+}
+.cv2-root[data-shell='mobile'] .pn-session-messages__n {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.cv2-root[data-shell='mobile'] :is(.pn-session-up, .pn-session-messages):focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.cv2-root[data-shell='mobile'] :is(.pn-session-up, .pn-session-messages):active {
+  background: var(--pn-hover);
+}
 .cv2-root[data-shell='mobile'] .pn-session-details-toggle {
   flex: none;
   min-width: 44px;
@@ -1539,6 +1588,20 @@
 .cv2-root[data-shell='mobile'] .pn-session-details-toggle:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: -2px;
+}
+
+/* THE ACTIONS BUTTON CLEARS THE SESSION COMPOSER. On Transcript the composer
+   is the last thing on the page, and the entity FAB's resting spot (12px off
+   the bottom-right) is its Send button. Lift the FAB one dock higher: the dock
+   measures 88px at rest in the immersive row and 104px with details shown.
+   While the field is being edited the FAB steps aside entirely, because the
+   field may grow past that and actions are not what a typing thumb wants. The
+   Terminal surface already carries the FAB in its key row. */
+.cv2-root[data-shell='mobile'] .mobile-frame:has(.pn-work-session-content[data-surface='transcript'] .tr-surface__foot) .efab {
+  --efab-base: calc(var(--mobile-safe-bottom, 0px) + 104px + var(--pn-space-2));
+}
+.cv2-root[data-shell='mobile'] .mobile-frame:has(.pn-work-session-content .tr-surface__foot:focus-within) .efab {
+  display: none;
 }
 
 /* The session input is a compact command row until it is being edited.

@@ -32,10 +32,10 @@
  */
 import { AttentionHeaderButton, AttentionSheet } from '../attention/AttentionSheet';
 import { useAttentionOptional } from '../attention';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ActorSummary, EntityId, EntityKind, SpaceId } from '@tm8/contract';
-import { MobileFrame, MobileSurfaceProvider } from '../mobile';
+import { MobileFrame, MobileSurfaceProvider, type PhoneUp } from '../mobile';
 import { MobileAccountSheet } from '../mobile/MobileAccountSheet';
 import '../mobile/mobile-chrome.css';
 import '../mobile/mobile-screens.css';
@@ -719,6 +719,29 @@ export function MobileShell(props: MobileShellProps) {
      top edge under a floating ☰; New chat is in the drawer, and the account
      is the drawer's foot row. Every other screen keeps the header, where the
      title is the only thing that names the screen. */
+  const upLabel = chevron?.label ?? `Up to ${upTarget ? getKind(upTarget.ref).labelPlural : title}`;
+  const runUp = () => {
+    if (chevron) {
+      chevron.run();
+      return;
+    }
+    if (screenStack.selected) {
+      screenStack.pop();
+      return;
+    }
+    if (upTarget) props.onStepUp?.(upTarget);
+  };
+  /*
+   * THE SAME ‹ FOR A SCREEN THAT HIDES THIS HEADER (the immersive session
+   * page). The press reads the latest closure through a ref, so the context
+   * value changes only when the label or the presence does, not every render.
+   */
+  const runUpRef = useRef(runUp);
+  runUpRef.current = runUp;
+  const upForScreen = useMemo<PhoneUp | null>(
+    () => (showUp && !onChatScreen ? { label: upLabel, run: () => runUpRef.current() } : null),
+    [showUp, onChatScreen, upLabel],
+  );
   const header = onChatScreen ? null : (
     <div className="mobile-header">
       {menuButton}
@@ -734,19 +757,9 @@ export function MobileShell(props: MobileShellProps) {
           /* The label names WHERE UP GOES, which for an entity is its
              collection and for an open entity on a kind screen is that screen.
              "Up to Tasks" is a promise the press then keeps. */
-          aria-label={chevron?.label ?? `Up to ${upTarget ? getKind(upTarget.ref).labelPlural : title}`}
+          aria-label={upLabel}
           data-testid="mobile-header-back"
-          onClick={() => {
-            if (chevron) {
-              chevron.run();
-              return;
-            }
-            if (screenStack.selected) {
-              screenStack.pop();
-              return;
-            }
-            if (upTarget) props.onStepUp?.(upTarget);
-          }}
+          onClick={runUp}
         >
           <VectorIcon paths={CHEVRON_UP_ART} size={20} strokeWidth={1.6} />
         </button>
@@ -830,7 +843,7 @@ export function MobileShell(props: MobileShellProps) {
           sits outside — a boundary that took the sheet host down with the
           screen would leave the next screen unable to open one at all. */}
       <CatchBoundary label="mobile-view">
-        <MobileSurfaceProvider sheetHost={sheetHost}>
+        <MobileSurfaceProvider sheetHost={sheetHost} up={upForScreen}>
           {screenFor(props, {
             soloConversation: true,
             routeThreadId: threadId,

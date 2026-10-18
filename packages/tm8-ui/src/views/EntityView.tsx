@@ -71,7 +71,7 @@ import {
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { navStore } from '../stores/navStore';
-import { EntityFab, MobileSheet, useMobileSurface } from '../mobile';
+import { EntityFab, MessagesDoorProvider, MobileSheet, useMobileSurface, type MessagesDoor } from '../mobile';
 import { PhoneEntityList, openedFromList } from '../mobile-lists';
 import { MESSAGES_ON_PAGE, PhoneEntityPage, PhoneMessages, hasPhoneScreen } from '../mobile-pages';
 import type { SortKey } from '../domain';
@@ -834,6 +834,15 @@ export function EntityView(props: EntityViewProps) {
         onViewAll={viewAllMessages}
       />
     ) : undefined;
+  /* The same reading as a DOOR, for the session page: its terminal owns the
+     screen down to the composer dock, so the section above would land under
+     the dock. The terminal archetype skips the section and draws this in its
+     surface row (`WorkSessionContent`). */
+  const messagesCount = phoneMessages && detail ? countMessages(detail, messages) : null;
+  const messagesDoor = useMemo<MessagesDoor | null>(
+    () => (messagesCount === null ? null : { count: messagesCount, open: () => setAux({ sort: 'tab', tab: 'discussion' }) }),
+    [messagesCount],
+  );
   const genericPage =
     oneSurface && selectedId && detail && !hasPhoneScreen(detail.kind) ? (
       <PhoneEntityPage
@@ -1420,7 +1429,7 @@ export function EntityView(props: EntityViewProps) {
               combined into one row. Deliberately NOT filtered to `kind` —
               attention lives on entities, so a doc waiting on you must show
               while the Tasks list is open. */}
-          {detailPanel ?? (attentionApi ? (
+          {detailPanel ? <MessagesDoorProvider value={messagesDoor}>{detailPanel}</MessagesDoorProvider> : (attentionApi ? (
             /* Attention v2 (chapter 4): the SAME list as the top-bar popover.
                A host rendered without the shell's store shows an empty column. */
             <div className="att-centre" data-testid="attention-inbox">
