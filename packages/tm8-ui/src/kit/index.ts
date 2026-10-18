@@ -54,7 +54,8 @@ export {
 export { Timestamp, type TimestampProps } from './Timestamp';
 export {
   CLOCK_TICK_MS, RELATIVE_WINDOW_MS,
-  absTime, clockTime, dayLabel, dayStart, elapsed, parseInstant, relTime, shortDate, useNow, weekdayDate,
+  absTime, clockTime, dayLabel, dayStart, elapsed, parseInstant, relTime,
+  listTime, shortDate, useNow, weekdayDate,
 } from './time';
 export {
   PanelResizer,

@@ -365,37 +365,43 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
   });
 });
 
-describe('the FAB — a create verb on the list, and an ABSENCE where there is none', () => {
+describe('the phone list’s ＋ — a create verb on the list, and an ABSENCE where there is none', () => {
+  /*
+   * The floating create button became the list header's ＋ (t-lists, phone
+   * entity-lists mockup 01a14cc0). The owner's answers B and C still hold and
+   * are what these pin; D (the FAB's reserved room) has no subject left,
+   * because the ＋ sits in the header, not over the last row.
+   */
   const entityView = read('../views/EntityView.tsx');
-  const screensCss = screens;
+  const phoneList = read('../mobile-lists/PhoneEntityList.tsx');
 
-  it('is the SAME verb the header ＋ performs, not a second create path', () => {
+  it('is the SAME verb the desktop header ＋ performs, not a second create path', () => {
     // Owner answer B. `createFlow` is the one `useNewTask` handle, with the one
-    // `onCreated` that opens the new entity with its title focused (D3). Two
-    // create paths is two chances to make differently-shaped entities.
-    expect(entityView).toMatch(/className="ev-fab"[\s\S]{0,400}createFlow\.create\(\)/);
+    // `onCreated` that opens the new entity with its title focused (D3).
+    expect(entityView).toMatch(/<PhoneEntityList[\s\S]{0,1400}onCreate: \(\) => void createFlow\.create\(\)/);
+    expect(entityView).not.toMatch(/className="ev-fab"/);
   });
 
   it('is ABSENT, not inert, for a kind with no wired create', () => {
-    // Owner answer C. Commits, worktrees and PRs are observed rather than
-    // authored. The gate is registry data and it is DELIBERATELY the same
-    // expression `createSlot` is gated on, so the FAB and the header ＋ cannot
-    // disagree about whether this kind can be born.
-    expect(entityView).toMatch(/oneSurface && !selectedId && config\.list\.quickCreate \?/);
+    // Owner answer C. The gate is the registry's `quickCreate`, the same
+    // expression `createSlot` is gated on, and the list draws no ＋ without it.
+    expect(entityView).toMatch(/config\.list\.quickCreate \? \{ onCreate:/);
+    expect(phoneList).toMatch(/\{props\.onCreate \? \(/);
   });
 
   it('never renders on a desktop, by construction rather than by a selector', () => {
     // `oneSurface` is false wherever there is no `MobileSurfaceProvider`, which
-    // is every desktop mount — so the element is not in the desktop DOM at all,
-    // and the styling is additionally scoped to the phone shell.
-    expect(screensCss).toMatch(/\.cv2-root\[data-shell='mobile'\] \.ev-fab/);
-    expect(screensCss).not.toMatch(/^\.ev-fab/m);
+    // is every desktop mount, and the desktop list section is drawn only then.
+    expect(entityView).toMatch(/\{oneSurface && !selectedId \? \(\s*<PhoneEntityList/);
+    expect(entityView).toMatch(/\{oneSurface \? null : \(\s*<section className="ev-list"/);
   });
 
   it('leaves the list room, so the last row is never trapped underneath', () => {
-    // Owner answer D. A pinned control over a scrolling list eats the final row
-    // unless the list ends above it — and NO metric in this program can see
-    // that: the row is present, laid out and measurable, it is simply covered.
+    // Owner answer D, kept as a guard: the reserve still exists for any phone
+    // list that mounts the desktop panel beside a floating control. A pinned
+    // control over a scrolling list eats the final row unless the list ends
+    // above it, and NO metric in this program can see that.
+    const screensCss = screens;
     expect(screensCss).toMatch(/\.lp__body\s*\{[^}]*padding-bottom:\s*var\(--mobile-fab-reserve\)/);
     expect(frame).toMatch(/--mobile-fab-reserve:/);
   });
@@ -477,8 +483,10 @@ describe('DEF-030 — the list chrome is a BUDGET, and it is spent in three band
     expect(listPanel).toMatch(/const narrowing = \(/);
     expect(listPanel).toMatch(/<MobileSheet title=\{title\}/);
     expect(entityView).toMatch(/picker=\{picker\}[\s\S]{0,80}onPicker=\{setPicker\}/);
-    expect(screens).toMatch(/\.cv2-root\[data-shell='mobile'\] \.ev-narrow/);
-    expect(screens).not.toMatch(/^\.ev-narrow/m);
+    /* On the phone shell the narrowing is the phone list's ⚙ sheet (t-lists):
+       the floating cluster is gone, and the sheet is the frame's MobileSheet. */
+    expect(entityView).not.toMatch(/className="ev-narrow"/);
+    expect(read('../mobile-lists/PhoneEntityList.tsx')).toMatch(/<MobileSheet title="Sort & filter"/);
   });
 
   it('clears the row verbs off the STANDARD tile too, not just the task tile', () => {

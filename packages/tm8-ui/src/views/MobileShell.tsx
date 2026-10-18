@@ -1035,6 +1035,16 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
         {...(activeTarget.mode !== undefined ? { mode: activeTarget.mode } : {})}
         {...(activeTarget.groupBy !== undefined ? { groupBy: activeTarget.groupBy } : {})}
         onGroupBy={(g) => props.navigateTo({ ...activeTarget, groupBy: g })}
+        /* THE PHONE LIST'S SORT AND NARROWING ARE ROUTE STATE (t-lists), the
+           same as `groupBy` above: a sorted, filtered list survives a reload
+           and travels with a shared link. Defaults are left out of the
+           address, so an untouched list keeps its plain `k/` URL. */
+        {...(activeTarget.sortBy !== undefined ? { sortBy: activeTarget.sortBy } : {})}
+        {...(activeTarget.pick !== undefined ? { pick: activeTarget.pick } : {})}
+        onListPick={(next) => {
+          const { sortBy: _sort, pick: _pick, ...rest } = activeTarget;
+          props.navigateTo({ ...rest, ...next });
+        }}
         /*
          * DEF-004 — THE PHONE'S DOOR INTO LAUNCH, and it is THIS arm because
          * there is nowhere else it could be.

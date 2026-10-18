@@ -82,8 +82,10 @@ function desktop() {
  * correct and is how the first draft of this file failed.
  */
 async function openFirstTask(view: ReturnType<typeof phone>) {
-  const tile = await waitFor(() => view.getAllByTestId('list-tile')[0] as HTMLElement);
-  fireEvent.click(tile.querySelector('.pn-tt__title') as HTMLElement);
+  /* The phone draws its own list (t-lists): one row button per entity, and
+     the whole row is the navigation — it carries no other control. */
+  const row = await waitFor(() => view.getAllByTestId('phone-list-row')[0] as HTMLElement);
+  fireEvent.click(row);
   return waitFor(() => view.getByTestId('entity-detail-panel'));
 }
 
@@ -99,19 +101,19 @@ async function openFirstTask(view: ReturnType<typeof phone>) {
 beforeEach(() => screenStackStore.getState().clearAll());
 
 describe('the phone entity screen mounts the action menu the tab row became', () => {
-  it('the list screen has the CREATE fab and no entity menu; opening an entity swaps them', async () => {
+  it('the list screen has the CREATE ＋ and no entity menu; opening an entity swaps them', async () => {
     const view = phone();
 
     /* The two floating controls are gated on opposite halves of one condition,
        so they can never be on screen together — the list and the entity are two
        different screens on this shell. */
-    await waitFor(() => expect(view.getByTestId('entity-view-fab')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('phone-list-new')).toBeTruthy());
     expect(view.queryByTestId('entity-fab')).toBeNull();
 
     await openFirstTask(view);
 
     expect(view.getByTestId('entity-fab')).toBeTruthy();
-    expect(view.queryByTestId('entity-view-fab')).toBeNull();
+    expect(view.queryByTestId('phone-list-new')).toBeNull();
   });
 
   it('the desktop screen mounts NEITHER — the whole branch is unreachable there', async () => {

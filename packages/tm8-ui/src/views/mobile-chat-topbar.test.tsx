@@ -89,7 +89,7 @@ describe('phone chat screen: no top bar (t-topbar)', () => {
 
   it('every other screen keeps the header, with the ☰ in it', async () => {
     const view = render(<PhoneHost target={TASKS} />);
-    await waitFor(() => expect(view.getAllByTestId('list-tile').length).toBeGreaterThan(0), { timeout: SLOW_GATE_MS });
+    await waitFor(() => expect(view.getAllByTestId('phone-list-row').length).toBeGreaterThan(0), { timeout: SLOW_GATE_MS });
     const header = view.container.querySelector('.mobile-frame__header');
     expect(header).not.toBeNull();
     expect(view.container.querySelector('.mobile-frame')!.hasAttribute('data-headless')).toBe(false);
