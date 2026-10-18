@@ -316,6 +316,13 @@ export interface EntityDetailPanelProps {
    * like a list whose host wired none.
    */
   linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
+  /**
+   * THE PHONE PAGE'S MESSAGES SECTION (CONTRACT §5 ruling 8): drawn below the
+   * body and above LINKED. A subtree body places it before its LINKED section;
+   * every other archetype draws it after the body. Absent everywhere but the
+   * phone's task, doc and session pages.
+   */
+  beforeLinked?: ReactNode;
 
   /** work_session inputs — ignored by every other archetype. */
   handoffs?: readonly HandoffView[];
@@ -1820,6 +1827,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     railTailSlot={railTail}
                   />
                   {bodyConsumesSlot ? null : attachmentSlot}
+                  {bodyConsumesSlot ? null : props.beforeLinked}
                 </>
               );
             })()}
@@ -2328,6 +2336,7 @@ function PanelBody(
         onAttached={props.onAttachmentUploaded}
         attachmentSlot={props.attachmentSlot}
         stripEdgeIds={props.stripEdgeIds}
+        beforeLinked={props.beforeLinked}
         descriptionSlot={
           twoColumn ? (
             /* THE PAGE'S PROSE RIDES THE DOC SAVE FLOW (PR2 of task 01a1163a):

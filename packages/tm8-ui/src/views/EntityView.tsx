@@ -73,6 +73,7 @@ import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { navStore } from '../stores/navStore';
 import { EntityFab, MobileSheet, useMobileSurface } from '../mobile';
 import { PhoneEntityList, openedFromList } from '../mobile-lists';
+import { MESSAGES_ON_PAGE, PhoneEntityPage, PhoneMessages, hasPhoneScreen } from '../mobile-pages';
 import type { SortKey } from '../domain';
 import type { ListPick } from '../routes/types';
 import type { Notice } from '../shell/notices';
@@ -175,6 +176,11 @@ export interface EntityViewProps {
   sortBy?: SortKey;
   pick?: ListPick;
   onListPick?(next: { sortBy?: SortKey; pick?: ListPick }): void;
+  /**
+   * PUSH AN ENTITY'S PAGE on the phone (`openEntityOnPhone`) — the generic
+   * page's Linked rows use it. Phone only; the desktop never passes it.
+   */
+  onOpenEntityPage?(id: EntityId, kind: string): void;
 }
 
 /**
@@ -787,8 +793,36 @@ export function EntityView(props: EntityViewProps) {
   ]);
   const chatCounts = useChatCounts(data.seam, selectedId);
 
-  const detailPanel = selectedId ? (
+  /*
+   * THE PHONE PAGE (CONTRACT §5 rulings 7-8). A kind with a v1 phone screen
+   * keeps the panel, and task, doc and session pages gain the Messages section
+   * below the body and above Linked. Every other kind is the generic entity
+   * page, whose Linked rows push their own pages.
+   */
+  const viewAllMessages = () => setAux({ sort: 'tab', tab: 'discussion' });
+  const phoneMessages =
+    oneSurface && selectedId && detail && MESSAGES_ON_PAGE.has(detail.kind) ? (
+      <PhoneMessages
+        className="pp-in-body"
+        messages={messages}
+        total={countMessages(detail, messages)}
+        onViewAll={viewAllMessages}
+      />
+    ) : undefined;
+  const genericPage =
+    oneSurface && selectedId && detail && !hasPhoneScreen(detail.kind) ? (
+      <PhoneEntityPage
+        detail={detail}
+        connections={data.connectionsOf(selectedId)}
+        messages={messages}
+        onOpenEntity={(id, entityKind) => props.onOpenEntityPage?.(id as EntityId, entityKind)}
+        onViewAllMessages={viewAllMessages}
+      />
+    ) : null;
+
+  const detailPanel = genericPage ?? (selectedId ? (
     <EntityDetailPanel
+      {...(phoneMessages ? { beforeLinked: phoneMessages } : {})}
       detail={detail ?? null}
       serverBaseUrl={props.serverBaseUrl}
       loading={!detail}
@@ -939,7 +973,7 @@ export function EntityView(props: EntityViewProps) {
           }
         : {})}
     />
-  ) : null;
+  ) : null);
 
   /*
    * The aux column's CONTAINER, chosen by arrangement.

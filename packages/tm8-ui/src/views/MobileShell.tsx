@@ -32,7 +32,7 @@
  */
 import { AttentionHeaderButton, AttentionSheet } from '../attention/AttentionSheet';
 import { useAttentionOptional } from '../attention';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ActorSummary, EntityId, EntityKind, SpaceId } from '@tm8/contract';
 import { MobileFrame, MobileSurfaceProvider } from '../mobile';
@@ -54,7 +54,11 @@ import { EntityView } from './EntityView';
 import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
 import { ChannelView } from './ChannelView';
 import { InboxView } from './InboxView';
-import { openEntityOnPhone } from './openEntityOnPhone';
+import { openEntityOnPhone, type NavigateOptions } from './openEntityOnPhone';
+import { PhoneEntityPage } from '../mobile-pages';
+import { usePagePlace } from '../mobile/usePagePlace';
+import { useEdgeSwipe } from '../mobile/useEdgeSwipe';
+import { backStepOf, phoneHistory, resetToChatFloor, topEntry, usePhoneHistory } from '../stores/phoneHistory';
 import { ChatHomeSurface } from '../chat-home';
 import { HelpScreen } from '../help';
 import type { ChatThreadSummary } from '../chat-home/types';
@@ -71,7 +75,8 @@ export interface MobileShellProps {
   data: GateData & { pull?: (id: string) => void };
   spaceId: SpaceId;
   activeTarget: MenuTarget | null;
-  navigateTo(target: MenuTarget): void;
+  /** `opts.open` shows an entity ON the target as one address — see `openEntityOnPhone`. */
+  navigateTo(target: MenuTarget, opts?: NavigateOptions): void;
   openEntity: EntityId | null;
   serverBaseUrl?: string;
   reasons: DetailReasons;
@@ -115,6 +120,16 @@ export interface MobileShellProps {
    * the entity chevron is not drawn, per the honest-absence rule.
    */
   onStepUp?: (target: MenuTarget) => void;
+  /**
+   * BACK, through the host's router (`history.back()`): the ‹ when the entry
+   * below is one this tab wrote (CONTRACT §5 rulings 1 and 5).
+   */
+  onBack?: () => void;
+  /**
+   * REPLACE the page with `target`: the ‹ on a cold link (Up to the kind's
+   * list, ruling 4) or over the drawer's Chat floor (ruling 3).
+   */
+  onReplace?: (target: MenuTarget) => void;
   /** Theme, controlled by the host so the phone writes the same state the root
       stamp reads — a second `useTheme()` here would be a second truth. */
   theme?: Theme;
@@ -229,6 +244,10 @@ const MENU_ART: KindArt = ['M2.5 4.25h11', 'M2.5 8h11', 'M2.5 11.75h7'];
  * the card explains which arrangement has no phone layout, and naming the thing
  * exactly is what makes that honest rather than vague.
  */
+function onChatScreenOf(activeTarget: MenuTarget | null): boolean {
+  return activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
+}
+
 function titleOf(activeTarget: MenuTarget | null, nameOfEntity?: (target: { ref: string; kind: string }) => string | null): string {
   if (!activeTarget) return 'Not found';
 
@@ -409,7 +428,33 @@ export function MobileShell(props: MobileShellProps) {
     activeTarget?.type === 'entity' && slugOfKind(activeTarget.kind)
       ? { type: 'kind', ref: activeTarget.kind }
       : null;
-  const showUp = Boolean(screenStack.selected) || Boolean(upTarget && props.onStepUp);
+  /*
+   * WHAT ‹ DOES (CONTRACT §5 rulings 1-6, owner 2026-10-18), read off the
+   * phone's projection of the one history (`stores/phoneHistory.ts`):
+   *
+   *   - an entry of ours is directly below → BACK, `history.back()` through the
+   *     host. The page below returns with its scroll and draft, and the system
+   *     Back and this button can never disagree, because they are one action.
+   *   - the drawer's Chat floor is below (ruling 3) → replace with Chat.
+   *   - nothing of ours below (a cold link, ruling 4) and an entity is open →
+   *     UP, which REPLACES the page with its kind's list.
+   *
+   * A host that wires neither verb (fixtures, older harnesses) keeps the
+   * original stack pop / step-up below, unchanged.
+   */
+  const backStep = usePhoneHistory(backStepOf);
+  const upList: MenuTarget | null =
+    activeTarget?.type === 'kind' && screenStack.selected ? { type: 'kind', ref: activeTarget.ref } : upTarget;
+  const chevron: { label: string; run: () => void } | null =
+    backStep === 'back' && props.onBack
+      ? { label: 'Back', run: props.onBack }
+      : backStep === 'chat' && props.onReplace && !onChatScreenOf(activeTarget)
+        ? { label: 'Back to Chat', run: () => props.onReplace?.({ type: 'view', ref: 'dashboard' }) }
+        : upList && props.onReplace
+          ? { label: `Up to ${getKind(upList.ref).labelPlural}`, run: () => props.onReplace?.(upList) }
+          : null;
+  const showUp = chevron !== null || Boolean(screenStack.selected) || Boolean(upTarget && props.onStepUp);
+  const goBack = chevron?.run ?? null;
   /*
    * DEF-034's lookup, SUMMARY FIRST and detail as the fallback — the same order
    * `capabilitiesOf` documents and for the same reason. A channel reached from
@@ -442,6 +487,51 @@ export function MobileShell(props: MobileShellProps) {
    * always-present full-frame overlay costs nothing.
    */
   const [sheetHost, setSheetHost] = useState<HTMLDivElement | null>(null);
+
+  /*
+   * ── PUSH AND POP FEEL LIKE PUSH AND POP (t-nav) ─────────────────────────
+   *
+   * The content region is the frame's, found from the sheet host the frame
+   * already gives this shell (both live in one `.mobile-frame`). Three things
+   * hang off it, all keyed to the TOP ENTRY of the phone's stack:
+   *
+   *   - the slide: a push comes in from the right over 280ms, a pop returns
+   *     from a 28% parallax (the entity-lists mockup's numbers). List↔entity
+   *     on one kind screen is left to the phone list's own slide (t-lists),
+   *     so nothing slides twice. Reduced motion: no travel.
+   *   - each entry's scroll and composer draft (ruling 5, `usePagePlace`).
+   *   - the iOS-standalone edge swipe (ruling 2, `useEdgeSwipe`).
+   */
+  const [contentEl, setContentEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setContentEl(sheetHost?.closest('.mobile-frame')?.querySelector<HTMLElement>('.mobile-frame__content') ?? null);
+  }, [sheetHost]);
+  const topSeq = usePhoneHistory((s) => topEntry(s)?.seq ?? null);
+  usePagePlace(contentEl, topSeq);
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+  const swipeBack = useCallback(() => goBackRef.current?.(), []);
+  useEdgeSwipe(contentEl, goBack ? swipeBack : null);
+  const screenNow = { kind: activeTarget?.type === 'kind' ? activeTarget.ref : null, open: screenStack.selected };
+  const screenThen = useRef(screenNow);
+  useLayoutEffect(() => {
+    const then = screenThen.current;
+    screenThen.current = screenNow;
+    if (topSeq === null || !contentEl) return;
+    const op = phoneHistory.getState().lastOp;
+    if (op !== 'push' && op !== 'pop') return;
+    if (then.kind !== null && then.kind === screenNow.kind && (then.open === null || screenNow.open === null)) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const page = contentEl.firstElementChild as HTMLElement | null;
+    page?.animate?.(
+      op === 'push'
+        ? [{ transform: 'translateX(100%)' }, { transform: 'none' }]
+        : [{ transform: 'translateX(-28%)', opacity: 0.6 }, { transform: 'none', opacity: 1 }],
+      { duration: 280, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+    );
+    // Once per arrival on an entry; `screenNow` is read, not watched.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topSeq, contentEl]);
 
   /*
    * ── THE CHAT SCREEN IS ONE SURFACE, AND ITS INVENTORY LIVES IN A SHEET ────
@@ -542,7 +632,11 @@ export function MobileShell(props: MobileShellProps) {
       ? attentionCounts.mine
       : attentionCounts.all
     : 0;
-  const resetScreenStacks = useCallback(() => screenStackStore.getState().clearAll(), []);
+  const resetScreenStacks = useCallback(() => {
+    screenStackStore.getState().clearAll();
+    /* The ‹ stack too: what follows lands as the only entry above Chat. */
+    resetToChatFloor();
+  }, []);
   const drawerNavigateTo = useCallback(
     (target: MenuTarget) => {
       resetScreenStacks();
@@ -629,8 +723,13 @@ export function MobileShell(props: MobileShellProps) {
           /* The label names WHERE UP GOES, which for an entity is its
              collection and for an open entity on a kind screen is that screen.
              "Up to Tasks" is a promise the press then keeps. */
-          aria-label={`Up to ${upTarget ? getKind(upTarget.ref).labelPlural : title}`}
+          aria-label={chevron?.label ?? `Up to ${upTarget ? getKind(upTarget.ref).labelPlural : title}`}
+          data-testid="mobile-header-back"
           onClick={() => {
+            if (chevron) {
+              chevron.run();
+              return;
+            }
             if (screenStack.selected) {
               screenStack.pop();
               return;
@@ -1025,6 +1124,7 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
         {...(props.serverBaseUrl ? { serverBaseUrl: props.serverBaseUrl } : {})}
         {...(props.viewerMemberId ? { viewerMemberId: props.viewerMemberId } : {})}
         onKindChange={(next) => props.navigateTo({ type: 'kind', ref: next })}
+        onOpenEntityPage={(id, kind) => openEntityOnPhone(props.navigateTo, id, kind)}
         /*
          * DEF-045 — THE LAYOUT MODE IS ROUTE STATE, AND THIS ARM WAS DROPPING IT.
          *
@@ -1122,14 +1222,19 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
      * like two products.
      */
     if (activeTarget.kind !== CHANNEL_KIND) {
+      /* THE GENERIC ENTITY PAGE (CONTRACT §5 ruling 7) — a kind with no phone
+         screen and no list (a voice room, a message) still opens as a page:
+         what it is, what it says, what it links to. It replaced the "doesn't
+         have a phone screen" card, which stopped the reader at the door. */
+      const detail = data.detailOf(activeTarget.ref);
+      if (!detail) props.data.pull?.(activeTarget.ref);
       return (
-        <div className="mobile-empty" data-testid="mobile-unbuilt-voice-view">
-          <p>“{titleOf(activeTarget)}” doesn’t have a phone screen in this build.</p>
-          <p>
-            This entity exists and the link is a real address — there is just no screen behind it
-            here. Nothing is hidden.
-          </p>
-        </div>
+        <PhoneEntityPage
+          detail={detail}
+          connections={data.connectionsOf(activeTarget.ref)}
+          messages={data.messagesOf(activeTarget.ref)}
+          onOpenEntity={(id, kind) => openEntityOnPhone(props.navigateTo, id as EntityId, kind)}
+        />
       );
     }
     return (
@@ -1186,16 +1291,9 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
       return (
         <InboxView
           seam={data.seam}
-          onOpenEntity={(id, kind) => {
-            if (openEntityOnPhone(props.navigateTo, id, kind)) return;
-            onNotice({
-              id: `open-entity:${id}`,
-              tone: 'info',
-              title: getKind(kind).label,
-              body: 'This kind has no phone screen in this build, so there is nowhere to open it. The link still names it.',
-              ttlMs: 6000,
-            });
-          }}
+          /* Every kind opens now (ruling 7): a kind with no phone screen
+             gets the generic entity page, so the E3 toast is gone. */
+          onOpenEntity={(id, kind) => openEntityOnPhone(props.navigateTo, id, kind)}
         />
       );
     case 'help':

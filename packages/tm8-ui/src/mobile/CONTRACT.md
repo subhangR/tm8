@@ -163,6 +163,15 @@ The drawer closes by swipe left; nothing opens it by edge swipe (that edge is An
 dismiss by dragging the head down. Both share `useModalFocus`: first row focused, Tab trapped, the
 frame behind `inert`, focus returned to the opener.
 
+**HOW THE RULINGS ARE BUILT (t-nav).** `stores/phoneHistory.ts` is a projection of the one history,
+recorded by `attachRouter` (push, replace, inbound) and never by a screen; ‹ reads it: Back
+(`history.back()` via the host's `onBack`) when an entry of ours is below, replace-with-Chat over the
+drawer floor, else Up-by-replace (`onReplace`). Entries are capped at 12 and carry scroll + textarea
+drafts (`mobile/usePagePlace.ts`). Opening an entity is ONE push: `openEntityOnPhone` →
+`navigateTo(target, { open })` writes `e/{id}?origin=…` directly, and a target equal to the entry
+below is Back. Kinds outside the v1 set open `mobile-pages/PhoneEntityPage`; task/doc/session pages
+get `PhoneMessages` via the panel's `beforeLinked` slot. Edge swipe: `mobile/useEdgeSwipe.ts`.
+
 The tab bar was retired on 2026-08-19, so where the text below says "tab bar", read **the drawer**.
 
 **One history. The shell forks and the router does not** — `no-router-fork.test.ts` enforces it.

@@ -1,0 +1,237 @@
+/*
+ * PHONE ENTITY PAGES — lane-owned (t-nav), scoped to `.pp` / `.pp-*`.
+ *
+ * Mounted only on the phone shell. The generic entity page and the Messages
+ * section share one vocabulary with the phone list (artifact 01a14cc0): 15px
+ * type, 44px targets, 12px radii, rows that ellipsise rather than overflow at
+ * 360px. Colour is the app's tokens only.
+ */
+
+.pp {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: clip;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding-bottom: calc(var(--pn-space-8) + env(safe-area-inset-bottom, 0px));
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+}
+.pp::-webkit-scrollbar {
+  display: none;
+}
+
+.pp-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--pn-space-4) 16px var(--pn-space-2);
+}
+.pp-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.pp-title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.pp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+
+.pp-body {
+  padding: var(--pn-space-2) 16px var(--pn-space-4);
+  font-size: 15px;
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── sections ──────────────────────────────────────────────────────────── */
+
+.pp-sec {
+  padding: var(--pn-space-2) 0 var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+}
+.pp-sec__h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: var(--pn-space-2) 16px;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-label);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.pp-sec__n {
+  color: var(--pn-ink-3);
+  font-weight: 500;
+}
+.pp-grp__h {
+  margin: 0;
+  padding: 6px 16px 2px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+  font-weight: 500;
+}
+.pp-links,
+.pp-msgs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pp-quiet {
+  margin: 0;
+  padding: 6px 16px 10px;
+  color: var(--pn-ink-3);
+  font-size: 14px;
+}
+
+/* ── messages ──────────────────────────────────────────────────────────── */
+
+.pp-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--mobile-touch-min, 44px);
+  padding: 8px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.pp-msg {
+  cursor: pointer;
+}
+button.pp-msg:active {
+  background: var(--pn-hover);
+}
+.pp-msg:focus-visible,
+.pp-more:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.pp-msg__av {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-label);
+  font-weight: 650;
+}
+.pp-msg__b {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pp-msg__l1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.pp-msg__who {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pp-msg__tm {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.pp-msg__tx {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--pn-ink-2);
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.pp-more {
+  display: flex;
+  align-items: center;
+  min-height: var(--mobile-touch-min, 44px);
+  margin: 0 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--pn-brand);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pp-more:active {
+  background: var(--pn-hover);
+}
+
+/* ── loading: the page's shape, never a blank flash ──────────────────── */
+
+.pp-sk {
+  display: block;
+  border-radius: 6px;
+  background: var(--pn-surface);
+}
+.pp-sk--eyebrow {
+  width: 30%;
+  height: 12px;
+}
+.pp-sk--title {
+  width: 75%;
+  height: 22px;
+}
+.pp-sk--line {
+  width: 55%;
+  height: 12px;
+}
+
+/* ── the Messages section inside a v1 page body ────────────────────────
+   On a task it sits inside the subtree body above LINKED; on a doc or a
+   session it follows the body. Either way it rides the body's measure. */
+.pp-in-body {
+  margin-top: var(--pn-space-3);
+}
+/* The body already carries the page's 16px gutter; don't add a second. */
+.pp-in-body .pp-sec__h,
+.pp-in-body .pp-quiet,
+.pp-in-body .pp-msg {
+  padding-left: 0;
+  padding-right: 0;
+}
+.pp-in-body .pp-more {
+  margin-left: -10px;
+}

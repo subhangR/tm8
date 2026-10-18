@@ -106,7 +106,8 @@ function person(name: string | null | undefined): PhoneRow['who'] {
   return { name, initial: initialOf(name) };
 }
 
-function tintOf(kind: string): PhoneRow['tint'] {
+/** A kind's glyph tint, shared with rows drawn outside the list (the generic page's Linked). */
+export function tintOf(kind: string): PhoneRow['tint'] {
   if (kind === 'chat' || kind === 'channel') return 'chat';
   if (kind === 'work_session') return 'session';
   if (kind === 'doc') return 'doc';
