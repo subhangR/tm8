@@ -50,6 +50,7 @@ import { SettingsShell } from './SettingsShell';
 import { ALL_SETTINGS_REASONS } from './reasons';
 import { SPECIMEN_INVITES, SPECIMEN_REDEEM, specimenMembers } from './specimen';
 import { SETTINGS_SECTIONS, type SettingsSectionId } from './types';
+import { PHONE_SETTINGS_GROUPS } from './phone-sections';
 import type { SettingsPort } from './port';
 import type { IdentityView } from '../data/seam';
 
@@ -932,5 +933,54 @@ describe('187 — session sharing defaults', () => {
     expect((await screen.findByTestId('sharing-watch-failure')).textContent).toBe('space admin required');
     // Nothing moved: the radios show the stored value, not the click.
     expect(radio('Who can watch a new session', 'Everyone in the space').getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+describe('E1 — stacked settings (the phone)', () => {
+  it('groups every section exactly once, so a new section cannot go missing on the phone', () => {
+    const grouped = PHONE_SETTINGS_GROUPS.flatMap((g) => g.ids);
+    expect([...grouped].sort()).toEqual(SETTINGS_SECTIONS.map((s) => s.id).sort());
+    expect(new Set(grouped).size).toBe(grouped.length);
+  });
+
+  it('opens on the grouped list, opens a section as its own screen, and comes back', async () => {
+    const onSectionChange = vi.fn();
+    const onSectionClear = vi.fn();
+    render(<SettingsShell port={fakePort()} stacked onSectionChange={onSectionChange} onSectionClear={onSectionClear} />);
+
+    const list = screen.getByRole('navigation', { name: 'Settings sections' });
+    expect(within(list).getByRole('heading', { name: 'Chat & models' })).toBeTruthy();
+    expect(screen.queryByTestId('settings-back')).toBeNull();
+
+    fireEvent.click(within(list).getByRole('button', { name: /Members & roles/ }));
+    expect(onSectionChange).toHaveBeenCalledWith('members');
+    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    expect(screen.queryByRole('navigation', { name: 'Settings sections' })).toBeNull();
+
+    fireEvent.click(screen.getByTestId('settings-back'));
+    expect(onSectionClear).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('navigation', { name: 'Settings sections' })).toBeTruthy();
+  });
+
+  it('opens the section the address named', async () => {
+    render(<SettingsShell port={fakePort()} stacked initialSection="members" />);
+    await screen.findByText('Members & roles', { selector: '.set-section__title' });
+    expect(screen.getByTestId('settings-back')).toBeTruthy();
+  });
+
+  it('lists a desktop-only editor with a tag and opens an honest refusal with a way out', () => {
+    render(<SettingsShell port={fakePort()} stacked />);
+    const row = screen.getByRole('button', { name: /^Menu/ });
+    expect(within(row).getByText('desktop')).toBeTruthy();
+    fireEvent.click(row);
+    const refusal = screen.getByTestId('settings-desktop-only');
+    expect(refusal.getAttribute('data-section')).toBe('menu');
+    expect(within(refusal).getByRole('button', { name: 'Copy link for desktop' })).toBeTruthy();
+  });
+
+  it('only lists the sections this scope shows', () => {
+    render(<SettingsShell port={fakePort()} stacked sectionIds={['members', 'models']} />);
+    const list = screen.getByRole('navigation', { name: 'Settings sections' });
+    expect(within(list).getAllByRole('button').map((b) => b.getAttribute('data-section'))).toEqual(['members', 'models']);
   });
 });

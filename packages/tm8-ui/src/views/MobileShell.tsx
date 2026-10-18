@@ -86,6 +86,12 @@ export interface MobileShellProps {
    */
   chatBridge?: ChatHomeL2Bridge;
   spaceLabel?: string;
+  /**
+   * The Settings screen, built by `GateApp` from the same mount (and the same
+   * ports) the desktop uses, in its `stacked` arrangement. Absent or null ⇒
+   * the refusal card, which is still the truth where no port was served.
+   */
+  settingsScreen?: ReactNode;
 
   /*
    * THE ACCOUNT AFFORDANCE'S INPUTS — DEF-003.
@@ -1181,6 +1187,13 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
          `stacked` makes it one column: the contents, then a page over them
          with a back verb. */
       return <HelpScreen stacked />;
+    case 'settings':
+      /* SETTINGS IS ON THE PHONE (audit E1). Chat defaults, credentials and
+         members are things people do from a phone, and the desktop shell's
+         sections already lay out in one column; `stacked` gives them a list
+         to start from and a way back. */
+      if (props.settingsScreen) return props.settingsScreen;
+      return <RefusalCard target={activeTarget} navigateTo={props.navigateTo} />;
     case 'dashboard':
       return (
         <ChatHomeSurface
@@ -1200,7 +1213,7 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
         />
       );
     default:
-      /* WORKSPACE, GRAPH, GIT, FILES, MESSAGES, SETTINGS, FEED — real screens
+      /* WORKSPACE, GRAPH, GIT, FILES, MESSAGES, FEED — real screens
          with no phone arrangement yet. Named individually rather than lumped,
          because "not built for this screen size" is a different statement from
          "does not exist", and a viewer who followed a link here should be told

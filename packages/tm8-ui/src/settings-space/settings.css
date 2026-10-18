@@ -855,3 +855,121 @@
   box-shadow: none;
   background: transparent;
 }
+
+/* --- stacked (the phone, audit E1) --------------------------------------- */
+
+/* One column: a grouped list of sections, then one section per screen under a
+   back verb. Geometry is the Settings mockup's (01a14cc4): 52px rows in a
+   rounded group card, an uppercase group title, a 12px gutter. Only the phone
+   shell passes `stacked`, so none of this reaches the desktop. */
+.set-root--stacked {
+  padding: 0;
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+.set-stack {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 12px 12px calc(16px + var(--mobile-safe-bottom, 0px));
+}
+.set-stack::-webkit-scrollbar { display: none; }
+.set-stack > .set-nav__eyebrow { display: block; padding: 4px 6px 10px; }
+
+.set-stack__group { margin-bottom: 14px; }
+.set-stack__title {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  margin: 0;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.set-stack__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.set-stack__rows > li + li { border-top: 1px solid var(--pn-line); }
+
+.set-stack__row {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.set-stack__row:active { background: var(--pn-hover); }
+.set-stack__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: -2px; }
+.set-stack__text { flex: 1; min-width: 0; }
+.set-stack__label,
+.set-stack__hint {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-stack__label { font-size: 15px; font-weight: 550; }
+.set-stack__hint { font-size: 12.5px; color: var(--pn-ink-3); }
+.set-stack__row--danger .set-stack__label { color: var(--pn-block); }
+.set-stack__tag {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--pn-line);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+.set-stack__chev { flex: none; font-size: 17px; color: var(--pn-ink-3); }
+
+.set-stack__page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.set-stack__back {
+  appearance: none;
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  margin: 4px 6px 0;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.set-stack__back > span:first-child { font-size: 20px; line-height: 1; }
+.set-stack__back:active { background: var(--pn-hover); }
+.set-stack__back:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.set-stack__page > .set-body { min-height: 0; }
+.set-stack__refusal { flex: 1; }
