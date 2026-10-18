@@ -6,8 +6,11 @@
          home-indicator strip, which is what makes `env(safe-area-inset-*)` return
          anything other than 0. src/mobile/mobile.css already spends those insets
          on the header and tab bar; without this attribute they are all zero and
-         an installed app renders inside letterboxed bars. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+         an installed app renders inside letterboxed bars.
+         `interactive-widget=resizes-content` (audit A4) makes Android's keyboard
+         shrink the layout viewport, so `100dvh` ends at the keys and the docked
+         composer stays above them. iOS ignores it; `useKeyboardInset` covers iOS. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
 
     <!-- #FBFAF6 is --pn-surface, the background of `.mobile-frame__header`, which
          is the element sitting directly under the status bar (it carries the

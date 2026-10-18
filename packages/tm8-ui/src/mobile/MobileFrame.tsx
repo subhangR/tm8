@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useKeyboardInset } from '../terminal/useKeyboardInset';
+import { useKeyboardUp } from './useKeyboardUp';
 import './mobile.css';
 
 /**
@@ -103,6 +104,7 @@ export function MobileFrame({ header, children, float, tabBar, sheet, notices }:
    * shrunk, so the frame is not shortened twice.
    */
   const keyboardInset = useKeyboardInset();
+  const keyboardUp = useKeyboardUp(keyboardInset);
 
   return (
     <div
@@ -112,7 +114,7 @@ export function MobileFrame({ header, children, float, tabBar, sheet, notices }:
          know "is it up" rather than "how far". Absent rather than `="down"`, so
          a selector for it is a presence check and the DOM stays quiet in the
          state the app is in almost all of the time. */
-      {...(keyboardInset > 0 ? { 'data-keyboard': 'up' } : {})}
+      {...(keyboardUp ? { 'data-keyboard': 'up' } : {})}
       /* NO HEADER, NO HEADER ROW. The grid's first track is the header's, and a
          frame without one would auto-place the content into that `auto` row,
          where it sizes to its content and the frame scrolls instead of it.

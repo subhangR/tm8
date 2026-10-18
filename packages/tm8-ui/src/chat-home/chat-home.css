@@ -1892,7 +1892,16 @@ button.tch-entity-chip:hover {
   margin-top: 0;
 }
 .cv2-root[data-shell='mobile'] .tch-conversation .tch-composer-wrap {
-  margin: auto auto var(--pn-space-2);
+  margin: auto auto calc(10px + var(--mobile-safe-bottom, 0px));
+}
+
+/* THE DOCK CLEARS THE HOME INDICATOR ONLY WHILE THERE IS ONE (composer-states
+   mockup §1, t-safe). With the keyboard up the indicator is under the keys, so
+   the safe-area term goes and the card sits 10px above them. `data-keyboard` is
+   stamped on iOS (overlay inset) and on Android (resized viewport). See
+   `mobile/useKeyboardUp.ts`. */
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-conversation .tch-composer-wrap {
+  margin-bottom: 10px;
 }
 
 /* Full-bleed but for one gutter: at 390px the desktop's 32px inset spends 8%
@@ -1924,6 +1933,33 @@ button.tch-entity-chip:hover {
    the composer. */
 .cv2-root[data-shell='mobile'] .tch-welcome {
   padding-inline: var(--pn-space-4);
+}
+
+/* Mockup §1a: h1 22/28, caption 14. */
+.cv2-root[data-shell='mobile'] .tch-welcome h1 {
+  font-size: var(--pn-fs-h2);
+  line-height: 28px;
+}
+.cv2-root[data-shell='mobile'] .tch-welcome p {
+  font-size: var(--pn-fs-body);
+}
+
+/* THE HERO COLLAPSES WHILE THE KEYBOARD IS UP (mockup §1b, audit A5). The mark
+   and the caption go, and the h1 drops to one muted 17px line just above the
+   card. That gives back ~180px of a ~510px visible frame to the conversation. */
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome {
+  justify-content: flex-end;
+  padding-bottom: var(--pn-space-3);
+}
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome__mark,
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome p {
+  display: none;
+}
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome h1 {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
 }
 
 
