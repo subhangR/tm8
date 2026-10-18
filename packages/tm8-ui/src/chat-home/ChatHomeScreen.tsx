@@ -1722,14 +1722,8 @@ export function ChatHomeScreen({
         : undefined,
       placement: { mode: 'chip' },
     },
-    onKeyDown: (event) => {
-      // `isComposing` guards an IME candidate window: Enter there commits the
-      // candidate, and sending on it would post a half-typed word.
-      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-        event.preventDefault();
-        void send();
-      }
-    },
+    // Enter sends on a keyboard; on a phone Return is a newline (`enterSends.ts`).
+    onSend: () => void send(),
   });
   /* The seed lands once per nonce (see `composerSeed`). The ref keeps the
      latest text without making the text itself a trigger. */
@@ -2358,7 +2352,7 @@ export function ChatHomeScreen({
           refusal
           ?? (attachments.blocked
             ? 'One or more attachments are not ready — wait for uploads to finish, retry failures, or remove them before sending.'
-            : 'Send (Enter)')
+            : rich.enterSends ? 'Send (Enter)' : 'Send')
         }
       >
         <ComposerIcon name="arrowUp" />

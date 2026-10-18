@@ -175,16 +175,11 @@ export function Composer({
     onKeyDown: (e) => {
       if (e.key === 'Escape') {
         if (replyTo) onCancelReply();
-        return;
-      }
-      // Shift+Enter is the newline and must fall through to the textarea
-      // untouched; anything else here would swallow a keystroke the
-      // footer copy promises works.
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        void submit();
       }
     },
+    // Enter sends on a keyboard (Shift+Enter, and every Return on a phone,
+    // falls through to the textarea as a newline) — `enterSends.ts`.
+    onSend: () => void submit(),
   });
   const attachments = rich.attachments!;
   const popover = rich.popover;
@@ -632,7 +627,8 @@ export function Composer({
             <span aria-hidden>/</span>
           </button>
         ) : null}
-        <span className="chs-composer__hint">Enter sends · Shift+Enter newline</span>
+        {/* On a phone Return is a newline and Send is the button; the hint would be false. */}
+        {rich.enterSends ? <span className="chs-composer__hint">Enter sends · Shift+Enter newline</span> : null}
         <SendControl
           disconnected={disconnected}
           wired={Boolean(onPost)}

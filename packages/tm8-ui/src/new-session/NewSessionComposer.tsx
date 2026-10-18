@@ -384,15 +384,11 @@ export function NewSessionComposer({
       onSelect: (option) => ({ insert: skillReference(option.display, option.id) }),
     }],
     attachments: { start: attach, placement: { mode: 'chip' } },
-    onKeyDown: (event) => {
-      /* `isComposing` guards an IME candidate window: Enter there commits the
-         candidate, and spawning on it would launch a half-typed thought.
-         Copied deliberately from the chat composers — a create flow that
-         misfires mid-word is worse here, because the result is a process. */
-      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-        event.preventDefault();
-        if (!busy && !refusal && !(requirePrompt && draft.trim() === '')) onSubmit();
-      }
+    /* The shared rule (`enterSends.ts`) keeps the IME guard — a create flow
+       that misfires mid-word is worse here, because the result is a process
+       — and makes Return a newline on a phone, where Launch is the button. */
+    onSend: () => {
+      if (!busy && !refusal && !(requirePrompt && draft.trim() === '')) onSubmit();
     },
   });
   const attachments = rich.attachments!;
