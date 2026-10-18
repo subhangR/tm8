@@ -75,14 +75,18 @@ The phone shows **one surface**. The rule for anything additional:
 - **A FULL SCREEN** when the thing *replaces your place* and belongs in the back stack: it is a
   navigation, it gets an address, and the phone's own back gesture walks to it.
 
-**THE TIEBREAKER, for the case that sits on the line.** "Open an arbitrary entity" is
-reference-while-reading from a chat tool-call chip and navigation from an Inbox row — same entity,
-same verb, different answer. Decide by **provenance**:
+**RULING (owner, 2026-10-18) — OPENING AN ENTITY IS ALWAYS A FULL SCREEN.** A chip in a chat
+transcript or in the entity strip pushes that entity's **full page** onto the stack, exactly like an
+Inbox or list row. There is **no peek sheet** for entities in v1. A long-press preview may come back
+later as a separate affordance, but tapping is always a push. Back (§5) returns you to the transcript
+at the scroll position you left.
 
-> **Tapped from inside content you are reading → SHEET. Tapped in a list or an inbox whose whole
-> purpose is to go there → FULL SCREEN.**
-
-The underlying question that tiebreaker encodes is *does this need an address*. A sheet has none.
+This **retires the old provenance tiebreaker** ("tapped from inside content you are reading → SHEET").
+That rule existed so a referenced entity stayed out of the back stack. With real browser history and
+per-entry scroll restoration (§5), going back to the paragraph you tapped from is just Back, so an
+entity always gets an address. The rest of this section still holds for surfaces that are **not
+entities**: pickers, the + sheet, the account menu, the ⚙ and model sheets and `LaunchSheet` are
+still sheets.
 
 **AND A THIRD SHAPE, WHICH IS NEITHER — found by Lane A, ruled in its favour, written here so the next
 lane neither converts it nor re-argues it:**
@@ -115,9 +119,9 @@ what is on screen is exactly the class of lie §8 forbids. **RULED: sheet conten
 of a share.** A surface worth sharing is a surface worth addressing, and that makes it a full screen
 by the rule above — so the tiebreaker and the share rule agree rather than needing a second mechanism.
 
-The distinction is not cosmetic: pushing what should be a sheet puts a referenced entity into the
-back stack, so backing out walks the screen stack instead of returning you to the paragraph you
-tapped from.
+The distinction is not cosmetic: pushing a picker or a transient surface puts it into the back stack,
+so backing out walks screens instead of dismissing the overlay. (Entities are the exception: see the
+2026-10-18 ruling above.)
 
 Sheets portal into the frame's host, so **position belongs to the frame and content belongs to the
 screen that opened it.** Do not build a bespoke sheet; seven bespoke sheets are seven chances to
@@ -125,7 +129,33 @@ disagree about what dismiss means.
 
 ## 5. BACK / NAV CONVENTION
 
+**RULINGS (owner, 2026-10-18 — mobile craft; these override anything below that disagrees).** Each one
+is cheap to reverse and will be revisited after a real-phone pass.
+
+1. **Back is real browser history.** Every push writes a real history entry (via the router —
+   `navigateTo` → `pushState`), and Back is `history.back()`. The iOS Safari edge swipe, the Android
+   back gesture/button and the desktop back button therefore work with no extra code. Never intercept
+   or fight them.
+2. **Our own edge-swipe runs ONLY in iOS standalone (`display-mode: standalone`)**, where nothing
+   native exists. Not in iOS Safari (it has its own), not on Android. The ‹ button works everywhere.
+3. **The drawer is top-level navigation: a drawer destination resets the stack to
+   `[Chat, destination]`.** That applies to kind trees, pinned kinds, footer rows and See all.
+4. **Cold link: ‹ (Up) REPLACES the page with that kind's list.** No structural parent in v1. Back
+   keeps the browser default, which leaves the app.
+5. **The stack is capped at 12 entries and drops the oldest.** Each entry keeps its scroll position
+   and composer draft. No stack menu in v1.
+6. **Loops:** a link to the entry directly below you acts as Back (pop). Any other link pushes, even if
+   its target is deeper in the stack. Nothing ever jumps several levels.
+7. **Phone screens in v1:** chat, doc, task, work_session and artifact. Every other kind opens the
+   generic entity page, which replaces the "no phone screen" toast (audit E3). Craft and graph screens
+   wait for a real-phone pass.
+8. **Messages section:** task, doc and session pages show Messages below the body and above Linked,
+   with the latest 3 and "View all". Other kinds list messages under Linked.
+
+The tab bar was retired on 2026-08-19, so where the text below says "tab bar", read **the drawer**.
+
 **One history. The shell forks and the router does not** — `no-router-fork.test.ts` enforces it.
+Ruling 1 doesn't change this: history is written through the router, never from a screen.
 
 - The header **chevron means UP, not BACK.** It pops the screen stack (the desktop's Esc). `GateApp`'s
   step-up sync turns that into the address write, which for a cold arrival from a pasted link is a
