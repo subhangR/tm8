@@ -37,16 +37,73 @@ export interface FencedTurnOptions {
   /** Called only after this owner's resources and durable lease are released. */
   onReleased?: (() => void) | undefined;
   onError?: ((error: unknown) => void) | undefined;
-  timeouts?: { preparation?: number; open?: number; submit?: number; observation?: number; close?: number; cleanupRetry?: number };
+  /**
+   * `observation` is the IDLE limit: how long the harness may say nothing at
+   * all. `tool` is the separate, longer budget that applies while at least one
+   * tool call is in flight, because a running tool emits no observation of its
+   * own (see `consume` below). `heartbeat` is only overridden by tests.
+   */
+  timeouts?: { preparation?: number; open?: number; submit?: number; observation?: number;
+    tool?: number; heartbeat?: number; close?: number; cleanupRetry?: number };
 }
 
-export async function deadline<T>(promise: Promise<T>, milliseconds: number, operation: string): Promise<T> {
+/** `operation` names the step for the thrown message, or builds the error itself. */
+export async function deadline<T>(promise: Promise<T>, milliseconds: number,
+  operation: string | (() => Error)): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([promise, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${operation} timed out`)), milliseconds);
+      timer = setTimeout(() => reject(typeof operation === 'function'
+        ? operation() : new Error(`${operation} timed out`)), milliseconds);
     })]);
   } finally { if (timer) clearTimeout(timer); }
+}
+
+/**
+ * The IDLE budget: how long the harness may say nothing with no tool call in
+ * flight. 30 minutes is the value #1283 shipped, and it is deliberately NOT
+ * tightened back to the old 120s here, because a running tool is not the only
+ * silent window in the stream: between a tool result and the next COMPLETE
+ * assistant message the adapter also emits nothing (the CLI runs without
+ * `--include-partial-messages`), and that gap spends this budget, not the tool
+ * one. Until partial messages are forwarded, a short idle limit would keep
+ * killing turns that are merely thinking.
+ */
+export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60_000;
+/**
+ * The budget while at least one tool call is in flight. Equal to the idle
+ * budget by default, so these defaults behave exactly like #1283's single
+ * 30-minute limit. The split is an operator lever rather than a change of
+ * behaviour: a running tool is positive evidence the agent is alive, so
+ * `TM8_CHAT_IDLE_TIMEOUT_MS` can be lowered to fail a wedged agent quickly
+ * WITHOUT risking a kill in the middle of a legitimately slow tool. The
+ * runtime lease is refreshed every 30s, so a wait this long never loses it.
+ */
+export const DEFAULT_CHAT_TOOL_TIMEOUT_MS = 30 * 60_000;
+
+function humanMs(milliseconds: number): string {
+  if (milliseconds < 60_000) return `${Math.round(milliseconds / 1000)}s`;
+  const minutes = milliseconds / 60_000;
+  return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)}m`;
+}
+
+/**
+ * The agent produced nothing for its whole budget. This is NOT a delivery
+ * failure: the input was provably sent and the runtime was alive, so reporting
+ * it as `delivery_unknown` told the human the one thing that was not wrong.
+ * The names of any tools still in flight are the single most useful fact about
+ * it, so they are in the message the thread renders.
+ */
+/** From #1284: the human should not assume a silent turn did nothing. */
+const EFFECTS_NOTE = 'Steps it already took may have taken effect.';
+export class AgentSilentError extends Error {
+  readonly code = 'agent_silent';
+  constructor(readonly waitedMs: number, readonly runningTools: readonly string[]) {
+    super(runningTools.length
+      ? `The agent sent nothing for ${humanMs(waitedMs)} while ${runningTools.join(', ')} ${
+        runningTools.length > 1 ? 'were' : 'was'} running; the turn was stopped. ${EFFECTS_NOTE}`
+      : `The agent sent nothing for ${humanMs(waitedMs)}; the turn was stopped. ${EFFECTS_NOTE}`);
+  }
 }
 function matched(a: GenerationFence, b: GenerationFence): boolean {
   return a.chatId===b.chatId && a.bindingId===b.bindingId && a.generation===b.generation
@@ -157,7 +214,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   };
   const heartbeat=setInterval(() => { void rpc('heartbeat_chat_runtime',[turn.chatId,leaseFence]).catch(error => {
     options.onError?.(error); void session?.cancel({turnId:turn.turnId,attemptId:snapshotId ?? '',configRevision:turn.configRevision},'revocation');
-  }); },30_000);
+  }); },options.timeouts?.heartbeat ?? 30_000);
   heartbeat.unref();
   const persistTerminalPart=async () => {
     if (!terminalPart) throw new Error('terminal has no normalized part');
@@ -237,10 +294,19 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     await rpc('begin_chat_dispatch',[turn.chatId,leaseFence,snapshotId,sealed.inputDigest]);
     barrier=true;
     const current=session;
+    const idleBudget=options.timeouts?.observation ?? DEFAULT_CHAT_IDLE_TIMEOUT_MS;
+    const toolBudget=Math.max(options.timeouts?.tool ?? DEFAULT_CHAT_TOOL_TIMEOUT_MS,idleBudget);
+    // Tools in flight, by toolKey. The Claude adapter emits one `tool`
+    // observation when a call starts and one when its result arrives, and
+    // NOTHING in between: a tool that runs longer than the idle limit used to
+    // kill the turn. While this map is non-empty the wait gets `toolBudget`.
+    const runningTools=new Map<string,string>();
     const consume=async () => {
       const iterator=current.observations[Symbol.asyncIterator]();
       while (!terminal) {
-        const next=await deadline(iterator.next(),options.timeouts?.observation ?? 30 * 60_000,'harness observation');
+        const waited=runningTools.size ? toolBudget : idleBudget;
+        const next=await deadline(iterator.next(),waited,
+          () => new AgentSilentError(waited,[...new Set(runningTools.values())]));
         if (next.done) break;
         const observation=next.value;
         if (!matched(observation.fence,fence)) continue;
@@ -266,6 +332,8 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
           if (payload.text.trim()) await append('thinking',{text:payload.text},event);
         } else if (payload.kind==='tool') {
           const tool=payload.tool;
+          if (tool.state==='running' && tool.result===null) runningTools.set(tool.toolKey,tool.name);
+          else runningTools.delete(tool.toolKey);
           await append('tool_call',{id:tool.toolKey,name:tool.name,args:tool.args,
             state:tool.state==='completed' ? 'completed' : tool.state==='running' ? 'running' : 'error'},`${event}:call`);
           if (tool.result!==null) await append('tool_result',{tool_call_id:tool.toolKey,content:tool.result,
@@ -324,10 +392,16 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     // Its output parts are consumed before this branch and must not gain a second done.
     if (terminal) await settleTerminal(terminal);
     else {
-      failure={code:stoppedBeforeDispatch ? 'interrupted' : knownNotSent ? 'provider_not_sent' : barrier ? 'delivery_unknown' : 'preparation_failed',
-        message:stoppedBeforeDispatch ? 'Stopped before the agent received this message.'
-          : knownNotSent ? 'The provider confirmed this input was not sent.' : barrier
-          ? 'Chat delivery was interrupted; recorded effects may have occurred.' : 'Chat runtime could not prepare this turn.'};
+      // `agent_silent` is reported ahead of `delivery_unknown`: the barrier is
+      // already committed when the observation budget runs out, so the generic
+      // branch would otherwise blame delivery for an agent that simply stopped.
+      const silent=error instanceof AgentSilentError ? error : null;
+      failure=stoppedBeforeDispatch
+        ? {code:'interrupted',message:'Stopped before the agent received this message.'}
+        : knownNotSent ? {code:'provider_not_sent',message:'The provider confirmed this input was not sent.'}
+        : silent ? {code:silent.code,message:silent.message}
+        : barrier ? {code:'delivery_unknown',message:'Chat delivery was interrupted; recorded effects may have occurred.'}
+        : {code:'preparation_failed',message:'Chat runtime could not prepare this turn.'};
       if (!barrier) { await rpc('fail_chat_preparation',[turn.chatId,leaseFence,failure]); settled=true; }
       else if (snapshotId) {
         await append('error',failure,`server:${snapshotId}:error`);
