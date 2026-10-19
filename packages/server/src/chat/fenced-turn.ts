@@ -51,16 +51,27 @@ export async function deadline<T>(promise: Promise<T>, milliseconds: number,
   } finally { if (timer) clearTimeout(timer); }
 }
 
-/** No observation arrived inside the applicable budget. Default 120s idle. */
-export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 120_000;
 /**
- * The budget while a tool runs. Above the Bash tool's own 600s ceiling would
- * be generous; equal to it means a tool that burns its full allowance still
- * reports its own failure rather than being cut off by this limit a moment
- * earlier. The runtime lease is refreshed every 30s, so a wait this long
- * never loses the lease.
+ * The IDLE budget: how long the harness may say nothing with no tool call in
+ * flight. 30 minutes is the value #1283 shipped, and it is deliberately NOT
+ * tightened back to the old 120s here, because a running tool is not the only
+ * silent window in the stream: between a tool result and the next COMPLETE
+ * assistant message the adapter also emits nothing (the CLI runs without
+ * `--include-partial-messages`), and that gap spends this budget, not the tool
+ * one. Until partial messages are forwarded, a short idle limit would keep
+ * killing turns that are merely thinking.
  */
-export const DEFAULT_CHAT_TOOL_TIMEOUT_MS = 600_000;
+export const DEFAULT_CHAT_IDLE_TIMEOUT_MS = 30 * 60_000;
+/**
+ * The budget while at least one tool call is in flight. Equal to the idle
+ * budget by default, so these defaults behave exactly like #1283's single
+ * 30-minute limit. The split is an operator lever rather than a change of
+ * behaviour: a running tool is positive evidence the agent is alive, so
+ * `TM8_CHAT_IDLE_TIMEOUT_MS` can be lowered to fail a wedged agent quickly
+ * WITHOUT risking a kill in the middle of a legitimately slow tool. The
+ * runtime lease is refreshed every 30s, so a wait this long never loses it.
+ */
+export const DEFAULT_CHAT_TOOL_TIMEOUT_MS = 30 * 60_000;
 
 function humanMs(milliseconds: number): string {
   if (milliseconds < 60_000) return `${Math.round(milliseconds / 1000)}s`;

@@ -183,19 +183,24 @@ export interface ServerConfig {
   readonly dbStatementTimeoutMs?: number;
   /**
    * How long a chat turn tolerates TOTAL silence from the harness before it is
-   * stopped (`TM8_CHAT_IDLE_TIMEOUT_MS`). Default 120000.
+   * stopped (`TM8_CHAT_IDLE_TIMEOUT_MS`). Default 1800000 (30 min).
    *
-   * This is the idle limit only. It does NOT apply while a tool call is in
+   * This is the idle limit only: it does NOT apply while a tool call is in
    * flight — see `chatToolTimeoutMs`, which exists because the Claude adapter
    * emits no observation between a tool starting and its result arriving, so
    * for two releases any tool slower than this limit killed the turn and
    * reported it to the human as an interrupted delivery.
+   *
+   * Lower this to fail a wedged agent faster, but not far: a tool result is
+   * followed by silence until the next COMPLETE assistant message, and that
+   * gap spends THIS budget rather than the tool one.
    */
   readonly chatIdleTimeoutMs?: number;
   /**
    * The silence a chat turn tolerates while at least one tool call is running
-   * (`TM8_CHAT_TOOL_TIMEOUT_MS`). Default 600000, matching the Bash tool's own
-   * ceiling. Raised to `chatIdleTimeoutMs` if set below it.
+   * (`TM8_CHAT_TOOL_TIMEOUT_MS`). Default 1800000, equal to the idle default,
+   * so out of the box the two behave as one 30-minute limit. Raised to
+   * `chatIdleTimeoutMs` if set below it.
    *
    * The runtime lease is heartbeaten every 30s and each beat extends it by ten
    * minutes, so a wait this long never loses the lease.

@@ -237,14 +237,27 @@ it('fails with agent_silent naming the tool when one outruns the tool budget',as
 });
 
 it('names the running tools and the real budget in the message a thread renders',()=>{
-  expect(new AgentSilentError(DEFAULT_CHAT_TOOL_TIMEOUT_MS,['WebSearch']).message)
+  // Explicit budgets, so the wording stays asserted even if the defaults move.
+  expect(new AgentSilentError(600_000,['WebSearch']).message)
     .toBe('The agent sent nothing for 10m while WebSearch was running; the turn was stopped.');
-  expect(new AgentSilentError(DEFAULT_CHAT_TOOL_TIMEOUT_MS,['WebSearch','Bash']).message)
+  expect(new AgentSilentError(600_000,['WebSearch','Bash']).message)
     .toBe('The agent sent nothing for 10m while WebSearch, Bash were running; the turn was stopped.');
-  expect(new AgentSilentError(DEFAULT_CHAT_IDLE_TIMEOUT_MS,[]).message)
+  expect(new AgentSilentError(120_000,[]).message)
     .toBe('The agent sent nothing for 2m; the turn was stopped.');
   expect(new AgentSilentError(90_000,[]).message).toBe('The agent sent nothing for 1.5m; the turn was stopped.');
-  expect(new AgentSilentError(DEFAULT_CHAT_IDLE_TIMEOUT_MS,[]).code).toBe('agent_silent');
+  expect(new AgentSilentError(120_000,[]).code).toBe('agent_silent');
+});
+
+/**
+ * The shipped defaults. #1283 raised the single observation limit to 30 min;
+ * splitting it in two must not quietly tighten either half, and the tool
+ * budget must never end up BELOW the idle one.
+ */
+it('keeps both default budgets at the 30 minutes #1283 shipped',()=>{
+  expect(DEFAULT_CHAT_IDLE_TIMEOUT_MS).toBe(30*60_000);
+  expect(DEFAULT_CHAT_TOOL_TIMEOUT_MS).toBeGreaterThanOrEqual(DEFAULT_CHAT_IDLE_TIMEOUT_MS);
+  expect(new AgentSilentError(DEFAULT_CHAT_IDLE_TIMEOUT_MS,[]).message)
+    .toBe('The agent sent nothing for 30m; the turn was stopped.');
 });
 
 it('heartbeats the runtime lease through a wait that outlasts the idle limit',async()=>{
