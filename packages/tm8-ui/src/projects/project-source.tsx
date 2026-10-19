@@ -30,6 +30,8 @@ export interface ProjectSourceDraft {
   sourceKind: SourceKind;
   setSourceKind(kind: SourceKind): void;
   workingDir: string;
+  /** A typed path: used as is (a leading `~/` is the node's home), never created. */
+  setWorkingDir(value: string): void;
   ensureWorkingDir: boolean;
   repoUrl: string;
   setRepoUrl(value: string): void;
@@ -111,6 +113,11 @@ export function useProjectSourceDraft(options: {
     sourceKind,
     setSourceKind: (kind) => { setSourceKindState(kind); edited(); },
     workingDir,
+    setWorkingDir: (value) => {
+      setWorkingDir(value);
+      setEnsureWorkingDir(false);
+      edited();
+    },
     ensureWorkingDir,
     repoUrl,
     setRepoUrl: (value) => {
@@ -264,6 +271,12 @@ export function ProjectSourceFields(props: {
   githubMode: GithubMode;
   /** Set when the node does not serve folder uploads; the radio is disabled with this reason. */
   uploadUnavailableReason?: string | null;
+  /**
+   * The folder a project with NO working directory gets (`~/<name>`, Add
+   * project only). Set, the field may be left empty and says what happens;
+   * absent, a folder is required.
+   */
+  defaultWorkingDir?: string | null;
 }) {
   const { draft, nodeLabel, githubMode } = props;
   const uploadUnavailable = Boolean(props.uploadUnavailableReason);
@@ -312,10 +325,22 @@ export function ProjectSourceFields(props: {
         <div className="project-onboard__field">
           <span>{draft.sourceKind === 'github' ? `Folder for the repository on ${nodeLabel}` : `Local folder on ${nodeLabel}`}</span>
           <div className="project-onboard__folder-row">
-            <code>{draft.workingDir || 'No folder selected'}</code>
+            <input
+              aria-label="Working directory"
+              value={draft.workingDir}
+              placeholder={props.defaultWorkingDir ?? '/path/to/folder'}
+              onChange={(event) => draft.setWorkingDir(event.target.value)}
+              spellCheck={false}
+            />
             <button type="button" className="project-onboard__button" onClick={() => draft.openBrowser('workingDir')}>Browse folders</button>
           </div>
           {draft.ensureWorkingDir ? <small>This folder will be created when you submit.</small> : null}
+          {props.defaultWorkingDir !== undefined && !draft.workingDir.trim() ? (
+            <small data-testid="project-default-dir">
+              Leave empty to create {props.defaultWorkingDir ?? '~/<project-name>'} on {nodeLabel}. Chats, sessions and
+              terminals for this project start there.
+            </small>
+          ) : null}
           {selectedBroad ? (
             <p className="project-onboard__warning" role="alert">{broadWorkingDirWarning(selectedBroad)}</p>
           ) : null}

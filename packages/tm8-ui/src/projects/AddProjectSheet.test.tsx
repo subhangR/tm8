@@ -80,6 +80,44 @@ describe('the Projects list is born by Add project (task 01a13574)', () => {
 });
 
 describe('AddProjectSheet', () => {
+  it('a project left with no working directory is added with none, and the form says it gets ~/<name>', async () => {
+    const p = port();
+    const onAdded = vi.fn();
+    const view = render(<AddProjectSheet nodeLabel="node" port={p} onAdded={onAdded} onCancel={vi.fn()} />);
+    fireEvent.change(view.getByLabelText('Project name'), { target: { value: 'Docs Site' } });
+    const field = view.getByLabelText('Working directory') as HTMLInputElement;
+    expect(field.placeholder).toBe('~/docs-site');
+    expect(view.getByTestId('project-default-dir').textContent).toContain('~/docs-site');
+    fireEvent.click(view.getByRole('button', { name: 'Add project' }));
+    await waitFor(() => expect(onAdded).toHaveBeenCalledWith('project-entity-1'));
+    const input = vi.mocked(p.add).mock.calls[0]![0];
+    expect(input).toMatchObject({ name: 'Docs Site' });
+    // No workingDir and no ensure flag: the server picks and creates ~/docs-site.
+    expect('workingDir' in input).toBe(false);
+    expect('ensureWorkingDir' in input).toBe(false);
+  });
+
+  it('a typed working directory is sent as is', async () => {
+    const p = port();
+    const view = render(<AddProjectSheet nodeLabel="node" port={p} onAdded={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.change(view.getByLabelText('Project name'), { target: { value: 'API' } });
+    fireEvent.change(view.getByLabelText('Working directory'), { target: { value: '~/repos/api' } });
+    expect(view.queryByTestId('project-default-dir')).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: 'Add project' }));
+    await waitFor(() => expect(p.add).toHaveBeenCalled());
+    expect(vi.mocked(p.add).mock.calls[0]![0]).toMatchObject({ name: 'API', workingDir: '~/repos/api' });
+    expect('ensureWorkingDir' in vi.mocked(p.add).mock.calls[0]![0]).toBe(false);
+  });
+
+  it('refuses an empty directory when the name gives no folder name', async () => {
+    const p = port();
+    const view = render(<AddProjectSheet nodeLabel="node" port={p} onAdded={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.change(view.getByLabelText('Project name'), { target: { value: '!!!' } });
+    fireEvent.click(view.getByRole('button', { name: 'Add project' }));
+    expect(view.getByRole('alert').textContent).toMatch(/choose the folder/);
+    expect(p.add).not.toHaveBeenCalled();
+  });
+
   it('adds a folder already on the node through spaces.projects.create', async () => {
     const p = port();
     const onAdded = vi.fn();

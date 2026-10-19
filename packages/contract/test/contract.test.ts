@@ -510,6 +510,13 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
     expect(ProjectLinkInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(true);
     expect(SpaceProjectCreateInputSchema.safeParse({ folderId: 'proj_1' }).success).toBe(true);
     expect(SpaceProjectCreateInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(false);
+    // Neither folderId nor workingDir: the home default, which needs a name.
+    expect(SpaceProjectCreateInputSchema.safeParse({ name: 'tm8' }).success).toBe(true);
+    expect(SpaceProjectCreateInputSchema.safeParse({ name: 'tm8', trust: 'untrusted' }).success).toBe(true);
+    expect(SpaceProjectCreateInputSchema.safeParse({}).success).toBe(false);
+    expect(SpaceProjectCreateInputSchema.safeParse({ name: 'tm8', ensureWorkingDir: true }).success).toBe(false);
+    expect(SpaceProjectCreateInputSchema.safeParse({ folderId: 'proj_1', workingDir: '/srv/x', name: 'x' }).success).toBe(false);
+    expect(SpaceProjectCreateInputSchema.safeParse({ folderId: 'proj_1', trust: 'untrusted' }).success).toBe(false);
     expect(ProjectDirectoryListingSchema.safeParse({
       roots: ['/Users/x'], path: '/Users/x', parentPath: null, separator: '/',
       directories: [{ name: 'tm8', path: '/Users/x/tm8' }], truncated: false,

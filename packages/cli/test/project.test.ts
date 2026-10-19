@@ -548,6 +548,22 @@ describe('tm8 project add — the Space project on a granted folder (W11)', () =
     expect(r.stdout).toMatch(/folderId[^\n]*00000000-0000-7000-8000-0000000000bb/);
   });
 
+  it('--name alone asks for the home default: no folderId and no workingDir in the body', async () => {
+    respond = () => ({ status: 201, body: ADDED });
+    const r = await invoke(['project', 'add', '--space', SPACE, '--name', 'Docs Site']);
+    expect(r.code).toBe(0);
+    const body = requests[0]?.body as Record<string, unknown>;
+    expect(body.name).toBe('Docs Site');
+    expect('folderId' in body).toBe(false);
+    expect('workingDir' in body).toBe(false);
+  });
+
+  it('with neither a folder id nor --name it still asks for the folder id', async () => {
+    const r = await invoke(['project', 'add', '--space', SPACE]);
+    expect(r.code).toBe(2);
+    expect(requests).toEqual([]);
+  });
+
   it('requires a Space in context', async () => {
     const r = await invoke(['project', 'add', PROJECT]);
     expect(r.code).toBe(2);

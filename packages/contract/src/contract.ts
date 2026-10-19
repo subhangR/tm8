@@ -5972,14 +5972,20 @@ export interface SpaceProject {
  *     step (migration 326). For a space admin who is not a node admin the path
  *     must lie inside an explicitly configured `TM8_PROJECT_ROOTS`.
  */
+/**
+ * `spaces.projects.create`. Three shapes: `folderId` names the project on a
+ * folder already granted to the Space; `workingDir` registers that folder (a
+ * leading `~/` is the node's home); NEITHER registers the home default
+ * `~/<projectDirName(name)>`, creating it when missing (`project-home.ts`).
+ */
 export interface SpaceProjectCreateInput extends CommandContext {
   folderId?: ProjectId;
   workingDir?: string;
   /** With `workingDir`: create it when it is one missing child of an allowed directory. */
   ensureWorkingDir?: boolean;
-  /** With `workingDir`. Only a node admin may register a folder `trusted`. */
+  /** Without `folderId`. Only a node admin may register a folder `trusted`. */
   trust?: ProjectTrustLevel;
-  /** Defaults to the folder's name; required with `workingDir`. */
+  /** Defaults to the folder's name; required without `folderId`. */
   name?: string;
 }
 
