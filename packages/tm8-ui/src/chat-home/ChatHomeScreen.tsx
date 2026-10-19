@@ -6,7 +6,7 @@ import { CollabError } from '@tm8/contract';
 import type { ChatCredentialSelection, ChatMode, EntityId, LaunchModelEffort, SessionTranscriptContext, SpaceId } from '@tm8/contract';
 import { useMobileSurface } from '../mobile';
 import { CHATS_ROOT, KindIcon, homeQuickBirthKinds, type HomeRoot } from '../domain';
-import { rememberChatStart } from '../chat-defaults/lastUsed';
+import { composerPicksScope, lastComposerPicks, rememberChatStart, rememberComposerPick, type ComposerPick } from '../chat-defaults/lastUsed';
 import { RibbonMark, Timestamp } from '../kit';
 import { ListRootHeader, rootBirthAction, type ListRootOption } from '../panels/ListRootHeader';
 import { EntityHelpOverlay } from '../entity-help/EntityHelpOverlay';
@@ -609,11 +609,22 @@ export function ChatHomeScreen({
   const [newCredential, setNewCredential] = useState<ChatCredentialSelection>({ source: 'auto' });
   const [credentialOverrides, setCredentialOverrides] = useState<Readonly<Record<string, ChatCredentialSelection>>>({});
   const [credentialsSaving, setCredentialsSaving] = useState(false);
+  /* THE LAST EXPLICIT PICKS, per Space and viewer: a new chat starts on the
+     mode, model and effort the viewer last chose in any chat, after a host's
+     seed and before the built-in defaults. A host that pins its mode (Craft)
+     neither reads nor writes them — that is not the viewer choosing. */
+  const picksScope = composerPicksScope(spaceId, viewerId);
+  const [remembered] = useState(() => (pinnedMode ? null : lastComposerPicks(picksScope)));
+  const rememberPick = useCallback((pick: ComposerPick) => {
+    if (!pinnedMode) rememberComposerPick(picksScope, pick);
+  }, [pinnedMode, picksScope]);
   const [modelId, setModelId] = useState(() =>
     newChatSeed?.model && models.some((model) => model.model === newChatSeed.model)
       ? newChatSeed.model
-      : (models[0]?.model ?? ''));
-  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? newChatSeed?.mode ?? 'ask');
+      : remembered?.model && models.some((model) => model.model === remembered.model)
+        ? remembered.model
+        : (models[0]?.model ?? ''));
+  const [chatMode, setChatMode] = useState<ChatMode>(pinnedMode ?? newChatSeed?.mode ?? remembered?.mode ?? 'ask');
   /* The seed is a STARTING value: the roster read below lands after mount, so
      the seeded teammate is kept in a ref and applied when it does. */
   const newChatSeedRef = useRef(newChatSeed);
@@ -622,7 +633,18 @@ export function ChatHomeScreen({
      binding (write-once on the server) and the permission ceiling. `null`
      permission means "not chosen" — the rail derives the default from the
      teammate's own `permission_mode` and says so. */
-  const [effortByMode, setEffortByMode] = useState<Partial<Record<ChatMode, LaunchModelEffort>>>({});
+  const [effortByMode, setEffortByMode] = useState<Partial<Record<ChatMode, LaunchModelEffort>>>(() => remembered?.effortByMode ?? {});
+  /* A Space switch without a remount lands the new chat on THAT Space's picks. */
+  const picksScopeRef = useRef(picksScope);
+  useEffect(() => {
+    if (picksScopeRef.current === picksScope) return;
+    picksScopeRef.current = picksScope;
+    if (pinnedMode) return;
+    const next = lastComposerPicks(picksScope);
+    setChatMode(next.mode ?? 'ask');
+    if (next.model) setModelId(next.model);
+    setEffortByMode(next.effortByMode);
+  }, [picksScope, pinnedMode]);
   const [modeOptions, setModeOptions] = useState<ModeOptionsByMode>({});
   const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
   /* THE PHONE CARD HOLDS ONLY THE FIELD AND THE FOOT (chat v2 mockup): staged
@@ -1378,8 +1400,10 @@ export function ChatHomeScreen({
      rebuilds `models` on every render. */
   const modelIdsKey = models.map((model) => model.model).join('\n');
   useEffect(() => {
-    const first = models[0]?.model;
-    if (first !== undefined && !models.some((model) => model.model === modelId)) setModelId(first);
+    if (models.some((model) => model.model === modelId)) return;
+    const last = pinnedMode ? null : lastComposerPicks(picksScope).model;
+    const next = last && models.some((model) => model.model === last) ? last : models[0]?.model;
+    if (next !== undefined) setModelId(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the id list
   }, [modelIdsKey, modelId]);
   const busy = isBusyPhase(phase);
@@ -1535,13 +1559,16 @@ export function ChatHomeScreen({
   const chooseMode = useCallback((next: string) => {
     /* An unstarted chat is still a PENDING PICK — `chat.start` carries this one
        as the thread's DEFAULT mode, which is a different write. */
-    if (!pinned) { setChatMode(next as ChatMode); return; }
+    /* Either way it is the next new chat's starting mode too. */
+    rememberPick({ mode: next as ChatMode });
+    setChatMode(next as ChatMode);
+    if (!pinned) return;
     const chatId = selectedRootId;
     if (chatId === null) return;
     /* No optimistic-then-corrected step, because there is no round trip to be
        wrong about: nothing is sent until the next turn is. */
     setModeOverrides((current) => ({ ...current, [chatId]: next as ChatMode }));
-  }, [pinned, selectedRootId]);
+  }, [pinned, selectedRootId, rememberPick]);
   /* THE ⚙ OFFERS ROLES, NOT MODES. Re-picking the role already shown is a
      no-op, so a thread in `plan` is not silently rewritten to `ask`. */
   const chooseRole = useCallback((next: ComposerRole) => {
@@ -1560,7 +1587,9 @@ export function ChatHomeScreen({
   const chooseModel = useCallback((next: string) => {
     /* An unstarted chat is still a PENDING PICK — it has no row to write to, and
        `chat.start` carries the choice. */
-    if (!pinned) { setModelId(next); return; }
+    rememberPick({ model: next });
+    setModelId(next);
+    if (!pinned) return;
     const chatId = selectedRootId;
     const setModel = port.setModel;
     if (chatId === null || setModel === undefined || configWriteRef.current) return;
@@ -1614,7 +1643,7 @@ export function ChatHomeScreen({
         fileSubmitFailure(chatId, describeError(error));
       },
     ).finally(() => { configWriteRef.current = false; setConfigSaving(false); });
-  }, [pinned, selectedRootId, port, fileSubmitFailure, models, activeConfig?.reasoningEffort, effortByMode, shownMode]);
+  }, [pinned, selectedRootId, port, fileSubmitFailure, models, activeConfig?.reasoningEffort, effortByMode, shownMode, rememberPick]);
   /* Under orchestrate the roster is COORDINATORS ONLY (ac_7); the model
      decides, the effect below applies its preselect. */
   const roster = useMemo(
@@ -1663,7 +1692,9 @@ export function ChatHomeScreen({
     return nearestEffort(wanted, shownModel?.efforts ?? []);
   }, [activeConfig?.reasoningEffort, effortByMode, shownMode, shownModel]);
   const chooseEffort = useCallback((next: LaunchModelEffort) => {
-    if (!pinned) { setEffortByMode(current => ({ ...current, [shownMode]: next })); return; }
+    rememberPick({ mode: shownMode, effort: next });
+    setEffortByMode(current => ({ ...current, [shownMode]: next }));
+    if (!pinned) return;
     const chatId = selectedRootId;
     if (!chatId || !port.setModel || configWriteRef.current) return;
     configWriteRef.current = true;
@@ -1674,7 +1705,7 @@ export function ChatHomeScreen({
         [chatId]: { ...current[chatId], ...result, reasoningEffort: result.reasoningEffort ?? next } })),
       error => fileSubmitFailure(chatId, describeError(error)),
     ).finally(() => { configWriteRef.current = false; setConfigSaving(false); });
-  }, [pinned, selectedRootId, port, shownModelId, shownMode, fileSubmitFailure]);
+  }, [pinned, selectedRootId, port, shownModelId, shownMode, fileSubmitFailure, rememberPick]);
   /* THE CEILING. Default = the teammate's own `permission_mode`, said out loud. */
   const shownTeammate = teammates.find((teammate) => teammate.id === shownTeammateId);
   const derivedPermission = rungFromPermissionMode(shownTeammate?.permissionMode);
