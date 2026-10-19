@@ -12,6 +12,7 @@ export function definitionFor(input: McpDefinition, previous?: McpServerDefiniti
   const authorizationUrl = input.authorizationUrl ?? oauth?.authorizationUrl;
   const tokenUrl = input.tokenUrl ?? oauth?.tokenUrl;
   const clientId = input.clientId ?? oauth?.clientId;
+  const clientSecretEnv = input.clientSecretEnv ?? oauth?.clientSecretEnv;
   const slot = input.secretSlot ?? (priorAuth?.type === 'api_key' ? priorAuth.headerName ?? priorAuth.envKey : undefined) ?? (input.transport === 'http' ? 'Authorization' : 'API_KEY');
   const definition = {
     name: input.title, provenance: input.description || undefined, transport: input.transport,
@@ -23,7 +24,7 @@ export function definitionFor(input: McpDefinition, previous?: McpServerDefiniti
     headerKeys: input.auth === 'api_key' && input.transport === 'http' ? [slot] : [],
     auth: input.auth === 'none' ? { type: 'none' } : input.auth === 'api_key'
       ? { type: 'api_key', ...(input.transport === 'http' ? { headerName: slot, prefix: input.prefix ?? (priorAuth?.type === 'api_key' ? priorAuth.prefix : undefined) ?? 'Bearer' } : { envKey: slot }) }
-      : { type: 'oauth2', ...(issuer ? { issuer } : {}), ...(authorizationUrl ? { authorizationUrl } : {}), ...(tokenUrl ? { tokenUrl } : {}), ...(clientId ? { clientId } : {}), scopes: input.scopes ?? oauth?.scopes ?? [] },
+      : { type: 'oauth2', ...(issuer ? { issuer } : {}), ...(authorizationUrl ? { authorizationUrl } : {}), ...(tokenUrl ? { tokenUrl } : {}), ...(clientId ? { clientId } : {}), ...(clientSecretEnv ? { clientSecretEnv } : {}), scopes: input.scopes ?? oauth?.scopes ?? [] },
   };
   return McpServerDefinitionSchema.parse(definition);
 }

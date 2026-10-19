@@ -150,6 +150,69 @@ describe('independent OAuth binding and lifecycle', () => {
     expect(Object.fromEntries(new URLSearchParams(exchanged.body))).toMatchObject({ client_id: 'post-client', client_secret: 'post-secret' });
     expect(secret.tokenEndpointAuthMethod).toBe('client_secret_post');
   });
+  it.each([
+    [['client_secret_post'], 'client_secret_post'],
+    [undefined, 'client_secret_basic'],
+  ] as const)('uses a preregistered confidential client (advertised %j) without registering', async (advertised, method) => {
+    const p = await provider();
+    if (advertised) p.state.metadata.token_endpoint_auth_methods_supported = [...advertised];
+    const auth = await p.begin({ clientId: 'slack-style-client', clientSecret: 'operator-secret' } as never);
+    expect(p.calls.some(call => call.path === '/register')).toBe(false);
+    expect(auth.searchParams.get('client_id')).toBe('slack-style-client');
+    expect(auth.toString()).not.toContain('operator-secret');
+    const { secret } = await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    const exchanged = p.calls.find(call => call.path === '/token')!;
+    if (method === 'client_secret_post') {
+      expect(exchanged.authorization).toBeUndefined();
+      expect(Object.fromEntries(new URLSearchParams(exchanged.body))).toMatchObject({ client_id: 'slack-style-client', client_secret: 'operator-secret' });
+    } else {
+      expect(exchanged.authorization).toBe(`Basic ${Buffer.from('slack-style-client:operator-secret').toString('base64')}`);
+      expect(exchanged.body).not.toContain('operator-secret');
+    }
+    expect(secret).toMatchObject({ clientId: 'slack-style-client', clientSecret: 'operator-secret', tokenEndpointAuthMethod: method });
+  });
+  it('refuses a preregistered secret the issuer cannot accept, before consent', async () => {
+    const p = await provider();
+    p.state.metadata.token_endpoint_auth_methods_supported = ['none'];
+    await expect(p.begin({ clientSecret: 'operator-secret' } as never)).rejects.toThrow('client authentication unsupported');
+    await expect(p.begin({ clientId: undefined, clientSecret: 'operator-secret' } as never)).rejects.toThrow('requires a client id');
+  });
+  it.each([['user', true], ['Bearer', true], ['DPoP', false], ['mac', false]] as const)('token_type %s accepted=%s', async (tokenType, accepted) => {
+    const p = await provider();
+    p.state.token = { access_token: 'access-secret', token_type: tokenType };
+    const auth = await p.begin();
+    const result = p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    if (accepted) await expect(result).resolves.toMatchObject({ secret: { accessToken: 'access-secret' } });
+    else await expect(result).rejects.toThrow(/^OAuth token response invalid$/);
+  });
+  it.each([undefined, 'operator-secret'])('reads a declared client secret from server env through the begin handler (secret=%s)', async configured => {
+    const p = await provider();
+    const serverId = '00000000-0000-4000-8000-000000000002';
+    const registry = new HandlerRegistry();
+    const deps = { db: {}, owner: async () => ({ identityId: 'human', isNodeAdmin: false }) } as unknown as FacadeDeps;
+    const asked: string[] = [];
+    registerMcpRuntimeHandlers(registry, deps, {
+      dataDir: '/unused-independent-oauth-fixture', callbackUrl: 'https://tm8.test/callback',
+      clientSecret: name => { asked.push(name); return configured; },
+      definition: async () => ({ id: serverId, spaceId: 'space', definition: { approved: true, transport: 'http', url: p.input.resource, allowPrivateNetwork: true, auth: { type: 'oauth2', issuer: p.origin, clientId: 'client', clientSecretEnv: 'TM8_MCP_CLIENT_SECRET_SLACK' } } }) as never,
+      authorize: async () => { throw new Error('unused'); },
+    });
+    const ctx = { body: { clientMutationId: 'begin', label: 'fixture' }, params: { serverId }, identity: { kind: 'bearer', identityId: 'human', authKind: 'browser' }, requestId: 'fixture' } as unknown as RequestContext;
+    const started = registry.get('mcp.oauth.begin')!(ctx);
+    if (!configured) {
+      await expect(started).rejects.toThrow('set TM8_MCP_CLIENT_SECRET_SLACK');
+      expect(asked).toEqual(['TM8_MCP_CLIENT_SECRET_SLACK']);
+      expect(p.calls).toHaveLength(0);
+      return;
+    }
+    const { authorizationUrl } = await started as { authorizationUrl: string };
+    expect(asked).toEqual(['TM8_MCP_CLIENT_SECRET_SLACK']);
+    expect(p.calls.some(call => call.path === '/register')).toBe(false);
+    // The fixture has no credential store, so the callback fails after the exchange; the exchange is what is under test.
+    await registry.get('mcp.oauth.callback')!({ ...ctx, body: { state: new URL(authorizationUrl).searchParams.get('state')!, code: 'code' } } as RequestContext).catch(() => undefined);
+    const exchanged = p.calls.find(call => call.path === '/token')!;
+    expect(exchanged.authorization).toBe(`Basic ${Buffer.from('client:operator-secret').toString('base64')}`);
+  });
   it('consumes state on denied token exchange and redacts provider error body', async () => {
     const p = await provider(); p.state.tokenStatus = 400; p.state.token = { error: 'access_denied', error_description: 'secret-from-provider' };
     const auth = await p.begin(); const input = { state: auth.searchParams.get('state')!, code: 'code' };
