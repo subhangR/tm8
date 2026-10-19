@@ -10,12 +10,21 @@ const PublicUrl = z.string().url().max(2048).refine(value => {
   return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password && !url.hash && !url.search;
 }, 'URLs must be HTTP(S) without credentials, query secrets or fragments');
 
+/**
+ * Names the server environment variable holding a preregistered client's secret
+ * (Slack's MCP server, for one, admits only preregistered confidential clients).
+ * The prefix confines it: a connector definition must never be able to send an
+ * arbitrary server variable, such as a database URL, to a token endpoint.
+ */
+const ClientSecretEnv = z.string().regex(/^TM8_MCP_CLIENT_SECRET_[A-Z0-9_]+$/).max(128);
+
 export const McpAuthSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }).strict(),
   z.object({ type: z.literal('api_key'), headerName: HeaderKey.optional(), envKey: EnvKey.optional(),
     prefix: z.enum(['Bearer', 'none']).optional() }).strict(),
   z.object({ type: z.literal('oauth2'), issuer: PublicUrl.optional(), authorizationUrl: PublicUrl.optional(), tokenUrl: PublicUrl.optional(),
-    clientId: z.string().min(1).max(512).optional(), scopes: z.array(z.string().min(1).max(256)).max(32).optional() }).strict(),
+    clientId: z.string().min(1).max(512).optional(), clientSecretEnv: ClientSecretEnv.optional(),
+    scopes: z.array(z.string().min(1).max(256)).max(32).optional() }).strict(),
 ]);
 
 /** Definition metadata only. Literal env/header values are never graph content. */
@@ -39,6 +48,7 @@ export const McpServerDefinitionSchema = z.object({
   if (value.transport === 'http' && (!value.url || value.command || value.args || value.envKeys.length)) reject('http requires url and forbids command, args and envKeys');
   if (value.transport === 'stdio' && value.auth.type === 'oauth2') reject('OAuth requires HTTP transport');
   if (value.auth.type !== 'api_key' && (value.envKeys.length || value.headerKeys.length)) reject('only API key auth declares a secret slot');
+  if (value.auth.type === 'oauth2' && value.auth.clientSecretEnv && !value.auth.clientId) reject('OAuth client secret requires a client id');
   if (value.auth.type === 'api_key') {
     if (value.envKeys.length + value.headerKeys.length !== 1) reject('API key auth requires exactly one secret slot');
     if (value.transport === 'http' && (!value.auth.headerName || value.auth.envKey || !value.headerKeys.includes(value.auth.headerName))) reject('HTTP API key requires a declared headerName');

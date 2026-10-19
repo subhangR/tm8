@@ -4,11 +4,15 @@ import { useMcpCatalog } from './context';
 import { readiness } from './McpPicker';
 import type { McpAccount, McpDefinition, McpPort, McpServer } from './port';
 import { SectionFrame } from '../settings-space';
+import { MCP_DIRECTORY, type McpDirectoryEntry } from './directory';
 import './mcp.css';
 
-function DefinitionForm({ server, busy, onSave }: { server?: McpServer; busy: boolean; onSave(input: McpDefinition): Promise<void> }) {
-  const [transport, setTransport] = useState<'http' | 'stdio'>(server?.transport ?? 'http');
-  const [auth, setAuth] = useState<McpDefinition['auth']>(server?.auth ?? 'none');
+function DefinitionForm({ server, template, busy, onSave }: { server?: McpServer; template?: McpDirectoryEntry; busy: boolean; onSave(input: McpDefinition): Promise<void> }) {
+  // A directory template prefills a new connector exactly as an existing definition prefills an edit.
+  const source = server?.source ?? template?.definition;
+  const [transport, setTransport] = useState<'http' | 'stdio'>(server?.transport ?? source?.transport ?? 'http');
+  const [auth, setAuth] = useState<McpDefinition['auth']>(server?.auth ?? (source?.auth.type === 'oauth2' ? 'oauth' : source?.auth.type) ?? 'none');
+  const oauthSource = source?.auth.type === 'oauth2' ? source.auth : undefined;
   const [trusted, setTrusted] = useState(server?.source?.stdioTrusted ?? false);
   const [error, setError] = useState<string | null>(null);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -22,15 +26,15 @@ function DefinitionForm({ server, busy, onSave }: { server?: McpServer; busy: bo
         if (!Array.isArray(args) || args.some(a => typeof a !== 'string')) throw new Error();
       }
     } catch { setError('Arguments must be a JSON array of strings.'); return; }
-    await onSave({ issuer: String(form.get('issuer') || ''), secretSlot: String(form.get('secretSlot') || (transport === 'http' ? 'Authorization' : 'API_KEY')), prefix: String(form.get('prefix') || 'Bearer') as 'Bearer' | 'none', authorizationUrl: String(form.get('authorizationUrl') || ''), tokenUrl: String(form.get('tokenUrl') || ''), clientId: String(form.get('clientId') || ''), scopes: String(form.get('scopes') || '').split(/\s+/).filter(Boolean), allowPrivateNetwork: form.get('privateNetwork') === 'on', title: String(form.get('title')).trim(), description: String(form.get('description') ?? ''), transport, auth,
+    await onSave({ issuer: String(form.get('issuer') || ''), secretSlot: String(form.get('secretSlot') || (transport === 'http' ? 'Authorization' : 'API_KEY')), prefix: String(form.get('prefix') || 'Bearer') as 'Bearer' | 'none', authorizationUrl: String(form.get('authorizationUrl') || ''), tokenUrl: String(form.get('tokenUrl') || ''), clientId: String(form.get('clientId') || ''), clientSecretEnv: String(form.get('clientSecretEnv') || ''), scopes: String(form.get('scopes') || '').split(/\s+/).filter(Boolean), allowPrivateNetwork: form.get('privateNetwork') === 'on', title: String(form.get('title')).trim(), description: String(form.get('description') ?? ''), transport, auth,
       ...(transport === 'http' ? { url: String(form.get('url')).trim() } : { command: String(form.get('command')).trim(), args, trustedCode: trusted }),
     });
   }
   return <form className="mcp-form" onSubmit={e => { void submit(e); }}>
-    <label>Name<input name="title" required maxLength={80} pattern="[A-Za-z]([A-Za-z0-9_]|-)*" title="Start with a letter; use letters, numbers, hyphens and underscores." defaultValue={server?.title} /></label>
-    <label>Source or notes<textarea name="description" defaultValue={server?.description} /></label>
+    <label>Name<input name="title" required maxLength={80} pattern="[A-Za-z]([A-Za-z0-9_]|-)*" title="Start with a letter; use letters, numbers, hyphens and underscores." defaultValue={server?.title ?? source?.name} /></label>
+    <label>Source or notes<textarea name="description" defaultValue={server?.description ?? source?.provenance} /></label>
     <label>Connection<select value={transport} onChange={e => { setTransport(e.target.value as 'http' | 'stdio'); if (e.target.value === 'stdio' && auth === 'oauth') setAuth('none'); }}><option value="http">Remote URL</option><option value="stdio">Local command (stdio)</option></select></label>
-    {transport === 'http' ? <label>Server URL<input name="url" type="url" required placeholder="https://example.com/mcp" defaultValue={server?.url} /></label> : <>
+    {transport === 'http' ? <label>Server URL<input name="url" type="url" required placeholder="https://example.com/mcp" defaultValue={server?.url ?? source?.url} /></label> : <>
       <label>Command<input name="command" required defaultValue={server?.command} /></label>
       <label>Arguments (JSON array)<textarea name="args" defaultValue={JSON.stringify(server?.args ?? [])} /></label>
       <p>This command runs code on the execution machine. Its subprocess can access its environment and files. Only register code you trust.</p>
@@ -38,7 +42,7 @@ function DefinitionForm({ server, busy, onSave }: { server?: McpServer; busy: bo
     </>}
     <label>Authentication<select value={auth} onChange={e => setAuth(e.target.value as McpDefinition['auth'])}><option value="none">No authentication</option><option value="api_key">API key</option>{transport === "http" && <option value="oauth">OAuth</option>}</select></label>
     {auth === 'api_key' && <><label>{transport === 'http' ? 'Header name' : 'Environment variable'}<input name="secretSlot" required defaultValue={server?.source?.auth.type === 'api_key' ? server.source.auth.headerName ?? server.source.auth.envKey : transport === 'http' ? 'Authorization' : 'API_KEY'} /></label>{transport === 'http' && <label>Header prefix<select name="prefix" defaultValue={server?.source?.auth.type === 'api_key' ? server.source.auth.prefix ?? 'Bearer' : 'Bearer'}><option value="Bearer">Bearer</option><option value="none">None</option></select></label>}</>}
-    {auth === 'oauth' && <details><summary>OAuth settings (optional)</summary><p>Leave these blank to use server discovery and registration.</p><label>Authorization server (issuer)<input name="issuer" type="url" defaultValue={server?.source?.auth.type === 'oauth2' ? server.source.auth.issuer : ''} /></label><label>Client ID<input name="clientId" defaultValue={server?.source?.auth.type === 'oauth2' ? server.source.auth.clientId : ''} /></label><label>Authorization URL<input type="url" name="authorizationUrl" defaultValue={server?.source?.auth.type === 'oauth2' ? server.source.auth.authorizationUrl : ''} /></label><label>Token URL<input type="url" name="tokenUrl" defaultValue={server?.source?.auth.type === 'oauth2' ? server.source.auth.tokenUrl : ''} /></label><label>Scopes (space separated)<input name="scopes" defaultValue={server?.source?.auth.type === 'oauth2' ? server.source.auth.scopes?.join(' ') : ''} /></label></details>}
+    {auth === 'oauth' && <details open={!!oauthSource?.clientSecretEnv}><summary>OAuth settings (optional)</summary><p>Leave these blank to use server discovery and registration.</p><label>Authorization server (issuer)<input name="issuer" type="url" defaultValue={oauthSource?.issuer ?? ''} /></label><label>Client ID<input name="clientId" required={!!oauthSource?.clientSecretEnv} defaultValue={oauthSource?.clientId ?? ''} /></label><label>Client secret environment variable<input name="clientSecretEnv" pattern="TM8_MCP_CLIENT_SECRET_[A-Z0-9_]+" title="TM8_MCP_CLIENT_SECRET_ followed by capitals, digits or underscores." placeholder="TM8_MCP_CLIENT_SECRET_EXAMPLE" defaultValue={oauthSource?.clientSecretEnv ?? ''} /></label><p>Only for providers that require a preregistered confidential client. The secret is never stored here: set the named variable in the tm8 server environment.</p><label>Authorization URL<input type="url" name="authorizationUrl" defaultValue={oauthSource?.authorizationUrl ?? ''} /></label><label>Token URL<input type="url" name="tokenUrl" defaultValue={oauthSource?.tokenUrl ?? ''} /></label><label>Scopes (space separated)<input name="scopes" defaultValue={oauthSource?.scopes?.join(' ') ?? ''} /></label></details>}
     {transport === 'http' && <label><span><input type="checkbox" name="privateNetwork" defaultChecked={server?.source?.allowPrivateNetwork ?? false} /> Allow this connector to access private networks (administrator policy)</span></label>}
     <p>Keep API keys and tokens out of URLs, commands and arguments. Add them as a private account after registration. Private network access requires administrator policy.</p>
     {error && <p role="alert" className="mcp-error">{error}</p>}
@@ -84,7 +88,8 @@ function AccountCard({ account, server, port, run, busy }: { account: McpAccount
 export function McpSettings() {
   const { catalog, port, error, loading, refresh } = useMcpCatalog();
   const [active, setActive] = useState<string | null>(null);
-  const [mode, setMode] = useState<'list' | 'add' | 'import'>('list');
+  const [mode, setMode] = useState<'list' | 'add' | 'import' | 'directory'>('list');
+  const [template, setTemplate] = useState<McpDirectoryEntry | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -110,9 +115,16 @@ export function McpSettings() {
     {loading && !catalog && <p role="status">Loading connectors…</p>}
     <div className="mcp-actions">
       <button onClick={() => { setActive(null); setMode('list'); }}>All connectors</button>
-      {catalog?.canRegister && <><button onClick={() => { setActive(null); setMode('add'); }}>Add connector</button><button onClick={() => { setActive(null); setMode('import'); }}>Import configuration</button></>}
+      {catalog?.canRegister && <><button onClick={() => { setActive(null); setMode('directory'); }}>Browse directory</button><button onClick={() => { setActive(null); setTemplate(undefined); setMode('add'); }}>Add connector</button><button onClick={() => { setActive(null); setMode('import'); }}>Import configuration</button></>}
     </div>
-    {mode === 'add' && catalog?.canRegister && <DefinitionForm busy={busy} onSave={input => run(async () => { await port.register(input); setMode('list'); }, 'Connector registered.')} />}
+    {mode === 'directory' && catalog?.canRegister && <>{MCP_DIRECTORY.map(entry => {
+      const added = catalog.servers.some(s => s.url === entry.definition.url);
+      return <article className="mcp-card" key={entry.id}><h3>{entry.title}</h3><p>{entry.summary}</p>
+        {entry.requirement && <p><strong>Requires:</strong> {entry.requirement}</p>}
+        <p><a href={entry.docsUrl} target="_blank" rel="noreferrer">{entry.title} MCP documentation</a></p>
+        <button disabled={added} onClick={() => { setTemplate(entry); setMode('add'); }}>{added ? 'Already added' : `Add ${entry.title}`}</button></article>;
+    })}</>}
+    {mode === 'add' && catalog?.canRegister && <DefinitionForm key={template?.id ?? 'custom'} template={template} busy={busy} onSave={input => run(async () => { await port.register(input); setTemplate(undefined); setMode('list'); }, 'Connector registered.')} />}
     {mode === 'import' && catalog?.canRegister && <form className="mcp-form" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); void run(async () => { await port.importConfig(String(data.get('json')), data.get('trusted') === 'on'); setMode('list'); }, 'Configuration imported.'); }}>
       <label>MCP configuration JSON<textarea required name="json" placeholder={'{"mcpServers": {}}'} /></label>
       <p>Remove secrets before importing. Local commands execute code on the machine.</p>
