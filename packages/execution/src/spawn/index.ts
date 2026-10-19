@@ -96,16 +96,26 @@ export {
 export { SpawnError } from './types.js';
 export { DISPATCHER_ROSTER_READ_MAX } from './context-index.js';
 export {
-  codexHomeReclaimReason,
   codexMcpHomesRoot,
   codexMcpSessionDir,
-  reclaimCodexMcpHomes,
   scrubCodexMcpHome,
   sweepCodexMcpHomeSecrets,
-  type CodexHomeReclaimReason,
-  type CodexHomeReclaimReport,
-  type CodexHomeSessionFacts,
 } from './mcp-home.js';
+export {
+  codexHomeReclaimReason,
+  manifestReclaimReason,
+  reclaimSessionArtifacts,
+  spaceHomeReclaimReason,
+  type CodexHomeReclaimReason,
+  type ManifestReclaimReason,
+  type SessionArtifact,
+  type SessionArtifactReclaimReason,
+  type SessionArtifactReclaimReport,
+  type SessionHomeFacts,
+  type SessionHomeOwnerFacts,
+  type SessionHomeRetention,
+  type SpaceHomeReclaimReason,
+} from './session-artifact-reclaim.js';
 export {
   materializeSpaceApiKeyHome,
   scrubSpaceSessionSecrets,
