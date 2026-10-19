@@ -2327,13 +2327,14 @@ const ROWS: Record<OperationName, Row> = {
   },
   'spaces.projects.create': {
     cmd: ['project', 'add'],
-    syn: 'tm8 project add <folder-id> [--name <name>] | --working-dir <absolute-path> --name <name> [--ensure-working-dir] [--trust trusted|untrusted]  [--space <space-id>] [--mutation-id <id>]',
+    syn: 'tm8 project add <folder-id> [--name <name>] | [--working-dir <absolute-path>] --name <name> [--ensure-working-dir] [--trust trusted|untrusted]  [--space <space-id>] [--mutation-id <id>]',
     sum: "Name the Space's project on a folder granted to that Space, or register a folder on the node for it",
     authz: 'space',
     input: 'bound',
     notes: [
       'requires the Space owner/admin capability; a folder granted to another Space is refused: this folder belongs to another space',
       '--working-dir registers and grants a folder in one step; a Space admin who is not a node admin may do so only inside an explicitly configured TM8_PROJECT_ROOTS, and only untrusted',
+      'with neither <folder-id> nor --working-dir, --name alone creates the default folder ~/<name> on the node (refused if it already exists) and registers it the same way',
     ],
   },
   'spaces.projects.clone': {

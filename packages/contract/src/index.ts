@@ -25,6 +25,7 @@ export * from './chat-runtime.js';
 export * from './membership.js';
 export * from './space-links.js';
 export * from './cross-space-refs.js';
+export * from './project-home.js';
 export * from './servers.js';
 export * from './forms.js';
 export * from './story.js';

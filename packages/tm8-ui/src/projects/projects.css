@@ -102,6 +102,11 @@
   align-items: stretch;
 }
 
+.project-onboard__folder-row input {
+  flex: 1;
+  font-family: var(--pn-mono);
+}
+
 .project-onboard__folder-row code {
   flex: 1;
   min-width: 0;

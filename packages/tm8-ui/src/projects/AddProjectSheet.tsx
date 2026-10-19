@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { projectHomeDisplayPath } from '@tm8/contract';
 import type {
   ProjectCloneInput,
   ProjectCloneJob,
@@ -126,8 +127,11 @@ export function AddProjectSheet(props: AddProjectSheetProps) {
 
   const validate = (): string | null => {
     if (!projectName.trim()) return 'Give the project a name.';
+    // An empty folder is the home default, `~/<name>`; the name must give one.
     if (draft.sourceKind === 'folder') {
-      return draft.workingDir ? null : 'Choose the folder this project lives in.';
+      return draft.workingDir.trim() || projectHomeDisplayPath(projectName)
+        ? null
+        : 'Use letters or digits in the name, or choose the folder this project lives in.';
     }
     if (draft.sourceKind === 'github') {
       if (!isGithubUrl(draft.repoUrl) && !/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(draft.repoUrl.trim())) {
@@ -178,10 +182,11 @@ export function AddProjectSheet(props: AddProjectSheetProps) {
     const name = projectName.trim();
     try {
       if (draft.sourceKind === 'folder') {
+        const workingDir = draft.workingDir.trim();
         const project = await props.port.add({
           name,
-          workingDir: draft.workingDir,
-          ...(draft.ensureWorkingDir ? { ensureWorkingDir: true } : {}),
+          ...(workingDir ? { workingDir } : {}),
+          ...(workingDir && draft.ensureWorkingDir ? { ensureWorkingDir: true } : {}),
           clientMutationId: `add-project:${crypto.randomUUID()}`,
         });
         setBusy(false);
@@ -247,6 +252,7 @@ export function AddProjectSheet(props: AddProjectSheetProps) {
               nodeLabel={props.nodeLabel}
               githubMode="clone"
               uploadUnavailableReason={props.port.importFolder ? null : FOLDER_UPLOAD_UNAVAILABLE}
+              defaultWorkingDir={projectHomeDisplayPath(projectName)}
             />
             <p className="project-onboard__note">
               The project is added untrusted: agents ask for confirmation before running in it until a node admin trusts it.

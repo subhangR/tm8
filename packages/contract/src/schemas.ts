@@ -3862,14 +3862,18 @@ export const SpaceProjectCreateInputSchema: z.ZodType<SpaceProjectCreateInput> =
   trust: ProjectTrustLevelSchema.optional(),
   name: z.string().trim().min(1).max(200).optional(),
 }).strict().superRefine((value, context) => {
-  if ((value.folderId === undefined) === (value.workingDir === undefined)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name exactly one of folderId or workingDir' });
+  /* Neither is the home default: a new folder `~/<name>` (project-home.ts). */
+  if (value.folderId !== undefined && value.workingDir !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name at most one of folderId or workingDir' });
   }
-  if (value.workingDir === undefined && (value.ensureWorkingDir !== undefined || value.trust !== undefined)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'ensureWorkingDir and trust apply only with workingDir' });
+  if (value.workingDir === undefined && value.ensureWorkingDir !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'ensureWorkingDir applies only with workingDir' });
   }
-  if (value.workingDir !== undefined && value.name === undefined) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name is required with workingDir' });
+  if (value.folderId !== undefined && value.trust !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'trust applies only to a new folder (workingDir, or none for the home default)' });
+  }
+  if (value.folderId === undefined && value.name === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name is required unless folderId is given' });
   }
 });
 
