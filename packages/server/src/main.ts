@@ -390,7 +390,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           : {}),
       })
     : undefined;
-  if (chat && typeof opts.chat === 'function') void chat.reconcileOnBoot();
+  if (chat && typeof opts.chat === 'function') {
+    void chat.reconcileOnBoot();
+    // Expired leases are recovered while the node runs, not only at the next boot.
+    chat.startRecoverySweep();
+  }
 
   // Voice-channel roster (voice plan §2). Ephemeral for the same reason
   // presence is, but sourced from LiveKit webhooks rather than from client
@@ -875,7 +879,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
-  server.http.once('close', () => chatCleanupRetries.stop());
+  server.http.once('close', () => { chatCleanupRetries.stop(); chat?.stopRecoverySweep(); });
   const { url } = await server.listen();
 
   // Retention, on boot and never on the request path: an expired date-bucket is

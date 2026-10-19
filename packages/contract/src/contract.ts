@@ -1607,6 +1607,14 @@ export interface SetChatCredentialsResult extends SetChatCredentialsInput {
   appliesAt?: 'next_claim';
 }
 
+/** Stop the chat's running turn. Queued turns behind it still run. */
+export type InterruptChatInput = Record<string, never>;
+export interface InterruptChatResult {
+  chatId: EntityId;
+  /** `requested`: the running turn will end and its done frame says how. `not_running`: nothing to stop. */
+  disposition: 'requested' | 'not_running';
+}
+
 export interface StartChatInput {
   credentialSelection?: ChatCredentialSelection;
   reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;

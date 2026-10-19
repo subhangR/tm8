@@ -26,6 +26,14 @@ export interface FencedTurnOptions {
   publisher: ChatTurnPublisher; turn: FencedClaim; leaseToken: string; prompt: string;
   historyBudgetBytes: number; createAgentMessage(): Promise<string>;
   track(active: ActiveChatHarness): void; untrack(): void;
+  /**
+   * True once a Stop has been asked for this turn. A Stop that lands before the
+   * harness is tracked (preparation, open) or between track and submit has no
+   * running attempt to cancel; it is latched by the caller and read here, so the
+   * input is never dispatched — and one that lands just as submit goes out is
+   * turned into a cancel right after it.
+   */
+  stopRequested?: (() => boolean) | undefined;
   /** Called only after this owner's resources and durable lease are released. */
   onReleased?: (() => void) | undefined;
   onError?: ((error: unknown) => void) | undefined;
@@ -80,6 +88,12 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   let snapshotId: string | undefined;
   let barrier=false;
   let knownNotSent=false;
+  let stoppedBeforeDispatch=false;
+  const stopIfRequested=() => {
+    if (!options.stopRequested?.()) return;
+    stoppedBeforeDispatch=true;
+    throw new Error('chat turn stopped before dispatch');
+  };
   let closed=false;
   let seq=Number(turn.nextSeq);
   let agentMessageId=turn.agentMessageId;
@@ -202,6 +216,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       prepared=value; preparing=false; if (closed) void cleanup(); return value;
     },error => { preparing=false; if (closed) void cleanup(); throw error; });
     prepared=await deadline(preparation,options.timeouts?.preparation ?? 30_000,'launch preparation');
+    stopIfRequested();
     const config: RuntimeConfig={schemaVersion:1,revision:turn.configRevision,target:prepared.target,
       instructionHash:prepared.instructionHash,toolPolicyHash:prepared.toolPolicyHash,mcpBindingRevision:prepared.mcpBindingRevision,
       cwdIdentity:turn.cwd,credentialBindingId:prepared.credentialBindingId,credentialRevision:prepared.credentialRevision,
@@ -216,6 +231,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       nativeStorageGeneration:prepared.launch.nativeStorageGeneration}]);
     options.track({session,attempt,revalidate:prepared.revalidate});
     await prepared.revalidate();
+    stopIfRequested();
     // Commit before submit, even if submit will fail before writing. Recovery
     // after this commit is conservative unless not_sent is explicitly proved.
     await rpc('begin_chat_dispatch',[turn.chatId,leaseFence,snapshotId,sealed.inputDigest]);
@@ -291,6 +307,8 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       await deadline(observed.catch(()=>undefined),options.timeouts?.close ?? 15_000,'failed dispatch observations');
       throw new Error(dispatched.delivery==='not_sent' ? 'provider_not_sent' : 'delivery_unknown');
     }
+    // A Stop that raced submit found no active attempt to cancel; honour it now.
+    if (options.stopRequested?.()) void current.cancel(attempt,'user').catch(error=>options.onError?.(error));
     if (dispatched.acknowledgement==='native_ack') await rpc('record_chat_acceptance',[
       turn.chatId,leaseFence,snapshotId,{nativeTurnId:dispatched.nativeTurnId}]);
     await observed;
@@ -301,13 +319,14 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       await deadline(session.close('failure'),options.timeouts?.close ?? 15_000,'failed turn close').catch(error=>options.onError?.(error));
       if (observed) await deadline(observed.catch(()=>undefined),options.timeouts?.close ?? 15_000,'failed turn observations').catch(error=>options.onError?.(error));
     }
-    options.onError?.(error);
+    if (!stoppedBeforeDispatch) options.onError?.(error);
     // An ACK failure is weaker evidence than an already-durable provider terminal.
     // Its output parts are consumed before this branch and must not gain a second done.
     if (terminal) await settleTerminal(terminal);
     else {
-      failure={code:knownNotSent ? 'provider_not_sent' : barrier ? 'delivery_unknown' : 'preparation_failed',
-        message:knownNotSent ? 'The provider confirmed this input was not sent.' : barrier
+      failure={code:stoppedBeforeDispatch ? 'interrupted' : knownNotSent ? 'provider_not_sent' : barrier ? 'delivery_unknown' : 'preparation_failed',
+        message:stoppedBeforeDispatch ? 'Stopped before the agent received this message.'
+          : knownNotSent ? 'The provider confirmed this input was not sent.' : barrier
           ? 'Chat delivery was interrupted; recorded effects may have occurred.' : 'Chat runtime could not prepare this turn.'};
       if (!barrier) { await rpc('fail_chat_preparation',[turn.chatId,leaseFence,failure]); settled=true; }
       else if (snapshotId) {

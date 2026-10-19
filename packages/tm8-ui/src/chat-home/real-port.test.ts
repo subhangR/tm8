@@ -300,20 +300,41 @@ describe('real chat-home seam adapter', () => {
     });
   });
 
-  it('folds the two server state axes into the one word a row draws', async () => {
-    // `runtimeState` is the headless child, `turnState` is the queue. A chat
-    // whose node restarted with work waiting is 'stopped' AND 'queued', and the
-    // row must read as busy rather than as continuable.
+  it('reads the row state from the queue alone', async () => {
+    // `runtimeState` is the child, `turnState` is the queue. Since the harness
+    // runtime closes its child after EVERY turn, 'stopped' is what any chat
+    // that has answered says — it is not a Stop, and must not read as one.
     const busy = chatSummary({
       state: { ...chatSummary().state, runtimeState: 'stopped', turnState: 'queued' },
     });
-    const stopped = chatSummary({
+    const settled = chatSummary({
       state: { ...chatSummary().state, runtimeState: 'stopped', turnState: 'idle' },
     });
     expect((await createChatHomePortFromSeam(seamStub([busy]).seam).listThreads('s'))[0]?.state)
       .toBe('streaming');
-    expect((await createChatHomePortFromSeam(seamStub([stopped]).seam).listThreads('s'))[0]?.state)
-      .toBe('stopped-continuable');
+    expect((await createChatHomePortFromSeam(seamStub([settled]).seam).listThreads('s'))[0]?.state)
+      .toBe('idle');
+  });
+
+  it("reads another participant's running turn as streaming on a settled-before chat", async () => {
+    // The multi-sender case: the chat's child is 'stopped' from its previous
+    // turn and someone else's message is now running. Opening it must show the
+    // turn as live (with ■), not as stopped.
+    const running = chatSummary({
+      state: { ...chatSummary().state, runtimeState: 'stopped', turnState: 'running' },
+    });
+    expect((await createChatHomePortFromSeam(seamStub([running]).seam).listThreads('s'))[0]?.state)
+      .toBe('streaming');
+  });
+
+  it('sends Stop to chat.interrupt', async () => {
+    const stub = seamStub([chatSummary()]);
+    const interruptChat = vi.fn(async (chatId: string) => ({ chatId, disposition: 'requested' as const }));
+    (stub.seam.commands as unknown as { interruptChat: typeof interruptChat }).interruptChat = interruptChat;
+    const port = createChatHomePortFromSeam(stub.seam);
+    expect(port.interrupt).toBeTypeOf('function');
+    await port.interrupt!(CHAT as never);
+    expect(interruptChat).toHaveBeenCalledWith(CHAT);
   });
 
   /**

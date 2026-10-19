@@ -199,7 +199,7 @@ import {
   type SessionTranscriptPage,
   type SpaceId,
   type HomeSnapshot,
-  type SetChatModelInput, type SetChatCredentialsInput, type SetChatCredentialsResult,
+  type SetChatModelInput, type SetChatCredentialsInput, type SetChatCredentialsResult, type InterruptChatResult,
   type SetChatModelResult,
   type StartChatInput,
   type StartChatResult,
@@ -1742,6 +1742,9 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
     setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult> {
       return http.call<SetChatModelResult>('chat.setModel', { params: { id: chatId }, body: input });
+    },
+    interruptChat(chatId: EntityId): Promise<InterruptChatResult> {
+      return http.call<InterruptChatResult>('chat.interrupt', { params: { id: chatId }, body: {} });
     },
 
     /** Note 2: bare `MessageView` lifted into the seam's `CommandResult`. */
