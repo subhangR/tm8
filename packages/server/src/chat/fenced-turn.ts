@@ -40,6 +40,17 @@ export async function deadline<T>(promise: Promise<T>, milliseconds: number, ope
     })]);
   } finally { if (timer) clearTimeout(timer); }
 }
+/** The agent sent no event within the observation deadline; `tool` is what it was still running, if anything. */
+class AgentSilentError extends Error {
+  constructor(readonly milliseconds: number, readonly tool: string | null) {
+    super(`harness observation timed out after ${milliseconds} ms${tool ? ` while running ${tool}` : ''}`);
+  }
+}
+function silenceMessage(error: AgentSilentError): string {
+  const minutes=Math.round(error.milliseconds/60_000);
+  const span=minutes>=1 ? `${minutes} min` : `${Math.round(error.milliseconds/1000)} s`;
+  return `The agent sent nothing for ${span}${error.tool ? ` while running ${error.tool}` : ''}, so this turn was stopped. Steps it already took may have taken effect.`;
+}
 function matched(a: GenerationFence, b: GenerationFence): boolean {
   return a.chatId===b.chatId && a.bindingId===b.bindingId && a.generation===b.generation
     && a.leaseEpoch===b.leaseEpoch && a.configRevision===b.configRevision;
@@ -96,6 +107,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
   let cleanupRunning=false;
   let observed: Promise<void> | undefined;
   const textItems=new Map<string,{revision:number;text:string}>();
+  const runningTools=new Map<string,string>();
   const usage=new UsageAccumulator();
   const text=() => [...textItems.values()].map(item=>item.text).join('');
   const rpc=<T>(name:string,args:readonly unknown[]) => db.rpc<T>(auth,name,args);
@@ -223,8 +235,13 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     const current=session;
     const consume=async () => {
       const iterator=current.observations[Symbol.asyncIterator]();
+      const silence=options.timeouts?.observation ?? 30 * 60_000;
       while (!terminal) {
-        const next=await deadline(iterator.next(),options.timeouts?.observation ?? 30 * 60_000,'harness observation');
+        const next=await deadline(iterator.next(),silence,'harness observation').catch((error: unknown) => {
+          if (error instanceof Error && error.message==='harness observation timed out')
+            throw new AgentSilentError(silence,[...runningTools.values()].at(-1) ?? null);
+          throw error;
+        });
         if (next.done) break;
         const observation=next.value;
         if (!matched(observation.fence,fence)) continue;
@@ -250,6 +267,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
           if (payload.text.trim()) await append('thinking',{text:payload.text},event);
         } else if (payload.kind==='tool') {
           const tool=payload.tool;
+          if (tool.state==='running') runningTools.set(tool.toolKey,tool.name); else runningTools.delete(tool.toolKey);
           await append('tool_call',{id:tool.toolKey,name:tool.name,args:tool.args,
             state:tool.state==='completed' ? 'completed' : tool.state==='running' ? 'running' : 'error'},`${event}:call`);
           if (tool.result!==null) await append('tool_result',{tool_call_id:tool.toolKey,content:tool.result,
@@ -306,8 +324,9 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     // Its output parts are consumed before this branch and must not gain a second done.
     if (terminal) await settleTerminal(terminal);
     else {
-      failure={code:knownNotSent ? 'provider_not_sent' : barrier ? 'delivery_unknown' : 'preparation_failed',
-        message:knownNotSent ? 'The provider confirmed this input was not sent.' : barrier
+      const silent=error instanceof AgentSilentError ? error : null;
+      failure={code:knownNotSent ? 'provider_not_sent' : silent ? 'agent_silent' : barrier ? 'delivery_unknown' : 'preparation_failed',
+        message:knownNotSent ? 'The provider confirmed this input was not sent.' : silent ? silenceMessage(silent) : barrier
           ? 'Chat delivery was interrupted; recorded effects may have occurred.' : 'Chat runtime could not prepare this turn.'};
       if (!barrier) { await rpc('fail_chat_preparation',[turn.chatId,leaseFence,failure]); settled=true; }
       else if (snapshotId) {

@@ -79,6 +79,25 @@ it('commits before send, consumes early notifications, folds replacements, ignor
   expect(f.resolver.mock.calls[0]![0]).toMatchObject({requesterIdentityId:'poster',requesterAuthKind:'cli',requesterAuthSessionId:f.options.turn.claimedAuthority.authSessionId});
   expect(f.publish.mock.calls.at(-1)![1].type).toBe('chat.turn.done');
 });
+it('names the running tool when the agent goes silent instead of reporting a delivery failure',async()=>{
+  const f=fixture();
+  f.open.mockImplementation(async(input:OpenHarnessInput)=>{
+    const session=f.makeSession(input); const sent=deferred<TurnCommand>();
+    return {...session,submit:async command=>{sent.resolve(command);return session.submit(command);},
+      observations:(async function*(){
+        const command=await sent.promise;
+        yield {fence:input.fence,attempt:command.attempt,nativeTurnId:'turn',observedAt:new Date().toISOString(),adapterSeq:1,
+          payload:{kind:'tool' as const,tool:{toolKey:'generation:attempt:search',nativeCallId:'search',name:'WebSearch',args:{query:'q'},state:'running' as const,
+            result:null,origin:'native' as const,evidence:'completion_only' as const}}};
+        await new Promise(()=>{});
+      })()};
+  });
+  await executeFencedTurn(f.options);
+  const done=f.calls.find(c=>c.name==='complete_chat_turn')!;
+  expect(done.args[1]).toBe('error');
+  expect(done.args[5]).toEqual({code:'agent_silent',
+    message:'The agent sent nothing for 0 s while running WebSearch, so this turn was stopped. Steps it already took may have taken effect.'});
+});
 it.each(['unknown','not_sent'] as const)('does not resend a %s dispatch',async delivery=>{
   const f=fixture(delivery); await executeFencedTurn(f.options);
   expect(f.events.filter(e=>e==='submit')).toHaveLength(1);
