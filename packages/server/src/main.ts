@@ -1153,6 +1153,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           claims: reapClaims,
           execution: {
             hasSession: (id) => execution.pty.hasSession(id),
+            liveSessionIds: () => execution.pty.liveSessionIds(),
             terminate: (claims, id, opts) => execution.spawnService.terminate(claims, id, opts),
           },
           idleMinutes: idleReapMinutes,
@@ -1373,7 +1374,7 @@ export async function main(): Promise<void> {
         .catch(() => undefined)
         .then((annotated) => {
           if (typeof annotated === 'number' && annotated > 0) {
-            console.log(`  recorded shutdown reason on ${annotated} live session(s)`);
+            console.log(`  recorded shutdown reason on ${annotated} session(s)`);
           }
         })
         .then(() => scheduler?.stop(2_000))

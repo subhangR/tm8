@@ -136,4 +136,17 @@ describe('the idle session reaper', () => {
     expect(sql).not.toContain("'running'");
     expect(sql).not.toContain("'spawning'");
   });
+
+  it('asks only about sessions this node holds, so other nodes and ghosts cannot starve the batch', async () => {
+    const database = db([{ entity_id: 's1', idle_minutes: 9 }]);
+    const exec = { ...execution(['s1']), liveSessionIds: () => ['s1'] };
+    const job = createIdleSessionReapJob({ db: database, claims, execution: exec, idleMinutes: 1 });
+    await job.run(CTX);
+    const params = (database as unknown as { query: ReturnType<typeof vi.fn> }).query.mock.calls[0]?.[2] as unknown[];
+    expect(params[2]).toEqual(['s1']);
+
+    const idle = { ...execution([]), liveSessionIds: () => [] };
+    const none = createIdleSessionReapJob({ db: db([]), claims, execution: idle, idleMinutes: 1 });
+    expect(await none.run(CTX)).toMatchObject({ skipped: true });
+  });
 });

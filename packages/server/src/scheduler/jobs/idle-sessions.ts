@@ -40,6 +40,13 @@ export const IDLE_SESSION_REAP_JOB_NAME = 'sessions.reap-idle';
 export interface IdleReapExecution {
   /** True when this node currently holds a PTY for that session. */
   hasSession(sessionId: string): boolean;
+  /**
+   * Every session this node holds a PTY for. When given, candidates are
+   * narrowed to these in SQL — otherwise a batch can fill with other nodes'
+   * idle rows and ghosts (oldest first, so the same ones every tick) and this
+   * node's own idle sessions are never reached.
+   */
+  liveSessionIds?(): string[];
   terminate(
     claims: DbClaims,
     sessionId: string,
@@ -92,6 +99,10 @@ export function createIdleSessionReapJob(options: IdleSessionReapOptions): Sched
       if (options.idleMinutes < 1) {
         return { skipped: true, reason: 'idle reaping is off (TM8_SESSION_IDLE_REAP_MINUTES unset)' };
       }
+      const live = options.execution.liveSessionIds?.();
+      if (live !== undefined && live.length === 0) {
+        return { skipped: true, reason: 'no live sessions on this node' };
+      }
       const claims = await options.claims();
 
       // Candidates are chosen by the row's own clock: `status_changed_at` is
@@ -106,9 +117,10 @@ export function createIdleSessionReapJob(options: IdleSessionReapOptions): Sched
           where session_kind = 'agent'
             and status = 'idle'
             and status_changed_at < now() - make_interval(mins => $1::int)
+            and ($3::uuid[] is null or entity_id = any($3::uuid[]))
           order by status_changed_at asc
           limit $2`,
-        [options.idleMinutes, batchSize],
+        [options.idleMinutes, batchSize, live ?? null],
       );
       if (rows.length === 0) {
         return { skipped: true, reason: `no sessions idle beyond ${options.idleMinutes}m` };
