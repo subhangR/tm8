@@ -224,7 +224,7 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
     const consume=async () => {
       const iterator=current.observations[Symbol.asyncIterator]();
       while (!terminal) {
-        const next=await deadline(iterator.next(),options.timeouts?.observation ?? 120_000,'harness observation');
+        const next=await deadline(iterator.next(),options.timeouts?.observation ?? 30 * 60_000,'harness observation');
         if (next.done) break;
         const observation=next.value;
         if (!matched(observation.fence,fence)) continue;
