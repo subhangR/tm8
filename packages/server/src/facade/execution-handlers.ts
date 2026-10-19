@@ -125,6 +125,7 @@ import type { HandlerRegistry } from './registry.js';
 import { sessionCheckoutHandlers } from './services/session-checkouts.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
 import { isChatRuntimeBearer, resolveSpawnParentId, runtimeChatIdOf } from '../chat/scope.js';
+import { inheritedSpawnProjectId } from './spawn-project-inheritance.js';
 import { issuePtyGrantToken } from '../pty/grant-token.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
@@ -3584,6 +3585,12 @@ function registerHandlers(
      */
     const sourceWorkSessionId = ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId : undefined;
     const parentSessionId = resolveSpawnParentId(ctx, input.parentSessionId ?? sourceWorkSessionId);
+    // An agent that names no project works where its chat or session does.
+    const inheritedProjectId = await inheritedSpawnProjectId(db, claims, {
+      input,
+      agentCaller: isChatRuntimeBearer(ctx) || sourceWorkSessionId !== undefined,
+      parentId: parentSessionId,
+    });
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
@@ -3596,7 +3603,7 @@ function registerHandlers(
       ...(isChatRuntimeBearer(ctx) && runtimeChatIdOf(ctx) ? { aboutFromChatId: runtimeChatIdOf(ctx)! } : {}),
       ...(sourceWorkSessionId ? { sourceWorkSessionId } : {}),
       ...(input.newTask ? { newTask: { title: input.newTask.title } } : {}),
-      projectId: input.projectId ?? null,
+      projectId: input.projectId ?? inheritedProjectId,
       ...(input.workdir ? { workdir: input.workdir } : {}),
       ...(input.interactionProfileId ? { interactionProfileId: input.interactionProfileId } : {}),
       ...(input.confirmUntrusted ? { confirmUntrusted: true } : {}),

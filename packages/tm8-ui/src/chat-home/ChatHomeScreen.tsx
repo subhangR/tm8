@@ -69,6 +69,7 @@ import {
   nearestEffort,
   projectBindingFromChoice,
   rungFromPermissionMode,
+  SCRATCH_PROJECT_ID,
   teammateRoster,
   type CrewSpec,
   type ModeOptionsByMode,
@@ -651,6 +652,16 @@ export function ChatHomeScreen({
      files, skill pills and a Coordinator's team move into the ＋ sheet. */
   const { oneSurface: phoneCard } = useMobileSurface();
   const [projectChoice, setProjectChoice] = useState(newChatSeed?.projectId ?? '');
+  /* The last project picked in this Space is the next chat's (chat 6c47ed84:
+     "the last used project is the selected project"), applied once the
+     Space's projects are read and only while it is still one of them. A host
+     seed already chose. */
+  const projectRememberedRef = useRef(newChatSeed?.projectId !== undefined || pinnedMode !== undefined);
+  const chooseProject = useCallback((next: string) => {
+    projectRememberedRef.current = true;
+    setProjectChoice(next);
+    rememberPick({ project: next && next !== SCRATCH_PROJECT_ID ? next : null });
+  }, [rememberPick]);
   const [projects, setProjects] = useState<readonly ChatProjectOption[] | null>(null);
   const [permissionChoice, setPermissionChoice] = useState<PermissionRung | null>(null);
   const [crew, setCrew] = useState<CrewSpec>({ workers: [] });
@@ -746,6 +757,7 @@ export function ChatHomeScreen({
        the same folder, silently bound to it without the viewer choosing it
        in this space. Back to the default (scratch) on every switch. */
     setProjectChoice('');
+    projectRememberedRef.current = false;
   }, [spaceId]);
 
   useEffect(() => {
@@ -1724,10 +1736,18 @@ export function ChatHomeScreen({
     let cancelled = false;
     if (!port.listProjects) { setProjects(null); return; }
     port.listProjects(spaceId).then(
-      (next) => { if (!cancelled) setProjects(next); },
+      (next) => {
+        if (cancelled) return;
+        setProjects(next);
+        if (projectRememberedRef.current) return;
+        projectRememberedRef.current = true;
+        const last = lastComposerPicks(picksScope).project;
+        if (last && next.some((project) => project.id === last)) setProjectChoice(last);
+      },
       () => { if (!cancelled) setProjects(null); },
     );
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- picksScope follows spaceId
   }, [port, spaceId]);
 
   /**
@@ -3077,7 +3097,7 @@ export function ChatHomeScreen({
                       onTeammateChange={(id) => setTeammateId(id as EntityId)}
                       projects={projects}
                       projectChoice={projectChoice}
-                      onProjectChange={setProjectChoice}
+                      onProjectChange={chooseProject}
                       permission={permission}
                       onPermissionChange={setPermissionChoice}
                       permissionSource={permissionSource}

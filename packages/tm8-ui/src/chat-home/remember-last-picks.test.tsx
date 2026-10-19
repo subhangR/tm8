@@ -163,4 +163,46 @@ describe('a new chat starts on the last chosen mode and model', () => {
     const view = await newChat(createChatHomeFixturePort().port);
     expect(modelOf(view)).toContain('Sonnet 4.5');
   });
+
+  describe('the project', () => {
+    const PROJECTS = [{ id: 'p-docs' as EntityId, name: 'Docs Site' }];
+    const withProjects = (projects = PROJECTS) => {
+      const { port, controls } = createChatHomeFixturePort();
+      return { port: { ...port, listProjects: async () => projects }, controls };
+    };
+    const projectOf = (view: ReturnType<typeof render>) => {
+      fireEvent.click(view.getByTestId('tch-settings'));
+      const value = view.getByTestId('tch-settings-project-value').textContent;
+      fireEvent.click(view.getByTestId('tch-settings'));
+      return value;
+    };
+
+    it('the last project picked is the next chat\u2019s, after a reload, and the chat starts in it', async () => {
+      const first = await newChat(withProjects().port);
+      await waitFor(() => expect(projectOf(first)).toBe('Scratch'));
+      fireEvent.click(first.getByTestId('tch-settings'));
+      fireEvent.click(first.getByTestId('tch-settings-project'));
+      fireEvent.click(first.getByTestId('tch-settings-project-p-docs'));
+      first.unmount();
+
+      const { port, controls } = withProjects();
+      const view = await newChat(port);
+      await waitFor(() => expect(projectOf(view)).toBe('Docs Site'));
+      fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'pwd' } });
+      fireEvent.click(view.getByRole('button', { name: /send/i }));
+      await waitFor(() => expect(controls.roots).toHaveLength(1));
+      expect(controls.roots[0]).toMatchObject({ workdirMode: 'project', projectId: 'p-docs' });
+    });
+
+    it('a remembered project the Space no longer lists falls back to scratch', async () => {
+      const first = await newChat(withProjects().port);
+      fireEvent.click(first.getByTestId('tch-settings'));
+      fireEvent.click(first.getByTestId('tch-settings-project'));
+      fireEvent.click(first.getByTestId('tch-settings-project-p-docs'));
+      first.unmount();
+
+      const view = await newChat(withProjects([]).port);
+      await waitFor(() => expect(projectOf(view)).toBe('Scratch'));
+    });
+  });
 });

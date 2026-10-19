@@ -64,8 +64,8 @@ export function rememberChatStart(start: { mode?: ChatMode | null; teammateId?: 
 }
 
 /**
- * THE COMPOSER'S LAST EXPLICIT PICKS, per Space and viewer: the mode, model
- * and per-mode effort the viewer last chose in ANY chat — a new one or one
+ * THE COMPOSER'S LAST EXPLICIT PICKS, per Space and viewer: the mode, model,
+ * per-mode effort and project the viewer last chose in ANY chat — a new one or one
  * already running. The next new chat starts on them instead of the built-in
  * `ask` + first-listed model; a host seed (the entity chat card) or a pick on
  * the new chat itself still wins. A model the catalog no longer lists is
@@ -78,12 +78,15 @@ export interface LastComposerPicks {
   mode: ChatMode | null;
   model: string | null;
   effortByMode: Partial<Record<ChatMode, LaunchModelEffort>>;
+  /** The Space's project a new chat starts in; null is scratch. */
+  project: string | null;
 }
 
 export type ComposerPick =
   | { mode: ChatMode }
   | { model: string }
-  | { mode: ChatMode; effort: LaunchModelEffort };
+  | { mode: ChatMode; effort: LaunchModelEffort }
+  | { project: string | null };
 
 export function composerPicksScope(spaceId: string, viewerId?: string | null): string {
   return viewerId ? `${spaceId}.${viewerId}` : spaceId;
@@ -109,6 +112,7 @@ export function lastComposerPicks(scope: string): LastComposerPicks {
     mode: typeof stored.mode === 'string' && MODES.has(stored.mode) ? (stored.mode as ChatMode) : null,
     model: typeof stored.model === 'string' && stored.model ? stored.model : null,
     effortByMode,
+    project: typeof stored.project === 'string' && stored.project ? stored.project : null,
   };
 }
 
@@ -118,7 +122,9 @@ export function rememberComposerPick(scope: string, pick: ComposerPick): void {
     ? { ...current, effortByMode: { ...current.effortByMode, [pick.mode]: pick.effort } }
     : 'mode' in pick
       ? { ...current, mode: pick.mode }
-      : { ...current, model: pick.model };
+      : 'project' in pick
+        ? { ...current, project: pick.project }
+        : { ...current, model: pick.model };
   try {
     globalThis.localStorage?.setItem(PICKS_PREFIX + scope, JSON.stringify(next));
   } catch {
