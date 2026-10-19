@@ -1990,6 +1990,7 @@ export interface ExecutionRuntime {
   reapLost(staleAfterMs: number): Promise<{ reaped: number; errors: Array<{ message: string }> }>;
   /** Spec D1 Q3 — close completed sessions idle past their space's window. Never rejects. */
   closeIdleCompleted(): Promise<{ closed: number; errors: Array<{ message: string }> }>;
+  /**
    * Resume the agent sessions the last restart interrupted, per
    * `resolveAutoResumePolicy`. Call once, AFTER the listener is up and after
    * `reconcileGhosts` (which is what files a SIGKILLed session under
@@ -2157,6 +2158,9 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
       }
     },
     recordShutdown: async (signal: string) => {
+      // Synchronously, before the owner lookup below yields: from here on a
+      // PTY exit (the cgroup SIGTERM reaches the agents too) is a restart.
+      spawnService.beginShutdown();
       // Same loopback-owner identity as ghost reconciliation, and for the same
       // reason: `work_session_transition` needs a real member. Wrapped for the
       // same reason too — a node whose graph is unreachable must still be able
@@ -2379,6 +2383,9 @@ export function registerExecutionHandlers(
       }
     },
     recordShutdown: async (signal: string) => {
+      // Synchronously, before the owner lookup below yields: from here on a
+      // PTY exit (the cgroup SIGTERM reaches the agents too) is a restart.
+      spawnService.beginShutdown();
       // Same loopback-owner identity as ghost reconciliation, and for the same
       // reason: `work_session_transition` needs a real member. Wrapped for the
       // same reason too — a node whose graph is unreachable must still be able

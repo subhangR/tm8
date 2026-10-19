@@ -1265,6 +1265,7 @@ export interface GraphPort {
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; minutes: number }>>;
+  /**
    * Agent sessions on THIS node that a server restart interrupted at or after
    * `since` — the candidates boot-time auto-resume brings back.
    *

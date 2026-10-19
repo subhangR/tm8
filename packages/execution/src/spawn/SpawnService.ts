@@ -422,6 +422,29 @@ async function isDirectory(path: string): Promise<boolean> {
 const SHUTDOWN_USAGE_READ_MS = 2_000;
 
 /**
+ * How far before the shutdown signal a PTY exit still counts as the restart's
+ * doing. `systemctl restart` with `KillMode=control-group` SIGTERMs the server
+ * AND every agent child at the same instant, and the children's exits can be
+ * processed (and recorded `crashed`) before this process's own SIGTERM handler
+ * runs. Measured 2026-10-19 on agentdev1: two sessions killed by a restart
+ * were filed `crashed` and so never auto-resumed. Five seconds covers the
+ * race with room to spare; a genuine crash that close to a restart is resumed,
+ * which is the cheaper mistake.
+ */
+const SHUTDOWN_EXIT_LOOKBACK_MS = 5_000;
+
+/** Bound on waiting for in-flight PTY-exit writes inside `recordShutdown`. */
+const SHUTDOWN_EXIT_DRAIN_MS = 3_000;
+
+/** The ending a restart gives a session. One sentence, shared by every writer. */
+const SERVER_RESTART_ENDING = {
+  endedKind: 'server_restart' as const,
+  endedReason:
+    'Stopped because the server was restarted. Nothing was wrong with this session — ' +
+    'it can be resumed to pick up where it left off.',
+};
+
+/**
  * Turn a {@link PtyExitInfo} into the honest, human-readable statement that
  * lands in `work_sessions.error` for a NATURAL exit.
  *
@@ -580,6 +603,16 @@ export class SpawnService {
    * spawn fresh PTYs into a process that is about to exit.
    */
   private stopping = false;
+  /** When `beginShutdown` first ran (epoch ms), or null while the node is up. */
+  private shutdownAt: number | null = null;
+  /**
+   * PTY exits this process recorded as a failure in the last
+   * `SHUTDOWN_EXIT_LOOKBACK_MS`, so `recordShutdown` can re-file the ones the
+   * restart actually caused. Pruned on every insert; never more than a few.
+   */
+  private readonly recentFailedExits = new Map<string, { at: number; auth: GraphAuth; error: string }>();
+  /** PTY-exit handlers still writing; `recordShutdown` drains them (bounded). */
+  private readonly inflightExits = new Set<Promise<void>>();
 
   /**
    * Claims captured at spawn time, replayed for that session's exit transition.
@@ -3835,10 +3868,65 @@ export class SpawnService {
    *
    * @returns how many sessions were annotated.
    */
-  async recordShutdown(auth: GraphAuth, signal: string): Promise<number> {
+  /**
+   * Mark the node as going away, SYNCHRONOUSLY. The server's signal handler
+   * calls this before anything it awaits (the owner lookup, the graph), so a
+   * PTY exit processed from here on is filed `server_restart` by
+   * `handlePtyExit` itself instead of racing to `crashed`. Idempotent.
+   */
+  beginShutdown(): void {
     this.stopping = true;
+    this.shutdownAt ??= Date.now();
+  }
+
+  async recordShutdown(auth: GraphAuth, signal: string): Promise<number> {
+    this.beginShutdown();
     const live = this.pty.liveSessionIds();
-    if (live.length === 0) return 0;
+    const annotatedLive = live.length === 0 ? 0 : await this.annotateLiveAtShutdown(auth, signal, live);
+    // The other half of the race: children the cgroup SIGTERM killed whose
+    // exits were processed BEFORE `beginShutdown`. Wait for the writes still in
+    // flight, then re-file every failure inside the lookback as a restart.
+    await this.drainInflightExits();
+    const refiled = await this.refileRecentExitsAsRestart(signal);
+    return annotatedLive + refiled;
+  }
+
+  private async drainInflightExits(): Promise<void> {
+    if (this.inflightExits.size === 0) return;
+    await Promise.race([
+      Promise.allSettled([...this.inflightExits]),
+      new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_EXIT_DRAIN_MS).unref()),
+    ]);
+  }
+
+  private async refileRecentExitsAsRestart(signal: string): Promise<number> {
+    const cutoff = (this.shutdownAt ?? Date.now()) - SHUTDOWN_EXIT_LOOKBACK_MS;
+    let refiled = 0;
+    for (const [sessionId, exit] of this.recentFailedExits) {
+      this.recentFailedExits.delete(sessionId);
+      if (exit.at < cutoff) continue;
+      try {
+        // failed -> failed is the one same-status transition the door allows,
+        // and it overwrites the ending: exactly the correction wanted.
+        await this.graph.transition(exit.auth, {
+          sessionId,
+          status: 'failed',
+          error: `${exit.error}; it ended inside the ${signal} shutdown window, so the restart is the cause`,
+          ...SERVER_RESTART_ENDING,
+        });
+        refiled += 1;
+      } catch (error) {
+        this.logger?.warn?.('SpawnService: could not re-file a shutdown-window exit as a restart', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (refiled > 0) this.logger?.info('SpawnService: re-filed shutdown-window exits as restarts', { signal, refiled });
+    return refiled;
+  }
+
+  private async annotateLiveAtShutdown(auth: GraphAuth, signal: string, live: string[]): Promise<number> {
 
     // Deliberately NOT the OOM path. Reaching this handler means the process
     // was asked to stop politely; the OOM killer sends SIGKILL and no handler
@@ -3852,10 +3940,7 @@ export class SpawnService {
           sessionId,
           status: 'failed',
           error: `node received ${signal} and is shutting down; this session's PTY dies with it`,
-          endedKind: 'server_restart',
-          endedReason:
-            'Stopped because the server was restarted. Nothing was wrong with this session — ' +
-            'it can be resumed to pick up where it left off.',
+          ...SERVER_RESTART_ENDING,
         });
         annotated += 1;
         // The usage read, BOUNDED. This handler's contract is "bounded and
@@ -4052,11 +4137,22 @@ export class SpawnService {
    * `createExecutionPtyHost` in the server's execution-handlers does exactly
    * that, and it is the only reason the graph ever learns an agent finished.
    */
-  handlePtyExit = async (
+  handlePtyExit = (
     sessionId: string,
     status: PtySessionStatus,
     exitInfo: PtyExitInfo = { exitCode: null, signal: null },
   ): Promise<void> => {
+    const running = this.recordPtyExit(sessionId, status, exitInfo);
+    this.inflightExits.add(running);
+    void running.finally(() => this.inflightExits.delete(running)).catch(() => undefined);
+    return running;
+  };
+
+  private async recordPtyExit(
+    sessionId: string,
+    status: PtySessionStatus,
+    exitInfo: PtyExitInfo,
+  ): Promise<void> {
     const auth = this.sessionAuth.get(sessionId);
     this.sessionAuth.delete(sessionId);
     // Tools report a nonzero command result in tool_exit_code. A wrapper
@@ -4086,18 +4182,39 @@ export class SpawnService {
     this.oomKillAtSpawn.delete(sessionId);
     const killedForMemory =
       exitInfo.signal !== null && oomKillObserved(oomBefore, await readOomKillCount());
+    // Inside the shutdown window every exit is the restart's doing — whatever
+    // code or signal the agent died with, clean exits included (an agent that
+    // exits 0 on SIGTERM did not finish its work). Filed `failed` so it is
+    // resumable, and `server_restart` so boot-time auto-resume brings it back.
+    const byRestart = this.stopping && !killedForMemory;
+    const recordedStatus: WorkSessionStatus = byRestart ? 'failed' : EXIT_STATUS_MAP[status];
+    const error =
+      byRestart
+        ? `${describePtyExit(exitInfo)} while the node was shutting down`
+        : status === 'failed'
+          ? describePtyExit(exitInfo)
+          : undefined;
     try {
       await this.graph.transition(auth, {
         sessionId,
-        status: EXIT_STATUS_MAP[status],
+        status: recordedStatus,
         exitCode: exitInfo.exitCode,
         // A clean 'completed' exit needs no narrative — exit_code alone says
         // it. 'failed' always gets an explicit statement of what the PTY
         // actually reported (see describePtyExit) — never left for `error` to
         // stay NULL by default.
-        ...(status === 'failed' ? { error: describePtyExit(exitInfo) } : {}),
-        ...endingFromPtyExit(status, exitInfo, killedForMemory),
+        ...(error !== undefined ? { error } : {}),
+        ...(byRestart ? SERVER_RESTART_ENDING : endingFromPtyExit(status, exitInfo, killedForMemory)),
       });
+      if (!byRestart && recordedStatus === 'failed' && !killedForMemory && error !== undefined) {
+        // Not yet known to be the restart's doing — but if `beginShutdown`
+        // lands within the lookback, `recordShutdown` re-files it.
+        const now = Date.now();
+        for (const [id, exit] of this.recentFailedExits) {
+          if (exit.at < now - SHUTDOWN_EXIT_LOOKBACK_MS) this.recentFailedExits.delete(id);
+        }
+        this.recentFailedExits.set(sessionId, { at: now, auth, error });
+      }
       // The one path with a real exit event, and so the one moment the file
       // is complete — the process that wrote it has exited. Runs after the
       // transition and inside its own catch; see the method.
@@ -4129,7 +4246,7 @@ export class SpawnService {
       // the agent is gone, and the checkout must come back either way.
       await this.releaseWorktreeLeaseAfterExit(auth, sessionId);
     }
-  };
+  }
 
   /**
    * The one lookup that turns a session (or a path) back into the worktree it
