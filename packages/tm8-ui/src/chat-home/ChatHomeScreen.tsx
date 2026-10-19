@@ -75,6 +75,7 @@ import {
   type PermissionRung,
 } from './composer';
 import { EntityTray } from './EntityTray';
+import { useNewChatJev, type ChatJevPort } from './new-chat-jev';
 import { LedgerHostProvider } from './ledger-host';
 import { StageExit } from './StageExit';
 import { CreatedHereStrip } from './created-here/CreatedHereStrip';
@@ -399,6 +400,11 @@ export interface ChatHomeScreenProps {
    * author identity.
    */
   viewerId?: string | undefined;
+  /**
+   * ✦ Ask Jev in the NEW-chat composer (doc 01a154f2, Phase 1). Absent ⇒ no
+   * button. Jev only recommends; an Apply sets the composer's own picks.
+   */
+  jev?: ChatJevPort | undefined;
 }
 
 /*
@@ -468,6 +474,7 @@ export function ChatHomeScreen({
   slots,
   viewerName,
   viewerId,
+  jev: jevPort,
 }: ChatHomeScreenProps) {
   const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
   const [teammates, setTeammates] = useState<readonly ChatTeammateOption[]>([]);
@@ -1699,6 +1706,31 @@ export function ChatHomeScreen({
     return () => { cancelled = true; };
   }, [port, spaceId]);
 
+  /* ✦ ASK JEV, before the first message only. Apply writes the same pending
+     picks the chips do, so `chat.start` carries them and they stick. */
+  const [jevRound, setJevRound] = useState(0);
+  const chatJev = useNewChatJev({
+    port: jevPort,
+    spaceId,
+    aboutId,
+    projectId: projectBinding.projectId ?? null,
+    draft,
+    teammateId,
+    setTeammate: (id) => setTeammateId(id as EntityId),
+    models,
+    modelId,
+    effort,
+    setModel: (next, nextEffort, mode) => {
+      setModelId(next);
+      if (nextEffort) setEffortByMode((current) => ({ ...current, [mode]: nextEffort }));
+    },
+    mode: chatMode,
+    setMode: setChatMode,
+    modeLocked: pinnedMode !== undefined,
+    resetKey: `${spaceId}:${String(jevRound)}`,
+  });
+  const jevShown = newThread && phase === 'idle';
+
   /**
    * THE COMPOSER IS THE SHARED RICH INPUT (chip placement, R4).
    *
@@ -2016,7 +2048,10 @@ export function ChatHomeScreen({
     const team = roleOfMode(shownMode) === 'coordinator'
       ? teamPayload(shownTeam, teammates, models, shownModelId || null)
       : null;
-    const body = brief ? `${draftBody}\n${brief}` : draftBody;
+    /* Jev's applied skills and context ride the opening message (Phase 1's
+       stopgap: `chat.start` has no skill or context ids yet). */
+    const opening = newThread ? chatJev.composeBody(draftBody) : draftBody;
+    const body = brief ? `${opening}\n${brief}` : opening;
     const staged = attachmentsRef.current;
     // An upload still in flight is not a reason to drop it: Send waits rather
     // than posting a message whose file the writer is watching arrive.
@@ -2163,7 +2198,7 @@ export function ChatHomeScreen({
         /* The chat's title defaults to the opening body; with a crew brief
            appended that would name the chat after the brief. Name it after
            the human's own words instead. */
-        ...(brief ? { title: draftBody.slice(0, 240) } : {}),
+        ...(brief || opening !== draftBody ? { title: draftBody.slice(0, 240) } : {}),
         teammateId,
         model: selectedModel.model,
         reasoningEffort: effort,
@@ -2184,6 +2219,8 @@ export function ChatHomeScreen({
         throw new Error('The node returned a different chat configuration than the one selected.');
       }
       acked = true;
+      /* Jev's picks went out with this chat; the next new chat starts clean. */
+      setJevRound((round) => round + 1);
       /* The new chat's team moves from the pending key to the chat's own. */
       writeTeam(created.chatId, shownTeam);
       /* The next new chat's last-used mode, teammate and model (§3.4, §5).
@@ -2265,7 +2302,7 @@ export function ChatHomeScreen({
     newThread, chatMode, crew, teammates, models, permission, modeOptions, projectBinding.workdirMode, projectBinding.projectId, pinnedMode,
     modeOverrides, shownMode, shownTeam, shownModelId,
     mcpSelections,
-    newCredential, credentialsSaving, effort,
+    newCredential, credentialsSaving, effort, chatJev.composeBody,
   ]);
 
   const interrupt = useCallback(async () => {
@@ -2920,6 +2957,7 @@ export function ChatHomeScreen({
                   ? <p className="tch-refusal" id="tch-compose-refusal" data-testid="tch-compose-refusal">{refusal}</p>
                   : null}
                 <AttachmentChips attachments={attachments} testId="tch-attachments" list={!phoneCard} />
+                {jevShown ? chatJev.strip : null}
               </>}
               field={<>
                 <textarea
@@ -3085,6 +3123,7 @@ export function ChatHomeScreen({
                 </span>
                 <span className="ri-foot-gap" aria-hidden />
                 {phaseLabel(phase) ? <span className="tch-phase" role="status">{phaseLabel(phase)}</span> : null}
+                {jevShown && chatJev.entry ? <span className="tch-jev" data-testid="tch-jev">{chatJev.entry}</span> : null}
                 <ModelEffortPicker
                   label="Chat model"
                   testId="tch-model"

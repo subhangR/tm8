@@ -3093,3 +3093,43 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   border-radius: 9px;
   font: 700 var(--pn-fs-micro) / 18px var(--pn-ui);
 }
+
+/* ✦ ASK JEV IN THE NEW-CHAT FOOT (doc 01a154f2 Phase 1). One small chip
+   beside the model picker, in the foot row that already exists: the badge
+   truncates rather than wrapping, and the panel FLOATS above the chip so
+   opening it moves no other control. */
+.tch-jev { position: relative; display: inline-flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+.tch-jev .jev-entry { flex-direction: row; gap: 0; }
+.tch-jev .jev-entry__bar { flex-wrap: nowrap; }
+.tch-jev .jev-entry__button { padding: 3px 8px; font-size: 11px; max-width: 200px; }
+.tch-jev .jev-link { white-space: nowrap; font-size: 11px; }
+/* The panel states what asking cost; the foot chip stays short. */
+.tch-jev .jev-entry__button > .jev-cost { display: none; }
+.tch-jev .jev-entry__pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  width: min(520px, calc(100vw - 32px));
+  box-shadow: var(--pn-shadow-pop, 0 8px 28px rgba(0, 0, 0, 0.18));
+  border-radius: 12px;
+}
+.tch-jev .jev-panel { max-height: min(60vh, 520px); }
+
+/* What Apply put in the first message: removable, above the field. */
+.tch-jev-refs { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 2px 0; min-width: 0; }
+.tch-jev-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+}
+.tch-jev-ref__mark { color: var(--pn-brand-2); font-weight: 600; }
+.tch-jev-ref__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tch-jev-ref__remove { border: 0; background: none; color: var(--pn-ink-3); cursor: pointer; padding: 0 4px; font-size: 13px; line-height: 1; }
+.tch-jev-ref__remove:hover { color: var(--pn-ink); }

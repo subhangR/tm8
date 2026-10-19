@@ -434,13 +434,25 @@ export function useJevSuggestions(args: {
    * charged call.
    */
   reaskOnChange?: boolean;
+  /**
+   * Rewrites the model group's answer before it is shown or applied — the
+   * new-chat composer swaps a Codex pick for its Claude rung when the viewer
+   * has no OpenAI credential. Read at answer time. Absent: Jev's answer as is.
+   */
+  adjustModel?: (suggestion: ModelSuggestion) => ModelSuggestion;
+  /**
+   * A surface that outlives its launch (the new-chat composer, mounted across
+   * chats) changes this to start over: a new run, no answers, nothing applied.
+   * An answer still in flight is dropped. Absent: one run per mount.
+   */
+  resetKey?: string | number;
 }): JevSuggestions {
   const { port, spaceId, subjectId, teammateId, draft, agentTool, host, contextBudgets } = args;
   const reaskOnChange = args.reaskOnChange ?? true;
   const interactionProfileId = args.interactionProfileId || null;
 
-  // One run per mount. `useState`'s initializer runs once, so this is stable.
-  const [runId] = useState(newJevId);
+  // One run per mount (or per `resetKey`). `useState`'s initializer runs once, so this is stable.
+  const [runId, setRunId] = useState(newJevId);
   const [groups, setGroups] = useState<JevGroups>(IDLE);
   const [run, setRun] = useState<JevCost | null>(null);
   const [asked, setAsked] = useState(false);
@@ -456,12 +468,30 @@ export function useJevSuggestions(args: {
   /* The request inputs and the host, read at ACTION time rather than
      captured: a press sends what the surface shows at that moment, and the
      actions stay referentially stable. */
-  const live = useRef({ port, spaceId, subjectId, teammateId, draft, agentTool, interactionProfileId, host, now: args.now ?? Date.now });
-  live.current = { port, spaceId, subjectId, teammateId, draft, agentTool, interactionProfileId, host, now: args.now ?? Date.now };
+  const live = useRef({ port, spaceId, subjectId, teammateId, draft, agentTool, interactionProfileId, host, now: args.now ?? Date.now, adjustModel: args.adjustModel });
+  live.current = { port, spaceId, subjectId, teammateId, draft, agentTool, interactionProfileId, host, now: args.now ?? Date.now, adjustModel: args.adjustModel };
 
   /* Which request each group's answer must come from. A slower, older answer
      that lands after a re-ask is dropped per group, never merged over the new. */
   const latest = useRef<Partial<Record<LaunchSuggestGroup, string>>>({});
+  const resetKey = args.resetKey;
+  const lastReset = useRef(resetKey);
+  useEffect(() => {
+    if (lastReset.current === resetKey) return;
+    lastReset.current = resetKey;
+    latest.current = {};
+    setRunId(newJevId());
+    setGroups(IDLE);
+    setRun(null);
+    setAsked(false);
+    setAskedDraft('');
+    setTicks(NO_TICKS);
+    setAnswers({});
+    setContextIndex(null);
+    setTickRefusal(null);
+    setApplied({});
+    setLastAll([]);
+  }, [resetKey]);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -546,7 +576,13 @@ export function useJevSuggestions(args: {
         if (!mounted.current) return;
         // `run` is the server's running total; the larger answer is the later one.
         setRun((current) => (current && current.calls > result.run.calls ? current : result.run));
-        settle((group) => result.groups[group] as JevGroupResult<unknown> | undefined, result.contextIndex);
+        const adjust = live.current.adjustModel;
+        settle((group) => {
+          const answer = result.groups[group] as JevGroupResult<unknown> | undefined;
+          return group === 'model' && adjust && answer?.status === 'ok'
+            ? { ...answer, value: adjust(answer.value as ModelSuggestion) }
+            : answer;
+        }, result.contextIndex);
       },
       (error: unknown) => {
         const reason = failureOf(error);
