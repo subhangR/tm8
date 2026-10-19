@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
 import { HarnessRegistry, type HarnessCapabilities, type HarnessSession, type OpenHarnessInput, type TurnCommand } from '@tm8/execution';
-import { executeFencedTurn, UsageAccumulator, type FencedClaim, type FencedTurnOptions } from '../../src/chat/fenced-turn.js';
+import { AgentSilentError, DEFAULT_CHAT_IDLE_TIMEOUT_MS, DEFAULT_CHAT_TOOL_TIMEOUT_MS, executeFencedTurn,
+  UsageAccumulator, type FencedClaim, type FencedTurnOptions } from '../../src/chat/fenced-turn.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 
 const caps: HarnessCapabilities={schemaVersion:1,harness:'codex',binaryVersion:'test',protocolRevision:'v2',
@@ -159,4 +160,98 @@ it('aggregates distinct request costs and respects an authoritative cumulative a
   expect(u.value()).toEqual({input_tokens:20,output_tokens:4,total_cost_usd:0.4});
   u.add({...fact,scope:'attempt',observationId:'c',inputTokens:25,costUsd:null,costBasis:'unknown'});
   expect(u.value()).toEqual({input_tokens:25,output_tokens:2});
+});
+
+/**
+ * The observation budget. `fixture()` above scripts a stream that never
+ * pauses; this one holds a started tool call open until the test releases it,
+ * which is the gap that used to end the turn after 120s.
+ */
+function toolGapFixture() {
+  const f=fixture();
+  const gate=deferred<void>();
+  f.open.mockImplementation(async value => {
+    const session=f.makeSession(value);
+    const sent=deferred<TurnCommand>();
+    const base=(adapterSeq:number,attempt:TurnCommand['attempt'])=>({fence:value.fence,attempt,adapterSeq,
+      nativeTurnId:'turn',observedAt:new Date().toISOString()});
+    const tool=(state:'running'|'completed')=>({toolKey:'k1',nativeCallId:'c1',name:'WebSearch',args:{query:'q'},
+      state,result:state==='completed'?'hits':null,origin:'native' as const,
+      evidence:state==='running'?'started' as const:'completed' as const});
+    return {...session,
+      // The attempt id is minted inside executeFencedTurn and an observation
+      // that names a different one is skipped by design, so take it from the
+      // command the turn actually submitted.
+      submit:async (command:TurnCommand)=>{sent.resolve(command); return session.submit(command);},
+      observations:(async function*(){
+        const {attempt}=await sent.promise;
+        yield {...base(1,attempt),payload:{kind:'tool' as const,tool:tool('running')}};
+        await gate.promise;
+        yield {...base(2,attempt),payload:{kind:'tool' as const,tool:tool('completed')}};
+        yield {...base(3,attempt),payload:{kind:'text' as const,itemId:'answer',revision:1,
+          operation:'append' as const,phase:'final' as const,text:'searched'}};
+        yield {...base(4,attempt),payload:{kind:'terminal' as const,outcome:'completed' as const,
+          evidence:'provider_terminal' as const}};
+      })()};
+  });
+  return {...f,gate};
+}
+
+it('lets a tool outlive the idle limit and still completes inside the tool budget',async()=>{
+  const f=toolGapFixture();
+  f.options.timeouts!.observation=40; f.options.timeouts!.tool=5_000;
+  const run=executeFencedTurn(f.options);
+  await sleep(160);                                  // four times the idle limit
+  expect(f.calls.some(c=>c.name==='complete_chat_turn')).toBe(false);
+  f.gate.resolve(); await run;
+  const done=f.calls.find(c=>c.name==='complete_chat_turn')!;
+  expect(done.args[1]).toBe('completed'); expect(done.args[2]).toBe('searched');
+  expect(done.args[5]).toBeNull();
+  expect(f.options.onError).not.toHaveBeenCalled();
+});
+
+it('fails with agent_silent, not delivery_unknown, when no tool is in flight',async()=>{
+  const f=fixture(); const stall=deferred<void>();
+  f.open.mockImplementation(async value=>({...f.makeSession(value),
+    observations:(async function*(){ await stall.promise; })()}));
+  f.options.timeouts!.observation=30; f.options.timeouts!.tool=5_000;
+  await executeFencedTurn(f.options);
+  const failure=f.calls.find(c=>c.name==='complete_chat_turn')!.args[5] as {code:string;message:string};
+  expect(failure.code).toBe('agent_silent');
+  expect(failure.message).toBe('The agent sent nothing for 0s; the turn was stopped.');
+  expect(f.calls.some(c=>c.name==='append_chat_message_part'
+    && (c.args[3] as {code?:string}|null)?.code==='delivery_unknown')).toBe(false);
+  stall.resolve();
+});
+
+it('fails with agent_silent naming the tool when one outruns the tool budget',async()=>{
+  const f=toolGapFixture();
+  f.options.timeouts!.observation=10; f.options.timeouts!.tool=60;
+  await executeFencedTurn(f.options);
+  const failure=f.calls.find(c=>c.name==='complete_chat_turn')!.args[5] as {code:string;message:string};
+  expect(failure.code).toBe('agent_silent');
+  // The budget these tests can afford is milliseconds, so it rounds to 0s
+  // here; the message at the real budgets is asserted below.
+  expect(failure.message).toBe('The agent sent nothing for 0s while WebSearch was running; the turn was stopped.');
+  f.gate.resolve();
+});
+
+it('names the running tools and the real budget in the message a thread renders',()=>{
+  expect(new AgentSilentError(DEFAULT_CHAT_TOOL_TIMEOUT_MS,['WebSearch']).message)
+    .toBe('The agent sent nothing for 10m while WebSearch was running; the turn was stopped.');
+  expect(new AgentSilentError(DEFAULT_CHAT_TOOL_TIMEOUT_MS,['WebSearch','Bash']).message)
+    .toBe('The agent sent nothing for 10m while WebSearch, Bash were running; the turn was stopped.');
+  expect(new AgentSilentError(DEFAULT_CHAT_IDLE_TIMEOUT_MS,[]).message)
+    .toBe('The agent sent nothing for 2m; the turn was stopped.');
+  expect(new AgentSilentError(90_000,[]).message).toBe('The agent sent nothing for 1.5m; the turn was stopped.');
+  expect(new AgentSilentError(DEFAULT_CHAT_IDLE_TIMEOUT_MS,[]).code).toBe('agent_silent');
+});
+
+it('heartbeats the runtime lease through a wait that outlasts the idle limit',async()=>{
+  const f=toolGapFixture();
+  f.options.timeouts!.observation=40; f.options.timeouts!.tool=5_000; f.options.timeouts!.heartbeat=25;
+  const run=executeFencedTurn(f.options);
+  await sleep(160);
+  expect(f.calls.filter(c=>c.name==='heartbeat_chat_runtime').length).toBeGreaterThanOrEqual(2);
+  f.gate.resolve(); await run;
 });

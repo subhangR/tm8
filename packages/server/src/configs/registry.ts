@@ -168,6 +168,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'HERMES_HOME', group: 'Lane launch', summary: 'Hermes home scanned for skills.', default: null, definedIn: 'packages/server/src/skills/service.ts' },
   { name: 'CLAUDE_MANAGED_SETTINGS_DIR', group: 'Lane launch', summary: 'Claude Code managed-settings directory scanned for skills.', default: '/etc/claude-code', definedIn: 'packages/server/src/skills/service.ts' },
   { name: 'TM8_CHAT_SKILLS_DIR', group: 'Lane launch', summary: 'Skills plugin directory chat threads load.', default: null, definedIn: MAIN },
+  { name: 'TM8_CHAT_IDLE_TIMEOUT_MS', group: 'Lane launch', summary: 'Total silence a chat turn tolerates from the agent before it is stopped. Does not apply while a tool runs.', default: '120000', definedIn: CONFIG },
+  { name: 'TM8_CHAT_TOOL_TIMEOUT_MS', group: 'Lane launch', summary: 'Silence a chat turn tolerates while one of the agent\'s tool calls is still running.', default: '600000', definedIn: CONFIG },
 
   // ── Containers ───────────────────────────────────────────────────────
   { name: 'TM8_CONTAINERS', group: 'Containers', summary: 'Container runtime gate (off disables it).', default: 'on', definedIn: CONFIG },

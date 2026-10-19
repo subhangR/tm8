@@ -11,7 +11,7 @@ import {
   type SessionTranscriptContext,
 } from '@tm8/contract';
 import type { HarnessRegistry } from '@tm8/execution';
-import { executeFencedTurn, type ActiveChatHarness, type FencedClaim } from './fenced-turn.js';
+import { executeFencedTurn, type ActiveChatHarness, type FencedClaim, type FencedTurnOptions } from './fenced-turn.js';
 import type { createChatPreparedLaunchResolver } from './harness-composition.js';
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
@@ -94,6 +94,12 @@ export interface ChatOrchestratorOptions {
   readonly nodeId?: string;
   readonly bootId?: string;
   readonly historyBudgetBytes?: number;
+  /**
+   * Per-turn step limits handed to every `executeFencedTurn`. Only the two
+   * observation budgets are configured in production (`TM8_CHAT_IDLE_TIMEOUT_MS`,
+   * `TM8_CHAT_TOOL_TIMEOUT_MS`); the rest keep the defaults in fenced-turn.ts.
+   */
+  readonly turnTimeouts?: FencedTurnOptions['timeouts'];
   readonly publisher: ChatTurnPublisher;
   readonly resolveLaunchConfig?: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
@@ -499,6 +505,7 @@ export class ChatOrchestrator {
           prompt:promptFor(turn,await this.readAbout(turn)),historyBudgetBytes:this.options.historyBudgetBytes ?? 32768,
           createAgentMessage:()=>this.createAgentMessage(turn),track:active=>this.activeHarnesses.set(chatId,active),
           untrack:()=>this.activeHarnesses.delete(chatId),onError:this.options.onError,
+          ...(this.options.turnTimeouts ? {timeouts:this.options.turnTimeouts} : {}),
           onReleased:()=>{ void this.wake(chatId,requesterIdentityId); }});
       } else {
         const turn=await this.options.db.rpc<ClaimedTurn|null>(claims(requesterIdentityId),'claim_next_chat_turn',[chatId]);

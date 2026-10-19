@@ -11,6 +11,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 
 import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 
+import { DEFAULT_CHAT_IDLE_TIMEOUT_MS, DEFAULT_CHAT_TOOL_TIMEOUT_MS } from '../chat/fenced-turn.js';
 import {
   CLIPBOARD_MAX_BYTES_DEFAULT,
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
@@ -180,6 +181,26 @@ export interface ServerConfig {
    * the wrong ceiling.
    */
   readonly dbStatementTimeoutMs?: number;
+  /**
+   * How long a chat turn tolerates TOTAL silence from the harness before it is
+   * stopped (`TM8_CHAT_IDLE_TIMEOUT_MS`). Default 120000.
+   *
+   * This is the idle limit only. It does NOT apply while a tool call is in
+   * flight — see `chatToolTimeoutMs`, which exists because the Claude adapter
+   * emits no observation between a tool starting and its result arriving, so
+   * for two releases any tool slower than this limit killed the turn and
+   * reported it to the human as an interrupted delivery.
+   */
+  readonly chatIdleTimeoutMs?: number;
+  /**
+   * The silence a chat turn tolerates while at least one tool call is running
+   * (`TM8_CHAT_TOOL_TIMEOUT_MS`). Default 600000, matching the Bash tool's own
+   * ceiling. Raised to `chatIdleTimeoutMs` if set below it.
+   *
+   * The runtime lease is heartbeaten every 30s and each beat extends it by ten
+   * minutes, so a wait this long never loses the lease.
+   */
+  readonly chatToolTimeoutMs?: number;
   /**
    * Self-hosted LiveKit SFU, for voice channels. All three or none — a node
    * with a URL and no secret cannot mint a token, so a half-set environment is
@@ -517,6 +538,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     );
   }
 
+  // Both chat budgets REFUSE a zero: `deadline(promise, 0)` fires on the next
+  // tick, so a zero here would not mean "no limit", it would fail every turn.
+  const chatIdleTimeoutMs = envPositiveInt(
+    env.TM8_CHAT_IDLE_TIMEOUT_MS, 'TM8_CHAT_IDLE_TIMEOUT_MS', DEFAULT_CHAT_IDLE_TIMEOUT_MS);
+  const chatToolTimeoutMs = envPositiveInt(
+    env.TM8_CHAT_TOOL_TIMEOUT_MS, 'TM8_CHAT_TOOL_TIMEOUT_MS', DEFAULT_CHAT_TOOL_TIMEOUT_MS);
+
   // An unrecognised value REFUSES rather than falling back to `single`. A typo
   // (`TM8_NODE_MODE=multiplayer`) silently defaulting to the permissive mode is
   // exactly how a node ends up auto-authenticating everyone who reaches
@@ -690,6 +718,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     },
     dbPoolMax,
     dbStatementTimeoutMs,
+    chatIdleTimeoutMs,
+    chatToolTimeoutMs,
     ...(livekit ? { livekit } : {}),
   };
 }
