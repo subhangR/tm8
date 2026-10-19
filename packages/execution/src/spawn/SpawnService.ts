@@ -1,4 +1,4 @@
-import { codexMcpHomeFor, isolateCodexMcpHome } from './mcp-home.js';
+import { codexMcpHomeFor, isolateCodexMcpHome, sessionManifestPath } from './mcp-home.js';
 // @tm8/execution — SpawnService: the G1A loop's engine.
 //
 // Owns the four verbs the loop is made of — spawn, prompt, terminate, and the
@@ -934,7 +934,7 @@ export class SpawnService {
   }
 
   private manifestPathFor(sessionId: string): string {
-    return join(this.dataDir, 'manifests', `${sessionId}.json`);
+    return sessionManifestPath(this.dataDir, sessionId);
   }
 
   /**

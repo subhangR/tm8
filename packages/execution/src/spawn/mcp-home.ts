@@ -2,6 +2,10 @@ import { parse, stringify } from '@iarna/toml';
 import { mkdir, readFile, writeFile, chmod, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
+/** Where a session's launch manifest lives under the node data dir. */
+export function sessionManifestPath(dataDir:string,sessionId:string):string {
+ return join(dataDir,'manifests',`${sessionId}.json`);
+}
 /**
  * The CODEX_HOME a session's child actually runs with, derived from its
  * manifest path the same way `isolateCodexMcpHome` creates it. Codex writes
@@ -16,7 +20,7 @@ const SESSION_UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 /** `codexMcpHomeFor` from a data dir and session id; null for a non-uuid id, so no caller can steer it outside the data dir. */
 export function codexSessionHome(dataDir:string,sessionId:string):string|null {
  if(!SESSION_UUID_RE.test(sessionId))return null;
- return codexMcpHomeFor(join(dataDir,'manifests',`${sessionId}.json`));
+ return codexMcpHomeFor(sessionManifestPath(dataDir,sessionId));
 }
 /** Session-owned Codex home: copy model login only, never inherited connector configuration. */
 export async function isolateCodexMcpHome(manifestPath:string,env:Record<string,string>):Promise<void> {
