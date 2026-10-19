@@ -171,6 +171,7 @@ paths "$FIX" packages/pty-protocol/src/x.ts; expect "pty-protocol -> ui (workspa
 paths "$FIX" packages/tm8-ui/src/x.tsx;      expect "tm8-ui -> ui only" '["typecheck","ui"]'
 paths "$FIX" tools/conformance/src/x.ts;     expect "conformance -> server, cli" '["typecheck","server","cli","small"]'
 paths "$FIX" deploy/nginx/site.conf;         expect "deploy -> server" '["typecheck","server"]'
+paths "$FIX" integrations/whatsapp-bridge/src/core.ts; expect "integrations -> typecheck only" '["typecheck"]'
 paths "$FIX" db/migrate.mjs;                 expect "db -> server, cli" '["typecheck","server","cli"]'
 paths "$FIX" db/migrations/300_x.sql;        expect "db/migrations -> migrations, server, cli, conformance" '["typecheck","server","cli","small","migrations"]'
 paths "$FIX" db/migrations/015_w1_foundations.sql
