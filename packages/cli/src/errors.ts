@@ -305,6 +305,12 @@ export function errorLines(err: unknown): string[] {
     const current = err.current;
     if (current) lines.push(currentLine(current));
     if (err.retryable) {
+      // A rate limit names its own wait; without it a caller retries at once
+      // and burns the next window too (a linked-space read loop hit 30+ in a row).
+      const wait = isRecord(err.details) ? err.details['retryAfterMs'] : undefined;
+      if (typeof wait === 'number' && Number.isFinite(wait) && wait > 0) {
+        lines.push(`  retryAfter: ${Math.ceil(wait / 1000)}s — wait that long before the next call`);
+      }
       lines.push('  retryable: retry with the SAME --mutation-id; a new id is a new mutation');
     }
     if (err.code === 'not_implemented') {

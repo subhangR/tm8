@@ -959,7 +959,8 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['link', 'space', 'cross-space', 'settings'],
     notes: [
-      'open to every Member of the home Space, agents included; a target Space name shows only when you are a Member of it',
+      'open to every Member of the home Space, agents included; a target Space name shows only when you are a Member of it — an agent sees it while its human is signed in on the link',
+      'address a linked Space with `tm8 --space <link-id|target-space-id|alias> …`; each link allows 120 calls a minute per sign-in',
     ],
   },
   'spaceLinks.add': {
@@ -2103,6 +2104,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       '--title-contains matches a literal substring of the title; --words requires each word across title and short descriptions (including stories), ignoring case and separators; these are bounded collection queries, not full-text search',
       '--subtree = every descendant of the entity; --parent = its direct children only, and --parent none = top-level rows only; --roots is shorthand for --parent none',
+      '--status is the task work status (open|pulled|working|in_review|done|blocked|cancelled); a pull request\'s or session\'s own state is not a query filter',
     ],
     examples: [
       'tm8 entity query --kind task --assignee <actor-id> --status working',

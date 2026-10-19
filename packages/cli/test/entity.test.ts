@@ -686,6 +686,27 @@ describe('entity query', () => {
     });
   });
 
+  it('refuses a --kind that is not a kind, before any call, and names the kind it guesses', async () => {
+    const r = await drive(['entity', 'query', '--kind', 'session']);
+    expect(r.code).toBe(EXIT_USAGE);
+    expect(seen).toHaveLength(0);
+    expect(r.stderr).toContain('--kind session is not a kind');
+    expect(r.stderr).toContain('did you mean --kind work_session?');
+  });
+
+  it('refuses a --status that is not a work status, saying the filter is the task work status', async () => {
+    const r = await drive(['entity', 'query', '--kind', 'pull_request', '--status', 'merged']);
+    expect(r.code).toBe(EXIT_USAGE);
+    expect(seen).toHaveLength(0);
+    expect(r.stderr).toContain('--status merged is not a work status');
+    expect(r.stderr).toContain('open|pulled|working|in_review|done|blocked|cancelled');
+  });
+
+  it('still passes custom kinds and the design alias through', async () => {
+    await drive(['entity', 'query', '--kind', 'c:recipe', '--kind', 'design']);
+    expect(seen[0]?.body).toEqual({ spaceId: SPACE, kinds: ['c:recipe', 'craft'] });
+  });
+
   it('--roots asks for top-level rows only — parentId null', async () => {
     await drive(['entity', 'query', '--kind', 'story', '--roots']);
     expect(seen[0]?.body).toEqual({ spaceId: SPACE, kinds: ['story'], parentId: null });

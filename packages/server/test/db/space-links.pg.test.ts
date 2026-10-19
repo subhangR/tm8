@@ -740,6 +740,15 @@ describe('W6 human-only management (strict gate)', () => {
     expect(await outcome(() => store.list(g, fixture.spaceA))).toBe('ok');
   });
 
+  it('G (agent) lists the target name of a link H is signed in on (333)', async () => {
+    const link = await linkAB();
+    const g = await claimsForToken(await mintAgent());
+    const listed = (await store.list(g, fixture.spaceA)).find((l) => l.id === link.id);
+    expect(listed!.mine).toMatchObject({ status: 'signed_in' });
+    expect(listed!.targetSpaceName).toEqual(expect.any(String));
+    expect(listed!.targetSpaceName).toBe(link.targetSpaceName);
+  });
+
   it('positive — H (browser) does each of them', async () => {
     const claims = await hClaims();
     const link = await store.add(claims, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
@@ -1031,12 +1040,29 @@ describe('W6 pin — link creation needs an unpinned human session; a pinned one
     expect(listed!.targetSpaceName).toBe(added.targetSpaceName);
   });
 
-  it('pinned to the home A: add A → B is refused as not found, login is refused, list works without the target name', async () => {
-    const link = await store.add(await hClaims(), { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+  it('pinned to the home A: add A → B is refused as not found, login is refused, list shows the target name only while signed in', async () => {
+    const unpinned = await hClaims();
+    const link = await store.add(unpinned, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
     const pinnedA: DbClaims = { ...(await hClaims()), sessionSpaceId: fixture.spaceA };
     expect(await outcome(() => store.add(pinnedA, { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB }))).toBe('P0002');
     expect(await outcome(() => store.login(pinnedA, link.id, { relogin: true }))).toBe('42501');
-    const listed = (await store.list(pinnedA, fixture.spaceA)).find((l) => l.id === link.id);
+    const pinnedName = async () => (await store.list(pinnedA, fixture.spaceA)).find((l) => l.id === link.id)!.targetSpaceName;
+    // 333: the caller's own signed_in row on the link shows the target's name
+    // to a session pinned to the home (every agent session is).
+    await store.login(unpinned, link.id, { relogin: link.mine?.status !== 'signed_out' });
+    expect(await pinnedName()).toEqual(expect.any(String));
+    expect(await pinnedName()).toBe(link.targetSpaceName);
+    // Paired negative: signed out, the pinned session sees no name again.
+    await store.logout(unpinned, link.id);
+    expect(await pinnedName()).toBeNull();
+    await store.login(unpinned, link.id, { relogin: false });
+  });
+
+  it('pinned to the home A: a signed-in row does not reveal the target name to a home member who is not in the target', async () => {
+    // H2 is a member of A only. H's signed-in row is not H2's row.
+    const link = await store.add(await hClaims(), { spaceId: fixture.spaceA, targetSpaceId: fixture.spaceB });
+    const h2: DbClaims = { ...(await claimsForToken(await mintBrowser(fixture.accountH2, fixture.identityH2))), sessionSpaceId: fixture.spaceA };
+    const listed = (await store.list(h2, fixture.spaceA)).find((l) => l.id === link.id);
     expect(listed).toBeDefined();
     expect(listed!.targetSpaceName).toBeNull();
   });
