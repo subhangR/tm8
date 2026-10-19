@@ -285,7 +285,7 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
-  SetChatModelInput, SetChatCredentialsInput, SetChatCredentialsResult,
+  SetChatModelInput, SetChatCredentialsInput, SetChatCredentialsResult, InterruptChatResult,
   SetChatModelResult,
   StartChatInput,
   StartChatResult,
@@ -1160,6 +1160,8 @@ export interface Seam {
      */
     setChatCredentials(chatId: EntityId, input: SetChatCredentialsInput): Promise<SetChatCredentialsResult>;
     setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult>;
+    /** `chat.interrupt` — stop the chat's running turn (the composer's ■ / Esc). */
+    interruptChat(chatId: EntityId): Promise<InterruptChatResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;

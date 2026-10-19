@@ -141,6 +141,7 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot, SetChatModelInput,
   SetChatModelResult, StartChatInput, ChatCredentialSelection, SetChatCredentialsInput, SetChatCredentialsResult,
+  InterruptChatInput, InterruptChatResult,
   PersonalStyleCreateInput, PersonalStyleUpdateInput, PersonalStyleDeleteInput, StylePushInput,
   StylePullInput, StyleRemoveInput, StylesResolveInput, StylePrefsSetInput, SpaceStyleDefaultSetInput,
   StartChatResult,
@@ -1588,6 +1589,11 @@ export const SetChatCredentialsResultSchema: z.ZodType<SetChatCredentialsResult>
   configRevision: z.number().int().positive().optional(),
   credentialIntent: ChatCredentialIntentSchema.optional(),
   appliesAt: z.literal('next_claim').optional(),
+}).strict();
+
+export const InterruptChatInputSchema: z.ZodType<InterruptChatInput> = z.object({}).strict() as z.ZodType<InterruptChatInput>;
+export const InterruptChatResultSchema: z.ZodType<InterruptChatResult> = z.object({
+  chatId: EntityIdSchema, disposition: z.enum(['requested', 'not_running']),
 }).strict();
 
 /** 328: the Coordinator's team on a chat turn — a field, never body text. */

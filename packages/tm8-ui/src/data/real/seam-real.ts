@@ -517,6 +517,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       postMessage: (input) => ops.postMessage(input),
       startChat: (input) => ops.startChat(input),
       setChatCredentials: (chatId, input) => ops.setChatCredentials(chatId, input),
+      interruptChat: (chatId) => ops.interruptChat(chatId),
       setChatModel: (chatId, input) => ops.setChatModel(chatId, input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),

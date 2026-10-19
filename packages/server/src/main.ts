@@ -376,6 +376,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         runtime: chatBlock.runtime,
         publisher: new ChatTurnPublisher(subscriptions),
         resolveLaunchConfig: chatBlock.resolveLaunchConfig,
+        // The two observation budgets are operational knobs, so they come from
+        // the environment rather than from a rebuild (see ServerConfig).
+        turnTimeouts: {
+          ...(config.chatIdleTimeoutMs !== undefined ? { observation: config.chatIdleTimeoutMs } : {}),
+          ...(config.chatToolTimeoutMs !== undefined ? { tool: config.chatToolTimeoutMs } : {}),
+        },
         ...(chatBlock.harnessRegistry ? {
           registry: chatBlock.harnessRegistry,
           resolvePreparedLaunch: chatBlock.resolvePreparedLaunch!,
@@ -390,7 +396,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           : {}),
       })
     : undefined;
-  if (chat && typeof opts.chat === 'function') void chat.reconcileOnBoot();
+  if (chat && typeof opts.chat === 'function') {
+    void chat.reconcileOnBoot();
+    // Expired leases are recovered while the node runs, not only at the next boot.
+    chat.startRecoverySweep();
+  }
 
   // Voice-channel roster (voice plan §2). Ephemeral for the same reason
   // presence is, but sourced from LiveKit webhooks rather than from client
@@ -875,7 +885,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
-  server.http.once('close', () => chatCleanupRetries.stop());
+  server.http.once('close', () => { chatCleanupRetries.stop(); chat?.stopRecoverySweep(); });
   const { url } = await server.listen();
 
   // Retention, on boot and never on the request path: an expired date-bucket is
