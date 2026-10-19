@@ -72,6 +72,18 @@ function oauthEndpoint(value: string, issuer: URL, privateNetwork: boolean, erro
   return parsed;
 }
 
+/**
+ * A preregistered confidential client authenticates with whichever secret method
+ * the issuer advertises. Basic is the RFC 6749 default when none is listed;
+ * Slack lists only client_secret_post.
+ */
+function preregisteredAuthMethod(metadata: Metadata): Exclude<TokenEndpointAuthMethod, 'none'> {
+  const supported = metadata.token_endpoint_auth_methods_supported;
+  if (!supported?.length || supported.includes('client_secret_basic')) return 'client_secret_basic';
+  if (supported.includes('client_secret_post')) return 'client_secret_post';
+  throw new Error('OAuth client authentication unsupported');
+}
+
 function formComponent(value: string): string {
   return new URLSearchParams([['value', value]]).toString().slice('value='.length);
 }
@@ -110,6 +122,8 @@ export class McpOAuth {
     resource: string;
     issuer?: string;
     clientId?: string;
+    /** Secret of the preregistered clientId; read from server env by the caller. */
+    clientSecret?: string;
     label?: string;
     scopes?: string[];
     allowPrivateNetwork: boolean;
@@ -154,7 +168,10 @@ export class McpOAuth {
     oauthEndpoint(metadata.token_endpoint, issuer, input.allowPrivateNetwork, 'OAuth endpoint refused');
     if (metadata.revocation_endpoint) oauthEndpoint(metadata.revocation_endpoint, issuer, input.allowPrivateNetwork, 'OAuth endpoint refused');
 
-    let client: OAuthClient = { id: input.clientId ?? '', method: 'none' };
+    if (input.clientSecret && !input.clientId) throw new Error('OAuth client secret requires a client id');
+    let client: OAuthClient = input.clientId && input.clientSecret
+      ? { id: input.clientId, method: preregisteredAuthMethod(metadata), secret: input.clientSecret }
+      : { id: input.clientId ?? '', method: 'none' };
     if (!input.clientId) {
       if (!metadata.registration_endpoint) throw new Error('OAuth client registration required');
       const endpoint = oauthEndpoint(metadata.registration_endpoint, issuer, input.allowPrivateNetwork, 'OAuth registration endpoint refused');
@@ -257,6 +274,15 @@ export class McpOAuth {
   }
 }
 
+/**
+ * Token types that are sent as `Authorization: Bearer`. Slack's
+ * oauth.v2.user.access, the token endpoint of its MCP server, labels its user
+ * token `"token_type": "user"`; the MCP server's 401 challenges with
+ * `WWW-Authenticate: Bearer`, so that is how the token is presented.
+ * Anything else (DPoP, MAC) is refused rather than sent the wrong way.
+ */
+const BEARER_TOKEN_TYPES = new Set(['bearer', 'user']);
+
 async function tokenRequest(
   url: string,
   body: URLSearchParams,
@@ -269,7 +295,7 @@ async function tokenRequest(
   try { value = JSON.parse(response.body) as Record<string, unknown>; }
   catch { throw new Error('OAuth token exchange failed'); }
   if (typeof value.access_token !== 'string' || !value.access_token
-    || typeof value.token_type !== 'string' || value.token_type.toLowerCase() !== 'bearer') {
+    || typeof value.token_type !== 'string' || !BEARER_TOKEN_TYPES.has(value.token_type.toLowerCase())) {
     throw new Error('OAuth token response invalid');
   }
   return {

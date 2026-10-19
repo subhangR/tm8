@@ -52,6 +52,16 @@ it('SQL rejects secret maps, reserved/colliding names, unknown auth and transpor
  }
  await create('collision');await expect(create('COLLISION')).rejects.toBeTruthy();
 });
+it('SQL admits a preregistered client secret only as a TM8_MCP_CLIENT_SECRET_ variable name beside a client id (336)',async()=>{
+ const oauth=(auth:Record<string,unknown>)=>({auth:{type:'oauth2',...auth}});
+ await expect(create('secret-env-'+randomUUID().slice(0,8),oauth({clientId:'issued',clientSecretEnv:'TM8_MCP_CLIENT_SECRET_SLACK'}))).resolves.toBeTruthy();
+ for(const auth of [
+  {clientId:'issued',clientSecretEnv:'TM8_DATABASE_URL'},
+  {clientId:'issued',clientSecretEnv:'TM8_MCP_CLIENT_SECRET_lower'},
+  {clientSecretEnv:'TM8_MCP_CLIENT_SECRET_SLACK'},
+  {clientId:'issued',clientSecret:'fixture-secret'},
+ ]) await expect(create('secret-env-reject-'+randomUUID().slice(0,8),oauth(auth))).rejects.toBeTruthy();
+});
 it('equips defaults require approval and have no account fallback; [] disables',async()=>{
  const c=await create('default');const denied=await create('unapproved',{approved:false});
  const task=await as(ownerIdentity,q=>q.rpc<{entity:{id:string}}>('create_task',[spaceId,'MCP task']));

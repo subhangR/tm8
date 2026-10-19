@@ -16,6 +16,8 @@ import type { DbClaims } from '../db/types.js';
 
 export interface McpRuntimeHandlerOptions {
  dataDir:string; callbackUrl:string;
+ /** Reads a preregistered OAuth client secret by its declared variable name. Defaults to process.env. */
+ clientSecret?:(envName:string)=>string|undefined;
  definition(claims:DbClaims,serverId:string):Promise<McpServerView & {securityRevision?:number}>;
  authorize:McpProxyPorts['authorize'];
  recordTest?:(claims:DbClaims,serverId:string,result:unknown)=>Promise<void>;
@@ -67,7 +69,11 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.oauth.begin':requireHumanSession(async ctx=>{
    const input=McpOAuthBeginInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);const config=server.definition.auth;
    if(config.type!=='oauth2' || !server.definition.url || !auth.identityId)throw new CollabError('invalid_input','OAuth connector required');
-   return oauth.begin({identityId:auth.identityId,spaceId:server.spaceId,serverId:server.id,definitionVersion:server.securityRevision ?? server.version,resource:server.definition.url,...(config.issuer?{issuer:config.issuer}:config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),label:input.label,...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
+   // Fail loud: without its secret a preregistered confidential client would be
+   // sent as a public one and refused at the token endpoint, after the consent screen.
+   const clientSecret=config.clientSecretEnv?(options.clientSecret??(name=>process.env[name]))(config.clientSecretEnv):undefined;
+   if(config.clientSecretEnv && !clientSecret)throw new CollabError('invalid_input',`OAuth client secret is not configured on this server: set ${config.clientSecretEnv}`);
+   return oauth.begin({identityId:auth.identityId,spaceId:server.spaceId,serverId:server.id,definitionVersion:server.securityRevision ?? server.version,resource:server.definition.url,...(config.issuer?{issuer:config.issuer}:config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),...(clientSecret?{clientSecret}:{}),label:input.label,...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
   }),
   'mcp.oauth.callback':requireHumanSession(async ctx=>{const input=McpOAuthCallbackInputSchema.parse(ctx.body);const auth=await claims(ctx);if(!auth.identityId)throw new CollabError('unauthenticated','Human session required');const pending=oauth.pendingFor(auth.identityId,input.state);if(!pending)throw new CollabError('invalid_input','OAuth state invalid or expired');const current=await options.definition(auth,pending.serverId);if(pending.definitionVersion!==undefined && (current.securityRevision ?? current.version)!==pending.definitionVersion)throw new CollabError('conflict','MCP connector changed; restart authorization');const result=await oauth.callback(auth.identityId,input);await approved(auth,result.serverId);const created=await credentials.create(auth,{...result,expectedRevision:pending.definitionVersion}) as {id:string};return view(auth,created.id);}),
   'mcp.servers.test':requireHumanSession(async ctx=>{

@@ -50,6 +50,11 @@ TM8_PUBLIC_ORIGIN=https://tm8.example.com        # filled from the installer's e
 The installer warns while `TM8_PUBLIC_ORIGIN` is unset or the mode is not
 `multi`. After editing the file: `systemctl restart tm8-prod`.
 
+MCP connectors that need a preregistered confidential OAuth client (Slack) read
+its secret from a `TM8_MCP_CLIENT_SECRET_*` variable in this file, and their OAuth
+redirect is `TM8_PUBLIC_ORIGIN` + `/mcp/oauth/callback`; see
+[mcp-connectors.md](../mcp-connectors.md#directory-providers).
+
 Ports already taken (another Postgres on 5442, another service on 17777)?
 `--pg-port <n>` and `--port <n>` move the slot. A Postgres the installer did not
 create is never adopted silently — see [INSTALL.md](INSTALL.md#a-cluster-already-on-the-port).
