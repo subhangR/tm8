@@ -160,3 +160,34 @@ it('aggregates distinct request costs and respects an authoritative cumulative a
   u.add({...fact,scope:'attempt',observationId:'c',inputTokens:25,costUsd:null,costBasis:'unknown'});
   expect(u.value()).toEqual({input_tokens:25,output_tokens:2});
 });
+it('a Stop latched before dispatch settles the turn as interrupted and never submits it',async()=>{
+  const f=fixture(); let stop=false;
+  f.resolver.mockImplementationOnce(async(...args)=>{ stop=true; return (await f.resolver.getMockImplementation()!(...args)); });
+  (f.options as {stopRequested?:()=>boolean}).stopRequested=()=>stop;
+  await executeFencedTurn(f.options);
+  expect(f.events).not.toContain('submit');
+  expect(f.events).not.toContain('begin_chat_dispatch');
+  const failed=f.calls.find(c=>c.name==='fail_chat_preparation')!;
+  expect(failed.args[2]).toMatchObject({code:'interrupted'});
+  expect(f.options.onError).not.toHaveBeenCalled();
+  expect(f.calls.some(c=>c.name==='release_chat_runtime')).toBe(true);
+  expect(f.publish.mock.calls.at(-1)![1].type).toBe('chat.turn.done');
+});
+it('a Stop latched between track and submit is not lost: the opened harness is cancelled before dispatch',async()=>{
+  const f=fixture(); let stop=false;
+  (f.options as {stopRequested?:()=>boolean}).stopRequested=()=>stop;
+  f.options.track=vi.fn(()=>{ stop=true; });
+  await executeFencedTurn(f.options);
+  expect(f.events).not.toContain('submit');
+  expect(f.calls.find(c=>c.name==='fail_chat_preparation')!.args[2]).toMatchObject({code:'interrupted'});
+});
+it('a Stop that races submit is turned into a cancel right after the send',async()=>{
+  const f=fixture(); let stop=false; const cancel=vi.fn(async()=>({disposition:'requested' as const,nativeTurnId:'turn'}));
+  (f.options as {stopRequested?:()=>boolean}).stopRequested=()=>stop;
+  const open=f.open.getMockImplementation()!;
+  f.open.mockImplementation(async input=>{ const s=await open(input); const submit=s.submit;
+    return {...s,cancel,submit:async command=>{ stop=true; return submit(command); }}; });
+  await executeFencedTurn(f.options);
+  expect(f.events.filter(e=>e==='submit')).toHaveLength(1);
+  expect(cancel).toHaveBeenCalledWith(expect.objectContaining({turnId:f.options.turn.turnId}),'user');
+});

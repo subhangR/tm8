@@ -2074,6 +2074,16 @@ const ROWS: Record<OperationName, Row> = {
     notes: ['Human-only; policy and credential access are checked before use. Applies to the next claimed turn.',
       'Switching account directories may reset native model context; stored tm8 messages survive.'],
   },
+  'chat.interrupt': {
+    cmd: ['chat', 'stop'], syn: 'tm8 chat stop <chat-id>',
+    sum: "Stop a chat's running turn", authz: 'entity', input: 'bound',
+    tags: ['chat', 'stop', 'interrupt', 'cancel', 'turn'],
+    notes: ['ends the running turn only; turns queued behind it still run, because they are other messages — often other people\'s',
+      'a turn still preparing is stopped before its input is sent; `requested` means the turn will end and its done part says how',
+      '`not_running` means this node has no turn to stop for the chat',
+      'any member who can read the chat may stop it; an agent runtime credential is refused'],
+    examples: ['tm8 chat stop <chat-id>'],
+  },
   'chat.setModel': {
     cmd: ['chat', 'model'],
     syn: 'tm8 chat model <chat-id> <model>',
@@ -4354,7 +4364,8 @@ export const CATALOG_DIGEST =
   // Re-measured for Craft L3 (+workspace.crafts.list|get|command) — RECOMPUTED, not adjusted.
   // Re-measured after the request noun's removal (-5 rows) — RECOMPUTED, not adjusted.
   // Re-measured for Projects add (+spaces.projects.clone|cloneJobs.get, 01a13574) on main 638f6069e — RECOMPUTED, not adjusted.
-  'sha256:cd50377655dfb62a17167c1983cb44d13a7c54a535e1207fee1afc8bf416da29';
+  // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
+  'sha256:66865117b63ee1d715d92651f220f64ff62a9d03ba410c1c27163fa7e3e8d38a';
 
 export const GRAMMAR_VERSION = '2';
 

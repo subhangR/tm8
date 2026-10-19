@@ -32,7 +32,7 @@ import {
   reconcileDetails,
   settleOptimisticTurn,
 } from './turn-model';
-import { clockFromRead, startTurnClock, useTurnInProgress, type TurnClock } from './turn-in-progress';
+import { clockFromRead, inFlightAgentTurn, startTurnClock, useTurnInProgress, type TurnClock } from './turn-in-progress';
 import { defaultChatTeammateId } from './default-teammate';
 import { CockpitGraphStage } from './fleet/CockpitGraphStage';
 import { FleetPane } from './fleet/FleetPane';
@@ -634,6 +634,10 @@ export function ChatHomeScreen({
   const [crew, setCrew] = useState<CrewSpec>({ workers: [] });
   const activeRootRef = useRef<EntityId | null>(null);
   const stoppedRootRef = useRef<EntityId | null>(null);
+  /* The agent message of the turn the viewer stopped, when known. A Stop ends
+     ONE turn: the queue behind it — often another participant's message —
+     still runs, and its frames must draw as live, not as stopped. */
+  const stoppedMessageRef = useRef<EntityId | null>(null);
   const detailRef = useRef<ChatThreadDetail | null>(null);
   /** Rolling cache of the active thread's recent frames, replayed over every
    *  snapshot read so a frame published after the read began is never lost
@@ -1188,6 +1192,17 @@ export function ChatHomeScreen({
              frame kept from the stream — is one read away, and nothing else
              would fetch it until the thread is reopened. */
           refreshDetail(frame.chatId);
+        }
+        if (
+          frame.type === 'chat.turn.delta'
+          && frame.chatId === stoppedRootRef.current
+          && stoppedMessageRef.current !== null
+          && frame.messageId !== stoppedMessageRef.current
+        ) {
+          // A different turn started after the stopped one: the chat is live again.
+          stoppedRootRef.current = null;
+          stoppedMessageRef.current = null;
+          setPhase((current) => (isBusyPhase(current) ? current : 'streaming'));
         }
         const stopped = frame.chatId === stoppedRootRef.current;
         setDetail((current) => {
@@ -2272,11 +2287,20 @@ export function ChatHomeScreen({
     if (!selectedRootId || !port.interrupt) return;
     const rootId = selectedRootId;
     stoppedRootRef.current = rootId;
+    const clock = turnClockRef.current;
+    stoppedMessageRef.current = (clock && clock.chatId === rootId ? clock.messageId : null)
+      ?? inFlightAgentTurn(detailRef.current)?.messageId ?? null;
     // A Stop that takes seconds is itself a wait — the row says so.
     setTurnClock((current) => (current && current.chatId === rootId ? { ...current, stopping: true } : current));
     try {
       await port.interrupt(rootId);
       const stoppedDetail = await port.readThread(rootId);
+      // No frame had named the stopped turn yet: the read does — it is the
+      // newest agent message, the one the Stop just ended.
+      if (stoppedRootRef.current === rootId && stoppedMessageRef.current === null) {
+        stoppedMessageRef.current = [...stoppedDetail.turns].reverse()
+          .find((turn) => turn.role === 'assistant')?.messageId ?? null;
+      }
       // Live-turn bookkeeping belongs to whichever thread is active NOW — an
       // interrupt that resolves after switching away must not touch it.
       if (activeRootRef.current === rootId) {
