@@ -1753,3 +1753,148 @@ describe('206: the member-login paths do not see a space login', () => {
     }
   });
 });
+
+// ===========================================================================
+// The login terminal's WORK SESSION ends — it used to read `spawning` forever
+// ===========================================================================
+
+describe('a credential work session records its ending (334)', () => {
+  const nodeAdminClaims = (): DbClaims => ({ ...humanClaims(fixture.aliceIdentity), nodeAdmin: true });
+
+  async function workSession(id: string): Promise<{
+    status: string;
+    ended_kind: string | null;
+    error: string | null;
+    exited_at: Date | null;
+  }> {
+    const [row] = await database.query<{
+      status: string;
+      ended_kind: string | null;
+      error: string | null;
+      exited_at: Date | null;
+    }>(
+      `select status, ended_kind, error, exited_at from public.work_sessions where entity_id = $1`,
+      [id],
+    );
+    return row!;
+  }
+
+  /** Age a login the way six weeks on a real node do, without touching its status. */
+  async function age(id: string, lease: { expiresAgo: string; finished: boolean }): Promise<void> {
+    await database.transaction(async (client) => {
+      await client.query(`select set_config('tm8.work_session_transition', 'on', true)`);
+      await client.query(
+        `update public.work_sessions set status_changed_at = now() - interval '2 hours' where entity_id = $1`,
+        [id],
+      );
+      await client.query(
+        `update public.credential_sessions
+            set expires_at = now() - $2::interval,
+                finished_at = case when $3 then now() - interval '2 hours' else finished_at end
+          where work_session_id = $1`,
+        [id, lease.expiresAgo, lease.finished],
+      );
+    });
+  }
+
+  it('a launch that fails after the mint (no vendor CLI) ends the row failed, not spawning', async () => {
+    const pty = fakePty();
+    const service = serviceFor(pty.pty, { resolveBinary: () => null });
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+    await expect(
+      service.start({ spaceId: fixture.space, provider: 'hermes' }, principal),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+
+    const [minted] = await database.query<{ work_session_id: string; finished_at: Date | null }>(
+      `select cs.work_session_id, cs.finished_at
+         from public.credential_sessions cs
+         join public.accounts a on a.id = cs.account_id
+        where a.identity_id = $1 and cs.provider = 'hermes'
+        order by cs.expires_at desc limit 1`,
+      [fixture.aliceIdentity],
+    );
+    expect(minted!.finished_at).not.toBeNull();
+    const row = await workSession(minted!.work_session_id);
+    expect(row.status).toBe('failed');
+    expect(row.exited_at).not.toBeNull();
+    expect(row.error).toMatch(/hermes/);
+  });
+
+  it('a member’s finish ends the work session exited, stopped by the close', async () => {
+    const pty = fakePty();
+    const service = serviceFor(pty.pty);
+    const principal = { claims: humanClaims(fixture.bobIdentity), identityId: 'pr2-bob' };
+    const started = await service.start({ spaceId: fixture.space, provider: 'openai' }, principal);
+    expect((await workSession(started.workSessionId)).status).toBe('spawning');
+    await service.finish({ workSessionId: started.workSessionId }, principal).catch(() => undefined);
+    expect(await workSession(started.workSessionId)).toMatchObject({
+      status: 'exited',
+      ended_kind: 'stopped_by_operator',
+    });
+  });
+
+  it('the sweep’s gone path ends a terminal that exited on its own as exited_clean', async () => {
+    const pty = fakePty();
+    const service = serviceFor(pty.pty);
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+    const started = await service.start({ spaceId: fixture.space, provider: 'github' }, principal);
+    pty.live.delete(started.workSessionId);
+    expect(await service.sweepNow()).toBe(1);
+    expect(await workSession(started.workSessionId)).toMatchObject({
+      status: 'exited',
+      ended_kind: 'exited_clean',
+    });
+  });
+
+  it('the ending sweep reaps a stale spawning row and keeps a login still inside its lease', async () => {
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+    // Minted straight through the RPC: exactly the rows a pre-fix node left —
+    // `spawning`, no node_id, no lifecycle writer.
+    const mint = async (provider: string) =>
+      (await db.rpc<{ workSessionId: string }>(principal.claims, 'start_credential_session', [
+        fixture.space, provider, 900, 100,
+      ])).workSessionId;
+
+    // STALE: the login finished six weeks ago and its lease is long over.
+    const stale = await mint('kimi');
+    await age(stale, { expiresAgo: '2 hours', finished: true });
+    // FRESH: minted just now, inside its lease.
+    const fresh = await mint('groq');
+    // CLAIMED ELSEWHERE: aged row, no PTY on this node, but its lease is still
+    // live — another node may be holding the terminal. Finished by a reclaim
+    // on another node, too: finished_at alone must not reap it.
+    const elsewhere = await mint('cursor');
+    await age(elsewhere, { expiresAgo: '-20 minutes', finished: true });
+
+    try {
+      const swept = await db.rpc<{ reaped: string[] }>(
+        nodeAdminClaims(), 'credential_session_ending_sweep', ['10 minutes', 1000],
+      );
+      expect(swept.reaped).toContain(stale);
+      expect(swept.reaped).not.toContain(fresh);
+      expect(swept.reaped).not.toContain(elsewhere);
+      expect(await workSession(stale)).toMatchObject({ status: 'failed', ended_kind: 'lost' });
+      expect((await workSession(stale)).exited_at).not.toBeNull();
+      expect((await workSession(fresh)).status).toBe('spawning');
+      expect((await workSession(elsewhere)).status).toBe('spawning');
+
+      // Idempotent: a second tick (or a second node) finds nothing new.
+      const again = await db.rpc<{ reaped: string[] }>(
+        nodeAdminClaims(), 'credential_session_ending_sweep', ['10 minutes', 1000],
+      );
+      expect(again.reaped).not.toContain(stale);
+    } finally {
+      await database.query(
+        `update public.credential_sessions set finished_at = coalesce(finished_at, now())
+          where work_session_id = any($1::uuid[])`,
+        [[stale, fresh, elsewhere]],
+      );
+    }
+  });
+
+  it('the ending sweep is node admin only', async () => {
+    await expect(
+      db.rpc(humanClaims(fixture.aliceIdentity), 'credential_session_ending_sweep', ['10 minutes', 10]),
+    ).rejects.toMatchObject({ code: 'forbidden', details: { sqlstate: '42501' } });
+  });
+});

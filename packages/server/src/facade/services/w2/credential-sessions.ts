@@ -45,10 +45,15 @@
  *      process dies.
  *
  * The residual, stated rather than discovered: an absent member's row stays
- * unfinished and its `work_sessions.status` reads `running` forever. It blocks
- * only that member, heals when they return, and is why READ MODELS MUST DERIVE
- * CONNECTION STATE FROM `credential_sessions.finished_at`/`expires_at` AND
- * NEVER FROM THE CREDENTIAL WORK SESSION'S `status`.
+ * unfinished until they return. It blocks only that member, and is why READ
+ * MODELS MUST DERIVE CONNECTION STATE FROM `credential_sessions.finished_at`/
+ * `expires_at` AND NEVER FROM THE CREDENTIAL WORK SESSION'S `status`.
+ *
+ * The WORK SESSION's status is written by this service on every close, after
+ * the kill (`recordEnding`), and `credential_session_ending_sweep` (334, the
+ * `credentials.session-ending-sweep` job) ends any login terminal whose lease
+ * ran out without one. Before both, every credential work session read
+ * `spawning` forever.
  */
 import { CollabError } from '@tm8/contract';
 import type { CredentialProvider, CredentialSessionLauncher, Logger } from '@tm8/execution';
@@ -288,6 +293,69 @@ interface OwnSpaceLoginRow {
   finished_at: Date | string | null;
 }
 
+/**
+ * The ending a closed login terminal leaves on its WORK SESSION. See
+ * `recordEnding` for why this service writes it at all.
+ */
+interface CredentialEnding {
+  status: 'exited' | 'failed';
+  /** Technical, for `work_sessions.error`. */
+  error?: string;
+  endedKind?: 'exited_clean' | 'stopped_by_operator' | 'lost';
+  /** Read by a person: one plain sentence. */
+  endedReason: string;
+}
+
+/** The PTY host's answer to a kill, as the launcher passes it through. */
+type KillOutcome = ReturnType<CredentialSessionLauncher['terminate']>;
+
+/**
+ * The ending of a terminal this node held and closed. The process fact comes
+ * from the kill (we stopped it, or it had already exited on its own); the
+ * sentence from what the close established about the login.
+ */
+function closedEnding(killed: KillOutcome, connected: boolean): CredentialEnding {
+  return {
+    status: 'exited',
+    endedKind: killed === 'killed' ? 'stopped_by_operator' : 'exited_clean',
+    endedReason: connected
+      ? 'Login finished: the account was connected.'
+      : 'Login closed without connecting an account.',
+  };
+}
+
+/**
+ * The ending of a terminal this node did NOT hold (a previous process, or one
+ * whose lease it closed by id). A kill that found it means we stopped it; one
+ * that found nothing means no process was left — the reaper's `lost`.
+ */
+function orphanEnding(killed: KillOutcome): CredentialEnding {
+  return killed === 'killed'
+    ? { status: 'exited', endedKind: 'stopped_by_operator', endedReason: 'Login closed without connecting an account.' }
+    : {
+        status: 'failed',
+        error: 'credential session closed with no live login terminal on this node',
+        endedKind: 'lost',
+        endedReason: 'Closed: this login terminal had already ended.',
+      };
+}
+
+/** A launch that failed after the row was minted: no terminal ever ran. */
+function launchFailedEnding(error: unknown): CredentialEnding {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    status: 'failed',
+    error: message.trim() !== '' ? message : 'the login terminal could not be opened',
+    endedReason: 'The login terminal could not be opened.',
+  };
+}
+
+/** `work_session_transition`'s 23514: the row is already terminal. */
+function isAlreadyTerminal(error: unknown): boolean {
+  if (error instanceof CollabError) return error.details?.['sqlstate'] === '23514';
+  return (error as { code?: string } | null)?.code === '23514';
+}
+
 export class W2CredentialSessionsService {
   private readonly db: Db;
   private readonly launcher: CredentialSessionLauncher;
@@ -514,7 +582,16 @@ export class W2CredentialSessionsService {
       // what stops a failed launch from locking the member out of retrying.
       // Best-effort: the launch error is the one that explains what happened
       // and must not be masked by a cleanup failure.
+      //
+      // The work session the RPC minted `spawning` ends too: before this it
+      // sat at `spawning` forever, and a missing vendor CLI was enough. Kill
+      // first (a no-op `not_found` when nothing launched), so the ending is
+      // never written over a live terminal.
+      const killed = this.launcher.terminate(started.workSessionId);
       await this.finishRow(principal, started.workSessionId).catch(() => undefined);
+      if (killed !== 'error') {
+        await this.recordEnding(principal.claims, started.workSessionId, launchFailedEnding(error));
+      }
       throw error;
     }
   }
@@ -697,7 +774,8 @@ export class W2CredentialSessionsService {
     // and a live `claude`/`gh` holding the config directory can race the
     // probe's read. `kill` answers 'not_found' rather than throwing for a
     // PTY that already died, so this is safe on the sweep's gone path too.
-    const terminated = this.launcher.terminate(entry.workSessionId) === 'killed';
+    const killed = this.launcher.terminate(entry.workSessionId);
+    const terminated = killed === 'killed';
 
     let probe: ProbeResult | null = null;
     let stored = false;
@@ -734,6 +812,12 @@ export class W2CredentialSessionsService {
       failure ??= error;
     } finally {
       this.registry.delete(entry.workSessionId);
+    }
+
+    // The terminal is gone (killed, or it had already exited), so the work
+    // session may say so. A kill `error` leaves it for the 334 sweep.
+    if (killed !== 'error') {
+      await this.recordEnding(principal.claims, entry.workSessionId, closedEnding(killed, stored));
     }
 
     return { probe, stored, terminated, failure };
@@ -1066,8 +1150,16 @@ export class W2CredentialSessionsService {
       // and is deliberately left out of this change — so the row is stamped as
       // before. This is the one remaining close that cannot persist, and it
       // only covers sessions this node never launched.
-      if (live) this.launcher.terminate(row.work_session_id);
+      const killed = live ? this.launcher.terminate(row.work_session_id) : 'not_found';
       await this.finishRow(principal, row.work_session_id);
+      // The work session's ending only when this node KNOWS the terminal is
+      // gone: it just killed it, or the lease ran out (the owning node kills at
+      // expiry, and a dead node took its PTY with it). An unexpired row with no
+      // PTY here may be live on another node; its own close records the ending,
+      // and the 334 sweep backs that up once the lease is over.
+      if (killed === 'killed' || (killed === 'not_found' && expiresAtMs <= now)) {
+        await this.recordEnding(principal.claims, row.work_session_id, orphanEnding(killed));
+      }
       reclaimed += 1;
     }
     return reclaimed;
@@ -1083,6 +1175,57 @@ export class W2CredentialSessionsService {
    */
   private async finishRow(principal: CredentialPrincipal, workSessionId: string): Promise<void> {
     await this.db.rpc(principal.claims, 'finish_credential_session', [workSessionId]);
+  }
+
+  /**
+   * Record the ending on the login terminal's WORK SESSION, after its lease
+   * is closed.
+   *
+   * WHY THIS SERVICE WRITES IT. R7 left the work session's status to "the
+   * PTY-exit path", and for a login terminal there is none that can write:
+   * the exit sink (`SpawnService.handlePtyExit`) holds no claims for a
+   * terminal it did not spawn, a close kills the PTY with `notify`, so that
+   * sink never runs anyway, and the boot reconciliation and the lost-session
+   * reaper list candidates by `node_id`, which a login terminal never has
+   * (D5). Every credential work session therefore sat at `spawning` forever —
+   * measured on a single-node install: twelve, the oldest six weeks old, each
+   * with `finished_at` long since stamped.
+   *
+   * R7's objection was to an RPC claiming `exited` over a process that may
+   * still be running. Every caller here writes only AFTER the kill answered
+   * `killed` or `not_found` — never on `error` — which is `SpawnService`'s own
+   * kill-then-record order. The claims are the ones that closed the lease, so
+   * `work_session_transition`'s space-member check is the one they already
+   * passed to open it.
+   *
+   * NEVER THROWS. The lease is what unblocks the member; this is bookkeeping,
+   * and `credential_session_ending_sweep` (334) ends whatever it misses. An
+   * already-terminal row (23514 — the sweep, or a second close, got there
+   * first) is not a failure.
+   */
+  private async recordEnding(
+    claims: DbClaims,
+    workSessionId: string,
+    ending: CredentialEnding,
+  ): Promise<void> {
+    try {
+      await this.db.rpc(claims, 'work_session_transition', [
+        workSessionId,
+        ending.status,
+        null, // p_exit_code — a kill does not wait for the real exit event
+        ending.error ?? null,
+        null, // p_transcript_doc_id
+        null, // p_client_mutation_id
+        ending.endedKind ?? null,
+        ending.endedReason,
+      ]);
+    } catch (error) {
+      if (isAlreadyTerminal(error)) return;
+      this.logger?.warn?.('credential session ending could not be recorded', {
+        workSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1199,11 +1342,15 @@ export class W2CredentialSessionsService {
       };
     } catch (error) {
       // Nothing was launched, or the launch threw: no PTY to kill first.
-      this.launcher.terminate(started.workSessionId);
+      const killed = this.launcher.terminate(started.workSessionId);
       await this.spaceStore
         .finishLogin(principal.claims, started.workSessionId, false)
         .catch(() => undefined);
       await this.spaceHomes.removeStaging(key, started.workSessionId).catch(() => undefined);
+      // As the member start: the minted work session ends, not `spawning` forever.
+      if (killed !== 'error') {
+        await this.recordEnding(principal.claims, started.workSessionId, launchFailedEnding(error));
+      }
       throw error;
     }
   }
@@ -1302,14 +1449,17 @@ export class W2CredentialSessionsService {
       }
     }
 
+    const connected = finished?.connected === true && stored;
     if (finished) {
       this.registry.delete(entry.workSessionId);
       await this.spaceHomes.removeStaging(key, entry.workSessionId).catch(() => undefined);
+      // The kill already succeeded (an `error` returned above), so the work
+      // session may record its ending — see `recordEnding`.
+      await this.recordEnding(principal.claims, entry.workSessionId, closedEnding(killed, connected));
     }
     // Otherwise the row is still open (the RPC could not be reached): the
     // entry and the staging home are kept, and the next sweep retries.
 
-    const connected = finished?.connected === true && stored;
     return {
       probe: finished
         ? {
@@ -1372,6 +1522,10 @@ export class W2CredentialSessionsService {
       }
       terminated = killed === 'killed';
       credential = (await this.spaceStore.finishLogin(principal.claims, workSessionId, false)).credential;
+      // As the member reclaim: only when this node knows the terminal is gone.
+      if (killed === 'killed' || new Date(row.expires_at).getTime() <= this.now()) {
+        await this.recordEnding(principal.claims, workSessionId, orphanEnding(killed));
+      }
     } else {
       credential = (await this.spaceStore.read(principal.claims, row.space_credential_id)) ?? undefined;
     }
@@ -1493,8 +1647,12 @@ export class W2CredentialSessionsService {
       if (outcome.failure && !outcome.probe) throw outcome.failure;
       return 'closed';
     }
-    if (this.launcher.terminate(workSessionId) === 'error') return 'kill_failed';
+    const killed = this.launcher.terminate(workSessionId);
+    if (killed === 'error') return 'kill_failed';
     await this.spaceStore.finishLogin(claims, workSessionId, false);
+    // Only a terminal this node just killed: with no PTY here it may still be
+    // live on another node until its expiry (see the member reclaim).
+    if (killed === 'killed') await this.recordEnding(claims, workSessionId, orphanEnding(killed));
     return 'closed';
   }
 

@@ -587,6 +587,18 @@ export class W2CredentialCatalogService {
         });
         continue;
       }
+      // The work session ends too, for a terminal this node just killed (the
+      // credential service's `recordEnding` explains why nothing else would).
+      // One with no PTY here may be live on another node until its expiry;
+      // its own close, or the 334 sweep after the lease, ends that one.
+      if (outcome === 'killed') {
+        await this.db
+          .rpc(principal.claims, 'work_session_transition', [
+            row.work_session_id, 'exited', null, null, null, null,
+            'stopped_by_operator', 'Closed when the account was disconnected.',
+          ])
+          .catch(() => undefined);
+      }
       terminated.push(row.work_session_id);
     }
     return terminated;
