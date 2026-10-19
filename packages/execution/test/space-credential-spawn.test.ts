@@ -270,6 +270,27 @@ describe('SC-2 spawn/resume ordering around a space credential', () => {
     expect(JSON.parse(await readFile(authJson, 'utf8'))).toEqual({ auth_mode: 'apikey', OPENAI_API_KEY: OAI_KEY });
   });
 
+  it('codex: records the isolated CODEX_HOME the child runs with as the session\'s agent config dir', async () => {
+    const port = new FakeSpacePort(events, new Set(['identity-A']));
+    const { spawnIfAbsent } = spyPty();
+    const recorded: Array<string | null> = [];
+    const record = graph.recordManifest.bind(graph);
+    graph.recordManifest = async (...args) => {
+      recorded.push(args[5]);
+      return record(...args);
+    };
+    await service(port).spawn(A, {
+      spaceId: SPACE_ID,
+      teamMemberId: TEAMMATE_OF_B,
+      model: 'gpt-5.5',
+      agentTool: 'codex',
+      credentialSources: { openai: 'space' },
+    });
+    const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
+    // Where resume and the transcript reader look is where Codex wrote.
+    expect(recorded).toEqual([env.CODEX_HOME]);
+  });
+
   it('records the exact credential in the manifest BEFORE the PTY, and re-checks it AFTER', async () => {
     const port = new FakeSpacePort(events, new Set(['identity-A']));
     spyPty();

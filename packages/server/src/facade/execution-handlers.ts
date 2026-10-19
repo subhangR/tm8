@@ -3461,6 +3461,8 @@ function registerHandlers(
       agentTool: session.agent_tool,
       ...(dataDir ? { dataDir } : {}),
       home: process.env.HOME ?? homedir(),
+      // A Codex child's rollouts live in its own isolated CODEX_HOME.
+      sessionId,
     });
 
     // `files=1` also scans the WHOLE transcript for Edit/Write tool calls —
