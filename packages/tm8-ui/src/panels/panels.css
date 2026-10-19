@@ -4705,6 +4705,14 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--pn-line);
 }
+/* The phone's bar: Edit and Download as two glyphs at the right, no rule
+   under them — a slim row that stays put while the document scrolls. */
+.cv2-root .rs-bar--phone {
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 2px 6px;
+  border-bottom: 0;
+}
 .cv2-root .rs-body {
   flex: 1;
   min-height: 0;

@@ -63,7 +63,32 @@ export function overlayIdOf(state: unknown): string | null {
   return typeof id === 'string' ? id : null;
 }
 
+const PATH_LINK = /^\/(?:s\/([^/]+)\/)?e\/([^/]+)\/?$/;
+
+/**
+ * THE PATH SPELLING OF AN ENTITY LINK, as the hash this router reads.
+ *
+ * `https://tm8.sh/e/{id}` is what people and agents type when they share a
+ * thing, and the node answers every extension-less path with `index.html`. But
+ * this router only reads the hash, so that link booted with an empty one and
+ * last-place won: the phone landed on whatever list it had open last and the
+ * item never opened. `/e/{id}` becomes `#/e/{id}` (the bare form, which
+ * `redirect` stitches onto the last-active space) and `/s/{space}/e/{id}`
+ * becomes `#/s/{space}/e/{id}`. Anything else is not a path link: null.
+ */
+export function hashOfPathLink(pathname: string): string | null {
+  const match = PATH_LINK.exec(pathname);
+  if (!match) return null;
+  const [, space, id] = match;
+  return space ? `#/s/${space}/e/${id}` : `#/e/${id}`;
+}
+
 export function createBrowserTarget(win: Window = window): RouterTarget {
+  /* A path link is respelled in place before the first read, and only when the
+     hash is empty: a hash always outranks the path it rides on. A replace, so
+     Back does not return to the path form and bounce. */
+  const pathHash = win.location.hash.length > 2 ? null : hashOfPathLink(win.location.pathname);
+  if (pathHash) win.history.replaceState(win.history.state, '', `/${win.location.search}${pathHash}`);
   return {
     getHash: () => win.location.hash || '#/',
     setHash: (hash, opts = {}) => {
