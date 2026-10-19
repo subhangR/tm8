@@ -13,6 +13,8 @@ import { WaConnection } from './wa.js'
 const ROOT = process.env.WA_BRIDGE_ROOT ?? path.resolve(import.meta.dirname, '..')
 const AUTH_DIR = path.join(ROOT, 'auth')
 const DATA_DIR = path.join(ROOT, 'data')
+// Speaker token files. In the container this is mounted at its host path, so the path in a briefing works for agents too.
+const TOKEN_DIR = process.env.WA_BRIDGE_TOKEN_DIR ?? path.join(ROOT, 'tokens')
 const allowLink = process.argv.includes('--link')
 const listGroups = process.argv.includes('--list-groups')
 
@@ -33,6 +35,7 @@ const bridge = new Bridge(cfg, store, {
   downloadMedia: (...a) => waRef.conn!.downloadMedia(...a),
 }, tm8, {
   mediaDir: path.join(DATA_DIR, 'media'),
+  tokenDir: TOKEN_DIR,
   transcriber: makeTranscriber(cfg, ROOT, (m) => console.log(`[${new Date().toISOString()}] ${m}`)),
 })
 waRef.conn = new WaConnection(bridge, { authDir: AUTH_DIR, dataDir: DATA_DIR, allowLink, listGroups, pairingPhone: cfg.pairingPhone, logLevel: process.env.LOG_LEVEL })

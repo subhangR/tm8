@@ -94,7 +94,8 @@ export type RouteRow = {
   wa_msg_id: string
   channel_id: string
   target_name: string
-  status: 'pending' | 'posted' | 'replied' | 'warned' | 'failed'
+  /** granted: not routed, but the main chat handed the session this thread (it may /say there). */
+  status: 'pending' | 'posted' | 'replied' | 'warned' | 'failed' | 'granted'
   posted_at: number | null
   replied_at: number | null
   created_at: number
@@ -383,6 +384,10 @@ export class Store {
   markBriefed(name: string) {
     this.db.prepare(`UPDATE names SET briefed_at = ? WHERE name = ?`).run(this.now(), name)
   }
+  /** A session that runs again after it ended: live, and briefed anew (with a new token). */
+  reviveName(name: string) {
+    this.db.prepare(`UPDATE names SET status = 'live', ended_at = NULL, briefed_at = NULL WHERE name = ?`).run(name)
+  }
   endName(name: string) {
     this.db.transaction(() => {
       this.db.prepare(`UPDATE names SET status = 'ended', ended_at = ? WHERE name = ? AND status != 'ended'`).run(this.now(), name)
@@ -501,6 +506,12 @@ export class Store {
     return this.db
       .prepare(`SELECT * FROM routes WHERE target_name = ? AND status IN ('posted', 'warned') ORDER BY id LIMIT 1`)
       .get(target) as RouteRow | undefined
+  }
+  /** Routes to `target` posted since `since` that nobody answered yet. */
+  openRoutes(target: string, since: number): RouteRow[] {
+    return this.db
+      .prepare(`SELECT * FROM routes WHERE target_name = ? AND status IN ('posted', 'warned') AND posted_at >= ? ORDER BY id`)
+      .all(target, since) as RouteRow[]
   }
   overdueRoutes(olderThan: number): RouteRow[] {
     return this.db.prepare(`SELECT * FROM routes WHERE status = 'posted' AND posted_at < ?`).all(olderThan) as RouteRow[]

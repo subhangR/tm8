@@ -14,13 +14,23 @@ export type EntityContext = {
   /** Tasks the session works on (work sessions); the first one's title is the default name title. */
   tasks?: { id: string; title?: string; status?: string }[]
   launchedSessions?: LaunchedSession[]
+  /** Chats: "running" while a turn runs; turnCount and lastTurnAt move when turns start. */
+  turnState?: string
+  turnCount?: number
+  lastTurnAt?: string
 }
+/** One part of an agent's chat-turn message: text, tool_call, tool_result, usage, done; payload is JSON. */
+export type TurnPart = { seq: number; kind: string; payload: string }
+/** A message on a chat, as the fallback relay needs it. `batch` is "chat-turn:<turn id>" for an agent's turn reply. */
+export type ChatMessage = { id: string; body: string; isAgent: boolean; batch: string | null; parts?: TurnPart[] }
 export type Teammate = { id: string; title: string }
 
 export interface Tm8Port {
   /** False until the token file holds a `tm8s_…` token. */
   configured(): boolean
   context(id: string): Promise<EntityContext>
+  /** The newest `limit` messages on an entity (agent turn replies with their parts), in any order. */
+  messages(anchorId: string, limit: number): Promise<ChatMessage[]>
   /** Post a message; `attach` are tm8 file ids shown as attachments on it. */
   post(anchorId: string, body: string, mutationId: string, attach?: string[]): Promise<void>
   /** Upload a local file as a tm8 file entity. */
@@ -127,6 +137,18 @@ export class Tm8Cli implements Tm8Port {
 
   async context(id: string): Promise<EntityContext> {
     return this.run(['entity', 'context', id])
+  }
+
+  async messages(anchorId: string, limit: number): Promise<ChatMessage[]> {
+    const out = await this.run(['message', 'list', anchorId, '--order', 'newest', '--limit', String(limit)])
+    const items: any[] = out?.items ?? out?.page?.items ?? []
+    return items.map((m) => ({
+      id: m.id,
+      body: m.content?.body ?? '',
+      isAgent: !!m.state?.author?.isAgent,
+      batch: m.state?.messageBatchId ?? null,
+      ...(Array.isArray(m.parts) ? { parts: m.parts.map((p: any) => ({ seq: p.seq, kind: p.kind, payload: typeof p.payload === 'string' ? p.payload : JSON.stringify(p.payload ?? null) })) } : {}),
+    }))
   }
 
   async post(anchorId: string, body: string, mutationId: string, attach: string[] = []) {

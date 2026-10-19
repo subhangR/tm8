@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { HttpError, PENDING_ECHO_MS } from '../src/core.js'
-import { rebriefDelegateRule, rebriefMainChat, rebriefReplyRule } from '../src/briefing.js'
-import { cleanLabel, escapeMentions, generateName, matchTeammate, parseCommand, parseMentions, RateLimiter, extractTm8Token, shortTitle, speakerLine } from '../src/text.js'
+import { apiReference, briefMainChat, rebriefDelegateRule, rebriefMainChat, rebriefReplyRule } from '../src/briefing.js'
+import { cleanLabel, envelopeWaId, escapeMentions, finalTurnText, looksSecret, generateName, matchTeammate, parseCommand, parseMentions, RateLimiter, extractTm8Token, shortTitle, speakerLine } from '../src/text.js'
 import { parseCliJson } from '../src/tm8.js'
-import { GROUP, OWNER, inbound, setup, withMain } from './helpers.js'
+import { GROUP, OWNER, agentTurn, briefToken, inbound, nextId, setup, withMain } from './helpers.js'
 
 const lastPost = (t: { tm8: { posts: { to: string; body: string }[] } }) => t.tm8.posts.at(-1)!
 
@@ -88,7 +88,7 @@ describe('main chat', () => {
     assert.equal(c.teammate, '01a0fb41-3317-77f3-b2b5-2bba3e489f4d')
     assert.match(c.body, /You are \*\*self-main\*\*/)
     for (const s of ['/say', '/history', '/search', 'curl', 'http://127.0.0.1:8787', 'UNTRUSTED']) assert.ok(c.body.includes(s), s)
-    const token = /TOKEN=(wab_\S+)/.exec(c.body)![1]
+    const token = briefToken(c.body)
     assert.equal(t.bridge.authenticate(`Bearer ${token}`).nameStr, 'self-main')
     assert.equal(t.store.channel('self').main_chat_id, 'chat-1')
     assert.equal(t.store.channel('self').epoch, 1)
@@ -138,7 +138,7 @@ describe('routing', () => {
 
     // The session replies; then the owner quote-replies without any mention.
     const addressed = t.store.history('self', 1)[0].wa_msg_id
-    const tok = /TOKEN=(wab_\S+)/.exec(t.tm8.posts.find((p) => p.to === 'sess-1' && p.body.includes('briefing'))!.body)![1]
+    const tok = briefToken(t.tm8.posts.find((p) => p.to === 'sess-1' && p.body.includes('briefing'))!.body)
     const r = await t.bridge.say(t.auth(tok), { text: 'step 3 OOMs', reply_to: addressed, idempotency_key: 'k1' })
     const botId = r.body.wa_msg_id as string
     await t.bridge.onInbound(inbound({ text: 'fix it', quotedId: botId }))
@@ -334,7 +334,7 @@ describe('names and poller', () => {
     const brief = t.tm8.posts.find((p) => p.to === 'sess-2')!.body
     assert.match(brief, new RegExp(`named \\*\\*${s2.name}\\*\\*`))
     for (const s of ['/say', '/history', '/search', 'reply_to', 'UNTRUSTED']) assert.ok(brief.includes(s), s)
-    const tok = /TOKEN=(wab_\S+)/.exec(brief)![1]
+    const tok = briefToken(brief)
     assert.equal(t.bridge.authenticate(`Bearer ${tok}`).nameStr, s2.name)
     // A second poll doesn't re-brief or rename.
     const n = t.tm8.posts.length
@@ -345,13 +345,44 @@ describe('names and poller', () => {
   test('ended sessions keep their name forever; tokens are revoked; names are never deleted or reused', async () => {
     const t = await withMain()
     const s = await addSession(t)
-    const tok = /TOKEN=(wab_\S+)/.exec(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)![1]
+    const tok = briefToken(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)
     await addSession(t, 'sess-1', 'exited')
     assert.throws(() => t.bridge.authenticate(`Bearer ${tok}`), (e: HttpError) => e.status === 401)
     assert.throws(() => t.store.db.prepare(`DELETE FROM names WHERE name = ?`).run(s.name), /never deleted/)
     assert.throws(() => t.store.insertName({ name: s.name, space_id: 'x', entity_id: 'other', kind: 'session', teammate: null, channel_id: 'self', parent_name: null }))
     const s2 = await addSession(t, 'sess-9')
     assert.notEqual(s2.name, s.name)
+  })
+  test('a session that runs again after it ended (resume, relaunch) is live again, re-briefed, and gets its messages', async () => {
+    const t = await withMain()
+    const s = await addSession(t)
+    const oldTok = briefToken(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)
+    await addSession(t, 'sess-1', 'exited')
+    assert.equal(t.store.getName(s.name)!.status, 'ended')
+    for (const status of ['running', 'idle']) {
+      await addSession(t, 'sess-1', status)
+      const n = t.store.getName(s.name)!
+      assert.equal(n.status, 'live', status)
+      assert.equal(n.ended_at, null)
+      if (status === 'idle') break
+      const briefs = t.tm8.posts.filter((p) => p.to === 'sess-1' && p.body.startsWith('[whatsapp bridge briefing]'))
+      assert.equal(briefs.length, 2)
+      const tok = briefToken(briefs[1].body)
+      assert.equal(t.bridge.authenticate(`Bearer ${tok}`).nameStr, s.name)
+      assert.throws(() => t.bridge.authenticate(`Bearer ${oldTok}`), (e: HttpError) => e.status === 401)
+      await t.bridge.onInbound(inbound({ id: 'BACK', text: `@${s.name} are you back?` }))
+      assert.equal(t.store.routesFor('BACK')[0].target_name, s.name)
+      await addSession(t, 'sess-1', 'exited')
+    }
+    // A name the owner stopped stays ended even while tm8 still says running.
+    await addSession(t, 'sess-1', 'running')
+    await t.bridge.onInbound(inbound({ text: `/stop ${s.name}` }))
+    await addSession(t, 'sess-1', 'running')
+    assert.equal(t.store.getName(s.name)!.status, 'ended')
+    // Still briefed once per revival, not on every poll.
+    const n = t.tm8.posts.length
+    await t.bridge.poll()
+    assert.equal(t.tm8.posts.length, n)
   })
   test('a session discovered already ended is named but not briefed', async () => {
     const t = await withMain()
@@ -363,6 +394,35 @@ describe('names and poller', () => {
 })
 
 describe('speaker tokens', () => {
+  test('briefings name a 0600 token file, never the token; tokens posted before token files are rotated once', async () => {
+    const t = await withMain()
+    const s = await addSession(t)
+    const mainTok = briefToken(t.tm8.chats[0].body)
+    const sessTok = briefToken(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)
+    // As if both had been briefed before token files: their token sat in a tm8 message.
+    t.store.db.prepare(`DELETE FROM kv WHERE k LIKE 'token-file:%'`).run()
+    const before = t.tm8.posts.length
+    await t.bridge.poll()
+    const updates = t.tm8.posts.slice(before)
+    assert.deepEqual(updates.map((p) => p.to).sort(), ['chat-1', 'chat-2', 'sess-1']) // chat-2: the infra group's main chat
+    for (const u of updates) assert.ok(u.body.includes('has been rotated') && u.body.includes('admin.ts'))
+    assert.ok(updates.find((u) => u.to === 'chat-1')!.body.includes('RULE 1 still holds'))
+    for (const tok of [mainTok, sessTok, t.mainToken]) assert.throws(() => t.bridge.authenticate(`Bearer ${tok}`), (e: HttpError) => e.status === 401)
+    assert.equal(t.bridge.authenticate(`Bearer ${briefToken(updates.find((u) => u.to === 'chat-1')!.body)}`).nameStr, 'self-main')
+    assert.equal(t.bridge.authenticate(`Bearer ${briefToken(updates.find((u) => u.to === 'sess-1')!.body)}`).nameStr, s.name)
+    // Once only.
+    await t.bridge.poll()
+    assert.equal(t.tm8.posts.length, before + 3)
+  })
+  test('a pending main chat from before token files (token in kv) starts over without it', async () => {
+    const t = setup()
+    t.store.setKv('pending-main:self', JSON.stringify({ mutationId: 'old-mut', name: 'self-main', token: 'wab_legacy', epoch: 1 }))
+    await t.bridge.ensureMainChat(t.cfg.channels[0])
+    assert.ok(!t.store.getKv('pending-main:self'))
+    assert.ok(!t.tm8.chats[0].body.includes('wab_legacy'))
+    assert.throws(() => t.bridge.authenticate('Bearer wab_legacy'), (e: HttpError) => e.status === 401)
+    assert.equal(t.bridge.authenticate(`Bearer ${briefToken(t.tm8.chats[0].body)}`).nameStr, 'self-main')
+  })
   test('missing, bad and revoked tokens are 401', async () => {
     const t = await withMain()
     assert.throws(() => t.bridge.authenticate(undefined), (e: HttpError) => e.status === 401)
@@ -385,10 +445,10 @@ describe('speaker tokens', () => {
   test('escalate: true lets a session post a blocker without reply_to, but not into an unrelated thread', async () => {
     const t = await withMain()
     const s = await addSession(t)
-    const tok = /TOKEN=(wab_\S+)/.exec(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)![1]
+    const tok = briefToken(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)
     const a = t.auth(tok)
     assert.match(t.tm8.posts.find((p) => p.to === 'sess-1')!.body, /## Escalate blockers to WhatsApp/)
-    assert.match(t.tm8.chats[0].body, /put this escalation route in its spawn context/)
+    assert.match(t.tm8.chats[0].body, /Put this in every spawn context:\n  "WhatsApp escalation:/)
     const r = await t.bridge.say(a, { text: 'Blocked: need a decision on A or B', escalate: true, idempotency_key: 'e1' })
     assert.equal(r.status, 200)
     assert.match(t.wa.sent.at(-1)!.text, new RegExp(`\\(${s.name}\\): Blocked: need a decision on A or B$`))
@@ -398,10 +458,33 @@ describe('speaker tokens', () => {
     await assert.rejects(t.bridge.say(a, { text: 'x', reply_to: unrelated, escalate: true, idempotency_key: 'e2' }), (e: HttpError) => e.status === 403)
     await assert.rejects(t.bridge.say(a, { text: 'x', escalate: 'yes', idempotency_key: 'e3' }), (e: HttpError) => e.status === 403)
   })
+  test('a session the main chat announced on a thread ("Title (handle) is on it") may post its first message there', async () => {
+    const t = await withMain()
+    const s = await addSession(t)
+    const a = t.auth(briefToken(t.tm8.posts.find((p) => p.to === 'sess-1')!.body))
+    await t.bridge.onInbound(inbound({ text: '@tm8 fix the deploy' }))
+    const req = t.store.history('self', 1)[0].wa_msg_id
+    await t.bridge.onInbound(inbound({ text: 'other' }))
+    const other = t.store.history('self', 1)[0].wa_msg_id
+    await assert.rejects(t.bridge.say(a, { text: 'hello', reply_to: req, idempotency_key: 's0' }), (e: HttpError) => e.status === 403)
+    await t.bridge.say(t.auth(), { text: `Deploy fix (${s.name}) is on it`, reply_to: req, idempotency_key: 'm1' })
+    const announce = t.wa.sent.at(-1)!.id
+    // On the request itself, or on the announcement (it quotes the request); not elsewhere.
+    assert.equal((await t.bridge.say(a, { text: 'hello, starting now', reply_to: req, idempotency_key: 's1' })).status, 200)
+    assert.equal((await t.bridge.say(a, { text: 'first finding', reply_to: announce, idempotency_key: 's2' })).status, 200)
+    await assert.rejects(t.bridge.say(a, { text: 'x', reply_to: other, idempotency_key: 's3' }), (e: HttpError) => e.status === 403)
+    assert.ok(t.tm8.posts.find((p) => p.to === 'sess-1')!.body.includes(`("Title (${s.name}) is on it")`))
+    // A grant is not a message for the session: the watchdog doesn't wait on it.
+    assert.equal(t.store.routesTo(s.name, req)!.status, 'granted')
+    assert.equal(t.store.oldestOpenRoute(s.name), undefined)
+    // Only live sessions of this group, and only from the main chat.
+    await t.bridge.say(t.auth(), { text: 'Nobody (no-such) is on it', reply_to: other, idempotency_key: 'm2' })
+    assert.equal(t.store.routesTo('no-such', other), undefined)
+  })
   test('sessions may only reply in threads addressed to them', async () => {
     const t = await withMain()
     const s = await addSession(t)
-    const tok = /TOKEN=(wab_\S+)/.exec(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)![1]
+    const tok = briefToken(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)
     const a = t.auth(tok)
     await t.bridge.onInbound(inbound({ text: 'unrelated' }))
     const unrelated = t.store.history('self', 1)[0].wa_msg_id
@@ -526,6 +609,87 @@ describe('history and search', () => {
   })
 })
 
+describe('fallback relay (a [whatsapp] turn that ends without /say)', () => {
+  async function relaySetup() {
+    const t = await withMain()
+    t.tm8.chatMessages.set('chat-1', [])
+    let turns = 0
+    /** The chat's turn signature moves, as tm8's does when a turn starts or ends. */
+    const bump = () => t.tm8.contexts.set('chat-1', { id: 'chat-1', kind: 'chat', turnState: 'idle', turnCount: ++turns, launchedSessions: [] })
+    const ask = async (text: string) => {
+      await t.bridge.onInbound(inbound({ text }))
+      return t.store.history('self', 1)[0].wa_msg_id
+    }
+    const endTurn = async (parts: Parameters<typeof agentTurn>[1]) => {
+      t.tm8.chatMessages.get('chat-1')!.push(agentTurn(nextId(), parts))
+      bump()
+      await t.bridge.poll()
+    }
+    return { ...t, ask, endTurn }
+  }
+  test('relays the final text (after the last tool call) on the thread, once, and clears the watchdog', async () => {
+    const t = await relaySetup()
+    const wa = await t.ask('@tm8 is staging green?')
+    const sent = t.wa.sent.length
+    await t.endTurn([{ text: 'Checking the deploy.' }, 'tool', { text: 'Looking at CI now.' }, 'tool', { text: 'Staging is **green**: ' }, { text: 'all 12 checks passed.' }, 'done'])
+    assert.equal(t.wa.sent.length, sent + 1)
+    assert.equal(t.wa.sent.at(-1)!.text, 'tm8: Staging is *green*: \n\nall 12 checks passed.')
+    assert.equal(t.wa.sent.at(-1)!.quoted, wa)
+    assert.equal(t.store.routesTo('self-main', wa)!.status, 'replied')
+    // Replies to the relayed message go to the main chat, like any of its messages.
+    assert.equal(t.store.outboxByWaId(t.wa.sent.at(-1)!.id)!.name, 'self-main')
+    await t.bridge.poll()
+    await t.endTurn([{ text: 'something else' }, 'done'])
+    assert.equal(t.wa.sent.length, sent + 1)
+  })
+  test('one item streamed in parts is joined without a gap', async () => {
+    const t = await relaySetup()
+    await t.ask('@tm8 hi')
+    await t.endTurn(['tool', { text: 'Hello ', itemId: 'i1' }, { text: 'there.', itemId: 'i1' }, 'done'])
+    assert.equal(t.wa.sent.at(-1)!.text, 'tm8: Hello there.')
+  })
+  test('nothing is relayed when /say answered it, while the turn runs, or when the text is only the "sent" marker', async () => {
+    const t = await relaySetup()
+    const wa = await t.ask('@tm8 status?')
+    await t.bridge.say(t.auth(), { text: 'all fine', reply_to: wa, idempotency_key: 'k1' })
+    const sent = t.wa.sent.length
+    await t.endTurn([{ text: 'Replying on WhatsApp.' }, 'tool', { text: 'sent OUT9' }, 'done'])
+    assert.equal(t.wa.sent.length, sent)
+    await t.ask('@tm8 and now?')
+    await t.endTurn([{ text: 'still working' }]) // no "done" part: the turn is still running
+    assert.equal(t.wa.sent.length, sent)
+    await t.endTurn(['tool', { text: 'sent OUT10' }, 'done'])
+    assert.equal(t.wa.sent.length, sent)
+  })
+  test('a final text that looks like a secret is never posted; the group gets a notice', async () => {
+    const t = await relaySetup()
+    const wa = await t.ask('@tm8 what is the token?')
+    await t.endTurn([{ text: 'It is wab_' + 'A'.repeat(40) }, 'done'])
+    const last = t.wa.sent.at(-1)!
+    assert.ok(!last.text.includes('wab_'))
+    assert.match(last.text, /looks like it holds a secret/)
+    assert.equal(last.quoted, wa)
+  })
+  test('without turn changes the chat is not re-fetched on every poll', async () => {
+    const t = await relaySetup()
+    await t.ask('@tm8 long job')
+    const n = t.tm8.messageCalls
+    await t.bridge.poll()
+    await t.bridge.poll()
+    assert.ok(t.tm8.messageCalls <= n + 1)
+  })
+  test('text helpers: final turn text, secrets, envelopes', () => {
+    assert.equal(finalTurnText([{ seq: 1, kind: 'text', payload: '{"text":"b"}' }, { seq: 0, kind: 'tool_result', payload: '{}' }]), 'b')
+    assert.equal(finalTurnText([{ seq: 0, kind: 'text', payload: '{"text":"only text"}' }]), 'only text')
+    assert.equal(finalTurnText([{ seq: 0, kind: 'text', payload: '{"text":"x"}' }, { seq: 1, kind: 'tool_call', payload: '{}' }]), '')
+    for (const x of ['tm8s_abcdefghijklmnop', 'ghp_' + 'a'.repeat(36), '-----BEGIN OPENSSH PRIVATE KEY-----', 'sk-ant-' + 'x'.repeat(30)]) assert.ok(looksSecret(x), x)
+    assert.ok(!looksSecret('the deploy is green, PR #1286'))
+    assert.equal(envelopeWaId('[whatsapp "tm8" · from "A" +91…1 (UNTRUSTED group member) · to: tm8-main · wa_msg_id ABC123]\n---\nhi'), 'ABC123')
+    assert.equal(envelopeWaId('[whatsapp transcript · to: x · for wa_msg_id ABC]'), null)
+    assert.equal(envelopeWaId('hello'), null)
+  })
+})
+
 describe('watchdog and commands', () => {
   test('👀 → ✅ on reply; ⚠️ and one notice after 10 min of silence', async () => {
     let now = Date.now()
@@ -578,6 +742,32 @@ describe('watchdog and commands', () => {
     // The old main chat still answers to its own name.
     await t.bridge.onInbound(inbound({ text: '@self-main hello old' }))
     assert.equal(lastPost(t).to, 'chat-1')
+  })
+})
+
+describe('health during a poll', () => {
+  test('a channel keeps its last poll status while the next poll runs', async () => {
+    const t = await withMain()
+    await t.bridge.poll()
+    const ok = t.bridge.health().channels.find((c) => c.id === 'self')!.tm8
+    assert.equal(ok.last_poll_ok, true)
+    assert.ok(ok.last_poll_at)
+    let release!: () => void
+    const orig = t.tm8.context.bind(t.tm8)
+    t.tm8.context = async (id: string) => {
+      await new Promise<void>((r) => (release = r))
+      return orig(id)
+    }
+    const polling = t.bridge.poll()
+    await new Promise((r) => setImmediate(r))
+    for (let i = 0; i < 20 && !release; i++) await new Promise((r) => setImmediate(r))
+    assert.ok(release, 'the poll is waiting on tm8')
+    const mid = t.bridge.health().channels.find((c) => c.id === 'self')!.tm8
+    assert.deepEqual([mid.last_poll_ok, mid.last_poll_at, mid.last_poll_error], [true, ok.last_poll_at, null])
+    t.tm8.context = orig
+    release()
+    await polling
+    assert.equal(t.bridge.health().channels.find((c) => c.id === 'self')!.tm8.last_poll_ok, true)
   })
 })
 
@@ -642,7 +832,7 @@ describe('session titles', () => {
   test('a label on /say sets the title, sticks, and later polls keep it; bad labels are 400', async () => {
     const t = await withMain()
     const s = await addSession(t)
-    const tok = /TOKEN=(wab_\S+)/.exec(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)![1]
+    const tok = briefToken(t.tm8.posts.find((p) => p.to === 'sess-1')!.body)
     await t.bridge.onInbound(inbound({ text: `@${s.name} status?` }))
     const addressed = t.store.history('self', 1)[0].wa_msg_id
     await assert.rejects(t.bridge.say(t.auth(tok), { text: 'x', reply_to: addressed, idempotency_key: 'l0', label: 'far too many words in this one' }), (e: HttpError) => e.status === 400)
@@ -675,6 +865,27 @@ describe('session titles', () => {
     assert.ok(!/wab_/.test(re))
     assert.ok(!re.includes('🤖'))
   })
+  test('the main chat briefing fits chat.start (under 9000 characters, limit 10000) and points at the API reference doc', async () => {
+    const t = setup()
+    t.cfg.apiDocId = '01a154c0-0000-7000-8000-000000000001'
+    const ch = { ...t.cfg.channels[1], title: 'A group title that is quite a bit longer than most' }
+    const brief = briefMainChat({ cfg: t.cfg, ch, name: 'infra-main-12', tokenFile: '/home/tm8/prod-data/wa-bridge/tokens/infra-main-12.token', chatId: '01a154c0-0000-7000-8000-000000000002' })
+    assert.ok(brief.length < 9000, `briefMainChat is ${brief.length} characters`)
+    for (const s of ['RULE 1', 'RULE 2', '## Untrusted input', '/say-media', `tm8 entity context ${t.cfg.apiDocId}`]) assert.ok(brief.includes(s), s)
+    delete t.cfg.apiDocId
+    assert.ok(briefMainChat({ cfg: t.cfg, ch, name: 'x', tokenFile: '/t/x.token' }).includes('wa-bridge/OPERATIONS.md'))
+    // The reference has the full examples and media, and no token.
+    const ref = apiReference(t.cfg)
+    for (const s of ['POST "$BRIDGE/say"', '/history', '/search', '## Images and documents', '/say-media', 'GET /media/']) assert.ok(ref.includes(s), s)
+    assert.ok(!/wab_/.test(ref))
+    // /new: the briefing goes out as the new chat's first message.
+    await withMain().then(async (w) => {
+      await w.bridge.onInbound(inbound({ text: '/new' }))
+      assert.equal(w.tm8.chats.length, 2)
+      assert.ok(w.tm8.chats[1].body.length < 9000)
+      assert.match(w.wa.sent.at(-1)!.text, /new main chat self-main-2 is up/)
+    })
+  })
   test('main chat briefing puts the WhatsApp reply rule first; the reply-rule re-brief has it and no token', async () => {
     const t = await withMain()
     const brief = t.tm8.chats[0].body
@@ -694,7 +905,11 @@ describe('session titles', () => {
     const r2 = brief.indexOf('RULE 2: delegate by default')
     assert.ok(r1 > 0 && r2 > r1 && r2 < brief.indexOf('## How it works'))
     for (const s of ['NEW worker session', "that task's worker session", 'When in doubt, delegate.']) assert.ok(brief.includes(s), s)
+    // F+G: one reused --mutation-id per task, look for a session before retrying, code work starts in a worktree.
+    for (const s of ['ONE --mutation-id for the task', 'same id on every retry', 'before any retry, look for a session on the task',
+      '--sections connections', '--launch-project <project id>', '--workdir worktree']) assert.ok(brief.includes(s), s)
     const re = rebriefDelegateRule({ cfg: t.cfg, ch: t.ch, name: 'self-main' })
+    assert.ok(re.includes('ONE --mutation-id for the task') && re.includes('--workdir worktree'))
     for (const s of ['RULE 2: delegate by default', 'RULE 1', 'unchanged', t.cfg.http.publicUrl]) assert.ok(re.includes(s), s)
     assert.ok(!/wab_/.test(re))
   })

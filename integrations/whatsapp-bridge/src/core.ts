@@ -25,15 +25,18 @@ import {
   type MediaKind,
 } from './media.js'
 import type { MediaRow, MessageRow, NameRow, OutboxMedia, OutboxRow, Store } from './store.js'
-import type { EntityContext, Teammate, Tm8Factory, Tm8Port } from './tm8.js'
+import type { ChatMessage, EntityContext, Teammate, Tm8Factory, Tm8Port } from './tm8.js'
 import {
   MAIN_PREFIX,
   RESERVED,
   RateLimiter,
   bodyHash,
   cleanLabel,
+  envelopeWaId,
+  finalTurnText,
   generateName,
   hashToken,
+  looksSecret,
   matchTeammate,
   newToken,
   parseCommand,
@@ -41,9 +44,11 @@ import {
   shortTitle,
   speakerLine,
   titled,
+  whatsappText,
   type Command,
 } from './text.js'
-import { briefMainChat, briefSession, envelope } from './briefing.js'
+import { briefMainChat, briefSession, envelope, rebriefTokenFile } from './briefing.js'
+import { readTokenFile, tokenFilePath, writeTokenFile } from './tokens.js'
 import { NoneTranscriber, TooLongError, transcribeTimeoutMs, type Transcriber } from './transcribe.js'
 
 export type WaKey = { remoteJid?: string | null; id?: string | null; fromMe?: boolean | null; participant?: string | null }
@@ -154,6 +159,8 @@ export class Bridge {
   private sendAttempts = new Map<number, number>()
   private notConfiguredAt = new Map<string, number>()
   private polling: Promise<void> | null = null
+  /** Fallback relay: the main chat's turn signature at its last message fetch, per chat. */
+  private relayChecked = new Map<string, { sig: string; at: number }>()
   private ensuring = new Map<string, Promise<void>>()
   /** Sends in flight (registered before sendText, removed once the outbox has the wa_msg_id). */
   private pendingSends: { channelId: string; hash: string; at: number }[] = []
@@ -164,6 +171,8 @@ export class Bridge {
   private sttChain: Promise<unknown> = Promise.resolve()
   transcriber: Transcriber
   media: MediaDir
+  /** Speaker token files (<name>.token, 0600); agents read theirs, briefings only name the path. */
+  tokenDir: string
   ownJids = new Set<string>()
   lastPoll: PollStatus = { at: null, ok: false, error: null }
   waState = 'starting'
@@ -174,9 +183,10 @@ export class Bridge {
     public wa: WaPort,
     /** One port for every channel, or a factory called once per (spaceId, tokenFile). */
     tm8: Tm8Port | Tm8Factory,
-    private o: { now?: () => number; log?: Log; retryDelaysMs?: number[]; mediaDir?: string; transcriber?: Transcriber } = {},
+    private o: { now?: () => number; log?: Log; retryDelaysMs?: number[]; mediaDir?: string; transcriber?: Transcriber; tokenDir?: string } = {},
   ) {
     this.makeTm8 = typeof tm8 === 'function' ? tm8 : () => tm8
+    this.tokenDir = o.tokenDir ?? path.join(os.tmpdir(), 'wa-bridge-tokens')
     this.media = new MediaDir(o.mediaDir ?? path.join(os.tmpdir(), 'wa-bridge-media'))
     this.transcriber = o.transcriber ?? new NoneTranscriber()
     // A transcription cut off by a restart is started again (resumeTranscriptions).
@@ -769,6 +779,8 @@ export class Bridge {
         try {
           await this.tm8For(ch).stopSession(n.entity_id, `stopped from WhatsApp by the owner (/stop ${n.name})`, crypto.randomUUID())
           this.store.endName(n.name)
+          // Its tm8 status may still read "running" for a moment: a stopped name is never revived.
+          this.store.setKv(`stopped:${n.name}`, new Date(this.now()).toISOString())
           return reply(`stopped ${n.name}`)
         } catch (e) {
           return reply(`couldn't stop ${n.name}: ${(e as Error).message.slice(0, 200)}`)
@@ -820,9 +832,11 @@ export class Bridge {
           })
         }
         this.store.setMainChat(ch.id, ch.mainChatId, name)
-        const token = this.issueToken(name, ch.id)
-        await c.port.post(ch.mainChatId, briefMainChat({ cfg: this.cfg, ch, name, token, chatId: ch.mainChatId }), crypto.randomUUID())
+        this.store.revokeTokens(name)
+        this.issueToken(name, ch.id)
+        await c.port.post(ch.mainChatId, briefMainChat({ cfg: this.cfg, ch, name, tokenFile: this.tokenFileFor(name), chatId: ch.mainChatId }), crypto.randomUUID())
         this.store.markBriefed(name)
+        this.markTokenFile(name)
         this.log(`[main] ${ch.id}: using configured main chat ${ch.mainChatId} as ${name}`)
         return
       }
@@ -855,11 +869,13 @@ export class Bridge {
     // A crash between chat.start and recording it must not create a second chat: replay the same mutation.
     const pendingKey = `pending-main:${ch.id}`
     const pendingRaw = this.store.getKv(pendingKey)
-    const pending: { mutationId: string; name: string; token: string; epoch: number } | null = pendingRaw ? JSON.parse(pendingRaw) : null
-    const p =
-      pending && pending.epoch === epoch
-        ? pending
-        : { mutationId: crypto.randomUUID(), name: this.allocMainName(ch, epoch), token: newToken(), epoch }
+    const pending: { mutationId: string; name: string; epoch: number; token?: string } | null = pendingRaw ? JSON.parse(pendingRaw) : null
+    // The token is in the name's token file, never in kv. A pending entry from before token files (it has a "token") is
+    // dropped: its briefing would carry the token, so it gets a fresh mutation.
+    const replay = pending && pending.epoch === epoch && !pending.token && readTokenFile(this.tokenDir, pending.name)
+    const p = replay ? { mutationId: pending.mutationId, name: pending.name, epoch } : { mutationId: crypto.randomUUID(), name: this.allocMainName(ch, epoch), epoch }
+    const token = (replay ? readTokenFile(this.tokenDir, p.name) : null) ?? newToken()
+    if (!replay) writeTokenFile(this.tokenDir, p.name, token)
     this.store.setKv(pendingKey, JSON.stringify(p))
     const teammateId = this.teammateOf(ch)
     const teammate = await this.teammateTitle(ch, teammateId)
@@ -867,7 +883,7 @@ export class Bridge {
       teammate: teammateId,
       model: ch.model ?? channelTm8(this.cfg, ch).defaultModel,
       title: `${ch.title} (WhatsApp)`,
-      body: briefMainChat({ cfg: this.cfg, ch, name: p.name, token: p.token }),
+      body: briefMainChat({ cfg: this.cfg, ch, name: p.name, tokenFile: this.tokenFileFor(p.name) }),
       mutationId: p.mutationId,
     })
     this.store.db.transaction(() => {
@@ -877,8 +893,9 @@ export class Bridge {
           teammate, channel_id: ch.id, parent_name: null,
         })
       }
-      this.store.addToken(hashToken(p.token), p.name, ch.id)
+      this.store.addToken(hashToken(token), p.name, ch.id)
       this.store.markBriefed(p.name)
+      this.markTokenFile(p.name)
       this.store.setMainChat(ch.id, chatId, p.name)
       this.store.db.prepare(`DELETE FROM kv WHERE k = ?`).run(pendingKey)
     })()
@@ -902,10 +919,41 @@ export class Bridge {
     c.teammates = { at: this.now(), list: await c.port.teammates() }
   }
 
+  /** A new token for a name, written to its token file (replacing the file). Returns the token, for tests only. */
   issueToken(name: string, channelId: string): string {
     const token = newToken()
+    writeTokenFile(this.tokenDir, name, token)
     this.store.addToken(hashToken(token), name, channelId)
     return token
+  }
+
+  tokenFileFor(name: string): string {
+    return tokenFilePath(this.tokenDir, name)
+  }
+
+  /** The name was briefed with a token file (so it never needs the token-file rotation). */
+  private markTokenFile(name: string) {
+    this.store.setKv(`token-file:${name}`, new Date(this.now()).toISOString())
+  }
+
+  /**
+   * Names briefed before token files got their token in a tm8 message. Rotate each live one once: revoke, write a new
+   * token to its file, and post the update naming the file. A failed post is tried again next poll (with a new token).
+   * Returns the names re-briefed.
+   */
+  async rotatePostedTokens(ch: ChannelConfig): Promise<string[]> {
+    const done: string[] = []
+    for (const n of this.store.namesIn(ch.id)) {
+      if (n.status !== 'live' || !n.briefed_at || this.store.getKv(`token-file:${n.name}`)) continue
+      this.store.revokeTokens(n.name)
+      this.issueToken(n.name, ch.id)
+      const main = n.kind === 'chat'
+      await this.tm8For(ch).post(n.entity_id, rebriefTokenFile({ cfg: this.cfg, ch, name: n.name, main, tokenFile: this.tokenFileFor(n.name) }), crypto.randomUUID())
+      this.markTokenFile(n.name)
+      this.log(`[tokens] rotated ${n.name}'s token; re-briefed with ${this.tokenFileFor(n.name)}`)
+      done.push(n.name)
+    }
+    return done
   }
 
   // ---------------------------------------------------------------- poller
@@ -956,15 +1004,19 @@ export class Bridge {
         continue
       }
       try {
-        this.channelPoll.delete(ch.id)
+        // The previous status stays in /health until this poll finishes (it used to be cleared here, so /health showed
+        // ok: false, last_poll_at: null mid-poll). ensureMainChat records its own failure as a new status (it never throws).
+        const before = this.channelPoll.get(ch.id)
         await this.ensureMainChat(ch)
+        const mainFailed = this.channelPoll.get(ch.id)
+        await this.rotatePostedTokens(ch)
+        const main = this.mainName(ch)
         for (const ep of this.store.epochs(ch.id)) {
           const ctx = await c.port.context(ep.chat_id)
           await this.syncLaunched(ch, ep.name, ctx, 0, new Set([ep.chat_id]))
+          if (main && ep.chat_id === main.entity_id) await this.relayUnanswered(ch, main, ctx).catch((e) => this.log(`[relay] ${main.name}: ${(e as Error).message}`))
         }
-        // ensureMainChat records its own failure (it never throws).
-        const st = this.channelPoll.get(ch.id)
-        if (st && !st.ok) errors.push(`${ch.id}: ${st.error}`)
+        if (mainFailed && mainFailed !== before && !mainFailed.ok) errors.push(`${ch.id}: ${mainFailed.error}`)
         else this.channelPoll.set(ch.id, { at: this.now(), ok: true, error: null })
       } catch (e) {
         const error = (e as Error).message.slice(0, 300)
@@ -982,7 +1034,13 @@ export class Bridge {
       seen.add(s.id)
       const ended = ENDED_STATUSES.has(s.status)
       let n = this.store.nameByEntity(s.id)
-      if (n && n.status === 'ended') continue
+      if (n && n.status === 'ended') {
+        if (ended || this.store.getKv(`stopped:${n.name}`)) continue
+        // Resumed or relaunched (tm8 session resume, an auto-relaunch): the name is live again and gets a fresh briefing.
+        this.store.reviveName(n.name)
+        n = this.store.getName(n.name)!
+        this.log(`[names] ${n.name} is ${s.status} again: revived`)
+      }
       if (n && ended) {
         this.store.endName(n.name)
         this.log(`[names] ${n.name} ended (${s.status})`)
@@ -1017,14 +1075,82 @@ export class Bridge {
 
   private async briefSessionName(ch: ChannelConfig, n: NameRow) {
     this.store.revokeTokens(n.name)
-    const token = this.issueToken(n.name, ch.id)
+    this.issueToken(n.name, ch.id)
     try {
-      await this.tm8For(ch).post(n.entity_id, briefSession({ cfg: this.cfg, ch, name: n, token }), crypto.randomUUID())
+      await this.tm8For(ch).post(n.entity_id, briefSession({ cfg: this.cfg, ch, name: n, tokenFile: this.tokenFileFor(n.name) }), crypto.randomUUID())
       this.store.markBriefed(n.name)
+      this.markTokenFile(n.name)
       this.log(`[names] briefed ${n.name}`)
     } catch (e) {
       this.store.revokeTokens(n.name)
       throw e
+    }
+  }
+
+  // ---------------------------------------------------------------- fallback relay
+
+  /**
+   * RULE 1 backstop: a main-chat turn that came with [whatsapp …] envelopes ended, and no /say answered them. Post the
+   * turn's final text (after its last tool call) to the group, as the main chat, on the last unanswered message's thread.
+   * Text that looks like a secret is never posted; the group gets a notice instead.
+   */
+  async relayUnanswered(ch: ChannelConfig, main: NameRow, ctx: EntityContext) {
+    const open = this.store.openRoutes(main.name, this.now() - RELAY_WINDOW_MS)
+    if (!open.length) return
+    // Fetch the chat's messages only when its turns moved (or once a minute): they carry every turn's parts.
+    const sig = `${ctx.turnState ?? ''}|${ctx.turnCount ?? ''}|${ctx.lastTurnAt ?? ''}`
+    const last = this.relayChecked.get(main.entity_id)
+    if (last && last.sig === sig && this.now() - last.at < 60_000) return
+    this.relayChecked.set(main.entity_id, { sig, at: this.now() })
+    const msgs = (await this.tm8For(ch).messages(main.entity_id, RELAY_FETCH)).sort((a, b) => (a.id < b.id ? -1 : 1))
+    const turns = msgs
+      .filter((m) => m.isAgent && m.batch?.startsWith('chat-turn:'))
+      .map((m) => ({ m, turnId: m.batch!.slice('chat-turn:'.length) }))
+      .sort((a, b) => (a.turnId < b.turnId ? -1 : 1))
+    for (let i = 0; i < turns.length; i++) {
+      const { m, turnId } = turns[i]
+      // A turn's inputs are the messages queued after the previous turn and before it. Without a previous turn in view,
+      // they may be outside the page.
+      const prev = turns[i - 1]?.turnId
+      if (prev === undefined && msgs.length >= RELAY_FETCH) continue
+      const done = m.parts?.find((p) => p.kind === 'done')
+      if (!done || this.store.getKv(`relayed-turn:${turnId}`)) continue
+      const waIds = msgs
+        .filter((x) => !x.isAgent && (prev === undefined || x.id > prev) && x.id < turnId)
+        .map((x) => envelopeWaId(x.body))
+        .filter((w): w is string => !!w)
+      const unanswered = open.filter((r) => waIds.includes(r.wa_msg_id) && ['posted', 'warned'].includes(this.store.routesTo(main.name, r.wa_msg_id)?.status ?? ''))
+      if (!unanswered.length) continue
+      await this.relayTurn(ch, main, turnId, m, unanswered.map((r) => r.wa_msg_id))
+    }
+  }
+
+  private async relayTurn(ch: ChannelConfig, main: NameRow, turnId: string, m: ChatMessage, waIds: string[]) {
+    const replyTo = waIds.at(-1)!
+    let text = finalTurnText(m.parts ?? [])
+    if (!text || /^sent\s+\S+\.?$/i.test(text) || /^Agent turn (failed|in progress)\.?$/i.test(text)) {
+      // Nothing to say (or only the RULE 1 marker): leave it to the watchdog.
+      this.store.setKv(`relayed-turn:${turnId}`, 'nothing')
+      return
+    }
+    if (this.channelLimiter.take(`ch:${ch.id}`)) return // try again next poll
+    this.store.setKv(`relayed-turn:${turnId}`, new Date(this.now()).toISOString())
+    if (looksSecret(text)) {
+      this.log(`[relay] turn ${turnId} of ${main.name}: its final text looks like it holds a secret; not relayed`)
+      text = 'answered in tm8, but the answer looks like it holds a secret, so it is not posted here. Ask in the tm8 app.'
+      const id = this.store.insertOutbox({ idempotency_key: null, name: BRIDGE, channel_id: ch.id, text: speakerLine({ kind: 'main' }, text), reply_to: replyTo })
+      if (this.wa.connected()) await this.deliver(id)
+    } else {
+      text = whatsappText(text)
+      if (text.length > 4000) text = text.slice(0, 3990).trimEnd() + ' …'
+      const id = this.store.insertOutbox({ idempotency_key: `relay:${turnId}`, name: main.name, channel_id: ch.id, text: speakerLine({ kind: 'main' }, text), reply_to: replyTo })
+      if (this.wa.connected()) await this.deliver(id)
+      this.log(`[relay] turn ${turnId} of ${main.name} ended without a /say for ${waIds.join(', ')}: relayed its final text`)
+    }
+    for (const w of waIds) {
+      const r = this.store.routesTo(main.name, w)
+      if (r) this.store.setRouteStatus(r.id, 'replied')
+      await this.reactSafe(ch, w, '✅')
     }
   }
 
@@ -1051,6 +1177,7 @@ export class Bridge {
     const full = speakerLine(this.speakerOf(name), text)
     const id = this.store.insertOutbox({ idempotency_key: pre.key, name: auth.nameStr, channel_id: auth.ch.id, text: full, reply_to: pre.replyTo })
     this.markReplied(auth.ch, auth.nameStr, pre.replyTo)
+    if (name?.kind === 'chat' && pre.replyTo) this.grantThread(auth.ch, pre.replyTo, text)
     if (this.wa.connected()) await this.deliver(id)
     return this.sayResult(this.store.getOutbox(id)!, false)
   }
@@ -1185,6 +1312,21 @@ export class Bridge {
       if (this.wa.connected()) void this.flushQueue()
     }
     return { status: 202, body: { queued: true, idempotency_key: row.idempotency_key, duplicate } }
+  }
+
+  /**
+   * A main chat announcing a session on a thread ("Deploy check (swift-otter) is on it", reply_to the request) hands that
+   * session the thread: it may post its first message there (a "granted" route, which the watchdog ignores).
+   */
+  private grantThread(ch: ChannelConfig, replyTo: string, text: string) {
+    for (const m of text.matchAll(/\(([a-z]+-[a-z]+(?:-\d+)?)\)/g)) {
+      const n = this.store.getName(m[1])
+      if (!n || n.kind !== 'session' || n.status !== 'live' || n.channel_id !== ch.id) continue
+      const routeId = this.store.insertRoute(replyTo, ch.id, n.name)
+      if (routeId === null) continue
+      this.store.setRouteStatus(routeId, 'granted')
+      this.log(`[names] ${n.name} may post in the thread of ${replyTo} (announced by the main chat)`)
+    }
   }
 
   /** Is `waId` (or anything it quotes) a message routed to `name` or sent by it? */
@@ -1555,6 +1697,9 @@ function clampInt(v: string | undefined, dflt: number, min: number, max: number)
   return Math.min(max, Math.max(min, n))
 }
 
+/** The fallback relay looks at turns for messages routed in the last 30 minutes, over the newest 20 chat messages. */
+const RELAY_WINDOW_MS = 30 * 60_000
+const RELAY_FETCH = 20
 const iso = (t: number | null) => (t === null ? null : new Date(t).toISOString())
 const EXPIRY_WARN_MS = 3 * 24 * 3600_000
 function humanDuration(ms: number) {

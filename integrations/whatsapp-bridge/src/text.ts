@@ -175,3 +175,57 @@ export class RateLimiter {
     return 0
   }
 }
+
+/**
+ * The text an agent ended its chat turn with: the text parts after its last tool call or result (what came before is
+ * narration: "Checking…", "Sending now…"). Consecutive parts of one item are joined as is, separate items by a blank line.
+ */
+export function finalTurnText(parts: { seq: number; kind: string; payload: string }[]): string {
+  const sorted = [...parts].sort((a, b) => a.seq - b.seq)
+  let last = -1
+  sorted.forEach((p, i) => {
+    if (p.kind === 'tool_call' || p.kind === 'tool_result') last = i
+  })
+  let out = ''
+  let item: string | null | undefined
+  for (const p of sorted.slice(last + 1)) {
+    if (p.kind !== 'text') continue
+    let t: { text?: unknown; itemId?: unknown }
+    try {
+      t = JSON.parse(p.payload)
+    } catch {
+      continue
+    }
+    if (typeof t?.text !== 'string') continue
+    const id = typeof t.itemId === 'string' ? t.itemId : null
+    out += out && (id === null || id !== item) ? '\n\n' + t.text : t.text
+    item = id
+  }
+  return out.trim()
+}
+
+/** Strings that look like credentials: never relayed to a group. */
+const SECRET_PATTERNS = [
+  /wab_[A-Za-z0-9_-]{16,}/, // bridge speaker tokens
+  /tm8s_[A-Za-z0-9_.-]{12,}/, // tm8 tokens
+  /sk-(ant-)?[A-Za-z0-9_-]{20,}/, // API keys
+  /\bgh[pousr]_[A-Za-z0-9]{20,}/, /\bgithub_pat_[A-Za-z0-9_]{20,}/,
+  /\bAKIA[0-9A-Z]{16}\b/, /\bxox[abprs]-[A-Za-z0-9-]{10,}/,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, // JWTs
+]
+export function looksSecret(text: string): boolean {
+  return SECRET_PATTERNS.some((r) => r.test(text))
+}
+
+/** Markdown an agent writes, as WhatsApp shows it: **bold** → *bold*, "## Heading" → *Heading*. */
+export function whatsappText(text: string): string {
+  return text.replace(/\*\*([^*\n]+)\*\*/g, '*$1*').replace(/^#{1,6}\s+(.+)$/gm, '*$1*')
+}
+
+/** The wa_msg_id of a bridge envelope ("[whatsapp "<group>" · … · wa_msg_id <id>]"), or null for anything else. */
+export function envelopeWaId(body: string): string | null {
+  const first = body.split('\n', 1)[0]
+  if (!first.startsWith('[whatsapp "')) return null
+  return /· wa_msg_id (\S+)\]$/.exec(first)?.[1] ?? null
+}

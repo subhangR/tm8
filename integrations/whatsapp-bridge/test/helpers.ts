@@ -1,4 +1,5 @@
 // Test fakes: an in-memory WhatsApp port, a scripted tm8 port and a bridge wired to both.
+import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -6,7 +7,7 @@ import { parseConfig } from '../src/config.js'
 import { Bridge, type Inbound, type WaKey, type WaPort } from '../src/core.js'
 import { TooLargeError } from '../src/media.js'
 import { Store } from '../src/store.js'
-import type { EntityContext, Teammate, Tm8Port } from '../src/tm8.js'
+import type { ChatMessage, EntityContext, Teammate, Tm8Port } from '../src/tm8.js'
 import type { Transcriber } from '../src/transcribe.js'
 
 export const OWNER = '910000000001@s.whatsapp.net'
@@ -73,6 +74,14 @@ export class FakeTm8 implements Tm8Port {
       throw new Error('tm8 down')
     }
     this.posts.push({ to, body, ...(attach?.length ? { attach } : {}) })
+    this.chatMessages.get(to)?.push({ id: nextId(), body, isAgent: false, batch: 'b' })
+  }
+  /** Messages per chat for message list (fallback relay); posts to a chat listed here are added as human messages. */
+  chatMessages = new Map<string, ChatMessage[]>()
+  messageCalls = 0
+  async messages(anchorId: string, limit: number) {
+    this.messageCalls++
+    return (this.chatMessages.get(anchorId) ?? []).slice(-limit)
   }
   async uploadFile(p: string, o: { name: string; mime: string; mutationId: string }) {
     if (this.failUploads > 0) {
@@ -137,8 +146,9 @@ export function setup(extra: { now?: () => number; rateLimits?: any; selfOnly?: 
   const tm8 = new FakeTm8()
   const logs: string[] = []
   const mediaDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wab-media-'))
-  const bridge = new Bridge(cfg, store, wa, tm8, { now: extra.now, log: (m) => logs.push(m), retryDelaysMs: [0, 0, 0], mediaDir, transcriber: extra.transcriber })
-  return { cfg, store, wa, tm8, bridge, logs, mediaDir }
+  const tokenDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wab-tokens-'))
+  const bridge = new Bridge(cfg, store, wa, tm8, { now: extra.now, log: (m) => logs.push(m), retryDelaysMs: [0, 0, 0], mediaDir, transcriber: extra.transcriber, tokenDir })
+  return { cfg, store, wa, tm8, bridge, logs, mediaDir, tokenDir }
 }
 
 let seq = 0
@@ -169,4 +179,34 @@ export async function withMain(extra: Parameters<typeof setup>[0] = {}) {
   await t.bridge.ensureMainChat(ch)
   const mainToken = t.bridge.issueToken('self-main', 'self')
   return { ...t, ch, mainToken, auth: (tok = mainToken) => t.bridge.authenticate(`Bearer ${tok}`) }
+}
+
+/** The speaker token a briefing points at: briefings name only the file (TOKEN=$(cat <file>)), so read it from there. */
+export function briefToken(body: string): string {
+  assert.ok(!/wab_/.test(body), 'a briefing must never carry a token')
+  const file = /TOKEN=\$\(cat (\S+?)\)/.exec(body)?.[1]
+  assert.ok(file, 'briefing names no token file')
+  const st = fs.statSync(file)
+  assert.equal(st.mode & 0o777, 0o600)
+  return fs.readFileSync(file, 'utf8').trim()
+}
+
+let idSeq = 0
+/** Increasing uuidv7-like ids, so message and turn ids sort in time order as tm8's do. */
+export function nextId(): string {
+  return `01a2${(++idSeq).toString(16).padStart(8, '0')}-0000-7000-8000-000000000000`
+}
+
+/** An agent's chat-turn reply: `turnId` from nextId() taken when the turn started; parts as tm8 stores them. */
+export function agentTurn(turnId: string, parts: ({ text: string; itemId?: string } | 'tool' | 'done')[]): ChatMessage {
+  return {
+    id: nextId(), body: 'Agent turn in progress.', isAgent: true, batch: `chat-turn:${turnId}`,
+    parts: parts.flatMap((p, i) =>
+      p === 'tool'
+        ? [{ seq: i * 2, kind: 'tool_call', payload: '{"name":"Bash"}' }, { seq: i * 2 + 1, kind: 'tool_result', payload: '{}' }]
+        : p === 'done'
+          ? [{ seq: i * 2, kind: 'done', payload: '{"reason":"success"}' }]
+          : [{ seq: i * 2, kind: 'text', payload: JSON.stringify(p) }],
+    ),
+  }
 }

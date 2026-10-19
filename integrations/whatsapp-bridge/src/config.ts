@@ -52,6 +52,8 @@ export type Config = {
   media: { maxBytes: number; attach: 'reference' | 'attach' }
   /** Voice-note transcription. provider "local" = whisper.cpp in the container; "none" = off; "openai" is reserved. */
   transcription: TranscriptionConfig
+  /** The tm8 doc with the full Bridge API reference (admin.ts api-reference); briefings point at it. */
+  apiDocId?: string | null
   channels: ChannelConfig[]
 }
 
@@ -147,6 +149,7 @@ export function parseConfig(raw: any, root: string): Config {
   for (const k of ['threads', 'maxDurationSec', 'waitSeconds'] as const) {
     if (!Number.isFinite(t[k]) || t[k] < 0) throw new Error(`transcription.${k} must be a non-negative number`)
   }
+  if (cfg.apiDocId !== undefined && cfg.apiDocId !== null && !UUID_RE.test(cfg.apiDocId)) throw new Error('apiDocId must be a tm8 doc id')
   const seen = new Set<string>()
   for (const ch of cfg.channels) {
     if (!ID_RE.test(ch.id)) throw new Error(`channel id ${JSON.stringify(ch.id)} must match ${ID_RE}`)

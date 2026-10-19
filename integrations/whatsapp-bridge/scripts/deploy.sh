@@ -8,7 +8,7 @@ IMAGE=${WA_BRIDGE_IMAGE:-wa-bridge:latest}
 
 [ -f config.json ] || { echo "config.json missing (copy config.example.json)" >&2; exit 1; }
 [ -d auth ] || { echo "auth/ missing: link the device first (OPERATIONS.md › Re-link)" >&2; exit 1; }
-mkdir -p data secrets && chmod 700 secrets
+mkdir -p data secrets tokens && chmod 700 secrets tokens
 
 docker build -t "$IMAGE" .
 
@@ -25,6 +25,7 @@ docker run -d --name "$NAME" \
   -v "$ROOT/auth:/app/auth" \
   -v "$ROOT/data:/app/data" \
   -v "$ROOT/secrets:/app/secrets:ro" \
+  -v "$ROOT/tokens:$ROOT/tokens" -e WA_BRIDGE_TOKEN_DIR="$ROOT/tokens" \
   -v "$ROOT/config.json:/app/config.json:ro" \
   -v /opt/tm8/prod:/opt/tm8/prod:ro \
   --log-opt max-size=20m --log-opt max-file=5 \

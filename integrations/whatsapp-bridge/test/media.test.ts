@@ -6,7 +6,7 @@ import { describe, test } from 'node:test'
 import { HttpError, type Inbound } from '../src/core.js'
 import { startHttp } from '../src/http.js'
 import { mediaPlaceholder, safeFileName, sniffMime, stableUuid } from '../src/media.js'
-import { GROUP, inbound, withMain } from './helpers.js'
+import { GROUP, briefToken, inbound, withMain } from './helpers.js'
 
 // A 1×1 PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
@@ -217,7 +217,7 @@ describe('outbound media (/say-media)', () => {
     t.tm8.contexts.set('s1', { id: 's1', kind: 'work_session', status: 'running', title: 'x', tasks: [{ id: 'k', title: 'Deploy log check' }], launchedSessions: [] })
     await t.bridge.poll()
     const s = t.store.nameByEntity('s1')!
-    const tok = /TOKEN=(wab_\S+)/.exec(t.tm8.posts.find((p) => p.to === 's1')!.body)![1]
+    const tok = briefToken(t.tm8.posts.find((p) => p.to === 's1')!.body)
     await assert.rejects(t.bridge.sayMedia(t.auth(tok), { file: file(), idempotency_key: 's0' }), (e: HttpError) => e.status === 403)
     await t.bridge.onInbound(inbound({ text: `@${s.name} send the chart` }))
     const addressed = t.store.history('self', 1)[0].wa_msg_id
