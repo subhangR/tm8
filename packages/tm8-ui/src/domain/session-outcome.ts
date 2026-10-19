@@ -391,6 +391,12 @@ export function sessionRowWord(
     return word('credential', 'Credential disconnected', 'block', 'ring-x', 'red', true, reason);
   }
   if (rec.endedKind === 'lost') return word('lost', 'Lost', 'block', 'ring-x', 'red', true, reason);
+  // 337: the idle reaper gave the process back. Nothing went wrong — opening
+  // or messaging the session brings it straight back.
+  if (rec.endedKind === 'idle_reaped') {
+    return word('ended', 'Paused', 'wait', 'ring', null, true,
+      reason ?? 'Paused after sitting idle. Open or message it and it picks up where it left off.');
+  }
   if (rec.status === 'failed' || (rec.endedKind !== null && CRASH_KINDS.has(rec.endedKind))) {
     return word('crashed', 'Crashed', 'block', 'ring-x', 'red', true, reason);
   }
@@ -402,6 +408,28 @@ export function sessionRowWord(
       'The process exited cleanly and no task is still being worked, but the session never ran `session complete`.');
   }
   return word('ended', 'Ended, not completed', 'wait', 'ring', null, true, reason);
+}
+
+/**
+ * Endings the NODE caused, not a person or a fault: a restart, the idle reaper,
+ * and the ghost reaper (a restart that got no chance to say so). Mirrors
+ * `RESUME_ON_DEMAND_ENDINGS` in @tm8/execution's SpawnService.
+ */
+const RESUME_ON_DEMAND_ENDINGS: ReadonlySet<string> = new Set(['server_restart', 'idle_reaped', 'lost']);
+
+/**
+ * True when opening this session should bring it straight back rather than
+ * show a Resume button — the desktop-app feel: an interrupted conversation is
+ * simply there again. Only open sessions (never Completed or Stopped for good),
+ * only ended ones, and only endings nobody chose; a crash, an OOM kill or an
+ * operator's Stop keeps its button, so a human decides.
+ */
+export function resumesOnDemand(state: EntityState | unknown): boolean {
+  const rec = sessionRecordOf(state);
+  if (rec === null || rec.outcome !== 'open') return false;
+  if (rec.status !== 'failed' && rec.status !== 'exited') return false;
+  if (rec.endedReason?.startsWith(RESUME_FAILED_PREFIX)) return false;
+  return rec.endedKind !== null && RESUME_ON_DEMAND_ENDINGS.has(rec.endedKind);
 }
 
 /** Open + ended: §5.1 rows 7-11. The session needs someone to resume, complete or stop it. */

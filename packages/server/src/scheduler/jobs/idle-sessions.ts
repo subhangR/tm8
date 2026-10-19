@@ -40,7 +40,11 @@ export const IDLE_SESSION_REAP_JOB_NAME = 'sessions.reap-idle';
 export interface IdleReapExecution {
   /** True when this node currently holds a PTY for that session. */
   hasSession(sessionId: string): boolean;
-  terminate(claims: DbClaims, sessionId: string, opts: { reason: string }): Promise<unknown>;
+  terminate(
+    claims: DbClaims,
+    sessionId: string,
+    opts: { reason: string; endedKind: 'idle_reaped'; endedReason: string },
+  ): Promise<unknown>;
 }
 
 export interface IdleSessionReapOptions {
@@ -127,6 +131,13 @@ export function createIdleSessionReapJob(options: IdleSessionReapOptions): Sched
             reason:
               `reaped after ${String(idleFor)}m idle: the conversation is kept and \`session resume\` ` +
               'restores it in full, so a waiting agent need not hold a process',
+            // Not `stopped_by_operator`, the bare terminate's default: nobody
+            // chose this, and the node resumes an idle-reaped session on demand
+            // (opened, typed into, messaged) where it must not undo a real Stop.
+            endedKind: 'idle_reaped',
+            endedReason:
+              `Paused after ${String(idleFor)} minutes idle to free memory. ` +
+              'Open or message it and it picks up where it left off.',
           });
           reaped += 1;
         } catch (error) {

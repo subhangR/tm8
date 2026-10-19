@@ -800,7 +800,7 @@ export function isEndedKind(value: string | null | undefined): value is WorkSess
 /** `work_sessions.ended_kind`'s CHECK verbatim — 171, widened by 177 and 299. */
 const ENDED_KINDS: ReadonlySet<string> = new Set<WorkSessionEndedKind>([
   'exited_clean', 'stopped_by_operator', 'server_restart', 'out_of_memory', 'crashed',
-  'container_stopped', 'runtime_lost', 'lost', 'credential_revoked', 'unknown',
+  'container_stopped', 'runtime_lost', 'lost', 'credential_revoked', 'idle_reaped', 'unknown',
 ]);
 
 /** True when a `working_on` claim has ended (299: `props.endedAt` is set). */

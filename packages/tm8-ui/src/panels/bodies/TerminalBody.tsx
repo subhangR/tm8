@@ -1,10 +1,10 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import { ToolRunChip } from '../../tools/ToolRunChip';
 import '../../tools/tools.css';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
-import type { ActionRef } from '../../domain';
+import { resumesOnDemand, type ActionRef } from '../../domain';
 import {
   ExitedFallback,
   LiveTerminal,
@@ -324,6 +324,48 @@ export function TerminalBody({
    shared context goes if it is wanted back on this panel. */
 
 /**
+ * Sessions this page has already auto-resumed once. A resume the node refuses
+ * (cap, missing rollout) lands back on the fallback with its reason, and must
+ * not loop; the button is still there for the person to try again.
+ */
+const autoResumed = new Set<string>();
+
+/**
+ * RESUME ON OPEN. A session the node itself stopped — a restart, the idle
+ * reaper, a ghost after a restart — comes back when someone opens it, the way
+ * a desktop chat app's conversation is simply there. Same `onResume` the button
+ * fires, so every refusal still surfaces in the same place. Endings a person
+ * or a fault chose (Stop, crash, OOM) keep the button: see `resumesOnDemand`.
+ */
+function useResumeOnOpen({
+  presentation,
+  sessionId,
+  sessionState,
+  onResume,
+  resuming,
+  resumeDisabledReason,
+}: {
+  presentation: ReturnType<typeof presentSession>;
+  sessionId: string;
+  sessionState?: unknown;
+  onResume?: () => void;
+  resuming?: boolean;
+  resumeDisabledReason?: string;
+}): void {
+  const eligible =
+    onResume !== undefined
+    && !resuming
+    && !resumeDisabledReason
+    && (presentation === 'stale'
+      || ((presentation === 'failed' || presentation === 'exited') && resumesOnDemand(sessionState)));
+  useEffect(() => {
+    if (!eligible || autoResumed.has(sessionId)) return;
+    autoResumed.add(sessionId);
+    onResume?.();
+  }, [eligible, sessionId, onResume]);
+}
+
+/**
  * The canvas slot. Each verdict gets the rendering that states what we
  * actually know — never a spinner that cannot resolve, never a dark box
  * pretending a dead session might still print.
@@ -378,6 +420,7 @@ function SessionCanvas({
   onCtrlSpent?: () => void;
   onAltSpent?: () => void;
 }) {
+  useResumeOnOpen({ presentation, sessionId, sessionState, onResume, resuming, resumeDisabledReason });
   switch (presentation) {
     case 'streaming':
     case 'running':

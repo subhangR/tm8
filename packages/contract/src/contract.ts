@@ -5108,6 +5108,9 @@ export type WorkSessionEndedKind =
   // 299: credential containment. Was recorded as `stopped_by_operator`,
   // though no operator chose it.
   | 'credential_revoked'
+  // 337: the idle reaper gave the process back; resume restores it, and the
+  // node resumes it on demand.
+  | 'idle_reaped'
   | 'unknown';
 
 /**

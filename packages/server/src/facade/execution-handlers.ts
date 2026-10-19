@@ -1325,6 +1325,7 @@ export class DbGraphPort implements GraphPort {
         native_session_id: string | null;
         agent_config_dir: string | null;
         node_id: string | null;
+        ended_kind: string | null;
       }>(
         // 330: the coordinator a resumed session reports to is its launcher
         // (`launched_by`), not parent_id — a chat is not a session's parent.
@@ -1333,7 +1334,7 @@ export class DbGraphPort implements GraphPort {
                   where lb.src_id = ws.entity_id and lb.type = 'launched_by' limit 1) as parent_id,
                 ws.project_id, ws.workdir_mode,
                 ws.workdir_path, ws.mode, ws.model, ws.agent_tool, ws.title,
-                ws.status, ws.native_session_id, ws.agent_config_dir, ws.node_id
+                ws.status, ws.native_session_id, ws.agent_config_dir, ws.node_id, ws.ended_kind
            from public.work_sessions ws
            join public.entities e on e.id = ws.entity_id
           where ws.entity_id = $1 and e.deleted_at is null`,
@@ -1371,6 +1372,7 @@ export class DbGraphPort implements GraphPort {
         nativeSessionId: row.native_session_id,
         agentConfigDir: row.agent_config_dir,
         nodeId: row.node_id,
+        endedKind: (row.ended_kind as WorkSessionResumeInfo['endedKind']) ?? null,
       };
     });
   }
@@ -1998,6 +2000,11 @@ export interface ExecutionRuntime {
    * `{ resumed: [], errors: [] }` when the policy is off.
    */
   resumeInterrupted(): Promise<AutoResumeReport>;
+  /**
+   * Resume on demand, as the loopback owner (`SpawnService.ensureLive`): true
+   * when the session has a live PTY here afterwards. Never rejects.
+   */
+  ensureLive(sessionId: string): Promise<boolean>;
 }
 
 /**
@@ -2180,6 +2187,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     },
     // See `runAutoResume` — shared with the legacy builder below.
     resumeInterrupted: () => runAutoResume(spawnService, owner, deps.logger),
+    ensureLive: (sessionId: string) => runEnsureLive(spawnService, owner, sessionId),
     reconcileWorktrees: async () => {
       // Same identity story as ghost reconciliation and for the same reason:
       // the doors below go through `require_space_member`, which has no
@@ -2227,6 +2235,27 @@ function resolveWorktreeCap(env: NodeJS.ProcessEnv = process.env): number {
   if (!raw) return 0;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+/**
+ * `ExecutionRuntime.ensureLive`, for both runtime builders. As the loopback
+ * owner for the same reason as auto-resume: a message delivery has no human
+ * caller whose claims could launch the agent. Never rejects.
+ */
+async function runEnsureLive(
+  spawnService: SpawnService,
+  owner: () => Promise<LoopbackOwner>,
+  sessionId: string,
+): Promise<boolean> {
+  try {
+    const o = await owner();
+    return await spawnService.ensureLive(
+      { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'resume-on-demand' },
+      sessionId,
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -2404,6 +2433,7 @@ export function registerExecutionHandlers(
       }
     },
     resumeInterrupted: () => runAutoResume(spawnService, owner, deps.logger),
+    ensureLive: (sessionId: string) => runEnsureLive(spawnService, owner, sessionId),
     reconcileWorktrees: async () => {
       try {
         const o = await owner();

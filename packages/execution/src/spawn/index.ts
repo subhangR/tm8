@@ -10,6 +10,7 @@ export {
   TOKEN_CHAR_CLASS,
 } from './secret-redaction.js';
 export {
+  RESUME_ON_DEMAND_ENDINGS,
   SpawnService,
   type CredentialContainmentCause,
   type CredentialContainmentResult,

@@ -82,6 +82,7 @@ describe('the idle session reaper', () => {
     expect(outcome.affected).toBe(1);
     expect(exec.terminate).toHaveBeenCalledTimes(1);
     const reason = exec.terminate.mock.calls[0]?.[2]?.reason as string;
+    expect(exec.terminate.mock.calls[0]?.[2]?.endedKind).toBe('idle_reaped');
     // The reason a human reads on the card must tell them nothing was lost.
     expect(reason).toMatch(/42m idle/);
     expect(reason).toMatch(/resume/);

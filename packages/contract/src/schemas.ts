@@ -400,6 +400,7 @@ export const WorkSessionEndedKindSchema: z.ZodType<WorkSessionEndedKind> =
     'runtime_lost',
     'lost',
     'credential_revoked',
+    'idle_reaped',
     'unknown',
   ]);
 /** Mirrors `work_sessions.outcome`'s CHECK exactly — 299. */

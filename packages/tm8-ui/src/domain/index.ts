@@ -152,6 +152,7 @@ export {
   sessionLineTwo,
   sessionNeedsAttentionOf,
   sessionOutcomeOf,
+  resumesOnDemand,
   sessionRecordOf,
   sessionRowWord,
   sessionTabOf,

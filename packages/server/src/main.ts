@@ -420,6 +420,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           connectionString: deliveryUrl,
           pty: execution.pty,
           promptSettlement: execution.promptSettlement,
+          ensureLive: (sessionId) => execution.ensureLive(sessionId),
         })
       : undefined;
 

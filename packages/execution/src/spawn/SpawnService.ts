@@ -133,6 +133,7 @@ import type {
   Tm8Manifest,
   TransitionInput,
   WorkSessionEndedKind,
+  WorkSessionResumeInfo,
   WorkSessionStatus,
   WorktreeAllocationRow,
   GhostReconcileReport,
@@ -436,6 +437,20 @@ const SHUTDOWN_EXIT_LOOKBACK_MS = 5_000;
 /** Bound on waiting for in-flight PTY-exit writes inside `recordShutdown`. */
 const SHUTDOWN_EXIT_DRAIN_MS = 3_000;
 
+/**
+ * Endings the NODE caused rather than a person or a fault: a restart, the idle
+ * reaper, and the ghost reaper (a restart that got no chance to say so). A
+ * session that ended one of these ways is resumed on demand — when someone
+ * prompts it or a message is delivered to it — instead of refusing with "no
+ * live terminal". A crash, an OOM kill or an operator's Stop is left for a
+ * person: resuming those silently would undo a decision or loop a fault.
+ */
+export const RESUME_ON_DEMAND_ENDINGS: ReadonlySet<WorkSessionEndedKind> = new Set<WorkSessionEndedKind>([
+  'server_restart',
+  'idle_reaped',
+  'lost',
+]);
+
 /** The ending a restart gives a session. One sentence, shared by every writer. */
 const SERVER_RESTART_ENDING = {
   endedKind: 'server_restart' as const,
@@ -613,6 +628,8 @@ export class SpawnService {
   private readonly recentFailedExits = new Map<string, { at: number; auth: GraphAuth; error: string }>();
   /** PTY-exit handlers still writing; `recordShutdown` drains them (bounded). */
   private readonly inflightExits = new Set<Promise<void>>();
+  /** On-demand resumes in flight, so two prompts to one session spawn it once. */
+  private readonly onDemandResumes = new Map<string, Promise<boolean>>();
 
   /**
    * Claims captured at spawn time, replayed for that session's exit transition.
@@ -3172,6 +3189,56 @@ export class SpawnService {
   }
 
   /**
+   * RESUME ON DEMAND — bring a session back because someone wants it.
+   *
+   * Resolves true when the session has a live PTY on this node afterwards:
+   * it already had one, or it ended one of the `RESUME_ON_DEMAND_ENDINGS` ways
+   * (or is a stale ghost of this node) and `resume()` brought it back. Resolves
+   * false — never throws — when it is not ours to bring back: another node's,
+   * an ending a person or fault chose, a refused resume, or a node that is
+   * shutting down. The caller then keeps its own "no live terminal" refusal.
+   *
+   * Concurrent callers for one session share one resume.
+   */
+  async ensureLive(auth: GraphAuth, sessionId: string): Promise<boolean> {
+    if (this.pty.hasSession(sessionId)) return true;
+    if (this.stopping) return false;
+    const inflight = this.onDemandResumes.get(sessionId);
+    if (inflight) return inflight;
+    const running = this.resumeOnDemand(auth, sessionId).finally(() => {
+      this.onDemandResumes.delete(sessionId);
+    });
+    this.onDemandResumes.set(sessionId, running);
+    return running;
+  }
+
+  private async resumeOnDemand(auth: GraphAuth, sessionId: string): Promise<boolean> {
+    let info: WorkSessionResumeInfo;
+    try {
+      info = await this.graph.loadWorkSessionForResume(auth, sessionId);
+    } catch {
+      return false;
+    }
+    if (info.nodeId != null && this.nodeId != null && info.nodeId !== this.nodeId) return false;
+    const ghost = info.status === 'running' || info.status === 'idle';
+    const endedByNode =
+      (info.status === 'exited' || info.status === 'failed')
+      && info.endedKind != null
+      && RESUME_ON_DEMAND_ENDINGS.has(info.endedKind);
+    if (!ghost && !endedByNode) return false;
+    try {
+      await this.resume(auth, { sessionId });
+      this.logger?.info('SpawnService: resumed session on demand', { sessionId, endedKind: info.endedKind ?? null });
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: on-demand resume refused', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return this.pty.hasSession(sessionId);
+  }
+
+  /**
    * execution.prompt (R17) — THE seam that fails silently.
    *
    * The failure this ordering exists to prevent: record the ledger row first,
@@ -3195,7 +3262,9 @@ export class SpawnService {
     if (!message || message.length === 0) {
       throw new SpawnError('prompt message must not be empty', 'invalid_input');
     }
-    if (!this.pty.hasSession(sessionId)) {
+    // A session the node itself stopped (restart, idle reap) is brought back
+    // first, so a prompt to it lands instead of refusing.
+    if (!(await this.ensureLive(auth, sessionId))) {
       throw new SpawnError(
         `work session ${sessionId} has no live terminal to prompt`,
         'conflict',

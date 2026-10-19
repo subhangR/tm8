@@ -539,6 +539,14 @@ export interface W2ExecutionDeliveryOptions {
   /** See `InternalPromptDeliverySettlement` — threaded through to `promptInternal`
    *  so `writeFor` awaits the REAL closed-loop outcome, not admission. */
   readonly promptSettlement: InternalPromptDeliverySettlement;
+  /**
+   * Resume on demand (`SpawnService.ensureLive`): bring a target the node
+   * itself stopped — a restart, the idle reaper — back before reserving, since
+   * the reservation refuses an ended target as `session_not_live`. Resolves
+   * false (never rejects) when the target is not the node's to bring back.
+   * Absent ⇒ an ended target is refused, as before.
+   */
+  readonly ensureLive?: (sessionId: string) => Promise<boolean>;
   readonly leaseMs?: number;
   /** Injected for tests; production uses the wall clock. */
   readonly now?: () => number;
@@ -653,6 +661,7 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
   private readonly rpc: W2DeliveryRpcPort;
   private readonly pty: InternalPromptPty;
   private readonly promptSettlement: InternalPromptDeliverySettlement;
+  private readonly ensureLive: ((sessionId: string) => Promise<boolean>) | undefined;
   private readonly leaseMs: number;
   private readonly now: () => number;
   private readonly newDeliveryId: () => string;
@@ -664,6 +673,7 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
     this.rpc = options.rpc;
     this.pty = options.pty;
     this.promptSettlement = options.promptSettlement;
+    this.ensureLive = options.ensureLive;
     this.leaseMs = options.leaseMs ?? DEFAULT_DELIVERY_LEASE_MS;
     this.now = options.now ?? (() => Date.now());
     this.newDeliveryId = options.newDeliveryId ?? (() => randomUUID());
@@ -692,6 +702,11 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
    */
   async reserve(intent: W2DeliveryReservationIntent): Promise<ReservedMessageDelivery | null> {
     const attemptNo = intent.attemptNo ?? 1;
+    // Before the reservation, which settles an ended target `session_not_live`
+    // for good: a target a restart or the idle reaper stopped comes back first.
+    if (this.ensureLive && !this.pty.hasSession(intent.targetWorkSessionId)) {
+      await this.ensureLive(intent.targetWorkSessionId).catch(() => false);
+    }
     const lease: DeliveryPrincipalLease = {
       deliveryId: this.newDeliveryId(),
       messageId: intent.messageId,
@@ -928,6 +943,8 @@ export function createW2ExecutionDelivery(options: {
    *  `ExecutionRuntime.promptSettlement` (execution-handlers.ts) and
    *  `InternalPromptDeliverySettlement`'s docs above. */
   readonly promptSettlement: InternalPromptDeliverySettlement;
+  /** See `W2ExecutionDeliveryOptions.ensureLive`. */
+  readonly ensureLive?: (sessionId: string) => Promise<boolean>;
   /** Overrides `consoleDeliveryLogger`; absent is NOT silent — see above. */
   readonly logger?: Logger;
 }): W2ExecutionDeliveryWiring {
@@ -935,6 +952,7 @@ export function createW2ExecutionDelivery(options: {
     rpc: PgW2DeliveryRpcPort.fromConnectionString(options.connectionString),
     pty: options.pty,
     promptSettlement: options.promptSettlement,
+    ...(options.ensureLive ? { ensureLive: options.ensureLive } : {}),
     logger: options.logger ?? consoleDeliveryLogger,
   });
   return {

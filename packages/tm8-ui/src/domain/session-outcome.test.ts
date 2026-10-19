@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  resumesOnDemand,
   offeredCountOf,
   claimTally,
   SESSION_TABS,
@@ -420,3 +421,23 @@ describe('scenario 16 — an offered task is on the row, not a claim (§6.3 R1)'
   });
 });
 
+
+describe('resumesOnDemand — opening an interrupted session brings it back', () => {
+  const ended = (over: Record<string, unknown>) => ({ kind: 'work_session', status: 'failed', outcome: 'open', ...over });
+  it('resumes what the node stopped: a restart, the idle reaper, a ghost', () => {
+    expect(resumesOnDemand(ended({ endedKind: 'server_restart' }))).toBe(true);
+    expect(resumesOnDemand(ended({ status: 'exited', endedKind: 'idle_reaped' }))).toBe(true);
+    expect(resumesOnDemand(ended({ endedKind: 'lost' }))).toBe(true);
+  });
+  it('leaves a person or a fault to decide', () => {
+    expect(resumesOnDemand(ended({ status: 'exited', endedKind: 'stopped_by_operator' }))).toBe(false);
+    expect(resumesOnDemand(ended({ endedKind: 'crashed' }))).toBe(false);
+    expect(resumesOnDemand(ended({ endedKind: 'out_of_memory' }))).toBe(false);
+  });
+  it('never a settled, live or already-failed-to-resume session', () => {
+    expect(resumesOnDemand(ended({ endedKind: 'server_restart', outcome: 'completed' }))).toBe(false);
+    expect(resumesOnDemand(ended({ endedKind: 'server_restart', outcome: 'stopped' }))).toBe(false);
+    expect(resumesOnDemand(ended({ endedKind: 'server_restart', status: 'running' }))).toBe(false);
+    expect(resumesOnDemand(ended({ endedKind: 'server_restart', endedReason: 'Failed to resume: cap' }))).toBe(false);
+  });
+});

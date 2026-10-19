@@ -66,6 +66,8 @@ export type WorkSessionEndedKind =
   // 299: the ghost reaper, and credential containment.
   | 'lost'
   | 'credential_revoked'
+  // 337: the idle reaper (TM8_SESSION_IDLE_REAP_MINUTES).
+  | 'idle_reaped'
   | 'unknown';
 
 /**
@@ -970,6 +972,8 @@ export interface WorkSessionResumeInfo {
    * node's session may have a live PTY there. Absent/null ⇒ unowned.
    */
   nodeId?: string | null;
+  /** How the last run ended (`work_sessions.ended_kind`). Absent ⇒ unknown. */
+  endedKind?: WorkSessionEndedKind | null;
 }
 
 export interface ResumeWorkSessionResult {
