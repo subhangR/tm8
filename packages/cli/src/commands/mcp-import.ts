@@ -20,12 +20,13 @@ import { homedir } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import {
-  disambiguateMcpNames,
   MCP_IMPORT_FORMATS,
+  MCP_IMPORT_LIMIT,
   McpImportError,
-  planMcpImport,
+  selectMcpImports,
   translateMcpConfigText,
   type McpImportCandidate,
+  type McpImportDecision,
   type McpImportFormat,
   type McpServerDefinition,
   type McpServerListResult,
@@ -37,9 +38,6 @@ import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
-
-/** The server import operation's own ceiling (`McpServerImportInputSchema`). */
-const IMPORT_LIMIT = 32;
 
 function defaultPath(format: McpImportFormat): string {
   const home = process.env.HOME || homedir();
@@ -55,9 +53,6 @@ function expand(path: string): string {
   return isAbsolute(path) ? path : resolve(process.cwd(), path);
 }
 
-/** What one source server resolved to. `register` is the only row that writes. */
-type Action = 'register' | 'duplicate' | 'needs-trust' | 'over-limit';
-
 interface PlanRow {
   sourceName: string;
   sourcePointer: string;
@@ -65,7 +60,7 @@ interface PlanRow {
   transport: 'http' | 'stdio';
   /** The URL or the command — never a header, never an env value. */
   endpoint: string;
-  action: Action;
+  action: McpImportDecision;
   reason?: string;
   /** Whether the SOURCE carried a literal credential. Never the value itself. */
   hasSecret: boolean;
@@ -95,7 +90,7 @@ async function existingServers(cmd: CommandContext, spaceId: string): Promise<Mc
 
 function render(result: ImportResult): string {
   const lines: string[] = [`${result.format} ${result.path}`];
-  const mark: Record<Action, string> = { register: '+', duplicate: '=', 'needs-trust': '!', 'over-limit': '!' };
+  const mark: Record<McpImportDecision, string> = { register: '+', duplicate: '=', needs_trust: '!', over_limit: '!' };
   for (const row of result.plan) {
     const suffix = row.action === 'register' ? '' : ` — ${row.reason ?? row.action}`;
     lines.push(`  ${mark[row.action]} ${row.name} (${row.transport} ${row.endpoint})${suffix}`);
@@ -168,51 +163,26 @@ export const MCP_IMPORT_COMMAND: CommandModule = {
     }
 
     const existing = await existingServers(cmd, spaceId);
-    const rows = planMcpImport(translated.candidates, existing);
-    const plan: PlanRow[] = [];
-    let register: McpImportCandidate[] = [];
-    /** Where in `plan` each entry of `register` sits, so a rename is reflected in the printed plan. */
-    const registerRow: number[] = [];
-    for (const row of rows) {
-      const { candidate } = row;
-      const base = {
-        sourceName: candidate.sourceName,
-        sourcePointer: candidate.sourcePointer,
-        name: candidate.definition.name,
-        transport: candidate.definition.transport,
-        endpoint: endpointOf(candidate.definition),
-        hasSecret: candidate.secret !== undefined,
-        ...(candidate.oauthProvider ? { oauthProvider: candidate.oauthProvider } : {}),
-        notes: candidate.notes,
-      };
-      if (row.duplicateOf) {
-        plan.push({ ...base, action: 'duplicate', reason: `already registered as ${row.duplicateOf.definition.name} (${row.duplicateOf.id})` });
-        continue;
-      }
-      if (row.duplicateOfCandidate) {
-        plan.push({ ...base, action: 'duplicate', reason: `same endpoint as ${row.duplicateOfCandidate.sourceName} earlier in this configuration` });
-        continue;
-      }
-      if (candidate.requiresStdioTrust && !trustStdio) {
-        plan.push({ ...base, action: 'needs-trust', reason: 'runs a local command: re-run with --trust-stdio to register it' });
-        continue;
-      }
-      if (register.length >= IMPORT_LIMIT) {
-        plan.push({ ...base, action: 'over-limit', reason: `more than ${IMPORT_LIMIT} new connectors in one import` });
-        continue;
-      }
-      registerRow.push(plan.length);
-      register.push(candidate);
-      plan.push({ ...base, action: 'register' });
+    // One shared decision step (contract `selectMcpImports`): dedupe, the stdio
+    // trust gate, the per-import ceiling and the renames, in the same order the
+    // UI's import box applies them.
+    const decisions = selectMcpImports(translated.candidates, existing, { trustStdio, limit: MCP_IMPORT_LIMIT });
+    const plan: PlanRow[] = decisions.map(({ candidate, decision, reason }) => ({
+      sourceName: candidate.sourceName,
+      sourcePointer: candidate.sourcePointer,
+      name: candidate.definition.name,
+      transport: candidate.definition.transport,
+      endpoint: endpointOf(candidate.definition),
+      action: decision,
+      ...(reason ? { reason } : {}),
+      hasSecret: candidate.secret !== undefined,
+      ...(candidate.oauthProvider ? { oauthProvider: candidate.oauthProvider } : {}),
+      notes: candidate.notes,
+    }));
+    const register: McpImportCandidate[] = decisions.filter(row => row.decision === 'register').map(row => row.candidate);
+    if (decisions.some(row => row.decision === 'needs_trust')) {
+      plan.forEach(row => { if (row.action === 'needs_trust') row.reason = 'runs a local command: re-run with --trust-stdio to register it'; });
     }
-    // Names are unique per Space ignoring case and the import is ONE
-    // transaction, so a single clash would refuse every other connector too.
-    register = disambiguateMcpNames(register, existing.map(server => server.definition.name));
-    register.forEach((candidate, index) => {
-      const row = plan[registerRow[index] as number] as PlanRow;
-      row.name = candidate.definition.name;
-      row.notes = candidate.notes;
-    });
 
     const hints: string[] = [];
     if (register.length) hints.push('imported connectors start unapproved: an administrator approves them before any session can attach one');

@@ -110,6 +110,96 @@ const CREDENTIALISH = /token|secret|key|password|passwd|credential|auth|cookie|s
 const HEADER_NAME = /^[A-Za-z][A-Za-z0-9-]{0,127}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
+/**
+ * Provider token shapes. A definition's `command`, `args` and `url` are
+ * ordinary graph content that every Space member can read, so an argv or a URL
+ * path carrying one of these is REFUSED rather than registered — unlike a
+ * header or env value, there is no slot to move it into and no way to describe
+ * it without storing it.
+ *
+ * Real configs do this constantly: `['-y', '@x/server', '--api-key', 'sk-…']`,
+ * `'--token=ghp_…'`, docker `['-e', 'SLACK_BOT_TOKEN=xoxb-…']`.
+ */
+const TOKEN_SHAPES: readonly RegExp[] = [
+  /^sk-[A-Za-z0-9_-]{12,}$/,                 // OpenAI and look-alikes
+  /^sk-ant-[A-Za-z0-9_-]{12,}$/,             // Anthropic
+  /^(sk|rk|pk)_(live|test)_[A-Za-z0-9]{8,}$/,// Stripe
+  /^gh[pousr]_[A-Za-z0-9]{16,}$/,            // GitHub classic
+  /^github_pat_[A-Za-z0-9_]{20,}$/,          // GitHub fine-grained
+  /^glpat-[A-Za-z0-9_-]{16,}$/,              // GitLab
+  /^xox[abposr]-[A-Za-z0-9-]{10,}$/,         // Slack bot/user/app
+  /^xapp-[A-Za-z0-9-]{10,}$/,
+  /^ntn_[A-Za-z0-9]{16,}$/,                  // Notion
+  /^secret_[A-Za-z0-9]{16,}$/,               // Notion internal integration (legacy)
+  /^figd_[A-Za-z0-9_-]{16,}$/,               // Figma
+  /^lin_api_[A-Za-z0-9]{16,}$/,              // Linear
+  /^AIza[A-Za-z0-9_-]{20,}$/,                // Google
+  /^ya29\.[A-Za-z0-9_-]{16,}$/,
+  /^npm_[A-Za-z0-9]{20,}$/,
+  /^hf_[A-Za-z0-9]{16,}$/,
+  /^dop_v1_[A-Za-z0-9]{32,}$/,               // DigitalOcean
+  /^eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\./, // a JWT
+];
+
+/**
+ * The shape of a secret nobody labelled: long, mixed-case, with a digit, and
+ * made only of token characters. A path, a package specifier, a URL and a flag
+ * all carry `/`, `@`, `:` or a space and are excluded by the character class;
+ * an all-caps env NAME (`GITHUB_PERSONAL_ACCESS_TOKEN`) has no lower case and
+ * no digit, and a UUID has no upper case, so neither trips it.
+ *
+ * It is deliberately a REFUSAL and not a rewrite: a false positive costs the
+ * member one edit and a clear message, while a miss puts a live token in the
+ * graph.
+ */
+const HIGH_ENTROPY = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])[A-Za-z0-9_\-+=.~]{28,}$/;
+
+function isKnownTokenShape(value: string): boolean {
+  return TOKEN_SHAPES.some(shape => shape.test(value));
+}
+
+function isFlag(part: string): boolean {
+  return /^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$/.test(part);
+}
+
+/**
+ * Where a literal credential sits in an argv, described WITHOUT its value, or
+ * undefined when there is none. Checks the three shapes real configs use — a
+ * credential-named flag followed by a value, `--flag=value` and `KEY=value` —
+ * and then any bare argument that is shaped like a token.
+ */
+export function literalCredentialIn(parts: readonly string[]): string | undefined {
+  for (const [index, part] of parts.entries()) {
+    const equals = part.indexOf('=');
+    if (equals > 0) {
+      const key = part.slice(0, equals);
+      const value = part.slice(equals + 1);
+      const literal = value !== '' && !PLACEHOLDER.test(value);
+      if (CREDENTIALISH.test(key) && literal) return `\`${key}=…\` holds a literal value`;
+      if (literal && (isKnownTokenShape(value) || HIGH_ENTROPY.test(value))) return `\`${key}=…\` holds something shaped like a provider token`;
+      continue;
+    }
+    if (isFlag(part)) {
+      if (!CREDENTIALISH.test(part)) continue;
+      const next = parts[index + 1];
+      if (next !== undefined && next !== '' && !isFlag(next) && !PLACEHOLDER.test(next)) return `\`${part}\` is followed by a literal value`;
+      continue;
+    }
+    if (isKnownTokenShape(part) || HIGH_ENTROPY.test(part)) return 'one argument is shaped like a provider token';
+  }
+  return undefined;
+}
+
+/** The same scan over a URL path: some servers put the key in a path segment. */
+export function literalCredentialInPath(pathname: string): string | undefined {
+  for (const segment of pathname.split('/')) {
+    if (!segment) continue;
+    const decoded = (() => { try { return decodeURIComponent(segment); } catch { return segment; } })();
+    if (isKnownTokenShape(decoded) || HIGH_ENTROPY.test(decoded)) return 'a path segment is shaped like a provider token';
+  }
+  return undefined;
+}
+
 function isLoopbackOrPrivate(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host.endsWith('.localhost') || host === '::1') return true;
@@ -276,6 +366,8 @@ function buildCandidate(
     if (parsed.username || parsed.password) return problem('the URL embeds credentials — move them to a header and re-import');
     if (parsed.search) return problem('the URL carries a query string, which tm8 refuses in case it holds a token — move it to a header and re-import');
     if (parsed.hash) return problem('the URL carries a fragment');
+    const inPath = literalCredentialInPath(parsed.pathname);
+    if (inPath) return problem(`the URL carries a literal credential (${inPath}): move it to a header and re-import`);
     provider = providerFor(parsed.hostname);
     if (isLoopbackOrPrivate(parsed.hostname)) {
       allowPrivateNetwork = true;
@@ -283,6 +375,13 @@ function buildCandidate(
       // desktop app bound to 127.0.0.1 is reachable only if the server runs there.
       notes.push('private address: the tm8 server dials this from its own host, not from your machine');
     }
+  }
+
+  if (entry.transport === 'stdio') {
+    // A header or env value has a slot to move into; an argv does not, so this
+    // is a refusal rather than a note. See `literalCredentialIn`.
+    const inArgs = literalCredentialIn([entry.command as string, ...(entry.args ?? [])]);
+    if (inArgs) return problem(`args carry a literal credential (${inArgs}): move it to env and re-import`);
   }
 
   const slot = chooseSlot(entry, valid);
@@ -522,6 +621,69 @@ export function disambiguateMcpNames(
       notes: [...candidate.notes, `renamed to \`${renamed}\`: this Space already has a connector called \`${name}\``],
     };
   });
+}
+
+/** The server-import operation's own ceiling (`McpServerImportInputSchema`). */
+export const MCP_IMPORT_LIMIT = 32;
+
+export type McpImportDecision = 'register' | 'duplicate' | 'needs_trust' | 'over_limit';
+
+export interface McpImportDecisionRow {
+  /** For `register`, the candidate AFTER any rename; otherwise the candidate as translated. */
+  candidate: McpImportCandidate;
+  decision: McpImportDecision;
+  /** Why it is not being registered, in the member's words. Absent for `register`. */
+  reason?: string;
+}
+
+/**
+ * Decide what an import actually registers — ONE implementation, because the
+ * CLI and the UI's import box must not drift. It applies, in order: dedupe
+ * against the Space and against earlier candidates in the same config, the
+ * stdio trust gate, the per-import ceiling, and then renames whatever survives
+ * around names the Space already uses.
+ *
+ * Nothing here REFUSES an import: a duplicate, an untrusted local command and
+ * an over-limit row are all reported and skipped, so one unusable entry in a
+ * member's config never costs them the rest of it. Only the translator refuses,
+ * and only for a config it cannot represent without storing a secret.
+ */
+export function selectMcpImports(
+  candidates: readonly McpImportCandidate[],
+  existing: readonly { id: string; definition: McpServerDefinition }[],
+  options: { trustStdio: boolean; limit?: number },
+): McpImportDecisionRow[] {
+  const limit = options.limit ?? MCP_IMPORT_LIMIT;
+  const rows: McpImportDecisionRow[] = [];
+  /** Index in `rows` of each registerable candidate, so a rename lands back in place. */
+  const registerRow: number[] = [];
+  const register: McpImportCandidate[] = [];
+  for (const row of planMcpImport(candidates, existing)) {
+    const { candidate } = row;
+    if (row.duplicateOf) {
+      rows.push({ candidate, decision: 'duplicate', reason: `already registered as ${row.duplicateOf.definition.name} (${row.duplicateOf.id})` });
+      continue;
+    }
+    if (row.duplicateOfCandidate) {
+      rows.push({ candidate, decision: 'duplicate', reason: `same endpoint as ${row.duplicateOfCandidate.sourceName} earlier in this configuration` });
+      continue;
+    }
+    if (candidate.requiresStdioTrust && !options.trustStdio) {
+      rows.push({ candidate, decision: 'needs_trust', reason: 'runs a local command: it is registered only with explicit code trust' });
+      continue;
+    }
+    if (register.length >= limit) {
+      rows.push({ candidate, decision: 'over_limit', reason: `more than ${limit} new connectors in one import` });
+      continue;
+    }
+    registerRow.push(rows.length);
+    register.push(candidate);
+    rows.push({ candidate, decision: 'register' });
+  }
+  disambiguateMcpNames(register, existing.map(server => server.definition.name)).forEach((renamed, index) => {
+    (rows[registerRow[index] as number] as McpImportDecisionRow).candidate = renamed;
+  });
+  return rows;
 }
 
 // ── reading Codex's config.toml ─────────────────────────────────────────────

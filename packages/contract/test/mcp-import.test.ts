@@ -11,8 +11,11 @@ import {
   disambiguateMcpNames,
   mcpImportKey,
   McpImportError,
+  literalCredentialIn,
+  literalCredentialInPath,
   parseCodexMcpServers,
   planMcpImport,
+  selectMcpImports,
   translateMcpConfig,
   translateMcpConfigText,
   type McpImportCandidate,
@@ -275,6 +278,66 @@ describe('refusals and problems', () => {
   });
 });
 
+describe('a literal credential in an argv or a URL path', () => {
+  const stdio = (args: string[]) => translateMcpConfig('claude', { mcpServers: { x: { command: 'npx', args } } });
+  const http = (url: string) => translateMcpConfig('claude', { mcpServers: { x: { type: 'http', url } } });
+
+  /** Every shape a real config has been seen to carry. Each one must REFUSE the connector. */
+  const REFUSED: Array<[label: string, args: string[]]> = [
+    ['a credential flag followed by a value', ['-y', '@acme/server', '--api-key', 'sk-fixture-abcdefghijklmnop']],
+    ['a credential flag in = form', ['--token=ghp_fixtureFIXTURE0123456789abcd']],
+    ['a fine-grained GitHub pat', ['--token=github_pat_11ABCDEFG0fixtureFIXTURE123456']],
+    ['a docker env assignment', ['run', '-i', '--rm', '-e', 'SLACK_BOT_TOKEN=xoxb-9999-8888-fixtureFIXTURE', 'acme/mcp']],
+    ['a bare Slack token', ['--flag', 'xoxp-1111-2222-fixtureFIXTUREfixture']],
+    ['a bare Notion token', ['serve', 'ntn_FIXTUREfixture0123456789abcd']],
+    ['a legacy Notion integration secret', ['serve', 'secret_FIXTUREfixture0123456789abcd']],
+    ['a bare Figma token', ['serve', 'figd_FIXTUREfixture-0123456789abcd']],
+    ['a long high-entropy argument nobody labelled', ['serve', 'Zk9Qw3Lm7Xp2Rt8Vb4Nc6Hy1Jd5Fg0As']],
+    ['a credential flag whose name only hints at it', ['--auth', 'fixture-value']],
+  ];
+  it.each(REFUSED)('refuses %s', (_label, args) => {
+    const result = stdio(args);
+    expect(result.candidates).toEqual([]);
+    expect(result.problems[0]?.reason).toContain('args carry a literal credential');
+    expect(JSON.stringify(result)).not.toContain('sk-fixture');
+  });
+
+  it('leaves the shapes a normal config uses alone', () => {
+    for (const args of [
+      ['-y', '@modelcontextprotocol/server-filesystem', '/srv/app'],
+      ['run', '-i', '--rm', '-e', 'GITHUB_PERSONAL_ACCESS_TOKEN', 'ghcr.io/github/github-mcp-server'],
+      ['--api-key', '${ACME_KEY}'],
+      ['--token=$ACME_TOKEN'],
+      ['--port', '3845', '--verbose'],
+      ['serve', '--config', '/etc/acme/mcp.json'],
+      ['--token'],
+      ['--token', '--verbose'],
+    ]) {
+      const result = stdio(args);
+      expect(result.problems, args.join(' ')).toEqual([]);
+      expect(result.candidates[0]?.definition.args).toEqual(args);
+    }
+  });
+
+  it('refuses a token in the URL path and keeps an ordinary path', () => {
+    expect(http('https://api.acme.test/mcp/sk-fixture-abcdefghijklmnopqrstu').problems[0]?.reason)
+      .toContain('the URL carries a literal credential');
+    expect(http('https://api.acme.test/Zk9Qw3Lm7Xp2Rt8Vb4Nc6Hy1Jd5Fg0As/mcp').problems[0]?.reason)
+      .toContain('path segment is shaped like a provider token');
+    expect(http('https://api.acme.test/v1/mcp/stream').problems).toEqual([]);
+    // A uuid tenant segment is lower case with no upper case, so it is not a token shape.
+    expect(http('https://api.acme.test/t/4f1c9b2e-7a3d-4c58-9f21-0ab8d6e5c7f3/mcp').problems).toEqual([]);
+  });
+
+  it('describes where the credential is without ever repeating it', () => {
+    expect(literalCredentialIn(['--api-key', 'sk-fixture-abcdefghijklmnop'])).toBe('`--api-key` is followed by a literal value');
+    expect(literalCredentialIn(['TOKEN=abc'])).toBe('`TOKEN=…` holds a literal value');
+    expect(literalCredentialIn(['ghp_fixtureFIXTURE0123456789abcd'])).toBe('one argument is shaped like a provider token');
+    expect(literalCredentialIn(['--api-key', 'sk-fixture-abcdefghijklmnop'])).not.toContain('sk-fixture');
+    expect(literalCredentialInPath('/mcp/stream')).toBeUndefined();
+  });
+});
+
 describe('planning against what the space already has', () => {
   const existing = (definition: Partial<McpServerDefinition>): { id: string; definition: McpServerDefinition } => ({
     id: 'existing',
@@ -326,6 +389,51 @@ describe('planning against what the space already has', () => {
     }));
     expect(key(['-y', 'a'])).toBe(key(['-y', 'a']));
     expect(key(['-y', 'a'])).not.toBe(key(['-y', 'b']));
+  });
+});
+
+describe('one shared decision step for the CLI and the UI', () => {
+  const config = {
+    mcpServers: {
+      linear: { type: 'http', url: 'https://mcp.linear.app/mcp' },
+      'linear-again': { type: 'http', url: 'https://mcp.linear.app/mcp/' },
+      local: { command: 'npx', args: ['-y', '@acme/server'] },
+      slack: { type: 'http', url: 'https://mcp.slack.com/mcp' },
+    },
+  };
+  const existing = [{
+    id: 'existing-id',
+    definition: McpServerDefinitionSchema.parse({
+      name: 'Slack', transport: 'http', url: 'https://slack.internal.test/mcp',
+      envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: true,
+    }),
+  }];
+
+  it('skips and reports rather than refusing, and renames around an existing name', () => {
+    const { candidates } = translateMcpConfig('claude', config);
+    const rows = selectMcpImports(candidates, existing, { trustStdio: false });
+    expect(rows.map(row => [row.candidate.sourceName, row.decision])).toEqual([
+      ['linear', 'register'],
+      ['linear-again', 'duplicate'],
+      ['local', 'needs_trust'],
+      ['slack', 'register'],
+    ]);
+    expect(rows[3]?.candidate.definition.name).toBe('slack-2');
+    expect(rows[2]?.reason).toContain('explicit code trust');
+  });
+
+  it('registers the local command once trust is given', () => {
+    const { candidates } = translateMcpConfig('claude', config, { trustStdio: true });
+    const rows = selectMcpImports(candidates, [], { trustStdio: true });
+    expect(rows.filter(row => row.decision === 'register')).toHaveLength(3);
+    expect(rows.find(row => row.candidate.sourceName === 'local')?.candidate.definition.stdioTrusted).toBe(true);
+  });
+
+  it('honours the per-import ceiling instead of letting the Server refuse the batch', () => {
+    const many = Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`s${i}`, { type: 'http', url: `https://api.${i}.test/mcp` }]));
+    const { candidates } = translateMcpConfig('claude', { mcpServers: many });
+    const rows = selectMcpImports(candidates, [], { trustStdio: false, limit: 3 });
+    expect(rows.map(row => row.decision)).toEqual(['register', 'register', 'register', 'over_limit', 'over_limit']);
   });
 });
 

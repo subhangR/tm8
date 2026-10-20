@@ -108,7 +108,7 @@ it('plans the import without writing anything under --dry-run', async () => {
   expect(result.plan).toMatchObject([
     { sourceName: 'notion', action: 'register', hasSecret: true, oauthProvider: 'Notion' },
     { sourceName: 'slack', action: 'register', hasSecret: false },
-    { sourceName: 'github', action: 'needs-trust' },
+    { sourceName: 'github', action: 'needs_trust' },
   ]);
   // The plan is printed. It names the slot, never the value.
   expect(JSON.stringify(result)).not.toContain(TOKEN);
@@ -197,6 +197,22 @@ it('reads a Codex config.toml', async () => {
   const { result } = await invoke(['mcp', 'import', '--from', 'codex', '--path', path, '--dry-run']);
   expect(result.plan).toMatchObject([{ sourceName: 'linear', action: 'register', hasSecret: false }]);
   expect(result.format).toBe('codex');
+});
+
+it('refuses a connector whose argv carries a literal token, and imports the rest', async () => {
+  const path = join(temp, 'argv.json');
+  await writeFile(path, JSON.stringify({
+    mcpServers: {
+      leaky: { command: 'npx', args: ['-y', '@acme/server', '--api-key', 'sk-fixture-abcdefghijklmnop'] },
+      clean: { type: 'http', url: 'https://api.acme.test/mcp' },
+    },
+  }), { mode: 0o600 });
+  const { result } = await invoke(['mcp', 'import', '--from', 'claude', '--path', path, '--trust-stdio']);
+  expect(result.problems).toMatchObject([{ sourceName: 'leaky' }]);
+  expect((result.problems as unknown as Array<{ reason: string }>)[0]?.reason).toContain('args carry a literal credential');
+  expect(result.plan).toMatchObject([{ sourceName: 'clean', action: 'register' }]);
+  expect(wire()).not.toContain('sk-fixture');
+  expect(JSON.stringify(result)).not.toContain('sk-fixture');
 });
 
 it('refuses a missing file, an unknown dialect and an unknown flag', async () => {
