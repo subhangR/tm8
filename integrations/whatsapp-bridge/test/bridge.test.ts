@@ -945,27 +945,6 @@ describe('channel style', () => {
     const name = { name: 'kind-falcon', title: 'Style rule', parent_name: 'infra-main' } as any
     const brief = briefSession({ cfg: t.cfg, ch, name, tokenFile: '/t/k.token' })
     assert.match(brief, /## Keep it short\n[\s\S]*casual & short/)
-    assert.match(brief, /At most 600 characters per message/)
     assert.match(rebriefStyle({ cfg: t.cfg, ch, name: 'infra-main' }), /## Keep it short[\s\S]*casual & short[\s\S]*No reply to this update/)
-  })
-})
-
-describe('short replies', () => {
-  test('config: maxReplyChars defaults to 600 and is bounded', () => {
-    const load = (maxReplyChars?: unknown) => parseConfig({ ownerJids: [OWNER], channels: [], ...(maxReplyChars === undefined ? {} : { maxReplyChars }) }, '/r')
-    assert.equal(load().maxReplyChars, 600)
-    assert.equal(load(1200).maxReplyChars, 1200)
-    for (const bad of [50, 5000, 1.5, '600']) assert.throws(() => load(bad), /maxReplyChars/)
-  })
-  test('/say refuses text over the cap with a hint, and sends text at the cap', async () => {
-    const t = await withMain()
-    const auth = t.auth()
-    const long = 'x'.repeat(601)
-    await assert.rejects(t.bridge.say(auth, { text: long, idempotency_key: 'k1' }), (e: HttpError) => e.status === 400 && /601 characters; the limit is 600\. People read this on a phone/.test(e.message))
-    assert.equal(t.wa.sent.length, 0)
-    // The refused key is not used up: the short rewrite goes out under it.
-    const r = await t.bridge.say(auth, { text: 'y'.repeat(600), idempotency_key: 'k1' })
-    assert.equal(r.status, 200)
-    assert.equal(t.wa.sent.length, 1)
   })
 })

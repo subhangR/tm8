@@ -56,8 +56,6 @@ export type Config = {
   watchdogMinutes: number
   maxRouteAgeMinutes: number
   rateLimits: { perTokenPerMinute: number; perChannelPerMinute: number }
-  /** Longest text one /say (or caption) may carry; longer is refused so the agent rewrites it short. The relay cuts there. */
-  maxReplyChars: number
   /**
    * Images, documents and audio, both directions. maxBytes caps downloads and uploads. `attach`: how a routed file reaches
    * tm8. "reference" (default) uploads it and puts the tm8 file id in the envelope; "attach" also passes it as
@@ -103,7 +101,6 @@ export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids' | 'trustedSenders'>
   watchdogMinutes: 10,
   maxRouteAgeMinutes: 10,
   rateLimits: { perTokenPerMinute: 20, perChannelPerMinute: 30 },
-  maxReplyChars: 600,
   media: { maxBytes: 25 * 1024 * 1024, attach: 'reference' },
   transcription: {
     provider: 'local',
@@ -153,7 +150,7 @@ const MAX_STYLE = 300
 
 /** How agents talk in a group that sets no `style`: people read these on a phone, between their own one-liners. */
 export const DEFAULT_STYLE =
-  'short and simple: lead with the answer in 1-3 short lines, plain everyday words, no ids, file names or internals unless asked, no headings or long lists; offer details instead of sending them'
+  'short and readable: lead with the answer, keep it to a few short lines, plain everyday words, no ids, file names or internals unless asked, no headings or long lists; offer details instead of sending them'
 
 /** A channel's effective style: its own, else DEFAULT_STYLE. */
 export function channelStyle(ch: ChannelConfig): string {
@@ -203,9 +200,6 @@ export function parseConfig(raw: any, root: string): Config {
   }
   if (cfg.approverName !== undefined && cfg.approverName !== null && (typeof cfg.approverName !== 'string' || !/^[^\n`$]{1,60}$/.test(cfg.approverName.trim()) || !cfg.approverName.trim())) {
     throw new Error('approverName must be a short name (1-60 characters, one line)')
-  }
-  if (!Number.isInteger(cfg.maxReplyChars) || cfg.maxReplyChars < 100 || cfg.maxReplyChars > 4000) {
-    throw new Error('maxReplyChars must be a whole number from 100 to 4000')
   }
   if (cfg.apiDocId !== undefined && cfg.apiDocId !== null && !UUID_RE.test(cfg.apiDocId)) throw new Error('apiDocId must be a tm8 doc id')
   const seen = new Set<string>()

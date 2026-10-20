@@ -1151,8 +1151,7 @@ export class Bridge {
       if (this.wa.connected()) await this.deliver(id)
     } else {
       text = whatsappText(text)
-      const max = this.cfg.maxReplyChars
-      if (text.length > max) text = text.slice(0, max - 30).trimEnd() + ' … (more in tm8)'
+      if (text.length > 4000) text = text.slice(0, 3990).trimEnd() + ' …'
       const id = this.store.insertOutbox({ idempotency_key: `relay:${turnId}`, name: main.name, channel_id: ch.id, text: speakerLine({ kind: 'main' }, text), reply_to: replyTo })
       if (this.wa.connected()) await this.deliver(id)
       this.log(`[relay] turn ${turnId} of ${main.name} ended without a /say for ${waIds.join(', ')}: relayed its final text`)
@@ -1180,7 +1179,7 @@ export class Bridge {
   async say(auth: { name: NameRow | null; nameStr: string; ch: ChannelConfig }, body: any): Promise<{ status: number; body: Record<string, unknown> }> {
     const text = typeof body?.text === 'string' ? body.text.trim() : ''
     if (!text) throw new HttpError(400, 'text is required')
-    this.checkLength(text, 'text')
+    if (text.length > 4000) throw new HttpError(400, 'text is limited to 4000 characters')
     const pre = this.precheckSend(auth, body)
     if ('prior' in pre) return this.sayResult(pre.prior, true)
     const name = this.commitSend(auth, pre.label)
@@ -1199,7 +1198,7 @@ export class Bridge {
   async sayMedia(auth: { name: NameRow | null; nameStr: string; ch: ChannelConfig }, body: SayMediaInput): Promise<{ status: number; body: Record<string, unknown> }> {
     const caption = typeof body.caption === 'string' ? body.caption.trim() : ''
     if (body.caption !== undefined && typeof body.caption !== 'string') throw new HttpError(400, 'caption must be a string')
-    this.checkLength(caption, 'caption')
+    if (caption.length > 4000) throw new HttpError(400, 'caption is limited to 4000 characters')
     const kindReq = body.kind === undefined || body.kind === '' ? 'auto' : body.kind
     if (kindReq !== 'auto' && kindReq !== 'image' && kindReq !== 'document') throw new HttpError(400, 'kind must be "image", "document" or "auto"')
     let mimeReq: string | null = null
@@ -1261,13 +1260,6 @@ export class Bridge {
     if (this.wa.connected()) await this.deliver(id)
     const res = this.sayResult(this.store.getOutbox(id)!, false)
     return { status: res.status, body: { ...res.body, kind, mime, size: data.length, file_name: fileName } }
-  }
-
-  /** People skim WhatsApp: a long text is refused with a hint, so the agent rewrites it short rather than truncated. */
-  private checkLength(text: string, what: 'text' | 'caption') {
-    const max = this.cfg.maxReplyChars
-    if (text.length <= max) return
-    throw new HttpError(400, `${what} is ${text.length} characters; the limit is ${max}. People read this on a phone: send the answer in 1-3 short lines, plain words, no ids or internals. Put the rest in tm8 and say where, or ask if they want details.`)
   }
 
   private speakerOf(name: NameRow | null) {

@@ -80,7 +80,6 @@ Docker's healthcheck is "WhatsApp connected".
   "watchdogMinutes": 10,         // 👀 → ⚠️ after this long without a reply (reaction only; nothing is posted)
   "maxRouteAgeMinutes": 10,      // older inbound (history sync) is logged, not routed
   "rateLimits": { "perTokenPerMinute": 20, "perChannelPerMinute": 30 },
-  "maxReplyChars": 600,          // longest /say text or caption (100–4000); longer is refused with "rewrite it short"; the relay cuts there
   "media": { "maxBytes": 26214400,               // 25 MB cap on downloads and on /say-media uploads
              "attach": "reference" },             // "reference" (default): file id in the envelope; "attach": also --attach (see Media)
   "transcription": {                              // voice notes; all optional, these are the defaults
@@ -103,7 +102,7 @@ Docker's healthcheck is "WhatsApp connected".
       "allowedSenders": ["owner"],                   // "owner", WA JIDs, or "everyone" (any member; owner-only commands stay owner-only); default ["owner"]
       "trustedSenders": ["919999999999@s.whatsapp.net"],  // optional: labelled TRUSTED in this channel only (added to the global list)
       "mainChatId": null,                            // optional: use this existing tm8 chat instead of creating one
-      "style": "casual & short",                     // optional, one line ≤300 chars: how agents talk here; on every envelope as [style: …] and in briefings; default: short and simple
+      "style": "casual & short",                     // optional, one line ≤300 chars: how agents talk here; on every envelope as [style: …] and in briefings; default: short and readable
       "tm8": {                                       // optional: this channel's tm8 space; each missing field falls back to the global tm8 block
         "spaceId": "<space id>",                     // calls go with --space <spaceId>
         "tokenFile": "secrets/tm8-token-<id>",       // optional: own token; without it, the global token through the space link
@@ -177,9 +176,9 @@ would let ask for work under their own name, and remove them when the number cha
 4. Chats and sessions briefed before this feature: post them `admin.ts rebrief-trust <name>` so the new label is explained.
 
 Every envelope gets one more line right under the header, `[style: …]`, so the agent sees the tone rule on each message,
-not only in its briefing (main chat and session briefings also get a "## Keep it short" section with the style and the
-`maxReplyChars` cap). The style is the channel's `style`, else the built-in default (`DEFAULT_STYLE` in src/config.ts:
-"short and simple: lead with the answer in 1-3 short lines, plain everyday words, no ids …"). Why: a group member said
+not only in its briefing (main chat and session briefings also get a "## Keep it short" section). It is guidance only:
+the bridge doesn't cap length (beyond WhatsApp-safe 4000 characters). The style is the channel's `style`, else the built-in default (`DEFAULT_STYLE` in src/config.ts:
+"short and readable: lead with the answer, keep it to a few short lines, plain everyday words, no ids …"). Why: a group member said
 on 20 Oct the messages were getting too hard to read; bot messages then ran 570 characters median, up to 3700.
 
 ```
@@ -189,7 +188,7 @@ on 20 Oct the messages were getting too hard to read; bot messages then ran 570 
 @tm8 who's up for a match
 ```
 
-Changing `style` or `maxReplyChars` needs a redeploy (`./scripts/deploy.sh [<inst>]`); envelopes and the /say cap apply at
+Changing `style` needs a redeploy (`./scripts/deploy.sh [<inst>]`); envelopes apply at
 once, briefings only for chats and sessions briefed after that. For ones briefed before:
 `docker exec wa-bridge node --import tsx src/admin.ts rebrief-style <name>` prints the update; post it to that chat/session.
 

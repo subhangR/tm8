@@ -216,13 +216,13 @@ only into tm8. Relay a session's blocker or question right away; a session messa
 - Also tell the chat that launched you, as usual. If you launch sessions yourself, pass this rule on in their spawn context.`
 }
 
-/** How long and in what tone to write: the channel's style (or the default) and the /say length cap. */
-function styleBlock(cfg: Config, ch: ChannelConfig): string {
+/** How long and in what tone to write: the channel's style, or the default. Guidance only; the bridge caps nothing. */
+function styleBlock(ch: ChannelConfig): string {
   return `
 ## Keep it short
 People read this on a phone; long messages don't get read.
 - Style: ${channelStyle(ch)} (repeated on every envelope as "[style: …]").
-- At most ${cfg.maxReplyChars} characters per message (/say refuses more). Answer what was asked, in plain words.
+- Answer what was asked, in plain words.
 - More to say? Put it in tm8 and say where, or ask "want the details?".
 `
 }
@@ -311,7 +311,7 @@ ${delegateRuleBlock()}
 - A message for an ended session comes to you with a note "was for <name> (ended)": handle it or start a new session.
 
 ${formatBlock({ main: true, name: o.name })}
-${styleBlock(o.cfg, o.ch)}
+${styleBlock(o.ch)}
 ${apiBlock(o.cfg, o.tokenFile, { withSay: false })}
 
 ${escalationBlock({ cfg: o.cfg, ch: o.ch, main: true, chatId: o.chatId })}
@@ -339,7 +339,7 @@ ${spaceLine(o.cfg, o.ch)}
 - Otherwise report to the chat or session that launched you through tm8 messages, as usual; it decides what to relay to the group.
 
 ${formatBlock({ main: false, name: o.name.name })}
-${styleBlock(o.cfg, o.ch)}
+${styleBlock(o.ch)}
 ${apiBlock(o.cfg, o.tokenFile, { withSay: true })}
 
 ${escalationBlock({ cfg: o.cfg, ch: o.ch, main: false })}
@@ -409,7 +409,7 @@ No reply to this update is needed, here or in the group.`
 export function rebriefStyle(o: { cfg: Config; ch: ChannelConfig; name: string }): string {
   return `[whatsapp bridge briefing update] **${o.name}** ("${o.ch.title}"): people in the group find the messages too long to read.
 Your bridge URL and speaker token are unchanged. This replaces any earlier "Group style" section:
-${styleBlock(o.cfg, o.ch)}
+${styleBlock(o.ch)}
 No reply to this update is needed, here or in the group.`
 }
 
