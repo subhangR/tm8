@@ -1,6 +1,6 @@
 import { rememberMcpOAuth } from './oauth-callback';
 import { McpUiError } from './errors';
-import { McpServerDefinitionSchema, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpTestResult, type Cursor } from '@tm8/contract';
+import { detectMcpImportFormat, McpImportError, McpServerDefinitionSchema, translateMcpConfigText, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpTestResult, type Cursor } from '@tm8/contract';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { McpDefinition, McpPort, McpServer } from './port';
@@ -39,22 +39,44 @@ export function viewOf(server: McpServerView, accounts: McpCredentialView[]): Mc
       sharing: a.visibility === 'selected' ? 'members' : a.visibility, memberIds: a.sharedMemberIds })),
   };
 }
-/** Import metadata only. Reject unknown secret-bearing env/header fields instead of silently importing them. */
-export function importDefinitions(json: string, trustedCode: boolean): McpServerDefinition[] {
-  let parsed: unknown;
-  try { parsed = JSON.parse(json); } catch { throw new McpUiError('Enter valid JSON before importing.'); }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new McpUiError('Expected an MCP configuration object.');
-  const config = parsed as Record<string, unknown>;
-  const rows = config.mcpServers;
-  if (!rows || typeof rows !== 'object' || Array.isArray(rows) || Object.keys(config).some(k => k !== 'mcpServers')) throw new McpUiError('Expected mcpServers metadata.');
-  return Object.entries(rows).map(([name, raw]) => {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new McpUiError('Invalid server metadata.');
-    const r = raw as Record<string, unknown>;
-    if (Object.keys(r).some(key => !['url', 'command', 'args', 'transport', 'auth', 'envKeys', 'headerKeys', 'provenance'].includes(key))) throw new McpUiError('Remove secrets and unsupported fields before importing.');
-    const transport = r.transport ?? (r.url ? 'http' : 'stdio');
-    if (transport === 'stdio' && !trustedCode) throw new McpUiError('Local commands need explicit code trust.');
-    return McpServerDefinitionSchema.parse({ ...r, name, transport, auth: r.auth ?? { type: 'none' }, envKeys: r.envKeys ?? [], headerKeys: r.headerKeys ?? [], approved: false, enabled: true, ...(transport === 'stdio' ? { stdioTrusted: true } : {}) });
-  });
+/**
+ * Accept a member's REAL harness configuration — `~/.claude.json`, a project
+ * `.mcp.json`, `~/.codex/config.toml` — and keep only metadata.
+ *
+ * This used to refuse any config carrying `type`, `headers` or `env`, which is
+ * every config anyone actually has: the box only accepted a hand-written tm8
+ * shape. The shared translator (`@tm8/contract`) now reads the real formats
+ * and turns a literal header or env token into a DECLARED SLOT. The value it
+ * extracts is deliberately dropped here rather than sent anywhere: the member
+ * adds their own credential per connector, so no token is ever carried into
+ * the Space by an import.
+ */
+export function importPlan(text: string, trustedCode: boolean): { definitions: McpServerDefinition[]; summary: string } {
+  let result;
+  try {
+    result = translateMcpConfigText(detectMcpImportFormat(text), text, { trustStdio: trustedCode });
+  } catch (error) {
+    throw new McpUiError(error instanceof McpImportError ? error.message : 'Enter a valid MCP configuration before importing.');
+  }
+  if (!trustedCode && result.candidates.some(candidate => candidate.requiresStdioTrust)) {
+    throw new McpUiError('Local commands need explicit code trust.');
+  }
+  if (!result.candidates.length) {
+    throw new McpUiError(`No connectors tm8 can register: ${result.problems.map(p => `${p.sourceName} — ${p.reason}`).join('; ')}`);
+  }
+  const definitions = result.candidates.map(candidate => McpServerDefinitionSchema.parse(candidate.definition));
+  const needCredential = result.candidates.filter(candidate => candidate.definition.auth.type === 'api_key');
+  const oauth = result.candidates.filter(candidate => candidate.definition.auth.type === 'oauth2');
+  const summary = [
+    `Imported ${definitions.length} connector${definitions.length === 1 ? '' : 's'}; an administrator approves them before any session can use one.`,
+    needCredential.length ? `No token was taken from the configuration — add your own key to: ${needCredential.map(c => c.definition.name).join(', ')}.` : '',
+    oauth.length ? `Connect in tm8: ${oauth.map(c => c.definition.name).join(', ')}.` : '',
+    result.problems.length ? `Skipped ${result.problems.map(p => `${p.sourceName} (${p.reason})`).join('; ')}.` : '',
+  ].filter(Boolean).join(' ');
+  return { definitions, summary };
+}
+export function importDefinitions(text: string, trustedCode: boolean): McpServerDefinition[] {
+  return importPlan(text, trustedCode).definitions;
 }
 export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'connections' | 'commands'>, spaceId: string): McpPort {
   async function attachments(targetId: string) {
@@ -87,7 +109,11 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     async register(input) { await http.call('mcp.servers.create', { params: { spaceId }, body: { ...command(), spaceId, definition: definitionFor(input) } }); },
     async update(server, input) { await http.call('mcp.servers.update', { params: { serverId: server.id }, body: { ...command(), serverId: server.id, expectedVersion: server.version, definition: definitionFor(input, server.source) } }); },
     async remove(server) { await http.call('mcp.servers.delete', { params: { serverId: server.id }, body: { ...command(), serverId: server.id, expectedVersion: server.version } }); },
-    async importConfig(json, trustedCode) { await http.call('mcp.servers.import', { params: { spaceId }, body: { ...command(), spaceId, definitions: importDefinitions(json, trustedCode) } }); },
+    async importConfig(json, trustedCode) {
+      const { definitions, summary } = importPlan(json, trustedCode);
+      await http.call('mcp.servers.import', { params: { spaceId }, body: { ...command(), spaceId, definitions } });
+      return summary;
+    },
     async attach(targetId, serverId) { await seam.commands.createEdge({ ...command(), srcId: targetId, dstId: serverId, type: 'equips', props: {} }); },
     async detach(targetId, serverId) {
       const edges = await attachments(targetId);

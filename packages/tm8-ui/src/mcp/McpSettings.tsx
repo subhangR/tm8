@@ -101,7 +101,9 @@ export function McpSettings() {
   async function run(action: () => Promise<unknown>, success: string) {
     if (busy) return;
     setBusy(true); setFailure(null); setMessage(null);
-    try { await action(); setMessage(success); }
+    // An action that KNOWS what it did (import: how many, which still need a
+    // credential) returns that line and it is shown instead of the generic one.
+    try { const detail = await action(); setMessage(typeof detail === 'string' && detail ? detail : success); }
     catch (error) { setFailure(error instanceof McpUiError ? error.message : 'The request could not be completed. Check your permissions and connection, then try again.'); }
     finally { refresh(); setBusy(false); }
   }
@@ -125,9 +127,9 @@ export function McpSettings() {
         <button disabled={added} onClick={() => { setTemplate(entry); setMode('add'); }}>{added ? 'Already added' : `Add ${entry.title}`}</button></article>;
     })}</>}
     {mode === 'add' && catalog?.canRegister && <DefinitionForm key={template?.id ?? 'custom'} template={template} busy={busy} onSave={input => run(async () => { await port.register(input); setTemplate(undefined); setMode('list'); }, 'Connector registered.')} />}
-    {mode === 'import' && catalog?.canRegister && <form className="mcp-form" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); void run(async () => { await port.importConfig(String(data.get('json')), data.get('trusted') === 'on'); setMode('list'); }, 'Configuration imported.'); }}>
-      <label>MCP configuration JSON<textarea required name="json" placeholder={'{"mcpServers": {}}'} /></label>
-      <p>Remove secrets before importing. Local commands execute code on the machine.</p>
+    {mode === 'import' && catalog?.canRegister && <form className="mcp-form" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); void run(async () => { const summary = await port.importConfig(String(data.get('json')), data.get('trusted') === 'on'); setMode('list'); return summary; }, 'Configuration imported.'); }}>
+      <label>MCP configuration<textarea required name="json" placeholder={'{"mcpServers": {}}  —  or the [mcp_servers] part of ~/.codex/config.toml'} /></label>
+      <p>Paste your own <code>~/.claude.json</code>, a project <code>.mcp.json</code> or <code>~/.codex/config.toml</code>. Tokens in it are not imported: tm8 keeps the header or variable NAME and you add your own key per connector. Local commands execute code on the machine.</p>
       <label><span><input type="checkbox" name="trusted" /> I trust any local commands in this configuration.</span></label>
       <button disabled={busy}>Import connectors</button>
     </form>}

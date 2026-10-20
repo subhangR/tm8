@@ -139,6 +139,12 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'no-follow-os',        // ...and its opposite; passing both is refused
   'trust-css',           // style use — allow the named space style's css
   'detach', 'close', 'value-stdin', // tool launch / hidden secret input
+  // `mcp import` (MCP config reuse). All three are bare, and `--dry-run` in
+  // particular has to be listed or it would eat the next token and turn a
+  // rehearsal into a write.
+  'dry-run',             // mcp import — plan only, no writes
+  'trust-stdio',         // mcp import — register connectors that run a local command
+  'with-credentials',    // mcp import — also seal each literal token as the member's own private credential
 ]);
 
 /**

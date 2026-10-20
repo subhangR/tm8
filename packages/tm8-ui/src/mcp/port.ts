@@ -29,7 +29,8 @@ export interface McpPort {
   register(input: McpDefinition): Promise<void>;
   update(server: McpServer, input: McpDefinition & { enabled: boolean }): Promise<void>;
   remove(server: McpServer): Promise<void>;
-  importConfig(json: string, trustedCode: boolean): Promise<void>;
+  /** Resolves with the member-facing summary of what was imported and what still needs a credential. */
+  importConfig(json: string, trustedCode: boolean): Promise<string>;
   attach(targetId: string, serverId: string): Promise<void>;
   detach(targetId: string, serverId: string): Promise<void>;
   test(selection: McpSelection): Promise<{ ok: boolean; message: string; tools: { name: string; description?: string }[] }>;

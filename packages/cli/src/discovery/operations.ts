@@ -4944,6 +4944,31 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 workspace color <ws> <color>'],
   }],
+  // `mcp import` is SUGAR over the read it diffs against and the import it
+  // performs: it owns no catalog row because nothing new happens on the wire.
+  // What is new is WHERE it runs — in the member's own process, over their own
+  // `~/.claude.json` / `~/.codex/config.toml`, which the Server cannot read
+  // and never will. `mcp.credentials.create` is named too because
+  // `--with-credentials` makes that call, and the command is as available as
+  // its weakest stage.
+  ['mcp import', {
+    path: ['mcp', 'import'],
+    syntax: 'tm8 mcp import --from claude|codex|mcp-json [--path <file>] [--dry-run] [--trust-stdio] [--with-credentials] [--mutation-id <id>]',
+    summary: 'Register the MCP servers already configured in your Claude Code or Codex config as tm8 connectors',
+    notes: [
+      'reads the config on THIS machine: ~/.claude.json (global and per-project), a project .mcp.json, or ~/.codex/config.toml; --path overrides',
+      'translates metadata only: a literal header or env token in the file becomes a declared slot, never definition content',
+      '--dry-run prints the diff against the Space\u2019s connectors (deduped by URL for http, by argv for stdio) and writes nothing',
+      '--trust-stdio is required before a connector that runs a local command is registered; without it those rows are listed and skipped',
+      '--with-credentials additionally seals each literal token as YOUR OWN private connector credential; without it the token is left behind and only reported',
+      'imported connectors arrive unapproved, and an OAuth provider is connected with `tm8 mcp oauth begin` rather than from the file',
+      '--with-credentials calls the human-only `mcp.credentials.create`: an agent session is refused (forbidden) and should import without it',
+    ],
+    examples: [
+      'tm8 mcp import --from claude --dry-run --path <file>',
+      'tm8 mcp import --from codex --trust-stdio --with-credentials --mutation-id <id>',
+    ],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
@@ -5014,6 +5039,9 @@ COMMAND_OPS.set('container screenshot', ['containers.computer']);
 COMMAND_OPS.set('container adb', ['containers.run']);
 COMMAND_OPS.set('container browser', ['containers.browser.endpoint', 'containers.computer']);
 COMMAND_ORDER.push('container screenshot', 'container adb');
+COMMAND_OPS.set('mcp import', ['mcp.servers.import', 'mcp.servers.list', 'mcp.credentials.create']);
+const mcpServerImportIndex = COMMAND_ORDER.indexOf('mcp server import');
+COMMAND_ORDER.splice(mcpServerImportIndex < 0 ? COMMAND_ORDER.length : mcpServerImportIndex + 1, 0, 'mcp import');
 COMMAND_OPS.set('worktree list', ['collections.query']);
 COMMAND_OPS.set('worktree status', ['entities.get']);
 COMMAND_ORDER.push('worktree list', 'worktree status');
