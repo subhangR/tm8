@@ -24,6 +24,11 @@ export type ChannelConfig = {
    * `--space <spaceId>` (through a space link); `tokenFile` gives the channel its own token. tokenFile is absolute after load.
    */
   tm8?: ChannelTm8Override
+  /**
+   * How agents should talk in this group, e.g. "casual & short". One line, shown on every inbound envelope
+   * (`[style: …]`) and in the briefings. Default: DEFAULT_STYLE.
+   */
+  style?: string
 }
 
 export type ChannelTm8Override = { spaceId?: string; tokenFile?: string; defaultTeammate?: string; defaultModel?: string }
@@ -51,6 +56,8 @@ export type Config = {
   watchdogMinutes: number
   maxRouteAgeMinutes: number
   rateLimits: { perTokenPerMinute: number; perChannelPerMinute: number }
+  /** Longest text one /say (or caption) may carry; longer is refused so the agent rewrites it short. The relay cuts there. */
+  maxReplyChars: number
   /**
    * Images, documents and audio, both directions. maxBytes caps downloads and uploads. `attach`: how a routed file reaches
    * tm8. "reference" (default) uploads it and puts the tm8 file id in the envelope; "attach" also passes it as
@@ -96,6 +103,7 @@ export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids' | 'trustedSenders'>
   watchdogMinutes: 10,
   maxRouteAgeMinutes: 10,
   rateLimits: { perTokenPerMinute: 20, perChannelPerMinute: 30 },
+  maxReplyChars: 600,
   media: { maxBytes: 25 * 1024 * 1024, attach: 'reference' },
   transcription: {
     provider: 'local',
@@ -141,6 +149,25 @@ function checkChannelTm8(ch: ChannelConfig, root: string) {
   if (o.tokenFile !== undefined) ch.tm8 = { ...ch.tm8, tokenFile: path.resolve(root, o.tokenFile as string) }
 }
 
+const MAX_STYLE = 300
+
+/** How agents talk in a group that sets no `style`: people read these on a phone, between their own one-liners. */
+export const DEFAULT_STYLE =
+  'short and simple: lead with the answer in 1-3 short lines, plain everyday words, no ids, file names or internals unless asked, no headings or long lists; offer details instead of sending them'
+
+/** A channel's effective style: its own, else DEFAULT_STYLE. */
+export function channelStyle(ch: ChannelConfig): string {
+  return ch.style ?? DEFAULT_STYLE
+}
+
+function checkStyle(ch: ChannelConfig) {
+  if (ch.style === undefined || ch.style === null) return void delete ch.style
+  if (typeof ch.style !== 'string' || !ch.style.trim()) throw new Error(`channel ${ch.id}: style must be a non-empty string`)
+  if (/[\r\n]/.test(ch.style)) throw new Error(`channel ${ch.id}: style must be one line`)
+  ch.style = ch.style.trim()
+  if (ch.style.length > MAX_STYLE) throw new Error(`channel ${ch.id}: style must be at most ${MAX_STYLE} characters`)
+}
+
 /** A channel's tm8 settings: each field from its `tm8` block, else the global tm8 block. */
 export function channelTm8(cfg: Config, ch: ChannelConfig): ChannelTm8 {
   const o = ch.tm8 ?? {}
@@ -177,6 +204,9 @@ export function parseConfig(raw: any, root: string): Config {
   if (cfg.approverName !== undefined && cfg.approverName !== null && (typeof cfg.approverName !== 'string' || !/^[^\n`$]{1,60}$/.test(cfg.approverName.trim()) || !cfg.approverName.trim())) {
     throw new Error('approverName must be a short name (1-60 characters, one line)')
   }
+  if (!Number.isInteger(cfg.maxReplyChars) || cfg.maxReplyChars < 100 || cfg.maxReplyChars > 4000) {
+    throw new Error('maxReplyChars must be a whole number from 100 to 4000')
+  }
   if (cfg.apiDocId !== undefined && cfg.apiDocId !== null && !UUID_RE.test(cfg.apiDocId)) throw new Error('apiDocId must be a tm8 doc id')
   const seen = new Set<string>()
   for (const ch of cfg.channels) {
@@ -189,6 +219,7 @@ export function parseConfig(raw: any, root: string): Config {
     }
     if (ch.trustedSenders !== undefined) ch.trustedSenders = checkTrustedSenders(ch.trustedSenders, `channel ${ch.id}: trustedSenders`)
     checkChannelTm8(ch, root)
+    checkStyle(ch)
   }
   return cfg
 }

@@ -1,5 +1,5 @@
 // Texts the bridge posts into tm8: the inbound envelope and the briefings for main chats and sessions.
-import { channelTm8, type ChannelConfig, type Config } from './config.js'
+import { channelStyle, channelTm8, type ChannelConfig, type Config } from './config.js'
 import type { NameRow } from './store.js'
 
 function maskJid(jid: string | null | undefined): string {
@@ -37,6 +37,7 @@ export function envelope(o: {
   const lines = [
     `[whatsapp "${o.ch.title}" · from "${o.senderName ?? 'unknown'}" ${maskJid(o.senderJid)} (${who}) · to: ${o.to} · wa_msg_id ${o.waMsgId}]`,
   ]
+  lines.push(`[style: ${channelStyle(o.ch)}]`)
   if (o.quoted) lines.push(`[quoted: ${o.quoted.by} "${oneLine(o.quoted.text, 200)}"]`)
   if (o.attachment) lines.push(o.attachment)
   for (const n of o.notes) lines.push(`[note: ${n}]`)
@@ -215,6 +216,17 @@ only into tm8. Relay a session's blocker or question right away; a session messa
 - Also tell the chat that launched you, as usual. If you launch sessions yourself, pass this rule on in their spawn context.`
 }
 
+/** How long and in what tone to write: the channel's style (or the default) and the /say length cap. */
+function styleBlock(cfg: Config, ch: ChannelConfig): string {
+  return `
+## Keep it short
+People read this on a phone; long messages don't get read.
+- Style: ${channelStyle(ch)} (repeated on every envelope as "[style: …]").
+- At most ${cfg.maxReplyChars} characters per message (/say refuses more). Answer what was asked, in plain words.
+- More to say? Put it in tm8 and say where, or ask "want the details?".
+`
+}
+
 /** Which tm8 space this group lives in: chat, session and file ids in envelopes are ids there. */
 function spaceLine(cfg: Config, ch: ChannelConfig): string {
   return `This group's tm8 space is ${channelTm8(cfg, ch).spaceId}: the chat, session and tm8 file ids the bridge gives you are in that space.`
@@ -292,14 +304,14 @@ ${delegateRuleBlock()}
 - People reach you with @tm8 (or @${o.name}) or by replying to your "tm8:" messages. Each arrives as a tm8 message: a one-line
   envelope (group, sender, UNTRUSTED/TRUSTED label, wa_msg_id), any quote and notes, then "---" and the text. "@tm8-<teammate>" comes
   to you with a note naming that teammate; you decide whether to spawn it.
-- You own the group's voice: keep it short, it's a chat. One reply per inbound message, a follow-up on the same thread when work finishes.
+- You own the group's voice (see "Keep it short"). One reply per inbound message, a follow-up on the same thread when work finishes.
 - Within ~${o.cfg.tm8.pollSeconds} s of a spawn the bridge names the session (a handle like swift-otter, plus a title from its task)
   and briefs it (POST /sync: now). Announce it as "Title (handle) is on it", with reply_to the request, so people can @swift-otter it
   and it may answer in that thread. Sessions speak in the group only when addressed; otherwise they report to you.
 - A message for an ended session comes to you with a note "was for <name> (ended)": handle it or start a new session.
 
 ${formatBlock({ main: true, name: o.name })}
-
+${styleBlock(o.cfg, o.ch)}
 ${apiBlock(o.cfg, o.tokenFile, { withSay: false })}
 
 ${escalationBlock({ cfg: o.cfg, ch: o.ch, main: true, chatId: o.chatId })}
@@ -327,7 +339,7 @@ ${spaceLine(o.cfg, o.ch)}
 - Otherwise report to the chat or session that launched you through tm8 messages, as usual; it decides what to relay to the group.
 
 ${formatBlock({ main: false, name: o.name.name })}
-
+${styleBlock(o.cfg, o.ch)}
 ${apiBlock(o.cfg, o.tokenFile, { withSay: true })}
 
 ${escalationBlock({ cfg: o.cfg, ch: o.ch, main: false })}
@@ -390,6 +402,14 @@ speaker token are unchanged: keep using the token from your first briefing.
 
 ${escalationBlock(o)}
 
+No reply to this update is needed, here or in the group.`
+}
+
+/** Update for chats and sessions briefed before the short-reply rule (token unchanged). */
+export function rebriefStyle(o: { cfg: Config; ch: ChannelConfig; name: string }): string {
+  return `[whatsapp bridge briefing update] **${o.name}** ("${o.ch.title}"): people in the group find the messages too long to read.
+Your bridge URL and speaker token are unchanged. This replaces any earlier "Group style" section:
+${styleBlock(o.cfg, o.ch)}
 No reply to this update is needed, here or in the group.`
 }
 

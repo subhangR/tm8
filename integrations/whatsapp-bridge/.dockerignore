@@ -5,3 +5,4 @@ secrets
 config.json
 *.log
 .git
+instances

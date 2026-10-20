@@ -249,3 +249,22 @@ console.log(JSON.stringify({ page: { items: [] }, session: { expiresAt: null } }
     assert.deepEqual(calls[1].argv, ['auth', 'session', '--format', 'json'])
   })
 })
+
+describe('a bridge on another number (no self chat)', () => {
+  test("the owner is a group member, not one of the bridge's own JIDs; mentioning the owner doesn't route", async () => {
+    const cfg = parseConfig(
+      { ownerJids: [OWNER, OWNER_LID], channels: [{ id: 'lvlup', jid: LVL_GROUP, title: 'lvlup + autograde', allowedSenders: ['owner'] }] },
+      '/srv/bridge',
+    )
+    const tm8 = new FakeTm8()
+    const bridge = new Bridge(cfg, new Store(':memory:'), new FakeWa(), () => tm8, { log: () => {}, mediaDir: fs.mkdtempSync(path.join(os.tmpdir(), 'wab-num2-')) })
+    assert.deepEqual([...bridge.ownJids], [])
+    bridge.ownJids.add('910000000002@s.whatsapp.net')
+    await bridge.poll()
+    const before = tm8.posts.length
+    await bridge.onInbound(inbound({ text: 'hey', chatJid: LVL_GROUP, chatAltJid: null, fromMe: false, senderJid: OWNER, senderAltJid: OWNER_LID, senderName: 'Subhang', mentionedJids: [OWNER] }))
+    assert.equal(tm8.posts.length, before)
+    await bridge.onInbound(inbound({ text: 'hi', chatJid: LVL_GROUP, chatAltJid: null, fromMe: false, senderJid: OWNER, senderAltJid: OWNER_LID, senderName: 'Subhang', mentionedJids: ['910000000002@s.whatsapp.net'] }))
+    assert.equal(tm8.posts.length, before + 1)
+  })
+})
