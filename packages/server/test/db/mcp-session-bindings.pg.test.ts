@@ -81,6 +81,48 @@ it('resolves the root member own connection for an unpinned selection (§3, G15)
  // rather than re-picking.
  expect(await bindings.authorize(r.claims,r.sessionId,server)).toMatchObject({credentialId:credential});
 });
+it('a refused credential leaves a usable transaction, so the launch says why (finding 3)',async()=>{
+ // `Querier.rpc` is a bare client.query with no savepoint, so a raised
+ // read_mcp_credential aborts the whole bind transaction. While readiness was
+ // decided by catching that throw in TypeScript, the resolver's NEXT statement
+ // (loadMcpServer for the following selection) died with 25P02 and the launch
+ // reported an opaque 'internal database error' instead of naming the problem.
+ // Deciding openability in plpgsql instead keeps the refusal inside an implicit
+ // savepoint. Two selections, the first unopenable, is the minimal reproduction.
+ const second=await db.rpc<{entity:{id:string}}>(auth,'create_mcp_server_entity',[space,JSON.stringify({...definition,name:'bindingsecond'}),null,randomUUID()]);
+ const r=await runtime(otherIdentity);
+ await expect(bindings.bind({...auth,identityId:otherIdentity},{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,
+  mcpSelections:[{serverId:server,credentialId:credential},{serverId:second.entity.id}]}))
+  .rejects.toThrow(/MCP launch unavailable/);
+});
+it('a delegated launch with no live launcher binding drops defaults instead of refusing (finding 4)',async()=>{
+ // An auth-none connector with defaultOn makes the resolved default set
+ // non-empty for EVERY launch in the space. Before this, that turned a rare
+ // refusal into one that killed every delegated launch: asking for NO
+ // connectors must never refuse the spawn itself.
+ const open=await db.rpc<{entity:{id:string}}>(auth,'create_mcp_server_entity',[space,
+  JSON.stringify({name:'bindingdefault',transport:'http',url:'https://example.test/open',envKeys:[],headerKeys:[],auth:{type:'none'},approved:true,defaultOn:true}),null,randomUUID()]);
+ // Sanity: it really is in the default set for a normal launcher.
+ const normal=await runtime();
+ expect(await bindings.bind(auth,{sessionId:normal.sessionId,spaceId:space,teamMemberId:teammate,agentToken:normal.token}))
+  .toEqual([{serverId:open.entity.id}]);
+ // An agent caller with no verified mcpSource is `sourceUnavailable`.
+ const r=await runtime(otherIdentity);
+ expect(await bindings.bind(r.claims,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token})).toEqual([]);
+ // The binding exists and grants nothing, so authorize refuses the connector.
+ await expect(bindings.authorize(r.claims,r.sessionId,open.entity.id)).rejects.toBeTruthy();
+ // An EXPLICIT selection is still refused: only defaults are dropped.
+ const explicit=await runtime(otherIdentity);
+ await expect(bindings.bind(explicit.claims,{sessionId:explicit.sessionId,spaceId:space,teamMemberId:teammate,agentToken:explicit.token,
+  mcpSelections:[{serverId:open.entity.id}]})).rejects.toThrow(/live launcher binding/);
+ // And an explicit [] is not an ask, so it is allowed.
+ const none=await runtime(otherIdentity);
+ expect(await bindings.bind(none.claims,{sessionId:none.sessionId,spaceId:space,teamMemberId:teammate,agentToken:none.token,mcpSelections:[]})).toEqual([]);
+ // A `defaultOn` connector is space-wide by design, so it belongs to EVERY
+ // launch's default set in this space. Retire it, or it silently joins the
+ // expected sets of the sibling tests below.
+ await db.rpc(auth,'delete_entity',[open.entity.id,null,randomUUID()]);
+});
 it('explicit [] persists across resume and cannot grant a connector',async()=>{
  const r=await runtime();
  expect(await bindings.bind(auth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[]})).toEqual([]);

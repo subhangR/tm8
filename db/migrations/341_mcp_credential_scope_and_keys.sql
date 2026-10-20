@@ -52,6 +52,44 @@
 -- =============================================================================
 set role tm8_graph_owner;
 
+-- --- 0. an MCP connection is NEVER the space default (B7) -------------------
+-- `is_default` is the per-(space, provider) credential a SPAWN injects. 'mcp' is
+-- server-only (internal.is_server_only_credential_provider) and never reaches a
+-- spawn; read_space_service_key refuses provider='mcp' outright, and MCP has its
+-- own resolver tiers below (resolve_mcp_account), which never read is_default.
+-- So one "MCP default" per Space across every connector means nothing — and it
+-- is actively harmful, because 206's space_credentials_default_check says only
+-- an active or stale row may be the default. The first Space-owned connection
+-- became the default, and marking it needs_reconnect then raised 23514: the
+-- Space's shared Gmail could hit invalid_grant and §7.2 could not record it.
+--
+-- Three layers, because the helper is not the only way a row gets promoted
+-- (rekey activation and revoke promotion also call it):
+create or replace function internal.default_space_credential_if_none(p_credential_id uuid)
+returns void
+language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare target public.space_credentials;
+begin
+  select * into target from public.space_credentials where id = p_credential_id;
+  -- The one line this re-creation adds. Deliberately 'mcp' alone: 'typesafe'
+  -- IS resolved through is_default by read_space_service_key.
+  if target.provider = 'mcp' then return; end if;
+  if target.status <> 'active' then return; end if;
+  if not (target.visibility = 'public'
+          and (target.owner_account_id is null or target.may_be_space_default)) then
+    return;
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(target.space_id::text || '|' || target.provider, 206));
+  if not exists (select 1 from public.space_credentials
+                  where space_id = target.space_id and provider = target.provider
+                    and is_default and status = 'active') then
+    update public.space_credentials set is_default = true where id = p_credential_id;
+  end if;
+end
+$$;
+
+update public.space_credentials set is_default = false where provider = 'mcp' and is_default;
+
 -- --- 1. columns and constraints ---------------------------------------------
 alter table public.space_credentials
   add column if not exists key_id text,
@@ -77,7 +115,11 @@ alter table public.space_credentials
   -- so the per-scope length cap lives in the contract (McpCredentialCreate /
   -- the OAuth callback), which is the only writer.
   add constraint space_credentials_granted_scopes_check
-    check (granted_scopes is null or array_length(granted_scopes, 1) <= 64);
+    check (granted_scopes is null or array_length(granted_scopes, 1) <= 64),
+  -- Layer three of B7. No future path can promote an MCP row again, whatever
+  -- internal.default_space_credential_if_none grows into.
+  add constraint space_credentials_mcp_never_default
+    check (provider <> 'mcp' or not is_default);
 
 -- §5.2: one connection per (connector, owner-or-Space, account_label). Partial
 -- on a present label on purpose — account_label arrives with this migration, so
@@ -238,27 +280,68 @@ begin
   return internal.space_credential_json(stored) || jsonb_build_object('keyId', stored.key_id);
 end $$;
 
--- §7.2's writer, so the column added above is reachable. t-refresh-hardening
--- owns the caller (invalid_grant detection, the reuse heuristic, the notice).
-create function public.set_mcp_credential_status(p_space uuid, p_server uuid, p_id uuid,
-  p_status text, p_reason text default null)
+-- §7.2's writer (advisor ruling B8). A ONE-WAY MARKER, not a status setter.
+--
+-- The authority question has an awkward shape. Revoking EXECUTE does not make
+-- this server-internal, because the server itself connects as tm8_app. Requiring
+-- can_manage does not work either: the proxy meets invalid_grant under the ROOT
+-- member's claims, and for the Space's shared connection the root is usually not
+-- its manager, so the very case this exists for would be refused.
+--
+-- So authority is "can the caller USE this row" — the same owner / public /
+-- shared-with test as read_mcp_credential, which is exactly what the proxy has
+-- and nothing more. You can only report a failure for a connection you could
+-- actually have failed with, and a member who cannot use a row cannot touch it.
+--
+-- What keeps that safe is that the marker is one-way:
+--   * the only transition is active -> needs_reconnect;
+--   * an existing needs_reconnect may only ESCALATE its reason to possible_reuse,
+--     never be downgraded or cleared, so no member can wipe a reuse warning;
+--   * nothing here ever writes 'active'. Clearing needs_reconnect happens only
+--     by a MANAGER re-establishing the secret — rekey_mcp_credential for an API
+--     key (B5), or a fresh OAuth connect, which creates a new row;
+--   * pending, stale and revoked sources are refused outright.
+-- security_revision_changed is absent on purpose: readiness COMPUTES that from
+-- the fingerprint, so storing it would be a second, staler source of truth.
+--
+-- No facade handler exposes this. Its only caller is the proxy's refresh path
+-- (t-refresh-hardening), which marks on invalid_grant and writes the audit row.
+create function public.mark_mcp_credential_needs_reconnect(p_space uuid, p_server uuid, p_id uuid,
+  p_reason text)
 returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare stored public.space_credentials;
+declare stored public.space_credentials; a uuid;
 begin
-  if p_status not in ('active', 'needs_reconnect') then
-    raise exception 'MCP status is active or needs_reconnect; revoke uses delete_space_credential' using errcode = '22023';
+  if p_reason is null or p_reason not in ('invalid_grant', 'scope_reduced', 'possible_reuse') then
+    raise exception 'a reconnect reason is required: invalid_grant, scope_reduced or possible_reuse' using errcode = '22023';
   end if;
+  perform internal.require_space_member(p_space);
+  if coalesce(internal.claim_text('tm8.via_link'), '') <> '' or coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
+    raise exception 'linked MCP credentials are unavailable' using errcode = '42501';
+  end if;
+  a := internal.current_account_id();
   select * into stored from public.space_credentials
-   where id = p_id and space_id = p_space and provider = 'mcp' and mcp_server_id = p_server for update;
-  if stored.id is null or not internal.is_space_member(stored.space_id) then
-    raise exception 'MCP credential unavailable' using errcode = 'P0002';
+   where id = p_id and space_id = p_space and provider = 'mcp' and mcp_server_id = p_server
+   for update;
+  -- The same usability test as read_mcp_credential, minus its fingerprint check:
+  -- a revision change must not stop the proxy recording a provider failure.
+  if stored.id is null or a is null or not (
+    stored.owner_account_id = a or stored.visibility = 'public' or internal.space_credential_shared_with(stored.id, a)) then
+    raise exception 'MCP credential unavailable' using errcode = '42501';
   end if;
-  if stored.status = 'revoked' then
-    raise exception 'space credential is revoked' using errcode = '23514';
+  if stored.status not in ('active', 'needs_reconnect') then
+    raise exception 'space credential is %', stored.status using errcode = '23514';
   end if;
-  update public.space_credentials set status = p_status, status_reason = p_reason
+  -- Already marked: the only legal move is escalation to possible_reuse.
+  if stored.status = 'needs_reconnect' then
+    if p_reason <> 'possible_reuse' or stored.status_reason = 'possible_reuse' then
+      return jsonb_build_object('credentialId', stored.id, 'status', stored.status,
+        'statusReason', stored.status_reason, 'changed', false);
+    end if;
+  end if;
+  update public.space_credentials set status = 'needs_reconnect', status_reason = p_reason
    where id = stored.id returning * into stored;
-  return jsonb_build_object('credentialId', stored.id, 'status', stored.status, 'statusReason', stored.status_reason);
+  return jsonb_build_object('credentialId', stored.id, 'status', stored.status,
+    'statusReason', stored.status_reason, 'changed', true);
 end $$;
 
 -- §5.2 "Make the proxy write it". Separate from read_mcp_credential because
@@ -396,7 +479,7 @@ revoke all on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea,by
 revoke all on function public.read_mcp_credential(uuid,uuid,uuid) from public;
 revoke all on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,bytea,timestamptz,boolean,text) from public;
 revoke all on function public.rekey_mcp_credential(uuid,uuid,uuid,bytea,bytea,text) from public;
-revoke all on function public.set_mcp_credential_status(uuid,uuid,uuid,text,text) from public;
+revoke all on function public.mark_mcp_credential_needs_reconnect(uuid,uuid,uuid,text) from public;
 revoke all on function public.touch_mcp_credential(uuid,uuid,uuid) from public;
 revoke all on function public.resolve_mcp_account(uuid,uuid) from public;
 grant execute on function internal.mcp_credential_usable(public.space_credentials) to tm8_app;
@@ -405,7 +488,7 @@ grant execute on function public.create_mcp_credential(uuid,uuid,uuid,text,bytea
 grant execute on function public.read_mcp_credential(uuid,uuid,uuid) to tm8_app;
 grant execute on function public.refresh_mcp_credential(uuid,uuid,uuid,bytea,bytea,bytea,timestamptz,boolean,text) to tm8_app;
 grant execute on function public.rekey_mcp_credential(uuid,uuid,uuid,bytea,bytea,text) to tm8_app;
-grant execute on function public.set_mcp_credential_status(uuid,uuid,uuid,text,text) to tm8_app;
+grant execute on function public.mark_mcp_credential_needs_reconnect(uuid,uuid,uuid,text) to tm8_app;
 grant execute on function public.touch_mcp_credential(uuid,uuid,uuid) to tm8_app;
 grant execute on function public.resolve_mcp_account(uuid,uuid) to tm8_app;
 

@@ -2,21 +2,25 @@ import { CollabError, McpSelectionsSchema, isHumanAuthKind, type McpSelection } 
 import type { Db, DbClaims } from '../db/types.js';
 import { resolveBearerIdentity } from '../identity/pg-auth.js';
 import { hashToken, parseToken } from '../identity/crypto.js';
-import { resolveMcpSelections, type McpCredentialReadiness } from './definitions.js';
+import { resolveMcpSelections } from './definitions.js';
 
-/**
- * Readiness by ACTUALLY OPENING the row under the claims in force — the only
- * honest test, since RLS and sharing are what decide. A refusal becomes a
- * reason, not a thrown error, so the resolver can skip a default (§7.3).
+/*
+ * WHY NEITHER bind NOR authorize PASSES ITS OWN `credentialReady` ANY MORE.
+ *
+ * Both used to call `read_mcp_credential` directly, which throws when the row
+ * cannot be opened. That was fine while every refusal failed the launch, but
+ * §7.3 asks for a default that cannot be opened to be SKIPPED — and a JS
+ * try/catch cannot deliver that: `Querier.rpc` is a bare `client.query`, so a
+ * raised exception has already aborted the surrounding transaction. Catching it
+ * in TypeScript leaves the tx poisoned and the next statement dies with 25P02,
+ * turning a skippable default into a failed launch.
+ *
+ * `mcp_credential_readiness` is the answer. Its plpgsql EXCEPTION block is an
+ * implicit SAVEPOINT, so the refusal is contained inside Postgres, and it opens
+ * the row under the very same claims. It also reports WHY (revoked, expired,
+ * needs_reconnect) instead of a flat 'credential_unavailable'. So the resolver's
+ * default path is now the right one for both callers, and this file passes none.
  */
-function openable(q: Parameters<typeof resolveMcpSelections>[0]): McpCredentialReadiness {
-  return async (selection, server) => {
-    try {
-      await q.rpc('read_mcp_credential', [server.spaceId, server.id, selection.credentialId]);
-      return 'ready';
-    } catch { return 'credential_unavailable'; }
-  };
-}
 
 export interface McpBindInput {
   sessionId: string; spaceId: string; teamMemberId: string; targetIds?: string[];
@@ -80,6 +84,21 @@ export class McpSessionBindings {
       const stored = input.resume
         ? await q.rpc<unknown>('read_mcp_launch_selections', [input.sessionId]) : null;
       const picks = stored == null ? input.mcpSelections : McpSelectionsSchema.parse(stored);
+      if (sourceUnavailable) {
+        // A delegated launch whose launcher binding is gone has no verifiable
+        // human behind it, so it gets NO connectors. It must not inherit
+        // DEFAULTS either — and crucially, asking for none must not refuse the
+        // spawn. Before `defaultOn` existed this was mostly moot, because the
+        // default set came only from `equips` edges on the task lineage; a
+        // space-wide `defaultOn` connector makes the resolved set non-empty for
+        // EVERY launch, which would have turned this from a rare refusal into
+        // one that killed every delegated launch in the Space.
+        if (picks?.length) {
+          throw new CollabError('forbidden', 'MCP delegated launch requires a live launcher binding');
+        }
+        await q.rpc('bind_mcp_session', [input.sessionId, hashToken(parsed.secret), '[]']);
+        return [];
+      }
       let targetIds = input.targetIds;
       if (picks === undefined && targetIds === undefined && runtime.runtimeChatId === input.sessionId) {
         // A chat may be about a task. Use only currently readable, same-space
@@ -96,16 +115,11 @@ export class McpSessionBindings {
         ...(targetIds ? { targetIds } : {}),
         ...(picks !== undefined ? { mcpSelections: picks } : {}),
       }, {
-        // §7.3/G15: a default that cannot be opened must be SKIPPED, not
-        // thrown. A rejected rpc would escape the resolver as a 500 and take
-        // the whole launch with it, which is the failure G15 describes.
-        credentialReady: openable(q),
         ...(rootMemberId !== undefined ? { rootMemberId } : {}),
       });
       // Only an EXPLICIT selection can refuse a launch now. Defaults that are
       // not ready have already been dropped into `resolved.skipped`.
       if (!resolved.ready) throw new CollabError('forbidden', `MCP launch unavailable: ${resolved.selections.find(s => !s.ready)?.reason}`);
-      if (sourceUnavailable && resolved.selections.length) throw new CollabError('forbidden', 'MCP delegated launch requires a live launcher binding');
       const selections = resolved.selections.map(s => ({ serverId: s.server.id,
         ...(s.credentialId ? { credentialId: s.credentialId } : {}) }));
       await q.rpc('bind_mcp_session', [input.sessionId, hashToken(parsed.secret), JSON.stringify(selections)]);
@@ -129,7 +143,7 @@ export class McpSessionBindings {
       // `pinnedOnly`: re-check the exact row bind wrote. A live session must
       // never silently move to a different connection because the root
       // connected a new account mid-flight.
-    }, { credentialReady: openable(q), pinnedOnly: true }));
+    }, { pinnedOnly: true }));
     if (!resolved.ready) throw new CollabError('forbidden', 'MCP connector access has changed');
     return { sessionId, spaceId: binding.spaceId, identityId: binding.identityId, serverId,
       launcherIdentityId: binding.launcherIdentityId, launcherAuthKind: binding.launcherAuthKind,

@@ -186,6 +186,58 @@ it('the effective server key is unique within the space, explicit or derived', a
   await expect(create({ ...base('keyholder3'), serverKey: 'unheld' })).resolves.toBeTruthy();
 });
 
+it('a soft-deleted connector holds no server key, and a restore re-checks it (finding 5)', async () => {
+  // A unique index could not express this: mcp_servers keeps its row when the
+  // entity is soft-deleted, and an index cannot read entities.deleted_at, so
+  // `delete Gmail; re-add Gmail` would have failed with 23505 forever.
+  const first = await create({ ...base('deletable'), serverKey: 'reusable' });
+  await as(adminIdentity, q => q.rpc('delete_entity', [first.entity.id, null, randomUUID()]));
+  const replacement = await create({ ...base('deletable2'), serverKey: 'reusable' });
+  expect(replacement.entity.id).not.toBe(first.entity.id);
+  // But restoring the original would put the key back twice over, and the
+  // definition guard never sees a restore, so the entity guard checks it.
+  // tm8_app holds no UPDATE on entities, so a restore is an owner-role write
+  // with the admin's claims set — the trigger is what is under test, and it
+  // reads those claims for its own admin check.
+  const restore = () => scratch.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','browser',true)", [adminIdentity]);
+    await c.query('update public.entities set deleted_at=null where id=$1', [first.entity.id]);
+  });
+  await expect(restore()).rejects.toThrow(/server key is already used/);
+  // With the replacement gone, the restore is fine again.
+  await as(adminIdentity, q => q.rpc('delete_entity', [replacement.entity.id, null, randomUUID()]));
+  await expect(restore()).resolves.toBeUndefined();
+  // And it is live again, so it holds the key once more.
+  await expect(create({ ...base('deletable3'), serverKey: 'reusable' })).rejects.toBeTruthy();
+});
+
+it('a pre-existing colliding pair can still be edited and disabled (finding 6)', async () => {
+  // `my-api` and `my_api` normalise alike. Both are legal before 340, so the
+  // collision check must only fire when a key MOVES — otherwise neither row
+  // could be touched at all, not even to set enabled:false to escape.
+  await scratch.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query('alter table public.mcp_servers disable trigger mcp_servers_guard');
+    for (const name of ['my-api', 'my_api']) {
+      const id = randomUUID();
+      await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'mcp_server',0,$3)", [id, spaceId, adminMember]);
+      await c.query('insert into public.mcp_servers(entity_id,space_id,title,definition) values($1,$2,$3,$4)', [id, spaceId, name, JSON.stringify(base(name))]);
+    }
+    await c.query('alter table public.mcp_servers enable trigger mcp_servers_guard');
+  });
+  const [stuck] = await scratch.query<{ entity_id: string }>("select entity_id from public.mcp_servers where title='my_api'");
+  const current = await as(adminIdentity, q => loadMcpServer(q, stuck!.entity_id));
+  // Same effective key, so the check does not fire: the admin can disable it.
+  await as(adminIdentity, q => q.rpc('update_mcp_server_entity', [stuck!.entity_id, current.version,
+    JSON.stringify({ ...base('my_api'), enabled: false }), null, randomUUID()]));
+  expect((await as(adminIdentity, q => loadMcpServer(q, stuck!.entity_id))).definition.enabled).toBe(false);
+  // Moving the key onto the OTHER row's key is still refused.
+  const after = await as(adminIdentity, q => loadMcpServer(q, stuck!.entity_id));
+  await expect(as(adminIdentity, q => q.rpc('update_mcp_server_entity', [stuck!.entity_id, after.version,
+    JSON.stringify({ ...base('my_api'), serverKey: 'held' }), null, randomUUID()]))).rejects.toBeTruthy();
+});
+
 it('mcpServerKey mirrors internal.mcp_effective_server_key', async () => {
   const cases = ['gmail', 'My-Tool', 'linear_team', '2fa_thing', 'a__b', '_leading', 'Trailing_'];
   for (const name of cases) {

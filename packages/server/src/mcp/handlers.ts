@@ -57,6 +57,7 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.credentials.share':requireHumanSession(async ctx=>{
    const input=McpCredentialShareInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);
    if(!current.manageable)throw new CollabError('forbidden','Only the account owner can share');
+   if(current.ownerId===null)throw new CollabError('invalid_input','A Space connection is already shared with the whole Space; its visibility cannot be changed');
    // Narrow first; if any later grant fails, no unintended public access remains.
    await store.setVisibility(auth,input.credentialId,'private');
    for(const share of await store.listShares(auth,input.credentialId))await store.unshare(auth,input.credentialId,share.granteeAccountId);
@@ -67,6 +68,11 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.credentials.unshare':requireHumanSession(async ctx=>{
    const input=McpCredentialCommandInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);
    if(!current.manageable)throw new CollabError('forbidden','Only the account owner can share');
+   // A Space connection is owned by nobody and is public by construction, so
+   // set_space_credential_visibility refuses it (22023). An admin reads as
+   // `manageable` on one, so without this the UI would offer unshare and then
+   // surface an opaque invariant error. Revoking it is the real lever.
+   if(current.ownerId===null)throw new CollabError('invalid_input','A Space connection cannot be unshared; revoke it instead');
    await store.setVisibility(auth,input.credentialId,'private');for(const share of await store.listShares(auth,input.credentialId))await store.unshare(auth,input.credentialId,share.granteeAccountId);return view(auth,input.credentialId);
   }),
   'mcp.oauth.begin':requireHumanSession(async ctx=>{

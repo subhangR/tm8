@@ -112,29 +112,70 @@ it('a personal connection stays private to its owner', async () => {
 
 // --- §5.2 status, key id, labels -------------------------------------------
 
-it('needs_reconnect carries its reason, stops the row being usable, and clears on rotation', async () => {
-  const server = await connector(keyed('statusflow'));
-  const created = await connect(aliceIdentity, server, { label: 'Expiring key', value: 'status-secret' });
-  const binding = { spaceId, serverId: server, credentialId: created.id };
-  await as(aliceIdentity, q => q.rpc('set_mcp_credential_status', [spaceId, server, created.id, 'needs_reconnect', 'invalid_grant']));
+it('an MCP connection is never the space default, so it can be marked needs_reconnect (B7)', async () => {
+  const server = await connector(keyed('neverdefault'));
+  // The FIRST Space-owned row is the one default_space_credential_if_none used
+  // to promote (owner null + visibility public + the only mcp row in the space).
+  const team = await connect(adminIdentity, server, { label: 'Team neverdefault', scope: 'space' });
+  const mine = await connect(aliceIdentity, server, { label: 'Alice neverdefault' });
+  const flags = await scratch.query<{ id: string; is_default: boolean }>(
+    'select id,is_default from public.space_credentials where provider=$1', ['mcp']);
+  expect(flags.length).toBeGreaterThan(0);
+  expect(flags.every(row => row.is_default === false)).toBe(true);
+  // Which is the whole point: space_credentials_default_check (206) forbids a
+  // default that is not active/stale, so a promoted row could never be marked.
+  await as(adminIdentity, q => q.rpc('mark_mcp_credential_needs_reconnect', [spaceId, server, team.id, 'invalid_grant']));
+  expect((await list(adminIdentity, server)).find(v => v.id === team.id))
+    .toMatchObject({ status: 'needs_reconnect', statusReason: 'invalid_grant' });
+  // And the constraint refuses it even by direct owner-role write.
+  await expect(scratch.query('update public.space_credentials set is_default=true where id=$1', [mine.id])).rejects.toBeTruthy();
+});
 
-  expect((await list(aliceIdentity, server))[0]).toMatchObject(
-    { status: 'needs_reconnect', statusReason: 'invalid_grant', usable: false, reason: 'needs_reconnect' });
-  expect(await as(aliceIdentity, q => q.rpc('mcp_credential_readiness', [server, created.id])))
-    .toEqual({ ready: false, reason: 'needs_reconnect' });
-  // read_mcp_credential already refuses any status <> 'active', so marking the
-  // row is all it takes to stop it being used.
+it('needs_reconnect is a one-way marker: usable-only, escalate-only, cleared only by a rekey (B8)', async () => {
+  const server = await connector(keyed('oneway'));
+  const mine = await connect(aliceIdentity, server, { label: 'Alice oneway', value: 'oneway-secret' });
+  const binding = { spaceId, serverId: server, credentialId: mine.id };
+  const mark = (identity: string, id: string, reason: string, srv = server) =>
+    as(identity, q => q.rpc<{ status: string; statusReason: string; changed: boolean }>('mark_mcp_credential_needs_reconnect', [spaceId, srv, id, reason]));
+
+  // Authority is "can you USE the row", not "are you a member". Bob is a member
+  // of the space and cannot use Alice's private row, so he cannot mark it.
+  await expect(mark(bobIdentity, mine.id, 'invalid_grant')).rejects.toMatchObject({ details: { sqlstate: '42501' } });
+  // A reason is required, and only the three §5.2 values it may store.
+  for (const bad of [null, 'security_revision_changed', 'nonsense']) {
+    await expect(mark(aliceIdentity, mine.id, bad as string)).rejects.toMatchObject({ details: { sqlstate: '22023' } });
+  }
+  expect(await mark(aliceIdentity, mine.id, 'invalid_grant')).toMatchObject({ status: 'needs_reconnect', statusReason: 'invalid_grant', changed: true });
+  expect((await list(aliceIdentity, server))[0]).toMatchObject({ status: 'needs_reconnect', statusReason: 'invalid_grant', usable: false, reason: 'needs_reconnect' });
+  expect(await as(aliceIdentity, q => q.rpc('mcp_credential_readiness', [server, mine.id]))).toEqual({ ready: false, reason: 'needs_reconnect' });
   await expect(store.read(auth(aliceIdentity), binding)).rejects.toThrow();
 
-  await as(aliceIdentity, q => q.rpc('set_mcp_credential_status', [spaceId, server, created.id, 'active', null]));
+  // ESCALATE to possible_reuse, then refuse to come back down. A member must not
+  // be able to wipe a reuse warning by re-marking with a milder reason.
+  expect(await mark(aliceIdentity, mine.id, 'possible_reuse')).toMatchObject({ statusReason: 'possible_reuse', changed: true });
+  expect(await mark(aliceIdentity, mine.id, 'invalid_grant')).toMatchObject({ statusReason: 'possible_reuse', changed: false });
+  expect(await mark(aliceIdentity, mine.id, 'scope_reduced')).toMatchObject({ statusReason: 'possible_reuse', changed: false });
+  expect(await mark(aliceIdentity, mine.id, 'possible_reuse')).toMatchObject({ statusReason: 'possible_reuse', changed: false });
+
+  // There is NO RPC back to active: only a manager re-establishing the secret.
+  await store.rotate(auth(aliceIdentity), binding, 'reconnected-secret');
   expect((await list(aliceIdentity, server))[0]).toMatchObject({ status: 'active', statusReason: null, reason: 'ready' });
-  // A rotation also clears the reason, which is the reconnect path for a key.
-  await as(aliceIdentity, q => q.rpc('set_mcp_credential_status', [spaceId, server, created.id, 'needs_reconnect', 'scope_reduced']));
-  await store.rotate(auth(aliceIdentity), binding, 'rotated-status-secret');
-  expect((await list(aliceIdentity, server))[0]).toMatchObject({ status: 'active', statusReason: null });
-  for (const bad of ['revoked', 'pending', 'nonsense']) {
-    await expect(as(aliceIdentity, q => q.rpc('set_mcp_credential_status', [spaceId, server, created.id, bad, null]))).rejects.toBeTruthy();
-  }
+  expect((await store.read(auth(aliceIdentity), binding)).secret).toEqual({ kind: 'api_key', value: 'reconnected-secret' });
+
+  // A revoked row is refused rather than resurrected as needs_reconnect.
+  await shares.revoke(auth(aliceIdentity), mine.id);
+  await expect(mark(aliceIdentity, mine.id, 'invalid_grant')).rejects.toMatchObject({ details: { sqlstate: '23514' } });
+
+  // A user of a SHARED row can mark it, which is the §7.2 case: the proxy meets
+  // invalid_grant under the root's claims, and the root is not its manager.
+  const shared = await connector(keyed('onewayshared'));
+  const team = await connect(adminIdentity, shared, { label: 'Team oneway', scope: 'space' });
+  expect(await mark(bobIdentity, team.id, 'invalid_grant', shared)).toMatchObject({ status: 'needs_reconnect', changed: true });
+  // ...but he still cannot rotate it back; that is the admin's job (B5).
+  await expect(store.rotate(auth(bobIdentity), { spaceId, serverId: shared, credentialId: team.id }, 'bob')).rejects.toThrow();
+  // Wrong space or wrong server is refused, as with every other MCP RPC.
+  await expect(as(adminIdentity, q => q.rpc('mark_mcp_credential_needs_reconnect', [randomUUID(), shared, team.id, 'invalid_grant']))).rejects.toBeTruthy();
+  await expect(mark(adminIdentity, team.id, 'invalid_grant', server)).rejects.toBeTruthy();
 });
 
 it('the key id is bound into the AAD, and an unknown one is refused before any crypto', async () => {
@@ -249,7 +290,7 @@ it('falls through to the Space connection, prefers a true Space-owned row, and r
 
   // Hers breaks. She falls back to the Space's, and the answer still names her
   // broken row so the UI can show the reconnect warning (§10.0).
-  await as(aliceIdentity, q => q.rpc('set_mcp_credential_status', [spaceId, server, hers.id, 'needs_reconnect', 'invalid_grant']));
+  await as(aliceIdentity, q => q.rpc('mark_mcp_credential_needs_reconnect', [spaceId, server, hers.id, 'invalid_grant']));
   expect(await resolve(aliceIdentity, server)).toMatchObject({ credentialId: team.id, source: 'space_shared',
     unusable: { credentialId: hers.id, reason: 'needs_reconnect' } });
 });

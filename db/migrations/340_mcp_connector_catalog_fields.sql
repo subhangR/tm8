@@ -33,12 +33,19 @@
 -- SERVER KEY UNIQUENESS. The effective key is the explicit serverKey or, absent
 -- one, the normalised name — nothing is backfilled into the stored jsonb, so
 -- `internal.mcp_effective_server_key` is the single definition of the key and
--- TS mirrors it (`mcpServerKey` in contract/mcp.ts). The guard trigger refuses a
--- definition whose effective key collides with another live connector in the
--- same space; a partial unique index backs explicit keys even against a direct
--- owner-role write. The check lives in the trigger rather than the index so that
--- two connectors whose names already normalise alike cannot make this migration
--- fail on existing data.
+-- TS mirrors it (`mcpServerKey` in contract/mcp.ts).
+--
+-- It is enforced by TRIGGER, not by a unique index, and deliberately. The key
+-- must be unique among LIVE connectors only: `mcp_servers` keeps its row when an
+-- entity is soft-deleted, so an index could not tell a deleted Gmail from a live
+-- one and `delete Gmail; re-add Gmail` would fail with 23505 forever. An index
+-- cannot read `entities.deleted_at` — indexes do not join — so excluding deleted
+-- rows is only possible in a trigger. Two triggers cover the two ways a live key
+-- can appear: `guard_mcp_definition` on an insert or definition edit, and
+-- `guard_mcp_entity` on a RESTORE, which brings a key back without touching
+-- `mcp_servers` at all. Keeping it out of the index also means two connectors
+-- whose names already normalise alike cannot make this migration fail on
+-- existing data; they are refused the next time either one's key changes.
 -- =============================================================================
 set role tm8_graph_owner;
 
@@ -65,6 +72,18 @@ create or replace function internal.mcp_effective_server_key(d jsonb) returns te
 language sql immutable as $$
   select coalesce(nullif(lower(d->>'serverKey'), ''), internal.mcp_normalized_server_key(d->>'name'))
 $$;
+
+-- LIVE connectors only (see SERVER KEY UNIQUENESS above): a soft-deleted
+-- connector holds no key, so re-adding one it used to own is allowed.
+create or replace function internal.assert_mcp_server_key_free(p_space uuid, p_entity uuid, d jsonb)
+returns void language plpgsql stable set search_path=public,internal,pg_temp as $$
+begin
+ if exists(select 1 from public.mcp_servers s join public.entities e on e.id=s.entity_id
+           where s.space_id=p_space and s.entity_id<>p_entity and e.deleted_at is null
+             and internal.mcp_effective_server_key(s.definition)=internal.mcp_effective_server_key(d)) then
+   raise exception 'MCP server key is already used in this space: %', internal.mcp_effective_server_key(d) using errcode='23505';
+ end if;
+end $$;
 
 -- 297's body with firstParty and gates added. Every other key is unchanged.
 create or replace function internal.mcp_security_fingerprint_json(d jsonb) returns text
@@ -159,25 +178,36 @@ end $$;
 
 -- 296's body plus the effective-key collision check. The admin gate, the space
 -- match and the title projection are unchanged.
+--
+-- The check runs on an INSERT, and on an UPDATE only when the effective key
+-- actually MOVES. Checking every update would mean a pre-existing colliding pair
+-- (`my-api` and `my_api`, legal before this migration) could not be touched at
+-- all — not even to set `enabled: false` to get out of the collision.
 create or replace function internal.guard_mcp_definition() returns trigger language plpgsql set search_path=public,internal,pg_temp as $$
 begin
  perform internal.require_space_admin(new.space_id);
  if not exists(select 1 from public.entities where id=new.entity_id and space_id=new.space_id) then raise exception 'MCP space mismatch' using errcode='22023'; end if;
  perform internal.validate_mcp_definition(new.definition);
  new.title:=lower(new.definition->>'name');
- if exists(select 1 from public.mcp_servers s join public.entities e on e.id=s.entity_id
-           where s.space_id=new.space_id and s.entity_id<>new.entity_id and e.deleted_at is null
-             and internal.mcp_effective_server_key(s.definition)=internal.mcp_effective_server_key(new.definition)) then
-   raise exception 'MCP server key is already used in this space: %', internal.mcp_effective_server_key(new.definition) using errcode='23505';
+ if TG_OP='INSERT' or internal.mcp_effective_server_key(new.definition)
+                      is distinct from internal.mcp_effective_server_key(OLD.definition) then
+   perform internal.assert_mcp_server_key_free(new.space_id,new.entity_id,new.definition);
  end if;
  return new;
 end $$;
 
--- Second line of defence for an explicit key, under the owner role too. Kept
--- partial so names that already normalise alike cannot fail this migration.
-create unique index if not exists mcp_servers_server_key_unique
-  on public.mcp_servers (space_id, lower(definition->>'serverKey'))
-  where definition ? 'serverKey';
+-- 296's body plus the same check on RESTORE. An undelete brings a key back into
+-- play without touching mcp_servers, so the definition guard never sees it.
+create or replace function internal.guard_mcp_entity() returns trigger language plpgsql set search_path=public,internal,pg_temp as $$
+begin
+ perform internal.require_space_admin(old.space_id);
+ if new.space_id<>old.space_id then raise exception 'MCP servers cannot move between spaces' using errcode='42501'; end if;
+ if old.deleted_at is not null and new.deleted_at is null then
+   perform internal.assert_mcp_server_key_free(new.space_id,new.id,
+     (select definition from public.mcp_servers where entity_id=new.id));
+ end if;
+ return new;
+end $$;
 
 -- Half two of the re-stamp. Must come after every function above is in place.
 update public.space_credentials sc
