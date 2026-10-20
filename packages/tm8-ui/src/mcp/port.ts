@@ -13,9 +13,12 @@ export interface McpServer {
   canManage: boolean; canAttach: boolean; unavailableReason?: string;
   accounts: McpAccount[];
 }
+/** A connector the target equips that the launch will leave out, and why. */
+export interface McpDroppedDefault { serverId: string; title: string; reason: string }
 export interface McpCatalog {
   attachedServerIds?: string[];
-  servers: McpServer[]; defaults: McpSelection[]; canRegister: boolean; canAttach: boolean;
+  servers: McpServer[]; defaults: McpSelection[]; droppedDefaults?: McpDroppedDefault[];
+  canRegister: boolean; canAttach: boolean;
 }
 export interface McpDefinition {
   title: string; description: string; transport: 'http' | 'stdio';

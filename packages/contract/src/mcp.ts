@@ -74,9 +74,18 @@ export const McpServerViewSchema = z.object({
 export type McpServerView = z.infer<typeof McpServerViewSchema>;
 export const McpResolvedSelectionSchema = z.object({
   server: McpServerViewSchema, credentialId: Id.optional(), ready: z.boolean(), reason: McpReadinessReasonSchema,
+  /** True when the selection came from an `equips` default rather than an explicit pick. */
+  fromDefault: z.boolean().optional(),
 }).strict();
 export type McpResolvedSelection = z.infer<typeof McpResolvedSelectionSchema>;
-export const McpResolveResultSchema = z.object({ selections: z.array(McpResolvedSelectionSchema), ready: z.boolean() }).strict();
+/**
+ * `selections` is what a launch would bind; `ready` covers only those, so an
+ * unready DEFAULT never refuses a launch. Unready defaults move to `dropped`
+ * with their reason, which is the only place a caller can see why a connector
+ * the target equips is missing from the session.
+ */
+export const McpResolveResultSchema = z.object({ selections: z.array(McpResolvedSelectionSchema), ready: z.boolean(),
+  dropped: z.array(McpResolvedSelectionSchema) }).strict();
 export type McpResolveResult = z.infer<typeof McpResolveResultSchema>;
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
 export const McpServerCreateInputSchema = z.object({ ...Command, spaceId: Id, definition: McpServerDefinitionSchema }).strict();

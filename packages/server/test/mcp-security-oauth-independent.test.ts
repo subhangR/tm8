@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CollabError } from '@tm8/contract';
 import { McpOAuth, refreshOAuth, revokeOAuth } from '../src/mcp/oauth.js';
+import { toWireError } from '../src/http/errors.js';
 import { McpProxy } from '../src/mcp/proxy.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
 import { registerMcpRuntimeHandlers } from '../src/mcp/handlers.js';
@@ -114,7 +116,11 @@ describe('independent OAuth binding and lifecycle', () => {
     p.state.rawRegistration = 'provider-private-detail';
     const error = await p.begin({ clientId: undefined }).catch(value => value);
     expect(error).toBeInstanceOf(Error);
-    expect(error.message).toBe('OAuth client registration rejected by provider');
+    // The cause is named (status, and the Client ID remedy) and the body is
+    // still not: a 403 here is a provider allowlist, and saying only
+    // "rejected" left the member with nothing to act on.
+    expect(error.message).toMatch(/^OAuth client registration rejected by provider: http:\/\/127\.0\.0\.1:\d+ answered 403\./);
+    expect(error.message).toContain('Client ID');
     expect(error.message).not.toContain('provider-private-detail');
   });
   it('uses a dynamically registered confidential client without exposing its secret', async () => {
@@ -153,7 +159,10 @@ describe('independent OAuth binding and lifecycle', () => {
   it('consumes state on denied token exchange and redacts provider error body', async () => {
     const p = await provider(); p.state.tokenStatus = 400; p.state.token = { error: 'access_denied', error_description: 'secret-from-provider' };
     const auth = await p.begin(); const input = { state: auth.searchParams.get('state')!, code: 'code' };
-    await expect(p.oauth.callback('human', input)).rejects.toThrow(/^OAuth token exchange failed$/);
+    const error = await p.oauth.callback('human', input).catch(value => value);
+    // The provider's short error CODE is named; its description is not.
+    expect(error.message).toMatch(/^OAuth token exchange failed: http:\/\/127\.0\.0\.1:\d+ answered 400 \(access_denied\)\./);
+    expect(error.message).not.toContain('secret-from-provider');
     await expect(p.oauth.callback('human', input)).rejects.toThrow('state');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(1);
   });
@@ -176,7 +185,7 @@ describe('independent OAuth binding and lifecycle', () => {
   });
   it('consumes provider-denied authorization without exchanging a code', async () => {
     const p = await provider(); const auth = await p.begin(); const state = auth.searchParams.get('state')!;
-    await expect(p.oauth.callback('human', { state, error: 'access_denied' })).rejects.toThrow(/^OAuth authorization denied$/);
+    await expect(p.oauth.callback('human', { state, error: 'access_denied' })).rejects.toThrow(/^OAuth authorization denied by the provider: access_denied\./);
     await expect(p.oauth.callback('human', { state, code: 'late-code' })).rejects.toThrow('state');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
   });
@@ -206,7 +215,7 @@ describe('independent OAuth binding and lifecycle', () => {
       // token exchange instead of rejecting every issuer-bearing callback.
       const second = await registry.get('mcp.oauth.begin')!(ctx({ clientMutationId: 'begin-again', label: 'fixture' })) as { authorizationUrl: string };
       const secondState = new URL(second.authorizationUrl).searchParams.get('state')!;
-      await expect(callback(ctx({ state: secondState, code: 'code', issuer: p.origin }))).rejects.toThrow(/^OAuth token exchange failed$/);
+      await expect(callback(ctx({ state: secondState, code: 'code', issuer: p.origin }))).rejects.toThrow(/^OAuth token exchange failed: /);
       expect(p.calls.filter(call => call.path === '/token')).toHaveLength(1);
     }
   });
@@ -252,5 +261,75 @@ describe('independent OAuth binding and lifecycle', () => {
     await expect(proxy.request({ identityId: 'human' }, 'session', 'server', 'tools/list')).rejects.toThrow('unavailable');
     expect(refreshes).toBe(1);
     expect(requests).toBe(1);
+  });
+});
+
+/**
+ * ac3: the four causes a `tm8 mcp` user actually hits must be distinguishable
+ * from each other in the message. Before this, every one of them was a plain
+ * `Error`, which `toWireError` turns into `internal server error`, and the
+ * loopback redirect origin — the reason connectors fail on a prod node with no
+ * TM8_PUBLIC_ORIGIN — was never mentioned anywhere.
+ */
+describe('OAuth failures name their cause', () => {
+  it('names a loopback redirect origin when DCR is unavailable or refused', async () => {
+    const p = await provider();
+    const loopback = new McpOAuth('http://127.0.0.1:8777/mcp/oauth/callback');
+    const begin = (overrides: Record<string, unknown> = {}) => loopback.begin({ ...p.input, clientId: undefined, ...overrides });
+
+    delete p.state.metadata.registration_endpoint;
+    const noDcr = await begin().catch(value => value as Error);
+    expect(noDcr.message).toContain('publishes no registration_endpoint');
+    expect(noDcr.message).toContain('Dynamic Client Registration');
+    expect(noDcr.message).toContain('http://127.0.0.1:8777, a loopback address');
+    expect(noDcr.message).toContain('TM8_PUBLIC_ORIGIN');
+    expect((noDcr as CollabError).code).toBe('invalid_input');
+
+    p.state.metadata.registration_endpoint = `${p.origin}/register`;
+    p.state.registrationStatus = 403;
+    p.state.registration = { error: 'access_denied' };
+    const rejected = await begin().catch(value => value as Error);
+    expect(rejected.message).toContain('answered 403 (access_denied)');
+    expect(rejected.message).toContain('a loopback address');
+  });
+
+  it('separates an issuer mismatch from unsupported PKCE', async () => {
+    const mismatch = await provider();
+    mismatch.state.metadata.issuer = 'https://elsewhere.test';
+    const issuer = await mismatch.begin().catch(value => value as Error);
+    expect(issuer.message).toMatch(/^OAuth issuer mismatch: /);
+    expect(issuer.message).toContain('https://elsewhere.test');
+    expect(issuer.message).toContain(mismatch.origin);
+
+    const pkce = await provider();
+    pkce.state.metadata.code_challenge_methods_supported = ['plain'];
+    const unsupported = await pkce.begin().catch(value => value as Error);
+    expect(unsupported.message).toMatch(/^OAuth PKCE unsupported: /);
+    expect(unsupported.message).toContain('S256');
+  });
+
+  it('explains an expired or restart-lost pending state, and reaches the client as a CollabError', async () => {
+    const p = await provider();
+    const error = await p.oauth.callback('human', { state: 'never-issued', code: 'code' }).catch(value => value as Error);
+    expect(error).toBeInstanceOf(CollabError);
+    expect(error.message).toContain('10 minutes');
+    expect(error.message).toContain('restart');
+    // A plain Error would be serialized as `internal server error`; the point
+    // of these being CollabErrors is that the sentence survives the wire.
+    expect(toWireError(error, 'request').body.error.message).toBe(error.message);
+    expect(toWireError(new Error('opaque'), 'request').body.error.message).toBe('internal server error');
+  });
+
+  it('names a non-approved connector rather than failing opaquely', async () => {
+    const registry = new HandlerRegistry();
+    const deps = { db: {}, owner: async () => ({ identityId: 'human', isNodeAdmin: false }) } as unknown as FacadeDeps;
+    registerMcpRuntimeHandlers(registry, deps, {
+      dataDir: '/unused-independent-oauth-fixture', callbackUrl: 'https://tm8.test/callback',
+      definition: async () => ({ id: '00000000-0000-4000-8000-000000000009', spaceId: 'space', definition: { approved: false, transport: 'http', url: 'https://vendor.test/mcp', auth: { type: 'oauth2' } } }) as never,
+      authorize: async () => { throw new Error('unused'); },
+    });
+    const ctx = { body: { clientMutationId: 'begin', label: 'fixture' }, params: { serverId: '00000000-0000-4000-8000-000000000009' }, identity: { kind: 'bearer', identityId: 'human', authKind: 'browser' }, requestId: 'fixture' } as unknown as RequestContext;
+    const error = await registry.get('mcp.oauth.begin')!(ctx).catch(value => value as Error);
+    expect(error.message).toContain('a space administrator must approve it');
   });
 });

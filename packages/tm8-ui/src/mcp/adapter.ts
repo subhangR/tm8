@@ -81,7 +81,9 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
         const accounts = server.definition.auth.type === 'none' ? [] : await http.call<McpCredentialView[]>('mcp.credentials.list', { params: { serverId: server.id } });
         return viewOf(server, accounts);
       }));
-      return { servers, attachedServerIds: targetId ? (await attachments(targetId)).map(e => e.serverId) : [], defaults: resolved.selections.map(s => ({ serverId: s.server.id, ...(s.credentialId ? { credentialId: s.credentialId } : {}) })), canRegister: allowed.register, canAttach: allowed.attach };
+      return { servers, attachedServerIds: targetId ? (await attachments(targetId)).map(e => e.serverId) : [], defaults: resolved.selections.map(s => ({ serverId: s.server.id, ...(s.credentialId ? { credentialId: s.credentialId } : {}) })),
+        droppedDefaults: (resolved.dropped ?? []).map(s => ({ serverId: s.server.id, title: s.server.definition.name, reason: s.reason })),
+        canRegister: allowed.register, canAttach: allowed.attach };
     },
     async register(input) { await http.call('mcp.servers.create', { params: { spaceId }, body: { ...command(), spaceId, definition: definitionFor(input) } }); },
     async update(server, input) { await http.call('mcp.servers.update', { params: { serverId: server.id }, body: { ...command(), serverId: server.id, expectedVersion: server.version, definition: definitionFor(input, server.source) } }); },
@@ -100,8 +102,16 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
       try {
         result = await http.call<{authorizationUrl:string}>('mcp.oauth.begin', { params: { serverId }, body: { ...command(), serverId, label } });
       } catch (error) {
-        if (error instanceof Error && ['OAuth client registration failed', 'OAuth client registration rejected by provider'].includes(error.message)) {
-          throw new McpUiError('This provider rejected tm8 as an OAuth client. Some providers only allow approved MCP clients; ask the provider to approve tm8, then retry.');
+        // These are matched by PREFIX and by tm8's own markers, never by exact
+        // text: the server appends the provider status, its short error code
+        // and the redirect-URI diagnosis, and an exact-match list could not
+        // see any of it. (It saw nothing before either: these were plain
+        // Errors, which the wire reports as `internal server error`.)
+        if (error instanceof Error && /loopback address/.test(error.message)) {
+          throw new McpUiError('tm8 is asking this provider to redirect back to a loopback address, which hosted providers refuse. An administrator must set TM8_PUBLIC_ORIGIN to this server\'s public HTTPS origin and restart tm8, then retry.');
+        }
+        if (error instanceof Error && /^OAuth client registration (failed|rejected|unavailable|unsupported)/.test(error.message)) {
+          throw new McpUiError('This provider rejected tm8 as an OAuth client. Some providers only allow approved MCP clients, or need a Client ID you create with them. Ask an administrator to check the connector, then retry.');
         }
         throw error;
       }

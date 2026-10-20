@@ -1,17 +1,32 @@
 import { ConnectorsLink } from './ConnectorsLink';
 import { useLayoutEffect, useId, useRef } from 'react';
 import { useMcpCatalog } from './context';
+import { droppedDefault } from './errors';
 import type { McpCatalog, McpSelection, McpServer } from './port';
 import './mcp.css';
 
-export function readiness(server: McpServer | undefined, selection: McpSelection): string | null {
-  if (!server) return 'This connector is no longer available.';
-  if (!server.canAttach) return server.unavailableReason ?? 'You cannot attach this connector.';
-  if (!server.approved || !server.enabled) return 'This connector is awaiting approval or disabled.';
+/** One readiness reason, in the server's vocabulary, so one authored map explains both. */
+export function clientReason(server: McpServer | undefined, selection: McpSelection): string | null {
+  if (!server) return 'server_unavailable';
+  // Approval and enablement are checked FIRST: the catalog derives canAttach
+  // from them, so testing attachment first reported "you cannot use the
+  // account" for every connector that was merely awaiting approval.
+  if (!server.approved) return 'not_approved';
+  if (!server.enabled) return 'disabled';
+  if (!server.canAttach) return 'access_denied';
   if (server.auth !== 'none' && !server.accounts.some(a => a.id === selection.credentialId && a.canUse && a.status === 'connected')) {
-    return 'Choose a connected account.';
+    return 'credential_required';
   }
   return null;
+}
+export function readiness(server: McpServer | undefined, selection: McpSelection): string | null {
+  switch (clientReason(server, selection)) {
+    case null: return null;
+    case 'server_unavailable': return 'This connector is no longer available.';
+    case 'access_denied': return server?.unavailableReason ?? 'You cannot attach this connector.';
+    case 'not_approved': case 'disabled': return 'This connector is awaiting approval or disabled.';
+    default: return 'Choose a connected account.';
+  }
 }
 export function selectionProblem(catalog: McpCatalog, value: McpSelection[] | undefined): string | null {
   for (const selected of value ?? catalog.defaults) {
@@ -24,6 +39,22 @@ export function selectionProblem(catalog: McpCatalog, value: McpSelection[] | un
 /** Defaults the launch can actually use: a default with no connected account is left off rather than blocking the launch. */
 export function usableDefaults(catalog: McpCatalog): McpSelection[] {
   return catalog.defaults.filter(selected => !readiness(catalog.servers.find(s => s.id === selected.serverId), selected));
+}
+
+/**
+ * Defaults left out of the launch, named. The server drops them (it resolves
+ * `equips` itself and reports each one with its reason); anything it still
+ * hands over as a default that this client cannot use is added here, so a
+ * connector is never dropped without a sentence saying which and why.
+ */
+export function droppedDefaults(catalog: McpCatalog): { serverId: string; title: string; reason: string }[] {
+  const dropped = [...(catalog.droppedDefaults ?? [])];
+  for (const selected of catalog.defaults) {
+    const reason = clientReason(catalog.servers.find(s => s.id === selected.serverId), selected);
+    if (!reason || dropped.some(d => d.serverId === selected.serverId)) continue;
+    dropped.push({ serverId: selected.serverId, title: catalog.servers.find(s => s.id === selected.serverId)?.title ?? 'A connector', reason });
+  }
+  return dropped;
 }
 
 /**
@@ -51,9 +82,13 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, di
   if (!catalog) return error ? <p className="mcp-error" role="alert">{error} <button type="button" onClick={refresh}>Retry connectors</button></p> : null;
   if (!catalog.canAttach) return null;
   const attachable = catalog.servers.filter(server => server.canAttach);
-  if (attachable.length === 0 && !problem) return null;
   const selected = value ?? catalog.defaults;
   const usingDefaults = value === undefined || (value === trimmed.current);
+  // A dropped default is often a connector that is no longer attachable at
+  // all, so it appears in no row: the notice is the only place it shows, and
+  // that makes it a reason to render the picker.
+  const dropped = usingDefaults ? droppedDefaults(catalog) : [];
+  if (attachable.length === 0 && !problem && dropped.length === 0) return null;
   return <fieldset className="mcp-picker" disabled={disabled} aria-describedby={`${id}-help`}>
     <legend>Connectors</legend>
     <p id={`${id}-help`}>Choose the tools and account for this session.</p>
@@ -81,6 +116,9 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, di
         {server.auth !== 'none' && accounts.length === 0 && <ConnectorsLink>Connect {server.title}</ConnectorsLink>}
       </div>;
     })}
+    {dropped.length > 0 && <p role="status" className="mcp-dropped">
+      Not in this session: {dropped.map(d => `${d.title} (${droppedDefault(d.reason)})`).join('; ')}.
+    </p>}
     {problem && <p role="alert" className="mcp-error">{problem}</p>}
   </fieldset>;
 }
