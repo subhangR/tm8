@@ -25,10 +25,10 @@ export function useProjectRowNote(port: ProjectRecordPort | null): ((row: Entity
             className="lp__tile-note-path"
             title={record.workingDir ?? 'Only a node admin can see this folder’s path'}
           >
-            {record.workingDir ? shortPath(record.workingDir) : 'folder hidden (node admins only)'}
+            {record.workingDir ? shortPath(record.workingDir) : 'folder: node admins only'}
           </span>
           {record.trust === 'untrusted' ? (
-            <span title="Agents ask for confirmation before running here">· untrusted</span>
+            <span className="lp__tile-note-flag" title="Agents ask for confirmation before running here">· untrusted</span>
           ) : null}
         </>
       );

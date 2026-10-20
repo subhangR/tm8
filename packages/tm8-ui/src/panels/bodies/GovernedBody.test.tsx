@@ -180,8 +180,8 @@ describe('trust is a THREE-state fact', () => {
     const { getByTestId } = renderBody({ resource: resource() });
     const card = getByTestId('governed-trust');
     expect(card.getAttribute('data-trust')).toBe('trusted');
-    expect(card.textContent).toContain('Agents may run real terminal sessions in this root');
-    expect(card.textContent).toContain('Untrusting terminates nothing but blocks new runs');
+    expect(card.textContent).toContain('Agents run in this folder without asking first');
+    expect(card.textContent).toContain('Untrusting stops nothing');
   });
 
   it('states the consequence THE OTHER WAY on an untrusted root', () => {

@@ -6318,6 +6318,10 @@
   white-space: nowrap;
   font-family: var(--pn-mono);
 }
+.cv2-root .lp__tile-note-flag {
+  flex: none;
+  white-space: nowrap;
+}
 .cv2-root .lp--toolbar .lp__tile-note { padding-left: 32px; }
 .cv2-root .lp__counts {
   display: inline-flex;

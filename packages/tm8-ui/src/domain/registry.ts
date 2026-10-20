@@ -1616,13 +1616,14 @@ const ROWS: readonly KindConfig[] = [
       /* The project page (task 01a15a00): the folder everything starts in,
          its trust, its git, then everything recorded in it with a kind
          filter. `work-list` replaced `live-sessions` — sessions are one of
-         its filters, with the same liveness word. */
+         its filters, with the same liveness word. The unlink footer is off
+         the page until `projects.unlink` has an executor: a dead button was
+         all it drew. */
       blocks: [
         { block: 'path-row', label: 'WORKING FOLDER' },
         { block: 'trust-card', params: { action: 'untrust' } },
         { block: 'git-status', label: 'GIT' },
         { block: 'work-list', label: 'IN THIS PROJECT' },
-        { block: 'unlink-footer', params: { action: 'unlink' } },
       ],
       capabilityReasons: {
         canEdit: 'Projects are materialized from the node registry — they cannot be edited from a space.',

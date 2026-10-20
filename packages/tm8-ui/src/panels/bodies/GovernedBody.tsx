@@ -436,7 +436,7 @@ function CopyPathControl({ path, onCopyPath }: { path: string; onCopyPath?: (pat
  * registry params, so a ruling elsewhere lands as data.
  */
 const TRUSTED_NOTE =
-  'Agents may run real terminal sessions in this root. Untrusting terminates nothing but blocks new runs.';
+  'Agents run in this folder without asking first. Untrusting stops nothing; new runs will ask for confirmation.';
 const UNTRUSTED_NOTE =
   'Every chat, session or terminal started in this folder asks for confirmation first. Trusting it removes that step; it starts nothing.';
 

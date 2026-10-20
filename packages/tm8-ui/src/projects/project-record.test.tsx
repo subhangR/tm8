@@ -84,7 +84,7 @@ describe('useProjectRowNote', () => {
     const { result } = renderHook(() => useProjectRowNote(p));
     await waitFor(() => expect(result.current!(projectTm8Ui)).not.toBeNull());
     const view = render(<div>{result.current!(projectTm8Ui)}</div>);
-    expect(view.container.textContent).toContain('folder hidden (node admins only)');
+    expect(view.container.textContent).toContain('folder: node admins only');
   });
 
   it('is absent without a port, so other lists keep their rows', () => {
