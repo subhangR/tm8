@@ -19,7 +19,10 @@ Design: `/home/tm8/prod-data/chat-threads/cbe3ce53-f1ab-4850-a62b-c42d3678601d/w
 | Config | `config.json` → `/app/config.json` (ro). Gitignored; see `config.example.json`. |
 | tm8 CLI | `/opt/tm8/prod` mounted read-only; the bridge runs `packages/cli/dist/tm8 … --format json` |
 
-**Only one process may hold the WhatsApp connection.** Never run `npm start` on the host while the
+A second number runs as a second container (instance `9494`: +91 …9494, the tm8 and lvlup groups, port 8788), see
+"Another WhatsApp number (instances)". The main container now holds only the self chat.
+
+**Only one process may hold a WhatsApp connection (per number).** Never run `npm start` on the host while the
 container is up (`docker stop wa-bridge` first), or the two sessions fight and WhatsApp may log the device out.
 
 ## Run / deploy
@@ -74,7 +77,7 @@ Docker's healthcheck is "WhatsApp connected".
     "defaultModel": "claude-opus-5-5",
     "pollSeconds": 10
   },
-  "watchdogMinutes": 10,         // 👀 → ⚠️ + "no reply yet" notice after this long without a reply
+  "watchdogMinutes": 10,         // 👀 → ⚠️ after this long without a reply (reaction only; nothing is posted)
   "maxRouteAgeMinutes": 10,      // older inbound (history sync) is logged, not routed
   "rateLimits": { "perTokenPerMinute": 20, "perChannelPerMinute": 30 },
   "media": { "maxBytes": 26214400,               // 25 MB cap on downloads and on /say-media uploads
@@ -99,6 +102,7 @@ Docker's healthcheck is "WhatsApp connected".
       "allowedSenders": ["owner"],                   // "owner", WA JIDs, or "everyone" (any member; owner-only commands stay owner-only); default ["owner"]
       "trustedSenders": ["919999999999@s.whatsapp.net"],  // optional: labelled TRUSTED in this channel only (added to the global list)
       "mainChatId": null,                            // optional: use this existing tm8 chat instead of creating one
+      "style": "casual & short",                     // optional, one line ≤300 chars: how agents talk here; on every envelope as [style: …] and in briefings; default: short and readable
       "tm8": {                                       // optional: this channel's tm8 space; each missing field falls back to the global tm8 block
         "spaceId": "<space id>",                     // calls go with --space <spaceId>
         "tokenFile": "secrets/tm8-token-<id>",       // optional: own token; without it, the global token through the space link
@@ -123,7 +127,7 @@ In WhatsApp (plain text, no emoji or names added beyond this):
 
 | Who | Line |
 |---|---|
-| A channel's main chat, operator tokens, and the bridge's own notices (command replies, watchdog, expiry, "link not configured") | `tm8: <text>` |
+| A channel's main chat, operator tokens, and the bridge's own notices (command replies, expiry, "link not configured") | `tm8: <text>` |
 | A session | `<title> (<handle>): <text>`, e.g. `WhatsApp reply cleanup (keen-otter): done` (just `<handle>: <text>` until it has a title) |
 
 The handle (adjective-animal) is the stable id: people address a session with `@keen-otter` or by replying to it. The title
@@ -170,6 +174,23 @@ would let ask for work under their own name, and remove them when the number cha
 3. Restart the bridge; the config is read at start. A bad entry (not `"owner"` or `<digits>@s.whatsapp.net|lid`, or
    `"everyone"`, or a group) stops the start with an error naming it.
 4. Chats and sessions briefed before this feature: post them `admin.ts rebrief-trust <name>` so the new label is explained.
+
+Every envelope gets one more line right under the header, `[style: …]`, so the agent sees the tone rule on each message,
+not only in its briefing (main chat and session briefings also get a "## Keep it short" section). It is guidance only:
+the bridge doesn't cap length (beyond WhatsApp-safe 4000 characters). The style is the channel's `style`, else the built-in default (`DEFAULT_STYLE` in src/config.ts:
+"short and readable: lead with the answer, keep it to a few short lines, plain everyday words, no ids …"). Why: a group member said
+on 20 Oct the messages were getting too hard to read; bot messages then ran 570 characters median, up to 3700.
+
+```
+[whatsapp "Gaming" · from "Rahul" +91…9999 (UNTRUSTED group member) · to: gaming-main · wa_msg_id 3EB0…]
+[style: casual & short]
+---
+@tm8 who's up for a match
+```
+
+Changing `style` needs a redeploy (`./scripts/deploy.sh [<inst>]`); envelopes apply at
+once, briefings only for chats and sessions briefed after that. For ones briefed before:
+`docker exec wa-bridge node --import tsx src/admin.ts rebrief-style <name>` prints the update; post it to that chat/session.
 
 The bridge URL, speaker token and speaking rules are only in the briefing (on main chat creation or `/new`, and when a
 session is named), never in envelopes.
@@ -336,7 +357,178 @@ After `issue-token <name>` for a chat or session, tell it the file path (the pat
 agents that follow their rules. Real isolation needs root: run the bridge as its own uid with `data/`, `secrets/` and `auth/` owned
 by it (0700), tokens group-readable by `tm8`, and agents out of the `docker` group.
 
+## Test hook: inject a message
+
+`POST /admin/inject {text, channel?, quoted_wa_msg_id?}` feeds a synthetic owner message (id `TEST-…`) through the
+normal inbound path (log, loop guard, routing) as if the owner had typed it. Nothing appears on WhatsApp except the
+agents' replies, and the bridge doesn't react to `TEST-` ids. The admin token is in `data/admin-token` (0600, created at first start):
+
+```bash
+ADMIN=$(cat data/admin-token)
+curl -s -X POST 127.0.0.1:8787/admin/inject -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+  -d '{"text": "@tm8 hello from a test"}'      # → {"wa_msg_id": "TEST-…", "routes": [{"target": "self-main", "status": "posted"}]}
+```
+
+## Add a group
+
+1. Find its JID. This needs the connection, so stop that number's container first, then do a one-off listing with the same auth:
+   ```bash
+   docker stop wa-bridge && ./scripts/link.sh main --list-groups     # instance: docker stop wa-bridge-<inst> && ./scripts/link.sh <inst> --list-groups
+   sleep 20; docker rm -f wa-bridge-link; docker start wa-bridge     # → data/groups.json (instances/<inst>/data/groups.json)
+   ```
+   (Don't list groups in normal runs.) This doesn't send anything.
+2. Add a channel to that number's `config.json` (a group lives on one number only, see "Another WhatsApp number"): `id`, `jid` (`…@g.us`), `title`, `allowedSenders` (owner + named members), and optionally
+   `teammate`/`model`/`mainChatId`.
+3. `./scripts/deploy.sh`. On the next poll the bridge creates "<title> (WhatsApp)" as the main chat (name `<id>-main`) and briefs it.
+In groups, `@tm8` also triggers when someone uses WhatsApp's real @mention of our number.
+
+## Add a group in another space
+
+A channel can live in a tm8 space other than the global `tm8.spaceId`: its main chat, its sessions' names and briefings,
+`@tm8-<teammate>` matching and media uploads all go to that space. Every tm8 call for the channel passes `--space <spaceId>`.
+Names stay unique across the whole bridge. There are two ways to reach the space:
+
+**A. Through a space link, with the global token (no new token).** The tm8 space has a link to the target (`tm8 link list`
+shows `→ <space id>: signed_in …`). Set only `tm8.spaceId` (and the teammate). The CLI then runs with the global token,
+`TM8_SPACE_ID` = the global space, `--space` = the target. Through a link tm8 refuses some operations
+(`/opt/tm8/prod/packages/contract/src/space-links.ts`, `SPACE_LINK_REFUSED`):
+- `chat.start` (process_start): the bridge can't create the main chat. Create a chat in the target space in the tm8 UI
+  (the channel's teammate, mode orchestrate) and put its id in the channel's `mainChatId`. The bridge adopts it as
+  `<id>-main` and posts the briefing into it. Until then `/health` shows `chat start is not allowed through a space link …` for
+  the channel, and `@tm8` there gets "the main chat for this group is not ready yet". `/new` needs option B.
+- `files.uploadInit` (grant): images, documents and voice notes are routed without a tm8 file: the envelope says
+  `not attached (upload to tm8 failed: file upload is not allowed through a space link …)` and the bytes are at `GET /media/<id>`.
+- `auth.*`: the expiry check runs `tm8 auth session` without `--space` (it's the global token anyway).
+The link session has its own expiry (`tm8 link list`, "signed_in until …"). When it lapses, calls into that space fail and
+`/health` shows the error on that channel only. Subhang signs in again in the link settings.
+
+**B. A token pinned to that space (`tm8.tokenFile`).** Everything works there, including `chat start`, uploads and `/new`. The token
+belongs to Subhang (a human session: `chat start` is human-only). Make it on the host, in the repo directory:
+
+```bash
+read -rs P                                                                       # Subhang's tm8 password, not echoed
+GATE=$(tm8 auth login subhang --password "$P" --kind cli --label wa-bridge-lvlup --print-token | grep -o 'tm8s_[A-Za-z0-9_.-]*'); unset P
+TM8_AGENT_TOKEN="$GATE" tm8 auth space enter <space id> --label wa-bridge-lvlup --print-token \
+  | grep -o 'tm8s_[A-Za-z0-9_.-]*' | install -m 600 /dev/stdin secrets/tm8-token-lvlup
+TM8_AGENT_TOKEN="$(cat secrets/tm8-token-lvlup)" tm8 auth session            # session.spaceId = <space id>, note expiresAt
+```
+
+Tokens contain a `.`: a pattern without it (`tm8s_[A-Za-z0-9_-]*`) cuts the token and the space enter fails with "invalid token". `auth space enter` mints a session pinned to that space from the unpinned (gate) session. `--print-token` stores nothing and prints it.
+The pinned session expires no later than the gate session. A space with a space password needs `--space-password`. Keep or revoke
+the gate session afterwards (it isn't used by the bridge). The file is read like `secrets/tm8-token` (first `tm8s_…`, re-read on change, no restart).
+
+**Channel entry.** Then add the channel (`allowedSenders: ["everyone"]` lets any member trigger agents; `/stop` and `/new` stay owner-only):
+
+```json
+{
+  "id": "lvlup",
+  "jid": "120363000000000002@g.us",
+  "title": "lvlup + autograde",
+  "allowedSenders": ["everyone"],
+  "mainChatId": "<chat id created in the lvlup space (option A); omit with option B>",
+  "tm8": {
+    "spaceId": "019fea87-7f2e-73c6-989f-8fdf9410cbbb",
+    "defaultTeammate": "019fea87-7f4e-7836-a3c1-e77ebbb3ef5f",
+    "tokenFile": "secrets/tm8-token-lvlup"
+  }
+}
+```
+
+(`tokenFile` only with option B.) Teammate ids are per space, so set `tm8.defaultTeammate` (or `teammate`) to a teammate of
+that space (`tm8 --space <space id> teammate list`). The global default isn't there. `./scripts/deploy.sh`, then check
+`curl -s 127.0.0.1:8787/health | jq '.channels[] | {id, main_chat_id, tm8}'` and `docker logs wa-bridge | grep -E '\[(tm8|main|poll)\]'`.
+A channel whose token file is missing or invalid is log-only (mentions get "tm8: link not configured yet") and doesn't affect the others.
+
+## Commands in a chat (strict, whole message)
+
+`/who` · `/status <name>` · `/help` (any allowed sender) · `/stop <name>` (owner: stops the tm8 session, ends the name)
+· `/new` (owner: new main chat = new epoch. The old chat is asked to send a summary to the new one, and `@tm8` goes to the new chat).
+
+## Re-link (device logged out)
+
+Symptoms: `/health` → `wa.state: "logged_out"` (the container stays up and doesn't crash-loop) or `not_linked`.
+
+```bash
+docker stop wa-bridge
+mv auth auth.dead-$(date +%F)            # keep it until the new link works, then delete it
+docker run --rm -it --network host --user 110:114 -v $PWD/auth:/app/auth -v $PWD/data:/app/data \
+  -v $PWD/config.json:/app/config.json:ro -v $PWD/secrets:/app/secrets:ro -v /opt/tm8/prod:/opt/tm8/prod:ro \
+  wa-bridge node --import tsx src/main.ts --link
+# Pairing code is printed (and written to data/pairing-code.txt) when config.pairingPhone is set; otherwise a QR
+# (terminal + data/qr.png). On the phone: WhatsApp › Linked devices › Link a device. Wait for "[wa] connected", Ctrl-C.
+./scripts/deploy.sh
+```
+
+For an instance: `docker stop wa-bridge-<inst>`, move `instances/<inst>/auth` aside, `./scripts/link.sh <inst>`, `./scripts/deploy.sh <inst>`.
+Only `--link` mode may pair or reset unlinked keys. The normal container never touches `auth/` except to save updated creds.
+
+## Stop / start
+
+```bash
+docker stop wa-bridge      # stays stopped (unless-stopped) across reboots until started
+docker start wa-bridge
+```
+
+Restarts (`docker restart`, a crash, host reboot) reconnect with the saved device, with no re-link. `/say` calls while
+WhatsApp is down return `202 {"queued": true}` and are sent in order on reconnect.
+
+## Backup
+
+`auth/` is the identity, and losing it means re-linking. Each instance has its own `instances/<inst>/auth` and `data/`: back them up the same way (`docker exec wa-bridge-<inst> …`). `data/bridge.sqlite` is the history and name registry.
+
+```bash
+ts=$(date +%F-%H%M); mkdir -p ~/backups
+docker exec wa-bridge node -e "require('better-sqlite3')('/app/data/bridge.sqlite').backup('/app/data/backup-$ts.sqlite').then(()=>console.log('ok'))"
+tar czf ~/backups/wa-bridge-$ts.tgz auth config.json secrets data/backup-$ts.sqlite && chmod 600 ~/backups/wa-bridge-$ts.tgz
+rm data/backup-$ts.sqlite
+```
+
 Keep backups private: they hold the WhatsApp session keys and the tm8 token.
+
+## Another WhatsApp number (instances)
+
+One container holds one number. A second number runs as a second **instance**: the same repo code and image, its own
+state under `instances/<inst>/` (gitignored, not in the image), its own container and port.
+
+| | Main bridge | Instance `9494` |
+|---|---|---|
+| Number | +91 …1999 (the owner's phone) | +91 …9494, linked 2026-10-19 |
+| Channels | `self` (Subhang's self chat) | `tm8` (group "tm8" → tm8 space) · `lvlup` ("lvlup + autograde" → lvlup 019fea87…, Opus 5 1M Teammate) · `gaming` ("🕹️Gaming 🕹️" → kiritivity-hackers 01a1556a…, Coordinator) · `zealots` ("Singularity Zealots" → Hustle 01a025f3…, Opus 5.5 1M Teammate). Each non-tm8 channel has its own pinned token `secrets/tm8-token-<id>` (expire 2027-01-17); allowedSenders "everyone" on all four |
+| State | `auth/`, `data/`, `tokens/`, `config.json` in the repo root | `instances/9494/{auth,data,tokens,config.json}` |
+| Container / API | `wa-bridge` / `127.0.0.1:8787` | `wa-bridge-9494` / `127.0.0.1:8788` (`http.port` in its config) |
+| Deploy | `./scripts/deploy.sh` | `./scripts/deploy.sh 9494` |
+| Logs / admin | `docker logs wa-bridge`, `docker exec wa-bridge …` | `docker logs wa-bridge-9494`, `docker exec wa-bridge-9494 …` |
+
+Shared by every instance: `secrets/` (read-only: the global `secrets/tm8-token` and per-channel `secrets/tm8-token-<id>`
+files; rotate a token once and every bridge that uses it re-reads it) and the whisper models (`data/models`, mounted read-only).
+`deploy.sh` builds the image once from the repo; after a code change, deploy every instance (`./scripts/deploy.sh && ./scripts/deploy.sh 9494`).
+Each instance has its own database, names and speaker tokens. Its briefings carry its own URL (`:8788`) and token dir.
+
+Rules:
+- **A group is served by exactly one number.** If two bridges have the same group as a channel, every `@tm8` there is routed twice.
+  To move a group, remove it from one config and add it to the other, and deploy both back to back.
+- An instance without a self chat (the number is not the owner's phone) learns its own JIDs on connect; `ownerJids` stays
+  Subhang's personal number (PN + LID), so his messages in the groups count as the owner's. `@tm8` and a real WhatsApp
+  @mention of the instance's number both reach the main chat; mentioning Subhang does not.
+- Without a self chat there is no place for the token-expiry notice: an instance only logs `[expiry] WARNING …`
+  (`docker logs wa-bridge-9494 | grep expiry`). The main bridge's self chat gets the notice for tokens it uses itself.
+- A group's existing main chat can move with it: set `mainChatId` to the chat id. The new bridge adopts it as `<id>-main`
+  and re-briefs it and the live sessions it launched (new names and token files from the new instance).
+
+**Add a number.**
+```bash
+mkdir -p instances/<inst> && cp config.json instances/<inst>/config.json
+# edit it: pairingPhone = the new number (digits), http.port = a free port (8789, …), channels = its groups (ownerJids unchanged)
+docker build -t wa-bridge:latest .
+./scripts/link.sh <inst>                       # detached link container; the pairing code is in its logs and data/pairing-code.txt
+docker logs -f wa-bridge-<inst>-link            # the phone with THAT number: Linked devices › Link a device › Link with phone number
+docker rm -f wa-bridge-<inst>-link              # after "[wa] connected as <number>"
+./scripts/link.sh <inst> --list-groups && sleep 20 && docker rm -f wa-bridge-<inst>-link   # instances/<inst>/data/groups.json
+./scripts/deploy.sh <inst>
+```
+Enter the code within about 2 minutes. When the code expires or the phone rejects it, the link container may end up `LOGGED OUT`.
+Then `docker rm -f` it, move `instances/<inst>/auth` aside (`auth.failed-<time>`, never delete a working one) and run `link.sh` again for a new code.
+The first attempt on 2026-10-19 failed that way ("Invalid buffer" in the companion-registration notification, then 408 and 401); the second code linked fine.
 
 ## Agent API (summary)
 

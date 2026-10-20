@@ -205,7 +205,9 @@ export class Bridge {
       store.channel(ch.id)
       store.backfillChannel(ch.id, this.channelJids(ch))
     }
-    for (const j of cfg.ownerJids) this.ownJids.add(j)
+    // With a self chat the owner's number is ours. A bridge on another number (no self chat, the owner is a group member)
+    // learns its JIDs on connect; seeding the owner there would treat the owner's messages and @mentions as the bridge's.
+    if (cfg.channels.some((c) => !c.jid.endsWith('@g.us'))) for (const j of cfg.ownerJids) this.ownJids.add(j)
   }
 
   now = () => (this.o.now ?? Date.now)()
@@ -1622,9 +1624,9 @@ export class Bridge {
       this.store.setRouteStatus(r.id, 'warned')
       const ch = this.cfg.channels.find((c) => c.id === r.channel_id)
       if (!ch) continue
+      // Only the ⚠️ reaction: a "no reply yet" text in the group is filler (Bhargav, 19 Oct).
       await this.reactSafe(ch, r.wa_msg_id, '⚠️')
-      const n = this.store.getName(r.target_name)
-      if (n) await this.sendBridge(ch, `no reply yet from ${displayName(n)}`, r.wa_msg_id)
+      this.log(`[watchdog] ${r.wa_msg_id} in ${ch.id}: no reply from ${r.target_name} after ${this.cfg.watchdogMinutes} min`)
     }
     this.store.expireIdempotencyKeys()
     await this.retryMedia().catch((e) => this.log(`[media] retry: ${(e as Error).message}`))

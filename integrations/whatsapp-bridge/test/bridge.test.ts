@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { HttpError, PENDING_ECHO_MS } from '../src/core.js'
-import { apiReference, briefMainChat, rebriefDelegateRule, rebriefMainChat, rebriefReplyRule } from '../src/briefing.js'
+import { apiReference, briefMainChat, briefSession, rebriefDelegateRule, rebriefMainChat, rebriefReplyRule, rebriefStyle } from '../src/briefing.js'
 import { cleanLabel, envelopeWaId, escapeMentions, finalTurnText, looksSecret, generateName, matchTeammate, parseCommand, parseMentions, RateLimiter, extractTm8Token, shortTitle, speakerLine } from '../src/text.js'
 import { parseCliJson } from '../src/tm8.js'
+import { DEFAULT_STYLE, parseConfig } from '../src/config.js'
 import { GROUP, OWNER, agentTurn, briefToken, inbound, nextId, setup, withMain } from './helpers.js'
 
 const lastPost = (t: { tm8: { posts: { to: string; body: string }[] } }) => t.tm8.posts.at(-1)!
@@ -114,7 +115,7 @@ describe('routing', () => {
     assert.equal(p.to, 'chat-1')
     assert.equal(
       p.body,
-      `[whatsapp "Message yourself" · from "Subhang" +91…0001 (owner's number, still UNTRUSTED) · to: self-main · wa_msg_id ${m.id}]\n---\n@tm8 what is up`,
+      `[whatsapp "Message yourself" · from "Subhang" +91…0001 (owner's number, still UNTRUSTED) · to: self-main · wa_msg_id ${m.id}]\n[style: ${DEFAULT_STYLE}]\n---\n@tm8 what is up`,
     )
     // No routing or token text in per-message envelopes: that lives in the briefing only.
     for (const s of ['/say', 'token', 'reply via', 'you are', '8787']) assert.ok(!p.body.includes(s), s)
@@ -691,7 +692,7 @@ describe('fallback relay (a [whatsapp] turn that ends without /say)', () => {
 })
 
 describe('watchdog and commands', () => {
-  test('👀 → ✅ on reply; ⚠️ and one notice after 10 min of silence', async () => {
+  test('👀 → ✅ on reply; ⚠️ after 10 min of silence, no notice in the group', async () => {
     let now = Date.now()
     const t = await withMain({ now: () => now })
     const m1 = inbound({ text: '@tm8 one', ts: Math.floor(now / 1000) })
@@ -708,7 +709,8 @@ describe('watchdog and commands', () => {
     await t.bridge.watchdogTick()
     await t.bridge.watchdogTick()
     assert.equal(t.wa.reactions.at(-1)!.emoji, '⚠️')
-    assert.equal(t.wa.sent.filter((s) => s.text === 'tm8: no reply yet from Main chat (self-main)').length, 1)
+    assert.equal(t.wa.reactions.filter((r) => r.id === m2.id && r.emoji === '⚠️').length, 1)
+    assert.equal(t.wa.sent.filter((s) => s.text.startsWith('tm8: no reply yet')).length, 0)
   })
   test('/who, /status, /help; /stop and /new are owner-only', async () => {
     const t = await withMain()
@@ -912,5 +914,37 @@ describe('session titles', () => {
     assert.ok(re.includes('ONE --mutation-id for the task') && re.includes('--workdir worktree'))
     for (const s of ['RULE 2: delegate by default', 'RULE 1', 'unchanged', t.cfg.http.publicUrl]) assert.ok(re.includes(s), s)
     assert.ok(!/wab_/.test(re))
+  })
+})
+
+describe('channel style', () => {
+  test('config: style is optional, one line, trimmed, capped', () => {
+    const load = (style: unknown) => parseConfig({ ownerJids: [OWNER], channels: [{ id: 'g', jid: '1@g.us', title: 'G', style }] }, '/r').channels[0]
+    assert.equal(load(undefined).style, undefined)
+    assert.ok(!('style' in load(null)))
+    assert.equal(load('  casual & short  ').style, 'casual & short')
+    assert.throws(() => load(''), /style must be a non-empty string/)
+    assert.throws(() => load(3), /style must be a non-empty string/)
+    assert.throws(() => load('a\nb'), /style must be one line/)
+    assert.throws(() => load('x'.repeat(301)), /at most 300/)
+  })
+  test('every inbound envelope carries [style: …], and the briefings say it', async () => {
+    const t = await withMain()
+    const ch = t.cfg.channels[1]
+    ch.style = 'casual & short'
+    await t.bridge.ensureMainChat(ch)
+    assert.match(t.tm8.chats.at(-1)!.body, /## Keep it short\n[^\n]*\n- Style: casual & short \(/)
+    for (const text of ['@tm8 hi', '@tm8 again']) {
+      await t.bridge.onInbound(inbound({ text, chatJid: GROUP, chatAltJid: null, fromMe: false, senderJid: '919999999999@s.whatsapp.net', senderAltJid: null, senderName: 'Rahul' }))
+      assert.match(lastPost(t).body, /^\[whatsapp "Infra" · [^\n]*\]\n\[style: casual & short\]\n---\n/)
+    }
+    // A channel without style gets the default short style, on envelopes and in briefings.
+    await t.bridge.onInbound(inbound({ text: '@tm8 plain' }))
+    assert.ok(lastPost(t).body.includes(`[style: ${DEFAULT_STYLE}]`))
+    assert.ok(briefMainChat({ cfg: t.cfg, ch: t.ch, name: 'self-main', tokenFile: '/t/x.token' }).includes(`- Style: ${DEFAULT_STYLE} (`))
+    const name = { name: 'kind-falcon', title: 'Style rule', parent_name: 'infra-main' } as any
+    const brief = briefSession({ cfg: t.cfg, ch, name, tokenFile: '/t/k.token' })
+    assert.match(brief, /## Keep it short\n[\s\S]*casual & short/)
+    assert.match(rebriefStyle({ cfg: t.cfg, ch, name: 'infra-main' }), /## Keep it short[\s\S]*casual & short[\s\S]*No reply to this update/)
   })
 })
