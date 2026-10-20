@@ -10,7 +10,8 @@ sessions, and agents speak back, read and search history through a speaker-token
 - `test/` node:test suites (`npm test`)
 
 In WhatsApp the main chat and the bridge speak as `tm8: <text>` and sessions as `<title> (<handle>): <text>`;
-see OPERATIONS.md › What messages look like. Images and documents travel both ways (inbound: downloaded and attached to
+see OPERATIONS.md › What messages look like. Every routed message is labelled UNTRUSTED unless the sender is in the
+config's `trustedSenders` (then TRUSTED, a label for agents only); see OPERATIONS.md › Trusted senders. Images and documents travel both ways (inbound: downloaded and attached to
 the tm8 message; outbound: `POST /say-media`); see OPERATIONS.md › Media.
 
 Run it with Docker: `./scripts/deploy.sh`. Everything operational (config, logs, re-link, tokens, groups, backup) is in

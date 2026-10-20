@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { allowedSenders, channelTm8, type ChannelConfig, type Config } from './config.js'
+import { allowedSenders, channelTm8, trustedSenders, type ChannelConfig, type Config } from './config.js'
 import {
   IMAGE_MIMES,
   MAX_IMAGE_BYTES,
@@ -257,6 +257,12 @@ export class Bridge {
   isOwner(m: Pick<Inbound, 'fromMe' | 'senderJid' | 'senderAltJid'>): boolean {
     return m.fromMe || this.cfg.ownerJids.some((j) => j === m.senderJid || j === m.senderAltJid)
   }
+  /** Is the sender on the channel's trusted list? Only changes the envelope label (TRUSTED vs UNTRUSTED). */
+  isTrusted(ch: ChannelConfig, m: Pick<Inbound, 'fromMe' | 'senderJid' | 'senderAltJid'>): boolean {
+    const trusted = trustedSenders(this.cfg, ch)
+    if (m.fromMe && this.cfg.ownerJids.some((j) => trusted.has(j))) return true
+    return [m.senderJid, m.senderAltJid].some((j) => !!j && trusted.has(j))
+  }
   private senderAllowed(ch: ChannelConfig, m: Inbound): boolean {
     const allowed = allowedSenders(this.cfg, ch)
     // "everyone": any member of the chat may trigger agents (owner-only commands stay owner-only).
@@ -425,6 +431,7 @@ export class Bridge {
           senderName: m.senderName,
           senderJid: m.senderAltJid?.endsWith('@s.whatsapp.net') ? m.senderAltJid : (m.senderJid ?? m.senderAltJid),
           owner: this.isOwner(m),
+          trusted: this.isTrusted(ch, m),
           waMsgId: m.id,
           to: t.name.name,
           quoted: quoted ? { by: quoted.by_name ?? quoted.sender_name ?? 'someone', text: quoted.text } : undefined,

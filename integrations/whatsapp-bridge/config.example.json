@@ -4,6 +4,7 @@
     "<your number>@s.whatsapp.net",
     "<your LID>@lid"
   ],
+  "trustedSenders": [],
   "http": {
     "host": "127.0.0.1",
     "port": 8787
@@ -32,6 +33,7 @@
     "maxDurationSec": 600,
     "waitSeconds": 20
   },
+  "approverName": "<who confirms sensitive actions in the tm8 UI, e.g. a name; default \"the operator\">",
   "apiDocId": "01a154c0-fe9f-7f51-8a3d-bb35d0ee76f3",
   "channels": [
     {
@@ -54,6 +56,9 @@
       "model": "claude-opus-5-5",
       "allowedSenders": [
         "owner",
+        "<member number>@s.whatsapp.net"
+      ],
+      "trustedSenders": [
         "<member number>@s.whatsapp.net"
       ],
       "mainChatId": null
