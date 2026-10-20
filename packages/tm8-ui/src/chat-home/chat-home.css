@@ -2866,6 +2866,10 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-switch[data-on] { background: var(--pn-brand); }
 .tch-switch[data-on] .tch-switch__knob { left: 14px; }
 
+/* The composer's project chip (ProjectChip): the project on the row. */
+.tch-project .tch-pop__trigger { max-width: 180px; }
+.tch-project__menu { display: grid; gap: 1px; }
+
 /* The submenu beside the panel (fixed; MenuRows positions it). */
 .tch-submenu {
   display: grid;

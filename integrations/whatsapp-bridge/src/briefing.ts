@@ -2,7 +2,7 @@
 import { channelStyle, channelTm8, type ChannelConfig, type Config } from './config.js'
 import type { NameRow } from './store.js'
 
-function maskJid(jid: string | null | undefined): string {
+export function maskJid(jid: string | null | undefined): string {
   if (!jid) return 'unknown number'
   const user = jid.split('@')[0].split(':')[0]
   if (jid.endsWith('@lid')) return `lid …${user.slice(-4)}`
@@ -81,7 +81,8 @@ ${tokenLine(tokenFile)}
 - /say: a new idempotency_key per message, the same one when you retry it (5xx, timeout). 202 {"queued": true} means
   WhatsApp is reconnecting and it goes out in order. Limits: ~${cfg.rateLimits.perTokenPerMinute}/min per name, ${cfg.rateLimits.perChannelPerMinute}/min per group (429: wait retry_after_ms).
 - Also: GET /message/<wa_msg_id> (with its quote chain), GET /names, POST /react {"wa_msg_id", "emoji"}, POST /sync,
-  POST /say-media (image or document: -F file=@path, or JSON {"tm8_file_id"}), GET /media/<wa_msg_id> (a received file).
+  POST /say-media (image or document: -F file=@path, or JSON {"tm8_file_id"}), GET /media/<wa_msg_id> (a received file),
+  POST /form {"form_id"} (tm8 form → group polls).
 - Received media arrives as "[image] …", "[document] …" or "[voice note 0:12]" with an "[attachment: …]" line (tm8 file id;
   tm8 file download <id> --output <path>) and, for audio, a "[transcript …]" line.
 - Full reference with examples: ${referenceLine(cfg)}.`
@@ -123,7 +124,31 @@ Limits: about ${cfg.rateLimits.perTokenPerMinute} messages/min per name and ${cf
 Errors are JSON {"error"}: 400 bad input, 401 token, 403 not addressed to you, 404, 429 {"retry_after_ms"}.
 
 ${mediaBlock(cfg)}
+
+${formsBlock(cfg)}
 `
+}
+
+/** tm8 forms in the group (for the reference doc and the forms re-brief). Uses $BRIDGE and $TOKEN. */
+export function formsBlock(cfg: Config): string {
+  return `## Forms: polls and questions in the group
+To ask the group something structured (a vote, a survey, a sign-up), create a tm8 form and put it in the group:
+
+  tm8 form create --title 'Offsite' --question 'city:single_choice:Which city?:goa=Goa,blr=Bangalore' \\
+    --question 'idea:short_text:One activity idea' --question 'excite:scale:How excited are you?'   # prints the form id
+  curl -s -X POST "$BRIDGE/form" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \\
+    -d '{"form_id": "<form id>", "idempotency_key": "'"$(cat /proc/sys/kernel/random/uuid)"'"}'
+
+- single_choice and multi_choice go out as native WhatsApp polls (up to 12 options; more become a numbered list).
+  short_text, long_text and scale go out as numbered messages ("Q3. …"); people reply to one, or write "3: answer".
+- Each member's answers are submitted to the form once every required question is answered (${cfg.forms.submitDelaySeconds} s after their last
+  change); a later change amends their response. Responses arrive in your session as usual. tm8 shows them as submitted by
+  the bridge's account; the "wa_respondent" answer says who it really was (WhatsApp name, masked number, group).
+- The bridge sets the form to responses "unlimited" and adds the optional "wa_respondent" question, so send a form before
+  anyone answers it in tm8 (a form with responses is refused, 409). Other question types are refused (400).
+- The answer is 200 {"delivery_id", "questions": [{"n", "key", "as": "poll"|"text", "wa_msg_id"}]} (202 {"queued": true}
+  while WhatsApp reconnects). GET /forms shows each form in the group and who has answered. Close the form in tm8
+  (tm8 form close <id>) to stop collecting.`
 }
 
 /** Images and documents, both directions (for the reference doc and the media re-brief). Uses $BRIDGE and $TOKEN. */
@@ -355,6 +380,16 @@ export function rebriefMedia(o: { cfg: Config; ch: ChannelConfig; name: string }
 Your bridge URL and speaker token are unchanged (BRIDGE=${o.cfg.http.publicUrl}, TOKEN = the token from your first briefing).
 
 ${mediaBlock(o.cfg)}
+
+No reply to this update is needed, here or in the group.`
+}
+
+/** Update for chats and sessions briefed before forms existed (token unchanged). */
+export function rebriefForms(o: { cfg: Config; ch: ChannelConfig; name: string }): string {
+  return `[whatsapp bridge briefing update] **${o.name}** ("${o.ch.title}"): you can now put tm8 forms in the group as polls and questions.
+Your bridge URL and speaker token are unchanged (BRIDGE=${o.cfg.http.publicUrl}, TOKEN = the token from your first briefing).
+
+${formsBlock(o.cfg)}
 
 No reply to this update is needed, here or in the group.`
 }

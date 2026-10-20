@@ -184,6 +184,15 @@
   font: 9.5px/1.45 var(--pn-mono);
 }
 
+.project-onboard .project-onboard__help {
+  color: var(--pn-ink-3);
+  font: 11px/1.45 var(--pn-ui);
+}
+
+.project-onboard small code {
+  color: var(--pn-ink-2);
+}
+
 .project-onboard__error {
   margin: 0;
   padding: 9px 11px;

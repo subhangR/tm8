@@ -90,6 +90,12 @@ export function handler(bridge: Bridge) {
           const r = await bridge.sayMedia(auth, await readSayMedia(req, bridge.cfg.media.maxBytes))
           return send(r.status, r.body)
         }
+        case 'POST /form': {
+          const r = await bridge.forms.deliver(auth, await readJson(req))
+          return send(r.status, r.body)
+        }
+        case 'GET /forms':
+          return send(200, bridge.forms.list(auth.ch))
         case 'POST /react':
           return send(200, await bridge.react(auth, await readJson(req)))
         case 'GET /history':

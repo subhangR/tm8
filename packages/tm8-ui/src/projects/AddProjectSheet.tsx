@@ -255,7 +255,8 @@ export function AddProjectSheet(props: AddProjectSheetProps) {
               defaultWorkingDir={projectHomeDisplayPath(projectName)}
             />
             <p className="project-onboard__note">
-              The project is added untrusted: agents ask for confirmation before running in it until a node admin trusts it.
+              The project is added untrusted: agents ask for confirmation before running in it until a node admin
+              trusts it. A node admin can change its folder or trust it later from the project’s page.
             </p>
           </fieldset>
           {job ? (

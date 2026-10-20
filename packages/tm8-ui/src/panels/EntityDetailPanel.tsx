@@ -82,7 +82,8 @@ import { HubBody } from './bodies/HubBody';
 import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
 import type { MembershipAuthoring } from './bodies/MembershipBlock';
 import type { MemoryMarkKind } from '../domain/memory';
-import { GovernedBody } from './bodies/GovernedBody';
+import { GovernedWithRecord } from './bodies/GovernedWithRecord';
+import type { ProjectRecordPort } from '../projects/project-record';
 import { MachineBody } from './bodies/MachineBody';
 import type { ManagedPort } from '../managed/port';
 import { RestrictedBody } from './bodies/RestrictedBody';
@@ -480,6 +481,11 @@ export interface EntityDetailPanelProps {
    * a host writes `attachmentsPortFromSeam(seam, spaceId)` and nothing else.
    */
   attachments?: AttachmentsPort | null;
+  /**
+   * The space's project folder records (path, trust, git, `projects.update`)
+   * for the governed body. Absent ⇒ path and trust render as not loaded.
+   */
+  projectRecords?: ProjectRecordPort | null;
   /** An upload landed; the host refetches so the new edge appears. */
   onAttachmentUploaded?: () => void;
   onContentSurfaceChange?: (surface: ContentSurface) => void;
@@ -2513,9 +2519,10 @@ function PanelBody(
 
   if (config.panel.archetype === 'governed') {
     return (
-      <GovernedBody
+      <GovernedWithRecord
         detail={detail}
         blocks={config.panel.blocks ?? []}
+        port={props.projectRecords ?? null}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
       />

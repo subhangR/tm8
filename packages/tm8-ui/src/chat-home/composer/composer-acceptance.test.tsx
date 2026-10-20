@@ -55,7 +55,7 @@ describe('composer acceptance', () => {
 
   it('ac_1 · one toolbar under the field: [+][⚙ role][👥 N] … [model·effort][send]', async () => {
     const view = await openNewChat(portWith().port);
-    expect(toolbarOf(view)).toEqual(['Add to this turn', 'Chat settings', 'Coordinator team', 'Chat model', 'Send']);
+    expect(toolbarOf(view)).toEqual(['Add to this turn', 'Chat settings', 'Chat project', 'Coordinator team', 'Chat model', 'Send']);
     // Teammate, credentials, mode options, project and permissions all live in the ⚙ panel now.
     expect(view.queryByLabelText('Chat teammate')).toBeNull();
     expect(view.queryByLabelText('Chat credentials')).toBeNull();

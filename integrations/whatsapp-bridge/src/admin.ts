@@ -13,12 +13,13 @@
 //                                                  --token-file: where the chat keeps its token, named in the update, never read)
 //   admin.ts rebrief-trust <name>                  print the trusted-senders update (TRUSTED label in envelopes)
 //   admin.ts rebrief-delegate <name>               print the delegate-by-default update for a main chat (RULE 2)
-//   admin.ts rebrief-style <name>                  print the short-reply update (style + length cap) for a chat or session
+//   admin.ts rebrief-style <name>                  print the short-reply update (style guidance) for a chat or session
+//   admin.ts rebrief-forms <name>                  print the forms update (POST /form: polls and questions in the group)
 //   admin.ts api-reference                         print the full Bridge API reference (no token) for the tm8 doc in apiDocId
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { apiReference, rebriefDelegateRule, rebriefEscalation, rebriefMedia, rebriefReplyRule, rebriefStyle, rebriefTrust, rebriefVoice } from './briefing.js'
+import { apiReference, rebriefDelegateRule, rebriefEscalation, rebriefForms, rebriefMedia, rebriefReplyRule, rebriefStyle, rebriefTrust, rebriefVoice } from './briefing.js'
 import { loadConfig } from './config.js'
 import { Store } from './store.js'
 import { hashToken, newToken } from './text.js'
@@ -98,13 +99,14 @@ switch (cmd) {
     break
   case 'rebrief-media':
   case 'rebrief-voice':
-  case 'rebrief-trust': {
+  case 'rebrief-trust':
+  case 'rebrief-forms': {
     const n = arg ? store.getName(arg) : undefined
     if (!n) fail(`usage: ${cmd} <name>`)
     const ch = cfg.channels.find((c) => c.id === n.channel_id)
     if (!ch) fail(`no channel ${n.channel_id} in config.json`)
     console.log(`# post to tm8 ${n.entity_id}`)
-    console.log((cmd === 'rebrief-voice' ? rebriefVoice : cmd === 'rebrief-trust' ? rebriefTrust : rebriefMedia)({ cfg, ch, name: n.name }))
+    console.log((cmd === 'rebrief-voice' ? rebriefVoice : cmd === 'rebrief-trust' ? rebriefTrust : cmd === 'rebrief-forms' ? rebriefForms : rebriefMedia)({ cfg, ch, name: n.name }))
     break
   }
   case 'rebrief-escalation': {
@@ -149,5 +151,5 @@ switch (cmd) {
     console.log(apiReference(cfg))
     break
   default:
-    fail('commands: api-reference |  set-operator-secret | issue-token <name> [--channel id] | revoke <name> | names [--channel id] | rebrief-media <name> | rebrief-voice <name> | rebrief-escalation <name> | rebrief-reply <name> [--token-file path] | rebrief-delegate <name> | rebrief-style <name> | rebrief-trust <name>')
+    fail('commands: api-reference |  set-operator-secret | issue-token <name> [--channel id] | revoke <name> | names [--channel id] | rebrief-media <name> | rebrief-voice <name> | rebrief-escalation <name> | rebrief-reply <name> [--token-file path] | rebrief-delegate <name> | rebrief-style <name> | rebrief-trust <name> | rebrief-forms <name>')
 }

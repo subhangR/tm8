@@ -547,8 +547,35 @@ All calls use `Authorization: Bearer <speaker token>`. The token decides the nam
 `POST /say {text, reply_to?, idempotency_key, label?, escalate?}` → `{wa_msg_id}` (`label`: ≤4 words, sets the name's title) (202 `{queued:true}` while disconnected; repeat key → same id; sessions must
 reply in a thread addressed to them, except `escalate: true` without reply_to: a blocker, decision or question for the humans;
 a main chat's `/say` that names a live session as "Title (handle)" with a reply_to grants that session the thread, a `granted` route the watchdog ignores) · `POST /react {wa_msg_id, emoji}` · `GET /history?before=&limit=` (≤200, `next_before` cursor) ·
-`GET /search?q=&from=&since=&limit=` · `GET /message/:id` (+ quote chain) · `GET /names` · `POST /sync` · `GET /health` (no auth).
+`GET /search?q=&from=&since=&limit=` · `GET /message/:id` (+ quote chain) · `GET /names` · `POST /sync` · `POST /form {form_id, idempotency_key}` · `GET /forms` · `GET /health` (no auth).
 Errors are JSON `{error}`: 400 bad input, 401 token, 403 not addressed, 404, 429 `{retry_after_ms}`.
+
+## Forms in groups (polls and questions)
+
+An agent creates a tm8 form and calls `POST /form {form_id, idempotency_key}`; the bridge puts it in the agent's group
+(code: `src/forms.ts`; tables `form_deliveries`, `form_messages`, `form_respondents`).
+
+- **Out**: one intro (`tm8: 📋 <title>`), then per question in order: `single_choice` / `multi_choice` with ≤12 options as a
+  native WhatsApp poll named `<n>. <title>` (single: 1 selectable; multi: `maxSelected`, else any); `short_text`, `long_text`,
+  `scale` and choices with more than 12 options as a numbered message `tm8: *Q<n>.* <title>` with how to answer. Polls are
+  `outbox_v1` rows of kind `poll` (`poll_json`); they queue and go out in order like any other send.
+- **Votes**: Baileys 7 (rc14) no longer decrypts poll votes, so `wa.ts` does: the vote key is the poll's
+  `messageContextInfo.messageSecret`, kept in the outbox `message_json`. Every PN/LID pairing of creator and voter is tried
+  (AES-GCM opens only with the right one). An empty vote clears that answer. Log: `[forms <ch>] <name> voted on Q<n> …`;
+  `[poll] … couldn't decrypt` means the stored poll message has no secret or the pairing is new.
+- **Typed answers**: a reply quoting a numbered question, or `n: answer` / `Qn. answer` / `n) answer` (several lines in one
+  message work) while a form is collecting in the group. They are collected (📝 reaction), not routed to the agents; a bad one
+  gets a one-line hint. A message that @mentions the bridge always routes. Answers need the sender to be allowed in the group.
+- **Into tm8**: tm8 has no "submit on behalf of", so every response is submitted with the channel's tm8 token. To keep members
+  apart, `POST /form` first sets the form to `responses: "unlimited"` and adds an optional `wa_respondent` question (only
+  possible before the form's first response; otherwise 409). Each member is one response chain: submitted once all required
+  questions are answered and `forms.submitDelaySeconds` (default 20) passed since their last change, then amended
+  (`--amend-of`) on later changes (not if the form has `allowAmend: false`). `wa_respondent` = `"<WhatsApp name>" <masked
+  number> in WhatsApp group "<title>"`. A member is matched by any of their JIDs (PN or LID).
+- **Stop**: close or cancel the form in tm8. The bridge notices on the next submit (`form_not_open`) or its 5-minute status
+  check and stops collecting. `GET /forms` (speaker token) lists the group's forms, respondents and their state
+  (`incomplete`, `submitting`, `submitted`, `error`).
+- Config: `"forms": {"submitDelaySeconds": 20}` (0–3600). Rebrief chats briefed before forms: `npx tsx src/admin.ts rebrief-forms <name>`.
 
 ## Escalation rule (blockers reach WhatsApp)
 

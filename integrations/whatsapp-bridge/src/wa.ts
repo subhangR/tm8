@@ -3,8 +3,10 @@ import makeWASocket, {
   Browsers,
   BufferJSON,
   DisconnectReason,
+  decryptPollVote,
   downloadMediaMessage,
   jidNormalizedUser,
+  normalizeMessageContent,
   useMultiFileAuthState,
   type WAMessage,
   type WAMessageKey,
@@ -19,6 +21,7 @@ import QRCode from 'qrcode'
 import qrcodeTerminal from 'qrcode-terminal'
 import type { Bridge, Inbound, WaKey, WaPort } from './core.js'
 import { TooLargeError, mediaPlaceholder, type InboundMedia } from './media.js'
+import type { OutboxPoll } from './store.js'
 
 // libsignal dumps whole sessions (including private keys) via console.info/log; keep them out of stdout.
 for (const level of ['log', 'info'] as const) {
@@ -37,6 +40,8 @@ export function textOf(m: proto.IMessage | null | undefined): string {
   if (m.extendedTextMessage?.text) return m.extendedTextMessage.text
   const media = mediaOf(m)
   if (media) return mediaPlaceholder(media.kind, media.caption, media.fileName, media)
+  const poll = m.pollCreationMessage ?? m.pollCreationMessageV2 ?? m.pollCreationMessageV3
+  if (poll) return `[poll] ${poll.name ?? ''}: ${(poll.options ?? []).map((o) => o.optionName).join(' / ')}`
   return `[${Object.keys(m).find((k) => k !== 'messageContextInfo') ?? 'unknown'}]`
 }
 
@@ -134,6 +139,59 @@ export class WaConnection implements WaPort {
     const sent = await sock.sendMessage(jid, content, this.quoteOpt(quoted))
     if (!sent?.key.id) throw new Error('send returned no message id')
     return { id: sent.key.id, key: sent.key as WaKey, message: toJsonSafe(sent.message) }
+  }
+
+  async sendPoll(jid: string, poll: OutboxPoll) {
+    const sock = this.guard(jid)
+    const sent = await sock.sendMessage(jid, { poll: { name: poll.name, values: poll.values, selectableCount: poll.selectableCount } })
+    if (!sent?.key.id) throw new Error('send returned no message id')
+    // toJsonSafe keeps messageContextInfo.messageSecret (the vote key) as base64, so it survives in the outbox.
+    return { id: sent.key.id, key: sent.key as WaKey, message: toJsonSafe(sent.message) }
+  }
+
+  /**
+   * A vote on one of our polls. Baileys 7 no longer decrypts votes, so we do: the key is the poll's messageSecret (kept
+   * in the outbox), signed with the poll's id, its creator and the voter. Groups may name either side by PN or LID, so
+   * every pairing is tried; AES-GCM only opens with the right one.
+   */
+  private async onPollUpdate(msg: WAMessage, update: proto.Message.IPollUpdateMessage) {
+    const pollKey = update.pollCreationMessageKey
+    const chat = msg.key.remoteJid
+    if (!pollKey?.id || !chat || !update.vote?.encPayload || !update.vote.encIv) return
+    const chatJid = jidNormalizedUser(chat)
+    if (!this.bridge.channelForJid(chatJid)) return
+    const json = this.bridge.store.sentMessageJson(pollKey.id)
+    if (!json) return // not a poll we sent
+    const secretRaw = JSON.parse(json, BufferJSON.reviver)?.messageContextInfo?.messageSecret
+    const secret = typeof secretRaw === 'string' ? Buffer.from(secretRaw, 'base64') : secretRaw
+    if (!secret) return this.bridge.log(`[poll] ${pollKey.id}: no messageSecret stored, can't read votes`)
+    const own = [...this.bridge.ownJids]
+    const isGroup = chatJid.endsWith('@g.us')
+    const voters = msg.key.fromMe
+      ? own
+      : [isGroup ? msg.key.participant : chat, isGroup ? msg.key.participantAlt : msg.key.remoteJidAlt].filter((j): j is string => !!j).map((j) => jidNormalizedUser(j))
+    let selected: Uint8Array[] | null = null
+    for (const creator of own) {
+      for (const voter of voters) {
+        try {
+          selected = decryptPollVote(update.vote as { encPayload: Uint8Array; encIv: Uint8Array }, {
+            pollEncKey: secret, pollCreatorJid: creator, pollMsgId: pollKey.id, voterJid: voter,
+          }).selectedOptions ?? []
+          break
+        } catch {
+          // wrong pairing: try the next
+        }
+      }
+      if (selected) break
+    }
+    if (!selected) return this.bridge.log(`[poll] ${pollKey.id}: couldn't decrypt a vote from ${voters.join(' / ') || '?'}`)
+    await this.bridge.forms.onPollVote({
+      chatJid,
+      pollId: pollKey.id,
+      voterJids: voters,
+      voterName: msg.pushName ?? null,
+      hashes: selected.map((h) => Buffer.from(h).toString('hex')),
+    })
   }
 
   /** Stored messages are JSON (bytes as base64); turn them back into protobuf-ready objects for quoting. */
@@ -253,6 +311,11 @@ export class WaConnection implements WaPort {
     sock.ev.on('messages.upsert', ({ messages }) => {
       if (this.o.allowLink || this.o.listGroups) return // operator modes never log or route
       for (const msg of messages) {
+        const pollUpdate = msg.message ? normalizeMessageContent(msg.message)?.pollUpdateMessage : null
+        if (pollUpdate) {
+          void this.onPollUpdate(msg, pollUpdate).catch((e) => this.bridge.log(`[poll] ${msg.key.id}: ${(e as Error).stack ?? e}`))
+          continue
+        }
         const inbound = this.toInbound(msg)
         if (inbound) void this.bridge.onInbound(inbound).catch((e) => this.bridge.log(`[in] ${msg.key.id}: ${(e as Error).stack ?? e}`))
       }

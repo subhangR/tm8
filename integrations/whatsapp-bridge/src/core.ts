@@ -24,7 +24,8 @@ import {
   type InboundMedia,
   type MediaKind,
 } from './media.js'
-import type { MediaRow, MessageRow, NameRow, OutboxMedia, OutboxRow, Store } from './store.js'
+import type { MediaRow, MessageRow, NameRow, OutboxMedia, OutboxPoll, OutboxRow, Store } from './store.js'
+import { Forms } from './forms.js'
 import type { ChatMessage, EntityContext, Teammate, Tm8Factory, Tm8Port } from './tm8.js'
 import {
   MAIN_PREFIX,
@@ -66,6 +67,8 @@ export interface WaPort {
   ): Promise<{ id: string; key: WaKey; message: unknown }>
   /** Download inbound media from its reference (InboundMedia.ref); throws TooLargeError past maxBytes. */
   downloadMedia(ref: string, maxBytes: number): Promise<Buffer>
+  /** Send a native poll. `message` must keep messageContextInfo.messageSecret: votes are decrypted with it. */
+  sendPoll(jid: string, poll: OutboxPoll): Promise<{ id: string; key: WaKey; message: unknown }>
 }
 
 /** Body of POST /say-media after HTTP parsing: a multipart file, or a tm8 file id to forward. */
@@ -171,6 +174,8 @@ export class Bridge {
   private sttChain: Promise<unknown> = Promise.resolve()
   transcriber: Transcriber
   media: MediaDir
+  /** tm8 forms in the group: polls, numbered questions, answers back into tm8 (forms.ts). */
+  forms: Forms
   /** Speaker token files (<name>.token, 0600); agents read theirs, briefings only name the path. */
   tokenDir: string
   ownJids = new Set<string>()
@@ -189,6 +194,7 @@ export class Bridge {
     this.tokenDir = o.tokenDir ?? path.join(os.tmpdir(), 'wa-bridge-tokens')
     this.media = new MediaDir(o.mediaDir ?? path.join(os.tmpdir(), 'wa-bridge-media'))
     this.transcriber = o.transcriber ?? new NoneTranscriber()
+    this.forms = new Forms(this)
     // A transcription cut off by a restart is started again (resumeTranscriptions).
     store.db.prepare(`UPDATE media SET transcript_status = NULL WHERE transcript_status = 'pending'`).run()
     const now = this.now
@@ -231,7 +237,7 @@ export class Bridge {
   get tm8(): Tm8Port {
     return this.client(this.cfg.tm8.spaceId, this.cfg.tm8.tokenFile).port
   }
-  private channelOf(channelId: string | null | undefined): ChannelConfig | undefined {
+  channelOf(channelId: string | null | undefined): ChannelConfig | undefined {
     return this.cfg.channels.find((c) => c.id === channelId)
   }
 
@@ -264,6 +270,14 @@ export class Bridge {
     const trusted = trustedSenders(this.cfg, ch)
     if (m.fromMe && this.cfg.ownerJids.some((j) => trusted.has(j))) return true
     return [m.senderJid, m.senderAltJid].some((j) => !!j && trusted.has(j))
+  }
+  /** May these JIDs (one person's PN/LID) take part in the channel? Votes carry no fromMe, only the voter's JIDs. */
+  senderAllowedJids(ch: ChannelConfig, jids: string[]): boolean {
+    const allowed = allowedSenders(this.cfg, ch)
+    if (allowed.has('everyone')) return true
+    const owner = jids.some((j) => this.cfg.ownerJids.includes(j) || this.ownJids.has(j))
+    if (owner && (allowed.has('owner') || this.cfg.ownerJids.some((j) => allowed.has(j)))) return true
+    return jids.some((j) => allowed.has(j))
   }
   private senderAllowed(ch: ChannelConfig, m: Inbound): boolean {
     const allowed = allowedSenders(this.cfg, ch)
@@ -308,6 +322,9 @@ export class Bridge {
     }
     if (!isNew) return // redelivery: already routed (or not) the first time
     this.log(`[in ${ch.id}] ${m.senderName ?? m.senderJid ?? '?'}: ${m.text.slice(0, 200)}`)
+    // An answer to a form in the group (a reply to a numbered question, or "2: …") is collected, not routed. No age limit:
+    // answers sent while the bridge was down still count.
+    if (this.senderAllowed(ch, m) && (await this.forms.onText(ch, m))) return
     if (m.media) {
       // Every logged media message is downloaded (unrouted ones too); only routed ones are uploaded to tm8.
       this.store.insertMedia({
@@ -1299,9 +1316,14 @@ export class Bridge {
     return { key, replyTo, label }
   }
 
+  /** Take one send's rate-limit slots (per name and per group); returns ms to wait, or 0 if taken. */
+  takeSendSlot(nameStr: string, channelId: string): number {
+    return this.tokenLimiter.take(`name:${nameStr}`) || this.channelLimiter.take(`ch:${channelId}`)
+  }
+
   /** Take the rate-limit slots and apply a label; returns the (possibly re-titled) name. */
   private commitSend(auth: { name: NameRow | null; nameStr: string; ch: ChannelConfig }, label: string | null): NameRow | null {
-    const wait = this.tokenLimiter.take(`name:${auth.nameStr}`) || this.channelLimiter.take(`ch:${auth.ch.id}`)
+    const wait = this.takeSendSlot(auth.nameStr, auth.ch.id)
     if (wait) throw new HttpError(429, 'rate limited', { retry_after_ms: wait })
     let { name } = auth
     if (label && name && label !== name.title) {
@@ -1381,6 +1403,11 @@ export class Bridge {
     await this.wa.react(ch.jid, key, emoji)
   }
 
+  /** React to a logged message; failures are logged, never thrown. */
+  reactTo(ch: ChannelConfig, waId: string, emoji: string) {
+    return this.reactSafe(ch, waId, emoji)
+  }
+
   private async reactSafe(ch: ChannelConfig, waId: string, emoji: string) {
     const msg = this.store.getMessage(waId)
     if (!msg || !this.wa.connected()) return
@@ -1423,20 +1450,24 @@ export class Bridge {
       // A media row's caption is row.text; its WhatsApp echo (and our log line) reads "[image] <caption>", so the
       // pending-send guard hashes that.
       const media: OutboxMedia | null = row.kind === 'media' && row.media_json ? JSON.parse(row.media_json) : null
+      const poll: OutboxPoll | null = row.kind === 'poll' && row.poll_json ? JSON.parse(row.poll_json) : null
       const logText = media ? mediaPlaceholder(media.kind, row.text, media.file_name) : row.text
       const pending = { channelId: ch.id, hash: bodyHash(logText), at: this.now() }
       this.pendingSends.push(pending)
       try {
         const send = (q?: { key: WaKey; message: unknown }) =>
-          media
-            ? this.wa.sendMedia(ch.jid, { kind: media.kind, data: this.media.read(media.path), mime: media.mime, fileName: media.file_name, caption: row.text }, q)
-            : this.wa.sendText(ch.jid, row.text, q)
+          poll
+            ? this.wa.sendPoll(ch.jid, poll)
+            : media
+              ? this.wa.sendMedia(ch.jid, { kind: media.kind, data: this.media.read(media.path), mime: media.mime, fileName: media.file_name, caption: row.text }, q)
+              : this.wa.sendText(ch.jid, row.text, q)
         const sent = await send(quoted).catch((e) => {
           if (!quoted) throw e
           this.log(`[out ${ch.id}] quoting ${row.reply_to} failed (${(e as Error).message}); sending unquoted`)
           return send()
         })
         this.store.markSent(row.id, sent.id, JSON.stringify(sent.message ?? null))
+        this.store.formMessageSent(row.id, sent.id)
         this.store.upsertBridgeMessage({
           wa_msg_id: sent.id, channel_id: ch.id, chat_jid: ch.jid, sender_jid: [...this.ownJids][0] ?? null, sender_alt_jid: null,
           sender_name: row.name, text: logText, quoted_wa_msg_id: row.reply_to, ts: Math.floor(this.now() / 1000), from_me: 1,

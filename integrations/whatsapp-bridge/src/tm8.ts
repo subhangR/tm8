@@ -24,6 +24,17 @@ export type TurnPart = { seq: number; kind: string; payload: string }
 /** A message on a chat, as the fallback relay needs it. `batch` is "chat-turn:<turn id>" for an agent's turn reply. */
 export type ChatMessage = { id: string; body: string; isAgent: boolean; batch: string | null; parts?: TurnPart[] }
 export type Teammate = { id: string; title: string }
+/** A form question as tm8 stores it (config with defaults not applied). */
+export type FormQuestionSpec = { key: string; type: string; title: string; help?: string; required: boolean; config: Record<string, any> }
+export type FormInfo = {
+  id: string
+  version: number
+  status: string
+  title: string
+  description: string | null
+  settings: { responses?: string; allowAmend?: boolean; respondents?: string }
+  questions: FormQuestionSpec[]
+}
 
 export interface Tm8Port {
   /** False until the token file holds a `tm8s_…` token. */
@@ -46,6 +57,14 @@ export interface Tm8Port {
   authSession(): Promise<{ expiresAt: string | null }>
   /** A non-secret fingerprint of the current token (changes when the token file changes), null if none. */
   tokenFingerprint(): string | null
+  /** A form with its questions and settings (throws if the id is not a form). */
+  formGet(id: string): Promise<FormInfo>
+  /** Sparse settings patch; returns the form's new version. */
+  formUpdateSettings(id: string, expectVersion: number, settings: Record<string, unknown>, mutationId: string): Promise<number>
+  /** Append one question; returns the form's new version. */
+  formAddQuestion(id: string, expectVersion: number, question: FormQuestionSpec, mutationId: string): Promise<number>
+  /** Submit answers as the token's member; amendOf = the revision this one replaces (under responses: unlimited). */
+  formSubmit(id: string, answers: Record<string, unknown>, o: { amendOf?: string | null; mutationId: string }): Promise<{ id: string; revision: number }>
 }
 
 export class Tm8Error extends Error {
@@ -199,6 +218,38 @@ export class Tm8Cli implements Tm8Port {
   tokenFingerprint() {
     const t = this.token()
     return t ? createHash('sha256').update(t).digest('hex').slice(0, 16) : null
+  }
+
+  async formGet(id: string): Promise<FormInfo> {
+    const out = await this.run(['entity', 'get', id, '--full'])
+    if (out?.kind !== 'form') throw new Tm8Error(`${id} is not a tm8 form`, null, '')
+    const c = out.content ?? {}
+    return {
+      id: out.id,
+      version: out.version,
+      status: c.status ?? out.state?.status ?? 'unknown',
+      title: out.title ?? '',
+      description: c.description ?? null,
+      settings: c.settings ?? {},
+      questions: (c.questions ?? []).map((q: any) => ({ key: q.key, type: q.type, title: q.title, help: q.help, required: q.required !== false, config: q.config ?? {} })),
+    }
+  }
+
+  async formUpdateSettings(id: string, expectVersion: number, settings: Record<string, unknown>, mutationId: string) {
+    const out = await this.run(['form', 'update', id, '--expect-version', String(expectVersion), '--settings', JSON.stringify(settings), '--mutation-id', mutationId])
+    return Number(out?.entity?.version ?? expectVersion + 1)
+  }
+
+  async formAddQuestion(id: string, expectVersion: number, question: FormQuestionSpec, mutationId: string) {
+    const out = await this.run(['form', 'question', 'add', id, '--expect-version', String(expectVersion), '--spec', JSON.stringify(question), '--mutation-id', mutationId])
+    return Number(out?.entity?.version ?? expectVersion + 1)
+  }
+
+  async formSubmit(id: string, answers: Record<string, unknown>, o: { amendOf?: string | null; mutationId: string }) {
+    // Answers go in on stdin: they hold whatever people typed in the group.
+    const out = await this.run(['form', 'submit', id, '--answers', '-', ...(o.amendOf ? ['--amend-of', o.amendOf] : []), '--mutation-id', o.mutationId], JSON.stringify(answers))
+    if (!out?.id) throw new Tm8Error('form submit returned no response id', null, JSON.stringify(out).slice(0, 300))
+    return { id: out.id, revision: Number(out.revision ?? 1) }
   }
 
   async stopSession(id: string, note: string, mutationId: string) {
