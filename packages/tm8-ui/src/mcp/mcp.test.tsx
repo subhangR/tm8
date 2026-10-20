@@ -51,6 +51,27 @@ describe('native MCP picker', () => {
     expect(screen.getByRole('button', { name: 'Use defaults' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.queryByRole('alert')).toBeNull();
   });
+  it('names each dropped default and its reason instead of hiding it', async () => {
+    const data = catalog();
+    data.defaults = []; data.droppedDefaults = [{ serverId: 'server', title: 'Calendar', reason: 'credential_required' }];
+    const onReady = vi.fn(); render(<Picker port={fixture(data)} onReady={onReady} />);
+    const note = await screen.findByRole('status');
+    expect(note.textContent).toContain('Not in this session: Calendar (no connected account for you to use');
+    // A dropped default is a notice, never a launch block.
+    expect(onReady).toHaveBeenLastCalledWith(true);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+  it('names a default this client itself cannot use, and says nothing once the member chooses', async () => {
+    const data = catalog();
+    data.servers[0]!.approved = false; data.servers[0]!.canAttach = false;
+    data.defaults = [{ serverId: 'server' }];
+    render(<Picker port={fixture(data)} />);
+    // Not attachable, so it appears in no row: the notice is its only surface.
+    expect((await screen.findByRole('status')).textContent).toContain('Calendar (an administrator has not approved it)');
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'None' }));
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
   it('keeps usable defaults and drops only the unconnected one', async () => {
     const data = catalog(); data.servers.push({ ...data.servers[0]!, id: 'open', title: 'Docs', auth: 'none', accounts: [] });
     data.defaults = [{ serverId: 'server' }, { serverId: 'open' }]; const onChange = vi.fn(), onReady = vi.fn();

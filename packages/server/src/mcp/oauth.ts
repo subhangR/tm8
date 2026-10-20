@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { CollabError } from '@tm8/contract';
 import { mcpHttp } from './transport.js';
 import type { McpOAuthSecret } from './credential-store.js';
 
@@ -65,10 +66,14 @@ function registrationAuthMethod(metadata: Metadata): TokenEndpointAuthMethod {
 function oauthEndpoint(value: string, issuer: URL, privateNetwork: boolean, error: string): URL {
   let parsed: URL;
   try { parsed = new URL(value); }
-  catch { throw new Error(error); }
+  // Truncated: the endpoint is provider-supplied metadata, so a hostile
+  // provider must not get to choose the length of a message tm8 renders.
+  catch { throw oauthError(`${error}: ${value.slice(0, 120)} is not a valid URL.`); }
   const safeProtocol = parsed.protocol === 'https:'
     || (privateNetwork && parsed.protocol === 'http:' && parsed.origin === issuer.origin);
-  if (!safeProtocol || parsed.username || parsed.password || parsed.hash) throw new Error(error);
+  if (!safeProtocol || parsed.username || parsed.password || parsed.hash) {
+    throw oauthError(`${error}: ${parsed.origin} must be HTTPS without credentials or a fragment (same-origin HTTP is allowed only for an approved private-network connector).`);
+  }
   return parsed;
 }
 
@@ -84,6 +89,48 @@ function preregisteredAuthMethod(metadata: Metadata): Exclude<TokenEndpointAuthM
   throw new Error('OAuth client authentication unsupported');
 }
 
+/**
+ * Every failure below used to be a plain `Error`, which `toWireError` turns
+ * into `internal server error` with the cause logged server-side only. A
+ * member running `tm8 mcp oauth begin` therefore learned nothing about WHY the
+ * connection failed, and the four real causes (not approved, loopback redirect
+ * origin, no DCR support, issuer mismatch) look identical. These are
+ * `CollabError`s so the sentence reaches the person who can fix it.
+ *
+ * Only the begin/callback flows — human sessions, by `requireHumanSession` —
+ * raise these. The refresh and revoke paths run under an agent's proxy call
+ * and keep their opaque messages: no vendor origin crosses into a harness
+ * (ADR 0297).
+ */
+function oauthError(message: string, code: 'invalid_input' | 'upstream_unavailable' = 'invalid_input'): CollabError {
+  return new CollabError(code, message);
+}
+/** Provider error codes are short tokens (`invalid_grant`); descriptions are not echoed. */
+function errorCode(value: unknown): string | null {
+  return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(value) ? value : null;
+}
+function providerErrorCode(body: string): string | null {
+  let value: { error?: unknown };
+  try { value = JSON.parse(body) as typeof value; } catch { return null; }
+  return errorCode(value.error);
+}
+/**
+ * The redirect URI is the single most common reason a hosted provider refuses
+ * tm8: with `TM8_PUBLIC_ORIGIN` unset the callback falls back to the bind
+ * address, so the server asks Slack or Notion to redirect to a loopback
+ * address and registration or the code exchange is rejected. Naming it is the
+ * whole point — the status alone cannot be acted on.
+ */
+function redirectDiagnosis(callbackUrl: string): string {
+  let url: URL;
+  try { url = new URL(callbackUrl); } catch { return ` The tm8 redirect URI ${callbackUrl} is not a valid URL; set TM8_PUBLIC_ORIGIN.`; }
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host === '::1' || /^127\./.test(host)) {
+    return ` The tm8 redirect URI origin is ${url.origin}, a loopback address, which hosted providers refuse: set TM8_PUBLIC_ORIGIN to this server's public HTTPS origin and restart, then register ${url.origin}/mcp/oauth/callback with the provider.`;
+  }
+  if (url.protocol !== 'https:') return ` The tm8 redirect URI origin is ${url.origin}, which is not HTTPS; most providers require an HTTPS redirect.`;
+  return ` Confirm ${url.href} is registered as a redirect URL with the provider.`;
+}
 function formComponent(value: string): string {
   return new URLSearchParams([['value', value]]).toString().slice('value='.length);
 }
@@ -129,7 +176,7 @@ export class McpOAuth {
     allowPrivateNetwork: boolean;
   }): Promise<{ authorizationUrl: string; expiresAt: string }> {
     for (const [key, value] of this.pending) if (value.expires < Date.now()) this.pending.delete(key);
-    if (this.pending.size >= 1000) throw new Error('Too many pending MCP connections');
+    if (this.pending.size >= 1000) throw oauthError('Too many pending MCP connections on this server; retry in a few minutes.', 'upstream_unavailable');
 
     let issuerText = input.issuer;
     if (!issuerText) {
@@ -139,29 +186,35 @@ export class McpOAuth {
       const advertised = /resource_metadata="([^"]+)"/.exec(challenge.headers['www-authenticate'] ?? '')?.[1];
       if (advertised) metadataUrl = new URL(advertised, resource).href;
       const resourceResponse = await mcpHttp({ url: metadataUrl, method: 'GET' }, input.allowPrivateNetwork);
-      if (resourceResponse.status !== 200) throw new Error('OAuth resource discovery failed');
+      if (resourceResponse.status !== 200) throw oauthError(`OAuth resource discovery failed: ${new URL(metadataUrl).origin} returned ${resourceResponse.status} for the protected-resource metadata. Set the connector's issuer explicitly if the provider does not publish it.`, 'upstream_unavailable');
       let resourceMetadata: { resource?: string; authorization_servers?: unknown[] };
       try { resourceMetadata = JSON.parse(resourceResponse.body) as typeof resourceMetadata; }
-      catch { throw new Error('OAuth resource discovery failed'); }
+      catch { throw oauthError('OAuth resource discovery failed: the protected-resource metadata was not JSON.', 'upstream_unavailable'); }
       if (resourceMetadata.resource !== input.resource
         || !Array.isArray(resourceMetadata.authorization_servers)
         || typeof resourceMetadata.authorization_servers[0] !== 'string') {
-        throw new Error('OAuth resource binding mismatch');
+        throw oauthError(`OAuth resource binding mismatch: the provider's metadata declares resource ${typeof resourceMetadata.resource === 'string' ? resourceMetadata.resource : '(absent)'} and tm8 requested ${input.resource}; they must match exactly. Register the connector URL exactly as the provider advertises it.`);
       }
       issuerText = resourceMetadata.authorization_servers[0];
     }
 
     let issuer: URL;
     try { issuer = new URL(issuerText); }
-    catch { throw new Error('OAuth issuer refused'); }
+    catch { throw oauthError(`OAuth issuer refused: ${issuerText} is not a valid URL.`); }
     const discovery = new URL(`/.well-known/oauth-authorization-server${issuer.pathname.replace(/\/$/, '')}`, issuer.origin);
     const response = await mcpHttp({ url: discovery.href, method: 'GET' }, input.allowPrivateNetwork);
-    if (response.status !== 200) throw new Error('OAuth discovery failed');
+    if (response.status !== 200) throw oauthError(`OAuth discovery failed: ${discovery.href} returned ${response.status}.`, 'upstream_unavailable');
     let metadata: Metadata;
     try { metadata = JSON.parse(response.body) as Metadata; }
-    catch { throw new Error('OAuth discovery failed'); }
-    if (metadata.issuer !== issuerText || !metadata.code_challenge_methods_supported?.includes('S256')) {
-      throw new Error('OAuth issuer or PKCE unsupported');
+    catch { throw oauthError(`OAuth discovery failed: ${discovery.href} did not return JSON metadata.`, 'upstream_unavailable'); }
+    // Two distinct causes, one message until now. An issuer mismatch is a
+    // connector misconfiguration the member can fix; missing S256 is a
+    // provider that tm8 cannot use at all.
+    if (metadata.issuer !== issuerText) {
+      throw oauthError(`OAuth issuer mismatch: discovery at ${discovery.href} declares issuer ${typeof metadata.issuer === 'string' ? metadata.issuer : '(absent)'}, but the connector expects ${issuerText}. Set the connector's issuer to the value the provider declares.`);
+    }
+    if (!metadata.code_challenge_methods_supported?.includes('S256')) {
+      throw oauthError(`OAuth PKCE unsupported: ${issuerText} does not advertise the S256 code challenge method, which tm8 requires.`);
     }
 
     oauthEndpoint(metadata.authorization_endpoint, issuer, input.allowPrivateNetwork, 'OAuth endpoint refused');
@@ -173,7 +226,9 @@ export class McpOAuth {
       ? { id: input.clientId, method: preregisteredAuthMethod(metadata), secret: input.clientSecret }
       : { id: input.clientId ?? '', method: 'none' };
     if (!input.clientId) {
-      if (!metadata.registration_endpoint) throw new Error('OAuth client registration required');
+      if (!metadata.registration_endpoint) {
+        throw oauthError(`OAuth client registration unavailable: ${issuerText} publishes no registration_endpoint, so it does not support Dynamic Client Registration (Slack does not). Create an app with the provider, set its Client ID on the connector and the matching client secret in this server's environment.${redirectDiagnosis(this.callbackUrl)}`);
+      }
       const endpoint = oauthEndpoint(metadata.registration_endpoint, issuer, input.allowPrivateNetwork, 'OAuth registration endpoint refused');
       const requestedMethod = registrationAuthMethod(metadata);
       const registered = await mcpHttp({
@@ -188,18 +243,23 @@ export class McpOAuth {
           token_endpoint_auth_method: requestedMethod,
         }),
       }, input.allowPrivateNetwork);
-      if (registered.status === 403) throw new Error('OAuth client registration rejected by provider');
-      if (registered.status !== 200 && registered.status !== 201) throw new Error('OAuth client registration failed');
+      const registrationCode = providerErrorCode(registered.body);
+      if (registered.status === 403) {
+        throw oauthError(`OAuth client registration rejected by provider: ${endpoint.origin} answered 403${registrationCode ? ` (${registrationCode})` : ''}. The provider allows only pre-approved clients (Figma does this): obtain a Client ID from the provider and set it on the connector.${redirectDiagnosis(this.callbackUrl)}`, 'upstream_unavailable');
+      }
+      if (registered.status !== 200 && registered.status !== 201) {
+        throw oauthError(`OAuth client registration failed: ${endpoint.origin} answered ${registered.status}${registrationCode ? ` (${registrationCode})` : ''}.${redirectDiagnosis(this.callbackUrl)}`, 'upstream_unavailable');
+      }
       let value: { client_id?: unknown; token_endpoint_auth_method?: unknown; client_secret?: unknown };
       try { value = JSON.parse(registered.body) as typeof value; }
-      catch { throw new Error('OAuth client registration failed'); }
+      catch { throw oauthError('OAuth client registration failed: the provider did not return JSON.', 'upstream_unavailable'); }
       const method = value.token_endpoint_auth_method === undefined
         ? requestedMethod
         : tokenAuthMethod(value.token_endpoint_auth_method);
       const secret = typeof value.client_secret === 'string' && value.client_secret ? value.client_secret : undefined;
       if (typeof value.client_id !== 'string' || !value.client_id || !method
         || (method === 'none' ? secret !== undefined : secret === undefined)) {
-        throw new Error('OAuth client registration unsupported');
+        throw oauthError('OAuth client registration unsupported: the provider returned a client tm8 cannot authenticate with (missing client_id, or a secret that contradicts the token endpoint auth method).', 'upstream_unavailable');
       }
       client = { id: value.client_id, method, ...(secret ? { secret } : {}) };
     }
@@ -244,17 +304,30 @@ export class McpOAuth {
 
   async callback(identityId: string, input: { state: string; code?: string; issuer?: string; error?: string }): Promise<{ spaceId: string; serverId: string; label: string; secret: McpOAuthSecret }> {
     const pending = this.pending.get(input.state);
-    if (!pending || pending.identityId !== identityId || pending.expires < Date.now()) throw new Error('OAuth state invalid or expired');
+    if (!pending || pending.identityId !== identityId || pending.expires < Date.now()) {
+      // Pending state is in memory: a server restart between begin and
+      // callback loses it, and so does crossing the 10 minute window.
+      throw oauthError('OAuth state invalid or expired: authorization must complete within 10 minutes, in the same browser identity that started it, and does not survive a tm8 server restart. Start the connection again.');
+    }
     this.pending.delete(input.state); // one use even on provider failure
-    if (input.error || !input.code) throw new Error('OAuth authorization denied');
-    if (input.issuer !== undefined && input.issuer !== pending.metadata.issuer) throw new Error('OAuth issuer mismatch');
+    if (input.error || !input.code) {
+      // The callback's `error` is whatever reached the redirect: echo it only
+      // when it is a short OAuth code, never as free text.
+      const denial = errorCode(input.error);
+      throw oauthError(`OAuth authorization denied by the provider${denial ? `: ${denial}` : ' (no authorization code was returned)'}.${denial === 'access_denied' ? ' The account holder declined the consent screen.' : redirectDiagnosis(pending.redirectUri)}`);
+    }
+    if (input.issuer !== undefined && input.issuer !== pending.metadata.issuer) {
+      throw oauthError(`OAuth issuer mismatch: the callback named issuer ${input.issuer}, but authorization started against ${pending.metadata.issuer}.`);
+    }
     const token = await tokenRequest(pending.metadata.token_endpoint, new URLSearchParams({
       grant_type: 'authorization_code',
       code: input.code,
       code_verifier: pending.verifier,
       redirect_uri: pending.redirectUri,
       resource: pending.resource,
-    }), pending.privateNetwork, pending.client);
+    }), pending.privateNetwork, pending.client, (status, code) => oauthError(
+      `OAuth token exchange failed: ${new URL(pending.metadata.token_endpoint).origin} answered ${status}${code ? ` (${code})` : ''}.${code === 'invalid_grant' || code === 'invalid_request' ? redirectDiagnosis(pending.redirectUri) : ''}`,
+      'upstream_unavailable'));
     return {
       spaceId: pending.spaceId,
       serverId: pending.serverId,
@@ -288,9 +361,11 @@ async function tokenRequest(
   body: URLSearchParams,
   privateNetwork: boolean,
   client: OAuthClient,
+  /** Only the human begin/callback flow diagnoses the cause; refresh keeps its opaque message. */
+  failure?: (status: number, code: string | null) => Error,
 ): Promise<{ accessToken: string; refreshToken?: string; expiresAt?: number }> {
   const response = await mcpHttp({ url, method: 'POST', headers: clientHeaders(body, client), body: body.toString() }, privateNetwork);
-  if (response.status !== 200) throw new Error('OAuth token exchange failed');
+  if (response.status !== 200) throw failure ? failure(response.status, providerErrorCode(response.body)) : new Error('OAuth token exchange failed');
   let value: Record<string, unknown>;
   try { value = JSON.parse(response.body) as Record<string, unknown>; }
   catch { throw new Error('OAuth token exchange failed'); }

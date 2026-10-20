@@ -55,6 +55,21 @@ describe('MCP real operation adapter', () => {
     expect(error).toBeInstanceOf(McpUiError);
     expect(error.message).toContain('only allow approved MCP clients');
   });
+  it('names the loopback redirect origin, and still maps a detailed registration refusal', async () => {
+    const wire = (message: string) => vi.fn(async () => new Response(JSON.stringify({ error: {
+      code: 'invalid_input', message, retryable: false,
+    } }), { status: 400, headers: { 'content-type': 'application/json' } }));
+    const seam = { query: vi.fn(), connections: vi.fn(), commands: {} } as unknown as Seam;
+    const start = async (message: string) => createMcpPort(createHttpClient({ fetch: wire(message) }), seam, 'space')
+      .startOAuth('server', 'Slack').catch(value => value as Error);
+
+    const loopback = await start('OAuth client registration unavailable: https://slack.test publishes no registration_endpoint, so it does not support Dynamic Client Registration (Slack does not). The tm8 redirect URI origin is http://127.0.0.1:8777, a loopback address, which hosted providers refuse: set TM8_PUBLIC_ORIGIN.');
+    expect(loopback).toBeInstanceOf(McpUiError);
+    expect(loopback.message).toContain('TM8_PUBLIC_ORIGIN');
+    // The matcher survives the status and error code the server now appends.
+    const rejected = await start('OAuth client registration rejected by provider: https://figma.test answered 403 (access_denied).');
+    expect(rejected.message).toContain('only allow approved MCP clients');
+  });
   it('rejects imported secrets and untrusted local commands', () => {
     expect(() => importDefinitions(JSON.stringify({ mcpServers: { fixture: { command: 'fixture', env: { TOKEN: 'secret' } } } }), true)).toThrow();
     expect(() => importDefinitions(JSON.stringify({ mcpServers: { fixture: { command: 'fixture' } } }), false)).toThrow();

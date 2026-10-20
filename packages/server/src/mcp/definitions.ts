@@ -1,7 +1,7 @@
 import { CollabError, McpTestResultSchema, McpServerDefinitionSchema, McpResolveInputSchema, McpServerCreateInputSchema,
   McpServerUpdateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema,
   type McpServerView, type McpResolveInput, type McpResolveResult, type McpSelection,
-  type McpReadinessReason } from '@tm8/contract';
+  type McpCredentialView, type McpReadinessReason } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
@@ -37,10 +37,27 @@ export async function loadMcpServer(q: Querier, serverId: string, targetId?: str
   return loaded as McpServerView & {securityRevision:number};
 }
 export type McpCredentialReadiness = (selection:McpSelection,server:McpServerView)=>Promise<McpReadinessReason>;
+/**
+ * The caller's OWN usable account for a server, and only when the choice is
+ * unambiguous. A default attachment carries no credentialId, so an
+ * authenticated connector the target equips used to resolve to
+ * `credential_required` forever; the member had already connected an account,
+ * nothing could name it. Owned accounts are preferred over accounts another
+ * member shared, and two candidates in the chosen tier resolve to nothing: a
+ * launch never guesses which account to lend.
+ */
+async function soleUsableCredential(q:Querier,serverId:string):Promise<string|undefined> {
+  const rows=await q.rpc<McpCredentialView[]>('list_mcp_credentials',[serverId,null]);
+  const usable=(Array.isArray(rows)?rows:[]).filter(row=>row.usable && row.reason==='ready');
+  const owned=usable.filter(row=>row.manageable);
+  const pool=owned.length?owned:usable;
+  return pool.length===1?pool[0]!.id:undefined;
+}
 /** Uses only caller-readable same-space attachments; never infers an account. */
 export async function resolveMcpSelections(q:Querier,input:McpResolveInput,credentialReady?:McpCredentialReadiness):Promise<McpResolveResult> {
   const checked=McpResolveInputSchema.parse(input);
   let selections=checked.mcpSelections;
+  const fromDefault=selections===undefined;
   if (selections===undefined) {
     const sources=[...new Set([...(checked.targetIds??[]),...(checked.teamMemberId?[checked.teamMemberId]:[])])];
     // Validate every supplied target rather than silently resolving a partial set.
@@ -80,21 +97,29 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,crede
     const d=server.definition;
     if(names.has(d.name.toLowerCase())) throw new CollabError('invalid_input','MCP connector name collision');
     names.add(d.name.toLowerCase());
+    let credentialId=selection.credentialId;
     let reason:McpReadinessReason='ready';
     if(!d.approved) reason='not_approved';
     else if(d.enabled===false) reason='disabled';
     else if(d.transport==='stdio' && !d.stdioTrusted) reason='stdio_not_trusted';
     else if(d.auth.type!=='none') {
-      if(!selection.credentialId) reason='credential_required';
-      else if(credentialReady) reason=await credentialReady(selection,server);
+      if(!credentialId && fromDefault) credentialId=await soleUsableCredential(q,server.id);
+      if(!credentialId) reason='credential_required';
+      else if(credentialReady) reason=await credentialReady({...selection,credentialId},server);
       else {
-        const result=await q.rpc<{ready:boolean;reason:McpReadinessReason}>('mcp_credential_readiness',[server.id,selection.credentialId]);
+        const result=await q.rpc<{ready:boolean;reason:McpReadinessReason}>('mcp_credential_readiness',[server.id,credentialId]);
         reason=result.ready === true ? 'ready' : result.reason;
       }
-    } else if(selection.credentialId) reason='credential_unavailable';
-    resolved.push({server,...(selection.credentialId?{credentialId:selection.credentialId}:{}),ready:reason==='ready',reason});
+    } else if(credentialId) reason='credential_unavailable';
+    resolved.push({server,...(credentialId?{credentialId}:{}),ready:reason==='ready',reason,...(fromDefault?{fromDefault:true}:{})});
   }
-  return {selections:resolved,ready:resolved.every(s=>s.ready)};
+  // An unready DEFAULT is dropped, not fatal: the member asked for this target,
+  // not for this connector, and refusing the whole launch over an account they
+  // never named made every authenticated default a launch trap. An explicit
+  // pick still refuses, because the caller named it.
+  const dropped=fromDefault?resolved.filter(s=>!s.ready):[];
+  const bound=fromDefault?resolved.filter(s=>s.ready):resolved;
+  return {selections:bound,ready:bound.every(s=>s.ready),dropped};
 }
 
 export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:FacadeDeps):void {

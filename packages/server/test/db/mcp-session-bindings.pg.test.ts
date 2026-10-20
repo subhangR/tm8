@@ -219,3 +219,38 @@ it('a session started through a space link launches with no MCP servers; naming 
   .rejects.toThrow(/space link/);
  await expect(bindings.authorize({...linkAuth,authSessionId:r.authSessionId},r.sessionId,server)).rejects.toThrow();
 });
+
+/**
+ * ac1/ac2 end to end: a task equips an authenticated connector, so the launch
+ * carries no credentialId for it. That used to refuse the whole spawn with
+ * `credential_required` — the launching member had an account, and no API
+ * could name it. The default now resolves their own sole account, and when
+ * that account dies the default is skipped with a warning instead of taking
+ * the session down with it.
+ */
+it('resolves an equipped default to the launcher own account, then drops it when that account dies',async()=>{
+ const equipped=await db.rpc<{entity:{id:string}}>(auth,'create_mcp_server_entity',[space,JSON.stringify({...definition,name:'defaultfixture'}),null,randomUUID()]);
+ const only=randomUUID();
+ await db.rpc(auth,'create_mcp_credential',[only,space,equipped.entity.id,'Default fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
+ const task=await db.rpc<{entity:{id:string}}>(auth,'create_task',[space,'MCP default task']);
+ await db.rpc(auth,'write_edge',[task.entity.id,equipped.entity.id,'equips','{}',null,randomUUID()]);
+ const warnings:string[]=[];
+ const watched=new McpSessionBindings(db,message=>{warnings.push(message);});
+ const first=await runtime();
+ expect(await watched.bind(auth,{sessionId:first.sessionId,spaceId:space,teamMemberId:teammate,agentToken:first.token,targetIds:[task.entity.id]}))
+  .toEqual([{serverId:equipped.entity.id,credentialId:only}]);
+ expect(warnings).toEqual([]);
+ expect(await watched.authorize(first.claims,first.sessionId,equipped.entity.id)).toMatchObject({credentialId:only});
+
+ await scratch.query("update public.space_credentials set status='revoked',secret_ciphertext=null,secret_nonce=null where id=$1",[only]);
+ const second=await runtime();
+ expect(await watched.bind(auth,{sessionId:second.sessionId,spaceId:space,teamMemberId:teammate,agentToken:second.token,targetIds:[task.entity.id]})).toEqual([]);
+ expect(warnings).toHaveLength(1);
+ expect(warnings[0]).toContain('MCP default connector skipped');
+ expect(warnings[0]).toContain('name=defaultfixture');
+ expect(warnings[0]).toContain('reason=credential_required');
+ // Naming it explicitly still refuses: the caller asked for THIS connector.
+ await expect(watched.bind(auth,{sessionId:second.sessionId,spaceId:space,teamMemberId:teammate,agentToken:second.token,
+  mcpSelections:[{serverId:equipped.entity.id,credentialId:only}]})).rejects.toThrow(/unavailable/i);
+ await expect(watched.authorize(second.claims,second.sessionId,equipped.entity.id)).rejects.toBeTruthy();
+});

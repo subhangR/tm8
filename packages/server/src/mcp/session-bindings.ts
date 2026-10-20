@@ -21,7 +21,7 @@ interface Binding extends Omit<DurableMcpGrant, 'serverId' | 'credentialId'> { s
 
 /** The only writer of runtime grants. Graph metadata is never an authority source. */
 export class McpSessionBindings {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly warn: (message: string) => void = message => console.warn(message)) {}
 
   async bind(claims: McpBindingClaims, input: McpBindInput): Promise<McpSelection[]> {
     if (!claims.identityId) throw new CollabError('forbidden', 'MCP launch unavailable');
@@ -79,6 +79,13 @@ export class McpSessionBindings {
         return 'ready';
       });
       if (!resolved.ready) throw new CollabError('forbidden', `MCP launch unavailable: ${resolved.selections.find(s => !s.ready)?.reason}`);
+      // A dropped default is silent to the agent otherwise: it boots with fewer
+      // tools than its target equips and nothing says so. One line per drop,
+      // naming the connector and the reason, so the launch log answers "where
+      // did Slack go" without a database query.
+      for (const drop of resolved.dropped) {
+        this.warn(`[tm8] MCP default connector skipped: session=${input.sessionId} server=${drop.server.id} name=${drop.server.definition.name} reason=${drop.reason}`);
+      }
       if (sourceUnavailable && resolved.selections.length) throw new CollabError('forbidden', 'MCP delegated launch requires a live launcher binding');
       const selections = resolved.selections.map(s => ({ serverId: s.server.id,
         ...(s.credentialId ? { credentialId: s.credentialId } : {}) }));
