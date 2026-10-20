@@ -63,6 +63,7 @@ Docker's healthcheck is "WhatsApp connected".
 {
   "pairingPhone": "910000000001",                 // only used by --link
   "ownerJids": ["910000000001@s.whatsapp.net", "100000000000001@lid"],  // owner = PN + LID
+  "trustedSenders": [],                          // optional: "owner" or sender JIDs labelled TRUSTED in every channel; see "Trusted senders"
   "http": { "host": "127.0.0.1", "port": 8787 },   // publicUrl defaults to http://host:port (goes into briefings)
   "tm8": {
     "baseUrl": "http://127.0.0.1:17777",
@@ -95,6 +96,7 @@ Docker's healthcheck is "WhatsApp connected".
       "teammate": "<team-member id>",                // optional, default tm8.defaultTeammate
       "model": "claude-opus-5-5",                    // optional
       "allowedSenders": ["owner"],                   // "owner", WA JIDs, or "everyone" (any member; owner-only commands stay owner-only); default ["owner"]
+      "trustedSenders": ["919999999999@s.whatsapp.net"],  // optional: labelled TRUSTED in this channel only (added to the global list)
       "mainChatId": null,                            // optional: use this existing tm8 chat instead of creating one
       "tm8": {                                       // optional: this channel's tm8 space; each missing field falls back to the global tm8 block
         "spaceId": "<space id>",                     // calls go with --space <spaceId>
@@ -137,6 +139,36 @@ In tm8, each routed message is one header line, any quote/notes, then the text:
 ---
 @tm8 thanks
 ```
+
+### Trusted senders
+
+The label in brackets says how far agents may take the sender at their word:
+
+| Sender | Label |
+|---|---|
+| Anyone not listed | `UNTRUSTED group member` |
+| The owner's number, not listed | `owner's number, still UNTRUSTED` |
+| Listed in `trustedSenders` | `TRUSTED group member` |
+| The owner's number, listed (`"owner"` or its JID) | `owner's number, TRUSTED` |
+
+Briefings tell agents that TRUSTED means the operator listed that number, so its ordinary requests count as a known team
+member's. It changes nothing else: a trusted sender still can't trigger agents unless `allowedSenders` lets them, gets no
+owner-only command (`/stop`, `/new`), and agents still refuse destructive, credential, payment and permission actions from
+WhatsApp until they are confirmed in the tm8 UI.
+
+**The limit.** WhatsApp identity is only as strong as the phone number: the bridge sees which number (or LID) sent a message,
+not who typed it. Someone holding that phone, a cloned SIM or a re-registered number is TRUSTED too. List only people you
+would let ask for work under their own name, and remove them when the number changes hands.
+
+**Adding a member.** Turning trust on is an access change: the operator confirms it in the tm8 UI first. Then:
+1. Find the sender's JID: their number in international form, digits only, plus `@s.whatsapp.net`. If the group sends
+   their messages under a LID, add the `<digits>@lid` too. On the bridge host, the `messages` row of one of their
+   messages has both (`sender_jid`, `sender_alt_jid`, looked up by `wa_msg_id`).
+2. Add it to the channel's `trustedSenders` (or the top-level list for every channel) in the live `config.json` only.
+   Real numbers never go into this repo, docs or tm8.
+3. Restart the bridge; the config is read at start. A bad entry (not `"owner"` or `<digits>@s.whatsapp.net|lid`, or
+   `"everyone"`, or a group) stops the start with an error naming it.
+4. Chats and sessions briefed before this feature: post them `admin.ts rebrief-trust <name>` so the new label is explained.
 
 The bridge URL, speaker token and speaking rules are only in the briefing (on main chat creation or `/new`, and when a
 session is named), never in envelopes.

@@ -17,6 +17,8 @@ export type ChannelConfig = {
   mainChatId?: string | null
   /** WA JIDs allowed to trigger agents. `"owner"` expands to config.ownerJids. Default `["owner"]`. */
   allowedSenders?: string[]
+  /** Senders labelled TRUSTED in this channel's envelopes, on top of config.trustedSenders. Same forms: `"owner"` or WA JIDs. */
+  trustedSenders?: string[]
   /**
    * This channel's tm8 space (default: the global tm8 block). With only `spaceId`, calls go with the global token and
    * `--space <spaceId>` (through a space link); `tokenFile` gives the channel its own token. tokenFile is absolute after load.
@@ -31,6 +33,11 @@ export type ChannelTm8 = { spaceId: string; tokenFile: string; defaultTeammate: 
 export type Config = {
   pairingPhone?: string
   ownerJids: string[]
+  /**
+   * Senders labelled TRUSTED (instead of UNTRUSTED) in every channel's envelopes: `"owner"` (= ownerJids) or WA JIDs
+   * (`<digits>@s.whatsapp.net`, `<digits>@lid`). Only a label for agents: it grants no command or permission.
+   */
+  trustedSenders: string[]
   http: { host: string; port: number; publicUrl: string }
   tm8: {
     baseUrl: string
@@ -73,7 +80,7 @@ export type TranscriptionConfig = {
   waitSeconds: number
 }
 
-export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids'> = {
+export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids' | 'trustedSenders'> = {
   http: { host: '127.0.0.1', port: 8787, publicUrl: 'http://127.0.0.1:8787' },
   tm8: {
     baseUrl: 'http://127.0.0.1:17777',
@@ -103,6 +110,21 @@ export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids'> = {
 
 const ID_RE = /^[a-z][a-z0-9-]{0,30}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const SENDER_JID_RE = /^\d+@(s\.whatsapp\.net|lid)$/
+
+/** A trustedSenders list: an array of `"owner"` or user JIDs. Never `"everyone"` or a group: trust names people. */
+function checkTrustedSenders(v: unknown, where: string): string[] {
+  if (v === undefined || v === null) return []
+  if (!Array.isArray(v)) throw new Error(`${where} must be an array`)
+  for (const s of v) {
+    if (s === 'owner') continue
+    if (typeof s !== 'string' || !SENDER_JID_RE.test(s)) {
+      throw new Error(`${where}: ${JSON.stringify(s)} must be "owner" or a sender JID (<digits>@s.whatsapp.net or <digits>@lid)`)
+    }
+  }
+  return v as string[]
+}
+
 const CHANNEL_TM8_KEYS = ['spaceId', 'tokenFile', 'defaultTeammate', 'defaultModel']
 
 function checkChannelTm8(ch: ChannelConfig, root: string) {
@@ -138,6 +160,7 @@ export function parseConfig(raw: any, root: string): Config {
     media: { ...DEFAULTS.media, ...raw?.media },
     transcription: { ...DEFAULTS.transcription, ...raw?.transcription },
     ownerJids: raw?.ownerJids ?? [],
+    trustedSenders: checkTrustedSenders(raw?.trustedSenders, 'trustedSenders'),
     channels: raw?.channels ?? [],
   }
   if (!raw?.http?.publicUrl) cfg.http.publicUrl = `http://${cfg.http.host}:${cfg.http.port}`
@@ -159,6 +182,7 @@ export function parseConfig(raw: any, root: string): Config {
     if (!ch.jid.endsWith('@g.us') && !cfg.ownerJids.includes(ch.jid)) {
       throw new Error(`channel ${ch.id}: a non-group channel must be our own number (the self chat)`)
     }
+    if (ch.trustedSenders !== undefined) ch.trustedSenders = checkTrustedSenders(ch.trustedSenders, `channel ${ch.id}: trustedSenders`)
     checkChannelTm8(ch, root)
   }
   return cfg
@@ -173,6 +197,16 @@ export function loadConfig(root: string): Config {
 export function allowedSenders(cfg: Config, ch: ChannelConfig): Set<string> {
   const out = new Set<string>()
   for (const s of ch.allowedSenders ?? ['owner']) {
+    if (s === 'owner') cfg.ownerJids.forEach((j) => out.add(j))
+    else out.add(s)
+  }
+  return out
+}
+
+/** JIDs labelled TRUSTED in a channel: config.trustedSenders plus the channel's own, with `owner` expanded. */
+export function trustedSenders(cfg: Config, ch: ChannelConfig): Set<string> {
+  const out = new Set<string>()
+  for (const s of [...cfg.trustedSenders, ...(ch.trustedSenders ?? [])]) {
     if (s === 'owner') cfg.ownerJids.forEach((j) => out.add(j))
     else out.add(s)
   }
