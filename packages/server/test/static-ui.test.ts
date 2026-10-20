@@ -111,6 +111,8 @@ describe('the product UI bundle at the root', () => {
     const res = await fetch(`${base}/assets/missing.js`);
     expect(res.status).toBe(404);
     expect(res.headers.get('content-type')).toContain('application/json');
+    // A proxy must not cache "missing": the chunk may exist a moment later.
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.text()).not.toContain('<!doctype');
   });
 
