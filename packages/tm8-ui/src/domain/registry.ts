@@ -1613,17 +1613,16 @@ const ROWS: readonly KindConfig[] = [
     panel: {
       /* kind-bodies-2 handover, applied verbatim: the GOVERNED body. */
       archetype: 'governed',
+      /* The project page (task 01a15a00): the folder everything starts in,
+         its trust, its git, then everything recorded in it with a kind
+         filter. `work-list` replaced `live-sessions` — sessions are one of
+         its filters, with the same liveness word. */
       blocks: [
-        { block: 'path-row' },
+        { block: 'path-row', label: 'WORKING FOLDER' },
         { block: 'trust-card', params: { action: 'untrust' } },
-        { block: 'live-sessions' },
+        { block: 'git-status', label: 'GIT' },
+        { block: 'work-list', label: 'IN THIS PROJECT' },
         { block: 'unlink-footer', params: { action: 'unlink' } },
-        {
-          block: 'notice',
-          params: {
-            text: 'Projects are a materialized per-space projection of node-level registry rows. Editing, deleting and moving them here is refused by design — manage them in node settings.',
-          },
-        },
       ],
       capabilityReasons: {
         canEdit: 'Projects are materialized from the node registry — they cannot be edited from a space.',

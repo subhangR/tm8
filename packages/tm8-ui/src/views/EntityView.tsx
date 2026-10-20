@@ -32,6 +32,7 @@
  *
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → detail → list.
  */
+import { projectRecordPort } from '../projects/project-record';
 import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntityId, EntityKind, ExecutionSpawnInput } from '@tm8/contract';
@@ -975,6 +976,7 @@ export function EntityView(props: EntityViewProps) {
          conflict card, and now the doc editor behind the reader archetype —
          is live only where the host hands down the seam's commands.
          AuthoringCommands is a structural subset, no cast. */
+      projectRecords={projectRecordPort(data.seam, data.spaceId)}
       commands={data.seam.commands}
       onSaved={data.reconcileCommand}
       streaming={data.activity[selectedId] ?? false}

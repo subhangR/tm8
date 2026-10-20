@@ -152,6 +152,7 @@ import {
   type ProjectFileBlame,
   type ProjectFileHistory,
   type ProjectCreateInput,
+  type ProjectUpdateInput,
   type ProjectDirectoryListing,
   type ProjectCloneInput,
   type ProjectCloneJob,
@@ -1200,6 +1201,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     createProject(input: ProjectCreateInput): Promise<ProjectResource> {
       return http.call<ProjectResource>('projects.create', { body: input });
+    },
+
+    /** Node admins only: a folder's path, name, trust or defaults (`projects.update`). */
+    updateProject(projectId: ProjectId, input: ProjectUpdateInput): Promise<ProjectResource> {
+      return http.call<ProjectResource>('projects.update', { params: { projectId }, body: input });
     },
 
     async linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void> {

@@ -24,6 +24,8 @@ import { useSessionStart } from '../../views/useSessionStart';
 import { useMarkEntitySeen } from '../../seen-entities/EntitySeen';
 import { EntityListPanel, type ListEmptyState, type ListFilterState } from '../../panels/EntityListPanel';
 import { requestLinkFocus } from '../../panels/list/linkFocus';
+import { projectRecordPort } from '../../projects/project-record';
+import { useProjectRowNote } from '../../projects/ProjectRowNote';
 import { sidePatch } from './sideSection';
 import { ListRootHeader, type ListRootOption } from '../../panels/ListRootHeader';
 import { useStore } from 'zustand';
@@ -388,15 +390,17 @@ function EntityBrowser() {
       if (state.tier) return <ListState text={`No ${state.tier.toLowerCase()} ${nounPlural}`} />;
       return (
         <ListState
-          text={`No ${nounPlural} yet`}
+          text={EMPTY_TEXT[kind] ?? `No ${nounPlural} yet`}
           {...(disabledReason === null ? { action: { label: `New ${noun}`, run: createDraft } } : {})}
         />
       );
     },
-    [retry, clearSearch, createDraft, disabledReason, noun, nounPlural],
+    [retry, clearSearch, createDraft, disabledReason, kind, noun, nounPlural],
   );
 
   const verbs = useRowVerbs(kind);
+  /* A project row's second line is its folder and trust (task 01a15a00). */
+  const rowNoteOf = useProjectRowNote(kind === 'project' ? projectRecordPort(data.seam, data.spaceId) : null);
 
   const source = needsMeListSource(attentionApi, kind, data, {
     rowsFor: data.rowsFor(kind),
@@ -506,6 +510,7 @@ function EntityBrowser() {
           onFiltersChange={onFiltersChange}
           bodyRef={scroll.ref}
           renderEmpty={renderEmpty}
+          {...(rowNoteOf ? { rowNoteOf } : {})}
         />
       </div>
     </section>
@@ -703,6 +708,12 @@ function useTierRowEdges(hostRef: RefObject<HTMLDivElement | null>) {
 }
 
 /** The list's empty and no-match states (design log §11): one line and a text action. */
+/** A kind whose empty list needs to say what the thing IS before asking for one. */
+const EMPTY_TEXT: Partial<Record<string, string>> = {
+  project:
+    'No projects yet. A project is a folder on the node: its chats, sessions, worktrees and terminals start there.',
+};
+
 function ListState({ text, action }: { text: string; action?: { label: string; run: () => void } }) {
   return (
     <div className="tws-browser-state" role="status">

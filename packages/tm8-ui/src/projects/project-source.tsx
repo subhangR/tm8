@@ -190,8 +190,14 @@ export function useProjectSourceDraft(options: {
 }
 
 /** The node folder browser. Rendered by the host IN PLACE of its form while open. */
-export function ProjectFolderBrowser(props: { draft: ProjectSourceDraft; nodeLabel: string }) {
+export function ProjectFolderBrowser(props: {
+  draft: ProjectSourceDraft;
+  nodeLabel: string;
+  /** False where the caller cannot create a folder (changing an existing project's path). */
+  allowNewFolder?: boolean;
+}) {
   const { draft, nodeLabel } = props;
+  const allowNewFolder = props.allowNewFolder ?? true;
   const { listing, mode, busy, error, newFolderName } = draft.browser;
   const browsingBroad = listing ? broadWorkingDirReason(listing.path, listing.separator) : null;
   const cleanFolderName = newFolderName.trim();
@@ -237,7 +243,7 @@ export function ProjectFolderBrowser(props: { draft: ProjectSourceDraft; nodeLab
             {!busy && listing.directories.length === 0 ? <li className="project-browser__empty">No child folders</li> : null}
           </ul>
           {listing.truncated ? <p className="project-onboard__note">Only the first 500 folders are shown.</p> : null}
-          {mode === 'workingDir' ? (
+          {mode === 'workingDir' && !allowNewFolder ? null : mode === 'workingDir' ? (
             <div className="project-browser__new">
               <label htmlFor="project-new-folder">Create a new folder here</label>
               <div>
@@ -323,7 +329,13 @@ export function ProjectSourceFields(props: {
 
       {pickWorkingDir ? (
         <div className="project-onboard__field">
-          <span>{draft.sourceKind === 'github' ? `Folder for the repository on ${nodeLabel}` : `Local folder on ${nodeLabel}`}</span>
+          <span>{draft.sourceKind === 'github' ? `Folder for the repository on ${nodeLabel}` : `Working folder on ${nodeLabel}`}</span>
+          {props.defaultWorkingDir !== undefined ? (
+            <small className="project-onboard__help" data-testid="project-folder-help">
+              The folder this project’s chats, sessions, worktrees and terminals start in. Pick a folder that
+              already holds your code, or leave it empty for a new one.
+            </small>
+          ) : null}
           <div className="project-onboard__folder-row">
             <input
               aria-label="Working directory"
@@ -337,8 +349,7 @@ export function ProjectSourceFields(props: {
           {draft.ensureWorkingDir ? <small>This folder will be created when you submit.</small> : null}
           {props.defaultWorkingDir !== undefined && !draft.workingDir.trim() ? (
             <small data-testid="project-default-dir">
-              Leave empty to create {props.defaultWorkingDir ?? '~/<project-name>'} on {nodeLabel}. Chats, sessions and
-              terminals for this project start there.
+              Left empty, {nodeLabel} creates <code>{props.defaultWorkingDir ?? '~/<project-name>'}</code> and uses it.
             </small>
           ) : null}
           {selectedBroad ? (

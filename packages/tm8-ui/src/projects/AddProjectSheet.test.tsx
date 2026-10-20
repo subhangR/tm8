@@ -88,6 +88,8 @@ describe('AddProjectSheet', () => {
     const field = view.getByLabelText('Working directory') as HTMLInputElement;
     expect(field.placeholder).toBe('~/docs-site');
     expect(view.getByTestId('project-default-dir').textContent).toContain('~/docs-site');
+    // The field says what it is for, not only what happens when it is empty.
+    expect(view.getByTestId('project-folder-help').textContent).toContain('chats, sessions, worktrees and terminals start in');
     fireEvent.click(view.getByRole('button', { name: 'Add project' }));
     await waitFor(() => expect(onAdded).toHaveBeenCalledWith('project-entity-1'));
     const input = vi.mocked(p.add).mock.calls[0]![0];

@@ -1,3 +1,4 @@
+import { projectRecordPort } from '../projects/project-record';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ChannelTab,
@@ -255,6 +256,7 @@ export function ChannelView({
       detail={selectedDetail ?? null}
       serverBaseUrl={serverBaseUrl}
       loading={!selectedDetail}
+      projectRecords={projectRecordPort(data.seam, data.spaceId)}
       host="stack"
       reasons={reasons}
       ctx={{ spaceId: data.spaceId, entityId: selectedId }}

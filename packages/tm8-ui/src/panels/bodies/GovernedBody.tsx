@@ -16,6 +16,7 @@ import { toSessionRow } from '../../terminal/session-row';
 import { EmptyBody } from '../detail/PanelStates';
 import { DisabledAction, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
+import { FolderEditor, GitStatusBlock, TrustSwitch, WorkListBlock, type GovernedRecordControls } from './GovernedRecord';
 import './governed-body.css';
 
 /**
@@ -80,6 +81,8 @@ export const GOVERNED_BLOCKS = [
   'live-sessions',
   'unlink-footer',
   'notice',
+  'git-status',
+  'work-list',
 ] as const;
 
 export type GovernedBlockName = (typeof GOVERNED_BLOCKS)[number];
@@ -138,12 +141,18 @@ export interface GovernedBodyProps {
    * (R5 #9 / L6).
    */
   onCopyPath?: (path: string) => void;
+  /**
+   * The record's writes and git reads, from the host. Absent ⇒ the path and
+   * trust are read-only and the git block draws nothing.
+   */
+  recordControls?: GovernedRecordControls;
 }
 
 export function GovernedBody({
   detail,
   blocks,
   resource,
+  recordControls,
   livenessOf,
   actionContext,
   now,
@@ -191,6 +200,7 @@ export function GovernedBody({
           now={nowIso}
           onOpenEntity={onOpenEntity}
           onCopyPath={onCopyPath}
+          recordControls={recordControls}
         />
       ))}
     </div>
@@ -206,9 +216,11 @@ function GovernedBlock({
   now,
   onOpenEntity,
   onCopyPath,
+  recordControls,
 }: {
   detail: EntityDetail;
   block: GovernedBlockRef;
+  recordControls?: GovernedRecordControls;
   resource?: ProjectResource | null;
   livenessOf?: (id: string) => SessionLiveness;
   actionContext?: ActionContext;
@@ -219,9 +231,22 @@ function GovernedBlock({
   const params = block.params ?? {};
   switch (block.block) {
     case 'path-row':
-      return <PathRowBlock detail={detail} params={params} resource={resource} onCopyPath={onCopyPath} />;
+      return <PathRowBlock detail={detail} params={params} label={block.label} resource={resource} recordControls={recordControls} onCopyPath={onCopyPath} />;
     case 'trust-card':
-      return <TrustCardBlock params={params} resource={resource} actionContext={actionContext} />;
+      return <TrustCardBlock params={params} resource={resource} recordControls={recordControls} actionContext={actionContext} />;
+    case 'git-status':
+      return <GitStatusBlock controls={recordControls} label={block.label} />;
+    case 'work-list':
+      return (
+        <WorkListBlock
+          detail={detail}
+          edgeType={asText(params.edgeType) ?? 'in_project'}
+          label={block.label}
+          livenessOf={livenessOf}
+          now={now}
+          onOpenEntity={onOpenEntity}
+        />
+      );
     case 'live-sessions':
       return (
         <LiveSessionsBlock
@@ -268,35 +293,64 @@ const OPEN_GLYPH = '↗';
 function PathRowBlock({
   detail,
   params,
+  label,
   resource,
+  recordControls,
   onCopyPath,
 }: {
   detail: EntityDetail;
   params: Params;
+  label?: string;
   resource?: ProjectResource | null;
+  recordControls?: GovernedRecordControls;
   onCopyPath?: (path: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const contentKey = typeof params.source === 'string' ? params.source : null;
   const fromContent = contentKey ? scalar(record(detail.content)[contentKey]) : null;
   const path = resource?.workingDir ?? fromContent;
   const repo = resource?.repoUrl ?? scalar(record(detail.content).repoUrl);
+  const update = recordControls?.update;
+  /* The node returns a path only to a node admin (W11), and only a node admin
+     may change it — so a path in hand is also the permission to edit. */
+  const canEdit = Boolean(update && resource?.workingDir);
 
   return (
     <section className="gb-pathgroup" data-testid="governed-path">
-      {path ? (
+      {label ? <Eyebrow faint>{label}</Eyebrow> : null}
+      {editing && update && path ? (
+        <FolderEditor current={path} controls={{ ...recordControls, update }} onDone={() => setEditing(false)} />
+      ) : path ? (
         <div className="gb-path">
+          <span aria-hidden className="gb-path__glyph">▱</span>
           <span className="gb-path__value" title={path}>
             {path}
           </span>
           <CopyPathControl path={path} onCopyPath={onCopyPath} />
+          {canEdit ? (
+            <button type="button" className="gb-verb" data-testid="governed-path-edit" onClick={() => setEditing(true)}>
+              Change
+            </button>
+          ) : null}
+        </div>
+      ) : resource ? (
+        <div className="gb-path gb-path--hollow" data-testid="governed-path-hidden">
+          <span className="gb-path__hint">
+            Only a node admin can see or change this project’s folder. Ask one if it needs to move.
+          </span>
         </div>
       ) : (
         <div className="gb-path gb-path--hollow" data-testid="governed-path-hollow">
-          <HollowInline caption="No node-record read has run for this entity — the execution root lives on the node's project record, which this build has no seam read for. An unread path is not an empty path.">
-            — execution root
+          <HollowInline caption={resource === null
+            ? 'This space has no folder record for this project.'
+            : 'The folder record has not been read here, so no path is shown. An unread path is not an empty one.'}>
+            {resource === null ? 'No folder record' : 'Folder not loaded'}
           </HollowInline>
         </div>
       )}
+      {!editing && (path || resource) ? (
+        <p className="gb-path__note">Chats, sessions, worktrees and terminals for this project start in this folder.</p>
+      ) : null}
       {repo ? (
         <div className="gb-repo" data-testid="governed-repo">
           <span aria-hidden className="gb-repo__glyph">
@@ -384,7 +438,7 @@ function CopyPathControl({ path, onCopyPath }: { path: string; onCopyPath?: (pat
 const TRUSTED_NOTE =
   'Agents may run real terminal sessions in this root. Untrusting terminates nothing but blocks new runs.';
 const UNTRUSTED_NOTE =
-  'Agents cannot start terminal sessions in this root. Trusting it allows new runs; it starts nothing and revives nothing.';
+  'Every chat, session or terminal started in this folder asks for confirmation first. Trusting it removes that step; it starts nothing.';
 
 /**
  * TRUST IS A THREE-STATE FACT, and that is the whole point of this block.
@@ -397,10 +451,12 @@ const UNTRUSTED_NOTE =
 function TrustCardBlock({
   params,
   resource,
+  recordControls,
   actionContext,
 }: {
   params: Params;
   resource?: ProjectResource | null;
+  recordControls?: GovernedRecordControls;
   actionContext?: ActionContext;
 }) {
   const trust = resource?.trust ?? null;
@@ -408,12 +464,11 @@ function TrustCardBlock({
   if (!trust) {
     return (
       <section className="gb-trust gb-trust--hollow" data-testid="governed-trust-hollow">
-        <HollowInline caption="No node-record read has run for this entity — trust lives on the node's project record, which this build has no seam read for. An unread trust level is never shown as untrusted.">
-          — trust
+        <HollowInline caption="The folder record has not been read here. An unread trust level is never shown as untrusted.">
+          Trust not loaded
         </HollowInline>
         <p className="gb-trust__note">
-          Trust decides whether agents may run terminal sessions in this root. This build cannot read
-          it yet, so neither answer is claimed.
+          Trust decides whether agents run in this folder without asking first.
         </p>
       </section>
     );
@@ -429,6 +484,8 @@ function TrustCardBlock({
   const note = isTrusted
     ? (asText(params.trustedNote) ?? TRUSTED_NOTE)
     : (asText(params.untrustedNote) ?? UNTRUSTED_NOTE);
+  const update = recordControls?.update;
+  const path = resource?.workingDir;
 
   return (
     <section
@@ -441,9 +498,16 @@ function TrustCardBlock({
           {trust}
         </Pill>
         <div className="gb-trust__spacer" />
-        <TrustVerb isTrusted={isTrusted} params={params} actionContext={actionContext} />
+        {/* A host with a record port says who may change trust below; only a
+            host without one falls back to the registry's verb. */}
+        {recordControls ? null : <TrustVerb isTrusted={isTrusted} params={params} actionContext={actionContext} />}
       </div>
       <p className="gb-trust__note">{note}</p>
+      {update && path ? (
+        <TrustSwitch trust={trust} path={path} update={update} />
+      ) : !isTrusted && resource && !resource.workingDir ? (
+        <p className="gb-trust__note" data-testid="governed-trust-ask">Only a node admin can trust it. They can do it from this page.</p>
+      ) : null}
     </section>
   );
 }
