@@ -433,12 +433,6 @@
   flex: none;
   display: inline-flex;
 }
-.cv2-root .tws-browser .tws-quicknew__label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 /* The tile's Terminal asks which project folder first: a menu under the
    tile, outside its clip (the tile hides overflow for its rounded edge). */
 .cv2-root .tws-browser .tws-quicknew-box {

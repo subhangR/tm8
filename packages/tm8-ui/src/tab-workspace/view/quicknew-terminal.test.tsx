@@ -29,12 +29,25 @@ const PROJECTS: TerminalProjectOption[] = [
   { id: 'pj-old', name: 'legacy', trusted: false, detail: '', reason: "untrusted — can't host sessions · trust it in Node settings" },
 ];
 
-describe('the New chat · New task · Terminal tile', () => {
-  it('draws Terminal as the third cell, next to New chat and New task', () => {
+describe('the New chat · task · terminal · doc · drawing tile', () => {
+  it('is five icon-only cells: chat · task · terminal · doc · drawing, each named', () => {
     render(<QuickNew terminal={{ start: vi.fn(), projects: PROJECTS }} />);
-    const cells = [...screen.getByTestId('tws-quicknew').querySelectorAll('button')].map((b) => b.getAttribute('data-testid'));
-    expect(cells).toEqual(['tws-quicknew-chat', 'tws-quicknew-task', 'tws-quicknew-terminal']);
-    expect(screen.getByTestId('tws-quicknew-terminal').getAttribute('aria-label')).toBe('New terminal');
+    const cells = [...screen.getByTestId('tws-quicknew').querySelectorAll('button')];
+    expect(cells.map((b) => b.getAttribute('data-kind'))).toEqual(['chat', 'task', 'terminal', 'doc', 'drawing']);
+    expect(cells.map((b) => b.getAttribute('aria-label'))).toEqual(['New chat', 'New task', 'New terminal', 'New doc', 'New drawing']);
+    for (const cell of cells) {
+      expect(cell.textContent).toBe('');
+      expect(cell.querySelector('svg')).not.toBeNull();
+      expect(cell.getAttribute('title')).toBeTruthy();
+    }
+  });
+
+  it('doc and drawing open their drafts directly', () => {
+    render(<QuickNew terminal={{ start: vi.fn(), projects: PROJECTS }} />);
+    fireEvent.click(screen.getByTestId('tws-quicknew-doc'));
+    fireEvent.click(screen.getByTestId('tws-quicknew-drawing'));
+    expect(dispatch).toHaveBeenNthCalledWith(1, { command: 'workspace.drafts.open', args: { kind: 'doc' }, source: 'click' });
+    expect(dispatch).toHaveBeenNthCalledWith(2, { command: 'workspace.drafts.open', args: { kind: 'drawing' }, source: 'click' });
   });
 
   it('New chat opens the chat draft directly, with no project question', () => {

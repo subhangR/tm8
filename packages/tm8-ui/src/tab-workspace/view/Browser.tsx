@@ -196,8 +196,12 @@ export function PanelTop({ searchable = false }: { searchable?: boolean }) {
   );
 }
 
-/** The two kinds every list column can start, whatever it is listing. */
-const QUICK_NEW_KINDS = ['chat', 'task'] as const satisfies readonly KindId[];
+/**
+ * The tile's cells, left to right (Subhang 2026-10-20: "chat | task | terminal
+ * | doc | drawing, only icons"). `terminal` is not a kind: it asks which
+ * project and starts a shell; every other cell opens that kind's draft.
+ */
+const QUICK_NEW_CELLS = ['chat', 'task', 'terminal', 'doc', 'drawing'] as const satisfies readonly (KindId | 'terminal')[];
 
 /** A project the tile's Terminal can open in (`data.launch.projects`). */
 export interface TerminalProjectOption {
@@ -216,14 +220,14 @@ export interface QuickNewTerminal {
 }
 
 /**
- * NEW CHAT · NEW TASK · TERMINAL (pinned-only rail, Subhang 2026-10-17; the
- * Terminal third added 2026-10-20 for Bhargav's "projects don't have a working
- * folder"): one row at the head of every list, side by side. Chat and task
- * open the same draft the list's own ＋ opens for that kind — a new chat picks
- * its project on the composer's own chip. Terminal ASKS which project first
- * (Subhang: "only terminal asks for the project") and starts the shell in
- * that project's folder, or a scratch directory. One black-and-white paper
- * tile split in thirds, each wearing its kind's mark.
+ * NEW CHAT · TASK · TERMINAL · DOC · DRAWING (pinned-only rail, Subhang
+ * 2026-10-17; icons only, five cells, 2026-10-20): one row at the head of
+ * every list. Each kind cell opens the same draft the list's own ＋ opens for
+ * that kind — a new chat picks its project on the composer's own chip.
+ * Terminal ASKS which project first (Subhang: "only terminal asks for the
+ * project"; Bhargav: terminals start in the project's folder) and starts the
+ * shell there, or in a scratch directory. One black-and-white paper tile, each
+ * cell wearing its kind's mark, named by its tooltip and aria-label.
  */
 export function QuickNew({ terminal }: { terminal: QuickNewTerminal }) {
   const { dispatch } = useWorkspace();
@@ -236,51 +240,55 @@ export function QuickNew({ terminal }: { terminal: QuickNewTerminal }) {
   return (
     <div className="tws-quicknew-box" ref={boxRef}>
       <div className="tws-quicknew" role="group" aria-label="New" data-testid="tws-quicknew">
-        {QUICK_NEW_KINDS.map((kind) => {
-          const adapter = getKindAdapter(kind);
+        {QUICK_NEW_CELLS.map((cell) => {
+          if (cell === 'terminal') {
+            return (
+              <button
+                key={cell}
+                type="button"
+                className="tws-quicknew__btn"
+                aria-label="New terminal"
+                aria-haspopup="menu"
+                aria-expanded={asking}
+                aria-disabled={terminalRefusal !== null || undefined}
+                title={terminalRefusal ?? 'New terminal — pick the project folder it opens in'}
+                data-kind="terminal"
+                data-testid="tws-quicknew-terminal"
+                onClick={() => {
+                  if (terminalRefusal !== null) return;
+                  setAsking((was) => !was);
+                }}
+              >
+                <span className="tws-quicknew__glyph" aria-hidden>
+                  <VectorIcon paths={KIND_ART.work_session} size={16} strokeWidth={1.5} />
+                </span>
+              </button>
+            );
+          }
+          const adapter = getKindAdapter(cell);
           const disabledReason = adapter.creatable === true ? null : adapter.creatable.disabledReason;
           const label = `New ${adapter.noun.toLowerCase()}`;
           return (
             <button
-              key={kind}
+              key={cell}
               type="button"
               className="tws-quicknew__btn"
+              aria-label={label}
               aria-disabled={disabledReason !== null || undefined}
               title={disabledReason ?? label}
-              data-kind={kind}
-              data-testid={`tws-quicknew-${kind}`}
+              data-kind={cell}
+              data-testid={`tws-quicknew-${cell}`}
               onClick={() => {
                 if (disabledReason !== null) return;
-                dispatch({ command: 'workspace.drafts.open', args: { kind }, source: 'click' });
+                dispatch({ command: 'workspace.drafts.open', args: { kind: cell }, source: 'click' });
               }}
             >
               <span className="tws-quicknew__glyph" aria-hidden>
-                <VectorIcon paths={KIND_ART[kind]} size={14} strokeWidth={1.5} />
+                <VectorIcon paths={KIND_ART[cell]} size={16} strokeWidth={1.5} />
               </span>
-              <span className="tws-quicknew__label">{label}</span>
             </button>
           );
         })}
-        <button
-          type="button"
-          className="tws-quicknew__btn"
-          aria-label="New terminal"
-          aria-haspopup="menu"
-          aria-expanded={asking}
-          aria-disabled={terminalRefusal !== null || undefined}
-          title={terminalRefusal ?? 'New terminal — pick the project folder it opens in'}
-          data-kind="terminal"
-          data-testid="tws-quicknew-terminal"
-          onClick={() => {
-            if (terminalRefusal !== null) return;
-            setAsking((was) => !was);
-          }}
-        >
-          <span className="tws-quicknew__glyph" aria-hidden>
-            <VectorIcon paths={KIND_ART.work_session} size={14} strokeWidth={1.5} />
-          </span>
-          <span className="tws-quicknew__label">Terminal</span>
-        </button>
       </div>
       {asking && start ? (
         <div className="tws-quicknew-menu" role="menu" aria-label="Open a terminal in" data-testid="tws-quicknew-terminal-menu">
