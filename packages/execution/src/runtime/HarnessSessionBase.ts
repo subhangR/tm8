@@ -95,12 +95,14 @@ export abstract class HarnessSessionBase implements HarnessSession {
       throw harnessFailure('invalid_config', 'submit', 'A harness attempt is already active');
     if (this.submitted.has(command.attempt.attemptId))
       throw harnessFailure('invalid_config', 'submit', 'Attempt was already dispatched');
-    if (!command.text.trim() || command.attachmentRefs.length)
+    if (command.attachmentRefs.length)
       throw harnessFailure(
         'unsupported_capability',
         'submit',
-        'Only nonempty text input is supported',
+        'This chat cannot take file attachments yet. Paste the content as text instead.',
       );
+    if (!command.text.trim())
+      throw harnessFailure('unsupported_capability', 'submit', 'Only nonempty text input is supported');
     if (command.attempt.configRevision !== command.config.revision)
       throw harnessFailure('invalid_config', 'submit', 'Attempt config revision does not match');
     const a = this.input.config,

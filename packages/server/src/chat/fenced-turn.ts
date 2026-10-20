@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { MessagePartSchema, type ChatTurnUsage } from '@tm8/contract';
 import {
-  type AttemptRef, type GenerationFence, type HarnessRegistry, type HarnessSession,
+  HarnessRuntimeError, type AttemptRef, type GenerationFence, type HarnessRegistry, type HarnessSession,
   type RuntimeConfig, type TerminalOutcome, type UsageFact,
 } from '@tm8/execution';
 import type { Db, DbClaims } from '../db/types.js';
@@ -54,9 +54,14 @@ export async function deadline<T>(promise: Promise<T>, milliseconds: number,
   try {
     return await Promise.race([promise, new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(typeof operation === 'function'
-        ? operation() : new Error(`${operation} timed out`)), milliseconds);
+        ? operation() : new StepTimeoutError(operation)), milliseconds);
     })]);
   } finally { if (timer) clearTimeout(timer); }
+}
+
+/** A named startup step ran out of time; `step` is safe to show the human. */
+export class StepTimeoutError extends Error {
+  constructor(readonly step: string) { super(`${step} timed out`); }
 }
 
 /**
@@ -388,6 +393,11 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
       if (observed) await deadline(observed.catch(()=>undefined),options.timeouts?.close ?? 15_000,'failed turn observations').catch(error=>options.onError?.(error));
     }
     if (!stoppedBeforeDispatch) options.onError?.(error);
+    // A harness refusal (e.g. attachments it cannot take) carries a safe reason.
+    // Closing the session after it reports `runtime_exit`, which used to settle
+    // the turn as a bare `runtime_lost` and render only "Agent turn failed."
+    const refused=error instanceof HarnessRuntimeError ? error.failure : null;
+    if (refused && !failure) failure={code:refused.code,message:refused.safeMessage};
     // An ACK failure is weaker evidence than an already-durable provider terminal.
     // Its output parts are consumed before this branch and must not gain a second done.
     if (terminal) await settleTerminal(terminal);
@@ -400,7 +410,10 @@ export async function executeFencedTurn(options: FencedTurnOptions): Promise<voi
         ? {code:'interrupted',message:'Stopped before the agent received this message.'}
         : knownNotSent ? {code:'provider_not_sent',message:'The provider confirmed this input was not sent.'}
         : silent ? {code:silent.code,message:silent.message}
+        : refused ? failure!
         : barrier ? {code:'delivery_unknown',message:'Chat delivery was interrupted; recorded effects may have occurred.'}
+        : error instanceof StepTimeoutError
+          ? {code:'preparation_failed',message:`Chat runtime could not prepare this turn: ${error.step} timed out.`}
         : {code:'preparation_failed',message:'Chat runtime could not prepare this turn.'};
       if (!barrier) { await rpc('fail_chat_preparation',[turn.chatId,leaseFence,failure]); settled=true; }
       else if (snapshotId) {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
-import { HarnessRegistry, type HarnessCapabilities, type HarnessSession, type OpenHarnessInput, type TurnCommand } from '@tm8/execution';
+import { HarnessRegistry, harnessFailure, type HarnessCapabilities, type HarnessSession, type OpenHarnessInput, type TurnCommand } from '@tm8/execution';
 import { AgentSilentError, DEFAULT_CHAT_IDLE_TIMEOUT_MS, DEFAULT_CHAT_TOOL_TIMEOUT_MS, executeFencedTurn,
   UsageAccumulator, type FencedClaim, type FencedTurnOptions } from '../../src/chat/fenced-turn.js';
 import type { Db, DbClaims, Querier } from '../../src/db/types.js';
@@ -145,6 +145,32 @@ it('releases late prepared material and does not open it after timeout',async()=
   await executeFencedTurn(f.options); expect(f.release).not.toHaveBeenCalled();
   late.resolve(await original({}, {}, {})); await sleep(5);
   expect(f.open).not.toHaveBeenCalled(); expect(f.release).toHaveBeenCalledOnce();
+});
+it('names the startup step that timed out in a preparation failure',async()=>{
+  const f=fixture(); const late=deferred<HarnessSession>();
+  f.open.mockImplementation(async()=>late.promise); f.options.timeouts!.open=5;
+  await executeFencedTurn(f.options);
+  const failed=f.calls.find(c=>c.name==='fail_chat_preparation')!;
+  expect(failed.args[2]).toEqual({code:'preparation_failed',message:'Chat runtime could not prepare this turn: harness open timed out.'});
+});
+it('settles a harness refusal with its own reason, not a bare runtime_lost',async()=>{
+  const f=fixture();
+  f.open.mockImplementation(async value=>{
+    const session=f.makeSession(value); let exited=false; let wake=()=>{};
+    return {...session,
+      submit:async()=>{ throw harnessFailure('unsupported_capability','submit','This chat cannot take file attachments yet. Paste the content as text instead.'); },
+      close:async()=>{ exited=true; wake(); return {exited:true,nativeUsable:null}; },
+      observations:(async function*(){
+        if (!exited) await new Promise<void>(r=>{wake=r;});
+        yield {fence:value.fence,attempt:null,nativeTurnId:null,observedAt:new Date().toISOString(),adapterSeq:1,
+          payload:{kind:'runtime_exit' as const}};
+      })()} as HarnessSession;
+  });
+  await executeFencedTurn(f.options);
+  const done=f.calls.find(c=>c.name==='complete_chat_turn')!;
+  expect(done.args[1]).toBe('error');
+  expect(done.args[5]).toEqual({code:'unsupported_capability',
+    message:'This chat cannot take file attachments yet. Paste the content as text instead.'});
 });
 it('never publishes durable completion when settlement fails',async()=>{
   const f=fixture(); const rpc=f.options.db.rpc.bind(f.options.db);
