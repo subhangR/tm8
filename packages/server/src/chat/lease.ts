@@ -167,7 +167,10 @@ export interface TurnLeaseOptions {
 export class TurnLease {
   private readonly leaseMs: number;
   private readonly safetyMs: number;
+  /** Earliest the lease can run out: from the START of the last write that landed. */
   private expiresAt: number;
+  /** Latest it can still be live: from the END of that write. */
+  private latest: number;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private stopped = false;
   private lostError: ChatLeaseLostError | null = null;
@@ -180,6 +183,8 @@ export class TurnLease {
     this.leaseMs = options.leaseMs ?? CHAT_LEASE_MS;
     this.safetyMs = options.safetyMs ?? 15_000;
     this.expiresAt = options.claimedAt + this.leaseMs;
+    // Constructed after the claim returned, so the claim's lease ends by now+lease.
+    this.latest = Date.now() + this.leaseMs;
     this.whenLost = new Promise<never>((_, reject) => { this.rejectLost = reject; });
     // Racing promises observe it; an unraced loss must not crash the process.
     this.whenLost.catch(() => undefined);
@@ -201,7 +206,7 @@ export class TurnLease {
    * The latest moment the lease this owner last wrote can still be live, by
    * the owner's clock. Recovery of an abandoned turn is scheduled after it.
    */
-  get latestExpiry(): number { return this.expiresAt; }
+  get latestExpiry(): number { return this.latest; }
 
   /** The owner's last safe moment to act on the lease. */
   get safeUntil(): number { return this.expiresAt - this.safetyMs; }
@@ -222,8 +227,9 @@ export class TurnLease {
     const startedAt = Date.now();
     try {
       await this.renewOnce();
-      // The database wrote now()+lease at some point after startedAt.
+      // The database wrote now()+lease at some point between these two.
       this.expiresAt = startedAt + this.leaseMs;
+      this.latest = Date.now() + this.leaseMs;
       if (this.consecutiveFailures > 0) {
         console.warn(`[chat] lease renewal recovered for ${this.options.label} after ${this.consecutiveFailures} failed attempt(s)`);
       }
