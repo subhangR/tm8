@@ -113,6 +113,27 @@ describe.sequential('328 chat turn team', () => {
     expect(await read(other)).toBeNull();
   });
 
+  it('356: a session pinned to another space neither reads nor stamps the turn', async () => {
+    const elsewhere = randomUUID();
+    const pinned = <T,>(fn: (client: PoolClient) => Promise<T>) => asIdentity(owner, async (client) => {
+      await client.query(`select set_config('tm8.session_space_id',$1,true)`, [elsewhere]);
+      return fn(client);
+    });
+    const messageId = await asIdentity(owner, async (client) => {
+      const id = await postIn(client, 'Pinned elsewhere.');
+      await client.query(`select set_config('tm8.session_space_id',$1,true)`, [elsewhere]);
+      expect(await stamp(client, id, TEAM)).toBe(false);
+      await client.query(`select set_config('tm8.session_space_id',$1,true)`, [spaceId]);
+      expect(await stamp(client, id, TEAM)).toBe(true);
+      return id;
+    });
+    const turn = await turnOf(messageId);
+    expect(turn.team).toEqual(TEAM);
+    const read = await pinned(async (client) =>
+      (await client.query<{ team: unknown }>('select public.chat_turn_team($1) team', [turn.turn_id])).rows[0]!.team);
+    expect(read).toBeNull();
+  });
+
   it('refuses to restamp a turn after its posting transaction', async () => {
     const messageId = await asIdentity(owner, (client) => postIn(client, 'Second.'));
     const later = await asIdentity(owner, (client) => stamp(client, messageId, TEAM));
