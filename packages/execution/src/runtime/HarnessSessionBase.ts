@@ -1,6 +1,7 @@
 import { harnessFailure } from './HarnessRegistry.js';
 import type {
   AttemptRef,
+  Json,
   HarnessObservation,
   HarnessSession,
   OpenHarnessInput,
@@ -10,6 +11,19 @@ import type {
   TurnCommand,
   TerminalOutcome,
 } from './harness-types.js';
+
+/**
+ * A tool result is shown in the thread and stored as one message part; the
+ * agent already has the full value. Past this size it is cut to a readable
+ * prefix, which also keeps one result from overflowing the observation queue.
+ */
+export const TOOL_RESULT_MAX_CHARS = 262_144;
+export function boundToolResult(result: Json): Json {
+  if (result === null) return result;
+  const text = typeof result === 'string' ? result : JSON.stringify(result);
+  if (text.length <= TOOL_RESULT_MAX_CHARS) return result;
+  return `${text.slice(0, TOOL_RESULT_MAX_CHARS)}\n… [tool result cut: ${text.length} characters in total]`;
+}
 
 /** Single consumer, bounded backlog. Overflow makes the generation uncertain. */
 class ObservationQueue implements AsyncIterable<HarnessObservation> {
@@ -175,7 +189,8 @@ export abstract class HarnessSessionBase implements HarnessSession {
       this.abortTransport();
     }
   }
-  protected tool(tool: ToolObservation): void {
+  protected tool(input: ToolObservation): void {
+    const tool = input.result === null ? input : { ...input, result: boundToolResult(input.result) };
     const previous = this.tools.get(tool.nativeCallId);
     if (previous && JSON.stringify(previous) === JSON.stringify(tool)) return;
     this.tools.set(tool.nativeCallId, tool);
