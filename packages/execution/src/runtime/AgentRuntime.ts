@@ -5,6 +5,7 @@ export type {
   AgentRuntime,
   AgentThread,
   AgentThreadExit,
+  AgentTurnContentBlock,
   AgentTurnInput,
   StartAgentThreadInput,
   TurnItem,

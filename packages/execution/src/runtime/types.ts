@@ -131,8 +131,22 @@ export interface AgentThread {
   nativeSessionId: string;
 }
 
+/**
+ * File content delivered INTO the turn, after `text`. Base64 bytes for an
+ * image or a PDF, decoded UTF-8 for a text file. The caller has already sniffed
+ * the media type from the bytes and capped the size: the adapter forwards these
+ * as provider content blocks, and a block the provider rejects fails the whole
+ * turn rather than just the one file.
+ */
+export type AgentTurnContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'; data: string }
+  | { type: 'document'; mediaType: 'application/pdf'; data: string; title?: string };
+
 export interface AgentTurnInput {
   text: string;
+  /** Absent or empty: the turn is `text` alone, exactly as before. */
+  content?: readonly AgentTurnContentBlock[];
 }
 
 export interface AgentThreadExit {
