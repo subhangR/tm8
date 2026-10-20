@@ -33,6 +33,7 @@ const bridge = new Bridge(cfg, store, {
   react: (...a) => waRef.conn!.react(...a),
   sendMedia: (...a) => waRef.conn!.sendMedia(...a),
   downloadMedia: (...a) => waRef.conn!.downloadMedia(...a),
+  sendPoll: (...a) => waRef.conn!.sendPoll(...a),
 }, tm8, {
   mediaDir: path.join(DATA_DIR, 'media'),
   tokenDir: TOKEN_DIR,
@@ -72,6 +73,8 @@ setInterval(() => void bridge.watchdogTick().catch((e) => bridge.log(`[watchdog]
 setInterval(() => {
   if (bridge.wa.connected()) void bridge.flushQueue()
 }, 15_000)
+// Form answers due for submit (also after a restart) and forms closed in tm8.
+setInterval(() => void bridge.forms.tick().catch((e) => bridge.log(`[forms] ${e.message}`)), 15_000)
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
   process.on(sig, () => {

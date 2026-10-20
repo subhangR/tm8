@@ -45,15 +45,64 @@ export type OutboxRow = {
   wa_msg_id: string | null
   message_json: string | null
   status: 'queued' | 'sent' | 'failed'
-  kind: 'text' | 'react' | 'media'
+  kind: 'text' | 'react' | 'media' | 'poll'
   /** For kind 'media': JSON of OutboxMedia. `text` is then the caption line. */
   media_json: string | null
+  /** For kind 'poll': JSON of OutboxPoll. `text` is then the log line. */
+  poll_json: string | null
   created_at: number
   sent_at: number | null
 }
 
 /** A queued media send: the bytes wait in data/media/<path> until WhatsApp takes them. */
 export type OutboxMedia = { kind: 'image' | 'document'; mime: string; file_name: string; size: number; path: string; tm8_file_id: string | null }
+
+/** A queued WhatsApp poll: selectableCount 1 = single choice, 0 = any number. */
+export type OutboxPoll = { name: string; values: string[]; selectableCount: number }
+
+/** A tm8 form put into a group (POST /form). questions_json holds FormQuestion[] (forms.ts). */
+export type FormDeliveryRow = {
+  id: number
+  form_id: string
+  channel_id: string
+  requested_by: string
+  idempotency_key: string | null
+  title: string
+  questions_json: string
+  allow_amend: number
+  status: 'active' | 'closed'
+  created_at: number
+  checked_at: number | null
+  closed_at: number | null
+}
+
+/** One message of a delivery: the intro, a poll or a numbered text question. wa_msg_id is set once it is sent. */
+export type FormMessageRow = {
+  outbox_id: number
+  wa_msg_id: string | null
+  delivery_id: number
+  question_key: string | null
+  kind: 'intro' | 'poll' | 'text'
+}
+
+/** One WhatsApp member's answers to one delivery; response_id is their current revision in tm8. */
+export type FormRespondentRow = {
+  id: number
+  delivery_id: number
+  person: string
+  /** JSON array: every JID (PN and LID) this person was seen with. */
+  jids: string
+  name: string | null
+  answers_json: string
+  /** When the answers are due to be submitted (null: nothing to send). */
+  due_at: number | null
+  response_id: string | null
+  submitted_json: string | null
+  submissions: number
+  attempts: number
+  error: string | null
+  updated_at: number
+}
 
 export type MediaRow = {
   wa_msg_id: string
@@ -182,6 +231,44 @@ const SCHEMA = `
     UNIQUE (wa_msg_id, target_name)
   );
   CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
+  CREATE TABLE IF NOT EXISTS form_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    form_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    idempotency_key TEXT,
+    title TEXT NOT NULL,
+    questions_json TEXT NOT NULL,
+    allow_amend INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'closed')),
+    created_at INTEGER NOT NULL,
+    checked_at INTEGER,
+    closed_at INTEGER,
+    UNIQUE (requested_by, idempotency_key)
+  );
+  CREATE TABLE IF NOT EXISTS form_messages (
+    outbox_id INTEGER PRIMARY KEY,
+    wa_msg_id TEXT UNIQUE,
+    delivery_id INTEGER NOT NULL,
+    question_key TEXT,
+    kind TEXT NOT NULL CHECK (kind IN ('intro', 'poll', 'text'))
+  );
+  CREATE TABLE IF NOT EXISTS form_respondents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_id INTEGER NOT NULL,
+    person TEXT NOT NULL,
+    jids TEXT NOT NULL,
+    name TEXT,
+    answers_json TEXT NOT NULL DEFAULT '{}',
+    due_at INTEGER,
+    response_id TEXT,
+    submitted_json TEXT,
+    submissions INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (delivery_id, person)
+  );
   CREATE TABLE IF NOT EXISTS media (
     wa_msg_id TEXT PRIMARY KEY,
     channel_id TEXT NOT NULL,
@@ -222,6 +309,7 @@ export class Store {
     for (const c of ['title', 'title_source']) if (!nameCols.has(c)) this.db.exec(`ALTER TABLE names ADD COLUMN ${c} TEXT`)
     const outCols = new Set((this.db.prepare(`PRAGMA table_info(outbox_v1)`).all() as { name: string }[]).map((c) => c.name))
     if (!outCols.has('media_json')) this.db.exec(`ALTER TABLE outbox_v1 ADD COLUMN media_json TEXT`)
+    if (!outCols.has('poll_json')) this.db.exec(`ALTER TABLE outbox_v1 ADD COLUMN poll_json TEXT`)
     const mediaCols = new Set((this.db.prepare(`PRAGMA table_info(media)`).all() as { name: string }[]).map((c) => c.name))
     for (const [c, t] of [
       ['duration_sec', 'REAL'], ['ptt', 'INTEGER'], ['transcript_status', 'TEXT'], ['transcript', 'TEXT'], ['transcript_lang', 'TEXT'],
@@ -427,15 +515,18 @@ export class Store {
     if (!v0) return null
     return (this.db.prepare(`SELECT message_json FROM outbox WHERE wa_msg_id = ?`).get(id) as any)?.message_json ?? null
   }
-  insertOutbox(r: { idempotency_key: string | null; name: string; channel_id: string; text: string; reply_to: string | null; kind?: OutboxRow['kind']; media?: OutboxMedia }): number {
-    const { media, ...rest } = r
+  insertOutbox(r: { idempotency_key: string | null; name: string; channel_id: string; text: string; reply_to: string | null; kind?: OutboxRow['kind']; media?: OutboxMedia; poll?: OutboxPoll }): number {
+    const { media, poll, ...rest } = r
     return Number(
       this.db
         .prepare(
-          `INSERT INTO outbox_v1 (idempotency_key, name, channel_id, text, reply_to, status, kind, media_json, created_at)
-           VALUES (@idempotency_key, @name, @channel_id, @text, @reply_to, 'queued', @kind, @media_json, @created_at)`,
+          `INSERT INTO outbox_v1 (idempotency_key, name, channel_id, text, reply_to, status, kind, media_json, poll_json, created_at)
+           VALUES (@idempotency_key, @name, @channel_id, @text, @reply_to, 'queued', @kind, @media_json, @poll_json, @created_at)`,
         )
-        .run({ kind: media ? 'media' : 'text', ...rest, media_json: media ? JSON.stringify(media) : null, created_at: this.now() }).lastInsertRowid,
+        .run({
+          kind: media ? 'media' : poll ? 'poll' : 'text', ...rest, media_json: media ? JSON.stringify(media) : null,
+          poll_json: poll ? JSON.stringify(poll) : null, created_at: this.now(),
+        }).lastInsertRowid,
     )
   }
   setOutboxMedia(id: number, media: OutboxMedia) {
@@ -521,5 +612,86 @@ export class Store {
   }
   lastRoute(target: string): RouteRow | undefined {
     return this.db.prepare(`SELECT * FROM routes WHERE target_name = ? ORDER BY id DESC LIMIT 1`).get(target) as RouteRow | undefined
+  }
+
+  // ---- forms ----
+  insertFormDelivery(d: Pick<FormDeliveryRow, 'form_id' | 'channel_id' | 'requested_by' | 'idempotency_key' | 'title' | 'questions_json' | 'allow_amend'>): number {
+    return Number(
+      this.db
+        .prepare(
+          `INSERT INTO form_deliveries (form_id, channel_id, requested_by, idempotency_key, title, questions_json, allow_amend, status, created_at)
+           VALUES (@form_id, @channel_id, @requested_by, @idempotency_key, @title, @questions_json, @allow_amend, 'active', @created_at)`,
+        )
+        .run({ ...d, created_at: this.now() }).lastInsertRowid,
+    )
+  }
+  formDelivery(id: number): FormDeliveryRow | undefined {
+    return this.db.prepare(`SELECT * FROM form_deliveries WHERE id = ?`).get(id) as FormDeliveryRow | undefined
+  }
+  formDeliveryByKey(requestedBy: string, key: string): FormDeliveryRow | undefined {
+    return this.db.prepare(`SELECT * FROM form_deliveries WHERE requested_by = ? AND idempotency_key = ?`).get(requestedBy, key) as FormDeliveryRow | undefined
+  }
+  activeFormDelivery(formId: string, channelId: string): FormDeliveryRow | undefined {
+    return this.db.prepare(`SELECT * FROM form_deliveries WHERE form_id = ? AND channel_id = ? AND status = 'active'`).get(formId, channelId) as
+      | FormDeliveryRow
+      | undefined
+  }
+  /** A channel's deliveries, newest first (active only, or all). */
+  formDeliveries(channelId: string, o: { activeOnly?: boolean; limit?: number } = {}): FormDeliveryRow[] {
+    return this.db
+      .prepare(`SELECT * FROM form_deliveries WHERE channel_id = ?${o.activeOnly ? ` AND status = 'active'` : ''} ORDER BY id DESC LIMIT ?`)
+      .all(channelId, o.limit ?? 50) as FormDeliveryRow[]
+  }
+  allActiveFormDeliveries(): FormDeliveryRow[] {
+    return this.db.prepare(`SELECT * FROM form_deliveries WHERE status = 'active' ORDER BY id`).all() as FormDeliveryRow[]
+  }
+  setFormDeliveryChecked(id: number) {
+    this.db.prepare(`UPDATE form_deliveries SET checked_at = ? WHERE id = ?`).run(this.now(), id)
+  }
+  closeFormDelivery(id: number) {
+    this.db.prepare(`UPDATE form_deliveries SET status = 'closed', closed_at = ? WHERE id = ? AND status = 'active'`).run(this.now(), id)
+  }
+  insertFormMessage(m: Omit<FormMessageRow, 'wa_msg_id'>) {
+    this.db.prepare(`INSERT INTO form_messages (outbox_id, delivery_id, question_key, kind) VALUES (@outbox_id, @delivery_id, @question_key, @kind)`).run(m)
+  }
+  /** Called for every sent outbox row; a no-op unless the row is a form message. */
+  formMessageSent(outboxId: number, waId: string) {
+    this.db.prepare(`UPDATE form_messages SET wa_msg_id = ? WHERE outbox_id = ?`).run(waId, outboxId)
+  }
+  formMessage(waId: string): FormMessageRow | undefined {
+    return this.db.prepare(`SELECT * FROM form_messages WHERE wa_msg_id = ?`).get(waId) as FormMessageRow | undefined
+  }
+  formMessagesOf(deliveryId: number): FormMessageRow[] {
+    return this.db.prepare(`SELECT * FROM form_messages WHERE delivery_id = ? ORDER BY outbox_id`).all(deliveryId) as FormMessageRow[]
+  }
+  formRespondents(deliveryId: number): FormRespondentRow[] {
+    return this.db.prepare(`SELECT * FROM form_respondents WHERE delivery_id = ? ORDER BY id`).all(deliveryId) as FormRespondentRow[]
+  }
+  formRespondent(id: number): FormRespondentRow | undefined {
+    return this.db.prepare(`SELECT * FROM form_respondents WHERE id = ?`).get(id) as FormRespondentRow | undefined
+  }
+  insertFormRespondent(r: Pick<FormRespondentRow, 'delivery_id' | 'person' | 'jids' | 'name'>): number {
+    return Number(
+      this.db
+        .prepare(`INSERT INTO form_respondents (delivery_id, person, jids, name, updated_at) VALUES (@delivery_id, @person, @jids, @name, @updated_at)`)
+        .run({ ...r, updated_at: this.now() }).lastInsertRowid,
+    )
+  }
+  updateFormRespondent(
+    id: number,
+    p: Partial<Pick<FormRespondentRow, 'jids' | 'name' | 'answers_json' | 'due_at' | 'response_id' | 'submitted_json' | 'submissions' | 'attempts' | 'error'>>,
+  ) {
+    const cols = Object.keys(p)
+    if (cols.length === 0) return
+    this.db.prepare(`UPDATE form_respondents SET ${cols.map((c) => `${c} = @${c}`).join(', ')}, updated_at = @t WHERE id = @id`).run({ ...p, t: this.now(), id })
+  }
+  /** Respondents whose answers are due, in active deliveries. */
+  dueFormRespondents(now: number): FormRespondentRow[] {
+    return this.db
+      .prepare(
+        `SELECT r.* FROM form_respondents r JOIN form_deliveries d ON d.id = r.delivery_id
+         WHERE r.due_at IS NOT NULL AND r.due_at <= ? AND d.status = 'active' ORDER BY r.due_at`,
+      )
+      .all(now) as FormRespondentRow[]
   }
 }

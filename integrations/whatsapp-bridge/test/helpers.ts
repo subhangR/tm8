@@ -7,7 +7,8 @@ import { parseConfig } from '../src/config.js'
 import { Bridge, type Inbound, type WaKey, type WaPort } from '../src/core.js'
 import { TooLargeError } from '../src/media.js'
 import { Store } from '../src/store.js'
-import type { ChatMessage, EntityContext, Teammate, Tm8Port } from '../src/tm8.js'
+import type { OutboxPoll } from '../src/store.js'
+import type { ChatMessage, EntityContext, FormInfo, FormQuestionSpec, Teammate, Tm8Port } from '../src/tm8.js'
 import type { Transcriber } from '../src/transcribe.js'
 
 export const OWNER = '910000000001@s.whatsapp.net'
@@ -16,7 +17,7 @@ export const GROUP = '120363000000000001@g.us'
 
 export class FakeWa implements WaPort {
   up = true
-  sent: { jid: string; text: string; quoted?: string; id: string; media?: { kind: string; mime: string; fileName: string; size: number } }[] = []
+  sent: { jid: string; text: string; quoted?: string; id: string; media?: { kind: string; mime: string; fileName: string; size: number }; poll?: OutboxPoll }[] = []
   /** Download results by ref: bytes, or an Error to throw. */
   downloads = new Map<string, Buffer | Error>()
   downloadCalls: string[] = []
@@ -40,6 +41,12 @@ export class FakeWa implements WaPort {
     this.sent.push({ jid, text: m.caption, quoted: quoted?.key.id ?? undefined, id, media: { kind: m.kind, mime: m.mime, fileName: m.fileName, size: m.data.length } })
     const message = m.kind === 'image' ? { imageMessage: { caption: m.caption, mimetype: m.mime } } : { documentMessage: { caption: m.caption, mimetype: m.mime, fileName: m.fileName } }
     return { id, key: { remoteJid: jid, id, fromMe: true }, message }
+  }
+  async sendPoll(jid: string, poll: OutboxPoll) {
+    if (!this.up) throw new Error('down')
+    const id = `OUT${++this.n}`
+    this.sent.push({ jid, text: poll.name, id, poll })
+    return { id, key: { remoteJid: jid, id, fromMe: true }, message: { pollCreationMessageV3: { name: poll.name }, messageContextInfo: { messageSecret: 'c2VjcmV0' } } }
   }
   async downloadMedia(ref: string, maxBytes: number) {
     this.downloadCalls.push(ref)
@@ -124,6 +131,43 @@ export class FakeTm8 implements Tm8Port {
   }
   async stopSession(id: string) {
     this.stopped.push(id)
+  }
+  /** Forms by id; submits are recorded, and `responses` counts submitted responses (structure freezes at the first). */
+  forms = new Map<string, FormInfo & { responses: number }>()
+  submits: { formId: string; answers: Record<string, any>; amendOf: string | null; mutationId: string }[] = []
+  /** Errors the next submits throw (then they succeed). */
+  submitErrors: Error[] = []
+  formCalls: string[] = []
+  async formGet(id: string): Promise<FormInfo> {
+    this.formCalls.push(`get ${id}`)
+    const f = this.forms.get(id)
+    if (!f) throw new Error(`tm8 entity get failed: not_found`)
+    return structuredClone(f)
+  }
+  async formUpdateSettings(id: string, v: number, settings: Record<string, unknown>) {
+    const f = this.forms.get(id)!
+    if (f.version !== v) throw new Error('version_conflict')
+    if (f.responses && 'responses' in settings) throw new Error('form_structure_frozen')
+    this.formCalls.push(`update ${id} ${JSON.stringify(settings)}`)
+    Object.assign(f.settings, settings)
+    return ++f.version
+  }
+  async formAddQuestion(id: string, v: number, q: FormQuestionSpec) {
+    const f = this.forms.get(id)!
+    if (f.version !== v) throw new Error('version_conflict')
+    if (f.responses) throw new Error('form_structure_frozen')
+    this.formCalls.push(`add ${id} ${q.key}`)
+    f.questions.push(q)
+    return ++f.version
+  }
+  async formSubmit(formId: string, answers: Record<string, unknown>, o: { amendOf?: string | null; mutationId: string }) {
+    const err = this.submitErrors.shift()
+    if (err) throw err
+    const f = this.forms.get(formId)!
+    if (f.status !== 'open') throw new Error('tm8 form submit failed: form_not_open')
+    f.responses++
+    this.submits.push({ formId, answers: structuredClone(answers), amendOf: o.amendOf ?? null, mutationId: o.mutationId })
+    return { id: `resp-${this.submits.length}`, revision: o.amendOf ? 2 : 1 }
   }
 }
 
