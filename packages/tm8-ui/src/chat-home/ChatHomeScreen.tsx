@@ -51,6 +51,7 @@ import {
   CrewPanel,
   ModeOptionRows,
   ModelEffortPicker,
+  ProjectChip,
   TeamChip,
   TeamPicker,
   ThreadSettingsFields,
@@ -3185,6 +3186,18 @@ export function ChatHomeScreen({
                       : modeLocked ? 'this chat is still starting' : null
                   }
                 />
+                {/* WHERE THE CHAT RUNS, on the row — not only in ⚙ (task 01a159fa).
+                    The phone card keeps its clean ＋ · ⚙ · model · send foot;
+                    its project stays in ⚙. */}
+                {!phoneCard ? (
+                  <ProjectChip
+                    projects={projects}
+                    projectChoice={projectChoice}
+                    onProjectChange={chooseProject}
+                    locked={pinned}
+                    lockedProjectLabel={lockedProjectLabel}
+                  />
+                ) : null}
                 {shownRole === 'coordinator' && !compactComposer && !phoneCard ? (
                   <TeamChip
                     team={shownTeam}
