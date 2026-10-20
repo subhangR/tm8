@@ -72,6 +72,7 @@ import {
   type AgentCredentialProvider,
 } from './agent-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
+import { applySessionTmpdir } from '../session-tmpdir.js';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -1541,6 +1542,7 @@ export function composeEnv(
     const value = parentEnv[key];
     if (value) env[key] = value;
   }
+  applySessionTmpdir(env, parentEnv);
   if (manifest.project) env.TM8_PROJECT_ID = manifest.project.id;
   if (manifest.launch.model) env.TM8_MODEL = manifest.launch.model;
 

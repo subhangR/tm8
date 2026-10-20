@@ -97,6 +97,7 @@
 // already takes for an agent session, whose `HOME` is likewise the server's.
 
 import { cliBinDir, withAgentBinDirs } from '../spawn/manifest.js';
+import { applySessionTmpdir } from '../session-tmpdir.js';
 
 /**
  * The MAXIMAL key set of a vanilla terminal's environment — everything it can
@@ -197,6 +198,7 @@ export function composeShellEnv(input: ComposeShellEnvInput): Record<string, str
     const value = parentEnv[key];
     if (value) env[key] = value;
   }
+  applySessionTmpdir(env, parentEnv);
 
   return env;
 }
