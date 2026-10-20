@@ -59,6 +59,8 @@ export type Config = {
   media: { maxBytes: number; attach: 'reference' | 'attach' }
   /** Voice-note transcription. provider "local" = whisper.cpp in the container; "none" = off; "openai" is reserved. */
   transcription: TranscriptionConfig
+  /** tm8 forms in groups (POST /form): a member's answers go to tm8 this long after their last change. */
+  forms: { submitDelaySeconds: number }
   /** Who confirms sensitive actions from the tm8 UI, as briefings name them (default "the operator"). A name, not an identity check. */
   approverName?: string | null
   /** The tm8 doc with the full Bridge API reference (admin.ts api-reference); briefings point at it. */
@@ -108,6 +110,7 @@ export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids' | 'trustedSenders'>
     maxDurationSec: 600,
     waitSeconds: 20,
   },
+  forms: { submitDelaySeconds: 20 },
 }
 
 const ID_RE = /^[a-z][a-z0-9-]{0,30}$/
@@ -161,12 +164,16 @@ export function parseConfig(raw: any, root: string): Config {
     rateLimits: { ...DEFAULTS.rateLimits, ...raw?.rateLimits },
     media: { ...DEFAULTS.media, ...raw?.media },
     transcription: { ...DEFAULTS.transcription, ...raw?.transcription },
+    forms: { ...DEFAULTS.forms, ...raw?.forms },
     ownerJids: raw?.ownerJids ?? [],
     trustedSenders: checkTrustedSenders(raw?.trustedSenders, 'trustedSenders'),
     channels: raw?.channels ?? [],
   }
   if (!raw?.http?.publicUrl) cfg.http.publicUrl = `http://${cfg.http.host}:${cfg.http.port}`
   cfg.tm8.tokenFile = path.resolve(root, cfg.tm8.tokenFile)
+  if (!Number.isFinite(cfg.forms.submitDelaySeconds) || cfg.forms.submitDelaySeconds < 0 || cfg.forms.submitDelaySeconds > 3600) {
+    throw new Error('forms.submitDelaySeconds must be a number from 0 to 3600')
+  }
   if (!['reference', 'attach'].includes(cfg.media.attach)) throw new Error('media.attach must be "reference" or "attach"')
   const t = cfg.transcription
   if (!['local', 'none', 'openai'].includes(t.provider)) throw new Error('transcription.provider must be "local", "none" or "openai"')
