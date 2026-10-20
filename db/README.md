@@ -88,6 +88,44 @@ blew the wide entity reads up to ~1e13 rows on CI. Only the runner calls it: a
 database built by applying files directly (the w1 test harness) gets 225's own
 one-time call and nothing after it.
 
+**Chat lock order (339): `chats` → `entities` → `space_event_seq`.** Any
+transaction that touches a chat takes its row locks in this order:
+
+1. `chats` rows, ascending `entity_id`. An `agent_runtime` transaction also
+   holds its own chat `FOR SHARE` from its first `internal.identity_id()` call
+   (`assert_chat_generation`, 332). Every RPC makes that call
+   (`require_identity`) before its first write, and `w2_post_message_batch`
+   makes it after its ascending pass, which already includes the source chat.
+2. `entities` rows: message anchors in ascending id, then the parent message,
+   then attached files.
+3. `space_event_seq` for the space, taken by the first insert or update that
+   fires `capture_workspace_event` and held until commit (013).
+
+`space_event_seq` is one row per space, held until commit by every graph write,
+so a chat lock taken after it waits behind the whole space. Any path that takes
+the chat row after that, while another path holds the chat row and waits for
+the event seq, deadlocks. That was the `delivery_unknown` turn failure.
+
+| Path | Locks, in order |
+|---|---|
+| `w2_post_message_batch` (messages.post, turn enqueue) | chats (`FOR UPDATE` where it queues a turn, `FOR SHARE` for the source chat) → anchor entities → event seq → `chat_assign_turn_order` re-locks the chat (already held) |
+| fenced chat RPCs: `append_chat_message_part`, `complete_chat_turn`, `record_chat_*`, `begin_chat_dispatch`, `reserve_chat_continuity`, `seal_chat_turn_snapshot`, `heartbeat_chat_runtime`, `fail_chat_preparation` | `chat_lock_owned`: chats `FOR UPDATE` → chat_turns / attempts / message_parts → event seq (tool_call audit, message updates) |
+| `claim_next_chat_turn`, `recover_chat_attempt` | chats `FOR UPDATE` → chat_turns `FOR UPDATE` → event seq |
+| `set_chat_configuration`, `set_chat_model`, `set_chat_credentials`, `set_chat_context`, `mark_chat_runtime_state`, `issue_agent_runtime_session`, `release_chat_runtime` | chats `FOR UPDATE` first |
+| any `agent_runtime` write (`identity_id` → `assert_chat_generation`) | own chat `FOR SHARE` at the first `identity_id` call, which comes before the first write |
+| `bind_chat_agent_message` | chat_turns `FOR UPDATE` only |
+
+When you add a chat path, lock the chat row before your first write. Never take
+a chat row `FOR UPDATE` that the transaction already holds `FOR SHARE`: two
+parallel agent writes both hold the share, so the upgrade deadlocks them
+(176's source-chat check did this). `packages/server/test/db/chat-lock-order.pg.test.ts`
+checks the order for each path. Add a new path to its list.
+
+Do not pin an agent's own chat lock at the start of the transaction (in the
+server's claim binding, for example). It looks safer, but an agent posting into a
+chat whose id sorts lower would then lock out of order, and two agents posting
+into each other's chats deadlock. The test has that case.
+
 ## Tests
 
 ```bash
