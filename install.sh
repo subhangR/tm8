@@ -310,13 +310,13 @@ find_psql() {
 can_query() {
   local url="$1"
   [[ -n "${PSQL:-}" ]] || return 1
-  "$PSQL" "$url" -tAc 'select 1' >/dev/null 2>&1
+  "$PSQL" -w "$url" -tAc 'select 1' >/dev/null 2>&1
 }
 
 # One scalar out of Postgres, or empty.
 pg_scalar() {
   local url="$1" sql="$2"
-  "$PSQL" "$url" -tAc "$sql" 2>/dev/null | head -1 | tr -d '[:space:]' || true
+  "$PSQL" -w "$url" -tAc "$sql" 2>/dev/null | head -1 | tr -d '[:space:]' || true
 }
 
 # A superuser psql invocation on this cluster, however we can get one.
@@ -369,6 +369,21 @@ su_scalar() {
     sudo)
       if (( IS_ROOT )); then runuser -u "$SU_SUDO_USER" -- "$PSQL" -p "$TM8_ENV_PG_PORT" -tAc "$sql" 2>/dev/null | head -1 | tr -d '[:space:]' || true
       else sudo -u "$SU_SUDO_USER" "$PSQL" -p "$TM8_ENV_PG_PORT" -tAc "$sql" 2>/dev/null | head -1 | tr -d '[:space:]' || true; fi
+      ;;
+  esac
+}
+
+# A whole text value as the superuser, lines and spacing kept. For reading
+# pg_hba.conf through the server: Debian keeps it 0640 postgres:postgres, so the
+# installing user cannot read the file itself and the trust check could only
+# answer "cannot tell".
+su_text() {
+  local sql="$1"
+  case "$SU_KIND" in
+    url)  "$PSQL" "$SU_URL" -tAc "$sql" 2>/dev/null || true ;;
+    sudo)
+      if (( IS_ROOT )); then runuser -u "$SU_SUDO_USER" -- "$PSQL" -p "$TM8_ENV_PG_PORT" -tAc "$sql" 2>/dev/null || true
+      else sudo -u "$SU_SUDO_USER" "$PSQL" -p "$TM8_ENV_PG_PORT" -tAc "$sql" 2>/dev/null || true; fi
       ;;
   esac
 }
@@ -1021,11 +1036,29 @@ fi
 phase "Postgres cluster on $TM8_ENV_PG_PORT"
 
 CREATED_CLUSTER=0
+
+# Debian names a cluster <major>/<name>, and its unit postgresql@<major>-<name>.
+# Installing the postgresql package creates <major>/main on 5432 — the dev
+# slot's cluster NAME, on another port — so on a fresh server pg_createcluster
+# refused with "cluster configuration already exists" and the installer blamed
+# root. Use the real name of whatever cluster owns this port, and a tm8 name
+# when the slot's is already taken elsewhere.
+DEB_CLUSTER_ON_PORT=""
+if [[ "$PLATFORM" == linux ]] && command -v pg_lsclusters >/dev/null; then
+  DEB_CLUSTER_ON_PORT="$(pg_lsclusters -h 2>/dev/null | awk -v p="$TM8_ENV_PG_PORT" '$3 == p { print $1, $2; exit }' || true)"
+  if [[ -n "$DEB_CLUSTER_ON_PORT" ]]; then
+    TM8_ENV_PG_MAJOR="${DEB_CLUSTER_ON_PORT%% *}"; TM8_ENV_PG_CLUSTER="${DEB_CLUSTER_ON_PORT#* }"
+  elif pg_lsclusters -h 2>/dev/null \
+       | awk -v m="$TM8_ENV_PG_MAJOR" -v c="$TM8_ENV_PG_CLUSTER" '$1 == m && $2 == c { f = 1 } END { exit !f }'; then
+    info "cluster $TM8_ENV_PG_MAJOR/$TM8_ENV_PG_CLUSTER already exists on another port — this slot gets $TM8_ENV_PG_MAJOR/tm8_$SLOT"
+    TM8_ENV_PG_CLUSTER="tm8_$SLOT"
+  fi
+fi
 cluster_listening() {
-  "$PSQL" "postgres://127.0.0.1:$TM8_ENV_PG_PORT/postgres" -tAc 'select 1' >/dev/null 2>&1 && return 0
+  "$PSQL" -w "postgres://127.0.0.1:$TM8_ENV_PG_PORT/postgres" -tAc 'select 1' >/dev/null 2>&1 && return 0
   # A refused ROLE still proves a listener; only a refused CONNECTION does not.
   local err
-  err="$("$PSQL" "postgres://127.0.0.1:$TM8_ENV_PG_PORT/postgres" -tAc 'select 1' 2>&1 || true)"
+  err="$("$PSQL" -w "postgres://127.0.0.1:$TM8_ENV_PG_PORT/postgres" -tAc 'select 1' 2>&1 || true)"
   case "$err" in
     *"could not connect"*|*"Connection refused"*|*"could not translate"*) return 1 ;;
     '') return 1 ;;
@@ -1084,7 +1117,11 @@ else
   info "nothing on $TM8_ENV_PG_PORT — creating a cluster"
   case "$PLATFORM" in
     linux)
-      if command -v pg_createcluster >/dev/null; then
+      if [[ -n "$DEB_CLUSTER_ON_PORT" ]]; then
+        # Creating over it fails; starting it silently would skip the marker check.
+        die "cluster ${DEB_CLUSTER_ON_PORT/ //} owns port $TM8_ENV_PG_PORT but is not accepting connections.
+      Start it and re-run:  sudo systemctl start postgresql@${DEB_CLUSTER_ON_PORT/ /-}"
+      elif command -v pg_createcluster >/dev/null; then
         # Debian/Ubuntu: a managed cluster, so it gets a systemd unit
         # (postgresql@<major>-<name>) and comes back after a reboot. That is the
         # whole difference between this and the hand-started postmaster that used
@@ -1203,19 +1240,30 @@ if (( ! DRY_RUN )); then
   hba_path="$(su_scalar 'show hba_file')"
 fi
 
+# The rule that decides a loopback login, for the check below and for the
+# message when it fails.
+HBA_FIRST=""
 hba_trusts_loopback() {
-  [[ -n "$hba_path" && -r "$hba_path" ]] || return 2      # cannot tell
+  [[ -n "$hba_path" ]] || return 2                         # cannot tell
+  # Read through the server when the file is not ours to read. On Debian it is
+  # 0640 postgres:postgres, so a plain `-r` test made every non-root install of
+  # an adopted cluster report "cannot tell" — on exactly the machines whose
+  # default rule is scram-sha-256.
+  local content
+  if [[ -r "$hba_path" ]]; then content="$(cat "$hba_path")"
+  else content="$(su_text "select pg_read_file('$hba_path')")"; fi
+  [[ -n "$content" ]] || return 2
   # pg_hba is FIRST MATCH WINS, so the presence of a trust line proves nothing:
   # it has to be the first rule matching a loopback host connection. A trust line
   # sitting below the distribution's default `host all all 127.0.0.1/32
   # scram-sha-256` never fires, phase 4 dies with `fe_sendauth: no password
   # supplied`, and every re-run still reports "already trusts loopback".
-  local first
-  first="$(grep -E '^[[:space:]]*host(ssl|nossl)?[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128|samehost)[[:space:]]+' "$hba_path" | head -n 1)"
-  [[ -n "$first" ]] || return 1
-  [[ "$first" =~ [[:space:]]trust([[:space:]]|$) ]]
+  HBA_FIRST="$(grep -E '^[[:space:]]*host(ssl|nossl)?[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128|samehost)[[:space:]]+' <<<"$content" | head -n 1 || true)"
+  [[ -n "$HBA_FIRST" ]] || return 1
+  [[ "$HBA_FIRST" =~ [[:space:]]trust([[:space:]]|$) ]]
 }
 
+HBA_RELOADED=0
 want_hba=0
 if [[ "$CONFIGURE_HBA" == 1 ]]; then want_hba=1
 elif [[ "$CONFIGURE_HBA" == 0 ]]; then want_hba=0
@@ -1245,9 +1293,19 @@ else
       # Prepended, never appended: pg_hba takes the FIRST matching rule, so below
       # the distribution's default scram-sha-256 lines these two would be dead
       # config. Rewritten through the original path so mode and owner survive.
-      act_sh "printf '# tm8: loopback trust. tm8_app and tm8_delivery_worker are created by\n# migrations 001/015 with LOGIN and no password, and the delivery path must\n# AUTHENTICATE as tm8_delivery_worker rather than SET ROLE to it. Safe only\n# because listen_addresses is 127.0.0.1.\n# These sit at the top because pg_hba is first match wins.\nhost all all 127.0.0.1/32 trust\nhost all all ::1/128 trust\n\n' | cat - '$hba_path' > '$hba_path.tm8-new' && cat '$hba_path.tm8-new' > '$hba_path' && rm -f '$hba_path.tm8-new'"
-      as_root systemctl reload "postgresql@$TM8_ENV_PG_MAJOR-$TM8_ENV_PG_CLUSTER" 2>/dev/null \
-        || act "$PSQL" "${SU_URL:-postgres://$TM8_ENV_SUPERUSER@127.0.0.1:$TM8_ENV_PG_PORT/postgres}" -qc 'select pg_reload_conf()' >/dev/null 2>&1 \
+      # As root when the file is not ours: Debian's belongs to postgres.
+      hba_write="printf '# tm8: loopback trust. tm8_app and tm8_delivery_worker are created by\n# migrations 001/015 with LOGIN and no password, and the delivery path must\n# AUTHENTICATE as tm8_delivery_worker rather than SET ROLE to it. Safe only\n# because listen_addresses is 127.0.0.1.\n# These sit at the top because pg_hba is first match wins.\nhost all all 127.0.0.1/32 trust\nhost all all ::1/128 trust\n\n' | cat - '$hba_path' > '$hba_path.tm8-new' && cat '$hba_path.tm8-new' > '$hba_path' && rm -f '$hba_path.tm8-new'"
+      if [[ -w "$hba_path" && -w "$(dirname "$hba_path")" ]]; then
+        act_sh "$hba_write" || die "could not rewrite $hba_path"
+      else
+        as_root bash -c "$hba_write" \
+          || { need_root_hint "bash -c \"$hba_write\""; die "cannot write $hba_path as $(id -un)"; }
+      fi
+      # Through the superuser connection rather than systemctl: the unit name is a
+      # guess on an adopted cluster, and the old psql fallback logged in as the
+      # role that could not log in yet.
+      HBA_RELOADED=1
+      su_sql 'select pg_reload_conf()' >/dev/null \
         || warn "could not reload the cluster — reload it for pg_hba to take effect"
       ok "loopback trust added to $hba_path"
     else
@@ -1255,16 +1313,44 @@ else
     fi
   else
     if (( rc == 2 )); then
-      warn "cannot read pg_hba.conf ($hba_path) — unable to confirm loopback trust"
+      warn "cannot read pg_hba.conf (${hba_path:-path unknown}) — unable to confirm loopback trust"
     else
       warn "pg_hba does NOT trust loopback on this adopted cluster"
     fi
     info "tm8_delivery_worker is created passwordless by migration 015, so without"
     info "trust it cannot authenticate and messages are stored but never delivered."
-    info "Add to ${hba_path:-pg_hba.conf}, then reload:"
+    info "Add to the TOP of ${hba_path:-pg_hba.conf} (first match wins), then reload:"
     printf '        host all all 127.0.0.1/32 trust\n'
     info "Or re-run with --configure-pg-hba to have this installer do it."
   fi
+fi
+
+# The gate. Everything after this phase connects as $TM8_ENV_SUPERUSER over
+# 127.0.0.1 with no password. Without this check a cluster that refuses it got
+# a database created in it, and the failure surfaced in phase 4 as "check
+# phase 3" — after phase 3's warning had scrolled away.
+if (( ! DRY_RUN )); then
+  deadline=$((SECONDS + (HBA_RELOADED ? 10 : 0)))   # a reload lands asynchronously
+  until can_query "$TM8_ENV_MAINTENANCE_URL"; do
+    if (( SECONDS >= deadline )); then
+      err="$("$PSQL" -w "$TM8_ENV_MAINTENANCE_URL" -tAc 'select 1' 2>&1 | head -n 1 || true)"
+      reload_hint="sudo -u postgres psql -p $TM8_ENV_PG_PORT -c 'select pg_reload_conf()'"
+      [[ "$SU_KIND" == url ]] && reload_hint="psql '$SU_URL' -c 'select pg_reload_conf()'"
+      die "role $TM8_ENV_SUPERUSER cannot log in over 127.0.0.1:$TM8_ENV_PG_PORT without a password,
+      so nothing after this phase can work. Postgres said:
+        ${err:-<no output>}
+      ${HBA_FIRST:+The first loopback rule in $hba_path is:
+        $HBA_FIRST
+      }Re-run with --configure-pg-hba to have this installer put loopback trust at
+      the top of ${hba_path:-pg_hba.conf} and reload, or add these lines yourself ABOVE
+      every other host line (pg_hba is first match wins):
+        host all all 127.0.0.1/32 trust
+        host all all ::1/128 trust
+      then reload:  $reload_hint"
+    fi
+    sleep 1
+  done
+  ok "role $TM8_ENV_SUPERUSER logs in over loopback"
 fi
 
 # --- PHASE 4: the database ---------------------------------------------------
@@ -1293,8 +1379,11 @@ fi
 
 if (( ! DRY_RUN )); then
   can_query "$TM8_ENV_DATABASE_URL" \
-    || die "created the database but cannot query $TM8_ENV_DATABASE_URL.
-      This is the state pg_isready calls healthy. Check loopback trust in pg_hba (phase 3)."
+    || die "created the database but cannot query $TM8_ENV_DATABASE_URL, though phase 3
+      logged in to the postgres database as the same role over the same address.
+      So a pg_hba rule names $TM8_ENV_DATABASE (or a database list) above the loopback
+      trust lines: rules are first match wins. Check $TM8_ENV_DATABASE's rows in:
+        select line_number, database, user_name, address, auth_method from pg_hba_file_rules;"
   ok "authenticated query on $TM8_ENV_DATABASE succeeds"
 fi
 
