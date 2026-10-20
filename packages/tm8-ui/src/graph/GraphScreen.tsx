@@ -27,6 +27,7 @@ import type { ActionContext, ActionRef } from '../domain/types';
 import type { Notice } from '../shell/notices';
 import { panelSessionControlsFor, usePanelPrimaries } from '../views/usePanelPrimaries';
 import type { Seam, SessionLiveness } from '../data/seam';
+import { projectRecordPort } from '../projects/project-record';
 import { GraphView, type GraphFrameHosts, type GraphTimelineStep } from './GraphView';
 import { debugSurfaceFor } from '../views/debugSurface';
 import { watchLiveFor } from '../views/watchLive';
@@ -236,6 +237,7 @@ export function GraphScreen(props: GraphScreenProps) {
       detail={detail ?? null}
       serverBaseUrl={props.serverBaseUrl}
       loading={!detail}
+      projectRecords={data.seam ? projectRecordPort(data.seam, ctx.spaceId) : null}
       host="stack"
       reasons={reasons}
       ctx={{ ...ctx, entityId: selectedId }}

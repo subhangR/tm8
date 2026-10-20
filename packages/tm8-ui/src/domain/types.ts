@@ -1259,6 +1259,9 @@ export type ContentBlockKind =
   | 'trust-card'
   | 'live-sessions'
   | 'unlink-footer'
+  // …the project page's git and filterable work list (task 01a15a00)…
+  | 'git-status'
+  | 'work-list'
   // …and the restricted body's five.
   | 'status-banner'
   | 'preview'

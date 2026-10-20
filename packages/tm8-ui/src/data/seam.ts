@@ -241,6 +241,7 @@ import type {
   ProjectFileBlame,
   ProjectFileHistory,
   ProjectCreateInput,
+  ProjectUpdateInput,
   ProjectDirectoryListing,
   ProjectCloneInput,
   ProjectCloneJob,
@@ -801,6 +802,15 @@ export interface Seam {
    * repository as a job (`spaces.projects.clone` + `cloneJobs.get`). Optional
    * for the same reason `projectSetup` is: a fixture seam has no node disk.
    */
+  /**
+   * Changing a project's FOLDER after it exists: its path or its trust
+   * (`projects.update`). The node lets only a node admin make this call, and
+   * only a node admin is ever shown the path; for anyone else the node refuses
+   * and the panel says who can. Optional because a fixture seam has no node.
+   */
+  projectAdmin?: {
+    update(projectId: ProjectId, input: ProjectUpdateInput): Promise<ProjectResource>;
+  };
   spaceProjects?: {
     directories(spaceId: SpaceId, path?: string): Promise<ProjectDirectoryListing>;
     add(spaceId: SpaceId, input: SpaceProjectCreateInput): Promise<SpaceProject>;
