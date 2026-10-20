@@ -125,7 +125,7 @@ describe('the phone composer card is clean', () => {
 
   it('desktop is unchanged: team chip in the foot, pills beside ＋, chips in the card', async () => {
     const { view, resolve } = await openNewChat(false);
-    expect(toolbarOf(view)).toEqual(['Add to this turn', 'Chat settings', 'Coordinator team', 'Chat model', 'Send']);
+    expect(toolbarOf(view)).toEqual(['Add to this turn', 'Chat settings', 'Chat project', 'Coordinator team', 'Chat model', 'Send']);
     stageFile(view);
     expect(card(view).querySelector('.ri-attachments__list')).toBeTruthy();
     fireEvent.click(view.getByTestId('tch-add'));
