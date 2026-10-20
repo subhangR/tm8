@@ -63,6 +63,7 @@ Docker's healthcheck is "WhatsApp connected".
 {
   "pairingPhone": "910000000001",                 // only used by --link
   "ownerJids": ["910000000001@s.whatsapp.net", "100000000000001@lid"],  // owner = PN + LID
+  "approverName": "<name>",                      // optional: who briefings say confirms sensitive actions in the tm8 UI; default "the operator"
   "trustedSenders": [],                          // optional: "owner" or sender JIDs labelled TRUSTED in every channel; see "Trusted senders"
   "http": { "host": "127.0.0.1", "port": 8787 },   // publicUrl defaults to http://host:port (goes into briefings)
   "tm8": {

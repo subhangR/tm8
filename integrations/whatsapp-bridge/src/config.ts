@@ -59,6 +59,8 @@ export type Config = {
   media: { maxBytes: number; attach: 'reference' | 'attach' }
   /** Voice-note transcription. provider "local" = whisper.cpp in the container; "none" = off; "openai" is reserved. */
   transcription: TranscriptionConfig
+  /** Who confirms sensitive actions from the tm8 UI, as briefings name them (default "the operator"). A name, not an identity check. */
+  approverName?: string | null
   /** The tm8 doc with the full Bridge API reference (admin.ts api-reference); briefings point at it. */
   apiDocId?: string | null
   channels: ChannelConfig[]
@@ -171,6 +173,9 @@ export function parseConfig(raw: any, root: string): Config {
   if (!/^[\w.-]+$/.test(t.model)) throw new Error('transcription.model must be a file name under transcription.modelsDir')
   for (const k of ['threads', 'maxDurationSec', 'waitSeconds'] as const) {
     if (!Number.isFinite(t[k]) || t[k] < 0) throw new Error(`transcription.${k} must be a non-negative number`)
+  }
+  if (cfg.approverName !== undefined && cfg.approverName !== null && (typeof cfg.approverName !== 'string' || !/^[^\n`$]{1,60}$/.test(cfg.approverName.trim()) || !cfg.approverName.trim())) {
+    throw new Error('approverName must be a short name (1-60 characters, one line)')
   }
   if (cfg.apiDocId !== undefined && cfg.apiDocId !== null && !UUID_RE.test(cfg.apiDocId)) throw new Error('apiDocId must be a tm8 doc id')
   const seen = new Set<string>()

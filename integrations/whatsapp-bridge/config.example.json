@@ -33,6 +33,7 @@
     "maxDurationSec": 600,
     "waitSeconds": 20
   },
+  "approverName": "<who confirms sensitive actions in the tm8 UI, e.g. a name; default \"the operator\">",
   "apiDocId": "01a154c0-fe9f-7f51-8a3d-bb35d0ee76f3",
   "channels": [
     {

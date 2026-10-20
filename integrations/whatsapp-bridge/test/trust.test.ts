@@ -90,3 +90,19 @@ describe('trusted senders: briefings', () => {
     assert.ok(up.includes('TRUSTED or not'))
   })
 })
+
+describe('approver name', () => {
+  test('briefings name the configured approver, default "the operator"; no person is hardcoded', async () => {
+    const t = await withMain()
+    const brief = () => briefMainChat({ cfg: t.cfg, ch: t.cfg.channels[0], name: 'self-main', tokenFile: '/x' })
+    assert.ok(brief().includes('reply that the operator has to confirm from the tm8 UI'))
+    assert.ok(!brief().includes('Subhang'))
+    t.cfg.approverName = 'Asha'
+    assert.ok(brief().includes('reply that Asha has to confirm from the tm8 UI'))
+  })
+  test('rejects a non-string or multi-line approverName', () => {
+    for (const bad of [42, '', 'a\nb', 'x'.repeat(61)]) {
+      assert.throws(() => parseConfig({ ownerJids: [OWNER], approverName: bad, channels: [] }, '/r'), /approverName/, JSON.stringify(bad))
+    }
+  })
+})
