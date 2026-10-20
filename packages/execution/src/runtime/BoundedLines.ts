@@ -1,12 +1,22 @@
 import type { Readable } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 
+/**
+ * The largest protocol line a harness may write. A frame is one JSON event, and
+ * an MCP or command tool result rides in a single frame: one `entities.feed`
+ * read on a long chat went past the old 1 MiB bound and killed the turn with
+ * "Codex protocol frame exceeded its bound". Results are cut to
+ * TOOL_RESULT_MAX_CHARS before they are stored, so this bound only protects the
+ * process from an unbounded line, not the thread from a big result.
+ */
+export const HARNESS_FRAME_MAX_CHARS = 64 * 1_048_576;
+
 /** Bounds incomplete frames too: readline's line event arrives after allocation. */
 export function boundedLines(
   stream: Readable,
   onLine: (line: string) => void,
   onOverflow: () => void,
-  maxChars = 1_048_576,
+  maxChars = HARNESS_FRAME_MAX_CHARS,
 ): { close(): void } {
   const decoder = new StringDecoder('utf8');
   let pending = '';
