@@ -214,6 +214,17 @@ begin
   if stored.provider <> 'mcp' or stored.space_id <> p_space or stored.mcp_server_id is distinct from p_server then
     raise exception 'MCP credential unavailable' using errcode = '42501';
   end if;
+  -- THIS FUNCTION IS THE ONLY AUTHORITY on a rotation: McpCredentialStore.rotate
+  -- no longer opens the old secret first (that refused any status but 'active',
+  -- which made a needs_reconnect row impossible to rotate — and rotating IS the
+  -- reconnect for an API key). So the shape check belongs here. Without it an
+  -- api_key-sealed ciphertext could overwrite an OAuth row, destroying the
+  -- refresh token and leaving a row whose shape says 'token' and whose plaintext
+  -- is `{kind:'api_key'}`. An OAuth connection is re-established by connecting
+  -- again, never by rotating.
+  if stored.shape <> 'api_key' then
+    raise exception 'an OAuth connection is rotated by connecting again, not by rekeying' using errcode = '22023';
+  end if;
   if stored.owner_account_id is null and not internal.is_space_admin(stored.space_id) then
     raise exception 'only a space admin can rotate a Space connection' using errcode = '42501';
   end if;

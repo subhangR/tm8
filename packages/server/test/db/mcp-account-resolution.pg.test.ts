@@ -179,6 +179,46 @@ it('the proxy stamp records last use without being able to read the secret', asy
   await expect(store.touch(auth(bobIdentity), { spaceId, serverId: server, credentialId: created.id })).rejects.toThrow();
 });
 
+it('rekey_mcp_credential is the only authority on a rotation, so it refuses every bad case itself', async () => {
+  // Advisor ruling B5. McpCredentialStore.rotate no longer opens the old secret
+  // first, so every refusal the precheck used to give incidentally has to be
+  // this function's own. One test per refusal, by SQLSTATE.
+  const server = await connector(keyed('rekeyguards'));
+  const other = await connector(keyed('rekeyguardsother'));
+  const mine = await connect(aliceIdentity, server, { label: 'Alice rekey' });
+  const rekey = (identity: string, args: unknown[]) => as(identity, q => q.rpc('rekey_mcp_credential', args));
+  const cipher = Buffer.from('not-a-real-seal'), nonce = Buffer.from('123456789012');
+
+  // Wrong space, and wrong server: the binding is checked here, not by a caller.
+  await expect(rekey(aliceIdentity, [randomUUID(), server, mine.id, cipher, nonce, LOCAL_KEY_ID])).rejects.toMatchObject({ details: { sqlstate: '42501' } });
+  await expect(rekey(aliceIdentity, [spaceId, other, mine.id, cipher, nonce, LOCAL_KEY_ID])).rejects.toMatchObject({ details: { sqlstate: '42501' } });
+  // A member who is not the owner of a MEMBER-owned row.
+  await expect(rekey(bobIdentity, [spaceId, server, mine.id, cipher, nonce, LOCAL_KEY_ID])).rejects.toMatchObject({ details: { sqlstate: '42501' } });
+  await expect(store.rotate(auth(bobIdentity), { spaceId, serverId: server, credentialId: mine.id }, 'bob-secret')).rejects.toThrow();
+  // An OAuth-shaped row. Rotating one would destroy the refresh token and leave
+  // a row whose shape says 'token' and whose plaintext says api_key.
+  const oauthServer = await connector({ name: 'rekeyoauth', transport: 'http', url: 'https://example.test/oauth',
+    envKeys: [], headerKeys: [], auth: { type: 'oauth2', issuer: 'https://example.test' }, approved: true });
+  const token = await as(aliceIdentity, () => store.create(auth(aliceIdentity), { spaceId, serverId: oauthServer, label: 'Alice oauth',
+    secret: { kind: 'oauth', accessToken: 'at', refreshToken: 'rt', issuer: 'https://example.test',
+      tokenEndpoint: 'https://example.test/token', resource: 'https://example.test/oauth', clientId: 'tm8' } }) as Promise<{ id: string }>);
+  await expect(rekey(aliceIdentity, [spaceId, oauthServer, token.id, cipher, nonce, LOCAL_KEY_ID])).rejects.toMatchObject({ details: { sqlstate: '22023' } });
+  await expect(store.rotate(auth(aliceIdentity), { spaceId, serverId: oauthServer, credentialId: token.id }, 'overwrite')).rejects.toThrow();
+  // The OAuth row is untouched: it still opens as the token it was.
+  expect((await store.read(auth(aliceIdentity), { spaceId, serverId: oauthServer, credentialId: token.id })).secret)
+    .toMatchObject({ kind: 'oauth', accessToken: 'at', refreshToken: 'rt' });
+
+  // A revoked row. `revoked` is terminal; delete_space_credential owns it.
+  await shares.revoke(auth(aliceIdentity), mine.id);
+  await expect(rekey(aliceIdentity, [spaceId, server, mine.id, cipher, nonce, LOCAL_KEY_ID])).rejects.toMatchObject({ details: { sqlstate: '23514' } });
+  // And the happy case still works, on a fresh row, so the guards are not just
+  // refusing everything.
+  const fresh = await connect(aliceIdentity, server, { label: 'Alice rekey again', value: 'before' });
+  await store.rotate(auth(aliceIdentity), { spaceId, serverId: server, credentialId: fresh.id }, 'after');
+  expect((await store.read(auth(aliceIdentity), { spaceId, serverId: server, credentialId: fresh.id })).secret)
+    .toEqual({ kind: 'api_key', value: 'after' });
+});
+
 // --- §3 resolution order ----------------------------------------------------
 
 it('resolves nothing when the connector has no connection at all', async () => {
