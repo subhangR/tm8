@@ -131,8 +131,8 @@
   color: var(--pn-ink);
 }
 .tws-ts-tab[data-active] {
-  --tws-ts-bg: var(--pn-card);
-  background: var(--pn-card);
+  --tws-ts-bg: var(--pn-x-page-bg);
+  background: var(--pn-x-page-bg);
   color: var(--pn-ink);
 }
 .tws-ts-tab[data-dragging] {
