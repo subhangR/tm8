@@ -37,7 +37,10 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.credentials.create':requireHumanSession(async ctx=>{
    const input=McpCredentialCreateInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);
    if(server.definition.auth.type!=='api_key')throw new CollabError('invalid_input','Connector requires OAuth');
-   const result=await credentials.create(auth,{spaceId:server.spaceId,serverId:server.id,label:input.label,expectedRevision:server.securityRevision,secret:{kind:'api_key',value:input.secret}}) as {id:string};return view(auth,result.id);
+   // scope 'space' creates a Space-owned row; create_mcp_credential enforces the
+   // admin rule itself (§5.2), so this handler never has to repeat it.
+   const result=await credentials.create(auth,{spaceId:server.spaceId,serverId:server.id,label:input.label,expectedRevision:server.securityRevision,secret:{kind:'api_key',value:input.secret},
+    ...(input.scope?{scope:input.scope}:{}),...(input.accountLabel?{accountLabel:input.accountLabel}:{})}) as {id:string};return view(auth,result.id);
   }),
   'mcp.credentials.rotate':requireHumanSession(async ctx=>{
    const input=McpCredentialRotateInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);

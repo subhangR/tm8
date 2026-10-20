@@ -12,7 +12,7 @@ export interface McpProxyDefinition {
 export interface McpRuntimeClaims extends DbClaims { authSessionId?:string }
 export interface McpProxyGrant { sessionId:string;identityId:string;launcherIdentityId?:string;spaceId:string;serverId:string;credentialId?:string }
 export interface McpProxyPorts {
-  credentials: Pick<McpCredentialStore,'read'|'replace'> & Partial<Pick<McpCredentialStore,'withRefreshLock'>>;
+  credentials: Pick<McpCredentialStore,'read'|'replace'> & Partial<Pick<McpCredentialStore,'withRefreshLock'|'touch'>>;
   /** Must read live session, launcher, selected connector/account and current membership from DB. */
   authorize(claims:McpRuntimeClaims,sessionId:string,serverId:string):Promise<McpProxyGrant>;
   definition(claims:DbClaims,serverId:string):Promise<McpProxyDefinition>;
@@ -143,6 +143,12 @@ export class McpProxy {
         if(value.id!==1 || value.error || value.result===undefined)throw new Error('MCP upstream request failed');
         return redactMcpResult(value.result,redactions);
       };
+      // §5.2 "Make the proxy write it": last_used_at is what the Connectors page
+      // shows and what the reuse heuristic reads. Best-effort — a failed stamp
+      // must never fail a tool call that is otherwise authorized.
+      if(grant.credentialId && this.ports.credentials.touch) {
+        await this.ports.credentials.touch(credentialClaims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId}).catch(()=>{});
+      }
       if(!connection.initialized) {
         const initialization=await rpc('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'tm8',version:'1'}}) as {protocolVersion?:string};
         if(initialization.protocolVersion && !['2024-11-05','2025-03-26','2025-06-18'].includes(initialization.protocolVersion))throw new Error('MCP protocol version unsupported');

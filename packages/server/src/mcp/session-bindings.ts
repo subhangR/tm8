@@ -2,11 +2,31 @@ import { CollabError, McpSelectionsSchema, isHumanAuthKind, type McpSelection } 
 import type { Db, DbClaims } from '../db/types.js';
 import { resolveBearerIdentity } from '../identity/pg-auth.js';
 import { hashToken, parseToken } from '../identity/crypto.js';
-import { resolveMcpSelections } from './definitions.js';
+import { resolveMcpSelections, type McpCredentialReadiness } from './definitions.js';
+
+/**
+ * Readiness by ACTUALLY OPENING the row under the claims in force — the only
+ * honest test, since RLS and sharing are what decide. A refusal becomes a
+ * reason, not a thrown error, so the resolver can skip a default (§7.3).
+ */
+function openable(q: Parameters<typeof resolveMcpSelections>[0]): McpCredentialReadiness {
+  return async (selection, server) => {
+    try {
+      await q.rpc('read_mcp_credential', [server.spaceId, server.id, selection.credentialId]);
+      return 'ready';
+    } catch { return 'credential_unavailable'; }
+  };
+}
 
 export interface McpBindInput {
   sessionId: string; spaceId: string; teamMemberId: string; targetIds?: string[];
   mcpSelections?: McpSelection[]; agentToken: string; resume?: boolean;
+  /**
+   * §6's provenance root, derived by the server from `launched_by` — never from
+   * anything the session says about itself. Absent means "the launcher claims in
+   * force", which is what this file already computes. t-provenance sets it.
+   */
+  rootMemberId?: string;
 }
 export interface McpBindingClaims extends DbClaims {
   authSessionId?: string;
@@ -55,6 +75,7 @@ export class McpSessionBindings {
         } catch { sourceUnavailable = true; }
       } else sourceUnavailable = true;
     }
+    const rootMemberId = input.rootMemberId;
     return this.db.tx(launcher, async q => {
       const stored = input.resume
         ? await q.rpc<unknown>('read_mcp_launch_selections', [input.sessionId]) : null;
@@ -74,10 +95,15 @@ export class McpSessionBindings {
         spaceId: input.spaceId, teamMemberId: input.teamMemberId,
         ...(targetIds ? { targetIds } : {}),
         ...(picks !== undefined ? { mcpSelections: picks } : {}),
-      }, async (selection, server) => {
-        await q.rpc('read_mcp_credential', [server.spaceId, server.id, selection.credentialId]);
-        return 'ready';
+      }, {
+        // §7.3/G15: a default that cannot be opened must be SKIPPED, not
+        // thrown. A rejected rpc would escape the resolver as a 500 and take
+        // the whole launch with it, which is the failure G15 describes.
+        credentialReady: openable(q),
+        ...(rootMemberId !== undefined ? { rootMemberId } : {}),
       });
+      // Only an EXPLICIT selection can refuse a launch now. Defaults that are
+      // not ready have already been dropped into `resolved.skipped`.
       if (!resolved.ready) throw new CollabError('forbidden', `MCP launch unavailable: ${resolved.selections.find(s => !s.ready)?.reason}`);
       if (sourceUnavailable && resolved.selections.length) throw new CollabError('forbidden', 'MCP delegated launch requires a live launcher binding');
       const selections = resolved.selections.map(s => ({ serverId: s.server.id,
@@ -100,10 +126,10 @@ export class McpSessionBindings {
     // Resolution is repeated per proxy operation; no approval or sharing snapshot.
     const resolved = await this.db.tx(launcher, q => resolveMcpSelections(q, {
       spaceId: binding.spaceId, mcpSelections: [selected],
-    }, async (selection, server) => {
-      await q.rpc('read_mcp_credential', [server.spaceId, server.id, selection.credentialId]);
-      return 'ready';
-    }));
+      // `pinnedOnly`: re-check the exact row bind wrote. A live session must
+      // never silently move to a different connection because the root
+      // connected a new account mid-flight.
+    }, { credentialReady: openable(q), pinnedOnly: true }));
     if (!resolved.ready) throw new CollabError('forbidden', 'MCP connector access has changed');
     return { sessionId, spaceId: binding.spaceId, identityId: binding.identityId, serverId,
       launcherIdentityId: binding.launcherIdentityId, launcherAuthKind: binding.launcherAuthKind,

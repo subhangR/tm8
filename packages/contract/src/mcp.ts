@@ -18,6 +18,20 @@ const PublicUrl = z.string().url().max(2048).refine(value => {
  */
 const ClientSecretEnv = z.string().regex(/^TM8_MCP_CLIENT_SECRET_[A-Z0-9_]+$/).max(128);
 
+/** The Discover preset a connector came from: `google.gmail`, `figma`, `notion`. */
+const CatalogId = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
+/**
+ * The readable tool prefix (§4.2). The model sees `mcp__<serverKey>__<tool>`, so
+ * it is confined to what a tool name admits, and `tm8` is reserved for tm8's own
+ * tools. Optional: absent, the key is the normalised name (`mcpServerKey`), so
+ * every definition stored before this field existed still has one.
+ */
+const ServerKey = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/).max(64)
+  .refine(value => value !== 'tm8', 'tm8 is reserved');
+/** Per-connector tool gates, e.g. `{gmailSend: false}`. Names to booleans only. */
+const ToolGates = z.record(z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/), z.boolean())
+  .refine(value => Object.keys(value).length <= 32, 'at most 32 tool gates');
+
 export const McpAuthSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('none') }).strict(),
   z.object({ type: z.literal('api_key'), headerName: HeaderKey.optional(), envKey: EnvKey.optional(),
@@ -42,6 +56,12 @@ export const McpServerDefinitionSchema = z.object({
   enabled: z.boolean().optional(),
   stdioTrusted: z.boolean().optional(),
   allowPrivateNetwork: z.boolean().optional(),
+  catalogId: CatalogId.optional(),
+  serverKey: ServerKey.optional(),
+  defaultOn: z.boolean().optional(),
+  allowExternalClients: z.boolean().optional(),
+  firstParty: z.boolean().optional(),
+  gates: ToolGates.optional(),
 }).strict().superRefine((value, ctx) => {
   const reject = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
   if (value.transport === 'stdio' && (!value.command || value.url || value.headerKeys.length)) reject('stdio requires command and forbids url and headerKeys');
@@ -57,6 +77,21 @@ export const McpServerDefinitionSchema = z.object({
   if (new Set(value.envKeys).size !== value.envKeys.length || new Set(value.headerKeys.map(k => k.toLowerCase())).size !== value.headerKeys.length) reject('duplicate secret keys');
 });
 export type McpServerDefinition = z.infer<typeof McpServerDefinitionSchema>;
+/**
+ * The connector's tool prefix: its explicit `serverKey`, or the normalised name
+ * when it has none (§4.2). MUST stay in step with
+ * `internal.mcp_effective_server_key` (migration 340), which is what enforces
+ * uniqueness within a Space — the two are one rule in two languages.
+ */
+export function mcpServerKey(definition: Pick<McpServerDefinition, 'name'> & { serverKey?: string }): string {
+  if (definition.serverKey) return definition.serverKey;
+  const normalised = definition.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return /^[a-z]/.test(normalised) ? normalised : `c${normalised}`;
+}
+/** Whether a per-connector tool gate is open. An absent gate is open. */
+export function mcpGateOpen(definition: Pick<McpServerDefinition, 'gates'>, gate: string): boolean {
+  return definition.gates?.[gate] !== false;
+}
 export const McpServerEntitySchema = z.object({ kind: z.literal('mcp_server'), definition: McpServerDefinitionSchema }).strict();
 export type McpServerEntity = z.infer<typeof McpServerEntitySchema>;
 export const McpSelectionSchema = z.object({ serverId: Id, credentialId: Id.optional() }).strict();
@@ -65,12 +100,32 @@ export type McpSelection = z.infer<typeof McpSelectionSchema>;
 export const McpSelectionsSchema = z.array(McpSelectionSchema).max(32).refine(
   selections => new Set(selections.map(s => s.serverId)).size === selections.length, 'duplicate server selection');
 export const McpReadinessReasonSchema = z.enum(['ready', 'not_approved', 'stdio_not_trusted', 'credential_required',
-  'credential_unavailable', 'credential_revoked', 'credential_expired', 'credential_definition_changed', 'server_unavailable', 'access_denied', 'disabled']);
+  'credential_unavailable', 'credential_revoked', 'credential_expired', 'credential_definition_changed', 'server_unavailable', 'access_denied', 'disabled',
+  /** The row is intact but the provider will not honour it; see `statusReason`. */
+  'needs_reconnect']);
+/** Who owns a connection: a member ("Just me") or the Space ("Shared with Space"). */
+export const McpCredentialScopeSchema = z.enum(['member', 'space']);
+export type McpCredentialScope = z.infer<typeof McpCredentialScopeSchema>;
+/** Why a connection stopped being honoured (§5.2, §7.2). Never a secret. */
+export const McpCredentialStatusReasonSchema = z.enum(['invalid_grant', 'security_revision_changed', 'scope_reduced', 'possible_reuse']);
+export type McpCredentialStatusReason = z.infer<typeof McpCredentialStatusReasonSchema>;
+/** How §3's order picked the connection a session uses. */
+export const McpCredentialSourceSchema = z.enum(['pinned', 'personal', 'space_shared']);
+export type McpCredentialSource = z.infer<typeof McpCredentialSourceSchema>;
 export type McpReadinessReason = z.infer<typeof McpReadinessReasonSchema>;
 export const McpCredentialViewSchema = z.object({
   id: Id, serverId: Id, label: z.string(), authType: z.enum(['api_key', 'oauth2']),
-  visibility: z.enum(['private', 'selected', 'space']), ownerId: Id, ownerLabel: z.string().max(200).optional(), sharedMemberIds: z.array(Id),
+  visibility: z.enum(['private', 'selected', 'space']),
+  /** Null on a Space-owned connection: it has no member owner (§5.2, G2). */
+  ownerId: Id.nullable(), ownerLabel: z.string().max(200).optional(), sharedMemberIds: z.array(Id),
   usable: z.boolean(), manageable: z.boolean(), revoked: z.boolean(), reason: McpReadinessReasonSchema,
+  scope: McpCredentialScopeSchema.optional(),
+  status: z.enum(['pending', 'active', 'stale', 'revoked', 'needs_reconnect']).optional(),
+  statusReason: McpCredentialStatusReasonSchema.nullable().optional(),
+  /** The provider's own name for the account, e.g. "subhang@gmail.com". */
+  accountLabel: z.string().max(200).nullable().optional(),
+  grantedScopes: z.array(z.string().max(1024)).max(64).optional(),
+  lastUsedAt: z.string().nullable().optional(), lastRefreshAt: z.string().nullable().optional(),
 }).strict();
 export type McpCredentialView = z.infer<typeof McpCredentialViewSchema>;
 export const McpToolSchema = z.object({ name: z.string(), description: z.string().optional(), inputSchema: z.record(z.unknown()) }).strict();
@@ -84,9 +139,23 @@ export const McpServerViewSchema = z.object({
 export type McpServerView = z.infer<typeof McpServerViewSchema>;
 export const McpResolvedSelectionSchema = z.object({
   server: McpServerViewSchema, credentialId: Id.optional(), ready: z.boolean(), reason: McpReadinessReasonSchema,
+  /** How the account was chosen (§3). Absent when the connector needs none. */
+  credentialSource: McpCredentialSourceSchema.optional(),
+  /** True when the connector came from the default set, not an explicit pick. */
+  fromDefault: z.boolean().optional(),
+  /** A connection owned by the root that exists but is not usable, so the UI can show ⚠ even when a shared one carried the launch. */
+  unusableCredential: z.object({ credentialId: Id, reason: McpReadinessReasonSchema }).strict().optional(),
 }).strict();
 export type McpResolvedSelection = z.infer<typeof McpResolvedSelectionSchema>;
-export const McpResolveResultSchema = z.object({ selections: z.array(McpResolvedSelectionSchema), ready: z.boolean() }).strict();
+/**
+ * `skipped` holds defaults that resolved to no usable connection (G15). They are
+ * dropped from `selections` rather than failing the launch (§7.3); an EXPLICIT
+ * selection that is not ready still shows up in `selections` with `ready:false`.
+ */
+export const McpSkippedSelectionSchema = z.object({ serverId: Id, name: z.string(), reason: McpReadinessReasonSchema }).strict();
+export type McpSkippedSelection = z.infer<typeof McpSkippedSelectionSchema>;
+export const McpResolveResultSchema = z.object({ selections: z.array(McpResolvedSelectionSchema), ready: z.boolean(),
+  skipped: z.array(McpSkippedSelectionSchema).optional() }).strict();
 export type McpResolveResult = z.infer<typeof McpResolveResultSchema>;
 const Command = { clientMutationId: z.string().min(1), actorId: Id.optional() };
 export const McpServerCreateInputSchema = z.object({ ...Command, spaceId: Id, definition: McpServerDefinitionSchema }).strict();
@@ -96,9 +165,14 @@ export const McpServerImportInputSchema = z.object({ ...Command, spaceId: Id, de
 export const McpServerTestInputSchema = z.object({ ...Command, serverId: Id, credentialId: Id.optional() }).strict();
 export const McpResolveInputSchema = z.object({ spaceId: Id, targetIds: z.array(Id).max(32).optional(), teamMemberId: Id.optional(), mcpSelections: McpSelectionsSchema.optional() }).strict();
 export type McpResolveInput = z.infer<typeof McpResolveInputSchema>;
-export const McpCredentialCreateInputSchema = z.object({ ...Command, serverId: Id, label: z.string().min(1).max(120), secret: z.string().min(1).max(65536) }).strict();
+export const McpCredentialCreateInputSchema = z.object({ ...Command, serverId: Id, label: z.string().min(1).max(120), secret: z.string().min(1).max(65536),
+  /** `space` needs a Space admin and creates a Space-owned row (§5.2). */
+  scope: McpCredentialScopeSchema.optional(), accountLabel: z.string().min(1).max(200).optional() }).strict();
 export const McpCredentialCommandInputSchema = z.object({ ...Command, credentialId: Id }).strict();
 export const McpCredentialShareInputSchema = z.object({ ...Command, credentialId: Id, visibility: z.enum(['private', 'selected', 'space']), memberIds: z.array(Id).max(100) }).strict();
+// `scope` and `returnTo` (§11) belong with the durable pending-state table of
+// §5.4, which carries `scope_kind`: without it a scope chosen at `begin` has
+// nowhere to survive the redirect. t-oauth-pending adds both together.
 export const McpOAuthBeginInputSchema = z.object({ ...Command, serverId: Id, label: z.string().min(1).max(120) }).strict();
 export const McpOAuthCallbackInputSchema = z.object({ state: z.string().min(1).max(2048), code: z.string().min(1).max(8192).optional(), error: z.string().min(1).max(128).optional(), issuer: PublicUrl.optional() }).strict().refine(value => Boolean(value.code) !== Boolean(value.error), 'OAuth callback requires exactly one of code or error');
 export const McpProxyRequestInputSchema = z.object({ sessionId: Id, serverId: Id, message: z.record(z.unknown()) }).strict();

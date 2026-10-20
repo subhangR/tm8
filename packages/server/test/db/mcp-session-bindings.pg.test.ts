@@ -62,10 +62,24 @@ it('binds launcher authority independently of runtime identity, denies sibling t
  await expect(bindings.authorize(r.claims,r.sessionId,randomUUID())).rejects.toBeTruthy();
  await expect(bindings.authorize({...r.claims,identityId:identity},r.sessionId,server)).rejects.toBeTruthy();
 });
-it('task readers cannot bind another human private account and authentication has no fallback',async()=>{
+it('task readers cannot bind another human private account, nor reach one through an unpinned selection',async()=>{
  const r=await runtime(otherIdentity);
  await expect(bindings.bind({...auth,identityId:otherIdentity},{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server,credentialId:credential}]})).rejects.toBeTruthy();
- await expect(bindings.bind(auth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]})).rejects.toBeTruthy();
+ // The §3 resolution 341 adds searches the ROOT's own rows and the Space's
+ // PUBLIC ones. The fixture credential is another human's PRIVATE row, so an
+ // unpinned selection under that other human must still find nothing: the
+ // fallback must never widen who can reach a private account.
+ await expect(bindings.bind({...auth,identityId:otherIdentity},{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]})).rejects.toBeTruthy();
+});
+it('resolves the root member own connection for an unpinned selection (§3, G15)',async()=>{
+ const r=await runtime(otherIdentity);
+ // Was `credential_required` and a failed launch before 341: the launcher owns
+ // the connection, so an unpinned selection now resolves to exactly that row.
+ const picks=await bindings.bind(auth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]});
+ expect(picks).toEqual([{serverId:server,credentialId:credential}]);
+ // And the binding holds that exact row, so the live session re-checks it
+ // rather than re-picking.
+ expect(await bindings.authorize(r.claims,r.sessionId,server)).toMatchObject({credentialId:credential});
 });
 it('explicit [] persists across resume and cannot grant a connector',async()=>{
  const r=await runtime();

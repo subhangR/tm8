@@ -1,7 +1,7 @@
 import { CollabError, McpTestResultSchema, McpServerDefinitionSchema, McpResolveInputSchema, McpServerCreateInputSchema,
   McpServerUpdateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema,
-  type McpServerView, type McpResolveInput, type McpResolveResult, type McpSelection,
-  type McpReadinessReason } from '@tm8/contract';
+  type McpServerView, type McpResolveInput, type McpResolveResult, type McpResolvedSelection, type McpSelection,
+  type McpSkippedSelection, type McpCredentialSource, type McpReadinessReason } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
@@ -37,10 +37,47 @@ export async function loadMcpServer(q: Querier, serverId: string, targetId?: str
   return loaded as McpServerView & {securityRevision:number};
 }
 export type McpCredentialReadiness = (selection:McpSelection,server:McpServerView)=>Promise<McpReadinessReason>;
-/** Uses only caller-readable same-space attachments; never infers an account. */
-export async function resolveMcpSelections(q:Querier,input:McpResolveInput,credentialReady?:McpCredentialReadiness):Promise<McpResolveResult> {
+/** What `resolve_mcp_account` (migration 341) answers: §3's order below the pin. */
+interface ResolvedAccount {
+  credentialId?:string; scope?:'member'|'space'; source?:Exclude<McpCredentialSource,'pinned'>;
+  unusable?:{credentialId:string;reason:McpReadinessReason};
+}
+export interface McpResolveOptions {
+  credentialReady?:McpCredentialReadiness;
+  /**
+   * §6's provenance root, ALWAYS derived by the server — it is a parameter and
+   * never a field of `McpResolveInput`, so it cannot arrive in a request body.
+   * Absent means "the claims in force", which is what bind and authorize supply
+   * today by running resolution under the launcher's claims. t-provenance
+   * supplies the chain root here without this resolver changing shape.
+   */
+  rootMemberId?:string;
+  /**
+   * Refuse to infer an account: only a pinned `credentialId` counts. `authorize`
+   * sets it so a live session re-checks the EXACT row `bind` wrote and can never
+   * re-pick a different connection mid-session.
+   */
+  pinnedOnly?:boolean;
+}
+/** A default is weaker than any `equips` attachment, however distant. */
+const DEFAULT_ON_DEPTH=1_000_000;
+/**
+ * Caller-readable same-space attachments, plus `defaultOn` connectors (§7.3).
+ *
+ * TWO THINGS ARE NEW HERE versus "never infers an account" (G15):
+ *  - a connector with no pinned account resolves one through §3's order
+ *    (pinned -> the root's personal -> the Space's shared), and
+ *  - a connector that came from the DEFAULT set and is not ready is reported in
+ *    `skipped` and dropped, instead of failing the whole launch. An EXPLICIT
+ *    selection that is not ready still lands in `selections` with ready:false,
+ *    so asking for something unusable by name is still an error.
+ */
+export async function resolveMcpSelections(q:Querier,input:McpResolveInput,options?:McpResolveOptions|McpCredentialReadiness):Promise<McpResolveResult> {
+  const {credentialReady,rootMemberId,pinnedOnly}=typeof options==='function'
+    ?{credentialReady:options,rootMemberId:undefined,pinnedOnly:undefined}:(options??{});
   const checked=McpResolveInputSchema.parse(input);
   let selections=checked.mcpSelections;
+  const fromDefaults=selections===undefined;
   if (selections===undefined) {
     const sources=[...new Set([...(checked.targetIds??[]),...(checked.teamMemberId?[checked.teamMemberId]:[])])];
     // Validate every supplied target rather than silently resolving a partial set.
@@ -69,10 +106,23 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,crede
       if(previous && previous.depth===depth && previous.serverId!==row.server_id)throw new CollabError('invalid_input','MCP connector name collision at the same attachment depth');
       if(!previous||depth<previous.depth)nearest.set(name,{serverId:row.server_id,depth});
     }
+    // §7.3: the default set is `defaultOn` UNION the `equips` lineage. An
+    // attachment at any depth beats a space-wide default of the same name.
+    const defaultOn=await q.query<{server_id:string;name:string}>(`select e.id as server_id,m.definition->>'name' as name
+      from public.entities e join public.mcp_servers m on m.entity_id=e.id
+      where e.space_id=$1 and e.kind='mcp_server' and e.deleted_at is null
+      and m.definition->>'defaultOn'='true' and m.definition->>'approved'='true' and coalesce(m.definition->>'enabled','true')='true'
+      order by e.id limit 33`,[checked.spaceId]);
+    if(defaultOn.length>32)throw new CollabError('invalid_input','Too many default MCP connectors');
+    for(const row of defaultOn){
+      const name=row.name.toLowerCase();
+      if(!nearest.has(name))nearest.set(name,{serverId:row.server_id,depth:DEFAULT_ON_DEPTH});
+    }
     if(nearest.size>32)throw new CollabError('invalid_input','Too many default MCP connectors');
     selections=[...nearest.values()].map(({serverId})=>({serverId}));
   }
-  const resolved=[];
+  const resolved:McpResolvedSelection[]=[];
+  const skipped:McpSkippedSelection[]=[];
   const names=new Set<string>();
   for (const selection of selections) {
     const server=await loadMcpServer(q,selection.serverId);
@@ -81,20 +131,41 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,crede
     if(names.has(d.name.toLowerCase())) throw new CollabError('invalid_input','MCP connector name collision');
     names.add(d.name.toLowerCase());
     let reason:McpReadinessReason='ready';
+    let credentialId=selection.credentialId;
+    let credentialSource:McpCredentialSource|undefined=credentialId?'pinned':undefined;
+    let unusable:ResolvedAccount['unusable'];
     if(!d.approved) reason='not_approved';
     else if(d.enabled===false) reason='disabled';
     else if(d.transport==='stdio' && !d.stdioTrusted) reason='stdio_not_trusted';
     else if(d.auth.type!=='none') {
-      if(!selection.credentialId) reason='credential_required';
-      else if(credentialReady) reason=await credentialReady(selection,server);
+      if(!credentialId && pinnedOnly!==true) {
+        // §3 below the pin. Runs under the claims in force, which bind and
+        // authorize have already set to the root member's (see rootMemberId).
+        const account=await q.rpc<ResolvedAccount|null>('resolve_mcp_account',[server.id,rootMemberId??null]);
+        if(account?.credentialId){credentialId=account.credentialId;credentialSource=account.source;}
+        // Worth reporting even when a shared connection carried the launch: the
+        // UI shows the root's own broken connection as needing a reconnect.
+        if(account?.unusable)unusable=account.unusable;
+      }
+      if(!credentialId) reason=unusable?unusable.reason:'credential_required';
+      else if(credentialReady) reason=await credentialReady({...selection,credentialId},server);
       else {
-        const result=await q.rpc<{ready:boolean;reason:McpReadinessReason}>('mcp_credential_readiness',[server.id,selection.credentialId]);
+        const result=await q.rpc<{ready:boolean;reason:McpReadinessReason}>('mcp_credential_readiness',[server.id,credentialId]);
         reason=result.ready === true ? 'ready' : result.reason;
       }
-    } else if(selection.credentialId) reason='credential_unavailable';
-    resolved.push({server,...(selection.credentialId?{credentialId:selection.credentialId}:{}),ready:reason==='ready',reason});
+    } else if(credentialId) reason='credential_unavailable';
+    // G15. A default that is not ready is skipped and reported; it never fails
+    // a launch. The caller asked for no connector in particular.
+    if(fromDefaults && reason!=='ready') {
+      names.delete(d.name.toLowerCase());
+      skipped.push({serverId:server.id,name:d.name,reason});
+      continue;
+    }
+    resolved.push({server,...(credentialId?{credentialId}:{}),ready:reason==='ready',reason,
+      ...(credentialSource?{credentialSource}:{}),...(fromDefaults?{fromDefault:true}:{}),
+      ...(unusable?{unusableCredential:unusable}:{})});
   }
-  return {selections:resolved,ready:resolved.every(s=>s.ready)};
+  return {selections:resolved,ready:resolved.every(s=>s.ready),...(skipped.length?{skipped}:{})};
 }
 
 export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:FacadeDeps):void {
