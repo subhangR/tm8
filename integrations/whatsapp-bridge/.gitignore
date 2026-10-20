@@ -1,0 +1,8 @@
+node_modules/
+auth/
+data/
+secrets/
+config.json
+*.log
+inbox/
+tokens/
