@@ -25,20 +25,21 @@ function claim(turnId: string) {
 }
 function deferred() { let resolve!: () => void; const promise = new Promise<void>((r) => { resolve = r; }); return { promise, resolve }; }
 
-function setup(opts: { queue?: string[]; team?: unknown; sweep?: { stale: unknown[]; queued: unknown[] } } = {}) {
+function setup(opts: { queue?: string[]; team?: unknown; sweep?: unknown[] } = {}) {
   const queue = [...(opts.queue ?? [])];
-  const rpcs: { name: string; args: readonly unknown[] }[] = [];
-  const rpc = async <T,>(_auth: DbClaims, name: string, args: readonly unknown[] = []): Promise<T> => {
-    rpcs.push({ name, args });
+  const rpcs: { name: string; args: readonly unknown[]; identityId?: string }[] = [];
+  const rpc = async <T,>(auth: DbClaims | undefined, name: string, args: readonly unknown[] = []): Promise<T> => {
+    rpcs.push({ name, args, ...(auth ? { identityId: auth.identityId } : {}) });
     if (name === 'claim_next_chat_turn') { const next = queue.shift(); return (next ? claim(next) : null) as T; }
     if (name === 'chat_turn_team') return (opts.team ?? null) as T;
     if (name === 'recover_chat_attempt' && args[1] === 'bad-turn') throw new Error('recover failed');
     return undefined as T;
   };
-  const q: Querier = { query: async <T,>() => [] as T[], rpc: (name, args) => rpc(undefined as never, name, args) };
+  const q: Querier = { query: async <T,>() => [] as T[], rpc: (name, args) => rpc(undefined, name, args) };
   const query = vi.fn(async <T,>(_auth: DbClaims, sql: string) => {
     if (!opts.sweep) return [] as T[];
-    return (sql.includes("t.state='queued'") ? opts.sweep.queued : opts.sweep.stale) as T[];
+    if (!sql.includes('list_recoverable_chats')) throw new Error(`unexpected sweep query: ${sql}`);
+    return opts.sweep as T[];
   });
   const db = { tx: async <T,>(_auth: DbClaims, fn: (q: Querier) => Promise<T>) => fn(q), query, rpc } as unknown as Db;
   const onError = vi.fn();
@@ -109,13 +110,11 @@ describe('periodic recovery sweep', () => {
     vi.useFakeTimers();
     const { orchestrator, rpcs, onError } = setup({
       queue: [],
-      sweep: {
-        stale: [
-          { entity_id: CHAT, configured_by_identity_id: 'creator', turn_id: 'bad-turn', attempt_no: 1 },
-          { entity_id: CHAT, configured_by_identity_id: 'creator', turn_id: 'stuck-turn', attempt_no: 2 },
-        ],
-        queued: [{ entity_id: CHAT, configured_by_identity_id: 'creator' }],
-      },
+      sweep: [
+        { kind: 'stale', chat_id: CHAT, configured_by_identity_id: 'creator', turn_id: 'bad-turn', attempt_no: 1 },
+        { kind: 'stale', chat_id: CHAT, configured_by_identity_id: 'creator', turn_id: 'stuck-turn', attempt_no: 2 },
+        { kind: 'queued', chat_id: CHAT, configured_by_identity_id: 'creator', turn_id: null, attempt_no: null },
+      ],
     });
     orchestrator.startRecoverySweep(1_000);
     expect(rpcs.filter((c) => c.name === 'recover_chat_attempt')).toHaveLength(0);
@@ -125,5 +124,26 @@ describe('periodic recovery sweep', () => {
     expect(recovered).toEqual(['bad-turn', 'stuck-turn']);
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'recover failed' }));
     expect(rpcs.some((c) => c.name === 'claim_next_chat_turn')).toBe(true);
+  });
+
+  it('lists chats through the node-admin function and acts on each as its own configuring identity', async () => {
+    // The listing must not be a SELECT under the owner's RLS: that hid every
+    // chat outside the owner's spaces and one stayed stuck (prod 2026-10-20).
+    const OTHER = '00000000-0000-4000-8000-0000000000c2';
+    const { orchestrator, query, rpcs } = setup({
+      sweep: [
+        { kind: 'stale', chat_id: OTHER, configured_by_identity_id: 'stranger', turn_id: 'frozen', attempt_no: 1 },
+        { kind: 'queued', chat_id: CHAT, configured_by_identity_id: 'creator', turn_id: null, attempt_no: null },
+      ],
+    });
+    await orchestrator.reconcileOnBoot();
+    const claims = () => rpcs.filter((c) => c.name === 'claim_next_chat_turn').map((c) => c.identityId);
+    await vi.waitFor(() => expect(claims()).toHaveLength(2));
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]![0]).toEqual({ identityId: 'owner' });
+    expect(query.mock.calls[0]![1]).toContain('public.list_recoverable_chats($1,$2)');
+    expect(query.mock.calls[0]![2]).toEqual(['node', 'boot']);
+    expect(rpcs.find((c) => c.name === 'recover_chat_attempt')).toMatchObject({ args: [OTHER, 'frozen', 1, { nodeId: 'node', bootId: 'boot' }], identityId: 'stranger' });
+    expect(claims().sort()).toEqual(['creator', 'stranger']);
   });
 });

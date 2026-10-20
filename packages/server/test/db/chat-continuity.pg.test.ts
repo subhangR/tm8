@@ -283,6 +283,45 @@ it('lets only one claim owner win and preserves a healthy other node at boot',as
   expect(recovery.disposition).toBe('wait_owner');
 });
 
+it('lists a stale chat outside the node admin\'s spaces so the sweep can recover and drain it',async () => {
+  // prod 2026-10-20: the sweep SELECTed chats as the node owner under RLS and
+  // never saw a chat in a space the owner is not in, so it stayed stuck.
+  const admin='chat-node-admin'; const stranger='chat-not-admin';
+  await database.query('insert into accounts(identity_id,username,is_node_admin) values($1,$2,true),($3,$4,false)',
+    [admin,'continuity-node-admin',stranger,'continuity-stranger']);
+  const as=<T>(identity:string,nodeAdmin:boolean,fn:(q:PoolClient)=>Promise<T>)=>database.transaction(async q=>{
+    await q.query('set local role tm8_app');
+    await q.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','browser',true),set_config('tm8.node_admin',$2,true)",
+      [identity,String(nodeAdmin)]);
+    return fn(q);
+  });
+  const list=(identity:string)=>as(identity,true,async q=>(await q.query(
+    'select kind,chat_id,configured_by_identity_id,turn_id,attempt_no from public.list_recoverable_chats($1,$2) where chat_id=$3',
+    ['node-sweeper','boot-sweeper',p.id])).rows);
+  const p=await prepared(); await opened(p);
+  await caller(q=>q.query(`select public.w2_post_message_batch($1::uuid[],'queued behind the frozen turn',null,
+    '{}'::uuid[],'{}'::uuid[],null,null,$2,null,null)`,[[p.id],randomUUID()]));
+  await database.query("update chats set runtime_lease_expires_at=now()-interval '1 second' where entity_id=$1",[p.id]);
+  await database.query("update chat_turns set lease_expires_at=now()-interval '1 second' where turn_id=$1",[p.claim.turnId]);
+  // The old sweep query, as the admin: RLS hides the chat.
+  expect((await as(admin,true,q=>q.query('select 1 from public.chats where entity_id=$1',[p.id]))).rows).toHaveLength(0);
+  expect(await list(admin)).toEqual([{kind:'stale',chat_id:p.id,configured_by_identity_id:fixture.identityA,
+    turn_id:p.claim.turnId,attempt_no:p.claim.attemptNo},
+    {kind:'queued',chat_id:p.id,configured_by_identity_id:fixture.identityA,turn_id:null,attempt_no:null}]);
+  // Node admins only (require_node_admin reads the account, not the claim),
+  // and never a session pinned to a space.
+  await expect(list(stranger)).rejects.toMatchObject({code:'42501'});
+  await expect(list(fixture.identityA)).rejects.toMatchObject({code:'42501'});
+  await expect(as(admin,true,async q=>{ await q.query("select set_config('tm8.session_space_id',$1,true)",[fixture.spaceId]);
+    return q.query("select * from public.list_recoverable_chats('n','b')"); })).rejects.toMatchObject({code:'42501'});
+  const recovery=await caller(async q=>(await q.query('select public.recover_chat_attempt($1,$2,$3,$4) result',
+    [p.id,p.claim.turnId,p.claim.attemptNo,{nodeId:'node-sweeper',bootId:'boot-sweeper'}])).rows[0].result);
+  expect(recovery.disposition).toBe('retry_prepared');
+  expect(await list(admin)).toEqual([{kind:'queued',chat_id:p.id,configured_by_identity_id:fixture.identityA,turn_id:null,attempt_no:null}]);
+  await database.query("update entities set deleted_at=now() where id=$1",[p.id]);
+  expect(await list(admin)).toEqual([]);
+});
+
 it('recovers a settled closing owner without changing its answer or replaying it',async()=>{
   const p=await prepared();await agentMessage(p);await opened(p);
   await caller(q=>q.query('select public.begin_chat_dispatch($1,$2,$3,$4)',[p.id,p.fence,p.snapshot,p.sealed.inputDigest]));

@@ -413,29 +413,36 @@ export class ChatOrchestrator {
     this.recoverySweep=undefined;
   }
 
+  /**
+   * The listing runs as the node admin through `list_recoverable_chats`, never
+   * as a plain SELECT: chats and chat_turns are under RLS, so a direct query saw
+   * only the chats in the owner's own spaces and a stale chat anywhere else
+   * stayed stuck for good (prod 2026-10-20: 124 of 240 chats visible). Each chat
+   * is still recovered and drained as its own configuring identity.
+   */
   private async recoverStale(): Promise<void> {
     const sweep=this.options.sweepClaims;
     if (!sweep) return;
-    const rows=await this.options.db.query<{entity_id:string;configured_by_identity_id:string;turn_id:string;attempt_no:number}>(sweep,
-      `select c.entity_id,c.configured_by_identity_id,t.turn_id,t.attempt_no
-       from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
-       where (t.state='running' or (c.runtime_phase='closing' and c.active_execution_snapshot_id=t.execution_snapshot_id))
-         and ((c.node_id=$1 and c.runtime_owner_boot_id is distinct from $2)
-         or coalesce(c.runtime_lease_expires_at,t.lease_expires_at)<=now()) order by t.turn_ordinal`,
+    const rows=await this.options.db.query<{kind:'stale'|'queued';chat_id:string;configured_by_identity_id:string;
+      turn_id:string|null;attempt_no:number|null}>(sweep,
+      'select kind,chat_id,configured_by_identity_id,turn_id,attempt_no from public.list_recoverable_chats($1,$2)',
       [this.options.nodeId,this.bootId]);
     for (const row of rows) {
+      if (row.kind!=='stale') continue;
       try {
         await this.options.db.rpc(claims(row.configured_by_identity_id),
-          'recover_chat_attempt',[row.entity_id,row.turn_id,row.attempt_no,{nodeId:this.options.nodeId,bootId:this.bootId}]);
+          'recover_chat_attempt',[row.chat_id,row.turn_id,row.attempt_no,{nodeId:this.options.nodeId,bootId:this.bootId}]);
       } catch (error) { this.options.onError?.(error); }
     }
-    const queued=await this.options.db.query<{entity_id:string;configured_by_identity_id:string}>(sweep,
-      `select distinct c.entity_id,c.configured_by_identity_id from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
-       where t.state='queued' and (c.node_id=$1 or c.node_id is null or c.runtime_lease_expires_at is null
-         or c.runtime_lease_expires_at<=now())`,[this.options.nodeId]);
-    for (const row of queued) void this.wake(row.entity_id,row.configured_by_identity_id);
+    // Wake stale chats too: recovery may have just requeued their turn or freed
+    // the queue behind it. A claim with nothing runnable returns null.
+    const woken=new Set<string>();
+    for (const row of rows) {
+      if (woken.has(row.chat_id)) continue;
+      woken.add(row.chat_id);
+      void this.wake(row.chat_id,row.configured_by_identity_id);
+    }
   }
-
 
   /**
    * F2 (PR188 review): reconcile durable state with process reality at boot.
