@@ -12,6 +12,7 @@ import {
 } from '@tm8/contract';
 import type { HarnessRegistry } from '@tm8/execution';
 import { executeFencedTurn, type ActiveChatHarness, type FencedClaim, type FencedTurnOptions } from './fenced-turn.js';
+import { deadline, retryTransient } from './lease.js';
 import type { createChatPreparedLaunchResolver } from './harness-composition.js';
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
@@ -88,6 +89,13 @@ interface BatchRpcResult {
 
 export interface ChatOrchestratorOptions {
   readonly db: Db;
+  /**
+   * A small pool reserved for lease-critical writes: renewals, a failed
+   * preparation's settlement, the release, and recovery of an abandoned turn.
+   * Without it those queue behind every read on the node, and a saturated
+   * pool turns them into silent losses. Defaults to `db`.
+   */
+  readonly leaseDb?: Db;
   readonly runtime?: AgentRuntime;
   readonly registry?: HarnessRegistry;
   readonly resolvePreparedLaunch?: ReturnType<typeof createChatPreparedLaunchResolver>;
@@ -289,6 +297,9 @@ async function teamLine(db: Db, turn: ClaimedTurn): Promise<string | null> {
   return chatTeamLine(team);
 }
 
+/** The subject and team lines are context; neither may hold a claimed turn for long. */
+const CONTEXT_READ_TIMEOUT_MS = 10_000;
+
 function promptFor(turn: ClaimedTurn, about: string | null, team: string | null = null): string {
   // The mode line leads every turn — it is the per-turn selector the mode-
   // neutral system prompt defers to, and turn.chatMode is the effective mode
@@ -344,6 +355,8 @@ export class ChatOrchestrator {
    */
   private readonly stopLatches=new Map<string,string>();
   private recoverySweep: ReturnType<typeof setInterval> | undefined;
+  /** Owner-side recovery of turns this process gave up unsettled, by chat. */
+  private readonly ownRecoveries=new Map<string,ReturnType<typeof setTimeout>>();
   private readonly bootId: string;
   constructor(private readonly options: ChatOrchestratorOptions) {
     this.bootId=options.bootId ?? randomUUID();
@@ -411,6 +424,51 @@ export class ChatOrchestrator {
   stopRecoverySweep(): void {
     if (this.recoverySweep) clearInterval(this.recoverySweep);
     this.recoverySweep=undefined;
+    for (const timer of this.ownRecoveries.values()) clearTimeout(timer);
+    this.ownRecoveries.clear();
+  }
+
+  /**
+   * The owner's own recovery of a turn it gave up unsettled (`onAbandoned`):
+   * its lease was lost, or its outcome could not be recorded even after
+   * retries. The durable lease may still be live, so `recover_chat_attempt`
+   * runs once the owner's latest estimate of its expiry has passed, then the
+   * queue behind it is drained. Until this existed the only way out was the
+   * periodic sweep — which, before 338, could not even see most chats.
+   *
+   * `wait_owner` means the database still sees a live lease (or nothing to
+   * recover); the attempt is repeated with backoff a bounded number of times
+   * and the chat is woken each time, because a claim with nothing runnable
+   * simply returns null.
+   */
+  private scheduleOwnRecovery(chatId:string,requesterIdentityId:string,turn:{turnId:string;attemptNo:number},
+    recoverAfter:number,attempt=1): void {
+    const MAX_ATTEMPTS=12;
+    const pending=this.ownRecoveries.get(chatId);
+    if (pending) clearTimeout(pending);
+    const backoff=attempt===1 ? 1_000 : Math.min(60_000,2_000*2**(attempt-2));
+    const timer=setTimeout(() => {
+      this.ownRecoveries.delete(chatId);
+      void (async () => {
+        let again=false;
+        try {
+          const result=await (this.options.leaseDb ?? this.options.db).rpc<{disposition?:string}|null>(claims(requesterIdentityId),
+            'recover_chat_attempt',[chatId,turn.turnId,turn.attemptNo,{nodeId:this.options.nodeId,bootId:this.bootId}]);
+          again=result?.disposition==='wait_owner';
+          console.warn(`[chat] owner recovery of chat ${chatId} turn ${turn.turnId}: ${result?.disposition ?? 'no result'}`);
+        } catch (error) {
+          again=true;
+          console.error(`[chat] owner recovery of chat ${chatId} turn ${turn.turnId} failed (attempt ${attempt}): ${errorMessage(error)}`);
+          this.options.onError?.(error);
+        }
+        await this.wake(chatId,requesterIdentityId);
+        if (again && attempt<MAX_ATTEMPTS && !this.ownRecoveries.has(chatId)) {
+          this.scheduleOwnRecovery(chatId,requesterIdentityId,turn,Date.now(),attempt+1);
+        }
+      })();
+    },Math.max(0,recoverAfter-Date.now())+backoff);
+    timer.unref?.();
+    this.ownRecoveries.set(chatId,timer);
   }
 
   /**
@@ -567,17 +625,26 @@ export class ChatOrchestrator {
     for (;;) {
       if (this.options.registry && this.options.resolvePreparedLaunch) {
         const leaseToken=randomUUID();
-        const turn=await this.options.db.rpc<FencedClaim|null>(claims(requesterIdentityId),'claim_next_chat_turn',[
+        // Taken before the claim: the lease it writes cannot start earlier.
+        const claimedAt=Date.now();
+        // A claim that lost a race for a pool client is retried, not dropped:
+        // dropping it left the message queued until some later wake.
+        const turn=await retryTransient(() => this.options.db.rpc<FencedClaim|null>(claims(requesterIdentityId),'claim_next_chat_turn',[
           chatId,2,{nodeId:this.options.nodeId,bootId:this.bootId,
-            leaseTokenHash:createHash('sha256').update(leaseToken).digest('hex')}]);
+            leaseTokenHash:createHash('sha256').update(leaseToken).digest('hex')}]),{until:() => claimedAt+30_000,
+          onRetry:error => this.options.onError?.(error)});
         if (!turn) return;
         this.claimedTurns.set(chatId,turn.turnId);
+        const pending=this.ownRecoveries.get(chatId);
+        if (pending) { clearTimeout(pending); this.ownRecoveries.delete(chatId); }
         try {
           // The team line (328) rides on the production path too; it used to be
           // read only by the legacy runtime, so a coordinator's 👥 pick never
           // reached a harness-run chat.
           const prompt=promptFor(turn,await this.readAbout(turn),await this.readTeam(turn));
           await executeFencedTurn({db:this.options.db,registry:this.options.registry,
+            ...(this.options.leaseDb ? {leaseDb:this.options.leaseDb} : {}),claimedAt,
+            onAbandoned:({recoverAfter}) => this.scheduleOwnRecovery(chatId,requesterIdentityId,turn,recoverAfter),
             resolvePreparedLaunch:this.options.resolvePreparedLaunch,publisher:this.options.publisher,turn,leaseToken,
             prompt,historyBudgetBytes:this.options.historyBudgetBytes ?? 32768,
             createAgentMessage:()=>this.createAgentMessage(turn),track:active=>this.activeHarnesses.set(chatId,active),
@@ -588,7 +655,8 @@ export class ChatOrchestrator {
         } catch (error) {
           // One turn that could not settle must not end the drain for the turns
           // queued behind it. The next claim refuses while that turn still holds
-          // the lease; the recovery sweep settles it once the lease expires.
+          // the lease; `onAbandoned` has scheduled this owner's own recovery for
+          // when it expires (the sweep remains the backstop).
           this.options.onError?.(error);
         } finally {
           this.claimedTurns.delete(chatId);
@@ -614,7 +682,8 @@ export class ChatOrchestrator {
    */
   private async readTeam(turn: ClaimedTurn): Promise<string | null> {
     try {
-      return await teamLine(this.options.db, turn);
+      // Bounded like every other step before launch: context never holds a turn.
+      return await deadline(teamLine(this.options.db, turn), CONTEXT_READ_TIMEOUT_MS, 'chat team read');
     } catch (error) {
       const failure = error as { code?: string; details?: { sqlstate?: string } } | null;
       // 42883 undefined_function: raw from pg, or preserved by db/errors.ts.
@@ -625,7 +694,7 @@ export class ChatOrchestrator {
 
   private async readAbout(turn: ClaimedTurn): Promise<string | null> {
     try {
-      return await aboutLine(this.options.db, turn);
+      return await deadline(aboutLine(this.options.db, turn), CONTEXT_READ_TIMEOUT_MS, 'chat subject read');
     } catch (error) {
       this.options.onError?.(error);
       return null;

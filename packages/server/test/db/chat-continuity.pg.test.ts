@@ -496,3 +496,138 @@ it('runs queued cross-harness turns through the registry with durable inert hist
     expect(await database.query("select * from message_parts where kind='tool_result' and message_id in(select agent_message_id from chat_turns where chat_id=$1)",[id])).toHaveLength(1);
   } finally {await db.end();}
 });
+
+/*
+ * prod 2026-10-20, chat dd0bbd03: a turn froze while preparing its launch. The
+ * preparation outlived its 30s budget while the node's pool was saturated, the
+ * turn's one attempt to record that (`fail_chat_preparation`) queued behind
+ * the same pool and failed, and nothing retried it. The lease was never
+ * released, no renewal ever landed, and every later message queued behind it.
+ */
+async function waitFor<T>(read:()=>Promise<T>,done:(value:T)=>boolean,label:string,ms=20_000):Promise<T> {
+  const until=Date.now()+ms;
+  for (;;) {
+    const value=await read();
+    if (done(value)) return value;
+    if (Date.now()>until) throw new Error(`timed out waiting for ${label}: ${JSON.stringify(value)}`);
+    await new Promise(r=>setTimeout(r,50));
+  }
+}
+/** A codex harness that answers every turn at once, and a resolver that mints a real grant. */
+async function answeringHarness(db:import('../../src/db/types.js').Db,id:string) {
+  const {HarnessRegistry}=await import('@tm8/execution');
+  const caps={schemaVersion:1,harness:'codex',binaryVersion:'test',protocolRevision:'v2',nativeResume:'unknown',portableBootstrap:'supported',
+    cancelActiveTurn:'supported',nativeTurnIds:'supported',usage:'supported',contextReading:'supported',interactiveRequests:'unsupported',
+    textInputs:'supported',imageInputs:'unsupported',fileInputs:'unsupported',builtInToolRestriction:'unknown',
+    configuration:{model:'per_turn',reasoningEffort:'per_turn',serviceTier:'per_turn',instructions:'restart',tools:'restart',credential:'restart'}};
+  const prompts:string[]=[];
+  const registry=new HarnessRegistry([{kind:'codex',capabilities:async()=>caps,open:async(input:any)=>{
+    let command:any; let ready!:()=>void; const submitted=new Promise<void>(r=>{ready=r;});
+    return {fence:input.fence,opened:{native:{schemaVersion:1,harness:'codex',nativeId:`opaque:${randomUUID()}`,nodeId:'node-a',
+      storageScopeId:input.launch.nativeStorageScopeId,nativeStorageGeneration:1,cwdIdentity:input.config.cwdIdentity,historyFormat:'test'},nativeConfirmed:true,
+      readiness:'protocol_session_ack',capabilities:caps,execution:{requested:input.config.target,configuredModel:input.config.target.model,
+        observedModel:null,observedEffort:null,observedServiceTier:null,evidence:'protocol_echo'},
+      seed:{...input.mode.context,transport:'instructions',acknowledgement:'launch_materialized'}},
+      observations:(async function*(){ await submitted; const base={fence:input.fence,attempt:command.attempt,nativeTurnId:'native-turn',observedAt:new Date().toISOString()};
+        yield {...base,adapterSeq:1,payload:{kind:'text',itemId:'answer',revision:1,operation:'append',phase:'final',text:`answered: ${command.text.split('\n').pop()}`}};
+        yield {...base,adapterSeq:2,payload:{kind:'terminal',outcome:'completed',evidence:'provider_terminal'}};
+      })(),
+      submit:async(value:any)=>{command=value;prompts.push(value.text);ready();return {delivery:'sent',acknowledgement:'native_ack',nativeTurnId:'native-turn'};},
+      cancel:async()=>({disposition:'requested',nativeTurnId:'native-turn'}),respond:async()=>{},close:async()=>({exited:true,nativeUsable:null})};
+  }}] as any);
+  const resolver=async(input:any,owner:any,fence:any)=>{
+    const auth={identityId:input.requesterIdentityId,authKind:input.requesterAuthKind,...(input.requesterAuthSessionId?{authSessionId:input.requesterAuthSessionId}:{})};
+    const grant:any=await db.rpc(auth,'issue_agent_runtime_session',[id,fixture.teammateId,randomUUID().replaceAll('-','').repeat(2),new Date(Date.now()+3600000).toISOString(),null,fence]);
+    return {target:{harness:'codex',provider:input.provider,model:input.model,reasoningEffort:input.reasoningEffort,serviceTier:null},
+      instructionHash:'instructions',toolPolicyHash:'policy',mcpBindingRevision:'mcp',credentialBinding:{},credentialBindingId:randomUUID(),
+      credentialRevision:null,launchFingerprint:null,revalidate:async()=>{},
+      launch:{owner,kind:'ephemeral-launch',launchId:randomUUID(),storageScopeId:'private',nativeStorageScopeId:`history:${fence.generation}`,
+        nativeStorageGeneration:1,modelCredentialLeaseId:'lease',runtimeGrantId:grant.id,capabilityPlanId:'plan',materialize:async()=>({}),
+        release:async()=>{await db.rpc(auth,'revoke_agent_runtime_session',[id,fence.leaseEpoch,fence.generation,grant.id]);}}};
+  };
+  return {registry,resolver,prompts};
+}
+const turnStates=(id:string)=>database.query<{state:string;failure:any;body:string}>(
+  `select t.state,t.failure,t.input_snapshot->>'body' as body from chat_turns t where t.chat_id=$1 order by t.turn_ordinal`,[id]);
+
+it('fails a frozen launch preparation with its reason and runs the queue behind it, though the main pool is exhausted',{timeout:60_000},async () => {
+  const {PgDb}=await import('../../src/db/client.js');
+  const {ChatOrchestrator}=await import('../../src/chat/orchestrator.js');
+  const {ChatTurnPublisher}=await import('../../src/chat/publisher.js');
+  const {SubscriptionRegistry}=await import('../../src/events/subscriptions.js');
+  // One client, and a checkout that gives up after 200ms: the saturated pool.
+  const db=new PgDb({databaseUrl:database.url,max:1,connectionTimeoutMillis:200});
+  const leaseDb=new PgDb({databaseUrl:database.url,max:2});
+  const id=await chat();
+  await caller(q=>q.query(`select public.w2_post_message_batch($1::uuid[],'queued behind the frozen turn',null,
+    '{}'::uuid[],'{}'::uuid[],null,null,$2,null,null)`,[[id],randomUUID()]));
+  const {registry,resolver,prompts}=await answeringHarness(db,id);
+  let release!:()=>void; const hogged=new Promise<void>(r=>{release=r;});
+  let frozen=0;
+  // The first preparation takes the node's only pool client and never returns.
+  const preparation=async(...args:Parameters<typeof resolver>)=>{
+    if (frozen++>0) return resolver(...args);
+    void db.tx({identityId:fixture.identityA},()=>hogged);
+    return new Promise<never>(()=>{});
+  };
+  const errors:unknown[]=[];
+  const orchestrator=new ChatOrchestrator({db,leaseDb,registry,resolvePreparedLaunch:preparation as any,nodeId:'node-a',bootId:'boot-a',
+    publisher:new ChatTurnPublisher(new SubscriptionRegistry()),onError:error=>errors.push(error),turnTimeouts:{preparation:300}});
+  try {
+    const drained=orchestrator.wake(id,fixture.identityA);
+    // Recorded on the reserved lane while the main pool is still exhausted.
+    const failed=await waitFor(()=>turnStates(id),rows=>rows[0]?.state==='error','the frozen turn to fail');
+    expect(failed[0].failure).toMatchObject({code:'phase_timeout'});
+    expect(failed[0].failure.message).toContain('preparing credentials and workspace');
+    // The lease is released too (release follows the failure record), so nothing waits for it to expire.
+    await waitFor(async()=>(await database.query('select runtime_phase,runtime_lease_expires_at from chats where entity_id=$1',[id]))[0],
+      row=>row.runtime_phase==='idle' && row.runtime_lease_expires_at===null,'the lease to be released');
+    // ...and it really is exhausted: the old single attempt on this pool would have failed.
+    await expect(db.rpc({identityId:fixture.identityA},'fail_chat_preparation',[id,{},{}]))
+      .rejects.toMatchObject({details:{reason:'db_pool_exhausted'}});
+    release();
+    await drained;
+    const rows=await waitFor(()=>turnStates(id),r=>r[1]?.state==='completed','the queued turn to run');
+    expect(rows.map(r=>r.state)).toEqual(['error','completed']);
+    expect(prompts).toHaveLength(1); expect(prompts[0]).toContain('queued behind the frozen turn');
+  } finally { release(); orchestrator.stopRecoverySweep(); await db.end(); await leaseDb.end(); }
+});
+
+it('recovers a chat already frozen in prepared with an expired lease at boot, with no manual step, and drains its queue',{timeout:60_000},async () => {
+  const {PgDb}=await import('../../src/db/client.js');
+  const {ChatOrchestrator}=await import('../../src/chat/orchestrator.js');
+  const {ChatTurnPublisher}=await import('../../src/chat/publisher.js');
+  const {SubscriptionRegistry}=await import('../../src/events/subscriptions.js');
+  const admin='chat-boot-recovery-admin';
+  await database.query('insert into accounts(identity_id,username,is_node_admin) values($1,$2,true)',[admin,'continuity-boot-admin']);
+  // dd0bbd03's durable state: attempt sealed 'prepared', turn running, no
+  // renewal ever landed, lease long expired, messages queued behind it, and
+  // the node admin is not a member of the chat's space.
+  const p=await prepared();
+  for (const body of ['second','third']) await caller(q=>q.query(`select public.w2_post_message_batch($1::uuid[],$2,null,
+    '{}'::uuid[],'{}'::uuid[],null,null,$3,null,null)`,[[p.id],body,randomUUID()]));
+  await database.query("update chats set runtime_lease_expires_at=now()-interval '2 hours' where entity_id=$1",[p.id]);
+  await database.query("update chat_turns set lease_expires_at=now()-interval '2 hours' where turn_id=$1",[p.claim.turnId]);
+  expect((await turnStates(p.id)).map(r=>r.state)).toEqual(['running','queued','queued']);
+  // Earlier tests in this file leave chats owned by node-a too. A real boot
+  // recovers those as well, which is right, but this harness answers only for
+  // this chat, so the others are taken out of the sweep's view.
+  await database.query("update entities set deleted_at=now() where kind='chat' and id<>$1 and deleted_at is null",[p.id]);
+  const db=new PgDb({databaseUrl:database.url}); const leaseDb=new PgDb({databaseUrl:database.url,max:2});
+  const {registry,resolver,prompts}=await answeringHarness(db,p.id);
+  const errors:unknown[]=[];
+  // A deploy is a new boot of the same node.
+  const orchestrator=new ChatOrchestrator({db,leaseDb,registry,resolvePreparedLaunch:resolver as any,nodeId:'node-a',bootId:'boot-after-deploy',
+    publisher:new ChatTurnPublisher(new SubscriptionRegistry()),onError:error=>errors.push(error),
+    sweepClaims:{identityId:admin,nodeAdmin:true}});
+  try {
+    await orchestrator.reconcileOnBoot();
+    const rows=await waitFor(()=>turnStates(p.id),r=>r.every(t=>t.state==='completed'),'the frozen chat to drain');
+    expect(rows.map(r=>r.body)).toEqual(['original input','second','third']);
+    // The frozen input is retried (it was provably never sent), not dropped.
+    expect(prompts.map(text=>text.split('\n').pop())).toEqual(['original input','second','third']);
+    expect((await database.query(`select phase,provider_terminal->>'evidence' as evidence from chat_turn_attempts
+      where snapshot_id=$1`,[p.snapshot]))[0]).toEqual({phase:'settled',evidence:'durable_prepared'});
+    expect(errors).toEqual([]);
+  } finally { orchestrator.stopRecoverySweep(); await db.end(); await leaseDb.end(); }
+});
