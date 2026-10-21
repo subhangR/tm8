@@ -58,6 +58,7 @@ import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential
 import { createCompletedAutoCloseJob, createLostSessionReaperJob, lostAfterMsFromEnv } from './scheduler/jobs/lost-session-reaper.js';
 import { codexHomeRetentionMsFromEnv, createCodexHomeReclaimJob } from './scheduler/jobs/codex-home-reclaim.js';
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
+import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -1153,6 +1154,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         claims: async () => {
           const o = await owner();
           return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'credential-binding-sweep' };
+        },
+      }),
+    );
+    // §5.6 (346): MCP call audit rows past the node's retention window.
+    scheduler.register(
+      createMcpAuditRetentionJob({
+        db,
+        ...(config.mcpAuditRetentionDays !== undefined ? { retentionDays: config.mcpAuditRetentionDays } : {}),
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'mcp-audit-retention' };
         },
       }),
     );

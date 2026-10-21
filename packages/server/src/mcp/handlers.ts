@@ -14,6 +14,7 @@ import { McpProxy, type McpProxyPorts } from './proxy.js';
 import { DbMcpOAuthPendingStore, McpOAuth, revokeOAuth, type McpOAuthPendingStore } from './oauth.js';
 import { localKeyProvider, type KeyProvider } from '../credentials/key-provider.js';
 import type { DbClaims } from '../db/types.js';
+import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafely, type McpCallAuditEntry } from './audit.js';
 
 export interface McpRuntimeHandlerOptions {
  dataDir:string; callbackUrl:string;
@@ -118,19 +119,45 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    if(method!=='tools/list' && method!=='tools/call')throw new CollabError('invalid_input','Unsupported MCP method');
    const params=input.message.params;if(params!==undefined && (!params || typeof params!=='object' || Array.isArray(params)))throw new CollabError('invalid_input','Invalid MCP params');
    const runtimeId=ctx.identity.workSessionId??ctx.identity.runtimeChatId;
-   if(!ctx.identity.sessionId || runtimeId!==input.sessionId || !['agent','agent_runtime'].includes(ctx.identity.authKind??''))throw new CollabError('forbidden','MCP session bearer mismatch');
+   const isRuntime=Boolean(ctx.identity.sessionId) && ['agent','agent_runtime'].includes(ctx.identity.authKind??'');
    const runtimeClaims={...await claims(ctx),authSessionId:ctx.identity.sessionId};
-   const grant=await options.authorize(runtimeClaims,input.sessionId,input.serverId);
-   // §6: an audit row is attributed to the ROOT — the human the call acts for —
-   // which for a bearer chain is the same identity the launcher field holds, and
-   // for a schedule firing is the member who armed it rather than the node
-   // owner the executor happened to run as. t-audit-log reads grant.chain /
-   // grant.rootMemberId for the chain columns it owns.
-   const auditClaims={...runtimeClaims,identityId:grant.rootIdentityId??grant.launcherIdentityId??grant.identityId,actorId:undefined,nodeAdmin:false};
-   const audit=(outcome:string)=>deps.db.rpc(auditClaims,'record_mcp_call',[grant.spaceId,grant.sessionId,grant.serverId,grant.credentialId??null,method,outcome]);
-   await audit('started');
-   try {const result=await proxy.request(runtimeClaims,input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>);await audit('succeeded');return result;}
-   catch(error){await audit('failed');throw error;}
+   /*
+    * §5.6: EVERY call leaves a row, a refusal included, written under the
+    * session's own runtime bearer (346's writer accepts no other). The row names
+    * the tool and the sizes, never an argument or a result. Root and chain are
+    * the grant's — what read_mcp_session_binding returned; a call refused before
+    * there was a grant passes none and the writer reads the recorded binding.
+    */
+   const began=performance.now();
+   const base={serverId:input.serverId,method,tool:mcpToolName(method,params),requestBytes:byteSize(params??{})} as const;
+   type Entry=Omit<McpCallAuditEntry,keyof typeof base|'sessionId'>&{sessionId?:string};
+   const row=(entry:Entry):McpCallAuditEntry=>({...base,sessionId:input.sessionId,latencyMs:performance.now()-began,...entry});
+   // `started` is the one write that may fail the call: it runs BEFORE anything
+   // reaches the provider, so failing closed there costs nothing.
+   const audit=(entry:Entry)=>recordMcpCall(deps.db,runtimeClaims,row(entry));
+   // Every later row is written safely: a refusal's row must never replace the
+   // refusal, and a succeeded row must never turn a call the provider already
+   // acted on into an error the caller might retry (a second email).
+   const auditAfter=(entry:Entry)=>recordMcpCallSafely(deps.db,runtimeClaims,row(entry));
+   if(!isRuntime || runtimeId!==input.sessionId) {
+    // A runtime bearer naming another session is recorded against its OWN
+    // session: that is the only session this bearer can write rows for.
+    if(isRuntime && runtimeId)await auditAfter({sessionId:runtimeId,outcome:'denied',denyReason:'session_mismatch'});
+    throw new CollabError('forbidden','MCP session bearer mismatch');
+   }
+   let grant;
+   try {grant=await options.authorize(runtimeClaims,input.sessionId,input.serverId);}
+   catch(error){await auditAfter({outcome:'denied',denyReason:mcpDenyReason(error)??'forbidden'});throw error;}
+   await audit({outcome:'started',grant});
+   let result;
+   try {result=await proxy.request(runtimeClaims,input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>);}
+   catch(error){
+    // The proxy re-authorizes before every send, so access lost mid-call is a
+    // refusal too; anything else (the provider, the network) is a failure.
+    const denyReason=mcpDenyReason(error);
+    await auditAfter(denyReason?{outcome:'denied',grant,denyReason}:{outcome:'failed',grant});throw error;
+   }
+   await auditAfter({outcome:'succeeded',grant,responseBytes:byteSize(result)});return result;
   },
  });
 }

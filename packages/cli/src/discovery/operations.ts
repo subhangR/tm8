@@ -191,6 +191,7 @@ const ROWS: Record<OperationName, Row> = {
   'mcp.oauth.begin': {cmd: ['mcp','oauth','begin'], syn: 'tm8 mcp oauth begin [<id>] --input <@file|->', sum: 'Begin MCP oauth', authz: 'entity', input: 'bound'},
   'mcp.oauth.callback': {cmd: ['mcp','oauth','callback'], syn: 'tm8 mcp oauth callback [<id>] --input <@file|->', sum: 'Callback MCP oauth', authz: 'entity', input: 'bound'},
   'mcp.resolve': {cmd:['mcp','resolve'], syn:'tm8 mcp resolve --input <json-source>',sum:'Resolve explicit MCP connector readiness',authz:'space',input:'bound'},
+  'mcp.audit.list': {cmd:['mcp','audit'], syn:'tm8 mcp audit [--session <id>] [--chat <id>] [--connector <id>] [--member <id>] [--outcome <started|succeeded|failed|denied|refreshed>] [--limit <count>] [--cursor <cursor>]', sum:'List MCP connector calls (admins: the Space; members: their own)', authz:'space', input:'none'},
   'mcp.proxy.request': {cmd:null,sum:'Invoke MCP through the authorized session bridge',authz:'session',input:'bound',reason:'internal_session_bridge'},
   // ── identity & spaces ────────────────────────────────────────────────────
   'identity.get': {
@@ -4366,7 +4367,8 @@ export const CATALOG_DIGEST =
   // Re-measured after the request noun's removal (-5 rows) — RECOMPUTED, not adjusted.
   // Re-measured for Projects add (+spaces.projects.clone|cloneJobs.get, 01a13574) on main 638f6069e — RECOMPUTED, not adjusted.
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:66865117b63ee1d715d92651f220f64ff62a9d03ba410c1c27163fa7e3e8d38a';
+  // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
+  'sha256:6c7a092d915dd271548b8366c7d294c27e72eb47dfe48f7657ca6930f31a9e7b';
 
 export const GRAMMAR_VERSION = '2';
 

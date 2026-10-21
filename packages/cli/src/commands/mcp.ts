@@ -33,7 +33,7 @@ const commands: Array<{path:string[];op:OperationName;param?:string;read?:boolea
   {path:['oauth','begin'],op:'mcp.oauth.begin',param:'serverId'},
   {path:['oauth','callback'],op:'mcp.oauth.callback',secret:true},
 ];
-export const MCP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...spec.path],run:async (cmd):Promise<ExitCode>=>{
+const MCP_OP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...spec.path],run:async (cmd):Promise<ExitCode>=>{
   assertKnownOptions(cmd,['input','expected-version','mutation-id','limit','cursor','target','credential']);
   const params:Record<string,string>={};
   if(spec.space)params.spaceId=requireSpace(cmd.ctx);
@@ -60,3 +60,13 @@ export const MCP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...sp
   cmd.out.data(await observedInvoke(clientFor(cmd.ctx),spec.op,{params,...(spec.read?{query}:{body})}),data=>JSON.stringify(data,null,2));
   return EXIT_OK;
 }}));
+const MCP_AUDIT_COMMAND:CommandModule={path:['mcp','audit'],run:async (cmd):Promise<ExitCode>=>{
+  // §5.6: Space admins see every call in the Space, members the calls they are the root of.
+  const flags:Record<string,string>={session:'sessionId',chat:'chatId',connector:'serverId',member:'memberId',outcome:'outcome',limit:'limit',cursor:'cursor'};
+  assertKnownOptions(cmd,Object.keys(flags));
+  const query:Record<string,string>={};
+  for(const [flag,key] of Object.entries(flags)){const value=cmd.options.value(flag);if(value!==undefined)query[key]=value;}
+  cmd.out.data(await observedInvoke(clientFor(cmd.ctx),'mcp.audit.list',{params:{spaceId:requireSpace(cmd.ctx)},query}),data=>JSON.stringify(data,null,2));
+  return EXIT_OK;
+}};
+export const MCP_COMMANDS:CommandModule[]=[...MCP_OP_COMMANDS,MCP_AUDIT_COMMAND];
