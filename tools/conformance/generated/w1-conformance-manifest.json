@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:66865117b63ee1d715d92651f220f64ff62a9d03ba410c1c27163fa7e3e8d38a",
+  "catalogDigest": "sha256:b8a694fa80e11b90f3eae9be6578bd0ca8a02bac071696ee844cf3ccfeeb9bbf",
   "catalog": {
-    "total": 373,
-    "v1": 371,
+    "total": 374,
+    "v1": 372,
     "reserved": 2,
-    "http": 371,
+    "http": 372,
     "ws": 1,
-    "registerableV1Http": 369,
+    "registerableV1Http": 370,
     "methods": {
-      "GET": 123,
+      "GET": 124,
       "POST": 182,
       "PATCH": 21,
       "DELETE": 23,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 129,
+      "read": 130,
       "command": 242,
       "stream": 2
     },
-    "uniqueNames": 373,
-    "uniqueBindings": 372
+    "uniqueNames": 374,
+    "uniqueBindings": 373
   },
   "reservedOperations": [
     "search.query",
@@ -400,6 +400,13 @@
         "operation": "mcp.oauth.callback",
         "method": "POST",
         "path": "/v2/mcp/oauth/callback",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.audit.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/mcp/audit",
         "status": "registered",
         "source": "server-router"
       },
@@ -3015,7 +3022,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 341
+    "unimplementedV1Http": 342
   },
   "schemas": {
     "additive": {
@@ -3659,6 +3666,23 @@
           "mcp",
           "oauth",
           "callback"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.audit.list",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.audit.list",
+        "intentTags": [
+          "mcp",
+          "audit",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

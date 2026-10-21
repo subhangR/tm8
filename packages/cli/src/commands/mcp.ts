@@ -62,7 +62,7 @@ const MCP_OP_COMMANDS:CommandModule[]=commands.map(spec=>({path:['mcp',...spec.p
 }}));
 const MCP_AUDIT_COMMAND:CommandModule={path:['mcp','audit'],run:async (cmd):Promise<ExitCode>=>{
   // §5.6: Space admins see every call in the Space, members the calls they are the root of.
-  const flags:Record<string,string>={session:'sessionId',chat:'chatId',server:'serverId',member:'memberId',outcome:'outcome',limit:'limit',cursor:'cursor'};
+  const flags:Record<string,string>={session:'sessionId',chat:'chatId',connector:'serverId',member:'memberId',outcome:'outcome',limit:'limit',cursor:'cursor'};
   assertKnownOptions(cmd,Object.keys(flags));
   const query:Record<string,string>={};
   for(const [flag,key] of Object.entries(flags)){const value=cmd.options.value(flag);if(value!==undefined)query[key]=value;}
