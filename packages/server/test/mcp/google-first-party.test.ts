@@ -180,6 +180,11 @@ describe('Google OAuth callback', () => {
 describe('the handlers: mcp.oauth.begin / callback / revoke on a first-party connector', () => {
   const serverId = '00000000-0000-4000-8000-0000000000aa';
   const credentialId = '00000000-0000-4000-8000-0000000000cc';
+  /** The STORED definition: the proxy-only id, spaceId and version are the view's, not the definition's. */
+  const storedDefinition = (service: GoogleFirstPartyService, live: Partial<McpProxyDefinition>) => {
+    const { id: _id, spaceId: _space, version: _version, ...rest } = definition(service, live);
+    return { ...rest, name: service.name, envKeys: [], headerKeys: [] };
+  };
   function handlers(configured = true, service: GoogleFirstPartyService = gmail, live: Partial<McpProxyDefinition> = {}) {
     const rpcs: { fn: string; args: unknown[] }[] = [];
     const keys = fixtureKeys();
@@ -192,19 +197,23 @@ describe('the handlers: mcp.oauth.begin / callback / revoke on a first-party con
         if (fn === 'list_mcp_credentials') return [{ id: credentialId, serverId, label: 'Work Google', authType: 'oauth2', manageable: true, ownerId: 'human' }];
         if (fn === 'mark_mcp_credential_needs_reconnect') return { changed: true };
         if (fn === 'delete_space_credential') return { id: credentialId, revoked: true };
+        if (fn === 'mcp_credential_readiness') return { reason: 'ready' };
+        if (fn === 'touch_mcp_credential' || fn === 'record_mcp_server_health') return null;
         if (fn === 'read_mcp_credential') {
           const sealed = sealSecret(await keys.keyFor('local:v1'), JSON.stringify(stored), mcpSecretBinding({ spaceId: 'space', credentialId }, 'local:v1'));
           return { credentialId, spaceId: 'space', serverId, definitionVersion: 3, keyId: 'local:v1', ciphertext: sealed.ciphertext.toString('base64'), nonce: sealed.nonce.toString('base64') };
         }
         throw new Error(`unexpected rpc ${fn}`);
       },
+      // The proxy's refresh lock runs in a transaction; the fake has no locks to take.
+      tx: async (claims: unknown, work: (q: unknown) => Promise<unknown>) => work({ query: async () => [], rpc: (fn: string, args: unknown[]) => db.rpc(claims, fn, args) }),
     };
     const registry = new HandlerRegistry();
     const deps = { db, owner: async () => ({ identityId: 'human', isNodeAdmin: false }) } as unknown as FacadeDeps;
     registerMcpRuntimeHandlers(registry, deps, {
       dataDir: '/unused-google-fixture', callbackUrl: 'https://tm8.test/mcp/oauth/callback', oauthPending: memoryOAuthPending(), keys,
       google: { endpoints: google.endpoints, client: () => configured ? google.client : undefined, privateNetwork: true },
-      definition: async () => ({ id: serverId, spaceId: 'space', version: 3, securityRevision: 3, definition: { ...definition(service), name: service.name, envKeys: [], headerKeys: [], ...live } }) as never,
+      definition: async () => ({ id: serverId, spaceId: 'space', version: 3, securityRevision: 3, definition: storedDefinition(service, live) }) as never,
       authorize: async () => { throw new Error('unused'); },
     });
     const ctx = (body: unknown, params: Record<string, string> = { serverId }) => ({ body, params, identity: { kind: 'bearer', identityId: 'human', authKind: 'browser' }, requestId: 'fixture' }) as RequestContext;
@@ -212,7 +221,8 @@ describe('the handlers: mcp.oauth.begin / callback / revoke on a first-party con
     const complete = (url: URL, grant?: readonly string[]) => registry.get('mcp.oauth.callback')!(ctx({ state: url.searchParams.get('state'), code: google.issueCode(url, grant) }));
     const created = () => rpcs.filter(call => call.fn === 'create_mcp_credential').at(-1)!;
     const revoke = (secret: McpOAuthSecret) => { stored = secret; return registry.get('mcp.credentials.revoke')!(ctx({ clientMutationId: 'revoke' }, { credentialId })); };
-    return { registry, rpcs, ctx, begin, complete, created, revoke };
+    const health = (secret: McpOAuthSecret) => { stored = secret; return registry.get('mcp.servers.test')!(ctx({ clientMutationId: 'test', credentialId })) as Promise<{ ready: boolean; tools: { name: string }[]; unavailableTools?: unknown[] }>; };
+    return { registry, rpcs, ctx, begin, complete, created, revoke, health };
   }
 
   it('connects a Google account end to end and stores its account label and granted scopes', async () => {
@@ -256,6 +266,18 @@ describe('the handlers: mcp.oauth.begin / callback / revoke on a first-party con
     await none.complete(await none.begin(), ['openid', 'email']);
     const id = none.created().args[0];
     expect(none.rpcs.find(call => call.fn === 'mark_mcp_credential_needs_reconnect')!.args).toEqual(['space', serverId, id, 'scope_reduced']);
+  });
+
+  it('the health check reports the tools a partial grant is missing, with the scope that would restore each (B41)', async () => {
+    const { result } = await connect(gmail, { grant: ['openid', 'email', 'https://www.googleapis.com/auth/gmail.compose'] });
+    const checked = await handlers(true, gmail).health(result.secret);
+    expect(checked.ready).toBe(true);
+    expect(checked.tools.map(tool => tool.name)).toEqual(['create_draft']);
+    // send_message is gated off for everyone, so it is not "missing" from this connection.
+    expect(checked.unavailableTools).toEqual(['search_messages', 'get_message', 'get_thread', 'list_labels']
+      .map(name => ({ name, unavailable: 'scope_missing', scopes: ['https://www.googleapis.com/auth/gmail.readonly'] })));
+    const full = await connect(gmail);
+    expect((await handlers(true, gmail).health(full.result.secret)).unavailableTools).toBeUndefined();
   });
 
   it('disconnect never revokes a Google connection at Google — keyed on the stored secret, not the live definition', async () => {

@@ -153,6 +153,12 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    let result;
    if(readiness!=='ready')result={ready:false,reason:readiness,tools:[],checkedAt:new Date().toISOString()};
    else try{const listed=await test.request(auth,'test',server.id,'tools/list') as {tools:unknown[]};result={ready:true,reason:'ready',tools:listed.tools,checkedAt:new Date().toISOString()};}catch{result={ready:false,reason:'server_unavailable',tools:[],checkedAt:new Date().toISOString()};}
+   // B41: a partial Google grant stays usable with fewer tools; say which are missing and which scope would restore each.
+   if(result.ready && server.definition.firstParty===true && input.credentialId) {
+    const opened=await credentials.read(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:input.credentialId});
+    const unavailableTools=opened.secret.kind==='oauth'?google.uncovered(server.definition,opened.secret.grantedScopes):[];
+    if(unavailableTools.length)result={...result,unavailableTools};
+   }
    if(options.recordTest)await options.recordTest(auth,server.id,result);
    else await deps.db.rpc(auth,'record_mcp_server_health',[server.id,result]);return result;
   }),

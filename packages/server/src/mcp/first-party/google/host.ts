@@ -1,4 +1,4 @@
-import { googleFirstPartyService, type GoogleFirstPartyService } from '@tm8/contract';
+import { googleFirstPartyService, type GoogleFirstPartyService, type McpUnavailableTool } from '@tm8/contract';
 import type { McpOAuthSecret } from '../../credential-store.js';
 import type { McpFirstPartyAuthorization, OAuthClient } from '../../oauth.js';
 import { mcpHttp } from '../../transport.js';
@@ -62,6 +62,18 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
     const granted = new Set(googleScopesFor(this.service(definition), grantedScopes));
     return TOOLS[this.service(definition).catalogId]
       .filter(tool => (!tool.gate || definition.gates?.[tool.gate] === true) && tool.scopes.some(scope => granted.has(scope)));
+  }
+
+  /**
+   * The tools this connection is MISSING for want of a scope — for the health
+   * check only, never for a model's tool list. A gated-off tool is not missing:
+   * it is switched off for everyone.
+   */
+  uncovered(definition: FirstPartyDefinition, grantedScopes: readonly string[] | undefined): McpUnavailableTool[] {
+    const usable = new Set(this.tools(definition, grantedScopes).map(tool => tool.name));
+    return TOOLS[this.service(definition).catalogId]
+      .filter(tool => !usable.has(tool.name) && (!tool.gate || definition.gates?.[tool.gate] === true))
+      .map(tool => ({ name: tool.name, unavailable: 'scope_missing', scopes: [...tool.scopes] }));
   }
 
   async request(definition: FirstPartyDefinition, method: 'tools/list' | 'tools/call', params: Record<string, unknown>, connection: FirstPartyConnection): Promise<unknown> {
