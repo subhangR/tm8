@@ -115,6 +115,10 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,optio
       order by e.id limit 33`,[checked.spaceId]);
     if(defaultOn.length>32)throw new CollabError('invalid_input','Too many default MCP connectors');
     for(const row of defaultOn){
+      // The validator makes `name` mandatory, so this is unreachable through any
+      // supported write — but `definition->>'name'` yields NULL rather than
+      // raising, and one malformed row must not crash every launch in the Space.
+      if(!row.name)continue;
       const name=row.name.toLowerCase();
       if(!nearest.has(name))nearest.set(name,{serverId:row.server_id,depth:DEFAULT_ON_DEPTH});
     }
