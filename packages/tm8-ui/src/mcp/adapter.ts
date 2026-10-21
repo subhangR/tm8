@@ -271,17 +271,18 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     },
     async createKey(serverId, label, secret, scope) { await http.call('mcp.credentials.create', { params: { serverId }, body: { ...command(), serverId, label, secret, ...(scope ? { scope } : {}) } }); },
     async rotateKey(_serverId, credentialId, secret) { await http.call('mcp.credentials.rotate', { params: { credentialId }, body: { ...command(), credentialId, secret } }); },
-    async startOAuth(serverId, label, scope) {
-      let result: {authorizationUrl:string};
-      try {
-        result = await http.call<{authorizationUrl:string}>('mcp.oauth.begin', { params: { serverId }, body: { ...command(), serverId, label, ...(scope ? { scope } : {}) } });
-      } catch (error) {
-        if (error instanceof Error && ['OAuth client registration failed', 'OAuth client registration rejected by provider'].includes(error.message)) {
-          throw new McpUiError('This provider rejected tm8 as an OAuth client. Some providers only allow approved MCP clients; ask the provider to approve tm8, then retry.');
-        }
-        throw error;
-      }
-      rememberMcpOAuth(result.authorizationUrl, spaceId);
+    /**
+     * Transport only. Every §10.2 refusal is WORDED by `errors.ts`
+     * (`connectFailure`), which the Connect flow calls — this used to match two
+     * exact server strings here, and both had already changed shape by the time
+     * anyone looked (#1296 appends the cause to each message).
+     */
+    async startOAuth(serverId, label, scope, returnTo) {
+      const result = await http.call<{authorizationUrl:string; expiresAt?:string}>('mcp.oauth.begin', { params: { serverId }, body: { ...command(), serverId, label, ...(scope ? { scope } : {}), ...(returnTo ? { returnTo } : {}) } });
+      // A HINT for the callback page: which node this connect was begun
+      // against (S4). The authority is the server's pending row, so a browser
+      // that refuses session storage loses a nicety, not the connect.
+      try { rememberMcpOAuth(result.authorizationUrl, spaceId); } catch { /* The hint is optional by design. */ }
       return result;
     },
     async share(_serverId, credentialId, sharing, memberIds) { await http.call('mcp.credentials.share', { params: { credentialId }, body: { ...command(), credentialId, visibility: sharing === 'members' ? 'selected' : sharing, memberIds } }); },

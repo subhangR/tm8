@@ -88,7 +88,13 @@ export interface McpPort {
   /** `scope: 'space'` needs a Space admin and creates a Space-owned connection (§10.2 step 2). */
   createKey(serverId: string, label: string, secret: string, scope?: McpCredentialScope): Promise<void>;
   rotateKey(serverId: string, credentialId: string, secret: string): Promise<void>;
-  startOAuth(serverId: string, label: string, scope?: McpCredentialScope): Promise<{ authorizationUrl: string }>;
+  /**
+   * §10.2 step 4. `scope: 'space'` needs a Space admin. `returnTo` is a path on
+   * tm8's own origin that the SERVER keeps on the pending row, so the same-tab
+   * fallback (popup blocked) comes back to the screen the connect started on
+   * even though the provider redirect lost every scrap of client state.
+   */
+  startOAuth(serverId: string, label: string, scope?: McpCredentialScope, returnTo?: string): Promise<{ authorizationUrl: string; expiresAt?: string }>;
   share(serverId: string, credentialId: string, sharing: 'private' | 'members' | 'space', memberIds: string[]): Promise<void>;
   revoke(serverId: string, credentialId: string): Promise<void>;
   members(): Promise<{ id: string; label: string }[]>;
