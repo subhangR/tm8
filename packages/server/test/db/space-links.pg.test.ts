@@ -70,7 +70,20 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'create_tool_credential(uuid,uuid,uuid,text,text,text,bytea,bytea,integer,uuid,text)': CREDENTIAL_MANAGEMENT,
   'internal.guard_tool_input_storage()': CREDENTIAL_MANAGEMENT,
   // MCP connector consent and persisted chat selections are human-only writes.
-  'create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamp with time zone,boolean,integer)': CREDENTIAL_MANAGEMENT,
+  // 341 adds scope|key_id|account_label|granted_scopes to create_mcp_credential,
+  // and rekey_mcp_credential takes over API-key rotation from
+  // rekey_space_credential so the ciphertext and its key_id land in one
+  // statement. Both are consent writes, so both stay on the strict gate.
+  //
+  // Three other MCP functions 341 adds are deliberately NOT here, because they
+  // run under the PROXY's agent claims and a human gate would break them:
+  // mark_mcp_credential_needs_reconnect (the §7.2 marker — the proxy meets
+  // invalid_grant, not a person), touch_mcp_credential (last_used_at) and
+  // resolve_mcp_account (launch-time account resolution). None of the three
+  // writes a secret, and each carries read_mcp_credential's own owner/public/
+  // shared-with authority instead.
+  'create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamp with time zone,boolean,integer,text,text,text,text[])': CREDENTIAL_MANAGEMENT,
+  'rekey_mcp_credential(uuid,uuid,uuid,bytea,bytea,text)': CREDENTIAL_MANAGEMENT,
   'save_chat_mcp_selections(uuid,jsonb)': CREDENTIAL_MANAGEMENT,
   'set_chat_configuration(uuid,bigint,jsonb,text)': CREDENTIAL_MANAGEMENT, // 332: set_chat_credentials (314) now delegates here
   'mark_entity_seen(uuid,text)': SEEN_STATE, // 313
@@ -372,9 +385,9 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 37 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282)', () => {
+  it('the list is 38 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
-    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(37); // +3 tool secret writers (318) +1 set_chat_credentials (314)
+    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(38); // +1 rekey_mcp_credential (341: API-key rotation moves off rekey_space_credential so ciphertext and key_id land together) +3 tool secret writers (318) +1 set_chat_credentials (314)
     expect(labels.filter((l) => l === SEEN_STATE)).toHaveLength(1); // mark_entity_seen (313)
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(8); // +2 generation-fenced mint/revoke overloads (332)
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
@@ -382,7 +395,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
-    expect(labels).toHaveLength(70); // +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+    expect(labels).toHaveLength(71); // +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {
