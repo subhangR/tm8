@@ -389,3 +389,42 @@ it('pinnedOnly refuses to infer an account, so a live session cannot be re-point
   const atBind = await as(aliceIdentity, q => resolveMcpSelections(q, { spaceId, mcpSelections: [{ serverId: server }] }));
   expect(atBind.selections[0]).toMatchObject({ ready: true, credentialId: mine.id });
 });
+
+it('a nameless definition is reported as a skipped default, and refuses an explicit selection (B9)', async () => {
+  // internal.validate_mcp_definition demands a name, so this row cannot be
+  // created through any supported write — the guard trigger has to be taken off
+  // to plant one. It is worth planting because `definition->>'name'` yields NULL
+  // rather than raising, and before B9 one such row crashed resolution for the
+  // WHOLE space on `row.name.toLowerCase()`.
+  const nameless = randomUUID();
+  await scratch.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query('alter table public.mcp_servers disable trigger mcp_servers_guard');
+    await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'mcp_server',0,$3)", [nameless, spaceId, adminMember]);
+    await c.query('insert into public.mcp_servers(entity_id,space_id,title,definition) values($1,$2,$3,$4)', [nameless, spaceId, 'nameless-' + nameless.slice(0, 8),
+      JSON.stringify({ transport: 'http', url: 'https://example.test/nameless', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: true, defaultOn: true })]);
+    await c.query('alter table public.mcp_servers enable trigger mcp_servers_guard');
+  });
+  try {
+    // DEFAULT path: reported, not silently dropped, and the launch survives.
+    const defaults = await as(aliceIdentity, q => resolveMcpSelections(q, { spaceId }));
+    expect(defaults.skipped).toEqual(expect.arrayContaining([{ serverId: nameless, name: '', reason: 'invalid_definition' }]));
+    expect(defaults.selections.map(s => s.server.id)).not.toContain(nameless);
+    expect(defaults.ready).toBe(true);
+    // EXPLICIT path: naming it must still refuse. McpServerDefinitionSchema
+    // requires a name, so loadMcpServer cannot produce a view for it at all.
+    await expect(as(aliceIdentity, q => resolveMcpSelections(q, { spaceId, mcpSelections: [{ serverId: nameless }] }))).rejects.toBeTruthy();
+    // And the same holds on the launch path, which is where it would matter.
+    await expect(as(aliceIdentity, q => resolveMcpSelections(q, { spaceId, mcpSelections: [{ serverId: nameless }] }, { pinnedOnly: true }))).rejects.toBeTruthy();
+  } finally {
+    // defaultOn is space-wide, so retire it rather than leave it in every
+    // later test's default set.
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      // mcp_entity_lifecycle fires on deleted_at and asks require_space_admin,
+      // so the claims have to be in force even for an owner-role write.
+      await c.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','browser',true)", [adminIdentity]);
+      await c.query('update public.entities set deleted_at=now() where id=$1', [nameless]);
+    });
+  }
+});

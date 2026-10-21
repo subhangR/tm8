@@ -102,7 +102,14 @@ export const McpSelectionsSchema = z.array(McpSelectionSchema).max(32).refine(
 export const McpReadinessReasonSchema = z.enum(['ready', 'not_approved', 'stdio_not_trusted', 'credential_required',
   'credential_unavailable', 'credential_revoked', 'credential_expired', 'credential_definition_changed', 'server_unavailable', 'access_denied', 'disabled',
   /** The row is intact but the provider will not honour it; see `statusReason`. */
-  'needs_reconnect']);
+  'needs_reconnect',
+  /**
+   * The stored definition cannot be read as one — today only a connector with no
+   * `name`, which the validator forbids and no supported write can produce. It
+   * is reported rather than silently dropped, and ONLY ever skips a DEFAULT: an
+   * explicit selection naming such a connector still refuses (B9).
+   */
+  'invalid_definition']);
 /** Who owns a connection: a member ("Just me") or the Space ("Shared with Space"). */
 export const McpCredentialScopeSchema = z.enum(['member', 'space']);
 export type McpCredentialScope = z.infer<typeof McpCredentialScopeSchema>;
@@ -152,6 +159,7 @@ export type McpResolvedSelection = z.infer<typeof McpResolvedSelectionSchema>;
  * dropped from `selections` rather than failing the launch (§7.3); an EXPLICIT
  * selection that is not ready still shows up in `selections` with `ready:false`.
  */
+/** `name` is empty when the definition is what was wrong with it. */
 export const McpSkippedSelectionSchema = z.object({ serverId: Id, name: z.string(), reason: McpReadinessReasonSchema }).strict();
 export type McpSkippedSelection = z.infer<typeof McpSkippedSelectionSchema>;
 export const McpResolveResultSchema = z.object({ selections: z.array(McpResolvedSelectionSchema), ready: z.boolean(),

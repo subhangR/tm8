@@ -78,6 +78,7 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,optio
   const checked=McpResolveInputSchema.parse(input);
   let selections=checked.mcpSelections;
   const fromDefaults=selections===undefined;
+  const skipped:McpSkippedSelection[]=[];
   if (selections===undefined) {
     const sources=[...new Set([...(checked.targetIds??[]),...(checked.teamMemberId?[checked.teamMemberId]:[])])];
     // Validate every supplied target rather than silently resolving a partial set.
@@ -100,8 +101,17 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,optio
       and d.deleted_at is null order by g.dst_id,g.src_id limit 1025`,[[...depths.keys()],checked.spaceId]);
     if(rows.length>1024)throw new CollabError('invalid_input','Too many MCP default attachments');
     const nearest=new Map<string,{serverId:string;depth:number}>();
+    // B9. A definition with no `name` cannot be loaded, named or collision-
+    // checked, so it is dropped from the DEFAULT set and REPORTED — never
+    // silently, and never for an explicit selection, which still refuses in
+    // loadMcpServer because McpServerDefinitionSchema requires a name.
+    // `definition->>'name'` yields NULL instead of raising, and one malformed
+    // row must not crash every launch in the Space. Unreachable through any
+    // supported write: internal.validate_mcp_definition demands a name.
+    const unnamed=(serverId:string)=>{skipped.push({serverId,name:'',reason:'invalid_definition'});};
     for(const row of rows){
       const depth=depths.get(row.source_id);if(depth===undefined)continue;
+      if(!row.name){unnamed(row.server_id);continue;}
       const name=row.name.toLowerCase(),previous=nearest.get(name);
       if(previous && previous.depth===depth && previous.serverId!==row.server_id)throw new CollabError('invalid_input','MCP connector name collision at the same attachment depth');
       if(!previous||depth<previous.depth)nearest.set(name,{serverId:row.server_id,depth});
@@ -115,10 +125,7 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,optio
       order by e.id limit 33`,[checked.spaceId]);
     if(defaultOn.length>32)throw new CollabError('invalid_input','Too many default MCP connectors');
     for(const row of defaultOn){
-      // The validator makes `name` mandatory, so this is unreachable through any
-      // supported write — but `definition->>'name'` yields NULL rather than
-      // raising, and one malformed row must not crash every launch in the Space.
-      if(!row.name)continue;
+      if(!row.name){unnamed(row.server_id);continue;}
       const name=row.name.toLowerCase();
       if(!nearest.has(name))nearest.set(name,{serverId:row.server_id,depth:DEFAULT_ON_DEPTH});
     }
@@ -126,7 +133,6 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,optio
     selections=[...nearest.values()].map(({serverId})=>({serverId}));
   }
   const resolved:McpResolvedSelection[]=[];
-  const skipped:McpSkippedSelection[]=[];
   const names=new Set<string>();
   for (const selection of selections) {
     const server=await loadMcpServer(q,selection.serverId);
