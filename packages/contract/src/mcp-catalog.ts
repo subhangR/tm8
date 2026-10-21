@@ -17,6 +17,7 @@
  */
 import { z } from 'zod';
 import { McpServerDefinitionSchema, type McpServerDefinition } from './mcp.js';
+import { googleFirstPartyService, type GoogleFirstPartyService } from './mcp-google.js';
 
 const Id = z.string().uuid();
 /** Same shape `internal.validate_mcp_definition` admits for `catalogId` (340). */
@@ -123,6 +124,27 @@ const remote = (
   approved: false, enabled: true, catalogId,
 });
 
+/**
+ * A Google first-party prefill (§8.1/§8.2), built from `GOOGLE_FIRST_PARTY` so
+ * the catalog, the SQL catalog (349) and the in-process host share one URL and
+ * one scope list. No client id or secret variable: the node's Google client is
+ * server configuration (`TM8_GOOGLE_OAUTH_CLIENT_ID`,
+ * `TM8_MCP_CLIENT_SECRET_GOOGLE`), never part of a definition.
+ */
+const google = (
+  catalogId: GoogleFirstPartyService['catalogId'], provenance: string, gates?: Record<string, boolean>,
+): McpServerDefinition => {
+  const service = googleFirstPartyService(catalogId);
+  if (!service) throw new Error(`no Google first-party service ${catalogId}`);
+  return {
+    name: service.name, transport: 'http', url: service.resource, envKeys: [], headerKeys: [],
+    auth: { type: 'oauth2', scopes: [...service.scopes] }, provenance,
+    approved: false, enabled: true, catalogId, firstParty: true, ...(gates ? { gates } : {}),
+  };
+};
+
+const GOOGLE_REQUIREMENT = 'Served by tm8 itself: Google hosts no MCP server. A server operator must register a Google OAuth client with <tm8 public origin>/mcp/oauth/callback as its redirect URI and set TM8_GOOGLE_OAUTH_CLIENT_ID and TM8_MCP_CLIENT_SECRET_GOOGLE; until then Connect reports that Google is not configured on this server.';
+
 /** Slack's advertised user scopes (https://mcp.slack.com/.well-known/oauth-authorization-server). Edit to narrow. */
 const SLACK_SCOPES = [
   'search:read.public', 'search:read.private', 'search:read.mpim', 'search:read.im', 'search:read.files', 'search:read.users',
@@ -142,26 +164,29 @@ const SLACK_SCOPES = [
  */
 export const MCP_CATALOG: readonly McpCatalogEntry[] = [
   {
-    id: 'google.gmail', title: 'Gmail', logo: 'google-gmail', kind: 'first_party', available: false,
+    id: 'google.gmail', title: 'Gmail', logo: 'google-gmail', kind: 'first_party', available: true,
     docsUrl: 'https://developers.google.com/workspace/gmail/api/guides',
     summary: 'Search and read mail, and prepare drafts, as the signed-in Google account.',
-    requirement: 'Coming soon. Google hosts no MCP server, so tm8 serves Gmail itself and needs its own Google OAuth client; Gmail scopes are restricted, which takes Google verification and an annual CASA assessment before more than 100 users.',
+    requirement: GOOGLE_REQUIREMENT + ' Gmail scopes are restricted: past 100 users Google requires app verification and an annual CASA assessment.',
     scopeLabels: ['Read your mail', 'Create drafts', 'Read your labels'],
     gates: { gmailSend: { label: 'Allow sending email', tools: ['send_message'] } },
+    definition: google('google.gmail', 'Gmail served in-process by tm8 (first-party). Read and draft; sending is gated off.', { gmailSend: false }),
   },
   {
-    id: 'google.calendar', title: 'Google Calendar', logo: 'google-calendar', kind: 'first_party', available: false,
+    id: 'google.calendar', title: 'Google Calendar', logo: 'google-calendar', kind: 'first_party', available: true,
     docsUrl: 'https://developers.google.com/workspace/calendar/api/guides/overview',
     summary: 'List calendars and events, find free time, and create or update events.',
-    requirement: 'Coming soon. Served by tm8 itself on the same Google OAuth client as Gmail; connecting Calendar after Gmail asks only for the Calendar scopes.',
+    requirement: GOOGLE_REQUIREMENT + ' Connecting Calendar after Gmail on the same account asks only for the Calendar scopes.',
     scopeLabels: ['Read your calendars and events', 'Create and update events'],
+    definition: google('google.calendar', 'Google Calendar served in-process by tm8 (first-party).'),
   },
   {
-    id: 'google.drive', title: 'Google Drive', logo: 'google-drive', kind: 'first_party', available: false,
+    id: 'google.drive', title: 'Google Drive', logo: 'google-drive', kind: 'first_party', available: true,
     docsUrl: 'https://developers.google.com/workspace/drive/api/guides/about-sdk',
     summary: 'Search files, read documents and export them, in the files you open with tm8.',
-    requirement: 'Coming soon. Served by tm8 itself on the same Google OAuth client as Gmail, and limited to the files you pick rather than your whole Drive.',
+    requirement: GOOGLE_REQUIREMENT + ' Drive access is limited to the files you open with tm8, not your whole Drive.',
     scopeLabels: ['Read files you open with tm8', 'Create files'],
+    definition: google('google.drive', 'Google Drive served in-process by tm8 (first-party), limited to files opened with tm8.'),
   },
   {
     id: 'notion', title: 'Notion', logo: 'notion', kind: 'remote', available: true,

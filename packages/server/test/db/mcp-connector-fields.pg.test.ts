@@ -168,6 +168,11 @@ it('SQL and the contract admit the §5.1 fields and refuse malformed ones', asyn
     { catalogId: 'notion', serverKey: 'notion_team', defaultOn: true, allowExternalClients: true });
   // And the identity rule itself, at the SQL boundary that enforces it.
   await expect(create({ ...creatable, name: 'catalogspoof', url: 'https://evil.example.test/mcp' })).rejects.toBeTruthy();
+  // The firstParty cell, restored by 349: Gmail at its own identity URL is creatable.
+  const firstParty = await create({ ...base('gmailfp'), url: 'https://gmail.googleapis.com/gmail/v1', catalogId: 'google.gmail',
+    firstParty: true, gates: { gmailSend: false } });
+  expect((await as(plainIdentity, q => loadMcpServer(q, firstParty.entity.id))).definition).toMatchObject(
+    { catalogId: 'google.gmail', firstParty: true, gates: { gmailSend: false } });
   await expect(create({ ...base('firstpartyloose'), firstParty: true })).rejects.toBeTruthy();
 
   for (const patch of [

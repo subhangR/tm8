@@ -272,7 +272,19 @@ export const McpCredentialViewSchema = z.object({
 }).strict();
 export type McpCredentialView = z.infer<typeof McpCredentialViewSchema>;
 export const McpToolSchema = z.object({ name: z.string(), description: z.string().optional(), inputSchema: z.record(z.unknown()) }).strict();
-export const McpTestResultSchema = z.object({ ready: z.boolean(), reason: McpReadinessReasonSchema, tools: z.array(McpToolSchema), checkedAt: z.string() }).strict();
+/**
+ * A tool the connector has but this CONNECTION cannot use, because the account
+ * did not grant a scope it needs (granular consent; B41). It is never offered
+ * to a model — `tools` holds only usable tools — and is reported here so the
+ * Connectors page can say "Reconnect to restore N tools" without a status change.
+ * `scopes`: any one of these would make the tool usable.
+ */
+export const McpUnavailableToolSchema = z.object({
+  name: z.string().min(1).max(120), unavailable: z.literal('scope_missing'), scopes: z.array(z.string().min(1).max(256)).min(1).max(16),
+}).strict();
+export type McpUnavailableTool = z.infer<typeof McpUnavailableToolSchema>;
+export const McpTestResultSchema = z.object({ ready: z.boolean(), reason: McpReadinessReasonSchema, tools: z.array(McpToolSchema), checkedAt: z.string(),
+  unavailableTools: z.array(McpUnavailableToolSchema).max(64).optional() }).strict();
 export type McpTestResult = z.infer<typeof McpTestResultSchema>;
 export const McpServerViewSchema = z.object({
   id: Id, spaceId: Id, version: z.number().int(), definition: McpServerDefinitionSchema,
