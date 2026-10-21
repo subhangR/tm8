@@ -295,6 +295,13 @@ const LIVE_VERBS = [
   /^Overview$/,
   /^Find a setting$/,
   /^Go to .+ settings$/,
+  // MCP tokens (§10.7 / D9): the NAV ROW only, for the `Agent credentials`
+  // reason — `mcp.tokens.create|list|revoke` are real executors on the seam
+  // (357). The body is owned by `settings-mcp-tokens/` and is injected by
+  // GateApp, not here, so this shell shows its honest not-mounted state and
+  // this sweep sees no control from it; its own controls are held in
+  // settings-mcp-tokens/mcp-tokens.test.tsx.
+  /^MCP tokens$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

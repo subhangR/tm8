@@ -615,6 +615,12 @@ export interface AttentionV2Ops {
 
 export interface Seam {
   mcp?: (spaceId: string) => import("../mcp/port").McpPort;
+  /**
+   * §10.7 / D9: the member's own MCP tokens for external clients. NO space id
+   * — a token carries a Space ARRAY and is minted outside any one Space.
+   * Optional: fixtures have none, and the section then states its absence.
+   */
+  mcpTokens?: () => import("../settings-mcp-tokens/port").McpTokensPort;
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
   openSpace(spaceId: SpaceId): Promise<void>;
