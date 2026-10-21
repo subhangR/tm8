@@ -4399,7 +4399,7 @@ export const CATALOG_DIGEST =
   // Re-measured for Projects add (+spaces.projects.clone|cloneJobs.get, 01a13574) on main 638f6069e — RECOMPUTED, not adjusted.
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:6c7a092d915dd271548b8366c7d294c27e72eb47dfe48f7657ca6930f31a9e7b';
+  'sha256:bc627396e0ce00b45d5a1f5a66660941d7fb2e419039f4d9735c7cacf1c8e209';
 
 export const GRAMMAR_VERSION = '2';
 
