@@ -94,6 +94,11 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   //                              Space's shared connections through mcp.resolve.
   'create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamp with time zone,boolean,integer,text,text,text,text[])': CREDENTIAL_MANAGEMENT,
   'rekey_mcp_credential(uuid,uuid,uuid,bytea,bytea,text)': CREDENTIAL_MANAGEMENT,
+  // 342 (§5.4): a pending OAuth sign-in is the first half of a consent write and
+  // carries a sealed PKCE verifier and client, so begin and its single-use take
+  // stay on the strict gate with create_mcp_credential.
+  'create_mcp_oauth_pending(bytea,uuid,uuid,integer,text,text,bytea,bytea,text,text,timestamp with time zone)': CREDENTIAL_MANAGEMENT,
+  'take_mcp_oauth_pending(bytea)': CREDENTIAL_MANAGEMENT,
   'save_chat_mcp_selections(uuid,jsonb)': CREDENTIAL_MANAGEMENT,
   'set_chat_configuration(uuid,bigint,jsonb,text)': CREDENTIAL_MANAGEMENT, // 332: set_chat_credentials (314) now delegates here
   'mark_entity_seen(uuid,text)': SEEN_STATE, // 313
@@ -395,9 +400,9 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 38 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282)', () => {
+  it('the list is 40 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
-    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(38); // +1 rekey_mcp_credential (341: API-key rotation moves off rekey_space_credential so ciphertext and key_id land together) +3 tool secret writers (318) +1 set_chat_credentials (314)
+    expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(40); // +2 create/take_mcp_oauth_pending (342: §5.4 pending OAuth sign-ins) +1 rekey_mcp_credential (341: API-key rotation moves off rekey_space_credential so ciphertext and key_id land together) +3 tool secret writers (318) +1 set_chat_credentials (314)
     expect(labels.filter((l) => l === SEEN_STATE)).toHaveLength(1); // mark_entity_seen (313)
     expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(8); // +2 generation-fenced mint/revoke overloads (332)
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
@@ -405,7 +410,7 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
-    expect(labels).toHaveLength(71); // +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+    expect(labels).toHaveLength(73); // +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

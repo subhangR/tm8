@@ -109,7 +109,20 @@ export const McpReadinessReasonSchema = z.enum(['ready', 'not_approved', 'stdio_
    * is reported rather than silently dropped, and ONLY ever skips a DEFAULT: an
    * explicit selection naming such a connector still refuses (B9).
    */
-  'invalid_definition']);
+  'invalid_definition',
+  /**
+   * No human is provably behind this launch, so no connection may be lent to
+   * it (§6.1). It is the LOOP-EXECUTOR shape and its kin: a bind whose claims
+   * are neither a human bearer (browser/cli) nor an agent bearer with a live
+   * launcher binding — today the in-process scheduler, which spawns under the
+   * node's loopback owner with no `authKind` at all, and a legacy chat whose
+   * `requesterAuthKind` was never recorded. Without this the §3 resolver's
+   * first tier would hand such a launch the NODE OWNER's own personal
+   * connection. Only connectors that need no account are bound; every connector
+   * that needs one is reported here instead, whether it came from `defaultOn`,
+   * an `equips` attachment or an explicit selection.
+   */
+  'no_human_provenance']);
 /** Who owns a connection: a member ("Just me") or the Space ("Shared with Space"). */
 export const McpCredentialScopeSchema = z.enum(['member', 'space']);
 export type McpCredentialScope = z.infer<typeof McpCredentialScopeSchema>;
@@ -178,10 +191,19 @@ export const McpCredentialCreateInputSchema = z.object({ ...Command, serverId: I
   scope: McpCredentialScopeSchema.optional(), accountLabel: z.string().min(1).max(200).optional() }).strict();
 export const McpCredentialCommandInputSchema = z.object({ ...Command, credentialId: Id }).strict();
 export const McpCredentialShareInputSchema = z.object({ ...Command, credentialId: Id, visibility: z.enum(['private', 'selected', 'space']), memberIds: z.array(Id).max(100) }).strict();
-// `scope` and `returnTo` (§11) belong with the durable pending-state table of
-// §5.4, which carries `scope_kind`: without it a scope chosen at `begin` has
-// nowhere to survive the redirect. t-oauth-pending adds both together.
-export const McpOAuthBeginInputSchema = z.object({ ...Command, serverId: Id, label: z.string().min(1).max(120) }).strict();
+/**
+ * Where a same-tab sign-in lands afterwards (§10.2, popup blocked): a path on
+ * tm8's own origin, never a URL. `//host` and `\` are refused because browsers
+ * read both as another origin.
+ */
+const SameOriginPath = z.string().min(1).max(2048).refine(
+  value => value.startsWith('/') && !value.startsWith('//') && !value.includes('\\') && !/[\u0000-\u001f\u007f]/.test(value),
+  'returnTo must be a path on this origin');
+// `scope` and `returnTo` (§11) ride the durable pending row of §5.4
+// (`scope_kind`, `return_to`), which is how they survive the provider redirect.
+export const McpOAuthBeginInputSchema = z.object({ ...Command, serverId: Id, label: z.string().min(1).max(120),
+  /** `space` needs a Space admin, checked at begin and again at callback (§5.2). */
+  scope: McpCredentialScopeSchema.optional(), returnTo: SameOriginPath.optional() }).strict();
 export const McpOAuthCallbackInputSchema = z.object({ state: z.string().min(1).max(2048), code: z.string().min(1).max(8192).optional(), error: z.string().min(1).max(128).optional(), issuer: PublicUrl.optional() }).strict().refine(value => Boolean(value.code) !== Boolean(value.error), 'OAuth callback requires exactly one of code or error');
 export const McpProxyRequestInputSchema = z.object({ sessionId: Id, serverId: Id, message: z.record(z.unknown()) }).strict();
 

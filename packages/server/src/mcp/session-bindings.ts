@@ -69,6 +69,31 @@ export class McpSessionBindings {
     if (!parsed) throw new CollabError('forbidden', 'MCP runtime unavailable');
     let launcher: DbClaims = claims;
     let sourceUnavailable = false;
+    /*
+     * §6.1 / B17: WHICH BEARER IS BEHIND THIS LAUNCH, and nothing else.
+     *
+     * The authority at each hop is the SPAWNING BEARER, never a graph edge. A
+     * human bearer (browser/cli) is a terminal root. An agent bearer hops to its
+     * own session — `mcpSource`, filled by the server execution handlers off the
+     * verified token, not off a request body — whose binding already holds its
+     * root. `launched_by` is deliberately NOT consulted: `parentSessionId` is
+     * client-asserted for every bearer but a chat runtime (`chat/scope.ts`
+     * `resolveSpawnParentId` constrains only that one), and `execution_spawn`
+     * checks merely that the parent is a live chat or session in the same Space
+     * — so a member could spawn naming ANOTHER member's chat as parent and a
+     * walk of that edge would hand their worker the other member's personal
+     * connections. The edge records report routing; it authorises nothing.
+     *
+     * Anything that is NEITHER shape has no root. That is the in-process loop
+     * executor — `createLoopExecutorPort` builds `{identityId: owner.identityId,
+     * nodeAdmin, requestId: 'loop-executor'}` with no `authKind` — and a legacy
+     * chat whose `requesterAuthKind` was never recorded (`chat/compose.ts`,
+     * which omits the claim on purpose so every human gate fails closed). Left
+     * alone, such a launch resolves accounts AS THE NODE OWNER, and 341's tier 1
+     * is "the root's own connection": any member's schedule would reach the node
+     * owner's personal Gmail. `noHumanRoot` stops that at the resolver.
+     */
+    let noHumanRoot = !isHumanAuthKind(claims.authKind);
     if (['agent', 'agent_runtime'].includes(claims.authKind ?? '')) {
       const source = claims.mcpSource;
       if (source?.sessionId && source.authSessionId) {
@@ -76,6 +101,7 @@ export class McpSessionBindings {
           const binding = await this.db.rpc<Binding>(claims, 'read_mcp_session_binding', [source.sessionId, source.authSessionId]);
           if (!isHumanAuthKind(binding.launcherAuthKind)) throw new CollabError('forbidden', 'MCP launcher unavailable');
           launcher = { identityId: binding.launcherIdentityId, authKind: binding.launcherAuthKind, sessionSpaceId: input.spaceId };
+          noHumanRoot = false;
         } catch { sourceUnavailable = true; }
       } else sourceUnavailable = true;
     }
@@ -116,10 +142,20 @@ export class McpSessionBindings {
         ...(picks !== undefined ? { mcpSelections: picks } : {}),
       }, {
         ...(rootMemberId !== undefined ? { rootMemberId } : {}),
+        ...(noHumanRoot ? { noHumanRoot: true } : {}),
       });
       // Only an EXPLICIT selection can refuse a launch now. Defaults that are
       // not ready have already been dropped into `resolved.skipped`.
-      if (!resolved.ready) throw new CollabError('forbidden', `MCP launch unavailable: ${resolved.selections.find(s => !s.ready)?.reason}`);
+      if (!resolved.ready) {
+        const reason = resolved.selections.find(s => !s.ready)?.reason;
+        // Named out loud, because the operator asked for a connector BY NAME and
+        // the answer is not "not connected" — it is "nothing here can say which
+        // human this launch acts for" (B19).
+        if (resolved.selections.some(s => s.reason === 'no_human_provenance')) {
+          throw new CollabError('forbidden', 'MCP delegated launch requires a human root');
+        }
+        throw new CollabError('forbidden', `MCP launch unavailable: ${reason}`);
+      }
       const selections = resolved.selections.map(s => ({ serverId: s.server.id,
         ...(s.credentialId ? { credentialId: s.credentialId } : {}) }));
       await q.rpc('bind_mcp_session', [input.sessionId, hashToken(parsed.secret), JSON.stringify(selections)]);
@@ -137,13 +173,23 @@ export class McpSessionBindings {
     if (!selected || binding.identityId !== claims.identityId) throw new CollabError('forbidden', 'MCP connector is not selected');
     const launcher: DbClaims = { identityId: binding.launcherIdentityId, authKind: binding.launcherAuthKind,
       sessionSpaceId: binding.spaceId };
+    /*
+     * Every binding a human root wrote carries that human's own auth kind:
+     * `bind_mcp_session` stamps `tm8.auth_kind` from the transaction it runs in,
+     * and `bind` runs that transaction under the human launcher's claims in both
+     * shapes. So a non-human kind here is exactly a binding written WITHOUT a
+     * root — the loop-executor shape, or one stored before B19 closed it. Those
+     * must not be honoured on resume or on any later call, which is why the
+     * re-check applies `noHumanRoot` too and does not merely trust `bind`.
+     */
+    const noHumanRoot = !isHumanAuthKind(binding.launcherAuthKind);
     // Resolution is repeated per proxy operation; no approval or sharing snapshot.
     const resolved = await this.db.tx(launcher, q => resolveMcpSelections(q, {
       spaceId: binding.spaceId, mcpSelections: [selected],
       // `pinnedOnly`: re-check the exact row bind wrote. A live session must
       // never silently move to a different connection because the root
       // connected a new account mid-flight.
-    }, { pinnedOnly: true }));
+    }, { pinnedOnly: true, ...(noHumanRoot ? { noHumanRoot: true } : {}) }));
     if (!resolved.ready) throw new CollabError('forbidden', 'MCP connector access has changed');
     return { sessionId, spaceId: binding.spaceId, identityId: binding.identityId, serverId,
       launcherIdentityId: binding.launcherIdentityId, launcherAuthKind: binding.launcherAuthKind,

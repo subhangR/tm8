@@ -12,7 +12,7 @@ const seams = vi.hoisted(() => ({
 vi.mock('node:dns/promises', () => ({ lookup: seams.lookup }));
 vi.mock('node:https', () => ({ request: seams.https }));
 import { mcpHttp } from '../src/mcp/transport.js';
-import { McpOAuth } from '../src/mcp/oauth.js';
+import { fixtureOAuth } from './mcp/oauth-pending-fixture.js';
 
 const servers: Server[] = [];
 afterEach(async () => {
@@ -24,7 +24,7 @@ async function fixture(handler: Parameters<typeof createServer>[0]) {
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   return `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 }
-const oauthInput = (origin: string) => ({ identityId: 'human', spaceId: 'space', serverId: 'server', resource: `${origin}/mcp`, issuer: origin, clientId: 'client', allowPrivateNetwork: true });
+const oauthInput = (origin: string) => ({ spaceId: 'space', serverId: 'server', resource: `${origin}/mcp`, issuer: origin, clientId: 'client', allowPrivateNetwork: true });
 
 // Emulate only the socket API while recording the actual pinned lookup supplied
 // by mcpHttp. The fallback DNS answer changes to private after the first lookup.
@@ -70,27 +70,27 @@ describe('independent MCP outbound call-site defenses', () => {
     expect(seams.lookup).not.toHaveBeenCalled(); expect(seams.https).not.toHaveBeenCalled();
   });
   it('rejects discovery to a private issuer even with an approved public resource', async () => {
-    await expect(new McpOAuth('https://tm8.test/callback').begin({ ...oauthInput('https://provider.test'), issuer: 'https://127.0.0.1', allowPrivateNetwork: false })).rejects.toThrow('private');
+    await expect(fixtureOAuth().begin({ identityId: 'human' }, { ...oauthInput('https://provider.test'), issuer: 'https://127.0.0.1', allowPrivateNetwork: false })).rejects.toThrow('private');
     expect(seams.https).not.toHaveBeenCalled();
   });
   it('guards advertised protected-resource metadata URLs before fetching them', async () => {
     seams.lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
     publicSocket('', { 'www-authenticate': 'Bearer resource_metadata="https://169.254.169.254/secrets"' }, 401);
     const { issuer: _issuer, ...input } = oauthInput('https://provider.test');
-    await expect(new McpOAuth('https://tm8.test/callback').begin({ ...input, allowPrivateNetwork: false })).rejects.toThrow('private');
+    await expect(fixtureOAuth().begin({ identityId: 'human' }, { ...input, allowPrivateNetwork: false })).rejects.toThrow('private');
     expect(seams.https).toHaveBeenCalledTimes(1);
   });
   it.each(['registration', 'token'])('rechecks DNS at the OAuth %s call site when the issuer rebinds', async stage => {
     const origin = 'https://provider.test';
     seams.lookup.mockResolvedValueOnce([{ address: '93.184.216.34', family: 4 }]).mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
     publicSocket(JSON.stringify({ issuer: origin, authorization_endpoint: `${origin}/authorize`, token_endpoint: `${origin}/token`, registration_endpoint: `${origin}/register`, code_challenge_methods_supported: ['S256'] }));
-    const oauth = new McpOAuth('https://tm8.test/callback');
+    const oauth = fixtureOAuth();
     const input = { ...oauthInput(origin), allowPrivateNetwork: false };
     if (stage === 'registration') {
-      await expect(oauth.begin({ ...input, clientId: undefined })).rejects.toThrow('private');
+      await expect(oauth.begin({ identityId: 'human' }, { ...input, clientId: undefined })).rejects.toThrow('private');
     } else {
-      const started = await oauth.begin(input);
-      await expect(oauth.callback('human', { state: new URL(started.authorizationUrl).searchParams.get('state')!, code: 'private-code' })).rejects.toThrow('private');
+      const started = await oauth.begin({ identityId: 'human' }, input);
+      await expect(oauth.callback({ identityId: 'human' }, { state: new URL(started.authorizationUrl).searchParams.get('state')!, code: 'private-code' })).rejects.toThrow('private');
     }
     expect(seams.lookup).toHaveBeenCalledTimes(2);
     expect(seams.https).toHaveBeenCalledTimes(1);
@@ -103,12 +103,12 @@ describe('independent MCP outbound call-site defenses', () => {
       if (req.url === target) { redirectedRequests++; res.writeHead(307, { location: destination }); res.end(); return; }
       res.end(JSON.stringify({ issuer: origin, authorization_endpoint: `${origin}/authorize`, token_endpoint: `${origin}/token`, registration_endpoint: `${origin}/register`, code_challenge_methods_supported: ['S256'] }));
     });
-    const oauth = new McpOAuth('https://tm8.test/callback');
+    const oauth = fixtureOAuth();
     if (stage === 'token') {
-      const started = await oauth.begin(oauthInput(origin));
-      await expect(oauth.callback('human', { state: new URL(started.authorizationUrl).searchParams.get('state')!, code: 'private-code' })).rejects.toThrow('redirect');
+      const started = await oauth.begin({ identityId: 'human' }, oauthInput(origin));
+      await expect(oauth.callback({ identityId: 'human' }, { state: new URL(started.authorizationUrl).searchParams.get('state')!, code: 'private-code' })).rejects.toThrow('redirect');
     } else {
-      await expect(oauth.begin({ ...oauthInput(origin), ...(stage === 'registration' ? { clientId: undefined } : {}) })).rejects.toThrow('redirect');
+      await expect(oauth.begin({ identityId: 'human' }, { ...oauthInput(origin), ...(stage === 'registration' ? { clientId: undefined } : {}) })).rejects.toThrow('redirect');
     }
     expect(redirectedRequests).toBe(1); expect(destinationRequests).toBe(0);
   });
@@ -116,7 +116,7 @@ describe('independent MCP outbound call-site defenses', () => {
     let destinationRequests = 0; let origin = '';
     const destination = await fixture((_req, res) => { destinationRequests++; res.end('{}'); });
     origin = await fixture((_req, res) => res.end(JSON.stringify({ issuer: origin, authorization_endpoint: `${origin}/authorize`, token_endpoint: `${origin}/token`, registration_endpoint: `${destination}/register`, code_challenge_methods_supported: ['S256'] })));
-    await expect(new McpOAuth('https://tm8.test/callback').begin({ ...oauthInput(origin), clientId: undefined })).rejects.toThrow('registration endpoint');
+    await expect(fixtureOAuth().begin({ identityId: 'human' }, { ...oauthInput(origin), clientId: undefined })).rejects.toThrow('registration endpoint');
     expect(destinationRequests).toBe(0);
   });
   it('bounds hostile response size and returns a sanitized transport error', async () => {

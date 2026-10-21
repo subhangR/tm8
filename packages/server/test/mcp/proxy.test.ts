@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { McpProxy } from '../../src/mcp/proxy.js';
 import { mcpHttp } from '../../src/mcp/transport.js';
-import { McpOAuth } from '../../src/mcp/oauth.js';
+import { fixtureOAuth } from './oauth-pending-fixture.js';
 const servers:Server[]=[];
 afterEach(async()=>{await Promise.all(servers.splice(0).map(server=>new Promise<void>(resolve=>server.close(()=>resolve()))));});
 async function fixture(handler:Parameters<typeof createServer>[0]) {
@@ -34,10 +34,10 @@ describe('MCP guarded proxy fixtures',()=>{
   let origin='';let tokenCalls=0;
   origin=await fixture(async(req,res)=>{res.setHeader('content-type','application/json');if(req.url?.startsWith('/.well-known/')){res.end(JSON.stringify({issuer:origin,authorization_endpoint:origin+'/authorize',token_endpoint:origin+'/token',code_challenge_methods_supported:['S256']}));return;}
    tokenCalls++;const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(chunk as Buffer);const body=new URLSearchParams(Buffer.concat(chunks).toString());expect(body.get('code_verifier')?.length).toBeGreaterThan(40);expect(body.get('resource')).toBe(origin+'/mcp');res.end(JSON.stringify({access_token:'access',refresh_token:'refresh',token_type:'Bearer',expires_in:3600}));});
-  const oauth=new McpOAuth('https://tm8.test/callback');const started=await oauth.begin({identityId:'h',spaceId:'p',serverId:'s',resource:origin+'/mcp',issuer:origin,clientId:'client',allowPrivateNetwork:true});const auth=new URL(started.authorizationUrl);expect(auth.searchParams.get('code_challenge_method')).toBe('S256');const state=auth.searchParams.get('state')!;
-  await expect(oauth.callback('other',{state,code:'code'})).rejects.toThrow('state');expect(tokenCalls).toBe(0);
-  const result=await oauth.callback('h',{state,code:'code'});expect(result.secret.accessToken).toBe('access');
-  await expect(oauth.callback('h',{state,code:'code'})).rejects.toThrow('state');expect(tokenCalls).toBe(1);
+  const oauth=fixtureOAuth();const started=await oauth.begin({identityId:'h'},{spaceId:'p',serverId:'s',resource:origin+'/mcp',issuer:origin,clientId:'client',allowPrivateNetwork:true});const auth=new URL(started.authorizationUrl);expect(auth.searchParams.get('code_challenge_method')).toBe('S256');const state=auth.searchParams.get('state')!;
+  await expect(oauth.callback({identityId:'other'},{state,code:'code'})).rejects.toThrow('state');expect(tokenCalls).toBe(0);
+  const result=await oauth.callback({identityId:'h'},{state,code:'code'});expect(result.secret.accessToken).toBe('access');
+  await expect(oauth.callback({identityId:'h'},{state,code:'code'})).rejects.toThrow('state');expect(tokenCalls).toBe(1);
  });
 });
 it('serializes rotating OAuth refresh across two sessions and refuses resource mismatch',async()=>{
@@ -65,8 +65,8 @@ it('discovers resource and authorization server and registers a public client',a
   if(req.url?.startsWith('/.well-known/')){res.end(JSON.stringify({issuer:origin,authorization_endpoint:origin+'/authorize',token_endpoint:origin+'/token',registration_endpoint:origin+'/register',code_challenge_methods_supported:['S256']}));return;}
   registered++;const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(chunk as Buffer);expect(JSON.parse(Buffer.concat(chunks).toString()).token_endpoint_auth_method).toBe('none');res.writeHead(201);res.end(JSON.stringify({client_id:'registered',token_endpoint_auth_method:'none'}));
  });
- const oauth=new McpOAuth('https://tm8.test/callback');const result=await oauth.begin({identityId:'h',spaceId:'p',serverId:'s',resource:origin+'/mcp',allowPrivateNetwork:true});expect(new URL(result.authorizationUrl).searchParams.get('client_id')).toBe('registered');expect(registered).toBe(1);
- const state=new URL(result.authorizationUrl).searchParams.get('state')!;await expect(oauth.callback('h',{state,error:'access_denied'})).rejects.toThrow('denied');await expect(oauth.callback('h',{state,code:'late'})).rejects.toThrow('state');
+ const oauth=fixtureOAuth();const result=await oauth.begin({identityId:'h'},{spaceId:'p',serverId:'s',resource:origin+'/mcp',allowPrivateNetwork:true});expect(new URL(result.authorizationUrl).searchParams.get('client_id')).toBe('registered');expect(registered).toBe(1);
+ const state=new URL(result.authorizationUrl).searchParams.get('state')!;await expect(oauth.callback({identityId:'h'},{state,error:'access_denied'})).rejects.toThrow('denied');await expect(oauth.callback({identityId:'h'},{state,code:'late'})).rejects.toThrow('state');
 });
 it('honors negotiated protocol headers and decodes actual SSE tool results',async()=>{
  let initialized=false;

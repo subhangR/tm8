@@ -74,12 +74,43 @@ export interface KeyedSpaceSecretBinding {
   readonly provider: string;
 }
 
+/**
+ * A pending MCP OAuth sign-in (§5.4, migration 342): AAD
+ * `mcp-oauth|<key_id>|<state_hash>|<identity_id>|<space_id>|<server_id>|<scope>|<definition_version>|<return_to>`.
+ * Literal prefix, like the keyed and server-gate forms. It binds the sealed
+ * verifier, client and token endpoint to the row's state hash, its owner, its
+ * connector, its scope, the connector revision begin saw and its return path, so
+ * no column of `internal.mcp_oauth_pending` can be rewritten — not even to slip
+ * past the "connector changed" guard — and still open. `-` is "none"; the
+ * return path is percent-encoded, so it can never carry the separator.
+ */
+export interface OAuthPendingSecretBinding {
+  readonly keyId: string;
+  /** Hex sha256 of the `state` the provider echoes back. */
+  readonly stateHash: string;
+  readonly identityId: string;
+  readonly spaceId: string;
+  readonly serverId: string;
+  readonly scope: string;
+  /** The connector revision begin saw; null when the definition had none. */
+  readonly definitionVersion: number | null;
+  /** Where a same-tab sign-in returns to; null when none was given. */
+  readonly returnTo: string | null;
+}
+
 export type SecretBinding =
   | AccountSecretBinding | SpaceSecretBinding | SpaceLinkSecretBinding | ServerGateSecretBinding
-  | KeyedSpaceSecretBinding;
+  | KeyedSpaceSecretBinding | OAuthPendingSecretBinding;
 
 /** The AAD string for `binding`; for a link or server gate, the value its `aad` column holds. */
 export function bindingAad(binding: SecretBinding): string {
+  if ('stateHash' in binding) {
+    const parts = [binding.keyId, binding.stateHash, binding.identityId, binding.spaceId, binding.serverId, binding.scope,
+      binding.definitionVersion === null ? '-' : String(binding.definitionVersion),
+      binding.returnTo === null ? '-' : encodeURIComponent(binding.returnTo)];
+    if (parts.some(part => part.includes('|'))) throw new Error('secret binding part must not contain "|"');
+    return `mcp-oauth|${parts.join('|')}`;
+  }
   if ('keyId' in binding) {
     if (binding.keyId.includes('|')) throw new Error('secret binding key id must not contain "|"');
     if (binding.provider.includes('|')) throw new Error('secret binding provider must not contain "|"');

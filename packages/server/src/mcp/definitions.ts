@@ -58,6 +58,29 @@ export interface McpResolveOptions {
    * re-pick a different connection mid-session.
    */
   pinnedOnly?:boolean;
+  /**
+   * §6.1, B17/B19: NO HUMAN IS PROVABLY BEHIND THIS LAUNCH, so no connector that
+   * needs an account may be lent to it.
+   *
+   * The caller decides this, because only the caller can see the bearer facts
+   * §6 admits: a human bearer is a root, an agent bearer hops to its own
+   * session's binding root, and anything else — the in-process loop executor,
+   * which spawns under the node's LOOPBACK OWNER with no `authKind` at all, or a
+   * legacy chat whose `requesterAuthKind` was never recorded — has no root.
+   *
+   * Without this, 341's `resolve_mcp_account` tier 1 searches "the root's own
+   * connection" under the claims in force, and for the loop shape those claims
+   * are the NODE OWNER's: any member's schedule could reach the node owner's
+   * personal Gmail. So the account is never even resolved here; a pinned
+   * `credentialId` is refused too, since the pin is the caller's assertion and
+   * the whole point is that this caller cannot vouch for one.
+   *
+   * It is a READINESS reason, not an exception, so the two existing rules apply
+   * unchanged and uniformly to all three sources: a `defaultOn` or `equips`
+   * default is dropped into `skipped`, and an EXPLICIT selection stays in
+   * `selections` with `ready:false` so `bind` refuses the launch out loud.
+   */
+  noHumanRoot?:boolean;
 }
 /** A default is weaker than any `equips` attachment, however distant. */
 const DEFAULT_ON_DEPTH=1_000_000;
@@ -73,8 +96,8 @@ const DEFAULT_ON_DEPTH=1_000_000;
  *    so asking for something unusable by name is still an error.
  */
 export async function resolveMcpSelections(q:Querier,input:McpResolveInput,options?:McpResolveOptions|McpCredentialReadiness):Promise<McpResolveResult> {
-  const {credentialReady,rootMemberId,pinnedOnly}=typeof options==='function'
-    ?{credentialReady:options,rootMemberId:undefined,pinnedOnly:undefined}:(options??{});
+  const {credentialReady,rootMemberId,pinnedOnly,noHumanRoot}=typeof options==='function'
+    ?{credentialReady:options,rootMemberId:undefined,pinnedOnly:undefined,noHumanRoot:undefined}:(options??{});
   const checked=McpResolveInputSchema.parse(input);
   let selections=checked.mcpSelections;
   const fromDefaults=selections===undefined;
@@ -148,7 +171,10 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,optio
     else if(d.enabled===false) reason='disabled';
     else if(d.transport==='stdio' && !d.stdioTrusted) reason='stdio_not_trusted';
     else if(d.auth.type!=='none') {
-      if(!credentialId && pinnedOnly!==true) {
+      // Before any account is resolved OR a pin honoured: a launch with no human
+      // root gets no connection at all (§6.1, B17/B19).
+      if(noHumanRoot===true) {credentialId=undefined;credentialSource=undefined;reason='no_human_provenance';}
+      else if(!credentialId && pinnedOnly!==true) {
         // §3 below the pin. Runs under the claims in force, which bind and
         // authorize have already set to the root member's (see rootMemberId).
         const account=await q.rpc<ResolvedAccount|null>('resolve_mcp_account',[server.id,rootMemberId??null]);
@@ -157,7 +183,8 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,optio
         // UI shows the root's own broken connection as needing a reconnect.
         if(account?.unusable)unusable=account.unusable;
       }
-      if(!credentialId) reason=unusable?unusable.reason:'credential_required';
+      if(reason==='no_human_provenance') {/* decided above; never open a row for a rootless launch */}
+      else if(!credentialId) reason=unusable?unusable.reason:'credential_required';
       else if(credentialReady) reason=await credentialReady({...selection,credentialId},server);
       else {
         const result=await q.rpc<{ready:boolean;reason:McpReadinessReason}>('mcp_credential_readiness',[server.id,credentialId]);

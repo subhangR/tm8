@@ -64,6 +64,12 @@ export interface W3PublicServer {
   readonly dataDir: string;
   request<T = unknown>(method: string, path: string, body?: unknown): Promise<PublicJsonResponse<T>>;
   rows<R extends QueryResultRow = QueryResultRow>(sql: string, params?: readonly unknown[]): Promise<R[]>;
+  /**
+   * Stop the composition root and boot a fresh one on the SAME database and
+   * data directory, as a process restart would. Nothing in memory survives;
+   * `baseUrl` and `production` name the new instance afterwards.
+   */
+  restart(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -79,6 +85,7 @@ export async function startW3PublicServer(label: string): Promise<W3PublicServer
   const database = await createW1ScratchDatabase(`w3_${label}`);
   const dataDir = await mkdtemp(join(tmpdir(), 'tm8-w3-'));
   let production: BootstrappedServer | undefined;
+  let config: ReturnType<typeof loadConfig> | undefined;
 
   try {
     database.apply(migrationFiles());
@@ -92,7 +99,7 @@ export async function startW3PublicServer(label: string): Promise<W3PublicServer
     // `loadConfig` correctly rejects port 0 for operator input. Tests replace
     // the already-validated port afterward so the kernel assigns one isolated
     // ephemeral port without weakening production configuration validation.
-    const config = { ...configured, port: 0 };
+    config = { ...configured, port: 0 };
     production = await bootstrap({ config });
   } catch (error) {
     await database.destroy();
@@ -101,13 +108,15 @@ export async function startW3PublicServer(label: string): Promise<W3PublicServer
   }
 
   let closed = false;
+  let live: BootstrappedServer = production;
+  const bootConfig = config!;
   return {
-    baseUrl: production.url,
+    get baseUrl() { return live.url; },
     database,
-    production,
+    get production() { return live; },
     dataDir,
     async request<T = unknown>(method: string, path: string, body?: unknown): Promise<PublicJsonResponse<T>> {
-      const response = await fetch(new URL(path, production.url), {
+      const response = await fetch(new URL(path, live.url), {
         method,
         ...(body === undefined
           ? {}
@@ -130,11 +139,16 @@ export async function startW3PublicServer(label: string): Promise<W3PublicServer
     ): Promise<R[]> {
       return database.query<R>(sql, params);
     },
+    async restart(): Promise<void> {
+      await live.server.close();
+      await live.db?.end();
+      live = await bootstrap({ config: bootConfig });
+    },
     async close(): Promise<void> {
       if (closed) return;
       closed = true;
-      await production.server.close();
-      await production.db?.end();
+      await live.server.close();
+      await live.db?.end();
       await database.destroy();
       await removeOwnedDataDir(dataDir);
     },
