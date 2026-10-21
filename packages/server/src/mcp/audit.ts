@@ -95,6 +95,24 @@ export async function recordMcpCallSafely(db:Pick<Db,'rpc'>,claims:DbClaims,entr
   log(`mcp audit: could not record a ${entry.outcome} call: ${String(error)}`);
  }
 }
+/**
+ * A connector TEST call (`mcp.servers.test`, 359): run under the caller's human
+ * session, so no work session and no chain. The writer derives the Space and
+ * the root (the caller) itself; only the outcome and sizes come from here.
+ */
+export interface McpTestAuditEntry {
+ serverId:string; credentialId:string|null; outcome:'started'|'succeeded'|'failed'|'denied';
+ denyReason?:string|null; latencyMs:number; requestBytes:number; responseBytes?:number|null;
+}
+export function recordMcpTestCall(db:Pick<Db,'rpc'>,claims:DbClaims,entry:McpTestAuditEntry):Promise<unknown> {
+ return db.rpc(claims,'record_mcp_test_audit',[entry.serverId,entry.credentialId,entry.outcome,entry.denyReason??null,
+  Math.max(0,Math.round(entry.latencyMs)),entry.requestBytes,entry.responseBytes??null]);
+}
+/** As `recordMcpCallSafely`: the test's own result is never replaced by a failed audit write. */
+export async function recordMcpTestCallSafely(db:Pick<Db,'rpc'>,claims:DbClaims,entry:McpTestAuditEntry,log:(message:string)=>void=console.warn):Promise<void> {
+ try {await recordMcpTestCall(db,claims,entry);}
+ catch(error){log(`mcp audit: could not record a ${entry.outcome} test call: ${String(error)}`);}
+}
 export function byteSize(value:unknown):number {
  return value===undefined?0:Buffer.byteLength(JSON.stringify(value) ?? '');
 }
