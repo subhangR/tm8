@@ -326,3 +326,26 @@ export const McpProxyRequestInputSchema = z.object({ sessionId: Id, serverId: Id
 export const McpServerListResultSchema = z.object({ items: z.array(McpServerViewSchema), nextCursor: z.string().nullable(), allowed: z.object({ register: z.boolean(), attach: z.boolean() }).strict() }).strict();
 export type McpServerListResult = z.infer<typeof McpServerListResultSchema>;
 export const McpCredentialRotateInputSchema = z.object({ ...Command, credentialId: Id, secret: z.string().min(1).max(65536) }).strict();
+
+/**
+ * One row of `mcp_call_audit` (§5.6, G10). References, sizes and outcomes
+ * only: no arguments, no results, no tokens. `denied` rows carry the reason;
+ * `rootMemberId` and `chain` are what bind recorded on the session's binding.
+ */
+export const McpCallAuditOutcomeSchema = z.enum(['started', 'succeeded', 'failed', 'denied', 'refreshed']);
+export type McpCallAuditOutcome = z.infer<typeof McpCallAuditOutcomeSchema>;
+export const McpCallAuditRowSchema = z.object({
+  id: z.string(), spaceId: Id, sessionId: Id, chatId: Id.nullable(), serverId: Id,
+  credentialId: Id.nullable(), credentialScope: z.enum(['member', 'space']).nullable(),
+  method: z.enum(['tools/list', 'tools/call']), tool: z.string().nullable(), outcome: McpCallAuditOutcomeSchema,
+  denyReason: z.string().nullable(), rootMemberId: Id.nullable(), chain: z.array(Id),
+  via: z.enum(['session', 'chat']).nullable(),
+  latencyMs: z.number().int().nullable(), requestBytes: z.number().int().nullable(), responseBytes: z.number().int().nullable(),
+  occurredAt: z.string(),
+}).strict();
+export type McpCallAuditRow = z.infer<typeof McpCallAuditRowSchema>;
+/** `scope` says what the caller was allowed to see: the whole Space (admin) or their own calls. */
+export const McpAuditListResultSchema = z.object({
+  items: z.array(McpCallAuditRowSchema), nextCursor: z.string().nullable(), scope: z.enum(['space', 'own']),
+}).strict();
+export type McpAuditListResult = z.infer<typeof McpAuditListResultSchema>;

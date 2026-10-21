@@ -16,6 +16,7 @@ import {
   CLIPBOARD_MAX_BYTES_DEFAULT,
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
+import { MCP_AUDIT_RETENTION_DAYS_DEFAULT } from '../scheduler/jobs/mcp-audit-retention.js';
 import { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from './auth-rate-limit.js';
 import { DEFAULT_STYLE_RATE_LIMITS, type StyleRateLimits } from './style-rate-limit.js';
 import type { SpaceSessionsMode } from './types.js';
@@ -65,6 +66,8 @@ export interface ServerConfig {
   readonly clipboardMaxBytes?: number;
   /** Days a clipboard date-bucket survives (`TM8_CLIPBOARD_RETENTION_DAYS`, 0 = keep). */
   readonly clipboardRetentionDays?: number;
+  /** Days an MCP call audit row survives (`TM8_MCP_AUDIT_RETENTION_DAYS`, 0 = keep). §5.6. */
+  readonly mcpAuditRetentionDays?: number;
   /** Seed/repair launchable personas and the current project at boot. */
   readonly launchBootstrap?: boolean;
   /** Absolute current project registered by launch bootstrap. */
@@ -654,6 +657,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     'TM8_CLIPBOARD_RETENTION_DAYS',
     CLIPBOARD_RETENTION_DAYS_DEFAULT,
   );
+  const mcpAuditRetentionDays = envNonNegativeInt(
+    env.TM8_MCP_AUDIT_RETENTION_DAYS,
+    'TM8_MCP_AUDIT_RETENTION_DAYS',
+    MCP_AUDIT_RETENTION_DAYS_DEFAULT,
+  );
 
   return {
     host,
@@ -669,6 +677,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     clipboardDir,
     clipboardMaxBytes,
     clipboardRetentionDays,
+    mcpAuditRetentionDays,
     launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),

@@ -67,6 +67,8 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     // personal writes stay open to agents (spec §7).
     'packages/server/src/facade/handlers/w2/styles.ts',
     'packages/server/src/mcp/handlers.ts',
+    // §5.6 (346): the audit read is a human oversight surface (lead ruling on #1321).
+    'packages/server/src/mcp/audit.ts',
     'packages/server/src/tools/handlers.ts',
   ];
 

@@ -88,6 +88,7 @@ export const OPERATIONS = [
   { name: 'mcp.credentials.unshare', method: 'POST', path: '/v2/mcp/credentials/:credentialId/unshare', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.oauth.begin', method: 'POST', path: '/v2/mcp/servers/:serverId/oauth/begin', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.oauth.callback', method: 'POST', path: '/v2/mcp/oauth/callback', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.audit.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/audit', kind: 'read', status: 'v1', humanOnly: true },
   { name: 'mcp.proxy.request', method: 'POST', path: '/v2/mcp/sessions/:sessionId/servers/:serverId', kind: 'command', status: 'v1' },
   { name: 'skills.roots', method: 'GET', path: '/v2/spaces/:spaceId/skills/roots', kind: 'read', status: 'v1' },
   { name: 'skills.create', method: 'POST', path: '/v2/spaces/:spaceId/skills', kind: 'command', status: 'v1' },
