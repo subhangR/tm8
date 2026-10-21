@@ -109,7 +109,20 @@ export const McpReadinessReasonSchema = z.enum(['ready', 'not_approved', 'stdio_
    * is reported rather than silently dropped, and ONLY ever skips a DEFAULT: an
    * explicit selection naming such a connector still refuses (B9).
    */
-  'invalid_definition']);
+  'invalid_definition',
+  /**
+   * No human is provably behind this launch, so no connection may be lent to
+   * it (§6.1). It is the LOOP-EXECUTOR shape and its kin: a bind whose claims
+   * are neither a human bearer (browser/cli) nor an agent bearer with a live
+   * launcher binding — today the in-process scheduler, which spawns under the
+   * node's loopback owner with no `authKind` at all, and a legacy chat whose
+   * `requesterAuthKind` was never recorded. Without this the §3 resolver's
+   * first tier would hand such a launch the NODE OWNER's own personal
+   * connection. Only connectors that need no account are bound; every connector
+   * that needs one is reported here instead, whether it came from `defaultOn`,
+   * an `equips` attachment or an explicit selection.
+   */
+  'no_human_provenance']);
 /** Who owns a connection: a member ("Just me") or the Space ("Shared with Space"). */
 export const McpCredentialScopeSchema = z.enum(['member', 'space']);
 export type McpCredentialScope = z.infer<typeof McpCredentialScopeSchema>;
