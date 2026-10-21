@@ -388,7 +388,40 @@ describe('§6 deny matrix — the schedule root (G3)', () => {
     await setEnabled({ identityId: people.bob.identity, authKind: 'agent' }, true);
     expect(await stampOf(resumed)).toMatchObject({ armed_by_member_id: null });
 
-    // 5. The stamp is the TRIGGER's to write. A direct UPDATE of the column —
+    // 5. A column in NEITHER list counts as CONTENT (B28). The trigger diffs
+    //    `to_jsonb(new/old)` minus the bookkeeping columns rather than
+    //    enumerating content, so a field nobody thought about — here `config`,
+    //    which carries the model, agent tool and access mode a firing launches
+    //    with — cannot be quietly treated as harmless. An agent changing it
+    //    NULLs the stamp.
+    const byConfig = await armLoop(human('alice', spaceA), 'B26 config is content');
+    const [{ version: cv }] = await scratch.query<{ version: number }>('select version from public.entities where id=$1', [byConfig]);
+    await db.rpc({ identityId: people.bob.identity, authKind: 'agent' }, 'update_loop',
+      [byConfig, cv, null, null, null, null, false, null, false, null,
+       JSON.stringify({ accessMode: 'fullAccess' }), null, null, false, null, null, false, randomUUID()]);
+    expect(await stampOf(byConfig)).toMatchObject({ armed_by_member_id: null });
+
+    // 5b. THE PROPERTY THE INVERSION ACTUALLY BUYS (B28), which cell 5 cannot
+    //     show on its own: `config` is a column that exists today, so a trigger
+    //     enumerating content would have listed it and that cell would pass
+    //     either way. What the inversion protects is a column nobody has written
+    //     yet. So add one, change it as an agent, and require the stamp to be
+    //     NULLED — i.e. an UNLISTED column reads as content, not as bookkeeping.
+    //     Dropped again straight after, so no sibling test sees it.
+    const byFuture = await armLoop(human('alice', spaceA), 'B28 a future column is content');
+    await scratch.query('alter table public.loops add column if not exists zz_future_field text');
+    try {
+      await scratch.transaction(async c => {
+        await c.query('set local role tm8_graph_owner');
+        await c.query("select set_config('tm8.identity_id', $1, true), set_config('tm8.auth_kind', 'agent', true)", [people.bob.identity]);
+        await c.query('update public.loops set zz_future_field = $2 where entity_id = $1', [byFuture, 'moved']);
+      });
+      expect(await stampOf(byFuture)).toMatchObject({ armed_by_member_id: null });
+    } finally {
+      await scratch.query('alter table public.loops drop column if exists zz_future_field');
+    }
+
+    // 6. The stamp is the TRIGGER's to write. A direct UPDATE of the column —
     //    the shape a future writer might reach for — is restored, so the fact
     //    cannot be forged onto a member who authorised nothing.
     const owned = await armLoop(human('alice', spaceA), 'B26 trigger owns it');
@@ -547,6 +580,76 @@ describe('§6 deny matrix — re-checked on every call, not only at bind', () =>
     expect(ok.reason).toBe('ready');
     expect(ok.depth).toBe(8);
     expect(ok.rootMemberId).toBe(people.alice.memberA);
+  });
+});
+
+describe('§6 — a forged root is refused (B28)', () => {
+  it('p_root_member naming another member, where the in-SQL walk is NOT ready, raises and binds nothing', async () => {
+    /*
+     * `p_root_member` is a CALLER argument. The ready-path equality check
+     * (`p_root_member <> v_root`) only fires when the in-SQL walk succeeds — so
+     * the hole is a walk that returns a NON-ready reason, where the chain branch
+     * would otherwise adopt whatever root the caller named. That root is stored,
+     * and `authorize` resolves under it from then on.
+     *
+     * This is that shape: the loop-executor claims (an identity, no bearer kind)
+     * make the walk answer `no_human_provenance`, and the call names DAVE as the
+     * root with a perfectly shaped one-hop chain in a Space Dave really is a
+     * member of — so neither the chain checks nor §6.2 object.
+     *
+     * The anchor that refuses it is B3's rule moved into SQL: `bind` always
+     * resolves accounts under the ROOT's own claims, so the root's identity must
+     * be the identity this transaction is running as. Verified non-vacuous by
+     * removing that one branch, which makes this cell fail.
+     */
+    const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const rootless: DbClaims = { identityId: people.alice.identity, requestId: 'loop-executor' };
+    const secret = s.token.split('.')[1]!;
+    const forge = (rootMember: string) => db.tx(rootless, q => q.rpc('bind_mcp_session', [
+      s.sessionId, hashToken(secret), JSON.stringify([{ serverId: serverA, credentialId: aliceKeyA }]),
+      null, null, rootMember, [s.sessionId], [spaceA],
+    ]));
+    expect(await outcome(() => forge(people.dave.memberA)))
+      .toMatch(/root must be the identity this launch resolves as/);
+    // NOTHING was bound: no row at all, so no later call can resolve under it.
+    const [row] = await scratch.query<{ n: string }>(
+      'select count(*)::text n from internal.mcp_session_bindings where session_id=$1', [s.sessionId]);
+    expect(row?.n).toBe('0');
+    expect(await outcome(() => bindings.authorize(s.claims, s.sessionId, serverA)))
+      .toMatch(/MCP session unavailable/);
+    // CONTROL: naming ALICE — the identity this transaction runs as — is
+    // accepted, so what the refusal rejects is the forged member and not the
+    // shape of the call or the rootless claims.
+    expect(await outcome(() => forge(people.alice.memberA))).toBe('ok');
+    expect(await bindings.authorize(s.claims, s.sessionId, serverA))
+      .toMatchObject({ rootMemberId: people.alice.memberA, rootIdentityId: people.alice.identity });
+  });
+
+  it('and the ready-path check still catches a forged root under a human bearer', async () => {
+    // The other half, which was already there: when the walk DOES succeed, the
+    // derived root and the named one must agree.
+    const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    expect(await outcome(() => db.tx(human('alice', spaceA), q => q.rpc('bind_mcp_session', [
+      s.sessionId, hashToken(s.token.split('.')[1]!), '[]',
+      null, null, people.dave.memberA, [s.sessionId], [spaceA],
+    ])))).toMatch(/root changed during launch/);
+  });
+
+  it('a delegated launch cannot re-root away from its source binding', async () => {
+    // The chain is inherited, and so is the ROOT: a child that names a root its
+    // source did not record is refused even when the chain shape checks out.
+    const parent = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const child = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const common = { spaceId: spaceA, teamMemberId: personaA };
+    await bindings.bind(human('alice', spaceA), { ...common, sessionId: parent.sessionId, agentToken: parent.token, mcpSelections: [] });
+    expect(await outcome(() => db.tx(
+      { identityId: people.dave.identity, authKind: 'browser', sessionSpaceId: spaceA },
+      q => q.rpc('bind_mcp_session', [
+        child.sessionId, hashToken(child.token.split('.')[1]!), '[]',
+        parent.sessionId, parent.authSessionId, people.dave.memberA,
+        [child.sessionId, parent.sessionId], [spaceA, spaceA],
+      ]))))
+      .toMatch(/root does not match its source binding/);
   });
 });
 

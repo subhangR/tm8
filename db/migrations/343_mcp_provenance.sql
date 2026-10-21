@@ -123,10 +123,9 @@ begin
      *
      * So: a write that touches only SCHEDULING BOOKKEEPING preserves the stamp
      * — that is the executor's own tick, which advances next_run_at and records
-     * the outcome through the same door on every firing. The allow-list is
-     * enumerated from 091's table, deliberately as a closed list of what is
-     * harmless rather than an open list of what is dangerous, so a column added
-     * later is treated as content until someone says otherwise.
+     * the outcome through the same door on every firing. That list is closed and
+     * SUBTRACTED from the row rather than compared field by field, so a column
+     * added later counts as content until someone adds it to the list.
      *
      * Any other changed column re-stamps to the writer when the writer is a
      * human bearer, and NULLS the stamp when it is not. A NULL means the next
@@ -136,13 +135,30 @@ begin
      * enabled false -> true is RESUMING, so it counts as content. true -> false
      * only narrows, so it is allowed to keep the stamp.
      */
+    /*
+     * INVERTED ON PURPOSE (B28): the comparison subtracts the BOOKKEEPING
+     * columns and asks whether anything else moved, rather than enumerating the
+     * content columns. Listing content would mean a column added to
+     * `public.loops` later — or one already there that nobody remembered — read
+     * as bookkeeping and silently PRESERVED the stamp, which is the direction
+     * that leaks. This way an unlisted column is content, so a new field is
+     * safe-by-default and only an explicit addition to the bookkeeping list can
+     * make it harmless.
+     *
+     * BOOKKEEPING is what the executor's tick writes through the same door on
+     * every firing: next_run_at, last_run_at, last_error, updated_at. That is
+     * the whole set on 091's table today — there are no lease or run-count
+     * columns — and `armed_by_*` are subtracted because this trigger is what
+     * writes them, so their own change must not count as content. `enabled` is
+     * subtracted and judged separately: false -> true is RESUMING, which is
+     * authorising the content again, while true -> false only narrows.
+     */
     v_content_changed :=
-         new.title          is distinct from old.title
-      or new.schedule       is distinct from old.schedule
-      or new.team_member_id is distinct from old.team_member_id
-      or new.subject_id     is distinct from old.subject_id
-      or new.prompt         is distinct from old.prompt
-      or new.config         is distinct from old.config
+         (to_jsonb(new) - 'next_run_at' - 'last_run_at' - 'last_error' - 'updated_at'
+            - 'enabled' - 'armed_by_member_id' - 'armed_by_identity_id')
+      is distinct from
+         (to_jsonb(old) - 'next_run_at' - 'last_run_at' - 'last_error' - 'updated_at'
+            - 'enabled' - 'armed_by_member_id' - 'armed_by_identity_id')
       or (new.enabled and not old.enabled);
     if not v_content_changed then
       -- Bookkeeping only (last_run_at, next_run_at, last_error, updated_at, or
@@ -549,7 +565,7 @@ returns jsonb language plpgsql security definer set search_path = public, intern
 declare
   s public.auth_sessions; runtime_identity text; target_space uuid; pick jsonb; definition jsonb;
   launcher text := internal.identity_id(); provenance jsonb; v_root uuid; v_chain uuid[]; v_spaces uuid[];
-  v_root_identity text; v_source_chain uuid[]; v_hop uuid; v_index integer;
+  v_root_identity text; v_source_chain uuid[]; v_source_root uuid; v_hop uuid; v_index integer;
 begin
   if launcher is null or coalesce(internal.claim_text('tm8.via_link'), '') <> '' then
     raise exception 'MCP session unavailable' using errcode = '42501';
@@ -637,23 +653,56 @@ begin
     -- switched (read_mcp_session_binding, under the spawner's claims), and this
     -- is a shape check on the same (session, auth session) pair.
     if p_source_session is not null then
-      select b.chain into v_source_chain from internal.mcp_session_bindings b
+      select b.chain, b.root_member_id into v_source_chain, v_source_root
+        from internal.mcp_session_bindings b
        where b.session_id = p_source_session and b.auth_session_id = p_source_auth_session;
       if p_chain[2] is distinct from p_source_session
          or p_chain[2:array_length(p_chain, 1)] is distinct from coalesce(v_source_chain, array[p_source_session]) then
         raise exception 'MCP provenance chain does not match its source binding' using errcode = '42501';
+      end if;
+      -- B28. The ROOT is inherited too, not just the chain: a delegated launch
+      -- roots exactly where its source rooted. A source written before 343
+      -- recorded none, and then the identity check below is the whole authority.
+      if v_source_root is not null and p_root_member is distinct from v_source_root then
+        raise exception 'MCP provenance root does not match its source binding' using errcode = '42501';
       end if;
     elsif array_length(p_chain, 1) <> 1 then
       raise exception 'MCP provenance chain has no source to justify its hops' using errcode = '42501';
     end if;
     v_chain := p_chain;
     v_spaces := p_chain_spaces;
+    v_root := coalesce(p_root_member, v_root);
+    v_root_identity := internal.mcp_provenance_root_identity(v_root, target_space);
     -- §6.2 over the FULL array, now that it has more than one hop in it.
-    v_root_identity := internal.mcp_provenance_root_identity(coalesce(p_root_member, v_root), target_space);
     if v_root_identity is null or not internal.mcp_root_in_every_space(v_root_identity, v_spaces) then
       raise exception 'MCP provenance root is not a member of every space in the chain' using errcode = '42501';
     end if;
-    v_root := coalesce(p_root_member, v_root);
+  end if;
+
+  /*
+   * B28. THE STORED ROOT IS BOUND TO A FACT THIS FUNCTION READS ITSELF.
+   *
+   * `p_root_member` is a caller argument, and the ready-path equality check
+   * above does not fire when the in-SQL walk returns a NON-ready reason — so
+   * without this a caller could hand in another member as the root, have it
+   * stored, and have `authorize` resolve that member's connections under it
+   * forever after.
+   *
+   * The binding fact is B3's rule, moved into SQL: `bind` always resolves
+   * accounts under the ROOT's own claims, so the root's identity must be the
+   * identity THIS TRANSACTION is running as. A forged member therefore has to
+   * belong to the caller already, which makes the forgery worthless. It holds
+   * for every shape: a human bearer is its own root, a delegated launch runs
+   * under the inherited root's claims, and a schedule firing runs under the
+   * armer's.
+   */
+  if v_root is not null then
+    v_root_identity := coalesce(v_root_identity,
+      internal.mcp_provenance_root_identity(v_root, target_space));
+    if v_root_identity is null or v_root_identity is distinct from launcher then
+      raise exception 'MCP provenance root must be the identity this launch resolves as'
+        using errcode = '42501';
+    end if;
   end if;
   -- NO BLANKET REFUSAL on a rootless launch. #1316 settled the shape of this:
   -- a connector that needs no ACCOUNT is still bound, because the rule withholds
