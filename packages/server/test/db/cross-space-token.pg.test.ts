@@ -380,21 +380,30 @@ describe('T9 agent G (A) reads B — refused (W0a)', () => {
         .toBe('ok');
     });
 
-    // TM8_SPACE_SESSIONS=off: the pin is INERT. No claim is bound, and every
-    // helper answers exactly as before 227 — so B is visible again. This is
-    // the pre-W0a leak, pinned as the documented behaviour of the kill switch.
-    it(`${kind}: off — no pin is bound and B entities are visible (pre-227 behaviour)`, async () => {
+    // B20 (Q15). TM8_SPACE_SESSIONS=off NO LONGER un-pins an agent kind, and
+    // this block used to pin the opposite: that under `off` no claim was bound
+    // and B was visible again, called "the documented behaviour of the kill
+    // switch". That reading is reversed. 226's
+    // `auth_sessions_pinned_kinds_have_space` forces a `space_id` onto every
+    // agent, agent_runtime and link row, so the Space is part of what the
+    // credential IS, not a policy choice; `sessionSpacePin` therefore binds it
+    // in every mode. `off` gates only the HUMAN `auth.space.enter` pins W3
+    // added (the browser cell below, and T1's `mintPinned`), which is what the
+    // kill switch exists to take back. Un-pinning an agent handed that bearer
+    // every Space its identity belongs to — the pre-W0a leak — for the whole
+    // node, which no operator asked for by turning W3 off.
+    it(`${kind}: off — the pin is bound anyway, and B entities stay invisible (B20/Q15)`, async () => {
       const token = await mint();
-      expect((await claimsForToken(token, 'off')).sessionSpaceId).toBeUndefined();
-      expect(await asToken(token, (q) => idsIn(q, fixture.spaceB), 'off')).toContain(fixture.docB);
+      expect((await claimsForToken(token, 'off')).sessionSpaceId).toBe(fixture.spaceA);
+      expect(await asToken(token, (q) => idsIn(q, fixture.spaceB), 'off')).toEqual([]);
     });
     it(`${kind}: off — positive — A entities stay visible`, async () => {
       const token = await mint();
       expect(await asToken(token, (q) => idsIn(q, fixture.spaceA), 'off')).toContain(fixture.docA);
     });
-    it(`${kind}: off — every helper answers as before for B`, async () => {
+    it(`${kind}: off — every helper intersects with the pin (B20/Q15); positive: A answers`, async () => {
       const token = await mint();
-      const row = await asToken(token, async (q) => (await q.query<{
+      const helpers = (spaceId: string) => async (q: Querier) => (await q.query<{
         pin: string | null; spaces: string[]; member: boolean; admin: boolean; me: string | null;
       }>(
         `select nullif(current_setting('tm8.session_space_id', true), '') as pin,
@@ -402,11 +411,17 @@ describe('T9 agent G (A) reads B — refused (W0a)', () => {
                 internal.is_space_member($1) as member,
                 internal.is_space_admin($1) as admin,
                 internal.current_member_id($1)::text as me`,
-        [fixture.spaceB],
-      ))[0]!, 'off');
-      expect(row.pin).toBeNull();
-      expect([...row.spaces].sort()).toEqual([fixture.spaceA, fixture.spaceB].sort());
-      expect(row).toMatchObject({ member: true, admin: true, me: fixture.memberHB });
+        [spaceId],
+      ))[0]!;
+      const b = await asToken(token, helpers(fixture.spaceB), 'off');
+      expect(b.pin).toBe(fixture.spaceA);
+      expect(b.spaces).toEqual([fixture.spaceA]);
+      expect(b).toMatchObject({ member: false, admin: false, me: null });
+      // Paired positive: the same four helpers, the same `off` claim, asked
+      // about the Space the token was minted for.
+      const a = await asToken(token, helpers(fixture.spaceA), 'off');
+      expect(a.pin).toBe(fixture.spaceA);
+      expect(a).toMatchObject({ member: true, me: fixture.memberHA });
     });
 
     // TM8_SPACE_SESSIONS=enforce adds the human gate (W3) and changes nothing
@@ -512,9 +527,15 @@ describe('T9 agent G (A) reads B through inline-membership surfaces — refused 
       expect(await asToken(token, (q) => slotById(q, s.slotA))).toHaveLength(1);
     });
   }
-  it('agent, off: the pin is inert — B\'s upload slot is visible', async () => {
+  // B20 (Q15): `off` binds the agent pin too, so the existence probe is closed
+  // on an `off` node as well. Was: "the pin is inert — B's upload slot is visible".
+  it('agent, off: the pin is bound anyway — B\'s upload slot is invisible (B20/Q15)', async () => {
     const token = await mintAgent();
-    expect(await asToken(token, (q) => slotById(q, s.slotB), 'off')).toHaveLength(1);
+    expect(await asToken(token, (q) => slotById(q, s.slotB), 'off')).toEqual([]);
+  });
+  it('agent, off: positive — A\'s upload slot is visible under the same claim', async () => {
+    const token = await mintAgent();
+    expect(await asToken(token, (q) => slotById(q, s.slotA), 'off')).toHaveLength(1);
   });
 
   /**
@@ -563,10 +584,17 @@ describe('T9 agent G (A) reads B through inline-membership surfaces — refused 
     const token = await mintPersonalessAgent();
     expect(await asToken(token, (q) => ownedTeammateInbox(q, fixture.personaA))).toEqual([s.teammateNotifA]);
   });
-  it('agent, persona-less, off: the pin is inert — B\'s inbox row and teammate inbox are visible', async () => {
+  // B20 (Q15): the non-acting arms are pinned under `off` too. Was: "the pin
+  // is inert — B's inbox row and teammate inbox are visible".
+  it('agent, persona-less, off: the pin is bound anyway — B\'s inbox row and teammate inbox are invisible (B20/Q15)', async () => {
     const token = await mintPersonalessAgent();
-    expect(await asToken(token, (q) => notificationById(q, s.notifB), 'off')).toHaveLength(1);
-    expect(await asToken(token, (q) => ownedTeammateInbox(q, s.personaB), 'off')).toEqual([s.teammateNotifB]);
+    expect(await asToken(token, (q) => notificationById(q, s.notifB), 'off')).toEqual([]);
+    expect(await asToken(token, (q) => ownedTeammateInbox(q, s.personaB), 'off')).toEqual([]);
+  });
+  it('agent, persona-less, off: positive — A\'s inbox row and teammate inbox still answer', async () => {
+    const token = await mintPersonalessAgent();
+    expect(await asToken(token, (q) => notificationById(q, s.notifA), 'off')).toHaveLength(1);
+    expect(await asToken(token, (q) => ownedTeammateInbox(q, fixture.personaA), 'off')).toEqual([s.teammateNotifA]);
   });
 
   /**
@@ -606,9 +634,18 @@ describe('T9 agent G (A) reads B through inline-membership surfaces — refused 
     expect(await outcome(() => asToken(token, (q) => markRead(q, notification)))).toBe('ok');
     expect(await readAt(notification)).not.toBeNull();
   });
-  it('agent, persona-less, off (S2): the pin is inert — B\'s notification is marked read', async () => {
+  // B20 (Q15): 246's pin is in both member arms in every mode now, so the S2
+  // write is refused on an `off` node too. Was: "the pin is inert — B's
+  // notification is marked read".
+  it('agent, persona-less, off (S2): the pin is bound anyway — marking B\'s notification read is refused P0002 (B20/Q15)', async () => {
     const token = await mintPersonalessAgent();
     const notification = await freshNotification(fixture.spaceB, fixture.memberHB);
+    expect(await outcome(() => asToken(token, (q) => markRead(q, notification), 'off'))).toBe('P0002');
+    expect(await readAt(notification)).toBeNull();
+  });
+  it('agent, persona-less, off (S2): positive — marking A\'s notification read succeeds under the same claim', async () => {
+    const token = await mintPersonalessAgent();
+    const notification = await freshNotification(fixture.spaceA, fixture.memberHA);
     expect(await outcome(() => asToken(token, (q) => markRead(q, notification), 'off'))).toBe('ok');
     expect(await readAt(notification)).not.toBeNull();
   });
@@ -669,9 +706,11 @@ describe('T10 agent G (A) writes B — 42501 (W0a)', () => {
     // THE A1 WRITE LEAK: a write guarded by `require_space_member` ALONE —
     // no actor binding — so before the pin an agent carrying H's identity
     // could write it in any of H's spaces. This is the discriminating cell:
-    // under `off` the same call succeeds in B (below), so the refusal here is
-    // the pin and nothing else. (update_document above also refuses B under
-    // `off`, via the persona actor's can_act_as, so it cannot show that.)
+    // strip the pin from the SAME claim and the call succeeds in B (below), so
+    // the refusal here is the pin and nothing else. (update_document above also
+    // refuses B unpinned, via the persona actor's can_act_as, so it cannot show
+    // that.) B20 (Q15) moved that control off `TM8_SPACE_SESSIONS=off`, which
+    // no longer un-pins an agent kind — the DbClaims are built directly now.
     it(`${kind}: provider_etag_record in B is refused`, async () => {
       const token = await mint();
       expect(await outcome(() => recordEtag(token, fixture.spaceB))).toBe('42501');
@@ -681,15 +720,31 @@ describe('T10 agent G (A) writes B — 42501 (W0a)', () => {
       expect(await outcome(() => recordEtag(token, fixture.spaceA))).toBe('ok');
     });
 
-    // off: the pin is inert, so the pre-227 write leak is back — by design of
-    // the kill switch, and pinned here so that stays a deliberate choice.
-    it(`${kind}: off — provider_etag_record in B succeeds (pin inert)`, async () => {
+    // B20 (Q15): `off` binds the pin too, so the pre-227 WRITE leak is closed
+    // on an `off` node as well. This block used to pin the opposite —
+    // "provider_etag_record in B succeeds (pin inert) ... by design of the kill
+    // switch" — and that is the documented decision B20 reverses.
+    it(`${kind}: off — provider_etag_record in B is refused, as under agents (B20/Q15)`, async () => {
       const token = await mint();
-      expect(await outcome(() => recordEtag(token, fixture.spaceB, 'off'))).toBe('ok');
+      expect(await outcome(() => recordEtag(token, fixture.spaceB, 'off'))).toBe('42501');
     });
     it(`${kind}: off — positive — provider_etag_record in A succeeds`, async () => {
       const token = await mint();
       expect(await outcome(() => recordEtag(token, fixture.spaceA, 'off'))).toBe('ok');
+    });
+
+    // The A1 control, now that no mode un-pins an agent: take the same `off`
+    // claim and drop `sessionSpaceId` by hand. 226's CHECK makes this
+    // unreachable through a real session, which is the point — it is the only
+    // way left to show that the 42501 above is 227's pin and not some other
+    // guard on `provider_etag_record`.
+    it(`${kind}: the refusal IS the pin — the same claim with sessionSpaceId dropped writes B (B20/Q15)`, async () => {
+      const token = await mint();
+      const unpinned = { ...(await claimsForToken(token, 'off')), sessionSpaceId: undefined };
+      expect(unpinned.authKind).toBe(kind);
+      expect(await outcome(() => db.tx(unpinned, (q) => q.rpc('provider_etag_record', [
+        fixture.spaceB, `cross-space/${randomUUID()}`, `"etag-${randomUUID()}"`, false,
+      ])))).toBe('ok');
     });
 
     it(`${kind}: enforce — provider_etag_record in B is refused, as under agents`, async () => {
