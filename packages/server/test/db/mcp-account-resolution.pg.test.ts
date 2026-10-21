@@ -323,6 +323,27 @@ it('a connection merely shared with the root never auto-resolves; it needs an ex
   expect(pinned.selections[0]).toMatchObject({ ready: true, credentialId: shared.id, credentialSource: 'pinned' });
 });
 
+it('a space-link caller is refused the resolver outright (B11, §6)', async () => {
+  const server = await connector(keyed('linkrefusal'));
+  const team = await connect(adminIdentity, server, { label: 'Team linkrefusal', scope: 'space' });
+  // Sanity: an ordinary member of the Space does resolve it, so the refusal
+  // below is about the LINK and not about the row being unreachable.
+  expect(await resolve(bobIdentity, server)).toMatchObject({ credentialId: team.id, source: 'space_shared' });
+  // §6: a session started through a space link gets no connectors. This reader
+  // is off the human-auth gate, so it must refuse the link itself — otherwise
+  // `mcp.resolve`, a public handler, would let a link session enumerate which
+  // shared connections a Space holds (ids and an account label, never a secret).
+  const viaLink = (claims: Partial<DbClaims>) => db.tx(
+    { identityId: bobIdentity, authKind: 'browser', sessionSpaceId: spaceId, requestId: randomUUID(), ...claims },
+    q => q.rpc('resolve_mcp_account', [server, null]));
+  await expect(viaLink({ viaLinkId: randomUUID() })).rejects.toMatchObject({ details: { sqlstate: '42501' } });
+  await expect(viaLink({ authKind: 'link' })).rejects.toMatchObject({ details: { sqlstate: '42501' } });
+  // touch_mcp_credential needs no check of its own: its first statement is
+  // read_mcp_credential, whose link refusal fires.
+  await expect(db.tx({ identityId: bobIdentity, authKind: 'link', sessionSpaceId: spaceId, requestId: randomUUID() },
+    q => q.rpc('touch_mcp_credential', [spaceId, server, team.id]))).rejects.toMatchObject({ details: { sqlstate: '42501' } });
+});
+
 it('the root member parameter must be the claims in force, and must be a member of the space', async () => {
   const server = await connector(keyed('rootparam'));
   const mine = await connect(aliceIdentity, server, { label: 'Alice root' });

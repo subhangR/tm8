@@ -82,6 +82,16 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   // resolve_mcp_account (launch-time account resolution). None of the three
   // writes a secret, and each carries read_mcp_credential's own owner/public/
   // shared-with authority instead.
+  //
+  // Being off the human gate does NOT exempt them from §6's link rule, and each
+  // meets it differently, which is the part worth writing down:
+  //   * touch_mcp_credential   — covered, because its first statement IS
+  //                              read_mcp_credential, whose own link refusal runs.
+  //   * mark_..._needs_reconnect — refuses links itself (341).
+  //   * resolve_mcp_account    — refuses links itself (341, B11). It does not go
+  //                              through read_mcp_credential, so it would
+  //                              otherwise have let a link session enumerate a
+  //                              Space's shared connections through mcp.resolve.
   'create_mcp_credential(uuid,uuid,uuid,text,bytea,bytea,text,timestamp with time zone,boolean,integer,text,text,text,text[])': CREDENTIAL_MANAGEMENT,
   'rekey_mcp_credential(uuid,uuid,uuid,bytea,bytea,text)': CREDENTIAL_MANAGEMENT,
   'save_chat_mcp_selections(uuid,jsonb)': CREDENTIAL_MANAGEMENT,

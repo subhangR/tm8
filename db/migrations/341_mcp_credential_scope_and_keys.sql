@@ -416,6 +416,16 @@ begin
   select space_id into v_space from public.mcp_servers where entity_id = p_server;
   if v_space is null then raise exception 'MCP connector is unavailable' using errcode = 'P0002'; end if;
   perform internal.require_space_member(v_space);
+  -- §6: a session started through a space link gets NO connectors, and this
+  -- reader sits OFF the human-auth gate (the proxy calls it under agent claims),
+  -- so it has to refuse a link caller itself rather than inherit a refusal. Only
+  -- ids and an account label would leak, never a secret — but `mcp.resolve` is a
+  -- public handler, so without this a link session could enumerate which shared
+  -- connections a Space holds. read_mcp_credential and
+  -- mark_mcp_credential_needs_reconnect carry the same two lines.
+  if coalesce(internal.claim_text('tm8.via_link'), '') <> '' or coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
+    raise exception 'linked MCP credentials are unavailable' using errcode = '42501';
+  end if;
   v_caller := internal.current_account_id();
   if p_root_member is null then
     v_account := v_caller;
