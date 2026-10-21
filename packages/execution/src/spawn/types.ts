@@ -821,6 +821,40 @@ export interface CreateWorkSessionInput {
    * own transaction (267). Absent/null creates none.
    */
   newTaskTitle?: string | null;
+  /**
+   * 348: the loop this session is a FIRING of. `execution_spawn` writes the
+   * session -> loop `triggered_by` edge in its own transaction and ABORTS the
+   * spawn if it cannot, because `internal.mcp_provenance` (343) reads the
+   * schedule provenance root off exactly that edge and `bind` runs inside this
+   * spawn. See {@link SpawnServerFacts} for why it does not travel on
+   * `SpawnRequest`.
+   */
+  triggeredByLoopId?: string;
+}
+
+/**
+ * FACTS THE SERVER ESTABLISHED, which a spawn request may not carry.
+ *
+ * Deliberately a SECOND PARAMETER of {@link SpawnService.spawn} rather than
+ * fields on `SpawnRequest`, and the separation is the security property, not
+ * tidiness: `SpawnRequest` is built field by field from the wire input by the
+ * public `execution.spawn` handler, so anything living on it is something a
+ * caller can try to set. A caller cannot reach a parameter the public handler
+ * never passes.
+ *
+ * `ExecutionSpawnInputSchema` is `.strict()` as well, so a client that invents
+ * one of these names on the wire is refused by the schema rather than having it
+ * silently dropped. Two independent barriers, which is the point.
+ */
+export interface SpawnServerFacts {
+  /**
+   * The loop whose firing this spawn IS — set only by the in-process loop
+   * executor (`createLoopExecutorPort.fire`), which holds the loop row it is
+   * firing. This is §6's schedule provenance root (`loops.armed_by_member_id`,
+   * 343) and it must be a SERVER fact: a client that could name a loop here
+   * would be naming the human whose connections its session launches with.
+   */
+  triggeredByLoopId?: string;
 }
 
 export interface CreateWorkSessionResult {

@@ -1021,3 +1021,340 @@ describe('§6 — a forged triggered_by edge roots nothing (347)', () => {
     });
   });
 });
+
+/* ===========================================================================
+ * 348 / 351 — THE ORDERING FIX, AND WHAT IT MAKES REACHABLE.
+ *
+ * Everything above this point writes a firing's `triggered_by` edge BY HAND,
+ * because until 348 the real executor wrote it AFTER `spawnService.spawn`
+ * returned — and `bind` runs INSIDE that spawn. So 343's schedule branch was
+ * correct and unreachable at the same time: every first firing fell to the
+ * no-bearer branch and was lent no connector that needs an account.
+ *
+ * These cells go through `public.execution_spawn` with the loop id, exactly as
+ * `createLoopExecutorPort.fire` now does, so the edge is written by the SPAWN
+ * and the provenance is read back at the moment `bind` would read it.
+ * =========================================================================== */
+describe('§6 — a FIRST firing reaches its armed-by root (348)', () => {
+  /** The in-process executor's claim shape: an identity, no bearer kind. */
+  const executor: DbClaims = { identityId: people.alice.identity, requestId: 'loop-executor' };
+
+  const armLoop = async (claims: DbClaims, title: string) =>
+    (await db.rpc<{ entity: { id: string } }>(claims, 'create_loop',
+      [spaceA, title, null, 'every 1h', personaA, null, 'fire', '{}', true, null, null, null, randomUUID()])).entity.id;
+
+  /**
+   * A firing, spawned the way the executor spawns one: under the node owner's
+   * rootless claims, with the loop id passed as `p_triggered_by_loop_id`.
+   *
+   * The agent bearer is minted afterwards here because the real mint lives in
+   * SpawnService, not in SQL — everything this file needs from it is a token
+   * the §6 doors will authenticate, which is exactly what `session()` builds.
+   */
+  async function fire(loopId: string | null, title: string) {
+    const spawned = await db.rpc<{ entity: { id: string } }>(executor, 'public.execution_spawn', [
+      spaceA, personaA, [], null, 'scratch', `/tmp/${randomUUID()}`, null,
+      null, 'claude-opus-5', 'claude-code', title, 'node-local', false, 64,
+      null, `fire-${randomUUID()}`, null, null, null, null, loopId,
+    ]);
+    const sessionId = spawned.entity.id;
+    const authSessionId = randomUUID();
+    const secret = randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '');
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.auth_sessions(id,account_id,kind,acting_as_team_member_id,work_session_id,token_hash,expires_at,space_id)
+        values($1,$2,'agent',$3,$4,$5,now()+interval '1 hour',$6)`,
+        [authSessionId, people.alice.account, personaA, sessionId, hashToken(secret), spaceA]);
+    });
+    return {
+      sessionId, authSessionId, token: `tm8s_${authSessionId}.${secret}`,
+      claims: { identityId: people.alice.identity, authKind: 'agent', sessionSpaceId: spaceA, authSessionId } as DbClaims,
+    };
+  }
+
+  it('the spawn writes the edge in its OWN transaction, so bind can already see it', async () => {
+    const armed = await armLoop(human('alice', spaceA), 'Reachable firing');
+    const firing = await fire(armed, 'first firing');
+
+    // THE ORDERING FACT. Before 348 this edge did not exist until after the
+    // spawn returned, which is after bind had already run and answered.
+    const [edge] = await scratch.query<{ n: string }>(
+      `select count(*)::text n from public.edges
+        where src_id=$1 and dst_id=$2 and type='triggered_by'`, [firing.sessionId, armed]);
+    expect(edge?.n).toBe('1');
+
+    // AND THE CONSEQUENCE: §6 now roots the firing at the human who armed it.
+    const got = await provenanceOf(executor, firing.sessionId, firing.token);
+    expect(got).toMatchObject({
+      reason: 'ready', via: 'schedule_armed_by',
+      rootMemberId: people.alice.memberA, rootIdentityId: people.alice.identity,
+    });
+  });
+
+  it('an UNARMED loop still gets no connectors, and a firing with no loop at all gets none either', async () => {
+    // Produced the way one really occurs: created by a caller with no human
+    // bearer, so the trigger never stamps it.
+    const unarmed = await armLoop({ identityId: people.alice.identity, authKind: 'agent' }, 'Unarmed reachable');
+    const [stamp] = await scratch.query<{ armed_by_member_id: string | null }>(
+      'select armed_by_member_id from public.loops where entity_id=$1', [unarmed]);
+    expect(stamp?.armed_by_member_id).toBeNull();
+
+    const firing = await fire(unarmed, 'unarmed firing');
+    expect(await provenanceOf(executor, firing.sessionId, firing.token))
+      .toMatchObject({ reason: 'no_human_provenance', loopId: unarmed });
+
+    // The control that keeps the cell honest: the refusal is about the LOOP
+    // being unarmed, not about the spawn shape. A spawn carrying no loop id at
+    // all writes no edge and is refused for having no terminal at all — no
+    // `loopId` in the answer, because there is no loop.
+    const plain = await fire(null, 'no loop at all');
+    const [none] = await scratch.query<{ n: string }>(
+      "select count(*)::text n from public.edges where src_id=$1 and type='triggered_by'", [plain.sessionId]);
+    expect(none?.n).toBe('0');
+    const got = await provenanceOf(executor, plain.sessionId, plain.token);
+    expect(got.reason).toBe('no_human_provenance');
+    expect(got).not.toHaveProperty('loopId');
+  });
+
+  it('a failed edge write ABORTS the spawn — no session, not a rootless one (ac2)', async () => {
+    /*
+     * The criterion is that this path is NOT best-effort. The executor's
+     * `writeTriggeredBy` swallows everything, and 343's decision to give a
+     * schedule no second rooting tier (B21) depends on that not being true
+     * here: a swallowed failure leaves a firing that looks successful and has
+     * no root, which is precisely the silent fall-through there is no fallback
+     * for.
+     *
+     * Two ways to make the write impossible, both exercising the same abort:
+     * a loop in ANOTHER Space, and an id that is not a loop at all.
+     */
+    const foreign = (await db.rpc<{ entity: { id: string } }>(human('alice', spaceB), 'create_loop',
+      [spaceB, 'Loop in B', null, 'every 1h', personaB, null, 'fire', '{}', true, null, null, null, randomUUID()])).entity.id;
+
+    expect(await outcome(() => fire(foreign, 'cross-space loop')))
+      .toMatch(/loop belongs to another space/);
+    // Not a loop: `internal.live_entity(id, 'loop')` refuses the kind.
+    expect(await outcome(() => fire(personaA, 'not a loop'))).toMatch(/not found|kind|loop/i);
+
+    // AND NOTHING SURVIVED. This is the half that would still pass if the
+    // insert were wrapped in an exception handler, so it is asserted from
+    // OUTSIDE the failed transaction: a swallowed failure would have committed
+    // a perfectly good session row with no edge on it.
+    const [rows] = await scratch.query<{ n: string }>(
+      `select count(*)::text n from public.entities e join public.work_sessions w on w.entity_id=e.id
+        where w.title in ('cross-space loop','not a loop')`);
+    expect(rows?.n).toBe('0');
+  });
+});
+
+/* ===========================================================================
+ * 351 — B35: A DELEGATED CHILD OF A SCHEDULE-ROOTED SESSION.
+ *
+ * Only reachable once 348 lets a firing root at its armer, which is why it has
+ * no cells before now. `bind` derives provenance twice, and for this one shape
+ * the two do NOT converge: derivation 1 hops through `read_mcp_session_binding`
+ * under the firing's own agent bearer and answers correctly, while derivation 2
+ * runs under the ROOT's replayed claims — and a schedule root carries no bearer
+ * kind (B21), so the walk takes the no-bearer branch, looks for the CHILD's own
+ * loop, and finds none.
+ *
+ * 343's comment claimed that refused the launch. It does not: the child BINDS,
+ * through inheritance, and derivation 2 contributes nothing. B35 ruled that
+ * CORRECT — for a delegated hop the authority was always derivation 1, under a
+ * bearer that PROVED it was the source — and required the inheritance path to
+ * stand on its own instead of leaning on a check that silently does nothing.
+ * =========================================================================== */
+describe('§6 — the delegated child of a schedule-rooted session (351, B35)', () => {
+  const executor: DbClaims = { identityId: people.alice.identity, requestId: 'loop-executor' };
+
+  const armLoop = async (claims: DbClaims, title: string) =>
+    (await db.rpc<{ entity: { id: string } }>(claims, 'create_loop',
+      [spaceA, title, null, 'every 1h', personaA, null, 'fire', '{}', true, null, null, null, randomUUID()])).entity.id;
+
+  async function fire(loopId: string, title: string) {
+    const spawned = await db.rpc<{ entity: { id: string } }>(executor, 'public.execution_spawn', [
+      spaceA, personaA, [], null, 'scratch', `/tmp/${randomUUID()}`, null,
+      null, 'claude-opus-5', 'claude-code', title, 'node-local', false, 64,
+      null, `fire-${randomUUID()}`, null, null, null, null, loopId,
+    ]);
+    const sessionId = spawned.entity.id;
+    const authSessionId = randomUUID();
+    const secret = randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '');
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into public.auth_sessions(id,account_id,kind,acting_as_team_member_id,work_session_id,token_hash,expires_at,space_id)
+        values($1,$2,'agent',$3,$4,$5,now()+interval '1 hour',$6)`,
+        [authSessionId, people.alice.account, personaA, sessionId, hashToken(secret), spaceA]);
+    });
+    return {
+      sessionId, authSessionId, token: `tm8s_${authSessionId}.${secret}`,
+      claims: { identityId: people.alice.identity, authKind: 'agent', sessionSpaceId: spaceA, authSessionId } as DbClaims,
+    };
+  }
+
+  it('the child binds, roots at the ARMER, and is recorded as INHERITED', async () => {
+    const armed = await armLoop(human('alice', spaceA), 'Delegating firing');
+    const firing = await fire(armed, 'firing that delegates');
+    const common = { spaceId: spaceA, teamMemberId: personaA };
+
+    // The firing binds first, as it does in life — inside its own spawn.
+    await bindings.bind(executor, { ...common, sessionId: firing.sessionId, agentToken: firing.token, mcpSelections: [] });
+    const [parentRow] = await scratch.query<{ root_member_id: string; chain: string[] }>(
+      'select root_member_id, chain from internal.mcp_session_bindings where session_id=$1', [firing.sessionId]);
+    expect(parentRow?.root_member_id).toBe(people.alice.memberA);
+
+    // Now the child the firing spawns: a delegated launch, carrying the
+    // firing's own verified bearer as its source.
+    const child = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    // Captured BEFORE restoring: `mockRestore` resets the mock as well as
+    // restoring it, which empties `mock.calls` and makes the assertion vacuous.
+    const logged: string[] = [];
+    const debug = vi.spyOn(console, 'debug').mockImplementation((...args) => { logged.push(args.join(' ')); });
+    try {
+      await bindings.bind(
+        { ...firing.claims, mcpSource: { sessionId: firing.sessionId, authSessionId: firing.authSessionId } },
+        { ...common, sessionId: child.sessionId, agentToken: child.token, mcpSelections: [] });
+    } finally {
+      debug.mockRestore();
+    }
+
+    // IT BINDS, with the armer as root and both hops recorded.
+    const [childRow] = await scratch.query<{ root_member_id: string; root_identity_id: string; chain: string[] }>(
+      'select root_member_id, root_identity_id, chain from internal.mcp_session_bindings where session_id=$1', [child.sessionId]);
+    expect(childRow?.root_member_id).toBe(people.alice.memberA);
+    expect(childRow?.root_identity_id).toBe(people.alice.identity);
+    expect(childRow?.chain).toEqual([child.sessionId, firing.sessionId]);
+
+    // AND IT SAYS SO (tightening 3). The re-derivation did not converge, so the
+    // root is inherited — reported, and logged at DEBUG because it is the
+    // expected shape for this launch and not a fault.
+    expect(logged.join('\n')).toContain('INHERITED provenance root');
+    expect(logged.join('\n')).toContain(people.alice.memberA);
+  });
+
+  it('the SQL door reports via=inherited for the child and a converged via for a human chain', async () => {
+    /*
+     * Asserted at the door itself, not through the log line, so the recorded
+     * fact is tested rather than its rendering — and the human-bearer CONTROL
+     * sits beside it, because "inherited" only means something if the other
+     * shape reports something else.
+     */
+    const armed = await armLoop(human('alice', spaceA), 'Via-reporting firing');
+    const firing = await fire(armed, 'via firing');
+    const common = { spaceId: spaceA, teamMemberId: personaA };
+    await bindings.bind(executor, { ...common, sessionId: firing.sessionId, agentToken: firing.token, mcpSelections: [] });
+
+    const child = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const inherited = await db.tx(
+      { identityId: people.alice.identity, sessionSpaceId: spaceA },
+      q => q.rpc<{ reason: string; bound?: { via?: string; rootMemberId?: string } }>('bind_mcp_session', [
+        child.sessionId, hashToken(child.token.split('.')[1]!), '[]',
+        firing.sessionId, firing.authSessionId, people.alice.memberA,
+        [child.sessionId, firing.sessionId], [spaceA, spaceA],
+      ]));
+    // The walk itself did not converge — that is the whole point — and the
+    // recorded root is the armer regardless.
+    expect(inherited.reason).toBe('no_human_provenance');
+    expect(inherited.bound).toMatchObject({ via: 'inherited', rootMemberId: people.alice.memberA });
+
+    // CONTROL: a HUMAN-bearer two-hop chain still converges, so it is NOT
+    // reported as inherited. Same door, same shape, different root kind.
+    const parent = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const kid = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    await bindings.bind(human('alice', spaceA), { ...common, sessionId: parent.sessionId, agentToken: parent.token, mcpSelections: [] });
+    const converged = await db.tx(human('alice', spaceA),
+      q => q.rpc<{ reason: string; bound?: { via?: string } }>('bind_mcp_session', [
+        kid.sessionId, hashToken(kid.token.split('.')[1]!), '[]',
+        parent.sessionId, parent.authSessionId, people.alice.memberA,
+        [kid.sessionId, parent.sessionId], [spaceA, spaceA],
+      ]));
+    expect(converged.reason).toBe('ready');
+    expect(converged.bound?.via).not.toBe('inherited');
+  });
+
+  it('a non-converging child whose source recorded NO root is refused (tightening 2)', async () => {
+    /*
+     * The hole tightening 2 closes. When the walk does not converge, the root
+     * is not anchored by this function's own derivation — it comes from the
+     * caller, checked only against the source binding — and that check is
+     * SKIPPED when the source recorded no root. A multi-hop inherited root
+     * would then rest on nothing but the identity anchor.
+     *
+     * The source here is shaped exactly like a PRE-343 binding: a real row,
+     * with a chain, and a null `root_member_id`. It cannot occur together with
+     * a non-converging child in life — schedule roots postdate 343, which is
+     * when `root_member_id` began to be recorded — which is precisely why
+     * requiring it cannot refuse a legitimate launch.
+     */
+    const source = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const child = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into internal.mcp_session_bindings
+        (session_id,space_id,auth_session_id,runtime_identity_id,launcher_identity_id,launcher_auth_kind,
+         selections,chain,chain_space_ids)
+        values($1,$2,$3,$4,$4,'browser','[]',$5,$6)
+        on conflict (session_id) do update set chain=excluded.chain, root_member_id=null`,
+        [source.sessionId, spaceA, source.authSessionId, people.alice.identity,
+         [source.sessionId], [spaceA]]);
+    });
+    // Rootless claims, so the re-derivation cannot converge — the same shape a
+    // schedule root presents, without needing a loop to build it.
+    const rootless: DbClaims = { identityId: people.alice.identity, requestId: 'loop-executor' };
+    expect(await outcome(() => db.tx(rootless, q => q.rpc('bind_mcp_session', [
+      child.sessionId, hashToken(child.token.split('.')[1]!), '[]',
+      source.sessionId, source.authSessionId, people.alice.memberA,
+      [child.sessionId, source.sessionId], [spaceA, spaceA],
+    ])))).toMatch(/cannot be inherited from a source that recorded none/);
+    const [row] = await scratch.query<{ n: string }>(
+      'select count(*)::text n from internal.mcp_session_bindings where session_id=$1', [child.sessionId]);
+    expect(row?.n).toBe('0');
+
+    // CONTROL: give the SAME source a recorded root and the identical call is
+    // accepted. So the refusal is about the missing root, not the shape.
+    await scratch.query('update internal.mcp_session_bindings set root_member_id=$2, root_identity_id=$3 where session_id=$1',
+      [source.sessionId, people.alice.memberA, people.alice.identity]);
+    expect(await outcome(() => db.tx(rootless, q => q.rpc('bind_mcp_session', [
+      child.sessionId, hashToken(child.token.split('.')[1]!), '[]',
+      source.sessionId, source.authSessionId, people.alice.memberA,
+      [child.sessionId, source.sessionId], [spaceA, spaceA],
+    ])))).toBe('ok');
+  });
+
+  it('§6.2 still withdraws the child when the ARMER leaves a Space in its chain', async () => {
+    /*
+     * The inherited root is re-checked on every call like any other, and that
+     * is what keeps inheritance from being a way to outlive your membership.
+     * Dave arms the loop here rather than Alice, because a member who owns a
+     * live credential cannot be removed at all.
+     */
+    const armed = await armLoop(human('dave', spaceA), 'Dave armed');
+    const firing = await fire(armed, 'dave firing');
+    const common = { spaceId: spaceA, teamMemberId: personaA };
+    await bindings.bind(executor, { ...common, sessionId: firing.sessionId, agentToken: firing.token, mcpSelections: [] });
+    const [row] = await scratch.query<{ root_member_id: string }>(
+      'select root_member_id from internal.mcp_session_bindings where session_id=$1', [firing.sessionId]);
+    expect(row?.root_member_id).toBe(people.dave.memberA);
+
+    const child = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    await bindings.bind(
+      { ...firing.claims, mcpSource: { sessionId: firing.sessionId, authSessionId: firing.authSessionId } },
+      { ...common, sessionId: child.sessionId, agentToken: child.token, mcpSelections: [{ serverId: serverA }] });
+    // Bound and usable while Dave is a member.
+    expect(await bindings.authorize(child.claims, child.sessionId, serverA))
+      .toMatchObject({ rootMemberId: people.dave.memberA });
+
+    // Dave leaves. The NEXT call refuses — the root must still be a current
+    // member of every Space in the recorded chain (§6.2, B18).
+    await scratch.query("update public.members set status='removed', left_at=now() where entity_id=$1", [people.dave.memberA]);
+    try {
+      expect(await outcome(() => bindings.authorize(child.claims, child.sessionId, serverA)))
+        .toMatch(/MCP session unavailable/);
+    } finally {
+      await scratch.query("update public.members set status='active', left_at=null where entity_id=$1", [people.dave.memberA]);
+    }
+    // Restored, and access returns: the refusal was Dave's membership, not a
+    // one-way latch on the child's binding.
+    expect(await outcome(() => bindings.authorize(child.claims, child.sessionId, serverA))).toBe('ok');
+  });
+});
