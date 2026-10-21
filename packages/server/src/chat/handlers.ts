@@ -9,6 +9,9 @@ import {
   chatCredentialProviderForModel,
   chatCredentialChoice,
   withChatCredentialChoice,
+  SetChatMcpSelectionsInputSchema,
+  ChatMcpSelectionsResultSchema,
+  type ChatMcpSelectionsResult,
   type ChatCredentialIntent,
   type ChatCredentialSelection,
   type LaunchModelEffort,
@@ -301,6 +304,36 @@ function interruptChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHan
 }
 
 /**
+ * `chat.setMcpSelections` (G4, §5.3) — change a LIVE thread's connectors.
+ *
+ * Before this, a thread's selection was written once at creation
+ * (`save_chat_mcp_selections`, `on conflict do nothing`) and `compose` rebinds
+ * with `resume: true`, so the first list always won: there was no way to turn a
+ * connector on in a thread that had already sent a message.
+ *
+ * It needs no chat RUNTIME. The selection is a row, and the change takes effect
+ * at the next turn's compose, so this works on a node whose runtime is absent
+ * or asleep — unlike `interrupt`, which has nothing to interrupt without one.
+ */
+function setChatMcpSelections(facade: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const chatId = requireUuidParam(ctx, 'id') as EntityId;
+    const input = SetChatMcpSelectionsInputSchema.parse(ctx.body);
+    const auth = claimsFor(await facade.owner(), ctx);
+    if (!auth.identityId) throw new CollabError('unauthenticated', 'authentication is required');
+    // `update_chat_mcp_selections` is the authority: human auth kind, no link
+    // caller, the chat's own configurer, membership of the chat's Space, and
+    // every named connector live in that same Space (345). It is not re-checked
+    // here, because a second copy of the rule is a second place to be wrong.
+    const stored = await facade.db.tx(auth, q => q.rpc<ChatMcpSelectionsResult>(
+      'update_chat_mcp_selections',
+      [chatId, input.mcpSelections === null ? null : JSON.stringify(input.mcpSelections)],
+    ));
+    return ChatMcpSelectionsResultSchema.parse(stored);
+  };
+}
+
+/**
  * Every chat operation is human-only.
  *
  * `credentials.ts` states the reasoning at length and it holds identically
@@ -349,5 +382,6 @@ export function registerChatHandlers(
     'chat.setModel': humanOnly(setChatModel(facade, chat)),
     'chat.setCredentials': humanOnly(setChatCredentials(facade, chat)),
     'chat.interrupt': humanOnly(interruptChat(facade, chat)),
+    'chat.setMcpSelections': humanOnly(setChatMcpSelections(facade)),
   });
 }
