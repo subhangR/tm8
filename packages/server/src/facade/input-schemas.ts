@@ -9,7 +9,7 @@ import {
   WorkspaceSwitchInputSchema,
   WorkspaceUpdateInputSchema,
 } from '@tm8/contract';
-import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema } from '@tm8/contract';
+import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerRequestInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema, SetChatMcpSelectionsInputSchema } from '@tm8/contract';
 import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
 /**
@@ -260,6 +260,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'mcp.servers.update': McpServerUpdateInputSchema,
   'mcp.servers.delete': McpServerDeleteInputSchema,
   'mcp.servers.import': McpServerImportInputSchema,
+  'mcp.servers.request': McpServerRequestInputSchema,
   'mcp.servers.test': McpServerTestInputSchema,
   'mcp.resolve': McpResolveInputSchema,
   'mcp.credentials.create': McpCredentialCreateInputSchema,
@@ -441,6 +442,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'chat.setModel': SetChatModelInputSchema,
   'chat.setCredentials': SetChatCredentialsInputSchema,
   'chat.interrupt': InterruptChatInputSchema,
+  'chat.setMcpSelections': SetChatMcpSelectionsInputSchema,
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,

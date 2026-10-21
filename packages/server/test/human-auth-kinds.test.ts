@@ -66,6 +66,10 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     // 284: only `spaces.styleDefault.set` is human-only; the style reads and
     // personal writes stay open to agents (spec §7).
     'packages/server/src/facade/handlers/w2/styles.ts',
+    // 345: `mcp.servers.request` is the one human-only operation registered
+    // from the DEFINITIONS file rather than the runtime one — it needs no MCP
+    // runtime bridge, only a member and a Space.
+    'packages/server/src/mcp/definitions.ts',
     'packages/server/src/mcp/handlers.ts',
     // §5.6 (346): the audit read is a human oversight surface (lead ruling on #1321).
     'packages/server/src/mcp/audit.ts',

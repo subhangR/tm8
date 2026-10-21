@@ -42,6 +42,8 @@ import { mcpSelectionFlag } from './mcp.js';
  * friendlier spelling that quietly lost the version guard would be worse than
  * none.
  */
+import { McpSelectionsSchema } from '@tm8/contract';
+import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
@@ -234,6 +236,55 @@ async function chatModel(cmd: CommandContext): Promise<ExitCode> {
   });
   cmd.out.data(data, renderModelSet);
   return EXIT_OK;
+}
+
+/**
+ * `tm8 chat connectors <chat-id> --input <json>` — change a live thread's
+ * connectors (G4).
+ *
+ * THREE VALUES, ALL DISTINCT, and that is the whole reason this takes a JSON
+ * source rather than repeatable `--connector` flags: `null` means "back to the
+ * defaults", resolved fresh at each turn; `[]` means every connector off; and a
+ * non-empty array replaces the selection. A flag-shaped spelling cannot express
+ * the difference between the first two, which is exactly the distinction the
+ * stored row carries.
+ */
+async function chatConnectors(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('chat connectors', cmd.options.value('mutation-id'));
+  assertKnownOptions(cmd, ['input']);
+  const chatId = requireArg(cmd, 0, '<chat-id>');
+  const source = cmd.options.value('input');
+  if (source === undefined) {
+    throw new CliError('--input is required: a JSON array of {serverId,credentialId?}, [] for none, or null for defaults', EXIT_USAGE);
+  }
+  const raw = await readJsonSource(source);
+  let mcpSelections: unknown = null;
+  if (raw !== null) {
+    const parsed = McpSelectionsSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new CliError('--input must be null, [], or an array of {serverId,credentialId?}', EXIT_USAGE);
+    }
+    mcpSelections = parsed.data;
+  }
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.setMcpSelections', {
+    params: { id: chatId }, body: { mcpSelections },
+  });
+  cmd.out.data(data, renderChatConnectors);
+  return EXIT_OK;
+}
+
+function renderChatConnectors(dto: unknown): string {
+  const stored = ((dto ?? {}) as { mcpSelections?: unknown }).mcpSelections;
+  if (stored === null || stored === undefined) {
+    return 'Connectors cleared: this chat is back on the defaults, resolved at each turn.';
+  }
+  const picks = Array.isArray(stored) ? stored : [];
+  if (picks.length === 0) return 'Every connector is off for this chat, from its next turn.';
+  return [`${picks.length} connector${picks.length === 1 ? '' : 's'} selected, from this chat's next turn:`,
+    ...picks.map((pick) => {
+      const row = (pick ?? {}) as { serverId?: unknown; credentialId?: unknown };
+      return `  ${String(row.serverId)}${row.credentialId ? `  (account ${String(row.credentialId)})` : ''}`;
+    })].join('\n');
 }
 
 function renderModelSet(dto: unknown): string {
@@ -451,6 +502,7 @@ export const CHAT_COMMANDS: CommandModule[] = [
   { path: ['chat', 'model'], run: chatModel },
   { path: ['chat', 'stop'], run: chatStop },
   { path: ['chat', 'credentials'], run: chatCredentials },
+  { path: ['chat', 'connectors'], run: chatConnectors },
   { path: ['chat', 'list'], run: chatList },
   { path: ['chat', 'show'], run: chatShow },
   { path: ['chat', 'send'], run: chatSend },
