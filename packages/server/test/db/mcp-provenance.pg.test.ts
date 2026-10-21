@@ -118,6 +118,27 @@ async function forgeBinding(input: {
   });
 }
 
+/**
+ * A SERVER-written provenance edge — what `execution_spawn` writes inside the
+ * spawn (348), and the only kind 347 lets the §6 schedule branch read.
+ *
+ * Written here as the graph owner under the `spawn` writer because that is the
+ * only way to set `props.provenance`: 347's trigger refuses the marker to
+ * every other writer, which is the whole point of the guard. `write_edge`
+ * therefore CANNOT produce one, and the cells below rely on that.
+ */
+async function markedProvenanceEdge(sessionId: string, loopId: string, space: string) {
+  await scratch.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query("select internal.w1_set_writer('spawn')");
+    await c.query(`insert into public.edges(space_id,src_id,dst_id,type,props,created_by)
+      values($1,$2,$3,'triggered_by',jsonb_build_object('provenance',true),$2)
+      on conflict (src_id,dst_id,type) do update set props = excluded.props`,
+      [space, sessionId, loopId]);
+    await c.query('select internal.w1_set_writer(null)');
+  });
+}
+
 const outcome = async (run: () => Promise<unknown>): Promise<string> => {
   try { await run(); return 'ok'; } catch (error) { return String((error as Error).message); }
 };
@@ -325,13 +346,11 @@ describe('§6 deny matrix — the schedule root (G3)', () => {
 
     for (const [loopId, reason] of [[armed, 'ready'], [unarmed, 'no_human_provenance']] as const) {
       const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
-      // The firing's own `triggered_by` edge. NOTE the ordering caveat reported
-      // to the lead: `createLoopExecutorPort.fire` writes this edge AFTER
-      // `spawnService.spawn` returns, and `bind` runs inside that spawn, so a
-      // FIRST firing does not yet carry it. The rule below is correct and live
-      // for every path where the edge exists; making a first firing reach it is
-      // an ordering fix in the executor, not in this rule.
-      await db.rpc(human('alice', spaceA), 'write_edge', [s.sessionId, loopId, 'triggered_by', '{}', null, randomUUID()]);
+      // The firing's own `triggered_by` edge, MARKED — 347 made the marker the
+      // authority, so an unmarked edge (which is all `write_edge` can produce)
+      // no longer roots anything. This cell used `write_edge` until then; the
+      // forged-edge cell further down is what now covers that shape.
+      await markedProvenanceEdge(s.sessionId, loopId, spaceA);
       const got = await provenanceOf(executor, s.sessionId, s.token);
       expect(got.reason).toBe(reason);
       if (reason === 'ready') {
@@ -437,7 +456,7 @@ describe('§6 deny matrix — the schedule root (G3)', () => {
     const armed = await armLoop(human('bob', spaceA), 'Armed then left');
     expect(await stampOf(armed)).toMatchObject({ armed_by_member_id: people.bob.memberA });
     const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
-    await db.rpc(human('alice', spaceA), 'write_edge', [s.sessionId, armed, 'triggered_by', '{}', null, randomUUID()]);
+    await markedProvenanceEdge(s.sessionId, armed, spaceA);
     expect((await provenanceOf(executor, s.sessionId, s.token)).reason).toBe('ready');
     await scratch.query("update public.members set status='removed', left_at=now() where entity_id=$1", [people.bob.memberA]);
     try {
@@ -947,5 +966,58 @@ describe('§6 — the delegated hop, including bindings written before 343', () 
 
     await scratch.query("update internal.mcp_session_bindings set launcher_auth_kind='' where session_id=$1", [parent.sessionId]);
     expect((await provenanceOf(parent.claims, child.sessionId, child.token, source)).reason).toBe('no_human_provenance');
+  });
+});
+
+/* ===========================================================================
+ * 347 — THE FORGED PROVENANCE EDGE (B46/B49). The one high-signal cell.
+ *
+ * 343 rooted a no-bearer session at the armer of ANY loop it found through a
+ * `triggered_by` edge. `public.write_edge` authorizes on Space MEMBERSHIP
+ * alone (129:98) and `triggered_by` had no writer guard (091:138), so a member
+ * could attach their own session to a loop ARMED BY SOMEONE ELSE and be rooted
+ * at that human — and the forms delivery drain really does bind with no bearer
+ * kind (main.ts:482 -> form-delivery-spawn.ts:108 -> SpawnService.ts:2632),
+ * so it was reachable, not theoretical.
+ * =========================================================================== */
+describe('§6 — a forged triggered_by edge roots nothing (347)', () => {
+  /** The forms-drain / executor claim shape: an identity, NO bearer kind. */
+  const noBearer: DbClaims = { identityId: people.alice.identity, requestId: 'forms-delivery' };
+
+  it('BOB cannot root his own session at a loop ALICE armed, and cannot set the marker', async () => {
+    // Alice arms a loop. Bob is an ordinary member of the same Space.
+    const armed = (await db.rpc<{ entity: { id: string } }>(human('alice', spaceA), 'create_loop',
+      [spaceA, 'Alice armed, Bob forges', null, 'every 1h', personaA, null,
+       'fire', '{}', true, null, null, null, randomUUID()])).entity.id;
+    const [stamp] = await scratch.query<{ armed_by_member_id: string }>(
+      'select armed_by_member_id from public.loops where entity_id=$1', [armed]);
+    expect(stamp?.armed_by_member_id).toBe(people.alice.memberA);
+
+    const bobs = await session(spaceA, people.bob.memberA, personaA, 'bob');
+
+    // THE FORGERY, through the real public door, as Bob. It still SUCCEEDS —
+    // run history is legitimately client-writable and 347 does not change that.
+    expect(await outcome(() => db.rpc(human('bob', spaceA), 'write_edge',
+      [bobs.sessionId, armed, 'triggered_by', '{}', null, randomUUID()]))).toBe('ok');
+
+    // ...and it roots NOTHING. Before 347 this answered `ready` with Alice as
+    // the root, which would have lent Bob's session Alice's connections.
+    const got = await provenanceOf(noBearer, bobs.sessionId, bobs.token);
+    expect(got.reason).toBe('no_human_provenance');
+    expect(got.rootMemberId).toBeUndefined();
+
+    // And Bob cannot simply ask for the marker: only the spawn writer may set
+    // it, so the authority is not reachable from any client door.
+    expect(await outcome(() => db.rpc(human('bob', spaceA), 'write_edge',
+      [bobs.sessionId, armed, 'triggered_by', JSON.stringify({ provenance: true }), null, randomUUID()])))
+      .toMatch(/provenance is recorded by the server/);
+
+    // CONTROL, so the cell proves the GUARD and not merely a broken branch:
+    // the same session with a SERVER-written marked edge does root at Alice.
+    await markedProvenanceEdge(bobs.sessionId, armed, spaceA);
+    const server = await provenanceOf(noBearer, bobs.sessionId, bobs.token);
+    expect(server).toMatchObject({
+      reason: 'ready', via: 'schedule_armed_by', rootMemberId: people.alice.memberA,
+    });
   });
 });
