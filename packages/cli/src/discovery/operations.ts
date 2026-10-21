@@ -210,15 +210,13 @@ const ROWS: Record<OperationName, Row> = {
     tags:['mcp','token','external','revoke'],
     notes:['clients using it stop working immediately, including a call already in flight']},
   /*
-   * NO CLI COMMAND: this is the data behind one block of the session debug view
-   * (§10.6), and reading it in a terminal would mean rendering a bearer chain
-   * of raw ids with no entity titles to resolve them against. `tm8 mcp audit`
-   * is the terminal's answer to "what did this session's connectors do".
+   * `tm8 mcp session provenance` prints the RPC's answer as JSON, bare ids and
+   * all: the session debug view resolves them to titles, and a terminal can
+   * resolve any one of them with `tm8 entity context <id>`.
    */
-  'mcp.sessions.provenance': {cmd:null,
+  'mcp.sessions.provenance': {cmd:['mcp','session','provenance'], syn:'tm8 mcp session provenance <session-id>',
     sum:'Read the provenance recorded for one session: the human root, the bearer chain, and whether that root is still admitted to every Space it crossed',
     authz:'entity',input:'none',tags:['mcp','connector','provenance','root','chain','session','debug'],
-    reason:'the session debug view resolves the chain\'s ids to entities; a terminal rendering would be a list of bare uuids',
     notes:['`recorded:false` is a real answer: the session has no provenance row — launched before the plan, or a chat still on Space defaults',
       '`rootStillAdmitted:false` means the recorded human has since left one of the Spaces the chain crossed, so the connectors have stopped working',
       '`chain` is nearest hop first, and `chainSpaceIds` is positional with it',
@@ -2148,21 +2146,18 @@ const ROWS: Record<OperationName, Row> = {
     ],
   },
   /*
-   * NO CLI COMMAND, and the gap is named rather than hidden: `tm8 chat
-   * connectors` is a WRITE, so a terminal cannot currently look at a thread's
-   * connectors without changing them. This door was added for §10.4's composer
-   * sheet, which has to know "Space defaults" from "Custom" before the user
-   * touches a toggle. A CLI read belongs with the rest of the `chat connectors`
-   * command (one path cannot serve two operations in this table), and is a
-   * follow-up rather than something to fake here.
+   * The READ beside `tm8 chat connectors`, which only writes. Its own path
+   * (`chat connectors show`) because one path cannot serve two operations in
+   * this table; the longest registered prefix wins, so a chat id is never read
+   * as `show`.
    */
   'chat.getMcpSelections': {
-    cmd: null,
+    cmd: ['chat', 'connectors', 'show'],
+    syn: 'tm8 chat connectors show <chat-id>',
     sum: "Read a chat's stored MCP connector selection — null means it is on the Space defaults, resolved fresh each turn",
     authz: 'entity',
     input: 'none',
     tags: ['chat', 'mcp', 'connector', 'tools', 'selection', 'defaults'],
-    reason: 'the terminal form of this read belongs on `tm8 chat connectors`, which today only writes; this door was added for the chat composer sheet',
     notes: [
       '`null` is the ANSWER and not a missing value: the thread has no stored row, so it uses the Space defaults resolved at each turn',
       'a non-empty list, or `[]`, means a human chose it — since 354 a chat\'s own launch no longer writes its resolved defaults back',

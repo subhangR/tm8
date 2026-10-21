@@ -72,6 +72,19 @@ const MCP_AUDIT_COMMAND:CommandModule={path:['mcp','audit'],run:async (cmd):Prom
 }};
 
 /**
+ * `tm8 mcp session provenance <session-id>` — the §6 provenance outcome of one
+ * launch. JSON, because the answer is ids: `recorded:false` is a real answer,
+ * and `rootStillAdmitted` is the server's verdict, printed and never recomputed.
+ */
+const MCP_SESSION_PROVENANCE_COMMAND:CommandModule={path:['mcp','session','provenance'],run:async (cmd):Promise<ExitCode>=>{
+  assertKnownOptions(cmd,[]);
+  const sessionId=cmd.args[0];
+  if(!sessionId)throw new CliError('sessionId is required',EXIT_USAGE);
+  cmd.out.data(await observedInvoke(clientFor(cmd.ctx),'mcp.sessions.provenance',{params:{sessionId},query:{}}),data=>JSON.stringify(data,null,2));
+  return EXIT_OK;
+}};
+
+/**
  * `tm8 mcp catalog list` — the §8.2 connector catalog.
  *
  * Its own module rather than a row in the table above, because the Space is a
@@ -226,14 +239,15 @@ async function mcpTokensRevoke(cmd:CommandContext):Promise<ExitCode> {
 }
 
 /**
- * The table-driven one-operation commands, plus `audit` (§5.6) and the three
- * composites: `catalog list`, whose Space rides the query, `connect`, which
+ * The table-driven one-operation commands, plus `audit` (§5.6), `session
+ * provenance` (§6) and the three composites: `catalog list`, whose Space rides the query, `connect`, which
  * chooses its door from the connector it reads first, and `tokens`, which
  * prints a secret once.
  */
 export const MCP_COMMANDS:CommandModule[]=[
   ...MCP_OP_COMMANDS,
   MCP_AUDIT_COMMAND,
+  MCP_SESSION_PROVENANCE_COMMAND,
   {path:['mcp','catalog','list'],run:mcpCatalogList},
   {path:['mcp','connect'],run:mcpConnect},
   {path:['mcp','tokens','create'],run:mcpTokensCreate},
