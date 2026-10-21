@@ -500,10 +500,22 @@ begin
     raise exception 'Invalid MCP selections' using errcode = '22023';
   end if;
 
-  -- §6, independently of whatever the caller believed. NOTE this runs under the
-  -- ROOT's claims, because that is the transaction `bind` resolves in — so the
-  -- human-bearer terminal sees the root's own kind, and the agent hop is taken
-  -- only when `bind` supplied the source it verified.
+  /*
+   * §6 again, independently of whatever the caller believed.
+   *
+   * THIS RUNS UNDER THE ROOT'S CLAIMS, because that is the transaction `bind`
+   * resolves accounts in. For a human-bearer chain the two derivations converge
+   * by construction: the root's replayed kind is browser|cli, so the walk takes
+   * the human terminal and lands on the same member it started from. For a
+   * SCHEDULE root they do not converge — the root carries no bearer kind, so the
+   * walk reaches the no-bearer branch and looks for THIS session's own loop,
+   * which a delegated CHILD of a schedule-rooted session does not have.
+   *
+   * The consequence is a loud refusal below, not a silent widening: nothing is
+   * bound and nothing is lent. It is unreachable today, because a schedule root
+   * needs the loop-executor ordering fix first (see the header), and it is
+   * recorded on that follow-up task so the shape and its fix land together.
+   */
   provenance := internal.mcp_provenance(p_session, p_source_session, p_source_auth_session);
   if provenance ->> 'reason' = 'ready' then
     v_root := (provenance ->> 'rootMemberId')::uuid;
