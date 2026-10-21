@@ -348,6 +348,46 @@ it('upserts a chat selection, clears it with NULL, and validates structure at th
     [chat, JSON.stringify([{ serverId: randomUUID() }])])).toBe('42501');
 });
 
+/**
+ * B57 (354). THE PROVENANCE COLUMNS ARE THE BIND'S, NOT THE SELECTION WRITE'S.
+ *
+ * 345's upsert named neither `root_member_id`, `root_identity_id`, `chain` nor
+ * `chain_space_ids`, so its `do update` left them where an earlier bind had put
+ * them: a root and chain from one selection, sitting beside the list that
+ * replaced it. `mcp_session_provenance` reports this very row to §10.6, so the
+ * row could answer "recorded: true" with provenance belonging to a selection
+ * the human had already discarded.
+ */
+it('clears the previous bind\'s root and chain when the selection is replaced', async () => {
+  const pick = JSON.stringify([{ serverId: approvedServer }]);
+  await q(MEMBER, 'select public.update_chat_mcp_selections($1,$2::jsonb)', [chat, pick]);
+  // Stand in for an earlier bind having stamped the row. (The real one no
+  // longer writes a chat's launch record at all — 354, S21a — which is the
+  // other half of why these four are always NULL on a chat row.)
+  await database.transaction(async (c) => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query(`update internal.mcp_launch_selections
+       set root_member_id=$2, root_identity_id='someone', chain=array[$1]::uuid[], chain_space_ids=array[$3]::uuid[]
+     where session_id=$1`, [chat, plainMember, space]);
+  });
+  const [stamped] = await q<{ root_member_id: string | null }>(MEMBER,
+    'select root_member_id from internal.mcp_launch_selections where session_id=$1', [chat]);
+  expect(stamped!.root_member_id).toBe(plainMember);
+
+  // The human replaces the selection, and the stale provenance goes with it.
+  await q(MEMBER, 'select public.update_chat_mcp_selections($1,$2::jsonb)', [chat, JSON.stringify([])]);
+  const [after] = await q<{ selections: unknown; root_member_id: string | null;
+    root_identity_id: string | null; chain: string[] | null; chain_space_ids: string[] | null }>(MEMBER,
+    `select selections, root_member_id, root_identity_id, chain, chain_space_ids
+       from internal.mcp_launch_selections where session_id=$1`, [chat]);
+  expect(after!.selections).toEqual([]);
+  expect(after!.root_member_id).toBeNull();
+  expect(after!.root_identity_id).toBeNull();
+  expect(after!.chain).toBeNull();
+  expect(after!.chain_space_ids).toBeNull();
+  await q(MEMBER, 'select public.update_chat_mcp_selections($1,null)', [chat]);
+});
+
 it('refuses a chat selection from anyone but the configuring human', async () => {
   const pick = JSON.stringify([{ serverId: approvedServer }]);
   // An admin of the Space is not the chat's configurer, and connectors ride the

@@ -1,6 +1,6 @@
 import { CollabError, McpSelectionsSchema, isHumanAuthKind, mcpServerKey,
   type McpBoundSelection, type McpSelection } from '@tm8/contract';
-import type { Db, DbClaims } from '../db/types.js';
+import type { Db, DbClaims, Querier } from '../db/types.js';
 import { resolveBearerIdentity } from '../identity/pg-auth.js';
 import { hashToken, parseToken } from '../identity/crypto.js';
 import { resolveMcpSelections } from './definitions.js';
@@ -70,6 +70,26 @@ interface McpProvenance {
    * reading like a failed launch to anything that checks it.
    */
   bound?: { rootMemberId?: string | null; rootIdentityId?: string | null; via?: string | null };
+}
+
+/**
+ * A chat's DEFAULT sources: the entities it is `about` (§7.3).
+ *
+ * Only currently readable, same-space attachment targets, read under the
+ * caller's own claims — an arbitrary reader never lends the chat creator's
+ * credential authority.
+ *
+ * Shared by `bind` and `effectiveChatSelection` on purpose. The orchestrator
+ * compares one turn's effective selection with the last one's to decide whether
+ * a running child may be reused, and two copies of "which targets feed the
+ * defaults" is two places for that comparison to go quietly wrong.
+ */
+export async function chatMcpDefaultTargets(q: Querier, chatId: string, spaceId: string): Promise<string[]> {
+  const about = await q.query<{ id: string }>(`select distinct e.dst_id as id from public.edges e
+    join public.entities t on t.id=e.dst_id
+    where e.src_id=$1 and e.type='about' and e.space_id=$2 and t.deleted_at is null
+      and t.kind in ('task','team_member','work_session') order by e.dst_id limit 33`, [chatId, spaceId]);
+  return about.map(row => row.id);
 }
 
 /** The only writer of runtime grants. Graph metadata is never an authority source. */
@@ -158,6 +178,19 @@ export class McpSessionBindings {
     // field is server-set, but there is no reason for two answers to this.
     const rootMemberId = root?.rootMemberId ?? input.rootMemberId;
     return this.db.tx(launcher, async q => {
+      /*
+       * ONE LINE, TWO MEANINGS, and 354 is what makes the second one true.
+       *
+       * For a WORK SESSION the row is the PIN this session launched with, so a
+       * resume reads it back and the session keeps its connectors for life.
+       * For a CHAT every turn is a resume, and `bind_mcp_session` used to write
+       * the RESOLVED DEFAULTS here on the first turn — so a thread on defaults
+       * pinned them to itself and no later `defaultOn` flip or newly connected
+       * account ever reached it. 354 stops that write for a chat key, which
+       * leaves the two human doors as the only writers of a chat's row: a row
+       * means "a human chose this", and no row means "defaults", re-resolved
+       * below on every turn.
+       */
       const stored = input.resume
         ? await q.rpc<unknown>('read_mcp_launch_selections', [input.sessionId]) : null;
       const picks = stored == null ? input.mcpSelections : McpSelectionsSchema.parse(stored);
@@ -180,14 +213,7 @@ export class McpSessionBindings {
       }
       let targetIds = input.targetIds;
       if (picks === undefined && targetIds === undefined && runtime.runtimeChatId === input.sessionId) {
-        // A chat may be about a task. Use only currently readable, same-space
-        // attachment targets, under this launcher's claims; arbitrary readers
-        // never lend the chat creator's credential authority.
-        const about = await q.query<{ id: string }>(`select distinct e.dst_id as id from public.edges e
-          join public.entities t on t.id=e.dst_id
-          where e.src_id=$1 and e.type='about' and e.space_id=$2 and t.deleted_at is null
-            and t.kind in ('task','team_member','work_session') order by e.dst_id limit 33`, [input.sessionId, input.spaceId]);
-        targetIds = about.map(row => row.id);
+        targetIds = await chatMcpDefaultTargets(q, input.sessionId, input.spaceId);
       }
       const resolved = await resolveMcpSelections(q, {
         spaceId: input.spaceId, teamMemberId: input.teamMemberId,
@@ -274,6 +300,64 @@ export class McpSessionBindings {
           + `chain ${(root?.chain ?? []).join(' <- ')}`);
       }
       return bound;
+    });
+  }
+
+  /**
+   * THE EFFECTIVE SELECTION FOR A CHAT TURN, RESOLVED BUT NOT BOUND (S21c).
+   *
+   * WHY THIS EXISTS AS A SEPARATE READ. `ChatOrchestrator.ensureRuntime` reuses
+   * a live headless child when nothing fixed at spawn has moved, and
+   * `--mcp-config` and `--allowed-tools` are fixed at spawn exactly as `--model`
+   * is. So the selection has to be in that comparison, and the comparison
+   * happens BEFORE the launch is resolved — while `bind` cannot be called
+   * speculatively, because it needs a freshly minted `agent_runtime` token and
+   * that mint atomically replaces the live child's token (105). Binding to find
+   * out whether to rebind would revoke the credential of the very child it was
+   * trying to leave alone.
+   *
+   * So this resolves and returns, and writes nothing: no mint, no
+   * `bind_mcp_session`, no config file. It reads the stored row through the same
+   * door `bind` uses and resolves defaults through the same
+   * `resolveMcpSelections` over the same `chatMcpDefaultTargets`, so it moves
+   * when and only when the bound set would move — a human's
+   * `chat.setMcpSelections`, an admin flipping `defaultOn`, an `equips` change
+   * on the chat's subject, a newly connected or revoked account.
+   *
+   * IT IS NOT AN AUTHORITY AND MUST NEVER BE READ AS ONE. It does not derive
+   * §6 provenance — that needs the agent token — so it approximates the root as
+   * "the claims handed in", which is what a chat's human bearer is anyway.
+   * BOTH SIDES of the orchestrator's comparison come from this same function,
+   * so an approximation that differed systematically from `bind` would still
+   * detect change correctly; what it cannot do is decide whether a connector
+   * may be lent. `bind` remains the only thing that answers that.
+   */
+  async effectiveChatSelection(
+    claims: DbClaims,
+    input: { chatId: string; spaceId: string; teamMemberId: string },
+  ): Promise<McpSelection[]> {
+    if (!claims.identityId) return [];
+    // Mirrors `bind`: a launcher with no HUMAN auth kind has no provable root,
+    // so nothing needing an account resolves. `compose` omits the claim for a
+    // legacy chat whose kind was never recorded, and the same omission must
+    // produce the same answer here.
+    const noHumanRoot = !isHumanAuthKind(claims.authKind ?? '');
+    const launcher: DbClaims = { ...claims, sessionSpaceId: input.spaceId };
+    return this.db.tx(launcher, async q => {
+      const stored = await q.rpc<unknown>('read_mcp_launch_selections', [input.chatId]);
+      const picks = stored == null ? undefined : McpSelectionsSchema.parse(stored);
+      const targetIds = picks === undefined
+        ? await chatMcpDefaultTargets(q, input.chatId, input.spaceId) : undefined;
+      const resolved = await resolveMcpSelections(q, {
+        spaceId: input.spaceId, teamMemberId: input.teamMemberId,
+        ...(targetIds ? { targetIds } : {}),
+        ...(picks !== undefined ? { mcpSelections: picks } : {}),
+      }, { ...(noHumanRoot ? { noHumanRoot: true } : {}) });
+      // Only what would actually be bound. An unready EXPLICIT pick makes the
+      // next turn's `bind` refuse out loud; dropping it here keeps that refusal
+      // from reading as "the selection changed" on every turn until it is fixed.
+      return resolved.selections.filter(s => s.ready).map(s => ({ serverId: s.server.id,
+        ...(s.credentialId ? { credentialId: s.credentialId } : {}) }));
     });
   }
 

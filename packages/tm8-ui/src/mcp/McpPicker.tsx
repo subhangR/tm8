@@ -1,5 +1,5 @@
 import { ConnectorsLink } from './ConnectorsLink';
-import { useLayoutEffect, useId, useRef } from 'react';
+import { useLayoutEffect, useId } from 'react';
 import { useMcpCatalog } from './context';
 import type { McpCatalog, McpSelection, McpServer } from './port';
 import './mcp.css';
@@ -13,17 +13,27 @@ export function readiness(server: McpServer | undefined, selection: McpSelection
   }
   return null;
 }
+/**
+ * The problem with an EXPLICIT selection, and only an explicit one (G15).
+ *
+ * It used to check `value ?? catalog.defaults`, so a Space default with no
+ * connected account blocked a launch nobody had configured. §7.3 settled that
+ * the other way: the server resolves defaults itself and reports one it cannot
+ * open as `skipped: not connected` instead of failing the launch, and the UI
+ * shows it as "needs connect". An untouched picker therefore has no problem to
+ * report, because it is not asserting anything.
+ *
+ * An explicit pick is still held to the old standard. Naming a connector and
+ * giving it no usable account is a request that cannot be honoured, and `bind`
+ * refuses it out loud (B9) — so refusing it here, where the account can still
+ * be chosen, is the better place to say so.
+ */
 export function selectionProblem(catalog: McpCatalog, value: McpSelection[] | undefined): string | null {
-  for (const selected of value ?? catalog.defaults) {
+  for (const selected of value ?? []) {
     const problem = readiness(catalog.servers.find(s => s.id === selected.serverId), selected);
     if (problem) return problem;
   }
   return null;
-}
-
-/** Defaults the launch can actually use: a default with no connected account is left off rather than blocking the launch. */
-export function usableDefaults(catalog: McpCatalog): McpSelection[] {
-  return catalog.defaults.filter(selected => !readiness(catalog.servers.find(s => s.id === selected.serverId), selected));
 }
 
 /**
@@ -31,24 +41,28 @@ export function usableDefaults(catalog: McpCatalog): McpSelection[] {
  * Renders nothing unless there is a connector to choose or a problem to fix, and only
  * blocks the launch for a selection that cannot work; loading, refreshing and an
  * unreadable catalog never block it, because the server resolves defaults itself.
+ *
+ * G15: IT NO LONGER SENDS A TRIMMED DEFAULT LIST. It used to notice that some
+ * default had no connected account and call `onChange(usableDefaults(catalog))`
+ * from a layout effect — which turned "the user chose nothing" into an explicit
+ * selection, computed from whatever the browser could see. §5.3's rule is the
+ * opposite: the field is sent ONLY when the user changed something, so defaults
+ * resolve server-side at launch, under the provenance root's own claims, with
+ * §3's account order and a `skipped: not connected` report for the ones it
+ * cannot open. The browser's view of "usable" was never the authority, and
+ * sending it meant a connector connected between the page load and the launch
+ * was silently left off.
  */
 export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, disabled = false, headless = false, retryClassName }: {
   targetId?: string; teamMemberId?: string; value: McpSelection[] | undefined;
   onChange(value: McpSelection[] | undefined): void; onReady?(ready: boolean): void; disabled?: boolean;
-  /** Keep the readiness and default-trimming work, draw nothing (the picker is drawn elsewhere, e.g. in ＋). */
+  /** Keep the readiness reporting, draw nothing (the picker is drawn elsewhere, e.g. in ＋). */
   headless?: boolean;
   retryClassName?: string;
 }) {
-  const { catalog, error, loading, port, refresh } = useMcpCatalog(targetId, teamMemberId);
+  const { catalog, error, port, refresh } = useMcpCatalog(targetId, teamMemberId);
   const id = useId();
-  const trimmed = useRef<McpSelection[] | undefined>(undefined);
   const problem = catalog ? selectionProblem(catalog, value) : null;
-  const unusableDefaults = value === undefined && !!catalog && !loading && !!problem;
-  useLayoutEffect(() => {
-    if (!unusableDefaults || !catalog) return;
-    trimmed.current = usableDefaults(catalog);
-    onChange(trimmed.current);
-  }, [unusableDefaults, catalog, onChange]);
   useLayoutEffect(() => { onReady?.(!port || !!error || (!!catalog && !problem)); }, [port, catalog, error, problem, onReady]);
   if (!port || headless) return null;
   if (!catalog) return error ? <p className="mcp-error" role="alert">{error} <button type="button" className={retryClassName} onClick={refresh}>Retry connectors</button></p> : null;
@@ -56,7 +70,10 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, di
   const attachable = catalog.servers.filter(server => server.canAttach);
   if (attachable.length === 0 && !problem) return null;
   const selected = value ?? catalog.defaults;
-  const usingDefaults = value === undefined || (value === trimmed.current);
+  // "Use defaults" is pressed exactly when the field is omitted. It used to
+  // also count the trimmed list as defaults, which is how a trimmed launch
+  // could look like an inherited one.
+  const usingDefaults = value === undefined;
   return <fieldset className="mcp-picker" disabled={disabled} aria-describedby={`${id}-help`}>
     <legend>Connectors</legend>
     <p id={`${id}-help`}>Choose the tools and account for this session.</p>

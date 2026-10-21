@@ -597,6 +597,70 @@ describe('TM8 Chat durable orchestration', () => {
     expect(runtime.turns).toHaveLength(2);
   });
 
+  /*
+   * §5.3 / G4. The whole point of `chat.setMcpSelections`.
+   *
+   * `--mcp-config` and `--allowed-tools` are argv on a running child, so a
+   * selection that moved after the child started can only arrive by closing it
+   * and resuming. Before the fingerprint joined the reuse key, the change was
+   * accepted, stored, and then ignored for the rest of the thread's life.
+   *
+   * Two turns, and the assertion is on BOTH halves: the second turn's child
+   * must be a restart carrying the new connector's allowed-tools, and the
+   * conversation must survive it (`resume`, not a cold start).
+   */
+  it('restarts the child at the next turn when the chat selection changed', async () => {
+    const base = { ...claim('cold'), agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, runtimeState: 'live' }], []);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    const selections = [
+      [{ serverId: 'aaaaaaaa-0000-4000-8000-000000000001' }],
+      [{ serverId: 'aaaaaaaa-0000-4000-8000-000000000001' },
+       { serverId: 'bbbbbbbb-0000-4000-8000-000000000002', credentialId: 'cccccccc-0000-4000-8000-000000000003' }],
+    ];
+    let turn = 0;
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveMcpSelection: async () => selections[Math.min(turn++, 1)]!,
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: (selections[Math.min(turn - 1, 1)] ?? [])
+          .map(selection => `mcp__${selection.serverId}__*`) }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts).toHaveLength(2);
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(runtime.starts[0]?.allowedTools).toHaveLength(1);
+    expect(runtime.starts[1]?.allowedTools).toHaveLength(2);
+    expect(runtime.starts[1]?.resume).toEqual({ nativeSessionId: NATIVE, cwd: base.cwd });
+    expect(runtime.turns).toHaveLength(2);
+  });
+
+  /*
+   * The other half, and the one a naive fix gets wrong: an UNCHANGED selection
+   * must not restart anything. A per-turn rebind would re-mint the thread's
+   * `agent_runtime` token (105 replaces it atomically), killing the tm8 tools
+   * of the very child it was trying to keep.
+   */
+  it('reuses the child when the chat selection has not changed', async () => {
+    const base = { ...claim('cold'), agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, runtimeState: 'live' }], []);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      // Same pair, reported in the opposite order: the fingerprint sorts, so a
+      // resolver that is merely unstable in its ordering is not a change.
+      resolveMcpSelection: async () => (runtime.starts.length
+        ? [{ serverId: 'bbbbbbbb-0000-4000-8000-000000000002' }, { serverId: 'aaaaaaaa-0000-4000-8000-000000000001' }]
+        : [{ serverId: 'aaaaaaaa-0000-4000-8000-000000000001' }, { serverId: 'bbbbbbbb-0000-4000-8000-000000000002' }]),
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: [] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts).toHaveLength(1);
+    expect(runtime.closes).toEqual([]);
+    expect(runtime.turns).toHaveLength(2);
+  });
+
   it('stops a live child when a credential mutation makes its selection unavailable', async () => {
     const events: string[] = [];
     const db = new FakeDb({ ...claim('cold'), agentMessageId: AGENT_MESSAGE }, events);
