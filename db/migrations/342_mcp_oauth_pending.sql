@@ -121,5 +121,6 @@ revoke all on function public.create_mcp_oauth_pending(bytea,uuid,uuid,integer,t
 revoke all on function public.take_mcp_oauth_pending(bytea) from public;
 grant execute on function public.create_mcp_oauth_pending(bytea,uuid,uuid,integer,text,text,bytea,bytea,text,text,timestamptz) to tm8_app;
 grant execute on function public.take_mcp_oauth_pending(bytea) to tm8_app;
+analyze internal.mcp_oauth_pending;
 
 reset role;
