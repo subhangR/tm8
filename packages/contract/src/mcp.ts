@@ -6,7 +6,14 @@ const Name = z.string().min(1).max(80).regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/)
 const EnvKey = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(128);
 const HeaderKey = z.string().regex(/^[A-Za-z][A-Za-z0-9-]*$/).max(128);
 const PublicUrl = z.string().url().max(2048).refine(value => {
-  const url = new URL(value);
+  // `new URL` CANNOT be the thing that decides. Zod runs a refinement even
+  // after `.url()` has failed, so a malformed value reaches here and an
+  // unguarded constructor throws a TypeError straight out of `safeParse` —
+  // which the facade can only answer as a 500 about input the caller could have
+  // fixed (lead review of #1318, finding 4; the defect is older than that PR
+  // and reached every `mcp.servers.*` op that parses a definition).
+  let url: URL;
+  try { url = new URL(value); } catch { return false; }
   return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password && !url.hash && !url.search;
 }, 'URLs must be HTTP(S) without credentials, query secrets or fragments');
 
@@ -322,7 +329,7 @@ export const McpOAuthBeginInputSchema = z.object({ ...Command, serverId: Id, lab
   scope: McpCredentialScopeSchema.optional(), returnTo: SameOriginPath.optional() }).strict();
 export const McpOAuthCallbackInputSchema = z.object({ state: z.string().min(1).max(2048), code: z.string().min(1).max(8192).optional(), error: z.string().min(1).max(128).optional(), issuer: PublicUrl.optional() }).strict().refine(value => Boolean(value.code) !== Boolean(value.error), 'OAuth callback requires exactly one of code or error');
 /**
- * What a non-admin may ASK for (§11 `mcp.servers.request`, B13). It is the
+ * What a non-admin may ASK for (§11 `mcp.servers.request`, B13/B23). It is the
  * ordinary definition schema minus everything a member must not be able to put
  * in front of an admin's approval click:
  *
@@ -331,23 +338,37 @@ export const McpOAuthCallbackInputSchema = z.object({ state: z.string().min(1).m
  *    `approved()` first, so NOTHING fetches a requested URL before an admin
  *    says yes.
  *  - stdio is refused outright — a local command is an admin-and-node-trust
- *    decision, never a request.
+ *    decision, never a request. HTTPS only, for the same reason.
  *  - `clientSecretEnv` is refused: a member must not name a server environment
  *    secret for an admin to approve by accident. An admin sets it afterwards.
  *  - the trust and reach flags (`stdioTrusted`, `allowPrivateNetwork`,
  *    `defaultOn`, `allowExternalClients`, `firstParty`) and `gates` are refused,
  *    so a request can never arrive pre-armed.
+ *  - `catalogId`, `serverKey` and `provenance` are refused, because all three
+ *    are CLAIMS ABOUT IDENTITY rather than configuration (B23): the provider's
+ *    face in Discover, the tool prefix the model reads, and the line an
+ *    administrator reads before approving. A CATALOG request names its entry by
+ *    `catalogId` on the REQUEST and the server supplies the definition, so a
+ *    member never gets to pair a provider's name with their own URL.
  */
 export const McpRequestedServerDefinitionSchema = McpServerDefinitionSchema.superRefine((value, ctx) => {
   const reject = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
   if (value.transport !== 'http') reject('a requested connector must be an HTTP connector');
   if (value.approved) reject('a requested connector cannot arrive approved');
-  if (!value.url || new URL(value.url).protocol !== 'https:') reject('a requested connector needs an https URL');
+  // `url` has already passed `PublicUrl`, so it parses — but only when it is
+  // PRESENT, and an http-transport definition with no url fails a different
+  // refinement that does not stop this one from running. Constructing `new URL`
+  // on undefined would throw a TypeError out of the schema, which the facade
+  // can only answer as a 500 (lead review, finding 4).
+  if (value.url === undefined || !value.url.startsWith('https://')) reject('a requested connector needs an https URL');
   if (value.auth.type === 'oauth2' && value.auth.clientSecretEnv) reject('an administrator sets the OAuth client secret after approval');
   for (const field of ['stdioTrusted', 'allowPrivateNetwork', 'defaultOn', 'allowExternalClients', 'firstParty'] as const) {
     if (value[field] !== undefined) reject(`only an administrator sets ${field}`);
   }
   if (value.gates) reject('only an administrator sets tool gates');
+  for (const field of ['catalogId', 'serverKey', 'provenance'] as const) {
+    if (value[field] !== undefined) reject(`a custom connector request cannot claim ${field}; name a catalogId on the request instead`);
+  }
 });
 
 /**

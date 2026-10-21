@@ -116,8 +116,9 @@ describe('what a member may request', () => {
 
   it('admits an inert https connector', () => {
     expect(ok()).toBe(true);
-    expect(ok({ catalogId: 'notion' })).toBe(true);
-    expect(ok({ provenance: 'our internal docs server' })).toBe(true);
+    // No `catalogId` and no `provenance` here any more: both are identity
+    // claims a custom request may not make (B23), asserted below.
+    expect(ok({ enabled: false })).toBe(true);
   });
 
   it('refuses everything only an administrator may set', () => {
@@ -132,5 +133,31 @@ describe('what a member may request', () => {
       expect(ok({ [flag]: false }), `${flag} (false is still a decision)`).toBe(false);
     }
     expect(ok({ gates: { send: false } })).toBe(false);
+  });
+
+  it('refuses a custom request that claims a catalog identity', () => {
+    // B23. All three are claims about WHO a connector is rather than how it is
+    // configured: the provider's face in Discover, the tool prefix the model
+    // reads, and the line an administrator reads before approving. A catalog
+    // request names its entry on the REQUEST and the server supplies the
+    // definition, so a member never pairs a provider's name with their own URL.
+    expect(ok({ catalogId: 'notion' })).toBe(false);
+    expect(ok({ serverKey: 'notion' })).toBe(false);
+    expect(ok({ provenance: 'Notion remote MCP server (official).' })).toBe(false);
+  });
+
+  it('answers a malformed URL with a validation failure, never a thrown TypeError', () => {
+    // The refinement used to call `new URL(value.url!)` after `.url()` had
+    // already failed, so a bad URL escaped as a TypeError — a 500 about input
+    // that was the caller's to fix (lead review, finding 4).
+    for (const url of ['not-a-url', '', 'https://user:pass@docs.example.test/mcp']) {
+      expect(() => McpRequestedServerDefinitionSchema.safeParse({ ...base, url })).not.toThrow();
+      expect(McpRequestedServerDefinitionSchema.safeParse({ ...base, url }).success, url).toBe(false);
+    }
+    // An http-transport definition with NO url at all reaches the same
+    // refinement, and must not construct a URL from undefined.
+    const { url: _dropped, ...noUrl } = base;
+    expect(() => McpRequestedServerDefinitionSchema.safeParse(noUrl)).not.toThrow();
+    expect(McpRequestedServerDefinitionSchema.safeParse(noUrl).success).toBe(false);
   });
 });

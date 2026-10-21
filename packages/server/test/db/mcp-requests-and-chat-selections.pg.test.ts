@@ -35,10 +35,24 @@ const ADMIN = 'mcp-req-admin';
 const MEMBER = 'mcp-req-member';
 const OUTSIDE = 'mcp-req-outside';
 
-/** A request body shaped exactly as `mcp.servers.request` sends one. */
+/**
+ * A CUSTOM request body, shaped exactly as `mcp.servers.request` sends one. It
+ * carries no `catalogId`, `serverKey` or `provenance` — a custom request claims
+ * no identity (B23), and the fixtures below assert each of those refusals.
+ */
 const request = (name: string, over: Record<string, unknown> = {}) => JSON.stringify({
-  name, transport: 'http', url: 'https://example.test/mcp', envKeys: [], headerKeys: [],
-  auth: { type: 'oauth2' }, approved: false, enabled: true, catalogId: 'notion', ...over,
+  name, transport: 'http', url: 'https://docs.example.test/mcp', envKeys: [], headerKeys: [],
+  auth: { type: 'oauth2' }, approved: false, enabled: true, ...over,
+});
+/**
+ * A CATALOG request body: the definition the SERVER supplies from MCP_CATALOG,
+ * which is the only shape that may carry a catalogId. Its URL has to be that
+ * entry's own, which is exactly what the identity rule pins.
+ */
+const catalogRequest = (over: Record<string, unknown> = {}) => JSON.stringify({
+  name: 'notion', transport: 'http', url: 'https://mcp.notion.com/mcp', envKeys: [], headerKeys: [],
+  auth: { type: 'oauth2' }, approved: false, enabled: true, catalogId: 'notion',
+  provenance: 'Notion remote MCP server (official). OAuth with dynamic client registration.', ...over,
 });
 
 /**
@@ -177,6 +191,9 @@ it('serves the catalog statically, and per Space says where each entry is alread
     query: new URLSearchParams({ spaceId: space }),
   });
   expect(afterward.items.find((entry) => entry.id === 'slack')?.added).toBeUndefined();
+  // And the approved Notion one goes too, so the tests below start from a Space
+  // with no live `notion` holding that name and server key.
+  await q(ADMIN, 'select public.delete_entity($1,$2,$3)', [notion.id, adminMember, `del-${randomUUID()}`]);
 });
 
 it('refuses a request for an unknown or not-yet-available catalog entry', async () => {
@@ -345,4 +362,176 @@ it('refuses a chat selection from anyone but the configuring human', async () =>
   // A chat that does not exist is the SAME refusal, never a different error
   // that would tell a caller whether it exists.
   expect(await refusal(MEMBER, 'select public.update_chat_mcp_selections($1,$2::jsonb)', [randomUUID(), pick])).toBe('42501');
+});
+
+/**
+ * B23. A catalogId is an IDENTITY CLAIM, and these are the refusals that make it
+ * one. They bind ADMINISTRATORS as well — the spoof does not need a member to
+ * perform it, and the Connectors page renders a provider's name, logo and help
+ * text from `catalogId` alone.
+ */
+it('pins a catalogId to its catalog entry, for administrators too', async () => {
+  const create = (over: Record<string, unknown>) => refusal(ADMIN,
+    'select public.create_mcp_server_entity($1,$2::jsonb,$3,$4)',
+    [space, JSON.stringify({
+      name: 'identity' + Math.random().toString(36).slice(2, 8), transport: 'http',
+      url: 'https://mcp.notion.com/mcp', envKeys: [], headerKeys: [],
+      auth: { type: 'oauth2' }, approved: true, catalogId: 'notion', ...over,
+    }), adminMember, `cr-${randomUUID()}`]);
+
+  // The honest shape is accepted: Notion's id with Notion's endpoint.
+  expect(await create({})).toBe('no-error');
+  // THE SPOOF: Notion's badge on someone else's server.
+  expect(await create({ url: 'https://evil.example.test/mcp' })).toBe('22023');
+  // An id no catalog entry owns.
+  expect(await create({ catalogId: 'notion2' })).toBe('22023');
+  // An entry tm8 has announced but cannot serve yet has no endpoint, so every
+  // URL offered for it is the wrong one. t-google-first-party adds the URL to
+  // internal.mcp_catalog and to MCP_CATALOG together.
+  expect(await create({ catalogId: 'google.gmail', firstParty: true })).toBe('22023');
+  // firstParty has to agree with the entry in both directions.
+  expect(await create({ firstParty: true })).toBe('22023');
+  expect(await refusal(ADMIN, 'select public.create_mcp_server_entity($1,$2::jsonb,$3,$4)',
+    [space, JSON.stringify({
+      name: 'hostedbynobody', transport: 'http', url: 'https://else.example.test/mcp',
+      envKeys: [], headerKeys: [], auth: { type: 'oauth2' }, approved: true, firstParty: true,
+    }), adminMember, `cr-${randomUUID()}`])).toBe('22023');
+});
+
+it('refuses a custom request that claims a catalog identity', async () => {
+  // Each of these is the attack in one field: the provider's face in Discover,
+  // the tool prefix the model reads, and the line an admin reads before
+  // approving. The URL in `request()` is the requester's own.
+  for (const claim of [
+    { catalogId: 'notion' },
+    { serverKey: 'notion' },
+    { provenance: 'Notion remote MCP server (official).' },
+  ]) {
+    expect(await refusal(MEMBER, 'select public.request_mcp_server_entity($1,$2::jsonb,null,$3,$4)',
+      [space, request('claimer', claim), plainMember, `req-${randomUUID()}`]), JSON.stringify(claim)).toBe('22023');
+  }
+  // And a catalogId whose URL is the member's own is refused by the identity
+  // rule even if the request predicate let it through.
+  expect(await refusal(MEMBER, 'select public.request_mcp_server_entity($1,$2::jsonb,null,$3,$4)',
+    [space, catalogRequest({ url: 'https://evil.example.test/mcp' }), plainMember, `req-${randomUUID()}`])).toBe('22023');
+});
+
+/**
+ * B22. Uniqueness over LIVE rows. 296's `unique(space_id,title)` outlived a soft
+ * delete, so deleting a connector reserved its name in that Space for ever and a
+ * withdrawn request could squat on `notion` permanently.
+ */
+it('frees a connector name on delete and refuses a restore into a taken one', async () => {
+  const first = await requestConnector(MEMBER, plainMember, request('squatme'));
+  // The name is held while the request is live.
+  expect(await refusal(MEMBER, 'select public.request_mcp_server_entity($1,$2::jsonb,null,$3,$4)',
+    [space, request('squatme'), plainMember, `req-${randomUUID()}`])).toBe('23505');
+  // Withdrawing frees it, which is the whole point.
+  await q(MEMBER, 'select public.delete_entity($1,$2,$3)', [first, plainMember, `del-${randomUUID()}`]);
+  const second = await requestConnector(MEMBER, plainMember, request('squatme'));
+  expect(second).not.toBe(first);
+
+  // A restore now has to find its name free, and raises 23505 rather than
+  // quietly producing two live `squatme` connectors.
+  expect(await refusal(ADMIN, 'select public.restore_entity($1,$2,$3)', [first, adminMember, `res-${randomUUID()}`]))
+    .toBe('23505');
+  // With the live one gone, the same restore succeeds.
+  await q(MEMBER, 'select public.delete_entity($1,$2,$3)', [second, plainMember, `del-${randomUUID()}`]);
+  expect(await refusal(ADMIN, 'select public.restore_entity($1,$2,$3)', [first, adminMember, `res-${randomUUID()}`]))
+    .toBe('no-error');
+  await q(ADMIN, 'select public.delete_entity($1,$2,$3)', [first, adminMember, `del-${randomUUID()}`]);
+});
+
+it('lets a member withdraw only a NEVER-approved request', async () => {
+  const id = await requestConnector(MEMBER, plainMember, request('onceapproved'));
+  const [v] = await q<{ version: number }>(MEMBER, 'select version from public.entities where id=$1', [id]);
+  // An admin approves it, then suspends it. `approved` is false again, but it
+  // has BEEN approved, and `approved_at` is what remembers that (finding 6).
+  const definition = (approved: boolean) => JSON.stringify({
+    name: 'onceapproved', transport: 'http', url: 'https://docs.example.test/mcp',
+    envKeys: [], headerKeys: [], auth: { type: 'oauth2' }, approved, enabled: true,
+  });
+  await q(ADMIN, 'select public.update_mcp_server_entity($1,$2,$3::jsonb,$4,$5)',
+    [id, v!.version, definition(true), adminMember, `up-${randomUUID()}`]);
+  const [v2] = await q<{ version: number }>(MEMBER, 'select version from public.entities where id=$1', [id]);
+  await q(ADMIN, 'select public.update_mcp_server_entity($1,$2,$3::jsonb,$4,$5)',
+    [id, v2!.version, definition(false), adminMember, `up-${randomUUID()}`]);
+  const [stamp] = await q<{ stamped: boolean }>(MEMBER,
+    'select approved_at is not null as stamped from public.mcp_servers where entity_id=$1', [id]);
+  expect(stamp!.stamped).toBe(true);
+  expect(await refusal(MEMBER, 'select public.delete_entity($1,$2,$3)', [id, plainMember, `del-${randomUUID()}`]))
+    .toBe('42501');
+  // The admin still can, and that also frees the cap slot this test used.
+  await q(ADMIN, 'select public.delete_entity($1,$2,$3)', [id, adminMember, `del-${randomUUID()}`]);
+});
+
+/**
+ * B22 and B25, the two halves of adoption. A second ask is the same request; an
+ * admin's create is told which connector to approve instead.
+ */
+it('returns the open request for a repeat catalog ask, and tells an admin to approve it', async () => {
+  const first = await requestConnector(MEMBER, plainMember, catalogRequest());
+  // A second member asking for Notion is the same decision for an admin, so it
+  // is the same row — not a second one, which would collide on the name anyway.
+  const again = await requestConnector(ADMIN, adminMember, catalogRequest());
+  expect(again).toBe(first);
+  const [open] = await q<{ found: string | null }>(MEMBER,
+    'select public.open_mcp_catalog_request($1,$2) as found', [space, 'notion']);
+  expect(open!.found).toBe(first);
+
+  // B25: the admin's "Add to Space" is answered with the id to approve.
+  await expect(call('mcp.servers.create', ADMIN, {
+    params: { spaceId: space },
+    body: {
+      spaceId: space, clientMutationId: `cr-${randomUUID()}`,
+      definition: {
+        name: 'notion', transport: 'http', url: 'https://mcp.notion.com/mcp', envKeys: [], headerKeys: [],
+        auth: { type: 'oauth2' }, approved: true, catalogId: 'notion',
+      },
+    },
+  })).rejects.toMatchObject({ code: 'conflict', details: { serverId: first, catalogId: 'notion' } });
+
+  // Approving the existing one is what the admin meant, and it works.
+  const [version] = await q<{ version: number }>(ADMIN, 'select version from public.entities where id=$1', [first]);
+  const [approved] = await q<{ result: unknown }>(ADMIN, 'select public.update_mcp_server_entity($1,$2,$3::jsonb,$4,$5) as result', [
+    first, version!.version,
+    JSON.stringify({
+      name: 'notion', transport: 'http', url: 'https://mcp.notion.com/mcp', envKeys: [], headerKeys: [],
+      auth: { type: 'oauth2' }, approved: true, catalogId: 'notion',
+    }),
+    adminMember, `up-${randomUUID()}`,
+  ]);
+  expect(approved!.result).toBeTruthy();
+  // Once approved it is no longer an OPEN request, so the next create is free to
+  // add a second Notion workspace deliberately.
+  const [closed] = await q<{ found: string | null }>(MEMBER,
+    'select public.open_mcp_catalog_request($1,$2) as found', [space, 'notion']);
+  expect(closed!.found).toBeNull();
+  await q(ADMIN, 'select public.delete_entity($1,$2,$3)', [first, adminMember, `del-${randomUUID()}`]);
+});
+
+/**
+ * THE DRIFT TEST (B23). `internal.mcp_catalog` is a second copy of the catalog,
+ * and this is what keeps it honest: a provider added to one side and not the
+ * other fails here rather than leaving a hole in the identity rule.
+ */
+it('holds the SQL catalog equal to MCP_CATALOG, entry by entry', async () => {
+  for (const entry of MCP_CATALOG) {
+    const [row] = await q<{ catalog_id: string; url: string | null; first_party: boolean }>(MEMBER,
+      'select * from internal.mcp_catalog($1)', [entry.id]);
+    expect(row, `${entry.id} is missing from internal.mcp_catalog`).toBeTruthy();
+    expect(row!.url ?? null, `${entry.id} url`).toBe(entry.definition?.url ?? null);
+    expect(row!.first_party, `${entry.id} firstParty`).toBe(entry.kind === 'first_party');
+    // An entry with no endpoint is exactly an entry that is not available yet.
+    expect(row!.url === null, `${entry.id} availability`).toBe(!entry.available);
+  }
+  // And nothing in SQL that the TS catalog does not have: the ids are the join
+  // key the Discover tab uses, so an extra one would be unreachable and an
+  // unexplained hole in the identity rule.
+  const ids = MCP_CATALOG.map((entry) => entry.id);
+  for (const stray of ['linear', 'github', 'atlassian', 'gmail', '']) {
+    expect(ids).not.toContain(stray);
+    const rows = await q(MEMBER, 'select * from internal.mcp_catalog($1)', [stray]);
+    expect(rows, `internal.mcp_catalog knows ${stray}`).toHaveLength(0);
+  }
 });

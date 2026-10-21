@@ -225,6 +225,23 @@ export async function resolveMcpSelections(q:Querier,input:McpResolveInput,optio
   return {selections:resolved,ready:resolved.every(s=>s.ready),...(skipped.length?{skipped}:{})};
 }
 
+/**
+ * B25. An admin adding a catalog connector a member has ALREADY requested means
+ * "approve that one" — the open request holds the name, so without this they
+ * would meet a bare unique-index violation and no id to act on.
+ *
+ * Answering `conflict` with the existing `serverId` makes adoption reachable
+ * from every door, the CLI included: approve it with `mcp.servers.update`
+ * (approved=true) instead of creating a second connector for one provider.
+ */
+async function refuseIfOpenCatalogRequest(q:Querier,spaceId:string,definition:McpServerDefinition):Promise<void> {
+  if(!definition.catalogId)return;
+  const open=await q.rpc<string|null>('open_mcp_catalog_request',[spaceId,definition.catalogId]);
+  if(open)throw new CollabError('conflict',
+    `An open request for ${definition.catalogId} exists in this space; approve it instead of adding a second connector`,
+    {details:{serverId:open,catalogId:definition.catalogId}});
+}
+
 export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:FacadeDeps):void {
   registry.register('mcp.servers.list',async ctx=>{
     const spaceId=requireUuidParam(ctx,'spaceId');
@@ -247,6 +264,7 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
   registry.register('mcp.servers.create',async ctx=>{
     const input=McpServerCreateInputSchema.parse({...(ctx.body as Record<string, unknown>),spaceId:requireUuidParam(ctx,'spaceId')});
     return deps.db.tx(claimsFor(await deps.owner(),ctx,commandEnvelope(ctx)),async q=>{
+      await refuseIfOpenCatalogRequest(q,input.spaceId,input.definition);
       const raw=await q.rpc<{entity:{id:string}}>('create_mcp_server_entity',[input.spaceId,JSON.stringify(input.definition),input.actorId??null,input.clientMutationId]);
       return publicView(await loadMcpServer(q,raw.entity.id));
     });
@@ -320,6 +338,7 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
     return deps.db.tx(claimsFor(await deps.owner(),ctx,commandEnvelope(ctx)),async q=>{
       const items=[];
       for(const [index,definition] of input.definitions.entries()){
+        await refuseIfOpenCatalogRequest(q,input.spaceId,definition);
         const raw=await q.rpc<{entity:{id:string}}>('create_mcp_server_entity',[input.spaceId,JSON.stringify(definition),input.actorId??null,`${input.clientMutationId}:${index}`]);
         items.push(publicView(await loadMcpServer(q,raw.entity.id)));
       }
