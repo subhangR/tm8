@@ -796,6 +796,18 @@
 .tws-entity-host:has(.pn-panel[data-archetype='reader'] [data-stance='edit']) > .tws-titlebar {
   padding-left: var(--pn-space-3);
 }
+/* THE TASK PAGE IS FLUSH LEFT (task 01a15e22: "the title should start from
+   the left most"). Its body does not sit in the reading measure, so its title
+   takes the body's own left padding (`.sb-body--two-column`) instead of the
+   measure's centred edge. */
+.tws-entity-host:has(.sb-body--two-column) > .tws-titlebar {
+  padding-left: var(--pn-space-6);
+}
+@container (max-width: 760px) {
+  .tws-entity-host:has(.sb-body--two-column) > .tws-titlebar {
+    padding-left: var(--pn-space-4);
+  }
+}
 .cv2-root .tws-panel .pn-panel[data-archetype='reader']:has([data-stance='edit']) .pn-embedded-head__pills {
   margin-inline: 0;
 }

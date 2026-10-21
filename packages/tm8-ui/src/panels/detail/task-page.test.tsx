@@ -126,6 +126,18 @@ describe('the two-column page', () => {
     expect(screen.queryByTestId('panel-embedded-head')).toBeNull();
   });
 
+  it('folds the properties under one Details row, with a summary, closed until asked', () => {
+    mount();
+    const rail = screen.getByTestId('subtree-rail');
+    const toggle = screen.getByTestId('subtree-details-toggle');
+    expect(rail.hidden).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toContain('Details');
+    fireEvent.click(toggle);
+    expect(rail.hidden).toBe(false);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('is a page layout only: a pinned panel keeps the stacked body', () => {
     mount(TASK, { embedded: false });
     expect(screen.getByTestId('subtree-body').getAttribute('data-layout')).toBeNull();
@@ -415,6 +427,8 @@ describe('the rail refuses Done while the checklist is open, and says why', () =
   });
   const option = (id: string) => {
     const rail = screen.getByTestId('subtree-rail');
+    // The properties are folded under the Details row until it is opened.
+    if (rail.hidden) fireEvent.click(screen.getByTestId('subtree-details-toggle'));
     fireEvent.click(within(rail).getByTestId('row-state-select'));
     return within(rail)
       .getAllByRole('menuitemradio')
