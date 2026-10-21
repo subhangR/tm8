@@ -31,9 +31,13 @@ const FileId = z.string().min(1).max(200).describe('Drive file id.');
 /** What `export_doc` may ask Google to render. Text formats only: the result goes back to the model as text. */
 const ExportType = z.enum(['text/plain', 'text/markdown', 'text/html', 'text/csv', 'application/json']);
 
+/** Which granted scope lets each tool work. */
+const FILE = ['https://www.googleapis.com/auth/drive.file'];
+
 export const DRIVE_TOOLS: readonly GoogleTool[] = [
   tool({
     name: 'search_files',
+    scopes: FILE,
     description: 'Search the Drive files tm8 can see (files created with tm8 or opened with it) by name or content.',
     input: z.object({
       query: z.string().max(500).optional().describe('Words to find in the file name or content. Omit to list recent files.'),
@@ -54,6 +58,7 @@ export const DRIVE_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'get_file',
+    scopes: FILE,
     description: 'Read a file\'s metadata and, for a text file, its content. Use export_doc for Google Docs, Sheets and Slides.',
     input: z.object({ fileId: FileId, includeContent: z.boolean().optional().describe('Also return the content of a text file (default true).') }).strict(),
     async run(api, input) {
@@ -66,6 +71,7 @@ export const DRIVE_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'export_doc',
+    scopes: FILE,
     description: 'Export a Google Doc, Sheet or Slides file as text (plain text, Markdown, HTML or CSV).',
     input: z.object({ fileId: FileId, mimeType: ExportType.optional().describe('Format to export to (default text/plain).') }).strict(),
     async run(api, input) {
@@ -76,6 +82,7 @@ export const DRIVE_TOOLS: readonly GoogleTool[] = [
   }),
   tool({
     name: 'create_file',
+    scopes: FILE,
     description: 'Create a text file in Drive, optionally converted to a Google Doc. The new file is one tm8 can read later.',
     input: z.object({
       name: z.string().min(1).max(255).describe('File name.'),

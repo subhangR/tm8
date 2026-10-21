@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { GoogleEndpoints } from '../../src/mcp/first-party/google/endpoints.js';
 
@@ -5,10 +6,14 @@ import type { GoogleEndpoints } from '../../src/mcp/first-party/google/endpoints
  * A FIXTURE Google: the OAuth server (token, revoke, userinfo) and the subset of
  * the Gmail, Calendar and Drive REST APIs the first-party host calls, on a
  * loopback port. It keeps the provider's rules that matter to tm8 — a code is
- * single-use, the client secret is checked, an unknown or revoked access token
- * answers 401, a refresh issues a new access token and (like Google) normally
- * no new refresh token — and records every request so a test can assert on
- * exactly what left tm8.
+ * single-use and bound to its PKCE challenge, redirect URI and client; the
+ * client secret is checked; an unknown or revoked access token answers 401; a
+ * token reaches only the APIs its scopes cover (403 otherwise); consent is
+ * incremental, so with include_granted_scopes a new token carries the
+ * account's earlier grant too and the token response reports the union; a
+ * refresh issues a new access token and (like Google) normally no new refresh
+ * token — and records every request so a test can assert on exactly what left
+ * tm8.
  */
 export interface GoogleFixtureRequest {
   method: string;
@@ -25,8 +30,17 @@ export interface GoogleFixture {
   requests: GoogleFixtureRequest[];
   client: { clientId: string; clientSecret: string };
   email: string;
-  /** Issue an authorization code, as the consent screen would after a redirect. */
-  issueCode(scope?: string): string;
+  /**
+   * The consent screen: the person approves the authorization URL tm8 sent them
+   * to, and Google redirects back with a code bound to that URL's PKCE
+   * challenge, redirect URI and client. `grant` is what the person left ticked
+   * (granular consent); by default everything asked for.
+   */
+  issueCode(authorizationUrl: URL, grant?: readonly string[]): string;
+  /** The account's whole grant to the client, as Google holds it. */
+  readonly grant: ReadonlySet<string>;
+  /** The person removes scopes at Google: from the grant and from every live token. */
+  removeScopes(scopes: readonly string[]): void;
   /** The access token currently honoured. */
   readonly accessToken: string;
   readonly refreshToken: string;
@@ -84,23 +98,36 @@ export async function startGoogleFixture(): Promise<GoogleFixture> {
   const client = { clientId: 'fixture-client.apps.googleusercontent.com', clientSecret: 'fixture-client-secret-canary' };
   const email = 'fixture.user@example.test';
   const requests: GoogleFixtureRequest[] = [];
-  const codes = new Map<string, string>();
-  const live = new Set<string>();
+  const codes = new Map<string, { scopes: Set<string>; challenge: string; redirect: string; clientId: string }>();
+  /** Live access tokens, each with the scopes it carries. */
+  const live = new Map<string, Set<string>>();
+  const refreshTokens = new Set<string>();
+  const grant = new Set<string>();
   let accessToken = ''; let refreshToken = ''; let issued = 0; let refreshRevoked = false;
   let server!: Server;
   const fixture: GoogleFixture = {
     origin: '', endpoints: undefined as unknown as GoogleEndpoints, requests, client, email,
     failUserinfo: false, accessTtl: 3599, drafts: [], sent: [],
-    issueCode(scope = 'openid email') { const code = `4/fixture-code-${codes.size + 1}-${Date.now()}`; codes.set(code, scope); return code; },
+    issueCode(authorizationUrl, ticked) {
+      const asked = (authorizationUrl.searchParams.get('scope') ?? '').split(' ').filter(Boolean);
+      const scopes = new Set((ticked ?? asked).filter(scope => asked.includes(scope)));
+      if (authorizationUrl.searchParams.get('include_granted_scopes') === 'true') for (const scope of grant) scopes.add(scope);
+      for (const scope of scopes) grant.add(scope);
+      const code = `4/fixture-code-${issued}-${codes.size + 1}-${Date.now()}`;
+      codes.set(code, { scopes, challenge: authorizationUrl.searchParams.get('code_challenge') ?? '', redirect: authorizationUrl.searchParams.get('redirect_uri') ?? '', clientId: authorizationUrl.searchParams.get('client_id') ?? '' });
+      return code;
+    },
+    get grant() { return grant; },
+    removeScopes(scopes) { for (const scope of scopes) { grant.delete(scope); for (const held of live.values()) held.delete(scope); } },
     get accessToken() { return accessToken; },
     get refreshToken() { return refreshToken; },
     expireAccess() { live.clear(); },
-    revokeRefresh() { refreshRevoked = true; },
+    revokeRefresh() { refreshRevoked = true; refreshTokens.clear(); },
     calls(match: string | RegExp) { return requests.filter(request => typeof match === 'string' ? request.path === match : match.test(request.path)); },
     close: () => new Promise<void>(resolve => server.close(() => resolve())),
   };
 
-  const mint = () => { issued++; accessToken = `ya29.fixture-access-${issued}`; live.add(accessToken); return accessToken; };
+  const mint = (scopes: Set<string>) => { issued++; accessToken = `ya29.fixture-access-${issued}`; live.set(accessToken, new Set(scopes)); return accessToken; };
 
   server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://fixture');
@@ -114,27 +141,36 @@ export async function startGoogleFixture(): Promise<GoogleFixture> {
       const form = new URLSearchParams(body);
       if (form.get('client_id') !== client.clientId || form.get('client_secret') !== client.clientSecret) return json(401, { error: 'invalid_client' });
       if (form.get('grant_type') === 'authorization_code') {
-        const scope = codes.get(form.get('code') ?? '');
-        if (scope === undefined || !form.get('code_verifier') || !form.get('redirect_uri')) return json(400, { error: 'invalid_grant' });
-        codes.delete(form.get('code')!);
-        refreshToken = `1//fixture-refresh-${issued + 1}`; refreshRevoked = false;
-        return json(200, { access_token: mint(), refresh_token: refreshToken, expires_in: fixture.accessTtl, token_type: 'Bearer', scope, id_token: 'fixture.id.token' });
+        const issuedCode = codes.get(form.get('code') ?? '');
+        codes.delete(form.get('code') ?? '');
+        // PKCE and redirect binding, as Google checks them.
+        const verifier = form.get('code_verifier') ?? '';
+        if (!issuedCode || createHash('sha256').update(verifier).digest('base64url') !== issuedCode.challenge
+          || form.get('redirect_uri') !== issuedCode.redirect || form.get('client_id') !== issuedCode.clientId) {
+          return json(400, { error: 'invalid_grant' });
+        }
+        refreshToken = `1//fixture-refresh-${issued + 1}`; refreshRevoked = false; refreshTokens.add(refreshToken);
+        return json(200, { access_token: mint(issuedCode.scopes), refresh_token: refreshToken, expires_in: fixture.accessTtl, token_type: 'Bearer', scope: [...issuedCode.scopes].join(' '), id_token: 'fixture.id.token' });
       }
       if (form.get('grant_type') === 'refresh_token') {
-        if (refreshRevoked || form.get('refresh_token') !== refreshToken) return json(400, { error: 'invalid_grant', error_description: 'Token has been expired or revoked.' });
-        return json(200, { access_token: mint(), expires_in: fixture.accessTtl, token_type: 'Bearer', scope: 'openid email' });
+        if (refreshRevoked || !refreshTokens.has(form.get('refresh_token') ?? '')) return json(400, { error: 'invalid_grant', error_description: 'Token has been expired or revoked.' });
+        // A refreshed token carries the grant as it stands now, and reports it.
+        return json(200, { access_token: mint(grant), expires_in: fixture.accessTtl, token_type: 'Bearer', scope: [...grant].join(' ') });
       }
       return json(400, { error: 'unsupported_grant_type' });
     }
     if (path === '/revoke' && req.method === 'POST') {
       const token = new URLSearchParams(body).get('token');
-      if (token === refreshToken) { refreshRevoked = true; live.clear(); }
+      if (refreshTokens.has(token ?? '')) { refreshRevoked = true; refreshTokens.clear(); live.clear(); grant.clear(); }
       live.delete(token ?? '');
       return json(200, {});
     }
 
     const bearer = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
-    if (!live.has(bearer)) return json(401, { error: { code: 401, message: 'Request had invalid authentication credentials.', status: 'UNAUTHENTICATED' } });
+    const held = live.get(bearer);
+    if (!held) return json(401, { error: { code: 401, message: 'Request had invalid authentication credentials.', status: 'UNAUTHENTICATED' } });
+    const needed = requiredScopes(req.method ?? 'GET', path);
+    if (!needed.some(scope => held.has(scope))) return json(403, { error: { code: 403, message: 'Request had insufficient authentication scopes.', status: 'PERMISSION_DENIED' } });
 
     if (path === '/userinfo') {
       if (fixture.failUserinfo) return json(500, { error: 'backend' });
@@ -191,4 +227,15 @@ export async function startGoogleFixture(): Promise<GoogleFixture> {
     gmail: `${origin}/gmail/v1`, calendar: `${origin}/calendar/v3`, drive: `${origin}/drive/v3`, driveUpload: `${origin}/upload/drive/v3`,
   };
   return fixture;
+}
+
+const SCOPE = 'https://www.googleapis.com/auth/';
+/** Which scopes let a request through, ANY one of them — Google's own rule for each method used here. */
+function requiredScopes(method: string, path: string): string[] {
+  if (path === '/userinfo') return ['email', 'openid'];
+  if (path.startsWith('/gmail/')) return method === 'GET' ? [`${SCOPE}gmail.readonly`] : [`${SCOPE}gmail.compose`];
+  if (path === '/calendar/v3/users/me/calendarList' || path === '/calendar/v3/freeBusy') return [`${SCOPE}calendar.readonly`];
+  if (path.startsWith('/calendar/')) return method === 'GET' ? [`${SCOPE}calendar.readonly`, `${SCOPE}calendar.events`] : [`${SCOPE}calendar.events`];
+  if (path.startsWith('/drive/') || path.startsWith('/upload/drive/')) return [`${SCOPE}drive.file`];
+  return [];
 }

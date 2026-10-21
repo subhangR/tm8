@@ -1,8 +1,8 @@
 import { googleFirstPartyService, type GoogleFirstPartyService } from '@tm8/contract';
 import type { McpOAuthSecret } from '../../credential-store.js';
-import type { McpFirstPartyAuthorization } from '../../oauth.js';
+import type { McpFirstPartyAuthorization, OAuthClient } from '../../oauth.js';
 import { mcpHttp } from '../../transport.js';
-import { FirstPartyRefused, type FirstPartyDefinition, type FirstPartyHost } from '../host.js';
+import { FirstPartyRefused, type FirstPartyConnection, type FirstPartyDefinition, type FirstPartyHost } from '../host.js';
 import { GoogleApi, GoogleApiError, jsonSchema, type GoogleTool } from './api.js';
 import { CALENDAR_TOOLS } from './calendar.js';
 import { DRIVE_TOOLS } from './drive.js';
@@ -51,13 +51,21 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
     return service;
   }
 
-  /** The tools a definition exposes: a gated tool exists only while its gate is TRUE (§7.1: no tool a caller can't use). */
-  tools(definition: FirstPartyDefinition): readonly GoogleTool[] {
-    return TOOLS[this.service(definition).catalogId].filter(tool => !tool.gate || definition.gates?.[tool.gate] === true);
+  /**
+   * The tools a connection gets (§7.1: no tool a caller can't use). A gated
+   * tool exists only while its gate is TRUE, and a tool exists only when the
+   * connection was granted a scope that lets it work: Google's granular consent
+   * lets a person untick a scope, and a connection with no reported scopes gets
+   * nothing.
+   */
+  tools(definition: FirstPartyDefinition, grantedScopes: readonly string[] | undefined): readonly GoogleTool[] {
+    const granted = new Set(googleScopesFor(this.service(definition), grantedScopes));
+    return TOOLS[this.service(definition).catalogId]
+      .filter(tool => (!tool.gate || definition.gates?.[tool.gate] === true) && tool.scopes.some(scope => granted.has(scope)));
   }
 
-  async request(definition: FirstPartyDefinition, method: 'tools/list' | 'tools/call', params: Record<string, unknown>, accessToken: string): Promise<unknown> {
-    const tools = this.tools(definition);
+  async request(definition: FirstPartyDefinition, method: 'tools/list' | 'tools/call', params: Record<string, unknown>, connection: FirstPartyConnection): Promise<unknown> {
+    const tools = this.tools(definition, connection.grantedScopes);
     if (method === 'tools/list') {
       return { tools: tools.map(tool => ({ name: tool.name, description: tool.description, inputSchema: jsonSchema(tool.input) })) };
     }
@@ -66,13 +74,15 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
     if (!tool) {
       // A gated tool is not listed, and calling it by name is refused before any
       // request leaves the server — the gate is not a hint to the model.
-      const gated = TOOLS[this.service(definition).catalogId].find(candidate => candidate.name === name);
-      throw new Error(gated ? `MCP tool ${gated.name} is turned off for this connector` : 'MCP tool unavailable');
+      const known = TOOLS[this.service(definition).catalogId].find(candidate => candidate.name === name);
+      if (!known) throw new Error('MCP tool unavailable');
+      if (known.gate && definition.gates?.[known.gate] !== true) throw new Error(`MCP tool ${known.name} is turned off for this connector`);
+      throw new Error(`MCP tool ${known.name} needs a Google permission this connection was not granted; reconnect and allow it`);
     }
     const parsed = tool.input.safeParse(params.arguments ?? {});
     if (!parsed.success) return toolError(`Invalid arguments: ${parsed.error.issues.map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')}`);
     try {
-      const value = await tool.run(this.api(definition, accessToken), parsed.data);
+      const value = await tool.run(this.api(definition, connection.accessToken), parsed.data);
       return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
     } catch (error) {
       if (error instanceof GoogleApiError) return toolError(`Google API error ${error.status}: ${error.message}`);
@@ -96,7 +106,10 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
         issuer: this.endpoints.issuer,
         authorization_endpoint: this.endpoints.authorization,
         token_endpoint: this.endpoints.token,
-        revocation_endpoint: this.endpoints.revocation,
+        // No revocation_endpoint, so none is stored in a connection: revoking
+        // one Google token ends the account's WHOLE grant to tm8 — every
+        // Gmail, Calendar and Drive connection of it — so no single disconnect
+        // may reach it (B39). Revoke-all uses this host's own endpoint.
         code_challenge_methods_supported: ['S256'],
       },
       client: { id: client.clientId, method: 'client_secret_post', secret: client.clientSecret },
@@ -104,6 +117,15 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
       authorizeParams: GOOGLE_AUTHORIZE_PARAMS,
       privateNetwork: this.privateNetwork,
     };
+  }
+
+  /**
+   * The client for the code exchange, read from server configuration at the
+   * CALLBACK: the secret is never sealed into the pending row.
+   */
+  oauthClient(): OAuthClient {
+    const client = this.client();
+    return { id: client.clientId, method: 'client_secret_post', secret: client.clientSecret };
   }
 
   /**
@@ -132,6 +154,9 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
       accessToken: value.access_token,
       ...(typeof value.refresh_token === 'string' && value.refresh_token ? { refreshToken: value.refresh_token } : {}),
       ...(typeof value.expires_in === 'number' ? { expiresAt: Date.now() + value.expires_in * 1000 } : {}),
+      // A refresh reports the grant as it is NOW: a scope the person removed at
+      // Google drops its tools at once.
+      ...(typeof value.scope === 'string' ? { grantedScopes: value.scope.split(' ').filter(Boolean) } : {}),
     };
   }
 
@@ -154,6 +179,16 @@ export class GoogleFirstPartyHost implements FirstPartyHost {
     if (!client?.clientId || !client.clientSecret) throw new Error(GOOGLE_NOT_CONFIGURED);
     return client;
   }
+}
+
+/**
+ * The part of a reported grant that belongs to this connector. With
+ * include_granted_scopes Google reports the account's whole grant, so a Drive
+ * token lists the Gmail scopes too; that is the grant, not this connection's
+ * access, and neither the stored row nor the tool list may claim it.
+ */
+export function googleScopesFor(service: GoogleFirstPartyService, granted: readonly string[] | undefined): string[] {
+  return service.scopes.filter(scope => granted?.includes(scope));
 }
 
 function toolError(text: string) {

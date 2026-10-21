@@ -15,7 +15,8 @@ import { DbMcpOAuthPendingStore, McpOAuth, revokeOAuth, type McpOAuthPendingStor
 import { localKeyProvider, type KeyProvider } from '../credentials/key-provider.js';
 import type { DbClaims } from '../db/types.js';
 import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafely, type McpCallAuditEntry } from './audit.js';
-import { GoogleFirstPartyHost } from './first-party/google/host.js';
+import { GOOGLE_OAUTH_ISSUER } from '@tm8/contract';
+import { GoogleFirstPartyHost, googleScopesFor } from './first-party/google/host.js';
 import { GOOGLE_NOT_CONFIGURED, type GoogleHostOptions } from './first-party/google/endpoints.js';
 import { FirstPartyRefused } from './first-party/host.js';
 
@@ -67,12 +68,14 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.credentials.revoke':requireHumanSession(async ctx=>{const input=McpCredentialCommandInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);const server=await options.definition(auth,current.serverId);
    const opened=await credentials.read(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:current.id}).catch(()=>null);
    await store.revoke(auth,input.credentialId);
-   // NOT for a first-party Google connection: Gmail, Calendar and Drive of one
-   // Google account are ONE grant on tm8's client (include_granted_scopes), and
-   // Google's revoke ends that whole grant — it would silently break the same
-   // account's other connections. Disconnecting stops tm8 using this one; the
-   // account owner removes tm8 entirely at Google's permissions page.
-   if(opened?.secret.kind==='oauth' && server.definition.firstParty!==true)await revokeOAuth(opened.secret,server.definition.allowPrivateNetwork===true).catch(()=>false);
+   // NOT for a Google connection (B39): Gmail, Calendar and Drive of one Google
+   // account are ONE grant on tm8's client (include_granted_scopes), and Google's
+   // revoke ends that whole grant, silently breaking the same account's other
+   // connections. Keyed on the STORED secret, never the live definition, so an
+   // edit to the definition cannot turn a disconnect into a whole-account
+   // revoke. (A first-party secret also carries no revocation endpoint.) The
+   // local row keeps no ciphertext; the owner removes tm8 entirely at Google.
+   if(opened?.secret.kind==='oauth' && opened.secret.issuer!==GOOGLE_OAUTH_ISSUER)await revokeOAuth(opened.secret,server.definition.allowPrivateNetwork===true).catch(()=>false);
    return view(auth,input.credentialId);}),
   'mcp.credentials.share':requireHumanSession(async ctx=>{
    const input=McpCredentialShareInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);
@@ -119,13 +122,25 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.oauth.callback':requireHumanSession(async ctx=>{
    const input=McpOAuthCallbackInputSchema.parse(ctx.body);const auth=await claims(ctx);if(!auth.identityId)throw new CollabError('unauthenticated','Human session required');
    // The state is consumed before this guard runs, so a changed connector spends it too.
-   const result=await oauth.callback(auth,input,async pending=>{const current=await options.definition(auth,pending.serverId);if(pending.definitionVersion!==undefined && (current.securityRevision ?? current.version)!==pending.definitionVersion)throw new CollabError('conflict','MCP connector changed; restart authorization');})
-    .catch(error=>{if(error instanceof Error && error.message==='OAuth state invalid or expired')throw new CollabError('invalid_input',error.message);throw error;});
+   const result=await oauth.callback(auth,input,async pending=>{const current=await options.definition(auth,pending.serverId);if(pending.definitionVersion!==undefined && (current.securityRevision ?? current.version)!==pending.definitionVersion)throw new CollabError('conflict','MCP connector changed; restart authorization');},
+    // A first-party connect's client secret is read from configuration NOW; the pending row never held it.
+    ()=>google.oauthClient())
+    .catch(error=>{if(error instanceof Error && [GOOGLE_NOT_CONFIGURED,'OAuth state invalid or expired'].includes(error.message))throw new CollabError('invalid_input',error.message);throw error;});
    const server=await approved(auth,result.serverId);
+   const firstParty=server.definition.firstParty===true;
    // §5.2: a first-party connection is labelled with the Google account it acts as.
-   const accountLabel=server.definition.firstParty===true?await google.accountLabel(result.secret.accessToken):undefined;
+   const accountLabel=firstParty?await google.accountLabel(result.secret.accessToken):undefined;
+   // Google reports the account's WHOLE grant (include_granted_scopes); the row
+   // records only this connector's part of it, never another connector's access.
+   const grantedScopes=firstParty?googleScopesFor(google.service(server.definition),result.grantedScopes):result.grantedScopes;
    // The scope chosen at begin rides the pending row; create_mcp_credential re-checks admin for 'space'.
-   const created=await credentials.create(auth,{spaceId:result.spaceId,serverId:result.serverId,label:result.label,secret:result.secret,expectedRevision:result.definitionVersion,scope:result.scope,...(result.grantedScopes?{grantedScopes:result.grantedScopes}:{}),...(accountLabel?{accountLabel}:{})}) as {id:string};
+   const created=await credentials.create(auth,{spaceId:result.spaceId,serverId:result.serverId,label:result.label,secret:result.secret,expectedRevision:result.definitionVersion,scope:result.scope,...(grantedScopes?.length?{grantedScopes}:{}),...(accountLabel?{accountLabel}:{})}) as {id:string};
+   // Granular consent can leave a connector with NO usable tool (every API
+   // scope unticked). That connection is stored but marked, so the UI says
+   // Reconnect rather than showing an empty connector. A partial grant stays
+   // active with the tools its scopes cover.
+   if(firstParty && google.tools(server.definition,result.secret.grantedScopes).length===0)
+    await deps.db.rpc(auth,'mark_mcp_credential_needs_reconnect',[result.spaceId,result.serverId,created.id,'scope_reduced']);
    const connected=await view(auth,created.id);return result.returnTo?{...connected,returnTo:result.returnTo}:connected;
   }),
   'mcp.servers.test':requireHumanSession(async ctx=>{

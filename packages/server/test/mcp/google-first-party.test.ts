@@ -12,6 +12,8 @@ import { HandlerRegistry } from '../../src/facade/registry.js';
 import { registerMcpRuntimeHandlers } from '../../src/mcp/handlers.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import type { RequestContext } from '../../src/http/types.js';
+import { sealSecret } from '../../src/credentials/secret-box.js';
+import { mcpSecretBinding } from '../../src/credentials/key-provider.js';
 import { fixtureKeys, memoryOAuthPending } from './oauth-pending-fixture.js';
 import { startGoogleFixture, type GoogleFixture } from './google-fixture.js';
 
@@ -39,13 +41,15 @@ function host(client: () => { clientId: string; clientSecret: string } | undefin
 }
 
 /** A whole connect: begin, the consent redirect (a code from the fixture), callback. */
-async function connect(service: GoogleFirstPartyService, googleHost = host()) {
+async function connect(service: GoogleFirstPartyService, options: { googleHost?: GoogleFirstPartyHost; grant?: readonly string[] } = {}) {
+  const googleHost = options.googleHost ?? host();
   const pending = memoryOAuthPending();
   const oauth = new McpOAuth('https://tm8.test/mcp/oauth/callback', pending, fixtureKeys());
   const started = await oauth.beginFirstParty({ identityId: 'human' }, { spaceId: 'space', serverId: 'server', definitionVersion: 1, resource: service.resource, label: 'Work Google' },
     googleHost.authorization(definition(service)));
   const authorizationUrl = new URL(started.authorizationUrl);
-  const result = await oauth.callback({ identityId: 'human' }, { state: authorizationUrl.searchParams.get('state')!, code: google.issueCode(service.scopes.join(' ')) });
+  const result = await oauth.callback({ identityId: 'human' }, { state: authorizationUrl.searchParams.get('state')!, code: google.issueCode(authorizationUrl, options.grant) },
+    undefined, () => googleHost.oauthClient());
   return { authorizationUrl, pending, result };
 }
 
@@ -91,14 +95,34 @@ describe('Google OAuth begin (§8.1): static endpoints, offline access, consent,
     expect((await connect(calendar)).authorizationUrl.searchParams.get('scope')).toBe('openid email https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events');
   });
 
-  it('seals the pending sign-in: the stored row holds only the state hash, never the client secret or the verifier', async () => {
+  it('seals no client secret into the pending row: the callback reads it from configuration again', async () => {
     const pending = memoryOAuthPending();
     const oauth = new McpOAuth('https://tm8.test/mcp/oauth/callback', pending, fixtureKeys());
-    const started = await oauth.beginFirstParty({ identityId: 'human' }, { spaceId: 'space', serverId: 'server', resource: gmail.resource }, host().authorization(definition(gmail)));
-    const state = new URL(started.authorizationUrl).searchParams.get('state')!;
-    const [key, row] = [...pending.rows.entries()][0]!;
-    expect(key).toBe(createHash('sha256').update(state).digest('hex'));
-    for (const secret of [state, google.client.clientSecret, google.endpoints.token]) expect(JSON.stringify(row)).not.toContain(secret);
+    const begin = async () => new URL((await oauth.beginFirstParty({ identityId: 'human' }, { spaceId: 'space', serverId: 'server', resource: gmail.resource }, host().authorization(definition(gmail)))).authorizationUrl);
+    let url = await begin();
+    expect(createHash('sha256').update(url.searchParams.get('state')!).digest('hex')).toBe([...pending.rows.keys()][0]);
+    // The operator rotates the secret between begin and callback. A sealed
+    // copy would present the OLD one, which the provider now refuses.
+    google.client.clientSecret = 'rotated-secret-canary';
+    const { result } = { result: await oauth.callback({ identityId: 'human' }, { state: url.searchParams.get('state')!, code: google.issueCode(url) }, undefined, () => host().oauthClient()) };
+    expect(new URLSearchParams(google.calls('/token').at(-1)!.body).get('client_secret')).toBe('rotated-secret-canary');
+    expect(result.secret.accessToken).toBe(google.accessToken);
+    // No client from configuration: refused, before any code leaves.
+    url = await begin();
+    const before = google.calls('/token').length;
+    await expect(oauth.callback({ identityId: 'human' }, { state: url.searchParams.get('state')!, code: google.issueCode(url) })).rejects.toThrow('OAuth client authentication unavailable');
+    // Reconfigured to ANOTHER client in between: refused too.
+    url = await begin();
+    await expect(oauth.callback({ identityId: 'human' }, { state: url.searchParams.get('state')!, code: google.issueCode(url) }, undefined, () => ({ id: 'other-client', method: 'client_secret_post', secret: 's' }))).rejects.toThrow('OAuth client changed');
+    expect(google.calls('/token')).toHaveLength(before);
+  });
+
+  it('the fixture really checks PKCE and the redirect: a code exchanged with another verifier is refused', async () => {
+    const pending = memoryOAuthPending();
+    const oauth = new McpOAuth('https://tm8.test/mcp/oauth/callback', pending, fixtureKeys());
+    const url = new URL((await oauth.beginFirstParty({ identityId: 'human' }, { spaceId: 'space', serverId: 'server', resource: gmail.resource }, host().authorization(definition(gmail)))).authorizationUrl);
+    const forged = new URL(url); forged.searchParams.set('code_challenge', createHash('sha256').update('attacker-verifier').digest('base64url'));
+    await expect(oauth.callback({ identityId: 'human' }, { state: url.searchParams.get('state')!, code: google.issueCode(forged) }, undefined, () => host().oauthClient())).rejects.toThrow('OAuth token exchange failed');
   });
 
   it('a provider parameter can never replace the state, the PKCE challenge, the client or the redirect', async () => {
@@ -136,9 +160,11 @@ describe('Google OAuth callback', () => {
     expect(result.grantedScopes).toEqual([...gmail.scopes]);
     expect(result.secret).toMatchObject({
       kind: 'oauth', accessToken: google.accessToken, refreshToken: google.refreshToken,
-      issuer: 'https://accounts.google.com', tokenEndpoint: google.endpoints.token, revocationEndpoint: google.endpoints.revocation,
-      resource: gmail.resource, clientId: google.client.clientId,
+      issuer: 'https://accounts.google.com', tokenEndpoint: google.endpoints.token,
+      resource: gmail.resource, clientId: google.client.clientId, grantedScopes: [...gmail.scopes],
     });
+    // No revocation endpoint is stored: no single disconnect can end the account's whole grant (B39).
+    expect(result.secret.revocationEndpoint).toBeUndefined();
     expect(result.secret.clientSecret).toBeUndefined();
     expect(JSON.stringify(result.secret)).not.toContain(google.client.clientSecret);
   });
@@ -153,26 +179,40 @@ describe('Google OAuth callback', () => {
 
 describe('the handlers: mcp.oauth.begin / callback / revoke on a first-party connector', () => {
   const serverId = '00000000-0000-4000-8000-0000000000aa';
-  function handlers(configured = true) {
+  const credentialId = '00000000-0000-4000-8000-0000000000cc';
+  function handlers(configured = true, service: GoogleFirstPartyService = gmail, live: Partial<McpProxyDefinition> = {}) {
     const rpcs: { fn: string; args: unknown[] }[] = [];
+    const keys = fixtureKeys();
+    /** The sealed connection read_mcp_credential returns, for the revoke path. */
+    let stored: McpOAuthSecret | undefined;
     const db = {
       rpc: async (_claims: unknown, fn: string, args: unknown[]) => {
         rpcs.push({ fn, args });
         if (fn === 'create_mcp_credential') return { id: args[0] };
-        if (fn === 'list_mcp_credentials') return [{ id: 'cred', serverId, label: 'Work Google', authType: 'oauth2', manageable: true, ownerId: 'human' }];
+        if (fn === 'list_mcp_credentials') return [{ id: credentialId, serverId, label: 'Work Google', authType: 'oauth2', manageable: true, ownerId: 'human' }];
+        if (fn === 'mark_mcp_credential_needs_reconnect') return { changed: true };
+        if (fn === 'delete_space_credential') return { id: credentialId, revoked: true };
+        if (fn === 'read_mcp_credential') {
+          const sealed = sealSecret(await keys.keyFor('local:v1'), JSON.stringify(stored), mcpSecretBinding({ spaceId: 'space', credentialId }, 'local:v1'));
+          return { credentialId, spaceId: 'space', serverId, definitionVersion: 3, keyId: 'local:v1', ciphertext: sealed.ciphertext.toString('base64'), nonce: sealed.nonce.toString('base64') };
+        }
         throw new Error(`unexpected rpc ${fn}`);
       },
     };
     const registry = new HandlerRegistry();
     const deps = { db, owner: async () => ({ identityId: 'human', isNodeAdmin: false }) } as unknown as FacadeDeps;
     registerMcpRuntimeHandlers(registry, deps, {
-      dataDir: '/unused-google-fixture', callbackUrl: 'https://tm8.test/mcp/oauth/callback', oauthPending: memoryOAuthPending(), keys: fixtureKeys(),
+      dataDir: '/unused-google-fixture', callbackUrl: 'https://tm8.test/mcp/oauth/callback', oauthPending: memoryOAuthPending(), keys,
       google: { endpoints: google.endpoints, client: () => configured ? google.client : undefined, privateNetwork: true },
-      definition: async () => ({ id: serverId, spaceId: 'space', version: 3, securityRevision: 3, definition: { ...definition(gmail), name: 'gmail', envKeys: [], headerKeys: [] } }) as never,
+      definition: async () => ({ id: serverId, spaceId: 'space', version: 3, securityRevision: 3, definition: { ...definition(service), name: service.name, envKeys: [], headerKeys: [], ...live } }) as never,
       authorize: async () => { throw new Error('unused'); },
     });
     const ctx = (body: unknown, params: Record<string, string> = { serverId }) => ({ body, params, identity: { kind: 'bearer', identityId: 'human', authKind: 'browser' }, requestId: 'fixture' }) as RequestContext;
-    return { registry, rpcs, ctx };
+    const begin = async () => new URL((await registry.get('mcp.oauth.begin')!(ctx({ clientMutationId: 'begin', label: 'Work Google' })) as { authorizationUrl: string }).authorizationUrl);
+    const complete = (url: URL, grant?: readonly string[]) => registry.get('mcp.oauth.callback')!(ctx({ state: url.searchParams.get('state'), code: google.issueCode(url, grant) }));
+    const created = () => rpcs.filter(call => call.fn === 'create_mcp_credential').at(-1)!;
+    const revoke = (secret: McpOAuthSecret) => { stored = secret; return registry.get('mcp.credentials.revoke')!(ctx({ clientMutationId: 'revoke' }, { credentialId })); };
+    return { registry, rpcs, ctx, begin, complete, created, revoke };
   }
 
   it('connects a Google account end to end and stores its account label and granted scopes', async () => {
@@ -181,7 +221,7 @@ describe('the handlers: mcp.oauth.begin / callback / revoke on a first-party con
     const authorizationUrl = new URL(started.authorizationUrl);
     expect(authorizationUrl.searchParams.get('access_type')).toBe('offline');
     expect(google.requests).toHaveLength(0); // no discovery: Google's endpoints are static
-    await registry.get('mcp.oauth.callback')!(ctx({ state: authorizationUrl.searchParams.get('state'), code: google.issueCode(gmail.scopes.join(' ')) }));
+    await registry.get('mcp.oauth.callback')!(ctx({ state: authorizationUrl.searchParams.get('state'), code: google.issueCode(authorizationUrl) }));
     const create = rpcs.find(call => call.fn === 'create_mcp_credential')!;
     // [.., label, ciphertext, nonce, kind, expiresAt, refreshable, expectedRevision, scope, keyId, accountLabel, grantedScopes]
     expect(create.args[3]).toBe('Work Google');
@@ -191,6 +231,46 @@ describe('the handlers: mcp.oauth.begin / callback / revoke on a first-party con
     expect(create.args[12]).toBe(google.email);
     expect(create.args[13]).toEqual([...gmail.scopes]);
     expect(google.calls('/userinfo')).toHaveLength(1);
+  });
+
+  it('stores only THIS connector\'s scopes, though Google reports the account\'s whole grant', async () => {
+    // Gmail first, then Drive on the same account: Google's Drive token
+    // response lists the Gmail scopes too (include_granted_scopes).
+    const first = handlers(true, gmail);
+    await first.complete(await first.begin());
+    const second = handlers(true, drive);
+    await second.complete(await second.begin());
+    expect(new URLSearchParams(google.calls('/token').at(-1)!.body).get('grant_type')).toBe('authorization_code');
+    expect(google.grant.has('https://www.googleapis.com/auth/gmail.readonly')).toBe(true);
+    expect(second.created().args[13]).toEqual([...drive.scopes]);
+    expect(second.rpcs.some(call => call.fn === 'mark_mcp_credential_needs_reconnect')).toBe(false);
+  });
+
+  it('a partial grant connects with the tools it covers; a grant covering no tool is marked scope_reduced (B8)', async () => {
+    const partial = handlers(true, gmail);
+    await partial.complete(await partial.begin(), ['openid', 'email', 'https://www.googleapis.com/auth/gmail.compose']);
+    expect(partial.created().args[13]).toEqual(['openid', 'email', 'https://www.googleapis.com/auth/gmail.compose']);
+    expect(partial.rpcs.some(call => call.fn === 'mark_mcp_credential_needs_reconnect')).toBe(false);
+
+    const none = handlers(true, calendar);
+    await none.complete(await none.begin(), ['openid', 'email']);
+    const id = none.created().args[0];
+    expect(none.rpcs.find(call => call.fn === 'mark_mcp_credential_needs_reconnect')!.args).toEqual(['space', serverId, id, 'scope_reduced']);
+  });
+
+  it('disconnect never revokes a Google connection at Google — keyed on the stored secret, not the live definition', async () => {
+    // Even a Google secret that somehow names a revocation endpoint, under a
+    // definition edited to look like a relay, is not revoked at the provider.
+    const { result } = await connect(gmail);
+    const edited = handlers(true, gmail, { firstParty: false, allowPrivateNetwork: true });
+    // (tokenEndpointAuthMethod 'none', so nothing ELSE would stop revokeOAuth sending it.)
+    await edited.revoke({ ...result.secret, revocationEndpoint: google.endpoints.revocation, tokenEndpointAuthMethod: 'none' });
+    expect(edited.rpcs.some(call => call.fn === 'delete_space_credential')).toBe(true);
+    expect(google.calls('/revoke')).toHaveLength(0);
+    // A relay's connection still is: the skip is Google's alone.
+    const relay = handlers(true, gmail, { firstParty: false, allowPrivateNetwork: true });
+    await relay.revoke({ kind: 'oauth', accessToken: 'relay-access', refreshToken: 'relay-refresh', issuer: google.origin, tokenEndpoint: `${google.origin}/token`, revocationEndpoint: google.endpoints.revocation, resource: gmail.resource, clientId: 'relay-client' });
+    expect(google.calls('/revoke').map(request => new URLSearchParams(request.body).get('token'))).toEqual(['relay-refresh', 'relay-access']);
   });
 
   it('refuses begin with the env vars to set when the node has no Google client', async () => {
@@ -297,6 +377,33 @@ describe('the proxy calls the host in-process', () => {
   });
 });
 
+describe('the tools follow the granted scopes', () => {
+  it('a partial grant lists only the tools it covers, and a missing-scope tool is refused by name before reaching Google', async () => {
+    const { result } = await connect(gmail, { grant: ['openid', 'email', 'https://www.googleapis.com/auth/gmail.compose'] });
+    const { call, list } = proxyFor(gmail, result.secret);
+    expect((await list()).tools.map(tool => tool.name)).toEqual(['create_draft']);
+    const before = google.requests.length;
+    await expect(call('search_messages', {})).rejects.toThrow('needs a Google permission this connection was not granted');
+    expect(google.requests).toHaveLength(before);
+  });
+
+  it('a scope the person removes at Google drops its tools at the next refresh', async () => {
+    const { result } = await connect(calendar);
+    const { list, state } = proxyFor(calendar, result.secret);
+    expect((await list()).tools.map(tool => tool.name)).toContain('create_event');
+    google.removeScopes(['https://www.googleapis.com/auth/calendar.events']);
+    google.expireAccess();
+    state.secret = { ...state.secret, expiresAt: Date.now() };
+    expect((await list()).tools.map(tool => tool.name)).toEqual(['list_calendars', 'list_events', 'get_event', 'find_free_time']);
+  });
+
+  it('a connection with no reported scopes gets no tools (fail closed)', async () => {
+    const { result } = await connect(drive);
+    const { grantedScopes: _dropped, ...secret } = result.secret;
+    expect((await proxyFor(drive, secret).list()).tools).toEqual([]);
+  });
+});
+
 describe('the Gmail send gate (§8.2, Q7): closed unless an admin turns it on', () => {
   it.each([
     ['absent', undefined],
@@ -375,7 +482,12 @@ describe('scope containment (B39): each connector reaches only its own Google AP
   it('a Calendar connection whose token also carries the Gmail scope cannot reach Gmail through tm8', async () => {
     // One grant: Gmail first, then Calendar with include_granted_scopes — the
     // Calendar token is good for Gmail too, as far as Google is concerned.
+    await connect(gmail);
     const { result } = await connect(calendar);
+    expect(result.secret.grantedScopes).toContain('https://www.googleapis.com/auth/gmail.readonly');
+    const direct = await fetch(`${google.endpoints.gmail}/users/me/labels`, { headers: { authorization: `Bearer ${result.secret.accessToken}` } });
+    expect(direct.status).toBe(200); // the token itself COULD read the mailbox
+    google.requests.length = 0;
     const { call } = proxyFor(calendar, result.secret);
     for (const name of ['search_messages', 'get_message', 'create_draft', 'send_message', 'search_files', 'create_file']) {
       await expect(call(name, {})).rejects.toThrow('MCP tool unavailable');
@@ -388,6 +500,19 @@ describe('scope containment (B39): each connector reaches only its own Google AP
     await expect(api.json('GET', google.endpoints.gmail, '/users/me/labels')).rejects.toThrow('may not call this Google API');
     await expect(api.json('GET', google.endpoints.drive, '/files')).rejects.toThrow('may not call this Google API');
     expect(google.requests.filter(request => request.path !== '/token').every(request => request.path.startsWith('/calendar/'))).toBe(true);
+  });
+
+  it('an id of "." or ".." cannot walk up to the parent collection, and no path leaves the connector\'s base', async () => {
+    const { result } = await connect(calendar);
+    const { call } = proxyFor(calendar, result.secret);
+    for (const eventId of ['..', '.']) {
+      expect(await call('update_event', { eventId, summary: 'x' })).toEqual({ isError: true, content: [{ type: 'text', text: 'Google API error 400: Invalid resource id' }] });
+    }
+    expect(await call('list_events', { calendarId: '..' })).toMatchObject({ isError: true });
+    expect(google.requests.filter(request => request.method === 'PATCH' || request.path.startsWith('/calendar/v3/calendars/primary') || request.path === '/calendar/v3/calendars')).toHaveLength(0);
+    const api = host().api(definition(calendar), result.secret.accessToken);
+    await expect(api.json('GET', google.endpoints.calendar, '/calendars/primary/../../../gmail/v1/users/me/labels')).rejects.toThrow('Invalid resource id');
+    expect(google.calls('/gmail/v1/users/me/labels')).toHaveLength(0);
   });
 
   it('Drive may use its upload base; Gmail may not', async () => {

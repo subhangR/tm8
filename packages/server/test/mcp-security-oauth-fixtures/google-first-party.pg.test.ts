@@ -46,7 +46,7 @@ it('connects a Google account over the public routes, labelled from userinfo, th
 
   // Consent → callback. A short-lived token makes the next use refresh.
   google.accessTtl = 10;
-  const completed = await node.request<{ id: string; accountLabel?: string }>('POST', '/v2/mcp/oauth/callback', { state: authorizationUrl.searchParams.get('state'), code: google.issueCode(gmail.scopes.join(' ')) });
+  const completed = await node.request<{ id: string; accountLabel?: string }>('POST', '/v2/mcp/oauth/callback', { state: authorizationUrl.searchParams.get('state'), code: google.issueCode(authorizationUrl) });
   expect(completed.status).toBe(200);
   const connection = successData(completed);
   expect(connection).toMatchObject({ serverId, label: 'Work Google', accountLabel: google.email });

@@ -9,6 +9,13 @@ export interface McpOAuthSecret {
   kind: 'oauth'; accessToken: string; refreshToken?: string; expiresAt?: number;
   issuer: string; tokenEndpoint: string; revocationEndpoint?:string; resource: string; clientId: string;
   clientSecret?: string; tokenEndpointAuthMethod?: 'none' | 'client_secret_basic' | 'client_secret_post';
+  /**
+   * First-party only: the scopes the provider reported for this token, so the
+   * host can offer exactly the tools they cover. With Google's incremental
+   * consent this is the account's whole grant; the host intersects it with the
+   * connector's own scopes before using it.
+   */
+  grantedScopes?: string[];
 }
 export type McpSecret = { kind: 'api_key'; value: string } | McpOAuthSecret;
 interface SealedRow { credentialId: string; spaceId: string; serverId: string; definitionVersion?: number; ciphertext: string; nonce: string; keyId?: string|null }

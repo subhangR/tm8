@@ -51,7 +51,10 @@ export class GoogleApi {
 
   private async send(method: McpHttpInput['method'], base: string, path: string, query?: Query, payload?: { contentType: string; body: string }) {
     if (!this.bases.includes(base)) throw new Error('MCP connector may not call this Google API');
-    const url = new URL(base.replace(/\/$/, '') + path);
+    const root = new URL(base.replace(/\/$/, ''));
+    const url = new URL(root.href + path);
+    // Belt to segment()'s braces: whatever the path held, the request stays under this connector's own base.
+    if (url.origin !== root.origin || !url.pathname.startsWith(`${root.pathname}/`)) throw new GoogleApiError(400, 'Invalid resource id');
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value === undefined) continue;
       if (Array.isArray(value)) for (const item of value) url.searchParams.append(key, item);
@@ -77,8 +80,13 @@ function googleMessage(body: string): string {
   return 'Google request failed';
 }
 
-/** A path segment from model input. Encoded, so an id can never add a path or a query. */
+/**
+ * A path segment from model input. Encoded, so an id can never add a path or a
+ * query; and never `.` or `..`, which URL parsing would resolve into a walk up
+ * to the parent collection (update_event {eventId:'..'} would PATCH the calendar).
+ */
 export function segment(value: string): string {
+  if (value === '' || value === '.' || value === '..') throw new GoogleApiError(400, 'Invalid resource id');
   return encodeURIComponent(value);
 }
 
@@ -88,6 +96,8 @@ export interface GoogleTool<I extends z.ZodTypeAny = z.ZodTypeAny> {
   description: string;
   input: I;
   gate?: string;
+  /** The Google scopes that let this tool work, ANY one of them. A connection granted none of them does not get the tool. */
+  scopes: readonly string[];
   run(api: GoogleApi, input: z.infer<I>): Promise<unknown>;
 }
 

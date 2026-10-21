@@ -1,5 +1,5 @@
 import type { DbClaims } from '../db/types.js';
-import type { McpCredentialBinding, McpCredentialStore } from './credential-store.js';
+import type { McpCredentialBinding, McpCredentialStore, McpOAuthSecret } from './credential-store.js';
 import { FirstPartyUnauthorized, type FirstPartyHost } from './first-party/host.js';
 import { refreshOAuth } from './oauth.js';
 import { mcpStdio } from './stdio.js';
@@ -82,6 +82,7 @@ export class McpProxy {
       if(JSON.stringify(current)!==JSON.stringify(grant))throw new Error('MCP session changed');
       const headers:Record<string,string>={'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-03-26'};
       const redactions:string[]=[];
+      let connected:McpOAuthSecret|undefined;
       const loadAuthorization=async(forceToken?:string):Promise<boolean>=>{
         if(definition.auth.type==='none')return false;
         let refreshed=false;
@@ -101,7 +102,7 @@ export class McpProxy {
               await store.read(credentialClaims,binding);
               refreshed=true;
             }
-            headers.authorization=`Bearer ${secret.accessToken}`;
+            headers.authorization=`Bearer ${secret.accessToken}`;connected=secret;
             redactions.push(secret.accessToken,...(secret.refreshToken?[secret.refreshToken]:[]));
           } else {
             if(definition.auth.type!=='api_key' || /[\r\n\0]/.test(secret.value))throw new Error('MCP account binding mismatch');
@@ -139,7 +140,7 @@ export class McpProxy {
         const refreshed=await loadAuthorization();
         if(refreshed)await recheck();
         if(host) {
-          const call=()=>host.request(definition,rpcMethod as 'tools/list'|'tools/call',rpcParams,headers.authorization!.slice(7));
+          const call=()=>host.request(definition,rpcMethod as 'tools/list'|'tools/call',rpcParams,{accessToken:connected!.accessToken,...(connected!.grantedScopes?{grantedScopes:connected!.grantedScopes}:{})});
           let result:unknown;
           try {result=await call();}
           catch(error) {

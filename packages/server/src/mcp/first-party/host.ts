@@ -16,8 +16,14 @@ export interface FirstPartyDefinition {
   gates?: Record<string, boolean>;
 }
 
+/** The decrypted connection a call runs with: its token, and the scopes the provider reported for it. */
+export interface FirstPartyConnection {
+  accessToken: string;
+  grantedScopes?: readonly string[];
+}
+
 export interface FirstPartyHost {
-  request(definition: FirstPartyDefinition, method: 'tools/list' | 'tools/call', params: Record<string, unknown>, accessToken: string): Promise<unknown>;
+  request(definition: FirstPartyDefinition, method: 'tools/list' | 'tools/call', params: Record<string, unknown>, connection: FirstPartyConnection): Promise<unknown>;
   /** The provider's own refresh; the generic one sends an RFC 8707 `resource` the provider may refuse. */
   refresh(secret: McpOAuthSecret): Promise<McpOAuthSecret>;
 }

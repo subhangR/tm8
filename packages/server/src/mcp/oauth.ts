@@ -40,8 +40,9 @@ interface SealedPending {
   /**
    * A first-party connect (§8.1, Google). Sealed, so a writer of the pending
    * table cannot turn it on or off: the code exchange then sends no RFC 8707
-   * `resource`, and the client secret — server configuration — is not copied
-   * into the connection, because the host refreshes with the configured one.
+   * `resource`, and the client secret — server configuration — is neither
+   * sealed here nor copied into the connection. The callback reads it from
+   * configuration again, and the host refreshes with it.
    */
   firstParty?: true;
 }
@@ -343,7 +344,7 @@ export class McpOAuth {
     if (!provider.client.secret || provider.client.method === 'none') throw new Error('OAuth client authentication unavailable');
     if (!provider.metadata.code_challenge_methods_supported?.includes('S256')) throw new Error('OAuth issuer or PKCE unsupported');
     return this.start(claims, identityId, { ...input, scopes: provider.scopes }, {
-      redirectUri: this.callbackUrl, client: provider.client, resource: input.resource, metadata: provider.metadata,
+      redirectUri: this.callbackUrl, client: { id: provider.client.id, method: provider.client.method }, resource: input.resource, metadata: provider.metadata,
       privateNetwork: provider.privateNetwork, firstParty: true,
     }, provider.authorizeParams);
   }
@@ -396,6 +397,8 @@ export class McpOAuth {
     claims: DbClaims,
     input: { state: string; code?: string; issuer?: string; error?: string },
     guard?: (target: McpOAuthPendingTarget) => Promise<void>,
+    /** A first-party connect's client, from server configuration now (the pending row holds no secret). */
+    firstPartyClient?: () => OAuthClient,
   ): Promise<McpOAuthCallbackResult> {
     const identityId = claims.identityId;
     if (!identityId) throw new Error('OAuth state invalid or expired');
@@ -418,13 +421,21 @@ export class McpOAuth {
     if (guard) await guard(target);
     if (input.error || !input.code) throw new Error('OAuth authorization denied');
     if (input.issuer !== undefined && input.issuer !== pending.metadata.issuer) throw new Error('OAuth issuer mismatch');
+    let client = pending.client;
+    if (pending.firstParty) {
+      if (!firstPartyClient) throw new Error('OAuth client authentication unavailable');
+      client = firstPartyClient();
+      // The code was issued to the client sealed at begin; a node reconfigured
+      // in between would be refused by the provider anyway, so say why here.
+      if (client.id !== pending.client.id || !client.secret) throw new Error('OAuth client changed; restart authorization');
+    }
     const { scope: grantedScope, ...token } = await tokenRequest(pending.metadata.token_endpoint, new URLSearchParams({
       grant_type: 'authorization_code',
       code: input.code,
       code_verifier: pending.verifier,
       redirect_uri: pending.redirectUri,
       ...(pending.firstParty ? {} : { resource: pending.resource }),
-    }), pending.privateNetwork, pending.client);
+    }), pending.privateNetwork, client);
     const grantedScopes = grantedScope?.split(' ').filter(Boolean);
     return {
       ...target,
@@ -441,6 +452,7 @@ export class McpOAuth {
         tokenEndpointAuthMethod: pending.client.method,
         ...(pending.client.secret && !pending.firstParty ? { clientSecret: pending.client.secret } : {}),
         ...(pending.metadata.revocation_endpoint ? { revocationEndpoint: pending.metadata.revocation_endpoint } : {}),
+        ...(pending.firstParty && grantedScopes ? { grantedScopes } : {}),
       },
     };
   }
