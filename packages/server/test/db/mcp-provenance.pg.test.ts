@@ -1,0 +1,568 @@
+/**
+ * §6, THE ACCESS RULE, AS A DENY MATRIX (plan §6/D7, G3; migration 343).
+ *
+ * One rule, re-asked on every tools/list and tools/call: find the human behind
+ * a launch, check them against the Space the call runs in and against every
+ * Space the chain passed through, and withhold every connection when there is
+ * no such human.
+ *
+ * WHAT THE AUTHORITY IS (advisor ruling B17, amending plan §6.1 to v3). The
+ * authority at each hop is the SPAWNING BEARER, never `launched_by`:
+ * `parentSessionId` is client-asserted for every bearer but a chat runtime, and
+ * `execution_spawn` checks only that the parent is a live chat or session in the
+ * same Space — so a member can spawn naming another member's chat as parent, and
+ * walking that edge would hand their worker the other member's connections.
+ * `packages/server/src/mcp/session-bindings.ts` carries the full reasoning.
+ *
+ * WHY SOME CHAINS ARE WRITTEN DIRECTLY. A multi-hop chain that CROSSES Spaces
+ * cannot be produced through the live spawn path today, because an agent bearer
+ * is pinned to its own Space (226/227, and Q15 — see
+ * test/identity/session-space-pin.test.ts) and `execution_spawn` then refuses a
+ * spawn into any other Space. §6.2 is therefore defence in depth, and the only
+ * honest way to test a rule about shapes the pin currently forbids is to build
+ * the shape. Those cells say so, and write the binding row as the graph owner.
+ * Every cell that CAN go through `bind`/`authorize` does.
+ */
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
+import { createDb } from '../../src/db/client.js';
+import type { Db, DbClaims } from '../../src/db/types.js';
+import { McpSessionBindings } from '../../src/mcp/session-bindings.js';
+import { hashToken } from '../../src/identity/crypto.js';
+
+vi.setConfig({ testTimeout: 180000, hookTimeout: 300000 });
+
+let scratch: W1ScratchDatabase;
+let db: Db;
+let bindings: McpSessionBindings;
+
+const spaceA = randomUUID();
+const spaceB = randomUUID();
+/** identity -> { account, memberA?, memberB? } */
+const people = {
+  alice: { identity: `prov-alice-${randomUUID()}`, account: randomUUID(), memberA: randomUUID(), memberB: randomUUID() },
+  bob:   { identity: `prov-bob-${randomUUID()}`,   account: randomUUID(), memberA: randomUUID(), memberB: null as string | null },
+  carol: { identity: `prov-carol-${randomUUID()}`, account: randomUUID(), memberA: null as string | null, memberB: randomUUID() },
+  /**
+   * In both Spaces and owning NOTHING. A member who owns a live credential
+   * cannot be removed at all ("revoke them before removing the member"), so the
+   * cells that end a membership mid-session need someone whose membership can
+   * actually end. They resolve the Space-SHARED connection instead.
+   */
+  dave:  { identity: `prov-dave-${randomUUID()}`,  account: randomUUID(), memberA: randomUUID(), memberB: randomUUID() },
+};
+const personaA = randomUUID();
+const personaB = randomUUID();
+let serverA = '';
+let serverB = '';
+let aliceKeyA = '';
+let aliceKeyB = '';
+/** Space-owned (owner null) on serverA: usable by any current member of A. */
+let sharedKeyA = '';
+
+/** A human bearer's claims: the §6 terminal root. */
+const human = (who: keyof typeof people, space: string): DbClaims =>
+  ({ identityId: people[who].identity, authKind: 'browser', sessionSpaceId: space });
+
+/** A live work session plus the agent bearer minted for it, as the spawn does. */
+async function session(space: string, creator: string, persona: string, who: keyof typeof people) {
+  const sessionId = randomUUID();
+  const authSessionId = randomUUID();
+  const secret = randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '');
+  await scratch.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'work_session',$3)", [sessionId, space, creator]);
+    await c.query("insert into public.work_sessions(entity_id,title,status,share_mode) values($1,'provenance fixture','running','space')", [sessionId]);
+    await c.query(`insert into public.auth_sessions(id,account_id,kind,acting_as_team_member_id,work_session_id,token_hash,expires_at,space_id)
+      values($1,$2,'agent',$3,$4,$5,now()+interval '1 hour',$6)`,
+      [authSessionId, people[who].account, persona, sessionId, hashToken(secret), space]);
+  });
+  return {
+    sessionId, authSessionId, token: `tm8s_${authSessionId}.${secret}`,
+    claims: { identityId: people[who].identity, authKind: 'agent', sessionSpaceId: space, authSessionId } as DbClaims,
+  };
+}
+
+/** `internal.mcp_provenance`'s own answer, through the door `bind` uses. */
+const provenanceOf = (claims: DbClaims, sessionId: string, token: string,
+                      source?: { sessionId: string; authSessionId: string }) =>
+  db.rpc<{ reason: string; rootMemberId?: string; rootIdentityId?: string; depth?: number; via?: string }>(
+    claims, 'mcp_provenance_for_bind',
+    [sessionId, hashToken(token.split('.')[1]!), source?.sessionId ?? null, source?.authSessionId ?? null]);
+
+/**
+ * Write a binding row directly, for the cross-Space and depth shapes the agent
+ * pin forbids through `bind`. Deliberately explicit about what it fakes: a chain
+ * and a root that `bind_mcp_session` would otherwise have derived.
+ */
+async function forgeBinding(input: {
+  sessionId: string; authSessionId: string; space: string; runtime: keyof typeof people;
+  root: keyof typeof people; rootMember: string; chain: string[]; chainSpaces: string[];
+  selections: unknown;
+  /** Defaults to the root, as a bearer chain always has them equal. */
+  launcher?: keyof typeof people;
+}) {
+  await scratch.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query(`insert into internal.mcp_session_bindings
+      (session_id,space_id,auth_session_id,runtime_identity_id,launcher_identity_id,launcher_auth_kind,
+       selections,root_member_id,root_identity_id,chain,chain_space_ids)
+      values($1,$2,$3,$4,$5,'browser',$6,$7,$8,$9,$10)
+      on conflict (session_id) do update set chain=excluded.chain, chain_space_ids=excluded.chain_space_ids,
+        root_member_id=excluded.root_member_id, root_identity_id=excluded.root_identity_id,
+        selections=excluded.selections`,
+      [input.sessionId, input.space, input.authSessionId, people[input.runtime].identity,
+       people[input.launcher ?? input.root].identity, JSON.stringify(input.selections), input.rootMember,
+       people[input.root].identity, input.chain, input.chainSpaces]);
+  });
+}
+
+const outcome = async (run: () => Promise<unknown>): Promise<string> => {
+  try { await run(); return 'ok'; } catch (error) { return String((error as Error).message); }
+};
+
+beforeAll(async () => {
+  scratch = await createW1ScratchDatabase('mcp_provenance');
+  scratch.apply(migrationFiles());
+  db = createDb(scratch.url, { max: 4 });
+  bindings = new McpSessionBindings(db);
+  await scratch.transaction(async c => {
+    await c.query('set local role tm8_graph_owner');
+    for (const [name, p] of Object.entries(people)) {
+      await c.query('insert into public.accounts(id,identity_id,username) values($1,$2,$3)', [p.account, p.identity, `prov-${name}-${p.account.slice(0, 8)}`]);
+      await c.query('insert into public.user_profiles(identity_id,display_name) values($1,$2)', [p.identity, name]);
+    }
+    await c.query('insert into public.spaces(id,name,created_by_identity) values($1,$2,$3),($4,$5,$3)',
+      [spaceA, 'Space A', people.alice.identity, spaceB, 'Space B']);
+    for (const [space, key] of [[spaceA, 'memberA'], [spaceB, 'memberB']] as const) {
+      for (const [name, p] of Object.entries(people)) {
+        const id = p[key];
+        if (!id) continue;
+        await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'member',$1)", [id, space]);
+        await c.query("insert into public.members(entity_id,space_id,identity_id,role,display_name) values($1,$2,$3,$4,$5)",
+          [id, space, p.identity, name === 'alice' ? 'owner' : 'member', name]);
+      }
+    }
+    for (const [persona, space, owner] of [[personaA, spaceA, people.alice.memberA], [personaB, spaceB, people.alice.memberB]] as const) {
+      await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'team_member',$3)", [persona, space, owner]);
+      await c.query("insert into public.team_members(entity_id,owner_member_id,name,role,model,agent_tool) values($1,$2,'Prov worker','helper','claude-sonnet-4-5','claude-code')", [persona, owner]);
+    }
+  });
+  const definition = (name: string) => JSON.stringify({
+    name, transport: 'http', url: 'https://example.test/mcp', envKeys: [], headerKeys: ['Authorization'],
+    auth: { type: 'api_key', headerName: 'Authorization' }, approved: true,
+  });
+  serverA = (await db.rpc<{ entity: { id: string } }>(human('alice', spaceA), 'create_mcp_server_entity', [spaceA, definition('provspacea'), null, randomUUID()])).entity.id;
+  serverB = (await db.rpc<{ entity: { id: string } }>(human('alice', spaceB), 'create_mcp_server_entity', [spaceB, definition('provspaceb'), null, randomUUID()])).entity.id;
+  aliceKeyA = randomUUID();
+  aliceKeyB = randomUUID();
+  await db.rpc(human('alice', spaceA), 'create_mcp_credential', [aliceKeyA, spaceA, serverA, 'Alice in A', Buffer.alloc(32, 7), Buffer.alloc(12, 3), 'api_key', null, false, 1]);
+  await db.rpc(human('alice', spaceB), 'create_mcp_credential', [aliceKeyB, spaceB, serverB, 'Alice in B', Buffer.alloc(32, 7), Buffer.alloc(12, 3), 'api_key', null, false, 1]);
+  // §5.2: scope 'space' is a Space-owned row (owner null) and needs an admin;
+  // Alice is A's owner. Nobody owns it, so its users stay removable.
+  sharedKeyA = randomUUID();
+  await db.rpc(human('alice', spaceA), 'create_mcp_credential',
+    [sharedKeyA, spaceA, serverA, 'Shared in A', Buffer.alloc(32, 9), Buffer.alloc(12, 4), 'api_key', null, false, 1, 'space']);
+});
+afterAll(async () => { await db?.end(); await scratch?.destroy(); });
+
+/* ===========================================================================
+ * THE MATRIX. One row per §6 cell, each naming the claim shape it arrives on,
+ * the reason `internal.mcp_provenance` must answer, and who the root must be.
+ * Driven through `mcp_provenance_for_bind`, the door `bind` reads, so every row
+ * exercises the real authentication (the freshly minted agent token) and not a
+ * helper.
+ * =========================================================================== */
+describe('§6 deny matrix — the provenance rule, cell by cell', () => {
+  type Cell = {
+    name: string;
+    /** Build the session under test and the claims `bind` would arrive on. */
+    arrange(): Promise<{ claims: DbClaims; sessionId: string; token: string;
+                         source?: { sessionId: string; authSessionId: string } }>;
+    reason: string;
+    /** Which person must come out as the root, when the cell is `ready`. */
+    root?: keyof typeof people;
+    rootSpace?: 'A' | 'B';
+  };
+
+  const cells: Cell[] = [
+    {
+      // SAME SPACE, the ordinary case: a human bearer is a terminal root.
+      name: 'same-space human bearer is its own root',
+      reason: 'ready', root: 'alice', rootSpace: 'A',
+      async arrange() {
+        const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+        return { claims: human('alice', spaceA), sessionId: s.sessionId, token: s.token };
+      },
+    },
+    {
+      // CROSS-SPACE MEMBER: Alice is in both, and the launch is in B. She gets
+      // B's connections — never A's, which is what the Space-scoped resolution
+      // below asserts end to end.
+      name: 'cross-space member: a human bearer in the other Space is admitted there',
+      reason: 'ready', root: 'alice', rootSpace: 'B',
+      async arrange() {
+        const s = await session(spaceB, people.alice.memberB, personaB, 'alice');
+        return { claims: human('alice', spaceB), sessionId: s.sessionId, token: s.token };
+      },
+    },
+    {
+      // CROSS-SPACE NON-MEMBER: Bob is in A only. A launch of his in B has no
+      // root there at all, so nothing can be lent to it.
+      name: 'cross-space non-member: a human bearer outside the Space has no root',
+      reason: 'root_not_in_space',
+      async arrange() {
+        const s = await session(spaceB, people.alice.memberB, personaB, 'bob');
+        return { claims: human('bob', spaceB), sessionId: s.sessionId, token: s.token };
+      },
+    },
+    {
+      // LINK SESSION (§6.5): no connectors, ever, and the rule is stated in the
+      // walk itself so no caller has to remember it.
+      name: 'link session: refused by the walk, not only by bind',
+      reason: 'link_session',
+      async arrange() {
+        const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+        return {
+          claims: { ...human('alice', spaceA), authKind: 'link', viaLinkId: randomUUID() },
+          sessionId: s.sessionId, token: s.token,
+        };
+      },
+    },
+    {
+      // AN AGENT BEARER THAT NAMES NO SOURCE has nothing to hop to. 298's
+      // behaviour, now a named reason instead of a caught exception.
+      name: 'agent bearer with no verified source: no hop, no root',
+      reason: 'source_unavailable',
+      async arrange() {
+        const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+        return { claims: s.claims, sessionId: s.sessionId, token: s.token };
+      },
+    },
+    {
+      // THE IN-PROCESS SHAPE with no schedule behind it: the loop-executor
+      // claims (#1316) and anything like them.
+      name: 'no bearer and no schedule: no root',
+      reason: 'no_human_provenance',
+      async arrange() {
+        // There is no persona-owner fallback (B21), even though this session
+        // acts as a persona Alice owns and Alice is the caller: a no-bearer
+        // session whose only facts are about a persona gets no root.
+        const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+        return {
+          claims: { identityId: people.alice.identity, requestId: 'loop-executor' },
+          sessionId: s.sessionId, token: s.token,
+        };
+      },
+    },
+  ];
+
+  for (const cell of cells) {
+    it(cell.name, async () => {
+      const a = await cell.arrange();
+      const got = await provenanceOf(a.claims, a.sessionId, a.token, a.source);
+      expect(got.reason).toBe(cell.reason);
+      if (cell.reason === 'ready') {
+        const want = cell.rootSpace === 'B' ? people[cell.root!].memberB : people[cell.root!].memberA;
+        expect(got.rootMemberId).toBe(want);
+        expect(got.rootIdentityId).toBe(people[cell.root!].identity);
+        expect(got.depth).toBe(1);
+      } else {
+        expect(got.rootMemberId).toBeUndefined();
+      }
+    });
+  }
+});
+
+describe('§6 deny matrix — the schedule root (G3)', () => {
+  /**
+   * A loop is the one launcher with no bearer behind its firings, so the human
+   * has to be recorded when they arm it. `entities.created_by` is NOT that fact
+   * — it names an actor, which is a team_member whenever an agent created the
+   * loop — so 343 adds `loops.armed_by_member_id`, stamped by a trigger that
+   * fires only for a human bearer.
+   */
+  const armLoop = async (claims: DbClaims, title: string) =>
+    (await db.rpc<{ entity: { id: string } }>(claims, 'create_loop',
+      [spaceA, title, null, 'every 1h', personaA, null, 'fire', '{}', true, null, null, null, randomUUID()])).entity.id;
+
+  it('a human bearer arming a loop is stamped; the in-process executor is not', async () => {
+    const armed = await armLoop(human('alice', spaceA), 'Armed by Alice');
+    const [row] = await scratch.query<{ armed_by_member_id: string | null; armed_by_identity_id: string | null }>(
+      'select armed_by_member_id, armed_by_identity_id from public.loops where entity_id=$1', [armed]);
+    expect(row?.armed_by_member_id).toBe(people.alice.memberA);
+    expect(row?.armed_by_identity_id).toBe(people.alice.identity);
+    // The executor advances `next_run_at` through the same door on every tick.
+    // It is not a human bearer, so it must neither stamp nor CLEAR the fact.
+    const [{ version }] = await scratch.query<{ version: number }>('select version from public.entities where id=$1', [armed]);
+    await db.rpc({ identityId: people.alice.identity, requestId: 'loop-executor' }, 'update_loop',
+      [armed, version, null, null, null, null, false, null, false, null, null, null,
+       new Date(Date.now() + 3_600_000).toISOString(), false, new Date().toISOString(), null, true, randomUUID()]);
+    const [after] = await scratch.query<{ armed_by_member_id: string | null }>(
+      'select armed_by_member_id from public.loops where entity_id=$1', [armed]);
+    expect(after?.armed_by_member_id).toBe(people.alice.memberA);
+  });
+
+  it('a firing of an ARMED loop has the arming human as its root; an UNARMED one has none', async () => {
+    const armed = await armLoop(human('alice', spaceA), 'Armed firing');
+    const unarmed = await armLoop(human('alice', spaceA), 'Unarmed firing');
+    // A loop created before 343, or by an agent persona: no recorded human.
+    await scratch.query('update public.loops set armed_by_member_id=null, armed_by_identity_id=null where entity_id=$1', [unarmed]);
+
+    const executor: DbClaims = { identityId: people.alice.identity, requestId: 'loop-executor' };
+    for (const [loopId, reason] of [[armed, 'ready'], [unarmed, 'no_human_provenance']] as const) {
+      const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+      // The firing's own `triggered_by` edge. NOTE the ordering caveat reported
+      // to the lead: `createLoopExecutorPort.fire` writes this edge AFTER
+      // `spawnService.spawn` returns, and `bind` runs inside that spawn, so a
+      // FIRST firing does not yet carry it. The rule below is correct and live
+      // for every path where the edge exists; making a first firing reach it is
+      // an ordering fix in the executor, not in this rule.
+      await db.rpc(human('alice', spaceA), 'write_edge', [s.sessionId, loopId, 'triggered_by', '{}', null, randomUUID()]);
+      const got = await provenanceOf(executor, s.sessionId, s.token);
+      expect(got.reason).toBe(reason);
+      if (reason === 'ready') {
+        expect(got.rootMemberId).toBe(people.alice.memberA);
+        expect(got.via).toBe('schedule_armed_by');
+      }
+    }
+  });
+
+  it('an armed loop whose arming member has left the Space lends nothing', async () => {
+    const armed = await armLoop(human('alice', spaceA), 'Armed then left');
+    await scratch.query('update public.loops set armed_by_member_id=$2, armed_by_identity_id=$3 where entity_id=$1',
+      [armed, people.bob.memberA, people.bob.identity]);
+    const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    await db.rpc(human('alice', spaceA), 'write_edge', [s.sessionId, armed, 'triggered_by', '{}', null, randomUUID()]);
+    const executor: DbClaims = { identityId: people.alice.identity, requestId: 'loop-executor' };
+    expect((await provenanceOf(executor, s.sessionId, s.token)).reason).toBe('ready');
+    await scratch.query("update public.members set status='removed', left_at=now() where entity_id=$1", [people.bob.memberA]);
+    try {
+      expect((await provenanceOf(executor, s.sessionId, s.token)).reason).toBe('no_human_provenance');
+    } finally {
+      await scratch.query("update public.members set status='active', left_at=null where entity_id=$1", [people.bob.memberA]);
+    }
+  });
+});
+
+describe('§6 deny matrix — re-checked on every call, not only at bind', () => {
+  it('member removed mid-session: a bound, authorized session loses access on the next call', async () => {
+    // Dave is the root and owns nothing, so his membership can actually end;
+    // he carries the launch on A's SPACE-shared connection (§6's shared row).
+    const s = await session(spaceA, people.dave.memberA, personaA, 'dave');
+    const picks = await bindings.bind(human('dave', spaceA), {
+      sessionId: s.sessionId, spaceId: spaceA, teamMemberId: personaA, agentToken: s.token,
+      mcpSelections: [{ serverId: serverA }],
+    });
+    expect(picks).toEqual([{ serverId: serverA, credentialId: sharedKeyA }]);
+    // The chain and root really were recorded, which is what the re-check reads.
+    const grant = await bindings.authorize(s.claims, s.sessionId, serverA);
+    expect(grant).toMatchObject({ rootMemberId: people.dave.memberA, rootIdentityId: people.dave.identity });
+    expect(grant.chain).toEqual([s.sessionId]);
+    expect(grant.chainSpaceIds).toEqual([spaceA]);
+
+    await scratch.query("update public.members set status='removed', left_at=now() where entity_id=$1", [people.dave.memberA]);
+    try {
+      // §6's last line: "If someone is removed from a Space, their running
+      // workers there lose access on the next call." Here the removed human is
+      // also the session's own runtime identity, so 298's caller membership
+      // check is what answers first.
+      expect(await outcome(() => bindings.authorize(s.claims, s.sessionId, serverA))).toMatch(/not a member of this space/);
+    } finally {
+      await scratch.query("update public.members set status='active', left_at=null where entity_id=$1", [people.dave.memberA]);
+    }
+    // Restored, and access comes back: the refusal was the membership, not a
+    // one-way latch on the binding.
+    expect(await outcome(() => bindings.authorize(s.claims, s.sessionId, serverA))).toBe('ok');
+  });
+
+  it('ROOT removed while BOTH the caller and the launcher stay members: only the root check refuses', async () => {
+    /*
+     * The cell above is answered by checks that predate 343 — the caller's own
+     * membership, and 332's `launcher_identity_id` membership — because for a
+     * BEARER chain the launcher and the root are the same human. So on its own
+     * it would pass even if 343's root check did nothing.
+     *
+     * Here they differ, which is the shape a SCHEDULE root has: the launcher is
+     * whoever the binding transaction ran as, and the root is the human who
+     * armed the loop. The binding is written directly to get that shape without
+     * the loop-executor ordering caveat in the way. Removing only the ROOT
+     * leaves every pre-343 check satisfied, so nothing but the recorded root can
+     * refuse — which is the whole reason it is recorded.
+     */
+    const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    await forgeBinding({
+      sessionId: s.sessionId, authSessionId: s.authSessionId, space: spaceA,
+      runtime: 'alice', launcher: 'alice', root: 'dave', rootMember: people.dave.memberA,
+      chain: [s.sessionId], chainSpaces: [spaceA],
+      selections: [{ serverId: serverA, credentialId: sharedKeyA }],
+    });
+    expect(await bindings.authorize(s.claims, s.sessionId, serverA))
+      .toMatchObject({ launcherIdentityId: people.alice.identity, rootIdentityId: people.dave.identity });
+    await scratch.query("update public.members set status='removed', left_at=now() where entity_id=$1", [people.dave.memberA]);
+    try {
+      expect(await outcome(() => bindings.authorize(s.claims, s.sessionId, serverA)))
+        .toMatch(/no longer a member of (this space|every space in the chain)/);
+      // Controls: both of the pre-343 principals are untouched, so neither of
+      // their checks is what refused.
+      for (const member of [people.alice.memberA, people.dave.memberB]) {
+        const [row] = await scratch.query<{ status: string }>('select status from public.members where entity_id=$1', [member]);
+        expect(row?.status).toBe('active');
+      }
+    } finally {
+      await scratch.query("update public.members set status='active', left_at=null where entity_id=$1", [people.dave.memberA]);
+    }
+    expect(await outcome(() => bindings.authorize(s.claims, s.sessionId, serverA))).toBe('ok');
+  });
+
+  it('§6.2 A -> B -> A: losing the MIDDLE Space withdraws access in the outer one', async () => {
+    /*
+     * The shape the plan's "a chain like A -> B -> A can't launder access"
+     * names. It is written directly: an agent bearer is pinned to its own Space
+     * (Q15), so `execution_spawn` refuses a cross-Space agent spawn and this
+     * chain cannot be produced live. The RULE still has to hold, because the pin
+     * is a second mechanism and not this one.
+     */
+    const hop = await session(spaceA, people.dave.memberA, personaA, 'dave');
+    await forgeBinding({
+      sessionId: hop.sessionId, authSessionId: hop.authSessionId, space: spaceA,
+      runtime: 'dave', root: 'dave', rootMember: people.dave.memberA,
+      chain: [hop.sessionId, randomUUID(), randomUUID()],
+      chainSpaces: [spaceA, spaceB, spaceA],
+      selections: [{ serverId: serverA, credentialId: sharedKeyA }],
+    });
+    expect(await outcome(() => bindings.authorize(hop.claims, hop.sessionId, serverA))).toBe('ok');
+    // Alice keeps her membership of A, and loses only B — the Space the chain
+    // merely passed THROUGH. Checking the target Space alone would miss this.
+    await scratch.query("update public.members set status='left', left_at=now() where entity_id=$1", [people.dave.memberB]);
+    try {
+      expect(await outcome(() => bindings.authorize(hop.claims, hop.sessionId, serverA)))
+        .toMatch(/no longer a member of every space in the chain/);
+      // Control: she IS still a member of A, so the target-Space check alone
+      // would have admitted this call. That is what makes §6.2 load-bearing.
+      const [row] = await scratch.query<{ status: string }>('select status from public.members where entity_id=$1', [people.dave.memberA]);
+      expect(row?.status).toBe('active');
+    } finally {
+      await scratch.query("update public.members set status='active', left_at=null where entity_id=$1", [people.dave.memberB]);
+    }
+    expect(await outcome(() => bindings.authorize(hop.claims, hop.sessionId, serverA))).toBe('ok');
+  });
+
+  it('the chain depth cap is 8, and a ninth hop is refused rather than truncated', async () => {
+    const source = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const child = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const eight = [source.sessionId, ...Array.from({ length: 7 }, () => randomUUID())];
+    await forgeBinding({
+      sessionId: source.sessionId, authSessionId: source.authSessionId, space: spaceA,
+      runtime: 'alice', root: 'alice', rootMember: people.alice.memberA,
+      chain: eight, chainSpaces: eight.map(() => spaceA), selections: [],
+    });
+    // The source itself is at the cap, so the child would be the ninth hop.
+    const got = await provenanceOf(
+      { ...source.claims }, child.sessionId, child.token,
+      { sessionId: source.sessionId, authSessionId: source.authSessionId });
+    expect(got.reason).toBe('depth_exceeded');
+    expect(got.depth).toBe(9);
+    // And a chain one shorter is admitted, so the cap is a boundary and not a
+    // blanket refusal of delegated launches.
+    const seven = eight.slice(0, 7);
+    await forgeBinding({
+      sessionId: source.sessionId, authSessionId: source.authSessionId, space: spaceA,
+      runtime: 'alice', root: 'alice', rootMember: people.alice.memberA,
+      chain: seven, chainSpaces: seven.map(() => spaceA), selections: [],
+    });
+    const ok = await provenanceOf(
+      { ...source.claims }, child.sessionId, child.token,
+      { sessionId: source.sessionId, authSessionId: source.authSessionId });
+    expect(ok.reason).toBe('ready');
+    expect(ok.depth).toBe(8);
+    expect(ok.rootMemberId).toBe(people.alice.memberA);
+  });
+});
+
+describe('§6 — the recorded chain is what audit reads', () => {
+  it('mcp_session_provenance returns what bind recorded, and refuses a link caller', async () => {
+    const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    await bindings.bind(human('alice', spaceA), {
+      sessionId: s.sessionId, spaceId: spaceA, teamMemberId: personaA, agentToken: s.token,
+      mcpSelections: [{ serverId: serverA, credentialId: aliceKeyA }],
+    });
+    const recorded = await db.rpc<{ recorded: boolean; rootMemberId: string; chain: string[]; depth: number; rootStillAdmitted: boolean }>(
+      human('alice', spaceA), 'mcp_session_provenance', [s.sessionId]);
+    expect(recorded).toMatchObject({
+      recorded: true, rootMemberId: people.alice.memberA, depth: 1, rootStillAdmitted: true,
+    });
+    expect(recorded.chain).toEqual([s.sessionId]);
+    // Off the human gate, so it refuses a link caller itself — otherwise a link
+    // session could enumerate which members are behind a Space's agents.
+    expect(await outcome(() => db.rpc({ ...human('alice', spaceA), authKind: 'link' }, 'mcp_session_provenance', [s.sessionId])))
+      .toMatch(/linked MCP provenance is unavailable/);
+    // A session nobody bound reads as not recorded rather than raising.
+    const bare = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    expect(await db.rpc<{ recorded: boolean }>(human('alice', spaceA), 'mcp_session_provenance', [bare.sessionId]))
+      .toMatchObject({ recorded: false });
+  });
+
+  it('a launch in B never reaches A\'s connections, pinned or defaulted', async () => {
+    const s = await session(spaceB, people.alice.memberB, personaB, 'alice');
+    const input = { sessionId: s.sessionId, spaceId: spaceB, teamMemberId: personaB, agentToken: s.token };
+    // Her own B connection resolves with no pin at all (§3 tier 1 under the root).
+    expect(await bindings.bind(human('alice', spaceB), { ...input, mcpSelections: [{ serverId: serverB }] }))
+      .toEqual([{ serverId: serverB, credentialId: aliceKeyB }]);
+    // A's connector is not even VISIBLE to a launch in B: `loadMcpServer` reads
+    // through RLS under the root's pinned claims, so it is not_found rather
+    // than "belongs to another space". The stricter of the two answers.
+    expect(await outcome(() => bindings.bind(human('alice', spaceB), { ...input, mcpSelections: [{ serverId: serverA }] })))
+      .toMatch(/MCP connector is unavailable/);
+    expect(await outcome(() => bindings.bind(human('alice', spaceB), { ...input, mcpSelections: [{ serverId: serverB, credentialId: aliceKeyA }] })))
+      .toMatch(/MCP launch unavailable|MCP credential unavailable/);
+  });
+});
+
+describe('§6 — the delegated hop, including bindings written before 343', () => {
+  it('a delegated launch records [child, parent] and keeps the parent chain root', async () => {
+    const parent = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const child = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    // Alice launches the parent as a human bearer; the parent then launches the
+    // child on its OWN agent bearer, which is the only source §6 admits.
+    await bindings.bind(human('alice', spaceA), {
+      sessionId: parent.sessionId, spaceId: spaceA, teamMemberId: personaA, agentToken: parent.token, mcpSelections: [],
+    });
+    await bindings.bind({ ...parent.claims, mcpSource: { sessionId: parent.sessionId, authSessionId: parent.authSessionId } }, {
+      sessionId: child.sessionId, spaceId: spaceA, teamMemberId: personaA, agentToken: child.token,
+      mcpSelections: [{ serverId: serverA, credentialId: aliceKeyA }],
+    });
+    const grant = await bindings.authorize(child.claims, child.sessionId, serverA);
+    // The whole ancestry, nearest hop first, read in ONE hop because the
+    // parent's binding already held its own chain.
+    expect(grant.chain).toEqual([child.sessionId, parent.sessionId]);
+    expect(grant.chainSpaceIds).toEqual([spaceA, spaceA]);
+    expect(grant).toMatchObject({ rootIdentityId: people.alice.identity, rootMemberId: people.alice.memberA });
+  });
+
+  it('a PRE-343 parent binding still yields a one-hop root, and only for a human kind', async () => {
+    /*
+     * Rows written before this migration have null chain columns, and they will
+     * exist in every database that upgrades. Their launcher identity WAS checked
+     * against the human auth kinds when they were written and that kind is
+     * stored, so they are still a sound one-hop root — but a stored kind that is
+     * NOT human is exactly a binding written with no root, and it must not
+     * become one now.
+     */
+    const parent = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const child = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    await bindings.bind(human('alice', spaceA), {
+      sessionId: parent.sessionId, spaceId: spaceA, teamMemberId: personaA, agentToken: parent.token, mcpSelections: [],
+    });
+    await scratch.query(`update internal.mcp_session_bindings
+      set chain=null, chain_space_ids=null, root_member_id=null, root_identity_id=null
+      where session_id=$1`, [parent.sessionId]);
+    const source = { sessionId: parent.sessionId, authSessionId: parent.authSessionId };
+    const got = await provenanceOf(parent.claims, child.sessionId, child.token, source);
+    expect(got).toMatchObject({ reason: 'ready', via: 'bearer_source_legacy', depth: 2, rootMemberId: people.alice.memberA });
+
+    await scratch.query("update internal.mcp_session_bindings set launcher_auth_kind='' where session_id=$1", [parent.sessionId]);
+    expect((await provenanceOf(parent.claims, child.sessionId, child.token, source)).reason).toBe('no_human_provenance');
+  });
+});
