@@ -21,7 +21,15 @@
  * `--allow-http` rides along only for an `http://` endpoint — the loopback and
  * LAN case. Adding it to an `https://` snippet would teach a member to pass a
  * flag that downgrades a connection they already have.
+ *
+ * THE BRIDGE VERSION IS PINNED (surface advisor, S31). A bare `npx -y
+ * mcp-remote` fetches whatever npm published most recently and then hands it
+ * the member's bearer token — every Claude Desktop start is a fresh
+ * supply-chain decision made by someone else. The pin is the version this
+ * snippet was written against; raising it is a deliberate edit here, which is
+ * exactly the property a bare tag does not have.
  */
+const MCP_REMOTE_VERSION = '0.15.2';
 
 /** A snippet: what to paste, and where it goes. */
 export interface McpClientSnippet {
@@ -43,13 +51,13 @@ function endpointOf(endpoint: string): string {
 
 export function claudeDesktopSnippet(endpoint: string, secret: string): McpClientSnippet {
   const url = endpointOf(endpoint);
-  const args = ['-y', 'mcp-remote', url, '--header', `Authorization: Bearer ${secret}`];
+  const args = ['-y', `mcp-remote@${MCP_REMOTE_VERSION}`, url, '--header', `Authorization: Bearer ${secret}`];
   if (url.startsWith('http://')) args.push('--allow-http');
   return {
     id: 'claude-desktop',
     client: 'Claude Desktop',
     where: 'claude_desktop_config.json',
-    note: 'Needs Node installed. Claude Desktop’s own Connectors screen adds a server by URL but cannot send a bearer header, so the bridge carries it.',
+    note: `Needs Node installed. Claude Desktop’s own Connectors screen adds a server by URL but cannot send a bearer header, so the bridge carries it. The bridge is pinned to mcp-remote ${MCP_REMOTE_VERSION}: unpinned, every start would fetch the latest release and hand it this token.`,
     text: `${JSON.stringify({ mcpServers: { tm8: { command: 'npx', args } } }, null, 2)}\n`,
   };
 }
@@ -72,7 +80,10 @@ export function cliSnippet(endpoint: string, secret: string): McpClientSnippet {
     id: 'cli',
     client: 'Claude Code',
     where: 'a terminal',
-    note: null,
+    /* The token is on a command line here and nowhere else on this surface, so
+       the snippet says so rather than leaving it in the member's history
+       unremarked (surface advisor, S31). */
+    note: 'This puts the token in your shell history — clear it afterwards, or keep the header in a file and paste from there.',
     text: `claude mcp add --transport http tm8 ${endpointOf(endpoint)} --header "Authorization: Bearer ${secret}"`,
   };
 }
