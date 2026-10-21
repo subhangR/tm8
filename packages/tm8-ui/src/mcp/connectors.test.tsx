@@ -65,6 +65,11 @@ describe('S14(c)/S2 — a logo slug is a bundled mark, never an address', () => 
     expect(connectorGlyph('notion')).not.toBe(GENERIC_GLYPH);
     expect(connectorGlyph('a-slug-this-build-never-heard-of')).toBe(GENERIC_GLYPH);
     expect(connectorGlyph(undefined)).toBe(GENERIC_GLYPH);
+    // A prototype key is not a glyph (S27). On a plain object this returned
+    // `Object`'s constructor — a function, which React refuses to render.
+    for (const inherited of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(connectorGlyph(inherited), inherited).toBe(GENERIC_GLYPH);
+    }
   });
 
   it('renders the catalog with no image element and no fetch', async () => {

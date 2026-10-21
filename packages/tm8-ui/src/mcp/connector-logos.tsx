@@ -13,14 +13,22 @@
  * one failure mode a slug-to-URL scheme has, and the reason this is a lookup
  * and not a template.
  */
-const GLYPHS: Record<string, string> = {
-  'google-gmail': '✉',
-  'google-calendar': '◷',
-  'google-drive': '△',
-  notion: 'N',
-  slack: '#',
-  figma: '◆',
-};
+/**
+ * A `Map`, not an object literal: a plain object resolves INHERITED keys, so
+ * `GLYPHS['constructor']` would hand back `Object`'s constructor — a function,
+ * which React then refuses to render as a child. Slugs come from the server's
+ * static catalog so nothing reaches that today (surface advisor, S27), but the
+ * guarantee this module exists to make is "an unknown slug falls back", and a
+ * lookup that can return a function does not make it.
+ */
+const GLYPHS = new Map<string, string>([
+  ['google-gmail', '✉'],
+  ['google-calendar', '◷'],
+  ['google-drive', '△'],
+  ['notion', 'N'],
+  ['slack', '#'],
+  ['figma', '◆'],
+]);
 
 /** The generic mark: a custom connector, or a catalog slug this build has no glyph for. */
 export const GENERIC_GLYPH = '⧉';
@@ -31,7 +39,7 @@ export const GENERIC_GLYPH = '⧉';
  */
 export function connectorGlyph(logo: string | undefined): string {
   if (!logo) return GENERIC_GLYPH;
-  return GLYPHS[logo] ?? GENERIC_GLYPH;
+  return GLYPHS.get(logo) ?? GENERIC_GLYPH;
 }
 
 export function ConnectorLogo({ logo, title }: { logo?: string; title: string }) {
