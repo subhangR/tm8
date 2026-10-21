@@ -35,14 +35,60 @@ export interface SessionIdentityResolverOptions {
 }
 
 /**
- * Whether a verified session row binds `tm8.session_space_id`. Every row that
- * carries a space binds it unless the node runs `off`: agent kinds always carry
- * one (226's `auth_sessions_pinned_kinds_have_space`), and a human row carries
- * one only when `auth.space.enter` (233, W3) minted it. A human GATE session
- * has `space_id` null and binds nothing, so under `agents` every pre-W3 human
- * session answers exactly as before.
+ * 226's `auth_sessions_pinned_kinds_have_space`: `check (kind not in ('agent',
+ * 'agent_runtime', 'link') or space_id is not null)`. A row of one of these
+ * kinds was minted FOR a Space and cannot exist without one, so its Space is
+ * not a policy choice — it is part of what the credential is.
  */
-function sessionSpacePin(mode: SpaceSessionsMode, spaceId: string | null | undefined): string | undefined {
+const ALWAYS_PINNED_KINDS: ReadonlySet<string> = new Set(['agent', 'agent_runtime', 'link']);
+
+/**
+ * Whether a verified session row binds `tm8.session_space_id`.
+ *
+ * B20 (Q15). The three kinds 226 forces a `space_id` onto bind it in EVERY
+ * `TM8_SPACE_SESSIONS` mode, `off` included. `off` gates only the HUMAN
+ * `auth.space.enter` pins (233, W3) — the thing W3 added and the thing the
+ * kill switch exists to take back. It was never meant to hand an agent bearer
+ * its identity's OTHER Spaces, which is what un-pinning it does: one
+ * `TM8_SPACE_SESSIONS=off` on a node turned every agent token into a
+ * cross-Space credential for its whole identity (the pre-W0a leak). This is
+ * the same argument `viaLinkId` below already carries: the pin only ever
+ * NARROWS, so no mode may un-bind it.
+ *
+ * This REVERSES a documented decision: the W3 audit matrix (#852,
+ * `test/db/cross-space-token.pg.test.ts`) pinned the un-pinning as "the
+ * documented behaviour of the kill switch", in the same comment that called it
+ * "the pre-W0a leak". Those nine cells now assert the narrowing, each citing
+ * B20/Q15 and keeping its paired positive. The kind x mode table is
+ * `test/identity/pinned-kinds-always-bound.test.ts`.
+ *
+ * A human row carries a `space_id` only when `auth.space.enter` minted it. A
+ * human GATE session has `space_id` null and binds nothing, so under `agents`
+ * every pre-W3 human session answers exactly as before.
+ */
+function sessionSpacePin(
+  mode: SpaceSessionsMode,
+  kind: string,
+  spaceId: string | null | undefined,
+  sessionId: string,
+): string | undefined {
+  if (ALWAYS_PINNED_KINDS.has(kind)) {
+    // Unreachable through SQL while 226's CHECK stands, and refused rather
+    // than binding `undefined` if it ever is: an agent row with no Space is a
+    // broken invariant, and the fail-open answer is exactly the leak above.
+    //
+    // B32: logged at error level as well, because a 401 on its own reads as a
+    // credential problem to whoever hit it and tells the OPERATOR nothing. The
+    // session id and kind are enough to find the row; the token never appears.
+    if (!spaceId) {
+      console.error(
+        `[tm8] BROKEN INVARIANT: auth_sessions row ${sessionId} of kind ${kind} has no space_id ` +
+          `(226 auth_sessions_pinned_kinds_have_space); refusing the credential (B20/Q15)`,
+      );
+      throw new CollabError('unauthenticated', `a ${kind} session is not bound to a space`);
+    }
+    return spaceId;
+  }
   return mode !== 'off' && spaceId ? spaceId : undefined;
 }
 
@@ -108,7 +154,7 @@ export function identityFromSession(
   raw: string,
   spaceSessions: SpaceSessionsMode,
 ): RequestIdentity {
-  const sessionSpaceId = sessionSpacePin(spaceSessions, session.spaceId);
+  const sessionSpaceId = sessionSpacePin(spaceSessions, session.kind, session.spaceId, session.sessionId);
   return {
     kind: 'bearer',
     identityId: session.identityId,
@@ -135,7 +181,10 @@ export function identityFromSession(
     authKind: session.kind,
     apiScope: session.apiScope ?? 'write',
     // 226/227. The space the session was minted for, off the same
-    // verified row. Every membership helper intersects with it.
+    // verified row. Every membership helper intersects with it. For an
+    // agent, agent_runtime or link row it is bound in every spaces mode
+    // (B20/Q15); for a human row only `auth.space.enter` sets it, and
+    // `off` leaves it unbound.
     ...(sessionSpaceId ? { sessionSpaceId } : {}),
     // 256 (W7p). Off the same verified row; NOT gated by the spaces mode —
     // it only narrows, and `off` must not un-bind a link.
