@@ -822,6 +822,14 @@ begin
       raise exception 'MCP provenance root is no longer a member of every space in the chain'
         using errcode = '42501';
     end if;
+    -- REDUNDANT BY CONSTRUCTION, and kept deliberately: `chain[1]` is always
+    -- this session, so its Space is `b.space_id` and the §6.2 check above has
+    -- already covered this one. No test can tell the two apart, which is why
+    -- this comment exists rather than a cell — disabling this branch leaves
+    -- every cell green. It stays because the redundancy is only guaranteed while
+    -- the chain's head is this session, and `v_root` is also what the caller
+    -- resolves accounts under: if a future writer ever stores a chain that does
+    -- not start here, this is the line that still fails closed.
     v_root := internal.mcp_root_member_in(b.root_identity_id, b.space_id);
     if v_root is null then
       raise exception 'MCP provenance root is no longer a member of this space' using errcode = '42501';

@@ -504,8 +504,14 @@ describe('§6 deny matrix — re-checked on every call, not only at bind', () =>
       .toMatchObject({ launcherIdentityId: people.alice.identity, rootIdentityId: people.dave.identity });
     await scratch.query("update public.members set status='removed', left_at=now() where entity_id=$1", [people.dave.memberA]);
     try {
+      // The SPECIFIC refusal, not an alternation: §6.2 is what answers, because
+      // chain[1] is this session and so this Space is already in the array.
+      // `read_mcp_session_binding`'s own "root is no longer a member of this
+      // space" branch is redundant by construction — disabling it leaves every
+      // cell green — and the migration says so at that line rather than
+      // pretending a cell defends it.
       expect(await outcome(() => bindings.authorize(s.claims, s.sessionId, serverA)))
-        .toMatch(/no longer a member of (this space|every space in the chain)/);
+        .toMatch(/no longer a member of every space in the chain/);
       // Controls: both of the pre-343 principals are untouched, so neither of
       // their checks is what refused.
       for (const member of [people.alice.memberA, people.dave.memberB]) {
@@ -633,6 +639,57 @@ describe('§6 — a forged root is refused (B28)', () => {
       s.sessionId, hashToken(s.token.split('.')[1]!), '[]',
       null, null, people.dave.memberA, [s.sessionId], [spaceA],
     ])))).toMatch(/root changed during launch/);
+  });
+
+  it('a chain that UNDERSTATES a hop\'s Space is refused — §6.2 cannot be dodged', async () => {
+    /*
+     * The check this cell defends is the one the identity-id allow-list verdict
+     * for `bind_mcp_session` claims: "a caller cannot understate a hop's space
+     * to dodge §6.2's membership check on it". Nothing was watching it — all the
+     * other cells pass with the read-back disabled — so the verdict asserted a
+     * property no test defended. Found by disabling each new guard in turn and
+     * looking for a cell that fails.
+     *
+     * THE ATTACK: Bob is a member of A only. He launches in A with a chain whose
+     * second hop is a session that really lives in B, but declares that hop's
+     * Space as A. §6.2 then checks him against [A, A] — where he IS a member —
+     * instead of the true [A, B], where he is not. Every other check is
+     * satisfied: the head is his session, the tail matches the source binding's
+     * stored chain, and the root identity is his own.
+     *
+     * The refusal comes from reading each hop's Space back off its own entity
+     * row rather than believing the array.
+     */
+    const child = await session(spaceA, people.bob.memberA, personaA, 'bob');
+    const sourceInB = await session(spaceB, people.alice.memberB, personaB, 'alice');
+    // A pre-343-shaped source binding (no recorded root), so the source-root
+    // anchor cannot be what refuses, leaving the read-back isolated.
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into internal.mcp_session_bindings
+        (session_id,space_id,auth_session_id,runtime_identity_id,launcher_identity_id,launcher_auth_kind,
+         selections,chain,chain_space_ids)
+        values($1,$2,$3,$4,$4,'browser','[]',$5,$6)
+        on conflict (session_id) do update set chain=excluded.chain, chain_space_ids=excluded.chain_space_ids`,
+        [sourceInB.sessionId, spaceB, sourceInB.authSessionId, people.alice.identity,
+         [sourceInB.sessionId], [spaceB]]);
+    });
+    const bob: DbClaims = { identityId: people.bob.identity, authKind: 'browser', sessionSpaceId: spaceA };
+    const bind = (spaces: string[]) => db.tx(bob, q => q.rpc('bind_mcp_session', [
+      child.sessionId, hashToken(child.token.split('.')[1]!), '[]',
+      sourceInB.sessionId, sourceInB.authSessionId, people.bob.memberA,
+      [child.sessionId, sourceInB.sessionId], spaces,
+    ]));
+    // Understated: the second hop is really in B, declared as A.
+    expect(await outcome(() => bind([spaceA, spaceA])))
+      .toMatch(/names a space the hop does not belong to/);
+    // And told the TRUTH, §6.2 refuses it on the merits — Bob is not in B. Two
+    // different refusals, so neither can stand in for the other.
+    expect(await outcome(() => bind([spaceA, spaceB])))
+      .toMatch(/not a member of every space in the chain/);
+    const [row] = await scratch.query<{ n: string }>(
+      'select count(*)::text n from internal.mcp_session_bindings where session_id=$1', [child.sessionId]);
+    expect(row?.n).toBe('0');
   });
 
   it('a delegated launch cannot re-root away from its source binding', async () => {
