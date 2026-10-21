@@ -442,6 +442,26 @@ describe('mcp.audit.list', () => {
   });
 });
 
+describe('connector test calls (359, B51)', () => {
+  it('every mcp.servers.test call writes a via=test row rooted at the caller, a failure included', async () => {
+    const test = () => registry.get('mcp.servers.test')!({
+      op: getOperation('mcp.servers.test'), opName: 'mcp.servers.test', params: { serverId: server },
+      query: new URLSearchParams(), body: { clientMutationId: randomUUID() }, requestId: `audit-test-${randomUUID()}`, headers: {}, method: 'POST', path: '/',
+      identity: { kind: 'bearer', identityId: people.alice.identity, authKind: 'browser', sessionId: randomUUID(), sessionSpaceId: space },
+    } as unknown as RequestContext) as Promise<{ ready: boolean }>;
+    expect(await test()).toMatchObject({ ready: true });
+    failUpstream = true;
+    try { expect(await test()).toMatchObject({ ready: false }); } finally { failUpstream = false; }
+    const rows = await scratch.query<Record<string, unknown>>("select * from public.mcp_call_audit where via = 'test' order by id");
+    expect(rows.map(r => r.outcome)).toEqual(['started', 'succeeded', 'started', 'failed']);
+    for (const row of rows) expect(row).toMatchObject({ space_id: space, server_id: server, session_id: null, chain: null,
+      root_member_id: people.alice.member, method: 'tools/list' });
+    // Only a test row may lack a session.
+    expect(await failure(() => scratch.query("update public.mcp_call_audit set via = 'session' where id = $1", [rows[0]!.id])))
+      .toMatch(/mcp_call_audit_session_unless_test/);
+  });
+});
+
 describe('retention', () => {
   it('prunes rows past the window, keeps the rest, and is node-admin only', async () => {
     const s = await boundSession('bob');
