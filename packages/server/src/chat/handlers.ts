@@ -18,6 +18,7 @@ import {
   type SetChatModelResult,
   type SetChatCredentialsInput,
   type SetChatCredentialsResult,
+  type InterruptChatResult,
   type StartChatInput,
   type StartChatResult,
 } from '@tm8/contract';
@@ -276,6 +277,30 @@ function setChatModel(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHand
 }
 
 /**
+ * Stop the chat's running turn — the composer's ■ and Esc.
+ *
+ * Any member who can read the chat may stop it, not only the configuring
+ * human: a chat is shared, and the person watching a runaway turn is often not
+ * the one who set the chat up. Queued turns behind the stopped one still run —
+ * they are other messages, frequently other people's.
+ */
+function interruptChat(facade: FacadeDeps, chat?: ChatHandlerDeps): OperationHandler {
+  return async (ctx) => {
+    if (!chat) throw new CollabError('upstream_unavailable', 'chat runtime is unavailable on this node');
+    const chatId = requireUuidParam(ctx, 'id') as EntityId;
+    const auth = claimsFor(await facade.owner(), ctx);
+    if (!auth.identityId) throw new CollabError('unauthenticated', 'authentication is required');
+    const [visible] = await facade.db.tx(auth, q => q.query<{ entity_id: string }>(
+      `select c.entity_id from public.chats c join public.entities e on e.id=c.entity_id
+        where c.entity_id=$1 and e.deleted_at is null`, [chatId]));
+    if (!visible) throw new CollabError('not_found', 'chat not found');
+    const disposition = await chat.orchestrator.interrupt(chatId);
+    const result: InterruptChatResult = { chatId, disposition };
+    return result;
+  };
+}
+
+/**
  * Every chat operation is human-only.
  *
  * `credentials.ts` states the reasoning at length and it holds identically
@@ -323,5 +348,6 @@ export function registerChatHandlers(
     'chat.start': humanOnly(startChat(facade, chat)),
     'chat.setModel': humanOnly(setChatModel(facade, chat)),
     'chat.setCredentials': humanOnly(setChatCredentials(facade, chat)),
+    'chat.interrupt': humanOnly(interruptChat(facade, chat)),
   });
 }

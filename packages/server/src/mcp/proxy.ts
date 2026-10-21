@@ -10,9 +10,15 @@ export interface McpProxyDefinition {
   auth:{type:'none'|'api_key'|'oauth2';headerName?:string;envKey?:string;prefix?:'Bearer'|'none'};
 }
 export interface McpRuntimeClaims extends DbClaims { authSessionId?:string }
-export interface McpProxyGrant { sessionId:string;identityId:string;launcherIdentityId?:string;spaceId:string;serverId:string;credentialId?:string }
+export interface McpProxyGrant { sessionId:string;identityId:string;launcherIdentityId?:string;spaceId:string;serverId:string;credentialId?:string;
+  /**
+   * §6's recorded provenance (343). The ROOT is the human the connection
+   * belongs to, so it is the identity every credential read runs under, and the
+   * chain is what an audit row names. Absent on a binding written before 343.
+   */
+  rootIdentityId?:string|null;rootMemberId?:string|null;chain?:string[];chainSpaceIds?:string[] }
 export interface McpProxyPorts {
-  credentials: Pick<McpCredentialStore,'read'|'replace'> & Partial<Pick<McpCredentialStore,'withRefreshLock'>>;
+  credentials: Pick<McpCredentialStore,'read'|'replace'> & Partial<Pick<McpCredentialStore,'withRefreshLock'|'touch'>>;
   /** Must read live session, launcher, selected connector/account and current membership from DB. */
   authorize(claims:McpRuntimeClaims,sessionId:string,serverId:string):Promise<McpProxyGrant>;
   definition(claims:DbClaims,serverId:string):Promise<McpProxyDefinition>;
@@ -27,7 +33,10 @@ export class McpProxy {
     if(!['tools/list','tools/call'].includes(method))throw new Error('MCP method refused');
     const grant=await this.ports.authorize(claims,sessionId,serverId);
     if(grant.sessionId!==sessionId || grant.serverId!==serverId || grant.identityId!==claims.identityId || claims.viaLinkId)throw new Error('MCP session unavailable');
-    const credentialClaims:DbClaims={...claims,identityId:grant.launcherIdentityId??grant.identityId,actorId:undefined,nodeAdmin:false};
+    // §6: the connection belongs to the ROOT, so the opener runs as the root.
+    // The launcher identity is the same human for every bearer chain; it stays
+    // as the fallback for a binding written before 343 recorded a root.
+    const credentialClaims:DbClaims={...claims,identityId:grant.rootIdentityId??grant.launcherIdentityId??grant.identityId,actorId:undefined,nodeAdmin:false};
     const definition=await this.ports.definition(credentialClaims,serverId);
     if(!definition.approved || definition.enabled===false || definition.spaceId!==grant.spaceId)throw new Error('MCP connector unavailable');
     if(definition.transport==='stdio') {
@@ -143,6 +152,12 @@ export class McpProxy {
         if(value.id!==1 || value.error || value.result===undefined)throw new Error('MCP upstream request failed');
         return redactMcpResult(value.result,redactions);
       };
+      // §5.2 "Make the proxy write it": last_used_at is what the Connectors page
+      // shows and what the reuse heuristic reads. Best-effort — a failed stamp
+      // must never fail a tool call that is otherwise authorized.
+      if(grant.credentialId && this.ports.credentials.touch) {
+        await this.ports.credentials.touch(credentialClaims,{spaceId:grant.spaceId,serverId,credentialId:grant.credentialId}).catch(()=>{});
+      }
       if(!connection.initialized) {
         const initialization=await rpc('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'tm8',version:'1'}}) as {protocolVersion?:string};
         if(initialization.protocolVersion && !['2024-11-05','2025-03-26','2025-06-18'].includes(initialization.protocolVersion))throw new Error('MCP protocol version unsupported');

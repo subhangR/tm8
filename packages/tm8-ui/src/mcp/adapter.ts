@@ -12,6 +12,7 @@ export function definitionFor(input: McpDefinition, previous?: McpServerDefiniti
   const authorizationUrl = input.authorizationUrl ?? oauth?.authorizationUrl;
   const tokenUrl = input.tokenUrl ?? oauth?.tokenUrl;
   const clientId = input.clientId ?? oauth?.clientId;
+  const clientSecretEnv = input.clientSecretEnv ?? oauth?.clientSecretEnv;
   const slot = input.secretSlot ?? (priorAuth?.type === 'api_key' ? priorAuth.headerName ?? priorAuth.envKey : undefined) ?? (input.transport === 'http' ? 'Authorization' : 'API_KEY');
   const definition = {
     name: input.title, provenance: input.description || undefined, transport: input.transport,
@@ -23,7 +24,7 @@ export function definitionFor(input: McpDefinition, previous?: McpServerDefiniti
     headerKeys: input.auth === 'api_key' && input.transport === 'http' ? [slot] : [],
     auth: input.auth === 'none' ? { type: 'none' } : input.auth === 'api_key'
       ? { type: 'api_key', ...(input.transport === 'http' ? { headerName: slot, prefix: input.prefix ?? (priorAuth?.type === 'api_key' ? priorAuth.prefix : undefined) ?? 'Bearer' } : { envKey: slot }) }
-      : { type: 'oauth2', ...(issuer ? { issuer } : {}), ...(authorizationUrl ? { authorizationUrl } : {}), ...(tokenUrl ? { tokenUrl } : {}), ...(clientId ? { clientId } : {}), scopes: input.scopes ?? oauth?.scopes ?? [] },
+      : { type: 'oauth2', ...(issuer ? { issuer } : {}), ...(authorizationUrl ? { authorizationUrl } : {}), ...(tokenUrl ? { tokenUrl } : {}), ...(clientId ? { clientId } : {}), ...(clientSecretEnv ? { clientSecretEnv } : {}), scopes: input.scopes ?? oauth?.scopes ?? [] },
   };
   return McpServerDefinitionSchema.parse(definition);
 }
@@ -33,7 +34,10 @@ export function viewOf(server: McpServerView, accounts: McpCredentialView[]): Mc
     transport: d.transport, url: d.url, command: d.command, args: d.args, auth: d.auth.type === 'oauth2' ? 'oauth' : d.auth.type,
     approved: d.approved, enabled: d.enabled !== false, canApprove: server.allowed.approve,
     canManage: server.allowed.manage, canAttach: server.allowed.attach, health: server.health,
-    accounts: accounts.map(a => ({ id: a.id, label: a.label, ownerId: a.ownerId, ownerLabel: "ownerLabel" in a && typeof a.ownerLabel === "string" ? a.ownerLabel : a.manageable ? "You" : "Another member", canUse: a.usable, canManage: a.manageable,
+    // ownerId is null on a Space-owned connection (G2): it has no member owner,
+    // so "Another member" would be a plain lie. The full Shared/Personal column
+    // is §10.1/§10.3 and belongs to the Connectors page work.
+    accounts: accounts.map(a => ({ id: a.id, label: a.label, ...(a.ownerId ? { ownerId: a.ownerId } : {}), ownerLabel: "ownerLabel" in a && typeof a.ownerLabel === "string" ? a.ownerLabel : a.ownerId === null ? "Shared with Space" : a.manageable ? "You" : "Another member", canUse: a.usable, canManage: a.manageable,
       status: a.revoked ? 'revoked' : a.usable && a.reason === 'ready' ? 'connected' : a.reason,
       sharing: a.visibility === 'selected' ? 'members' : a.visibility, memberIds: a.sharedMemberIds })),
   };

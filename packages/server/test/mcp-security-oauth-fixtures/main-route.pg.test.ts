@@ -95,3 +95,30 @@ it('composed HTTP callback refuses expired state before token exchange', async (
   finally { clock.mockRestore(); }
   expect(tokens).toHaveLength(before);
 });
+
+it('an OAuth connect begun before a server restart completes after it, keeping its scope and returnTo (G1, §5.4)', async () => {
+  const before = tokens.length;
+  const started = successData(await node.request<{ authorizationUrl: string }>('POST', `/v2/mcp/servers/${serverId}/oauth/begin`, {
+    serverId, clientMutationId: randomUUID(), label: 'Restart account', scope: 'space', returnTo: '/#/s/restart/settings/connectors',
+  }));
+  const auth = new URL(started.authorizationUrl); const state = auth.searchParams.get('state')!;
+  const hash = createHash('sha256').update(state).digest();
+  const pending = await node.rows<{ scope_kind: string; return_to: string; secret_ciphertext: Buffer }>(
+    'select scope_kind, return_to, secret_ciphertext from internal.mcp_oauth_pending where state_hash = $1', [hash]);
+  expect(pending).toHaveLength(1);
+  expect(pending[0]).toMatchObject({ scope_kind: 'space', return_to: '/#/s/restart/settings/connectors' });
+  // Nothing survives in memory across this: a fresh composition root, same DB and data dir.
+  const firstUrl = node.baseUrl;
+  const bootLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+  try { await node.restart(); }
+  finally { bootLog.mockRestore(); }
+  expect(node.baseUrl).not.toBe(firstUrl);
+  const completed = await callback({ state, code: 'restart-code', issuer: origin });
+  expect(completed.status).toBe(200);
+  expect(successData(completed as never)).toMatchObject({ serverId, label: 'Restart account', ownerId: null, scope: 'space', returnTo: '/#/s/restart/settings/connectors' });
+  expect(tokens).toHaveLength(before + 1);
+  expect(createHash('sha256').update(tokens.at(-1)!.get('code_verifier')!).digest('base64url')).toBe(auth.searchParams.get('code_challenge'));
+  expect(await node.rows('select 1 from internal.mcp_oauth_pending where state_hash = $1', [hash])).toHaveLength(0);
+  expect((await callback({ state, code: 'restart-code', issuer: origin })).status).toBeGreaterThanOrEqual(400);
+  expect(tokens).toHaveLength(before + 1);
+});

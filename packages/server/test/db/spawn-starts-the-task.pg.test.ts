@@ -203,10 +203,13 @@ beforeAll(async () => {
   // runs last. 267 has its own suite (launch-v3-new-task.pg.test.ts).
   // Direct story spawn extends that signature again, and canonical edges (303,
   // and 308/309 built on it) re-create it; all belong to the current-chain
-  // suites, not this intentionally pre-267 fixture.
+  // suites, not this intentionally pre-267 fixture. 330 (launched_by) is built
+  // on 303 — it sets edge_types.replaced_by and re-creates the spawn again — so
+  // it is skipped with them.
   database.apply(files.filter((f) => f !== migration && !f.endsWith(LAUNCH_V3_SUFFIX)
     && !f.endsWith('_direct_story_spawn.sql') && !f.endsWith('_canonical_edges.sql')
-    && !f.endsWith('_canonical_edges_rows.sql') && !f.endsWith('_session_teammate_participates_only.sql')));
+    && !f.endsWith('_canonical_edges_rows.sql') && !f.endsWith('_session_teammate_participates_only.sql')
+    && !f.endsWith('_launched_by.sql')));
   fixture = await seedPre131(database);
   database.apply([migration]);
 });

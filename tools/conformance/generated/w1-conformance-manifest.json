@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:cd50377655dfb62a17167c1983cb44d13a7c54a535e1207fee1afc8bf416da29",
+  "catalogDigest": "sha256:6c7a092d915dd271548b8366c7d294c27e72eb47dfe48f7657ca6930f31a9e7b",
   "catalog": {
-    "total": 372,
-    "v1": 370,
+    "total": 374,
+    "v1": 372,
     "reserved": 2,
-    "http": 370,
+    "http": 372,
     "ws": 1,
-    "registerableV1Http": 368,
+    "registerableV1Http": 370,
     "methods": {
-      "GET": 123,
-      "POST": 181,
+      "GET": 124,
+      "POST": 182,
       "PATCH": 21,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 129,
-      "command": 241,
+      "read": 130,
+      "command": 242,
       "stream": 2
     },
-    "uniqueNames": 372,
-    "uniqueBindings": 371
+    "uniqueNames": 374,
+    "uniqueBindings": 373
   },
   "reservedOperations": [
     "search.query",
@@ -400,6 +400,13 @@
         "operation": "mcp.oauth.callback",
         "method": "POST",
         "path": "/v2/mcp/oauth/callback",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.audit.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/mcp/audit",
         "status": "registered",
         "source": "server-router"
       },
@@ -1247,6 +1254,13 @@
         "operation": "chat.setModel",
         "method": "POST",
         "path": "/v2/chats/:id/model",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.interrupt",
+        "method": "POST",
+        "path": "/v2/chats/:id/interrupt",
         "status": "registered",
         "source": "server-router"
       },
@@ -3008,7 +3022,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 340
+    "unimplementedV1Http": 342
   },
   "schemas": {
     "additive": {
@@ -3652,6 +3666,23 @@
           "mcp",
           "oauth",
           "callback"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.audit.list",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.audit.list",
+        "intentTags": [
+          "mcp",
+          "audit",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -5682,6 +5713,22 @@
           "chat",
           "set",
           "model"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.interrupt",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.interrupt",
+        "intentTags": [
+          "chat",
+          "interrupt"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

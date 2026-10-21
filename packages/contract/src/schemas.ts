@@ -141,6 +141,7 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot, SetChatModelInput,
   SetChatModelResult, StartChatInput, ChatCredentialSelection, SetChatCredentialsInput, SetChatCredentialsResult,
+  InterruptChatInput, InterruptChatResult,
   PersonalStyleCreateInput, PersonalStyleUpdateInput, PersonalStyleDeleteInput, StylePushInput,
   StylePullInput, StyleRemoveInput, StylesResolveInput, StylePrefsSetInput, SpaceStyleDefaultSetInput,
   StartChatResult,
@@ -1588,6 +1589,11 @@ export const SetChatCredentialsResultSchema: z.ZodType<SetChatCredentialsResult>
   configRevision: z.number().int().positive().optional(),
   credentialIntent: ChatCredentialIntentSchema.optional(),
   appliesAt: z.literal('next_claim').optional(),
+}).strict();
+
+export const InterruptChatInputSchema: z.ZodType<InterruptChatInput> = z.object({}).strict() as z.ZodType<InterruptChatInput>;
+export const InterruptChatResultSchema: z.ZodType<InterruptChatResult> = z.object({
+  chatId: EntityIdSchema, disposition: z.enum(['requested', 'not_running']),
 }).strict();
 
 /** 328: the Coordinator's team on a chat turn — a field, never body text. */
@@ -3862,14 +3868,18 @@ export const SpaceProjectCreateInputSchema: z.ZodType<SpaceProjectCreateInput> =
   trust: ProjectTrustLevelSchema.optional(),
   name: z.string().trim().min(1).max(200).optional(),
 }).strict().superRefine((value, context) => {
-  if ((value.folderId === undefined) === (value.workingDir === undefined)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name exactly one of folderId or workingDir' });
+  /* Neither is the home default: a new folder `~/<name>` (project-home.ts). */
+  if (value.folderId !== undefined && value.workingDir !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name at most one of folderId or workingDir' });
   }
-  if (value.workingDir === undefined && (value.ensureWorkingDir !== undefined || value.trust !== undefined)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'ensureWorkingDir and trust apply only with workingDir' });
+  if (value.workingDir === undefined && value.ensureWorkingDir !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'ensureWorkingDir applies only with workingDir' });
   }
-  if (value.workingDir !== undefined && value.name === undefined) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name is required with workingDir' });
+  if (value.folderId !== undefined && value.trust !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'trust applies only to a new folder (workingDir, or none for the home default)' });
+  }
+  if (value.folderId === undefined && value.name === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'name is required unless folderId is given' });
   }
 });
 

@@ -244,6 +244,12 @@ export interface EntityListPanelProps {
    */
   rowsFor: (filter: QueryFilter, sort?: SortKey) => readonly EntitySummary[];
   /**
+   * One host-supplied fact under a row's title, from a read the summary does
+   * not carry (a project's working folder and trust). Null for a row with
+   * nothing to add, so its height is unchanged.
+   */
+  rowNoteOf?: (row: EntitySummary) => ReactNode | null;
+  /**
    * Rows of ANOTHER kind, for the rows this list's rows launched (331,
    * `list.launches`: the chat list's sessions). Absent ⇒ nothing nests.
    */
@@ -4905,6 +4911,8 @@ export function Tile({
   );
 
   // ---- the Z1 badge vocabulary, from registry DATA ------------------------
+  const rowNote = props.rowNoteOf?.(row) ?? null;
+
   const slots = list.tile.badges
     .map((spec) => renderBadge(spec.source, row))
     .filter((slot): slot is TileSlot => slot != null);
@@ -5680,6 +5688,7 @@ export function Tile({
           line 1 holds the 29px floor — a row with counts measures ~43px and a
           row without them is unchanged, which is the §6 geometry. */}
       <AttentionTileSubtitle line={attentionLine} />
+      {rowNote ? <div className="lp__tile-note" data-testid="row-note">{rowNote}</div> : null}
       {countsLine ? <div className="lp__tile-counts">{countsLine}</div> : null}
 
       {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}

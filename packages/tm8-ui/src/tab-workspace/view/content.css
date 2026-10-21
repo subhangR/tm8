@@ -34,7 +34,7 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  background: var(--pn-card);
+  background: var(--pn-x-page-bg);
 }
 
 /* --- No head rows (Subhang, round 4): the property pills are the body's first
@@ -718,7 +718,7 @@
   align-items: center;
   /* The left edge is the body's measure edge. */
   padding: 0 var(--pn-space-3) 0 max(var(--pn-space-3), (100cqw - var(--pn-read-measure)) / 2);
-  background: var(--pn-card);
+  background: var(--pn-x-page-bg);
   border-bottom: 1px solid var(--pn-line);
   transition:
     height var(--pn-dur-fast) var(--pn-ease-out),

@@ -10,3 +10,4 @@ export { TeamChip, TeamPicker } from './TeamChip';
 export { ModeOptionsForm, ModeOptionRows } from './ModeOptionsSlot';
 export { ComposerIcon } from './ComposerIcons';
 export { ThreadSettingsFields } from './ThreadSettingsFields';
+export { ProjectChip } from './ProjectChip';

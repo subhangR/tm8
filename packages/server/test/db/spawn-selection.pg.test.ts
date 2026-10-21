@@ -408,7 +408,8 @@ describe('a task dressed by the attach palette', () => {
     const manifest = manifestOf(await loadPalette());
     const { composePrompt } = await import('@tm8/prompt');
     const prompt = composePrompt(manifest, { sessionId: 'session', baseUrl: 'http://localhost' }).task;
-    expect(prompt).toContain('<linked count="3"');
+    // v2 names whose links these are (several tasks can share one turn).
+    expect(prompt).toMatch(/<linked task="[^"]+" count="3"/);
     expect(prompt).toContain(`<entity id="${ids.session2}" kind="work_session" link="relates_to" reference="id_only" />`);
     expect(prompt).toContain(`<entity id="${ids.doc}" kind="doc" link="attached_to" />`);
     expect(prompt).toContain('Design notes');

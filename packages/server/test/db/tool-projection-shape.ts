@@ -37,3 +37,19 @@ export async function addCraftProjectionShape(database: W1ScratchDatabase): Prom
     grant execute on function internal.craft_summary(uuid) to tm8_app;
     reset role;`);
 }
+
+/**
+ * 329 and 331 add the `prs`/`artifacts`/`drawings`/`sessions` link counters,
+ * and current readers (`entity-read.ts`, the projector) select them. Historical
+ * fixtures that stop before 329 mirror only those columns, at their defaults;
+ * no counter trigger runs and no assertion reads them.
+ */
+export async function addEntityCounterLinkShape(database: W1ScratchDatabase): Promise<void> {
+  await database.query(`set role tm8_graph_owner;
+    alter table public.entity_counters
+      add column if not exists prs       integer not null default 0,
+      add column if not exists artifacts integer not null default 0,
+      add column if not exists drawings  integer not null default 0,
+      add column if not exists sessions  integer not null default 0;
+    reset role;`);
+}

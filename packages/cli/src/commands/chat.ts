@@ -212,6 +212,17 @@ async function chatCredentials(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/** The composer's ■, for the terminal: stops the running turn, not the queue. */
+async function chatStop(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('chat stop', cmd.options.value('mutation-id'));
+  assertKnownOptions(cmd, []);
+  const chatId = requireArg(cmd, 0, '<chat-id>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.interrupt', { params: { id: chatId }, body: {} });
+  cmd.out.data(data, (dto) => ((dto ?? {}) as { disposition?: unknown }).disposition === 'requested'
+    ? 'Stop requested; the running turn will end.' : 'Nothing to stop: no turn is running for this chat on this node.');
+  return EXIT_OK;
+}
+
 async function chatModel(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('chat model', cmd.options.value('mutation-id'));
   assertKnownOptions(cmd, []);
@@ -438,6 +449,7 @@ function renderTurnRows(dto: unknown): string {
 export const CHAT_COMMANDS: CommandModule[] = [
   { path: ['chat', 'start'], run: chatStart },
   { path: ['chat', 'model'], run: chatModel },
+  { path: ['chat', 'stop'], run: chatStop },
   { path: ['chat', 'credentials'], run: chatCredentials },
   { path: ['chat', 'list'], run: chatList },
   { path: ['chat', 'show'], run: chatShow },

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { boundedLines } from './BoundedLines.js';
+import { boundedLines, HARNESS_FRAME_MAX_CHARS } from './BoundedLines.js';
 import { composeChatEnv } from './chat-env.js';
 import { harnessFailure } from './HarnessRegistry.js';
 import { HarnessSessionBase, validateLaunch } from './HarnessSessionBase.js';
@@ -54,6 +54,14 @@ const CAPABILITIES: HarnessCapabilities = {
 export interface CodexAppServerAdapterOptions {
   nodeId: string;
   rpcTimeoutMs?: number;
+  /**
+   * `thread/start` and `thread/resume` answer only after Codex has started the
+   * chat's MCP servers, which on a loaded node takes longer than an ordinary
+   * acknowledgement. It stays inside the server's 30s open deadline.
+   */
+  threadRpcTimeoutMs?: number;
+  /** Tests only: the stdout line bound, HARNESS_FRAME_MAX_CHARS by default. */
+  maxFrameChars?: number;
   closeGraceMs?: number;
 }
 export class CodexAppServerAdapter implements HarnessAdapter {
@@ -137,6 +145,7 @@ class CodexSession extends HarnessSessionBase {
         }
       },
       () => this.protocolLost('Codex protocol frame exceeded its bound'),
+      options.maxFrameChars ?? HARNESS_FRAME_MAX_CHARS,
     );
     // Diagnostics are intentionally drained without carrying vendor/secret text to public errors.
     this.child.stderr.on('data', () => {});
@@ -250,6 +259,7 @@ class CodexSession extends HarnessSessionBase {
         await this.rpc(
           resume ? 'thread/resume' : 'thread/start',
           resume ? { ...params, threadId: resume.native.nativeId } : params,
+          this.options.threadRpcTimeoutMs ?? 20_000,
         ),
       );
     } catch (error) {
@@ -438,7 +448,11 @@ class CodexSession extends HarnessSessionBase {
       );
     this.child.stdin.write(`${JSON.stringify(frame)}\n`);
   }
-  private rpc(method: string, params: WireObject): Promise<unknown> {
+  private rpc(
+    method: string,
+    params: WireObject,
+    timeoutMs = this.options.rpcTimeoutMs ?? 10_000,
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (this.dead) {
         reject(
@@ -454,16 +468,11 @@ class CodexSession extends HarnessSessionBase {
       const id = ++this.requestSeq;
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(
-          harnessFailure(
-            'runtime_lost',
-            'stream',
-            'Codex protocol acknowledgement timed out',
-            'reconcile_before_retry',
-          ),
-        );
-        this.protocolLost('Codex protocol acknowledgement timed out');
-      }, this.options.rpcTimeoutMs ?? 10_000);
+        // Named, so a failed open says which request Codex never answered.
+        const message = `Codex did not answer ${method} within ${timeoutMs / 1000}s`;
+        reject(harnessFailure('runtime_lost', 'stream', message, 'reconcile_before_retry'));
+        this.protocolLost(message);
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       try {
         this.write({ id, method, params });

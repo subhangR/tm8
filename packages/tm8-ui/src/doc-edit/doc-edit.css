@@ -174,6 +174,30 @@
   flex: none;
 }
 
+/* The glyph-only form (the phone's reader bar): a 36px target, no box. */
+.cv2-root .de-btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+.cv2-root .de-btn--icon:active {
+  background: var(--pn-hover);
+}
+.cv2-root .rs-bar--phone .hon-disabled--tooltip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+}
+
 .cv2-root .de-btn--quiet {
   color: var(--pn-ink-2);
   background: var(--pn-card);

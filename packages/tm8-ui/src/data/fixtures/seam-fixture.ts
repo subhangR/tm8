@@ -4750,6 +4750,11 @@ export function createFixtureSeam(): FixtureSeam {
         return { chat: clone(chat), messageId: message.id };
       },
 
+      async interruptChat(chatId) {
+        const chat = requireSummary(chatId);
+        if (chat.state.kind !== 'chat') throw new CollabError('invalid_input', 'Not a chat');
+        return { chatId, disposition: 'not_running' as const };
+      },
       async setChatCredentials(chatId, input) {
         const chat = requireSummary(chatId);
         if (chat.state.kind !== 'chat') throw new CollabError('invalid_input', 'Not a chat');

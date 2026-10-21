@@ -50,7 +50,7 @@
  * `expires_at` AND NEVER FROM THE CREDENTIAL WORK SESSION'S `status`.
  *
  * The WORK SESSION's status is written by this service on every close, after
- * the kill (`recordEnding`), and `credential_session_ending_sweep` (334, the
+ * the kill (`recordEnding`), and `credential_session_ending_sweep` (357, the
  * `credentials.session-ending-sweep` job) ends any login terminal whose lease
  * ran out without one. Before both, every credential work session read
  * `spawning` forever.
@@ -815,7 +815,7 @@ export class W2CredentialSessionsService {
     }
 
     // The terminal is gone (killed, or it had already exited), so the work
-    // session may say so. A kill `error` leaves it for the 334 sweep.
+    // session may say so. A kill `error` leaves it for the 357 sweep.
     if (killed !== 'error') {
       await this.recordEnding(principal.claims, entry.workSessionId, closedEnding(killed, stored));
     }
@@ -1156,7 +1156,7 @@ export class W2CredentialSessionsService {
       // gone: it just killed it, or the lease ran out (the owning node kills at
       // expiry, and a dead node took its PTY with it). An unexpired row with no
       // PTY here may be live on another node; its own close records the ending,
-      // and the 334 sweep backs that up once the lease is over.
+      // and the 357 sweep backs that up once the lease is over.
       if (killed === 'killed' || (killed === 'not_found' && expiresAtMs <= now)) {
         await this.recordEnding(principal.claims, row.work_session_id, orphanEnding(killed));
       }
@@ -1199,7 +1199,7 @@ export class W2CredentialSessionsService {
    * passed to open it.
    *
    * NEVER THROWS. The lease is what unblocks the member; this is bookkeeping,
-   * and `credential_session_ending_sweep` (334) ends whatever it misses. An
+   * and `credential_session_ending_sweep` (357) ends whatever it misses. An
    * already-terminal row (23514 — the sweep, or a second close, got there
    * first) is not a failure.
    */

@@ -28,6 +28,24 @@ import type { ChatModelOption, ChatThreadDetail } from './chat-home/types';
 import type { CockpitStage } from './routes/types';
 import type { FileUploadTask } from './files/upload';
 import './session-graph/session-graph.css';
+import { answer, item, okGroup } from './jev/test-support';
+import type { ChatJevPort } from './chat-home/new-chat-jev';
+
+/* `?jev=1`: ✦ Ask Jev in the new-chat composer (doc 01a154f2), answered from
+   the shared Jev fixtures after a short wait. No OpenAI credential, so a
+   Codex pick would be left out. */
+const DEV_JEV: ChatJevPort = {
+  jev: {
+    suggest: (_spaceId, input) => new Promise((resolve) => {
+      setTimeout(() => resolve(answer(input, {
+        model: okGroup({ tier: 'premium', model: 'claude-opus-5', agentTool: 'claude-code', effort: 'high', need: 2.1, workKind: 'implement', reasons: ['need=2.10 (depth 0.72, breadth 0.55, radius 0.40) -> premium'] }),
+        teammates: okGroup({ items: [item('019f0000-0000-7000-8000-000000000003', 'team_member', 2.6, true, ['space'], 'Researcher')], noFit: false, floor: 1 }),
+      })), 500);
+    }),
+  },
+  homeAnchor: async () => '019f0000-0000-7000-8000-0000000000aa' as EntityId,
+  codexAvailable: async () => false,
+};
 
 /**
  * CHAT WAITING-MARKS SCRATCH HARNESS — same spirit as loader-dev.tsx and
@@ -54,6 +72,7 @@ import './session-graph/session-graph.css';
  *                          ?style=atelier for the retired Atelier tokens,
  *                          ?stage=fleet or ?stage=graph for a stage,
  *                          ?empty=1 for a space with no conversations,
+ *                          ?jev=1 for ✦ Ask Jev in the new-chat composer,
  *                          ?shell=mobile for the phone arrangement,
  *                          ?turns=N for a thread long enough to overflow)
  *
@@ -111,6 +130,7 @@ function Harness() {
   /* `?attach=1`: an upload port that never lands and two skills, so the ＋
      sheet's "Attached to this message" list has something to list
      (`e2e/capture-plus-sheet.mjs`). */
+  const jevInputs = params.get('jev') === '1' ? { jev: DEV_JEV } : {};
   const turnInputs = params.get('attach') === '1'
     ? {
         attach: (): FileUploadTask => ({ result: new Promise(() => {}), cancel: () => {} }),
@@ -194,6 +214,7 @@ function Harness() {
       }}
       ref={setHost}
     >
+
       {/* THE PHONE'S SURFACE CONTEXT, and this harness was wrong without it.
           `oneSurface` is what `ComposerSelect` reads to draw its options in a
           sheet rather than the desktop's anchored popover, and what
@@ -222,6 +243,7 @@ function Harness() {
                no reader sees. */
             soloConversation
             {...turnInputs}
+            {...jevInputs}
           />
         </MobileSurfaceProvider>
       ) : (
@@ -233,6 +255,7 @@ function Harness() {
           stage={stage}
           onStageChange={setStage}
           {...turnInputs}
+          {...jevInputs}
         />
       )}
     </div>

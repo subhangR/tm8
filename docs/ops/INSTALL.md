@@ -136,6 +136,23 @@ On a cluster the installer created, it does this itself. On a cluster it
 pass `--configure-pg-hba`. Someone else's cluster is not the installer's to
 reconfigure.
 
+Phase 3 ends with a real login as `tm8` over `127.0.0.1`. When that is refused,
+the run stops there and names the `pg_hba` rule that matched first, before any
+database is created. It used to warn, create the database, and only fail in phase
+4 with "created the database but cannot query …". On a fresh Debian/Ubuntu server
+with `--pg-port 5432 --adopt-cluster`, that was the usual outcome: the stock
+`host all all 127.0.0.1/32 scram-sha-256` matched first. Re-run with
+`--configure-pg-hba`. As a non-root user that needs passwordless sudo, because
+Debian's `pg_hba.conf` belongs to `postgres`. The installer reads that file through
+the server (`pg_read_file`) and reloads with `pg_reload_conf()`, so both work under
+peer auth.
+
+Installing the `postgresql` package on Debian/Ubuntu creates cluster `<major>/main`
+on 5432. The dev slot's cluster is also named `main`, so on a fresh server
+`pg_createcluster` used to refuse it. When that name is taken on another port, the
+installer now names the slot's cluster `tm8_<slot>`. A plain `./install.sh` then
+gets a cluster of its own on 5442, and `--adopt-cluster` isn't needed.
+
 ## The sidecar that never ran
 
 `packages/server/src/sidecar/` is fourteen files of Postgres lifecycle management

@@ -82,7 +82,8 @@ import { HubBody } from './bodies/HubBody';
 import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
 import type { MembershipAuthoring } from './bodies/MembershipBlock';
 import type { MemoryMarkKind } from '../domain/memory';
-import { GovernedBody } from './bodies/GovernedBody';
+import { GovernedWithRecord } from './bodies/GovernedWithRecord';
+import type { ProjectRecordPort } from '../projects/project-record';
 import { MachineBody } from './bodies/MachineBody';
 import type { ManagedPort } from '../managed/port';
 import { RestrictedBody } from './bodies/RestrictedBody';
@@ -480,6 +481,11 @@ export interface EntityDetailPanelProps {
    * a host writes `attachmentsPortFromSeam(seam, spaceId)` and nothing else.
    */
   attachments?: AttachmentsPort | null;
+  /**
+   * The space's project folder records (path, trust, git, `projects.update`)
+   * for the governed body. Absent ⇒ path and trust render as not loaded.
+   */
+  projectRecords?: ProjectRecordPort | null;
   /** An upload landed; the host refetches so the new edge appears. */
   onAttachmentUploaded?: () => void;
   onContentSurfaceChange?: (surface: ContentSurface) => void;
@@ -968,6 +974,15 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * and `frame` (an artifact viewport takes the pixels).
    */
   const bodyOwnsBottom = isTerminal || config.panel.composition != null;
+
+  /**
+   * THE PHONE READS A DOCUMENT FULL SCREEN (owner ruling 2026-10-19). The
+   * phone header already names it, so the panel's title row, the attachment
+   * drop zone and the presence footer were three bands of chrome around a body
+   * that barely showed. They go on the phone only; Messages and Connections
+   * stay one tap away on the entity's action button.
+   */
+  const phoneReader = oneSurface && config.panel.archetype === 'reader';
 
   /**
    * THE CONTROLS RIDE THE PANEL BAR — the same slot, for the second reason.
@@ -1524,7 +1539,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           )
         : null}
       {embedded?.verbsSlot && !oneSurface ? createPortal(barEnd, embedded.verbsSlot) : null}
-      {canvas || embedded ? null : <PanelHeader
+      {canvas || embedded || phoneReader ? null : <PanelHeader
         detail={detail}
         config={config}
         breadcrumb={breadcrumb}
@@ -1740,7 +1755,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                   )
                 : undefined;
               const attachmentSlot =
-                tab === 'content' && !isTombstone && !bodyOwnsBottom ? (
+                tab === 'content' && !isTombstone && !bodyOwnsBottom && !phoneReader ? (
                   <AttachmentStrip
                     anchorId={detail.id}
                     files={attachedFiles(detail)}
@@ -1832,8 +1847,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                   {bodyConsumesSlot ? null : attachmentSlot}
                   {/* Not under a terminal: it owns the screen down to its
                       composer dock, so this would sit below the dock, out of
-                      reach. The session draws a Messages door in its own row. */}
-                  {bodyConsumesSlot || isTerminal ? null : props.beforeLinked}
+                      reach. The session draws a Messages door in its own row.
+                      Not under a phone doc either: it reads full screen
+                      (`phoneReader`). */}
+                  {bodyConsumesSlot || isTerminal || phoneReader ? null : props.beforeLinked}
                 </>
               );
             })()}
@@ -1850,7 +1867,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           A declared `composition` joins the exclusion for the same structural
           reason: a conversation ends at its composer and an artifact frame ends
           at the panel edge, not at a chrome strip below either. */}
-      {bodyOwnsBottom || embedded?.omitFooter ? null : (
+      {bodyOwnsBottom || phoneReader || embedded?.omitFooter ? null : (
         <PanelFooter
           detail={detail}
           presenceHollowReason={reasons.presenceHollow}
@@ -2502,9 +2519,10 @@ function PanelBody(
 
   if (config.panel.archetype === 'governed') {
     return (
-      <GovernedBody
+      <GovernedWithRecord
         detail={detail}
         blocks={config.panel.blocks ?? []}
+        port={props.projectRecords ?? null}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
       />

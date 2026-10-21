@@ -88,6 +88,7 @@ export const OPERATIONS = [
   { name: 'mcp.credentials.unshare', method: 'POST', path: '/v2/mcp/credentials/:credentialId/unshare', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.oauth.begin', method: 'POST', path: '/v2/mcp/servers/:serverId/oauth/begin', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.oauth.callback', method: 'POST', path: '/v2/mcp/oauth/callback', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.audit.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/audit', kind: 'read', status: 'v1', humanOnly: true },
   { name: 'mcp.proxy.request', method: 'POST', path: '/v2/mcp/sessions/:sessionId/servers/:serverId', kind: 'command', status: 'v1' },
   { name: 'skills.roots', method: 'GET', path: '/v2/spaces/:spaceId/skills/roots', kind: 'read', status: 'v1' },
   { name: 'skills.create', method: 'POST', path: '/v2/spaces/:spaceId/skills', kind: 'command', status: 'v1' },
@@ -272,6 +273,9 @@ export const OPERATIONS = [
   // claimed keeps the model it was stamped with.
   { name: 'chat.setCredentials', method: 'POST', path: '/v2/chats/:id/credentials', kind: 'command', status: 'v1' },
   { name: 'chat.setModel',           method: 'POST',   path: '/v2/chats/:id/model',                         kind: 'command', status: 'v1' },
+  // Stop the running turn (the composer's ■ / Esc). Before this the UI had a
+  // Stop button and the server had no operation behind it.
+  { name: 'chat.interrupt',          method: 'POST',   path: '/v2/chats/:id/interrupt',                     kind: 'command', status: 'v1' },
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },

@@ -11,7 +11,7 @@ import {
   type SessionTranscriptContext,
 } from '@tm8/contract';
 import type { HarnessRegistry } from '@tm8/execution';
-import { executeFencedTurn, type ActiveChatHarness, type FencedClaim } from './fenced-turn.js';
+import { executeFencedTurn, type ActiveChatHarness, type FencedClaim, type FencedTurnOptions } from './fenced-turn.js';
 import type { createChatPreparedLaunchResolver } from './harness-composition.js';
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
@@ -94,6 +94,12 @@ export interface ChatOrchestratorOptions {
   readonly nodeId?: string;
   readonly bootId?: string;
   readonly historyBudgetBytes?: number;
+  /**
+   * Per-turn step limits handed to every `executeFencedTurn`. Only the two
+   * observation budgets are configured in production (`TM8_CHAT_IDLE_TIMEOUT_MS`,
+   * `TM8_CHAT_TOOL_TIMEOUT_MS`); the rest keep the defaults in fenced-turn.ts.
+   */
+  readonly turnTimeouts?: FencedTurnOptions['timeouts'];
   readonly publisher: ChatTurnPublisher;
   readonly resolveLaunchConfig?: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
@@ -328,6 +334,16 @@ export class ChatOrchestrator {
   }>();
 
   private readonly activeHarnesses=new Map<string,ActiveChatHarness>();
+  /** The turn each chat's drain is executing right now, from claim to settle. */
+  private readonly claimedTurns=new Map<string,string>();
+  /**
+   * A Stop that found no running attempt to cancel — the turn was still
+   * preparing, opening, or between track and submit. Keyed by chat, holding
+   * the TURN it was meant for, so a latch can never stop the next queued turn
+   * (often another person's message).
+   */
+  private readonly stopLatches=new Map<string,string>();
+  private recoverySweep: ReturnType<typeof setInterval> | undefined;
   private readonly bootId: string;
   constructor(private readonly options: ChatOrchestratorOptions) {
     this.bootId=options.bootId ?? randomUUID();
@@ -347,11 +363,77 @@ export class ChatOrchestrator {
     },['portableBootstrap']);
   }
 
-  async interrupt(chatId:string):Promise<boolean> {
+  /**
+   * Stop the chat's running turn. `requested` means the turn will end (its own
+   * done frame says how); `not_running` means this node has nothing to stop.
+   *
+   * A turn that has been claimed but has no cancellable attempt yet — it is
+   * preparing its launch, opening the harness, or about to submit — used to be
+   * a silent no-op here, so Stop pressed in the first seconds of a turn did
+   * nothing. Such a stop is latched against the claimed turn and the turn reads
+   * it before it dispatches (see `stopRequested` in fenced-turn.ts).
+   */
+  async interrupt(chatId:string):Promise<'requested'|'not_running'> {
     const active=this.activeHarnesses.get(chatId);
-    if (active) { const receipt=await active.session.cancel(active.attempt,'user');
-      return receipt.disposition==='requested' || receipt.disposition==='already_terminal'; }
-    return await this.options.runtime?.interrupt(chatId) ?? false;
+    if (active) {
+      const receipt=await active.session.cancel(active.attempt,'user').catch(error=>{ this.options.onError?.(error); return null; });
+      if (receipt?.disposition==='requested' || receipt?.disposition==='already_terminal') return 'requested';
+    }
+    const claimed=this.claimedTurns.get(chatId);
+    if (claimed) { this.stopLatches.set(chatId,claimed); return 'requested'; }
+    if (this.options.registry) return 'not_running';
+    // Legacy (pre-harness) runtime: a thread that is not running throws.
+    return await this.options.runtime?.interrupt(chatId).catch(() => false) ? 'requested' : 'not_running';
+  }
+
+  /**
+   * Recover turns whose owner died or stopped renewing its lease, then drain
+   * the queues behind them — on boot AND periodically.
+   *
+   * Boot alone was not enough. A turn whose settlement or release failed keeps
+   * the chat's lease, `claim_next_chat_turn` refuses every claim behind it, and
+   * nothing woke that chat again when the lease ran out: every later message
+   * queued silently until the next server restart. `recover_chat_attempt` only
+   * acts on a lease that has expired (or on this node's previous boot), so
+   * running it on an interval never steals a live turn.
+   */
+  startRecoverySweep(intervalMs=60_000): void {
+    if (!this.options.sweepClaims || !this.options.registry || this.recoverySweep) return;
+    let running=false;
+    this.recoverySweep=setInterval(() => {
+      if (running) return;
+      running=true;
+      void this.recoverStale().catch(error=>this.options.onError?.(error)).finally(() => { running=false; });
+    },intervalMs);
+    this.recoverySweep.unref?.();
+  }
+
+  stopRecoverySweep(): void {
+    if (this.recoverySweep) clearInterval(this.recoverySweep);
+    this.recoverySweep=undefined;
+  }
+
+  private async recoverStale(): Promise<void> {
+    const sweep=this.options.sweepClaims;
+    if (!sweep) return;
+    const rows=await this.options.db.query<{entity_id:string;configured_by_identity_id:string;turn_id:string;attempt_no:number}>(sweep,
+      `select c.entity_id,c.configured_by_identity_id,t.turn_id,t.attempt_no
+       from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
+       where (t.state='running' or (c.runtime_phase='closing' and c.active_execution_snapshot_id=t.execution_snapshot_id))
+         and ((c.node_id=$1 and c.runtime_owner_boot_id is distinct from $2)
+         or coalesce(c.runtime_lease_expires_at,t.lease_expires_at)<=now()) order by t.turn_ordinal`,
+      [this.options.nodeId,this.bootId]);
+    for (const row of rows) {
+      try {
+        await this.options.db.rpc(claims(row.configured_by_identity_id),
+          'recover_chat_attempt',[row.entity_id,row.turn_id,row.attempt_no,{nodeId:this.options.nodeId,bootId:this.bootId}]);
+      } catch (error) { this.options.onError?.(error); }
+    }
+    const queued=await this.options.db.query<{entity_id:string;configured_by_identity_id:string}>(sweep,
+      `select distinct c.entity_id,c.configured_by_identity_id from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
+       where t.state='queued' and (c.node_id=$1 or c.node_id is null or c.runtime_lease_expires_at is null
+         or c.runtime_lease_expires_at<=now())`,[this.options.nodeId]);
+    for (const row of queued) void this.wake(row.entity_id,row.configured_by_identity_id);
   }
 
 
@@ -372,19 +454,7 @@ export class ChatOrchestrator {
     const sweep = this.options.sweepClaims;
     if (!sweep) return;
     if (this.options.registry) {
-      const rows=await this.options.db.query<{entity_id:string;configured_by_identity_id:string;turn_id:string;attempt_no:number}>(sweep,
-        `select c.entity_id,c.configured_by_identity_id,t.turn_id,t.attempt_no
-         from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
-         where (t.state='running' or (c.runtime_phase='closing' and c.active_execution_snapshot_id=t.execution_snapshot_id))
-           and ((c.node_id=$1 and c.runtime_owner_boot_id is distinct from $2)
-           or coalesce(c.runtime_lease_expires_at,t.lease_expires_at)<=now()) order by t.turn_ordinal`,
-        [this.options.nodeId,this.bootId]);
-      for (const row of rows) await this.options.db.rpc(claims(row.configured_by_identity_id),
-        'recover_chat_attempt',[row.entity_id,row.turn_id,row.attempt_no,{nodeId:this.options.nodeId,bootId:this.bootId}]);
-      const queued=await this.options.db.query<{entity_id:string;configured_by_identity_id:string}>(sweep,
-        `select distinct c.entity_id,c.configured_by_identity_id from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
-         where t.state='queued' and (c.node_id=$1 or c.node_id is null or c.runtime_lease_expires_at<=now())`,[this.options.nodeId]);
-      for (const row of queued) void this.wake(row.entity_id,row.configured_by_identity_id);
+      await this.recoverStale();
       return;
     }
     try {
@@ -494,12 +564,29 @@ export class ChatOrchestrator {
           chatId,2,{nodeId:this.options.nodeId,bootId:this.bootId,
             leaseTokenHash:createHash('sha256').update(leaseToken).digest('hex')}]);
         if (!turn) return;
-        await executeFencedTurn({db:this.options.db,registry:this.options.registry,
-          resolvePreparedLaunch:this.options.resolvePreparedLaunch,publisher:this.options.publisher,turn,leaseToken,
-          prompt:promptFor(turn,await this.readAbout(turn)),historyBudgetBytes:this.options.historyBudgetBytes ?? 32768,
-          createAgentMessage:()=>this.createAgentMessage(turn),track:active=>this.activeHarnesses.set(chatId,active),
-          untrack:()=>this.activeHarnesses.delete(chatId),onError:this.options.onError,
-          onReleased:()=>{ void this.wake(chatId,requesterIdentityId); }});
+        this.claimedTurns.set(chatId,turn.turnId);
+        try {
+          // The team line (328) rides on the production path too; it used to be
+          // read only by the legacy runtime, so a coordinator's 👥 pick never
+          // reached a harness-run chat.
+          const prompt=promptFor(turn,await this.readAbout(turn),await this.readTeam(turn));
+          await executeFencedTurn({db:this.options.db,registry:this.options.registry,
+            resolvePreparedLaunch:this.options.resolvePreparedLaunch,publisher:this.options.publisher,turn,leaseToken,
+            prompt,historyBudgetBytes:this.options.historyBudgetBytes ?? 32768,
+            createAgentMessage:()=>this.createAgentMessage(turn),track:active=>this.activeHarnesses.set(chatId,active),
+            untrack:()=>this.activeHarnesses.delete(chatId),onError:this.options.onError,
+            stopRequested:()=>this.stopLatches.get(chatId)===turn.turnId,
+            ...(this.options.turnTimeouts ? {timeouts:this.options.turnTimeouts} : {}),
+            onReleased:()=>{ void this.wake(chatId,requesterIdentityId); }});
+        } catch (error) {
+          // One turn that could not settle must not end the drain for the turns
+          // queued behind it. The next claim refuses while that turn still holds
+          // the lease; the recovery sweep settles it once the lease expires.
+          this.options.onError?.(error);
+        } finally {
+          this.claimedTurns.delete(chatId);
+          if (this.stopLatches.get(chatId)===turn.turnId) this.stopLatches.delete(chatId);
+        }
       } else {
         const turn=await this.options.db.rpc<ClaimedTurn|null>(claims(requesterIdentityId),'claim_next_chat_turn',[chatId]);
         if (!turn) return;

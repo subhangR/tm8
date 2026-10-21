@@ -58,6 +58,7 @@ import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential
 import { createCompletedAutoCloseJob, createLostSessionReaperJob, lostAfterMsFromEnv } from './scheduler/jobs/lost-session-reaper.js';
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
 import { createCredentialSessionEndingSweepJob } from './scheduler/jobs/credential-session-ending-sweep.js';
+import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -377,6 +378,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         runtime: chatBlock.runtime,
         publisher: new ChatTurnPublisher(subscriptions),
         resolveLaunchConfig: chatBlock.resolveLaunchConfig,
+        // The two observation budgets are operational knobs, so they come from
+        // the environment rather than from a rebuild (see ServerConfig).
+        turnTimeouts: {
+          ...(config.chatIdleTimeoutMs !== undefined ? { observation: config.chatIdleTimeoutMs } : {}),
+          ...(config.chatToolTimeoutMs !== undefined ? { tool: config.chatToolTimeoutMs } : {}),
+        },
         ...(chatBlock.harnessRegistry ? {
           registry: chatBlock.harnessRegistry,
           resolvePreparedLaunch: chatBlock.resolvePreparedLaunch!,
@@ -391,7 +398,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           : {}),
       })
     : undefined;
-  if (chat && typeof opts.chat === 'function') void chat.reconcileOnBoot();
+  if (chat && typeof opts.chat === 'function') {
+    void chat.reconcileOnBoot();
+    // Expired leases are recovered while the node runs, not only at the next boot.
+    chat.startRecoverySweep();
+  }
 
   // Voice-channel roster (voice plan §2). Ephemeral for the same reason
   // presence is, but sourced from LiveKit webhooks rather than from client
@@ -876,7 +887,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
-  server.http.once('close', () => chatCleanupRetries.stop());
+  server.http.once('close', () => { chatCleanupRetries.stop(); chat?.stopRecoverySweep(); });
   const { url } = await server.listen();
 
   // Retention, on boot and never on the request path: an expired date-bucket is
@@ -1146,7 +1157,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
-    // 334: a login terminal's work session has no node_id, so the boot
+    // 357: a login terminal's work session has no node_id, so the boot
     // reconciliation and the reaper below never see it. One whose login lease
     // ran out is ended here (`failed / lost`); runs at boot, then every 5 min.
     scheduler.register(
@@ -1155,6 +1166,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         claims: async () => {
           const o = await owner();
           return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'credential-session-ending-sweep' };
+        },
+      }),
+    );
+    // §5.6 (346): MCP call audit rows past the node's retention window.
+    scheduler.register(
+      createMcpAuditRetentionJob({
+        db,
+        ...(config.mcpAuditRetentionDays !== undefined ? { retentionDays: config.mcpAuditRetentionDays } : {}),
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'mcp-audit-retention' };
         },
       }),
     );
