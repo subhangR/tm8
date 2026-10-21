@@ -194,16 +194,29 @@ it('the loop-executor claim shape is lent no connection, for all three sources (
   expect(await bindings.bind(loopExecutor,{...defaults,sessionId:named.sessionId,agentToken:named.token,
    mcpSelections:[{serverId:openOne.entity.id}]})).toEqual([{serverId:openOne.entity.id}]);
 
-  // A BINDING WRITTEN BEFORE B19 must not keep working. The human control above
-  // left `fired`'s sibling with real accounts; re-stamp a binding's launcher
-  // kind to the rootless shape and the per-call re-check withdraws it.
+  // A BINDING WRITTEN BEFORE #1316 must not keep working. Reproduce one
+  // exactly: 343 records a root, and a row from before it has none, so the only
+  // thing left to judge it by is the launcher kind it stored — which for the
+  // rootless shapes is ''. Clearing the root columns as well as the kind is what
+  // makes this a pre-343 row rather than a 343 row with a damaged kind.
   const legacy=await runtime();
   await bindings.bind(auth,{...defaults,sessionId:legacy.sessionId,agentToken:legacy.token,
    mcpSelections:[{serverId:byDefaultOn.entity.id}]});
   await bindings.authorize(legacy.claims,legacy.sessionId,byDefaultOn.entity.id);
-  await scratch.query("update internal.mcp_session_bindings set launcher_auth_kind='' where session_id=$1",[legacy.sessionId]);
+  await scratch.query(`update internal.mcp_session_bindings
+    set launcher_auth_kind='', root_member_id=null, root_identity_id=null, chain=null, chain_space_ids=null
+    where session_id=$1`,[legacy.sessionId]);
   await expect(bindings.authorize(legacy.claims,legacy.sessionId,byDefaultOn.entity.id))
    .rejects.toThrow(/MCP connector access has changed/);
+  // And the mirror: a 343 row whose RECORDED ROOT is intact is judged by that
+  // root, not by a launcher kind — so clearing only the kind changes nothing.
+  // Without this cell the line above would pass for the wrong reason.
+  const kept=await runtime();
+  await bindings.bind(auth,{...defaults,sessionId:kept.sessionId,agentToken:kept.token,
+   mcpSelections:[{serverId:byDefaultOn.entity.id}]});
+  await scratch.query("update internal.mcp_session_bindings set launcher_auth_kind='' where session_id=$1",[kept.sessionId]);
+  expect(await bindings.authorize(kept.claims,kept.sessionId,byDefaultOn.entity.id))
+   .toMatchObject({serverId:byDefaultOn.entity.id,rootIdentityId:identity});
  } finally {
   // `defaultOn` is space-wide, so these would silently join every sibling
   // test's expected default set.
