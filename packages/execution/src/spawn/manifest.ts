@@ -72,6 +72,7 @@ import {
   type AgentCredentialProvider,
 } from './agent-credentials.js';
 import { redactSecretsDeep } from './secret-redaction.js';
+import { assignMcpServerKeys } from '@tm8/contract';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -216,8 +217,15 @@ function asAgentMode(value: string | null | undefined): AgentMode | null {
 
 /** The resolved launch posture — one persona, one request, three links. */
 export interface ResolvedLaunchConfig {
-  /** Authorized references only; provider secrets never enter this object. */
-  mcpSelections?: Array<{serverId: string; credentialId?: string}>;
+  /**
+   * Authorized references only; provider secrets never enter this object.
+   *
+   * `serverKey` is the connector's tool prefix (§4.2), written by
+   * `McpSessionBindings.bind` from the definition it resolved. Optional because
+   * a hand-built launch config (tests, embedders) has no resolver behind it;
+   * such a selection keeps the opaque `connector_<hex>` bridge name.
+   */
+  mcpSelections?: Array<{serverId: string; credentialId?: string; serverKey?: string}>;
   mode: AgentMode;
   model: string | null;
   agentTool: string;
@@ -2154,6 +2162,11 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       : null;
     manifest.launch.harness = laneHarnessRecord(launch, plugins, skillPlan?.record ?? null);
   }
+  // Outside the `input.harness` branch on purpose: the connector record is not
+  // a harness fact. Both surfaces get exactly the launch's selection (D4), and
+  // a codex lane gets one too.
+  const connectors = connectorManifestRecord(launch.mcpSelections);
+  if (connectors.length > 0) manifest.launch.connectors = connectors;
 
   // The launch-context audit (§6): ids and enums only, after every trim.
   manifest.context = {
@@ -2206,12 +2219,37 @@ export function resolveSessionTitle(
   return `${context.teamMember.name} session`;
 }
 
-/** Internal bridge configs contain UUIDs only, never raw definitions or credential material. */
+/**
+ * Internal bridge configs contain UUIDs only, never raw definitions or
+ * credential material.
+ *
+ * The ENTRY NAME is the connector's server key (§4.2), so the model reads
+ * `mcp__gmail__search_messages`. `assignMcpServerKeys` is the one rule that
+ * names them, collisions included; `--connector <id>` stays a UUID, so the
+ * config still holds ids only.
+ */
 export function connectorBridgeConfig(selections: ResolvedLaunchConfig['mcpSelections']): Record<string,{command:string;args:string[]}> {
   const result: Record<string,{command:string;args:string[]}> = {};
+  const keys = assignMcpServerKeys(selections ?? []);
   for (const selection of selections ?? []) {
     if (!/^[0-9a-f-]{36}$/i.test(selection.serverId)) throw new Error('Invalid MCP connector reference');
-    result[`connector_${selection.serverId.replaceAll('-', '')}`] = {command:process.execPath,args:[fileURLToPath(new URL('../../../mcp/dist/cli.js', import.meta.url)),'--connector',selection.serverId]};
+    result[keys.get(selection.serverId)!] = {command:process.execPath,args:[fileURLToPath(new URL('../../../mcp/dist/cli.js', import.meta.url)),'--connector',selection.serverId]};
   }
   return result;
+}
+
+/**
+ * `manifest.launch.connectors`: the key -> id map the launcher was given (§4.2),
+ * sorted by key. Ids and names only — a bridge entry's argv is in
+ * `launch.command` and its credential is never anywhere. It is recorded for
+ * BOTH harness surfaces, because connectors do not depend on the surface (D4),
+ * and it is what the session debug view reads to say which tool prefix belongs
+ * to which connector (§10.6).
+ */
+export function connectorManifestRecord(
+  selections: ResolvedLaunchConfig['mcpSelections'],
+): { serverKey: string; serverId: string }[] {
+  const keys = assignMcpServerKeys(selections ?? []);
+  return [...keys].map(([serverId, serverKey]) => ({ serverKey, serverId }))
+    .sort((a, b) => (a.serverKey < b.serverKey ? -1 : a.serverKey > b.serverKey ? 1 : 0));
 }
