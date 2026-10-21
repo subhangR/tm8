@@ -81,13 +81,14 @@ function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): Chat
     lastTurnAt: state.lastTurnAt,
     title: summary.title,
     turnCount: state.turnCount,
-    // The two axes the server projects separately, folded to the one word this
-    // surface draws. `turnState` is the queue, `runtimeState` the child: a
-    // chat with nothing queued whose runtime stopped is continuable, which is
-    // a different thing from idle and the composer says so.
-    state: state.turnState === 'running' || state.turnState === 'queued'
-      ? 'streaming'
-      : state.runtimeState === 'stopped' ? 'stopped-continuable' : 'idle',
+    // Only the QUEUE decides this word. `runtimeState` used to too — 'stopped'
+    // read as "Stopped · continuable" — but since the harness runtime (332)
+    // every settled turn closes its child and writes 'stopped', so every chat
+    // that had ever answered opened as if someone had pressed Stop. Worse, that
+    // state pinned the composer: another participant's turn streaming into the
+    // chat was drawn as stopped, with no ■. A Stop the viewer pressed is still
+    // drawn as stopped — the screen sets that itself, from the press.
+    state: state.turnState === 'running' || state.turnState === 'queued' ? 'streaming' : 'idle',
     runtimeState: state.runtimeState,
     context: state.context ?? null,
   };
@@ -479,6 +480,11 @@ export function createChatHomePortFromSeam(
         && (row.ownerAccountId === null || row.visibility === 'public'
           || row.ownerAccountId === identity.accountId || row.sharedWithMe))
         .map(row => ({ id: row.id, label: row.label }));
+    },
+    /* The ■ / Esc. Before `chat.interrupt` existed this port had no `interrupt`,
+       so the composer drew Stop disabled on every real node. */
+    async interrupt(chatId) {
+      await seam.commands.interruptChat(chatId);
     },
     async setCredentials(input) {
       const cachedBefore = listCache.get(input.chatId);

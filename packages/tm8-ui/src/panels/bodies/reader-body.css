@@ -29,6 +29,19 @@
    is gone rather than restyled — a pill is a tag, and these are destinations.
    Type stays in the outline's own quiet register (mono micro, ink-3) so the
    reading column below it is still the loudest thing in the body. */
+/* THE PHONE'S FOLDED OUTLINE: one quiet line, closed by default, opening
+   the same list in place. */
+.cv2-root .rd-toc-fold__summary {
+  cursor: pointer;
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  padding: 4px 0;
+}
+.cv2-root .rd-toc-fold[open] > .rd-toc-fold__summary {
+  margin-bottom: 6px;
+}
+
 .cv2-root .rd-toc {
   /* The body is a 12px-gap flex column; the list needs no box of its own. */
   display: block;

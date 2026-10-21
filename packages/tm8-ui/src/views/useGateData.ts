@@ -2453,8 +2453,9 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       id: project.id,
       name: project.name,
       trusted: project.trust === 'trusted',
+      /* Only a node admin is sent the path (W11); a member's row says trusted alone. */
       detail: project.trust === 'trusted'
-        ? `trusted · ${project.workingDir}`
+        ? (project.workingDir ? `trusted · ${project.workingDir}` : 'trusted')
         : '',
       ...(project.trust === 'untrusted'
         ? { reason: "untrusted — can't host sessions · trust it in Node settings" }

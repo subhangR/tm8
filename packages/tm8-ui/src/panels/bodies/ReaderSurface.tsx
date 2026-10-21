@@ -277,16 +277,20 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
         commands={commands}
         editRefusal={editRefusal}
         onEnterEdit={commands ? () => setEditing(true) : undefined}
+        compact={oneSurface}
       />
-      <DownloadDocControl detail={detail} onDownload={downloadPdf} />
+      <DownloadDocControl detail={detail} onDownload={downloadPdf} compact={oneSurface} />
     </>
   );
+  /* THE PHONE'S BAR IS TWO GLYPHS AT THE TOP RIGHT (owner ruling 2026-10-19):
+     the labelled row, with the read-only sentence under Edit, was the second
+     band of chrome above the text. The sentence still opens on a tap. */
   return (
-    <div className="rs-root" data-testid="reader-surface" data-stance="read">
+    <div className="rs-root" data-testid="reader-surface" data-stance="read" data-arrangement={oneSurface ? 'phone' : 'desktop'}>
       {props.toolbarSlot ? (
         createPortal(<div className="rs-bar rs-bar--slotted">{barControls}</div>, props.toolbarSlot)
       ) : props.toolbarSlot === undefined ? (
-        <div className="rs-bar">{barControls}</div>
+        <div className={oneSurface ? 'rs-bar rs-bar--phone' : 'rs-bar'}>{barControls}</div>
       ) : null}
       <div className="rs-body" ref={bodyRef}>
         <ReaderBody

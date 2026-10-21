@@ -1,0 +1,67 @@
+{
+  "pairingPhone": "<your number, digits only, for pairing-code linking; omit for QR>",
+  "ownerJids": [
+    "<your number>@s.whatsapp.net",
+    "<your LID>@lid"
+  ],
+  "trustedSenders": [],
+  "http": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "tm8": {
+    "baseUrl": "http://127.0.0.1:17777",
+    "spaceId": "01a0fb3d-558e-7d92-b370-d0601112607a",
+    "tokenFile": "secrets/tm8-token",
+    "defaultTeammate": "01a0fb41-3317-77f3-b2b5-2bba3e489f4d",
+    "defaultModel": "claude-opus-5-5",
+    "pollSeconds": 10
+  },
+  "watchdogMinutes": 10,
+  "rateLimits": {
+    "perTokenPerMinute": 20,
+    "perChannelPerMinute": 30
+  },
+  "media": {
+    "maxBytes": 26214400,
+    "attach": "reference"
+  },
+  "transcription": {
+    "provider": "local",
+    "model": "ggml-small-q5_1.bin",
+    "threads": 4,
+    "maxDurationSec": 600,
+    "waitSeconds": 20
+  },
+  "approverName": "<who confirms sensitive actions in the tm8 UI, e.g. a name; default \"the operator\">",
+  "apiDocId": "01a154c0-fe9f-7f51-8a3d-bb35d0ee76f3",
+  "channels": [
+    {
+      "id": "self",
+      "jid": "<your number>@s.whatsapp.net",
+      "altJids": [
+        "<your LID>@lid"
+      ],
+      "title": "Self chat",
+      "allowedSenders": [
+        "owner"
+      ],
+      "mainChatId": null
+    },
+    {
+      "id": "infra",
+      "jid": "<group id>@g.us",
+      "title": "Infra",
+      "teammate": "<team-member id, optional>",
+      "model": "claude-opus-5-5",
+      "allowedSenders": [
+        "owner",
+        "<member number>@s.whatsapp.net"
+      ],
+      "trustedSenders": [
+        "<member number>@s.whatsapp.net"
+      ],
+      "mainChatId": null
+    }
+  ]
+}

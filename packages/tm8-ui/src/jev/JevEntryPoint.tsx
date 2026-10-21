@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { LAUNCH_SUGGEST_GROUPS } from '@tm8/contract';
 
 import { openJevKeySettings } from './credentials-link';
@@ -66,7 +66,7 @@ export function entryBadge(jev: JevPanelSource): string {
  * launch config stays reachable. Opening moves focus to the panel's heading;
  * Escape or Close puts it back on the button.
  */
-export function JevEntryPoint({ jev, modelLabel, open: controlledOpen, onOpenChange, defaultOpen = false }: {
+export function JevEntryPoint({ jev, modelLabel, open: controlledOpen, onOpenChange, defaultOpen = false, title, panelNote, panelExtra }: {
   /** `useJevSuggestions(...)` with the surface's `host`: every Apply goes through it, so the ledger knows. */
   jev: JevPanelSource;
   /** The catalog's words for Jev's model (`modelLabel(suggestion, catalog)`). */
@@ -75,6 +75,11 @@ export function JevEntryPoint({ jev, modelLabel, open: controlledOpen, onOpenCha
   open?: boolean;
   onOpenChange?(open: boolean): void;
   defaultOpen?: boolean;
+  /** The button's tooltip when Jev can be asked. Default `ENTRY_TITLE`. */
+  title?: string;
+  /** Pass-through to `JevPanel`'s `note` and `extra`. */
+  panelNote?: string;
+  panelExtra?: ReactNode;
 }) {
   const [ownOpen, setOwnOpen] = useState(defaultOpen);
   const open = controlledOpen ?? ownOpen;
@@ -118,7 +123,7 @@ export function JevEntryPoint({ jev, modelLabel, open: controlledOpen, onOpenCha
           aria-controls={open ? panelId : undefined}
           aria-disabled={refused ? true : undefined}
           aria-busy={asking || undefined}
-          title={jev.askRefusal ?? (jev.state === 'unavailable' ? JEV_UNAVAILABLE_COPY : ENTRY_TITLE)}
+          title={jev.askRefusal ?? (jev.state === 'unavailable' ? JEV_UNAVAILABLE_COPY : title ?? ENTRY_TITLE)}
           onClick={(event) => {
             event.stopPropagation();
             if (refused) return;
@@ -160,6 +165,8 @@ export function JevEntryPoint({ jev, modelLabel, open: controlledOpen, onOpenCha
             jev={jev}
             modelLabel={modelLabel}
             onClose={close}
+            {...(panelNote !== undefined ? { note: panelNote } : {})}
+            extra={panelExtra}
           />
         </div>
       ) : null}

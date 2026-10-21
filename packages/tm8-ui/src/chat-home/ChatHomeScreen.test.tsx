@@ -653,6 +653,35 @@ describe('Chat Home', () => {
     await waitFor(() => expect(view.getByText('Agent turn completed.')).toBeTruthy());
   });
 
+  it('a Stop ends one turn: the next queued turn (another participant) draws as live again', async () => {
+    const { port, controls } = createChatHomeFixturePort();
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} newMutationId={(prefix) => `${prefix}:stop-then-next`} />,
+    );
+    await waitFor(() => expect(view.getByText(OPENED_FIXTURE_TURN)).toBeTruthy());
+    fireEvent.change(view.getByLabelText('Message the chat agent'), { target: { value: 'Read the current context.' } });
+    fireEvent.click(view.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(view.getByTestId('tch-send-working')).toBeTruthy());
+    fireEvent.click(view.getByRole('button', { name: /stop/i }));
+    await waitFor(() => expect(view.getByText('Stopped · continuable')).toBeTruthy());
+    const chatId = controls.interrupts[0]!;
+    const stoppedTurn = (await port.readThread(chatId)).turns.at(-1)!;
+
+    // A late frame of the STOPPED turn keeps the chat stopped.
+    act(() => { controls.emit({ type: 'chat.turn.done', chatId, messageId: stoppedTurn.messageId, usage: {} }); });
+    expect(view.getByText('Stopped · continuable')).toBeTruthy();
+
+    // Someone else's queued message starts its turn: that is a different agent message.
+    act(() => {
+      controls.emit({
+        type: 'chat.turn.delta', chatId, messageId: '019f0000-0000-7000-8000-0000000009ff' as never, seq: 0,
+        part: { kind: 'text', text: 'Answering the next message' } as never,
+      });
+    });
+    await waitFor(() => expect(view.queryByText('Stopped · continuable')).toBeNull());
+    expect(view.getByTestId('tch-send-working')).toBeTruthy();
+  });
+
   it('says why a running turn cannot be stopped when the port has no interrupt', async () => {
     const fixture = createChatHomeFixturePort();
     const { interrupt: _interrupt, ...withoutInterrupt } = fixture.port;

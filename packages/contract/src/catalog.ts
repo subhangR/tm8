@@ -272,6 +272,9 @@ export const OPERATIONS = [
   // claimed keeps the model it was stamped with.
   { name: 'chat.setCredentials', method: 'POST', path: '/v2/chats/:id/credentials', kind: 'command', status: 'v1' },
   { name: 'chat.setModel',           method: 'POST',   path: '/v2/chats/:id/model',                         kind: 'command', status: 'v1' },
+  // Stop the running turn (the composer's ■ / Esc). Before this the UI had a
+  // Stop button and the server had no operation behind it.
+  { name: 'chat.interrupt',          method: 'POST',   path: '/v2/chats/:id/interrupt',                     kind: 'command', status: 'v1' },
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },

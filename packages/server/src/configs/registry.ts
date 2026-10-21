@@ -161,6 +161,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '64', definedIn: EXEC_HANDLERS },
   { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs.', default: '4', definedIn: EXEC_HANDLERS },
   { name: 'TM8_WORKTREE_CAP', group: 'Lane launch', summary: 'Concurrent worktree lanes (0 = unlimited).', default: '0', definedIn: EXEC_HANDLERS },
+  { name: 'TM8_NODE_AGENT_LOGIN_CHECK', group: 'Lane launch', summary: 'Refuses a source=node spawn on a host with no claude/codex login, and answers Node admin\'s usable-login row (0 turns it off, for a node whose login the probe cannot see).', default: 'on', definedIn: EXEC_HANDLERS },
   { name: 'TM8_LAUNCH_BOOTSTRAP', group: 'Lane launch', summary: 'Seeds launchable personas and the current project at boot (0 turns it off).', default: 'on', definedIn: CONFIG },
   { name: 'TM8_PROJECT_DIR', group: 'Lane launch', summary: 'Project the launch bootstrap registers.', default: 'the server\'s working directory', definedIn: CONFIG },
   { name: 'TM8_PROJECT_ROOTS', group: 'Lane launch', summary: 'Directories offered when linking a project.', default: null, definedIn: 'packages/server/src/facade/services/w2/project-directories.ts' },
@@ -169,6 +170,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'HERMES_HOME', group: 'Lane launch', summary: 'Hermes home scanned for skills.', default: null, definedIn: 'packages/server/src/skills/service.ts' },
   { name: 'CLAUDE_MANAGED_SETTINGS_DIR', group: 'Lane launch', summary: 'Claude Code managed-settings directory scanned for skills.', default: '/etc/claude-code', definedIn: 'packages/server/src/skills/service.ts' },
   { name: 'TM8_CHAT_SKILLS_DIR', group: 'Lane launch', summary: 'Skills plugin directory chat threads load.', default: null, definedIn: MAIN },
+  { name: 'TM8_CHAT_IDLE_TIMEOUT_MS', group: 'Lane launch', summary: 'Total silence a chat turn tolerates from the agent before it is stopped. Does not apply while a tool runs.', default: '1800000', definedIn: CONFIG },
+  { name: 'TM8_CHAT_TOOL_TIMEOUT_MS', group: 'Lane launch', summary: 'Silence a chat turn tolerates while one of the agent\'s tool calls is still running. Raised to the idle limit if set below it.', default: '1800000', definedIn: CONFIG },
 
   // ── Containers ───────────────────────────────────────────────────────
   { name: 'TM8_CONTAINERS', group: 'Containers', summary: 'Container runtime gate (off disables it).', default: 'on', definedIn: CONFIG },
@@ -263,6 +266,7 @@ export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
   CHROME_RECORD_NAME: 'the label launch.harness records --no-chrome under, not a setting',
   TRUSTED_CONTROL_TYPES: 'the closed vocabulary of control envelope types',
   DISCOVERY_PROMPT_FORM: 'prompt wording, shown on the Prompts page',
+  COORDINATION_INSTRUCTION_CHAT: 'prompt wording for a chat-spawned worker, not a setting',
   COORDINATOR_KINDS: 'the closed vocabulary of coordinator anchors',
   ZERO_COST: 'the zero value of Jev cost accounting',
 };

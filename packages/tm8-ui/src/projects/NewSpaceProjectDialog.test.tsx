@@ -199,7 +199,7 @@ describe('Create Space — a project from a node-local folder', () => {
     await waitFor(() => expect(p.directories).toHaveBeenCalledWith(undefined));
     fireEvent.change(view.getByLabelText('Create a new folder here'), { target: { value: 'website' } });
     fireEvent.click(view.getByRole('button', { name: 'Use new folder' }));
-    expect(view.getByText('/srv/projects/website')).toBeTruthy();
+    expect(view.getByDisplayValue('/srv/projects/website')).toBeTruthy();
     fireEvent.click(view.getByRole('button', { name: 'Create Space & add project' }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(space));

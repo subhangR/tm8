@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import {
   CodexAppServerAdapter,
+  TOOL_RESULT_MAX_CHARS,
   type HarnessSession,
   type LaunchMaterial,
   type OpenHarnessInput,
@@ -45,11 +46,12 @@ function material(env: Record<string, string> = {}): LaunchMaterial {
     allowedTools: ['Bash', 'mcp__tm8__read'],
   };
 }
-async function open(data: OpenHarnessInput) {
+async function open(data: OpenHarnessInput, maxFrameChars?: number) {
   const session = await new CodexAppServerAdapter({
     nodeId: 'node1',
     rpcTimeoutMs: 500,
     closeGraceMs: 100,
+    ...(maxFrameChars ? { maxFrameChars } : {}),
   }).open(data);
   sessions.push(session);
   return session;
@@ -285,7 +287,7 @@ describe('Codex pinned-v2 conformance', () => {
   it('preserves partial output and reports one runtime_lost on death/invalid frames/timeouts', async () => {
     for (const text of ['crash', 'bad-frame', 'oversize-frame', 'timeout']) {
       const data = input(material()),
-        session = await open(data),
+        session = await open(data, 1_048_576),
         record = new Recorder(session);
       expect(await session.submit(command(data.config, text))).toMatchObject({
         delivery: 'unknown',
@@ -301,6 +303,34 @@ describe('Codex pinned-v2 conformance', () => {
           text: 'partial',
         });
     }
+  });
+  it('carries a tool result past the old 1 MiB frame bound and cuts it for the thread', async () => {
+    const data = input(material()),
+      session = await open(data),
+      record = new Recorder(session);
+    expect(await session.submit(command(data.config, 'big-tool-result'))).toMatchObject({
+      delivery: 'sent',
+    });
+    await record.terminal();
+    expect(record.events.find((e) => e.payload.kind === 'terminal')?.payload).toMatchObject({
+      outcome: 'completed',
+      evidence: 'provider_terminal',
+    });
+    const tool = record.events.find((e) => e.payload.kind === 'tool')?.payload;
+    if (tool?.kind !== 'tool') throw new Error('no tool observation');
+    expect(typeof tool.tool.result).toBe('string');
+    expect((tool.tool.result as string).length).toBeLessThan(TOOL_RESULT_MAX_CHARS + 100);
+    expect(tool.tool.result as string).toMatch(/\[tool result cut: \d+ characters in total\]$/);
+  });
+  it('names the Codex request that was never answered', async () => {
+    const data = input(material({ TM8_FAKE_CODEX_THREAD_START: 'silent' }));
+    const adapter = new CodexAppServerAdapter({
+      nodeId: 'node1',
+      rpcTimeoutMs: 500,
+      threadRpcTimeoutMs: 300,
+      closeGraceMs: 100,
+    });
+    await expect(adapter.open(data)).rejects.toThrow('Codex did not answer thread/start within 0.3s');
   });
   it('observes idle exit, closes idempotently, releases only after exit and refuses unpinned protocol', async () => {
     let released = 0;

@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:cd50377655dfb62a17167c1983cb44d13a7c54a535e1207fee1afc8bf416da29",
+  "catalogDigest": "sha256:66865117b63ee1d715d92651f220f64ff62a9d03ba410c1c27163fa7e3e8d38a",
   "catalog": {
-    "total": 372,
-    "v1": 370,
+    "total": 373,
+    "v1": 371,
     "reserved": 2,
-    "http": 370,
+    "http": 371,
     "ws": 1,
-    "registerableV1Http": 368,
+    "registerableV1Http": 369,
     "methods": {
       "GET": 123,
-      "POST": 181,
+      "POST": 182,
       "PATCH": 21,
       "DELETE": 23,
       "PUT": 22,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 129,
-      "command": 241,
+      "command": 242,
       "stream": 2
     },
-    "uniqueNames": 372,
-    "uniqueBindings": 371
+    "uniqueNames": 373,
+    "uniqueBindings": 372
   },
   "reservedOperations": [
     "search.query",
@@ -1247,6 +1247,13 @@
         "operation": "chat.setModel",
         "method": "POST",
         "path": "/v2/chats/:id/model",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.interrupt",
+        "method": "POST",
+        "path": "/v2/chats/:id/interrupt",
         "status": "registered",
         "source": "server-router"
       },
@@ -3008,7 +3015,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 340
+    "unimplementedV1Http": 341
   },
   "schemas": {
     "additive": {
@@ -5682,6 +5689,22 @@
           "chat",
           "set",
           "model"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.interrupt",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.interrupt",
+        "intentTags": [
+          "chat",
+          "interrupt"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

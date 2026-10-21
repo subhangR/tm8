@@ -125,7 +125,7 @@ const err = (): string => stderr.join('');
 // ---------------------------------------------------------------------------
 
 describe('the module registers exactly its own rows, and the projection agrees', () => {
-  it('owns the seven chat paths and nothing else', () => {
+  it('owns the eight chat paths and nothing else', () => {
     expect(CHAT_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
       // +1 chat credentials (credential selection). MEASURED on the Tools 3 rebase.
       'chat credentials',
@@ -136,6 +136,8 @@ describe('the module registers exactly its own rows, and the projection agrees',
       'chat send',
       'chat show',
       'chat start',
+      // +1 chat.interrupt (chat turn management): the composer's Stop.
+      'chat stop',
       'chat turns',
     ]);
   });

@@ -22,6 +22,7 @@
  * task-git and graph surfaces, so every route out of this panel lands in the
  * same place.
  */
+import { projectRecordPort } from '../projects/project-record';
 import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { EntityDetailPanel, type ControlHost, type DetailReasons, type EntityDetailPanelProps as DetailPanelProps } from '../panels';
@@ -211,6 +212,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHos
       connections={data.connectionsOf(entityId)}
       linkedPullRequests={data.linkedPullRequestsOf?.(entityId) ?? []}
       linkedPullRequestsOf={data.linkedPullRequestsOf}
+      projectRecords={projectRecordPort(data.seam, data.spaceId)}
       commands={data.seam.commands}
       onSaved={data.reconcileCommand}
       onOpenEntity={(id) => onOpenEntity(id as EntityId)}

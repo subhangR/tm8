@@ -253,6 +253,21 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   ['internal.design_contains_guard', '322_design_to_craft.sql'],
   ['internal.design_summary', '322_design_to_craft.sql'],
   ['internal.backfill_graph_designs', '322_design_to_craft.sql'],
+  // 325 removes the op_request entity kind entirely: 280's table, its doors
+  // and its helpers are dropped, not left orphaned. See
+  // db/migrations/325_drop_op_requests.sql.
+  ['public.op_requests', '325_drop_op_requests.sql'],
+  ['internal.op_request_can_decide', '325_drop_op_requests.sql'],
+  ['internal.op_request_json', '325_drop_op_requests.sql'],
+  ['internal.op_request_for_decision', '325_drop_op_requests.sql'],
+  ['internal.op_request_resolve_attention', '325_drop_op_requests.sql'],
+  ['internal.op_request_touch', '325_drop_op_requests.sql'],
+  ['public.create_op_request', '325_drop_op_requests.sql'],
+  ['public.claim_op_request', '325_drop_op_requests.sql'],
+  ['public.settle_op_request', '325_drop_op_requests.sql'],
+  ['public.deny_op_request', '325_drop_op_requests.sql'],
+  ['public.get_op_request', '325_drop_op_requests.sql'],
+  ['public.list_op_requests', '325_drop_op_requests.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {

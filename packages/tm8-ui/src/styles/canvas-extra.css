@@ -103,6 +103,12 @@
      that falls out, and the one that scopes any future use: --pn-line BOUNDS
      a component, this SEPARATES siblings within one. Never apply it blanket. */
   --pn-x-hairline-soft: #F0EDE4;
+  /* PAGE PLANE — what an entity page (task, doc, any tab body) sits on, and
+     the active tab that joins it. Light keeps the --pn-card plane it always
+     had; the dark block below drops it to --pn-paper so every page matches
+     Chat's near-black (`.tch-root`) instead of a lifted grey card. Raised
+     things ON the page (popovers, menus, inputs) stay --pn-card. */
+  --pn-x-page-bg: var(--pn-card);
   /* Dark Terminate hover. The canvas draws this one DARK-ONLY
      (`color:#DA7D6A` = --pn-block dark, `style-hover="color:#E89A89"`), so the
      LIGHT value here is a DERIVATION, not a measurement — block lifted toward
@@ -187,6 +193,9 @@
      — and #262117 IS the dark --pn-hover, exactly. So this DERIVES rather than
      restating the literal: one source, and it tracks any future ramp change. */
   --pn-x-hairline-soft: var(--pn-hover);
+  /* Subhang, 2026-10-20: dark entity pages read grey next to Chat. The page
+     plane is the paper, as Chat's is; see the light block. */
+  --pn-x-page-bg: var(--pn-paper);
   /* MEASURED (unlike the light counterpart above): T0-1 draws the Terminate
      hover only in dark, `style-hover="color:#E89A89"` over #DA7D6A. */
   --pn-x-block-hover: #E89A89;
