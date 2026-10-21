@@ -36,6 +36,12 @@ const DENY_REASONS: ReadonlyArray<readonly [string, string]> = [
  ['MCP credential changed','credential_changed'],
  ['MCP account binding mismatch','credential_changed'],
  ['MCP root member is not a member','root_not_member'],
+ // 357, the external-token endpoint: the token, the Space or the connector
+ // stopped admitting this caller. Named so an audit row says WHICH, instead of
+ // a flat 'forbidden' for every external refusal.
+ ['MCP token access is unavailable','token_not_admitted'],
+ ['MCP connector is not available to external clients','external_clients_off'],
+ ['this MCP token is read-only','token_read_only'],
 ];
 export function mcpDenyReason(error:unknown):string|null {
  const message=error instanceof Error?error.message:'';

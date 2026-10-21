@@ -160,18 +160,83 @@ async function mcpConnect(cmd:CommandContext):Promise<ExitCode> {
 }
 
 /**
- * The table-driven one-operation commands, plus the two composites: `catalog
- * list`, whose Space rides the query, and `connect`, which chooses its door
- * from the connector it reads first.
+ * `tm8 mcp tokens create|list|revoke` — §5.5 / §10.7, for an external MCP client.
+ *
+ * Its own module rather than rows in the table above for two reasons. The Space
+ * is a LIST in the body, not a path segment, and "all my spaces" is an explicit
+ * choice rather than an omission (hence `--all-spaces` beside `--space`; one of
+ * the two is required, and the server refuses a null list from a space-pinned
+ * session anyway). And `create` has to PRINT A SECRET exactly once, with the
+ * client snippets §10.7 specifies — the table's renderer prints JSON, which
+ * would bury the one line the caller must copy.
  */
+async function mcpTokensCreate(cmd:CommandContext):Promise<ExitCode> {
+  assertKnownOptions(cmd,['label','space','all-spaces','expires-in-days','mutation-id']);
+  const label=cmd.options.value('label')??cmd.args[0];
+  if(!label)throw new CliError('--label is required',EXIT_USAGE);
+  const spaces=cmd.options.values('space');
+  const all=cmd.options.bool('all-spaces');
+  // Refused here rather than defaulted: a token for every Space the member will
+  // ever join is a real choice, and silence must not make it.
+  if(all===(spaces.length>0))throw new CliError(
+    'name the spaces with --space <id> (repeatable), or pass --all-spaces for every space you belong to now or join later',EXIT_USAGE);
+  const days=cmd.options.value('expires-in-days');
+  const body:Record<string,unknown>={label,spaceIds:all?null:spaces,
+    clientMutationId:resolveMutationId(cmd.options.value('mutation-id'))};
+  if(days!==undefined){const n=Number(days);
+    if(!Number.isInteger(n)||n<1||n>365)throw new CliError('--expires-in-days must be between 1 and 365',EXIT_USAGE);
+    body.expiresInDays=n;}
+  if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;
+  const data=await observedInvoke<unknown>(clientFor(cmd.ctx),'mcp.tokens.create',{body});
+  cmd.out.data(data,dto=>{
+    const created=(dto??{}) as {secret?:unknown;endpoint?:unknown;token?:{label?:unknown;expiresAt?:unknown}};
+    return [`Created MCP token ${String(created.token?.label??label)}. It is shown ONCE — copy it now:`,
+      '',`  ${String(created.secret??'(no secret returned)')}`,'',
+      `  claude mcp add --transport http tm8 ${String(created.endpoint??'')} --header "Authorization: Bearer <the token above>"`,
+      '',`Expires ${String(created.token?.expiresAt??'unknown')}. Revoke it with: tm8 mcp tokens revoke <id>`].join('\n');
+  });
+  return EXIT_OK;
+}
+async function mcpTokensList(cmd:CommandContext):Promise<ExitCode> {
+  assertKnownOptions(cmd,[]);
+  const data=await observedInvoke<unknown>(clientFor(cmd.ctx),'mcp.tokens.list',{query:{}});
+  cmd.out.data(data,dto=>{
+    const items=((dto??{}) as {items?:unknown}).items;
+    if(!Array.isArray(items)||items.length===0)return 'No MCP tokens. Create one with: tm8 mcp tokens create --label <name> --all-spaces';
+    return items.map(raw=>{
+      const t=raw as {id?:unknown;label?:unknown;spaceIds?:unknown;missingSpaceIds?:unknown;expiresAt?:unknown;lastUsedAt?:unknown;revokedAt?:unknown};
+      const spaces=Array.isArray(t.spaceIds)?`${t.spaceIds.length} space(s)`:'all my spaces';
+      const missing=Array.isArray(t.missingSpaceIds)&&t.missingSpaceIds.length
+        ?`  (${t.missingSpaceIds.length} listed space(s) you are no longer in)`:'';
+      const state=t.revokedAt?'revoked':`expires ${String(t.expiresAt)}`;
+      return `${String(t.id)}  ${String(t.label)}  [${spaces}; ${state}; last used ${String(t.lastUsedAt??'never')}]${missing}`;
+    }).join('\n');
+  });
+  return EXIT_OK;
+}
+async function mcpTokensRevoke(cmd:CommandContext):Promise<ExitCode> {
+  assertKnownOptions(cmd,['mutation-id']);
+  const tokenId=cmd.args[0];
+  if(!tokenId)throw new CliError('tokenId is required',EXIT_USAGE);
+  const body:Record<string,unknown>={clientMutationId:resolveMutationId(cmd.options.value('mutation-id'))};
+  if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;
+  const data=await observedInvoke<unknown>(clientFor(cmd.ctx),'mcp.tokens.revoke',{params:{tokenId},body});
+  cmd.out.data(data,()=>'Revoked. Clients using it stop working immediately.');
+  return EXIT_OK;
+}
+
 /**
- * The table-driven one-operation commands, plus `audit` (§5.6) and the two
- * composites: `catalog list`, whose Space rides the query, and `connect`,
- * which chooses its door from the connector it reads first.
+ * The table-driven one-operation commands, plus `audit` (§5.6) and the three
+ * composites: `catalog list`, whose Space rides the query, `connect`, which
+ * chooses its door from the connector it reads first, and `tokens`, which
+ * prints a secret once.
  */
 export const MCP_COMMANDS:CommandModule[]=[
   ...MCP_OP_COMMANDS,
   MCP_AUDIT_COMMAND,
   {path:['mcp','catalog','list'],run:mcpCatalogList},
   {path:['mcp','connect'],run:mcpConnect},
+  {path:['mcp','tokens','create'],run:mcpTokensCreate},
+  {path:['mcp','tokens','list'],run:mcpTokensList},
+  {path:['mcp','tokens','revoke'],run:mcpTokensRevoke},
 ];

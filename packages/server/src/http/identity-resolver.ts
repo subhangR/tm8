@@ -21,6 +21,7 @@ import type { Db } from '../db/types.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
 import { TOKEN_PREFIX } from '../identity/crypto.js';
 import { refuseLinkSessionOnTransport } from '../identity/link-bearer.js';
+import { refuseMcpTokenOnTransport } from '../identity/mcp-token.js';
 import { resolveBearerIdentity, type ResolvedAuthSession } from '../identity/pg-auth.js';
 import { readTm8SessionCookie } from './session-cookie.js';
 import { autoOwnerResolver } from './security.js';
@@ -119,6 +120,13 @@ export function createSessionIdentityResolver(
       throw new CollabError('unauthenticated', 'conflicting authentication credentials');
     }
     const raw = authorization || cookie;
+    // 357 (§5.5), layer (i): an MCP token is accepted ONLY by the `/mcp` route,
+    // which resolves its own bearer. It is refused HERE, on the raw carrier,
+    // and BEFORE the auto-owner arm — because `tm8m_` does not match the bearer
+    // prefix below, so an unrefused MCP token would fall through to
+    // `autoOwnerResolver` and come back as the node owner on any loopback
+    // request. No allow-list, ever. See identity/mcp-token.ts.
+    refuseMcpTokenOnTransport(raw);
     if (raw.startsWith(TOKEN_PREFIX)) {
       const session = await resolveBearerIdentity(db, raw);
       // 256 (W7p, layer (i)): a `link` session's token is never accepted on

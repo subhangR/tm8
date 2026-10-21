@@ -19,6 +19,7 @@ import { GOOGLE_OAUTH_ISSUER } from '@tm8/contract';
 import { GoogleFirstPartyHost, googleScopesFor } from './first-party/google/host.js';
 import { GOOGLE_NOT_CONFIGURED, type GoogleHostOptions } from './first-party/google/endpoints.js';
 import { FirstPartyRefused } from './first-party/host.js';
+import { createMcpEndpointRoute, type McpEndpointRoute } from './endpoint.js';
 
 export interface McpRuntimeHandlerOptions {
  dataDir:string; callbackUrl:string;
@@ -33,6 +34,18 @@ export interface McpRuntimeHandlerOptions {
  keys?:KeyProvider;
  /** The Google first-party host (§8.1). Defaults to Google's endpoints with no client configured. */
  google?:GoogleHostOptions;
+ /**
+  * §7.1 / G14: receives the `POST /mcp` route for the HTTP server to mount, built
+  * from the very same proxy ports as `mcp.proxy.request` — one credential
+  * reader, one definition reader, one first-party host. A second set would be a
+  * second place for the access rule to be subtly different.
+  *
+  * Absent (every test that does not need it) simply mounts no endpoint, and an
+  * MCP token then resolves nowhere at all.
+  */
+ onEndpoint?(route:McpEndpointRoute):void;
+ /** The body cap the endpoint reads under; defaults to the frame's 1 MiB. */
+ maxBodyBytes?:number;
 }
 export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeDeps,options:McpRuntimeHandlerOptions):void {
  const keys=options.keys??localKeyProvider(options.dataDir);
@@ -44,6 +57,11 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
  // §8.1: every first-party connector today is Google's; anything else is served by no host.
  const firstParty:McpProxyPorts['firstParty']=value=>value.catalogId?.startsWith('google.')?google:undefined;
  const proxy=new McpProxy({credentials,authorize:options.authorize,definition,firstParty});
+ // §7.1: the remote endpoint is NOT a catalog operation — it authenticates its
+ // own bearer, which every other transport refuses — so it is handed to the
+ // HTTP frame as a route instead of being registered here.
+ options.onEndpoint?.(createMcpEndpointRoute({db:deps.db,credentials,definition,firstParty,
+  maxBodyBytes:options.maxBodyBytes ?? 1024*1024}));
  const claims=async(ctx:RequestContext)=>claimsFor(await deps.owner(),ctx);
  const path=(ctx:RequestContext,name:string)=>{const value=ctx.params[name];if(!value)throw new CollabError('invalid_input',`${name} required`);return value;};
  const views=(auth:DbClaims,serverId:string|null,id:string|null=null)=>deps.db.rpc<McpCredentialView[]>(auth,'list_mcp_credentials',[serverId,id]);

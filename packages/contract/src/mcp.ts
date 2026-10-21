@@ -445,11 +445,21 @@ export const McpCredentialRotateInputSchema = z.object({ ...Command, credentialI
 export const McpCallAuditOutcomeSchema = z.enum(['started', 'succeeded', 'failed', 'denied', 'refreshed']);
 export type McpCallAuditOutcome = z.infer<typeof McpCallAuditOutcomeSchema>;
 export const McpCallAuditRowSchema = z.object({
-  id: z.string(), spaceId: Id, sessionId: Id, chatId: Id.nullable(), serverId: Id,
+  id: z.string(), spaceId: Id,
+  /**
+   * NULL for a call with no session: a connector TEST (353) or an external
+   * token (357). `via` says which shape a row is, and the two are kept in step
+   * by one CHECK — `session`/`chat` name a session, `test` and `external_token`
+   * do not, and only `external_token` names a token.
+   */
+  sessionId: Id.nullable(), chatId: Id.nullable(), serverId: Id,
   credentialId: Id.nullable(), credentialScope: z.enum(['member', 'space']).nullable(),
   method: z.enum(['tools/list', 'tools/call']), tool: z.string().nullable(), outcome: McpCallAuditOutcomeSchema,
   denyReason: z.string().nullable(), rootMemberId: Id.nullable(), chain: z.array(Id),
-  via: z.enum(['session', 'chat']).nullable(),
+  /** `test` is 353's (#1327); `external_token` is 357's. Both have no session. */
+  via: z.enum(['session', 'chat', 'test', 'external_token']).nullable(),
+  /** The `mcp.tokens.*` token an external call arrived on (§5.5), else null. */
+  mcpTokenId: Id.nullable(),
   latencyMs: z.number().int().nullable(), requestBytes: z.number().int().nullable(), responseBytes: z.number().int().nullable(),
   occurredAt: z.string(),
 }).strict();
@@ -459,3 +469,58 @@ export const McpAuditListResultSchema = z.object({
   items: z.array(McpCallAuditRowSchema), nextCursor: z.string().nullable(), scope: z.enum(['space', 'own']),
 }).strict();
 export type McpAuditListResult = z.infer<typeof McpAuditListResultSchema>;
+
+
+/*
+ * §5.5 / D9 — MCP TOKENS FOR EXTERNAL CLIENTS.
+ *
+ * One kind of token: minted on the node BY A MEMBER, acting as that member,
+ * with an OPTIONAL Space list. `spaceIds: null` means every Space the member
+ * belongs to now or joins later; a list limits it to those, intersected with
+ * live membership on every call. It is accepted on the `/mcp` endpoint and
+ * refused on every other transport (identity/mcp-token.ts).
+ *
+ * `connectorIds` and `readOnly` are §5.5's "optional, later in the UI": they are
+ * reported so a client can see them, and nothing sets them yet.
+ */
+export const McpTokenViewSchema = z.object({
+  id: Id, label: z.string(),
+  /** null = every Space I belong to now or join later. */
+  spaceIds: z.array(Id).nullable(),
+  /** §10.7's "Some listed Spaces you're no longer in" — server-computed, never stored. */
+  missingSpaceIds: z.array(Id),
+  readOnly: z.boolean(), connectorIds: z.array(Id).nullable(),
+  expiresAt: z.string(), lastUsedAt: z.string().nullable(), lastUsedIp: z.string().nullable(),
+  createdAt: z.string(), revokedAt: z.string().nullable(),
+}).strict();
+export type McpTokenView = z.infer<typeof McpTokenViewSchema>;
+/**
+ * `spaceIds` is REQUIRED and explicitly nullable rather than optional: "all my
+ * Spaces" is a choice with real reach (§10.7 makes it a radio button), so a
+ * caller that forgot the field must not get it by default.
+ */
+export const McpTokenCreateInputSchema = z.object({ ...Command,
+  label: z.string().min(1).max(80).regex(/^[^\u0000-\u001f\u007f]+$/, 'a label is one line of text'),
+  spaceIds: z.array(Id).min(1).max(32).nullable(),
+  /** §10.7: 30 / 90 / 365 / custom. No "never" (B63.1); the default is 90 days. */
+  expiresInDays: z.number().int().min(1).max(365).optional(),
+}).strict();
+export type McpTokenCreateInput = z.infer<typeof McpTokenCreateInputSchema>;
+/** The ONE time the token is readable. Never stored, never returned again (§10.7). */
+export const McpTokenCreateResultSchema = z.object({ token: McpTokenViewSchema,
+  /** `tm8m_<id>.<secret>` — show once, copy, and it is gone. */
+  secret: z.string(),
+  /** Where to point an MCP client, so the UI and the CLI print the same snippet. */
+  endpoint: z.string(),
+}).strict();
+export type McpTokenCreateResult = z.infer<typeof McpTokenCreateResultSchema>;
+export const McpTokenListResultSchema = z.object({ items: z.array(McpTokenViewSchema) }).strict();
+export type McpTokenListResult = z.infer<typeof McpTokenListResultSchema>;
+/**
+ * Revoke names its token in the PATH (`/v2/mcp/tokens/:tokenId/revoke`) and so
+ * does not repeat it in the body — the rule `chat.setMcpSelections` states: two
+ * places to name one thing is two places for them to disagree, and the body is
+ * what the facade validates.
+ */
+export const McpTokenRevokeInputSchema = z.object({ ...Command }).strict();
+export type McpTokenRevokeInput = z.infer<typeof McpTokenRevokeInputSchema>;
