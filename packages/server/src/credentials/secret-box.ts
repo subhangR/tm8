@@ -74,12 +74,35 @@ export interface KeyedSpaceSecretBinding {
   readonly provider: string;
 }
 
+/**
+ * A pending MCP OAuth sign-in (§5.4, migration 342): AAD
+ * `mcp-oauth|<key_id>|<state_hash>|<identity_id>|<space_id>|<server_id>|<scope>`.
+ * Literal prefix, like the keyed and server-gate forms. It binds the sealed
+ * verifier, client and token endpoint to the row's state hash, its owner, its
+ * connector and its chosen scope, so no column of `internal.mcp_oauth_pending`
+ * can be rewritten to have another sign-in's envelope opened as this one.
+ */
+export interface OAuthPendingSecretBinding {
+  readonly keyId: string;
+  /** Hex sha256 of the `state` the provider echoes back. */
+  readonly stateHash: string;
+  readonly identityId: string;
+  readonly spaceId: string;
+  readonly serverId: string;
+  readonly scope: string;
+}
+
 export type SecretBinding =
   | AccountSecretBinding | SpaceSecretBinding | SpaceLinkSecretBinding | ServerGateSecretBinding
-  | KeyedSpaceSecretBinding;
+  | KeyedSpaceSecretBinding | OAuthPendingSecretBinding;
 
 /** The AAD string for `binding`; for a link or server gate, the value its `aad` column holds. */
 export function bindingAad(binding: SecretBinding): string {
+  if ('stateHash' in binding) {
+    const parts = [binding.keyId, binding.stateHash, binding.identityId, binding.spaceId, binding.serverId, binding.scope];
+    if (parts.some(part => part.includes('|'))) throw new Error('secret binding part must not contain "|"');
+    return `mcp-oauth|${parts.join('|')}`;
+  }
   if ('keyId' in binding) {
     if (binding.keyId.includes('|')) throw new Error('secret binding key id must not contain "|"');
     if (binding.provider.includes('|')) throw new Error('secret binding provider must not contain "|"');

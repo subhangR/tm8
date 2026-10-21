@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { McpOAuthBeginInputSchema } from '@tm8/contract';
 import { McpOAuth, refreshOAuth, revokeOAuth } from '../src/mcp/oauth.js';
+import { fixtureKeys, fixtureOAuth, memoryOAuthPending } from './mcp/oauth-pending-fixture.js';
 import { McpProxy } from '../src/mcp/proxy.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
 import { registerMcpRuntimeHandlers } from '../src/mcp/handlers.js';
@@ -41,16 +43,56 @@ async function provider() {
   });
   state.metadata = { issuer: origin, authorization_endpoint: `${origin}/authorize`, token_endpoint: `${origin}/token`, registration_endpoint: `${origin}/register`, code_challenge_methods_supported: ['S256'] };
   state.resource = { resource: `${origin}/mcp`, authorization_servers: [origin] };
-  const oauth = new McpOAuth('https://tm8.test/callback');
-  const input = { identityId: 'human', spaceId: 'space', serverId: 'server', resource: `${origin}/mcp`, issuer: origin, clientId: 'client', allowPrivateNetwork: true };
-  const begin = async (overrides: Partial<typeof input> = {}) => new URL((await oauth.begin({ ...input, ...overrides })).authorizationUrl);
+  const oauth = fixtureOAuth();
+  const input = { spaceId: 'space', serverId: 'server', resource: `${origin}/mcp`, issuer: origin, clientId: 'client', allowPrivateNetwork: true };
+  const begin = async (overrides: Partial<typeof input> = {}) => new URL((await oauth.begin({ identityId: 'human' }, { ...input, ...overrides })).authorizationUrl);
   return { state, calls, origin, oauth, input, begin };
 }
 
 describe('independent OAuth binding and lifecycle', () => {
+  it('persists only the state hash and a sealed verifier/client, and carries scope and returnTo to the callback (§5.4)', async () => {
+    const p = await provider();
+    const pending = memoryOAuthPending();
+    const oauth = new McpOAuth('https://tm8.test/callback', pending, fixtureKeys());
+    p.state.token = { ...p.state.token, scope: 'read write' };
+    const auth = new URL((await oauth.begin({ identityId: 'human' }, { ...p.input, clientSecret: 'client-secret-canary', scope: 'space', returnTo: '/#/s/space/chat' })).authorizationUrl);
+    const state = auth.searchParams.get('state')!;
+    const [key, row] = [...pending.rows.entries()][0]!;
+    expect(key).toBe(createHash('sha256').update(state).digest('hex'));
+    const stored = JSON.stringify(row);
+    for (const secret of [state, 'client-secret-canary', '/token']) expect(stored).not.toContain(secret);
+    expect(row).toMatchObject({ scope: 'space', returnTo: '/#/s/space/chat', identityId: 'human' });
+    const result = await oauth.callback({ identityId: 'human' }, { state, code: 'code' });
+    expect(result).toMatchObject({ scope: 'space', returnTo: '/#/s/space/chat', grantedScopes: ['read', 'write'], secret: { clientSecret: 'client-secret-canary', tokenEndpoint: `${p.origin}/token` } });
+    expect(pending.rows.size).toBe(0);
+  });
+  it.each([['scope', 'space'], ['serverId', 'other-server'], ['spaceId', 'other-space'], ['identityId', 'intruder']] as const)('refuses a pending row whose %s was rewritten, before any exchange', async (column, value) => {
+    const p = await provider();
+    const pending = memoryOAuthPending();
+    const oauth = new McpOAuth('https://tm8.test/callback', pending, fixtureKeys());
+    const state = new URL((await oauth.begin({ identityId: 'human' }, p.input)).authorizationUrl).searchParams.get('state')!;
+    const row = [...pending.rows.values()][0]!;
+    Object.assign(row, { [column]: value });
+    await expect(oauth.callback({ identityId: column === 'identityId' ? 'intruder' : 'human' }, { state, code: 'code' })).rejects.toThrow('state');
+    expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
+  });
+  it('a sign-in begun on one server instance completes on another sharing the store and key', async () => {
+    const p = await provider();
+    const pending = memoryOAuthPending(); const keys = fixtureKeys();
+    const before = new McpOAuth('https://tm8.test/callback', pending, keys);
+    const state = new URL((await before.begin({ identityId: 'human' }, p.input)).authorizationUrl).searchParams.get('state')!;
+    const after = new McpOAuth('https://tm8.test/callback', pending, keys);
+    await expect(after.callback({ identityId: 'human' }, { state, code: 'code' })).resolves.toMatchObject({ serverId: 'server', secret: { accessToken: 'access-secret' } });
+  });
+  it.each(['//evil.test/x', 'https://evil.test/', '/\\evil.test', 'relative', '/ok\nx'])('refuses returnTo %j at the contract', value => {
+    expect(McpOAuthBeginInputSchema.safeParse({ clientMutationId: 'c', serverId: '00000000-0000-4000-8000-000000000001', label: 'x', returnTo: value }).success).toBe(false);
+  });
+  it('admits a same-origin returnTo and a scope at the contract', () => {
+    expect(McpOAuthBeginInputSchema.safeParse({ clientMutationId: 'c', serverId: '00000000-0000-4000-8000-000000000001', label: 'x', scope: 'space', returnTo: '/#/s/a/settings/connectors?x=1' }).success).toBe(true);
+  });
   it('proves PKCE hash and exact redirect/client/resource binding through token exchange', async () => {
     const p = await provider(); const auth = await p.begin();
-    const result = await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code', issuer: p.origin });
+    const result = await p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code', issuer: p.origin });
     const body = new URLSearchParams(p.calls.find(call => call.path === '/token')!.body);
     expect(createHash('sha256').update(body.get('code_verifier')!).digest('base64url')).toBe(auth.searchParams.get('code_challenge'));
     expect(auth.searchParams.get('code_challenge_method')).toBe('S256');
@@ -60,22 +102,22 @@ describe('independent OAuth binding and lifecycle', () => {
   });
   it('rejects wrong callback identity, allows owner, and rejects concurrent replay', async () => {
     const p = await provider(); const auth = await p.begin(); const input = { state: auth.searchParams.get('state')!, code: 'code' };
-    await expect(p.oauth.callback('other', input)).rejects.toThrow('state');
+    await expect(p.oauth.callback({ identityId: 'other' }, input)).rejects.toThrow('state');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
-    const result = await Promise.allSettled([p.oauth.callback('human', input), p.oauth.callback('human', input)]);
+    const result = await Promise.allSettled([p.oauth.callback({ identityId: 'human' }, input), p.oauth.callback({ identityId: 'human' }, input)]);
     expect(result.map(item => item.status).sort()).toEqual(['fulfilled', 'rejected']);
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(1);
   });
   it('rejects expired state before token exchange', async () => {
     const p = await provider(); const auth = await p.begin();
     const now = Date.now(); vi.spyOn(Date, 'now').mockReturnValue(now + 601_000);
-    await expect(p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' })).rejects.toThrow('expired');
+    await expect(p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code' })).rejects.toThrow('expired');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
   });
   it('rejects issuer mix-up and consumes that state', async () => {
     const p = await provider(); const auth = await p.begin(); const input = { state: auth.searchParams.get('state')!, code: 'code' };
-    await expect(p.oauth.callback('human', { ...input, issuer: 'https://other.test' })).rejects.toThrow('issuer');
-    await expect(p.oauth.callback('human', input)).rejects.toThrow('state');
+    await expect(p.oauth.callback({ identityId: 'human' }, { ...input, issuer: 'https://other.test' })).rejects.toThrow('issuer');
+    await expect(p.oauth.callback({ identityId: 'human' }, input)).rejects.toThrow('state');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
   });
   it.each(['issuer', 'pkce', 'token-origin', 'authorization-origin'])('rejects malicious %s discovery metadata', async attack => {
@@ -105,7 +147,7 @@ describe('independent OAuth binding and lifecycle', () => {
     const p = await provider(); const auth = await p.begin({ clientId: undefined });
     expect(JSON.parse(p.calls.find(call => call.path === '/register')!.body)).toMatchObject({ redirect_uris: ['https://tm8.test/callback'], token_endpoint_auth_method: 'none' });
     expect(auth.searchParams.get('client_id')).toBe('registered-client');
-    await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    await p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code' });
     expect(new URLSearchParams(p.calls.find(call => call.path === '/token')!.body).get('client_id')).toBe('registered-client');
   });
   it('reports a provider client allowlist rejection without exposing its body', async () => {
@@ -128,7 +170,7 @@ describe('independent OAuth binding and lifecycle', () => {
     };
     const auth = await p.begin({ clientId: undefined });
     expect(JSON.parse(p.calls.find(call => call.path === '/register')!.body)).toMatchObject({ token_endpoint_auth_method: 'client_secret_basic' });
-    const { secret } = await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    const { secret } = await p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code' });
     const expectedAuthorization = `Basic ${Buffer.from(`${encodeURIComponent('figma-style-client')}:${encodeURIComponent('provider-confidential-secret')}`).toString('base64')}`;
     const exchanged = p.calls.find(call => call.path === '/token')!;
     expect(exchanged.authorization).toBe(expectedAuthorization);
@@ -144,7 +186,7 @@ describe('independent OAuth binding and lifecycle', () => {
     p.state.metadata.token_endpoint_auth_methods_supported = ['client_secret_post'];
     p.state.registration = { client_id: 'post-client', client_secret: 'post-secret', token_endpoint_auth_method: 'client_secret_post' };
     const auth = await p.begin({ clientId: undefined });
-    const { secret } = await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    const { secret } = await p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code' });
     const exchanged = p.calls.find(call => call.path === '/token')!;
     expect(exchanged.authorization).toBeUndefined();
     expect(Object.fromEntries(new URLSearchParams(exchanged.body))).toMatchObject({ client_id: 'post-client', client_secret: 'post-secret' });
@@ -160,7 +202,7 @@ describe('independent OAuth binding and lifecycle', () => {
     expect(p.calls.some(call => call.path === '/register')).toBe(false);
     expect(auth.searchParams.get('client_id')).toBe('slack-style-client');
     expect(auth.toString()).not.toContain('operator-secret');
-    const { secret } = await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    const { secret } = await p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code' });
     const exchanged = p.calls.find(call => call.path === '/token')!;
     if (method === 'client_secret_post') {
       expect(exchanged.authorization).toBeUndefined();
@@ -181,7 +223,7 @@ describe('independent OAuth binding and lifecycle', () => {
     const p = await provider();
     p.state.token = { access_token: 'access-secret', token_type: tokenType };
     const auth = await p.begin();
-    const result = p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    const result = p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code' });
     if (accepted) await expect(result).resolves.toMatchObject({ secret: { accessToken: 'access-secret' } });
     else await expect(result).rejects.toThrow(/^OAuth token response invalid$/);
   });
@@ -192,7 +234,7 @@ describe('independent OAuth binding and lifecycle', () => {
     const deps = { db: {}, owner: async () => ({ identityId: 'human', isNodeAdmin: false }) } as unknown as FacadeDeps;
     const asked: string[] = [];
     registerMcpRuntimeHandlers(registry, deps, {
-      dataDir: '/unused-independent-oauth-fixture', callbackUrl: 'https://tm8.test/callback',
+      dataDir: '/unused-independent-oauth-fixture', callbackUrl: 'https://tm8.test/callback', oauthPending: memoryOAuthPending(), keys: fixtureKeys(),
       clientSecret: name => { asked.push(name); return configured; },
       definition: async () => ({ id: serverId, spaceId: 'space', definition: { approved: true, transport: 'http', url: p.input.resource, allowPrivateNetwork: true, auth: { type: 'oauth2', issuer: p.origin, clientId: 'client', clientSecretEnv: 'TM8_MCP_CLIENT_SECRET_SLACK' } } }) as never,
       authorize: async () => { throw new Error('unused'); },
@@ -216,8 +258,8 @@ describe('independent OAuth binding and lifecycle', () => {
   it('consumes state on denied token exchange and redacts provider error body', async () => {
     const p = await provider(); p.state.tokenStatus = 400; p.state.token = { error: 'access_denied', error_description: 'secret-from-provider' };
     const auth = await p.begin(); const input = { state: auth.searchParams.get('state')!, code: 'code' };
-    await expect(p.oauth.callback('human', input)).rejects.toThrow(/^OAuth token exchange failed$/);
-    await expect(p.oauth.callback('human', input)).rejects.toThrow('state');
+    await expect(p.oauth.callback({ identityId: 'human' }, input)).rejects.toThrow(/^OAuth token exchange failed$/);
+    await expect(p.oauth.callback({ identityId: 'human' }, input)).rejects.toThrow('state');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(1);
   });
   it.each(['resource', 'registration'])('does not expose a malformed %s response in errors', async stage => {
@@ -230,7 +272,7 @@ describe('independent OAuth binding and lifecycle', () => {
   });
   it('keeps resource/client binding and rotates refresh credentials', async () => {
     const p = await provider(); const auth = await p.begin();
-    const { secret } = await p.oauth.callback('human', { state: auth.searchParams.get('state')!, code: 'code' });
+    const { secret } = await p.oauth.callback({ identityId: 'human' }, { state: auth.searchParams.get('state')!, code: 'code' });
     p.state.token = { access_token: 'rotated-access', refresh_token: 'rotated-refresh', token_type: 'Bearer', expires_in: 60 };
     const refreshed = await refreshOAuth(secret, true);
     const body = new URLSearchParams(p.calls.at(-1)!.body);
@@ -239,8 +281,8 @@ describe('independent OAuth binding and lifecycle', () => {
   });
   it('consumes provider-denied authorization without exchanging a code', async () => {
     const p = await provider(); const auth = await p.begin(); const state = auth.searchParams.get('state')!;
-    await expect(p.oauth.callback('human', { state, error: 'access_denied' })).rejects.toThrow(/^OAuth authorization denied$/);
-    await expect(p.oauth.callback('human', { state, code: 'late-code' })).rejects.toThrow('state');
+    await expect(p.oauth.callback({ identityId: 'human' }, { state, error: 'access_denied' })).rejects.toThrow(/^OAuth authorization denied$/);
+    await expect(p.oauth.callback({ identityId: 'human' }, { state, code: 'late-code' })).rejects.toThrow('state');
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
   });
   it.each(['denial', 'issuer'])('handles %s through the actual OAuth callback handler', async scenario => {
@@ -249,7 +291,7 @@ describe('independent OAuth binding and lifecycle', () => {
     const registry = new HandlerRegistry();
     const deps = { db: {}, owner: async () => ({ identityId: 'human', isNodeAdmin: false }) } as unknown as FacadeDeps;
     registerMcpRuntimeHandlers(registry, deps, {
-      dataDir: '/unused-independent-oauth-fixture', callbackUrl: 'https://tm8.test/callback',
+      dataDir: '/unused-independent-oauth-fixture', callbackUrl: 'https://tm8.test/callback', oauthPending: memoryOAuthPending(), keys: fixtureKeys(),
       definition: async () => ({ id: serverId, spaceId: 'space', definition: { approved: true, transport: 'http', url: p.input.resource, allowPrivateNetwork: true, auth: { type: 'oauth2', authorizationUrl: `${p.origin}/authorize`, clientId: 'client' } } }) as never,
       authorize: async () => { throw new Error('unused'); },
     });
