@@ -3137,3 +3137,59 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-jev-ref__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tch-jev-ref__remove { border: 0; background: none; color: var(--pn-ink-3); cursor: pointer; padding: 0 4px; font-size: var(--pn-fs-sm); line-height: 1; }
 .tch-jev-ref__remove:hover { color: var(--pn-ink); }
+
+/* -------------------------------------------------------------------------
+   §10.4 CONNECTORS — the ＋ sheet's section and the composer chip.
+   The rows themselves are `mcp-toggles` (mcp/mcp.css), shared with the launch
+   dialogs; these rules only place them and draw the chip.
+   ------------------------------------------------------------------------- */
+.tch-connectors {
+  min-width: 0;
+  padding: 4px 0;
+}
+
+
+.tch-connectors-chip {
+  flex: 0 0 auto;
+}
+
+.tch-connectors-chip__face {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  gap: 4px;
+}
+
+.tch-connectors-chip__n {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* `[]` — every connector deliberately off. Struck through, because a plain 0
+   is indistinguishable from a Space that has no connectors at all. */
+.tch-connectors-chip__face[data-off] .tch-connectors-chip__n {
+  text-decoration: line-through;
+}
+
+/* Something switched on needs reconnecting. A dot, not a colour on the count:
+   the count is still true. */
+.tch-connectors-chip__dot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-warn, #c88a00);
+}
+
+/* INSIDE A POPOVER ONLY. The list scrolls on its own there, so a Space with
+   twenty connectors cannot push the skill checklist above it out of reach —
+   but the same rule applied to every mount CLIPPED the full-width sheet after
+   two rows and silently hid the rest of the Space's connectors, which is the
+   worse failure of the two and is exactly what the screenshot caught. */
+.tch-popmenu .tch-connectors {
+  max-height: 320px;
+  overflow-y: auto;
+}

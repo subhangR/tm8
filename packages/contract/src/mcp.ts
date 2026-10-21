@@ -445,6 +445,39 @@ export const ChatMcpSelectionsResultSchema = z.object({ chatId: Id,
   mcpSelections: z.array(McpSelectionSchema).nullable() }).strict();
 export type ChatMcpSelectionsResult = z.infer<typeof ChatMcpSelectionsResultSchema>;
 
+/**
+ * `mcp.sessions.provenance` (§6, §10.6, S6) — the provenance OUTCOME of one
+ * launch, as `public.mcp_session_provenance` computed it.
+ *
+ * `recorded: false` is the whole answer for a session that has no provenance
+ * row at all — one launched before the plan, or a chat still on Space defaults
+ * — and the debug view says exactly that rather than drawing an empty chain.
+ * Every other field is present only when `recorded` is true.
+ *
+ * `chain` is the bearer chain NEAREST HOP FIRST, and `chainSpaceIds` is the
+ * Spaces it crossed, positionally. `rootStillAdmitted` is the live re-check of
+ * §6.2: false means the recorded root has since left one of those Spaces, so
+ * the connectors this session was lent have stopped working. The UI RENDERS
+ * that verdict and never computes it — the rule lives in SQL, and a second
+ * copy in a browser is a second place for it to be wrong.
+ */
+export const McpSessionProvenanceSchema = z.union([
+  z.object({ sessionId: Id, recorded: z.literal(false) }).strict(),
+  z.object({
+    sessionId: Id, recorded: z.literal(true),
+    /** The teammate the root acted as, when the launch recorded one. */
+    rootMemberId: Id.nullable(),
+    rootIdentityId: z.string().min(1).nullable(),
+    chain: z.array(Id),
+    chainSpaceIds: z.array(Id),
+    depth: z.number().int().min(0),
+    launcherIdentityId: z.string().min(1).nullable(),
+    launcherAuthKind: z.string().min(1).nullable(),
+    rootStillAdmitted: z.boolean(),
+  }).strict(),
+]);
+export type McpSessionProvenance = z.infer<typeof McpSessionProvenanceSchema>;
+
 export const McpProxyRequestInputSchema = z.object({ sessionId: Id, serverId: Id, message: z.record(z.unknown()) }).strict();
 
 export const McpServerListResultSchema = z.object({ items: z.array(McpServerViewSchema), nextCursor: z.string().nullable(), allowed: z.object({ register: z.boolean(), attach: z.boolean() }).strict() }).strict();

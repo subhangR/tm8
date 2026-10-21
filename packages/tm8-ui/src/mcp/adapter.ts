@@ -1,6 +1,6 @@
 import { rememberMcpOAuth } from './oauth-callback';
 import { McpUiError } from './errors';
-import { CollabError, McpServerDefinitionSchema, mcpCatalogEntry, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpTestResult, type Cursor } from '@tm8/contract';
+import { CollabError, McpServerDefinitionSchema, mcpCatalogEntry, type ChatMcpSelectionsResult, type McpCatalogEntry, type McpCatalogListResult, type McpCredentialView, type McpResolveResult, type McpServerDefinition, type McpServerListResult, type McpServerView, type McpSessionProvenance, type McpTestResult, type Cursor } from '@tm8/contract';
 import type { HttpClient } from '../data/real/http';
 import type { Seam } from '../data/seam';
 import type { McpAddOutcome, McpDefinition, McpPort, McpServer } from './port';
@@ -286,6 +286,32 @@ export function createMcpPort(http: HttpClient, seam: Pick<Seam, 'query' | 'conn
     },
     async share(_serverId, credentialId, sharing, memberIds) { await http.call('mcp.credentials.share', { params: { credentialId }, body: { ...command(), credentialId, visibility: sharing === 'members' ? 'selected' : sharing, memberIds } }); },
     async revoke(_serverId, credentialId) { await http.call('mcp.credentials.revoke', { params: { credentialId }, body: { ...command(), credentialId } }); },
+    /*
+     * §10.4's two chat doors. The chat is named in the PATH on both, like every
+     * other `chat.*` operation, and the body carries only what changes.
+     *
+     * The three-value meaning is passed through UNTOUCHED in both directions:
+     * `null` out of the read means "no stored row, the Space's defaults apply",
+     * and `null` into the write deletes the row. Collapsing either into `[]`
+     * here — the obvious-looking tidy-up — would silently turn "back to
+     * defaults" into "every connector off", which is the one mistake in this
+     * area a user cannot see until an agent is missing a tool.
+     */
+    async chatSelections(chatId) {
+      const result = await http.call<ChatMcpSelectionsResult>('chat.getMcpSelections', { params: { id: chatId } });
+      return result.mcpSelections ?? null;
+    },
+    async setChatSelections(chatId, value) {
+      const result = await http.call<ChatMcpSelectionsResult>('chat.setMcpSelections', {
+        params: { id: chatId },
+        body: { ...command(), mcpSelections: value },
+      });
+      return result.mcpSelections ?? null;
+    },
+    /** §10.6. A pass-through: the server owns §6 and the view only renders it. */
+    async sessionProvenance(sessionId) {
+      return http.call<McpSessionProvenance>('mcp.sessions.provenance', { params: { sessionId } });
+    },
     async members() {
       const members: { id: string; label: string }[] = [];
       let cursor: Cursor | undefined;

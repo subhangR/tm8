@@ -209,6 +209,20 @@ const ROWS: Record<OperationName, Row> = {
     sum:'Revoke one of your MCP tokens', authz:'server', input:'bound',
     tags:['mcp','token','external','revoke'],
     notes:['clients using it stop working immediately, including a call already in flight']},
+  /*
+   * NO CLI COMMAND: this is the data behind one block of the session debug view
+   * (§10.6), and reading it in a terminal would mean rendering a bearer chain
+   * of raw ids with no entity titles to resolve them against. `tm8 mcp audit`
+   * is the terminal's answer to "what did this session's connectors do".
+   */
+  'mcp.sessions.provenance': {cmd:null,
+    sum:'Read the provenance recorded for one session: the human root, the bearer chain, and whether that root is still admitted to every Space it crossed',
+    authz:'entity',input:'none',tags:['mcp','connector','provenance','root','chain','session','debug'],
+    reason:'the session debug view resolves the chain\'s ids to entities; a terminal rendering would be a list of bare uuids',
+    notes:['`recorded:false` is a real answer: the session has no provenance row — launched before the plan, or a chat still on Space defaults',
+      '`rootStillAdmitted:false` means the recorded human has since left one of the Spaces the chain crossed, so the connectors have stopped working',
+      '`chain` is nearest hop first, and `chainSpaceIds` is positional with it',
+      'human sessions only; a link caller is refused by the RPC itself']},
   'mcp.catalog.list': {cmd:['mcp','catalog','list'], syn:'tm8 mcp catalog list',sum:'List the connector catalog — the connectors tm8 knows how to add',authz:'server',input:'none',
     tags:['mcp','connector','catalog','directory','discover','gmail','slack','notion','figma'],
     notes:['node-level static data: it answers with no Space, and the ambient --space only adds, per entry, where it is already registered there',
@@ -2131,6 +2145,28 @@ const ROWS: Record<OperationName, Row> = {
     examples: [
       'tm8 chat connectors <chat-id> --input \'[{"serverId":"<server-id>"}]\'',
       'tm8 chat connectors <chat-id> --input null',
+    ],
+  },
+  /*
+   * NO CLI COMMAND, and the gap is named rather than hidden: `tm8 chat
+   * connectors` is a WRITE, so a terminal cannot currently look at a thread's
+   * connectors without changing them. This door was added for §10.4's composer
+   * sheet, which has to know "Space defaults" from "Custom" before the user
+   * touches a toggle. A CLI read belongs with the rest of the `chat connectors`
+   * command (one path cannot serve two operations in this table), and is a
+   * follow-up rather than something to fake here.
+   */
+  'chat.getMcpSelections': {
+    cmd: null,
+    sum: "Read a chat's stored MCP connector selection — null means it is on the Space defaults, resolved fresh each turn",
+    authz: 'entity',
+    input: 'none',
+    tags: ['chat', 'mcp', 'connector', 'tools', 'selection', 'defaults'],
+    reason: 'the terminal form of this read belongs on `tm8 chat connectors`, which today only writes; this door was added for the chat composer sheet',
+    notes: [
+      '`null` is the ANSWER and not a missing value: the thread has no stored row, so it uses the Space defaults resolved at each turn',
+      'a non-empty list, or `[]`, means a human chose it — since 354 a chat\'s own launch no longer writes its resolved defaults back',
+      'human sessions only, and a chat opened through a Space link is refused: a link chat gets no connectors',
     ],
   },
   'chat.setModel': {
@@ -4418,7 +4454,7 @@ export const CATALOG_DIGEST =
   // Re-measured for Projects add (+spaces.projects.clone|cloneJobs.get, 01a13574) on main 638f6069e — RECOMPUTED, not adjusted.
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:508a625af9ff431f10465055fab1231e1ef1f67ca53b0ca131163dd710b8c037';
+  'sha256:13bee07261a99fc58e0c5ec6fb1d5f3d837b826d1fcdadd0d6edf94d96cadb66';
 
 export const GRAMMAR_VERSION = '2';
 

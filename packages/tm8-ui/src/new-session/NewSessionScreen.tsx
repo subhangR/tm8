@@ -289,9 +289,21 @@ export function NewSessionScreen({
             Describe what you want done. Enter creates the task and starts an agent on it.
           </p>
         </div>
-      <McpPicker teamMemberId={config.teamMemberId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={transitioning} />
         <NewSessionComposer
           {...bind}
+          // §10.5: the Connectors section lives IN the composer's ··· menu,
+          // beside the harness rows, instead of floating above the card where
+          // it used to sit as a bare fieldset.
+          connectors={(
+            <McpPicker
+              teamMemberId={config.teamMemberId ?? undefined}
+              value={mcpSelections}
+              onChange={setMcpSelections}
+              onReady={setMcpReady}
+              disabled={transitioning}
+              layout="grid"
+            />
+          )}
           draft={draft}
           onDraftChange={(next) => {
             setDraft(next);

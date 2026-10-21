@@ -78,6 +78,12 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     // §5.6 (346): the audit read is a human oversight surface (lead ruling on #1321).
     'packages/server/src/mcp/audit.ts',
     'packages/server/src/tools/handlers.ts',
+    // §10.4: `chat.getMcpSelections` is the one chat operation registered
+    // through `requireHumanSession`. Its siblings rely on the family's own
+    // `refuseChatRuntimeBearer` plus a human gate inside their RPC, and
+    // `read_mcp_launch_selections` has no such gate — so this door carries the
+    // wrapper for real and the catalog flags it.
+    'packages/server/src/chat/handlers.ts',
   ];
 
   it('matches op by op, not by prefix', () => {

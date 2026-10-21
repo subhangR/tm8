@@ -30,21 +30,21 @@ function Picker({ port, onReady = vi.fn(), onChange = vi.fn() }: { port: McpPort
 describe('native MCP picker', () => {
   it('requires an explicit account and distinguishes defaults from none', async () => {
     const onReady = vi.fn(), onChange = vi.fn(); render(<Picker port={fixture()} onReady={onReady} onChange={onChange} />);
-    fireEvent.click(await screen.findByRole('checkbox', { name: /Calendar/ }));
+    fireEvent.click(await screen.findByRole('switch', { name: /Calendar/ }));
     expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'server' }]); expect(onReady).toHaveBeenLastCalledWith(false);
     fireEvent.change(screen.getByRole('combobox', { name: 'Account for Calendar' }), { target: { value: 'account' } });
     expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'server', credentialId: 'account' }]); expect(onReady).toHaveBeenLastCalledWith(true);
-    fireEvent.click(screen.getByRole('button', { name: 'None' })); expect(onChange).toHaveBeenLastCalledWith([]);
-    fireEvent.click(screen.getByRole('button', { name: 'Use defaults' })); expect(onChange).toHaveBeenLastCalledWith(undefined);
+    fireEvent.click(screen.getByRole('button', { name: 'Turn all off' })); expect(onChange).toHaveBeenLastCalledWith([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to defaults' })); expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
   it('shows unconnected servers unavailable with a connection route', async () => {
     const data = catalog(); data.servers[0]!.accounts[0]!.canUse = false; render(<Picker port={fixture(data)} />);
-    expect((await screen.findByRole('checkbox', { name: /Calendar/ }) as HTMLInputElement).disabled).toBe(true);
+    expect((await screen.findByRole('switch', { name: /Calendar/ }) as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByRole('link', { name: 'Connect Calendar' }).getAttribute('href')).toContain('/settings/connectors');
   });
   it('hides controls without attachment permission', async () => {
     const data = catalog(); data.canAttach = false; const port = fixture(data); render(<Picker port={port} />);
-    await waitFor(() => expect(port.catalog).toHaveBeenCalled()); expect(screen.queryByRole('checkbox')).toBeNull();
+    await waitFor(() => expect(port.catalog).toHaveBeenCalled()); expect(screen.queryByRole('switch')).toBeNull();
   });
   /*
    * G15 / §5.3 (S22). An UNRESOLVED DEFAULT IS THE SERVER'S TO SKIP.
@@ -66,20 +66,20 @@ describe('native MCP picker', () => {
   it('leaves an unresolved default to the server instead of sending a trimmed list', async () => {
     const data = catalog(); data.defaults = [{ serverId: 'server' }]; const onReady = vi.fn(), onChange = vi.fn();
     render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange} />);
-    await screen.findByRole('checkbox', { name: /Calendar/ });
+    await screen.findByRole('switch', { name: /Calendar/ });
     await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
     expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Use defaults' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('mcp-picker-toggles-using').textContent).toBe('Using: Space defaults');
     expect(screen.queryByRole('alert')).toBeNull();
     // Shown as on and awaiting an account, not hidden and not warned about.
-    expect((screen.getByRole('checkbox', { name: /Calendar/ }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('switch', { name: /Calendar/ }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole('combobox', { name: /Account for Calendar/ }) as HTMLSelectElement).value).toBe('');
   });
   it('sends nothing at all when only some defaults are connected', async () => {
     const data = catalog(); data.servers.push({ ...data.servers[0]!, id: 'open', title: 'Docs', auth: 'none', accounts: [] });
     data.defaults = [{ serverId: 'server' }, { serverId: 'open' }]; const onChange = vi.fn(), onReady = vi.fn();
     render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange} />);
-    await screen.findByRole('checkbox', { name: /Docs/ });
+    await screen.findByRole('switch', { name: /Docs/ });
     await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
     // The old behaviour sent `[{serverId:'open'}]` — a list the user never
     // chose, which would ALSO have pinned the thread or session to it.
@@ -164,7 +164,8 @@ describe('MCP readiness and recovery', () => {
     const data = catalog(); data.defaults = [{serverId:'server',credentialId:'account'}];
     data.servers[0]!.accounts[0]!.status='revoked'; data.servers[0]!.accounts[0]!.canUse=false;
     const onReady=vi.fn(), onChange=vi.fn(); render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange}/>);
-    await screen.findByRole('link',{name:'Connect Calendar'});
+    // §10.0: a revoked connection reads [Reconnect].
+    await screen.findByRole('link',{name:'Reconnect Calendar'});
     await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
     // S22: the revoked default is dropped by the SERVER's resolution, not by
     // the browser sending a shorter list.
@@ -173,7 +174,7 @@ describe('MCP readiness and recovery', () => {
   });
   it('still blocks an explicitly ticked connector until an account is chosen', async () => {
     const onReady = vi.fn(); render(<Picker port={fixture()} onReady={onReady} />);
-    fireEvent.click(await screen.findByRole('checkbox', { name: /Calendar/ }));
+    fireEvent.click(await screen.findByRole('switch', { name: /Calendar/ }));
     expect(onReady).toHaveBeenLastCalledWith(false); expect(screen.getByRole('alert').textContent).toBe('Choose a connected account.');
   });
   it('preserves sharing selection and offers the named member after loading', async () => {
@@ -205,8 +206,9 @@ it('refreshes a mounted launch picker immediately after revocation elsewhere in 
   fireEvent.click(screen.getByRole('button',{name:'Confirm disconnect'}));
   // S22: a DEFAULT losing its account does not block the launch — the server
   // skips it and reports "not connected". What must still happen immediately is
-  // the picker reflecting the revocation, which is the connect link below.
-  await screen.findByRole('link',{name:'Connect Calendar'});
+  // the picker reflecting the revocation, which is the reconnect link below
+  // (§10.0: a revoked connection reads Reconnect, not Connect).
+  await screen.findByRole('link',{name:'Reconnect Calendar'});
   await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
   expect(screen.queryByRole('button',{name:'Confirm disconnect'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
@@ -253,5 +255,5 @@ it('blocks a changed connector account and offers reconnect without key rotation
   // S22, as above: a default whose account changed under it is the server's to
   // skip, so the launch stays ready and the UI offers the reconnect.
   await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
-  expect(screen.getByRole('link',{name:'Connect Calendar'})).toBeTruthy();
+  expect(screen.getByRole('link',{name:'Reconnect Calendar'})).toBeTruthy();
 });

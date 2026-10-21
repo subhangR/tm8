@@ -1,5 +1,10 @@
 import { McpPicker } from '../mcp/McpPicker';
-import type { McpSelection } from '../mcp/port';
+import {
+  CODEX_CONNECTORS_REASON,
+  ChatConnectorsSheet,
+  ConnectorsChip,
+  useChatConnectors,
+} from './composer/ChatConnectors';
 import { EntityAttentionChip } from '../attention';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CollabError } from '@tm8/contract';
@@ -544,7 +549,6 @@ export function ChatHomeScreen({
      the drafts, it shows beside the draft that survived and nowhere else, and
      — D26 — survives navigation and sends in other threads: nothing the
      viewer typed, or was told, vanishes because they moved. */
-  const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
   const [mcpReady, setMcpReady] = useState(true);
   const [submitFailures, setSubmitFailures] = useState<Readonly<Record<string, string>>>({});
   const submitError = submitFailures[draftKey] ?? null;
@@ -1464,6 +1468,17 @@ export function ChatHomeScreen({
       : null;
   const newThread = selectedRootId === null;
   const startUnavailable = newThread ? port.startThread.unavailableReason : null;
+  /*
+   * §10.4 / G4 — THE THREAD'S CONNECTORS, new or long since started.
+   *
+   * One hook for both cases, keyed on the thread: a new chat's picks are local
+   * until `chat.start` carries them, and an opened thread's are read from and
+   * written to the server. The old code had only the first half, and the `+`
+   * menu only offered connectors `newThread &&` — which is why a running
+   * conversation could not be given a tool it turned out to need.
+   */
+  const connectors = useChatConnectors(selectedRootId);
+  const mcpSelections = connectors.value;
 
   /* LANE 2: the in-flight message's parts, for the live row's words. The
      turn itself is lane 1's `turnInProgress` above; this only looks it up. */
@@ -1487,7 +1502,20 @@ export function ChatHomeScreen({
         : !selectedModel
           ? 'No model is available from the launch catalog.'
           : null;
-  const refusal = startUnavailable ?? selectionUnavailable ?? (newThread && !mcpReady ? MCP_REFUSAL : null);
+  /*
+   * The MCP gate now holds for EVERY thread, not just a new one.
+   *
+   * It used to be `newThread && !mcpReady` because an existing thread's
+   * selection could not be changed, so there was nothing a viewer could be
+   * holding wrong. Now they can change it mid-conversation, and an explicit
+   * pick with no usable account is exactly what `bind` refuses out loud at the
+   * next turn (B9) — so saying it here, where the account can still be chosen,
+   * is the earlier and kinder place. S22 is what makes this safe to widen:
+   * `selectionProblem` reads only an EXPLICIT value, so a thread on Space
+   * defaults has nothing to report and is never blocked by a default it did
+   * not choose.
+   */
+  const refusal = startUnavailable ?? selectionUnavailable ?? (!mcpReady ? MCP_REFUSAL : null);
 
   /**
    * THE THREAD'S THREE WRITE-ONCE FACTS, as the composer's drop-ups read them.
@@ -1533,6 +1561,17 @@ export function ChatHomeScreen({
     (selectedRootId === null ? undefined : modelOverrides[selectedRootId])
     ?? activeConfig?.model
     ?? modelId;
+  /*
+   * G13 — a CODEX lane gets no tm8 connectors yet.
+   *
+   * Read off the catalog entry for the model this thread actually runs, not
+   * off the model id's spelling: `agentTool` is the catalog's own field and a
+   * provider can add a model tomorrow whose name says nothing about which
+   * harness runs it. A model the catalog does not list yet is NOT treated as
+   * Codex — an unknown tool is unknown, and silently refusing connectors would
+   * be the wrong way round for a Claude lane whose entry had not loaded.
+   */
+  const codexChat = models.find((model) => model.model === shownModelId)?.agentTool === 'codex';
   const shownCredential = (selectedRootId ? credentialOverrides[selectedRootId] : undefined)
     ?? activeConfig?.credentialSelection ?? newCredential;
   useEffect(() => {
@@ -3016,8 +3055,20 @@ export function ChatHomeScreen({
                 ) : null}
               </>
             ) : null}
-            {/* Compact: the picker keeps its readiness work here but draws in ＋. */}
-            {newThread && <McpPicker teamMemberId={teammateId ?? undefined} targetId={aboutId ?? undefined} value={mcpSelections} onChange={setMcpSelections} onReady={setMcpReady} disabled={busy} headless={compactComposer} />}
+            {/* READINESS ONLY, for every thread. The rows are drawn in ＋ and in
+                the chip (§10.4); this instance is `headless` so it reports the
+                send gate's verdict and renders nothing — mounting it for an
+                existing thread is what extends the gate to a selection that
+                can now be changed mid-conversation. */}
+            <McpPicker
+              teamMemberId={teammateId ?? undefined}
+              targetId={aboutId ?? undefined}
+              value={mcpSelections}
+              onChange={connectors.change}
+              onReady={setMcpReady}
+              disabled={busy}
+              headless
+            />
             {submitError ? <p className="tch-submit-error" role="alert">{submitError}</p> : null}
             {/* No "Turn stopped · continuable" line above the composer (Subhang,
                 2026-10-18): the composer's own phase label already says it, and
@@ -3114,21 +3165,36 @@ export function ChatHomeScreen({
                         extraLabel: `Coordinator team · ${teamSize(shownTeam)}`,
                       }
                     : {})}
-                  {...(compactComposer && newThread
-                    ? {
+                  // §10.4: the ＋ sheet's Connectors section, for a NEW thread
+                  // and an existing one alike (G4) — the `newThread &&` that
+                  // used to be here IS the defect. G13 keeps the row on a Codex
+                  // lane and refuses it, naming the reason.
+                  {...(codexChat
+                    ? { connectorsReason: CODEX_CONNECTORS_REASON }
+                    : {
                         connectors: (
-                          <McpPicker
-                            teamMemberId={teammateId ?? undefined}
-                            targetId={aboutId ?? undefined}
-                            value={mcpSelections}
-                            onChange={setMcpSelections}
+                          <ChatConnectorsSheet
+                            state={connectors}
+                            {...(aboutId ? { targetId: aboutId } : {})}
+                            {...(teammateId ? { teamMemberId: teammateId } : {})}
+                            streaming={thinking}
                             disabled={busy}
-                            retryClassName="tch-addmenu__row"
                           />
                         ),
-                      }
-                    : {})}
+                      })}
                 />
+                {/* The chip, beside the turn pills: `🔌 N` of what is on and
+                    ready. Hidden while a thread is on defaults with none on,
+                    so a Space without connectors adds no furniture here. */}
+                {codexChat ? null : (
+                  <ConnectorsChip
+                    state={connectors}
+                    {...(aboutId ? { targetId: aboutId } : {})}
+                    {...(teammateId ? { teamMemberId: teammateId } : {})}
+                    streaming={thinking}
+                    disabled={busy}
+                  />
+                )}
                 {enabledSkills.length && !phoneCard ? (
                   <span className="tch-turnpills" data-testid="tch-turnpills">
                     {enabledSkills.map((id) => (

@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:508a625af9ff431f10465055fab1231e1ef1f67ca53b0ca131163dd710b8c037",
+  "catalogDigest": "sha256:13bee07261a99fc58e0c5ec6fb1d5f3d837b826d1fcdadd0d6edf94d96cadb66",
   "catalog": {
-    "total": 380,
-    "v1": 378,
+    "total": 382,
+    "v1": 380,
     "reserved": 2,
-    "http": 378,
+    "http": 380,
     "ws": 1,
-    "registerableV1Http": 376,
+    "registerableV1Http": 378,
     "methods": {
-      "GET": 126,
+      "GET": 128,
       "POST": 186,
       "PATCH": 21,
       "DELETE": 23,
@@ -17,12 +17,12 @@
       "WS": 2
     },
     "kinds": {
-      "read": 132,
+      "read": 134,
       "command": 246,
       "stream": 2
     },
-    "uniqueNames": 380,
-    "uniqueBindings": 379
+    "uniqueNames": 382,
+    "uniqueBindings": 381
   },
   "reservedOperations": [
     "search.query",
@@ -449,6 +449,13 @@
         "operation": "mcp.tokens.revoke",
         "method": "POST",
         "path": "/v2/mcp/tokens/:tokenId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.sessions.provenance",
+        "method": "GET",
+        "path": "/v2/mcp/sessions/:sessionId/provenance",
         "status": "registered",
         "source": "server-router"
       },
@@ -1302,6 +1309,13 @@
       {
         "operation": "chat.setMcpSelections",
         "method": "POST",
+        "path": "/v2/chats/:id/mcp-selections",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.getMcpSelections",
+        "method": "GET",
         "path": "/v2/chats/:id/mcp-selections",
         "status": "registered",
         "source": "server-router"
@@ -3064,7 +3078,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 348
+    "unimplementedV1Http": 350
   },
   "schemas": {
     "additive": {
@@ -3827,6 +3841,23 @@
           "mcp",
           "tokens",
           "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.sessions.provenance",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.sessions.provenance",
+        "intentTags": [
+          "mcp",
+          "sessions",
+          "provenance"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -5872,6 +5903,24 @@
         "intentTags": [
           "chat",
           "set",
+          "mcp",
+          "selections"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.getMcpSelections",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.getMcpSelections",
+        "intentTags": [
+          "chat",
+          "get",
           "mcp",
           "selections"
         ],
