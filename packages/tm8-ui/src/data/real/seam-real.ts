@@ -1,4 +1,5 @@
 import { createMcpPort } from '../../mcp/adapter';
+import { createMcpTokensPort } from '../../settings-mcp-tokens/port';
 import { createToolPort } from '../../tools/adapter';
 /**
  * `createRealSeam()` — the HTTP + WS implementation of the co-owned Facade seam
@@ -238,6 +239,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
   const seam: RealSeam = {
     mcp: (spaceId) => createMcpPort(http, seam, spaceId),
+    mcpTokens: () => createMcpTokensPort(http, seam),
     // -- lifecycle -----------------------------------------------------------
 
     /**
