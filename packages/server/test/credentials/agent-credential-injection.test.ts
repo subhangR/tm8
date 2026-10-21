@@ -230,8 +230,12 @@ describe('DbAgentCredentialHome', () => {
   it.each([
     ['gpt-6-astra', 'openai'],
     ['qwen/qwen3.8-27b', 'groq'],
-    // Named Kimi, served by Groq: the serving vendor decides.
     ['meta-models/muse-spark-open', 'groq'],
+    // THE SHARP CASE, with BOTH keys connected: an `openai/`-named model that
+    // still goes to Groq, because the serving vendor decides and `openai` is
+    // itself a catalog provider. The row that used to make this point,
+    // `moonshotai/kimi-k2-instruct-0905`, was retired by Groq on 2026-04-15.
+    ['openai/gpt-oss-120b', 'groq'],
   ] as const)(
     'with Groq AND OpenAI connected, codex model %s runs on %s',
     async (model, expected) => {
