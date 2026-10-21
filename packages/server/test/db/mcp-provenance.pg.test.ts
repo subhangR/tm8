@@ -286,6 +286,16 @@ describe('§6 deny matrix — the schedule root (G3)', () => {
   const armLoop = async (claims: DbClaims, title: string) =>
     (await db.rpc<{ entity: { id: string } }>(claims, 'create_loop',
       [spaceA, title, null, 'every 1h', personaA, null, 'fire', '{}', true, null, null, null, randomUUID()])).entity.id;
+  const editPrompt = async (claims: DbClaims, loopId: string, prompt: string) => {
+    const [{ version }] = await scratch.query<{ version: number }>('select version from public.entities where id=$1', [loopId]);
+    return db.rpc(claims, 'update_loop',
+      [loopId, version, null, null, null, null, false, null, false, prompt, null, null, null, false, null, null, false, randomUUID()]);
+  };
+  const stampOf = async (loopId: string) => (await scratch.query<{
+    armed_by_member_id: string | null; armed_by_identity_id: string | null;
+  }>('select armed_by_member_id, armed_by_identity_id from public.loops where entity_id=$1', [loopId]))[0];
+  /** The in-process scheduler's shape: an identity, no bearer kind at all. */
+  const executor: DbClaims = { identityId: people.alice.identity, requestId: 'loop-executor' };
 
   it('a human bearer arming a loop is stamped; the in-process executor is not', async () => {
     const armed = await armLoop(human('alice', spaceA), 'Armed by Alice');
@@ -296,7 +306,7 @@ describe('§6 deny matrix — the schedule root (G3)', () => {
     // The executor advances `next_run_at` through the same door on every tick.
     // It is not a human bearer, so it must neither stamp nor CLEAR the fact.
     const [{ version }] = await scratch.query<{ version: number }>('select version from public.entities where id=$1', [armed]);
-    await db.rpc({ identityId: people.alice.identity, requestId: 'loop-executor' }, 'update_loop',
+    await db.rpc(executor, 'update_loop',
       [armed, version, null, null, null, null, false, null, false, null, null, null,
        new Date(Date.now() + 3_600_000).toISOString(), false, new Date().toISOString(), null, true, randomUUID()]);
     const [after] = await scratch.query<{ armed_by_member_id: string | null }>(
@@ -306,11 +316,13 @@ describe('§6 deny matrix — the schedule root (G3)', () => {
 
   it('a firing of an ARMED loop has the arming human as its root; an UNARMED one has none', async () => {
     const armed = await armLoop(human('alice', spaceA), 'Armed firing');
-    const unarmed = await armLoop(human('alice', spaceA), 'Unarmed firing');
-    // A loop created before 343, or by an agent persona: no recorded human.
-    await scratch.query('update public.loops set armed_by_member_id=null, armed_by_identity_id=null where entity_id=$1', [unarmed]);
+    // An UNARMED loop, produced the way one really occurs: created by a caller
+    // that is not a human bearer, so the trigger never stamps it. The column is
+    // never written directly — the trigger owns it, and a direct write is
+    // restored, which is itself asserted in the B26 block below.
+    const unarmed = await armLoop({ identityId: people.alice.identity, authKind: 'agent' }, 'Unarmed firing');
+    expect(await stampOf(unarmed)).toMatchObject({ armed_by_member_id: null });
 
-    const executor: DbClaims = { identityId: people.alice.identity, requestId: 'loop-executor' };
     for (const [loopId, reason] of [[armed, 'ready'], [unarmed, 'no_human_provenance']] as const) {
       const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
       // The firing's own `triggered_by` edge. NOTE the ordering caveat reported
@@ -329,13 +341,70 @@ describe('§6 deny matrix — the schedule root (G3)', () => {
     }
   });
 
-  it('an armed loop whose arming member has left the Space lends nothing', async () => {
-    const armed = await armLoop(human('alice', spaceA), 'Armed then left');
+  it('B26 — armed_by follows the CONTENT: who may change it, and who loses it', async () => {
+    /*
+     * The lead's F2: `update_loop` requires only membership (091), so Bob — or
+     * Bob's agent — could rewrite the prompt, persona or subject of a loop ALICE
+     * armed, and the firing would run Bob's instructions on Alice's
+     * connections. Preserving the stamp across any write is therefore wrong;
+     * what matters is whether the CONTENT moved (B26).
+     */
+    // 1. An AGENT bearer changing the prompt NULLs the stamp: the next firing
+    //    then has no human provenance and is lent nothing, until a human
+    //    re-arms. Fails closed rather than keeping Alice's name on Bob's words.
+    const byAgent = await armLoop(human('alice', spaceA), 'B26 agent edit');
+    expect(await stampOf(byAgent)).toMatchObject({ armed_by_member_id: people.alice.memberA });
+    await editPrompt({ identityId: people.bob.identity, authKind: 'agent' }, byAgent, 'rewritten by an agent');
+    expect(await stampOf(byAgent)).toMatchObject({ armed_by_member_id: null, armed_by_identity_id: null });
+
+    // 2. A DIFFERENT HUMAN changing the prompt re-stamps to THEM, so the firing
+    //    runs on the connections of whoever actually wrote the instructions.
+    const byHuman = await armLoop(human('alice', spaceA), 'B26 human edit');
+    await editPrompt(human('bob', spaceA), byHuman, 'rewritten by Bob himself');
+    expect(await stampOf(byHuman)).toMatchObject({
+      armed_by_member_id: people.bob.memberA, armed_by_identity_id: people.bob.identity,
+    });
+
+    // 3. The EXECUTOR's tick preserves it. This is the firing path itself: it
+    //    advances next_run_at and records the outcome through the same door
+    //    every minute, and must not disarm the loop it just fired.
+    const ticked = await armLoop(human('alice', spaceA), 'B26 executor tick');
+    const [{ version }] = await scratch.query<{ version: number }>('select version from public.entities where id=$1', [ticked]);
+    await db.rpc(executor, 'update_loop',
+      [ticked, version, null, null, null, null, false, null, false, null, null, null,
+       new Date(Date.now() + 3_600_000).toISOString(), false, new Date().toISOString(), null, true, randomUUID()]);
+    expect(await stampOf(ticked)).toMatchObject({ armed_by_member_id: people.alice.memberA });
+
+    // 4. An AGENT RE-ENABLING a paused loop NULLs it: resuming is authorising
+    //    the content again. Pausing (true -> false) only narrows, so it keeps.
+    const resumed = await armLoop(human('alice', spaceA), 'B26 resume');
+    const setEnabled = async (claims: DbClaims, enabled: boolean) => {
+      const [{ version: v }] = await scratch.query<{ version: number }>('select version from public.entities where id=$1', [resumed]);
+      await db.rpc(claims, 'update_loop',
+        [resumed, v, null, null, null, null, false, null, false, null, null, enabled, null, false, null, null, false, randomUUID()]);
+    };
+    await setEnabled({ identityId: people.bob.identity, authKind: 'agent' }, false);
+    expect(await stampOf(resumed)).toMatchObject({ armed_by_member_id: people.alice.memberA });
+    await setEnabled({ identityId: people.bob.identity, authKind: 'agent' }, true);
+    expect(await stampOf(resumed)).toMatchObject({ armed_by_member_id: null });
+
+    // 5. The stamp is the TRIGGER's to write. A direct UPDATE of the column —
+    //    the shape a future writer might reach for — is restored, so the fact
+    //    cannot be forged onto a member who authorised nothing.
+    const owned = await armLoop(human('alice', spaceA), 'B26 trigger owns it');
     await scratch.query('update public.loops set armed_by_member_id=$2, armed_by_identity_id=$3 where entity_id=$1',
-      [armed, people.bob.memberA, people.bob.identity]);
+      [owned, people.bob.memberA, people.bob.identity]);
+    expect(await stampOf(owned)).toMatchObject({
+      armed_by_member_id: people.alice.memberA, armed_by_identity_id: people.alice.identity,
+    });
+  });
+
+  it('an armed loop whose arming member has left the Space lends nothing', async () => {
+    // Armed by BOB, as himself — not by rewriting the stamp.
+    const armed = await armLoop(human('bob', spaceA), 'Armed then left');
+    expect(await stampOf(armed)).toMatchObject({ armed_by_member_id: people.bob.memberA });
     const s = await session(spaceA, people.alice.memberA, personaA, 'alice');
     await db.rpc(human('alice', spaceA), 'write_edge', [s.sessionId, armed, 'triggered_by', '{}', null, randomUUID()]);
-    const executor: DbClaims = { identityId: people.alice.identity, requestId: 'loop-executor' };
     expect((await provenanceOf(executor, s.sessionId, s.token)).reason).toBe('ready');
     await scratch.query("update public.members set status='removed', left_at=now() where entity_id=$1", [people.bob.memberA]);
     try {
@@ -539,6 +608,65 @@ describe('§6 — the delegated hop, including bindings written before 343', () 
     expect(grant.chain).toEqual([child.sessionId, parent.sessionId]);
     expect(grant.chainSpaceIds).toEqual([spaceA, spaceA]);
     expect(grant).toMatchObject({ rootIdentityId: people.alice.identity, rootMemberId: people.alice.memberA });
+  });
+
+  it('an END-TO-END chain of 3 real binds records 3 hops, and §6.2 spans all of them', async () => {
+    /*
+     * F1/B27, through real `bind` only — no forged rows. The earlier depth and
+     * A->B->A cells write their bindings by hand, so they could not catch the
+     * collapse the lead found: `bind_mcp_session` re-derived the chain under the
+     * ROOT's claims, where the hop branch is not taken, and stored `[self]`.
+     * This is the cell that fails on that bug.
+     */
+    const a = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const b = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const c = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const common = { spaceId: spaceA, teamMemberId: personaA };
+    await bindings.bind(human('alice', spaceA), { ...common, sessionId: a.sessionId, agentToken: a.token, mcpSelections: [] });
+    const hopFrom = (parent: { sessionId: string; authSessionId: string; claims: DbClaims }) =>
+      ({ ...parent.claims, mcpSource: { sessionId: parent.sessionId, authSessionId: parent.authSessionId } });
+    await bindings.bind(hopFrom(a), { ...common, sessionId: b.sessionId, agentToken: b.token, mcpSelections: [] });
+    await bindings.bind(hopFrom(b), { ...common, sessionId: c.sessionId, agentToken: c.token,
+      mcpSelections: [{ serverId: serverA, credentialId: aliceKeyA }] });
+    const grant = await bindings.authorize(c.claims, c.sessionId, serverA);
+    expect(grant.chain).toEqual([c.sessionId, b.sessionId, a.sessionId]);
+    expect(grant.chainSpaceIds).toEqual([spaceA, spaceA, spaceA]);
+    expect(grant).toMatchObject({ rootIdentityId: people.alice.identity, rootMemberId: people.alice.memberA });
+    // And the launch record carries the same depth, which is what audit reads.
+    expect(await db.rpc<{ depth: number }>(human('alice', spaceA), 'mcp_session_provenance', [c.sessionId]))
+      .toMatchObject({ depth: 3 });
+  });
+
+  it('the depth cap refuses the NINTH real bind, and the eighth is admitted', async () => {
+    // Through real binds, so the cap is reachable rather than only asserted on
+    // a hand-written row: eight hops bind, the ninth is refused.
+    const chain: Array<{ sessionId: string; authSessionId: string; claims: DbClaims; token: string }> = [];
+    let claims: DbClaims = human('alice', spaceA);
+    for (let hop = 1; hop <= 9; hop += 1) {
+      const next = await session(spaceA, people.alice.memberA, personaA, 'alice');
+      const input = { spaceId: spaceA, teamMemberId: personaA, sessionId: next.sessionId,
+        agentToken: next.token, mcpSelections: [] as never[] };
+      if (hop === 9) {
+        // A rootless launch asking for NOTHING must still not refuse the spawn,
+        // so the ninth hop binds `[]` — and gets no root, which is the refusal.
+        await bindings.bind(claims, input);
+        const provenance = await provenanceOf(claims, next.sessionId, next.token,
+          { sessionId: chain.at(-1)!.sessionId, authSessionId: chain.at(-1)!.authSessionId });
+        expect(provenance).toMatchObject({ reason: 'depth_exceeded', depth: 9 });
+        // And naming a connector by name at that depth refuses out loud.
+        await expect(bindings.bind(claims, { ...input, mcpSelections: [{ serverId: serverA, credentialId: aliceKeyA }] }))
+          .rejects.toThrow(/requires a human root \(depth_exceeded\)/);
+        break;
+      }
+      await bindings.bind(claims, input);
+      chain.push(next);
+      claims = { ...next.claims, mcpSource: { sessionId: next.sessionId, authSessionId: next.authSessionId } };
+    }
+    // The eighth is at the cap and still fully rooted.
+    const eighth = chain.at(-1)!;
+    const atCap = await db.rpc<{ depth: number; rootMemberId: string }>(
+      human('alice', spaceA), 'mcp_session_provenance', [eighth.sessionId]);
+    expect(atCap).toMatchObject({ depth: 8, rootMemberId: people.alice.memberA });
   });
 
   it('a PRE-343 parent binding still yields a one-hop root, and only for a human kind', async () => {

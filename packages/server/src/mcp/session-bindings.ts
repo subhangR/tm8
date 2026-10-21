@@ -163,7 +163,8 @@ export class McpSessionBindings {
           throw new CollabError('forbidden', 'MCP delegated launch requires a live launcher binding');
         }
         await q.rpc('bind_mcp_session', [input.sessionId, tokenHash, '[]',
-          source?.sessionId ?? null, source?.authSessionId ?? null, rootMemberId ?? null]);
+          source?.sessionId ?? null, source?.authSessionId ?? null, rootMemberId ?? null,
+          root?.chain ?? null, root?.chainSpaceIds ?? null]);
         return [];
       }
       let targetIds = input.targetIds;
@@ -202,11 +203,22 @@ export class McpSessionBindings {
       }
       const selections = resolved.selections.map(s => ({ serverId: s.server.id,
         ...(s.credentialId ? { credentialId: s.credentialId } : {}) }));
-      // The root is handed back as a CONSISTENCY CHECK: `bind_mcp_session`
-      // derives provenance again, under these very claims, and refuses if it
-      // lands on a different root than the accounts above were opened under.
+      /*
+       * The root is handed back as a CONSISTENCY CHECK: `bind_mcp_session`
+       * derives provenance again, under these very claims, and refuses if it
+       * lands on a different root than the accounts above were opened under.
+       *
+       * The CHAIN, by contrast, is handed over to be RECORDED (F1/B27). It was
+       * derived above under the SPAWNING BEARER's claims, which is the only
+       * place the hop can be taken — by this point the transaction runs as the
+       * root, and a re-derivation here collapses every chain to `[self]`. SQL
+       * verifies it rather than trusting it: the head must be this session,
+       * every hop's Space must be the one its entity carries, and the tail must
+       * equal the source binding's own stored chain.
+       */
       await q.rpc('bind_mcp_session', [input.sessionId, tokenHash, JSON.stringify(selections),
-        source?.sessionId ?? null, source?.authSessionId ?? null, rootMemberId ?? null]);
+        source?.sessionId ?? null, source?.authSessionId ?? null, rootMemberId ?? null,
+        root?.chain ?? null, root?.chainSpaceIds ?? null]);
       return selections;
     });
   }

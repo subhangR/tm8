@@ -36,9 +36,11 @@
 --
 --   * A SCHEDULE firing. The loop executor spawns under the node's loopback
 --     owner, so there is no bearer at all. The root is the human who ARMED the
---     loop, recorded on `public.loops` by a trigger that fires only for a human
---     bearer — never inferred afterwards from `entities.created_by`, which an
---     agent persona can own. No armed-by, no connectors.
+--     loop's CONTENT, recorded on `public.loops` by a trigger — never inferred
+--     afterwards from `entities.created_by`, which an agent persona can own. A
+--     write that changes content re-stamps to a human writer and NULLS the stamp
+--     for a non-human one (B26); only scheduling bookkeeping preserves it. No
+--     armed-by, no connectors.
 --   * A TEAMMATE-AUTONOMOUS terminal (the persona's `owner_member_id`) does NOT
 --     exist (ruling B21). See the long comment at that branch in
 --     `internal.mcp_provenance` for the three verified reasons it fails OPEN,
@@ -75,11 +77,11 @@ set role tm8_graph_owner;
 -- comes to differ from its original by an edit nobody meant. The trigger also
 -- cannot be bypassed by a future third writer.
 --
--- It stamps on INSERT and on any later human write, so the fact is "the human
--- who last configured this schedule" — which is who the firings act for. The
--- executor's own `update_loop` (it advances `next_run_at` through the same door)
--- is not a human bearer, so it passes through without touching the stamp, and
--- nothing here ever CLEARS one.
+-- It stamps on INSERT and on any later human write that changes the loop's
+-- CONTENT, so the fact is "the human who last authorised what this schedule
+-- does" — which is who the firings act for. The executor's own `update_loop`
+-- (it advances `next_run_at` through the same door on every tick) changes only
+-- bookkeeping, so it passes through without touching the stamp.
 -- -----------------------------------------------------------------------------
 alter table public.loops
   add column if not exists armed_by_member_id uuid references public.members(entity_id) on delete set null,
@@ -88,29 +90,88 @@ alter table public.loops
 comment on column public.loops.armed_by_member_id is
   'The member who last configured this schedule from a HUMAN bearer (343, §6). '
   'The provenance root of every firing; null means this loop lends no '
-  'connection. Never written from an agent, link or in-process caller, and '
-  'never cleared.';
+  'connection. Re-stamped when a human changes the loop''s CONTENT and NULLED '
+  'when a non-human caller does (B26); only scheduling bookkeeping '
+  '(next_run_at, last_run_at, last_error, a pause) preserves it.';
 comment on column public.loops.armed_by_identity_id is
   'The identity behind armed_by_member_id, kept beside it so a firing''s root '
   'survives the member row being re-created in another Space (343).';
 
 create or replace function internal.stamp_loop_armed_by() returns trigger
 language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare v_space uuid; v_member uuid;
+declare v_space uuid; v_member uuid; v_human boolean; v_content_changed boolean;
 begin
   -- Fails closed on every non-human shape: an agent or agent_runtime bearer, a
   -- link session, the in-process scheduler (no claim at all), and an
-  -- unrecognised kind all leave the stamp exactly as it was.
-  if coalesce(internal.claim_text('tm8.auth_kind'), '') not in ('browser', 'cli')
-     or coalesce(internal.claim_text('tm8.via_link'), '') <> '' then
-    return new;
+  -- unrecognised kind are all "not a human bearer".
+  v_human := coalesce(internal.claim_text('tm8.auth_kind'), '') in ('browser', 'cli')
+             and coalesce(internal.claim_text('tm8.via_link'), '') = '';
+
+  if tg_op = 'INSERT' then
+    if not v_human then return new; end if;
+  else
+    /*
+     * B26: armed_by NAMES THE HUMAN WHO LAST AUTHORISED THE LOOP'S CONTENT,
+     * which is stricter than B21's "never cleared" and is the fix for the
+     * lead's F2.
+     *
+     * The hole F2 found: `update_loop` requires only membership (091), so BOB's
+     * agent — or Bob himself — could rewrite the prompt, the persona or the
+     * subject of a loop ALICE armed, and the firing would run Bob's
+     * instructions on Alice's connections. Preserving the stamp across any
+     * write is therefore wrong; what matters is whether the CONTENT moved.
+     *
+     * So: a write that touches only SCHEDULING BOOKKEEPING preserves the stamp
+     * — that is the executor's own tick, which advances next_run_at and records
+     * the outcome through the same door on every firing. The allow-list is
+     * enumerated from 091's table, deliberately as a closed list of what is
+     * harmless rather than an open list of what is dangerous, so a column added
+     * later is treated as content until someone says otherwise.
+     *
+     * Any other changed column re-stamps to the writer when the writer is a
+     * human bearer, and NULLS the stamp when it is not. A NULL means the next
+     * firing has no human provenance and is lent nothing, which fails closed
+     * until a human re-arms the loop.
+     *
+     * enabled false -> true is RESUMING, so it counts as content. true -> false
+     * only narrows, so it is allowed to keep the stamp.
+     */
+    v_content_changed :=
+         new.title          is distinct from old.title
+      or new.schedule       is distinct from old.schedule
+      or new.team_member_id is distinct from old.team_member_id
+      or new.subject_id     is distinct from old.subject_id
+      or new.prompt         is distinct from old.prompt
+      or new.config         is distinct from old.config
+      or (new.enabled and not old.enabled);
+    if not v_content_changed then
+      -- Bookkeeping only (last_run_at, next_run_at, last_error, updated_at, or
+      -- a pause): whoever wrote it, the stamp stands.
+      new.armed_by_member_id := old.armed_by_member_id;
+      new.armed_by_identity_id := old.armed_by_identity_id;
+      return new;
+    end if;
+    if not v_human then
+      new.armed_by_member_id := null;
+      new.armed_by_identity_id := null;
+      return new;
+    end if;
   end if;
+
   select space_id into v_space from public.entities where id = new.entity_id;
   if v_space is null then return new; end if;
   -- Pinned (227): a space-pinned session resolves a member only for its pin, so
   -- this can never stamp a member of a Space the caller is not acting in.
   v_member := internal.current_member_id(v_space);
-  if v_member is null then return new; end if;
+  if v_member is null then
+    -- A human bearer who is not a member of this Space cannot have authorised
+    -- the content either. Fail closed rather than leave a stale stamp.
+    if tg_op <> 'INSERT' then
+      new.armed_by_member_id := null;
+      new.armed_by_identity_id := null;
+    end if;
+    return new;
+  end if;
   new.armed_by_member_id := v_member;
   new.armed_by_identity_id := internal.identity_id();
   return new;
@@ -142,8 +203,16 @@ alter table internal.mcp_launch_selections
   add column if not exists chain uuid[],
   add column if not exists chain_space_ids uuid[];
 
+-- Both tables: the launch record is what a RESUME reads and what
+-- `mcp_session_provenance` hands to audit, so §6.1's depth cap has to hold
+-- there as well, not only on the live binding (F4).
 alter table internal.mcp_session_bindings
   add constraint mcp_session_bindings_chain_shape
+    check (chain is null or (array_length(chain, 1) between 1 and 8
+           and array_length(chain, 1) = array_length(chain_space_ids, 1)));
+
+alter table internal.mcp_launch_selections
+  add constraint mcp_launch_selections_chain_shape
     check (chain is null or (array_length(chain, 1) between 1 and 8
            and array_length(chain, 1) = array_length(chain_space_ids, 1)));
 
@@ -474,11 +543,13 @@ drop function public.bind_mcp_session(uuid, text, jsonb);
 
 create function public.bind_mcp_session(p_session uuid, p_token_hash text, p_selections jsonb,
   p_source_session uuid default null, p_source_auth_session uuid default null,
-  p_root_member uuid default null)
+  p_root_member uuid default null,
+  p_chain uuid[] default null, p_chain_spaces uuid[] default null)
 returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
   s public.auth_sessions; runtime_identity text; target_space uuid; pick jsonb; definition jsonb;
   launcher text := internal.identity_id(); provenance jsonb; v_root uuid; v_chain uuid[]; v_spaces uuid[];
+  v_root_identity text; v_source_chain uuid[]; v_hop uuid; v_index integer;
 begin
   if launcher is null or coalesce(internal.claim_text('tm8.via_link'), '') <> '' then
     raise exception 'MCP session unavailable' using errcode = '42501';
@@ -525,6 +596,65 @@ begin
       raise exception 'MCP provenance root changed during launch' using errcode = '42501';
     end if;
   end if;
+
+  /*
+   * F1 / B27. THE CHAIN IS INHERITED, NOT RE-DERIVED.
+   *
+   * The derivation above runs under the ROOT's claims, which is right for the
+   * ROOT (the root's own replayed kind reproduces the human terminal and lands
+   * on the same member) but WRONG for the CHAIN: the hop branch of
+   * `internal.mcp_provenance` is only taken for an agent or agent_runtime
+   * caller, and by this point the caller is the root. So it collapsed every
+   * chain to `[self]`, the depth cap was unreachable, §6.2 only ever saw the
+   * target Space, and the recorded chain an audit row would quote was wrong.
+   *
+   * `bind` therefore passes the chain it derived EARLIER, under the spawning
+   * bearer's own claims, where `mcp_provenance_for_bind` proved the hop through
+   * `read_mcp_session_binding`. That is a caller argument, so it is VERIFIED
+   * here against facts this function can read for itself rather than trusted:
+   * the head is this session, every hop's Space is the one its entity actually
+   * carries, the tail is exactly the source binding's own stored chain, and the
+   * depth cap applies to the inherited length.
+   */
+  if p_chain is not null then
+    if array_length(p_chain, 1) is null or array_length(p_chain, 1) > 8
+       or array_length(p_chain, 1) is distinct from array_length(p_chain_spaces, 1) then
+      raise exception 'MCP provenance chain is malformed or exceeds the depth cap' using errcode = '22023';
+    end if;
+    if p_chain[1] <> p_session then
+      raise exception 'MCP provenance chain must start at this session' using errcode = '42501';
+    end if;
+    -- Every hop's Space is read back from its own entity row, so a caller
+    -- cannot understate a Space and dodge §6.2's membership check on it.
+    for v_index in 1 .. array_length(p_chain, 1) loop
+      select e.space_id into v_hop from public.entities e where e.id = p_chain[v_index];
+      if v_hop is null or v_hop <> p_chain_spaces[v_index] then
+        raise exception 'MCP provenance chain names a space the hop does not belong to' using errcode = '42501';
+      end if;
+    end loop;
+    -- The tail must be the source's OWN recorded chain. Read straight from the
+    -- internal table: authority for the hop was established before the claims
+    -- switched (read_mcp_session_binding, under the spawner's claims), and this
+    -- is a shape check on the same (session, auth session) pair.
+    if p_source_session is not null then
+      select b.chain into v_source_chain from internal.mcp_session_bindings b
+       where b.session_id = p_source_session and b.auth_session_id = p_source_auth_session;
+      if p_chain[2] is distinct from p_source_session
+         or p_chain[2:array_length(p_chain, 1)] is distinct from coalesce(v_source_chain, array[p_source_session]) then
+        raise exception 'MCP provenance chain does not match its source binding' using errcode = '42501';
+      end if;
+    elsif array_length(p_chain, 1) <> 1 then
+      raise exception 'MCP provenance chain has no source to justify its hops' using errcode = '42501';
+    end if;
+    v_chain := p_chain;
+    v_spaces := p_chain_spaces;
+    -- §6.2 over the FULL array, now that it has more than one hop in it.
+    v_root_identity := internal.mcp_provenance_root_identity(coalesce(p_root_member, v_root), target_space);
+    if v_root_identity is null or not internal.mcp_root_in_every_space(v_root_identity, v_spaces) then
+      raise exception 'MCP provenance root is not a member of every space in the chain' using errcode = '42501';
+    end if;
+    v_root := coalesce(p_root_member, v_root);
+  end if;
   -- NO BLANKET REFUSAL on a rootless launch. #1316 settled the shape of this:
   -- a connector that needs no ACCOUNT is still bound, because the rule withholds
   -- connections and not connectors, and a schedule firing must still run. The
@@ -560,7 +690,7 @@ begin
      launcher_auth_kind, selections, root_member_id, root_identity_id, chain, chain_space_ids)
     values (p_session, target_space, s.id, runtime_identity, launcher,
             coalesce(internal.claim_text('tm8.auth_kind'), ''), p_selections,
-            v_root, provenance ->> 'rootIdentityId', v_chain, v_spaces)
+            v_root, coalesce(v_root_identity, provenance ->> 'rootIdentityId'), v_chain, v_spaces)
     on conflict (session_id) do update set auth_session_id = excluded.auth_session_id,
       runtime_identity_id = excluded.runtime_identity_id,
       launcher_identity_id = excluded.launcher_identity_id,
@@ -571,7 +701,7 @@ begin
     (session_id, selections, launcher_identity_id, launcher_auth_kind,
      root_member_id, root_identity_id, chain, chain_space_ids)
     values (p_session, p_selections, launcher, coalesce(internal.claim_text('tm8.auth_kind'), ''),
-            v_root, provenance ->> 'rootIdentityId', v_chain, v_spaces)
+            v_root, coalesce(v_root_identity, provenance ->> 'rootIdentityId'), v_chain, v_spaces)
     on conflict (session_id) do update set selections = excluded.selections,
       launcher_identity_id = excluded.launcher_identity_id,
       launcher_auth_kind = excluded.launcher_auth_kind,
@@ -580,8 +710,8 @@ begin
   return provenance;
 end
 $$;
-revoke all on function public.bind_mcp_session(uuid, text, jsonb, uuid, uuid, uuid) from public;
-grant execute on function public.bind_mcp_session(uuid, text, jsonb, uuid, uuid, uuid) to tm8_app;
+revoke all on function public.bind_mcp_session(uuid, text, jsonb, uuid, uuid, uuid, uuid[], uuid[]) from public;
+grant execute on function public.bind_mcp_session(uuid, text, jsonb, uuid, uuid, uuid, uuid[], uuid[]) to tm8_app;
 
 -- -----------------------------------------------------------------------------
 -- 9. read_mcp_session_binding — 332's body, plus §6 RE-CHECKED ON EVERY CALL.
@@ -704,10 +834,13 @@ $$;
 revoke all on function public.mcp_session_provenance(uuid) from public;
 grant execute on function public.mcp_session_provenance(uuid) to tm8_app;
 
-grant execute on function internal.mcp_provenance(uuid, uuid, uuid) to tm8_app;
-grant execute on function internal.mcp_root_in_every_space(text, uuid[]) to tm8_app;
-grant execute on function internal.mcp_root_member_in(text, uuid) to tm8_app;
-grant execute on function internal.mcp_provenance_root_identity(uuid, uuid) to tm8_app;
+-- F3. NO tm8_app EXECUTE on any of the internal helpers. They are reached only
+-- from the SECURITY DEFINER doors above, which carry the gates; and
+-- `internal.mcp_provenance(p_session, ...)` in particular has no readability
+-- check of its own — granting it would hand any caller a root-and-chain oracle
+-- for an arbitrary session id. The two public doors are the whole surface:
+-- `mcp_provenance_for_bind` (authenticated by the session's fresh agent token)
+-- and `mcp_session_provenance` (entity readability plus a link refusal).
 
 analyze internal.mcp_session_bindings, internal.mcp_launch_selections, public.loops;
 reset role;
@@ -729,8 +862,8 @@ begin
     raise exception 'VERIFY 343: the three-argument bind_mcp_session still exists';
   end if;
   if not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                  where n.nspname = 'public' and p.proname = 'bind_mcp_session' and p.pronargs = 6) then
-    raise exception 'VERIFY 343: the six-argument bind_mcp_session is missing';
+                  where n.nspname = 'public' and p.proname = 'bind_mcp_session' and p.pronargs = 8) then
+    raise exception 'VERIFY 343: the eight-argument bind_mcp_session is missing';
   end if;
   if not exists (select 1 from pg_trigger where tgname = 'loops_stamp_armed_by' and not tgisinternal) then
     raise exception 'VERIFY 343: the loop armed-by trigger is missing';
@@ -743,10 +876,16 @@ begin
   end if;
   -- The depth cap is a CHECK, not only a branch, so no future writer can store
   -- a chain longer than §6.1 allows.
-  if not exists (select 1 from pg_constraint
-                  where conrelid = 'internal.mcp_session_bindings'::regclass
-                    and conname = 'mcp_session_bindings_chain_shape' and convalidated) then
-    raise exception 'VERIFY 343: the chain shape check is missing or not validated';
+  if (select count(*) from pg_constraint
+       where conname in ('mcp_session_bindings_chain_shape', 'mcp_launch_selections_chain_shape')
+         and convalidated) <> 2 then
+    raise exception 'VERIFY 343: a chain shape check is missing or not validated';
+  end if;
+  -- F3: the internal helpers must stay ungranted.
+  if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'internal' and p.proname like 'mcp_provenance%'
+                and has_function_privilege('tm8_app', p.oid, 'execute')) then
+    raise exception 'VERIFY 343: an internal provenance helper is executable by tm8_app';
   end if;
 end
 $verify$;

@@ -1,21 +1,32 @@
 /**
- * Q15 (plan §13), answered and pinned: is an `agent` / `agent_runtime` bearer
- * narrowed to its own Space, or does it list every Space like other bearers?
+ * Q15 (plan §13) VERIFIED, as a kind × mode table.
  *
- * It is narrowed. 226's `auth_sessions_pinned_kinds_have_space` CHECK makes
- * `space_id` non-null for agent, agent_runtime and link rows, `identityFromSession`
- * binds `tm8.session_space_id` from that row, and every membership helper
- * intersects with the claim (227).
+ * The question: are `agent` / `agent_runtime` claims narrowed to the session's
+ * own Space, or do they list every Space like other bearers?
  *
- * THE HOLE THIS TABLE EXISTS FOR: `TM8_SPACE_SESSIONS=off` used to drop the pin
- * for EVERY kind, so on such a node an agent bearer reverted to answering for
- * every Space its identity belongs to — exactly Q15's worry. `viaLinkId` beside
- * it was already exempt from the mode ("it only narrows, and `off` must not
- * un-bind a link"); B20 gives the three pinned kinds the same treatment, and
- * leaves the mode gating only the human `auth.space.enter` pins.
+ * THE ANSWER, pinned below:
+ *   * under `agents` (the default) and `enforce` — YES, narrowed. 226's
+ *     `auth_sessions_pinned_kinds_have_space` CHECK makes `space_id` non-null
+ *     for agent, agent_runtime and link rows, `identityFromSession` binds
+ *     `tm8.session_space_id` from that verified row, and every membership
+ *     helper intersects with the claim (227).
+ *   * under `TM8_SPACE_SESSIONS=off` — NO. The pin is inert for EVERY kind, so
+ *     an agent bearer answers for every Space its identity belongs to.
+ *
+ * That second row is not an oversight. It is the documented contract of the
+ * kill switch, asserted for both agent kinds in
+ * `test/db/cross-space-token.pg.test.ts:384` — which calls it "the pre-W0a leak,
+ * pinned as the documented behaviour of the kill switch" — including that
+ * `internal.member_space_ids()` returns both Spaces and that `is_space_member`,
+ * `is_space_admin` and `current_member_id` all answer for the other one.
+ *
+ * Narrowing the three pinned kinds in every mode is ruling B20, and it is
+ * deliberately NOT done here: it reverses that documented decision, so it ships
+ * as its own reviewed security change with the W3 audit-matrix owner in the
+ * loop (ruling B24). This table is what that PR will edit, beside those cells.
+ * Exposure meanwhile is limited to a node an operator explicitly set to `off`.
  */
 import { describe, expect, it } from 'vitest';
-import { CollabError } from '@tm8/contract';
 import { identityFromSession } from '../../src/http/identity-resolver.js';
 import type { ResolvedAuthSession } from '../../src/identity/pg-auth.js';
 import type { SpaceSessionsMode } from '../../src/http/types.js';
@@ -34,21 +45,21 @@ const row = (kind: ResolvedAuthSession['kind'], spaceId: string | null): Resolve
 const MODES: readonly SpaceSessionsMode[] = ['off', 'agents', 'enforce'];
 
 /**
- * `pinned` is what `tm8.session_space_id` must become. `'space'` means the row's
- * own space in EVERY mode; `'mode'` means only when the mode is not `off`.
+ * `pinned` is what `tm8.session_space_id` becomes. `'mode'` means the row's own
+ * Space whenever the mode is not `off`; `'never'` means nothing, in any mode.
  */
 const MATRIX: ReadonlyArray<{
-  kind: ResolvedAuthSession['kind']; spaceId: string | null; pinned: 'space' | 'mode' | 'never';
+  kind: ResolvedAuthSession['kind']; spaceId: string | null; pinned: 'mode' | 'never';
 }> = [
-  // The 226 pinned kinds: never un-pinned, whatever the operator set.
-  { kind: 'agent', spaceId: 'space', pinned: 'space' },
-  { kind: 'agent_runtime', spaceId: 'space', pinned: 'space' },
-  { kind: 'link', spaceId: 'space', pinned: 'space' },
-  // Human kinds: a space only when `auth.space.enter` (233, W3) minted one, and
-  // then only while the feature is on.
+  // The 226 pinned kinds always CARRY a Space, so they are narrowed in every
+  // mode but `off` — which is the Q15 answer, and the Q15 hole, in one row.
+  { kind: 'agent', spaceId: 'space', pinned: 'mode' },
+  { kind: 'agent_runtime', spaceId: 'space', pinned: 'mode' },
+  { kind: 'link', spaceId: 'space', pinned: 'mode' },
+  // Human kinds carry one only when `auth.space.enter` (233, W3) minted it.
   { kind: 'browser', spaceId: 'space', pinned: 'mode' },
   { kind: 'cli', spaceId: 'space', pinned: 'mode' },
-  // A human GATE session carries no space and binds nothing in any mode, which
+  // A human GATE session carries no Space and binds nothing in any mode, which
   // is what keeps every pre-W3 human session answering exactly as before.
   { kind: 'browser', spaceId: null, pinned: 'never' },
   { kind: 'cli', spaceId: null, pinned: 'never' },
@@ -57,29 +68,30 @@ const MATRIX: ReadonlyArray<{
 describe('Q15 — tm8.session_space_id across kind x TM8_SPACE_SESSIONS', () => {
   for (const cell of MATRIX) {
     for (const mode of MODES) {
-      const want = cell.pinned === 'space' ? 'space'
-        : cell.pinned === 'mode' && mode !== 'off' ? 'space' : undefined;
+      const want = cell.pinned === 'mode' && mode !== 'off' ? 'space' : undefined;
       it(`${cell.kind} with space=${cell.spaceId ?? 'null'} on '${mode}' pins ${want ?? 'nothing'}`, () => {
         const identity = identityFromSession(row(cell.kind, cell.spaceId), 'opaque', mode);
         expect(identity.sessionSpaceId).toBe(want);
-        // K6: a pinned session never carries node admin, so the two answers can
-        // never disagree about whether this session is narrowed.
         expect(identity.authKind).toBe(cell.kind);
       });
     }
   }
 
-  it('refuses a pinned kind that carries no space instead of binding the empty pin', () => {
-    // Unreachable through SQL — 226's CHECK forbids the row — so this is the
-    // assertion B20 asked for rather than a live path. An empty pin would read
-    // as "unpinned" and answer for every Space the identity belongs to, which
-    // is the one outcome this function exists to prevent, so it must not be
-    // producible by a future writer that forgets the CHECK.
-    for (const kind of ['agent', 'agent_runtime', 'link'] as const) {
-      for (const mode of MODES) {
-        expect(() => identityFromSession(row(kind, null), 'opaque', mode))
-          .toThrow(CollabError);
-      }
+  it('an agent bearer IS narrowed under the default mode — the Q15 answer', () => {
+    // The row this task was asked to verify, stated on its own so it cannot be
+    // lost in the table: the default is `agents`, and under it an agent bearer
+    // carries its own Space and nothing else.
+    for (const kind of ['agent', 'agent_runtime'] as const) {
+      expect(identityFromSession(row(kind, 'space'), 'opaque', 'agents').sessionSpaceId).toBe('space');
+      expect(identityFromSession(row(kind, 'space'), 'opaque', 'enforce').sessionSpaceId).toBe('space');
+    }
+  });
+
+  it('and is NOT narrowed under `off` — the Q15 hole, documented, pending B20', () => {
+    // Paired with cross-space-token.pg.test.ts:384, which asserts the DB-side
+    // consequence of this same row. If B20 lands, both move together.
+    for (const kind of ['agent', 'agent_runtime'] as const) {
+      expect(identityFromSession(row(kind, 'space'), 'opaque', 'off').sessionSpaceId).toBeUndefined();
     }
   });
 });
