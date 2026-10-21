@@ -1,4 +1,5 @@
-import { CollabError, McpSelectionsSchema, isHumanAuthKind, type McpSelection } from '@tm8/contract';
+import { CollabError, McpSelectionsSchema, isHumanAuthKind, mcpServerKey,
+  type McpBoundSelection, type McpSelection } from '@tm8/contract';
 import type { Db, DbClaims } from '../db/types.js';
 import { resolveBearerIdentity } from '../identity/pg-auth.js';
 import { hashToken, parseToken } from '../identity/crypto.js';
@@ -65,7 +66,7 @@ interface McpProvenance {
 export class McpSessionBindings {
   constructor(private readonly db: Db) {}
 
-  async bind(claims: McpBindingClaims, input: McpBindInput): Promise<McpSelection[]> {
+  async bind(claims: McpBindingClaims, input: McpBindInput): Promise<McpBoundSelection[]> {
     if (!claims.identityId) throw new CollabError('forbidden', 'MCP launch unavailable');
     if (claims.viaLinkId) {
       // A session started through a space link (W7b) launches with NO MCP
@@ -201,8 +202,15 @@ export class McpSessionBindings {
         }
         throw new CollabError('forbidden', `MCP launch unavailable: ${reason}`);
       }
-      const selections = resolved.selections.map(s => ({ serverId: s.server.id,
-        ...(s.credentialId ? { credentialId: s.credentialId } : {}) }));
+      // §4.2. The tool prefix is computed HERE, from the definition resolution
+      // just read, and is returned to the launcher but deliberately NOT stored:
+      // `read_mcp_launch_selections` and `authorize` both parse the stored value
+      // with the strict `McpSelectionsSchema`, and a key that outlived a rename
+      // would name a connector that no longer answers to it.
+      const bound: McpBoundSelection[] = resolved.selections.map(s => ({ serverId: s.server.id,
+        ...(s.credentialId ? { credentialId: s.credentialId } : {}),
+        serverKey: mcpServerKey(s.server.definition) }));
+      const selections: McpSelection[] = bound.map(({ serverKey: _serverKey, ...stored }) => stored);
       /*
        * The root is handed back as a CONSISTENCY CHECK: `bind_mcp_session`
        * derives provenance again, under these very claims, and refuses if it
@@ -215,11 +223,15 @@ export class McpSessionBindings {
        * verifies it rather than trusting it: the head must be this session,
        * every hop's Space must be the one its entity carries, and the tail must
        * equal the source binding's own stored chain.
+       *
+       * `selections` and not `bound`: the stored array is the bare
+       * {serverId, credentialId} pair the strict schema parses on resume, and
+       * the verification above runs against exactly what is handed over.
        */
       await q.rpc('bind_mcp_session', [input.sessionId, tokenHash, JSON.stringify(selections),
         source?.sessionId ?? null, source?.authSessionId ?? null, rootMemberId ?? null,
         root?.chain ?? null, root?.chainSpaceIds ?? null]);
-      return selections;
+      return bound;
     });
   }
 

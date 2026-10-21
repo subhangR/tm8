@@ -92,6 +92,83 @@ export function mcpServerKey(definition: Pick<McpServerDefinition, 'name'> & { s
 export function mcpGateOpen(definition: Pick<McpServerDefinition, 'gates'>, gate: string): boolean {
   return definition.gates?.[gate] !== false;
 }
+/**
+ * Bridge entry names no connector may take. `tm8` is not another connector's
+ * key: it is the name of tm8's OWN entry in every launcher's `--mcp-config`
+ * (`server/chat/compose.ts`, `chat/harness-composition.ts`), so a connector
+ * that took it would REPLACE the tm8 server and shadow every tm8 tool. Both
+ * the Zod `ServerKey` and `internal.validate_mcp_definition` refuse it as an
+ * explicit key; this set is what also catches a NAME that normalises onto it
+ * (`tm8--` -> `tm8`) in a row written before migration 344 closed that hole.
+ */
+export const MCP_RESERVED_SERVER_KEYS: ReadonlySet<string> = new Set(['tm8']);
+/** The shape `ServerKey` admits, and so the shape a bridge entry name may take. */
+const SERVER_KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
+const SERVER_KEY_MAX = 64;
+/** The opaque pre-§4.2 name: readable by nobody, but it collides with nothing. */
+function opaqueServerKey(serverId: string): string {
+  return `connector_${serverId.replaceAll('-', '')}`;
+}
+/**
+ * What `bind` hands a launcher: the stored selection plus the tool prefix the
+ * model will read (§4.2). The key is SERVER-DERIVED from the resolved
+ * definition and never client-supplied, and it is deliberately NOT stored in
+ * the session binding — recomputing it at every launch means a renamed
+ * connector cannot leave a stale prefix behind in a resumed session.
+ */
+export type McpBoundSelection = McpSelection & { serverKey: string };
+/**
+ * Name each selected connector's bridge entry, so the model sees
+ * `mcp__gmail__search_messages` instead of `mcp__connector_<32 hex>__…` (§4.2,
+ * G8). Returns `serverId -> entry name`.
+ *
+ * `serverKey` is the effective key (`mcpServerKey`, mirroring
+ * `internal.mcp_effective_server_key`), and migration 340 keeps it unique among
+ * the LIVE connectors of a Space. Three things can still collide at launch, so
+ * this function, not the database, is what guarantees the launcher gets
+ * distinct names:
+ *  - connectors registered BEFORE 340, whose names normalise alike (`my-api`
+ *    and `my_api`): 340 refuses the next edit to either, but it rewrote no
+ *    existing data, by design;
+ *  - two names that differ only past `SERVER_KEY_MAX`, since a `name` may be 80
+ *    characters and a tool prefix may not;
+ *  - `MCP_RESERVED_SERVER_KEYS`.
+ *
+ * Collisions resolve DETERMINISTICALLY, and deliberately not by the order the
+ * selection arrived in: candidates are considered in ascending `serverId`, so
+ * one set of connectors always yields one set of names however the launch
+ * ordered them, and a resumed session keeps the names it launched with. The
+ * loser takes `<key>_2`, then `_3`, and never a name another connector wants.
+ * A selection with no `serverKey` — a launch config built by hand, which never
+ * went through `bind` — keeps the opaque name.
+ */
+export function assignMcpServerKeys(
+  selections: readonly { serverId: string; serverKey?: string }[],
+): Map<string, string> {
+  const base = new Map<string, string>();
+  for (const selection of selections) {
+    const candidate = (selection.serverKey ?? '').toLowerCase().slice(0, SERVER_KEY_MAX);
+    base.set(selection.serverId, SERVER_KEY_PATTERN.test(candidate) && !MCP_RESERVED_SERVER_KEYS.has(candidate)
+      ? candidate : opaqueServerKey(selection.serverId));
+  }
+  const wanted = new Set(base.values());
+  const taken = new Set<string>();
+  const assigned = new Map<string, string>();
+  for (const serverId of [...base.keys()].sort()) {
+    const want = base.get(serverId)!;
+    if (!taken.has(want)) { taken.add(want); assigned.set(serverId, want); continue; }
+    // A suffix must fit the key shape AND be nobody else's first choice.
+    const stem = want.slice(0, SERVER_KEY_MAX - 3);
+    let key = opaqueServerKey(serverId);
+    for (let n = 2; n <= 99; n += 1) {
+      const next = `${stem}_${n}`;
+      if (!taken.has(next) && !wanted.has(next)) { key = next; break; }
+    }
+    taken.add(key);
+    assigned.set(serverId, key);
+  }
+  return assigned;
+}
 export const McpServerEntitySchema = z.object({ kind: z.literal('mcp_server'), definition: McpServerDefinitionSchema }).strict();
 export type McpServerEntity = z.infer<typeof McpServerEntitySchema>;
 export const McpSelectionSchema = z.object({ serverId: Id, credentialId: Id.optional() }).strict();

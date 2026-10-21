@@ -56,7 +56,7 @@ afterAll(async()=>{await db?.end();await scratch?.destroy();});
 it('binds launcher authority independently of runtime identity, denies sibling tokens and unselected servers',async()=>{
  const r=await runtime(otherIdentity);
  const picks=await bindings.bind(auth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server,credentialId:credential}]});
- expect(picks).toEqual([{serverId:server,credentialId:credential}]);
+ expect(picks).toEqual([{serverId:server,credentialId:credential,serverKey:'bindingfixture'}]);
  expect(await bindings.authorize(r.claims,r.sessionId,server)).toMatchObject({identityId:otherIdentity,launcherIdentityId:identity,credentialId:credential});
  await expect(bindings.authorize({...r.claims,authSessionId:randomUUID()},r.sessionId,server)).rejects.toBeTruthy();
  await expect(bindings.authorize(r.claims,r.sessionId,randomUUID())).rejects.toBeTruthy();
@@ -76,7 +76,7 @@ it('resolves the root member own connection for an unpinned selection (§3, G15)
  // Was `credential_required` and a failed launch before 341: the launcher owns
  // the connection, so an unpinned selection now resolves to exactly that row.
  const picks=await bindings.bind(auth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]});
- expect(picks).toEqual([{serverId:server,credentialId:credential}]);
+ expect(picks).toEqual([{serverId:server,credentialId:credential,serverKey:'bindingfixture'}]);
  // And the binding holds that exact row, so the live session re-checks it
  // rather than re-picking.
  expect(await bindings.authorize(r.claims,r.sessionId,server)).toMatchObject({credentialId:credential});
@@ -105,7 +105,7 @@ it('a delegated launch with no live launcher binding drops defaults instead of r
  // Sanity: it really is in the default set for a normal launcher.
  const normal=await runtime();
  expect(await bindings.bind(auth,{sessionId:normal.sessionId,spaceId:space,teamMemberId:teammate,agentToken:normal.token}))
-  .toEqual([{serverId:open.entity.id}]);
+  .toEqual([{serverId:open.entity.id,serverKey:'bindingdefault'}]);
  // An agent caller with no verified mcpSource is `sourceUnavailable`.
  const r=await runtime(otherIdentity);
  expect(await bindings.bind(r.claims,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token})).toEqual([]);
@@ -165,7 +165,7 @@ it('the loop-executor claim shape is lent no connection, for all three sources (
   // survives, which is also assertion 4.
   const fired=await runtime();
   expect(await bindings.bind(loopExecutor,{...defaults,sessionId:fired.sessionId,agentToken:fired.token}))
-   .toEqual([{serverId:openOne.entity.id}]);
+   .toEqual([{serverId:openOne.entity.id,serverKey:'loopopen'}]);
   // The binding holds exactly that, so no later call can reach the others.
   expect(await bindings.authorize(fired.claims,fired.sessionId,openOne.entity.id)).toMatchObject({serverId:openOne.entity.id});
   for(const made of [byDefaultOn,byEquips,explicit]) {
@@ -192,7 +192,7 @@ it('the loop-executor claim shape is lent no connection, for all three sources (
   // 4. An explicitly named auth-NONE connector still binds: the rule withholds
   // connections, not connectors.
   expect(await bindings.bind(loopExecutor,{...defaults,sessionId:named.sessionId,agentToken:named.token,
-   mcpSelections:[{serverId:openOne.entity.id}]})).toEqual([{serverId:openOne.entity.id}]);
+   mcpSelections:[{serverId:openOne.entity.id}]})).toEqual([{serverId:openOne.entity.id,serverKey:'loopopen'}]);
 
   // A BINDING WRITTEN BEFORE #1316 must not keep working. Reproduce one
   // exactly: 343 records a root, and a row from before it has none, so the only
@@ -342,9 +342,9 @@ it('omitted selections resolve attached defaults, [] disables, and a nonempty li
  await db.rpc(auth,'write_edge',[task.entity.id,a.entity.id,'equips','{}',null,randomUUID()]);
  const r=await runtime();
  const input={sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,targetIds:[task.entity.id],agentToken:r.token};
- expect(await bindings.bind(auth,input)).toEqual([{serverId:a.entity.id}]);
+ expect(await bindings.bind(auth,input)).toEqual([{serverId:a.entity.id,serverKey:'defaultone'}]);
  expect(await bindings.bind(auth,{...input,mcpSelections:[]})).toEqual([]);
- expect(await bindings.bind(auth,{...input,mcpSelections:[{serverId:b.entity.id}]})).toEqual([{serverId:b.entity.id}]);
+ expect(await bindings.bind(auth,{...input,mcpSelections:[{serverId:b.entity.id}]})).toEqual([{serverId:b.entity.id,serverKey:'explicitreplacement'}]);
  await expect(bindings.authorize(r.claims,r.sessionId,a.entity.id)).rejects.toBeTruthy();
 });
 
@@ -356,7 +356,7 @@ it('chat about-task defaults honor omission and a new sender cannot inherit the 
  await db.rpc(auth,'start_chat',[chatId,space,teammate,'claude-sonnet-4-5','anthropic','claude-code','ask','scratch',null,randomUUID(),'/tmp/mcp-chat-fixture','MCP chat','Hello',[],task.entity.id,randomUUID()]);
  const minted=await issueAgentRuntimeSession(db,auth,{chatId,teamMemberId:teammate});
  const input={sessionId:chatId,spaceId:space,teamMemberId:teammate,agentToken:minted.token,resume:true};
- expect(await bindings.bind(auth,input)).toEqual([{serverId:made.entity.id}]);
+ expect(await bindings.bind(auth,input)).toEqual([{serverId:made.entity.id,serverKey:'chatdefault'}]);
  const selected=randomUUID();
  await db.rpc(auth,'create_mcp_credential',[selected,space,server,'Chat private fixture',Buffer.alloc(32,7),Buffer.alloc(12,3),'api_key',null,false,1]);
  await bindings.bind(auth,{...input,resume:false,mcpSelections:[{serverId:server,credentialId:selected}]});
@@ -374,4 +374,33 @@ it('a session started through a space link launches with no MCP servers; naming 
  await expect(bindings.bind(linkAuth,{sessionId:r.sessionId,spaceId:space,teamMemberId:teammate,agentToken:r.token,mcpSelections:[{serverId:server}]}))
   .rejects.toThrow(/space link/);
  await expect(bindings.authorize({...linkAuth,authSessionId:r.authSessionId},r.sessionId,server)).rejects.toThrow();
+});
+
+/**
+ * §4.2. `bind` answers the launcher with the tool prefix the model will read,
+ * and it is DERIVED, not stored: the durable binding keeps the bare
+ * `{serverId, credentialId}` pair that `read_mcp_launch_selections` and
+ * `authorize` parse with the strict `McpSelectionsSchema`. That is what lets a
+ * rename change the prefix at the next launch instead of leaving a dead name
+ * behind in a resumed session — and it is why adding the key to the stored JSON
+ * would break resume outright.
+ */
+it('answers the readable server key but stores only the selection pair (§4.2)', async () => {
+  const renamed = await db.rpc<{ entity: { id: string; version: number } }>(auth, 'create_mcp_server_entity',
+    [space, JSON.stringify({ ...definition, name: 'Key-Fixture', auth: { type: 'none' }, headerKeys: [] }), null, randomUUID()]);
+  const r = await runtime();
+  const input = { sessionId: r.sessionId, spaceId: space, teamMemberId: teammate, agentToken: r.token };
+  expect(await bindings.bind(auth, { ...input, mcpSelections: [{ serverId: renamed.entity.id }] }))
+    .toEqual([{ serverId: renamed.entity.id, serverKey: 'key_fixture' }]);
+
+  // The stored binding is the bare pair; the strict schema would reject a key.
+  const stored = await db.rpc<unknown>(auth, 'read_mcp_launch_selections', [r.sessionId]);
+  expect(stored).toEqual([{ serverId: renamed.entity.id }]);
+
+  // Rename the connector: the next launch names it by its NEW key, and resume
+  // (which re-reads the stored pair) does too.
+  await db.rpc(auth, 'update_mcp_server_entity', [renamed.entity.id, renamed.entity.version,
+    JSON.stringify({ ...definition, name: 'Gmail', auth: { type: 'none' }, headerKeys: [] }), null, randomUUID()]);
+  expect(await bindings.bind(auth, { ...input, resume: true }))
+    .toEqual([{ serverId: renamed.entity.id, serverKey: 'gmail' }]);
 });
