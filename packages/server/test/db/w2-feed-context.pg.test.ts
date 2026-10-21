@@ -35,7 +35,21 @@
 import { randomUUID } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+/*
+ * BUDGETS. MEASURED on main 06f219db7: alone on an idle host this file's 13
+ * tests take 25049 ms and all pass, so vitest's default 10s HOOK budget sat in
+ * front of a `beforeAll` that builds a scratch database and applies the whole
+ * migration chain. Under a loaded full check.sh it failed as
+ * "Failed Suites 1 ... Hook timed out in 10000ms" with ZERO failed tests — a
+ * suite-level failure that shows as "Test Files 1 failed" while the Tests line
+ * reports nothing, which is how it went unexplained across several runs.
+ *
+ * These are the values 44 other .pg.test.ts files in this directory already
+ * use; this one never set them.
+ */
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
+
 
 import {
   FEED_SCOPE_ANCHOR_KINDS,
