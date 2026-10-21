@@ -90,6 +90,15 @@ export const OPERATIONS = [
   { name: 'mcp.oauth.callback', method: 'POST', path: '/v2/mcp/oauth/callback', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.audit.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/audit', kind: 'read', status: 'v1', humanOnly: true },
   { name: 'mcp.proxy.request', method: 'POST', path: '/v2/mcp/sessions/:sessionId/servers/:serverId', kind: 'command', status: 'v1' },
+  // §11. The connector catalog (§8.2) is NODE-level static data, so the Space is
+  // an optional QUERY param: given one, each entry also reports where it is
+  // already registered there, which is what Discover's "Added" / "Requested"
+  // states read (B16).
+  { name: 'mcp.catalog.list', method: 'GET', path: '/v2/mcp/catalog', kind: 'read', status: 'v1' },
+  // A MEMBER asks the Space's admins to add a connector. It creates the
+  // connector UNAPPROVED — inert until an admin approves with
+  // `mcp.servers.update` — plus an attention request on it (B13, §10.1).
+  { name: 'mcp.servers.request', method: 'POST', path: '/v2/spaces/:spaceId/mcp/servers/request', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'skills.roots', method: 'GET', path: '/v2/spaces/:spaceId/skills/roots', kind: 'read', status: 'v1' },
   { name: 'skills.create', method: 'POST', path: '/v2/spaces/:spaceId/skills', kind: 'command', status: 'v1' },
   { name: 'skills.edit', method: 'PATCH', path: '/v2/skills/:id', kind: 'command', status: 'v1' },
@@ -276,6 +285,15 @@ export const OPERATIONS = [
   // Stop the running turn (the composer's ■ / Esc). Before this the UI had a
   // Stop button and the server had no operation behind it.
   { name: 'chat.interrupt',          method: 'POST',   path: '/v2/chats/:id/interrupt',                     kind: 'command', status: 'v1' },
+  // G4 — change a LIVE thread's connectors. Before this, a chat's selection was
+  // written once at creation (`save_chat_mcp_selections`, `on conflict do
+  // nothing`) and there was no way to change it afterwards.
+  // No `humanOnly` flag: the chat family carries its own guard
+  // (`refuseChatRuntimeBearer`, chat/handlers.ts) rather than
+  // `requireHumanSession`, and the flag's invariant is "flagged iff wrapped in
+  // requireHuman(Link)Session". `test/chat/handlers-human-only.test.ts` holds
+  // every chat.* operation to the refusal instead, this one included.
+  { name: 'chat.setMcpSelections',   method: 'POST',   path: '/v2/chats/:id/mcp-selections',                kind: 'command', status: 'v1' },
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },

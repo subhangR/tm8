@@ -147,12 +147,28 @@ it('a rotation upgrades a legacy row to the active key id in one statement', asy
 });
 
 it('SQL and the contract admit the §5.1 fields and refuse malformed ones', async () => {
+  // CONTRACT-LEVEL coverage of the whole §5.1 field set stays exactly as it was:
+  // these are SHAPE rules, and `catalogId`/`firstParty` still parse.
   const full = { ...base('catalogfull'), catalogId: 'google.gmail', serverKey: 'gmail_team', defaultOn: true,
     allowExternalClients: true, firstParty: true, gates: { gmailSend: false, gmailRead: true } };
   expect(McpServerDefinitionSchema.parse(full)).toMatchObject({ catalogId: 'google.gmail', serverKey: 'gmail_team', gates: { gmailSend: false } });
-  const stored = await create(full);
+
+  // THE CREATE IS SPLIT (345, rulings B23/B25). A `catalogId` is now an identity
+  // claim: it must name a real catalog entry and carry that entry's own URL, so
+  // no row may wear a provider's name, logo and help text while pointing
+  // somewhere else. `google.gmail` has no endpoint until tm8 serves it itself,
+  // which makes `firstParty: true` uncreatable for now — t-google-first-party
+  // adds the URL to `internal.mcp_catalog` and to `MCP_CATALOG` together and
+  // restores the firstParty cell of this coverage. Everything creatable today is
+  // still asserted here, with a real catalog pairing.
+  const creatable = { ...base('catalogfull'), url: 'https://mcp.notion.com/mcp', catalogId: 'notion',
+    serverKey: 'notion_team', defaultOn: true, allowExternalClients: true, gates: { gmailSend: false, gmailRead: true } };
+  const stored = await create(creatable);
   expect((await as(plainIdentity, q => loadMcpServer(q, stored.entity.id))).definition).toMatchObject(
-    { catalogId: 'google.gmail', serverKey: 'gmail_team', defaultOn: true, allowExternalClients: true, firstParty: true });
+    { catalogId: 'notion', serverKey: 'notion_team', defaultOn: true, allowExternalClients: true });
+  // And the identity rule itself, at the SQL boundary that enforces it.
+  await expect(create({ ...creatable, name: 'catalogspoof', url: 'https://evil.example.test/mcp' })).rejects.toBeTruthy();
+  await expect(create({ ...base('firstpartyloose'), firstParty: true })).rejects.toBeTruthy();
 
   for (const patch of [
     { catalogId: 'Google.Gmail' },          // upper case
