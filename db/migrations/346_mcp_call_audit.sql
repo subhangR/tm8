@@ -115,6 +115,7 @@ declare
   v_space uuid;
   b internal.mcp_session_bindings;
   v_root uuid;
+  v_root_identity text;
   v_chain uuid[];
   v_scope text;
 begin
@@ -145,21 +146,51 @@ begin
   -- The recorded root, or for a binding written before 343 the launcher, as
   -- their member row in this Space (whatever its status: a removed root is
   -- exactly the denial worth naming).
+  -- B50 (advisor review): the connector must be one of THIS Space's, so a row
+  -- can never name another Space's connector. A call that reached the provider
+  -- (any outcome but 'denied') must also be on a connector the binding selected;
+  -- a refusal is exactly the case where it may not be, and the Space check
+  -- above still binds it.
+  if not exists(select 1 from public.entities e
+      where e.id = p_server and e.space_id = v_space and e.kind = 'mcp_server') then
+    raise exception 'MCP audit connector is not one of this space''s' using errcode = '22023';
+  end if;
+  if b.session_id is not null and p_outcome <> 'denied' and not exists(
+      select 1 from jsonb_array_elements(b.selections) sel where sel->>'serverId' = p_server::text) then
+    raise exception 'MCP audit connector is not selected on this session' using errcode = '22023';
+  end if;
+
+  -- The root as RECORDED. A supplied root must be the recorded root's member
+  -- row here (whatever its status: a removed root is exactly the denial worth
+  -- naming). Absent one, the binding's own root. The launcher stands in ONLY
+  -- for a binding written before 343 by a HUMAN launcher; a rootless binding
+  -- (loop executor, no human provenance) records NULL, which means "no human
+  -- provenance" — never the node owner the executor ran as (B50).
+  if b.session_id is not null then
+    v_root_identity := case
+      when b.root_identity_id is not null then b.root_identity_id
+      when b.launcher_auth_kind in ('browser', 'cli') then b.launcher_identity_id
+    end;
+  end if;
   if p_root_member is not null then
-    if b.session_id is null or not exists(select 1 from public.members m
-        where m.entity_id = p_root_member and m.space_id = v_space
-          and m.identity_id = coalesce(b.root_identity_id, b.launcher_identity_id)) then
+    if v_root_identity is null or not exists(select 1 from public.members m
+        where m.entity_id = p_root_member and m.space_id = v_space and m.identity_id = v_root_identity) then
       raise exception 'MCP audit root is not the recorded root' using errcode = '22023';
     end if;
     v_root := p_root_member;
-  elsif b.session_id is not null then
-    v_root := coalesce(b.root_member_id, (select m.entity_id from public.members m
-      where m.space_id = v_space and m.identity_id = coalesce(b.root_identity_id, b.launcher_identity_id)));
+  elsif v_root_identity is not null then
+    v_root := coalesce(case when b.root_identity_id is not null then b.root_member_id end,
+      (select m.entity_id from public.members m where m.space_id = v_space and m.identity_id = v_root_identity));
   end if;
 
+  -- B50: a credential, when named, must be an MCP credential of this Space.
   if p_credential is not null then
     select case when c.owner_account_id is null then 'space' else 'member' end into v_scope
-      from public.space_credentials c where c.id = p_credential and c.space_id = v_space;
+      from public.space_credentials c
+     where c.id = p_credential and c.space_id = v_space and c.provider = 'mcp';
+    if v_scope is null then
+      raise exception 'MCP audit credential is not one of this space''s MCP connections' using errcode = '22023';
+    end if;
   end if;
 
   insert into public.mcp_call_audit(space_id, session_id, server_id, credential_id, method, outcome,

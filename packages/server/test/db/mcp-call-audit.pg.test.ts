@@ -339,6 +339,20 @@ describe('the writer', () => {
     expect(await failure(() => write(s.claims, s))).toBe('ok');
   });
 
+  it('refuses a connector from ANOTHER Space (B50): a row can never name one', async () => {
+    const s = await boundSession('bob');
+    const foreign = randomUUID();
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'mcp_server',$3)", [foreign, otherSpace, danElsewhere]);
+    });
+    const as = (serverId: string, outcome: string, reason: string | null) => failure(() => db.rpc(s.claims, 'record_mcp_call_audit',
+      [s.sessionId, serverId, null, 'tools/call', 'send_email', outcome, null, null, reason, 1, 2, 3]));
+    expect(await as(foreign, 'succeeded', null)).toMatch(/not one of this space/);
+    expect(await as(foreign, 'denied', 'not_selected')).toMatch(/not one of this space/);
+    expect(await as(server, 'succeeded', null)).toBe('ok');
+  });
+
   it('refuses a chain or root that is not the recorded one', async () => {
     const s = await boundSession('bob');
     expect(await failure(() => write(s.claims, s, { chain: [randomUUID()] }))).toMatch(/recorded chain/);
