@@ -4,6 +4,7 @@ export {
   composeChatHarnessFoundation,
   createChatPreparedLaunchResolver,
   createChatLaunchConfigResolver,
+  createChatMcpSelectionResolver,
   chatAllowedTools,
   chatSystemPrompt,
   wrapExecutionAgentRuntime,
@@ -31,6 +32,7 @@ export type {
   ChatLaunchConfigInput,
   ResolveChatLaunchConfig,
   ResolveChatCredentialEnv,
+  ResolveChatMcpSelection,
   StartAgentThreadInput,
   TurnItem,
 } from './runtime.js';
