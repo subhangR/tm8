@@ -550,19 +550,14 @@ describe('per-model routing — a Kimi model gets the Kimi key, a Claude model t
   // change this table on purpose.
   it.each([
     ['kimi-k3', 'claude-code', 'kimi'],
-    ['kimi-k2.7-code-highspeed', 'claude-code', 'kimi'],
     ['kimi-k2.6', 'claude-code', 'kimi'],
-    ['kimi-k2.7-code', 'claude-code', 'kimi'],
     // AN OPENAI-NAMED MODEL SERVED BY GROQ: routed by who serves it, not by
     // the vendor its id is named after. `openai` is itself a catalog provider,
     // which is what makes this the sharp case — it used to be carried by
     // `moonshotai/kimi-k2-instruct-0905`, retired by Groq on 2026-04-15.
     ['openai/gpt-oss-120b', 'codex', 'groq'],
     ['openai/gpt-oss-20b', 'codex', 'groq'],
-    ['meta-models/muse-spark-open', 'codex', 'groq'],
     ['llama-3.3-70b-versatile', 'codex', 'groq'],
-    ['qwen/qwen3.8-27b', 'codex', 'groq'],
-    ['minimaxai/minimax-m2.7', 'codex', 'groq'],
   ] as const)('%s on %s runs on the %s key', (model, agentTool, backend) => {
     expect(apiKeyBackendForModel(agentTool, model)).toBe(backend);
   });
@@ -600,7 +595,7 @@ describe('per-model routing — a Kimi model gets the Kimi key, a Claude model t
     expect(apiKeyBackendForModel(null, 'kimi-k3')).toBeNull();
     // A Kimi model asked for on codex is not the Kimi-on-claude route.
     expect(apiKeyBackendForModel('codex', 'kimi-k3')).toBeNull();
-    expect(apiKeyBackendForModel('claude-code', 'qwen/qwen3.8-27b')).toBeNull();
+    expect(apiKeyBackendForModel('claude-code', 'openai/gpt-oss-120b')).toBeNull();
   });
 });
 

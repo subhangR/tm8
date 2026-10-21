@@ -229,8 +229,7 @@ describe('DbAgentCredentialHome', () => {
 
   it.each([
     ['gpt-6-astra', 'openai'],
-    ['qwen/qwen3.8-27b', 'groq'],
-    ['meta-models/muse-spark-open', 'groq'],
+    ['llama-3.3-70b-versatile', 'groq'],
     // THE SHARP CASE, with BOTH keys connected: an `openai/`-named model that
     // still goes to Groq, because the serving vendor decides and `openai` is
     // itself a catalog provider. The row that used to make this point,

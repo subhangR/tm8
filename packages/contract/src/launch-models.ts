@@ -21,25 +21,12 @@ export const CLAUDE_CODE_EFFORTS = ['low', 'medium', 'high', 'max'] as const sat
 export const CODEX_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly LaunchModelEffort[];
 export const CODEX_ULTRA_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const satisfies readonly LaunchModelEffort[];
 /**
- * The three stops Groq's open-weight reasoning models accept — the GPT-OSS
- * pair and Qwen 3.8. Deliberately NOT `CODEX_EFFORTS`: `max` is OpenAI-hosted
- * vocabulary, and offering it here would put a value in
+ * The three stops OpenAI's open-weight models accept when Codex is pointed at
+ * Groq. Deliberately NOT `CODEX_EFFORTS`: `xhigh` and `max` are OpenAI-hosted
+ * vocabulary, and offering them here would put a value in
  * `model_reasoning_effort` that the Groq endpoint rejects at the first turn.
- * `xhigh` is excluded for a narrower reason — on Groq it belongs to Muse Spark
- * alone (see `GROQ_MUSE_SPARK_EFFORTS`), not to open-weight models generally.
- *
- * Groq additionally documents `none` and `default` for Qwen 3.8. Neither is a
- * `LaunchModelEffort`, and neither needs to be: "no reasoning" is not a stop on
- * a dial the composer can render, and `default` is what sending nothing means.
  */
-export const GROQ_OPEN_WEIGHT_EFFORTS = ['low', 'medium', 'high'] as const satisfies readonly LaunchModelEffort[];
-
-/**
- * Muse Spark Open is the one model on Groq that takes `xhigh`, and it is that
- * model's DEFAULT rather than its ceiling. `none` is absent because Groq states
- * the model always reasons, so there is no off position to offer.
- */
-export const GROQ_MUSE_SPARK_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly LaunchModelEffort[];
+export const GROQ_GPT_OSS_EFFORTS = ['low', 'medium', 'high'] as const satisfies readonly LaunchModelEffort[];
 
 export interface LaunchModelCatalogEntry {
   readonly model: string;
@@ -223,11 +210,22 @@ export const LAUNCH_MODEL_CATALOG = [
   // empty list makes the composer draw the dial disabled with "has one fixed
   // effort level" rather than offering four stops the backend would ignore.
   //
-  // THESE IDS ROT. The K2 generation these rows used to name (`kimi-k2-thinking`
-  // and friends) was discontinued on 2026-05-25 and every one of those launches
-  // failed at the provider, unnoticed here because the rows only run on a
-  // member's own key. Check them against platform.kimi.ai/docs/models rather
-  // than assuming a once-correct id is still served.
+  // THESE IDS ROT. The four K2 rows this replaces (`kimi-k2-thinking`,
+  // `-thinking-turbo`, `kimi-k2-turbo-preview`, `kimi-k2-0905-preview`) were
+  // discontinued with the whole K2 series on 2026-05-25, and every launch on
+  // them had been failing at the provider since — unnoticed here, because these
+  // rows only ever run on a member's own key. Check
+  // platform.kimi.ai/docs/models rather than assuming a once-correct id is
+  // still served.
+  //
+  // WHY ONLY TWO OF MOONSHOT'S FOUR CURRENT MODELS. `kimi-k2.7-code` and
+  // `kimi-k2.7-code-highspeed` are live and are deliberately NOT offered: they
+  // are reported to reject a request with thinking disabled, Moonshot documents
+  // no reasoning-effort parameter we could use to guarantee the other mode, and
+  // our Kimi rows send no effort at all. The two kept rows have no such
+  // question — `kimi-k2.6` is documented for thinking AND non-thinking modes,
+  // and `kimi-k3` is the model Moonshot's own Claude Code guide points at this
+  // very endpoint. Re-test the K2.7 pair with a real key before adding them.
   {
     model: 'kimi-k3',
     label: 'Kimi K3',
@@ -244,22 +242,6 @@ export const LAUNCH_MODEL_CATALOG = [
     note: 'General model with thinking and non-thinking modes, 256k — runs on your own Kimi key (Settings → Connections)',
     efforts: [],
   },
-  {
-    model: 'kimi-k2.7-code',
-    label: 'Kimi K2.7 Code',
-    provider: 'moonshot',
-    agentTool: 'claude-code',
-    note: 'Coding model for long-context instruction following, 256k — runs on your own Kimi key (Settings → Connections)',
-    efforts: [],
-  },
-  {
-    model: 'kimi-k2.7-code-highspeed',
-    label: 'Kimi K2.7 Code (High-speed)',
-    provider: 'moonshot',
-    agentTool: 'claude-code',
-    note: 'Faster-serving K2.7 Code, ~180 tok/s — runs on your own Kimi key (Settings → Connections)',
-    efforts: [],
-  },
 
   // ---------------------------------------------------------------------
   // Groq — the same cross-provider arrangement on the Codex side.
@@ -270,27 +252,37 @@ export const LAUNCH_MODEL_CATALOG = [
   // rule applies: only these rows use the Groq key, and the GPT rows above
   // keep running on the member's OpenAI login.
   //
-  // THE MODEL IDS CARRY THEIR VENDOR PREFIX (`openai/`, `qwen/`,
-  // `minimaxai/`, `meta-models/`) because that is literally what Groq's API
-  // expects; they are not decoration and must not be tidied away. Note that
-  // `llama-3.3-70b-versatile` genuinely has no prefix — that is Groq's own
-  // spelling, not an omission.
+  // THE MODEL IDS CARRY THEIR VENDOR PREFIX (`openai/`) because that is
+  // literally what Groq's API expects; it is not decoration and must not be
+  // tidied away. Note that `llama-3.3-70b-versatile` genuinely has no prefix —
+  // that is Groq's own spelling, not an omission. An `openai/`-named row
+  // running on the GROQ key is also the clearest statement of the per-model
+  // rule above: routing follows who SERVES a model, not what its id is named
+  // after.
   //
   // THESE IDS ROT, AND GROQ PUBLISHES THE DATES. Three rows here previously
   // named models Groq had already shut down: `moonshotai/kimi-k2-instruct-0905`
   // (2026-04-15), `qwen/qwen3-32b` (2026-07-17) and
-  // `deepseek-r1-distill-llama-70b` (2025-10-02). Groq no longer serves ANY
-  // Moonshot or DeepSeek model, so those two rows could not be renamed in
-  // place; they were replaced with current Groq models rather than pointed at
-  // `openai/gpt-oss-120b`, which this catalog already offers. Check
-  // console.groq.com/docs/deprecations before trusting a row here.
+  // `deepseek-r1-distill-llama-70b` (2025-10-02). They are removed rather than
+  // repointed: Groq no longer serves ANY Moonshot or DeepSeek model, and its
+  // suggested replacement for all three is `openai/gpt-oss-120b`, already a row
+  // here. Check console.groq.com/docs/deprecations before trusting a row.
+  //
+  // ONLY GROQ'S *PRODUCTION* MODELS BELONG HERE. Groq says preview models
+  // "should not be used in production environments" and "may be discontinued at
+  // short notice" — which is exactly the failure this catalog just suffered. So
+  // `qwen/qwen3.8-27b`, `minimaxai/minimax-m2.7` and `meta-models/muse-spark-open`
+  // are live, tool-use capable and still deliberately absent. `muse-spark-open`
+  // is the only model on Groq that accepts `xhigh` effort, which is the one
+  // thing worth revisiting if it is ever promoted to production.
+  // `llama-3.1-8b-instant` IS production and simply not offered yet.
   {
     model: 'openai/gpt-oss-120b',
     label: 'GPT-OSS 120B (Groq)',
     provider: 'groq',
     agentTool: 'codex',
     note: 'OpenAI open-weight 120B on Groq — runs on your own Groq key (Settings → Connections)',
-    efforts: GROQ_OPEN_WEIGHT_EFFORTS,
+    efforts: GROQ_GPT_OSS_EFFORTS,
   },
   {
     model: 'openai/gpt-oss-20b',
@@ -298,15 +290,7 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'groq',
     agentTool: 'codex',
     note: 'Smallest open-weight rung, for cheap mechanical work — runs on your own Groq key (Settings → Connections)',
-    efforts: GROQ_OPEN_WEIGHT_EFFORTS,
-  },
-  {
-    model: 'meta-models/muse-spark-open',
-    label: 'Muse Spark Open (Groq)',
-    provider: 'groq',
-    agentTool: 'codex',
-    note: 'The only model on Groq that takes xhigh effort, and its default — runs on your own Groq key (Settings → Connections)',
-    efforts: GROQ_MUSE_SPARK_EFFORTS,
+    efforts: GROQ_GPT_OSS_EFFORTS,
   },
   {
     model: 'llama-3.3-70b-versatile',
@@ -314,22 +298,6 @@ export const LAUNCH_MODEL_CATALOG = [
     provider: 'groq',
     agentTool: 'codex',
     note: 'Meta Llama 3.3 70B on Groq — runs on your own Groq key (Settings → Connections)',
-    efforts: [],
-  },
-  {
-    model: 'qwen/qwen3.8-27b',
-    label: 'Qwen3.8 27B (Groq)',
-    provider: 'groq',
-    agentTool: 'codex',
-    note: 'Qwen3.8 27B on Groq, the successor to Qwen3 32B — runs on your own Groq key (Settings → Connections)',
-    efforts: GROQ_OPEN_WEIGHT_EFFORTS,
-  },
-  {
-    model: 'minimaxai/minimax-m2.7',
-    label: 'MiniMax M2.7 (Groq)',
-    provider: 'groq',
-    agentTool: 'codex',
-    note: 'Largest context on Groq at 196k — runs on your own Groq key (Settings → Connections)',
     efforts: [],
   },
 ] as const satisfies readonly LaunchModelCatalogEntry[];
