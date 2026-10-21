@@ -524,6 +524,52 @@ describe('§6 deny matrix — re-checked on every call, not only at bind', () =>
     expect(await outcome(() => bindings.authorize(s.claims, s.sessionId, serverA))).toBe('ok');
   });
 
+  it('authorize opens the account as the RECORDED ROOT, not as the launcher', async () => {
+    /*
+     * The invariant the backend advisor flagged as most at risk of a merge that
+     * compiles but drops it — and it had NO cell watching it. Reverting
+     * `authorize` to the launcher identity left all 39 cells green, because for
+     * a bearer chain the launcher and the root are the same human, and the one
+     * cell with launcher <> root pins a SPACE-SHARED connection, which either
+     * identity can open.
+     *
+     * So this cell makes the distinction matter: the pinned connection is
+     * ALICE's own PRIVATE row, the recorded root is Alice, and the launcher is
+     * DAVE — an active member of the Space who has no claim on that row at all.
+     * Opening it as the launcher is refused by `read_mcp_credential`; opening it
+     * as the root succeeds. Nothing else in the binding differs.
+     *
+     * It matters beyond defending a line: a schedule firing roots at the human
+     * who armed the loop while the binding transaction ran as someone else, so
+     * "resolve as the launcher" would hand that firing the WRONG person's
+     * connections — or none, failing a launch that should work.
+     */
+    const s = await session(spaceA, people.dave.memberA, personaA, 'dave');
+    await forgeBinding({
+      sessionId: s.sessionId, authSessionId: s.authSessionId, space: spaceA,
+      runtime: 'dave', launcher: 'dave', root: 'alice', rootMember: people.alice.memberA,
+      chain: [s.sessionId], chainSpaces: [spaceA],
+      selections: [{ serverId: serverA, credentialId: aliceKeyA }],
+    });
+    // Alice's row is PRIVATE: she owns it, it is not public, and it is shared
+    // with nobody — so only resolution under her own identity can open it.
+    const [row] = await scratch.query<{ visibility: string; owner: string | null }>(
+      'select visibility, owner_account_id::text owner from public.space_credentials where id=$1', [aliceKeyA]);
+    expect(row).toMatchObject({ visibility: 'private', owner: people.alice.account });
+    const grant = await bindings.authorize(s.claims, s.sessionId, serverA);
+    expect(grant).toMatchObject({
+      launcherIdentityId: people.dave.identity,
+      rootIdentityId: people.alice.identity,
+      credentialId: aliceKeyA,
+    });
+    // Control: the launcher really is live and admitted, so the success above is
+    // the ROOT opening the row and not the launcher happening to be allowed.
+    expect(await outcome(() => db.rpc(
+      { identityId: people.dave.identity, authKind: 'browser', sessionSpaceId: spaceA },
+      'read_mcp_credential', [spaceA, serverA, aliceKeyA])))
+      .toMatch(/MCP credential unavailable/);
+  });
+
   it('§6.2 A -> B -> A: losing the MIDDLE Space withdraws access in the outer one', async () => {
     /*
      * The shape the plan's "a chain like A -> B -> A can't launder access"
