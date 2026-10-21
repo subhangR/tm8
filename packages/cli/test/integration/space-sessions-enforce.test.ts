@@ -11,7 +11,24 @@
  * owner (not gated), and the spaces through the user's own gate session
  * (`spaces.create` is on the gate list), so the user is a member of both.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+/*
+ * BUDGETS, not performance targets. This file drives the BUILT CLI through a
+ * login, two `auth space enter` calls and several commands against a live
+ * Server, so its cost tracks host load rather than anything it asserts.
+ *
+ * MEASURED on main 06f219db7. The cell "switch to B without logout" runs in
+ * 2260 / 2473 / 2318 / 2294 ms across four runs on an idle host (load 5.6-7.1),
+ * i.e. under half of vitest's 5s default — and took 5034 ms in a full
+ * check.sh at load 12-25, failing by 34 ms. Nothing was wrong with the code:
+ * the same run passed every assertion in the file, four times, alone.
+ *
+ * So the default was measuring the host. These are the values the other
+ * integration tests in this directory already use, which is the point — this
+ * file was the outlier that never set them.
+ */
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
+
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
