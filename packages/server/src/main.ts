@@ -120,6 +120,7 @@ import {
   type AgentRuntime,
   type ResolveChatLaunchConfig,
   type ResolveChatCredentialEnv,
+  type ResolveChatMcpSelection,
   type ResolveChatPreparedLaunch,
   type ChatHarnessComposition,
 } from './chat/index.js';
@@ -129,6 +130,8 @@ export interface ChatBootstrapOptions {
   readonly runtime: AgentRuntime;
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
   readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
+  /** §5.3: lets a changed connector selection reach the next turn. */
+  readonly resolveMcpSelection?: ResolveChatMcpSelection;
   readonly harnessRegistry?: HarnessRegistry;
   readonly resolvePreparedLaunch?: ResolveChatPreparedLaunch;
   readonly onError?: (error: unknown) => void;
@@ -397,6 +400,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           nodeId: desktopNodeId(dataDir),
         } : {}),
         ...(chatBlock.resolveCredentialEnv ? { resolveCredentialEnv: chatBlock.resolveCredentialEnv } : {}),
+        ...(chatBlock.resolveMcpSelection ? { resolveMcpSelection: chatBlock.resolveMcpSelection } : {}),
         ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
         // F2: only the production (factory) composition gets the boot sweep —
         // block-form test harnesses must never see sweep queries.

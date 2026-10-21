@@ -43,19 +43,44 @@ describe('native MCP picker', () => {
     const data = catalog(); data.canAttach = false; const port = fixture(data); render(<Picker port={port} />);
     await waitFor(() => expect(port.catalog).toHaveBeenCalled()); expect(screen.queryByRole('checkbox')).toBeNull();
   });
-  it('leaves an unresolved default off instead of blocking the launch', async () => {
+  /*
+   * G15 / §5.3 (S22). An UNRESOLVED DEFAULT IS THE SERVER'S TO SKIP.
+   *
+   * This cell used to assert the opposite: `onChange([])`, the picker rewriting
+   * "the user chose nothing" into an explicit empty list because the browser
+   * could see no connected account. The rule is that the field is sent only
+   * when the user changed something, so the launch omits it and the server
+   * resolves defaults under the provenance root's own claims and reports the
+   * ones it cannot open as `skipped: not connected`. A connector connected
+   * between page load and launch was silently lost to the old behaviour.
+   *
+   * The default here names the connector and no ACCOUNT, which the old
+   * `readiness` read as a problem. It is not one: §3's order resolves the
+   * account server-side (the pin, then the root's own connection, then the
+   * Space's shared one), so there is nothing for the launch to block on and
+   * nothing for the picker to warn about.
+   */
+  it('leaves an unresolved default to the server instead of sending a trimmed list', async () => {
     const data = catalog(); data.defaults = [{ serverId: 'server' }]; const onReady = vi.fn(), onChange = vi.fn();
     render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange} />);
-    expect((await screen.findByRole('checkbox', { name: /Calendar/ }) as HTMLInputElement).checked).toBe(false);
-    expect(onChange).toHaveBeenLastCalledWith([]); expect(onReady).toHaveBeenLastCalledWith(true);
+    await screen.findByRole('checkbox', { name: /Calendar/ });
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Use defaults' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.queryByRole('alert')).toBeNull();
+    // Shown as on and awaiting an account, not hidden and not warned about.
+    expect((screen.getByRole('checkbox', { name: /Calendar/ }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('combobox', { name: /Account for Calendar/ }) as HTMLSelectElement).value).toBe('');
   });
-  it('keeps usable defaults and drops only the unconnected one', async () => {
+  it('sends nothing at all when only some defaults are connected', async () => {
     const data = catalog(); data.servers.push({ ...data.servers[0]!, id: 'open', title: 'Docs', auth: 'none', accounts: [] });
     data.defaults = [{ serverId: 'server' }, { serverId: 'open' }]; const onChange = vi.fn(), onReady = vi.fn();
     render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange} />);
-    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith([{ serverId: 'open' }])); expect(onReady).toHaveBeenLastCalledWith(true);
+    await screen.findByRole('checkbox', { name: /Docs/ });
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    // The old behaviour sent `[{serverId:'open'}]` — a list the user never
+    // chose, which would ALSO have pinned the thread or session to it.
+    expect(onChange).not.toHaveBeenCalled();
   });
   it('renders nothing and stays ready when no connectors are registered', async () => {
     const data = catalog(); data.servers = []; const port = fixture(data), onReady = vi.fn(); render(<Picker port={port} onReady={onReady} />);
@@ -125,11 +150,15 @@ describe('native MCP management', () => {
 });
 
 describe('MCP readiness and recovery', () => {
-  it('drops a revoked default account instead of blocking the launch', async () => {
+  it('does not block the launch on a revoked default account (the server skips it)', async () => {
     const data = catalog(); data.defaults = [{serverId:'server',credentialId:'account'}];
     data.servers[0]!.accounts[0]!.status='revoked'; data.servers[0]!.accounts[0]!.canUse=false;
     const onReady=vi.fn(), onChange=vi.fn(); render(<Picker port={fixture(data)} onReady={onReady} onChange={onChange}/>);
-    await screen.findByRole('link',{name:'Connect Calendar'}); expect(onChange).toHaveBeenLastCalledWith([]); expect(onReady).toHaveBeenLastCalledWith(true);
+    await screen.findByRole('link',{name:'Connect Calendar'});
+    await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
+    // S22: the revoked default is dropped by the SERVER's resolution, not by
+    // the browser sending a shorter list.
+    expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByRole('option',{name:'Work account'})).toBeNull();
   });
   it('still blocks an explicitly ticked connector until an account is chosen', async () => {
@@ -165,8 +194,11 @@ it('refreshes a mounted launch picker immediately after revocation elsewhere in 
   await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
   fireEvent.click(screen.getByRole('button',{name:'Revoke account'}));
   fireEvent.click(screen.getByRole('button',{name:'Confirm revoke'}));
-  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(false));
+  // S22: a DEFAULT losing its account does not block the launch — the server
+  // skips it and reports "not connected". What must still happen immediately is
+  // the picker reflecting the revocation, which is the connect link below.
   await screen.findByRole('link',{name:'Connect Calendar'});
+  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
   expect(screen.queryByRole('button',{name:'Confirm revoke'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
   expect(screen.getByText('Add a new private account below to reconnect.')).toBeTruthy();
@@ -207,6 +239,8 @@ it('blocks a changed connector account and offers reconnect without key rotation
   expect(screen.getByText(/Connector changed; reconnect account/)).toBeTruthy();
   expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
   expect(screen.getByRole('button',{name:'Add private account'}).hasAttribute('disabled')).toBe(false);
-  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(false));
+  // S22, as above: a default whose account changed under it is the server's to
+  // skip, so the launch stays ready and the UI offers the reconnect.
+  await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
   expect(screen.getByRole('link',{name:'Connect Calendar'})).toBeTruthy();
 });

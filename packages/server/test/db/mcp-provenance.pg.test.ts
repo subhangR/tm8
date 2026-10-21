@@ -1358,3 +1358,164 @@ describe('§6 — the delegated child of a schedule-rooted session (351, B35)', 
     expect(await outcome(() => bindings.authorize(child.claims, child.sessionId, serverA))).toBe('ok');
   });
 });
+
+/**
+ * §5.3 / §7.3, S21a (354). A CHAT'S DEFAULTS ARE NOT PINNED BY ITS OWN BIND.
+ *
+ * `internal.mcp_launch_selections` is two things at once. For a WORK SESSION it
+ * is the pin a resume reads back, which is what keeps a session's connectors
+ * stable for its whole life. For a CHAT, where every turn is a resume, writing
+ * it turned the first turn's RESOLVED DEFAULTS into an explicit selection that
+ * every later turn read back — so a connector switched `defaultOn` afterwards
+ * never reached an existing thread, a newly connected account never reached
+ * one, and §10.4's composer could not tell "Space defaults" from "Custom".
+ *
+ * So the launch-record write is skipped for a chat key and the SESSION key is
+ * the control in the same cell — the two differ only in the bearer that proves
+ * which kind of thing is being bound.
+ *
+ * `internal.mcp_session_bindings` is asserted for the chat as well, because
+ * that row is the one `authorize` and §5.6's audit read: this change must make
+ * the chat's launch record absent, NOT its provenance.
+ */
+describe('§5.3 — a chat key writes no launch record (354)', () => {
+  /** A live chat plus the `agent_runtime` bearer `issueAgentRuntimeSession` mints. */
+  async function chatRuntime(space: string, member: string, persona: string, who: keyof typeof people) {
+    const chatId = randomUUID();
+    const authSessionId = randomUUID();
+    const secret = randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '');
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'chat',$3)", [chatId, space, member]);
+      await c.query(`insert into public.chats(
+          entity_id, space_id, title, teammate_id, model, provider, agent_tool,
+          chat_mode, workdir_mode, cwd, native_session_id,
+          configured_by_identity_id, configured_by_member_id, client_mutation_id)
+        values($1,$2,'354 fixture',$3,'claude-opus-5','anthropic','claude-code',
+               'ask','scratch','/tmp/tm8-354', gen_random_uuid(), $4, $5, $6)`,
+        [chatId, space, persona, people[who].identity, member, `chat-354-${randomUUID()}`]);
+      // `auth_sessions_agent_runtime_shape` (176): a runtime bearer carries the
+      // persona it acts as, the member behind it, and its chat.
+      await c.query(`insert into public.auth_sessions(id,account_id,kind,acting_as_team_member_id,runtime_member_id,
+          runtime_chat_id,token_hash,expires_at,space_id)
+        values($1,$2,'agent_runtime',$3,$4,$5,$6,now()+interval '1 hour',$7)`,
+        [authSessionId, people[who].account, persona, member, chatId, hashToken(secret), space]);
+    });
+    return { chatId, authSessionId, token: `tm8s_${authSessionId}.${secret}` };
+  }
+
+  const countsFor = async (id: string) => {
+    const [row] = await scratch.query<{ binding: string; launch: string }>(
+      `select (select count(*)::text from internal.mcp_session_bindings where session_id=$1) as binding,
+              (select count(*)::text from internal.mcp_launch_selections where session_id=$1) as launch`, [id]);
+    return { binding: row!.binding, launch: row!.launch };
+  };
+
+  it('binds a chat without writing its launch record, and still writes the session key\'s', async () => {
+    const chat = await chatRuntime(spaceA, people.alice.memberA, personaA, 'alice');
+    const picks = JSON.stringify([{ serverId: serverA, credentialId: aliceKeyA }]);
+    expect(await outcome(() => db.tx(human('alice', spaceA), q => q.rpc('bind_mcp_session', [
+      chat.chatId, hashToken(chat.token.split('.')[1]!), picks, null, null, people.alice.memberA,
+      [chat.chatId], [spaceA],
+    ])))).toBe('ok');
+    // The BINDING is complete — selections, root and chain — because that is
+    // what `authorize` re-checks and what the audit quotes.
+    const [binding] = await scratch.query<{ selections: unknown; root_member_id: string; chain: string[] }>(
+      'select selections, root_member_id, chain from internal.mcp_session_bindings where session_id=$1', [chat.chatId]);
+    expect(binding!.selections).toEqual([{ serverId: serverA, credentialId: aliceKeyA }]);
+    expect(binding!.root_member_id).toBe(people.alice.memberA);
+    expect(binding!.chain).toEqual([chat.chatId]);
+    // And the LAUNCH RECORD is absent, which is what makes the absence of a row
+    // mean "defaults" for a chat.
+    expect(await countsFor(chat.chatId)).toEqual({ binding: '1', launch: '0' });
+
+    // CONTROL, same call through a work-session bearer: both rows are written,
+    // so what the branch keys on is the kind of key and not the arguments.
+    const worker = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    expect(await outcome(() => db.tx(human('alice', spaceA), q => q.rpc('bind_mcp_session', [
+      worker.sessionId, hashToken(worker.token.split('.')[1]!), picks, null, null, people.alice.memberA,
+      [worker.sessionId], [spaceA],
+    ])))).toBe('ok');
+    expect(await countsFor(worker.sessionId)).toEqual({ binding: '1', launch: '1' });
+  });
+
+  /*
+   * §5.3's THREE-WAY FIELD, through the read the orchestrator actually takes.
+   *
+   * The probe is new code on the path of every turn, and the case worth pinning
+   * is the middle one: a thread set to "None" must fingerprint as EMPTY, not
+   * fall back to the defaults. If it fell back, a thread the human had turned
+   * every connector off in would compare equal to one running on defaults, and
+   * the probe's answer would disagree with what `bind` goes on to do.
+   *
+   * The resolver's own `[]`-versus-omitted semantics are proved in
+   * mcp-account-resolution.pg.test.ts; what is proved here is that the chat
+   * path reaches them with the right argument.
+   */
+  it('reads omitted as defaults, [] as all off, and an explicit pin as itself', async () => {
+    const chat = await chatRuntime(spaceA, people.alice.memberA, personaA, 'alice');
+    const task = randomUUID();
+    await scratch.transaction(async c => {
+      // The edge triggers read the caller's identity, so bind one: these rows
+      // are Alice's, exactly as the graph writers would have made them.
+      await c.query("select set_config('tm8.identity_id',$1,true),set_config('tm8.auth_kind','browser',true)", [people.alice.identity]);
+      await c.query('set local role tm8_graph_owner');
+      await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'task',$3)", [task, spaceA, people.alice.memberA]);
+      await c.query("insert into public.tasks(entity_id,title,work_status) values($1,'354 equips target','open')", [task]);
+      // The chat is ABOUT the task, and the task EQUIPS the connector: §7.3's
+      // default set for a thread with no explicit selection.
+      await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'about',$4)",
+        [spaceA, chat.chatId, task, people.alice.memberA]);
+      await c.query("insert into public.edges(space_id,src_id,dst_id,type,created_by) values($1,$2,$3,'equips',$4)",
+        [spaceA, task, serverA, people.alice.memberA]);
+    });
+    const probe = () => bindings.effectiveChatSelection(human('alice', spaceA),
+      { chatId: chat.chatId, spaceId: spaceA, teamMemberId: personaA });
+    const store = (selections: unknown) => scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into internal.mcp_launch_selections(session_id,selections,launcher_identity_id,launcher_auth_kind)
+        values($1,$2::jsonb,$3,'browser') on conflict (session_id) do update set selections=excluded.selections`,
+        [chat.chatId, JSON.stringify(selections), people.alice.identity]);
+    });
+
+    // OMITTED (no row): the equips default, with §3 resolving Alice's own
+    // connection for it — nothing the human ever typed.
+    expect(await probe()).toEqual([{ serverId: serverA, credentialId: aliceKeyA }]);
+
+    // `[]`: ALL OFF, defaults included. The case that must not fall back.
+    await store([]);
+    expect(await probe()).toEqual([]);
+
+    // An explicit pin naming a different connection is honoured as written.
+    await store([{ serverId: serverA, credentialId: sharedKeyA }]);
+    expect(await probe()).toEqual([{ serverId: serverA, credentialId: sharedKeyA }]);
+  });
+
+  it('leaves a chat\'s explicit selection exactly as the human wrote it', async () => {
+    /*
+     * The other half of "no row means defaults": a row that IS there must be
+     * the human's, untouched. Before 354 the bind rewrote it with the RESOLVED
+     * list, so a pick made without naming an account came back with one pinned
+     * into it — and from then on the thread could not follow the root to a
+     * different connection.
+     */
+    const chat = await chatRuntime(spaceA, people.alice.memberA, personaA, 'alice');
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into internal.mcp_launch_selections(session_id,selections,launcher_identity_id,launcher_auth_kind)
+        values($1,$2::jsonb,$3,'browser')`,
+        [chat.chatId, JSON.stringify([{ serverId: serverA }]), people.alice.identity]);
+    });
+    expect(await outcome(() => db.tx(human('alice', spaceA), q => q.rpc('bind_mcp_session', [
+      chat.chatId, hashToken(chat.token.split('.')[1]!),
+      JSON.stringify([{ serverId: serverA, credentialId: aliceKeyA }]),
+      null, null, people.alice.memberA, [chat.chatId], [spaceA],
+    ])))).toBe('ok');
+    const [row] = await scratch.query<{ selections: unknown; root_member_id: string | null }>(
+      'select selections, root_member_id from internal.mcp_launch_selections where session_id=$1', [chat.chatId]);
+    // No `credentialId` pinned into it, and no root stamped over it (B57's
+    // other half: provenance on this row is the bind's, and a chat has none).
+    expect(row!.selections).toEqual([{ serverId: serverA }]);
+    expect(row!.root_member_id).toBeNull();
+  });
+});
