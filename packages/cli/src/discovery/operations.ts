@@ -4367,8 +4367,8 @@ export const CATALOG_DIGEST =
   // Re-measured after the request noun's removal (-5 rows) — RECOMPUTED, not adjusted.
   // Re-measured for Projects add (+spaces.projects.clone|cloneJobs.get, 01a13574) on main 638f6069e — RECOMPUTED, not adjusted.
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
-  // Re-measured for mcp.audit.list (§5.6, 346) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:b8a694fa80e11b90f3eae9be6578bd0ca8a02bac071696ee844cf3ccfeeb9bbf';
+  // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
+  'sha256:6c7a092d915dd271548b8366c7d294c27e72eb47dfe48f7657ca6930f31a9e7b';
 
 export const GRAMMAR_VERSION = '2';
 

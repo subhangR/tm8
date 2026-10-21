@@ -14,7 +14,7 @@ import { McpProxy, type McpProxyPorts } from './proxy.js';
 import { DbMcpOAuthPendingStore, McpOAuth, revokeOAuth, type McpOAuthPendingStore } from './oauth.js';
 import { localKeyProvider, type KeyProvider } from '../credentials/key-provider.js';
 import type { DbClaims } from '../db/types.js';
-import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, type McpCallAuditEntry } from './audit.js';
+import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafely, type McpCallAuditEntry } from './audit.js';
 
 export interface McpRuntimeHandlerOptions {
  dataDir:string; callbackUrl:string;
@@ -130,19 +130,24 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
     */
    const began=performance.now();
    const base={serverId:input.serverId,method,tool:mcpToolName(method,params),requestBytes:byteSize(params??{})} as const;
-   const audit=(entry:Omit<McpCallAuditEntry,keyof typeof base|'sessionId'>&{sessionId?:string})=>
-    recordMcpCall(deps.db,runtimeClaims,{...base,sessionId:input.sessionId,latencyMs:performance.now()-began,...entry});
-   // A refusal's row must never replace the refusal itself.
-   const auditRefusal=(entry:Parameters<typeof audit>[0])=>audit(entry).catch(error=>{console.warn(`mcp audit: could not record a ${entry.outcome} call: ${String(error)}`);});
+   type Entry=Omit<McpCallAuditEntry,keyof typeof base|'sessionId'>&{sessionId?:string};
+   const row=(entry:Entry):McpCallAuditEntry=>({...base,sessionId:input.sessionId,latencyMs:performance.now()-began,...entry});
+   // `started` is the one write that may fail the call: it runs BEFORE anything
+   // reaches the provider, so failing closed there costs nothing.
+   const audit=(entry:Entry)=>recordMcpCall(deps.db,runtimeClaims,row(entry));
+   // Every later row is written safely: a refusal's row must never replace the
+   // refusal, and a succeeded row must never turn a call the provider already
+   // acted on into an error the caller might retry (a second email).
+   const auditAfter=(entry:Entry)=>recordMcpCallSafely(deps.db,runtimeClaims,row(entry));
    if(!isRuntime || runtimeId!==input.sessionId) {
     // A runtime bearer naming another session is recorded against its OWN
     // session: that is the only session this bearer can write rows for.
-    if(isRuntime && runtimeId)await auditRefusal({sessionId:runtimeId,outcome:'denied',denyReason:'session_mismatch'});
+    if(isRuntime && runtimeId)await auditAfter({sessionId:runtimeId,outcome:'denied',denyReason:'session_mismatch'});
     throw new CollabError('forbidden','MCP session bearer mismatch');
    }
    let grant;
    try {grant=await options.authorize(runtimeClaims,input.sessionId,input.serverId);}
-   catch(error){await auditRefusal({outcome:'denied',denyReason:mcpDenyReason(error)??'forbidden'});throw error;}
+   catch(error){await auditAfter({outcome:'denied',denyReason:mcpDenyReason(error)??'forbidden'});throw error;}
    await audit({outcome:'started',grant});
    let result;
    try {result=await proxy.request(runtimeClaims,input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>);}
@@ -150,9 +155,9 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
     // The proxy re-authorizes before every send, so access lost mid-call is a
     // refusal too; anything else (the provider, the network) is a failure.
     const denyReason=mcpDenyReason(error);
-    await auditRefusal(denyReason?{outcome:'denied',grant,denyReason}:{outcome:'failed',grant});throw error;
+    await auditAfter(denyReason?{outcome:'denied',grant,denyReason}:{outcome:'failed',grant});throw error;
    }
-   await audit({outcome:'succeeded',grant,responseBytes:byteSize(result)});return result;
+   await auditAfter({outcome:'succeeded',grant,responseBytes:byteSize(result)});return result;
   },
  });
 }

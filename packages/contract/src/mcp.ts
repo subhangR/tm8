@@ -339,7 +339,7 @@ export const McpCallAuditRowSchema = z.object({
   credentialId: Id.nullable(), credentialScope: z.enum(['member', 'space']).nullable(),
   method: z.enum(['tools/list', 'tools/call']), tool: z.string().nullable(), outcome: McpCallAuditOutcomeSchema,
   denyReason: z.string().nullable(), rootMemberId: Id.nullable(), chain: z.array(Id),
-  via: z.enum(['session', 'chat', 'external_token', 'test']).nullable(),
+  via: z.enum(['session', 'chat']).nullable(),
   latencyMs: z.number().int().nullable(), requestBytes: z.number().int().nullable(), responseBytes: z.number().int().nullable(),
   occurredAt: z.string(),
 }).strict();

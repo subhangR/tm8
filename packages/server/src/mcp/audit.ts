@@ -3,6 +3,7 @@ import type { Db, DbClaims } from '../db/types.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
 import { claimsFor, limitOf, requireUuidParam } from '../facade/context.js';
+import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import type { McpProxyGrant } from './proxy.js';
 
 /*
@@ -28,6 +29,7 @@ const DENY_REASONS: ReadonlyArray<readonly [string, string]> = [
  ['MCP session unavailable','session_unavailable'],
  ['MCP session changed','session_changed'],
  ['MCP connector definition changed','definition_changed'],
+ ['MCP connector unavailable; definition changed','definition_changed'],
  ['MCP connector unavailable','connector_unavailable'],
  ['MCP executable is not trusted','executable_untrusted'],
  ['Select an MCP account before launch','credential_required'],
@@ -57,11 +59,35 @@ export function recordMcpCall(db:Pick<Db,'rpc'>,claims:DbClaims,entry:McpCallAud
   entry.grant?.rootMemberId??null,entry.grant?.chain?.length?entry.grant.chain:null,entry.denyReason??null,
   entry.latencyMs===undefined?null:Math.max(0,Math.round(entry.latencyMs)),entry.requestBytes,entry.responseBytes??null]);
 }
-/** The tool a `tools/call` names, never its arguments. */
+/**
+ * The tool a `tools/call` names, never its arguments. The name is the caller's
+ * own text, so control characters are stripped: a NUL makes Postgres refuse the
+ * whole insert, which would let a session suppress its own denied row.
+ */
 export function mcpToolName(method:string,params:unknown):string|null {
  if(method!=='tools/call' || !params || typeof params!=='object')return null;
  const name=(params as {name?:unknown}).name;
- return typeof name==='string' && name.trim()?name.trim().slice(0,200):null;
+ if(typeof name!=='string')return null;
+ // eslint-disable-next-line no-control-regex
+ const clean=name.replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim().slice(0,200).trim();
+ return clean||null;
+}
+/**
+ * A row that must exist whatever the caller sent: a refusal, or the outcome of
+ * a call that already reached the provider. Never throws. If the write fails it
+ * is retried once without the tool name, the only caller-controlled text in the
+ * row; if that fails too it is logged, never surfaced in place of the call's
+ * own result.
+ */
+export async function recordMcpCallSafely(db:Pick<Db,'rpc'>,claims:DbClaims,entry:McpCallAuditEntry,log:(message:string)=>void=console.warn):Promise<void> {
+ try {await recordMcpCall(db,claims,entry);return;}
+ catch(error){
+  if(entry.tool!==null){
+   try {await recordMcpCall(db,claims,{...entry,tool:null});return;}
+   catch(retry){log(`mcp audit: could not record a ${entry.outcome} call even without its tool name: ${String(retry)}`);return;}
+  }
+  log(`mcp audit: could not record a ${entry.outcome} call: ${String(error)}`);
+ }
 }
 export function byteSize(value:unknown):number {
  return value===undefined?0:Buffer.byteLength(JSON.stringify(value) ?? '');
@@ -69,7 +95,9 @@ export function byteSize(value:unknown):number {
 
 interface AuditRow { id:string }
 export function registerMcpAuditHandlers(registry:HandlerRegistry,deps:FacadeDeps):void {
- registry.register('mcp.audit.list',async ctx=>{
+ // Human oversight surface (lead ruling on #1321): an agent bearer carries its
+ // owner's identity and must not read the Space's audit through it.
+ registry.registerAll({'mcp.audit.list':requireHumanSession(async ctx=>{
   const spaceId=requireUuidParam(ctx,'spaceId');
   const limit=limitOf(ctx.query.get('limit'));
   const uuid=(name:string)=>{const value=ctx.query.get(name);if(!value)return null;
@@ -83,5 +111,5 @@ export function registerMcpAuditHandlers(registry:HandlerRegistry,deps:FacadeDep
    [spaceId,uuid('sessionId'),uuid('chatId'),uuid('serverId'),uuid('memberId'),outcome?.data??null,before,limit+1]);
   const page=result.items.slice(0,limit);
   return {items:page,scope:result.scope,nextCursor:result.items.length>limit?encodeCursor([spaceId,page.at(-1)!.id]):null} as McpAuditListResult;
- });
+ })});
 }

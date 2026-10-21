@@ -46,7 +46,10 @@ const people = {
   alice: { identity: `audit-alice-${randomUUID()}`, account: randomUUID(), member: randomUUID(), role: 'owner' },
   bob:   { identity: `audit-bob-${randomUUID()}`,   account: randomUUID(), member: randomUUID(), role: 'member' },
   carol: { identity: `audit-carol-${randomUUID()}`, account: randomUUID(), member: randomUUID(), role: 'member' },
+  /** Also a member of `otherSpace`, so a chain can pass through it. */
+  dan:   { identity: `audit-dan-${randomUUID()}`,   account: randomUUID(), member: randomUUID(), role: 'member' },
 };
+const danElsewhere = randomUUID();
 const operator = { identity: `audit-operator-${randomUUID()}`, account: randomUUID() };
 const persona = randomUUID();
 let server = '';
@@ -84,7 +87,7 @@ async function boundSession(who: keyof typeof people) {
 }
 
 /** One `mcp.proxy.request`, as the facade would dispatch it for this bearer. */
-async function call(s: Session, who: keyof typeof people, serverId: string, method: string, params?: Record<string, unknown>) {
+async function call(s: Session, who: keyof typeof people, serverId: string, method: string, params?: Record<string, unknown>, via: HandlerRegistry = registry) {
   const ctx = {
     op: getOperation('mcp.proxy.request'), opName: 'mcp.proxy.request', params: { sessionId: s.sessionId, serverId },
     query: new URLSearchParams(), body: { message: { jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) } },
@@ -92,15 +95,15 @@ async function call(s: Session, who: keyof typeof people, serverId: string, meth
     identity: { kind: 'bearer', identityId: people[who].identity, authKind: 'agent', sessionId: s.authSessionId,
       workSessionId: s.sessionId, sessionSpaceId: space },
   } as unknown as RequestContext;
-  return registry.get('mcp.proxy.request')!(ctx);
+  return via.get('mcp.proxy.request')!(ctx);
 }
 
-async function list(claims: { identity: string; authKind?: string; viaLinkId?: string }, query: Record<string, string> = {}, s = space) {
+async function list(claims: { identity: string; authKind?: string; viaLinkId?: string; pin?: string }, query: Record<string, string> = {}, s = space) {
   const ctx = {
     op: getOperation('mcp.audit.list'), opName: 'mcp.audit.list', params: { spaceId: s },
     query: new URLSearchParams(query), body: undefined, requestId: `audit-list-${randomUUID()}`, headers: {}, method: 'GET', path: '/',
     identity: { kind: 'bearer', identityId: claims.identity, authKind: claims.authKind ?? 'browser', sessionId: randomUUID(),
-      ...(claims.viaLinkId ? { viaLinkId: claims.viaLinkId } : {}) },
+      ...(claims.viaLinkId ? { viaLinkId: claims.viaLinkId } : {}), ...(claims.pin ? { sessionSpaceId: claims.pin } : {}) },
   } as unknown as RequestContext;
   return registry.get('mcp.audit.list')!(ctx) as Promise<{ items: Array<Record<string, unknown>>; nextCursor: string | null; scope: string }>;
 }
@@ -145,6 +148,9 @@ beforeAll(async () => {
       await c.query('insert into public.members(entity_id,space_id,identity_id,role,display_name) values($1,$2,$3,$4,$5)',
         [p.member, space, p.identity, p.role, name]);
     }
+    await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'member',$1)", [danElsewhere, otherSpace]);
+    await c.query("insert into public.members(entity_id,space_id,identity_id,role,display_name) values($1,$2,$3,'member','dan')",
+      [danElsewhere, otherSpace, people.dan.identity]);
     await c.query("insert into public.entities(id,space_id,kind,created_by) values($1,$2,'team_member',$3)", [persona, space, people.alice.member]);
     await c.query("insert into public.team_members(entity_id,owner_member_id,name,role,model,agent_tool) values($1,$2,'Audit worker','helper','claude-sonnet-4-5','claude-code')",
       [persona, people.alice.member]);
@@ -154,19 +160,27 @@ beforeAll(async () => {
   server = (await db.rpc<{ entity: { id: string } }>(human('alice'), 'create_mcp_server_entity', [space, definition('auditmail'), null, randomUUID()])).entity.id;
   unselected = (await db.rpc<{ entity: { id: string } }>(human('alice'), 'create_mcp_server_entity', [space, definition('auditother'), null, randomUUID()])).entity.id;
 
-  const deps = { db, owner: async () => ({ identityId: operator.identity, isNodeAdmin: false }), config: {} } as unknown as FacadeDeps;
-  registerMcpRuntimeHandlers(registry, deps, {
+  compose(registry);
+  registerMcpAuditHandlers(registry, depsFor(db));
+});
+
+const depsFor = (database: Pick<Db, 'rpc'>) =>
+  ({ db: database, owner: async () => ({ identityId: operator.identity, isNodeAdmin: false }), config: {} }) as unknown as FacadeDeps;
+/** The connector the proxy dials is the fake upstream; authorize still resolves the REAL row. */
+const upstreamDefinition = (overrides: Record<string, unknown> = {}) =>
+  ({ name: 'auditmail', transport: 'http', url: upstreamUrl, envKeys: [], headerKeys: [], auth: { type: 'none' },
+     approved: true, allowPrivateNetwork: true, ...overrides });
+/** The real proxy handler over `database`, optionally with a different connector definition. */
+function compose(target: HandlerRegistry, options: { database?: Pick<Db, 'rpc'>; definition?: () => Record<string, unknown> } = {}) {
+  registerMcpRuntimeHandlers(target, depsFor(options.database ?? db), {
     dataDir: '/unused', callbackUrl: 'https://tm8.test/mcp/oauth/callback',
-    // The connector the proxy dials is the fake upstream; authorize still
-    // resolves the REAL connector row through the database.
     definition: async (_claims, id) => ({ id, spaceId: space, version: 1,
       allowed: { register: false, manage: false, approve: false, attach: false },
-      definition: { name: 'auditmail', transport: 'http', url: upstreamUrl, envKeys: [], headerKeys: [], auth: { type: 'none' },
-        approved: true, allowPrivateNetwork: true } }) as never,
+      definition: options.definition?.() ?? upstreamDefinition() }) as never,
     authorize: (claims, sessionId, serverId) => bindings.authorize(claims, sessionId, serverId),
   });
-  registerMcpAuditHandlers(registry, deps);
-});
+  return target;
+}
 afterAll(async () => {
   await db?.end(); await scratch?.destroy();
   await new Promise<void>(resolve => upstream ? upstream.close(() => resolve()) : resolve());
@@ -239,6 +253,75 @@ describe('§5.6 every call leaves a row', () => {
     expect(await rowsFor(theirs.sessionId)).toHaveLength(0);
     expect((await rowsFor(mine.sessionId)).map(r => [r.outcome, r.deny_reason, r.server_id]))
       .toEqual([['denied', 'session_mismatch', server]]);
+  });
+});
+
+describe('review fixes (#1321)', () => {
+  it('a NUL in the tool name cannot suppress a denied row: control characters are stripped', async () => {
+    const s = await boundSession('bob');
+    expect(await failure(() => call(s, 'bob', unselected, 'tools/call', { name: 'x\u0000\u0007' }))).toMatch(/not selected/);
+    expect((await rowsFor(s.sessionId)).map(r => [r.outcome, r.deny_reason, r.tool])).toEqual([['denied', 'not_selected', 'x']]);
+  });
+
+  it('a refusal whose row will not write is retried without the tool name, never dropped', async () => {
+    const s = await boundSession('bob');
+    // The database refuses any row that carries a tool name.
+    const picky = { rpc: (claims: DbClaims, fn: string, args: readonly unknown[] = []) =>
+      fn === 'record_mcp_call_audit' && args[4] !== null ? Promise.reject(new Error('refused')) : db.rpc(claims, fn, args) };
+    const via = compose(new HandlerRegistry(), { database: picky });
+    expect(await failure(() => call(s, 'bob', unselected, 'tools/call', { name: 'send_email' }, via))).toMatch(/not selected/);
+    expect((await rowsFor(s.sessionId)).map(r => [r.outcome, r.deny_reason, r.tool])).toEqual([['denied', 'not_selected', null]]);
+  });
+
+  it('a succeeded row that fails to write never turns a call the provider acted on into an error', async () => {
+    const s = await boundSession('bob');
+    const flaky = { rpc: (claims: DbClaims, fn: string, args: readonly unknown[] = []) =>
+      fn === 'record_mcp_call_audit' && args[5] === 'succeeded' ? Promise.reject(new Error('audit down')) : db.rpc(claims, fn, args) };
+    const via = compose(new HandlerRegistry(), { database: flaky });
+    const result = await call(s, 'bob', server, 'tools/call', { name: 'send_email' }, via);
+    expect(JSON.stringify(result)).toContain('result-canary');
+    expect((await rowsFor(s.sessionId)).map(r => r.outcome)).toEqual(['started']);
+  });
+
+  it('a connector that needs an account the grant does not carry is DENIED credential_required', async () => {
+    const s = await boundSession('bob');
+    const via = compose(new HandlerRegistry(), { definition: () => upstreamDefinition({ auth: { type: 'api_key', headerName: 'Authorization' } }) });
+    expect(await failure(() => call(s, 'bob', server, 'tools/list', undefined, via))).toMatch(/Select an MCP account/);
+    expect((await rowsFor(s.sessionId)).map(r => [r.outcome, r.deny_reason])).toEqual([['started', null], ['denied', 'credential_required']]);
+  });
+
+  it('a connector whose definition changes mid-call is DENIED definition_changed', async () => {
+    const s = await boundSession('bob');
+    let reads = 0;
+    const via = compose(new HandlerRegistry(), { definition: () => upstreamDefinition({ description: `revision ${reads++}` }) });
+    expect(await failure(() => call(s, 'bob', server, 'tools/list', undefined, via))).toMatch(/definition changed/);
+    expect((await rowsFor(s.sessionId)).map(r => [r.outcome, r.deny_reason])).toEqual([['started', null], ['denied', 'definition_changed']]);
+  });
+
+  it('multi-hop: the root leaving a Space EARLIER in the chain is DENIED, with the recorded chain on the row', async () => {
+    const s = await session('dan');
+    const parent = randomUUID();
+    // A cross-Space chain cannot be produced through spawn today (the agent pin;
+    // see mcp-provenance.pg.test.ts), so the binding is written as bind records it.
+    await scratch.transaction(async c => {
+      await c.query('set local role tm8_graph_owner');
+      await c.query(`insert into internal.mcp_session_bindings
+        (session_id,space_id,auth_session_id,runtime_identity_id,launcher_identity_id,launcher_auth_kind,
+         selections,root_member_id,root_identity_id,chain,chain_space_ids)
+        values($1,$2,$3,$4,$4,'browser',$5,$6,$4,$7,$8)`,
+        [s.sessionId, space, s.authSessionId, people.dan.identity, JSON.stringify([{ serverId: server }]), people.dan.member,
+         [s.sessionId, parent], [space, otherSpace]]);
+    });
+    await call(s, 'dan', server, 'tools/list');
+    await scratch.query("update public.members set status='removed', left_at=now() where entity_id=$1", [danElsewhere]);
+    try {
+      expect(await failure(() => call(s, 'dan', server, 'tools/list'))).toMatch(/every space in the chain/);
+    } finally {
+      await scratch.query("update public.members set status='active', left_at=null where entity_id=$1", [danElsewhere]);
+    }
+    const rows = await rowsFor(s.sessionId);
+    expect(rows.map(r => [r.outcome, r.deny_reason])).toEqual([['started', null], ['succeeded', null], ['denied', 'root_left_chain_space']]);
+    expect(rows[2]).toMatchObject({ root_member_id: people.dan.member, chain: [s.sessionId, parent] });
   });
 });
 
@@ -318,9 +401,28 @@ describe('mcp.audit.list', () => {
     expect(Number(second.items[0]!.id)).toBeLessThan(Number(first.items[1]!.id));
   });
 
+  it('is a HUMAN surface: an agent bearer is refused, even one carrying an admin\'s identity', async () => {
+    expect(await failure(() => list({ identity: people.alice.identity, authKind: 'agent' }))).toMatch(/human sessions only/);
+    // The SQL door refuses on its own, behind the facade guard.
+    const agentClaims: DbClaims = { identityId: people.alice.identity, authKind: 'agent', sessionSpaceId: space, authSessionId: aliceSession.authSessionId };
+    expect(await failure(() => db.rpc(agentClaims, 'list_mcp_call_audit', [space, null, null, null, null, null, null, 10]))).not.toBe('ok');
+    expect(await db.query(agentClaims, 'select id from public.mcp_call_audit')).toEqual([]);
+  });
+
+  it('honours the session-Space pin on BOTH branches', async () => {
+    // Pinned to another Space, neither the admin nor a member reads this one.
+    expect(await failure(() => list({ identity: people.alice.identity, pin: otherSpace }))).not.toBe('ok');
+    expect(await failure(() => list({ identity: people.bob.identity, pin: otherSpace }))).not.toBe('ok');
+    expect(await db.query(human('alice', otherSpace), 'select id from public.mcp_call_audit')).toEqual([]);
+    expect(await db.query(human('bob', otherSpace), 'select id from public.mcp_call_audit')).toEqual([]);
+    // Pinned to this Space, the member still sees their own.
+    expect((await db.query(human('bob', space), 'select id from public.mcp_call_audit')).length).toBeGreaterThan(0);
+  });
+
   it('refuses a non-member, a link caller and a bad filter', async () => {
     expect(await failure(() => list({ identity: operator.identity }))).not.toBe('ok');
     expect(await failure(() => list({ identity: people.alice.identity, viaLinkId: randomUUID() }))).not.toBe('ok');
+    expect(await failure(() => list({ identity: people.alice.identity, authKind: 'link', viaLinkId: randomUUID() }))).not.toBe('ok');
     expect(await failure(() => list({ identity: people.alice.identity }, { outcome: 'exploded' }))).toMatch(/outcome must be/);
     expect(await failure(() => list({ identity: people.alice.identity }, { sessionId: 'nope' }))).toMatch(/uuid/);
   });

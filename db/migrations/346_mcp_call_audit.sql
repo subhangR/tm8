@@ -26,7 +26,8 @@
 --   session, takes the Space from the session entity, and checks every value it
 --   did not derive against the binding. 297's writer is dropped.
 -- * READ POLICY: Space admins read the whole Space; a member reads the rows
---   where they are the root (§5.6, §10.8). Link callers read nothing.
+--   where they are the root (§5.6, §10.8; connections act as the root, §6).
+--   Human callers only: link and agent bearers read nothing.
 -- * RETENTION: `prune_mcp_call_audit` (node admin) deletes rows past the
 --   retention window in bounded batches. The server runs it from the scheduler,
 --   90 days by default, `TM8_MCP_AUDIT_RETENTION_DAYS` per node.
@@ -39,10 +40,12 @@ set role tm8_graph_owner;
 -- 1. Columns.
 -- -----------------------------------------------------------------------------
 alter table public.mcp_call_audit
-  add column tool text check (tool is null or char_length(tool) between 1 and 200),
+  add column tool text check (tool is null or (char_length(tool) between 1 and 200 and tool !~ '[[:cntrl:]]')),
   add column root_member_id uuid,
   add column chain uuid[],
-  add column via text check (via is null or via in ('session', 'chat', 'external_token', 'test')),
+  -- Only what is written today; t-mcp-tokens-server widens this when external
+  -- token callers exist (plan §5.6 lists 'external_token' and 'test').
+  add column via text check (via is null or via in ('session', 'chat')),
   add column chat_id uuid,
   add column credential_scope text check (credential_scope is null or credential_scope in ('member', 'space')),
   add column deny_reason text check (deny_reason is null or deny_reason ~ '^[a-z][a-z0-9_]{0,63}$'),
@@ -59,6 +62,8 @@ alter table public.mcp_call_audit add constraint mcp_call_audit_denied_has_reaso
 
 -- The list reads newest-first within a Space; retention scans by time.
 create index mcp_call_audit_space_recent on public.mcp_call_audit(space_id, id desc);
+-- The per-connector filter (§10.8 "connector"), newest first.
+create index mcp_call_audit_space_server on public.mcp_call_audit(space_id, server_id, id desc);
 create index mcp_call_audit_session on public.mcp_call_audit(session_id, id desc);
 create index mcp_call_audit_root on public.mcp_call_audit(root_member_id, id desc) where root_member_id is not null;
 create index mcp_call_audit_occurred on public.mcp_call_audit(occurred_at);
@@ -68,10 +73,16 @@ create index mcp_call_audit_occurred on public.mcp_call_audit(occurred_at);
 -- -----------------------------------------------------------------------------
 create function internal.mcp_audit_visible(p_space uuid, p_root uuid)
 returns boolean language sql stable security definer set search_path = public, internal, pg_temp as $$
+  -- A human oversight surface (lead ruling on #1321): an agent bearer carries
+  -- its owner's identity, so without the kind check an admin's agent would read
+  -- the whole Space. The member branch honours the session pin exactly as
+  -- is_space_admin does for the admin branch.
   select coalesce(internal.claim_text('tm8.via_link'), '') = ''
-     and coalesce(internal.claim_text('tm8.auth_kind'), '') <> 'link'
+     and coalesce(internal.claim_text('tm8.auth_kind'), '') in ('browser', 'cli')
      and (internal.is_space_admin(p_space)
-          or (p_root is not null and exists(select 1 from public.members m
+          or (p_root is not null
+              and (internal.session_space_id() is null or internal.session_space_id() = p_space)
+              and exists(select 1 from public.members m
                 where m.entity_id = p_root and m.space_id = p_space
                   and m.identity_id = internal.identity_id() and m.status = 'active')))
 $$;
@@ -166,7 +177,7 @@ grant execute on function public.record_mcp_call_audit(uuid, uuid, uuid, text, t
 -- -----------------------------------------------------------------------------
 -- 4. mcp.audit.list — newest first, keyset-paged by id.
 --
--- A non-member is refused; a member who is not an admin sees only rows where
+-- Human callers only. A non-member is refused; a member who is not an admin sees only rows where
 -- they are the root, so a member filter naming someone else returns nothing.
 -- -----------------------------------------------------------------------------
 create function public.list_mcp_call_audit(
@@ -175,13 +186,17 @@ create function public.list_mcp_call_audit(
 returns jsonb language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
 declare v_admin boolean; v_self uuid; v_items jsonb;
 begin
-  if coalesce(internal.claim_text('tm8.via_link'), '') <> '' or coalesce(internal.claim_text('tm8.auth_kind'), '') = 'link' then
+  -- Human only (browser/cli; refuses link and agent bearers), fail-closed, and
+  -- a link claim refuses whatever kind rides beside it.
+  perform internal.require_human_auth_kind();
+  if coalesce(internal.claim_text('tm8.via_link'), '') <> '' then
     raise exception 'MCP audit is unavailable to a space link' using errcode = '42501';
   end if;
   perform internal.require_space_member(p_space);
   v_admin := internal.is_space_admin(p_space);
   select m.entity_id into v_self from public.members m
-   where m.space_id = p_space and m.identity_id = internal.identity_id() and m.status = 'active';
+   where m.space_id = p_space and m.identity_id = internal.identity_id() and m.status = 'active'
+     and (internal.session_space_id() is null or internal.session_space_id() = p_space);
   select coalesce(jsonb_agg(row_json order by id desc), '[]'::jsonb) into v_items from (
     select a.id, jsonb_build_object(
       'id', a.id::text, 'spaceId', a.space_id, 'sessionId', a.session_id, 'chatId', a.chat_id,
