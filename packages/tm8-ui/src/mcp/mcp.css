@@ -382,12 +382,21 @@
   color: var(--pn-ok, var(--pn-ink-2));
 }
 
+/* INK, NOT AMBER, AND DELIBERATELY SO (S32). `--pn-warn` does not exist, so
+   this already painted as ink-2 — but writing the real caution token here
+   would be wrong rather than a fix: THIS SHEET IS SHARED WITH THE COMPOSER.
+   `ConnectorToggleList` renders these rows in the chat composer's connectors
+   sheet as well as in the launch dialogs and the debug view, and the composer
+   carries no yellow (Subhang, 2026-10-18; composer-no-warning-tone.test.tsx
+   reads `mcp.css` for exactly this). The ⚠ glyph and the status words carry
+   the state. The amber ramp lives in `connectors.css`, which only the settings
+   surfaces import. */
 .mcp-toggles__status[data-status='needs_reconnect'],
 .mcp-toggles__status[data-status='credential_expired'],
 .mcp-toggles__status[data-status='credential_revoked'],
 .mcp-toggles__status[data-status='credential_definition_changed'],
 .mcp-toggles__status[data-status='server_unavailable'] {
-  color: var(--pn-warn, var(--pn-ink-2));
+  color: var(--pn-ink-2);
 }
 
 .mcp-toggles__status[data-status='stdio_not_trusted'],
