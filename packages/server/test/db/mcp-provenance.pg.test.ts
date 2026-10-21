@@ -754,6 +754,53 @@ describe('§6 — a forged root is refused (B28)', () => {
       ]))))
       .toMatch(/root does not match its source binding/);
   });
+
+  it('a chain naming a source that was never bound is refused (B35/B36, 350)', async () => {
+    /*
+     * The tail check and the root anchor BOTH fall open when the named source
+     * has no binding row, and they fall open together:
+     * `coalesce(v_source_chain, array[p_source_session])` invents the very tail
+     * it is meant to verify, so a two-hop chain matches; and `v_source_root` is
+     * null, so `if v_source_root is not null and ...` skips the root anchor.
+     *
+     * The call below is shaped so NOTHING ELSE can refuse it, which is what
+     * makes it a test of this guard and not of its neighbours: the walk is
+     * ready (Alice is a human bearer), the named root is the one the walk
+     * derived, the head is the child's own session, both hops really are in A,
+     * and the transaction runs as Alice — so the B28 identity anchor is
+     * satisfied too. The only untrue thing about it is that Alice's "source"
+     * was never bound.
+     *
+     * Severity is defence in depth, not a live exploit (B36): the TypeScript
+     * derivation calls `read_mcp_session_binding` under the source's own bearer
+     * first and answers `source_unavailable`, so no API path arrives here with
+     * a bindingless source. This cell goes at the SQL door, which is specified
+     * to stand on facts it reads itself.
+     */
+    const child = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const unbound = await session(spaceA, people.alice.memberA, personaA, 'alice');
+    const bindChild = () => db.tx(human('alice', spaceA), q => q.rpc('bind_mcp_session', [
+      child.sessionId, hashToken(child.token.split('.')[1]!), '[]',
+      unbound.sessionId, unbound.authSessionId, people.alice.memberA,
+      [child.sessionId, unbound.sessionId], [spaceA, spaceA],
+    ]));
+    expect(await outcome(bindChild)).toMatch(/names a source with no binding/);
+    // Nothing was recorded, so no later call can resolve under the invented chain.
+    const [row] = await scratch.query<{ n: string }>(
+      'select count(*)::text n from internal.mcp_session_bindings where session_id=$1', [child.sessionId]);
+    expect(row?.n).toBe('0');
+
+    // CONTROL: bind the source for real and the IDENTICAL call is accepted. So
+    // what the refusal rejects is the missing row, not the shape of the call —
+    // and the inherited chain is recorded as the two hops it really has.
+    await bindings.bind(human('alice', spaceA),
+      { spaceId: spaceA, teamMemberId: personaA, sessionId: unbound.sessionId, agentToken: unbound.token, mcpSelections: [] });
+    expect(await outcome(bindChild)).toBe('ok');
+    const [bound] = await scratch.query<{ chain: string[]; root_member_id: string }>(
+      'select chain, root_member_id from internal.mcp_session_bindings where session_id=$1', [child.sessionId]);
+    expect(bound?.chain).toEqual([child.sessionId, unbound.sessionId]);
+    expect(bound?.root_member_id).toBe(people.alice.memberA);
+  });
 });
 
 describe('§6 — the recorded chain is what audit reads', () => {
