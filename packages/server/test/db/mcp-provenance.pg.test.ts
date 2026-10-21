@@ -1440,6 +1440,51 @@ describe('§5.3 — a chat key writes no launch record (354)', () => {
   });
 
   /*
+   * B61 / S23 (358). THE OTHER HALF OF 354: provenance follows the binding.
+   *
+   * 354 stopped writing a chat's launch record, and `mcp_session_provenance`
+   * — §10.6's debug read — was still sourced from that table, so every chat on
+   * defaults answered `recorded: false` about a binding that holds a perfectly
+   * good root, chain and depth. 358 points the reader at
+   * `internal.mcp_session_bindings`, the copy `authorize` and §5.6's audit
+   * already act on.
+   *
+   * "On defaults" is exactly the absence of a stored selection: neither human
+   * door has written this thread, so there is no launch record at all — which
+   * is asserted here, because it is the condition that made the old reader
+   * wrong and is therefore what makes this test revert-proving.
+   */
+  it('reports a chat on defaults as recorded, with the root its binding holds (358)', async () => {
+    const chat = await chatRuntime(spaceA, people.alice.memberA, personaA, 'alice');
+    const picks = JSON.stringify([{ serverId: serverA, credentialId: aliceKeyA }]);
+    expect(await outcome(() => db.tx(human('alice', spaceA), q => q.rpc('bind_mcp_session', [
+      chat.chatId, hashToken(chat.token.split('.')[1]!), picks, null, null, people.alice.memberA,
+      [chat.chatId], [spaceA],
+    ])))).toBe('ok');
+    // The precondition, not a bonus assertion: no launch record exists, so the
+    // pre-358 reader had nothing to answer from.
+    expect(await countsFor(chat.chatId)).toEqual({ binding: '1', launch: '0' });
+
+    const recorded = await db.rpc<{ recorded: boolean; rootMemberId: string; rootIdentityId: string;
+      chain: string[]; chainSpaceIds: string[]; depth: number; rootStillAdmitted: boolean }>(
+      human('alice', spaceA), 'mcp_session_provenance', [chat.chatId]);
+    expect(recorded).toMatchObject({
+      recorded: true, rootMemberId: people.alice.memberA, rootIdentityId: people.alice.identity,
+      depth: 1, rootStillAdmitted: true,
+    });
+    expect(recorded.chain).toEqual([chat.chatId]);
+    expect(recorded.chainSpaceIds).toEqual([spaceA]);
+
+    // The gates are not loosened by the move: a link caller is still refused
+    // outright, and a chat nobody bound still READS as unrecorded.
+    expect(await outcome(() => db.rpc({ ...human('alice', spaceA), authKind: 'link' }, 'mcp_session_provenance', [chat.chatId])))
+      .toMatch(/linked MCP provenance is unavailable/);
+    const unbound = await chatRuntime(spaceA, people.alice.memberA, personaA, 'alice');
+    expect(await db.rpc<{ recorded: boolean }>(human('alice', spaceA), 'mcp_session_provenance', [unbound.chatId]))
+      .toMatchObject({ recorded: false });
+  });
+
+  /*
    * §5.3's THREE-WAY FIELD, through the read the orchestrator actually takes.
    *
    * The probe is new code on the path of every turn, and the case worth pinning
