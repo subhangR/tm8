@@ -121,7 +121,12 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    if(!ctx.identity.sessionId || runtimeId!==input.sessionId || !['agent','agent_runtime'].includes(ctx.identity.authKind??''))throw new CollabError('forbidden','MCP session bearer mismatch');
    const runtimeClaims={...await claims(ctx),authSessionId:ctx.identity.sessionId};
    const grant=await options.authorize(runtimeClaims,input.sessionId,input.serverId);
-   const auditClaims={...runtimeClaims,identityId:grant.launcherIdentityId??grant.identityId,actorId:undefined,nodeAdmin:false};
+   // §6: an audit row is attributed to the ROOT — the human the call acts for —
+   // which for a bearer chain is the same identity the launcher field holds, and
+   // for a schedule firing is the member who armed it rather than the node
+   // owner the executor happened to run as. t-audit-log reads grant.chain /
+   // grant.rootMemberId for the chain columns it owns.
+   const auditClaims={...runtimeClaims,identityId:grant.rootIdentityId??grant.launcherIdentityId??grant.identityId,actorId:undefined,nodeAdmin:false};
    const audit=(outcome:string)=>deps.db.rpc(auditClaims,'record_mcp_call',[grant.spaceId,grant.sessionId,grant.serverId,grant.credentialId??null,method,outcome]);
    await audit('started');
    try {const result=await proxy.request(runtimeClaims,input.sessionId,input.serverId,method,(params??{}) as Record<string,unknown>);await audit('succeeded');return result;}
