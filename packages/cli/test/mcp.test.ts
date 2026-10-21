@@ -75,9 +75,15 @@ it('connect chooses its door from the connector, and never takes a secret in arg
  expect(requests.at(-1)).toMatchObject({method:'POST',path:`/v2/mcp/servers/${ID}/oauth/begin`});
  expect((requests.at(-1)!.body as {label?:string}).label).toBe('notion account');
  // `--shared` on OAuth needs oauth.begin to carry a scope through the redirect
- // (§5.4). Until it does, this refuses rather than connecting personally and
- // calling it shared.
- await expect(invoke(['mcp','connect',ID,'--shared'])).rejects.toThrow('shared OAuth connection');
+ // (§5.4), and #1315's 342_mcp_oauth_pending now provides exactly that: the
+ // durable pending row carries the scope, so `scope` joined
+ // McpOAuthBeginInputSchema and the shape probe that used to refuse here no
+ // longer fires. FLIPPED DELIBERATELY at that rebase: the old assertion (a
+ // refusal) became false the moment #1315 landed, and asserting a refusal the
+ // code no longer performs would have pinned the absence of a shipped feature.
+ await invoke(['mcp','connect',ID,'--shared']);
+ expect(requests.at(-1)).toMatchObject({method:'POST',path:`/v2/mcp/servers/${ID}/oauth/begin`,
+  body:{scope:'space',label:'notion account'}});
 
  // API key: a secret may only arrive by file or stdin.
  definition={name:'internaldocs',transport:'http',url:'https://docs.example.test/mcp',envKeys:[],headerKeys:['Authorization'],

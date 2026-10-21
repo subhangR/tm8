@@ -1,4 +1,4 @@
-import { McpOAuthBeginInputSchema, McpSelectionsSchema, mcpServerKey, type McpServerView, type OperationName } from '@tm8/contract';
+import { McpSelectionsSchema, mcpServerKey, type McpServerView, type OperationName } from '@tm8/contract';
 import { readJsonSource } from '../args.js';
 import { assertKnownOptions } from './entity.js';
 import { requireSpace } from '../context.js';
@@ -142,12 +142,10 @@ async function mcpConnect(cmd:CommandContext):Promise<ExitCode> {
     cmd.out.data(data,()=>`Connected ${definition.name}${shared?' for the whole Space':''}.`);
     return EXIT_OK;
   }
-  // OAuth. `scope` belongs to the durable pending-state table (§5.4): without a
-  // row to carry it, a scope chosen here would not survive the redirect, so
-  // this refuses rather than connecting personally and calling it shared.
-  if(shared&&!('scope' in McpOAuthBeginInputSchema.shape)){
-    throw new CliError('This server cannot start a shared OAuth connection yet; connect personally, or use --shared on an API-key connector',EXIT_USAGE);
-  }
+  // OAuth. `scope` belongs to the durable pending-state table (§5.4), and 342
+  // (#1315) added it, so a scope chosen here survives the redirect and `--shared`
+  // asks for a SPACE credential below. The shape probe that guarded this before
+  // 342 landed is gone rather than left dead: it could no longer fire.
   const body:Record<string,unknown>={label,clientMutationId:resolveMutationId(cmd.options.value('mutation-id')),
     ...(shared?{scope:'space'}:{})};
   if(cmd.ctx.actor)body.actorId=cmd.ctx.actor.value;

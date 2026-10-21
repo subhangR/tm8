@@ -113,9 +113,20 @@ language sql immutable set search_path=pg_temp as $$
    where c.catalog_id = p_catalog_id;
 $$;
 
--- 340's body with ONE section appended: the catalogId identity rules. Every
--- other check is 340's, unchanged — this is the only place a definition is
+-- 344'S BODY with ONE section appended: the catalogId identity rules. Every
+-- other check is 344's, unchanged — this is the only place a definition is
 -- validated, so the identity rule has to live here to bind every writer.
+--
+-- THE BASE IS 344, NOT 340, AND THAT MATTERS. 344 (#1317) replaced this same
+-- function to tighten the `serverKey` shape to single-underscore segments
+-- capped at 32, and to refuse an EFFECTIVE key of `tm8` (the launcher's own
+-- bridge entry). A fresh database runs 344 then 345, so a 345 built on 340's
+-- body would silently revert both and reopen the `mcp__tm8__evil__send` tool
+-- prefix forgery 344 exists to close. Built by taking 344's body as the base
+-- and appending the block below; verified by diffing BOTH ways — against 344
+-- only these added lines move, against the pre-rebase 345 only 344's lines
+-- move. The same obligation passes to the next migration that replaces this
+-- function: diff against the LATEST prior definition, not against 340.
 create or replace function internal.validate_mcp_definition(d jsonb) returns void
 language plpgsql immutable set search_path=public,internal,pg_temp as $$
 declare k text; a jsonb; c record;
@@ -138,8 +149,27 @@ begin
  -- not shadow tm8's own tools.
  if d ? 'catalogId' and (jsonb_typeof(d->'catalogId')<>'string' or (d->>'catalogId') !~ '^[a-z0-9][a-z0-9._-]{0,63}$') then
    raise exception 'invalid MCP catalog id' using errcode='22023'; end if;
- if d ? 'serverKey' and (jsonb_typeof(d->'serverKey')<>'string' or (d->>'serverKey') !~ '^[a-z][a-z0-9_]{0,63}$' or d->>'serverKey'='tm8') then
+ -- 344 tightens 340's shape: alphanumeric segments joined by SINGLE
+ -- underscores, 32 characters. `__` is the field separator in
+ -- `mcp__<server>__<tool>`, so `tm8__evil` presented as `mcp__tm8__evil__send`
+ -- reads as tm8's OWN server with a tool called `evil__send`, and the
+ -- `mcp__tm8__*` allow-list entry then denies every real tm8 tool. `tm8_` does
+ -- it one character later. 32 rather than 64 because `mcp__` + key + `__` is
+ -- carried by every tool name and clients cap those near 64.
+ if d ? 'serverKey' and (jsonb_typeof(d->'serverKey')<>'string'
+    or (d->>'serverKey') !~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$' or length(d->>'serverKey')>32
+    or d->>'serverKey'='tm8') then
    raise exception 'invalid MCP server key' using errcode='22023'; end if;
+ -- 344: and neither may the key a name NORMALISES to be `tm8`. `tm8` is the
+ -- launcher's own bridge entry; a connector holding it replaces tm8's tools.
+ -- The normalised path needs no shape check: mcp_normalized_server_key collapses
+ -- every run of non-alphanumerics to ONE underscore and trims the ends, so it
+ -- cannot produce `__` or an edge underscore. It is not length-capped either,
+ -- because a `name` may be 80 characters and capping the EFFECTIVE key here
+ -- would silently move the keys of connectors already stored; the launcher
+ -- truncates instead, through the same collision rule (`assignMcpServerKeys`).
+ if internal.mcp_effective_server_key(d)='tm8' then
+   raise exception 'MCP server key tm8 is reserved' using errcode='22023'; end if;
  -- Gates are names to booleans and nothing else: no nested object can smuggle a
  -- literal value into a definition.
  if d ? 'gates' then
@@ -194,7 +224,6 @@ begin
    or (a ? 'authorizationUrl' and a->>'authorizationUrl' !~ '^https?://[^/@?#]+(/[^?#]*)?$') or (a ? 'tokenUrl' and a->>'tokenUrl' !~ '^https?://[^/@?#]+(/[^?#]*)?$')
    or (a ? 'scopes' and jsonb_typeof(a->'scopes')<>'array') then raise exception 'invalid MCP OAuth metadata' using errcode='22023'; end if;
  end if;
-
  -- 345/B23. THE IDENTITY RULES. Everything above is shape; this is "are you who
  -- you say you are". It binds administrators too: the Connectors page renders a
  -- provider's name, logo and help text from `catalogId` alone, so a row that
