@@ -33,9 +33,10 @@ let scratch: W1ScratchDatabase;
 const spaceId = randomUUID(), otherSpaceId = randomUUID(), adminMember = randomUUID();
 const adminIdentity = 'mcp-key-lock-admin-' + randomUUID();
 
-const definition = (name: string) => JSON.stringify({
+const definition = (name: string, serverKey?: string) => JSON.stringify({
   name, transport: 'http', url: 'https://example.test/mcp',
   envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: true,
+  ...(serverKey === undefined ? {} : { serverKey }),
 });
 
 /** `Db.tx`'s claim binding, by hand: this suite must hold transactions open. */
@@ -53,10 +54,10 @@ async function open(claims = true): Promise<PoolClient> {
 
 interface Created { id: string; version: number }
 
-async function createConnector(client: PoolClient, name: string): Promise<Created> {
+async function createConnector(client: PoolClient, name: string, serverKey?: string): Promise<Created> {
   const { rows } = await client.query<{ create_mcp_server_entity: { entity: Created } }>(
     'select * from public.create_mcp_server_entity($1,$2,$3,$4)',
-    [spaceId, definition(name), null, randomUUID()]);
+    [spaceId, definition(name, serverKey), null, randomUUID()]);
   return rows[0]!.create_mcp_server_entity.entity;
 }
 
@@ -178,6 +179,35 @@ it("refuses a connector whose NAME normalises onto tm8, the launcher's own bridg
     await client.query('begin');
     await expect(scratch.query('select internal.validate_mcp_definition($1::jsonb)', [definition('tm8')]))
       .rejects.toMatchObject({ code: '22023' });
+  } finally {
+    await client.query('rollback').catch(() => undefined);
+    client.release();
+  }
+});
+
+/**
+ * The key's SHAPE, which is the other half of 344 (lead review of #1317).
+ * `__` is the field separator in `mcp__<server>__<tool>`, so a key carrying one
+ * forges a prefix: `tm8__evil` presents `mcp__tm8__evil__send`, which splits as
+ * tm8's OWN server with a tool named `evil__send`, and the `mcp__tm8__*`
+ * allow-list entry then denies every real tm8 tool. This asserts the SQL half;
+ * contract/test/mcp.test.ts asserts Zod's and the launcher's, and all three
+ * carry the identical rule on purpose.
+ */
+it('refuses a server key that could forge a tool prefix, and admits the shape that cannot', async () => {
+  const client = await open();
+  try {
+    for (const key of ['tm8__evil', 'gmail__x', 'tm8_', 'a_', '_a', 'Gmail', '2fast', 'tm8', 'a'.repeat(33)]) {
+      await expect(scratch.query('select internal.validate_mcp_definition($1::jsonb)', [definition('shape', key)]))
+        .rejects.toMatchObject({ code: '22023' });
+    }
+    for (const key of ['gmail', 'linear_team', 'gmail_2', 'a', 'a'.repeat(32)]) {
+      await expect(scratch.query('select internal.validate_mcp_definition($1::jsonb)', [definition('shape', key)]))
+        .resolves.toBeTruthy();
+    }
+    // And the rule is enforced on the real write path, not only in the helper.
+    await expect(createConnector(client, 'Shaped', 'tm8__evil'))
+      .rejects.toMatchObject({ message: /invalid MCP server key/ });
   } finally {
     await client.query('rollback').catch(() => undefined);
     client.release();

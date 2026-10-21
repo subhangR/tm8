@@ -457,7 +457,9 @@ describe('§6 deny matrix — re-checked on every call, not only at bind', () =>
       sessionId: s.sessionId, spaceId: spaceA, teamMemberId: personaA, agentToken: s.token,
       mcpSelections: [{ serverId: serverA }],
     });
-    expect(picks).toEqual([{ serverId: serverA, credentialId: sharedKeyA }]);
+    // `serverKey` is the §4.2 tool prefix bind answers with, derived from the
+    // connector's name ('provspacea'); it is returned, never stored.
+    expect(picks).toEqual([{ serverId: serverA, credentialId: sharedKeyA, serverKey: 'provspacea' }]);
     // The chain and root really were recorded, which is what the re-check reads.
     const grant = await bindings.authorize(s.claims, s.sessionId, serverA);
     expect(grant).toMatchObject({ rootMemberId: people.dave.memberA, rootIdentityId: people.dave.identity });
@@ -831,7 +833,7 @@ describe('§6 — the recorded chain is what audit reads', () => {
     const input = { sessionId: s.sessionId, spaceId: spaceB, teamMemberId: personaB, agentToken: s.token };
     // Her own B connection resolves with no pin at all (§3 tier 1 under the root).
     expect(await bindings.bind(human('alice', spaceB), { ...input, mcpSelections: [{ serverId: serverB }] }))
-      .toEqual([{ serverId: serverB, credentialId: aliceKeyB }]);
+      .toEqual([{ serverId: serverB, credentialId: aliceKeyB, serverKey: 'provspaceb' }]);
     // A's connector is not even VISIBLE to a launch in B: `loadMcpServer` reads
     // through RLS under the root's pinned claims, so it is not_found rather
     // than "belongs to another space". The stricter of the two answers.

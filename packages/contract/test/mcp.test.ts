@@ -89,20 +89,65 @@ describe('readable connector server keys (§4.2, G8)', () => {
     expect(MCP_RESERVED_SERVER_KEYS.has('tm8')).toBe(true);
   });
 
-  it('truncates an over-long key to the shape a tool prefix admits, and still separates the two', () => {
-    // `name` admits 80 characters; a serverKey admits 64. Two names that differ
-    // only past the cut are distinct in the database and must stay distinct here.
-    const stem = 'a'.repeat(70);
+  it('truncates an over-long key to 32, and still separates two that differ past the cut', () => {
+    // `name` admits 80 characters and normalises to a key of any length; the
+    // prefix a tool name carries is `mcp__<key>__`, so the key is cut to 32.
+    // Two names that differ only past the cut are distinct in the database and
+    // must stay distinct here, which is the collision rule's job.
+    const stem = 'a'.repeat(40);
     const assigned = keys([{ serverId: id(1), serverKey: `${stem}b` }, { serverId: id(2), serverKey: `${stem}c` }]);
-    expect(assigned[0]).toBe('a'.repeat(64));
-    expect(assigned[1]).toBe(`${'a'.repeat(61)}_2`);
-    for (const key of assigned) expect(key.length).toBeLessThanOrEqual(64);
+    expect(assigned[0]).toBe('a'.repeat(32));
+    expect(assigned[1]).toBe(`${'a'.repeat(29)}_2`);
+    for (const key of assigned) {
+      expect(key.length).toBeLessThanOrEqual(32);
+      // `mcp__<key>__<tool>` must leave room for the provider's tool name
+      // inside the clients' ~64-character limit.
+      expect(`mcp__${key}__`.length).toBe(key.length + 7);
+    }
+  });
+
+  it('never leaves a truncated key, or a collision stem, ending in an underscore', () => {
+    // `__` is the field separator, so a cut that lands just after one must not
+    // leave it there: `<stem>_` + `_2` would read as server `<stem>` with a
+    // tool prefix of its own, and a bare trailing `_` fails the shape rule and
+    // would cost the connector its readable name.
+    //
+    // The cut for a name is at 32 and the cut for a collision stem at 29, so
+    // each case needs a key whose underscore sits exactly there.
+    const atCut = `${'a'.repeat(31)}_bb`;
+    expect(keys([{ serverId: id(1), serverKey: atCut }])).toEqual(['a'.repeat(31)]);
+
+    const atStemCut = `${'b'.repeat(28)}_cccc`;
+    const colliding = keys([{ serverId: id(1), serverKey: atStemCut }, { serverId: id(2), serverKey: atStemCut }]);
+    // 33 characters, so the winner is itself cut to 32 first.
+    expect(colliding).toEqual([`${'b'.repeat(28)}_ccc`, `${'b'.repeat(28)}_2`]);
+    for (const key of colliding) {
+      expect(key).not.toContain('__');
+      expect(key.endsWith('_')).toBe(false);
+    }
+  });
+
+  it('refuses a key that would forge a tool prefix, in Zod and at naming time', () => {
+    // Claude Code splits `mcp__<server>__<tool>` on `__`, so `tm8__evil`
+    // presents `mcp__tm8__evil__send`: tm8's own server with a tool called
+    // `evil__send`, and `mcp__tm8__*` then denies every real tm8 tool.
+    for (const serverKey of ['tm8__evil', 'gmail__x', 'tm8_', 'a_', '_a', 'Gmail', 'gm ail', '2fast', 'tm8',
+      'a'.repeat(33)]) {
+      expect(McpServerDefinitionSchema.safeParse({ ...definition, serverKey }).success).toBe(false);
+    }
+    for (const serverKey of ['gmail', 'linear_team', 'gmail_2', 'a', 'a'.repeat(32)]) {
+      expect(McpServerDefinitionSchema.safeParse({ ...definition, serverKey }).success).toBe(true);
+    }
+    // A key STORED before all three rules agreed must not reach a launcher
+    // either: it fails the naming test and takes the opaque name.
+    expect(keys([{ serverId: id(1), serverKey: 'tm8__evil' }]))
+      .toEqual(['connector_00000000000040008000000000000001']);
   });
 
   it('rejects a malformed key rather than passing it into argv', () => {
-    expect(keys([{ serverId: id(1), serverKey: 'has spaces' }]))
-      .toEqual(['connector_00000000000040008000000000000001']);
-    expect(keys([{ serverId: id(1), serverKey: '2fast' }]))
-      .toEqual(['connector_00000000000040008000000000000001']);
+    for (const serverKey of ['has spaces', '2fast', 'bad__key', '_lead']) {
+      expect(keys([{ serverId: id(1), serverKey }]))
+        .toEqual(['connector_00000000000040008000000000000001']);
+    }
   });
 });

@@ -1,6 +1,6 @@
 -- =============================================================================
--- 344: the server-key guard takes a lock, and `tm8` stops being reachable as an
--- effective key. Plan §4.2, G8.
+-- 344: the server-key guard takes a lock, and a server key can no longer forge
+-- a tool prefix. Plan §4.2, G8.
 --
 -- 1. THE RACE (review of #1312). internal.assert_mcp_server_key_free, added by
 --    340, is a plain `exists` read with no lock, so two writers each read a
@@ -40,7 +40,20 @@
 --    about the body moves: the same `exists`, the same LIVE-only join on
 --    entities.deleted_at, the same 23505 and the same message.
 --
--- 2. `tm8` AS AN EFFECTIVE KEY. The explicit `serverKey` already refuses `tm8`
+-- 2. THE SERVER KEY'S SHAPE (lead review of #1317). 340 admitted
+--    `^[a-z][a-z0-9_]{0,63}$`, which accepts `gmail__x`, `tm8__evil`, `tm8_`
+--    and `a_`. `__` is the FIELD SEPARATOR in `mcp__<server>__<tool>`: a
+--    connector keyed `tm8__evil` presents `mcp__tm8__evil__send`, which splits
+--    as tm8's own server with a tool named `evil__send` — a lookalike whose
+--    `mcp__tm8__*` allow-list entry would then deny every real tm8 tool. The
+--    rule is now alphanumeric segments joined by SINGLE underscores, capped at
+--    32 so `mcp__` + key + `__` leaves room inside clients' ~64-character
+--    tool-name limits. Zod's `ServerKey` and the launcher's own
+--    `SERVER_KEY_PATTERN` carry the identical rule; a key stored before all
+--    three agreed fails the launcher's test and takes the opaque name, which
+--    impersonates nothing.
+--
+-- 3. `tm8` AS AN EFFECTIVE KEY. The explicit `serverKey` already refuses `tm8`
 --    (340's validator, and Zod's `ServerKey`), and `name` refuses it too. But
 --    the EFFECTIVE key of a connector with no `serverKey` is the NORMALISED
 --    name, and normalisation can land on it anyway: `tm8--` and `Tm8_` both
@@ -59,8 +72,13 @@
 --    is what makes the ones already stored harmless.
 --
 -- VERIFIED SAFE ON EXISTING DATA: the validator runs on write only, so a stored
--- connector whose name normalises to `tm8` keeps working and is refused only at
--- its next edit — the same treatment 340 gave a pre-existing key collision.
+-- connector whose key is now out of shape, or whose name normalises to `tm8`,
+-- keeps working and is refused only at its next edit — the same treatment 340
+-- gave a pre-existing key collision. MEASURED: nothing in the tree writes an
+-- explicit `serverKey` (the Discover presets in ui/mcp/directory.ts set none),
+-- so the shape change can only reach a definition authored by hand since #1312.
+-- Either way the launcher is not relying on it: an out-of-shape stored key
+-- fails `SERVER_KEY_PATTERN` and that connector takes the opaque name.
 -- =============================================================================
 set role tm8_graph_owner;
 
@@ -103,10 +121,25 @@ begin
  -- not shadow tm8's own tools.
  if d ? 'catalogId' and (jsonb_typeof(d->'catalogId')<>'string' or (d->>'catalogId') !~ '^[a-z0-9][a-z0-9._-]{0,63}$') then
    raise exception 'invalid MCP catalog id' using errcode='22023'; end if;
- if d ? 'serverKey' and (jsonb_typeof(d->'serverKey')<>'string' or (d->>'serverKey') !~ '^[a-z][a-z0-9_]{0,63}$' or d->>'serverKey'='tm8') then
+ -- 344 tightens 340's shape: alphanumeric segments joined by SINGLE
+ -- underscores, 32 characters. `__` is the field separator in
+ -- `mcp__<server>__<tool>`, so `tm8__evil` presented as `mcp__tm8__evil__send`
+ -- reads as tm8's OWN server with a tool called `evil__send`, and the
+ -- `mcp__tm8__*` allow-list entry then denies every real tm8 tool. `tm8_` does
+ -- it one character later. 32 rather than 64 because `mcp__` + key + `__` is
+ -- carried by every tool name and clients cap those near 64.
+ if d ? 'serverKey' and (jsonb_typeof(d->'serverKey')<>'string'
+    or (d->>'serverKey') !~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$' or length(d->>'serverKey')>32
+    or d->>'serverKey'='tm8') then
    raise exception 'invalid MCP server key' using errcode='22023'; end if;
- -- 344: and neither may the key a name NORMALISES to. `tm8` is the launcher's
- -- own bridge entry; a connector holding it replaces tm8's tools.
+ -- 344: and neither may the key a name NORMALISES to be `tm8`. `tm8` is the
+ -- launcher's own bridge entry; a connector holding it replaces tm8's tools.
+ -- The normalised path needs no shape check: mcp_normalized_server_key collapses
+ -- every run of non-alphanumerics to ONE underscore and trims the ends, so it
+ -- cannot produce `__` or an edge underscore. It is not length-capped either,
+ -- because a `name` may be 80 characters and capping the EFFECTIVE key here
+ -- would silently move the keys of connectors already stored; the launcher
+ -- truncates instead, through the same collision rule (`assignMcpServerKeys`).
  if internal.mcp_effective_server_key(d)='tm8' then
    raise exception 'MCP server key tm8 is reserved' using errcode='22023'; end if;
  -- Gates are names to booleans and nothing else: no nested object can smuggle a

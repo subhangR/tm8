@@ -205,8 +205,16 @@ export class McpSessionBindings {
       // §4.2. The tool prefix is computed HERE, from the definition resolution
       // just read, and is returned to the launcher but deliberately NOT stored:
       // `read_mcp_launch_selections` and `authorize` both parse the stored value
-      // with the strict `McpSelectionsSchema`, and a key that outlived a rename
-      // would name a connector that no longer answers to it.
+      // with the strict `McpSelectionsSchema`.
+      //
+      // So every launch, A RESUME INCLUDED, recomputes the key from the
+      // connector's CURRENT definition: renaming a connector CHANGES the tool
+      // prefix its sessions see from their next start, and the agent's earlier
+      // transcript then names a prefix that is gone. Said plainly because it is
+      // a real consequence, not a detail — it is the cost of one source for the
+      // key, against a stored key that would have a resumed session advertising
+      // a name the Connectors page no longer uses. Routing is unaffected: the
+      // bridge is invoked with `--connector <serverId>`, never with the key.
       const bound: McpBoundSelection[] = resolved.selections.map(s => ({ serverId: s.server.id,
         ...(s.credentialId ? { credentialId: s.credentialId } : {}),
         serverKey: mcpServerKey(s.server.definition) }));
