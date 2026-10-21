@@ -11,7 +11,8 @@ import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { DbSpaceCredentialStore } from '../credentials/space-credential-store.js';
 import { McpCredentialStore } from './credential-store.js';
 import { McpProxy, type McpProxyPorts } from './proxy.js';
-import { McpOAuth, revokeOAuth } from './oauth.js';
+import { DbMcpOAuthPendingStore, McpOAuth, revokeOAuth, type McpOAuthPendingStore } from './oauth.js';
+import { localKeyProvider, type KeyProvider } from '../credentials/key-provider.js';
 import type { DbClaims } from '../db/types.js';
 
 export interface McpRuntimeHandlerOptions {
@@ -21,11 +22,16 @@ export interface McpRuntimeHandlerOptions {
  definition(claims:DbClaims,serverId:string):Promise<McpServerView & {securityRevision?:number}>;
  authorize:McpProxyPorts['authorize'];
  recordTest?:(claims:DbClaims,serverId:string,result:unknown)=>Promise<void>;
+ /** Pending sign-ins (§5.4). Defaults to Postgres; tests without a database pass their own. */
+ oauthPending?:McpOAuthPendingStore;
+ /** Seals pending sign-ins and connections. Defaults to the node-local key under dataDir. */
+ keys?:KeyProvider;
 }
 export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeDeps,options:McpRuntimeHandlerOptions):void {
- const credentials=new McpCredentialStore(deps.db,options.dataDir);
+ const keys=options.keys??localKeyProvider(options.dataDir);
+ const credentials=new McpCredentialStore(deps.db,options.dataDir,keys);
  const store=new DbSpaceCredentialStore({db:deps.db,dataDir:options.dataDir});
- const oauth=new McpOAuth(options.callbackUrl);
+ const oauth=new McpOAuth(options.callbackUrl,options.oauthPending??new DbMcpOAuthPendingStore(deps.db),keys);
  const definition=async(claims:DbClaims,id:string)=>{const view=await options.definition(claims,id);return {id:view.id,spaceId:view.spaceId,version:view.securityRevision ?? view.version,...view.definition};};
  const proxy=new McpProxy({credentials,authorize:options.authorize,definition});
  const claims=async(ctx:RequestContext)=>claimsFor(await deps.owner(),ctx);
@@ -82,9 +88,18 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    // sent as a public one and refused at the token endpoint, after the consent screen.
    const clientSecret=config.clientSecretEnv?(options.clientSecret??(name=>process.env[name]))(config.clientSecretEnv):undefined;
    if(config.clientSecretEnv && !clientSecret)throw new CollabError('invalid_input',`OAuth client secret is not configured on this server: set ${config.clientSecretEnv}`);
-   return oauth.begin({identityId:auth.identityId,spaceId:server.spaceId,serverId:server.id,definitionVersion:server.securityRevision ?? server.version,resource:server.definition.url,...(config.issuer?{issuer:config.issuer}:config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),...(clientSecret?{clientSecret}:{}),label:input.label,...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
+   return oauth.begin(auth,{spaceId:server.spaceId,serverId:server.id,definitionVersion:server.securityRevision ?? server.version,resource:server.definition.url,...(config.issuer?{issuer:config.issuer}:config.authorizationUrl?{issuer:new URL(config.authorizationUrl).origin}:{}),...(config.clientId?{clientId:config.clientId}:{}),...(clientSecret?{clientSecret}:{}),label:input.label,...(input.scope?{scope:input.scope}:{}),...(input.returnTo?{returnTo:input.returnTo}:{}),...(config.scopes?{scopes:config.scopes}:{}),allowPrivateNetwork:server.definition.allowPrivateNetwork===true});
   }),
-  'mcp.oauth.callback':requireHumanSession(async ctx=>{const input=McpOAuthCallbackInputSchema.parse(ctx.body);const auth=await claims(ctx);if(!auth.identityId)throw new CollabError('unauthenticated','Human session required');const pending=oauth.pendingFor(auth.identityId,input.state);if(!pending)throw new CollabError('invalid_input','OAuth state invalid or expired');const current=await options.definition(auth,pending.serverId);if(pending.definitionVersion!==undefined && (current.securityRevision ?? current.version)!==pending.definitionVersion)throw new CollabError('conflict','MCP connector changed; restart authorization');const result=await oauth.callback(auth.identityId,input);await approved(auth,result.serverId);const created=await credentials.create(auth,{...result,expectedRevision:pending.definitionVersion}) as {id:string};return view(auth,created.id);}),
+  'mcp.oauth.callback':requireHumanSession(async ctx=>{
+   const input=McpOAuthCallbackInputSchema.parse(ctx.body);const auth=await claims(ctx);if(!auth.identityId)throw new CollabError('unauthenticated','Human session required');
+   // The state is consumed before this guard runs, so a changed connector spends it too.
+   const result=await oauth.callback(auth,input,async pending=>{const current=await options.definition(auth,pending.serverId);if(pending.definitionVersion!==undefined && (current.securityRevision ?? current.version)!==pending.definitionVersion)throw new CollabError('conflict','MCP connector changed; restart authorization');})
+    .catch(error=>{if(error instanceof Error && error.message==='OAuth state invalid or expired')throw new CollabError('invalid_input',error.message);throw error;});
+   await approved(auth,result.serverId);
+   // The scope chosen at begin rides the pending row; create_mcp_credential re-checks admin for 'space'.
+   const created=await credentials.create(auth,{spaceId:result.spaceId,serverId:result.serverId,label:result.label,secret:result.secret,expectedRevision:result.definitionVersion,scope:result.scope,...(result.grantedScopes?{grantedScopes:result.grantedScopes}:{})}) as {id:string};
+   const connected=await view(auth,created.id);return result.returnTo?{...connected,returnTo:result.returnTo}:connected;
+  }),
   'mcp.servers.test':requireHumanSession(async ctx=>{
    const input=McpServerTestInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);
    const test=new McpProxy({credentials,definition,authorize:async()=>({sessionId:'test',identityId:auth.identityId!,spaceId:server.spaceId,serverId:server.id,...(input.credentialId?{credentialId:input.credentialId}:{})})});
