@@ -99,6 +99,15 @@ export const OPERATIONS = [
   // connector UNAPPROVED — inert until an admin approves with
   // `mcp.servers.update` — plus an attention request on it (B13, §10.1).
   { name: 'mcp.servers.request', method: 'POST', path: '/v2/spaces/:spaceId/mcp/servers/request', kind: 'command', status: 'v1', humanOnly: true },
+  // §5.5 / D9. Member-owned, NODE-level tokens (no `:spaceId` in the path, by
+  // design): one token acts as its member across the Spaces it lists, and the
+  // Space it may touch is checked per call on `/mcp`. humanOnly on all three —
+  // a credential that acts as a member is minted by that member, never by their
+  // agent carrying their identity — and an `mcp` token can reach none of them,
+  // because every non-/mcp transport refuses it outright.
+  { name: 'mcp.tokens.create', method: 'POST', path: '/v2/mcp/tokens', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.tokens.list', method: 'GET', path: '/v2/mcp/tokens', kind: 'read', status: 'v1', humanOnly: true },
+  { name: 'mcp.tokens.revoke', method: 'POST', path: '/v2/mcp/tokens/:tokenId/revoke', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'skills.roots', method: 'GET', path: '/v2/spaces/:spaceId/skills/roots', kind: 'read', status: 'v1' },
   { name: 'skills.create', method: 'POST', path: '/v2/spaces/:spaceId/skills', kind: 'command', status: 'v1' },
   { name: 'skills.edit', method: 'PATCH', path: '/v2/skills/:id', kind: 'command', status: 'v1' },
