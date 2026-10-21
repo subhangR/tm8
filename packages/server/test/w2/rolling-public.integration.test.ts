@@ -534,6 +534,11 @@ const PATH_GRANT_NET_NEW_OPERATIONS = [
 const MCP_NET_NEW_OPERATIONS = [
   // §5.6 (346): the per-call audit reader.
   'mcp.audit.list',
+  // 345: both are registered by `registerMcpDefinitionHandlers`, which mounts
+  // unconditionally — the catalog is static and a request needs only a member,
+  // so neither waits on the MCP runtime bridge.
+  'mcp.catalog.list',
+  'mcp.servers.request',
   'mcp.resolve',
   'mcp.servers.create',
   'mcp.servers.delete',
@@ -572,6 +577,8 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   'entities.commands.release',
   // Chat turn management: the composer's Stop finally has an operation.
   'chat.interrupt',
+  // G4 (345): changing a live thread's connectors.
+  'chat.setMcpSelections',
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -722,7 +729,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // The facade baseline is 263 including tools, read markers and credential selection. MCP handlers add only when the
     // runtime bridge is mounted in this fixture.
     // Spec D1 (301): +1 entities.commands.release. MEASURED.
-    expect(registry.size).toBe(266 /* +1 chat.interrupt (chat turn management). MEASURED. */ /* +2 spaces.projects.clone|cloneJobs.get (Projects add, 01a13574). MEASURED. */ + mountedMcpOperations); // -5 the request noun (325). MEASURED.
+    expect(registry.size).toBe(267 /* +1 chat.setMcpSelections (G4, 345): a chat registration, so it is not in the mcp tranche term. MEASURED. */ /* +1 chat.interrupt (chat turn management). MEASURED. */ /* +2 spaces.projects.clone|cloneJobs.get (Projects add, 01a13574). MEASURED. */ + mountedMcpOperations); // -5 the request noun (325). MEASURED.
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
   });
@@ -894,7 +901,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 119 -> 120 (2026-09-19, Changes screen Phase 1 INTEGRATED WITH main): one bound input schema each. MEASURED on the merged tree from this assertion's own failing run.
     // 120 -> 125 (2026-09-23): skills.scan + F4's create/edit/equip/unequip bind input schemas. MEASURED.
     // 125 -> 126 (Jev lane F #655): launch.suggest binds LaunchSuggestInputSchema. MEASURED from CI's failing run.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(234 /* +1 chat.interrupt (chat turn management). MEASURED. */ /* +1 spaces.projects.clone|cloneJobs.get (Projects add, 01a13574). MEASURED. */ /* request noun removed (325). MEASURED. */ /* +1 workspace.crafts.command (Craft L3). MEASURED. */ /* +1 entities.markSeen. */ /* +1 workspace.prompts.resolve (MW W3.1). MEASURED. */ /* +4 workspace.create|update|reorder|switch (MW W2.1). MEASURED. */ /* +2 execution.complete, entities.commands.release (Spec D1, 302). MEASURED. */ /* +1 workspace.drafts.patch input (Spec D). MEASURED. */ /* +1 workspace.command input (Spec C). MEASURED. */ /* +1 spaceLinks.inbound.grant (W9c, 301). MEASURED. */ /* +14 MCP input schemas. MEASURED. */ /* +2 credentials.space.share|unshare bodies (992). MEASURED. */ /* +9 style command input schemas (284). MEASURED: CI 37009211546. */ /* +2 entities.refs.add|remove input schemas (L3, 279). MEASURED. */ /* +2 spaceLinks.inbound.* (278, D2). MEASURED. */); /* +2 node.pathGrants.create|revoke input schemas (282). MEASURED. */ /* +1 chat.setModel input schema (276, chat model switch). MEASURED. */ /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +4 servers.add/adopt/remove/probe input schemas (W8, 261; list/get take none). MEASURED. */ /* +1 spaceLinks.invoke input schema (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 spaceLinks.* input schemas (W6, 250/251; list takes none). MEASURED. */ /* W11: +2 input schemas, spaces.projects.create and gate.folders.create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +5 W10b credential commands bind. MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +1 spaces.chatDefaults.set binds SetChatDefaultsInputSchema (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(236 /* +2 mcp.servers.request, chat.setMcpSelections input schemas (345). MEASURED. */ /* +1 chat.interrupt (chat turn management). MEASURED. */ /* +1 spaces.projects.clone|cloneJobs.get (Projects add, 01a13574). MEASURED. */ /* request noun removed (325). MEASURED. */ /* +1 workspace.crafts.command (Craft L3). MEASURED. */ /* +1 entities.markSeen. */ /* +1 workspace.prompts.resolve (MW W3.1). MEASURED. */ /* +4 workspace.create|update|reorder|switch (MW W2.1). MEASURED. */ /* +2 execution.complete, entities.commands.release (Spec D1, 302). MEASURED. */ /* +1 workspace.drafts.patch input (Spec D). MEASURED. */ /* +1 workspace.command input (Spec C). MEASURED. */ /* +1 spaceLinks.inbound.grant (W9c, 301). MEASURED. */ /* +14 MCP input schemas. MEASURED. */ /* +2 credentials.space.share|unshare bodies (992). MEASURED. */ /* +9 style command input schemas (284). MEASURED: CI 37009211546. */ /* +2 entities.refs.add|remove input schemas (L3, 279). MEASURED. */ /* +2 spaceLinks.inbound.* (278, D2). MEASURED. */); /* +2 node.pathGrants.create|revoke input schemas (282). MEASURED. */ /* +1 chat.setModel input schema (276, chat model switch). MEASURED. */ /* +3 spaces.spacePassword.setRequired, spaces.members.spacePassword.reset|lock (W5). MEASURED. */ /* +2 attentionSignals.raise|clear (Attention v2 S6; stacked on tm8/attention-v2-integration). MEASURED. */ /* +4 servers.add/adopt/remove/probe input schemas (W8, 261; list/get take none). MEASURED. */ /* +1 spaceLinks.invoke input schema (W7, 260). MEASURED. */ /* +1 credentials.space.addMine (W10d). MEASURED. */ /* +6 spaceLinks.* input schemas (W6, 250/251; list takes none). MEASURED. */ /* W11: +2 input schemas, spaces.projects.create and gate.folders.create. MEASURED. */ /* +1 auth.space.enter (W3-server). MEASURED. */ /* +5 W10b credential commands bind. MEASURED. */ /* +3 spaces.leave, spaces.members.remove, accounts.disable (G6, 232). MEASURED. */ /* +1 spaces.chatDefaults.set binds SetChatDefaultsInputSchema (entity chat G). MEASURED. */ /* Forms W3 + headers I4, on the merged tree. MEASURED. */ /* +2 entities.header.set/clear (headers I4). MEASURED. */ /* +10 forms.* command schemas (Forms W1). MEASURED. */ // +7 SC-3 space/node credential command schemas. MEASURED. // +2 service-key put/delete (Jev lane K). MEASURED. /* +1 entities.commands.tick (bug 01a0d2f1). MEASURED. */ /* -1 containers.attention (Attention v2 S7a). MEASURED. */ /* +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4; stacked on tm8/attention-v2-integration). MEASURED. */
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long

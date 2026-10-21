@@ -1,6 +1,13 @@
 import type { McpServerDefinition } from '@tm8/contract';
 
 /**
+ * THE SERVER NOW OWNS THE CATALOG: `MCP_CATALOG` in `@tm8/contract`
+ * (`contract/src/mcp-catalog.ts`), served as `mcp.catalog.list` with the Google
+ * first-party cards and, per Space, where each entry is already registered.
+ * This list stays as the Discover tab's source only until the Connectors page
+ * is rebuilt against that operation (plan §10.1); a new provider belongs in the
+ * contract catalog, not here.
+ *
  * Official remote MCP servers an administrator can add without looking up their
  * configuration. Choosing one only prefills the connector form: registration,
  * approval and every member's own OAuth account work exactly as for a custom

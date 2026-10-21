@@ -1,11 +1,14 @@
 import { CollabError, McpTestResultSchema, McpServerDefinitionSchema, McpResolveInputSchema, McpServerCreateInputSchema,
-  McpServerUpdateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema,
+  McpServerUpdateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerRequestInputSchema,
+  MCP_CATALOG, mcpCatalogEntry,
   type McpServerView, type McpResolveInput, type McpResolveResult, type McpResolvedSelection, type McpSelection,
-  type McpSkippedSelection, type McpCredentialSource, type McpReadinessReason } from '@tm8/contract';
+  type McpSkippedSelection, type McpCredentialSource, type McpReadinessReason,
+  type McpCatalogEntry, type McpCatalogAdded, type McpServerDefinition } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
 import { claimsFor, commandEnvelope, requireUuidParam, limitOf } from '../facade/context.js';
+import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { encodeCursor, decodeCursor } from '@tm8/contract';
 
 type DefinitionRow = { id: string; space_id: string; version: number; security_revision?: number; definition: unknown; admin: boolean; health?: unknown };
@@ -35,6 +38,23 @@ export async function loadMcpServer(q: Querier, serverId: string, targetId?: str
   const loaded=view(row,await canAttachMcp(q,row.space_id,targetId));
   if (loaded.securityRevision === undefined) throw new CollabError('upstream_unavailable','MCP security revision unavailable');
   return loaded as McpServerView & {securityRevision:number};
+}
+/**
+ * The definition a CATALOG request carries. Taken from the catalog, never from
+ * the member's body, so "please add Slack" cannot arrive pointing somewhere
+ * else — and so a request body for a catalog entry is one id, with nothing in
+ * it a reviewer has to read closely.
+ *
+ * No narrowing is needed on the way through: `McpCatalogEntrySchema` already
+ * holds every entry to an unapproved https definition that names no server
+ * secret variable, which is exactly `McpRequestedServerDefinitionSchema`'s
+ * shape and exactly what `internal.mcp_definition_is_request` admits.
+ */
+function catalogRequestDefinition(catalogId:string):McpServerDefinition {
+  const entry=mcpCatalogEntry(catalogId);
+  if(!entry)throw new CollabError('not_found','Unknown connector catalog entry');
+  if(!entry.available || !entry.definition)throw new CollabError('invalid_input',`${entry.title} is not available yet`);
+  return entry.definition;
 }
 export type McpCredentialReadiness = (selection:McpSelection,server:McpServerView)=>Promise<McpReadinessReason>;
 /** What `resolve_mcp_account` (migration 341) answers: §3's order below the pin. */
@@ -249,6 +269,52 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
       return {deleted:true,serverId:input.serverId};
     });
   });
+  // §11. The catalog is NODE-level static data — see contract/mcp-catalog.ts
+  // for why it is not UI data any more. `spaceId` is OPTIONAL: without it this
+  // is the bare list (what the CLI prints), and with it each entry also reports
+  // where it is already registered in that Space, which is what Discover's
+  // "Added" and "Requested" states read (B16). The join is on
+  // `definition.catalogId`, under the CALLER's claims, so a non-member learns
+  // nothing about a Space's connectors beyond the static list they could read
+  // anyway.
+  registry.register('mcp.catalog.list',async ctx=>{
+    const spaceId=ctx.query.get('spaceId')??undefined;
+    if(spaceId===undefined)return {items:[...MCP_CATALOG]};
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(spaceId))throw new CollabError('invalid_input','spaceId must be a uuid');
+    return deps.db.tx(claimsFor(await deps.owner(),ctx),async q=>{
+      const rows=await q.query<{server_id:string;catalog_id:string;approved:boolean}>(`select e.id as server_id,m.definition->>'catalogId' as catalog_id,
+        coalesce((m.definition->>'approved')='true',false) as approved
+        from public.entities e join public.mcp_servers m on m.entity_id=e.id
+        where e.space_id=$1 and e.kind='mcp_server' and e.deleted_at is null and m.definition->>'catalogId' is not null
+        order by e.id limit 256`,[spaceId]);
+      const added=new Map<string,McpCatalogAdded[]>();
+      for(const row of rows){
+        const list=added.get(row.catalog_id)??[];
+        // One Space can hold several connectors from one entry (two Notion
+        // workspaces, say), and the cap keeps the response bounded.
+        if(list.length<32)list.push({serverId:row.server_id,approved:row.approved===true});
+        added.set(row.catalog_id,list);
+      }
+      return {items:MCP_CATALOG.map((entry):McpCatalogEntry=>{
+        const here=added.get(entry.id);
+        return here?.length?{...entry,added:here}:entry;
+      })};
+    });
+  });
+  // §11, §10.1. A MEMBER asks the Space's admins for a connector. It creates the
+  // real `mcp_server` entity UNAPPROVED and raises an attention request on it,
+  // so the member sees it in the Yours tab as "Awaiting approval" and approving
+  // is the existing `mcp.servers.update` with approved=true (B13).
+  registry.registerAll({'mcp.servers.request':requireHumanSession(async ctx=>{
+    const spaceId=requireUuidParam(ctx,'spaceId');
+    const input=McpServerRequestInputSchema.parse(ctx.body);
+    const definition=input.catalogId!==undefined?catalogRequestDefinition(input.catalogId):input.definition!;
+    return deps.db.tx(claimsFor(await deps.owner(),ctx,commandEnvelope(ctx)),async q=>{
+      const raw=await q.rpc<{entity:{id:string}}>('request_mcp_server_entity',
+        [spaceId,JSON.stringify(definition),input.note??null,input.actorId??null,input.clientMutationId]);
+      return publicView(await loadMcpServer(q,raw.entity.id));
+    });
+  })});
   registry.register('mcp.servers.import',async ctx=>{
     const input=McpServerImportInputSchema.parse({...(ctx.body as Record<string, unknown>),spaceId:requireUuidParam(ctx,'spaceId')});
     if(new Set(input.definitions.map(d=>d.name.toLowerCase())).size!==input.definitions.length)throw new CollabError('invalid_input','Duplicate imported connector names');

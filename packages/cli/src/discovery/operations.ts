@@ -192,6 +192,19 @@ const ROWS: Record<OperationName, Row> = {
   'mcp.oauth.callback': {cmd: ['mcp','oauth','callback'], syn: 'tm8 mcp oauth callback [<id>] --input <@file|->', sum: 'Callback MCP oauth', authz: 'entity', input: 'bound'},
   'mcp.resolve': {cmd:['mcp','resolve'], syn:'tm8 mcp resolve --input <json-source>',sum:'Resolve explicit MCP connector readiness',authz:'space',input:'bound'},
   'mcp.audit.list': {cmd:['mcp','audit'], syn:'tm8 mcp audit [--session <id>] [--chat <id>] [--connector <id>] [--member <id>] [--outcome <started|succeeded|failed|denied|refreshed>] [--limit <count>] [--cursor <cursor>]', sum:'List MCP connector calls (admins: the Space; members: their own)', authz:'space', input:'none'},
+  'mcp.catalog.list': {cmd:['mcp','catalog','list'], syn:'tm8 mcp catalog list',sum:'List the connector catalog — the connectors tm8 knows how to add',authz:'server',input:'none',
+    tags:['mcp','connector','catalog','directory','discover','gmail','slack','notion','figma'],
+    notes:['node-level static data: it answers with no Space, and the ambient --space only adds, per entry, where it is already registered there',
+      'an entry is a PREFILL, not a connector: adding one still needs an admin (`mcp server create`) and every member still connects their own account',
+      '`requires:` carries what the provider demands of a client like tm8 — read it before the consent screen fails',
+      'an entry marked `coming soon` has no definition yet and cannot be added']},
+  'mcp.servers.request': {cmd:['mcp','server','request'], syn:'tm8 mcp server request --input <@file|-> ({"catalogId":"<id>"} or {"definition":{…}}, optional "note")',sum:'Ask the Space administrators to add a connector',authz:'space',input:'bound',
+    tags:['mcp','connector','request','ask','approve'],
+    notes:['for a member who is not an administrator: it creates the connector UNAPPROVED and raises an attention request on it',
+      'an unapproved connector is inert — it cannot be selected, bound or called, and nothing fetches its URL until an admin approves it',
+      'a catalog request names `catalogId` only; the server takes the definition from the catalog, so a request can never point somewhere else',
+      'an administrator approves with `mcp server update … approved=true`; the requester may withdraw with `entity delete` while it is still unapproved',
+      'human-authenticated only']},
   'mcp.proxy.request': {cmd:null,sum:'Invoke MCP through the authorized session bridge',authz:'session',input:'bound',reason:'internal_session_bridge'},
   // ── identity & spaces ────────────────────────────────────────────────────
   'identity.get': {
@@ -2084,6 +2097,24 @@ const ROWS: Record<OperationName, Row> = {
       '`not_running` means this node has no turn to stop for the chat',
       'any member who can read the chat may stop it; an agent runtime credential is refused'],
     examples: ['tm8 chat stop <chat-id>'],
+  },
+  'chat.setMcpSelections': {
+    cmd: ['chat', 'connectors'],
+    syn: 'tm8 chat connectors <chat-id> --input <json-source>  (an array of {serverId,credentialId?}, [] for none, null for defaults)',
+    sum: "Change a live chat's MCP connectors — applies from its next turn",
+    authz: 'entity',
+    input: 'bound',
+    tags: ['chat', 'mcp', 'connector', 'tools', 'selection'],
+    notes: [
+      'before this a chat\'s connectors were fixed at creation; this is the only way to change them afterwards',
+      'three distinct values: `null` goes back to the defaults resolved fresh each turn, `[]` turns every connector off, and a non-empty array REPLACES the selection',
+      'applies from the next turn: a turn already running keeps the connectors it was bound with',
+      'only the human who configures the chat may call it; an agent runtime credential is refused',
+    ],
+    examples: [
+      'tm8 chat connectors <chat-id> --input \'[{"serverId":"<server-id>"}]\'',
+      'tm8 chat connectors <chat-id> --input null',
+    ],
   },
   'chat.setModel': {
     cmd: ['chat', 'model'],
@@ -4714,6 +4745,26 @@ const COMMAND_ALIASES = new Map<string, {
   // a `chats.postTurn` row would be a second way to ask a question
   // `collections.query` and `messages.post` already answer, on an entity kind
   // whose entire design is that it needs no special door except its birth.
+  // `mcp connect` is the one ALIAS the mcp noun needs, and it is an alias
+  // because the connector decides which door it is: an API-key connector takes
+  // a secret (mcp.credentials.create) and an OAuth one hands back a URL
+  // (mcp.oauth.begin). One verb over both is what a user means by "connect"; two
+  // catalog rows for it would be the same two doors with a worse name.
+  ['mcp connect', {
+    path: ['mcp', 'connect'],
+    syntax: 'tm8 mcp connect <server-id> [--shared] [--label <text>] [--input <@file|->]',
+    summary: 'Connect an account to a connector — an API key, or an OAuth authorization URL to open',
+    notes: [
+      'sugar over mcp.servers.get plus mcp.credentials.create or mcp.oauth.begin — it adds no catalog operation',
+      'the connector\u2019s own auth chooses the door: `api_key` needs --input @file or --input - (a secret never travels in argv), `oauth2` prints an authorization URL to open in a browser signed in to tm8',
+      '--shared connects on behalf of the whole Space rather than just you, and needs a Space admin; for an OAuth connector it is refused until this server can carry a scope through the redirect',
+      'a connector with auth `none` needs no connection at all and is refused as a usage error',
+    ],
+    examples: [
+      'tm8 mcp connect <server-id>',
+      'tm8 mcp connect <server-id> --shared --input @key.json',
+    ],
+  }],
   ['chat list', {
     path: ['chat', 'list'],
     syntax: 'tm8 chat list [--space <space-id>] [--limit <count>] [--cursor <cursor>]',
@@ -5001,6 +5052,12 @@ COMMAND_ORDER.splice(
 // but two of its three sub-verbs invoke `containers.computer`, so both
 // operations are named here and the command is as available as its WEAKEST.
 // The form lifecycle verbs sit right after `form open`, which the catalog row owns.
+// `mcp connect` reads the connector, then takes ONE of two doors. Availability
+// is the weakest of all three, because a caller cannot know in advance which
+// door their connector needs.
+COMMAND_OPS.set('mcp connect', ['mcp.servers.get', 'mcp.credentials.create', 'mcp.oauth.begin']);
+const mcpCatalogIndex = COMMAND_ORDER.indexOf('mcp catalog list');
+COMMAND_ORDER.splice(mcpCatalogIndex < 0 ? COMMAND_ORDER.length : mcpCatalogIndex + 1, 0, 'mcp connect');
 COMMAND_OPS.set('form close', ['forms.transition']);
 COMMAND_OPS.set('form cancel', ['forms.transition']);
 COMMAND_OPS.set('form reopen', ['forms.transition']);

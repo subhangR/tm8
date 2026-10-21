@@ -418,6 +418,20 @@
         "source": "server-router"
       },
       {
+        "operation": "mcp.catalog.list",
+        "method": "GET",
+        "path": "/v2/mcp/catalog",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.servers.request",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/mcp/servers/request",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "skills.roots",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/skills/roots",
@@ -1261,6 +1275,13 @@
         "operation": "chat.interrupt",
         "method": "POST",
         "path": "/v2/chats/:id/interrupt",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "chat.setMcpSelections",
+        "method": "POST",
+        "path": "/v2/chats/:id/mcp-selections",
         "status": "registered",
         "source": "server-router"
       },
@@ -3709,6 +3730,40 @@
         "publicComposite": null
       },
       {
+        "operation": "mcp.catalog.list",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.catalog.list",
+        "intentTags": [
+          "mcp",
+          "catalog",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.servers.request",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.servers.request",
+        "intentTags": [
+          "mcp",
+          "servers",
+          "request"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "skills.roots",
         "noun": "skill",
         "exposure": "public",
@@ -5729,6 +5784,24 @@
         "intentTags": [
           "chat",
           "interrupt"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "chat.setMcpSelections",
+        "noun": "chat",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/chat.setMcpSelections",
+        "intentTags": [
+          "chat",
+          "set",
+          "mcp",
+          "selections"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

@@ -321,6 +321,83 @@ export const McpOAuthBeginInputSchema = z.object({ ...Command, serverId: Id, lab
   /** `space` needs a Space admin, checked at begin and again at callback (§5.2). */
   scope: McpCredentialScopeSchema.optional(), returnTo: SameOriginPath.optional() }).strict();
 export const McpOAuthCallbackInputSchema = z.object({ state: z.string().min(1).max(2048), code: z.string().min(1).max(8192).optional(), error: z.string().min(1).max(128).optional(), issuer: PublicUrl.optional() }).strict().refine(value => Boolean(value.code) !== Boolean(value.error), 'OAuth callback requires exactly one of code or error');
+/**
+ * What a non-admin may ASK for (§11 `mcp.servers.request`, B13). It is the
+ * ordinary definition schema minus everything a member must not be able to put
+ * in front of an admin's approval click:
+ *
+ *  - `approved` is false, so the connector is inert the moment it exists:
+ *    resolve and bind refuse it, and `test` and `oauth.begin` both go through
+ *    `approved()` first, so NOTHING fetches a requested URL before an admin
+ *    says yes.
+ *  - stdio is refused outright — a local command is an admin-and-node-trust
+ *    decision, never a request.
+ *  - `clientSecretEnv` is refused: a member must not name a server environment
+ *    secret for an admin to approve by accident. An admin sets it afterwards.
+ *  - the trust and reach flags (`stdioTrusted`, `allowPrivateNetwork`,
+ *    `defaultOn`, `allowExternalClients`, `firstParty`) and `gates` are refused,
+ *    so a request can never arrive pre-armed.
+ */
+export const McpRequestedServerDefinitionSchema = McpServerDefinitionSchema.superRefine((value, ctx) => {
+  const reject = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+  if (value.transport !== 'http') reject('a requested connector must be an HTTP connector');
+  if (value.approved) reject('a requested connector cannot arrive approved');
+  if (!value.url || new URL(value.url).protocol !== 'https:') reject('a requested connector needs an https URL');
+  if (value.auth.type === 'oauth2' && value.auth.clientSecretEnv) reject('an administrator sets the OAuth client secret after approval');
+  for (const field of ['stdioTrusted', 'allowPrivateNetwork', 'defaultOn', 'allowExternalClients', 'firstParty'] as const) {
+    if (value[field] !== undefined) reject(`only an administrator sets ${field}`);
+  }
+  if (value.gates) reject('only an administrator sets tool gates');
+});
+
+/**
+ * §11 `mcp.servers.request` — a MEMBER asks the Space's admins to add a
+ * connector. Exactly one of `catalogId` or `definition`:
+ *
+ *  - `catalogId` names a §8.2 entry and the SERVER supplies its definition. A
+ *    member never gets to send the URL or auth of a catalog connector, so a
+ *    request that looks like "please add Slack" cannot smuggle in a different
+ *    endpoint for an admin to approve by eye.
+ *  - `definition` is a custom connector, narrowed by
+ *    `McpRequestedServerDefinitionSchema` to the inert shape of §10.1: HTTPS
+ *    only, unapproved, and none of the admin-only trust flags (B13).
+ */
+export const McpServerRequestInputSchema = z.object({ ...Command,
+  // The Space is addressed by the PATH (`/v2/spaces/:spaceId/mcp/servers/request`)
+  // and so is absent here, like every `:id`-addressed `chat.*` command: two
+  // places to name one Space is two places for them to disagree, and the body
+  // is what the facade validates.
+  catalogId: CatalogId.optional(), definition: McpRequestedServerDefinitionSchema.optional(),
+  note: z.string().min(1).max(500).optional() }).strict()
+  .refine(value => Boolean(value.catalogId) !== Boolean(value.definition),
+    'a connector request names exactly one of catalogId or definition');
+export type McpServerRequestInput = z.infer<typeof McpServerRequestInputSchema>;
+
+/**
+ * `chat.setMcpSelections` (§5.3, G4) — change a LIVE thread's connectors.
+ *
+ * The chat is addressed by the path (`/v2/chats/:id/mcp-selections`), like every
+ * other `chat.*` command, so it is deliberately absent from the body.
+ *
+ * `null` DELETES the stored selection, which puts the thread back on the
+ * default set resolved fresh at each turn; `[]` means every connector off; a
+ * non-empty list replaces the selection. That is the same three-way meaning
+ * `McpSelectionsSchema` documents for launch, so a thread and a session read
+ * the field identically.
+ */
+// `clientMutationId` is OPTIONAL here, unlike every `mcp.*` command: this is a
+// `chat.*` operation and the family's DTOs take it optionally (`chat.setModel`),
+// and the write itself is idempotent by construction — an upsert of the same
+// list leaves the same row, so it needs no ledger entry to be safe to retry.
+export const SetChatMcpSelectionsInputSchema = z.object({
+  clientMutationId: z.string().min(1).optional(), actorId: Id.optional(),
+  mcpSelections: McpSelectionsSchema.nullable() }).strict();
+export type SetChatMcpSelectionsInput = z.infer<typeof SetChatMcpSelectionsInputSchema>;
+/** The stored value AFTER the write, so a client never has to assume its own write landed. */
+export const ChatMcpSelectionsResultSchema = z.object({ chatId: Id,
+  mcpSelections: z.array(McpSelectionSchema).nullable() }).strict();
+export type ChatMcpSelectionsResult = z.infer<typeof ChatMcpSelectionsResultSchema>;
+
 export const McpProxyRequestInputSchema = z.object({ sessionId: Id, serverId: Id, message: z.record(z.unknown()) }).strict();
 
 export const McpServerListResultSchema = z.object({ items: z.array(McpServerViewSchema), nextCursor: z.string().nullable(), allowed: z.object({ register: z.boolean(), attach: z.boolean() }).strict() }).strict();
