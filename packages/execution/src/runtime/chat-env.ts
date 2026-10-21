@@ -41,6 +41,7 @@
 // this environment is not a filesystem sandbox.
 
 import { withAgentBinDirs } from '../spawn/manifest.js';
+import { applySessionTmpdir } from '../session-tmpdir.js';
 
 /**
  * The MAXIMAL key set of a chat runtime's environment, before the per-thread
@@ -100,6 +101,7 @@ export function composeChatEnv(parentEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
     const value = parentEnv[key];
     if (typeof value === 'string' && value !== '') env[key] = value;
   }
+  applySessionTmpdir(env, parentEnv);
   // PATH is the one key whose absence is not survivable — without it the child
   // cannot find `git`, `node`, or anything Bash is asked to run — so it falls
   // back rather than being omitted, exactly as `composeShellEnv` does.

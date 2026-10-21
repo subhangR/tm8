@@ -44,6 +44,7 @@ import {
 import { createExecutionRuntime, createLoopExecutorPort } from './facade/execution-handlers.js';
 import type { ExecutionRuntime } from './facade/execution-handlers.js';
 import { createDefaultScheduler, type Scheduler } from './scheduler/index.js';
+import { diskGuardJobFromEnv, prepareSessionTmpdir } from './ops/disk-guard-config.js';
 import { commandEnvelope } from './facade/context.js';
 import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
@@ -280,6 +281,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     );
   }
   const dataDir = config.dataDir ?? resolveServerDataDir();
+  // Spawned sessions write temp output under <dataDir>/tmp, which the disk
+  // guard expires, instead of /tmp, which nothing on the node ever cleaned.
+  // Process-wide, so only for a real node: in-process test harnesses skip it.
+  if (opts.startBackgroundJobs === true) prepareSessionTmpdir(dataDir);
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
   const owner = db ? createLoopbackOwnerResolver(db) : undefined;
   const blobStore = db ? createW2BlobStore({ dataDir, maxSizeBytes: fileMaxSizeBytes }) : undefined;
@@ -1143,6 +1148,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
       );
     }
+    // Disk retention + the 85% alert: the rules that keep the disk from
+    // filling (it reached 97% on 2026-10-20 with Postgres on it).
+    const diskGuard = diskGuardJobFromEnv({
+      db, dataDir,
+      claims: async () => {
+        const o = await owner();
+        return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'disk-guard' };
+      },
+    });
+    if (diskGuard) scheduler.register(diskGuard);
     // R2 gate 2 (session_credential_binding): a session still `pending` past the grace never recorded
     // the credential it runs on and can never run; ended in SQL. Every other
     // binding violation is logged, not killed (release 1 is additive).
