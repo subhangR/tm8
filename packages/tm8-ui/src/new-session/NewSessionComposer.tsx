@@ -222,8 +222,12 @@ const PLUGINS_UNDER_FULL_REASON =
 /** The harness choices, in the menu's order. `null` is the teammate's default. */
 const HARNESS_OPTIONS: readonly { value: 'minimal' | 'inherit' | null; label: string; hint: string }[] = [
   { value: null, label: 'Teammate default', hint: 'Whatever this teammate is configured for — lean unless it says otherwise' },
-  { value: 'minimal', label: 'Lean', hint: 'Repo skills, equipped skills and chosen plugins only · no claude.ai connectors' },
-  { value: 'inherit', label: 'Full', hint: 'Every plugin, connector and skill the account has installed' },
+  { value: 'minimal', label: 'Lean', hint: 'Repo skills, equipped skills and chosen plugins only' },
+  // D4: the surface decides plugins and skills, NEVER connectors. Both surfaces
+  // run `--strict-mcp-config` with the session's own tm8 connectors, so `Full`
+  // does not load the operator's MCP servers and `Lean` does not strip the ones
+  // a launch selected. Saying otherwise sent people to the wrong control.
+  { value: 'inherit', label: 'Full', hint: 'Every plugin and skill the account has installed · connectors come from the Connectors picker, not the harness' },
 ];
 
 const EFFORT_NOT_TUNABLE_REASON =

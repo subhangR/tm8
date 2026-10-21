@@ -1494,6 +1494,15 @@ export interface Tm8Manifest {
      */
     harness?: LaunchHarnessRecord;
     /**
+     * The connector bridge entries this launch gave the agent: the tool prefix
+     * the model reads mapped to the connector it reaches (§4.2), sorted by key.
+     * Ids and names only — no account, no credential, no argv.
+     *
+     * Written for EVERY tool and BOTH harness surfaces, because connectors do
+     * not depend on the surface (D4). Absent when the launch bound none.
+     */
+    connectors?: { serverKey: string; serverId: string }[];
+    /**
      * Set by the workspace-trust watchdog when this lane booted into Claude
      * Code's trust dialog despite the seeded entry and tm8 answered it through
      * the PTY. Absent otherwise — never false. Written to the manifest FILE

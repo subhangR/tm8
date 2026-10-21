@@ -223,8 +223,13 @@ export type SessionLiveCause = 'spawn' | 'resume' | 'running' | 'idle';
 export type SessionLiveListener = (sessionId: string, cause: SessionLiveCause) => void | Promise<void>;
 
 export interface SpawnServiceOptions {
-  /** Resolves and durably authorizes exact connector references after runtime token mint. */
-  mcpBindings?: { bind(auth: GraphAuth, input: { sessionId: string; spaceId: string; teamMemberId: string; targetIds?: string[]; mcpSelections?: Array<{serverId: string; credentialId?: string}>; agentToken: string; resume?: boolean }): Promise<Array<{serverId: string; credentialId?: string}>> };
+  /**
+   * Resolves and durably authorizes exact connector references after runtime
+   * token mint. It answers with `serverKey` on each selection — the tool prefix
+   * the model will read (§4.2) — derived from the definition it resolved, never
+   * from the request.
+   */
+  mcpBindings?: { bind(auth: GraphAuth, input: { sessionId: string; spaceId: string; teamMemberId: string; targetIds?: string[]; mcpSelections?: Array<{serverId: string; credentialId?: string}>; agentToken: string; resume?: boolean }): Promise<Array<{serverId: string; credentialId?: string; serverKey?: string}>> };
   graph: GraphPort;
   pty: PtyHostService;
   /** Where the agent reports back — becomes TM8_BASE_URL. */

@@ -25,9 +25,24 @@ const CatalogId = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
  * it is confined to what a tool name admits, and `tm8` is reserved for tm8's own
  * tools. Optional: absent, the key is the normalised name (`mcpServerKey`), so
  * every definition stored before this field existed still has one.
+ *
+ * `__` IS THE FIELD SEPARATOR, so a key may not contain one, and may not end in
+ * `_` where the separator would complete it. Claude Code splits
+ * `mcp__<server>__<tool>` on `__`: a connector keyed `tm8__evil` would present
+ * `mcp__tm8__evil__send`, which reads as tm8's OWN server with a tool named
+ * `evil__send` — a lookalike whose `mcp__tm8__*` allow-list entry would then
+ * quietly deny every real tm8 tool. `tm8_` would do the same thing one
+ * character later. Hence alphanumeric segments joined by SINGLE underscores:
+ * that shape cannot forge a prefix whatever it is concatenated with.
+ *
+ * 32 characters, not 64: `mcp__` + key + `__` is the prefix every tool name
+ * carries, and model APIs and MCP clients enforce tool-name limits around 64.
+ * At 32 the prefix is 39 characters and leaves room for the provider's own tool
+ * names; at 64 it was 71 before the tool name even started.
  */
-const ServerKey = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/).max(64)
-  .refine(value => value !== 'tm8', 'tm8 is reserved');
+const ServerKey = z.string().regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/,
+  'a server key is lowercase alphanumeric segments joined by single underscores')
+  .max(32).refine(value => value !== 'tm8', 'tm8 is reserved');
 /** Per-connector tool gates, e.g. `{gmailSend: false}`. Names to booleans only. */
 const ToolGates = z.record(z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/), z.boolean())
   .refine(value => Object.keys(value).length <= 32, 'at most 32 tool gates');
@@ -91,6 +106,107 @@ export function mcpServerKey(definition: Pick<McpServerDefinition, 'name'> & { s
 /** Whether a per-connector tool gate is open. An absent gate is open. */
 export function mcpGateOpen(definition: Pick<McpServerDefinition, 'gates'>, gate: string): boolean {
   return definition.gates?.[gate] !== false;
+}
+/**
+ * Bridge entry names no connector may take. `tm8` is not another connector's
+ * key: it is the name of tm8's OWN entry in every launcher's `--mcp-config`
+ * (`server/chat/compose.ts`, `chat/harness-composition.ts`), so a connector
+ * that took it would REPLACE the tm8 server and shadow every tm8 tool. Both
+ * the Zod `ServerKey` and `internal.validate_mcp_definition` refuse it as an
+ * explicit key; this set is what also catches a NAME that normalises onto it
+ * (`tm8--` -> `tm8`) in a row written before migration 344 closed that hole.
+ */
+export const MCP_RESERVED_SERVER_KEYS: ReadonlySet<string> = new Set(['tm8']);
+/**
+ * The shape `ServerKey` admits, and so the shape a bridge entry name may take:
+ * alphanumeric segments joined by SINGLE underscores, because `__` is how
+ * `mcp__<server>__<tool>` is split (see `ServerKey` for the lookalike this
+ * forbids). Applied here as well as in Zod and in `validate_mcp_definition`, so
+ * a key STORED before all three agreed cannot reach a launcher: it fails this
+ * test and the connector takes the opaque name instead, which impersonates
+ * nothing.
+ */
+const SERVER_KEY_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
+/** 32, so `mcp__<key>__<tool>` stays inside the clients' tool-name limits. */
+const SERVER_KEY_MAX = 32;
+/** The opaque pre-§4.2 name: readable by nobody, but it collides with nothing. */
+function opaqueServerKey(serverId: string): string {
+  return `connector_${serverId.replaceAll('-', '')}`;
+}
+/**
+ * What `bind` hands a launcher: the stored selection plus the tool prefix the
+ * model will read (§4.2). The key is SERVER-DERIVED from the resolved
+ * definition and never client-supplied.
+ *
+ * It is deliberately NOT stored in the session binding, and the consequence is
+ * worth stating plainly rather than implying: every launch — a resume
+ * included — recomputes the key from the connector's CURRENT definition, so
+ * renaming a connector CHANGES the tool prefix its sessions see from their next
+ * start. The agent's earlier transcript then names a prefix that no longer
+ * exists. That is the accepted cost of having one source for the key; the
+ * alternative, a stored key, means a resumed session advertising a name the
+ * Connectors page has stopped using. Routing is unaffected either way: the
+ * bridge is invoked with `--connector <serverId>`, never with the key.
+ */
+export type McpBoundSelection = McpSelection & { serverKey: string };
+/**
+ * Name each selected connector's bridge entry, so the model sees
+ * `mcp__gmail__search_messages` instead of `mcp__connector_<32 hex>__…` (§4.2,
+ * G8). Returns `serverId -> entry name`.
+ *
+ * `serverKey` is the effective key (`mcpServerKey`, mirroring
+ * `internal.mcp_effective_server_key`), and migration 340 keeps it unique among
+ * the LIVE connectors of a Space. Three things can still collide at launch, so
+ * this function, not the database, is what guarantees the launcher gets
+ * distinct names:
+ *  - connectors registered BEFORE 340, whose names normalise alike (`my-api`
+ *    and `my_api`): 340 refuses the next edit to either, but it rewrote no
+ *    existing data, by design;
+ *  - two names that differ only past `SERVER_KEY_MAX`, since a `name` may be 80
+ *    characters and a tool prefix may not;
+ *  - `MCP_RESERVED_SERVER_KEYS`.
+ *
+ * Collisions resolve DETERMINISTICALLY, and deliberately not by the order the
+ * selection arrived in: candidates are considered in ascending `serverId`, so
+ * one set of connectors always yields one set of names however the launch
+ * ordered them, and a resumed session keeps the names it launched with. The
+ * loser takes `<key>_2`, then `_3`, and never a name another connector wants.
+ * A selection with no `serverKey` — a launch config built by hand, which never
+ * went through `bind` — keeps the opaque name.
+ */
+export function assignMcpServerKeys(
+  selections: readonly { serverId: string; serverKey?: string }[],
+): Map<string, string> {
+  const base = new Map<string, string>();
+  for (const selection of selections) {
+    // Trailing `_` is stripped AFTER the cut, not before: truncating
+    // `linear_team_eu` at a segment boundary would otherwise leave
+    // `linear_team_`, which the shape rule rejects, and the connector would
+    // lose its readable name to the opaque one over a formatting detail.
+    const candidate = (selection.serverKey ?? '').toLowerCase().slice(0, SERVER_KEY_MAX).replace(/_+$/, '');
+    base.set(selection.serverId, SERVER_KEY_PATTERN.test(candidate) && !MCP_RESERVED_SERVER_KEYS.has(candidate)
+      ? candidate : opaqueServerKey(selection.serverId));
+  }
+  const wanted = new Set(base.values());
+  const taken = new Set<string>();
+  const assigned = new Map<string, string>();
+  for (const serverId of [...base.keys()].sort()) {
+    const want = base.get(serverId)!;
+    if (!taken.has(want)) { taken.add(want); assigned.set(serverId, want); continue; }
+    // A suffix must fit the key shape AND be nobody else's first choice. The
+    // stem is re-trimmed after its own cut for the same reason the candidate
+    // is: a stem ending in `_` would make `<stem>__2`, which carries the field
+    // separator the shape rule exists to keep out of a key.
+    const stem = want.slice(0, SERVER_KEY_MAX - 3).replace(/_+$/, '') || want.slice(0, 1);
+    let key = opaqueServerKey(serverId);
+    for (let n = 2; n <= 99; n += 1) {
+      const next = `${stem}_${n}`;
+      if (!taken.has(next) && !wanted.has(next)) { key = next; break; }
+    }
+    taken.add(key);
+    assigned.set(serverId, key);
+  }
+  return assigned;
 }
 export const McpServerEntitySchema = z.object({ kind: z.literal('mcp_server'), definition: McpServerDefinitionSchema }).strict();
 export type McpServerEntity = z.infer<typeof McpServerEntitySchema>;
