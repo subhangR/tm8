@@ -103,6 +103,21 @@ export function hashToken(secret: string): string {
  */
 export const TOKEN_PREFIX = 'tm8s_';
 
+/**
+ * An MCP token's prefix (§5.5, 357): `tm8m_<tokenId>.<secret>`.
+ *
+ * A DIFFERENT prefix, not a different `kind` behind the same one, and that is
+ * the point. An MCP token is not an auth session: `resolveBearerIdentity` must
+ * never find one, and the prefix is what makes "not an auth session" visible on
+ * the wire before anything is looked up.
+ *
+ * Its own prefix also creates one hazard, which identity/mcp-token.ts exists to
+ * close: a carrier that does NOT start with `TOKEN_PREFIX` falls past the bearer
+ * arm of `createSessionIdentityResolver` into the loopback auto-owner, so an MCP
+ * token presented to the facade would otherwise resolve as the NODE OWNER.
+ */
+export const MCP_TOKEN_PREFIX = 'tm8m_';
+
 export interface ParsedToken {
   sessionId: string;
   secret: string;
@@ -114,8 +129,23 @@ export function formatToken(sessionId: string, secret: string): string {
 
 /** Returns null for anything that is not a well-formed tm8 token. */
 export function parseToken(token: string): ParsedToken | null {
-  if (!token.startsWith(TOKEN_PREFIX)) return null;
-  const body = token.slice(TOKEN_PREFIX.length);
+  return parsePrefixed(token, TOKEN_PREFIX);
+}
+
+/** `tm8m_<tokenId>.<secret>`, the MCP token wire format (357). */
+export function formatMcpToken(tokenId: string, secret: string): string {
+  return `${MCP_TOKEN_PREFIX}${tokenId}.${secret}`;
+}
+
+/** Returns null for anything that is not a well-formed MCP token. */
+export function parseMcpToken(token: string): { tokenId: string; secret: string } | null {
+  const parsed = parsePrefixed(token, MCP_TOKEN_PREFIX);
+  return parsed ? { tokenId: parsed.sessionId, secret: parsed.secret } : null;
+}
+
+function parsePrefixed(token: string, prefix: string): ParsedToken | null {
+  if (!token.startsWith(prefix)) return null;
+  const body = token.slice(prefix.length);
   const dot = body.indexOf('.');
   if (dot <= 0 || dot === body.length - 1) return null;
   return { sessionId: body.slice(0, dot), secret: body.slice(dot + 1) };

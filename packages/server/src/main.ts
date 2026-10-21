@@ -1,5 +1,6 @@
 import { ToolRuntime } from './tools/runtime.js';
 import { McpSessionBindings } from './mcp/session-bindings.js';
+import type { McpEndpointRoute } from './mcp/endpoint.js';
 import { loadMcpServer } from './mcp/definitions.js';
 import type { GoogleHostOptions } from './mcp/first-party/google/endpoints.js';
 import { WorkspaceBridge } from './workspace/bridge.js';
@@ -504,6 +505,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   if (formDelivery) execution?.spawnService.onSessionLive((sessionId) => formDelivery.onSessionLive(sessionId));
 
   let remoteSpaceLinkRoute: RemoteSpaceLinkRoute | undefined;
+  // §7.1 / G14: handed over by `registerMcpRuntimeHandlers`, built from the same
+  // proxy ports as `mcp.proxy.request`, and mounted on the HTTP frame below.
+  let mcpEndpointRoute: McpEndpointRoute | undefined;
   if (db) {
     if (config.remoteSpaceLinks === true) {
       console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
@@ -538,6 +542,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           }
           return mcpBindings.authorize(claims, sessionId, serverId);
         },
+        maxBodyBytes: config.maxBodyBytes,
+        onEndpoint: (route: McpEndpointRoute) => { mcpEndpointRoute = route; },
         recordTest: async (claims, serverId, result) => {
           const health = McpTestResultSchema.parse(result);
           await db.rpc(claims, 'record_mcp_server_health', [serverId, JSON.stringify(health)]);
@@ -900,6 +906,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
+    ...(mcpEndpointRoute ? { mcpEndpointRoute } : {}),
     ...(remoteSpaceLinkRoute ? { remoteSpaceLinkRoute } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
     ...(db ? { sessionIssuedHere: (token: string) => sessionIssuedHere(db, token) } : {}),
