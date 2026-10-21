@@ -71,6 +71,9 @@ language sql immutable set search_path=public,internal,pg_temp as $$
   select jsonb_typeof(d)='object'
      and d->>'transport'='http'
      and (d->>'approved')='false'
+     -- HTTPS only. The REST of the URL shape — no userinfo, query or fragment
+     -- (`^https?://[^/@?#]+(/[^?#]*)?$`) — is validate_mcp_definition's, which
+     -- the same trigger calls on the same row, so it is not restated here.
      and d->>'url' like 'https://%'
      -- Only an administrator arms a connector: trust, reach, default-on,
      -- external clients, first-party hosting and tool gates are all theirs.

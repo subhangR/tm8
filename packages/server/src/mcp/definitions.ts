@@ -7,7 +7,7 @@ import { CollabError, McpTestResultSchema, McpServerDefinitionSchema, McpResolve
 import type { Querier } from '../db/types.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
-import { claimsFor, commandEnvelope, requireUuidParam, limitOf } from '../facade/context.js';
+import { claimsFor, commandEnvelope, requireUuidParam, optionalUuid, limitOf } from '../facade/context.js';
 import { requireHumanSession } from '../facade/handlers/w2/credentials.js';
 import { encodeCursor, decodeCursor } from '@tm8/contract';
 
@@ -278,9 +278,8 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
   // nothing about a Space's connectors beyond the static list they could read
   // anyway.
   registry.register('mcp.catalog.list',async ctx=>{
-    const spaceId=ctx.query.get('spaceId')??undefined;
-    if(spaceId===undefined)return {items:[...MCP_CATALOG]};
-    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(spaceId))throw new CollabError('invalid_input','spaceId must be a uuid');
+    const spaceId=optionalUuid(ctx.query.get('spaceId'),'spaceId');
+    if(spaceId===null)return {items:[...MCP_CATALOG]};
     return deps.db.tx(claimsFor(await deps.owner(),ctx),async q=>{
       const rows=await q.query<{server_id:string;catalog_id:string;approved:boolean}>(`select e.id as server_id,m.definition->>'catalogId' as catalog_id,
         coalesce((m.definition->>'approved')='true',false) as approved
