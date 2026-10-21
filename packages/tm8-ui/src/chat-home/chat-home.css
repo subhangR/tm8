@@ -3105,8 +3105,8 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-jev { position: relative; display: inline-flex; align-items: center; min-width: 0; flex: 0 1 auto; }
 .tch-jev .jev-entry { flex-direction: row; gap: 0; }
 .tch-jev .jev-entry__bar { flex-wrap: nowrap; }
-.tch-jev .jev-entry__button { padding: 3px 8px; font-size: 11px; max-width: 200px; }
-.tch-jev .jev-link { white-space: nowrap; font-size: 11px; }
+.tch-jev .jev-entry__button { padding: 3px 8px; font-size: var(--pn-fs-micro); max-width: 200px; }
+.tch-jev .jev-link { white-space: nowrap; font-size: var(--pn-fs-micro); }
 /* The panel states what asking cost; the foot chip stays short. */
 .tch-jev .jev-entry__button > .jev-cost { display: none; }
 .tch-jev .jev-entry__pop {
@@ -3130,10 +3130,10 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   padding: 2px 4px 2px 8px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
-  font-size: 11.5px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-2);
 }
 .tch-jev-ref__mark { color: var(--pn-brand-2); font-weight: 600; }
 .tch-jev-ref__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.tch-jev-ref__remove { border: 0; background: none; color: var(--pn-ink-3); cursor: pointer; padding: 0 4px; font-size: 13px; line-height: 1; }
+.tch-jev-ref__remove { border: 0; background: none; color: var(--pn-ink-3); cursor: pointer; padding: 0 4px; font-size: var(--pn-fs-sm); line-height: 1; }
 .tch-jev-ref__remove:hover { color: var(--pn-ink); }
