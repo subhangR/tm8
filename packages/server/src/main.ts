@@ -1,6 +1,7 @@
 import { ToolRuntime } from './tools/runtime.js';
 import { McpSessionBindings } from './mcp/session-bindings.js';
 import { loadMcpServer } from './mcp/definitions.js';
+import type { GoogleHostOptions } from './mcp/first-party/google/endpoints.js';
 import { WorkspaceBridge } from './workspace/bridge.js';
 import { WorkspaceService } from './workspace/service.js';
 import { memberForClaims } from './workspace/handlers.js';
@@ -177,6 +178,13 @@ export interface BootstrapOptions {
    * a deterministic one so a test run never calls a vendor over the network.
    */
   readonly spaceCredentialProbe?: SpaceCredentialProbe;
+  /**
+   * The Google first-party connector host (§8.1). Absent means the real one:
+   * Google's static endpoints and the client from TM8_GOOGLE_OAUTH_CLIENT_ID and
+   * TM8_MCP_CLIENT_SECRET_GOOGLE. A harness passes a fixture provider so a test
+   * run never calls Google.
+   */
+  readonly googleConnectors?: GoogleHostOptions;
 }
 
 export interface BootstrappedServer {
@@ -512,6 +520,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         dataDir,
         callbackUrl: `${config.publicOrigin ?? `http://${config.host}:${config.port}`}/mcp/oauth/callback`,
         definition: (claims, serverId) => db.tx(claims, q => loadMcpServer(q, serverId)),
+        google: opts.googleConnectors ?? {
+          client: () => {
+            const clientId = process.env.TM8_GOOGLE_OAUTH_CLIENT_ID;
+            const clientSecret = process.env.TM8_MCP_CLIENT_SECRET_GOOGLE;
+            return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+          },
+        },
         authorize: async (claims, sessionId, serverId) => {
           if (claims.authKind === 'agent_runtime') {
             if (!claims.authSessionId) throw new CollabError('forbidden', 'MCP runtime unavailable');

@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import type { QueryResultRow } from 'pg';
 import { vi } from 'vitest';
 
-import { bootstrap, type BootstrappedServer } from '../../src/main.js';
+import { bootstrap, type BootstrapOptions, type BootstrappedServer } from '../../src/main.js';
 import { loadConfig } from '../../src/http/config.js';
 import {
   createW1ScratchDatabase,
@@ -81,7 +81,7 @@ export interface W3PublicServer {
  * `bootstrap()`/`main()` composition, its public response stays the production
  * Server's honest 501 and the W3 gate catches the missing wiring.
  */
-export async function startW3PublicServer(label: string): Promise<W3PublicServer> {
+export async function startW3PublicServer(label: string, extra: Omit<BootstrapOptions, 'config'> = {}): Promise<W3PublicServer> {
   const database = await createW1ScratchDatabase(`w3_${label}`);
   const dataDir = await mkdtemp(join(tmpdir(), 'tm8-w3-'));
   let production: BootstrappedServer | undefined;
@@ -100,7 +100,7 @@ export async function startW3PublicServer(label: string): Promise<W3PublicServer
     // the already-validated port afterward so the kernel assigns one isolated
     // ephemeral port without weakening production configuration validation.
     config = { ...configured, port: 0 };
-    production = await bootstrap({ config });
+    production = await bootstrap({ ...extra, config });
   } catch (error) {
     await database.destroy();
     await removeOwnedDataDir(dataDir);
@@ -142,7 +142,7 @@ export async function startW3PublicServer(label: string): Promise<W3PublicServer
     async restart(): Promise<void> {
       await live.server.close();
       await live.db?.end();
-      live = await bootstrap({ config: bootConfig });
+      live = await bootstrap({ ...extra, config: bootConfig });
     },
     async close(): Promise<void> {
       if (closed) return;

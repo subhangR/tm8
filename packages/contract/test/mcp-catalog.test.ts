@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MCP_CATALOG, McpCatalogEntrySchema, McpCatalogListResultSchema, mcpCatalogEntry,
-  McpServerDefinitionSchema, McpRequestedServerDefinitionSchema, mcpGateOpen, mcpServerKey,
+  McpServerDefinitionSchema, McpRequestedServerDefinitionSchema, mcpGateOpen, mcpServerKey, googleFirstPartyService,
 } from '../src/index.js';
 
 describe('the launch catalog', () => {
@@ -33,20 +33,22 @@ describe('the launch catalog', () => {
     expect(mcpCatalogEntry('notion')?.title).toBe('Notion');
   });
 
-  it('serves the three Google cards as first-party and not yet available', () => {
+  it('serves the three Google cards as first-party, at the host\'s own identity URL', () => {
     const google = MCP_CATALOG.filter((entry) => entry.id.startsWith('google.'));
     expect(google).toHaveLength(3);
     for (const entry of google) {
       expect(entry.kind).toBe('first_party');
-      // Announced, not connectable: tm8 hosts these itself and that host plus
-      // its Google OAuth path land with t-google-first-party, which flips this.
-      expect(entry.available).toBe(false);
-      // AND THEREFORE NO DEFINITION. An entry with no provider endpoint must
-      // not carry an invented URL that an admin could approve and the proxy
-      // could then fetch.
-      expect(entry.definition).toBeUndefined();
-      expect(entry.requirement).toMatch(/Coming soon/);
+      // tm8's in-process Google host serves these (#1323), so they are connectable.
+      expect(entry.available).toBe(true);
+      // The URL is GOOGLE_FIRST_PARTY's resource, the identity the host and the
+      // SQL catalog (349) share; the scopes are the host's minimum, nothing more.
+      const service = googleFirstPartyService(entry.id)!;
+      expect(entry.definition).toMatchObject({ url: service.resource, firstParty: true, catalogId: entry.id });
+      expect(entry.definition?.auth).toEqual({ type: 'oauth2', scopes: [...service.scopes] });
+      expect(entry.requirement).toMatch(/TM8_GOOGLE_OAUTH_CLIENT_ID/);
     }
+    // Sending email ships closed.
+    expect(mcpCatalogEntry('google.gmail')?.definition?.gates).toEqual({ gmailSend: false });
   });
 
   it('keeps every remote definition inert, catalog-tagged and gate-closed', () => {

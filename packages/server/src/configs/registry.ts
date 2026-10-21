@@ -200,6 +200,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'OPENAI_API_KEY', group: 'Keys', summary: 'Node fallback OpenAI key for launches.', default: null, definedIn: NODE_KEYS, secret: true },
   { name: 'GH_TOKEN', group: 'Keys', summary: 'Node fallback GitHub token (launches and PR tracking).', default: null, definedIn: NODE_KEYS, secret: true },
   { name: 'GITHUB_TOKEN', group: 'Keys', summary: 'Alternative name for the node GitHub token.', default: null, definedIn: NODE_KEYS, secret: true },
+  { name: 'TM8_GOOGLE_OAUTH_CLIENT_ID', group: 'Keys', summary: 'Client ID of this node\'s Google OAuth client, for the Gmail, Calendar and Drive connectors. Read at each connect and refresh.', default: null, definedIn: MAIN },
+  { name: 'TM8_MCP_CLIENT_SECRET_GOOGLE', group: 'Keys', summary: 'Client secret of the Google OAuth client named by TM8_GOOGLE_OAUTH_CLIENT_ID. Never stored in a connection.', default: null, definedIn: MAIN, secret: true },
   { name: 'TM8_GITHUB_TOKEN', group: 'Keys', summary: 'GitHub token PR tracking prefers over GITHUB_TOKEN / GH_TOKEN.', default: null, definedIn: 'packages/server/src/tracking/github.ts', secret: true },
 ];
 
