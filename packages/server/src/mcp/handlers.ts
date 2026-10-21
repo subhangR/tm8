@@ -1,7 +1,7 @@
 import {
  CollabError, McpCredentialRotateInputSchema, McpCredentialCreateInputSchema, McpCredentialCommandInputSchema,
  McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema,
- McpServerTestInputSchema, McpProxyRequestInputSchema, type McpCredentialView, type McpServerView,
+ McpServerTestInputSchema, McpProxyRequestInputSchema, type McpCredentialView, type McpServerDefinition, type McpServerView,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
@@ -14,7 +14,7 @@ import { McpProxy, type McpProxyPorts } from './proxy.js';
 import { DbMcpOAuthPendingStore, McpOAuth, revokeOAuth, type McpOAuthPendingStore } from './oauth.js';
 import { localKeyProvider, type KeyProvider } from '../credentials/key-provider.js';
 import type { DbClaims } from '../db/types.js';
-import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafely, type McpCallAuditEntry } from './audit.js';
+import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafely, recordMcpTestCall, recordMcpTestCallSafely, type McpCallAuditEntry, type McpTestAuditEntry } from './audit.js';
 import { GOOGLE_OAUTH_ISSUER } from '@tm8/contract';
 import { GoogleFirstPartyHost, googleScopesFor } from './first-party/google/host.js';
 import { GOOGLE_NOT_CONFIGURED, type GoogleHostOptions } from './first-party/google/endpoints.js';
@@ -52,6 +52,34 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
  const credentials=new McpCredentialStore(deps.db,options.dataDir,keys);
  const store=new DbSpaceCredentialStore({db:deps.db,dataDir:options.dataDir});
  const oauth=new McpOAuth(options.callbackUrl,options.oauthPending??new DbMcpOAuthPendingStore(deps.db),keys);
+ /**
+  * S10/S12, B44: how many tools each connection CANNOT use for want of a
+  * granted scope, so the Connectors page can draw the amber "Limited access"
+  * badge on the row instead of only in the drawer.
+  *
+  * It reads the STORED plain `granted_scopes` the list already returns and the
+  * first-party host's own tool→scope map. No decrypt (nothing here needs a
+  * token), and no copy of the map in SQL — the host is the one place a tool's
+  * scopes are stated, and a second copy would drift the moment a tool changed.
+  *
+  * NULL for a connector no host serves: a relayed connector's map lives at the
+  * provider, so tm8 genuinely cannot say, and 0 would claim full coverage. A
+  * definition the host refuses (a first-party flag with the wrong URL) is left
+  * null for the same reason, which is also why the throw is caught rather than
+  * surfaced: this is an annotation on a read, never its authority.
+  */
+ const limitedAccess=(definition:McpServerDefinition,rows:McpCredentialView[]):McpCredentialView[]=>{
+  // The SAME predicate the proxy routes on, narrowed by identity: only the
+  // Google host knows a tool's scopes, so only it can answer this.
+  if(firstParty(definition)!==google)return rows;
+  return rows.map(row=>{
+   // An API-key connection has no OAuth grant to be partial, and a row that is
+   // already revoked or pending has no coverage to report.
+   if(row.authType!=='oauth2'||row.revoked||row.status==='pending')return row;
+   try{return {...row,unavailableToolCount:host.uncovered(definition,row.grantedScopes).length};}
+   catch{return row;}
+  });
+ };
  const definition=async(claims:DbClaims,id:string)=>{const view=await options.definition(claims,id);return {id:view.id,spaceId:view.spaceId,version:view.securityRevision ?? view.version,...view.definition};};
  const google=new GoogleFirstPartyHost(options.google??{client:()=>undefined});
  // §8.1: every first-party connector today is Google's; anything else is served by no host.
@@ -81,7 +109,7 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    if(!current.manageable || current.authType!=='api_key')throw new CollabError('forbidden','Only the API key owner can rotate');
    const server=await approved(auth,current.serverId);await credentials.rotate(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:current.id},input.secret);return view(auth,current.id);
   }),
-  'mcp.credentials.list':async ctx=>{const auth=await claims(ctx);const id=path(ctx,'serverId');await options.definition(auth,id);return views(auth,id);},
+  'mcp.credentials.list':async ctx=>{const auth=await claims(ctx);const id=path(ctx,'serverId');const server=await options.definition(auth,id);return limitedAccess(server.definition,await views(auth,id));},
   'mcp.credentials.readiness':async ctx=>view(await claims(ctx),path(ctx,'credentialId')),
   'mcp.credentials.revoke':requireHumanSession(async ctx=>{const input=McpCredentialCommandInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);const server=await options.definition(auth,current.serverId);
    const opened=await credentials.read(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:current.id}).catch(()=>null);
@@ -168,9 +196,33 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    if(server.definition.enabled===false)readiness='disabled';
    else if(server.definition.transport==='stdio' && !server.definition.stdioTrusted)readiness='stdio_not_trusted';
    else if(server.definition.auth.type!=='none')readiness=input.credentialId?(await deps.db.rpc<{reason:string}>(auth,'mcp_credential_readiness',[server.id,input.credentialId])).reason:'credential_required';
+   /*
+    * §7.5/B51 (359): a test uses the stored credential too, so it is audited
+    * like any proxied call, via='test' with the caller as root. A test refused
+    * before it reached the provider is `denied` with its readiness reason; the
+    * `started` row fails closed (nothing has been sent yet), every later row is
+    * written safely so it never replaces the test's own result.
+    */
+   const began=performance.now();
+   const testRow=(entry:Pick<McpTestAuditEntry,'outcome'|'denyReason'|'responseBytes'>):McpTestAuditEntry=>
+    ({serverId:server.id,credentialId:input.credentialId??null,latencyMs:performance.now()-began,requestBytes:byteSize({}),...entry});
    let result;
-   if(readiness!=='ready')result={ready:false,reason:readiness,tools:[],checkedAt:new Date().toISOString()};
-   else try{const listed=await test.request(auth,'test',server.id,'tools/list') as {tools:unknown[]};result={ready:true,reason:'ready',tools:listed.tools,checkedAt:new Date().toISOString()};}catch{result={ready:false,reason:'server_unavailable',tools:[],checkedAt:new Date().toISOString()};}
+   if(readiness!=='ready'){
+    await recordMcpTestCallSafely(deps.db,auth,testRow({outcome:'denied',denyReason:readiness}));
+    result={ready:false,reason:readiness,tools:[],checkedAt:new Date().toISOString()};
+   }
+   else {
+    await recordMcpTestCall(deps.db,auth,testRow({outcome:'started'}));
+    try{
+     const listed=await test.request(auth,'test',server.id,'tools/list') as {tools:unknown[]};
+     await recordMcpTestCallSafely(deps.db,auth,testRow({outcome:'succeeded',responseBytes:byteSize(listed)}));
+     result={ready:true,reason:'ready',tools:listed.tools,checkedAt:new Date().toISOString()};
+    }catch(error){
+     const denyReason=mcpDenyReason(error);
+     await recordMcpTestCallSafely(deps.db,auth,testRow(denyReason?{outcome:'denied',denyReason}:{outcome:'failed'}));
+     result={ready:false,reason:'server_unavailable',tools:[],checkedAt:new Date().toISOString()};
+    }
+   }
    // B41: a partial Google grant stays usable with fewer tools; say which are missing and which scope would restore each.
    if(result.ready && server.definition.firstParty===true && input.credentialId) {
     const opened=await credentials.read(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:input.credentialId});

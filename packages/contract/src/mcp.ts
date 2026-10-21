@@ -268,6 +268,20 @@ export const McpCredentialViewSchema = z.object({
   /** The provider's own name for the account, e.g. "subhang@gmail.com". */
   accountLabel: z.string().max(200).nullable().optional(),
   grantedScopes: z.array(z.string().max(1024)).max(64).optional(),
+  /**
+   * How many of the connector's tools THIS connection cannot use for want of a
+   * granted scope (S10/S12, B44) — the count behind the Connectors page's amber
+   * "Limited access" badge, so a partial grant is visible in the table without
+   * the page opening every row's drawer.
+   *
+   * NULL for a connector no first-party host serves: a relayed connector's
+   * tool→scope map lives at the provider, so tm8 cannot say, and 0 would be a
+   * claim rather than an absence. It is computed from the STORED plain
+   * `granted_scopes` plus the host's own map — no decrypt, and no copy of the
+   * map in SQL. Gated-off tools are excluded: they are switched off for
+   * everyone, not missing for this account.
+   */
+  unavailableToolCount: z.number().int().min(0).max(64).nullable().optional(),
   lastUsedAt: z.string().nullable().optional(), lastRefreshAt: z.string().nullable().optional(),
 }).strict();
 export type McpCredentialView = z.infer<typeof McpCredentialViewSchema>;
