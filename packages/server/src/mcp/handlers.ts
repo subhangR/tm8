@@ -14,7 +14,7 @@ import { McpProxy, type McpProxyPorts } from './proxy.js';
 import { DbMcpOAuthPendingStore, McpOAuth, revokeOAuth, type McpOAuthPendingStore } from './oauth.js';
 import { localKeyProvider, type KeyProvider } from '../credentials/key-provider.js';
 import type { DbClaims } from '../db/types.js';
-import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafely, type McpCallAuditEntry } from './audit.js';
+import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafely, recordMcpTestCall, recordMcpTestCallSafely, type McpCallAuditEntry, type McpTestAuditEntry } from './audit.js';
 import { GOOGLE_OAUTH_ISSUER } from '@tm8/contract';
 import { GoogleFirstPartyHost, googleScopesFor } from './first-party/google/host.js';
 import { GOOGLE_NOT_CONFIGURED, type GoogleHostOptions } from './first-party/google/endpoints.js';
@@ -196,9 +196,33 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    if(server.definition.enabled===false)readiness='disabled';
    else if(server.definition.transport==='stdio' && !server.definition.stdioTrusted)readiness='stdio_not_trusted';
    else if(server.definition.auth.type!=='none')readiness=input.credentialId?(await deps.db.rpc<{reason:string}>(auth,'mcp_credential_readiness',[server.id,input.credentialId])).reason:'credential_required';
+   /*
+    * §7.5/B51 (359): a test uses the stored credential too, so it is audited
+    * like any proxied call, via='test' with the caller as root. A test refused
+    * before it reached the provider is `denied` with its readiness reason; the
+    * `started` row fails closed (nothing has been sent yet), every later row is
+    * written safely so it never replaces the test's own result.
+    */
+   const began=performance.now();
+   const testRow=(entry:Pick<McpTestAuditEntry,'outcome'|'denyReason'|'responseBytes'>):McpTestAuditEntry=>
+    ({serverId:server.id,credentialId:input.credentialId??null,latencyMs:performance.now()-began,requestBytes:byteSize({}),...entry});
    let result;
-   if(readiness!=='ready')result={ready:false,reason:readiness,tools:[],checkedAt:new Date().toISOString()};
-   else try{const listed=await test.request(auth,'test',server.id,'tools/list') as {tools:unknown[]};result={ready:true,reason:'ready',tools:listed.tools,checkedAt:new Date().toISOString()};}catch{result={ready:false,reason:'server_unavailable',tools:[],checkedAt:new Date().toISOString()};}
+   if(readiness!=='ready'){
+    await recordMcpTestCallSafely(deps.db,auth,testRow({outcome:'denied',denyReason:readiness}));
+    result={ready:false,reason:readiness,tools:[],checkedAt:new Date().toISOString()};
+   }
+   else {
+    await recordMcpTestCall(deps.db,auth,testRow({outcome:'started'}));
+    try{
+     const listed=await test.request(auth,'test',server.id,'tools/list') as {tools:unknown[]};
+     await recordMcpTestCallSafely(deps.db,auth,testRow({outcome:'succeeded',responseBytes:byteSize(listed)}));
+     result={ready:true,reason:'ready',tools:listed.tools,checkedAt:new Date().toISOString()};
+    }catch(error){
+     const denyReason=mcpDenyReason(error);
+     await recordMcpTestCallSafely(deps.db,auth,testRow(denyReason?{outcome:'denied',denyReason}:{outcome:'failed'}));
+     result={ready:false,reason:'server_unavailable',tools:[],checkedAt:new Date().toISOString()};
+    }
+   }
    // B41: a partial Google grant stays usable with fewer tools; say which are missing and which scope would restore each.
    if(result.ready && server.definition.firstParty===true && input.credentialId) {
     const opened=await credentials.read(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:input.credentialId});
