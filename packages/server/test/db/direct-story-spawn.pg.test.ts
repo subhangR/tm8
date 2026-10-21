@@ -27,8 +27,10 @@ describe('direct story spawn on the current migration chain', () => {
     // 303 (and 309) re-create the spawn 294 introduces; replaying 294 after
     // them would collide, so this out-of-order fixture leaves P0b's three
     // migrations out (303, and 308/309 which build on it). Their own suites are
-    // canonical-edges.pg.test.ts and canonical-edges-rows.pg.test.ts.
-    const p0b = ['_canonical_edges.sql', '_canonical_edges_rows.sql', '_session_teammate_participates_only.sql'];
+    // canonical-edges.pg.test.ts and canonical-edges-rows.pg.test.ts. 330
+    // (launched_by) is built on 303 (edge_types.replaced_by) and re-creates the
+    // spawn too, so it is left out with them.
+    const p0b = ['_canonical_edges.sql', '_canonical_edges_rows.sql', '_session_teammate_participates_only.sql', '_launched_by.sql'];
     db.apply(files.filter(file => file !== migration && !p0b.some(suffix => file.endsWith(suffix))));
     previousOwner = (await db.query(`select pg_get_userbyid(proowner) owner from pg_proc
       where oid='public.execution_spawn(uuid,uuid,uuid[],uuid,text,text,text,text,text,text,text,text,boolean,integer,uuid,text,uuid,text)'::regprocedure`))[0]!.owner;

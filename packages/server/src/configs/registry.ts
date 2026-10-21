@@ -160,6 +160,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '64', definedIn: EXEC_HANDLERS },
   { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs.', default: '4', definedIn: EXEC_HANDLERS },
   { name: 'TM8_WORKTREE_CAP', group: 'Lane launch', summary: 'Concurrent worktree lanes (0 = unlimited).', default: '0', definedIn: EXEC_HANDLERS },
+  { name: 'TM8_NODE_AGENT_LOGIN_CHECK', group: 'Lane launch', summary: 'Refuses a source=node spawn on a host with no claude/codex login, and answers Node admin\'s usable-login row (0 turns it off, for a node whose login the probe cannot see).', default: 'on', definedIn: EXEC_HANDLERS },
   { name: 'TM8_LAUNCH_BOOTSTRAP', group: 'Lane launch', summary: 'Seeds launchable personas and the current project at boot (0 turns it off).', default: 'on', definedIn: CONFIG },
   { name: 'TM8_PROJECT_DIR', group: 'Lane launch', summary: 'Project the launch bootstrap registers.', default: 'the server\'s working directory', definedIn: CONFIG },
   { name: 'TM8_PROJECT_ROOTS', group: 'Lane launch', summary: 'Directories offered when linking a project.', default: null, definedIn: 'packages/server/src/facade/services/w2/project-directories.ts' },
@@ -264,6 +265,7 @@ export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
   CHROME_RECORD_NAME: 'the label launch.harness records --no-chrome under, not a setting',
   TRUSTED_CONTROL_TYPES: 'the closed vocabulary of control envelope types',
   DISCOVERY_PROMPT_FORM: 'prompt wording, shown on the Prompts page',
+  COORDINATION_INSTRUCTION_CHAT: 'prompt wording for a chat-spawned worker, not a setting',
   COORDINATOR_KINDS: 'the closed vocabulary of coordinator anchors',
   ZERO_COST: 'the zero value of Jev cost accounting',
 };
