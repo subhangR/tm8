@@ -34,7 +34,10 @@ export function viewOf(server: McpServerView, accounts: McpCredentialView[]): Mc
     transport: d.transport, url: d.url, command: d.command, args: d.args, auth: d.auth.type === 'oauth2' ? 'oauth' : d.auth.type,
     approved: d.approved, enabled: d.enabled !== false, canApprove: server.allowed.approve,
     canManage: server.allowed.manage, canAttach: server.allowed.attach, health: server.health,
-    accounts: accounts.map(a => ({ id: a.id, label: a.label, ownerId: a.ownerId, ownerLabel: "ownerLabel" in a && typeof a.ownerLabel === "string" ? a.ownerLabel : a.manageable ? "You" : "Another member", canUse: a.usable, canManage: a.manageable,
+    // ownerId is null on a Space-owned connection (G2): it has no member owner,
+    // so "Another member" would be a plain lie. The full Shared/Personal column
+    // is §10.1/§10.3 and belongs to the Connectors page work.
+    accounts: accounts.map(a => ({ id: a.id, label: a.label, ...(a.ownerId ? { ownerId: a.ownerId } : {}), ownerLabel: "ownerLabel" in a && typeof a.ownerLabel === "string" ? a.ownerLabel : a.ownerId === null ? "Shared with Space" : a.manageable ? "You" : "Another member", canUse: a.usable, canManage: a.manageable,
       status: a.revoked ? 'revoked' : a.usable && a.reason === 'ready' ? 'connected' : a.reason,
       sharing: a.visibility === 'selected' ? 'members' : a.visibility, memberIds: a.sharedMemberIds })),
   };

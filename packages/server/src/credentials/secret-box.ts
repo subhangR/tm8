@@ -52,11 +52,39 @@ export interface ServerGateSecretBinding {
   readonly memberId: string;
 }
 
+/**
+ * An MCP connection sealed under a NAMED key (§5.2, §9.4): AAD
+ * `mcp-key|<key_id>|<space_id>|<credential_id>|<provider>`.
+ *
+ * The literal prefix is load-bearing. Every form above separates its domain by
+ * SEPARATOR COUNT, so appending the key id to the space form would give three
+ * separators and collide with the space-link form. The prefix keeps it apart
+ * whatever the ids hold, exactly as the server-gate form does.
+ *
+ * Binding the key id means an attacker who can write `space_credentials.key_id`
+ * still cannot make the server open a ciphertext under a different key: the tag
+ * check fails. A row whose `key_id` is NULL was sealed before the column existed
+ * and keeps the unkeyed `SpaceSecretBinding` form — the OPENER picks the form
+ * from the column and never tries one and then the other.
+ */
+export interface KeyedSpaceSecretBinding {
+  readonly keyId: string;
+  readonly spaceId: string;
+  readonly credentialId: string;
+  readonly provider: string;
+}
+
 export type SecretBinding =
-  | AccountSecretBinding | SpaceSecretBinding | SpaceLinkSecretBinding | ServerGateSecretBinding;
+  | AccountSecretBinding | SpaceSecretBinding | SpaceLinkSecretBinding | ServerGateSecretBinding
+  | KeyedSpaceSecretBinding;
 
 /** The AAD string for `binding`; for a link or server gate, the value its `aad` column holds. */
 export function bindingAad(binding: SecretBinding): string {
+  if ('keyId' in binding) {
+    if (binding.keyId.includes('|')) throw new Error('secret binding key id must not contain "|"');
+    if (binding.provider.includes('|')) throw new Error('secret binding provider must not contain "|"');
+    return `mcp-key|${binding.keyId}|${binding.spaceId}|${binding.credentialId}|${binding.provider}`;
+  }
   if ('serverId' in binding) {
     return `server-gate|${binding.homeSpaceId}|${binding.serverId}|${binding.memberId}`;
   }
