@@ -116,8 +116,13 @@ function stateHash(state: string): Buffer {
   return createHash('sha256').update(state).digest();
 }
 
-function pendingBinding(keyId: string, hash: Buffer, identityId: string, target: { spaceId: string; serverId: string; scope: string }): OAuthPendingSecretBinding {
-  return { keyId, stateHash: hash.toString('hex'), identityId, spaceId: target.spaceId.toLowerCase(), serverId: target.serverId.toLowerCase(), scope: target.scope };
+function pendingBinding(keyId: string, hash: Buffer, identityId: string, row: {
+  spaceId: string; serverId: string; scope: string; definitionVersion?: number | null; returnTo?: string | null;
+}): OAuthPendingSecretBinding {
+  return {
+    keyId, stateHash: hash.toString('hex'), identityId, spaceId: row.spaceId.toLowerCase(), serverId: row.serverId.toLowerCase(), scope: row.scope,
+    definitionVersion: row.definitionVersion ?? null, returnTo: row.returnTo || null,
+  };
 }
 
 const TOKEN_AUTH_METHODS: readonly TokenEndpointAuthMethod[] = [

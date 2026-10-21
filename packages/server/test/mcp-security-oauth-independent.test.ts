@@ -66,14 +66,20 @@ describe('independent OAuth binding and lifecycle', () => {
     expect(result).toMatchObject({ scope: 'space', returnTo: '/#/s/space/chat', grantedScopes: ['read', 'write'], secret: { clientSecret: 'client-secret-canary', tokenEndpoint: `${p.origin}/token` } });
     expect(pending.rows.size).toBe(0);
   });
-  it.each([['scope', 'space'], ['serverId', 'other-server'], ['spaceId', 'other-space'], ['identityId', 'intruder']] as const)('refuses a pending row whose %s was rewritten, before any exchange', async (column, value) => {
+  it.each([
+    ['scope', 'space'], ['serverId', 'other-server'], ['spaceId', 'other-space'], ['identityId', 'intruder'],
+    // Rewriting the revision to today's would otherwise get past the "connector changed" guard.
+    ['definitionVersion', 8], ['definitionVersion', null], ['returnTo', '/#/elsewhere'], ['returnTo', null],
+  ] as const)('refuses a pending row whose %s was rewritten to %j, before any guard or exchange', async (column, value) => {
     const p = await provider();
     const pending = memoryOAuthPending();
     const oauth = new McpOAuth('https://tm8.test/callback', pending, fixtureKeys());
-    const state = new URL((await oauth.begin({ identityId: 'human' }, p.input)).authorizationUrl).searchParams.get('state')!;
+    const state = new URL((await oauth.begin({ identityId: 'human' }, { ...p.input, definitionVersion: 7, returnTo: '/#/s/space/chat' })).authorizationUrl).searchParams.get('state')!;
+    const guard = vi.fn(async () => {});
     const row = [...pending.rows.values()][0]!;
     Object.assign(row, { [column]: value });
-    await expect(oauth.callback({ identityId: column === 'identityId' ? 'intruder' : 'human' }, { state, code: 'code' })).rejects.toThrow('state');
+    await expect(oauth.callback({ identityId: column === 'identityId' ? 'intruder' : 'human' }, { state, code: 'code' }, guard)).rejects.toThrow('state');
+    expect(guard).not.toHaveBeenCalled();
     expect(p.calls.filter(call => call.path === '/token')).toHaveLength(0);
   });
   it('a sign-in begun on one server instance completes on another sharing the store and key', async () => {
@@ -84,7 +90,7 @@ describe('independent OAuth binding and lifecycle', () => {
     const after = new McpOAuth('https://tm8.test/callback', pending, keys);
     await expect(after.callback({ identityId: 'human' }, { state, code: 'code' })).resolves.toMatchObject({ serverId: 'server', secret: { accessToken: 'access-secret' } });
   });
-  it.each(['//evil.test/x', 'https://evil.test/', '/\\evil.test', 'relative', '/ok\nx'])('refuses returnTo %j at the contract', value => {
+  it.each(['//evil.test/x', 'https://evil.test/', '/\\evil.test', 'relative', '/ok\nx', '/\t/evil.test'])('refuses returnTo %j at the contract', value => {
     expect(McpOAuthBeginInputSchema.safeParse({ clientMutationId: 'c', serverId: '00000000-0000-4000-8000-000000000001', label: 'x', returnTo: value }).success).toBe(false);
   });
   it('admits a same-origin returnTo and a scope at the contract', () => {

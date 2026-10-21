@@ -17,14 +17,17 @@
 --   own nonce anyway, and putting the token endpoint inside the envelope means
 --   a writer of this table cannot point the code exchange somewhere else. The
 --   AAD (server-side, `mcp-oauth|<key_id>|<state_hash>|<identity>|<space>|
---   <server>|<scope>`) binds the envelope to its row.
+--   <server>|<scope>|<definition_version>|<return_to>`) binds the envelope to its
+--   row, so a rewritten definition_version cannot slip past the "connector
+--   changed" guard and a rewritten return_to cannot redirect the user.
 -- * SINGLE USE: take_mcp_oauth_pending consumes with DELETE … RETURNING, so a
 --   state is spent even when the provider then fails, and two concurrent
 --   callbacks cannot both get it. A callback by a DIFFERENT identity deletes
 --   nothing (today's rule: someone else's state is not burned by a stranger).
--- * TTL 10 minutes and a node-wide cap of 1,000 live sign-ins, as before. The
---   sweep runs inside every begin, under one advisory lock, so the cap counts
---   only live rows and stays exact across instances.
+-- * TTL 10 minutes and a node-wide cap of 1,000 live sign-ins, as before, plus
+--   20 per identity so one member cannot exhaust the node's. The sweep runs
+--   inside every begin, under one advisory lock, so the caps count only live
+--   rows and stay exact across instances.
 -- * scope_kind is the "Just me / Shared with this Space" choice made at begin
 --   (§10.2). It must survive the redirect, which is why §11's `scope` lands with
 --   this table. A Space scope needs a Space admin HERE, before the user is sent
@@ -46,7 +49,9 @@ create table internal.mcp_oauth_pending (
   secret_nonce bytea not null check (octet_length(secret_nonce) = 12),
   label text not null check (char_length(label) between 1 and 120),
   return_to text check (return_to is null or (char_length(return_to) <= 2048
-    and left(return_to, 1) = '/' and left(return_to, 2) <> '//' and position('\' in return_to) = 0)),
+    and left(return_to, 1) = '/' and left(return_to, 2) <> '//' and position('\' in return_to) = 0
+    -- Browsers strip tab/CR/LF from URLs, so '/\t/evil' would become '//evil'.
+    and return_to !~ E'[\\x01-\\x1f\\x7f]')),
   expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
@@ -76,6 +81,11 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('mcp_oauth_pending', 342));
   delete from internal.mcp_oauth_pending where expires_at <= now();
   if (select count(*) from internal.mcp_oauth_pending) >= 1000 then
+    raise exception 'Too many pending MCP connections' using errcode = '53400';
+  end if;
+  -- Per identity too, so one member scripting begins cannot use up the node's
+  -- 1,000 and block every other connect for ten minutes.
+  if (select count(*) from internal.mcp_oauth_pending where identity_id = internal.identity_id()) >= 20 then
     raise exception 'Too many pending MCP connections' using errcode = '53400';
   end if;
   v_expires := least(coalesce(p_expires_at, now() + interval '10 minutes'), now() + interval '10 minutes');

@@ -96,7 +96,22 @@ describe('internal.mcp_oauth_pending (342)', () => {
     await expect(store.insert(plainClaims, row({ stateHash: randomBytes(16) }))).rejects.toThrow();
     await expect(store.insert(plainClaims, row({ nonce: randomBytes(8) }))).rejects.toThrow();
     await expect(store.insert(plainClaims, row({ keyId: 'aws-kms:v1' }))).rejects.toThrow();
-    for (const returnTo of ['//evil.test', 'https://evil.test', '/\\evil.test']) await expect(store.insert(plainClaims, row({ returnTo }))).rejects.toThrow();
+    // Browsers strip tab/CR/LF, so '/\t/evil.test' would navigate to '//evil.test'.
+    for (const returnTo of ['//evil.test', 'https://evil.test', '/\\evil.test', '/\t/evil.test', '/\n/evil.test', '/\r/evil.test', '/x\u007f']) {
+      await expect(store.insert(plainClaims, row({ returnTo }))).rejects.toThrow();
+    }
+    expect(await count()).toBe(0);
+  });
+  it('caps live sign-ins at 20 per identity, so one member cannot exhaust the node', async () => {
+    await scratch.query('delete from internal.mcp_oauth_pending');
+    const mine: McpOAuthPendingRow[] = [];
+    for (let i = 0; i < 20; i++) { const pending = row(); mine.push(pending); await store.insert(plainClaims, pending); }
+    await expect(store.insert(plainClaims, row())).rejects.toMatchObject({ code: 'limit_exceeded', message: 'Too many pending MCP connections' });
+    // Another member is unaffected, and an expired row of mine stops counting.
+    const theirs = row(); await store.insert(ownerClaims, theirs);
+    await scratch.query("update internal.mcp_oauth_pending set expires_at = now() - interval '1 second' where state_hash = $1", [mine[0]!.stateHash]);
+    await store.insert(plainClaims, row());
+    await scratch.query('delete from internal.mcp_oauth_pending');
   });
   it('keeps the node-wide cap of 1,000 live sign-ins and sweeps expired rows first', async () => {
     await scratch.query('delete from internal.mcp_oauth_pending');
