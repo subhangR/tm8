@@ -1,7 +1,7 @@
 import {
  CollabError, McpCredentialRotateInputSchema, McpCredentialCreateInputSchema, McpCredentialCommandInputSchema,
  McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema,
- McpServerTestInputSchema, McpProxyRequestInputSchema, type McpCredentialView, type McpServerView,
+ McpServerTestInputSchema, McpProxyRequestInputSchema, type McpCredentialView, type McpServerDefinition, type McpServerView,
 } from '@tm8/contract';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { HandlerRegistry } from '../facade/registry.js';
@@ -52,6 +52,34 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
  const credentials=new McpCredentialStore(deps.db,options.dataDir,keys);
  const store=new DbSpaceCredentialStore({db:deps.db,dataDir:options.dataDir});
  const oauth=new McpOAuth(options.callbackUrl,options.oauthPending??new DbMcpOAuthPendingStore(deps.db),keys);
+ /**
+  * S10/S12, B44: how many tools each connection CANNOT use for want of a
+  * granted scope, so the Connectors page can draw the amber "Limited access"
+  * badge on the row instead of only in the drawer.
+  *
+  * It reads the STORED plain `granted_scopes` the list already returns and the
+  * first-party host's own tool→scope map. No decrypt (nothing here needs a
+  * token), and no copy of the map in SQL — the host is the one place a tool's
+  * scopes are stated, and a second copy would drift the moment a tool changed.
+  *
+  * NULL for a connector no host serves: a relayed connector's map lives at the
+  * provider, so tm8 genuinely cannot say, and 0 would claim full coverage. A
+  * definition the host refuses (a first-party flag with the wrong URL) is left
+  * null for the same reason, which is also why the throw is caught rather than
+  * surfaced: this is an annotation on a read, never its authority.
+  */
+ const limitedAccess=(definition:McpServerDefinition,rows:McpCredentialView[]):McpCredentialView[]=>{
+  // The SAME predicate the proxy routes on, narrowed by identity: only the
+  // Google host knows a tool's scopes, so only it can answer this.
+  if(firstParty(definition)!==google)return rows;
+  return rows.map(row=>{
+   // An API-key connection has no OAuth grant to be partial, and a row that is
+   // already revoked or pending has no coverage to report.
+   if(row.authType!=='oauth2'||row.revoked||row.status==='pending')return row;
+   try{return {...row,unavailableToolCount:host.uncovered(definition,row.grantedScopes).length};}
+   catch{return row;}
+  });
+ };
  const definition=async(claims:DbClaims,id:string)=>{const view=await options.definition(claims,id);return {id:view.id,spaceId:view.spaceId,version:view.securityRevision ?? view.version,...view.definition};};
  const google=new GoogleFirstPartyHost(options.google??{client:()=>undefined});
  // §8.1: every first-party connector today is Google's; anything else is served by no host.
@@ -81,7 +109,7 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    if(!current.manageable || current.authType!=='api_key')throw new CollabError('forbidden','Only the API key owner can rotate');
    const server=await approved(auth,current.serverId);await credentials.rotate(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:current.id},input.secret);return view(auth,current.id);
   }),
-  'mcp.credentials.list':async ctx=>{const auth=await claims(ctx);const id=path(ctx,'serverId');await options.definition(auth,id);return views(auth,id);},
+  'mcp.credentials.list':async ctx=>{const auth=await claims(ctx);const id=path(ctx,'serverId');const server=await options.definition(auth,id);return limitedAccess(server.definition,await views(auth,id));},
   'mcp.credentials.readiness':async ctx=>view(await claims(ctx),path(ctx,'credentialId')),
   'mcp.credentials.revoke':requireHumanSession(async ctx=>{const input=McpCredentialCommandInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);const server=await options.definition(auth,current.serverId);
    const opened=await credentials.read(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:current.id}).catch(()=>null);
