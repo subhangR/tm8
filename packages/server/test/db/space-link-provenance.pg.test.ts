@@ -471,7 +471,8 @@ async function childOf(L: Linked): Promise<DbClaims> {
 }
 
 /**
- * The same child with NO Space pin.
+ * The same child with NO Space pin. PREDICATE-ONLY CONTROL (B32): unreachable
+ * via a real session since B20 (226's CHECK + the always-pinned kinds).
  *
  * This used to be `childOf(L, 'off')`: resolve the real token under
  * `TM8_SPACE_SESSIONS=off`, which dropped `sessionSpaceId`. B20 (Q15) pins

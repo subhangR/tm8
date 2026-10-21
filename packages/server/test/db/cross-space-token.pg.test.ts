@@ -724,27 +724,27 @@ describe('T10 agent G (A) writes B — 42501 (W0a)', () => {
     // on an `off` node as well. This block used to pin the opposite —
     // "provider_etag_record in B succeeds (pin inert) ... by design of the kill
     // switch" — and that is the documented decision B20 reverses.
-    it(`${kind}: off — provider_etag_record in B is refused, as under agents (B20/Q15)`, async () => {
+    //
+    // The A1 discrimination used to come from `off` succeeding in B. `off` can
+    // no longer show that, so both halves live in ONE cell (B33): the live
+    // path's 42501, and then the SAME claim with exactly one field removed,
+    // which lands the write. The second half is a PREDICATE-ONLY control —
+    // unreachable via a real session since B20 (226's CHECK plus the
+    // always-pinned kinds) — and it is in here rather than beside, so neither
+    // half can pass alone: without the drop it returns 42501 (proven by
+    // mutation), and without the pin the first assertion fails.
+    it(`${kind}: off — provider_etag_record in B is refused, and the refusal IS the pin (B20/Q15)`, async () => {
       const token = await mint();
       expect(await outcome(() => recordEtag(token, fixture.spaceB, 'off'))).toBe('42501');
-    });
-    it(`${kind}: off — positive — provider_etag_record in A succeeds`, async () => {
-      const token = await mint();
-      expect(await outcome(() => recordEtag(token, fixture.spaceA, 'off'))).toBe('ok');
-    });
-
-    // The A1 control, now that no mode un-pins an agent: take the same `off`
-    // claim and drop `sessionSpaceId` by hand. 226's CHECK makes this
-    // unreachable through a real session, which is the point — it is the only
-    // way left to show that the 42501 above is 227's pin and not some other
-    // guard on `provider_etag_record`.
-    it(`${kind}: the refusal IS the pin — the same claim with sessionSpaceId dropped writes B (B20/Q15)`, async () => {
-      const token = await mint();
       const unpinned = { ...(await claimsForToken(token, 'off')), sessionSpaceId: undefined };
       expect(unpinned.authKind).toBe(kind);
       expect(await outcome(() => db.tx(unpinned, (q) => q.rpc('provider_etag_record', [
         fixture.spaceB, `cross-space/${randomUUID()}`, `"etag-${randomUUID()}"`, false,
       ])))).toBe('ok');
+    });
+    it(`${kind}: off — positive — provider_etag_record in A succeeds`, async () => {
+      const token = await mint();
+      expect(await outcome(() => recordEtag(token, fixture.spaceA, 'off'))).toBe('ok');
     });
 
     it(`${kind}: enforce — provider_etag_record in B is refused, as under agents`, async () => {

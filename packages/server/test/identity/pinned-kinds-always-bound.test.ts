@@ -18,7 +18,7 @@
  * The SQL-side half of this (what the claim then does to every membership
  * helper) is `test/db/cross-space-token.pg.test.ts`.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CollabError } from '@tm8/contract';
 import { identityFromSession } from '../../src/http/identity-resolver.js';
 import type { SpaceSessionsMode } from '../../src/http/types.js';
@@ -60,11 +60,25 @@ describe('sessionSpacePin — the pinned kinds bind in every spaces mode (B20/Q1
     // the identity belongs to) is exactly the leak B20 closes, and a future
     // migration that relaxes the CHECK must break loudly instead.
     it(`${kind} with no space is REFUSED, not bound to the empty pin`, () => {
-      for (const mode of MODES) {
-        expect(() => identityFromSession(row(kind, null), 'bearer', mode))
-          .toThrow(CollabError);
-        expect(() => identityFromSession(row(kind, null), 'bearer', mode))
-          .toThrow(/not bound to a space/);
+      // B32: and the operator is told, not just the caller. Spied, not
+      // silenced, so the log stays part of the contract.
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        for (const mode of MODES) {
+          expect(() => identityFromSession(row(kind, null), 'bearer', mode))
+            .toThrow(CollabError);
+          expect(() => identityFromSession(row(kind, null), 'bearer', mode))
+            .toThrow(/not bound to a space/);
+        }
+        expect(logged).toHaveBeenCalledTimes(MODES.length * 2);
+        const [line] = logged.mock.calls.at(-1)!;
+        expect(line).toContain('BROKEN INVARIANT');
+        expect(line).toContain(row(kind, null).sessionId);
+        expect(line).toContain(kind);
+        // The token never reaches the log.
+        expect(line).not.toContain('bearer');
+      } finally {
+        logged.mockRestore();
       }
     });
   }

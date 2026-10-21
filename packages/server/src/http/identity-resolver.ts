@@ -70,12 +70,21 @@ function sessionSpacePin(
   mode: SpaceSessionsMode,
   kind: string,
   spaceId: string | null | undefined,
+  sessionId: string,
 ): string | undefined {
   if (ALWAYS_PINNED_KINDS.has(kind)) {
     // Unreachable through SQL while 226's CHECK stands, and refused rather
     // than binding `undefined` if it ever is: an agent row with no Space is a
     // broken invariant, and the fail-open answer is exactly the leak above.
+    //
+    // B32: logged at error level as well, because a 401 on its own reads as a
+    // credential problem to whoever hit it and tells the OPERATOR nothing. The
+    // session id and kind are enough to find the row; the token never appears.
     if (!spaceId) {
+      console.error(
+        `[tm8] BROKEN INVARIANT: auth_sessions row ${sessionId} of kind ${kind} has no space_id ` +
+          `(226 auth_sessions_pinned_kinds_have_space); refusing the credential (B20/Q15)`,
+      );
       throw new CollabError('unauthenticated', `a ${kind} session is not bound to a space`);
     }
     return spaceId;
@@ -145,7 +154,7 @@ export function identityFromSession(
   raw: string,
   spaceSessions: SpaceSessionsMode,
 ): RequestIdentity {
-  const sessionSpaceId = sessionSpacePin(spaceSessions, session.kind, session.spaceId);
+  const sessionSpaceId = sessionSpacePin(spaceSessions, session.kind, session.spaceId, session.sessionId);
   return {
     kind: 'bearer',
     identityId: session.identityId,
