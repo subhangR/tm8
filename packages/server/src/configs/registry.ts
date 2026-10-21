@@ -41,6 +41,7 @@ import {
   CLIPBOARD_MAX_BYTES_DEFAULT,
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
+import { MCP_AUDIT_RETENTION_DAYS_DEFAULT } from '../scheduler/jobs/mcp-audit-retention.js';
 import { DEFAULT_AUTH_RATE_LIMITS, RATE_LIMITED_AUTH_OPS } from '../http/auth-rate-limit.js';
 import { DEFAULT_STYLE_RATE_LIMITS } from '../http/style-rate-limit.js';
 import { CANDIDATE_LIMIT, TEXT_LIMIT } from '../jev/candidates.js';
@@ -134,6 +135,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_CLIPBOARD_DIR', group: 'Storage & database', summary: 'Where pasted clipboard images land; exported to every agent.', default: '<data dir>/clipboard', definedIn: CONFIG },
   { name: 'TM8_CLIPBOARD_MAX_BYTES', group: 'Storage & database', summary: 'Per-image ceiling for a clipboard paste.', default: String(CLIPBOARD_MAX_BYTES_DEFAULT), definedIn: CONFIG },
   { name: 'TM8_CLIPBOARD_RETENTION_DAYS', group: 'Storage & database', summary: 'Days a clipboard bucket survives (0 = keep).', default: String(CLIPBOARD_RETENTION_DAYS_DEFAULT), definedIn: CONFIG },
+  { name: 'TM8_MCP_AUDIT_RETENTION_DAYS', group: 'Storage & database', summary: 'Days an MCP call audit row survives (0 = keep).', default: String(MCP_AUDIT_RETENTION_DAYS_DEFAULT), definedIn: CONFIG },
   { name: 'TM8_PG_PORT', group: 'Storage & database', summary: 'Port of the bundled Postgres sidecar.', default: '5442', definedIn: SIDECAR },
   { name: 'TM8_PG_APP_ROLE', group: 'Storage & database', summary: 'Role the server connects as.', default: 'tm8_app', definedIn: SIDECAR },
   { name: 'TM8_PG_DATABASE', group: 'Storage & database', summary: 'Sidecar database name.', default: 'tm8', definedIn: SIDECAR },
