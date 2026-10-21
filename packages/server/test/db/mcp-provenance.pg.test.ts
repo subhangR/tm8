@@ -1020,6 +1020,9 @@ describe('§6 — a forged triggered_by edge roots nothing (347)', () => {
       reason: 'ready', via: 'schedule_armed_by', rootMemberId: people.alice.memberA,
     });
   });
+});
+
+/* ===========================================================================
  * 348 / 351 — THE ORDERING FIX, AND WHAT IT MAKES REACHABLE.
  *
  * Everything above this point writes a firing's `triggered_by` edge BY HAND,
