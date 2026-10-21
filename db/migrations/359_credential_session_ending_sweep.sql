@@ -1,5 +1,5 @@
 -- =============================================================================
--- 357: end a credential login terminal's work session once its login is over.
+-- 359: end a credential login terminal's work session once its login is over.
 --
 -- A credential work session (session_kind 'credential', a vendor login
 -- terminal) is minted `spawning` by start_credential_session (083/183) or

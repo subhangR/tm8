@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:bc627396e0ce00b45d5a1f5a66660941d7fb2e419039f4d9735c7cacf1c8e209",
+  "catalogDigest": "sha256:508a625af9ff431f10465055fab1231e1ef1f67ca53b0ca131163dd710b8c037",
   "catalog": {
-    "total": 377,
-    "v1": 375,
+    "total": 380,
+    "v1": 378,
     "reserved": 2,
-    "http": 375,
+    "http": 378,
     "ws": 1,
-    "registerableV1Http": 373,
+    "registerableV1Http": 376,
     "methods": {
-      "GET": 125,
-      "POST": 184,
+      "GET": 126,
+      "POST": 186,
       "PATCH": 21,
       "DELETE": 23,
       "PUT": 22,
       "WS": 2
     },
     "kinds": {
-      "read": 131,
-      "command": 244,
+      "read": 132,
+      "command": 246,
       "stream": 2
     },
-    "uniqueNames": 377,
-    "uniqueBindings": 376
+    "uniqueNames": 380,
+    "uniqueBindings": 379
   },
   "reservedOperations": [
     "search.query",
@@ -428,6 +428,27 @@
         "operation": "mcp.servers.request",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/mcp/servers/request",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.tokens.create",
+        "method": "POST",
+        "path": "/v2/mcp/tokens",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.tokens.list",
+        "method": "GET",
+        "path": "/v2/mcp/tokens",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "mcp.tokens.revoke",
+        "method": "POST",
+        "path": "/v2/mcp/tokens/:tokenId/revoke",
         "status": "registered",
         "source": "server-router"
       },
@@ -3043,7 +3064,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 345
+    "unimplementedV1Http": 348
   },
   "schemas": {
     "additive": {
@@ -3755,6 +3776,57 @@
           "mcp",
           "servers",
           "request"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.tokens.create",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.tokens.create",
+        "intentTags": [
+          "mcp",
+          "tokens",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.tokens.list",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.tokens.list",
+        "intentTags": [
+          "mcp",
+          "tokens",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "mcp.tokens.revoke",
+        "noun": "mcp",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/mcp.tokens.revoke",
+        "intentTags": [
+          "mcp",
+          "tokens",
+          "revoke"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

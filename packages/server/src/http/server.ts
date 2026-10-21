@@ -61,6 +61,7 @@ import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
 import type { RemoteSpaceLinkRoute } from '../facade/handlers/w2/space-link-remote-route.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
+import { MCP_ENDPOINT_PATH, type McpEndpointRoute } from '../mcp/endpoint.js';
 import type { ReadAdmission } from './read-admission.js';
 import { requireWriteApiScope } from '../identity/api-scope.js';
 import { assertSpaceGate } from './space-gate.js';
@@ -111,6 +112,18 @@ export interface FacadeServerOptions {
    * re-serialized one has a different digest.
    */
   readonly voiceWebhookRoute?: VoiceWebhookRoute;
+  /**
+   * §7.1 / G14: the remote MCP endpoint, `POST /mcp`. Not a catalog operation —
+   * it speaks JSON-RPC, not the DEV-6 envelope — and it resolves its own bearer,
+   * because the ONE credential it takes (an `mcp` token) is refused by the
+   * shared identity resolver on every other transport. Dispatched before
+   * `readJsonBody` for the same reason the link routes are: it reads its own
+   * body under its own cap. Absent: `/mcp` is an honest 404.
+   *
+   * It matches the EXACT path. `/mcp/oauth/callback` is the browser redirect
+   * target served by the UI, so a prefix match here would swallow it.
+   */
+  readonly mcpEndpointRoute?: McpEndpointRoute;
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
   /**
@@ -367,6 +380,17 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // try block, ahead of checkTransport — see the comment there for why.
 
       const isApiPath = pathname === BASE_PATH || pathname.startsWith(`${BASE_PATH}/`);
+
+      // §7.1 / G14: the remote MCP endpoint. No transport identity — it resolves
+      // the one bearer the shared resolver refuses (identity/mcp-token.ts) — and
+      // AHEAD OF THE STATIC HANDLER, so a client's `GET /mcp` (Streamable
+      // HTTP's optional server-to-client stream) gets the route's honest 405
+      // instead of the SPA's index.html with a 200. EXACT path only:
+      // `/mcp/oauth/callback` is the browser redirect target the UI serves, and
+      // a prefix match here would swallow it.
+      if (opts.mcpEndpointRoute && pathname === MCP_ENDPOINT_PATH) {
+        if (await opts.mcpEndpointRoute(req, res, { requestId })) return;
+      }
 
       // Static assets never get a chance to shadow the API surface: an unknown
       // `/v2/...` path is an honest `not_found`, never an index.html with a 200.

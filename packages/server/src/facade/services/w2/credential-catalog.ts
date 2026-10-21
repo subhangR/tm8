@@ -590,7 +590,7 @@ export class W2CredentialCatalogService {
       // The work session ends too, for a terminal this node just killed (the
       // credential service's `recordEnding` explains why nothing else would).
       // One with no PTY here may be live on another node until its expiry;
-      // its own close, or the 357 sweep after the lease, ends that one.
+      // its own close, or the 359 sweep after the lease, ends that one.
       if (outcome === 'killed') {
         await this.db
           .rpc(principal.claims, 'work_session_transition', [

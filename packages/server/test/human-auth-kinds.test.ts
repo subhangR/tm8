@@ -71,6 +71,10 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     // runtime bridge, only a member and a Space.
     'packages/server/src/mcp/definitions.ts',
     'packages/server/src/mcp/handlers.ts',
+    // §5.5 (357): all three `mcp.tokens.*` are human-only. A token that acts as
+    // a member is minted and revoked by that member at a keyboard — never by
+    // their agent carrying their identity, and never by another MCP token.
+    'packages/server/src/mcp/tokens.ts',
     // §5.6 (346): the audit read is a human oversight surface (lead ruling on #1321).
     'packages/server/src/mcp/audit.ts',
     'packages/server/src/tools/handlers.ts',

@@ -192,6 +192,23 @@ const ROWS: Record<OperationName, Row> = {
   'mcp.oauth.callback': {cmd: ['mcp','oauth','callback'], syn: 'tm8 mcp oauth callback [<id>] --input <@file|->', sum: 'Callback MCP oauth', authz: 'entity', input: 'bound'},
   'mcp.resolve': {cmd:['mcp','resolve'], syn:'tm8 mcp resolve --input <json-source>',sum:'Resolve explicit MCP connector readiness',authz:'space',input:'bound'},
   'mcp.audit.list': {cmd:['mcp','audit'], syn:'tm8 mcp audit [--session <id>] [--chat <id>] [--connector <id>] [--member <id>] [--outcome <started|succeeded|failed|denied|refreshed>] [--limit <count>] [--cursor <cursor>]', sum:'List MCP connector calls (admins: the Space; members: their own)', authz:'space', input:'none'},
+  'mcp.tokens.create': {cmd:['mcp','tokens','create'], syn:'tm8 mcp tokens create --label <name> [--space <id>]... [--all-spaces] [--expires-in-days <n>]',
+    sum:'Mint an MCP token for an external client — printed ONCE', authz:'server', input:'bound',
+    tags:['mcp','token','claude desktop','cursor','external','connector'],
+    notes:['the token acts as YOU: it reaches the connectors your member can use, in the spaces it lists, and nothing else',
+      'it is printed once and only its hash is stored — there is no command that shows it again',
+      '--all-spaces means every space you belong to NOW OR JOIN LATER; otherwise name them with --space (repeatable)',
+      'it is accepted on POST <origin>/mcp and refused on every other route, this CLI included',
+      'a connector appears to an external client only where an admin turned on "available to external MCP clients"']},
+  'mcp.tokens.list': {cmd:['mcp','tokens','list'], syn:'tm8 mcp tokens list',
+    sum:'List your MCP tokens (never their secrets)', authz:'server', input:'none',
+    tags:['mcp','token','external'],
+    notes:['yours only: a space admin cannot see or revoke another member\'s token — their lever is the membership',
+      'a revoked token is listed for a day, then drops off']},
+  'mcp.tokens.revoke': {cmd:['mcp','tokens','revoke'], syn:'tm8 mcp tokens revoke <token-id>',
+    sum:'Revoke one of your MCP tokens', authz:'server', input:'bound',
+    tags:['mcp','token','external','revoke'],
+    notes:['clients using it stop working immediately, including a call already in flight']},
   'mcp.catalog.list': {cmd:['mcp','catalog','list'], syn:'tm8 mcp catalog list',sum:'List the connector catalog — the connectors tm8 knows how to add',authz:'server',input:'none',
     tags:['mcp','connector','catalog','directory','discover','gmail','slack','notion','figma'],
     notes:['node-level static data: it answers with no Space, and the ambient --space only adds, per entry, where it is already registered there',
@@ -4327,6 +4344,8 @@ function exposureFor(operation: OperationName): Exposure {
 // to 161 rows. RECOMPUTED from `JSON.stringify(OPERATIONS)`, not adjusted.
 // Tools 3: re-computed from JSON.stringify(OPERATIONS); CLI wiring does not alter the catalog.
 export const CATALOG_DIGEST =
+  /* +3 mcp.tokens.create|list|revoke (external MCP tokens, §5.5/D9, 357): RECOMPUTED from
+     JSON.stringify(OPERATIONS), equal to the regenerated manifest digest. MEASURED. */
   // Re-measured for MW W1.2 (+workspace.list) — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command) and Spec D (+workspace.get|drafts.patch) on main 0edaefe41 — RECOMPUTED, not adjusted.
   // Re-measured for Spec C (+workspace.instances.list|inspect|command, the Workspace remote bridge) — RECOMPUTED, not adjusted.
@@ -4399,7 +4418,7 @@ export const CATALOG_DIGEST =
   // Re-measured for Projects add (+spaces.projects.clone|cloneJobs.get, 01a13574) on main 638f6069e — RECOMPUTED, not adjusted.
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:bc627396e0ce00b45d5a1f5a66660941d7fb2e419039f4d9735c7cacf1c8e209';
+  'sha256:508a625af9ff431f10465055fab1231e1ef1f67ca53b0ca131163dd710b8c037';
 
 export const GRAMMAR_VERSION = '2';
 
