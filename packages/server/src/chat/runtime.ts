@@ -79,3 +79,23 @@ export type ResolveChatLaunchConfig = (
 export type ResolveChatCredentialEnv = (
   input: ChatLaunchConfigInput,
 ) => Promise<Readonly<Record<string, string>>>;
+
+/**
+ * The connectors THIS turn would actually get (§5.3, S21c), resolved without
+ * binding anything.
+ *
+ * Read before every turn, for the same reason `ResolveChatCredentialEnv` is: a
+ * live headless child cannot be handed a new `--mcp-config` or
+ * `--allowed-tools`, so a selection that has moved since the child started has
+ * to close it and resume. It is deliberately NOT part of `ChatLaunchConfig`,
+ * which is resolved only on a cold or post-interrupt start and mints a token on
+ * the way — that mint is exactly what must not happen on a turn that reuses its
+ * child.
+ *
+ * `null` means "could not find out", and the caller treats it as no
+ * information rather than as a failure: a turn that would have reused its child
+ * must not die because a read that only detects CHANGE could not be taken.
+ */
+export type ResolveChatMcpSelection = (
+  input: ChatLaunchConfigInput,
+) => Promise<readonly { readonly serverId: string; readonly credentialId?: string }[] | null>;
