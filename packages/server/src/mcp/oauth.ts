@@ -8,7 +8,7 @@ import type { McpOAuthSecret } from './credential-store.js';
 
 type TokenEndpointAuthMethod = 'none' | 'client_secret_basic' | 'client_secret_post';
 
-interface Metadata {
+export interface Metadata {
   issuer: string;
   authorization_endpoint: string;
   token_endpoint: string;
@@ -19,7 +19,7 @@ interface Metadata {
   token_endpoint_auth_methods_supported?: string[];
 }
 
-interface OAuthClient {
+export interface OAuthClient {
   id: string;
   method: TokenEndpointAuthMethod;
   secret?: string;
@@ -37,6 +37,37 @@ interface SealedPending {
   resource: string;
   metadata: Metadata;
   privateNetwork: boolean;
+  /**
+   * A first-party connect (§8.1, Google). Sealed, so a writer of the pending
+   * table cannot turn it on or off: the code exchange then sends no RFC 8707
+   * `resource`, and the client secret — server configuration — is not copied
+   * into the connection, because the host refreshes with the configured one.
+   */
+  firstParty?: true;
+}
+
+/**
+ * How a first-party host connects (§8.1): static endpoints and the node's own
+ * preregistered client, so begin does no discovery and no registration, and
+ * extra authorization parameters the provider needs (Google's offline access).
+ */
+export interface McpFirstPartyAuthorization {
+  metadata: Metadata;
+  client: OAuthClient;
+  scopes: string[];
+  authorizeParams: Readonly<Record<string, string>>;
+  privateNetwork: boolean;
+}
+
+interface PendingInput {
+  spaceId: string;
+  serverId: string;
+  definitionVersion?: number;
+  resource: string;
+  label?: string;
+  scopes?: string[];
+  scope?: McpCredentialScope;
+  returnTo?: string;
 }
 
 /** A row of `internal.mcp_oauth_pending` as begin writes it (migration 342). */
@@ -298,14 +329,33 @@ export class McpOAuth {
       client = { id: value.client_id, method, ...(secret ? { secret } : {}) };
     }
 
+    return this.start(claims, identityId, input, { redirectUri: this.callbackUrl, client, resource: input.resource, metadata, privateNetwork: input.allowPrivateNetwork }, { resource: input.resource });
+  }
+
+  /**
+   * Begin for a first-party connector (§8.1): the provider's static endpoints
+   * and the node's client, with the SAME pending row, PKCE and single-use state
+   * as every other connect, so the shared `/mcp/oauth/callback` completes it.
+   */
+  async beginFirstParty(claims: DbClaims, input: Omit<PendingInput, 'scopes'>, provider: McpFirstPartyAuthorization): Promise<{ authorizationUrl: string; expiresAt: string }> {
+    const identityId = claims.identityId;
+    if (!identityId) throw new Error('OAuth requires a signed-in member');
+    if (!provider.client.secret || provider.client.method === 'none') throw new Error('OAuth client authentication unavailable');
+    if (!provider.metadata.code_challenge_methods_supported?.includes('S256')) throw new Error('OAuth issuer or PKCE unsupported');
+    return this.start(claims, identityId, { ...input, scopes: provider.scopes }, {
+      redirectUri: this.callbackUrl, client: provider.client, resource: input.resource, metadata: provider.metadata,
+      privateNetwork: provider.privateNetwork, firstParty: true,
+    }, provider.authorizeParams);
+  }
+
+  private async start(claims: DbClaims, identityId: string, input: PendingInput, pending: Omit<SealedPending, 'verifier'>, extraParams: Readonly<Record<string, string>>): Promise<{ authorizationUrl: string; expiresAt: string }> {
+    const { metadata, client } = pending;
     const state = randomBytes(32).toString('base64url');
     const verifier = randomBytes(48).toString('base64url');
     const hash = stateHash(state);
     const scope = input.scope ?? 'member';
     const keyId = this.keys.activeKeyId;
-    const sealed: SealedPending = {
-      verifier, redirectUri: this.callbackUrl, client, resource: input.resource, metadata, privateNetwork: input.allowPrivateNetwork,
-    };
+    const sealed: SealedPending = { ...pending, verifier };
     const envelope = sealSecret(await this.keys.keyFor(keyId), JSON.stringify(sealed), pendingBinding(keyId, hash, identityId, { ...input, scope }));
     const expiresAt = await this.pending.insert(claims, {
       stateHash: hash,
@@ -321,14 +371,16 @@ export class McpOAuth {
       expiresAt: new Date(Date.now() + PENDING_TTL_MS),
     });
     const url = new URL(metadata.authorization_endpoint);
+    // The provider's extra parameters go FIRST, so none of them can replace the
+    // state, the PKCE challenge, the client or the redirect below.
     const params = {
+      ...extraParams,
       response_type: 'code',
       client_id: client.id,
       redirect_uri: this.callbackUrl,
       state,
       code_challenge: createHash('sha256').update(verifier).digest('base64url'),
       code_challenge_method: 'S256',
-      resource: input.resource,
       scope: (input.scopes ?? []).join(' '),
     };
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -371,7 +423,7 @@ export class McpOAuth {
       code: input.code,
       code_verifier: pending.verifier,
       redirect_uri: pending.redirectUri,
-      resource: pending.resource,
+      ...(pending.firstParty ? {} : { resource: pending.resource }),
     }), pending.privateNetwork, pending.client);
     const grantedScopes = grantedScope?.split(' ').filter(Boolean);
     return {
@@ -387,7 +439,7 @@ export class McpOAuth {
         resource: pending.resource,
         clientId: pending.client.id,
         tokenEndpointAuthMethod: pending.client.method,
-        ...(pending.client.secret ? { clientSecret: pending.client.secret } : {}),
+        ...(pending.client.secret && !pending.firstParty ? { clientSecret: pending.client.secret } : {}),
         ...(pending.metadata.revocation_endpoint ? { revocationEndpoint: pending.metadata.revocation_endpoint } : {}),
       },
     };

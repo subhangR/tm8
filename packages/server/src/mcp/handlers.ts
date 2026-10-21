@@ -15,6 +15,9 @@ import { DbMcpOAuthPendingStore, McpOAuth, revokeOAuth, type McpOAuthPendingStor
 import { localKeyProvider, type KeyProvider } from '../credentials/key-provider.js';
 import type { DbClaims } from '../db/types.js';
 import { byteSize, mcpDenyReason, mcpToolName, recordMcpCall, recordMcpCallSafely, type McpCallAuditEntry } from './audit.js';
+import { GoogleFirstPartyHost } from './first-party/google/host.js';
+import { GOOGLE_NOT_CONFIGURED, type GoogleHostOptions } from './first-party/google/endpoints.js';
+import { FirstPartyRefused } from './first-party/host.js';
 
 export interface McpRuntimeHandlerOptions {
  dataDir:string; callbackUrl:string;
@@ -27,6 +30,8 @@ export interface McpRuntimeHandlerOptions {
  oauthPending?:McpOAuthPendingStore;
  /** Seals pending sign-ins and connections. Defaults to the node-local key under dataDir. */
  keys?:KeyProvider;
+ /** The Google first-party host (§8.1). Defaults to Google's endpoints with no client configured. */
+ google?:GoogleHostOptions;
 }
 export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeDeps,options:McpRuntimeHandlerOptions):void {
  const keys=options.keys??localKeyProvider(options.dataDir);
@@ -34,7 +39,10 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
  const store=new DbSpaceCredentialStore({db:deps.db,dataDir:options.dataDir});
  const oauth=new McpOAuth(options.callbackUrl,options.oauthPending??new DbMcpOAuthPendingStore(deps.db),keys);
  const definition=async(claims:DbClaims,id:string)=>{const view=await options.definition(claims,id);return {id:view.id,spaceId:view.spaceId,version:view.securityRevision ?? view.version,...view.definition};};
- const proxy=new McpProxy({credentials,authorize:options.authorize,definition});
+ const google=new GoogleFirstPartyHost(options.google??{client:()=>undefined});
+ // §8.1: every first-party connector today is Google's; anything else is served by no host.
+ const firstParty:McpProxyPorts['firstParty']=value=>value.catalogId?.startsWith('google.')?google:undefined;
+ const proxy=new McpProxy({credentials,authorize:options.authorize,definition,firstParty});
  const claims=async(ctx:RequestContext)=>claimsFor(await deps.owner(),ctx);
  const path=(ctx:RequestContext,name:string)=>{const value=ctx.params[name];if(!value)throw new CollabError('invalid_input',`${name} required`);return value;};
  const views=(auth:DbClaims,serverId:string|null,id:string|null=null)=>deps.db.rpc<McpCredentialView[]>(auth,'list_mcp_credentials',[serverId,id]);
@@ -59,7 +67,12 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.credentials.revoke':requireHumanSession(async ctx=>{const input=McpCredentialCommandInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);const server=await options.definition(auth,current.serverId);
    const opened=await credentials.read(auth,{spaceId:server.spaceId,serverId:server.id,credentialId:current.id}).catch(()=>null);
    await store.revoke(auth,input.credentialId);
-   if(opened?.secret.kind==='oauth')await revokeOAuth(opened.secret,server.definition.allowPrivateNetwork===true).catch(()=>false);
+   // NOT for a first-party Google connection: Gmail, Calendar and Drive of one
+   // Google account are ONE grant on tm8's client (include_granted_scopes), and
+   // Google's revoke ends that whole grant — it would silently break the same
+   // account's other connections. Disconnecting stops tm8 using this one; the
+   // account owner removes tm8 entirely at Google's permissions page.
+   if(opened?.secret.kind==='oauth' && server.definition.firstParty!==true)await revokeOAuth(opened.secret,server.definition.allowPrivateNetwork===true).catch(()=>false);
    return view(auth,input.credentialId);}),
   'mcp.credentials.share':requireHumanSession(async ctx=>{
    const input=McpCredentialShareInputSchema.parse({...ctx.body as object,credentialId:path(ctx,'credentialId')});const auth=await claims(ctx);const current=await view(auth,input.credentialId);
@@ -85,6 +98,18 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   'mcp.oauth.begin':requireHumanSession(async ctx=>{
    const input=McpOAuthBeginInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);const config=server.definition.auth;
    if(config.type!=='oauth2' || !server.definition.url || !auth.identityId)throw new CollabError('invalid_input','OAuth connector required');
+   if(server.definition.firstParty===true) {
+    // §8.1: Google's own begin — static endpoints and the node's client, never
+    // discovery, and nothing from the definition but which service it is.
+    let provider;
+    try {provider=google.authorization(server.definition);}
+    catch(error) {
+     if(error instanceof FirstPartyRefused)throw new CollabError('invalid_input','First-party connector unavailable on this server');
+     if(error instanceof Error && error.message===GOOGLE_NOT_CONFIGURED)throw new CollabError('invalid_input',GOOGLE_NOT_CONFIGURED);
+     throw error;
+    }
+    return oauth.beginFirstParty(auth,{spaceId:server.spaceId,serverId:server.id,definitionVersion:server.securityRevision ?? server.version,resource:server.definition.url,label:input.label,...(input.scope?{scope:input.scope}:{}),...(input.returnTo?{returnTo:input.returnTo}:{})},provider);
+   }
    // Fail loud: without its secret a preregistered confidential client would be
    // sent as a public one and refused at the token endpoint, after the consent screen.
    const clientSecret=config.clientSecretEnv?(options.clientSecret??(name=>process.env[name]))(config.clientSecretEnv):undefined;
@@ -96,14 +121,16 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
    // The state is consumed before this guard runs, so a changed connector spends it too.
    const result=await oauth.callback(auth,input,async pending=>{const current=await options.definition(auth,pending.serverId);if(pending.definitionVersion!==undefined && (current.securityRevision ?? current.version)!==pending.definitionVersion)throw new CollabError('conflict','MCP connector changed; restart authorization');})
     .catch(error=>{if(error instanceof Error && error.message==='OAuth state invalid or expired')throw new CollabError('invalid_input',error.message);throw error;});
-   await approved(auth,result.serverId);
+   const server=await approved(auth,result.serverId);
+   // §5.2: a first-party connection is labelled with the Google account it acts as.
+   const accountLabel=server.definition.firstParty===true?await google.accountLabel(result.secret.accessToken):undefined;
    // The scope chosen at begin rides the pending row; create_mcp_credential re-checks admin for 'space'.
-   const created=await credentials.create(auth,{spaceId:result.spaceId,serverId:result.serverId,label:result.label,secret:result.secret,expectedRevision:result.definitionVersion,scope:result.scope,...(result.grantedScopes?{grantedScopes:result.grantedScopes}:{})}) as {id:string};
+   const created=await credentials.create(auth,{spaceId:result.spaceId,serverId:result.serverId,label:result.label,secret:result.secret,expectedRevision:result.definitionVersion,scope:result.scope,...(result.grantedScopes?{grantedScopes:result.grantedScopes}:{}),...(accountLabel?{accountLabel}:{})}) as {id:string};
    const connected=await view(auth,created.id);return result.returnTo?{...connected,returnTo:result.returnTo}:connected;
   }),
   'mcp.servers.test':requireHumanSession(async ctx=>{
    const input=McpServerTestInputSchema.parse({...ctx.body as object,serverId:path(ctx,'serverId')});const auth=await claims(ctx);const server=await approved(auth,input.serverId);
-   const test=new McpProxy({credentials,definition,authorize:async()=>({sessionId:'test',identityId:auth.identityId!,spaceId:server.spaceId,serverId:server.id,...(input.credentialId?{credentialId:input.credentialId}:{})})});
+   const test=new McpProxy({credentials,definition,firstParty,authorize:async()=>({sessionId:'test',identityId:auth.identityId!,spaceId:server.spaceId,serverId:server.id,...(input.credentialId?{credentialId:input.credentialId}:{})})});
    let readiness='ready';
    if(server.definition.enabled===false)readiness='disabled';
    else if(server.definition.transport==='stdio' && !server.definition.stdioTrusted)readiness='stdio_not_trusted';
