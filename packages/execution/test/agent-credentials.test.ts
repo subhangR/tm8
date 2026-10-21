@@ -549,17 +549,17 @@ describe('per-model routing — a Kimi model gets the Kimi key, a Claude model t
   // the catalog, so a catalog edit that moves a model to another vendor has to
   // change this table on purpose.
   it.each([
-    ['kimi-k2-thinking', 'claude-code', 'kimi'],
-    ['kimi-k2-thinking-turbo', 'claude-code', 'kimi'],
-    ['kimi-k2-turbo-preview', 'claude-code', 'kimi'],
-    ['kimi-k2-0905-preview', 'claude-code', 'kimi'],
+    ['kimi-k3', 'claude-code', 'kimi'],
+    ['kimi-k2.7-code-highspeed', 'claude-code', 'kimi'],
+    ['kimi-k2.6', 'claude-code', 'kimi'],
+    ['kimi-k2.7-code', 'claude-code', 'kimi'],
     ['openai/gpt-oss-120b', 'codex', 'groq'],
     ['openai/gpt-oss-20b', 'codex', 'groq'],
     // A Kimi model SERVED BY GROQ: routed by who serves it, not by its name.
-    ['moonshotai/kimi-k2-instruct-0905', 'codex', 'groq'],
+    ['meta-models/muse-spark-open', 'codex', 'groq'],
     ['llama-3.3-70b-versatile', 'codex', 'groq'],
-    ['qwen/qwen3-32b', 'codex', 'groq'],
-    ['deepseek-r1-distill-llama-70b', 'codex', 'groq'],
+    ['qwen/qwen3.8-27b', 'codex', 'groq'],
+    ['minimaxai/minimax-m2.7', 'codex', 'groq'],
   ] as const)('%s on %s runs on the %s key', (model, agentTool, backend) => {
     expect(apiKeyBackendForModel(agentTool, model)).toBe(backend);
   });
@@ -594,10 +594,10 @@ describe('per-model routing — a Kimi model gets the Kimi key, a Claude model t
     expect(apiKeyBackendForModel('claude-code', 'opus')).toBeNull();
     expect(apiKeyBackendForModel('claude-code', null)).toBeNull();
     expect(apiKeyBackendForModel('claude-code', 'some-future-model')).toBeNull();
-    expect(apiKeyBackendForModel(null, 'kimi-k2-thinking')).toBeNull();
+    expect(apiKeyBackendForModel(null, 'kimi-k3')).toBeNull();
     // A Kimi model asked for on codex is not the Kimi-on-claude route.
-    expect(apiKeyBackendForModel('codex', 'kimi-k2-thinking')).toBeNull();
-    expect(apiKeyBackendForModel('claude-code', 'qwen/qwen3-32b')).toBeNull();
+    expect(apiKeyBackendForModel('codex', 'kimi-k3')).toBeNull();
+    expect(apiKeyBackendForModel('claude-code', 'qwen/qwen3.8-27b')).toBeNull();
   });
 });
 

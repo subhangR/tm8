@@ -45,7 +45,7 @@ async function rig() {
 describe('generation-owned chat credentials', () => {
   it('derives native/inference/policy providers from admitted model/harness routes', () => {
     expect(chatCredentialRoute(input)).toMatchObject({ nativeProvider: 'anthropic', inferenceProvider: 'anthropic' });
-    expect(chatCredentialRoute({ model: 'kimi-k2-thinking', agentTool: 'claude-code' }))
+    expect(chatCredentialRoute({ model: 'kimi-k3', agentTool: 'claude-code' }))
       .toMatchObject({ nativeProvider: 'anthropic', inferenceProvider: 'kimi', policyProvider: 'anthropic' });
     expect(chatCredentialRoute({ model: 'gpt-6.1-sol', agentTool: 'codex' }))
       .toMatchObject({ nativeProvider: 'openai', inferenceProvider: 'openai', harness: 'codex' });
@@ -119,7 +119,7 @@ describe('generation-owned chat credentials', () => {
   it('isolates a Kimi member key and refuses an unsupported node source before preparation', async () => {
     const { port, state, dataDir } = await rig();
     state.member = { provider: 'kimi', homeDir: dataDir, configDir: join(dataDir, 'kimi'), apiKey: KEY };
-    const target = { ...input, model: 'kimi-k2-thinking', provider: 'moonshot' };
+    const target = { ...input, model: 'kimi-k3', provider: 'moonshot' };
     await expect(port.prepare({ ...target, credentialSelection: { source: 'node' } }, owner)).rejects.toThrow();
     expect(await readdir(dataDir)).toEqual([]);
     const prepared = await port.prepare(target, owner);
