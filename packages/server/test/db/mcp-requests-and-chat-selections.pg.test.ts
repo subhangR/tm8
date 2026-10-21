@@ -196,14 +196,10 @@ it('serves the catalog statically, and per Space says where each entry is alread
   await q(ADMIN, 'select public.delete_entity($1,$2,$3)', [notion.id, adminMember, `del-${randomUUID()}`]);
 });
 
-it('refuses a request for an unknown or not-yet-available catalog entry', async () => {
+it('refuses a request for an unknown catalog entry', async () => {
   const body = (catalogId: string) => ({ catalogId, clientMutationId: `req-${randomUUID()}` });
   await expect(call('mcp.servers.request', MEMBER, { params: { spaceId: space }, body: body('nosuchthing') }))
     .rejects.toMatchObject({ code: 'not_found' });
-  // A Google card is announced but not connectable yet, and it carries no
-  // definition at all, so there is nothing honest to create.
-  await expect(call('mcp.servers.request', MEMBER, { params: { spaceId: space }, body: body('google.gmail') }))
-    .rejects.toMatchObject({ code: 'invalid_input' });
   // Exactly one of catalogId or definition.
   await expect(call('mcp.servers.request', MEMBER, {
     params: { spaceId: space }, body: { clientMutationId: `req-${randomUUID()}` },
@@ -385,10 +381,11 @@ it('pins a catalogId to its catalog entry, for administrators too', async () => 
   expect(await create({ url: 'https://evil.example.test/mcp' })).toBe('22023');
   // An id no catalog entry owns.
   expect(await create({ catalogId: 'notion2' })).toBe('22023');
-  // An entry tm8 has announced but cannot serve yet has no endpoint, so every
-  // URL offered for it is the wrong one. t-google-first-party adds the URL to
-  // internal.mcp_catalog and to MCP_CATALOG together.
+  // A first-party entry is pinned to its own identity URL (349): Notion's URL
+  // under Gmail's id is refused, and Gmail's own URL is admitted.
   expect(await create({ catalogId: 'google.gmail', firstParty: true })).toBe('22023');
+  expect(await create({ name: 'gmailhonest', catalogId: 'google.gmail', firstParty: true,
+    url: 'https://gmail.googleapis.com/gmail/v1' })).toBe('no-error');
   // firstParty has to agree with the entry in both directions.
   expect(await create({ firstParty: true })).toBe('22023');
   expect(await refusal(ADMIN, 'select public.create_mcp_server_entity($1,$2::jsonb,$3,$4)',
@@ -524,6 +521,12 @@ it('holds the SQL catalog equal to MCP_CATALOG, entry by entry', async () => {
     expect(row!.first_party, `${entry.id} firstParty`).toBe(entry.kind === 'first_party');
     // An entry with no endpoint is exactly an entry that is not available yet.
     expect(row!.url === null, `${entry.id} availability`).toBe(!entry.available);
+    // And a member may request every available entry: the SQL request predicate
+    // admits the server's own prefill, first-party flag and closed gates included (349).
+    if (entry.definition) {
+      const [admit] = await q<{ ok: boolean }>(MEMBER, 'select internal.mcp_definition_is_request($1::jsonb) as ok', [JSON.stringify(entry.definition)]);
+      expect(admit!.ok, `${entry.id} requestable`).toBe(true);
+    }
   }
   // And nothing in SQL that the TS catalog does not have: the ids are the join
   // key the Discover tab uses, so an extra one would be unreachable and an

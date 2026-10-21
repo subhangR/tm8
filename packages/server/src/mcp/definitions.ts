@@ -47,8 +47,10 @@ export async function loadMcpServer(q: Querier, serverId: string, targetId?: str
  *
  * No narrowing is needed on the way through: `McpCatalogEntrySchema` already
  * holds every entry to an unapproved https definition that names no server
- * secret variable, which is exactly `McpRequestedServerDefinitionSchema`'s
- * shape and exactly what `internal.mcp_definition_is_request` admits.
+ * secret variable and ships every gate closed, which is what
+ * `internal.mcp_definition_is_request` admits for a catalog request (349 lets
+ * a first-party entry carry the `firstParty` flag and closed `gates` its
+ * catalog row fixes).
  */
 function catalogRequestDefinition(catalogId:string):McpServerDefinition {
   const entry=mcpCatalogEntry(catalogId);
