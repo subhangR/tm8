@@ -1,20 +1,23 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { McpProvider } from './context';
 import { McpPicker } from './McpPicker';
 import { McpSettings } from './McpSettings';
 import { McpEquipment } from './McpEquipment';
 import type { McpCatalog, McpPort, McpSelection } from './port';
 afterEach(cleanup);
+/** The row drawer. Its Connect/Reconnect buttons share a name with the table row's, by design: §10.0 gives one status one verb wherever it is drawn. */
+const drawer = () => within(screen.getByLabelText('Calendar connector'));
 const catalog = (): McpCatalog => ({ canRegister: true, canAttach: true, defaults: [], servers: [{
   id: 'server', version: 1, title: 'Calendar', description: 'Read events', transport: 'http', url: 'https://calendar.example/mcp',
   auth: 'api_key', approved: true, enabled: true, canManage: true, canAttach: true,
   accounts: [{ id: 'account', label: 'Work account', canUse: true, canManage: true, status: 'connected', sharing: 'private' }],
 }] });
 function fixture(data = catalog()): McpPort {
-  return { catalog: vi.fn(async () => data), register: vi.fn(), update: vi.fn(), remove: vi.fn(), importConfig: vi.fn(), attach: vi.fn(), detach: vi.fn(),
+  return { catalog: vi.fn(async () => data), register: vi.fn(), update: vi.fn(), remove: vi.fn(), importConfig: vi.fn(), importMany: vi.fn(), attach: vi.fn(), detach: vi.fn(),
+    catalogEntries: vi.fn(async () => []), addFromCatalog: vi.fn(async () => ({ serverId: 'server', adopted: false })), request: vi.fn(), patch: vi.fn(),
     test: vi.fn(async () => ({ ok: true, message: 'Connected', tools: [{ name: 'list_events' }] })),
     createKey: vi.fn(), rotateKey: vi.fn(), startOAuth: vi.fn(async () => ({ authorizationUrl: 'https://identity.example/authorize' })),
     share: vi.fn(), revoke: vi.fn(), members: vi.fn(async () => [{ id: 'member', label: 'Ada' }]),
@@ -103,39 +106,46 @@ describe('native MCP management', () => {
     data.servers[0]!.accounts = [];
     const { container } = render(<McpProvider port={fixture(data)}><McpSettings /></McpProvider>);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage Calendar' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Calendar' }));
+    fireEvent.click(drawer().getByRole('button', { name: 'Connect' }));
 
     const scroll = screen.getByTestId('connectors-body');
     expect(container.querySelectorAll('.set-section')).toHaveLength(1);
     expect(container.querySelectorAll('.set-section__scroll')).toHaveLength(1);
-    expect(scroll.contains(screen.getByRole('button', { name: 'Connect with OAuth' }))).toBe(true);
+    expect(scroll.contains(screen.getByRole('button', { name: 'Continue to sign-in' }))).toBe(true);
     expect(screen.getAllByText('Connectors')).toHaveLength(1);
   });
 
-  it('tests with the selected account and displays discovered tools', async () => {
+  it('tests with the connection it would use and displays discovered tools', async () => {
     const port = fixture(); render(<McpProvider port={port}><McpSettings /></McpProvider>);
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage Calendar' }));
-    expect((screen.getByRole('button', { name: 'Test and discover tools' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Test with account' }), { target: { value: 'account' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Test and discover tools' })); await screen.findByText('list_events');
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Calendar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' })); await screen.findByText('list_events');
     expect(port.test).toHaveBeenCalledWith({ serverId: 'server', credentialId: 'account' });
+  });
+  it('cannot test a connector that needs an account and has no usable one', async () => {
+    const data = catalog(); data.servers[0]!.accounts[0]!.canUse = false;
+    render(<McpProvider port={fixture(data)}><McpSettings /></McpProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Calendar' }));
+    expect((screen.getByRole('button', { name: 'Test connection' }) as HTMLButtonElement).disabled).toBe(true);
   });
   it('clears passwords before sending and renders errors without secret text', async () => {
     const port = fixture(); port.createKey = vi.fn().mockRejectedValue(new Error('never-display-secret'));
-    render(<McpProvider port={port}><McpSettings /></McpProvider>); fireEvent.click(await screen.findByRole('button', { name: 'Manage Calendar' }));
+    render(<McpProvider port={port}><McpSettings /></McpProvider>); fireEvent.click(await screen.findByRole('button', { name: 'Open Calendar' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Add another account' }));
     fireEvent.change(screen.getByLabelText('Account label'), { target: { value: 'Personal' } });
     const secret = screen.getByLabelText('API key') as HTMLInputElement; fireEvent.change(secret, { target: { value: 'fixture-secret' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add private account' })); expect(secret.value).toBe('');
-    expect(port.createKey).toHaveBeenCalledWith('server', 'Personal', 'fixture-secret'); await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Save connection' })); expect(secret.value).toBe('');
+    expect(port.createKey).toHaveBeenCalledWith('server', 'Personal', 'fixture-secret', 'member'); await screen.findByRole('alert');
     expect(document.body.textContent).not.toContain('never-display-secret');
   });
-  it('requires confirmation for revocation', async () => {
-    const port = fixture(); render(<McpProvider port={port}><McpSettings /></McpProvider>); fireEvent.click(await screen.findByRole('button', { name: 'Manage Calendar' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke account' })); expect(port.revoke).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm revoke' })); await waitFor(() => expect(port.revoke).toHaveBeenCalledWith('server', 'account'));
+  it('requires confirmation for a disconnect', async () => {
+    const port = fixture(); render(<McpProvider port={port}><McpSettings /></McpProvider>); fireEvent.click(await screen.findByRole('button', { name: 'Open Calendar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' })); expect(port.revoke).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm disconnect' })); await waitFor(() => expect(port.revoke).toHaveBeenCalledWith('server', 'account'));
   });
   it('requires code trust before local command registration', async () => {
-    render(<McpProvider port={fixture()}><McpSettings /></McpProvider>); fireEvent.click(await screen.findByRole('button', { name: 'Add connector' }));
+    render(<McpProvider port={fixture()}><McpSettings /></McpProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Custom connector…' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Connection' }), { target: { value: 'stdio' } });
     expect((screen.getByRole('button', { name: 'Register connector' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('checkbox', { name: /I trust this command/ }));
@@ -168,7 +178,7 @@ describe('MCP readiness and recovery', () => {
   });
   it('preserves sharing selection and offers the named member after loading', async () => {
     const port=fixture(); render(<McpProvider port={port}><McpSettings/></McpProvider>);
-    fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
+    fireEvent.click(await screen.findByRole('button',{name:'Open Calendar'}));
     fireEvent.change(screen.getByRole('combobox',{name:'Account sharing'}),{target:{value:'members'}});
     fireEvent.click(await screen.findByRole('checkbox',{name:'Ada'}));
     fireEvent.click(screen.getByRole('button',{name:'Save sharing'}));
@@ -177,9 +187,8 @@ describe('MCP readiness and recovery', () => {
   it('offers recovery when a previously ready account expires during testing', async () => {
     const port=fixture(); port.test=vi.fn(async()=>({ok:false,message:'credential_expired',tools:[]}));
     render(<McpProvider port={port}><McpSettings/></McpProvider>);
-    fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
-    fireEvent.change(screen.getByRole('combobox',{name:'Test with account'}),{target:{value:'account'}});
-    fireEvent.click(screen.getByRole('button',{name:'Test and discover tools'}));
+    fireEvent.click(await screen.findByRole('button',{name:'Open Calendar'}));
+    fireEvent.click(screen.getByRole('button',{name:'Test connection'}));
     expect((await screen.findByRole('alert')).textContent).toContain('Reconnect an account');
     expect(screen.queryByText('Connection tested.')).toBeNull();
   });
@@ -190,35 +199,36 @@ it('refreshes a mounted launch picker immediately after revocation elsewhere in 
   const port=fixture(data); port.revoke=vi.fn(async()=>{data.servers[0]!.accounts[0]!.canUse=false;data.servers[0]!.accounts[0]!.status='revoked';});
   const onReady=vi.fn();
   render(<McpProvider port={port}><McpSettings/><McpPicker value={undefined} onChange={()=>{}} onReady={onReady}/></McpProvider>);
-  fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Open Calendar'}));
   await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
-  fireEvent.click(screen.getByRole('button',{name:'Revoke account'}));
-  fireEvent.click(screen.getByRole('button',{name:'Confirm revoke'}));
+  fireEvent.click(screen.getByRole('button',{name:'Disconnect'}));
+  fireEvent.click(screen.getByRole('button',{name:'Confirm disconnect'}));
   // S22: a DEFAULT losing its account does not block the launch — the server
   // skips it and reports "not connected". What must still happen immediately is
   // the picker reflecting the revocation, which is the connect link below.
   await screen.findByRole('link',{name:'Connect Calendar'});
   await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
-  expect(screen.queryByRole('button',{name:'Confirm revoke'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Confirm disconnect'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
-  expect(screen.getByText('Add a new private account below to reconnect.')).toBeTruthy();
+  expect(screen.getByText(/You haven.t connected an account here/)).toBeTruthy();
+  expect(screen.getByRole('button',{name:'Connect'})).toBeTruthy();
 });
 it('loads already shared member names when an account is reopened', async()=>{
   const data=catalog(); data.servers[0]!.accounts[0]!.sharing='members'; data.servers[0]!.accounts[0]!.memberIds=['member'];
   render(<McpProvider port={fixture(data)}><McpSettings/></McpProvider>);
-  fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Open Calendar'}));
   expect((await screen.findByRole('checkbox',{name:'Ada'}) as HTMLInputElement).checked).toBe(true);
-  fireEvent.click(screen.getByRole('button',{name:'All connectors'}));
-  fireEvent.click(screen.getByRole('button',{name:'Manage Calendar'}));
+  fireEvent.click(screen.getByRole('button',{name:'Close connector details'}));
+  fireEvent.click(screen.getByRole('button',{name:'Open Calendar'}));
   expect((await screen.findByRole('checkbox',{name:'Ada'}) as HTMLInputElement).checked).toBe(true);
 });
 it('shows owner and use-only access without management controls',async()=>{
   const data=catalog(); data.servers[0]!.accounts[0]!.canManage=false; data.servers[0]!.accounts[0]!.ownerId='owner'; data.servers[0]!.accounts[0]!.ownerLabel='Pat';
   render(<McpProvider port={fixture(data)}><McpSettings/></McpProvider>);
-  fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
-  expect(screen.getByText('Owner: Pat')).toBeTruthy();
-  expect(screen.getByText(/Its owner manages sharing/)).toBeTruthy();
-  expect(screen.queryByRole('button',{name:'Revoke account'})).toBeNull();
+  fireEvent.click(await screen.findByRole('button',{name:'Open Calendar'}));
+  expect(screen.getByText(/shared with you by Pat/)).toBeTruthy();
+  expect(screen.getByText(/Its owner manages it/)).toBeTruthy();
+  expect(screen.queryByRole('button',{name:'Disconnect'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
 });
 
@@ -235,10 +245,11 @@ it('blocks a changed connector account and offers reconnect without key rotation
   data.servers[0]!.accounts[0]!.canUse=false;
   const onReady=vi.fn();
   render(<McpProvider port={fixture(data)}><McpSettings/><McpPicker value={undefined} onChange={()=>{}} onReady={onReady}/></McpProvider>);
-  fireEvent.click(await screen.findByRole('button',{name:'Manage Calendar'}));
-  expect(screen.getByText(/Connector changed; reconnect account/)).toBeTruthy();
+  fireEvent.click(await screen.findByRole('button',{name:'Open Calendar'}));
+  expect(screen.getAllByText(/Connector settings changed by an admin/).length).toBeGreaterThan(0);
   expect(screen.queryByRole('button',{name:'Rotate key'})).toBeNull();
-  expect(screen.getByRole('button',{name:'Add private account'}).hasAttribute('disabled')).toBe(false);
+  // §10.0: a changed definition offers RECONNECT, not a key rotation.
+  expect(drawer().getByRole('button',{name:'Reconnect'}).hasAttribute('disabled')).toBe(false);
   // S22, as above: a default whose account changed under it is the server's to
   // skip, so the launch stays ready and the UI offers the reconnect.
   await waitFor(()=>expect(onReady).toHaveBeenLastCalledWith(true));
