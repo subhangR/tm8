@@ -1024,6 +1024,9 @@ export class DbGraphPort implements GraphPort {
       input.newTaskTitle ?? null,
       input.storyId ?? null,
       input.sourceWorkSessionId ?? null,
+      // 348. Positional, last: `p_triggered_by_loop_id`. Null for every caller
+      // but the in-process loop executor.
+      input.triggeredByLoopId ?? null,
     ];
     // `aboutEntityId` / `aboutFromChatId` (321): the about edge goes in the SAME
     // transaction as the session, so it binds (Craft doc §4). work_session_about
@@ -3104,6 +3107,29 @@ export function createLoopExecutorPort(deps: {
           // prompt — the same channel `--context` uses.
           promptExtra: loop.prompt === '' ? null : loop.prompt,
           clientMutationId: `loop-fire:${firingKey}`,
+        }, {
+          /*
+           * 348, ac1/ac2. THE FIRING'S PROVENANCE ROOT, handed over as a SERVER
+           * FACT and written inside `execution_spawn`'s own transaction.
+           *
+           * It travels in the second argument, not in the SpawnRequest above,
+           * because `SpawnRequest` is what the public `execution.spawn` handler
+           * builds from wire input — a loop id there would be a client naming
+           * the human whose connections its session launches with.
+           *
+           * This REPLACES the post-spawn `writeTriggeredBy` for this branch,
+           * and the ordering is the whole point: the MCP bind runs INSIDE
+           * `spawn`, and `internal.mcp_provenance` (343) reads the schedule
+           * root off this very edge. Written afterwards, as it was, the edge
+           * did not exist yet at bind time and every firing was lent no
+           * connector that needs an account.
+           *
+           * It is also no longer best-effort: `execution_spawn` aborts if it
+           * cannot write the edge, so a firing either has its provenance or
+           * does not happen. 343's decision to give a schedule NO second
+           * rooting tier (B21) depends on that.
+           */
+          triggeredByLoopId: loop.entityId,
         })).sessionId;
       } else {
         // A null runner means "route through the dispatcher" (§4.4). Resolving
@@ -3129,9 +3155,26 @@ export function createLoopExecutorPort(deps: {
           requestId: `loop-fire:${loop.entityId}`,
           clientMutationId: `loop-dispatch-request:${firingKey}`,
         });
+        /*
+         * 348: the session edge is still written HERE, best-effort, for the
+         * dispatcher branch ONLY — and it stays run history rather than
+         * becoming provenance.
+         *
+         * Two reasons a dispatcher must not be handed the loop id the way a
+         * direct firing is. `resolveDispatcherSession` usually REUSES a live
+         * dispatcher that serves the whole Space across every loop and every
+         * caller, so rooting it at one loop's armer would lend that human's
+         * connections to all of its other work. And when it does spawn one, the
+         * dispatcher is launched to ROUTE the task, not to be the firing.
+         *
+         * A dispatcher-routed firing therefore still gets no connector that
+         * needs an account. That is #1316's behaviour and it fails closed; the
+         * worker the dispatcher goes on to spawn is an ordinary delegated
+         * launch with its own bearer chain.
+         */
+        await writeTriggeredBy(db, claims, sessionId, loop.entityId, `loop-session:${firingKey}:${sessionId}`);
       }
 
-      await writeTriggeredBy(db, claims, sessionId, loop.entityId, `loop-session:${firingKey}:${sessionId}`);
       return { taskId, sessionId };
     },
   };

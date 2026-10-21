@@ -60,6 +60,16 @@ interface McpProvenance {
     | 'no_human_provenance' | 'root_not_in_space' | 'depth_exceeded';
   rootMemberId?: string; rootIdentityId?: string; rootAuthKind?: string | null;
   chain?: string[]; chainSpaceIds?: string[]; depth?: number; via?: string; loopId?: string;
+  /**
+   * 351 (B35 tightening 3), on `bind_mcp_session`'s RETURN only. What was
+   * actually recorded, as against what the re-derivation said in `reason`.
+   * `via: 'inherited'` means the re-derivation did not converge and the root
+   * came from the source binding — the expected shape for a delegated child of
+   * a schedule-rooted session, since a schedule root has no bearer kind to
+   * replay. Kept separate from `reason` so a non-ready `reason` does not start
+   * reading like a failed launch to anything that checks it.
+   */
+  bound?: { rootMemberId?: string | null; rootIdentityId?: string | null; via?: string | null };
 }
 
 /** The only writer of runtime grants. Graph metadata is never an authority source. */
@@ -236,9 +246,33 @@ export class McpSessionBindings {
        * {serverId, credentialId} pair the strict schema parses on resume, and
        * the verification above runs against exactly what is handed over.
        */
-      await q.rpc('bind_mcp_session', [input.sessionId, tokenHash, JSON.stringify(selections),
-        source?.sessionId ?? null, source?.authSessionId ?? null, rootMemberId ?? null,
-        root?.chain ?? null, root?.chainSpaceIds ?? null]);
+      /*
+       * 351 (B35 tightening 3). The return used to be DISCARDED, so nothing
+       * downstream could tell a converged bind from an inherited one.
+       *
+       * NOTE the two different `bound`s: the local `bound` above is the
+       * SELECTION array handed back to the caller; `recordedProvenance.bound`
+       * is 351's report of how the ROOT was established. Different things,
+       * unfortunately similar names — the SQL key is named for the binding row.
+       */
+      const recordedProvenance = await q.rpc<McpProvenance>('bind_mcp_session',
+        [input.sessionId, tokenHash, JSON.stringify(selections),
+         source?.sessionId ?? null, source?.authSessionId ?? null, rootMemberId ?? null,
+         root?.chain ?? null, root?.chainSpaceIds ?? null]);
+      /*
+       * DEBUG, not warn: an inherited root is the CORRECT outcome for a
+       * delegated child of a schedule-rooted session, because a schedule root
+       * carries no bearer kind for the re-derivation to replay (B21). The
+       * authority behind it is the first derivation, which ran under the
+       * source's own bearer, plus the chain and root anchors SQL re-checks.
+       * Logging it as a fault would train readers to ignore it.
+       */
+      if (recordedProvenance?.bound?.via === 'inherited') {
+        console.debug(`[tm8:mcp] session ${input.sessionId} bound with an INHERITED provenance root `
+          + `${recordedProvenance.bound.rootMemberId ?? 'none'} `
+          + `(the re-derivation answered ${recordedProvenance.reason}); `
+          + `chain ${(root?.chain ?? []).join(' <- ')}`);
+      }
       return bound;
     });
   }

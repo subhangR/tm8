@@ -205,11 +205,19 @@ beforeAll(async () => {
   // and 308/309 built on it) re-create it; all belong to the current-chain
   // suites, not this intentionally pre-267 fixture. 330 (launched_by) is built
   // on 303 — it sets edge_types.replaced_by and re-creates the spawn again — so
-  // it is skipped with them.
+  // it is skipped with them. 348 (loop firing provenance) stands on 330 the same
+  // way: it DROPS 330's twenty-argument spawn by exact signature before creating
+  // a twenty-one-argument one, so in a chain without 330 that drop names a
+  // function this fixture never created and the apply fails. Skipped with them;
+  // it is covered by mcp-provenance.pg.test.ts and loops.pg.test.ts on the real
+  // chain. (The drop is deliberately NOT `if exists`: in a partial chain the
+  // alternative is to create the new signature BESIDE an older one and make
+  // every positional call ambiguous — the exact hazard this skip list exists
+  // for — so failing loudly is the behaviour we want from the real chain.)
   database.apply(files.filter((f) => f !== migration && !f.endsWith(LAUNCH_V3_SUFFIX)
     && !f.endsWith('_direct_story_spawn.sql') && !f.endsWith('_canonical_edges.sql')
     && !f.endsWith('_canonical_edges_rows.sql') && !f.endsWith('_session_teammate_participates_only.sql')
-    && !f.endsWith('_launched_by.sql')));
+    && !f.endsWith('_launched_by.sql') && !f.endsWith('_loop_firing_provenance.sql')));
   fixture = await seedPre131(database);
   database.apply([migration]);
 });

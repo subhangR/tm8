@@ -132,6 +132,7 @@ import type {
   SpawnContext,
   SpawnRequest,
   SpawnResult,
+  SpawnServerFacts,
   SpaceCredentialPort,
   SpaceCredentialProvider,
   Tm8Manifest,
@@ -1546,7 +1547,14 @@ export class SpawnService {
     }
   }
 
-  async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
+  /**
+   * @param server FACTS THE SERVER ESTABLISHED — see {@link SpawnServerFacts}.
+   * A separate parameter precisely because `SpawnRequest` is assembled from the
+   * wire input by the public `execution.spawn` handler: a caller cannot reach
+   * an argument that handler never passes. Only the in-process loop executor
+   * fills it.
+   */
+  async spawn(auth: GraphAuth, request: SpawnRequest, server?: SpawnServerFacts): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
     let firstPromptDeliveryId: string | undefined;
@@ -1667,6 +1675,11 @@ export class SpawnService {
         ...(request.aboutEntityId ? { aboutEntityId: request.aboutEntityId } : {}),
         ...(request.aboutFromChatId ? { aboutFromChatId: request.aboutFromChatId } : {}),
         ...(request.sourceWorkSessionId ? { sourceWorkSessionId: request.sourceWorkSessionId } : {}),
+        // 348: from `server`, never from `request`. `execution_spawn` writes
+        // the session -> loop `triggered_by` edge in THIS transaction, because
+        // the MCP bind below runs inside this spawn and reads the schedule
+        // provenance root off that edge.
+        ...(server?.triggeredByLoopId ? { triggeredByLoopId: server.triggeredByLoopId } : {}),
       });
     } catch (error) {
       // The row was refused, so nothing references the checkout just created
