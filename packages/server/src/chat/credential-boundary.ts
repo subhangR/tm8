@@ -116,6 +116,13 @@ async function readAuthFile(configDir: string, name: string): Promise<string> {
   } finally { await file.close(); }
 }
 
+/** A member home whose login file is absent (not refused): its login lives in the Keychain. */
+async function keychainLoginHome(configDir: string, error: unknown): Promise<boolean> {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return false;
+  const info = await lstat(configDir).catch(() => null);
+  return !!info?.isDirectory() && !info.isSymbolicLink();
+}
+
 export interface PreparedChatCredential {
   readonly leaseId: string;
   readonly owner: ChatCredentialOwner;
@@ -175,12 +182,13 @@ export function createChatCredentialPreparation(options: ChatCredentialResolverO
           const sourceConfig = home?.configDir ?? join(options.nodeCredentialHome ?? homedir(),
             provider === 'openai' ? '.codex' : '.claude');
           const name = provider === 'openai' ? 'auth.json' : '.credentials.json';
-          const material = await readAuthFile(sourceConfig, name).catch((error: unknown) => {
-            // LOCAL TEST BRANCH: on macOS Claude Code keeps its login in the Keychain,
-            // so there is no file to copy. Run on the native ~/.claude instead of an
-            // isolated copy (main's behaviour); copying the OAuth token would let the
+          const material = await readAuthFile(sourceConfig, name).catch(async (error: unknown) => {
+            // On macOS Claude Code keeps its login in the Keychain, keyed by the
+            // config dir, so there is no file to copy. Run on the source config dir
+            // instead of an isolated copy; copying the OAuth token would let the
             // copy's refresh rotate it and sign out the user's own `claude`.
-            if (provider === 'anthropic' && !home && process.platform === 'darwin') return null;
+            if (provider === 'anthropic' && process.platform === 'darwin'
+              && (!home || await keychainLoginHome(sourceConfig, error))) return null;
             throw error;
           });
           if (material === null) sharedConfigDir = sourceConfig;
@@ -196,7 +204,8 @@ export function createChatCredentialPreparation(options: ChatCredentialResolverO
         };
         const env = { ...selected.env };
         applyAgentCredentialEnv(env, isolated);
-        if (sharedConfigDir) delete env['CLAUDE_CONFIG_DIR'];
+        // Only the native ~/.claude must run unset; a member home's Keychain entry is keyed by its dir.
+        if (sharedConfigDir && !home) delete env['CLAUDE_CONFIG_DIR'];
         // Relocation suppresses ambient keys; this key was explicitly selected
         // through the policy-gated node rung and belongs to this snapshot.
         if (selected.binding.source === 'node' && key) {

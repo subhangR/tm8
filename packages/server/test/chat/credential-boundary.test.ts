@@ -116,6 +116,22 @@ describe('generation-owned chat credentials', () => {
     expect(await stat(join(configDir, 'projects'))).toBeDefined();
   });
 
+  it.runIf(process.platform === 'darwin')('runs a macOS Keychain member login on its own config dir instead of refusing', async () => {
+    const { port, state, dataDir } = await rig();
+    const configDir = join(dataDir, 'member-login');
+    await mkdir(configDir);
+    state.member = { provider: 'anthropic', configDir, homeDir: dataDir };
+    const prepared = await port.prepare(input, owner);
+    const material = await prepared.materialize();
+    expect(material.modelConfigDir).toBe(configDir);
+    expect(material.env.CLAUDE_CONFIG_DIR).toBe(configDir);
+    expect(material.env.ANTHROPIC_API_KEY).toBeUndefined();
+    await prepared.release();
+    expect(await stat(configDir)).toBeDefined();
+    state.member = { ...state.member, configDir: join(dataDir, 'missing-login') };
+    await expect(port.prepare(input, owner)).rejects.toThrow('cannot be prepared in an isolated runtime');
+  });
+
   it('isolates a Kimi member key and refuses an unsupported node source before preparation', async () => {
     const { port, state, dataDir } = await rig();
     state.member = { provider: 'kimi', homeDir: dataDir, configDir: join(dataDir, 'kimi'), apiKey: KEY };
