@@ -61,6 +61,17 @@ export interface CredentialResolutionDeps {
   resolveMemberHome(source: 'member' | null): Promise<AgentCredentialHome | null>;
   /** The member rung for GitHub; null when the caller connected none. */
   resolveMemberGitHub(): Promise<GitHubCredential | null>;
+  /**
+   * The NODE's shared GitHub bot credential, when the operator configured one
+   * (`github-bot-credential.ts`). `null` means no bot posture is configured
+   * and the ordinary chain runs. A THROW means the posture IS configured but
+   * its file is unusable, and the launch refuses rather than quietly fall back
+   * to a personal login — the one contract a caller must not soften.
+   *
+   * Optional so a caller that cannot have one omits it: the headless chat path
+   * is `modelOnly` and never reaches GitHub at all.
+   */
+  readGitHubBot?(): Promise<GitHubCredential | null>;
   /** Create or re-seed the per-session home for a space API key. */
   materializeApiKeyHome(input: {
     provider: 'anthropic' | 'openai';
@@ -402,38 +413,97 @@ export async function resolveSessionCredentials(
     const provider = 'github' as const;
     const source = launch.credentialSources.github ?? null;
     const allowed = allowedBy(policies, provider);
-    if (source !== null) gateExplicit(provider, source);
-    if (source === 'member') {
-      gitHubCredential = await deps.resolveMemberGitHub();
-      effective.github = 'member';
-    } else if (source === 'node') {
+    // THE NODE'S SHARED BOT POSTURE, AHEAD OF THE CHAIN AND OF THE POLICY
+    // GATE (`github-bot-credential.ts`).
+    //
+    // It is first because when it is on there is NO OTHER GitHub credential a
+    // session on this node may run on: not the launcher's own, not the
+    // space's, not the machine's ambient `gh`. The rungs below are not
+    // reordered, they are UNREACHABLE, and `resolveMemberGitHub` is never
+    // called — so on a shared box no session decrypts, holds or pushes with a
+    // personal token, which is the whole point of the posture.
+    //
+    // THREE DECISIONS HERE ARE JUDGEMENTS, NOT FORCED MOVES. Each is written
+    // out because each is a reasonable place to disagree.
+    //
+    //  1. THE POLICY ROWS ARE NOT CONSULTED IN THIS POSTURE. D5's space and
+    //     node policies choose BETWEEN sources; in this posture there is one
+    //     source, so an `allowed_sources` list that excludes `node` would
+    //     refuse every launch on a node whose only GitHub credential is the
+    //     bot — a space admin switching git off for everyone, by accident and
+    //     with no sentence saying so. The posture is set in the server's own
+    //     configuration, by the operator who also owns the database, so it
+    //     sits ABOVE a policy row rather than under one.
+    //
+    //  2. AN EXPLICIT `member` OR `space` REFUSES; A RECORDED ONE DOES NOT,
+    //     and `input.resume` is what separates them. A client ASKING for a
+    //     personal login must hear that it cannot have one (I3, fail closed).
+    //     The same field on a RESUME is history, not a request: a session
+    //     spawned before the posture was turned on recorded `member`, and
+    //     refusing there would make every pre-existing session unresumable,
+    //     with a sentence naming no fix its caller could apply. So a resume is
+    //     moved onto the bot — a change that can only narrow what it reaches.
+    //
+    //  3. THE EFFECTIVE SOURCE IS RECORDED AS `node`, not a fourth name. The
+    //     bot IS a credential the node supplies, which is what `node` means in
+    //     this union. `CredentialSource` is also pinned by 206's
+    //     `is_credential_source_set` CHECK, the policy UI and the binding
+    //     roll-up, so a new member means a migration plus three more surfaces
+    //     carrying a label — a large diff for a word. What a reader loses is
+    //     that `node` no longer distinguishes "the bot" from "the machine's
+    //     ambient gh"; what they keep is that both mean "not a person", and
+    //     the posture itself is visible in the node's configuration.
+    const bot = deps.readGitHubBot ? await deps.readGitHubBot() : null;
+    if (bot) {
+      if (!input.resume && (source === 'member' || source === 'space')) {
+        throw new SpawnError(
+          `credentialSources.github '${source}' is not available on this node: it runs GitHub on ` +
+            'a shared bot credential, and no session on it runs on a personal or space GitHub ' +
+            "login — omit credentialSources.github, or ask the node admin to change this node's " +
+            'GitHub posture',
+          'forbidden',
+          { provider, source, reason: 'bot_posture' },
+        );
+      }
+      // Recorded, not just injected: a later resume reads `sources` back, and
+      // left as `member` it would ask for the rung that no longer exists.
+      gitHubCredential = bot;
+      sources.github = 'node';
       effective.github = 'node';
-    } else if (source === 'space') {
-      // M8b: an explicit space token that cannot be used refuses here, and
-      // `composeEnv` isolates `space` as strictly as `member`, so the node's
-      // machine gh is unreachable either way.
-      const grant = await readSpace(provider, launch.spaceCredentialIds?.github ?? null);
-      if (!grant) throw new Error('unreachable: an explicit space read returns or throws');
-      gitHubCredential = spaceGitHub(grant);
-      useSpace(provider, grant, pickOf(provider));
     } else {
-      const mine = allowed.space ? await readMine(provider) : null;
-      const member = !mine && allowed.member ? await deps.resolveMemberGitHub() : null;
-      if (mine) {
-        gitHubCredential = spaceGitHub(mine);
-        useSpace(provider, mine, 'my_default');
-      } else if (member) {
-        gitHubCredential = member;
+      if (source !== null) gateExplicit(provider, source);
+      if (source === 'member') {
+        gitHubCredential = await deps.resolveMemberGitHub();
         effective.github = 'member';
+      } else if (source === 'node') {
+        effective.github = 'node';
+      } else if (source === 'space') {
+        // M8b: an explicit space token that cannot be used refuses here, and
+        // `composeEnv` isolates `space` as strictly as `member`, so the node's
+        // machine gh is unreachable either way.
+        const grant = await readSpace(provider, launch.spaceCredentialIds?.github ?? null);
+        if (!grant) throw new Error('unreachable: an explicit space read returns or throws');
+        gitHubCredential = spaceGitHub(grant);
+        useSpace(provider, grant, pickOf(provider));
       } else {
-        const grant = allowed.space && !input.resume ? await readSpace(provider, null) : null;
-        if (grant) {
-          gitHubCredential = spaceGitHub(grant);
-          useSpace(provider, grant, 'space_default');
-        } else if (allowed.nodeBySpace && allowed.nodeByNode) {
-          effective.github = 'node';
+        const mine = allowed.space ? await readMine(provider) : null;
+        const member = !mine && allowed.member ? await deps.resolveMemberGitHub() : null;
+        if (mine) {
+          gitHubCredential = spaceGitHub(mine);
+          useSpace(provider, mine, 'my_default');
+        } else if (member) {
+          gitHubCredential = member;
+          effective.github = 'member';
         } else {
-          throw autoExhausted(provider);
+          const grant = allowed.space && !input.resume ? await readSpace(provider, null) : null;
+          if (grant) {
+            gitHubCredential = spaceGitHub(grant);
+            useSpace(provider, grant, 'space_default');
+          } else if (allowed.nodeBySpace && allowed.nodeByNode) {
+            effective.github = 'node';
+          } else {
+            throw autoExhausted(provider);
+          }
         }
       }
     }

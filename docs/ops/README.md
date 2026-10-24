@@ -10,6 +10,7 @@ Running tm8: configuring it, starting it, and the runbooks for the parts that bi
 | [`ENVIRONMENTS.md`](ENVIRONMENTS.md) | **PROD and STAGING are two different tm8's.** Read before pointing any CLI anywhere |
 | [`SIDECAR-PACKAGING.md`](SIDECAR-PACKAGING.md) | The Postgres sidecar: packaging and lifecycle. The major version here is pinned against CI |
 | [`MESSAGE-DELIVERY-LATENCY.md`](MESSAGE-DELIVERY-LATENCY.md) | Why a message to a running agent takes ~60s to land, and how to tell delivered from lost |
+| [`GITHUB-BOT-CREDENTIAL.md`](GITHUB-BOT-CREDENTIAL.md) | **A shared node whose sessions must not push as a person.** Put every session on one least-privilege GitHub bot, then remove the personal logins and revoke them |
 | [`VOICE-CHANNELS.md`](VOICE-CHANNELS.md) | Voice channels — fresh checkout to two tabs talking |
 | [`VOICE-VERIFICATION-2026-07-31.md`](VOICE-VERIFICATION-2026-07-31.md) | What was actually verified, and what was not |
 | `livekit-dev.yaml` | LiveKit dev config used by the voice runbook |

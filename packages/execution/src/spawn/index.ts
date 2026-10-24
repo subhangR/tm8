@@ -107,6 +107,12 @@ export {
   type ResolvedSessionCredentials,
 } from './credential-resolution.js';
 export {
+  gitHubBotCredentialPath,
+  gitHubBotPostureActive,
+  readGitHubBotCredential,
+  GITHUB_BOT_CREDENTIAL_FILE_ENV,
+} from './github-bot-credential.js';
+export {
   branchNameFor,
   provisionWorktree,
   type ProvisionedWorktree,
