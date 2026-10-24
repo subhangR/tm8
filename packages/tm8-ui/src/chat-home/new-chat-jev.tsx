@@ -22,8 +22,9 @@ import type { ChatModelOption } from './types';
  * ✦ ASK JEV IN THE NEW-CHAT COMPOSER (Phase 1 of doc 01a154f2).
  *
  * The same `launch.suggest` the Run popup asks, about the prompt being typed:
- * the subject is the chat's `about` entity, else the picked project, else the
- * space's home anchor, and the draft is the prompt. Jev only RECOMMENDS. Each
+ * the subject is the chat's `about` entity, else the space's home anchor, and
+ * the draft is the prompt. Never the picked project: a project is not a graph
+ * entity, so the server refuses it as a subject (`not_found`) and every group fails. Jev only RECOMMENDS. Each
  * pick reaches the composer on an Apply click and is then ordinary composer
  * state the person can still change before Send:
  *
@@ -41,7 +42,7 @@ import type { ChatModelOption } from './types';
 /** What the new-chat composer needs from the host to ask Jev. */
 export interface ChatJevPort {
   jev: JevPort;
-  /** The space's home anchor (its default channel): the subject when the chat has no `about` and no project. */
+  /** The space's home anchor (its default channel): the subject when the chat has no `about`. */
   homeAnchor(spaceId: string): Promise<EntityId | null>;
   /** True when the viewer can run Codex (an OpenAI credential of their own or the space's). */
   codexAvailable(spaceId: string): Promise<boolean>;
@@ -134,8 +135,6 @@ export interface NewChatJevArgs {
   spaceId: string;
   /** The chat's `about` entity, when the host has one. */
   aboutId?: EntityId | undefined;
-  /** The picked project's id; '' (or scratch) for none. */
-  projectId?: EntityId | null | undefined;
   /** The draft prompt. */
   draft: string;
   teammateId: string;
@@ -165,9 +164,10 @@ export interface NewChatJev {
 }
 
 export function useNewChatJev(args: NewChatJevArgs): NewChatJev {
-  const { port, spaceId, aboutId, projectId, draft, teammateId, models, modelId, effort, mode, modeLocked, resetKey } = args;
+  const { port, spaceId, aboutId, draft, teammateId, models, modelId, effort, mode, modeLocked, resetKey } = args;
 
-  /* WHAT JEV IS ASKED ABOUT: the about entity, the project, else the home anchor. */
+  /* WHAT JEV IS ASKED ABOUT: the about entity, else the home anchor. Not the
+     project: it is not an entity, and the server answers it `not_found`. */
   const [homeAnchor, setHomeAnchor] = useState<EntityId | null>(null);
   const [codex, setCodex] = useState(false);
   useEffect(() => {
@@ -178,7 +178,7 @@ export function useNewChatJev(args: NewChatJevArgs): NewChatJev {
     port.codexAvailable(spaceId).then((yes) => { if (!cancelled) setCodex(yes); }, () => { if (!cancelled) setCodex(false); });
     return () => { cancelled = true; };
   }, [port, spaceId]);
-  const subjectId = aboutId ?? (projectId || null) ?? homeAnchor ?? '';
+  const subjectId = aboutId ?? homeAnchor ?? '';
 
   const jevDraft = useMemo(() => {
     const text = draft.trim();

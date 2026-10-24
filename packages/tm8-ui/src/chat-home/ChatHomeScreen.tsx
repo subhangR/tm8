@@ -1819,7 +1819,6 @@ export function ChatHomeScreen({
     port: jevPort,
     spaceId,
     aboutId,
-    projectId: projectBinding.projectId ?? null,
     draft,
     teammateId,
     setTeammate: (id) => setTeammateId(id as EntityId),
