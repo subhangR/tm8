@@ -281,14 +281,6 @@ function emptyEntry(key: ChatStateKeyParts, drafts: ChatDrafts): ChatEntry {
   };
 }
 
-
-
-
-
-
-
-
-
 function browserStorage(): Storage | null {
   if (typeof window === 'undefined') return null;
   try {

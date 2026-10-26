@@ -204,7 +204,10 @@ function settleStored(
   messages: readonly MessageView[],
 ): void {
   const completed = store.getState().entries[keyId]?.mutations[clientMutationId];
-  if (!completed) return;
+  // The command result and the event echo BOTH settle, in either order. The
+  // second must be a no-op: it used to clear the draft again, wiping whatever
+  // the viewer had started typing in the gap between the two.
+  if (!completed || completed.storageState === 'stored') return;
   store.getState().patch(keyId, (entry) => {
     const journal = entry.mutations[clientMutationId];
     if (!journal) return entry;

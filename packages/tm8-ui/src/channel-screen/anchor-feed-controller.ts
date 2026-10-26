@@ -157,21 +157,44 @@ export function createAnchorFeedController({
     patch({ phase: current().page ? current().phase : 'loading', error: null, refusal: null });
   };
 
-  const loadNewest = async (refreshedFromNewest = false): Promise<void> => {
+  /**
+   * `keepHistory` is the LIVE refresh's reading. An event or a reconnect asks
+   * "what is new at the bottom", not "start over": replacing the page threw
+   * away every older page the viewer had scrolled back through, every 300ms on
+   * a busy anchor, and reset `olderCursor` so the next scroll-up re-read pages
+   * already seen. The newest page replaces only the window it covers; items
+   * older than its oldest row survive with the cursor that reaches past them,
+   * provided the two pages overlap.
+   * A focused (`loadAround`) view keeps the old reading — its cursors are
+   * minted for the other direction.
+   */
+  const readNewest = async (refreshedFromNewest: boolean, keepHistory: boolean): Promise<void> => {
     const token = begin();
     beginRead();
     try {
       const response = await seam.feed(anchorId, feedQuery({ order: 'newest', limit }));
       if (!accepts(token)) return;
-      patch({
-        page: chronologicalPage(response),
-        phase: 'ready',
-        error: null,
-        refusal: null,
-        olderCursor: response.nextCursor,
-        newerCursor: null,
-        refreshedFromNewest,
-        focusedItemId: null,
+      patch((entry) => {
+        const fresh = chronologicalPage(response);
+        const oldest = fresh.items[0];
+        // Only when the two pages overlap: more than a page of news since the
+        // last read leaves a gap, and a gap rendered as continuity is a lie.
+        const overlaps = Boolean(oldest && entry.page?.items.some((existing) => compareItems(existing, oldest!) >= 0));
+        const older = keepHistory && !entry.focusedItemId && entry.page && oldest && overlaps
+          && response.nextCursor !== null && entry.olderCursor !== null
+          ? entry.page.items.filter((existing) => compareItems(existing, oldest) < 0)
+          : [];
+        return {
+          ...entry,
+          page: older.length > 0 ? { ...fresh, items: [...older, ...fresh.items] } : fresh,
+          phase: 'ready',
+          error: null,
+          refusal: null,
+          olderCursor: older.length > 0 ? entry.olderCursor : response.nextCursor,
+          newerCursor: null,
+          refreshedFromNewest,
+          focusedItemId: null,
+        };
       });
       /*
        * An open branch rides every refresh: the ROOT's rollup (replyCount,
@@ -192,6 +215,16 @@ export function createAnchorFeedController({
     }
   };
 
+  const loadNewest = (refreshedFromNewest = false): Promise<void> =>
+    readNewest(refreshedFromNewest, false);
+  const refreshLive = (): Promise<void> => readNewest(false, true);
+
+  /**
+   * A paging read superseded by another read still owns its in-flight flag.
+   * Returning without clearing it left `loadingEarlier` true for good — and
+   * `loadOlder` refuses while it is — so one live refresh landing during a
+   * scroll-up ended paging for the life of the mount.
+   */
   const loadOlder = async (): Promise<void> => {
     const cursor = current().olderCursor;
     if (!cursor || current().loadingEarlier) return;
@@ -203,7 +236,7 @@ export function createAnchorFeedController({
         cursor,
         limit,
       }));
-      if (!accepts(token)) return;
+      if (!accepts(token)) { patch({ loadingEarlier: false }); return; }
       patch((entry) => ({
         ...entry,
         page: mergePages(response, entry.page),
@@ -211,7 +244,7 @@ export function createAnchorFeedController({
         loadingEarlier: false,
       }));
     } catch (reason: unknown) {
-      if (!accepts(token)) return;
+      if (!accepts(token)) { patch({ loadingEarlier: false }); return; }
       if (errorCode(reason) === 'invalid_cursor') {
         patch({ loadingEarlier: false });
         await loadNewest(true);
@@ -228,7 +261,7 @@ export function createAnchorFeedController({
     patch({ loadingNewer: true });
     try {
       const response = await seam.feed(anchorId, feedQuery({ order: 'oldest', cursor, limit }));
-      if (!accepts(token)) return;
+      if (!accepts(token)) { patch({ loadingNewer: false }); return; }
       patch((entry) => ({
         ...entry,
         page: mergePages(entry.page, response),
@@ -236,7 +269,7 @@ export function createAnchorFeedController({
         loadingNewer: false,
       }));
     } catch (reason: unknown) {
-      if (!accepts(token)) return;
+      if (!accepts(token)) { patch({ loadingNewer: false }); return; }
       if (errorCode(reason) === 'invalid_cursor') {
         patch({ loadingNewer: false });
         await loadNewest(true);
@@ -371,7 +404,7 @@ export function createAnchorFeedController({
     refreshTimer = setTimeout(() => {
       refreshTimer = null;
       refreshDeadline = null;
-      void loadNewest();
+      void refreshLive();
     }, Math.min(REFRESH_DEBOUNCE_MS, Math.max(0, refreshDeadline - at)));
   };
 
@@ -393,7 +426,7 @@ export function createAnchorFeedController({
       const previous = lastConnectionPhase;
       lastConnectionPhase = connection.phase;
       if (connection.phase === 'live' && previous !== null && previous !== 'live') {
-        void loadNewest();
+        void refreshLive();
       }
     });
     const offResync = seam.onResync((resyncedSpaceId) => {
@@ -479,9 +512,12 @@ function dedupe(items: readonly FeedItem[]): FeedItem[] {
   });
 }
 
+function compareItems(a: FeedItem, b: FeedItem): number {
+  return a.createdAt.localeCompare(b.createdAt) || a.itemId.localeCompare(b.itemId);
+}
+
 function chronological(items: readonly FeedItem[]): FeedItem[] {
-  return [...items].sort((a, b) =>
-    a.createdAt.localeCompare(b.createdAt) || a.itemId.localeCompare(b.itemId));
+  return [...items].sort(compareItems);
 }
 
 function refusalFrom(error: unknown): ChannelRefusal | null {
