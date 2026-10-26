@@ -208,6 +208,14 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
   const selectedRef = useRef<EntityId | null>(null);
   selectedRef.current = selectedId;
 
+  /**
+   * The space the hook is reading NOW. A paging read resolves into whatever
+   * space is current when it lands; without this check a "load more" started
+   * in one space appended its rows to the next one's list.
+   */
+  const spaceRef = useRef(spaceId);
+  spaceRef.current = spaceId;
+
   // -- the conversation query ------------------------------------------------
 
   /**
@@ -255,6 +263,11 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
     setConversations(null);
     setConversationsError(null);
     setCursor(null);
+    // The flat reading is per space too: left in place it showed the previous
+    // space's messages, and its non-null value stopped the new read starting.
+    setAllMessages(null);
+    setAllMessagesError(null);
+    setAllCursor(null);
     void fetchConversationPage(null)
       .then(({ rows, next }) => {
         if (cancelled) return;
@@ -273,6 +286,7 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
   const loadMore = useCallback(() => {
     if (loadingMore || cursor === null) return;
     setLoadingMore(true);
+    const forSpace = spaceId;
     void (async () => {
       let from: Cursor | null = cursor;
       const gathered: ConversationRow[] = [];
@@ -284,21 +298,28 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
           from = result.next;
           if (gathered.length > 0) break;
         }
+        if (spaceRef.current !== forSpace) return;
         setConversations((current) =>
           sortByRecency(dedupeById([...(current ?? []), ...gathered])),
         );
         setCursor(from);
       } catch (error: unknown) {
-        setConversationsError(messageOf(error));
+        if (spaceRef.current === forSpace) setConversationsError(messageOf(error));
       } finally {
         setLoadingMore(false);
       }
     })();
-  }, [cursor, fetchConversationPage, loadingMore]);
+  }, [cursor, fetchConversationPage, loadingMore, spaceId]);
 
   // -- the flat reading ------------------------------------------------------
 
   const anchorIndex = useMemo(() => anchorIndexOf(conversations ?? []), [conversations]);
+  /* Read, not depended on, by the flat read below. The index changes on every
+     `message.created`, and as a dependency each change cancelled and re-issued
+     the in-flight read — in a busy space the flat reading could never land.
+     Names that arrive later are re-projected by the effect after it. */
+  const anchorIndexRef = useRef(anchorIndex);
+  anchorIndexRef.current = anchorIndex;
 
   useEffect(() => {
     // Only paid for when the viewer actually asks for the flat reading — the
@@ -309,7 +330,7 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
       .query({ spaceId, kinds: [messageKindRef()], sort: 'createdAt_desc', limit: PAGE_LIMIT })
       .then((result) => {
         if (cancelled) return;
-        setAllMessages(messageRowsOf(result.page.items, anchorIndex));
+        setAllMessages(messageRowsOf(result.page.items, anchorIndexRef.current));
         setAllCursor(result.page.nextCursor);
       })
       .catch((error: unknown) => {
@@ -318,7 +339,7 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
     return () => {
       cancelled = true;
     };
-  }, [mode, allMessages, allMessagesError, seam, spaceId, anchorIndex]);
+  }, [mode, allMessages, allMessagesError, seam, spaceId]);
 
   /**
    * Anchor names resolve LATE, and that is fine.
@@ -350,6 +371,7 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
   const loadMoreAll = useCallback(() => {
     if (allLoadingMore || allCursor === null) return;
     setAllLoadingMore(true);
+    const forSpace = spaceId;
     void seam
       .query({
         spaceId,
@@ -359,11 +381,14 @@ export function useMessagesData(seam: MessagesSeamPort, spaceId: SpaceId): Messa
         cursor: allCursor,
       })
       .then((result) => {
+        if (spaceRef.current !== forSpace) return;
         const rows = messageRowsOf(result.page.items, anchorIndex);
         setAllMessages((current) => sortMessagesByRecency(dedupeById([...(current ?? []), ...rows])));
         setAllCursor(result.page.nextCursor);
       })
-      .catch((error: unknown) => setAllMessagesError(messageOf(error)))
+      .catch((error: unknown) => {
+        if (spaceRef.current === forSpace) setAllMessagesError(messageOf(error));
+      })
       .finally(() => setAllLoadingMore(false));
   }, [allCursor, allLoadingMore, anchorIndex, seam, spaceId]);
 

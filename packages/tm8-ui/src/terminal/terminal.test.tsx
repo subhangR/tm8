@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, renderHook } from '@testing-library/react';
 import type { SessionLiveness } from '../data/seam';
 import {
   ExitedFallback,
@@ -10,6 +10,7 @@ import {
   UnverifiedFallback,
   createScriptedActivitySource,
   presentSession,
+  useTerminalActivityMap,
   presentationStyle,
   type SessionPresentation,
 } from './index';
@@ -100,6 +101,13 @@ describe('activity source (the §9.2 port)', () => {
 
     expect(seen).toEqual([['ws-1', true], ['ws-1', false]]);
     expect(src.isActive('ws-1')).toBe(false);
+  });
+
+  it('the whole-map hook sees a session that was already streaming when it mounted', () => {
+    const src = createScriptedActivitySource();
+    src.setActive('ws-1', true);
+    const { result } = renderHook(() => useTerminalActivityMap(src));
+    expect(result.current['ws-1']).toBe(true);
   });
 
   it('unsubscribes cleanly', () => {

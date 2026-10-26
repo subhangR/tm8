@@ -241,7 +241,7 @@ export function applyMessageCreated(
   rows: readonly ConversationRow[],
   anchorId: EntityId,
   message: MessageView,
-): ConversationRow[] {
+): readonly ConversationRow[] {
   let found = false;
   const next = rows.map((row) => {
     if (row.id !== anchorId) return row;
@@ -262,7 +262,11 @@ export function applyMessageCreated(
   // into a row: we would have to invent its title and kind, and a row reading
   // "Untitled" is worse than one that appears on the next read. The count and
   // ordering of what we DO show stay correct either way.
-  return found ? sortByRecency(next) : [...rows];
+  //
+  // The SAME array when nothing moved, so a state updater bails out: a copy
+  // re-rendered the list (and rebuilt the anchor index) for every message
+  // posted anywhere in the space.
+  return found ? sortByRecency(next) : rows;
 }
 
 /** Newest-active first. Ties break on id so the order is total and stable. */

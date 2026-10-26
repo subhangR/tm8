@@ -38,6 +38,8 @@ export interface ScriptedActivitySource extends ActivitySource {
   setActive(sessionId: string, active: boolean): void;
   /** Current state — for a component mounting mid-stream. */
   isActive(sessionId: string): boolean;
+  /** Every session's current state — `isActive` for the whole-map consumer. */
+  snapshot(): Readonly<Record<string, boolean>>;
 }
 
 /**
@@ -65,6 +67,9 @@ export function createScriptedActivitySource(
     },
     isActive(sessionId) {
       return active.get(sessionId) ?? false;
+    },
+    snapshot() {
+      return Object.fromEntries(active);
     },
   };
 }
@@ -127,6 +132,10 @@ export function useTerminalActivityMap(
       setMap({});
       return;
     }
+    // Seeded like `useTerminalActivity`: `setActive` is idempotent, so a
+    // session already streaming at mount fans out nothing until it goes idle,
+    // and its dot stayed dark for the whole stream.
+    setMap((source as Partial<ScriptedActivitySource>).snapshot?.() ?? {});
     return source.onActivity((id, isActive) => {
       setMap((prev) => (prev[id] === isActive ? prev : { ...prev, [id]: isActive }));
     });
