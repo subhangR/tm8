@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { build, defaultRoute, normalize, parse } from './codec';
 import { decodeQ, encodeQ } from './q';
 import { MAX_HASH_LENGTH, emptyPanels } from './types';
-import type { ContentSurface, PanelTab, Route } from './types';
+import type { ContentSurface, NavView, PanelTab, Route } from './types';
 
 const SPACE = '019f98a0-1111-2222-3333-444455556666';
 
@@ -518,27 +518,60 @@ describe('the unified Home root and the Trail (task 01a00932, re-seated by 01a0c
     expect(dropped).not.toContain('stack');
   });
 
-  /* §3.2's case 2 AT THE SEAM THAT REPORTS. `parse` is the only tier that can
-     raise a notice, and the pin cross-filter runs after it, in `normalize` —
-     so a `pc` naming a pinned entity used to pass `parse` as a real position
-     and then clamp to the top with nothing said. Absent is absent whichever
-     filter made it so. */
-  it('a pc naming an entity that is also PINNED drops under its own class', () => {
+  /* §3.2's case 2, UNDER U13. A `pc` naming an entity that is also pinned is
+     a REAL position on Home: `normalize` keeps the cursor's own entry through
+     the pin cross-filter, so the link opens on the crumb it named and there is
+     nothing to announce. (The #653 review first made this a 'cursor' drop;
+     U13 dissolved the case instead of reporting it.) */
+  it('a pc naming an entity that is also PINNED stays on the Trail, with no notice (U13)', () => {
     const { route, dropped } = parse(
       `#/s/${SPACE}/home?pin=${id(2)}&p=${id(1)}.${id(2)}.${id(3)}&pc=${id(2)}`,
     );
-    expect(route?.panels.cursor).toBeNull();
-    expect(dropped).toContain('cursor');
-    expect(dropped).not.toContain('stack');
-    expect(normalize(route!).panels.stack).toEqual([id(1), id(3)]);
+    expect(dropped).toEqual([]);
+    expect(route?.panels.cursor).toBe(id(2));
+    const canonical = normalize(route!);
+    expect(canonical.panels.stack).toEqual([id(1), id(2), id(3)]);
+    expect(canonical.panels.pinned).toEqual([id(2)]);
+    expect(canonical.panels.cursor).toBe(id(2));
+    // And the address it rebuilds reproduces it.
+    expect(normalize(parse(build(canonical).hash).route!)).toEqual(canonical);
 
-    // Case 1 is NOT a drop: a pinned crumb BEFORE the cursor shifts the index
-    // and the id absorbs it — nothing was lost, so nothing is announced.
+    // Case 1 is NOT a drop either: a pinned crumb BEFORE the cursor is still
+    // stripped (only the cursor's own entry is held), the index shifts, and
+    // the id absorbs it — nothing was lost, so nothing is announced.
     const shifted = parse(
       `#/s/${SPACE}/home?pin=${id(1)}&p=${id(1)}.${id(2)}.${id(3)}&pc=${id(2)}`,
     );
     expect(shifted.dropped).toEqual([]);
     expect(shifted.route?.panels.cursor).toBe(id(2));
+    expect(normalize(shifted.route!).panels.stack).toEqual([id(2), id(3)]);
+    expect(normalize(shifted.route!).panels.cursor).toBe(id(2));
+  });
+
+  /* THE CASE U13 EXISTS FOR (#653 review, Q1). A Trail hop APPENDS, so it
+     lands at the top, and the top is spelled with NO `pc` — so a null cursor
+     must hold the top's entry, not mean "no exemption". Keyed on the cursor
+     alone, this hop would still be stripped and a reload would land one crumb
+     back. */
+  it('a hop onto a PINNED entity reaches the address at the top — null ⇒ the top is held (U13)', () => {
+    const home = (stack: string[], pinned: string[], cursor: string | null = null): Route => ({
+      ...defaultRoute(SPACE, { view: 'home' }),
+      panels: { ...emptyPanels(), stack, pinned, cursor },
+    });
+    const canonical = normalize(home([id(1), id(2)], [id(2)]));
+    expect(canonical.panels.stack).toEqual([id(1), id(2)]);
+    expect(canonical.panels.cursor).toBeNull();
+    const { hash } = build(canonical);
+    expect(hash).toContain(`p=${id(1)}.${id(2)}`);
+    expect(hash).not.toContain('pc=');
+    // Reload → the viewer is back on the entity they hopped to.
+    const back = normalize(parse(hash).route!);
+    expect(back.panels.stack[back.panels.stack.length - 1]).toBe(id(2));
+    expect(back).toEqual(canonical);
+
+    // ONLY the cursor's entry is held: a pinned crumb elsewhere still goes.
+    expect(normalize(home([id(1), id(2)], [id(1)])).panels.stack).toEqual([id(2)]);
+    expect(normalize(home([id(1), id(2), id(3)], [id(1), id(3)], id(2))).panels.stack).toEqual([id(2)]);
   });
 
   /* THE PIN CROSS-FILTER, BOTH HALVES. `normalize` strips from `stack` any id
@@ -560,8 +593,9 @@ describe('the unified Home root and the Trail (task 01a00932, re-seated by 01a0c
     expect(shifted.panels.stack).toEqual([id(2), id(3)]);
     expect(shifted.panels.cursor).toBe(id(2));
 
-    // The CURSOR'S OWN entity removed, mid-Trail: its id is now absent, which
-    // is detectable — it clamps to the top.
+    // OFF HOME (`routeOf` defaults to Work), the CURSOR'S OWN entity pinned is
+    // still removed — U13 is Home's — so its id is absent, which is
+    // detectable, and it clamps to the top.
     const pulled = normalize(
       routeOf({
         panels: {
@@ -821,5 +855,89 @@ describe('the Cockpit stage param `?stage=`', () => {
   it('bare /home never grows the param — only the /chat segment reads it', () => {
     const { route } = parse(`#/s/${SPACE}/home?stage=fleet`);
     expect(route?.target).toEqual({ view: 'home' });
+  });
+});
+
+/**
+ * U13 IS HOME'S, AND EVERY OTHER ROUTE NORMALIZES EXACTLY AS MAIN DOES.
+ *
+ * GOLDENS FROM MAIN, not from this codec: each row was printed by main's own
+ * `build(normalize(route))` at 51033104 (the main this branch merged), run
+ * against a checkout of main's `routes/{codec,q,types}.ts`. Columns: view,
+ * stack, pins, main's hash (`$S` = SPACE, `$n` = id(n)), main's canonical
+ * stack, main's canonical pins. The shapes are chosen for the pin filter:
+ * none, a pinned top, a pinned middle, pins at both ends, a repeat that is
+ * also pinned, no stack, everything pinned, a stack of one pinned id.
+ */
+describe('U13 leaves every non-Home route exactly as main normalizes it', () => {
+  type Golden = [NavView['view'], number[], number[], string, number[], number[]];
+  const MAIN: Golden[] = [
+    ['workspace', [1, 2], [], '#/s/$S/workspace?p=$1.$2', [1, 2], []],
+    ['workspace', [1, 2], [2], '#/s/$S/workspace?pin=$2&p=$1', [1], [2]],
+    ['workspace', [1, 2, 3], [2], '#/s/$S/workspace?pin=$2&p=$1.$3', [1, 3], [2]],
+    ['workspace', [1, 2, 3], [3, 1], '#/s/$S/workspace?pin=$3.$1&p=$2', [2], [3, 1]],
+    ['workspace', [1, 1, 2], [1], '#/s/$S/workspace?pin=$1&p=$2', [2], [1]],
+    ['workspace', [], [1, 2], '#/s/$S/workspace?pin=$1.$2', [], [1, 2]],
+    ['workspace', [1, 2, 3], [1, 2, 3], '#/s/$S/workspace?pin=$1.$2.$3', [], [1, 2, 3]],
+    ['workspace', [2], [2], '#/s/$S/workspace?pin=$2', [], [2]],
+    ['feed', [1, 2], [], '#/s/$S/feed?p=$1.$2', [1, 2], []],
+    ['feed', [1, 2], [2], '#/s/$S/feed?pin=$2&p=$1', [1], [2]],
+    ['feed', [1, 2, 3], [2], '#/s/$S/feed?pin=$2&p=$1.$3', [1, 3], [2]],
+    ['feed', [1, 2, 3], [3, 1], '#/s/$S/feed?pin=$3.$1&p=$2', [2], [3, 1]],
+    ['feed', [1, 1, 2], [1], '#/s/$S/feed?pin=$1&p=$2', [2], [1]],
+    ['feed', [], [1, 2], '#/s/$S/feed?pin=$1.$2', [], [1, 2]],
+    ['feed', [1, 2, 3], [1, 2, 3], '#/s/$S/feed?pin=$1.$2.$3', [], [1, 2, 3]],
+    ['feed', [2], [2], '#/s/$S/feed?pin=$2', [], [2]],
+    ['inbox', [1, 2], [], '#/s/$S/inbox?p=$1.$2', [1, 2], []],
+    ['inbox', [1, 2], [2], '#/s/$S/inbox?pin=$2&p=$1', [1], [2]],
+    ['inbox', [1, 2, 3], [2], '#/s/$S/inbox?pin=$2&p=$1.$3', [1, 3], [2]],
+    ['inbox', [1, 2, 3], [3, 1], '#/s/$S/inbox?pin=$3.$1&p=$2', [2], [3, 1]],
+    ['inbox', [1, 1, 2], [1], '#/s/$S/inbox?pin=$1&p=$2', [2], [1]],
+    ['inbox', [], [1, 2], '#/s/$S/inbox?pin=$1.$2', [], [1, 2]],
+    ['inbox', [1, 2, 3], [1, 2, 3], '#/s/$S/inbox?pin=$1.$2.$3', [], [1, 2, 3]],
+    ['inbox', [2], [2], '#/s/$S/inbox?pin=$2', [], [2]],
+    ['graph', [1, 2], [], '#/s/$S/graph?p=$1.$2', [1, 2], []],
+    ['graph', [1, 2], [2], '#/s/$S/graph?pin=$2&p=$1', [1], [2]],
+    ['graph', [1, 2, 3], [2], '#/s/$S/graph?pin=$2&p=$1.$3', [1, 3], [2]],
+    ['graph', [1, 2, 3], [3, 1], '#/s/$S/graph?pin=$3.$1&p=$2', [2], [3, 1]],
+    ['graph', [1, 1, 2], [1], '#/s/$S/graph?pin=$1&p=$2', [2], [1]],
+    ['graph', [], [1, 2], '#/s/$S/graph?pin=$1.$2', [], [1, 2]],
+    ['graph', [1, 2, 3], [1, 2, 3], '#/s/$S/graph?pin=$1.$2.$3', [], [1, 2, 3]],
+    ['graph', [2], [2], '#/s/$S/graph?pin=$2', [], [2]],
+  ];
+  const expand = (hash: string) =>
+    hash.replace('$S', SPACE).replace(/\$(\d+)/g, (_, n: string) => id(Number(n)));
+  const routeAt = (view: NavView['view'], stack: number[], pinned: number[], cursor: string | null = null): Route => ({
+    ...defaultRoute(SPACE, { view } as NavView),
+    panels: { ...emptyPanels(), stack: stack.map(id), pinned: pinned.map(id), cursor },
+  });
+
+  it('with no cursor, build(normalize(route)) is BYTE-IDENTICAL to main', () => {
+    for (const [view, stack, pinned, hash] of MAIN) {
+      expect(build(normalize(routeAt(view, stack, pinned))).hash, `${view} p=${stack} pin=${pinned}`)
+        .toBe(expand(hash));
+    }
+  });
+
+  /* `navigate` writes `view` alone, so a Trail cursor can ride the wire onto a
+     Work route. The view gate — not the cursor — is what keeps it inert there. */
+  it('with a cursor riding onto the route, the stack and pins are still exactly main\'s', () => {
+    for (const [view, stack, pinned, , mainStack, mainPinned] of MAIN) {
+      for (const at of [null, ...stack]) {
+        const canonical = normalize(routeAt(view, stack, pinned, at === null ? null : id(at)));
+        expect(canonical.panels.stack, `${view} p=${stack} pin=${pinned} pc=${at}`).toEqual(mainStack.map(id));
+        expect(canonical.panels.pinned).toEqual(mainPinned.map(id));
+      }
+    }
+  });
+
+  /* The guard against the exemption being DEAD CODE (held resolved after the
+     filter, say): the same shapes on Home must differ from main exactly where
+     the held entry is pinned. */
+  it('the same shapes on HOME keep the held entry — the exemption is live', () => {
+    const home = normalize(routeAt('home', [1, 2], [2]));
+    expect(home.panels.stack).toEqual([id(1), id(2)]);
+    const work = MAIN.find(([view, s, p]) => view === 'workspace' && s.join() === '1,2' && p.join() === '2')!;
+    expect(work[4].map(id)).toEqual([id(1)]);
   });
 });

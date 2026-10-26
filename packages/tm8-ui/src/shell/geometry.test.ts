@@ -54,6 +54,42 @@ describe('C_min — the law (LLD §5.1, WLT §6)', () => {
     expect(panelSlots({ stack: ids(4), pinned: ids(2) })).toBe(3);
   });
 
+  it('is the LLD §5.1 count EXACTLY wherever the stack top is not pinned — the derivation is a no-op off the overlap', () => {
+    /* The sweep that lets a reviewer accept a change to pin admission without
+       re-deriving LLD §5.1: every (pinned, stack) over a 5-id pool with 0..3
+       distinct pins and a stack of 0..3 whose TOP is not pinned — entries
+       BELOW the top may be (they never render). */
+    const pool = ids(5);
+    const lld = (s: { stack: readonly EntityId[]; pinned: readonly EntityId[] }) =>
+      s.pinned.length + (s.stack.length > 0 ? 1 : 0);
+    const subsets = (n: number): EntityId[][] =>
+      n === 0 ? [[]] : subsets(n - 1).flatMap((head) =>
+        pool.filter((x) => !head.includes(x)).map((x) => [...head, x]));
+    let swept = 0;
+    let overlaps = 0;
+    for (let p = 0; p <= 3; p++) {
+      for (const pinned of subsets(p)) {
+        for (let n = 0; n <= 3; n++) {
+          for (const stack of subsets(n)) {
+            const top = stack[stack.length - 1];
+            if (top !== undefined && pinned.includes(top)) {
+              /* THE OVERLAP: the top already has its pin column. */
+              expect(panelSlots({ stack, pinned })).toBe(pinned.length);
+              overlaps++;
+            } else {
+              expect(panelSlots({ stack, pinned })).toBe(lld({ stack, pinned }));
+              swept++;
+            }
+          }
+        }
+      }
+    }
+    /* The sweep actually ran over both sides — empty stack, empty pins and
+       three pins included — rather than passing vacuously. */
+    expect(swept).toBeGreaterThan(100);
+    expect(overlaps).toBeGreaterThan(0);
+  });
+
   it('is monotonic in V — adding a panel never lowers the floor', () => {
     for (let v = 0; v < 12; v++) expect(cMin(v + 1)).toBeGreaterThanOrEqual(cMin(v));
   });

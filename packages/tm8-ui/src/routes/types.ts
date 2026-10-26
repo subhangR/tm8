@@ -291,9 +291,11 @@ export interface PanelState {
    * An id rather than an index because `normalize` can REMOVE an entry from
    * `stack` — it cross-filters against pins — and an index would then aim one
    * place to the left, at a real entity, with nothing to detect. An id
-   * re-resolves to the same entity across that shift, and when the entity
-   * itself was removed it is simply ABSENT: the cursor clamps to the top under
-   * the standard drop notice rather than landing somewhere wrong.
+   * re-resolves to the same entity across that shift. On Home the cursor's
+   * OWN entry is never the one removed: `normalize` exempts it from the pin
+   * filter (U13). A `pc` naming nothing on `p` is simply ABSENT: it clamps to
+   * the top under its own `cursor` drop notice rather than landing somewhere
+   * wrong.
    *
    * Well-defined only because the Trail cannot repeat an entity (a revisit
    * moves the cursor, ruled 2026-09-22). The two rules hold each other up.

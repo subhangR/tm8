@@ -3,16 +3,19 @@
  * The unified Home's route-owned trails, driven through the COMPOSED app
  * (task 01a00932 D1/R6/R7): the rail switches the root and the ADDRESS says
  * so; a list click roots the centre and the address carries the trail; Esc
- * walks it back out. The memory-history target is the assertion instrument —
+ * walks the cursor back and never past the root (U14). The memory-history
+ * target is the assertion instrument —
  * what these cases prove is that the arrangement lives in the URL, which no
  * unit test of the store can see end to end.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { fireEvent, render, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
+import type { EntityId } from '@tm8/contract';
 import { GateApp } from './GateApp';
-import { resetNav } from '../stores/navStore';
+import { navStore, resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget } from '../routes';
+import { projectTm8Ui, taskGuideLines, taskQueued } from '../fixtures';
 
 const SPACE = 'sp-atelier';
 
@@ -73,9 +76,17 @@ describe('Home trails live in the URL (D1)', () => {
     await waitFor(() => view.getByTestId('tch-center-override'));
     await waitFor(() => expect(target.getHash()).toContain('p='));
 
-    /* Esc walks the trail back out: B returns to the chat, `p` leaves the
-       address (D14 generalized). */
+    /* Esc at the root does NOTHING (U14): a one-hop Trail has nowhere further
+       back, and Esc must never be the key that throws a Trail away. */
     fireEvent.keyDown(document, { key: 'Escape' });
+    expect(view.getByTestId('tch-center-override')).toBeTruthy();
+    expect(target.getHash()).toContain('p=');
+
+    /* The panel's explicit close is the way back to the chat: B returns to
+       the conversation and `p` leaves the address. */
+    fireEvent.click(
+      within(view.getByTestId('hp-center-trail-host')).getByRole('button', { name: 'Close panel' }),
+    );
     await waitFor(() => expect(view.queryByTestId('tch-center-override')).toBeNull());
     await waitFor(() => expect(target.getHash()).not.toContain('p='));
     view.unmount();
@@ -98,5 +109,69 @@ describe('Home trails live in the URL (D1)', () => {
     await waitFor(() => b.getByTestId('tch-hosted-list'));
     await waitFor(() => b.getByTestId('tch-center-override'));
     b.unmount();
+  });
+});
+
+describe('Esc steps the cursor back and stops at the root (U11 / U14)', () => {
+  it('[a,b,c], cursorTo(a), Esc, Esc → the Trail is still [a,b,c] and the cursor still 0', async () => {
+    const target = createMemoryTarget(`#/s/${SPACE}/home`);
+    const view = render(<GateApp routerTarget={target} />);
+    await waitFor(() => view.getByTestId('home-page'));
+
+    const [a, b, c] = [projectTm8Ui.id, taskGuideLines.id, taskQueued.id] as EntityId[];
+    act(() => {
+      const nav = navStore.getState();
+      nav.openCenter(a!);
+      nav.trailPush(b!);
+      nav.trailPush(c!);
+    });
+    await waitFor(() => view.getByTestId('hp-center-trail-host'));
+
+    /* Still a step back while there is somewhere to step to — U14 narrowed
+       the root, not the gesture. */
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(navStore.getState().cursor).toBe(1);
+
+    act(() => navStore.getState().cursorTo(a!));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    const nav = navStore.getState();
+    expect(nav.stack, 'Esc at the root threw the Trail away (D7 as first written; U14 overrules it)')
+      .toEqual([a, b, c]);
+    expect(nav.cursor).toBe(0);
+    /* The address agrees, and B is still standing on the root. */
+    await waitFor(() => expect(target.getHash()).toContain(`pc=${a}`));
+    expect(view.getByTestId('hp-center-trail-host')).toBeTruthy();
+    view.unmount();
+  });
+});
+
+describe("Home's door into Work rides the Trail strip (U15)", () => {
+  it('opens the entity the cursor stands on in the workspace — at length 1 too', async () => {
+    const target = createMemoryTarget(`#/s/${SPACE}/home`);
+    const view = render(<GateApp routerTarget={target} />);
+    await waitFor(() => view.getByTestId('home-page'));
+
+    const [a, b, c] = [projectTm8Ui.id, taskGuideLines.id, taskQueued.id] as EntityId[];
+    /* Length 1: no crumbs to show, and the door is still there. */
+    act(() => navStore.getState().openCenter(a!));
+    const host = await waitFor(() => view.getByTestId('hp-center-trail-host'));
+    expect(within(host).getByRole('button', { name: 'Open in Workspace' })).toBeTruthy();
+
+    /* Mid-Trail: the door acts on the cursor's entry, not the top. */
+    act(() => {
+      const nav = navStore.getState();
+      nav.trailPush(b!);
+      nav.trailPush(c!);
+      nav.cursorTo(b!);
+    });
+    fireEvent.click(
+      within(view.getByTestId('hp-center-trail-host')).getByRole('button', { name: 'Open in Workspace' }),
+    );
+    await waitFor(() => expect(target.getHash()).toContain(`/s/${SPACE}/workspace`));
+    const stack = navStore.getState().stack;
+    expect(stack[stack.length - 1]).toBe(b);
+    view.unmount();
   });
 });

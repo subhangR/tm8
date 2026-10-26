@@ -573,10 +573,12 @@ export function HomeView(props: HomeViewProps) {
 
 
   /* ESC STEPS THE CURSOR BACK, AND NEVER TRUNCATES (U11/D7). At the root it
-     returns B to the conversation, which is already mounted behind it (D8).
-     Esc is the one gesture people press without looking, so it is the one
-     that must not lose the forward half — `trailBack` moves the cursor and
-     leaves the walk whole.
+     does NOTHING and does not claim the key (U14): D7 as first written had
+     Esc at cursor 0 clear the Trail, which throws away every forward hop —
+     the very loss D7's own reason forbids. Esc is the one gesture people
+     press without looking, so it is the one that must not lose the forward
+     half; `trailBack` moves the cursor and leaves the walk whole. Leaving the
+     Trail for the conversation is the panel's explicit close, not a keypress.
 
      The cursor is read LIVE from the store inside the handler rather than
      closed over: a stale index here would step from where the viewer used to
@@ -588,10 +590,10 @@ export function HomeView(props: HomeViewProps) {
     if (!hasCenter) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
-      event.preventDefault();
       const nav = navStore.getState();
-      if (nav.cursor > 0) nav.trailBack();
-      else nav.clearStack();
+      if (nav.cursor <= 0) return;
+      event.preventDefault();
+      nav.trailBack();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -624,6 +626,7 @@ export function HomeView(props: HomeViewProps) {
         titleOf={titleOf}
         parentOf={parentOf}
         onCrumb={(id) => navStore.getState().cursorTo(id)}
+        onOpenInWorkspace={props.onOpenInWorkspace}
       />
       <AuxEntityPanel
         host={hostBundle}

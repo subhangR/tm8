@@ -30,6 +30,11 @@ import {
   type RouteNotice,
 } from './navStore';
 import { build, createMemoryTarget, parse } from '../routes';
+import {
+  selectPanelIds as portSelectPanelIds,
+  selectVisibleCount as portSelectVisibleCount,
+} from '../shell/nav-port';
+import { panelSlots } from '../shell/geometry';
 
 const SPACE = 'space-1';
 const A = 'entity-a';
@@ -237,12 +242,40 @@ describe('selectors', () => {
         nav().pin(C);
         nav().pin(D);
       },
+      /* THE OVERLAP: a Trail hop onto an entity pinned in Work leaves it on
+         the stack AND pinned (U13 makes that legitimate). None of the cases
+         above can reach it — `push`/`pin` on distinct ids never produce it. */
+      () => {
+        nav().pin(C);
+        nav().openCenter(A);
+        nav().trailPush(C);
+      },
     ];
     for (const setup of cases) {
       resetNav(SPACE, { view: 'workspace' });
       setup();
-      expect(selectPanelIds(nav())).toHaveLength(selectVisibleCount(nav()));
+      const ids = selectPanelIds(nav());
+      /* IDENTITY, not just count: `[C, C]` against a V of 2 passes a length
+         check while drawing one entity twice. */
+      expect(new Set(ids).size, `an id renders twice: ${ids.join(',')}`).toBe(ids.length);
+      expect(ids).toHaveLength(selectVisibleCount(nav()));
+      /* The shell's twins must say the same thing, or the halves separate —
+         and `panelSlots` is the V `cMin` actually reads. */
+      expect(portSelectPanelIds(nav())).toEqual(ids);
+      expect(portSelectVisibleCount(nav())).toBe(ids.length);
+      expect(panelSlots(nav())).toBe(ids.length);
     }
+  });
+
+  it('a pinned stack top renders once, in its pin column (WLT §5.2c under U13)', () => {
+    nav().pin(C);
+    nav().openCenter(A);
+    nav().trailPush(C);
+    expect(nav().stack).toEqual([A, C]);
+    expect(nav().pinned).toEqual([C]);
+    expect(selectPanelIds(nav())).toEqual([C]);
+    expect(selectVisibleCount(nav())).toBe(1);
+    expect(panelSlots(nav())).toBe(1);
   });
 
   it('defaults an unrecorded tab to content and an unrecorded surface to null', () => {
@@ -556,6 +589,31 @@ describe('the Trail — one walk, a cursor along it (U2–U5, task 01a0c864)', (
       panels: { ...route.panels, cursor: 'gone' },
     });
     expect(selectTrailEntity(navStore.getState())).toBe('c');
+  });
+
+  /* U13 AT THE SITE THAT RESOLVES IT. `normalize` keeps the cursor's own
+     entry through the pin filter on Home, so `hydrate`'s `indexOf` finds it
+     instead of returning -1 — the link lands on the crumb it named, and the
+     id stays pinned too (§5.2c holds because `selectPanelIds` dedupes). */
+  it('hydrate lands on a PINNED cursor entity, and a reload of a pinned hop lands on it (U13)', () => {
+    const { route, dropped } = parse(`#/s/${SPACE}/home?pin=b&p=a.b.c&pc=b`);
+    expect(dropped).toEqual([]);
+    navStore.getState().hydrate(route!);
+    expect(navStore.getState().stack).toEqual(['a', 'b', 'c']);
+    expect(navStore.getState().pinned).toEqual(['b']);
+    expect(selectTrailEntity(navStore.getState())).toBe('b');
+
+    // The hop Q1 was about: onto an entity already pinned, at the top.
+    resetNav(SPACE, { view: 'home' });
+    const s = navStore.getState();
+    s.pin('x');
+    s.openCenter('a');
+    s.trailPush('x');
+    const { hash } = build(routeOf(navStore.getState()));
+    resetNav(SPACE, { view: 'home' });
+    navStore.getState().hydrate(parse(hash).route!);
+    expect(navStore.getState().stack).toEqual(['a', 'x']);
+    expect(selectTrailEntity(navStore.getState())).toBe('x');
   });
 
   it('a round trip through the URL preserves the Trail AND the place in it', () => {

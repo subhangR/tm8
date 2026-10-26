@@ -38,8 +38,16 @@ A connection hop and a hierarchy hop both land in B and both extend the same
 - **U8 — `p` carries the whole Trail; `pc` carries the cursor.**
 - **U9 — A long Trail collapses its middle to `…`**, which opens a jump menu.
 - **U10 — Picking a row in column A restarts the Trail clean.**
-- **U11 — Esc steps the cursor back.**
+- **U11 — Esc steps the cursor back.** At the root it does nothing (U14, §3.7).
 - **U12 → D4** — how the hop marks are addressed.
+
+Ruled in the #653 review:
+
+- **U13 — On Home, the cursor's own entry survives the pin filter.** A hop onto
+  an entity pinned in Work reaches the address. Home only (§3.2).
+- **U14 — Esc at the root does nothing** (§3.7).
+- **U15 — "Open in Workspace →" moves into the Trail strip**, acting on the
+  cursor's entity (§3.6).
 
 ## 3. How it is built
 
@@ -88,27 +96,42 @@ one in the other direction: `normalize` strips from `stack` any id that is
 also pinned, and pins survive a Work→Home switch, so the Trail can lose an
 entry under the cursor's feet.
 
+**U13 — on Home, the entry the cursor stands on is exempt from that filter.**
+The held entry is `pc`'s, or the top's when `pc` is omitted. It is resolved
+from the deduped `p` BEFORE the filter; resolved after, the entry is already
+gone and the exemption is dead code. Every other pinned entry is still
+stripped. Off Home nothing is held, so Work routes normalize exactly as they
+did on main: `codec.test.ts` checks 32 routes against hashes printed by main's
+codec, "U13 leaves every non-Home route exactly as main normalizes it". The
+gate is on the ROUTE's view, not the cursor, because the cursor rides the wire
+onto Work (`navigate` writes `view` alone).
+
 ```
 stack [a,b,c], cursor on b, pin a → normalize strips a → [b,c]
   index: 1 → c.  Wrong entity, correct-looking chrome. Nothing detects it.
   id:    b → 0.  Right entity. The shift is ABSORBED, not survived.
 
-stack [a,b,c], cursor on b, pin b → normalize strips b → [a,c]
-  id:    absent → clamp to top + the 'cursor' drop notice. DETECTABLE.
+stack [a,b,c], cursor on b, pin b → on Home b is held → [a,b,c]
+  id:    b → 1.  Right entity; nothing was lost, so nothing is announced.
 
-stack [a,b,c], cursor on c (the top), pin c → [a,b]
-  wire carried null → null still resolves → the cursor lands on b, the new
-  top, SILENTLY. Correct: null is a canonical position, not an address that
-  failed to resolve, so nothing dangled and nothing is announced. A notice
-  here would fire on every ordinary top-of-trail pin.
+stack [a,b], a hop onto x (pinned in Work) → [a,b,x], cursor at the top
+  wire carries no pc → null holds the top → x survives → a reload lands on x.
+  This is the case U13 exists for; before it, the hop never reached `p`.
+
+pc=zz, and zz is not on p
+  id:    absent → clamp to top + the 'cursor' drop notice. DETECTABLE.
 ```
 
-The notice in the second case is raised by `parse`, not `normalize`: the pin
-cross-filter runs in `normalize`, which returns a route and has no drop channel
-at all, so `parse` — the last tier that can still report — treats a `pc` that
-is also in `pin` as dangling. (The first cut checked `pc` only against the raw
-`p` and clamped this case silently; caught in review, pinned by `codec.test.ts`
-"a pc naming an entity that is also PINNED".)
+The held id is then in `pin` AND `p` at once. That is never two panels: Home
+renders the Trail and never reads `pinned`, and Work renders
+`[...pinned, top]` through `selectPanelIds`, which now dedupes (§4).
+
+*History.* The first cut checked `pc` only against the raw `p`, so a pinned
+`pc` clamped to the top with nothing said. The review then made `parse` report
+it as a `'cursor'` drop, because `normalize` has no drop channel. U13 dissolved
+the case instead: a pinned `pc` is a real position, so `parse`'s rule came out
+and its test inverted (`codec.test.ts`, "a pc naming an entity that is also
+PINNED stays on the Trail").
 
 An index is still what the store holds — `trailBack`/`trailForward` and the
 render move along an array — and the id/index conversion happens at the one
@@ -172,20 +195,27 @@ entry marked current. **Hops ahead of the cursor are listed too, dimmed** —
 that is where "keep forward" stops being merely true and becomes visible. A
 Trail walked back to its root therefore shows `current …`: that trailing
 ellipsis is the only thing on the screen saying there is still something ahead.
-The strip still earns its row only at length ≥ 2.
+The crumbs earn their place only at length ≥ 2.
 
-### 3.7 Esc steps back, and never truncates (D7)
+**The door into Work lives at the strip's far end (U15).** "Open in Workspace
+→" sat on region C's header. It now acts on `stack[cursor]`, the entity the
+panel below is showing, and it is there at length 1, where the strip carries
+it alone. `HomeView`'s `onOpenInWorkspace` feeds it, and `GateApp`'s handler
+(switch to Work, `push` the id) is unchanged.
 
-`Esc` = `trailBack()`. At cursor 0 it returns the centre to the conversation
-(already mounted-but-hidden, prior D8). Esc is the one gesture people press
-without looking, so it is the one that must not lose the forward half. Pickers
-and sheets still consume Esc first (`useDismissable`) — unchanged.
+### 3.7 Esc steps back, and never truncates (D7, corrected by U14)
 
-At cursor 0 there is nowhere further back on the Trail, so Esc clears the
-centre (`clearStack`) and the forward half goes with it — D7 as ruled. It is
-one keystroke from recovery, not lost: `clearStack` writes a history PUSH, so
-browser Back restores the whole Trail, forward half included. Making Esc-at-0
-inert instead would be a change to D7, not a fix to it.
+`Esc` = `trailBack()`. At cursor 0 it does **nothing**, and does not claim the
+key. Esc is the one gesture people press without looking, so it is the one
+that must not lose the forward half. Pickers and sheets still consume Esc
+first (`useDismissable`) — unchanged. Returning B to the conversation is the
+entity panel's explicit close (`clearStack`), not a keypress.
+
+**Corrected in place (U14, #653 review).** D7 as first written also said "at
+cursor 0 it returns the centre to the conversation". That half was wrong:
+clearing at the root discards every hop ahead of the cursor, which is exactly
+what D7's own reason — Esc must not lose the forward half — forbids. The
+letter and the reason disagreed; the reason wins.
 
 ## 4. What retired, what survived
 
@@ -196,9 +226,31 @@ inert instead would be a change to D7, not a fix to it.
 `data-aside` · the `.hp-aside*` rules in `home-page.css` · R6's promote path ·
 `views/home-tree.ts` · R7's "breadcrumbs on both panels".
 
+**Survived, moved:** "Open in Workspace →", from region C's header into the
+Trail strip (U15, §3.6).
+
 **Survived untouched:** Work and `WorkspaceView` · `PanelStack` · pinning ·
 `LiveSessionBar` · `pinned`, `session`, `tabs`, `contentSurface` · `push` and
 every other Work verb · `selectStackTop`.
+
+**Changed under Work, deliberately (#653 review).** U13 lets one id sit in
+`pin` and at the top of `p` together. On main the render list and its count
+were each written out separately as `[...pinned, top]`, so that id would have
+been drawn twice and counted twice. The list is now deduped, and the count is
+DERIVED from it, at all five sites:
+- `navStore.selectPanelIds` / `selectVisibleCount`;
+- `shell/nav-port.ts`'s copies of the same pair;
+- `shell/geometry.ts`'s `panelSlots`.
+
+`panelSlots` is the one that carries weight. It is the V that `cMin` reads in
+`cMinFor`, `admitPin` and the demotion loop. The two `selectVisibleCount`s
+have no production caller.
+
+Off the overlap the change is a no-op: `geometry.test.ts` sweeps every ordered
+pin/stack pair drawn from a pool of five ids and checks the old count wherever
+the top is not pinned. On the overlap, the old count reserved a column for an
+entity drawn once. That made `admitPin` refuse pins that fit, and made the
+demotion loop demote early. Both now reserve what they draw.
 
 **On U6 being safe.** Retiring `r` *everywhere* reads like it should disturb
 Work, and it does not: `HomeView` is the only thing that ever rendered the `r`
@@ -223,16 +275,19 @@ the `r` trail.
 
 ## 6. Known edges and open questions (from the #653 review)
 
-- **A hop onto an entity PINNED in Work desyncs the store from the address —
-  accepted.** `trailPush`/`openCenter` put it on the Trail and Home renders
-  it, but `normalize`'s pin cross-filter strips it from `p`, so the address
-  never carries the hop and a reload lands one crumb back (or on the empty
-  centre). Refusing the hop fails a legitimate click for a reason the viewer
-  cannot see; unpinning lets Home mutate Work's pins (U1); exempting `p` from
-  the filter hosts one id twice. Documented at the divergence in `trailPush`.
-  Needs an entity pinned in Work AND reached from Home in the same session.
-- **OPEN — Home's per-entity door into Work.** "Open in Workspace →" lived on
-  region C's header and retired with it; `HomeView`'s `onOpenInWorkspace`
-  prop survives with no call site while `GateApp` still wires a working
-  handler. §4 does not list it as retired. Awaiting a ruling (re-home it into
-  the Trail strip, or retire the prop and its handler and list it in §4).
+- **FIXED by U13 — a hop onto an entity PINNED in Work no longer desyncs the
+  store from the address.** The review first proposed accepting it: `normalize`
+  stripped the hop from `p`, so a reload landed one crumb back. On Home the
+  cursor's entry now survives the filter (§3.2). "Hosts one id twice", the
+  objection to exempting it, is answered in two places. Home never reads
+  `pinned`. Work's render list dedupes (§4).
+- **Residual, by the gate: a Trail reloaded while on WORK.** U13 is Home's.
+  Say the cursor stands on a pinned entity and the viewer switches to Work. The
+  store keeps the Trail, so returning to Home in the same session loses
+  nothing. But Work's address is normalized by Work's law, which strips that
+  entity from `p`. A reload or shared link taken on Work therefore comes back
+  to Home one crumb short, with no notice, because `normalize` has no drop
+  channel. This is the pre-U13 behaviour, now confined to Work's addresses.
+- **RESOLVED by U15 — Home's door into Work.** "Open in Workspace →" had been
+  left with no call site when region C retired. It now lives in the Trail
+  strip (§3.6).

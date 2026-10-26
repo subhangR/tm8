@@ -75,13 +75,26 @@ export interface NavPort extends NavPanelState {
   setContentSurface?(id: EntityId, surface: ContentSurface): void;
 }
 
-/** `V` — kept identical to A1a's `selectVisibleCount` so the halves cannot drift. */
-export function selectVisibleCount(state: NavPanelState): number {
-  return state.pinned.length + (state.stack.length > 0 ? 1 : 0);
+/** What the render-list selectors read — readonly, so geometry can call them. */
+type PanelIdsInput = { readonly stack: readonly EntityId[]; readonly pinned: readonly EntityId[] };
+
+/**
+ * `V` — derived from the render list, as `panelSlots` is. NOT the geometry
+ * input and not read in production: `cMin` reads `panelSlots` (geometry.ts).
+ * A1a's `selectVisibleCount` in the store is the same derivation, but stores/
+ * and shell/ do not import each other, so across that line it is
+ * `panel-render-order` (navStore.test.ts) that holds them equal.
+ */
+export function selectVisibleCount(state: PanelIdsInput): number {
+  return selectPanelIds(state).length;
 }
 
-/** Render order: pins left → right in pin order, then the stack's top panel. */
-export function selectPanelIds(state: NavPanelState): EntityId[] {
+/**
+ * Render order: pins left → right in pin order, then the stack's top panel —
+ * unless the top is itself pinned (a Home Trail hop onto a pin, U13), in which
+ * case it already has its column. One id, one column (WLT §5.2c).
+ */
+export function selectPanelIds(state: PanelIdsInput): EntityId[] {
   const top = state.stack[state.stack.length - 1];
-  return top === undefined ? [...state.pinned] : [...state.pinned, top];
+  return [...new Set(top === undefined ? state.pinned : [...state.pinned, top])];
 }

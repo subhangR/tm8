@@ -13,6 +13,7 @@
  * the CSS through custom properties rather than re-typed into a stylesheet.
  */
 import type { EntityId } from '@tm8/contract';
+import { selectPanelIds } from './nav-port';
 
 // ---------------------------------------------------------------------------
 // Floors and dials (L4, 02-LAYOUT §6; restated at LLD §5.1)
@@ -67,10 +68,17 @@ export const MAX_PINNED = 3;
  * Panel slots occupied in the center: every pin is its own column, and the
  * whole stack shares ONE column (stack-top rendered, rest behind it).
  *
- * `V = pinned.length + (stack.length > 0 ? 1 : 0)` — LLD §5.1.
+ * `V = pinned.length + (stack.length > 0 ? 1 : 0)` — LLD §5.1 — whenever the
+ * stack top is not itself pinned. THIS is the `V` that `cMin` reads (via
+ * `cMinFor`, `admitPin` and the demotion loop), so it is DERIVED from the
+ * render list rather than counted beside it: a Home Trail hop onto an entity
+ * pinned in Work leaves it pinned AND on top of the stack (U13), the render
+ * list draws it once, and a count of `pinned + 1` would reserve a column with
+ * nothing standing in it — refusing a pin, or demoting one, early. Off that
+ * overlap the two forms are equal (swept in geometry.test.ts).
  */
 export function panelSlots(state: { stack: readonly EntityId[]; pinned: readonly EntityId[] }): number {
-  return state.pinned.length + (state.stack.length > 0 ? 1 : 0);
+  return selectPanelIds(state).length;
 }
 
 /**

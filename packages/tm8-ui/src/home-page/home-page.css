@@ -403,6 +403,21 @@
   white-space: nowrap;
 }
 
+/* Home's door into Work (U15): the strip's last item, pushed to its far end. */
+.cv2-root .hp-trail__workspace {
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-card);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cv2-root .hp-trail__workspace:hover { color: var(--pn-ink); background: var(--pn-hover); }
+
 /* B's trail host: crumb on top, the panel filling the rest. */
 .cv2-root .hp-trail-host {
   display: flex;

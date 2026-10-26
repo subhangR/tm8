@@ -63,9 +63,11 @@ export interface NavState {
    * an entry from `stack` (it cross-filters against pins, codec.ts) and every
    * index after that entry then aims one place to the left. That is a silently
    * WRONG destination with correct-looking chrome. An id absorbs the shift:
-   * re-resolved against the canonical stack it still names the same entity,
-   * and when the entity itself is gone it is ABSENT — detectable, so the
-   * cursor clamps to the top under the standard notice instead of guessing.
+   * re-resolved against the canonical stack it still names the same entity.
+   * On Home the cursor's own entry survives the pin filter (U13), so the id is
+   * never stripped out from under itself; a `pc` naming nothing on `p` is
+   * ABSENT — detectable, so the cursor clamps to the top under its own notice
+   * instead of guessing.
    *
    * The id is only well-defined because of the no-repeats ruling below: a
    * Trail that could repeat an entity could not be addressed by id at all.
@@ -249,7 +251,13 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     /* THE ONE PLACE THE WIRE ID BECOMES AN INDEX, and it resolves against the
        ALREADY-NORMALIZED stack — which is the whole reason the wire carries an
        id. Resolving before normalization would re-introduce exactly the shift
-       the id exists to absorb. Absent (or omitted) ⇒ the top, per D2. */
+       the id exists to absorb. Absent (or omitted) ⇒ the top, per D2.
+
+       U13 MAKES THIS A SECOND SITE, not just the filter: a cursor on an entity
+       pinned in Work used to be stripped by `normalize` and come back -1 here
+       (⇒ the top). On Home it now survives the pin filter, so `indexOf`
+       RESOLVES it and the viewer lands on the crumb the link named. That is
+       the behaviour U13 asks for, not a coincidence of the lookup. */
     const at = cursorId === null ? -1 : panels.stack.indexOf(cursorId);
     set((s) => ({
       spaceId: canonical.spaceId,
@@ -426,16 +434,15 @@ export const navStore: StoreApi<NavStore> = createStore<NavStore>()((set, get) =
     /* SOMEWHERE NEW FROM MID-TRAIL DISCARDS THE FORWARD HALF (U5). This is
        the ONLY verb that shortens the Trail — `cursorTo` and `trailBack`
        deliberately do not, which is the whole of "keep forward". */
-    /* A KNOWN STORE/ADDRESS DIVERGENCE, ACCEPTED (#653 review, Q1). An entity
-       PINNED in Work is appended here like any other, so Home renders it —
-       but `normalize`'s pin cross-filter (pin outranks stack: one id, one
-       host) strips it from `p`, so the address never carries this hop and a
-       reload lands one crumb back. `openCenter` has the same edge (a reload
-       lands on the empty centre). The alternatives are worse: refusing the hop
-       fails a legitimate click for a reason the viewer cannot see, unpinning
-       lets Home mutate Work's pins (U1), and exempting `p` from the filter
-       hosts one id twice. Needs an entity pinned in Work AND reached from Home
-       in the same session. */
+    /* AN ENTITY PINNED IN WORK is appended here like any other, so Home
+       renders it — and the address carries it too, because on Home
+       `normalize` exempts the cursor's entry from its pin cross-filter (U13).
+       The hop lands at the top, which the wire spells as NO `pc`, so the
+       exemption keys on the top when the cursor is null. The same holds for
+       `openCenter`. Before U13 the filter stripped the hop from `p` and a
+       reload landed one crumb back (#653 review, Q1). The id then sits in
+       `pin` and `p` at once; Work's `selectPanelIds` dedupes, so it is never
+       two panels. */
     const stack = [...s.stack.slice(0, s.cursor + 1), id];
     const open = new Set([...stack, ...s.pinned]);
     set({
@@ -496,13 +503,19 @@ export function useNavStore<T>(selector: (state: NavStore) => T): T {
  * whose BODY was not. A1b read the docblock, reported what it implied, and was
  * reading it correctly; the body was the lie.
  *
- * The two are now derived from the same rule, and `panel-render-order` in the
- * test suite asserts `selectPanelIds(s).length === selectVisibleCount(s)` so
- * they cannot drift apart again.
+ * `selectVisibleCount` is now DERIVED from this list, and `panel-render-order`
+ * in the test suite asserts both `selectPanelIds(s).length ===
+ * selectVisibleCount(s)` and that no id appears twice — the count alone passes
+ * on a duplicate that preserves it.
  */
 export function selectPanelIds(s: NavState): EntityId[] {
   const top = selectStackTop(s);
-  return top === null ? [...s.pinned] : [...s.pinned, top];
+  /* ONE ID, ONE COLUMN (WLT §5.2c, enforced here). Under U13 a stack entry
+     that is also pinned is a LEGITIMATE state rather than an accident — a
+     Home Trail hop onto an entity pinned in Work keeps it on the Trail — so
+     the render list must tolerate the overlap: a pinned top already has its
+     column. First occurrence wins, so pin order is untouched. */
+  return [...new Set(top === null ? s.pinned : [...s.pinned, top])];
 }
 
 /**
@@ -518,9 +531,17 @@ export function selectOpenPanelIds(s: NavState): EntityId[] {
 /**
  * V — the C_min input. Named once, here, so the store and the shell's
  * `cMin(V)` cannot drift on the definition (LLD §5.1).
+ *
+ * DERIVED from `selectPanelIds`, not counted beside it: two expressions that
+ * happen to agree drift apart the first time one learns something the other
+ * does not (the pinned-top overlap above counted 2 against 1 column).
+ *
+ * NOT the geometry input: nothing in production reads this. The `V` that
+ * `cMin` consumes is `panelSlots` (shell/geometry.ts), derived the same way;
+ * `panel-render-order` holds the three together across the store/shell line.
  */
 export function selectVisibleCount(s: NavState): number {
-  return s.pinned.length + (s.stack.length > 0 ? 1 : 0);
+  return selectPanelIds(s).length;
 }
 
 export function selectStackTop(s: NavState): EntityId | null {

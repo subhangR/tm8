@@ -305,20 +305,15 @@ export function parse(hash: string): ParseOutcome {
      it is a dangling address, and it clamps to the top under its own class
      rather than being honoured. Omitted is the COMMON case and means the top:
      that is what makes every pre-`pc` link parse to what it parses to today.
-     A `pc` that is also PINNED is dangling too: `normalize`'s pin cross-filter
-     takes it off the Trail, and this is the last tier that can still SAY so —
-     past here the clamp to the top would happen with nothing reported (§3.2
-     case 2). A pinned entry elsewhere on `p` is not a drop: the id absorbs the
-     shift, which is what carrying an id rather than an index is for. */
+     A `pc` that is also PINNED is NOT dangling: on Home, `normalize` keeps
+     the cursor's entry on the Trail through the pin cross-filter (U13), so it
+     still names a real crumb. A pinned entry elsewhere on `p` is not a drop
+     either: the id absorbs the shift, which is what carrying an id rather
+     than an index is for. */
   const cursorRaw = query.get('pc');
   if (cursorRaw !== null) {
     const cursor = dec(cursorRaw);
-    if (
-      cursor === null ||
-      cursor.length === 0 ||
-      !panels.stack.includes(cursor) ||
-      panels.pinned.includes(cursor)
-    ) {
+    if (cursor === null || cursor.length === 0 || !panels.stack.includes(cursor)) {
       drop('cursor')();
       panels.cursor = null;
     } else {
@@ -656,7 +651,9 @@ export function build(route: Route): BuildOutcome {
  * (`normalize ∘ normalize = normalize`, asserted by property test):
  *
  *   - `p` and `pin` deduped within themselves (first occurrence wins);
- *   - CROSS-SET dedup with precedence PIN > STACK (WLT §2.2 hydration rule);
+ *   - CROSS-SET dedup with precedence PIN > STACK (WLT §2.2 hydration rule),
+ *     except that on Home the entry the Trail's cursor stands on survives it
+ *     (U13, below);
  *   - `t` / `contentSurface` entries for ids that are not open are pruned —
  *     they address panels that do not exist;
  *   - `t` entries equal to the default (`content`) are dropped, since an
@@ -672,17 +669,41 @@ export function build(route: Route): BuildOutcome {
 export function normalize(route: Route): Route {
   const pinned = dedupe(route.panels.pinned);
   const pinnedSet = new Set(pinned);
-  const stack = dedupe(route.panels.stack).filter((id) => !pinnedSet.has(id));
+  const deduped = dedupe(route.panels.stack);
+  /* U13: ON HOME, THE ENTRY THE CURSOR POINTS AT SURVIVES THE PIN FILTER. A
+     Trail hop onto an entity pinned over in Work used to be stripped here, so
+     the address never carried the hop and a reload landed one crumb back.
+     `null` ⇒ the top (D2) — which is where an appended hop lands, i.e. the
+     case this exists for, so a null cursor is NOT "no exemption".
+
+     `held` resolves from `deduped`, BEFORE the filter. Resolved from the
+     filtered stack, the pinned entry is already gone, nothing can equal it,
+     and the exemption is dead code that still typechecks.
+
+     Off Home `held` is null, nothing equals null, and the predicate is the
+     pre-U13 one by construction rather than by a branch — so every Work
+     route normalizes exactly as before (pinned by a differential test). The
+     view gate is on the ROUTE, not on the cursor, because the cursor rides
+     the wire onto Work: `navigate` writes `view` alone.
+
+     The held id is then in `pin` AND `p` at once. That is never two panels:
+     Home renders the Trail and never reads `pinned`; Work renders
+     `[...pinned, top]` through `selectPanelIds`, which dedupes. */
+  const held =
+    route.target.view === 'home'
+      ? (route.panels.cursor ?? deduped[deduped.length - 1] ?? null)
+      : null;
+  const stack = deduped.filter((id) => !pinnedSet.has(id) || id === held);
   const open = new Set([...pinned, ...stack]);
 
   /* THE CURSOR IS RESOLVED AGAINST THE CANONICAL STACK, which is the entire
      reason `pc` is an id. Both filters above can REMOVE an entry — the dedupe
-     within `p`, and the pin cross-filter, which fires on a Trail that walked
-     onto something pinned over in Work. An index would survive that silently
-     and aim one place to the left, at a real entity, with correct-looking
-     chrome. An id either still names its entity (the common case: an entry
-     BEFORE the cursor was removed, and the cursor is simply unaffected) or is
-     absent, and absent clamps to the top.
+     within `p`, and the pin cross-filter, which still fires on every pinned
+     entry of the Trail except the cursor's own (U13). An index would survive
+     that silently and aim one place to the left, at a real entity, with
+     correct-looking chrome. An id either still names its entity (the common
+     case: an entry BEFORE the cursor was removed, and the cursor is simply
+     unaffected) or is absent, and absent clamps to the top.
 
      Canonical form is NULL AT THE TOP, so `normalize ∘ normalize = normalize`
      holds and the omitted-`pc` link stays the one true spelling of "at the

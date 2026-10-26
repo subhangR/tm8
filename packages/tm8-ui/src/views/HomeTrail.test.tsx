@@ -122,3 +122,46 @@ describe('the Trail strip', () => {
     expect(view.getAllByRole('button', { name: 'Jump to a hop on the trail' })).toHaveLength(1);
   });
 });
+
+/**
+ * Home's one door into Work (U15). It lived on region C's header; it moves
+ * here, and the strip's length rule must not take it away with the crumbs.
+ */
+describe('the door into Work (U15)', () => {
+  function withDoor(trail: string[], cursor: number) {
+    const onOpenInWorkspace = vi.fn();
+    const view = render(
+      <HomeTrail
+        trail={trail}
+        cursor={cursor}
+        label="Trail"
+        titleOf={titleOf}
+        parentOf={(id) => CHAIN[id]}
+        onCrumb={vi.fn()}
+        onOpenInWorkspace={onOpenInWorkspace}
+      />,
+    );
+    return { view, onOpenInWorkspace };
+  }
+
+  it('is there at length 1, where the crumbs are not', () => {
+    const { view, onOpenInWorkspace } = withDoor(['a'], 0);
+    expect(view.container.querySelector('nav.hp-trail')).not.toBeNull();
+    expect(view.container.querySelector('.hp-trail__here')).toBeNull();
+    expect(view.container.querySelector('.hp-trail__crumb')).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: 'Open in Workspace' }));
+    expect(onOpenInWorkspace).toHaveBeenCalledWith('a');
+  });
+
+  it('opens the CURSOR\'S entity, not the top — what the panel below is showing', () => {
+    const { view, onOpenInWorkspace } = withDoor(['a', 'b', 'c'], 1);
+    fireEvent.click(view.getByRole('button', { name: 'Open in Workspace' }));
+    expect(onOpenInWorkspace).toHaveBeenCalledWith('b');
+    expect(onOpenInWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('an empty Trail has no strip, door or not', () => {
+    const { view } = withDoor([], 0);
+    expect(view.container.querySelector('nav.hp-trail')).toBeNull();
+  });
+});

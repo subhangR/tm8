@@ -26,6 +26,11 @@
  *     Connections tab and its crumb still reads `›`, because it *is* its
  *     parent. That is more truthful than recording which tab was clicked, and
  *     unlike a stored gesture it survives a reload.
+ *
+ * HOME'S ONE DOOR INTO WORK LIVES HERE (U15, #653 review). "Open in
+ * Workspace →" sat on region C's header and would have retired with it; it
+ * acts on the entity the viewer is standing on — the CURSOR'S entry, not the
+ * top — so it opens what the panel below is showing.
  */
 import { useRef, useState } from 'react';
 import { KindIcon, getKind } from '../domain';
@@ -33,7 +38,10 @@ import { useDismissable } from '../panels/useDismissable';
 import type { EntityId } from '@tm8/contract';
 
 export interface HomeTrailProps {
-  /** The WHOLE walk, bottom → top — not just what renders. Length ≥ 2. */
+  /**
+   * The WHOLE walk, bottom → top — not just what renders. Crumbs need two
+   * entries; the door needs one.
+   */
   trail: readonly EntityId[];
   /** Where the viewer stands: an index into `trail`. */
   cursor: number;
@@ -45,6 +53,8 @@ export interface HomeTrailProps {
    */
   parentOf(id: EntityId): EntityId | null | undefined;
   onCrumb(id: EntityId): void;
+  /** Absent ⇒ no door. Receives the cursor's entity (U15). */
+  onOpenInWorkspace?(id: EntityId): void;
 }
 
 type Mark = '›' | '→';
@@ -136,12 +146,39 @@ function glyphFor(kind: string) {
   ) : null;
 }
 
-export function HomeTrail({ trail, cursor, label, titleOf, parentOf, onCrumb }: HomeTrailProps) {
-  /* A one-entry Trail has no walk to show — the strip earns its row only when
-     there is somewhere else to be. */
-  if (trail.length < 2) return null;
-
+export function HomeTrail({
+  trail,
+  cursor,
+  label,
+  titleOf,
+  parentOf,
+  onCrumb,
+  onOpenInWorkspace,
+}: HomeTrailProps) {
+  if (trail.length === 0) return null;
   const here = Math.min(Math.max(cursor, 0), trail.length - 1);
+  const door = onOpenInWorkspace ? (
+    <button
+      type="button"
+      className="hp-trail__workspace"
+      title="Leave Home and open this entity in the full workspace"
+      onClick={() => onOpenInWorkspace(trail[here]!)}
+    >
+      Open in Workspace <span aria-hidden>→</span>
+    </button>
+  ) : null;
+
+  /* A one-entry Trail has no walk to show — the crumbs earn their place only
+     when there is somewhere else to be. The door does not depend on a walk,
+     so at length 1 the strip carries it alone, and without it there is no
+     strip (U15). */
+  if (trail.length < 2) {
+    return door ? (
+      <nav className="hp-trail" aria-label={label}>
+        {door}
+      </nav>
+    ) : null;
+  }
 
   /* THE MIDDLE COLLAPSES (U9/D6): `root … parent › current`. An `…` stands
      exactly where hops are hidden, so a Trail walked back to its root shows
@@ -189,6 +226,7 @@ export function HomeTrail({ trail, cursor, label, titleOf, parentOf, onCrumb }: 
         );
       })}
       {shown[shown.length - 1]! < trail.length - 1 ? jump() : null}
+      {door}
     </nav>
   );
 }
