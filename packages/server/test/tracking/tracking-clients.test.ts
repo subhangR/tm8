@@ -218,7 +218,7 @@ describe('tracking observer (`tm8 tracking refresh`)', () => {
 });
 
 describe('the backgroundJob claim', () => {
-  it('is set only where the tracking jobs are composed — never by a request path', () => {
+  it('is set only where background jobs are composed — never by a request path', () => {
     const src = join(__dirname, '../../src');
     const files: string[] = [];
     const walk = (dir: string): void => {
@@ -233,8 +233,23 @@ describe('the backgroundJob claim', () => {
       .filter((file) => /backgroundJob\s*:/.test(readFileSync(file, 'utf8')))
       .map((file) => relative(src, file))
       .sort();
-    // main.ts is the composition root that binds it (db/types.ts declares it
-    // as an optional field, which this pattern does not match).
-    expect(setters).toEqual(['main.ts']);
+    /**
+     * The POINT of this assertion is that the list is short and every entry is
+     * a composition site, not a request path. Adding a file here is a decision
+     * a reviewer must make on purpose — which is why it is a literal list and
+     * not a count.
+     *
+     *   - `main.ts`: the composition root, binding the two tracking jobs (306).
+     *   - `facade/execution-handlers.ts`: `createLoopExecutorPort.dueReadClaims`
+     *     (360), binding `loops.execute-due` for the loop executor's ONE
+     *     cross-space read. It is in this file rather than main.ts because the
+     *     port is built here; the claim is still reachable only from the
+     *     in-process scheduler, and the firing path it hands back deliberately
+     *     carries no background claim at all.
+     *
+     * (db/types.ts declares it as an optional field, which this pattern does
+     * not match.)
+     */
+    expect(setters).toEqual(['facade/execution-handlers.ts', 'main.ts']);
   });
 });
