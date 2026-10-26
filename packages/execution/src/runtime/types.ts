@@ -124,6 +124,12 @@ export interface StartAgentThreadInput {
    * HOME is expressly forbidden: Claude subscription auth uses the keychain.
    */
   env?: Readonly<Record<string, string>>;
+  /**
+   * Opaque caller data kept with a host-backed child (task 01a0db31) and
+   * handed back by {@link AgentRuntime.adoptAll} after a server restart. Never
+   * put a secret here: the session host holds it in memory.
+   */
+  hostMeta?: unknown;
 }
 
 export interface AgentThread {
@@ -133,6 +139,29 @@ export interface AgentThread {
 
 export interface AgentTurnInput {
   text: string;
+  /**
+   * Names this turn to the session host (the orchestrator passes
+   * `<turnId>:<attemptNo>`), so a restarted server can tell which turn the
+   * child was last given. Ignored for an in-process child.
+   */
+  tag?: string;
+}
+
+/** A host-backed thread a previous server started, now held by this one. */
+export interface AdoptedAgentThread {
+  threadId: string;
+  nativeSessionId: string;
+  hostMeta: unknown;
+  /**
+   * The turn the child was last given and never finished (as far as any ack
+   * says), or null when the thread is idle. `acked` is the caller's cursor
+   * from the last {@link AgentRuntime.acknowledge} of THIS turn, or null when
+   * none of its items was acknowledged. Its items continue through
+   * {@link AgentRuntime.resumeTurn}, starting with every line after that ack.
+   */
+  inFlight: { tag: string; acked: unknown } | null;
+  /** The child had already exited; the thread will close once its output replays. */
+  exited: boolean;
 }
 
 export interface AgentThreadExit {
@@ -161,6 +190,16 @@ export interface AgentRuntime {
    */
   interrupt(threadId: string): Promise<boolean>;
   close(threadId: string): Promise<void>;
+  /**
+   * Host-backed threads only (task 01a0db31): `item` — as yielded by this
+   * runtime — is durably recorded, so the host may drop the output that
+   * produced it and keep `cursor` for the next server. A no-op otherwise.
+   */
+  acknowledge?(threadId: string, item: TurnItem, cursor: unknown): void;
+  /** Take over every chat child the session hosts kept through a restart. */
+  adoptAll?(): AdoptedAgentThread[];
+  /** The items of an adopted thread's in-flight turn; null when it has none. */
+  resumeTurn?(threadId: string): AsyncIterable<TurnItem> | null;
 }
 
 export class AgentRuntimeError extends Error {

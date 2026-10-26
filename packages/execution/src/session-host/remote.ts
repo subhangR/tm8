@@ -261,7 +261,8 @@ export interface RemoteChildSpawn {
 /**
  * The ChildProcess subset ClaudeHeadlessAdapter drives. Events: 'spawn',
  * 'error', 'exit' (code, signal), 'close' (code, signal) — 'close' only after
- * stdout and stderr have ended, like a real child.
+ * stdout and stderr have ended, like a real child — and 'input_dropped'
+ * (bytes, tag) when the host refused a stdin write.
  */
 export class RemoteChild extends EventEmitter {
   readonly remote = true;
@@ -324,6 +325,9 @@ export class RemoteChild extends EventEmitter {
       onHostLost: () => this.finish({ exitCode: null, signal: null, at: Date.now() }),
       onResync: (stream) => {
         if (!this.exited) this.subscribe(stream, stream === 'out' ? this.outNext : this.errNext);
+      },
+      onInputDropped: (bytes, tag) => {
+        if (!this.exited) this.emit('input_dropped', bytes, tag);
       },
     };
     conn.bind(sid, this.binding);

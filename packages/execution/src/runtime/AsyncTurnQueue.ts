@@ -11,8 +11,12 @@ export class AsyncTurnQueue implements AsyncIterable<TurnItem> {
   private ended = false;
   private iteratorClaimed = false;
 
+  /** `tap` sees every item accepted, before any reader does. */
+  constructor(private readonly tap?: (item: TurnItem) => void) {}
+
   push(item: TurnItem): void {
     if (this.ended) return;
+    this.tap?.(item);
     const reader = this.readers.shift();
     if (reader) {
       reader.resolve({ value: item, done: false });

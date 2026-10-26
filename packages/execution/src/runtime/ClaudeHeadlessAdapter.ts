@@ -1,18 +1,20 @@
-import {
-  spawn as spawnChild,
-  type ChildProcessWithoutNullStreams,
-} from 'node:child_process';
+import { spawn as spawnChild } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
+import type { Readable, Writable } from 'node:stream';
 import type { SessionTranscriptContext } from '@tm8/contract';
-import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 import type { Logger } from '../pty/types.js';
+import type { SessionHostConnection } from '../session-host/client.js';
+import type { HostSessionRecord } from '../session-host/frames.js';
+import { RemoteChild } from '../session-host/remote.js';
 import { redactSecretTokens } from '../spawn/secret-redaction.js';
 import { composeChatEnv } from './chat-env.js';
 import { AsyncTurnQueue } from './AsyncTurnQueue.js';
 import {
   AgentRuntimeError,
+  type AdoptedAgentThread,
   type AgentRuntime,
   type AgentThread,
   type AgentThreadExit,
@@ -84,12 +86,136 @@ const FRESH_TOTALS: RunningTotals = {
 interface ActiveTurn {
   queue: AsyncTurnQueue;
   toolCalls: Map<string, ToolCallTurnItem>;
+  /** The caller's turn tag, when it gave one (host-backed threads ack by it). */
+  tag: string | null;
+}
+
+/** What the adapter drives: a real child, or its stand-in in a session host. */
+interface ChatChild {
+  readonly stdin: Writable;
+  readonly stdout: Readable;
+  readonly stderr: Readable;
+  readonly exitCode: number | null;
+  readonly signalCode: NodeJS.Signals | null;
+  kill(signal?: NodeJS.Signals): boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(event: string, listener: (...args: any[]) => void): unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  once(event: string, listener: (...args: any[]) => void): unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  off(event: string, listener: (...args: any[]) => void): unknown;
+}
+
+/**
+ * Splits stdout into lines like readline did, and also knows the absolute
+ * stdout offset just past each line — the unit a host-backed thread acks in.
+ */
+class OffsetLineSplitter {
+  private pending: Buffer[] = [];
+  private closed = false;
+
+  constructor(
+    private offset: number,
+    private readonly onLine: (line: string, end: number) => void,
+  ) {}
+
+  write(chunk: Buffer | string): void {
+    const data = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+    let start = 0;
+    for (;;) {
+      if (this.closed) return;
+      const newline = data.indexOf(10, start);
+      if (newline < 0) break;
+      const piece = data.subarray(start, newline + 1);
+      const full = this.pending.length > 0 ? Buffer.concat([...this.pending, piece]) : piece;
+      this.pending = [];
+      start = newline + 1;
+      this.emit(full, full.length - 1);
+    }
+    if (start < data.length) this.pending.push(data.subarray(start));
+  }
+
+  /** A last line with no newline is still a line (readline's behaviour). */
+  end(): void {
+    if (this.closed || this.pending.length === 0) return;
+    const rest = Buffer.concat(this.pending);
+    this.pending = [];
+    this.emit(rest, rest.length);
+  }
+
+  close(): void {
+    this.closed = true;
+    this.pending = [];
+  }
+
+  private emit(bytes: Buffer, textLength: number): void {
+    this.offset += bytes.length;
+    let line = bytes.toString('utf8', 0, textLength);
+    if (line.endsWith('\r')) line = line.slice(0, -1);
+    this.onLine(line, this.offset);
+  }
+}
+
+/** Host session id of a chat thread's child; PTY sessions use the bare work session id. */
+function chatSid(threadId: string): string {
+  return `chat-${threadId}`;
+}
+
+/** Spawn metadata a host keeps with a chat child: what adoption rebuilds the thread from. */
+interface ChatHostMeta {
+  kind: 'chat';
+  v: 1;
+  threadId: string;
+  nativeSessionId: string;
+  model: string;
+  cwd: string;
+  hostMeta: unknown;
+}
+
+function chatHostMeta(record: HostSessionRecord): ChatHostMeta | null {
+  const meta = record.meta;
+  if (record.kind !== 'pipe' || !isObject(meta) || meta['kind'] !== 'chat' || meta['v'] !== 1) return null;
+  const threadId = stringField(meta, 'threadId');
+  const nativeSessionId = stringField(meta, 'nativeSessionId');
+  const model = stringField(meta, 'model');
+  const cwd = stringField(meta, 'cwd');
+  if (!threadId || !nativeSessionId || !model || !cwd) return null;
+  return { kind: 'chat', v: 1, threadId, nativeSessionId, model, cwd, hostMeta: meta['hostMeta'] ?? null };
+}
+
+/** The cursor this adapter stores with each ack: whose turn, whether it ended, and the caller's own. */
+interface ChatAckCursor {
+  v: 1;
+  tag: string | null;
+  done: boolean;
+  app: unknown;
+}
+
+function chatAckCursor(value: unknown): ChatAckCursor | null {
+  if (!isObject(value) || value['v'] !== 1) return null;
+  const tag = value['tag'];
+  return {
+    v: 1,
+    tag: typeof tag === 'string' ? tag : null,
+    done: value['done'] === true,
+    app: value['app'] ?? null,
+  };
+}
+
+/** The host's surface the adapter needs; `SessionHostPool` satisfies it. */
+export interface ChatSessionHosts {
+  hostForSpawn(): SessionHostConnection | null;
+  sessions(): Array<{ conn: SessionHostConnection; record: HostSessionRecord }>;
 }
 
 interface ThreadState {
   readonly input: StartAgentThreadInput;
-  readonly child: ChildProcessWithoutNullStreams;
-  readonly lines: ReadlineInterface;
+  readonly child: ChatChild;
+  /** Set when the child lives in a session host. */
+  readonly remote: RemoteChild | null;
+  readonly lines: OffsetLineSplitter;
+  /** Absolute stdout offset just past the line being handled. */
+  lineEnd: number;
   readonly exited: Promise<void>;
   resolveExited(): void;
   active: ActiveTurn | null;
@@ -138,6 +264,14 @@ export interface ClaudeHeadlessAdapterOptions {
    * NOT a settings source: this does not re-enable project hooks/permissions.
    */
   pluginDir?: string;
+  /**
+   * Session hosts (task 01a0db31): when set, each chat child is spawned in the
+   * active host and survives a server restart; {@link ClaudeHeadlessAdapter.adoptAll}
+   * takes the survivors back.
+   */
+  sessionHosts?: ChatSessionHosts;
+  /** Host mode is on but no host was available: this thread's child runs in-process. */
+  onInProcessFallback?: (threadId: string) => void;
 }
 
 /**
@@ -157,7 +291,11 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
   private readonly closeGraceMs: number;
   private readonly onThreadExit: ClaudeHeadlessAdapterOptions['onThreadExit'];
   private readonly pluginDir: string | undefined;
+  private readonly sessionHosts: ChatSessionHosts | undefined;
+  private readonly onInProcessFallback: ((threadId: string) => void) | undefined;
   private readonly threads = new Map<string, ThreadState>();
+  /** Where each yielded item came from, for {@link acknowledge}. */
+  private readonly itemMarks = new WeakMap<TurnItem, { offset: number; tag: string | null }>();
   /**
    * Same-process consistency hints for R8. The orchestrator's durable binding
    * is the resume authority, so absence after a node restart never blocks a
@@ -187,6 +325,8 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     this.closeGraceMs = options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
     this.onThreadExit = options.onThreadExit;
     this.pluginDir = options.pluginDir?.trim() || undefined;
+    this.sessionHosts = options.sessionHosts;
+    this.onInProcessFallback = options.onInProcessFallback;
     if (this.bootSettlementMs < 0 || !Number.isFinite(this.bootSettlementMs)) {
       throw new AgentRuntimeError('bootSettlementMs must be a finite non-negative number', 'invalid_input');
     }
@@ -261,47 +401,62 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     }
 
     const args = this.buildArgs(config);
-    let child: ChildProcessWithoutNullStreams;
+    const host = this.sessionHosts?.hostForSpawn() ?? null;
+    if (!host && this.sessionHosts) {
+      this.logger?.error(
+        'ClaudeHeadlessAdapter: no session host; this chat runs in-process and will not survive a server restart',
+        undefined,
+        { threadId: config.threadId },
+      );
+      this.onInProcessFallback?.(config.threadId);
+    }
+    let child: ChatChild;
+    let remote: RemoteChild | null = null;
     try {
-      child = spawnChild(this.command, args, {
-        cwd: config.cwd,
-        env: childEnv,
-        shell: false,
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      if (host) {
+        const meta: ChatHostMeta = {
+          kind: 'chat',
+          v: 1,
+          threadId: config.threadId,
+          nativeSessionId: config.nativeSessionId,
+          model: config.model,
+          cwd: config.cwd,
+          hostMeta: config.hostMeta ?? null,
+        };
+        remote = RemoteChild.spawn(host, {
+          sid: chatSid(config.threadId),
+          epoch: `chat-${randomUUID()}`,
+          file: this.command,
+          args,
+          cwd: config.cwd,
+          env: Object.fromEntries(
+            Object.entries(childEnv).filter((entry): entry is [string, string] => entry[1] !== undefined),
+          ),
+          meta,
+        });
+        child = remote;
+      } else {
+        child = spawnChild(this.command, args, {
+          cwd: config.cwd,
+          env: childEnv,
+          shell: false,
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      }
     } catch (error) {
       throw this.spawnError(error);
     }
 
-    let resolveExited!: () => void;
-    const exited = new Promise<void>((resolve) => {
-      resolveExited = resolve;
-    });
-    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-    const state: ThreadState = {
-      input: config,
+    const state = this.newState(
+      config,
       child,
-      lines,
-      exited,
-      resolveExited,
-      active: null,
-      stderr: '',
-      closeRequested: false,
-      interruptRequested: false,
-      unusable: false,
-      booting: true,
-      closed: false,
-      totals: config.resume === 'post_interrupt' ? this.lastTotals.get(config.threadId) ?? null : FRESH_TOTALS,
-      sampledRequestId: null,
-      sample: null,
-    };
+      remote,
+      0,
+      config.resume === 'post_interrupt' ? this.lastTotals.get(config.threadId) ?? null : FRESH_TOTALS,
+    );
     this.threads.set(config.threadId, state);
-
-    lines.on('line', (line) => this.handleLine(state, line));
-    child.stderr.on('data', (chunk: Buffer | string) => this.captureStderr(state, chunk));
-    child.on('error', (error) => this.handleProcessError(state, error));
-    child.once('close', (code, signal) => this.handleProcessClose(state, code, signal));
+    this.wire(state);
 
     try {
       await this.awaitBoot(state);
@@ -310,7 +465,7 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     } catch (error) {
       state.booting = false;
       this.threads.delete(config.threadId);
-      lines.close();
+      state.lines.close();
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       if (error instanceof AgentRuntimeError) throw error;
       throw this.spawnError(error);
@@ -341,16 +496,14 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       throw new AgentRuntimeError('turn text must be a non-empty string without NUL bytes', 'invalid_input');
     }
 
-    const active: ActiveTurn = {
-      queue: new AsyncTurnQueue(),
-      toolCalls: new Map(),
-    };
+    const active = this.newActive(state, input.tag ?? null);
     state.active = active;
 
     const message = `${JSON.stringify({
       type: 'user',
       message: { role: 'user', content: input.text },
     })}\n`;
+    if (state.remote && active.tag) state.remote.tagNextWrite(active.tag);
     try {
       state.child.stdin.write(message, 'utf8', (error) => {
         if (error && state.active === active) {
@@ -391,6 +544,65 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       `agent thread '${threadId}' did not exit after stdin close, SIGTERM, and SIGKILL`,
       'close_failed',
     );
+  }
+
+  acknowledge(threadId: string, item: TurnItem, cursor: unknown): void {
+    const state = this.threads.get(threadId);
+    const mark = this.itemMarks.get(item);
+    if (!state?.remote || !mark) return;
+    const ack: ChatAckCursor = { v: 1, tag: mark.tag, done: item.kind === 'done', app: cursor };
+    state.remote.ack(mark.offset, ack);
+  }
+
+  /**
+   * Take back every chat child the session hosts kept through a restart. Each
+   * becomes a thread exactly as if this process had started it; a turn it was
+   * given and never finished continues through {@link resumeTurn}, from the
+   * first line after the last acknowledged item. A child that exited in the
+   * gap replays its remaining output and then closes like any other exit.
+   */
+  adoptAll(): AdoptedAgentThread[] {
+    if (!this.sessionHosts) return [];
+    const adopted: AdoptedAgentThread[] = [];
+    for (const { conn, record } of this.sessionHosts.sessions()) {
+      const meta = chatHostMeta(record);
+      if (!meta || this.threads.has(meta.threadId)) continue;
+      const cursor = chatAckCursor(record.cursor);
+      const last = record.lastInputTag;
+      const inFlightTag = last !== null && !(cursor?.tag === last && cursor.done) ? last : null;
+      const remote = RemoteChild.adopt(conn, record, record.out.acked);
+      const input: StartAgentThreadInput = {
+        threadId: meta.threadId,
+        nativeSessionId: meta.nativeSessionId,
+        model: meta.model,
+        cwd: meta.cwd,
+        // Launch-only fields: an adopted child is past its launch.
+        systemPrompt: '',
+        mcpConfigPath: '',
+        availableTools: [],
+        allowedTools: [],
+        ...(meta.hostMeta !== null ? { hostMeta: meta.hostMeta } : {}),
+      };
+      // No honest usage base survives the restart; this process's first step stays uncosted.
+      const state = this.newState(input, remote, remote, remote.stdoutBase, null);
+      state.booting = false;
+      if (inFlightTag) state.active = this.newActive(state, inFlightTag);
+      this.threads.set(meta.threadId, state);
+      this.wire(state);
+      adopted.push({
+        threadId: meta.threadId,
+        nativeSessionId: meta.nativeSessionId,
+        hostMeta: meta.hostMeta,
+        inFlight: inFlightTag ? { tag: inFlightTag, acked: cursor?.tag === inFlightTag ? cursor.app : null } : null,
+        exited: remote.exitPending,
+      });
+      remote.start();
+    }
+    return adopted;
+  }
+
+  resumeTurn(threadId: string): AsyncIterable<TurnItem> | null {
+    return this.threads.get(threadId)?.active?.queue ?? null;
   }
 
   /** Read-only registry probes for health checks and deterministic tests. */
@@ -537,6 +749,67 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
       '--system-prompt',
       input.systemPrompt,
     ];
+  }
+
+  private newState(
+    input: StartAgentThreadInput,
+    child: ChatChild,
+    remote: RemoteChild | null,
+    stdoutBase: number,
+    totals: RunningTotals | null,
+  ): ThreadState {
+    let resolveExited!: () => void;
+    const exited = new Promise<void>((resolve) => {
+      resolveExited = resolve;
+    });
+    const state: ThreadState = {
+      input,
+      child,
+      remote,
+      lines: new OffsetLineSplitter(stdoutBase, (line, end) => {
+        state.lineEnd = end;
+        this.handleLine(state, line);
+      }),
+      lineEnd: stdoutBase,
+      exited,
+      resolveExited,
+      active: null,
+      stderr: '',
+      closeRequested: false,
+      interruptRequested: false,
+      unusable: false,
+      booting: true,
+      closed: false,
+      totals,
+      sampledRequestId: null,
+      sample: null,
+    };
+    return state;
+  }
+
+  private newActive(state: ThreadState, tag: string | null): ActiveTurn {
+    return {
+      queue: new AsyncTurnQueue((item) => this.itemMarks.set(item, { offset: state.lineEnd, tag })),
+      toolCalls: new Map(),
+      tag,
+    };
+  }
+
+  private wire(state: ThreadState): void {
+    const { child } = state;
+    child.stdout.on('data', (chunk: Buffer | string) => state.lines.write(chunk));
+    child.stdout.on('end', () => state.lines.end());
+    child.stderr.on('data', (chunk: Buffer | string) => this.captureStderr(state, chunk));
+    child.on('error', (error: Error) => this.handleProcessError(state, error));
+    child.once('close', (code: number | null, signal: NodeJS.Signals | null) =>
+      this.handleProcessClose(state, code, signal),
+    );
+    // The host refused the turn's stdin write (H4): the turn would never start.
+    child.on('input_dropped', () => {
+      if (state.active) {
+        this.failActiveTurn(state, 'stdin_write_failed', 'the session host refused the turn: the agent is not reading its input');
+      }
+    });
   }
 
   private awaitBoot(state: ThreadState): Promise<void> {
@@ -858,6 +1131,8 @@ export class ClaudeHeadlessAdapter implements AgentRuntime {
     state.closed = true;
     state.lines.close();
     this.threads.delete(state.input.threadId);
+    // The exit is recorded here; the host may forget it.
+    state.remote?.release();
 
     const reason: AgentThreadExit['reason'] = state.interruptRequested
       ? 'interrupted'

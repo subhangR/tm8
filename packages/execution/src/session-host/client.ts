@@ -105,6 +105,8 @@ export interface SessionBinding {
   onHostLost(): void;
   /** H4: the host stopped streaming this stream at its send high water; resubscribe from your own offset. */
   onResync?(stream: StreamName): void;
+  /** H4: the host refused a write (its input cap); `tag` is the write's tag, if it had one. */
+  onInputDropped?(bytes: number, tag: string | null): void;
 }
 
 type HelloOk = Extract<HostFrame, { t: 'hello_ok' }>;
@@ -324,6 +326,7 @@ export class SessionHostConnection extends EventEmitter {
           bytes: frame.bytes,
           tag: frame.tag,
         });
+        this.bindings.get(frame.sid)?.onInputDropped?.(frame.bytes, frame.tag);
         return;
       case 'hello_ok':
         return;
