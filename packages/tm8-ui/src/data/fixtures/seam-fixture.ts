@@ -38,6 +38,8 @@ import {
   type TaskWorkflowInput,
   type UpdateMemberRoleInput,
   type UpdateSpaceInput,
+  UpdateMenuInputSchema,
+  EntityKindCreateInputSchema,
   type MembershipEndResult,
   type MembershipEndStatus,
   bindPath,
@@ -80,6 +82,8 @@ import {
   type ExecutionResumeInput,
   type ExecutionSessionsShareInput,
   type ExecutionTerminateInput,
+  type ExecutionCompleteInput,
+  type ReleaseInput,
   type FeedItem,
   type FileUploadGrant,
   type FileUploadInitInput,
@@ -108,12 +112,12 @@ import {
   type SpaceCredentialProviderName,
   type NodeCredentialsStatusView,
   type SpaceCredentialView,
+  type SpaceCredentialShareView,
   type SpaceLinkView,
   type SpaceLinkAuditEntry,
   type SpaceLinkInboundAuditEntry,
   type SpaceLinkInboundView,
   type CrossSpaceRef,
-  type OpRequestView,
   type ServerView,
   type ActionRows,
   type ContentionReport,
@@ -143,6 +147,8 @@ import {
   type SessionGitStashResult,
   type SessionGitStashEntry,
   type SessionGitRollbackResult,
+  type SessionCheckoutDiff,
+  type SessionCheckouts,
   type SessionGitStatus,
   type SessionJournalPage,
   type SessionLaunchRecord,
@@ -192,7 +198,6 @@ import {
   ada,
   fixtureDetails,
   fixtureHandoffsBySession,
-  fixtureOpRequests,
   fixtureSummaries,
   memberAda,
   memberNoor,
@@ -202,7 +207,7 @@ import {
   sessionLive,
   sessionStale,
 } from '../../fixtures';
-import { SHIPPED_DEFAULT_MENU, getKind, headerAuthorable } from '../../domain';
+import { SHIPPED_DEFAULT_MENU, getKind, headerAuthorable, sessionCategoryOf } from '../../domain';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
 
@@ -834,12 +839,16 @@ function synthesizeContent(s: EntitySummary): EntityContent {
     case 'credential':
       // W10a: content is the same allow-list as state — no secret, hint or login.
       return { ...state };
-    case 'op_request':
-      // 280: the same facts as its state; the rest is `opRequests.get`'s.
-      return { ...state };
     case 'story':
       // The page is hydrated on a detail read only; a seam row carries none.
       return { kind: 'story', description: '', page: null };
+    case 'craft':
+      // 304/322: a fixture craft is born empty; its pages are `contains` edges.
+      return { kind: 'craft', description: '', pages: [] };
+    case 'tool':
+      return { kind: 'tool', definition: { name: 'fixture-tool', description: '', help: '', runtime: 'bash', source: 'true', inputs: [], tm8Access: 'none', timeoutSeconds: 900 } };
+    case 'mcp_server':
+      return { kind: 'mcp_server', definition: { name: 'fixture', transport: 'http', url: 'https://fixture.example/mcp', envKeys: [], headerKeys: [], auth: { type: 'none' }, approved: false } };
     case 'style':
       // 284: a space style's content is its state's facts plus a description.
       return { ...state, description: null };
@@ -1167,8 +1176,9 @@ const SESSION_STATUS_CATEGORY: Readonly<Record<string, StatusCategory>> = {
   spawning: 'to_do',
   running: 'in_progress',
   idle: 'in_progress',
-  exited: 'done',
-  failed: 'done',
+  // Spec D1 §3.2: an OPEN session whose process ended is unfinished, not done.
+  exited: 'in_progress',
+  failed: 'in_progress',
 };
 
 function stampCategory(s: EntitySummary): void {
@@ -1178,7 +1188,8 @@ function stampCategory(s: EntitySummary): void {
     return;
   }
   if (s.state.kind === 'work_session') {
-    const category = SESSION_STATUS_CATEGORY[s.state.status];
+    // Spec D1 §3.2: outcome first, then process — the 301 writer's rule.
+    const category = sessionCategoryOf(s.state) ?? SESSION_STATUS_CATEGORY[s.state.status];
     if (category) s.category = category;
   }
 }
@@ -1228,6 +1239,8 @@ export function createFixtureSeam(): FixtureSeam {
   const openSpaces = new Set<SpaceId>();
   const seqBySpace = new Map<SpaceId, number>();
   const readMarks = new Map<EntityId, string>();
+  // Fixture entities, like pre-rollout entities, start seen.
+  const seenEntities = new Set(summaries.keys());
   const uploadSlots = new Map<string, { input: FileUploadInitInput; grant: FileUploadGrant; uploaded: boolean }>();
 
   const eventSubs = new Set<(e: DurableWorkspaceEvent) => void>();
@@ -1339,6 +1352,8 @@ export function createFixtureSeam(): FixtureSeam {
       { provider: 'github', allowNode: false, envKeyPresent: true },
     ],
   };
+  /** 992: in-memory grants per credential id. */
+  const spaceCredentialShares = new Map<string, SpaceCredentialShareView[]>();
   const spaceCredentialById = (id: string): SpaceCredentialView => {
     const row = spaceCredentialsState.find((c) => c.id === id);
     if (!row) throw new CollabError('not_found', `space credential ${id} not found`);
@@ -1361,28 +1376,6 @@ export function createFixtureSeam(): FixtureSeam {
       },
     },
   ];
-  /**
-   * Op requests (L5, 280) — the `opRequests.get` answers behind the dataset's
-   * `op_request` rows. Approving RUNS NOTHING here: the fixture records the
-   * decision (succeeded, no result) and says whether a session would be told,
-   * which is the whole of what the approve card reads back.
-   */
-  const opRequestsState: OpRequestView[] = clone(fixtureOpRequests);
-  const opRequestById = (id: string): OpRequestView => {
-    const request = opRequestsState.find((r) => r.id === id);
-    if (!request) throw new CollabError('not_found', `op request ${id} not found`);
-    return request;
-  };
-  const decideOpRequest = (id: string, to: 'succeeded' | 'denied', note?: string | null) => {
-    const request = opRequestById(id);
-    if (request.status !== 'pending') throw new CollabError('conflict', `op request ${id} is already ${request.status}`);
-    const at = tick();
-    Object.assign(request, {
-      status: to, decidedBy: ada.id, decidedAt: at, decisionNote: note ?? null,
-      canDecide: false, updatedAt: at, version: request.version + 1,
-    });
-    return { request: clone(request), notified: request.requestingSessionId !== null };
-  };
   /** W7 audit rows (none until an agent invokes through a link). */
   const spaceLinkAuditState: SpaceLinkAuditEntry[] = [];
   /**
@@ -1607,6 +1600,41 @@ export function createFixtureSeam(): FixtureSeam {
   let prMergeGuard: FixturePrMergeGuard = 'available';
   /** oid → the files a stash entry holds, so pop restores what push took. */
   const stashedFiles = new Map<string, SessionGitFile[]>();
+  const fxCheckouts = (workSessionId: EntityId): SessionCheckouts => {
+    requireSummary(workSessionId);
+    if (workSessionId === sessionLive.id) {
+      return { sessionId: workSessionId, available: false, unavailableReason: 'has_worktree', checkouts: [], checkoutsTruncated: false, checkedAt: FIXTURE_NOW };
+    }
+    return clone({
+      sessionId: workSessionId,
+      available: true,
+      unavailableReason: null,
+      checkouts: [
+        {
+          name: 'w266',
+          shared: false,
+          readable: true,
+          branch: 'crawl/266',
+          remote: 'https://github.com/example/app.git',
+          baseRef: 'origin/main',
+          mergeBaseOid: 'f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0',
+          headOid: 'a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1',
+          ahead: 3,
+          uncommitted: 1,
+          lastCommitAt: FIXTURE_NOW,
+          files: [
+            { path: 'src/crawl/fetch.ts', change: 'M', additions: 7, deletions: 2, uncommitted: false },
+            { path: 'src/crawl/queue.ts', change: 'A', additions: 40, deletions: 0, uncommitted: false },
+            { path: 'notes/run.md', change: '?', additions: 3, deletions: 0, uncommitted: true },
+          ],
+          filesTruncated: false,
+          stat: { filesChanged: 3, additions: 50, deletions: 2 },
+        },
+      ],
+      checkoutsTruncated: false,
+      checkedAt: FIXTURE_NOW,
+    } satisfies SessionCheckouts);
+  };
   const gitUnavailable = (
     sessionId: EntityId,
     kind: 'status' | 'diff',
@@ -2535,6 +2563,8 @@ export function createFixtureSeam(): FixtureSeam {
     memberships: [{ spaceId: FIXTURE_SPACE_ID, memberId: viewerActor.id, role: 'owner' }],
   };
 
+  const createdKinds = new Map<string, EntityKindDef>();
+  let savedMenu: MenuConfig | null = null;
   const spaceSummary: SpaceSummary = {
     id: FIXTURE_SPACE_ID,
     name: 'atelier',
@@ -2681,7 +2711,7 @@ export function createFixtureSeam(): FixtureSeam {
            row nobody designed. `menu()` resolves null here by C-4 and the UI
            substitutes its shipped default, so the shipped default is exactly
            what a consistent settings payload has to carry. */
-        menu: SHIPPED_DEFAULT_MENU,
+        menu: savedMenu ?? SHIPPED_DEFAULT_MENU,
         defaultChannelId: null,
         defaultInteractionProfileId: 'ip-house-style',
         settingsRevision: 1,
@@ -2796,13 +2826,10 @@ export function createFixtureSeam(): FixtureSeam {
       if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
       const counts: SpaceKindCounts = {};
       for (const summary of summaries.values()) {
-        if (summary.deletedAt) continue;
+        if (summary.spaceId !== spaceId || summary.deletedAt) continue;
         const key = summary.kind as keyof SpaceKindCounts;
         const row = counts[key] ?? { total: 0, unseen: 0 };
-        const mark = readMarks.get(summary.id);
-        // Same predicate as the server RPC (063): never opened, or changed
-        // since it was last opened.
-        if (!mark || summary.activityAt > mark) row.unseen += 1;
+        if (!seenEntities.has(summary.id)) row.unseen += 1;
         row.total += 1;
         counts[key] = row;
       }
@@ -2810,7 +2837,7 @@ export function createFixtureSeam(): FixtureSeam {
     },
     /** C-4: the dataset ships no menu row — resolve null, UI uses its default. */
     async menu(_spaceId): Promise<MenuConfig | null> {
-      return null;
+      return savedMenu ? clone(savedMenu) : null;
     },
     async query(input: CollectionQuery): Promise<CollectionResult> {
       const deleted = input.filters?.deleted ?? 'exclude';
@@ -2833,7 +2860,7 @@ export function createFixtureSeam(): FixtureSeam {
            nobody noticed, because no assertion compared the two. That is the
            production defect in miniature: the live node's session list read
            "To Do 1" over an empty tab. */
-        if ((s.state as { sessionKind?: unknown }).sessionKind === 'credential') return false;
+        if (['credential', 'tool'].includes(String((s.state as { sessionKind?: unknown }).sessionKind))) return false;
         /* G6 (#841): an ended member is not LISTED — by id it still resolves. */
         if (endedMembers.has(s.id)) return false;
         const f = input.filters;
@@ -2846,8 +2873,13 @@ export function createFixtureSeam(): FixtureSeam {
            `NULL = any(...)` server semantics, mirrored. */
         if (f?.category?.length && !(s.category !== undefined && f.category.includes(s.category))) return false;
         if (f?.priority?.length && !(s.state.kind === 'task' && f.priority.includes(s.state.priority))) return false;
+        if (f?.parentIn?.length && !(s.parentId !== null && f.parentIn.includes(s.parentId))) return false;
+        if (f?.idIn?.length && !f.idIn.includes(s.id)) return false;
         if (f?.sessionStatus?.length && !(s.state.kind === 'work_session'
           && f.sessionStatus.includes(s.state.status))) return false;
+        /* Spec D1: the session tabs' outcome axis. Absent outcome = open. */
+        if (f?.sessionOutcome?.length && !(s.state.kind === 'work_session'
+          && f.sessionOutcome.includes(s.state.outcome ?? 'open'))) return false;
         if (f?.assigneeIds?.length && !(s.state.kind === 'task'
           && s.state.assignees.some((a) => f.assigneeIds!.includes(a.id)))) return false;
         /* 129's provenance filter: a task matches when ANY of its CURRENT
@@ -2962,7 +2994,7 @@ export function createFixtureSeam(): FixtureSeam {
       for (const s of summaries.values()) {
         if (s.kind.startsWith('c:') && !custom.has(s.kind)) custom.set(s.kind, s);
       }
-      return clone([...custom.entries()].map(([kind, sample]): EntityKindDef => {
+      return clone([...createdKinds.values(), ...[...custom.entries()].filter(([kind]) => !createdKinds.has(kind)).map(([kind, sample]): EntityKindDef => {
         const fields = isCustomState(sample.state) ? sample.state.fields : {};
         const fieldSchema: CustomFieldDef[] = Object.entries(fields).map(([name, v]) => ({
           name,
@@ -2972,7 +3004,7 @@ export function createFixtureSeam(): FixtureSeam {
           id: `kind-${kind}`, kind: kind as `c:${string}`, origin: 'custom', spaceId,
           icon: null, fieldSchema, capabilities: {}, createdBy: null, createdAt: FIXTURE_NOW,
         };
-      }));
+      })]);
     },
     async projects(): Promise<ProjectResource[]> {
       return clone([...FIXTURE_PROJECTS]);
@@ -3482,6 +3514,38 @@ export function createFixtureSeam(): FixtureSeam {
         stashes: gitLane.stashes.map((e, index) => ({ ...e, index })),
         checkedAt: FIXTURE_NOW,
       });
+    },
+    /**
+     * A worktree-less session's own checkouts. The live PTY has a worktree and
+     * answers `has_worktree`; every other session shows one scratch clone, a
+     * branch ahead of origin with committed and uncommitted work — the shape
+     * prod agents leave (measured 2026-10-07).
+     */
+    async gitCheckouts(workSessionId): Promise<SessionCheckouts> {
+      return fxCheckouts(workSessionId);
+    },
+    async gitCheckoutDiff(workSessionId, checkout, path, opts): Promise<SessionCheckoutDiff> {
+      const listing = fxCheckouts(workSessionId);
+      const file = listing.checkouts.find((c) => c.name === checkout)?.files.find((f) => f.path === path);
+      if (file === undefined) throw new CollabError('not_found', `${path} has no change in ${checkout}`);
+      let diff = fxFileDiff(path);
+      let diffTruncated = false;
+      if (opts?.maxBytes !== undefined && diff.length > opts.maxBytes) {
+        diff = diff.slice(0, opts.maxBytes);
+        diffTruncated = true;
+      }
+      return {
+        sessionId: workSessionId,
+        checkout,
+        path,
+        change: file.change,
+        additions: file.additions,
+        deletions: file.deletions,
+        baseRef: 'origin/main',
+        diff,
+        diffTruncated,
+        checkedAt: FIXTURE_NOW,
+      };
     },
     /**
      * Honours `maxBytes` HERE too (the projectBranches rule): a fixture that
@@ -4006,6 +4070,31 @@ export function createFixtureSeam(): FixtureSeam {
        * left alone. Only the space summary moves; no session is touched,
        * because a default applies at spawn and never reaches backwards.
        */
+      async createEntityKind(spaceId, input) {
+        if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+        const viewer = membersOfSpace(spaceId).find((m) => m.id === viewerActor.id)
+          ?? membersOfSpace(spaceId).find((m) => roleOfSummary(m) === 'owner');
+        if (!viewer || !['owner', 'admin'].includes(roleOfSummary(viewer) ?? '')) throw new CollabError('forbidden', 'space admin required');
+        const parsed = EntityKindCreateInputSchema.safeParse(input);
+        if (!parsed.success) throw new CollabError('invalid_input', parsed.error.issues[0]?.message ?? 'Invalid kind');
+        if (createdKinds.has(input.kind) || [...summaries.values()].some((s) => s.kind === input.kind)) throw new CollabError('conflict', 'Kind already exists');
+        const kind: EntityKindDef = { id: crypto.randomUUID(), kind: input.kind, origin: 'custom', spaceId,
+          icon: input.icon ?? null, fieldSchema: clone(input.fieldSchema), capabilities: clone(input.capabilities ?? {}), createdAt: FIXTURE_NOW };
+        createdKinds.set(kind.kind, kind);
+        return clone(kind);
+      },
+      async updateMenu(spaceId, input) {
+        if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+        const viewer = membersOfSpace(spaceId).find((m) => m.id === viewerActor.id)
+          ?? membersOfSpace(spaceId).find((m) => roleOfSummary(m) === 'owner');
+        if (!viewer || !['owner', 'admin'].includes(roleOfSummary(viewer) ?? '')) throw new CollabError('forbidden', 'space admin required');
+        const parsed = UpdateMenuInputSchema.safeParse(input);
+        if (!parsed.success) throw new CollabError('invalid_input', parsed.error.issues[0]?.message ?? 'Invalid menu');
+        if (input.expectedRevision !== (savedMenu?.revision ?? 0)) throw new CollabError('conflict', 'Menu changed; reload before saving.');
+        savedMenu = { ...clone(input.payload), revision: (savedMenu?.revision ?? 0) + 1 };
+        emit(spaceId, { type: 'menu.updated', menu: clone(savedMenu) }, input);
+        return clone(savedMenu);
+      },
       async updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary> {
         if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
         const viewer = membersOfSpace(spaceId).find((m) => m.id === viewerActor.id)
@@ -4022,6 +4111,10 @@ export function createFixtureSeam(): FixtureSeam {
           && input.sessionDriveDefault !== 'owner' && input.sessionDriveDefault !== 'space') {
           throw new CollabError('invalid_input', 'sessionDriveDefault must be owner or space');
         }
+        if (input.sessionAutoCloseMinutes !== undefined && (!Number.isInteger(input.sessionAutoCloseMinutes) || input.sessionAutoCloseMinutes < 0 || input.sessionAutoCloseMinutes > 10080)) {
+          throw new CollabError('invalid_input', 'sessionAutoCloseMinutes must be an integer between 0 and 10080');
+        }
+        if (input.sessionAutoCloseMinutes !== undefined) spaceSummary.sessionAutoCloseMinutes = input.sessionAutoCloseMinutes;
         if (input.name !== undefined) spaceSummary.name = input.name;
         if (input.description !== undefined) spaceSummary.description = input.description;
         if (input.githubRepo !== undefined) spaceSummary.githubRepo = input.githubRepo;
@@ -4626,6 +4719,7 @@ export function createFixtureSeam(): FixtureSeam {
             kind: 'chat',
             teammateId: input.teammateId,
             model: input.model,
+            credentialSelection: input.credentialSelection ?? { source: 'auto' },
             provider: 'fixture',
             agentTool: 'claude-code',
             mode: input.mode,
@@ -4656,6 +4750,18 @@ export function createFixtureSeam(): FixtureSeam {
         return { chat: clone(chat), messageId: message.id };
       },
 
+      async interruptChat(chatId) {
+        const chat = requireSummary(chatId);
+        if (chat.state.kind !== 'chat') throw new CollabError('invalid_input', 'Not a chat');
+        return { chatId, disposition: 'not_running' as const };
+      },
+      async setChatCredentials(chatId, input) {
+        const chat = requireSummary(chatId);
+        if (chat.state.kind !== 'chat') throw new CollabError('invalid_input', 'Not a chat');
+        chat.state = { ...chat.state, credentialSelection: input.credentialSelection };
+        touch(chat); emit(chat.spaceId, { type: 'entity.upsert', entity: clone(chat) });
+        return { chatId, credentialSelection: input.credentialSelection };
+      },
       /**
        * 276: fixture echo of `chat.setModel`.
        *
@@ -4765,6 +4871,12 @@ export function createFixtureSeam(): FixtureSeam {
         // The fixture inbox is honestly empty (no notification rows exist),
         // so every markRead is a not_found — exercising the rollback path.
         throw new CollabError('not_found', `notification ${notificationId} not found`);
+      },
+      async markSeen(entityId) {
+        const entity = requireSummary(entityId);
+        if (seenEntities.has(entityId)) return;
+        seenEntities.add(entityId);
+        emit(entity.spaceId, { type: 'entity.seen', entityId, seenAt: tick() });
       },
       async upsertReadMark(anchorId, lastReadAt) {
         requireSummary(anchorId);
@@ -4997,8 +5109,31 @@ export function createFixtureSeam(): FixtureSeam {
       async terminate(id, input: ExecutionTerminateInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'work_session') throw new CollabError('invariant_violation', `${id} is not a work_session`);
-        s.state.status = 'exited';
+        /* Spec D1 §4.2, mirrored: an OPEN session terminated without an
+           outcome is stopped. `markLost` is a process fact only. */
+        const outcome = s.state.outcome ?? 'open';
+        if (input.markLost === true) {
+          s.state.status = 'failed';
+          s.state.endedKind = 'lost';
+          s.state.endedReason = 'Marked lost: no live process.';
+        } else {
+          if (outcome === 'open' && input.outcome !== 'complete') {
+            s.state.outcome = 'stopped';
+            s.state.outcomeAt = tick();
+            s.state.outcomeSource = 'operator';
+            s.state.outcomeNote = input.note ?? null;
+          }
+          if (outcome === 'open' && input.outcome === 'complete') {
+            s.state.outcome = 'completed';
+            s.state.outcomeAt = tick();
+            s.state.outcomeSource = 'operator';
+            s.state.receiptMessageId = input.receiptMessageId ?? null;
+          }
+          s.state.status = 'exited';
+          s.state.endedKind = s.state.outcome === 'completed' ? 'exited_clean' : 'stopped_by_operator';
+        }
         s.state.exitedAt = tick();
+        stampCategory(s);
         touch(s);
         const snap = livenessBySpace.get(s.spaceId);
         if (snap?.liveEntityIds.includes(id)) {
@@ -5037,6 +5172,59 @@ export function createFixtureSeam(): FixtureSeam {
         return commandResult(s);
       },
       /**
+       * Spec D1 §4.1, mirrored at the depth the fixture holds: a stopped
+       * session refuses, a completed one is idempotent, the receipt is the
+       * one named or the latest message on the session's anchor, and with
+       * none at all the command refuses `receipt_required`. The fixture keeps
+       * no claim props, so the claim check is the server's alone.
+       */
+      async completeSession(id, input: ExecutionCompleteInput) {
+        const s = requireSummary(id);
+        if (s.state.kind !== 'work_session') throw new CollabError('invariant_violation', `${id} is not a work_session`);
+        if (s.state.outcome === 'stopped') {
+          throw new CollabError('invariant_violation', 'this session was stopped; resume it first', {
+            details: { reason: 'session_stopped' },
+          });
+        }
+        const already = s.state.outcome === 'completed';
+        if (!already) {
+          const latest = [...summaries.values()]
+            .filter((m) => m.state.kind === 'message' && m.state.anchorId === id)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+          const receipt = input.receiptMessageId ?? latest?.id ?? null;
+          if (receipt === null) {
+            throw new CollabError('invariant_violation', 'no close-out message on this session to use as a receipt', {
+              details: { reason: 'receipt_required' },
+            });
+          }
+          s.state.outcome = 'completed';
+          s.state.outcomeAt = tick();
+          s.state.outcomeSource = 'operator';
+          s.state.receiptMessageId = receipt;
+        }
+        if (input.closeProcess !== false && ['spawning', 'running', 'idle'].includes(s.state.status)) {
+          s.state.status = 'exited';
+          s.state.endedKind = 'exited_clean';
+          s.state.exitedAt = tick();
+        }
+        stampCategory(s);
+        touch(s);
+        emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        return {
+          ...commandResult(s),
+          outcome: { outcome: 'completed' as const, receiptMessageId: s.state.receiptMessageId ?? null, alreadyCompleted: already },
+        };
+      },
+      /** Spec D1 §6.3 R4 — the fixture holds no claim rows, so a release only validates its subject. */
+      async releaseClaim(taskId, input: ReleaseInput) {
+        const t = requireSummary(taskId);
+        if (t.state.kind !== 'task') throw new CollabError('invariant_violation', `${taskId} is not a task`);
+        if (input.note.trim().length === 0) throw new CollabError('invalid_input', 'a hand-off note is required');
+        touch(t);
+        emit(t.spaceId, { type: 'entity.upsert', entity: clone(t) }, input);
+        return commandResult(t);
+      },
+      /**
        * The inverse of terminate, and it refuses on the same terms: only a
        * TERMINAL session can be resumed. The server refuses a live one with
        * `conflict`, so the fixture must too — a fixture that cheerfully
@@ -5046,11 +5234,19 @@ export function createFixtureSeam(): FixtureSeam {
       async resume(id, input: ExecutionResumeInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'work_session') throw new CollabError('invariant_violation', `${id} is not a work_session`);
+        // Q2 = B: a completed session reopens through resume (logged
+        // server-side) — but only once its process has ended, which the
+        // status guard below already demands.
         if (s.state.status !== 'exited' && s.state.status !== 'failed') {
           throw new CollabError('invariant_violation', `session ${id} is not resumable from ${s.state.status}`);
         }
         s.state.status = 'running';
         s.state.exitedAt = null;
+        s.state.endedKind = null;
+        s.state.endedReason = null;
+        // Resuming a stopped (§3 rule 6) or completed (Q2 = B) session reopens its work.
+        if (s.state.outcome === 'stopped' || s.state.outcome === 'completed') s.state.outcome = 'open';
+        stampCategory(s);
         touch(s);
         const snap = livenessBySpace.get(s.spaceId);
         const live = snap?.liveEntityIds ?? [];
@@ -5763,6 +5959,54 @@ export function createFixtureSeam(): FixtureSeam {
           row.updatedAt = tick();
           return { credential: clone(row), terminatedAgentSessionIds: [], failures: [] };
         },
+        // 992 — the fixture keeps grants in memory; the owner shares, the owner unshares.
+        async share(credentialId, granteeAccountId) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== 'acct-ada') {
+            throw new CollabError('forbidden', 'only the owner can share this credential');
+          }
+          if (row.visibility !== 'private') {
+            throw new CollabError('invariant_violation', 'a public credential needs no share');
+          }
+          const list = spaceCredentialShares.get(credentialId) ?? [];
+          const existing = list.find((s) => s.granteeAccountId === granteeAccountId || s.granteeMemberId === granteeAccountId);
+          const share = existing ?? {
+            granteeAccountId,
+            grantedByAccountId: 'acct-ada',
+            createdAt: tick(),
+            granteeMemberId: granteeAccountId,
+            granteeDisplayName: null,
+          };
+          if (!existing) spaceCredentialShares.set(credentialId, [...list, share]);
+          return {
+            credentialId,
+            spaceId: row.spaceId,
+            granteeAccountId: share.granteeAccountId,
+            grantedByAccountId: share.grantedByAccountId,
+            createdAt: share.createdAt,
+            shared: !existing,
+          };
+        },
+        async unshare(credentialId, granteeAccountId) {
+          const row = spaceCredentialById(credentialId);
+          if (row.ownerAccountId !== 'acct-ada') {
+            throw new CollabError('forbidden', 'only the owner or a space admin can stop sharing this credential');
+          }
+          const list = spaceCredentialShares.get(credentialId) ?? [];
+          const kept = list.filter((s) => s.granteeAccountId !== granteeAccountId && s.granteeMemberId !== granteeAccountId);
+          spaceCredentialShares.set(credentialId, kept);
+          return {
+            credentialId,
+            granteeAccountId,
+            unshared: kept.length !== list.length,
+            terminatedAgentSessionIds: [],
+            failures: [],
+          };
+        },
+        async shares(credentialId) {
+          spaceCredentialById(credentialId);
+          return { credentialId, shares: (spaceCredentialShares.get(credentialId) ?? []).map((s) => ({ ...s })) };
+        },
         async spaceDefaultConsent(credentialId, allowed) {
           const row = spaceCredentialById(credentialId);
           if (row.ownerAccountId !== 'acct-ada' || row.visibility !== 'public') {
@@ -5791,8 +6035,8 @@ export function createFixtureSeam(): FixtureSeam {
           const row = spaceCredentialById(credentialId);
           return {
             credentialId,
-            // A server-only key (typesafe) never reaches a session: no usage rows.
-            sessions: row.lastUsedAt === null || row.provider === 'typesafe' ? [] : [{
+            // This fixture emits vendor launch usage; server-only keys have no vendor rows.
+            sessions: row.lastUsedAt === null || row.provider === 'typesafe' || row.provider === 'mcp' || row.provider === 'tool' ? [] : [{
               workSessionId: 'ws-fixture-usage', provider: row.provider, source: 'space_default',
               credentialId, ownerAccountId: row.ownerAccountId ?? null, launcherAccountId: 'acct-ada',
               agentSessionId: null, status: 'ended', recordedAt: FIXTURE_NOW, updatedAt: FIXTURE_NOW,
@@ -5899,18 +6143,6 @@ export function createFixtureSeam(): FixtureSeam {
         return { id: refId, entityId, removed: true as const };
       },
     },
-    opRequests: {
-      async list(spaceId, query) {
-        const rows = opRequestsState
-          .filter((r) => r.spaceId === spaceId && (query?.status === undefined || r.status === query.status))
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        return clone(query?.limit === undefined ? rows : rows.slice(0, query.limit));
-      },
-      async get(requestId) { return clone(opRequestById(requestId)); },
-      async approve(requestId, note) { return decideOpRequest(requestId, 'succeeded', note); },
-      async deny(requestId, note) { return decideOpRequest(requestId, 'denied', note); },
-    },
-
     servers: {
       async get(serverId) {
         return clone(serverById(serverId));
@@ -6033,7 +6265,5 @@ export function createFixtureSeam(): FixtureSeam {
      finished object. This therefore REQUIRES an unfrozen seam; freezing
      `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
-  // The approve card's port IS the noun; the panel reaches it through `commands`.
-  seam.commands.opRequests = seam.opRequests;
   return seam;
 }

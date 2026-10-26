@@ -1,3 +1,4 @@
+import { addCraftProjectionShape, addEntityCounterLinkShape, addToolProjectionShape } from './tool-projection-shape.js';
 import type { PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -390,16 +391,6 @@ describe.sequential('task assignment provenance (129)', () => {
         entity_id uuid primary key, name text not null, base_url text not null);
       grant select on public.servers to tm8_app;
       reset role;`);
-    // 280 (op requests, L5): `entity-read.ts` and the projector left-join
-    // `public.op_requests opr` for a request's title, op and status. Same shim
-    // shape as `servers` above: only the columns the read selects and their
-    // tm8_app read grant. No assertion here reads them. DELETE this shim if
-    // this suite ever applies the chain through 280.
-    await database.query(`set role tm8_graph_owner;
-      create table public.op_requests (
-        entity_id uuid primary key, title text not null, op text not null, status text not null);
-      grant select on public.op_requests to tm8_app;
-      reset role;`);
     // 283 (story kind), the same recurring shape as 194 above: `entity-read.ts`
     // and the projector statically left-join `public.stories` and select
     // `internal.story_summary(e.id)`, so current code refuses this partial
@@ -425,6 +416,39 @@ describe.sequential('task assignment provenance (129)', () => {
         resolved_hash text, pushed_by uuid not null, source_owner_identity_id text not null,
         pushed_at timestamptz not null default now());
       grant select on public.styles to tm8_app;
+      reset role;`);
+    // 296 (MCP connectors): entity reads join the definition table even in
+    // this intentionally partial assignment fixture. Mirror only the read
+    // columns; the full MCP migration is covered by its dedicated fixtures.
+    await database.query(`set role tm8_graph_owner;
+      create table public.mcp_servers (
+        entity_id uuid primary key, space_id uuid not null, definition jsonb not null);
+      grant select on public.mcp_servers to tm8_app;
+      reset role;`);
+    // 304 (design kind): `entity-read.ts` and the projector left-join
+    // `public.designs` and select `internal.design_summary(e.id)`, the 283
+    // shape again. It applies cleanly LAST, after the styles/mcp shims: its
+    // plpgsql bodies resolve tables lazily and its backfill finds no graphs.
+    database.apply(['304_design_kind.sql']);
+    await addCraftProjectionShape(database);
+    await addToolProjectionShape(database);
+    await addEntityCounterLinkShape(database);
+    // 302 (Spec D1): entity reads select the session OUTCOME columns. Same
+    // shape as the shims above — only the read columns, none of 302's rules.
+    await database.query(`alter table public.work_sessions
+      add column outcome text not null default 'open', add column outcome_at timestamptz,
+      add column outcome_by uuid, add column receipt_message_id uuid,
+      add column outcome_source text, add column outcome_note text`);
+    // 307 (task progress): `entity-read.ts` and the projector select
+    // `internal.task_progress(e.id)` on task rows. 307 itself rewrites
+    // story_summary over 289/295 and adds triggers this partial chain does not
+    // need, so — like the styles/mcp shims — only the read's signature is
+    // mirrored: a stub returning NULL, which the readers treat as "no figure".
+    // DELETE this shim if this suite ever applies the chain through 307.
+    await database.query(`set role tm8_graph_owner;
+      create or replace function internal.task_progress(p_task_id uuid) returns jsonb
+        language sql stable as 'select null::jsonb';
+      grant execute on function internal.task_progress(uuid) to tm8_app;
       reset role;`);
   }, 180_000);
 

@@ -21,8 +21,8 @@
  * CURRENT style plus an optional DARK style used while `followOs` is on and
  * the OS is dark. The painted style is derived from that pair and the OS, so
  * "follow the OS until you choose" is the same mechanism as "use Midnight when
- * dark" — a viewer with nothing stored is simply `{atelier-light, atelier-dark,
- * followOs}` and paints exactly what phase 1 painted.
+ * dark" — a viewer with nothing stored is simply `{chatgpt-light, chatgpt-dark,
+ * followOs}` (`BUILTIN_STYLE_IDS`; Atelier until 2026-10-14).
  *
  * THE STORE IS STILL A PAINTER. Where the pair comes from — the server's prefs,
  * the space default, a legacy key — is `style-sync.ts`'s job. The store only
@@ -39,6 +39,8 @@
 import {
   BUILTIN_STYLES,
   BUILTIN_STYLE_IDS,
+  concreteStyleTable,
+  RETIRED_BUILTIN_ALIASES,
   STYLE_REGISTRY,
   StyleDocSchema,
   formatStyleRef,
@@ -173,9 +175,16 @@ function resolveDoc(doc: StyleDoc): ResolvedStyle {
   return resolveStyle(doc, BUILTIN_STYLES, STYLE_REGISTRY);
 }
 
-/** A built-in as a pair entry. `null` for a slug this bundle does not ship. */
+/**
+ * A built-in as a pair entry. `null` for a slug this bundle does not ship.
+ *
+ * A RETIRED built-in (Atelier) answers as its replacement: every stored
+ * `builtin:atelier-*` — the cache, a prefs row, a space default — was written
+ * when Atelier was the only built-in, so it said "light" or "dark", and the
+ * viewer who stored it sees the current default of that mode.
+ */
 export function builtinEntry(id: StyleRef): StyleEntry | null {
-  const builtin = BUILTIN_STYLES[id];
+  const builtin = BUILTIN_STYLES[RETIRED_BUILTIN_ALIASES[id] ?? id];
   if (!builtin) return null;
   return { ref: builtin.id, doc: styleDocForBuiltin(builtin.id), title: builtin.title, trustCss: true, status: 'live' };
 }
@@ -235,12 +244,16 @@ function entryFromCache(cached: CachedEntry | null | undefined): StyleEntry | nu
   if (!cached || typeof cached.ref !== 'string') return null;
   const parsed = parseStyleRef(cached.ref);
   if (!parsed) return null;
+  /* A built-in's document is derivable from its ref, so the cached copy adds
+     nothing — and rebuilding it is what lets a retired built-in in an old
+     cache paint as its replacement on the very first frame. */
+  if (parsed.kind === 'builtin') return builtinEntry(formatStyleRef(parsed));
   /* A cached document is UNTRUSTED storage — another bundle wrote it, or a
      person with devtools did. It goes through the same schema the server
      validates with, and `resolveStyle` re-checks every value and re-sanitises
      the css before anything reaches the DOM (§8). */
   const doc = StyleDocSchema.safeParse(cached.doc);
-  if (!doc.success) return parsed.kind === 'builtin' ? builtinEntry(cached.ref as StyleRef) : null;
+  if (!doc.success) return null;
   const status = cached.status === 'detached' || cached.status === 'removed' ? cached.status : 'live';
   return {
     ref: formatStyleRef(parsed),
@@ -367,7 +380,30 @@ function paint(resolved: ResolvedStyle, trustCss: boolean): void {
   } else {
     document.getElementById(EXTRA_STYLE_ELEMENT_ID)?.remove();
   }
+  syncThemeColor(resolved);
   appliedHash = key;
+}
+
+/**
+ * THE BROWSER CHROME FOLLOWS THE PAINTED STYLE (audit E2). `index.html` ships
+ * a light and a `prefers-color-scheme: dark` theme-color so the first paint is
+ * right for a viewer who follows the OS; once a style is painted it is the
+ * truth, including a viewer who chose dark on a light OS or a custom style.
+ * One tag, no `media`: two tags would let the OS scheme outvote the choice.
+ *
+ * `--pn-surface` because it is what sits under the status bar — the frame
+ * header's paper (see the comment over the tag in `index.html`).
+ */
+function syncThemeColor(resolved: ResolvedStyle): void {
+  const surface = concreteStyleTable(resolved.cssVars)['--pn-surface'];
+  if (!surface) return;
+  const tags = Array.from(document.head.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'));
+  const [tag, ...rest] = tags;
+  for (const extra of rest) extra.remove();
+  const meta = tag ?? document.head.appendChild(document.createElement('meta'));
+  meta.name = 'theme-color';
+  meta.removeAttribute('media');
+  meta.content = surface;
 }
 
 /**

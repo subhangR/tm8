@@ -23,6 +23,7 @@
  * Home SCREEN, derived from the registry at render time.
  */
 import { collectionKinds } from './registry';
+import { CRAFT_KIND } from './craft';
 import type { KindConfig } from './types';
 
 /**
@@ -129,8 +130,9 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     label: 'Library',
     // Authored, produced, uploaded — then the two arrangements OVER those
     // things: a curated set and an extracted index. `drawing` sits beside
-    // `doc` because it is AUTHORED, not an arrangement.
-    kinds: ['doc', 'drawing', 'artifact', 'file', 'collection', 'graph'],
+    // `doc` because it is AUTHORED, not an arrangement. `craft` closes it:
+    // an ordered set of pages made of the kinds above it.
+    kinds: ['doc', 'drawing', 'artifact', 'file', 'collection', 'graph', CRAFT_KIND],
   },
   {
     id: 'people',
@@ -159,9 +161,7 @@ const HOME_RAIL_GROUP_SPINE: readonly HomeRailGroupSpec[] = [
     // settled. They sit last so the settled kinds read first. `style` (284)
     // follows them: the space's published themes are picked from the
     // account menu, not created here — the same "listed, managed elsewhere" shape.
-    // `op_request` (280) follows `server`: every op an agent may ask for today
-    // changes one of these (a space link, a gate folder, a path grant).
-    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'op_request', 'style', 'loop', 'spell', 'container'],
+    kinds: ['interaction_profile', 'credential', 'space_link', 'server', 'mcp_server', 'tool', 'style', 'loop', 'spell', 'container'],
   },
 ];
 

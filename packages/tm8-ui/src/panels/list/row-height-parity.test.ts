@@ -82,3 +82,87 @@ describe('shared list-row floor', () => {
     expect(sessionRule![1]).not.toMatch(/min-height/);
   });
 });
+
+/**
+ * AND THE OTHER WAY A ROW OUTGROWS THE FLOOR: SOMETHING IN IT IS TALLER.
+ *
+ * The floor above is a `min-height`, so honouring it against the right box
+ * guarantees a row is never SHORTER than the token — not that it stays on it.
+ * The standard row shipped at 34px against the task row's 30 with both rules
+ * correct, because `.lp__rowaction--ind` is 22px in a content box of 18 and
+ * sat in the flow.
+ *
+ * WHY IT SAT THERE. §6 moved the row's verbs behind the `⋯`, which retired the
+ * `.lp__rowactions` wrapper that used to float the cluster out of the flow,
+ * and left the disclosure chevron a direct child of `.lp__row1`. The only rule
+ * that took it out again lives inside `@media (hover: hover) and (pointer:
+ * fine)` — so every device that reports no hover laid it out and paid the 4px.
+ * That includes this project's own headless Chrome, which reports `hover:
+ * none` AND `pointer: none` and therefore matches neither that query nor the
+ * coarse one: the screenshots the branch was verified in were taken in the
+ * environment where the defect is permanent. A task row never had it, because
+ * `pn-tt__ind` lives inside `.pn-tt__actions`, which is absolute everywhere.
+ *
+ * THE INVARIANT. A non-media rule must bring the chevron's layout footprint
+ * down to 18px, so the floor is also the ceiling for every pointer. The phone
+ * is excluded by selector — there the chevron is a deliberate 44px target on a
+ * row that is 44px by design.
+ */
+describe('nothing in line 1 may outgrow the shared floor', () => {
+  /**
+   * `panels.css` with the contents of every `@media` block removed.
+   *
+   * COMMENTS COME OUT FIRST, and this file is the reason
+   * `css-comments-do-not-eat-rules.test.ts` exists: the prose above the new
+   * rule QUOTES `@media (hover: hover) and (pointer: fine)`, and a scanner
+   * that reads that as a block open skips from the comment to the next
+   * matching brace and swallows the very rule it was written to find. It
+   * failed exactly that way once, on the first run.
+   */
+  function outsideMediaQueries(source: string): string {
+    const css = source.replace(/\/\*[\s\S]*?\*\//g, '');
+    let out = '';
+    let i = 0;
+    while (i < css.length) {
+      const at = css.indexOf('@media', i);
+      if (at === -1) {
+        out += css.slice(i);
+        break;
+      }
+      out += css.slice(i, at);
+      const open = css.indexOf('{', at);
+      if (open === -1) break;
+      let depth = 1;
+      let j = open + 1;
+      while (j < css.length && depth > 0) {
+        if (css[j] === '{') depth += 1;
+        else if (css[j] === '}') depth -= 1;
+        j += 1;
+      }
+      i = j;
+    }
+    return out;
+  }
+
+  const base = outsideMediaQueries(sources['panels.css']);
+
+  it('the chevron really is taller than the row — the premise of the rule', () => {
+    const rule = sources['panels.css'].match(/\.cv2-root \.lp__rowaction \{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    expect(rule![1]).toMatch(/height:\s*22px/);
+  });
+
+  it('its footprint is cut outside every @media query', () => {
+    const rule = base.match(/\.lp__row1 > \.lp__rowaction--ind \{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    // 22 - 2 - 2 = the 18px the lead icon already occupies (`.lp-lead` in
+    // `browser.css` reaches the same number the same way).
+    expect(rule![1]).toMatch(/margin-block:\s*-2px/);
+  });
+
+  it('and the phone is excluded, where the 44px target is the point', () => {
+    const selector = base.match(/([^{}]*)\.lp__row1 > \.lp__rowaction--ind \{/);
+    expect(selector).not.toBeNull();
+    expect(selector![1]).toContain(":not([data-shell='mobile'])");
+  });
+});

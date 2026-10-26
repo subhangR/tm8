@@ -144,6 +144,11 @@ describe.sequential('claim_next_chat_turn and message attachments', () => {
   it('answers an empty list for a turn whose message has no files', async () => {
     const claimed = await claim();
     expect(claimed).toMatchObject({ userMessageId: openingMessageId, attachments: [] });
+    // A claimed input must settle before the next queued input can be claimed.
+    await asIdentity(fixture.identityA, client => client.query(
+      `select public.complete_chat_turn($1,'error','fixture settled without dispatch',null,null,'{}'::jsonb)`,
+      [claimed!.turnId],
+    ));
   });
 
   it('carries the file the human attached, with the id the teammate can fetch', async () => {

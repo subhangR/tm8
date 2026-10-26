@@ -129,7 +129,7 @@ describe('the feed region', () => {
     expect(screen.queryByTestId('chs-message-meta')).toBeNull();
   });
 
-  it('clusters an author run into one byline and opens each day with a divider', () => {
+  it('draws a byline on every message, as a chat turn does, and opens each day with a divider', () => {
     const first = msg({ id: 'msg-first' });
     const follow = msg({
       id: 'msg-follow',
@@ -146,10 +146,10 @@ describe('the feed region', () => {
       messageItem({ itemId: 'f-follow' }, follow),
       messageItem({ itemId: 'f-next-day' }, nextDay),
     ])} />);
-    // The 2-minute follow-up repeats no byline; the new day starts a new run.
-    expect(screen.getAllByText('alex')).toHaveLength(2);
+    // Chat grammar: no author-run clustering — every message names its author.
+    expect(screen.getAllByText('alex')).toHaveLength(3);
     expect(screen.getAllByTestId('chs-day')).toHaveLength(2);
-    // Every message keeps its own article — clustering is presentation only.
+    // Every message is its own chat turn.
     expect(screen.getAllByRole('article')).toHaveLength(3);
     expect(screen.getByText('And the y-offsets after.')).toBeTruthy();
   });
@@ -385,17 +385,27 @@ describe('the feed region', () => {
 });
 
 describe('delivery is a FACET on the row, never a row of its own', () => {
-  it('badges a delivered message and scopes the claim in its tooltip', () => {
-    const item = messageItem({
+  it('says nothing for a delivered message — only a delivery that has not landed earns a badge', () => {
+    const delivered = messageItem({
       delivery: [{
         deliveryId: 'd1', targetWorkSessionId: 'ws-forge', status: 'delivered',
         attemptNo: 1, failureReason: null, updatedAt: '2026-07-29T11:24:05.000Z',
       }],
     });
-    render(<ChannelScreen {...base} page={page([item])} />);
+    const { unmount } = render(<ChannelScreen {...base} page={page([delivered])} />);
+    expect(screen.queryByTestId('chs-delivery')).toBeNull();
+    unmount();
+
+    const sending = messageItem({
+      delivery: [{
+        deliveryId: 'd1', targetWorkSessionId: 'ws-forge', status: 'dispatching',
+        attemptNo: 1, failureReason: null, updatedAt: '2026-07-29T11:24:05.000Z',
+      }],
+    });
+    render(<ChannelScreen {...base} page={page([sending])} />);
     const badge = screen.getByTestId('chs-delivery');
-    expect(badge.textContent).toContain('delivered');
-    expect(badge.getAttribute('title')).toContain('governed PTY write completed');
+    expect(badge.textContent).toContain('sending');
+    expect(badge.getAttribute('title')).toContain('receipt is never claimed');
   });
 
   it('keeps the message visible when delivery FAILED, and offers Send again (S19)', async () => {
@@ -947,7 +957,7 @@ describe('paging and the honest absences', () => {
       messageItem({ itemId: 'feed-c' }, c),
     ])} />);
     expect(region.scrollTop).toBe(100);
-    const jump = screen.getByRole('button', { name: /1 new item/i });
+    const jump = screen.getByRole('button', { name: /jump to latest · 1 new/i });
     fireEvent.click(jump);
     expect(region.scrollTop).toBe(900);
   });
@@ -963,8 +973,11 @@ describe('paging and the honest absences', () => {
     let fire: (() => void) | undefined;
     const prior = globalThis.ResizeObserver;
     globalThis.ResizeObserver = class {
-      constructor(callback: () => void) { fire = callback; }
-      observe() {}
+      private readonly callback: () => void;
+      constructor(callback: () => void) { this.callback = callback; }
+      /* The composer card watches its own width (`ComposerCard`); only the
+         feed's observer is the one under test. */
+      observe(element: Element) { if (!element.classList.contains('ri-host')) fire = this.callback; }
       unobserve() {}
       disconnect() {}
     } as unknown as typeof ResizeObserver;
@@ -1001,7 +1014,8 @@ describe('paging and the honest absences', () => {
     const observed: Element[] = [];
     const prior = globalThis.ResizeObserver;
     globalThis.ResizeObserver = class {
-      observe(element: Element) { observed.push(element); }
+      /* The composer card's own width observer is not the feed's. */
+      observe(element: Element) { if (!element.classList.contains('ri-host')) observed.push(element); }
       unobserve() {}
       disconnect() {}
     } as unknown as typeof ResizeObserver;

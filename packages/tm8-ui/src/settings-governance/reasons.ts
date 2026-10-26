@@ -155,8 +155,8 @@ export const GOVERNANCE_REASONS = {
 
   /** Oracle L508 "Create kind". */
   createKind: {
-    cause: 'Creating a kind isn’t wired yet',
-    remedy: `EntityKindCreateInput is declared (contract.ts:1533); ${SEAM} reads entityKinds() and carries no write`,
+    cause: 'Creating a kind is unavailable in this view',
+    remedy: 'An owner or admin with custom-kind write access can create kinds from Space admin',
   },
 
   /** Oracle L530 "…" — the glyph picker's overflow. */

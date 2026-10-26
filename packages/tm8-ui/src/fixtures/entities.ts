@@ -8,7 +8,6 @@ import type {
   EntitySummary,
   Hierarchy,
   Connections,
-  OpRequestView,
   Page,
   StatusCategory,
 } from '@tm8/contract';
@@ -1066,59 +1065,34 @@ export const profileHouseStyle = summary({
  * hint and the vendor login never reach an entity, so there is nothing else
  * a fixture could honestly carry.
  */
+const fixtureMcpDefinition = {
+  name: 'fixture_calendar', transport: 'http' as const, url: 'https://mcp.example.test/calendar',
+  envKeys: [], headerKeys: [], auth: { type: 'none' as const }, approved: true, enabled: true,
+};
+export const mcpCalendar = summary({
+  id: 'mcp-calendar', kind: 'mcp_server', title: 'Fixture calendar',
+  excerpt: 'Shared calendar tools; credentials are selected separately.',
+  state: { kind: 'mcp_server', definition: fixtureMcpDefinition },
+});
+
+const fixtureToolDefinition = { name: 'fixture-tool', description: 'Stored tool fixture', help: '',
+  runtime: 'bash' as const, source: 'true', inputs: [], tm8Access: 'none' as const, timeoutSeconds: 900 };
+export const toolFixture = summary({ id: 'tool-fixture', kind: 'tool', title: 'Fixture tool',
+  excerpt: 'Stored source and declared inputs.', state: {kind: 'tool', definition: fixtureToolDefinition} });
+
+/** Craft (304/322) — an ordered set of pages; its pages are `contains` edges. */
+export const designCheckout = summary({
+  id: 'design-checkout', kind: 'craft', title: 'Checkout redesign',
+  excerpt: 'The new checkout, page by page.',
+  state: { kind: 'craft', pageCount: 0, pageKinds: [] },
+});
+
 export const credentialTeamKey = summary({
   id: 'cred-team-anthropic',
   kind: 'credential',
   title: 'Team Anthropic key',
   state: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
 });
-
-/**
- * Op request (280, L5) — forge, an agent, asks its human to link a space it
- * may not link itself. PENDING and filed by an agent, so the approve card has
- * both its buttons and its justification to draw. The row carries only the op
- * and status; params, input and outcome are `opRequests.get`'s
- * (`fixtureOpRequests` below), exactly as on a node.
- */
-export const opRequestLinkResearch = summary({
-  id: 'opreq-link-research',
-  kind: 'op_request',
-  title: 'Link a space: Research',
-  excerpt: 'spaceLinks.add',
-  createdBy: forge,
-  state: { kind: 'op_request', op: 'spaceLinks.add', status: 'pending' },
-});
-
-/**
- * The `opRequests.get` answers behind the op-request rows above, keyed by the
- * same id. The fixture seam serves these; `canDecide` is the viewer's (Ada,
- * the human forge acts for), as the server would compute it.
- */
-export const fixtureOpRequests: OpRequestView[] = [
-  {
-    id: opRequestLinkResearch.id,
-    spaceId: FIXTURE_SPACE_ID,
-    op: 'spaceLinks.add',
-    label: 'Link a space',
-    params: { spaceId: FIXTURE_SPACE_ID },
-    input: { targetSpaceId: '0f1e2d3c-0000-4000-8000-0000000000e2' },
-    justification: 'The migration notes live in the Research space. Linking it lets me read them instead of asking you to paste them.',
-    title: opRequestLinkResearch.title,
-    status: 'pending',
-    approver: 'requester',
-    requestedBy: forge.id,
-    requestingSessionId: sessionLive.id,
-    decidedBy: null,
-    decidedAt: null,
-    decisionNote: null,
-    result: null,
-    error: null,
-    canDecide: true,
-    createdAt: T.morning,
-    updatedAt: T.morning,
-    version: 1,
-  },
-];
 
 /** Custom kind — lands on the generic archetype with zero special-casing. */
 export const customRitual = summary({
@@ -1430,8 +1404,7 @@ export const fixtureSummaries: EntitySummary[] = [
   chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, credentialTeamKey, customRitual, artifactPulseBoard, drawingLoginFlow,
-  opRequestLinkResearch,
+  profileHouseStyle, credentialTeamKey, mcpCalendar, toolFixture, designCheckout, customRitual, artifactPulseBoard, drawingLoginFlow,
   storyAsAnEntity,
   styleMidnight,
   ...formSummaries,
@@ -1809,8 +1782,8 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     content: { kind: 'commit', filesChanged: 21 },
     connections: {
       // 082 provenance: the commit was produced IN the live session.
-      outgoing: [{ type: 'created_in', direction: 'outgoing', label: 'created in', edges: [
-        edge('edge-created-in-1', 'created_in', snap(commitFoundation), snap(sessionLive), forge),
+      outgoing: [{ type: 'authored_from', direction: 'outgoing', label: 'made during', edges: [
+        edge('edge-authored-from-1', 'authored_from', snap(commitFoundation), snap(sessionLive), forge),
       ] }],
       incoming: [],
       unresolvedHardDependencyCount: 0,
@@ -1942,12 +1915,19 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     },
   }),
 
-  [credentialTeamKey.id]: detail(credentialTeamKey, {
-    content: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
+  [toolFixture.id]: detail(toolFixture, {content: {kind: 'tool', definition: fixtureToolDefinition}, capabilities: CAPS_READONLY}),
+
+  [mcpCalendar.id]: detail(mcpCalendar, {
+    content: { kind: 'mcp_server', definition: fixtureMcpDefinition },
+    capabilities: CAPS_READONLY,
   }),
 
-  [opRequestLinkResearch.id]: detail(opRequestLinkResearch, {
-    content: { kind: 'op_request', op: 'spaceLinks.add', status: 'pending' },
+  [designCheckout.id]: detail(designCheckout, {
+    content: { kind: 'craft', description: 'The new checkout, page by page.', pages: [] },
+  }),
+
+  [credentialTeamKey.id]: detail(credentialTeamKey, {
+    content: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
   }),
 
   [styleMidnight.id]: detail(styleMidnight, {

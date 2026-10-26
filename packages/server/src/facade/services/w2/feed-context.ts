@@ -67,7 +67,8 @@ import { cursorAfter, type ActionDiscovery } from './saved-views-actions.js';
 
 import type { Db, DbClaims, Querier } from '../../../db/types.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
-import { claimsFor, requireUuidParam } from '../../context.js';
+import { claimsFor, requireParam, requireUuidParam } from '../../context.js';
+import { FULL_ENTITY_ID, resolveEntityReadId } from '../../entity-read-id.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
   ENTITY_COLUMNS,
@@ -1117,7 +1118,11 @@ export class W2FeedContextService {
    * any schema change because `cursors` is an open `z.record`.
    */
   readonly context: OperationHandler = async (ctx) => {
-    const id = requireUuidParam(ctx, 'id');
+    const reference = requireParam(ctx, 'id');
+    // Keep full-id reads (and invalid-cursor validation) on the existing query path.
+    const id = FULL_ENTITY_ID.test(reference) ? reference : await this.deps.db.tx(
+      (await accessFor(this.deps, ctx)).claims, q => resolveEntityReadId(q, reference),
+    );
     const input = parseContextQuery(ctx.query);
     if (input.schema === 'v2') {
       // M2/S3a: v2 only when asked for, until S5 flips the default.

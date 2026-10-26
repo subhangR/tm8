@@ -20,6 +20,7 @@ export { AlwaysDark } from './AlwaysDark';
 export { TerminalChromeStrip, StatusPill } from './TerminalChromeStrip';
 export { TerminalHost, TERMINAL_PLACEHOLDER } from './TerminalHost';
 export { LiveTerminal, type LiveTerminalHandle, type LiveTerminalProps } from './LiveTerminal';
+export { decodeUserVar, type ScreenSignal } from './screenSignals';
 export { TerminalModifierBar, type TerminalModifierBarProps } from './TerminalModifierBar';
 export { useKeyboardInset } from './useKeyboardInset';
 export {

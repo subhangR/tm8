@@ -1,4 +1,7 @@
-import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
+import { TOOL_CONTENT_SQL, TOOL_RUN_SQL, toolBindingActorIds, projectToolView, projectToolRun } from '../tools/projection.js';
+import { McpServerDefinitionSchema } from '@tm8/contract';
+import { attachChatRuntimeFacts } from '../chat/public-state.js';
+import type { EffectiveSkills, TaskLiveSession } from '@tm8/contract';
 /**
  * Derived truth, assembled ONCE, server-side (L3).
  *
@@ -29,6 +32,8 @@ import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
 import { SKILL_REFERENCE_SQL, skillReferenceOf, readSkillDetail } from '../skills/reference.js';
 import type {
   WorkSessionEndedKind,
+  WorkSessionOutcome,
+  WorkSessionOutcomeSource,
   WorkSessionKind,
   AcceptanceCriterion,
   ContainerIsolationClass,
@@ -61,14 +66,17 @@ import type {
   WorkStatus,
 } from '@tm8/contract';
 import { checkGraphCoherence, DEFAULT_FORM_SETTINGS, plainExcerpt, type FormQuestionRow, type FormSectionRow, type FormSettings, type FormStatus } from '@tm8/contract';
-import { SessionTranscriptContextSchema, StoryStateSchema, type SessionTranscriptContext } from '@tm8/contract';
+import { SessionTranscriptContextSchema, StoryStateSchema, TaskProgressSchema, type SessionTranscriptContext, type TaskProgress } from '@tm8/contract';
+import { CraftStateSchema, type CraftPage } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 import {
   loadLinkedPullRequestBadges,
   projectForgeFacts,
+  projectTrackingFreshness,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
+import { loadTaskLiveSessionBadges } from '../tracking/live-session-projection.js';
 import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from './message-author-projection.js';
 // The ONE narrowing of the status columns, shared with `events/projector.ts`.
 import { categoryFragment, narrowWorkStatus } from './status.js';
@@ -101,6 +109,10 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.agent_messages, 0) as agent_messages,
   coalesce(ec.docs, 0)     as docs,
   coalesce(ec.memories, 0) as memories,
+  coalesce(ec.prs, 0)       as prs,
+  coalesce(ec.artifacts, 0) as artifacts,
+  coalesce(ec.drawings, 0)  as drawings,
+  coalesce(ec.sessions, 0)  as sessions,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
   t.start_date,
@@ -129,6 +141,20 @@ export const ENTITY_COLUMNS = `
   ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   ws.checkout_branch as ws_checkout_branch, ws.workdir_mode as ws_workdir_mode,
   ws.ended_kind as ws_ended_kind, ws.ended_reason as ws_ended_reason, ws.skills as ws_skills,
+  ws.outcome as ws_outcome, ws.outcome_at as ws_outcome_at, ws.outcome_by as ws_outcome_by,
+  ws.receipt_message_id as ws_receipt_message_id, ws.outcome_source as ws_outcome_source,
+  ws.outcome_note as ws_outcome_note,
+  -- 301 (Spec D1 R1): tasks handed to this session that it has not claimed.
+  case when ws.entity_id is null then null else (select coalesce(array_agg(distinct sh.source_entity_id::text), '{}')
+     from public.session_handoffs sh
+     join public.entities ot on ot.id = sh.source_entity_id and ot.kind = 'task' and ot.deleted_at is null
+    where sh.target_work_session_id = ws.entity_id and sh.withdrawn_at is null
+      and not exists (select 1 from public.edges oc
+                       where oc.src_id = ws.entity_id and oc.dst_id = sh.source_entity_id
+                         and oc.type = 'working_on')) end as ws_offered_task_ids,
+  -- 330: who launched it — the launched_by edge, not parent_id.
+  case when ws.entity_id is null then null else (select lb.dst_id::text from public.edges lb
+    where lb.src_id = ws.entity_id and lb.type = 'launched_by' limit 1) end as ws_launched_by,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -154,6 +180,10 @@ export const ENTITY_COLUMNS = `
   lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
   lp.last_error as loop_last_error,
   cht.title as chat_title, cht.teammate_id as chat_teammate_id,
+  to_jsonb(cht)->'credential_selection' as chat_credential_selection,
+  to_jsonb(cht)->'credential_intent' as chat_credential_intent,
+  to_jsonb(cht)->>'reasoning_effort' as chat_reasoning_effort,
+  to_jsonb(cht)->>'config_revision' as chat_config_revision,
   cht.model as chat_model, cht.provider as chat_provider, cht.agent_tool as chat_agent_tool,
   cht.chat_mode as chat_mode, cht.workdir_mode as chat_workdir_mode,
   cht.project_id as chat_project_id, cht.runtime_state as chat_runtime_state,
@@ -165,10 +195,21 @@ export const ENTITY_COLUMNS = `
   drw.title as drawing_title, drw.format as drawing_format,
   drw.elements as drawing_elements, drw.app_state as drawing_app_state,
   drw.files as drawing_files,
+  mcp.definition as mcp_definition,
+  ${TOOL_CONTENT_SQL} as tool_content,
+  ${TOOL_RUN_SQL} as ws_tool_run,
+  case when e.kind='mcp_server' then internal.is_space_admin(e.space_id) else false end as mcp_manage,
   sty.title as story_title, sty.description as story_description,
   -- 283: the computed summary, one SQL function the projector twin selects
   -- too. CASE keeps it off every other kind's row.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
+  -- 304: a craft's title, description and summary (page count, page kinds
+  -- in order) — one SQL function the projector twin selects too.
+  dsg.title as craft_title, dsg.description as craft_description,
+  case when e.kind = 'craft' then internal.craft_summary(e.id) end as craft_summary,
+  -- 307: points-weighted subtree progress, the same function the projector
+  -- twin selects. Computed on read, never stored.
+  case when e.kind = 'task' then internal.task_progress(e.id) end as task_progress,
   -- Space styles (284): the whole document is row facts (spec §4.3) — it is
   -- what a push repaints from, and it is bounded by the doors.
   stl.title as sty_title, stl.description as sty_description,
@@ -205,8 +246,6 @@ export const ENTITY_COLUMNS = `
   -- excerpt. servers holds no secret; the gate session is
   -- server_gate_tokens, which this read never names.
   srv.name as srv_name, srv.base_url as srv_base_url,
-  -- Op requests (L5, 280): the title, op and status for a list row.
-  opr.title as opr_title, opr.op as opr_op, opr.status as opr_status,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
@@ -220,6 +259,9 @@ export const ENTITY_COLUMNS = `
   pr.state as pr_state, pr.ci_status as pr_ci_status,
   pr.mergeable_state as pr_mergeable_state, pr.head_ref as pr_head_ref,
   pr.url as pr_url, pr.fetched_at as pr_fetched_at,
+  -- 306's column, read through the row: position-pinned suites stop the
+  -- chain before 306 and still run this shared SQL.
+  (to_jsonb(pr) ->> 'last_polled_at') as pr_last_polled_at,
   cm.repo as commit_repo, cm.sha as commit_sha,
   cm.message as commit_message, cm.committed_at as commit_committed_at,
   cm.url as commit_url, cm.author as commit_author,
@@ -398,11 +440,12 @@ export const ENTITY_FROM = `
   left join public.graphs gr             on gr.entity_id = e.id
   left join public.drawings drw           on drw.entity_id = e.id
   left join public.stories sty            on sty.entity_id = e.id
+  left join public.crafts dsg            on e.kind = 'craft' and dsg.entity_id = e.id
+  left join public.mcp_servers mcp on e.kind='mcp_server' and mcp.entity_id=e.id
   left join public.styles stl             on e.kind = 'style' and stl.entity_id = e.id
   left join public.forms frm              on frm.entity_id = e.id
   left join public.space_credentials scr  on e.kind = 'credential' and scr.id = e.id
   left join public.servers srv            on e.kind = 'server' and srv.entity_id = e.id
-  left join public.op_requests opr        on e.kind = 'op_request' and opr.entity_id = e.id
   left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.commits cm            on cm.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
@@ -466,6 +509,12 @@ export interface EntityRow {
   /** Link counters (108); optional keeps legacy row fixtures source-compatible. */
   docs?: number;
   memories?: number;
+  /** Link counters (329), optional for the same reason. */
+  prs?: number;
+  artifacts?: number;
+  drawings?: number;
+  /** Launched sessions (331), optional for the same reason. */
+  sessions?: number;
   task_title: string | null;
   task_description: string | null;
   task_axes: Record<string, string> | null;
@@ -521,6 +570,15 @@ export interface EntityRow {
   ws_ended_kind?: string | null;
   ws_skills?: EffectiveSkills | null;
   ws_ended_reason?: string | null;
+  /** Outcome facts (299); optional for the same fixture-compatibility reason. */
+  ws_outcome?: string | null;
+  ws_outcome_at?: Date | string | null;
+  ws_outcome_by?: string | null;
+  ws_receipt_message_id?: string | null;
+  ws_outcome_source?: string | null;
+  ws_outcome_note?: string | null;
+  ws_offered_task_ids?: string[] | null;
+  ws_launched_by?: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -560,6 +618,11 @@ export interface EntityRow {
   loop_last_error: string | null;
   chat_title: string | null;
   chat_teammate_id: string | null;
+  chat_credential_selection: import("@tm8/contract").ChatCredentialSelection | null;
+  chat_credential_intent?: import('@tm8/contract').ChatCredentialIntent | null;
+  chat_reasoning_effort?: import('@tm8/contract').LaunchModelEffort | null;
+  chat_config_revision?: string | number | null;
+  chat_runtime_public?: import('@tm8/contract').ChatRuntimeState;
   chat_model: string | null;
   chat_provider: string | null;
   chat_agent_tool: string | null;
@@ -582,9 +645,16 @@ export interface EntityRow {
   drawing_elements: unknown[] | null;
   drawing_app_state: Record<string, unknown> | null;
   drawing_files: Record<string, unknown> | null;
+  mcp_definition?: unknown;
+  tool_content?: unknown; ws_tool_run?: unknown;
+  mcp_manage?: boolean;
   story_title?: string | null;
   story_description?: string | null;
   story_summary?: unknown;
+  craft_title?: string | null;
+  craft_description?: string | null;
+  craft_summary?: unknown;
+  task_progress?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
   sty_schema_version?: number | null;
@@ -613,9 +683,6 @@ export interface EntityRow {
   cred_owner_account_id?: string | null;
   srv_name?: string | null;
   srv_base_url?: string | null;
-  opr_title?: string | null;
-  opr_op?: string | null;
-  opr_status?: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -656,6 +723,7 @@ export interface EntityRow {
   pr_head_ref?: string | null;
   pr_url?: string | null;
   pr_fetched_at?: Date | string | null;
+  pr_last_polled_at?: Date | string | null;
   /** commits mirror columns; optional for the same reason the pr_* ones are. */
   commit_repo?: string | null;
   commit_sha?: string | null;
@@ -726,14 +794,52 @@ export function isoOrNull(value: Date | string | null): string | null {
  * one column must not make a session unreadable.
  */
 export function isEndedKind(value: string | null | undefined): value is WorkSessionEndedKind {
-  return (
-    value === 'completed' ||
-    value === 'stopped_by_operator' ||
-    value === 'server_restart' ||
-    value === 'out_of_memory' ||
-    value === 'crashed' ||
-    value === 'unknown'
-  );
+  return value !== null && value !== undefined && ENDED_KINDS.has(value);
+}
+
+/** `work_sessions.ended_kind`'s CHECK verbatim — 171, widened by 177 and 299. */
+const ENDED_KINDS: ReadonlySet<string> = new Set<WorkSessionEndedKind>([
+  'exited_clean', 'stopped_by_operator', 'server_restart', 'out_of_memory', 'crashed',
+  'container_stopped', 'runtime_lost', 'lost', 'credential_revoked', 'unknown',
+]);
+
+/** True when a `working_on` claim has ended (299: `props.endedAt` is set). */
+export function isEndedClaim(props: Record<string, unknown> | null | undefined): boolean {
+  const endedAt = props?.['endedAt'];
+  return typeof endedAt === 'string' && endedAt !== '';
+}
+
+/** The outcome half of a session's state (299, Spec D1 §3), from a projected row. */
+export function outcomeFacts(row: {
+  ws_outcome?: string | null;
+  ws_outcome_at?: Date | string | null;
+  ws_outcome_by?: string | null;
+  ws_receipt_message_id?: string | null;
+  ws_outcome_source?: string | null;
+  ws_outcome_note?: string | null;
+}): {
+  outcome?: WorkSessionOutcome;
+  outcomeAt?: string | null;
+  outcomeBy?: string | null;
+  receiptMessageId?: string | null;
+  outcomeSource?: WorkSessionOutcomeSource | null;
+  outcomeNote?: string | null;
+} {
+  // Absent column (a fixture, or a pre-299 node) projects nothing at all.
+  if (row.ws_outcome === undefined) return {};
+  const outcome: WorkSessionOutcome =
+    row.ws_outcome === 'completed' || row.ws_outcome === 'stopped' ? row.ws_outcome : 'open';
+  const at = row.ws_outcome_at instanceof Date ? row.ws_outcome_at.toISOString()
+    : typeof row.ws_outcome_at === 'string' ? new Date(row.ws_outcome_at).toISOString() : null;
+  const source = row.ws_outcome_source;
+  return {
+    outcome,
+    outcomeAt: at,
+    outcomeBy: row.ws_outcome_by ?? null,
+    receiptMessageId: row.ws_receipt_message_id ?? null,
+    outcomeSource: source === 'self' || source === 'operator' || source === 'backfill' ? source : null,
+    outcomeNote: row.ws_outcome_note ?? null,
+  };
 }
 
 /** `date` columns must not acquire a timezone on the way out. */
@@ -1267,38 +1373,40 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     }
   }
 
-  // The tense rule (doc 06 §2.3): `workingActors` means "working NOW", but
-  // `working_on` cannot express an ending — its propsSchema has no `endedAt`,
-  // so edges accumulate forever. Liveness is therefore DERIVED, never stored:
-  // a session-sourced edge counts only while its work_session is in a live
-  // status. `work_sessions.status` is trustworthy for this — it has an
-  // enforced single writer (001:727-746). Person-sourced edges pass through
-  // (a person has no status row); a source row this querier cannot see proves
-  // nothing, so it does not get the badge. The terminal-task half of the rule
-  // lives in badgesOf, where the row is at hand.
+  // The tense rule (doc 06 §2.3): `workingActors` means "working NOW". Since
+  // 299 (Spec D1 §6.9) a `working_on` claim CAN express its ending — it keeps
+  // its row with `props.endedAt` — so "now" is the claim's own fact: an ended
+  // claim never counts. A session-sourced claim also needs its session's
+  // outcome to be `open` (spec §5.7), NOT a live process: a crashed session
+  // still holds its claims (its robot is fallen, not gone) until someone
+  // resumes or stops it. Person-sourced edges pass through; a source row this
+  // querier cannot see proves nothing, so it does not get the badge. The
+  // terminal-task half of the rule lives in badgesOf, where the row is at hand.
+  if (relations.workingOn.size > 0) {
+    for (const [id, list] of relations.workingOn) {
+      const active = list.filter((w) => !isEndedClaim(w.props));
+      if (active.length === list.length) continue;
+      if (active.length === 0) relations.workingOn.delete(id);
+      else relations.workingOn.set(id, active);
+    }
+  }
   if (relations.workingOn.size > 0) {
     const sourceIds = [
       ...new Set([...relations.workingOn.values()].flat().map((w) => w.actorId)),
     ];
-    const sourceRows = await q.query<{ id: string; kind: string; status: string | null }>(
-      `select e.id, e.kind, ws.status
+    const sourceRows = await q.query<{ id: string; kind: string; outcome: string | null }>(
+      `select e.id, e.kind, ws.outcome
          from public.entities e
          left join public.work_sessions ws on ws.entity_id = e.id
         where e.id = any($1::uuid[])
           and e.deleted_at is null`,
       [sourceIds],
     );
-    const liveSource = new Map(
-      sourceRows.map((r) => [
-        r.id,
-        r.kind !== 'work_session' ||
-          r.status === 'spawning' ||
-          r.status === 'running' ||
-          r.status === 'idle',
-      ]),
+    const workingSource = new Map(
+      sourceRows.map((r) => [r.id, r.kind !== 'work_session' || (r.outcome ?? 'open') === 'open']),
     );
     for (const [id, list] of relations.workingOn) {
-      const live = list.filter((w) => liveSource.get(w.actorId) === true);
+      const live = list.filter((w) => workingSource.get(w.actorId) === true);
       if (live.length === list.length) continue;
       if (live.length === 0) relations.workingOn.delete(id);
       else relations.workingOn.set(id, live);
@@ -1541,9 +1649,14 @@ export function titleOf(row: EntityRow): string {
     case 'drawing':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.drawing_title ?? 'Drawing';
+    case 'tool': return projectToolView(row, new Map()).definition.name;
+    case 'mcp_server': return McpServerDefinitionSchema.parse(row.mcp_definition).name;
     case 'story':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.story_title ?? 'Story';
+    case 'craft':
+      // Its own detail-row title — MIRRORS the projector twin (same reason).
+      return row.craft_title ?? 'Craft';
     case 'style':
       // Its own detail-row title — MIRRORS the projector twin (same reason).
       return row.sty_title ?? 'Style';
@@ -1561,9 +1674,6 @@ export function titleOf(row: EntityRow): string {
       // the target see THAT a link exists, not what the target is called.
       // Before this arm the title fell through to the raw kind string.
       return 'Space link';
-    case 'op_request':
-      // Its own title (allow-list label + facts). MIRRORS the projector twin.
-      return row.opr_title ?? 'Op request';
     case 'chat':
       // The chat's own title, which `start_chat` seeds from the opening message.
       // An empty one is legal (the column defaults to '') and must still render
@@ -1648,6 +1758,9 @@ function excerptOf(row: EntityRow): string | undefined {
     case 'story':
       // The description says what the story is for. MIRRORS the projector twin.
       return excerpt(row.story_description ?? null);
+    case 'craft':
+      // The description says what the design is for. MIRRORS the projector twin.
+      return excerpt(row.craft_description ?? null);
     case 'style':
       // The description says what the style is for. MIRRORS the projector twin.
       return excerpt(row.sty_description ?? null);
@@ -1688,6 +1801,8 @@ export interface AssemblyContext {
    * those must not recurse into a second round of badge material.
    */
   pullRequests?: Map<string, LinkedPullRequestBadges>;
+  /** Per working/blocked task, `badges.liveSession` (P0g); optional like `pullRequests`. */
+  liveSessions?: Map<string, TaskLiveSession>;
   /** Summaries of related entities (dependency targets, working-on tasks). */
   related?: Map<string, EntitySummary>;
   /**
@@ -1775,6 +1890,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
           assignedAt: assignment.assignedAt,
         })),
         acceptance: acceptanceOf(row),
+        ...taskProgressOf(row.task_progress),
         completionGate: row.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
       };
     case 'channel':
@@ -1874,6 +1990,7 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // a server that never looked. `.strict()` refuses an explicit
         // `undefined` key, hence the spread rather than a ternary value.
         ...(row.ws_session_kind ? { sessionKind: row.ws_session_kind as WorkSessionKind } : {}),
+        ...(row.ws_tool_run ? { toolRun: projectToolRun(row.ws_tool_run, actorOf(ctx.actors, row.created_by)) } : {}),
         // The lane facts (107). `checkoutBranch` is nullable-and-present:
         // an explicit null is "measured absence / never captured — render no
         // claim", while a missing KEY would mean "server too old to know the
@@ -1892,6 +2009,10 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         // and a row carrying something else is a bug to surface, not to render.
         endedKind: isEndedKind(row.ws_ended_kind) ? row.ws_ended_kind : null,
         endedReason: row.ws_ended_reason ?? null,
+        // 299 (Spec D1 §3): the outcome of the WORK, beside the process facts.
+        ...outcomeFacts(row),
+        ...(Array.isArray(row.ws_offered_task_ids) ? { offeredTaskIds: row.ws_offered_task_ids } : {}),
+        ...(row.ws_launched_by !== undefined ? { launchedBy: row.ws_launched_by } : {}),
         // The persona, via the SAME resolver that attributes this session's
         // messages — `loadActors` keyed by the session's own id already does
         // the `participates_in` hop. A session with no persona resolves to a
@@ -1977,10 +2098,16 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         format: row.drawing_format ?? 'excalidraw',
         elementCount: Array.isArray(row.drawing_elements) ? row.drawing_elements.length : 0,
       };
+    case 'tool': return { kind: 'tool', ...projectToolView(row, ctx.actors) };
+    case 'mcp_server': return { kind: 'mcp_server', definition: McpServerDefinitionSchema.parse(row.mcp_definition) };
     case 'story':
       // 283: computed by `internal.story_summary`, which the projector twin
       // selects too — the mirror is the shared function, not a comment.
       return storySummaryOf(row.story_summary);
+    case 'craft':
+      // 304: `internal.craft_summary`, which the projector twin selects
+      // too — the mirror is the shared function.
+      return craftSummaryOf(row.craft_summary);
     case 'form':
       // Where it is in its lifecycle, and how long. MIRRORS the projector twin.
       return {
@@ -1997,10 +2124,19 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // durable claim about the headless child, `turnState` is the queue.
       return {
         kind: 'chat',
-        teammateId: row.chat_teammate_id ?? '',
-        model: row.chat_model ?? '',
-        provider: row.chat_provider ?? '',
-        agentTool: row.chat_agent_tool ?? '',
+        credentialSelection: row.chat_credential_selection ?? { source: 'auto' },
+        ...(row.chat_config_revision != null ? {
+          configRevision: Number(row.chat_config_revision),
+          reasoningEffort: row.chat_reasoning_effort ?? null,
+          ...(row.chat_credential_intent ? { credentialIntent: row.chat_credential_intent } : {}),
+          ...(row.chat_runtime_public ? { runtime: row.chat_runtime_public } : {}),
+        } : {}),
+        // A deleted chat's row is hidden by `chats_select`: fall back to values
+        // the contract accepts. MIRRORS the projector twin.
+        teammateId: row.chat_teammate_id ?? row.created_by,
+        model: row.chat_model ?? 'unknown',
+        provider: row.chat_provider ?? 'unknown',
+        agentTool: row.chat_agent_tool ?? 'unknown',
         mode: (row.chat_mode ?? 'ask') as ChatMode,
         workdirMode: (row.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
         projectId: row.chat_project_id,
@@ -2060,10 +2196,9 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         number: Number(row.pr_number ?? 0),
         state: row.pr_state ?? 'open',
         ...(row.pr_url ? { url: row.pr_url } : {}),
-        fetchedAt: isoOrNull(fetched),
-        // `stale` is "the mirror is older than the upstream". Never fetched ⇒
-        // definitionally stale — same ruling as the projector twin.
-        stale: fetched === null,
+        // 306: never polled, or open and unpolled past the threshold — same
+        // ruling as the projector twin, through the same helper.
+        ...projectTrackingFreshness(row.pr_state, fetched, row.pr_last_polled_at),
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
@@ -2087,9 +2222,6 @@ export function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // link, so the shared entity read takes no join for it. MIRRORS the
       // projector twin.
       return { kind: row.kind };
-    case 'op_request':
-      // 280 (L5): which op, and where it is. MIRRORS the projector twin.
-      return { kind: 'op_request', op: row.opr_op ?? '', status: (row.opr_status ?? 'pending') as OpRequestStatus };
     case 'style':
       // 284: the full document (spec §4.3) — a push's entity.upsert is how
       // every viewer on the style repaints, with no fetch. MIRRORS the
@@ -2173,6 +2305,11 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
       );
     }
   }
+
+  // P0g: is anyone really on this working/blocked task? Emitted whenever the
+  // loader answered, including `live`, so a client never infers it from absence.
+  const liveSession = ctx.liveSessions?.get(row.id);
+  if (liveSession) badges.liveSession = liveSession;
 
   // The PRs this task tracks, carried ON THE ROW. Unlike every other badge
   // here, this one does not summarize the entity's own state — it projects a
@@ -2292,7 +2429,7 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Work-session "edit" is likewise exactly one thing: the display title, via
   // rename_work_session (085). Everything else on that row belongs to the
   // execution block, which is why it is still not deletable or hierarchical.
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing', 'story']);
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session', 'graph', 'drawing', 'story', 'craft']);
   // A story's children are child stories (same-kind hierarchy, 283).
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection', 'story']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
@@ -2374,6 +2511,8 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
 export function entityCapabilities(row: EntityRow): EntityCapabilities {
   const base = capabilitiesOf(row);
   const live = row.deleted_at === null;
+  if (row.kind === 'tool') return { ...base, canEdit: live, canDelete: live, canAddChild: false, canPull: false, canComplete: false };
+  if (row.kind === 'mcp_server') return { ...base, canEdit: live && row.mcp_manage === true, canDelete: live && row.mcp_manage === true, canAddChild: false, canPull: false, canComplete: false };
   if (row.kind === 'project' || row.kind === 'interaction_profile') {
     return {
       canEdit: false,
@@ -2528,6 +2667,10 @@ export function toEntitySummary(row: EntityRow, ctx: AssemblyContext): EntitySum
       // an invented 0 would be a different (wrong) claim.
       ...(row.docs === undefined ? {} : { docs: row.docs }),
       ...(row.memories === undefined ? {} : { memories: row.memories }),
+      ...(row.prs === undefined ? {} : { prs: row.prs }),
+      ...(row.artifacts === undefined ? {} : { artifacts: row.artifacts }),
+      ...(row.drawings === undefined ? {} : { drawings: row.drawings }),
+      ...(row.sessions === undefined ? {} : { sessions: row.sessions }),
       viewerReaction: ctx.viewerReactions.get(row.id) ?? null,
     },
     state: stateOf(row, ctx),
@@ -2701,9 +2844,14 @@ export function contentOf(row: EntityRow): EntityContent {
         appState: row.drawing_app_state ?? {},
         files: row.drawing_files ?? {},
       };
+    case 'tool': return { kind: 'tool', ...projectToolView(row, new Map()) };
+    case 'mcp_server': return { kind: 'mcp_server', definition: McpServerDefinitionSchema.parse(row.mcp_definition) };
     case 'story':
       // The prose; `hydrateDetail` adds the computed page on a detail read.
       return { kind: 'story', description: row.story_description ?? '', page: null };
+    case 'craft':
+      // The prose; `hydrateDetail` adds the ordered pages on a detail read.
+      return { kind: 'craft', description: row.craft_description ?? '', pages: null };
     case 'form':
       // The row facts; `hydrateDetail` adds the sections and questions in
       // order, so a detail read renders the panel in one call while a list row
@@ -2775,8 +2923,7 @@ export function contentOf(row: EntityRow): EntityContent {
         number: Number(row.pr_number ?? 0),
         state: row.pr_state ?? 'open',
         ...(row.pr_url ? { url: row.pr_url } : {}),
-        fetchedAt: isoOrNull(fetched),
-        stale: fetched === null,
+        ...projectTrackingFreshness(row.pr_state, fetched, row.pr_last_polled_at),
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       };
     }
@@ -2784,9 +2931,6 @@ export function contentOf(row: EntityRow): EntityContent {
     case 'server':
       // 250 (W6): a link's content is `spaceLinks.list`'s answer (see stateOf).
       return { kind: row.kind };
-    case 'op_request':
-      // 280 (L5): the state's facts; the rest is `opRequests.get`'s.
-      return { kind: 'op_request', op: row.opr_op ?? '', status: (row.opr_status ?? 'pending') as OpRequestStatus };
     case 'style':
       // 284: the state's facts plus the description.
       return { kind: 'style', description: row.sty_description ?? null, ...styleFacts(row) };
@@ -2851,6 +2995,26 @@ export async function loadChatSubjects(
 }
 
 /**
+ * The live direct-child count on each LIST row (task 01a14b92) — the number a
+ * tile's child subscript draws, where the rows on screen are one page and one
+ * status tab of a family. Collection reads only: `entities.context` output is
+ * frozen byte-for-byte (W2.G13 goldens), so the summary assembly every read
+ * shares stays as it was. One grouped query per page.
+ */
+export async function withChildCounts(q: Querier, items: readonly EntitySummary[]): Promise<EntitySummary[]> {
+  if (items.length === 0) return [...items];
+  const rows = await q.query<{ parent_id: string; count: string }>(
+    `select parent_id, count(*)::text as count
+       from public.entities
+      where parent_id = any($1::uuid[]) and deleted_at is null
+      group by parent_id`,
+    [items.map((item) => item.id)],
+  );
+  const counts = new Map(rows.map((row) => [row.parent_id, Number(row.count)]));
+  return items.map((item) => ({ ...item, childCount: counts.get(item.id) ?? 0 }));
+}
+
+/**
  * Assemble summaries for a set of rows: batch the relations, batch the actors,
  * then map. Two passes over the rows, because `badges.blocked.waitingOn` and
  * `badges.workingActors.task` are themselves `EntitySummary`s — the first pass
@@ -2871,6 +3035,7 @@ export async function assembleSummaries(
   } = {},
 ): Promise<EntitySummary[]> {
   if (rows.length === 0) return [];
+  await attachChatRuntimeFacts(q, rows);
 
   const ids = rows.map((r) => r.id);
   // Sequential, NOT Promise.all: a `Querier` wraps ONE pooled client, and a pg
@@ -2883,6 +3048,8 @@ export async function assembleSummaries(
   // THE SAME loader the events projector calls — see its header for why this
   // is one function and not two twins.
   const pullRequests = await loadLinkedPullRequestBadges(q, rows);
+  // Same loader as the projector, for the reason `pullRequests` is shared.
+  const liveSessions = await loadTaskLiveSessionBadges(q, rows);
   const humanMessageAuthors = await loadHumanMessageAuthorIds(q, ids);
   const chatSubjects = await loadChatSubjects(q, rows);
 
@@ -2902,6 +3069,7 @@ export async function assembleSummaries(
   const allRows = [...rows, ...dependencyRows];
   const actorIds = allRows.flatMap((r) => [
     r.created_by,
+    ...toolBindingActorIds(r.tool_content),
     r.author_id ?? '',
     r.team_member_owner_id ?? '',
     // A work_session's OWN id, so `loadActors` runs its `participates_in` hop
@@ -2940,7 +3108,7 @@ export async function assembleSummaries(
   // Pass 2: the real thing, with relations and the summaries the badges need.
   const ctx: AssemblyContext = {
     actors, relations, viewerReactions, unreadCounts, related, pullRequests, humanMessageAuthors,
-    chatSubjects,
+    chatSubjects, liveSessions,
   };
   return rows.map((r) => toEntitySummary(r, ctx));
 }
@@ -3056,6 +3224,16 @@ function credentialFactsOf(row: EntityRow): Extract<EntityState, { kind: 'creden
 }
 
 /**
+ * A task's progress as `internal.task_progress` returned it (307), as the
+ * spread for its state. Shared with the projector; a missing or malformed
+ * value leaves `progress` off rather than failing the read.
+ */
+export function taskProgressOf(raw: unknown): { progress?: TaskProgress } {
+  const parsed = TaskProgressSchema.safeParse(raw);
+  return parsed.success ? { progress: parsed.data } : {};
+}
+
+/**
  * A story's summary as `internal.story_summary` returned it (283). Shared with
  * the projector so both twins coerce the same jsonb the same way; a missing
  * or malformed value reads as an empty story rather than failing the read.
@@ -3071,11 +3249,47 @@ export function storySummaryOf(raw: unknown): Extract<EntityState, { kind: 'stor
   };
 }
 
+/**
+ * A craft's pages (304): its live `contains` targets in page order
+ * (`props.position`, then when they were added), each the page entity's
+ * ordinary summary plus `pagePosition`. Read under the viewer's claims: a page
+ * the viewer cannot read is not listed (its summary does not load).
+ */
+export async function loadCraftPages(q: Querier, craftId: string, viewerIdentityId: string): Promise<CraftPage[]> {
+  const edges = await q.query<{ dst_id: string; pos: number | null }>(
+    `select c.dst_id,
+            case when jsonb_typeof(c.props -> 'position') = 'number'
+                 then (c.props ->> 'position')::double precision end as pos
+       from public.edges c
+      where c.src_id = $1 and c.type = 'contains'
+      order by pos nulls last, c.created_at, c.id`,
+    [craftId],
+  );
+  const summaries = await loadEntitySummariesByIds(q, edges.map((edge) => edge.dst_id), viewerIdentityId);
+  const byId = new Map(summaries.map((summary) => [summary.id, summary]));
+  return edges.flatMap((edge) => {
+    const summary = byId.get(edge.dst_id);
+    return summary && summary.deletedAt === null
+      ? [{ ...summary, pagePosition: edge.pos === null ? null : Number(edge.pos) }]
+      : [];
+  });
+}
+
+/**
+ * A craft's summary as `internal.craft_summary` returned it (304). Shared
+ * with the projector; a missing or malformed value reads as an empty craft.
+ */
+export function craftSummaryOf(raw: unknown): Extract<EntityState, { kind: 'craft' }> {
+  const parsed = CraftStateSchema.safeParse(raw);
+  return parsed.success ? parsed.data : { kind: 'craft', pageCount: 0, pageKinds: [] };
+}
+
 /** Detail-only IO, shared by the original and universal entity doors. */
 export async function hydrateDetail(
   q: Querier, row: EntityRow, state: EntityState, content: EntityContent, viewerIdentityId: string,
 ): Promise<{ state: EntityState; content: EntityContent }> {
   if (row.deleted_at) return { state, content };
+  if (state.kind === 'tool') return { state, content: { ...state } };
   if (content.kind === 'form') {
     const [structure] = await q.query<{ sections: FormSectionRow[]; questions: FormQuestionRow[] }>(
       `select internal.form_sections_json($1) as sections, internal.form_questions_json($1) as questions`,
@@ -3090,6 +3304,10 @@ export async function hydrateDetail(
     // 283: the page — roots, trail, graph, team, call signs, activity, feed —
     // computed now from the same trail the summary counts.
     return { state, content: { ...content, page: await loadStoryPage(q, row.id) } };
+  }
+  if (content.kind === 'craft') {
+    // 304: the pages, in page order, as the viewer may read them.
+    return { state, content: { ...content, pages: await loadCraftPages(q, row.id, viewerIdentityId) } };
   }
   if (content.kind === 'team_member') {
     const edges = await q.query<{ dst_id: string }>(

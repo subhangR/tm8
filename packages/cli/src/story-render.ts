@@ -6,9 +6,9 @@
  *     projection of the page (state, roots, counts by kind, blocked rows,
  *     sessions with call signs, team by mode, child stories). The description
  *     is the `assignment` body and prints there.
- *   - `tm8 entity get <story>`: the detail, whose `content.page` is the whole
- *     computed page. Human text is a summary plus the page's COUNTS, never the
- *     page itself; `--format json` has it.
+ *   - `tm8 entity get <story>`: the detail with bounded `content.context`.
+ *     `--story-page --full --format json` opts into the computed browser page.
+ *     Human text is a summary plus the page's counts when it was requested.
  *
  * Both read only what the server computed. Nothing here re-derives progress:
  * the figures are `StoryState` / `StoryProgress` as sent (packages/contract
@@ -57,7 +57,7 @@ export function storyStateLines(state: unknown): string[] {
     out.push(`with child stories (${num(state['childStoryCount'])}): ${progressText(state['rollup'], 'tasks')}`);
   }
   out.push(`trail: ${num(state['itemCount'])} things from ${num(state['rootCount'])} roots`
-    + ` · every kind ${progressText(state['progress'])}`
+    + ` · tasks and stories ${progressText(state['progress'])}`
     + (state['truncated'] === true ? ' · TRUNCATED at the follow limit' : ''));
   out.push(`live sessions ${num(state['liveSessionCount'])}`
     + ` · pending attention ${num(state['pendingAttentionCount'])}`
@@ -65,11 +65,31 @@ export function storyStateLines(state: unknown): string[] {
   return out;
 }
 
+/**
+ * A story's status is MANUAL (migration 288): nothing derives it from the
+ * trail. When the task progress plainly disagrees with it, say so and name
+ * the setter — a hint, never a write. Empty when they agree.
+ */
+export function storyStatusHint(status: unknown, state: unknown, id: unknown): string[] {
+  if (typeof status !== 'string' || !isRow(state) || !isRow(state['taskProgress'])) return [];
+  const tp = state['taskProgress'];
+  const work = num(tp['work']);
+  const done = num(tp['done']);
+  let suggest: string | null = null;
+  // Cancelled tasks are outside work; they cannot complete unfinished tasks.
+  if (work > 0 && done === work && status !== 'done' && status !== 'cancelled') suggest = 'done';
+  else if (status === 'to_do' && (num(tp['inProgress']) > 0 || done > 0)) suggest = 'in_progress';
+  if (suggest === null) return [];
+  return [`status hint: status is ${status} but tasks are ${progressText(tp)} — status is set by hand:`
+    + ` tm8 entity update ${str(id)} --expect-version <n> --status ${suggest}`];
+}
+
 function rootLine(r: Row, index: number): string {
   const tp = r['taskProgress'];
   const tasks = isRow(tp) && num(tp['work']) > 0 ? ` · ${num(tp['done'])}/${num(tp['work'])} tasks` : '';
   const all = isRow(r['progress']) ? ` · ${num(r['progress']['done'])}/${num(r['progress']['work'])} all` : '';
-  const children = r['childCount'] !== undefined ? num(r['childCount']) : len(r['childIds']);
+  const children = r['childCount'] !== undefined ? num(r['childCount'])
+    : r['descendantCount'] !== undefined ? num(r['descendantCount']) : len(r['childIds']);
   const trail = r['trailCount'] !== undefined ? num(r['trailCount']) : len(r['trail']);
   return `  ${index + 1}. ${str(r['id'])} ${str(r['kind'])}${statusTag(r['status'], r['statusCategory'])} ${str(r['title'])}`
     + (r['blocked'] === true ? ' (blocked)' : '')
@@ -84,35 +104,60 @@ function byKindText(byKind: unknown): string {
 
 /**
  * The v2 context `story` section as lines. Lists print whole (the server
- * capped them and says so in `omitted[]`, which the brief prints).
+ * capped them and says so in `omitted[]`, which the brief prints). A
+ * `--cursor` page carries only the list it continues: an absent list is not
+ * printed, so it never reads as "none".
  */
-export function storyContextLines(story: unknown): string[] {
+export function storyContextLines(story: unknown, status?: unknown, id?: unknown): string[] {
   if (!isRow(story)) return [];
   const out = storyStateLines(story['state']);
+  out.push(...storyStatusHint(status, story['state'], id));
   if (story['truncated'] === true && !(isRow(story['state']) && story['state']['truncated'] === true)) {
     out.push('trail: TRUNCATED at the follow limit');
   }
   out.push(`by kind: ${byKindText(story['byKind'])}`);
 
-  const roots = rows(story['roots']);
-  out.push(`roots (${roots.length}):`);
-  roots.forEach((r, i) => out.push(rootLine(r, i)));
-
-  const blocked = rows(story['blocked']);
-  out.push(`blocked (${blocked.length})${blocked.length === 0 ? ': none' : ':'}`);
-  for (const b of blocked) out.push(`  ${str(b['id'])} ${str(b['kind'])}${statusTag(b['status'], b['statusCategory'])} ${str(b['title'])}`);
-
-  const sessions = rows(story['sessions']);
-  out.push(`sessions (${sessions.length}):`);
-  for (const s of sessions) {
-    const tasks = Array.isArray(s['taskIds']) ? s['taskIds'].map(String) : [];
-    out.push(`  ${str(s['callSign'])} ${str(s['id'])} ${s['live'] === true ? 'live' : 'idle'}`
-      + (s['mode'] != null ? ` · ${str(s['mode'])}` : '')
-      + ` · ${str(s['title'])}`
-      + (tasks.length > 0 ? ` · on ${tasks.join(', ')}` : ''));
+  if (story['roots'] !== undefined) {
+    const roots = rows(story['roots']);
+    out.push(`roots (${roots.length}):`);
+    roots.forEach((r, i) => out.push(rootLine(r, i)));
   }
 
-  const team = rows(story['team']);
+  if (story['blocked'] !== undefined) {
+    const blocked = rows(story['blocked']);
+    out.push(`blocked (${blocked.length})${blocked.length === 0 ? ': none' : ':'}`);
+    for (const b of blocked) out.push(`  ${str(b['id'])} ${str(b['kind'])}${statusTag(b['status'], b['statusCategory'])} ${str(b['title'])}`);
+  }
+
+  if (story['sessions'] !== undefined) {
+    const sessions = rows(story['sessions']);
+    out.push(`sessions (${sessions.length}):`);
+    for (const s of sessions) {
+      const tasks = Array.isArray(s['taskIds']) ? s['taskIds'].map(String) : [];
+      // `taskCount` rides only when the server cut `taskIds`.
+      const more = num(s['taskCount']) - tasks.length;
+      out.push(`  ${str(s['callSign'])} ${str(s['id'])} ${s['live'] === true ? 'live' : 'idle'}`
+        + (s['mode'] != null ? ` · ${str(s['mode'])}` : '')
+        + ` · ${str(s['title'])}`
+        + (tasks.length > 0 ? ` · on ${tasks.join(', ')}${more > 0 ? ` +${more} more` : ''}` : ''));
+    }
+  }
+
+  if (story['team'] !== undefined) teamLines(rows(story['team']), out);
+
+  if (story['childStories'] !== undefined) {
+    const children = rows(story['childStories']);
+    out.push(`child stories (${children.length})${children.length === 0 ? ': none' : ':'}`);
+    for (const c of children) {
+      out.push(`  ${str(c['id'])}${statusTag(c['status'], c['statusCategory'])} ${str(c['title'])}`
+        + ` · ${progressText(c['rollup'] ?? c['taskProgress'], 'tasks')}`
+        + (num(c['liveSessionCount']) > 0 ? ` · ${num(c['liveSessionCount'])} live` : ''));
+    }
+  }
+  return out;
+}
+
+function teamLines(team: Row[], out: string[]): void {
   out.push(`team (${team.length}):`);
   const modes = new Map<string, Row[]>();
   for (const t of team) {
@@ -123,22 +168,15 @@ export function storyContextLines(story: unknown): string[] {
   for (const [mode, members] of modes) {
     out.push(`  ${mode}:`);
     for (const t of members) {
+      // `sessionCount` rides only when the server cut `sessionIds`.
+      const sessionCount = t['sessionCount'] !== undefined ? num(t['sessionCount']) : len(t['sessionIds']);
       out.push(`    ${str(t['id'])} ${str(t['name'])}${t['live'] === true ? ' (live)' : ''}`
-        + (t['kind'] === 'member' ? '' : ` · ${len(t['sessionIds'])} session${len(t['sessionIds']) === 1 ? '' : 's'}`)
+        + (t['kind'] === 'member' ? '' : ` · ${sessionCount} session${sessionCount === 1 ? '' : 's'}`)
         + (len(t['runs']) > 0 ? ` · runs ${len(t['runs'])}` : '')
         + (len(t['assigned']) > 0 ? ` · assigned ${len(t['assigned'])}` : '')
         + (t['parentId'] != null ? ` · under ${str(t['parentId'])}` : ''));
     }
   }
-
-  const children = rows(story['childStories']);
-  out.push(`child stories (${children.length})${children.length === 0 ? ': none' : ':'}`);
-  for (const c of children) {
-    out.push(`  ${str(c['id'])}${statusTag(c['status'], c['statusCategory'])} ${str(c['title'])}`
-      + ` · ${progressText(c['rollup'] ?? c['taskProgress'], 'tasks')}`
-      + (num(c['liveSessionCount']) > 0 ? ` · ${num(c['liveSessionCount'])} live` : ''));
-  }
-  return out;
 }
 
 /** The first line of a description, cut at `max` characters. */
@@ -185,6 +223,7 @@ export function renderStoryDetail(detail: Row, head: string): string {
     + (parent ? ` · parent story ${str(parent['id'])} ${str(parent['title'])}` : ''));
   out.push(`description: ${lede(content['description'])}`);
   out.push(...storyStateLines(detail['state']));
+  out.push(...storyStatusHint(detail['status'], detail['state'], detail['id']));
   if (page) {
     const counts = storyPageCounts(page)!;
     out.push(`by kind: ${byKindText(counts['byKind'])}`);
@@ -198,6 +237,6 @@ export function renderStoryDetail(detail: Row, head: string): string {
     out.push('page: not hydrated on this read');
   }
   const id = str(detail['id']);
-  out.push(`next: tm8 entity context ${id} (roots, sessions, team, blocked, child stories) · tm8 entity get ${id} --full --format json (the whole page)`);
+  out.push(`next: tm8 entity context ${id} (roots, sessions, team, blocked, child stories) · tm8 entity get ${id} --story-page --full --format json (the whole page)`);
   return out.join('\n');
 }

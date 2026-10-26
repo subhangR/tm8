@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import type { LaunchModelEffort } from '@tm8/contract';
 
 import {
@@ -21,9 +21,11 @@ import {
   type LaunchTeammate,
   type WorkdirMode,
 } from '../domain/launch';
-import { Avatar } from '../kit';
+import { AgentToolIcon, Avatar } from '../kit';
 import { useDismissable } from '../panels/useDismissable';
 import { TITLE_MAX } from './prompt-title';
+import { LAUNCH_KEYS } from '../keyboard';
+import { LAUNCH_HINTS, focusMenuChoice, isTextField, launchActionFor, moveMenuFocus } from './launch-keys';
 
 /**
  * THE NEW SESSION COMPOSER — type a prompt, press Enter, get a running agent.
@@ -175,6 +177,16 @@ export interface NewSessionComposerProps {
   /** `null` is the teammate's list; an array is this launch's exact pick. */
   plugins?: readonly string[] | null;
   onPluginsChange?(next: readonly string[] | null): void;
+  /**
+   * §10.5 — THE CONNECTORS SECTION, drawn in the ··· menu beside the harness
+   * rows because that is where this launch's "what will it be given" choices
+   * live. The host passes the picker (it owns the selection, which rides the
+   * spawn request); this component only places it and supplies the D4 note.
+   *
+   * Absent ⇒ no section at all, which is the honest rendering for a host that
+   * cannot send `mcpSelections`.
+   */
+  connectors?: ReactNode;
 
   mode: LaunchMode;
   onModeChange(next: LaunchMode): void;
@@ -189,7 +201,7 @@ export interface NewSessionComposerProps {
 }
 
 type MenuName = 'workdir' | 'dots' | 'model' | 'perm' | 'team';
-type SubName = 'cred' | 'mode' | 'harness' | 'plugins';
+type SubName = 'cred' | 'mode' | 'harness' | 'plugins' | 'connectors';
 
 /**
  * The postures this surface offers, of the domain's five. The canvas draws
@@ -220,8 +232,12 @@ const PLUGINS_UNDER_FULL_REASON =
 /** The harness choices, in the menu's order. `null` is the teammate's default. */
 const HARNESS_OPTIONS: readonly { value: 'minimal' | 'inherit' | null; label: string; hint: string }[] = [
   { value: null, label: 'Teammate default', hint: 'Whatever this teammate is configured for — lean unless it says otherwise' },
-  { value: 'minimal', label: 'Lean', hint: 'Repo skills, equipped skills and chosen plugins only · no claude.ai connectors' },
-  { value: 'inherit', label: 'Full', hint: 'Every plugin, connector and skill the account has installed' },
+  { value: 'minimal', label: 'Lean', hint: 'Repo skills, equipped skills and chosen plugins only' },
+  // D4: the surface decides plugins and skills, NEVER connectors. Both surfaces
+  // run `--strict-mcp-config` with the session's own tm8 connectors, so `Full`
+  // does not load the operator's MCP servers and `Lean` does not strip the ones
+  // a launch selected. Saying otherwise sent people to the wrong control.
+  { value: 'inherit', label: 'Full', hint: 'Every plugin and skill the account has installed · connectors come from the Connectors picker, not the harness' },
 ];
 
 const EFFORT_NOT_TUNABLE_REASON =
@@ -297,6 +313,7 @@ export function NewSessionComposer({
   harnessApplies = false,
   harnessSurface = null,
   onHarnessChange,
+  connectors,
   installedPlugins = null,
   installedPluginsNote = null,
   pluginSkillCounts = null,
@@ -326,6 +343,27 @@ export function NewSessionComposer({
     setSub(null);
   };
 
+  /* KEYBOARD (Esc, then a letter — see `launch-keys.ts`). `keysActive` is
+     focus on the card but not in a field: the hint line names the letters only
+     then. `byKey` marks a menu opened from the keyboard, so its options take
+     focus and, once it closes, focus comes back to the card instead of
+     falling to the page. A pointer-opened menu leaves focus where it was. */
+  const [keysActive, setKeysActive] = useState(false);
+  const byKey = useRef(false);
+  useEffect(() => {
+    const root = card.current;
+    if (!root || !byKey.current) return;
+    if (open !== null) {
+      const menu = root.querySelector<HTMLElement>('[role="menu"]');
+      if (menu) focusMenuChoice(menu);
+      return;
+    }
+    byKey.current = false;
+    // Only when focus fell to the page (the picked option unmounted) — never
+    // pull it back from wherever a click outside just put it.
+    if (document.activeElement === null || document.activeElement === document.body) root.focus();
+  }, [open]);
+
   /* Escape and outside-pointer dismissal, shared with every other popover in
      the package. Scoped to `open !== null` so Escape is only CONSUMED while a
      menu is actually up — with none open it still reaches whatever surface
@@ -341,7 +379,8 @@ export function NewSessionComposer({
   useEffect(() => {
     if (open !== null || !onDismissRequest) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      // The card already used this Escape to leave the prompt for the card.
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
       event.stopPropagation();
       onDismissRequest();
@@ -360,15 +399,11 @@ export function NewSessionComposer({
       onSelect: (option) => ({ insert: skillReference(option.display, option.id) }),
     }],
     attachments: { start: attach, placement: { mode: 'chip' } },
-    onKeyDown: (event) => {
-      /* `isComposing` guards an IME candidate window: Enter there commits the
-         candidate, and spawning on it would launch a half-typed thought.
-         Copied deliberately from the chat composers — a create flow that
-         misfires mid-word is worse here, because the result is a process. */
-      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-        event.preventDefault();
-        if (!busy && !refusal && !(requirePrompt && draft.trim() === '')) onSubmit();
-      }
+    /* The shared rule (`enterSends.ts`) keeps the IME guard — a create flow
+       that misfires mid-word is worse here, because the result is a process
+       — and makes Return a newline on a phone, where Launch is the button. */
+    onSend: () => {
+      if (!busy && !refusal && !(requirePrompt && draft.trim() === '')) onSubmit();
     },
   });
   const attachments = rich.attachments!;
@@ -404,6 +439,63 @@ export function NewSessionComposer({
     onEffortChange(effortStops[(at + 1) % effortStops.length] ?? null);
   };
 
+  const openByKey = (name: MenuName) => {
+    byKey.current = true;
+    toggle(name);
+  };
+
+  const onCardKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const consume = () => { event.preventDefault(); event.stopPropagation(); };
+    /* In the prompt or the title, only Escape is ours: it leaves the field for
+       the card. Every other key is typing. A popover the field owns (the skill
+       picker) takes its Escape first and prevents it, which the guard above
+       respects. */
+    if (isTextField(event.target)) {
+      if (event.key === 'Escape') { consume(); card.current?.focus(); }
+      return;
+    }
+    if (open !== null && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      const menu = card.current?.querySelector<HTMLElement>('[role="menu"]');
+      if (menu) { consume(); moveMenuFocus(menu, event.key === 'ArrowDown' ? 1 : -1); }
+      return;
+    }
+    /* Escape with a menu up never gets here (`useDismissable` takes it at
+       capture). With none up, a popup host's own listener dismisses the card;
+       the full-screen card hands focus back to the page, where the app's
+       single-key shortcuts live. */
+    if (event.key === 'Escape') {
+      if (onDismissRequest) return;
+      consume();
+      card.current?.blur();
+      return;
+    }
+    if (busy) return;
+    // Enter on a control activates THAT control; on the card itself it launches.
+    if (event.key === 'Enter') {
+      if (event.target !== card.current) return;
+      consume();
+      if (!blocked) onSubmit();
+      return;
+    }
+    const action = launchActionFor(event.key);
+    if (action === null) return;
+    consume();
+    switch (action) {
+      case 'model': openByKey('model'); break;
+      case 'permission': openByKey('perm'); break;
+      case 'teammate': openByKey('team'); break;
+      case 'workdir': openByKey('workdir'); break;
+      case 'options': openByKey('dots'); break;
+      case 'effort': cycleEffort(); break;
+      case 'worktree':
+        if (workdirChoosable) onWorkdirModeChange(workdirMode === 'worktree' ? 'project' : 'worktree');
+        break;
+      case 'prompt': close(); area.current?.focus(); break;
+    }
+  };
+
   const stopThen = (act: () => void) => (event: { stopPropagation(): void }) => {
     event.stopPropagation();
     act();
@@ -414,13 +506,30 @@ export function NewSessionComposer({
       {/* The card-level click closes menus (blank card space, the textarea);
           every trigger and menu item stops propagation before this sees it.
           Not a keyboard surface: Escape does the same job via useDismissable. */}
-      <div className="nsx-composer" data-busy={busy || undefined} ref={card} onClick={close}>
+      <div
+        className="nsx-composer"
+        data-busy={busy || undefined}
+        ref={card}
+        onClick={close}
+        /* Focusable but not a tab stop: Esc from the prompt lands here, and
+           the card's letters work from here (see `onCardKeyDown`). */
+        tabIndex={-1}
+        role="group"
+        aria-label="Launch card"
+        data-testid="nsx-card"
+        onKeyDown={onCardKeyDown}
+        onFocus={(event) => setKeysActive(!isTextField(event.target))}
+        onBlur={(event) => {
+          if (!card.current?.contains(event.relatedTarget as Node | null)) setKeysActive(false);
+        }}
+      >
         <div className="nsx-head">
           <div className="nsx-anchor">
             <button
               type="button"
               className="nsx-head__workdir"
               data-testid="nsx-workdir"
+              aria-keyshortcuts={LAUNCH_KEYS.workdir}
               aria-haspopup="menu"
               aria-expanded={open === 'workdir'}
               aria-label={`Working directory: ${selectedWorkdir?.name ?? 'not chosen'}`}
@@ -479,6 +588,7 @@ export function NewSessionComposer({
             type="button"
             className="nsx-head__copy"
             data-testid="nsx-copy"
+            aria-keyshortcuts={LAUNCH_KEYS.worktree}
             aria-disabled={!workdirChoosable || undefined}
             title={workdirChoosable
               ? `${copyDef?.description ?? ''} Click to switch.`
@@ -499,6 +609,7 @@ export function NewSessionComposer({
               type="button"
               className="nsx-head__dots"
               data-testid="nsx-dots"
+              aria-keyshortcuts={LAUNCH_KEYS.options}
               aria-haspopup="menu"
               aria-expanded={open === 'dots'}
               aria-label="More launch options"
@@ -582,6 +693,36 @@ export function NewSessionComposer({
                       </button>
                     ))}
                   </div>
+                ) : null}
+
+                {/* §10.5 — CONNECTORS, next to the harness it is independent of.
+                    Placed here on purpose: D4 is the thing people get wrong
+                    (they expect `Full` to carry their personal Claude app
+                    connectors), so the correction sits where the mistake is
+                    made rather than in a help page. */}
+                {connectors ? (
+                  <>
+                    <button
+                      type="button"
+                      className="nsx-menu__row"
+                      aria-expanded={sub === 'connectors'}
+                      data-testid="nsx-connectors-row"
+                      onClick={stopThen(() => setSub((current) => (current === 'connectors' ? null : 'connectors')))}
+                    >
+                      <span>Connectors</span>
+                      <span className="nsx-menu__val">{'▸'}</span>
+                    </button>
+                    {sub === 'connectors' ? (
+                      <div className="nsx-menu__subsec" data-testid="nsx-connectors-menu">
+                        {connectors}
+                        <p className="nsx-menu__sub" role="note">
+                          {harnessSurface === 'inherit'
+                            ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
+                            : 'Personal Claude app connectors aren’t loaded, whatever the harness. Add them under Connectors.'}
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
                 ) : null}
 
                 <button
@@ -739,12 +880,13 @@ export function NewSessionComposer({
               type="button"
               className="nsx-tool"
               data-testid="nsx-model"
+              aria-keyshortcuts={LAUNCH_KEYS.model}
               aria-haspopup="menu"
               aria-expanded={open === 'model'}
               aria-label={`Model: ${modelLabel}`}
               onClick={stopThen(() => toggle('model'))}
             >
-              <span className="nsx-tool__glyph" aria-hidden="true">✳</span>
+              <span className="nsx-tool__glyph" aria-hidden="true"><AgentToolIcon tool={teammate?.agentTool ?? null} size={14} /></span>
               <span>{modelLabel}</span>
             </button>
             {open === 'model' ? (
@@ -780,6 +922,7 @@ export function NewSessionComposer({
             type="button"
             className="nsx-tool"
             data-testid="nsx-effort"
+            aria-keyshortcuts={LAUNCH_KEYS.effort}
             aria-disabled={effortStops.length === 0 || undefined}
             title={effortStops.length === 0
               ? EFFORT_NOT_TUNABLE_REASON
@@ -806,6 +949,7 @@ export function NewSessionComposer({
               type="button"
               className="nsx-tool"
               data-testid="nsx-perm"
+              aria-keyshortcuts={LAUNCH_KEYS.permission}
               aria-haspopup="menu"
               aria-expanded={open === 'perm'}
               title={describeAccessMode(accessMode)}
@@ -845,6 +989,7 @@ export function NewSessionComposer({
               type="button"
               className="nsx-tool"
               data-testid="nsx-team"
+              aria-keyshortcuts={LAUNCH_KEYS.teammate}
               aria-haspopup="menu"
               aria-expanded={open === 'team'}
               aria-label={teammate ? `Teammate: ${teammate.name}` : 'Teammate: chosen automatically'}
@@ -923,6 +1068,19 @@ export function NewSessionComposer({
           </button>
         </div>
       </div>
+
+      {/* The card's letters, named while they work; otherwise the way in. */}
+      <p className="nsx-keys" data-testid="nsx-keys" aria-hidden="true">
+        {keysActive ? (
+          LAUNCH_HINTS.map((hint) => (
+            <span key={hint.label} className="nsx-keys__hint">
+              <kbd>{hint.key}</kbd> {hint.label}
+            </span>
+          ))
+        ) : (
+          <span className="nsx-keys__hint"><kbd>Esc</kbd> then a letter sets the options</span>
+        )}
+      </p>
 
       {(refusal ?? notice) ? (
         <p className="nsx-refusal" id="nsx-refusal" role="alert">{refusal ?? notice}</p>

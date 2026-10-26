@@ -220,7 +220,7 @@ function renderWrite(dto: PersonalStyleWriteResult | SpaceStyleWriteResult): str
 }
 
 function renderPrefs(prefs: { currentStyle: string; darkStyle: string | null; followOs: boolean; revision: number } | null): string {
-  if (!prefs) return 'No style chosen: the space default applies, else builtin:atelier-light.';
+  if (!prefs) return 'No style chosen: the space default applies, else builtin:chatgpt-light.';
   return [
     `current: ${prefs.currentStyle}`,
     `dark: ${prefs.darkStyle ?? '-'}`,

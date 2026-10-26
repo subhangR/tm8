@@ -38,11 +38,13 @@ export {
 } from './ServiceKeysBlock';
 export {
   credentialsPortFromSeam,
+  credentialsSharePortFromSeam,
   serviceKeysPortFromSeam,
   disconnectVerdictOf,
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
+  type CredentialsSharePort,
   type DisconnectVerdict,
   type ServiceKeysPort,
 } from './port';

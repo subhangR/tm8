@@ -17,6 +17,9 @@
  *   - dark  = that table, with the `[data-theme='dark']` block of BOTH files
  *             applied over it. This is the inheritance the browser performs
  *             today, computed once instead of at paint.
+ *   - chatgpt-light / chatgpt-dark = the Atelier table of the same mode with
+ *             the `[data-style='chatgpt']` block (and, for dark, the
+ *             `[data-style='chatgpt'][data-theme='dark']` block) laid over it.
  *
  * WHAT IS *NOT* EXTRACTED, and why each exclusion is deliberate:
  *   - `--cv2-status-*`. They are ALIASES (`var(--pn-run)`), they are not in the
@@ -138,6 +141,20 @@ const isDarkRoot = (sel) =>
     .split(',')
     .some((s) => /^\.cv2-root\[data-theme=['"]dark['"]\]$/.test(s.trim()));
 
+/**
+ * THE CHATGPT PAIR (tokens.css, last section) is declared as OVERRIDES on the
+ * Atelier table of the same mode, scoped by `data-style='chatgpt'`, so it
+ * inherits every key it has no opinion about (status ramp, spacing, motion,
+ * the diagram wheel) exactly as the browser would.
+ */
+const isChatgptLight = (sel) =>
+  sel.split(',').some((s) => /^\.cv2-root\[data-style=['"]chatgpt['"]\]$/.test(s.trim()));
+
+const isChatgptDark = (sel) =>
+  sel
+    .split(',')
+    .some((s) => /^\.cv2-root\[data-style=['"]chatgpt['"]\]\[data-theme=['"]dark['"]\]$/.test(s.trim()));
+
 export function extractBuiltins() {
   const files = [readFileSync(TOKENS_CSS, 'utf8'), readFileSync(CANVAS_EXTRA_CSS, 'utf8')];
 
@@ -169,9 +186,27 @@ export function extractBuiltins() {
       `extract-builtins: only ${lightCssKeys} light tokens found — the selector scan is broken, not the palette`,
     );
   }
+  const overlay = (base, ...matchers) => {
+    const table = { ...base };
+    for (const match of matchers) {
+      for (const css of files) {
+        for (const body of blocksMatching(css, match)) {
+          for (const [name, value] of pnDeclarations(body)) {
+            if (!(name in light)) {
+              throw new Error(`extract-builtins: ${name} is a ChatGPT override with no Atelier key under it`);
+            }
+            table[name] = value;
+          }
+        }
+      }
+    }
+    return table;
+  };
+  const chatgptLight = overlay(light, isChatgptLight);
+  const chatgptDark = overlay(dark, isChatgptLight, isChatgptDark);
+
   /* The terminal options do not flip with the theme: one set for both. */
-  Object.assign(light, TERMINAL_DEFAULTS);
-  Object.assign(dark, TERMINAL_DEFAULTS);
+  for (const table of [light, dark, chatgptLight, chatgptDark]) Object.assign(table, TERMINAL_DEFAULTS);
 
   return {
     'atelier-light': {
@@ -190,6 +225,20 @@ export function extractBuiltins() {
          which is why this is a self-reference and not an optional field. */
       darkSibling: 'builtin:atelier-dark',
       tokens: sorted(dark),
+    },
+    'chatgpt-light': {
+      id: 'builtin:chatgpt-light',
+      title: 'ChatGPT Light',
+      builtinRevision: BUILTIN_REVISION,
+      darkSibling: 'builtin:chatgpt-dark',
+      tokens: sorted(chatgptLight),
+    },
+    'chatgpt-dark': {
+      id: 'builtin:chatgpt-dark',
+      title: 'ChatGPT Dark',
+      builtinRevision: BUILTIN_REVISION,
+      darkSibling: 'builtin:chatgpt-dark',
+      tokens: sorted(chatgptDark),
     },
   };
 }

@@ -63,6 +63,27 @@ export function docBodyOf(detail: EntityDetail): string {
   return typeof body === 'string' ? body : '';
 }
 
+/**
+ * HOW ONE KIND'S PROSE IS READ AND WRITTEN. `useDocSave` owns the save flow
+ * (the base-version law, autosave, the device copy, the conflict banner); a
+ * codec owns only the two kind-specific ends of it, so a task description or
+ * a story body rides the same flow as a doc instead of a second copy of it.
+ * `C` is the codec's own command port, a structural subset of the seam's
+ * commands like `DocCommands`, so no adapter sits between it and the seam.
+ */
+export interface SaveCodec<C> {
+  /** The prose the editor shows for this record. */
+  bodyOf(detail: EntityDetail): string;
+  /** Write the edits against `expectedVersion`. Never re-read the version here. */
+  send(commands: C, id: EntityId, edits: DocEdits, expectedVersion: number): Promise<CommandResult>;
+}
+
+/** The doc's codec, and `useDocSave`'s default: `patchEntity` with `content.body`. */
+export const docCodec: SaveCodec<DocCommands> = {
+  bodyOf: docBodyOf,
+  send: (commands, id, edits, expectedVersion) => commands.patchEntity(id, docPatchInput(edits, expectedVersion)),
+};
+
 /** The format the record carries, or null when it carries none. Never guessed. */
 export function docFormatOf(detail: EntityDetail): string | null {
   const content = detail.content as unknown as Record<string, unknown>;

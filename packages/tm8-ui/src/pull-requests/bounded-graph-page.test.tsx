@@ -110,11 +110,11 @@ describe('PR chips survive a bounded graph page that dropped the PR node and its
     expect(index.get(sessionLive.id)?.map((f) => f.id)).toEqual([prTransplant.id]);
   });
 
-  it('and a session that AUTHORED the PR resolves it through created_in alone', async () => {
+  it('and a session that AUTHORED the PR resolves it through authored_from alone', async () => {
     // TIER 1 on the losing side of the lottery. Every other route to the
     // session is severed on purpose: no PR node, no `tracks` edge, no
     // `working_on` edge, and the task's `workingActors` badge stripped. A
-    // `created_in` edge is the only thing left that can answer — and it is
+    // `authored_from` edge is the only thing left that can answer — and it is
     // the one the client never read, which is the whole reported bug.
     //
     // The PR facts come off the edge's own ENDPOINT SNAPSHOT here, because
@@ -126,15 +126,15 @@ describe('PR chips survive a bounded graph page that dropped the PR node and its
       return { ...node, badges };
     });
     const edges = page.edges.filter((e) => e.type !== 'working_on');
-    const createdIn = {
+    const authoredFrom = {
       ...page.edges[0]!,
-      id: 'edge-created-in',
-      type: 'created_in' as const,
+      id: 'edge-authored-from',
+      type: 'authored_from' as const,
       source: prTransplant,
       target: sessionLive,
     };
 
-    const index = indexLinkedPullRequests(nodes, [...edges, createdIn]);
+    const index = indexLinkedPullRequests(nodes, [...edges, authoredFrom]);
     expect(index.get(sessionLive.id)?.map((f) => f.id)).toEqual([prTransplant.id]);
     expect(index.get(sessionLive.id)?.[0]).toMatchObject({ attribution: 'authored' });
 

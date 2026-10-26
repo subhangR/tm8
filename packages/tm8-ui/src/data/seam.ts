@@ -20,8 +20,9 @@ import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
  * the task vocabulary cannot express the session 'running' literal the R-UI-5
  * predicate compares against. Additive, zero caller churn.
  * Recorded seam-scope ruling (same exchange): handoffs.send and
- * spaces.menu.update stay OUT of this seam until their phase; adding either is
- * a deferred amendment requiring dual re-consensus.
+ * spaces.menu.update originally stayed OUT until their phase. Space admin
+ * now exposes optional updateMenu and createEntityKind commands backed by
+ * existing contract operations; handoffs.send remains outside this scope.
  *
  * Amendment 2 (2026-07-31, artifacts preview): commands gains
  * `previewArtifact` — the user RATIFIED the two decisions that gated artifact
@@ -72,7 +73,7 @@ import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
  * `projects.file.blame` (GET /v2/projects/:projectId/file-history|blame,
  * catalog v1). READS over one path in a linked project's working directory:
  * revisions (rename-following, optional selected-revision patch via
- * `diffOid`) and working-tree blame hunks, each joined to the `created_in`
+ * `diffOid`) and working-tree blame hunks, each joined to the `authored_from`
  * session provenance — `session: null` means NO tm8 session recorded, and the
  * UI must say so rather than guess. Contract-shaped and additive, zero caller
  * churn. Filed by the tier1-file-history-blame lane for dual re-consensus
@@ -111,6 +112,12 @@ import type { LaunchSuggestInput, SpaceSessionsMode } from '@tm8/contract';
  * NOT behind this seam (R9): the PTY terminal byte stream. The terminal
  * transport is transplanted verbatim by FE and shares `/v2/ws?sessionId=`
  * without being this client.
+ *
+ * Workspace remote bridge (2026-10-06, Spec C doc 01a1111d-589e, task
+ * 01a11117-3526): optional `workspaceBridge` port — registers this window as a
+ * live Workspace instance on the existing events socket and carries forwarded
+ * commands and their results. Additive and optional like `onChatContext`;
+ * fixtures have none. Listed for the seam owners' re-consensus.
  */
 import type {
   CreateInviteInput,
@@ -120,6 +127,8 @@ import type {
   SpaceInviteView,
   UpdateMemberRoleInput,
   UpdateSpaceInput,
+  UpdateMenuInput,
+  EntityKindCreateInput,
   MembershipEndResult,
   ActivityItem,
   ArtifactPreviewSession,
@@ -156,6 +165,9 @@ import type {
   CredentialsSpacePolicyView,
   CredentialsSpaceReadinessView,
   CredentialsSpaceSetVisibilityResult,
+  CredentialsSpaceShareResult,
+  CredentialsSpaceSharesView,
+  CredentialsSpaceUnshareResult,
   CredentialsSpaceMyDefaultResult,
   CredentialsSpaceUsageView,
   SpaceCredentialVisibilityName,
@@ -174,8 +186,6 @@ import type {
   SpaceLinkInboundView,
   CrossSpaceRef,
   CrossSpaceRefRemoved,
-  OpRequestView,
-  OpRequestStatus,
   ServerView,
   ServerProbeView,
   ActionRows,
@@ -204,6 +214,8 @@ import type {
   ExecutionResumeInput,
   ExecutionSessionsShareInput,
   ExecutionTerminateInput,
+  ExecutionCompleteInput,
+  ReleaseInput,
   FileUploadAbortInput,
   FileUploadCompleteInput,
   FileUploadGrant,
@@ -229,7 +241,12 @@ import type {
   ProjectFileBlame,
   ProjectFileHistory,
   ProjectCreateInput,
+  ProjectUpdateInput,
   ProjectDirectoryListing,
+  ProjectCloneInput,
+  ProjectCloneJob,
+  SpaceProject,
+  SpaceProjectCreateInput,
   ProjectFileAttachInput,
   ProjectFileReadResult,
   ProjectFileListing,
@@ -254,6 +271,8 @@ import type {
   ExecutionGitRollbackInput,
   SessionGitCheckpointResult,
   SessionGitCommitResult,
+  SessionCheckoutDiff,
+  SessionCheckouts,
   SessionGitDiff,
   SessionGitDiffScope,
   SessionGitMergeResult,
@@ -267,7 +286,7 @@ import type {
   SessionLaunchRecord,
   SessionTranscriptPage,
   HomeSnapshot,
-  SetChatModelInput,
+  SetChatModelInput, SetChatCredentialsInput, SetChatCredentialsResult, InterruptChatResult,
   SetChatModelResult,
   StartChatInput,
   StartChatResult,
@@ -314,34 +333,6 @@ import type {
 import type { ChatContextFrame, ChatTurnFrame } from '../chat-home/types';
 
 export type Unsubscribe = () => void;
-
-/**
- * `opRequests.approve` / `opRequests.deny`'s answer (L5, 280): the request as
- * it now stands, and whether the outcome reached the requesting session. A
- * failed notify is NOT a failed decision: the request is decided either way.
- */
-export interface OpRequestDecision {
-  request: OpRequestView;
-  notified: boolean;
-  notifyError?: { code: string; message: string };
-  delivery?: unknown[];
-}
-
-/**
- * The op-request noun (`opRequests.*`, L5, migration 280). An agent files a
- * typed request for a human-only op; a human approves it (the server runs the
- * op AS THE APPROVER) or denies it. `create` is the agent's door and has no UI
- * caller, so it is not here.
- */
-export interface OpRequestsOps {
-  /** The space's requests, newest first. */
-  list(spaceId: SpaceId, query?: { status?: OpRequestStatus; limit?: number }): Promise<OpRequestView[]>;
-  get(requestId: EntityId): Promise<OpRequestView>;
-  /** HUMAN-ONLY. An agent caller is refused `forbidden`. */
-  approve(requestId: EntityId, note?: string | null): Promise<OpRequestDecision>;
-  /** HUMAN-ONLY. Nothing runs. */
-  deny(requestId: EntityId, note?: string | null): Promise<OpRequestDecision>;
-}
 
 /**
  * Connection honesty states (T4). The UI renders these truthfully and never
@@ -482,6 +473,19 @@ export interface PageOpts {
 }
 
 /** `messages.list` paging plus the one filter that read has always accepted. */
+/**
+ * `execution.complete`'s answer (Spec D1 §4.1): the usual command result plus
+ * what the outcome write did. `alreadyCompleted` is the idempotent replay.
+ */
+export interface SessionCompleteResult extends CommandResult {
+  outcome?: {
+    outcome: 'open' | 'completed' | 'stopped';
+    receiptMessageId: string | null;
+    endedClaims?: number;
+    alreadyCompleted?: boolean;
+  } | null;
+}
+
 export interface MessageListOpts extends PageOpts {
   /** Read the branch under this root instead of the anchor's thread roots. */
   rootMessageId?: EntityId;
@@ -610,6 +614,13 @@ export interface AttentionV2Ops {
 }
 
 export interface Seam {
+  mcp?: (spaceId: string) => import("../mcp/port").McpPort;
+  /**
+   * §10.7 / D9: the member's own MCP tokens for external clients. NO space id
+   * — a token carries a Space ARRAY and is minted outside any one Space.
+   * Optional: fixtures have none, and the section then states its absence.
+   */
+  mcpTokens?: () => import("../settings-mcp-tokens/port").McpTokensPort;
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
   openSpace(spaceId: SpaceId): Promise<void>;
@@ -629,6 +640,10 @@ export interface Seam {
   onChatTurn(cb: (frame: ChatTurnFrame) => void): Unsubscribe;
   /** A chat's latest context reading (`chat.context`). Optional: fixtures have none. */
   onChatContext?(cb: (frame: ChatContextFrame) => void): Unsubscribe;
+  /** Spec C: the Workspace remote bridge over the events socket. Optional: fixtures have none. */
+  workspaceBridge?: WorkspaceBridgePort;
+  /** Lane L3: this identity's per-craft workspaces and open-crafts row. Optional: fixtures have none. */
+  craftWorkspaces?: CraftWorkspacesPort;
   onConnection(cb: (s: ConnectionState) => void): Unsubscribe;
   getConnection(): ConnectionState;
   /**
@@ -758,7 +773,7 @@ export interface Seam {
   /**
    * The revisions of one path in a linked project's working directory
    * (Amendment 8) — argv-only git server-side, rename-following, each
-   * revision carrying its `created_in` session attribution or null. The same
+   * revision carrying its `authored_from` session attribution or null. The same
    * `invalid_input`-is-a-project-fact rule as `projectBranches` applies.
    */
   projectFileHistory(projectId: string, path: string, opts?: FileHistoryOpts): Promise<ProjectFileHistory>;
@@ -785,6 +800,28 @@ export interface Seam {
      * is how onboarding finds that project to link instead of dead-ending.
      */
     listProjects(): Promise<ProjectResource[]>;
+  };
+  /**
+   * Adding a project to an EXISTING space from its Projects list (task
+   * 01a13574): browse the folders this viewer may use for that space, register
+   * one (`spaces.projects.create` with `workingDir`), or clone a GitHub
+   * repository as a job (`spaces.projects.clone` + `cloneJobs.get`). Optional
+   * for the same reason `projectSetup` is: a fixture seam has no node disk.
+   */
+  /**
+   * Changing a project's FOLDER after it exists: its path or its trust
+   * (`projects.update`). The node lets only a node admin make this call, and
+   * only a node admin is ever shown the path; for anyone else the node refuses
+   * and the panel says who can. Optional because a fixture seam has no node.
+   */
+  projectAdmin?: {
+    update(projectId: ProjectId, input: ProjectUpdateInput): Promise<ProjectResource>;
+  };
+  spaceProjects?: {
+    directories(spaceId: SpaceId, path?: string): Promise<ProjectDirectoryListing>;
+    add(spaceId: SpaceId, input: SpaceProjectCreateInput): Promise<SpaceProject>;
+    clone(spaceId: SpaceId, input: ProjectCloneInput): Promise<ProjectCloneJob>;
+    cloneJob(spaceId: SpaceId, jobId: string): Promise<ProjectCloneJob>;
   };
   /**
    * Reading an ALREADY-CONNECTED project folder, for the same reason
@@ -936,6 +973,22 @@ export interface Seam {
   gitStatus(workSessionId: EntityId): Promise<SessionGitStatus>;
   gitDiff(workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff>;
   /**
+   * The Changes rail for a session WITHOUT a worktree: every git checkout in
+   * its own working directory (scratch clones, or the shared project dir),
+   * with branch, commits ahead and the files changed vs the remote's default
+   * branch — committed and uncommitted. Read-only. A worktree session answers
+   * `available:false` / `has_worktree`: its lane is `gitStatus`'s. A node that
+   * predates the op answers 404; callers fall back to the transcript.
+   */
+  gitCheckouts(workSessionId: EntityId): Promise<SessionCheckouts>;
+  /** One file's diff in one checkout `gitCheckouts` listed. */
+  gitCheckoutDiff(
+    workSessionId: EntityId,
+    checkout: string,
+    path: string,
+    opts?: { maxBytes?: number },
+  ): Promise<SessionCheckoutDiff>;
+  /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter
    * nor an attention sort (contract.ts CollectionQuery), so the alternative
@@ -1050,19 +1103,13 @@ export interface Seam {
      * synthesized id the caller could not reconcile.
      */
     skills?: SkillPort;
+    tools?: import("../tools/port").ToolPort;
     /**
      * The managed panel's port (task 01a0e24d): credential, space link and
      * server verbs by OPERATION name, gated by `actions.list`. Optional like
      * `skills`: a seam without it renders every verb refused-with-reason.
      */
     managed?: ManagedPort;
-    /**
-     * The approve card's port (L5, 280): the same object as `seam.opRequests`,
-     * re-exposed here because every detail-panel host already hands the panel
-     * `seam.commands`. Optional like `managed`: absent, the card says the
-     * decision is not wired here rather than drawing dead buttons.
-     */
-    opRequests?: OpRequestsOps;
     /**
      * `launch.suggest` — Ask Jev on LaunchSheet and the Run popup (design
      * 01a0cb80 §5.1). Optional like `skills`: a seam without it renders the
@@ -1127,7 +1174,10 @@ export interface Seam {
      * the old model until the next turn is claimed; nothing here interrupts an
      * answer in flight to apply a choice about the answer after it.
      */
+    setChatCredentials(chatId: EntityId, input: SetChatCredentialsInput): Promise<SetChatCredentialsResult>;
     setChatModel(chatId: EntityId, input: SetChatModelInput): Promise<SetChatModelResult>;
+    /** `chat.interrupt` — stop the chat's running turn (the composer's ■ / Esc). */
+    interruptChat(chatId: EntityId): Promise<InterruptChatResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;
@@ -1205,6 +1255,10 @@ export interface Seam {
      * the vocabulary live in `w2_update_space`; this seam checks neither.
      */
     updateSpace(spaceId: SpaceId, input: UpdateSpaceInput): Promise<SpaceSummary>;
+    /** Create a custom kind through the server-authorized entityKinds.create operation. */
+    createEntityKind?(spaceId: SpaceId, input: EntityKindCreateInput): Promise<EntityKindDef>;
+    /** Revision-checked space navigation writes, backed by spaces.menu.update. */
+    updateMenu?(spaceId: SpaceId, input: UpdateMenuInput): Promise<MenuConfig>;
     /**
      * Mint a join code. `role` is what redemption confers and may be `admin` or
      * `member` — never `owner`: a code travels out of band, and a bearer
@@ -1259,6 +1313,8 @@ export interface Seam {
     redeemInvite(input: RedeemInviteInput): Promise<InviteRedemption>;
     markRead(notificationId: string): Promise<void>;
     upsertReadMark(anchorId: EntityId, lastReadAt: string): Promise<void>;
+    /** Permanent personal seen state; call only on entity-list activation. */
+    markSeen?(entityId: EntityId): Promise<void>;
     /**
      * Mint a short-lived, viewer-bound preview capability (Amendment 2).
      * `previewUrl` is present only when the node runs the second-origin
@@ -1328,6 +1384,21 @@ export interface Seam {
     dispatch(input: ExecutionDispatchInput): Promise<ExecutionDispatchResult>;
     prompt(id: EntityId, input: ExecutionPromptInput): Promise<CommandResult>;
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult>;
+    /**
+     * `execution.complete` (Spec D1 §4.1) — settle the session's OUTCOME as
+     * `completed`. The claim check runs first (`claims_open`, listing each
+     * task still working), then the receipt rule (`receipt_required` /
+     * `receipt_not_on_anchor`); refusals arrive as `invariant_violation` with
+     * `details.reason`, verbatim. A live process then closes as `exited_clean`
+     * unless `closeProcess: false`. The result carries `outcome` beside the usual patches.
+     */
+    completeSession(id: EntityId, input: ExecutionCompleteInput): Promise<SessionCompleteResult>;
+    /**
+     * `entities.commands.release` (Spec D1 §6.3 R4) — end the caller's claim
+     * on a TASK with a hand-off note; the task keeps its status. The Complete
+     * dialog's "Hand off". `no_claim` when there is none to end.
+     */
+    releaseClaim(taskId: EntityId, input: ReleaseInput): Promise<CommandResult>;
     /**
      * `execution.sessions.share` (187) — TURN ONE OR BOTH OF THIS SESSION'S
      * SHARING DIALS.
@@ -1554,6 +1625,15 @@ export interface Seam {
        * a refusal is rendered with the server's reason text.
        */
       setVisibility(credentialId: string, visibility: SpaceCredentialVisibilityName): Promise<CredentialsSpaceSetVisibilityResult>;
+      /**
+       * 992: the owner shares a PRIVATE credential with one member. The grantee is
+       * their account id OR their member entity id in the credential's space.
+       */
+      share(credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceShareResult>;
+      /** 992: the owner or a space admin withdraws a share; the grantee's sessions on it stop. */
+      unshare(credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceUnshareResult>;
+      /** 992: every grantee to the owner or an admin; any other member sees only their own row. */
+      shares(credentialId: string): Promise<CredentialsSpaceSharesView>;
       spaceDefaultConsent(credentialId: string, allowed: boolean): Promise<SpaceCredentialView>;
       claim(credentialId: string): Promise<SpaceCredentialView>;
       setMyDefault(credentialId: string): Promise<CredentialsSpaceMyDefaultResult>;
@@ -1644,15 +1724,6 @@ export interface Seam {
   };
 
   /**
-   * -- op requests (`opRequests.*`, L5, migration 280) -----------------------
-   *
-   * An agent's typed request for an allow-listed human-only op. `approve` and
-   * `deny` are HUMAN-ONLY at the facade; `canDecide` on each view says whether
-   * THIS caller may decide it now.
-   */
-  opRequests: OpRequestsOps;
-
-  /**
    * -- remote servers (`servers.*`, W8, migration 261) ------------------------
    *
    * A `server` entity lives in a home space. `get` and `probe` are open to its
@@ -1722,4 +1793,59 @@ export interface FixtureControls {
 
 export interface FixtureSeam extends Seam {
   fixtureControls: FixtureControls;
+}
+
+/**
+ * The window side of the Workspace remote bridge (Spec C §1). Frames ride the
+ * events socket the page already holds; there is no second connection.
+ */
+export interface WorkspaceBridgePort {
+  /** Send one `workspace.*` control frame; false when the socket is not open. */
+  send(frame: import('./real/socket').WorkspaceBridgeFrame): boolean;
+  /** A command the node forwarded to this page (filter by `instanceId`). */
+  onCommand(cb: (frame: import('@tm8/contract').WorkspaceBridgeCommandFrame) => void): Unsubscribe;
+  /** The socket opened (first time and every reconnect): register again. */
+  onOpen(cb: () => void): Unsubscribe;
+  /** Spec D: the stored workspace (state / applied / draft) for this identity's windows. */
+  onSync?(cb: (frame: import('./real/socket').WorkspaceSyncFrame) => void): Unsubscribe;
+  /** True while the socket is open (the sync is online). */
+  isOpen?(): boolean;
+  /** The socket went live (true) or down (false): the switcher is offline-disabled (S13). */
+  onStatus?(cb: (online: boolean) => void): Unsubscribe;
+  /** Multiple workspaces (API doc 01a115c4 §5): the HTTP management ops. */
+  manage?: WorkspaceManagePort;
+}
+
+/**
+ * Craft-scoped workspaces (lane L3, doc 01a1255d §3 Persistence): one hidden
+ * workspace per (space, identity, craft), whose `open` / `position` are also
+ * the Craft top bar's open-craft tabs. Every call addresses the caller's own.
+ */
+export interface CraftWorkspacesPort {
+  list(spaceId: string): Promise<import('@tm8/contract').CraftWorkspaceListResult>;
+  /** Get-or-default: no write on read. */
+  get(spaceId: string, craftId: string): Promise<import('@tm8/contract').CraftWorkspace>;
+  command(
+    spaceId: string,
+    craftId: string,
+    input: import('@tm8/contract').CraftWorkspaceCommandInput,
+  ): Promise<import('@tm8/contract').CraftWorkspaceCommandResult>;
+  /** `craft.workspace` / `craft.workspaces` frames for this identity's windows. */
+  onPush(cb: (frame: import('./real/socket').CraftWorkspacePushFrame) => void): Unsubscribe;
+}
+
+/** The HTTP `workspace.*` management ops, scoped to one call's space. */
+export interface WorkspaceManagePort {
+  list(spaceId: string): Promise<import('@tm8/contract').WorkspaceListResult>;
+  create(spaceId: string, input: { name?: string; color?: import('@tm8/contract').WorkspaceColor | null }): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  update(
+    spaceId: string,
+    workspaceId: string,
+    input: { name?: string; color?: import('@tm8/contract').WorkspaceColor | null },
+  ): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  reorder(spaceId: string, workspaceId: string, beforeWorkspaceId: string | null): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  remove(spaceId: string, workspaceId: string, discard: boolean): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  switch(spaceId: string, workspaceId: string, expectedActiveWorkspaceId: string | null): Promise<import('@tm8/contract').WorkspaceManageResult>;
+  /** §5.12: answer an agent's prompt (accept = Switch / Delete, decline = Stay / Keep); `discard` is F1's. */
+  resolvePrompt(spaceId: string, promptId: string, choice: 'accept' | 'decline', discard: boolean): Promise<import('@tm8/contract').WorkspaceManageResult>;
 }

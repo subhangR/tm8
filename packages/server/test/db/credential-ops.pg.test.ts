@@ -602,18 +602,33 @@ describe('N13 / F-R13a — the providers overload: resume\'s window, resume\'s a
     });
   });
 
-  it('F-R13a (4): in the resume window, a member who cannot act as the session\'s persona is refused, and nothing is deleted', async () => {
+  it('F-R13a (4): in the resume window, a caller who cannot act as the session\'s persona is refused, and nothing is deleted', async () => {
     const cred = await create(A, { visibility: 'public' });
     const s = await session(ids[`member:S:${A}`]!);
-    // The persona is A's own member entity: A may act as it (can_act_as), B may not.
-    await asOwner((c) => c.query(
-      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'relates_to', $3)`,
-      [ids.S, s, ids[`member:S:${A}`]]));
+    // 309: the session's teammate is participates_in (teammate -> session), and
+    // any active member may act as a live teammate of the space (075). So the
+    // refusal is reachable when the teammate is deactivated: nobody may act as
+    // it then, and the re-point must change nothing.
+    const persona = await asOwner(async (c) => {
+      const id = await newId(c);
+      await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'team_member', 0, $3)`,
+        [id, ids.S, ids[`member:S:${A}`]]);
+      await c.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity)
+                     values ($1, $2, 'A persona', 'worker', 'persona')`, [id, ids[`member:S:${A}`]]);
+      await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'participates_in', $4)`,
+        [ids.S, id, s, ids[`member:S:${A}`]]);
+      return id;
+    });
+    const deactivate = (on: boolean) => asOwner((c) => c.query(
+      `update public.team_members set deactivated_at = ${on ? 'now()' : 'null'} where entity_id = $1`, [persona]));
     await record(claims(A), s, cred);
     await resumeWindow(s);
     const before = await recorded(s);
+    await deactivate(true);
     expect(await outcome(() => store.repointSession(claims(B), s, ['openai']))).toBe('42501');
+    expect(await outcome(() => store.repointSession(claims(A), s, ['openai']))).toBe('42501');
     expect(await recorded(s)).toEqual(before);
+    await deactivate(false);
     expect(await store.repointSession(claims(A), s, ['anthropic'])).toMatchObject({ launcherAccountId: accounts[A] });
   });
 

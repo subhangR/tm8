@@ -78,7 +78,9 @@ function toOwner(row: AccountJson): LoopbackOwner {
     identityId,
     accountId,
     username: row.username ?? LOOPBACK_OWNER_USERNAME,
-    isNodeAdmin: row.isNodeAdmin ?? row.is_node_admin ?? false,
+    // Match internal.is_node_admin: ownership also carries node authority.
+    isNodeAdmin: (row.isNodeAdmin ?? row.is_node_admin ?? false)
+      || (row.isOwner ?? row.is_owner ?? false),
     isOwner: row.isOwner ?? row.is_owner ?? false,
   };
 }

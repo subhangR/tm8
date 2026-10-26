@@ -1,5 +1,17 @@
 export { CraftScreen } from './CraftScreen';
-export type { CraftScreenProps } from './CraftScreen';
+export type { CraftScreenProps, CraftTarget } from './CraftScreen';
+export { craftSourceFromSeam, fixtureCraftSource } from './craft-source';
+export type { CraftPageRow, CraftSource } from './craft-source';
 export { blueprintView } from './blueprint-model';
 export type { BlueprintCard, BlueprintLine, BlueprintView, RefTitles } from './blueprint-model';
 export { BlueprintCanvas } from './BlueprintCanvas';
+export { CraftsHome } from './CraftsHome';
+export type { CraftsHomeProps } from './CraftsHome';
+export { craftsSourceFromSeam, fixtureCraftsSource } from './crafts-source';
+export type { CraftCard, CraftsSource, FixtureCraft } from './crafts-source';
+export { CraftHeaderSwitcher } from './CraftHeaderSwitcher';
+export type { CraftHeaderSwitcherProps } from './CraftHeaderSwitcher';
+export { craftTabsKey, clearCraftOpenTabs, localOpenCraftsPort, serverOpenCraftsPort } from './craft-open-tabs';
+export type { OpenCraftsPort } from './craft-open-tabs';
+export { lastCraftKey, readLastCraft, writeLastCraft } from './last-craft';
+export type { LastCraft } from './last-craft';

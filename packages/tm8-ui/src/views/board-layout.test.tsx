@@ -18,11 +18,15 @@
  * The localStorage stub is last-place-gate.test.tsx's, for its reason:
  * gate.test.tsx's `window.localStorage.clear()` throws under this runner.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
+
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 beforeEach(() => {
   const map = new Map<string, string>();
@@ -69,7 +73,8 @@ async function openTasksScreen() {
   /* Revision 17: the Work tab retired with the unified Home (task 01a00932)
      — the kind screens are reached by their GUARANTEED chord (`g t`), the
      door the keyboard contract promises survives any menu arrangement. */
-  await waitFor(() => view.getByTestId('home-page'));
+  /* The Home dashboard is gone: a no-memory boot lands in the workspace. */
+  await waitFor(() => view.getByTestId('tab-workspace'));
   fireEvent.keyDown(window, { key: 'g' });
   fireEvent.keyDown(window, { key: 't' });
   await waitFor(() => view.getByTestId('entity-view'));

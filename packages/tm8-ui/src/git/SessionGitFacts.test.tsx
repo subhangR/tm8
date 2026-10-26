@@ -3,7 +3,7 @@
  * The session's git GRAPH FACTS — the half of the rail that never needed a
  * worktree. Driven through a delegating seam whose `connections` is scripted
  * per entity, because the facts block's whole claim is that it reads the
- * GRAPH (created_in / in_worktree / working_on→tracks), not the checkout.
+ * GRAPH (authored_from / in_worktree / working_on→tracks), not the checkout.
  *
  * CHIP CONSUMPTION IS PINNED HERE exactly as in TaskGitSection.test: the PR
  * rows must render through Lane B's `linked-pr-chips` testids.
@@ -39,6 +39,16 @@ const laneEntity: EntitySummary = {
   } as unknown as EntitySummary['state'],
 };
 
+function messageOf(id: string): EntitySummary {
+  return {
+    ...commitFoundation,
+    id,
+    kind: 'message',
+    title: `message ${id}`,
+    state: { kind: 'message' } as unknown as EntitySummary['state'],
+  };
+}
+
 function mkEdge(id: string, type: string, source: EntitySummary, target: EntitySummary): EdgeView {
   return {
     id,
@@ -68,8 +78,10 @@ function seamWith(edgesByAnchor: Record<string, EdgeView[]>): Seam {
 
 const FULL_GRAPH: Record<string, EdgeView[]> = {
   [SESSION]: [
-    // Recorder provenance: commit → created_in → session.
-    mkEdge('e-ci-1', 'created_in', commitFoundation, sessionStale),
+    // Recorder provenance: commit → authored_from → session.
+    mkEdge('e-ci-1', 'authored_from', commitFoundation, sessionStale),
+    // A session's own messages ride the same edge type — never a commit row.
+    mkEdge('e-msg-1', 'authored_from', messageOf('msg-1'), sessionStale),
     // The lane entity.
     mkEdge('e-wt-1', 'in_worktree', sessionStale, laneEntity),
     // The task whose tracks carry the PR.
@@ -79,7 +91,7 @@ const FULL_GRAPH: Record<string, EdgeView[]> = {
 };
 
 describe('graph facts, independent of any checkout', () => {
-  it('renders commits (created_in), the lane, and PRs through Lane B chips', async () => {
+  it('renders commits (authored_from), the lane, and PRs through Lane B chips', async () => {
     render(<SessionGitFacts seam={seamWith(FULL_GRAPH)} sessionId={SESSION} />);
     const facts = await screen.findByTestId('session-git-facts');
 
@@ -87,6 +99,8 @@ describe('graph facts, independent of any checkout', () => {
     const commits = screen.getByTestId('session-git-commits');
     const sha = (commitFoundation.state as unknown as { sha: string }).sha;
     expect(commits.textContent).toContain(sha.slice(0, 10));
+    expect(commits.querySelectorAll('li')).toHaveLength(1);
+    expect(commits.textContent).not.toContain('message msg-1');
 
     // The lane entity, with its branch and status pill.
     const lane = screen.getByTestId('session-git-lane');
@@ -111,7 +125,7 @@ describe('graph facts, independent of any checkout', () => {
   it('one task with a failing tracks read does not hide the session commits', async () => {
     const seam = seamWith({
       [SESSION]: [
-        mkEdge('e-ci-1', 'created_in', commitFoundation, sessionStale),
+        mkEdge('e-ci-1', 'authored_from', commitFoundation, sessionStale),
         mkEdge('e-wo-1', 'working_on', sessionStale, taskGuideLines),
       ],
       // taskGuideLines missing from the script — its connections read still
@@ -145,5 +159,32 @@ describe('graph facts, independent of any checkout', () => {
     render(<SessionGitFacts seam={broken} sessionId={SESSION} />);
     const err = await screen.findByTestId('session-git-facts-error');
     expect(err.textContent).toContain('graph offline');
+  });
+
+  it('pages past a session\'s MESSAGES to find its commits', async () => {
+    // `authored_from` into a session is dominated by its messages: a full
+    // first page of them must not hide the commit on the next one.
+    const messages = Array.from({ length: 100 }, (_, i) =>
+      mkEdge(`e-msg-${i}`, 'authored_from', messageOf(`msg-${i}`), sessionStale));
+    const calls: unknown[] = [];
+    const base = createFixtureSeam();
+    const paged: Seam = {
+      ...base,
+      async connections(id, opts) {
+        if (id !== SESSION || !opts?.types?.includes('authored_from')) return { items: [], nextCursor: null };
+        calls.push(opts);
+        return opts.cursor === undefined
+          ? { items: messages, nextCursor: 'page-2' }
+          : { items: [mkEdge('e-ci-1', 'authored_from', commitFoundation, sessionStale)], nextCursor: null };
+      },
+    };
+    render(<SessionGitFacts seam={paged} sessionId={SESSION} />);
+    const commits = await screen.findByTestId('session-git-commits');
+    expect(commits.querySelectorAll('li')).toHaveLength(1);
+    expect(commits.textContent).toContain(
+      (commitFoundation.state as unknown as { sha: string }).sha.slice(0, 10),
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({ types: ['authored_from'], direction: 'incoming' });
   });
 });

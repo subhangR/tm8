@@ -61,7 +61,7 @@ describe('launch v3: newTask and dispatcher routing', () => {
     expect(created).toMatchObject({ title: 'Fix the flaky test', status: 'working', version: 2 });
     const { prompts } = graph.manifests.find((m) => m.sessionId === result.sessionId)!;
     expect(prompts.task).toContain(result.createdTaskId!);
-    expect(prompts.task).toContain('kind="task_assignment"');
+    expect(prompts.task).toContain(`<assignment task="${result.createdTaskId}"`);
   });
 
   it('gives a dispatcher launched on a task a routing turn, not an assignment', async () => {

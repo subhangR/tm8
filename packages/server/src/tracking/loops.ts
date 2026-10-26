@@ -37,7 +37,8 @@
 
 import type { Db, DbClaims } from '../db/types.js';
 import type { JobContext, JobOutcome, ScheduledJob } from '../scheduler/types.js';
-import { GithubClient, resolveGithubToken, type CheckRunFacts, type ReviewThreadFacts } from './github.js';
+import { TrackingClients, type TrackingTokenResolver } from './clients.js';
+import type { CheckRunFacts, GithubClient, ReviewThreadFacts } from './github.js';
 import {
   decideNudges,
   deliverPendingNudges,
@@ -53,7 +54,17 @@ export interface ForgeWatcherOptions {
   db: Db;
   /** Same identity story as 081's observer: the doors have no node-admin bypass. */
   claims: () => Promise<DbClaims>;
+  /** Tests: one client for every space. Production resolves per space (`resolveToken`). */
   client?: GithubClient;
+  /** 306: a space's own GitHub token credential, used for that space's PRs only. */
+  resolveToken?: TrackingTokenResolver;
+  /**
+   * Which client polls which space, plus rate-limit backoff. The job wrapper
+   * creates one for its lifetime so a backoff outlives the tick that hit it.
+   */
+  clients?: TrackingClients;
+  /** 306: a gated in_review task whose PR has not been polled for this long raises attention. */
+  staleAfterSeconds?: number;
   /** PRs per tick. Small: this is a watcher, not a backfill. */
   targetBudget?: number;
   /**
@@ -89,7 +100,84 @@ export interface ForgeWatchTickDetail extends Record<string, unknown> {
   nudgesCapped: number;
   suppressed: number;
   rateLimited: boolean;
+  /** Targets skipped because the budget they spend is backed off. */
+  skippedRateLimited: number;
+  /** Budgets backed off at the end of the tick (`space:<id>`, `env`, `anonymous`). */
+  limitedBudgets: string[];
+  staleSignals: number;
+  /** 306 §6: per-space freshness, surfaced on `/health` as `tracking`. */
+  health?: TrackingHealthSummary;
   problems: string[];
+}
+
+/**
+ * 306 §6: the answer to "is tracking actually running?", computed every tick
+ * from `public.tracking_health` and carried on the job outcome, which `/health`
+ * already publishes. `authenticated` is false when a space has no GitHub token
+ * credential AND the node has no env token: that space is read on the shared
+ * 60-requests-an-hour anonymous budget, and `warnings` says so.
+ */
+export interface TrackingHealthSummary {
+  status: 'ok' | 'degraded' | 'stale';
+  checkedAt: string;
+  staleAfterSeconds: number;
+  spaces: Array<{
+    spaceId: string;
+    trackedOpen: number;
+    neverPolled: number;
+    stale: number;
+    erroring: number;
+    lastPolledAt: string | null;
+    authenticated: boolean;
+    status: 'ok' | 'degraded' | 'stale';
+  }>;
+  warnings: string[];
+}
+
+export function summarizeTrackingHealth(
+  raw: unknown,
+  fallbackAuthenticated: boolean,
+  staleAfterSeconds: number,
+  now: Date = new Date(),
+): TrackingHealthSummary {
+  const rows = Array.isArray((raw as { spaces?: unknown } | null)?.spaces)
+    ? ((raw as { spaces: unknown[] }).spaces)
+    : [];
+  const warnings: string[] = [];
+  const spaces = rows.map((entry) => {
+    const row = (entry ?? {}) as Record<string, unknown>;
+    const n = (key: string): number => Number(row[key] ?? 0) || 0;
+    const spaceId = String(row.spaceId ?? '');
+    const authenticated = row.githubCredential === true || fallbackAuthenticated;
+    const stale = n('stale');
+    const neverPolled = n('neverPolled');
+    const status: 'ok' | 'degraded' | 'stale' =
+      stale > 0 || neverPolled > 0 ? 'stale' : authenticated ? 'ok' : 'degraded';
+    if (!authenticated) {
+      warnings.push(`space ${spaceId}: no GitHub token; polling unauthenticated (60 requests/hour shared by the node)`);
+    }
+    if (stale > 0) {
+      warnings.push(`space ${spaceId}: ${String(stale)} open pull request(s) not polled within ${String(staleAfterSeconds)}s`);
+    }
+    return {
+      spaceId,
+      trackedOpen: n('trackedOpen'),
+      neverPolled,
+      stale,
+      erroring: n('erroring'),
+      lastPolledAt: typeof row.lastPolledAt === 'string' ? row.lastPolledAt : null,
+      authenticated,
+      status,
+    };
+  });
+  return {
+    status: spaces.some((s) => s.status === 'stale') ? 'stale'
+      : spaces.some((s) => s.status === 'degraded') ? 'degraded' : 'ok',
+    checkedAt: now.toISOString(),
+    staleAfterSeconds,
+    spaces,
+    warnings: warnings.slice(0, 20),
+  };
 }
 
 /**
@@ -102,14 +190,17 @@ export async function runForgeWatchTick(
   signal?: AbortSignal,
   log?: (message: string) => void,
 ): Promise<JobOutcome> {
-  const client = options.client ?? new GithubClient({ token: resolveGithubToken() });
+  const clients = options.clients ?? trackingClientsFor(options, log);
+  clients.beginTick();
   const claims = await options.claims();
   const budget = options.targetBudget ?? 25;
 
+  // 306 §3: the door orders by priority tier and backs off cold rows itself;
+  // this floor is the hottest tier's.
   const listed = await options.db.rpc<{ targets?: unknown }>(
     claims,
     'public.observer_watch_targets',
-    [budget, options.minAgeSeconds ?? 0],
+    [budget, options.minAgeSeconds ?? 120],
   );
   const targets = normalizeTargets(listed?.targets);
 
@@ -122,6 +213,9 @@ export async function runForgeWatchTick(
     nudgesCapped: 0,
     suppressed: 0,
     rateLimited: false,
+    skippedRateLimited: 0,
+    limitedBudgets: [],
+    staleSignals: 0,
     problems: [],
   };
 
@@ -133,10 +227,17 @@ export async function runForgeWatchTick(
   for (const target of targets) {
     if (signal?.aborted) break;
     try {
+      // A rate limit stops only the targets that spend THAT budget: a space's
+      // own token, the env token, or the anonymous allowance (clients.ts).
+      const { client, budget: spend } = await clients.forSpace(target.spaceId);
+      if (clients.isLimited(spend)) {
+        detail.skippedRateLimited += 1;
+        continue;
+      }
       const stopped = await watchOne(options, claims, client, target, detail, signal);
-      if (stopped === 'rate_limited') {
+      if (stopped.status === 'rate_limited') {
         detail.rateLimited = true;
-        break;
+        clients.markLimited(spend, stopped.retryAtMs);
       }
     } catch (error) {
       // Load-bearing, for 081's reason: `Db.rpc` throws on any Postgres error,
@@ -151,17 +252,45 @@ export async function runForgeWatchTick(
   // earlier tick whose addressee has only just come back — and draining it
   // costs no provider quota unless a CI log is needed.
   try {
-    await drainPendingNudges(options, claims, client, detail, signal);
+    await drainPendingNudges(options, claims, clients, detail, signal);
   } catch (error) {
     detail.problems.push(`nudge drain: ${describe(error)}`);
     log?.(`tracking.forge-watcher: nudge drain: ${describe(error)}`);
+  }
+
+  // 306 §6: staleness made visible where it costs something — a gated
+  // in_review task whose pull request has not been polled. Provider-free.
+  try {
+    const swept = await options.db.rpc<{ raised?: number }>(
+      claims,
+      'public.tracking_sweep_staleness',
+      [options.staleAfterSeconds ?? 3600],
+    );
+    detail.staleSignals = typeof swept?.raised === 'number' ? swept.raised : 0;
+  } catch (error) {
+    detail.problems.push(`staleness sweep: ${describe(error)}`);
+    log?.(`tracking.forge-watcher: staleness sweep: ${describe(error)}`);
+  }
+  detail.limitedBudgets = clients.limitedBudgets();
+  try {
+    const stale = options.staleAfterSeconds ?? 3600;
+    const raw = await options.db.rpc<unknown>(claims, 'public.tracking_health', [stale]);
+    detail.health = summarizeTrackingHealth(raw, clients.fallbackAuthenticated, stale);
+  } catch (error) {
+    detail.problems.push(`tracking health: ${describe(error)}`);
   }
 
   // Bounded: this rides in a job outcome that gets logged, and an unbounded
   // list of provider errors is how a log becomes unreadable.
   detail.problems = detail.problems.slice(0, 10);
   if (targets.length === 0 && detail.pendingDrained === 0) {
-    return { skipped: true, reason: 'no watched pull requests and no queued nudges' };
+    // The health summary rides on a skip too: "nothing to poll" is exactly
+    // when an operator most needs to see whether that is true.
+    return {
+      skipped: true,
+      reason: 'no watched pull requests and no queued nudges',
+      ...(detail.health ? { detail: { health: detail.health } } : {}),
+    };
   }
   return { affected: detail.nudgesDelivered, detail };
 }
@@ -173,10 +302,11 @@ async function watchOne(
   target: WatchTarget,
   detail: ForgeWatchTickDetail,
   signal: AbortSignal | undefined,
-): Promise<'ok' | 'rate_limited'> {
+): Promise<WatchOutcome> {
   if (target.provider !== 'github') {
     detail.problems.push(`${target.repo}#${String(target.number)}: provider ${target.provider} is not implemented`);
-    return 'ok';
+    await recordPoll(options, claims, target.prEntityId, `provider ${target.provider} is not implemented`);
+    return OK;
   }
 
   // The sha the watch list carried. Kept because `target.headSha` is updated
@@ -193,10 +323,14 @@ async function watchOne(
   // ---- 1. The pull request itself.
   const pr = await client.pullRequest(target.repo, target.number, signal, etags[prKey] ?? null);
   if (!pr.ok) {
-    if (pr.reason === 'rate_limited') return 'rate_limited';
+    // A rate limit is not evidence about the pull request: nothing is recorded.
+    if (pr.reason === 'rate_limited') return limited(pr.retryAtMs);
     detail.problems.push(`${target.repo}#${String(target.number)}: ${pr.reason}: ${pr.detail}`);
-    return 'ok';
+    await recordPoll(options, claims, target.prEntityId, `${pr.reason}: ${pr.detail}`);
+    return OK;
   }
+  // 304 §2: polled, whatever the answer — a 304 included.
+  await recordPoll(options, claims, target.prEntityId, null);
 
   let headSha = target.headSha;
   let previousMergeable = null as string | null;
@@ -262,7 +396,7 @@ async function watchOne(
         );
     const runs = await client.checkRuns(target.repo, headSha, signal, checkEtags[key] ?? null);
     if (!runs.ok) {
-      if (runs.reason === 'rate_limited') return 'rate_limited';
+      if (runs.reason === 'rate_limited') return limited(runs.retryAtMs);
       detail.problems.push(`${target.repo}#${String(target.number)} checks: ${runs.reason}: ${runs.detail}`);
     } else if (runs.notModified === true) {
       detail.notModified += 1;
@@ -294,7 +428,7 @@ async function watchOne(
   let newlyUnresolved: ReviewThreadFacts[] = [];
   const threads = await client.reviewThreads(target.repo, target.number, signal);
   if (!threads.ok) {
-    if (threads.reason === 'rate_limited') return 'rate_limited';
+    if (threads.reason === 'rate_limited') return limited(threads.retryAtMs);
     // An unauthenticated node cannot read review threads at all. That is a
     // known, permanent condition rather than a per-PR incident, so it is not
     // worth a problem line per pull request per tick.
@@ -333,7 +467,42 @@ async function watchOne(
     new Map(),
   );
   detail.suppressed += decision.suppressed.length;
-  return 'ok';
+  return OK;
+}
+
+interface WatchOutcome {
+  status: 'ok' | 'rate_limited';
+  retryAtMs?: number | undefined;
+}
+
+const OK: WatchOutcome = { status: 'ok' };
+
+function limited(retryAtMs: number | undefined): WatchOutcome {
+  return { status: 'rate_limited', retryAtMs };
+}
+
+/** 306 §2: `last_polled_at` / `last_poll_error` for one row. */
+async function recordPoll(
+  options: { db: Db },
+  claims: DbClaims,
+  entityId: string,
+  error: string | null,
+): Promise<void> {
+  await options.db.rpc(claims, 'public.record_tracking_poll', [entityId, error]);
+}
+
+/** The clients a job without an injected `clients` uses: per-space tokens, env fallback. */
+export function trackingClientsFor(
+  options: { client?: GithubClient | undefined; resolveToken?: TrackingTokenResolver | undefined },
+  log?: (message: string) => void,
+): TrackingClients {
+  return new TrackingClients({
+    ...(options.client ? { client: options.client } : {}),
+    ...(options.resolveToken ? { resolveToken: options.resolveToken } : {}),
+    onResolveError: (spaceId, error) => {
+      log?.(`tracking: could not read the GitHub credential of space ${spaceId}: ${describe(error)}`);
+    },
+  });
 }
 
 /**
@@ -347,7 +516,7 @@ async function watchOne(
 async function drainPendingNudges(
   options: ForgeWatcherOptions,
   claims: DbClaims,
-  client: GithubClient,
+  clients: TrackingClients,
   detail: ForgeWatchTickDetail,
   signal: AbortSignal | undefined,
 ): Promise<void> {
@@ -386,6 +555,7 @@ async function drainPendingNudges(
       if (row.loopKind === 'ci_failure') {
         const jobId = row.payload.externalId;
         if (typeof jobId === 'string' && jobId !== '') {
+          const { client } = await clients.forSpace(row.spaceId);
           const res = await client.jobLogTail(
             row.repo,
             jobId,
@@ -524,6 +694,9 @@ function describe(error: unknown): string {
 }
 
 export function createForgeWatcherJob(options: ForgeWatcherOptions): ScheduledJob {
+  // One set of clients for the job's lifetime, so a rate-limit backoff outlives
+  // the tick that hit it.
+  let clients = options.clients;
   return {
     name: FORGE_WATCHER_JOB_NAME,
     // Ninety seconds, with `minAgeSeconds` as the real throttle. The interval
@@ -535,7 +708,9 @@ export function createForgeWatcherJob(options: ForgeWatcherOptions): ScheduledJo
     runOnStart: options.runOnStart ?? false,
     timeoutMs: 2 * 60_000,
     async run(ctx: JobContext): Promise<JobOutcome> {
-      return runForgeWatchTick(options, ctx.signal, (m) => { ctx.logger.warn(m); });
+      const log = (m: string): void => { ctx.logger.warn(m); };
+      clients ??= trackingClientsFor(options, log);
+      return runForgeWatchTick({ ...options, clients }, ctx.signal, log);
     },
   };
 }

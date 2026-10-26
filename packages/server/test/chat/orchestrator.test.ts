@@ -88,6 +88,10 @@ class FakeDb implements Db {
    */
   about: { id: string; kind: string; title: string; hidden?: boolean } | null = null;
   readonly aboutIdentities: (string | undefined)[] = [];
+  /** The turn's team (328) as `chat_turn_team` returns it; null = default team. */
+  team: unknown = null;
+  /** Make `chat_turn_team` fail as a pre-328 database would (undefined_function). */
+  teamMissing = false;
   private nextClaim = 0;
   private readonly claimedTurns: readonly Record<string, unknown>[];
 
@@ -159,6 +163,10 @@ class FakeDb implements Db {
       this.contexts.push([rpcClaims.identityId, ...args]);
       this.events.push('context');
       return undefined as T;
+    }
+    if (name === 'chat_turn_team') {
+      if (this.teamMissing) throw Object.assign(new Error('function chat_turn_team does not exist'), { code: '42883' });
+      return this.team as T;
     }
     if (name === 'mark_chat_runtime_state') {
       this.states.push(String(args[1]));
@@ -541,6 +549,186 @@ describe('TM8 Chat durable orchestration', () => {
    * announce itself as a bug — the chat would just feel slow. So the negative
    * case is pinned next to the positive one.
    */
+  it.each([true, false])('rechecks model credentials each turn and restarts only on a change (%s)', async change => {
+    const events: string[] = [];
+    const base = { ...claim('cold'), agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, runtimeState: 'live',
+      turnId: '10000000-0000-4000-8000-00000000000a',
+      userMessageId: '10000000-0000-4000-8000-00000000000b' }], events);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    let checks = 0;
+    let launches = 0;
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async input => {
+        expect(input.requesterIdentityId).toBe(IDENTITY);
+        checks++;
+        return { CLAUDE_CONFIG_DIR: runtime.turns.length === 1 && change ? '/new-home' : '/member-home' };
+      },
+      resolveLaunchConfig: async () => {
+        launches++;
+        return { systemPrompt: '', mcpConfigPath: '/tmp/mcp.json', availableTools: [],
+          allowedTools: ['mcp__tm8__tm8_read'] };
+      },
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(checks).toBe(change ? 4 : 3);
+    expect(launches).toBe(change ? 2 : 1);
+    expect(runtime.starts[0]?.env).toEqual({ CLAUDE_CONFIG_DIR: '/member-home' });
+    expect(runtime.closes).toEqual(change ? [CHAT] : []);
+    if (change) {
+      expect(runtime.starts[1]?.env).toEqual({ CLAUDE_CONFIG_DIR: '/new-home' });
+      expect(runtime.starts[1]?.resume).toEqual({ nativeSessionId: NATIVE, cwd: base.cwd });
+    }
+  });
+
+  it('forwards each claimed credential selection and restarts at the next turn', async () => {
+    const base = { ...claim('cold'), credentialSelection: { source: 'member' }, agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, credentialSelection: { source: 'node' }, runtimeState: 'live' }], []);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async input => ({ CLAUDE_CONFIG_DIR: '/'+input.credentialSelection?.source }),
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp', availableTools: [], allowedTools: [] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts.map(start => start.env?.CLAUDE_CONFIG_DIR)).toEqual(['/member','/node']);
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(runtime.turns).toHaveLength(2);
+  });
+
+  /*
+   * §5.3 / G4. The whole point of `chat.setMcpSelections`.
+   *
+   * `--mcp-config` and `--allowed-tools` are argv on a running child, so a
+   * selection that moved after the child started can only arrive by closing it
+   * and resuming. Before the fingerprint joined the reuse key, the change was
+   * accepted, stored, and then ignored for the rest of the thread's life.
+   *
+   * Two turns, and the assertion is on BOTH halves: the second turn's child
+   * must be a restart carrying the new connector's allowed-tools, and the
+   * conversation must survive it (`resume`, not a cold start).
+   */
+  it('restarts the child at the next turn when the chat selection changed', async () => {
+    const base = { ...claim('cold'), agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, runtimeState: 'live' }], []);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    const selections = [
+      [{ serverId: 'aaaaaaaa-0000-4000-8000-000000000001' }],
+      [{ serverId: 'aaaaaaaa-0000-4000-8000-000000000001' },
+       { serverId: 'bbbbbbbb-0000-4000-8000-000000000002', credentialId: 'cccccccc-0000-4000-8000-000000000003' }],
+    ];
+    let turn = 0;
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveMcpSelection: async () => selections[Math.min(turn++, 1)]!,
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: (selections[Math.min(turn - 1, 1)] ?? [])
+          .map(selection => `mcp__${selection.serverId}__*`) }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts).toHaveLength(2);
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(runtime.starts[0]?.allowedTools).toHaveLength(1);
+    expect(runtime.starts[1]?.allowedTools).toHaveLength(2);
+    expect(runtime.starts[1]?.resume).toEqual({ nativeSessionId: NATIVE, cwd: base.cwd });
+    expect(runtime.turns).toHaveLength(2);
+  });
+
+  /*
+   * The other half, and the one a naive fix gets wrong: an UNCHANGED selection
+   * must not restart anything. A per-turn rebind would re-mint the thread's
+   * `agent_runtime` token (105 replaces it atomically), killing the tm8 tools
+   * of the very child it was trying to keep.
+   */
+  it('reuses the child when the chat selection has not changed', async () => {
+    const base = { ...claim('cold'), agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, runtimeState: 'live' }], []);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      // Same pair, reported in the opposite order: the fingerprint sorts, so a
+      // resolver that is merely unstable in its ordering is not a change.
+      resolveMcpSelection: async () => (runtime.starts.length
+        ? [{ serverId: 'bbbbbbbb-0000-4000-8000-000000000002' }, { serverId: 'aaaaaaaa-0000-4000-8000-000000000001' }]
+        : [{ serverId: 'aaaaaaaa-0000-4000-8000-000000000001' }, { serverId: 'bbbbbbbb-0000-4000-8000-000000000002' }]),
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: [] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts).toHaveLength(1);
+    expect(runtime.closes).toEqual([]);
+    expect(runtime.turns).toHaveLength(2);
+  });
+
+  it('stops a live child when a credential mutation makes its selection unavailable', async () => {
+    const events: string[] = [];
+    const db = new FakeDb({ ...claim('cold'), agentMessageId: AGENT_MESSAGE }, events);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    let revoked = false;
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async () => {
+        if (revoked) throw new Error('credential revoked');
+        return { CLAUDE_CONFIG_DIR: '/member-home' };
+      },
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: ['mcp__tm8__tm8_read'] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    await orchestrator.recheckCredentials();
+    expect(runtime.closes).toEqual([]);
+    revoked = true;
+    await orchestrator.recheckCredentials();
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(db.states).toEqual(['live', 'stopped']);
+  });
+
+  it('closes a process before sending when a credential changes during startup', async () => {
+    const events: string[] = [];
+    const db = new FakeDb({ ...claim('cold'), agentMessageId: AGENT_MESSAGE }, events);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async () => ({
+        CLAUDE_CONFIG_DIR: runtime.starts.length ? '/changed-home' : '/original-home',
+      }),
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: ['mcp__tm8__tm8_read'] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts).toHaveLength(1);
+    expect(runtime.turns).toEqual([]);
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(db.states).toEqual(['live', 'stopped']);
+    expect(db.completed[0]?.[1]).toBe('error');
+  });
+
+  it('refuses a turn and closes the old process when its credential policy cannot be read', async () => {
+    const events: string[] = [];
+    const base = { ...claim('cold'), agentMessageId: AGENT_MESSAGE };
+    const db = new FakeDb([base, { ...base, runtimeState: 'live',
+      turnId: '10000000-0000-4000-8000-00000000000a',
+      userMessageId: '10000000-0000-4000-8000-00000000000b' }], events);
+    const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
+    let checks = 0;
+    const orchestrator = new ChatOrchestrator({
+      db, runtime, publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
+      resolveCredentialEnv: async () => {
+        checks++;
+        if (runtime.turns.length === 1) throw new Error('policy read failed');
+        return { CLAUDE_CONFIG_DIR: '/member-home' };
+      },
+      resolveLaunchConfig: async () => ({ systemPrompt: '', mcpConfigPath: '/tmp/mcp.json',
+        availableTools: [], allowedTools: ['mcp__tm8__tm8_read'] }),
+    });
+    await orchestrator.wake(CHAT, IDENTITY);
+    expect(runtime.starts).toHaveLength(1);
+    expect(runtime.turns).toHaveLength(1);
+    expect(runtime.closes).toEqual([CHAT]);
+    expect(db.completed[1]?.[1]).toBe('error');
+  });
+
   it('276: an unchanged model reuses the live child — no close, no second start', async () => {
     const events: string[] = [];
     const base = {
@@ -834,10 +1022,12 @@ describe('TM8 Chat durable orchestration', () => {
 
     function subjectRig(claims: readonly Record<string, unknown>[]) {
       const events: string[] = [];
+      const errors: unknown[] = [];
       const db = new FakeDb(claims, events);
       const runtime = new FakeRuntime([{ kind: 'done', reason: 'success' }]);
       const orchestrator = new ChatOrchestrator({
         db,
+        onError: (error) => errors.push(error),
         runtime,
         publisher: new ChatTurnPublisher(new SubscriptionRegistry()),
         resolveLaunchConfig: async () => ({
@@ -847,7 +1037,7 @@ describe('TM8 Chat durable orchestration', () => {
           allowedTools: ['messages.post'],
         }),
       });
-      return { db, orchestrator, runtime };
+      return { db, orchestrator, runtime, errors };
     }
 
     it('names the subject right after the mode line, before the speaker line', async () => {
@@ -867,6 +1057,27 @@ describe('TM8 Chat durable orchestration', () => {
       ].join('\n'));
       // Read as the configuring human, whoever spoke.
       expect(db.aboutIdentities).toEqual([IDENTITY]);
+    });
+
+    it('puts the team line (328) after the mode line, from the turn — not the body', async () => {
+      const { db, orchestrator, runtime } = subjectRig([claim('cold')]);
+      db.team = { members: [{ name: 'Worker', model: 'Claude Sonnet 5', effort: 'low' }] };
+      db.about = { id: SUBJECT, kind: 'task', title: 'Ship the chat button' };
+      await orchestrator.wake(CHAT, IDENTITY);
+      expect(runtime.turns[0]).toBe([
+        '[mode: ask]',
+        '[team: Worker (Claude Sonnet 5/low)]',
+        `[about task ${SUBJECT} ${DOT} "Ship the chat button"]`,
+        'human prompt verbatim',
+      ].join('\n'));
+    });
+
+    it('a database without 328 sends the turn without a team line, and reports nothing', async () => {
+      const { db, orchestrator, runtime, errors } = subjectRig([claim('cold')]);
+      db.teamMissing = true;
+      await orchestrator.wake(CHAT, IDENTITY);
+      expect(runtime.turns[0]).toBe('[mode: ask]\nhuman prompt verbatim');
+      expect(errors).toEqual([]);
     });
 
     it('adds no line to a chat with no about link, or one whose subject is gone', async () => {

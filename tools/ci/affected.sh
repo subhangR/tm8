@@ -22,7 +22,7 @@
 # means an error widens the set, it does not fail the `changes` job.
 #
 # COMPOSITION (§3): map each changed path to its node (a workspace package dir, or one of
-# the pseudo nodes deploy, db, db/migrations); take the reverse transitive closure over
+# the pseudo nodes deploy, db, db/migrations, integrations); take the reverse transitive closure over
 # workspace dependency edges; then add exactly ONE hop of EXTRA_EDGES from every node in
 # that closure (no re-closure); then map nodes to modules.
 # The dependency graph is the UNION of the base and head package.json files, so a PR cannot
@@ -75,11 +75,15 @@ declare -A MODULE_OF=(
   # The Electron shell (bun run desktop): no suite of its own and no @tm8/* edges — it
   # forks packages/server/dist, which the server module already tests.
   [apps/desktop]=
+  # Standalone services outside the bun workspace, each with its own npm lockfile and
+  # Docker build (integrations/whatsapp-bridge). Nothing in the workspace imports them,
+  # and their suites (node:test via tsx) run in their own directories, not in CI.
+  [integrations]=
   [deploy]=
   [db]=
   [db/migrations]=migrations
 )
-PSEUDO_NODES=(db/migrations db deploy)   # longest prefix first
+PSEUDO_NODES=(db/migrations db deploy integrations)   # longest prefix first
 
 # One hop, applied after the closure. Evidence is the §3 table.
 declare -A EXTRA_EDGES=(

@@ -49,8 +49,19 @@ import { ACCOUNT_MENU } from './specimen';
 export interface AccountMenuProps {
   /** Display actor in the active space; distinct from the local login account. */
   actor: ActorSummary;
+  /**
+   * Opt-in avatar-only trigger (the Workspace rail, design log R12): no name
+   * or caret, a 32px avatar the host may scale, and an explicit accessible
+   * name. Default false keeps the named trigger.
+   */
+  compact?: boolean;
+  /** With `compact`: also draw the name beside the avatar (the expanded Workspace rail). */
+  compactName?: boolean;
   /** Open the full T3-3 screen. Omitted ⇒ the row is not offered. */
   onOpenAccountScreen?: () => void;
+  /** Admin destinations are supplied only after the host resolves authority. */
+  onOpenSpaceAdmin?: () => void;
+  onOpenNodeAdmin?: () => void;
   /**
    * Re-open the guided credential setup flow. Omitted ⇒ the row is not
    * offered, the same rule every other optional row here follows: a menu item
@@ -93,11 +104,23 @@ export interface AccountMenuProps {
    * sit on one grid; this component adds no chrome of its own around them.
    */
   utilityRows?: ReactNode;
+  /**
+   * INLINE (the Work rail, Subhang 2026-10-10): draw only the menu body, no
+   * trigger and no anchoring — the host owns the popover it sits in (the rail
+   * places it beside itself, where an absolutely-placed menu was clipped).
+   */
+  inline?: boolean;
+  /** With `inline`: a row that navigates away calls this so the host closes. */
+  onClose?: () => void;
 }
 
 export function AccountMenu({
   actor,
+  compact = false,
+  compactName = false,
   onOpenAccountScreen,
+  onOpenSpaceAdmin,
+  onOpenNodeAdmin,
   onOpenAgentTools,
   agentToolsNudge,
   theme: controlledTheme,
@@ -106,6 +129,8 @@ export function AccountMenu({
   onOpenInbox,
   onOpenPrompts,
   utilityRows,
+  inline = false,
+  onClose,
 }: AccountMenuProps) {
   const actions = useAuthActions();
   const localTheme = useTheme();
@@ -114,7 +139,10 @@ export function AccountMenu({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    setOpen(false);
+    onClose?.();
+  }, [onClose]);
 
   // Click-away and Escape. Both, because a popover that only closes on one of
   // them is a popover people get stuck in — and Escape is the path a keyboard
@@ -144,32 +172,8 @@ export function AccountMenu({
   const account = actions.account;
   const name = actor.displayName;
 
-  return (
-    <div className="auth-accountmenu" ref={wrapRef}>
-      <button
-        type="button"
-        className="auth-accountmenu__trigger"
-        data-testid="account-menu-trigger"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <Avatar
-          actorId={actor.id}
-          provenance={actor.isAgent ? 'agent' : 'human'}
-          label={name}
-          size={20}
-          src={actor.avatar ?? null}
-          className="auth-avatar auth-avatar--sm"
-        />
-        <span className="auth-accountmenu__name">{name}</span>
-        <span className="auth-accountmenu__caret" aria-hidden>
-          ▾
-        </span>
-      </button>
-
-      {open ? (
-        <div className="auth-menu auth-menu--anchored" role="menu" data-testid="auth-account-menu">
+  const menu = (
+        <div className={`auth-menu ${inline ? 'auth-menu--inline' : 'auth-menu--anchored'}`} role="menu" data-testid="auth-account-menu">
           <div className="auth-menu__head">
             <Avatar
               actorId={actor.id}
@@ -241,6 +245,20 @@ export function AccountMenu({
               </button>
             ) : null}
 
+            {onOpenSpaceAdmin ? (
+              <button type="button" className="auth-menu__row auth-menu__row--live"
+                onClick={() => { close(); onOpenSpaceAdmin(); }}>
+                <span className="auth-menu__glyph" aria-hidden>⛭</span>
+                Space admin
+              </button>
+            ) : null}
+            {onOpenNodeAdmin ? (
+              <button type="button" className="auth-menu__row auth-menu__row--live"
+                onClick={() => { close(); onOpenNodeAdmin(); }}>
+                <span className="auth-menu__glyph" aria-hidden>⛭</span>
+                Node admin
+              </button>
+            ) : null}
             {utilityRows ?? null}
           </div>
 
@@ -339,7 +357,42 @@ export function AccountMenu({
             </button>
           </div>
         </div>
-      ) : null}
+  );
+  if (inline) return menu;
+
+  return (
+    <div className="auth-accountmenu" ref={wrapRef}>
+      <button
+        type="button"
+        className="auth-accountmenu__trigger"
+        data-testid="account-menu-trigger"
+        data-compact={compact || undefined}
+        {...(compact ? { 'aria-label': `Account: ${name}` } : {})}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Avatar
+          actorId={actor.id}
+          provenance={actor.isAgent ? 'agent' : 'human'}
+          label={name}
+          size={compact ? 32 : 20}
+          src={actor.avatar ?? null}
+          className={compact ? 'auth-avatar auth-avatar--compact' : 'auth-avatar auth-avatar--sm'}
+        />
+        {compact ? (
+          compactName ? <span className="auth-accountmenu__name">{name}</span> : null
+        ) : (
+          <>
+            <span className="auth-accountmenu__name">{name}</span>
+            <span className="auth-accountmenu__caret" aria-hidden>
+              ▾
+            </span>
+          </>
+        )}
+      </button>
+
+      {open ? menu : null}
     </div>
   );
 }

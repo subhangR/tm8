@@ -229,7 +229,7 @@ export const WORKTREE_HELP: KindHelpModule = {
         body: (
           <p>
             While a lane is active, the server walks the commits it has made beyond its base and records each one
-            as a commit entity with a <code>created_in</code> edge to the session. Which session wrote this change
+            as a commit entity with an <code>authored_from</code> edge to the session. Which session wrote this change
             becomes a graph question with a graph answer, before anything is pushed or linked to a pull request.
           </p>
         ),

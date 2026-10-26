@@ -148,7 +148,8 @@ describe('the form kind', () => {
 
   it('may be the source of authored_from (requesting session) and attached_to (task)', async () => {
     const rows = await sql(`select type from public.edge_types
-                             where type in ('authored_from', 'attached_to') and 'form' = any(src_kinds) order by type`);
+                             where type in ('authored_from', 'attached_to')
+                               and ('form' = any(src_kinds) or '*' = any(src_kinds)) order by type`);
     expect(rows.map((r) => r.type)).toEqual(['attached_to', 'authored_from']);
   });
 

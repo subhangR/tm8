@@ -19,6 +19,9 @@ import type {
   CredentialsSpaceDeleteResult,
   CredentialsSpaceMyDefaultResult,
   CredentialsSpaceSetVisibilityResult,
+  CredentialsSpaceShareResult,
+  CredentialsSpaceSharesView,
+  CredentialsSpaceUnshareResult,
   CredentialsSpaceUsageView,
   CredentialsSpaceListView,
   CredentialsSpacePolicySetResult,
@@ -63,6 +66,9 @@ type SpaceCredentialStorePort = Pick<
   | 'setDefault'
   | 'revoke'
   | 'setVisibility'
+  | 'share'
+  | 'unshare'
+  | 'listShares'
   | 'setSpaceDefaultConsent'
   | 'claim'
   | 'setMyDefault'
@@ -371,6 +377,75 @@ export class SpaceCredentialCatalogService {
   }
 
   /**
+   * 992: the owner shares their private credential with one active member of
+   * its space. Every rule is in SQL; a grantee who is not an active member is
+   * refused there (`not_member`) and named plainly here.
+   */
+  async share(claims: DbClaims, credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceShareResult> {
+    try {
+      const shared = await this.store.share(claims, credentialId, granteeAccountId);
+      return {
+        credentialId: shared.credentialId,
+        spaceId: shared.spaceId,
+        granteeAccountId: shared.granteeAccountId,
+        grantedByAccountId: shared.grantedByAccountId,
+        createdAt: shared.createdAt,
+        shared: shared.shared,
+      };
+    } catch (error) {
+      throw shareError(error, granteeAccountId);
+    }
+  }
+
+  /**
+   * 992: withdraw a share — the owner or a space admin. The grantee's live
+   * sessions on it are killed exactly as `setVisibility` kills a non-owner's:
+   * best effort after the committed delete, a failed kill named in
+   * `failures`, never thrown; then the streams it no longer permits close.
+   */
+  async unshare(claims: DbClaims, credentialId: string, granteeAccountId: string): Promise<CredentialsSpaceUnshareResult> {
+    const { killSessions, ...stored } = await this.store.unshare(claims, credentialId, granteeAccountId);
+    const terminatedAgentSessionIds: string[] = [];
+    const failures: Array<{ sessionId: string; reason: string }> = [];
+    for (const session of killSessions) {
+      const contained = await this.agentSessions.containCredentialSession(
+        session.workSessionId,
+        'space_credential_unshared',
+      );
+      const failure = containmentFailureOf(contained);
+      if (failure !== null) failures.push({ sessionId: session.workSessionId, reason: failure });
+      if (contained.outcome === 'error') continue;
+      terminatedAgentSessionIds.push(session.workSessionId);
+    }
+    if (stored.unshared) {
+      const failure = await this.closeStreams(claims, credentialId);
+      if (failure !== null) failures.push({ sessionId: credentialId, reason: failure });
+    }
+    return {
+      credentialId: stored.credentialId,
+      granteeAccountId: stored.granteeAccountId,
+      unshared: stored.unshared,
+      terminatedAgentSessionIds,
+      failures,
+    };
+  }
+
+  /** 992: who a credential is shared with — all of them to its owner or an admin, else the caller's own row. */
+  async shares(claims: DbClaims, credentialId: string): Promise<CredentialsSpaceSharesView> {
+    const rows = await this.store.listShares(claims, credentialId);
+    return {
+      credentialId,
+      shares: rows.map((row) => ({
+        granteeAccountId: row.granteeAccountId,
+        grantedByAccountId: row.grantedByAccountId,
+        createdAt: row.createdAt,
+        granteeMemberId: row.granteeMemberId ?? null,
+        granteeDisplayName: row.granteeDisplayName ?? null,
+      })),
+    };
+  }
+
+  /**
    * Design §5, in the member Disconnect's order:
    *   1. revoke the row (authorises the caller; drops the sealed bytes),
    *   2. read every live session and open login terminal on it,
@@ -597,6 +672,7 @@ export function spaceCredentialViewOf(row: SpaceCredential): SpaceCredentialView
     ownerAccountId: row.ownerAccountId,
     visibility: row.visibility,
     mayBeSpaceDefault: row.mayBeSpaceDefault,
+    sharedWithMe: row.sharedWithMe === true,
   };
 }
 
@@ -629,6 +705,22 @@ function storeError(error: unknown): unknown {
     return new CollabError('invalid_input', 'the key is too short to be a credential; nothing was stored');
   }
   return error;
+}
+
+/**
+ * 992's refusal of a grantee who is not an ACTIVE member of the credential's
+ * space arrives as 42501 with DETAIL `{"reason":"not_member"}`. It is a
+ * forbidden with a message a person can act on; anything else passes.
+ */
+function shareError(error: unknown, granteeAccountId: string): unknown {
+  if (!(error instanceof CollabError) || error.details?.sqlstate !== '42501') return error;
+  if (error.details.reason !== 'not_member') return error;
+  return new CollabError(
+    'forbidden',
+    'that account is not an active member of this space, so the credential cannot be shared with it — ' +
+      'add them to the space first',
+    { details: { sqlstate: '42501', reason: 'not_member', granteeAccountId } },
+  );
 }
 
 function reasonOf(error: unknown): string {

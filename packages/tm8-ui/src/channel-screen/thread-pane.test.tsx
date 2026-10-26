@@ -252,8 +252,12 @@ describe('the thread pane', () => {
     expect(within(rootRegion).getAllByRole('article')).toHaveLength(1);
     expect(within(pane).getByTestId('chs-thread-divider').textContent).toMatch(/3 replies/);
     const rows = within(pane).getByRole('list', { name: /thread replies/i });
-    const bodies = within(rows).getAllByTestId('chs-text').map((el) => el.textContent);
-    expect(bodies).toEqual(['first answer', 'second answer']);
+    // A person's reply is a bubble and an agent's is an answer, as in chat —
+    // read the turns themselves, oldest-first.
+    const turns = within(rows).getAllByRole('article').map((el) => el.textContent ?? '');
+    const order = ['first answer', 'second answer'].map((text) => turns.findIndex((t) => t.includes(text)));
+    expect(order[0]).toBeGreaterThanOrEqual(0);
+    expect(order[1]).toBeGreaterThan(order[0]!);
     expect(within(pane).getByRole('textbox', { name: /message this thread/i })).toBeTruthy();
     // The three-column split is stated on the surface root for the collapse CSS.
     expect(screen.getByTestId('chs-root').getAttribute('data-thread-open')).toBe('true');
@@ -455,34 +459,19 @@ describe('the host-sequenced thread read (ChannelChatSurface + useChannelFeed)',
   });
 });
 
-describe('author-run clustering in threads mode', () => {
-  it('clusters consecutive roots by one author — the entity parentId is not a reply fact there', () => {
-    // `parentId` on a channel message is the ENTITY parent (the channel), and
-    // it froze clustering: every root repeated its byline (Lane D's report).
+describe('roots in threads mode draw as chat turns', () => {
+  it('every root keeps its own byline and its thread footer — no author-run clustering, as in chat', () => {
+    // `parentId` on a channel message is the ENTITY parent (the channel); it
+    // is not a reply fact, so no root previews "in reply to" the channel.
     const first = msg({ id: 'msg-a', parentId: ANCHOR, createdAt: '2026-07-29T11:24:00.000Z' } as Partial<MessageView>);
-    const second = msg({ id: 'msg-b', parentId: ANCHOR, createdAt: '2026-07-29T11:26:00.000Z' } as Partial<MessageView>);
-    const items = [messageItem({ itemId: 'f-a' }, first), messageItem({ itemId: 'f-b' }, second)];
-    const view = render(<ChannelScreen {...base} page={feedPage(items)} />);
-    // One byline for the run of two.
-    expect(screen.getAllByText('alex')).toHaveLength(1);
-
-    // Threads OFF (session grammar): the guard is untouched — a message with
-    // a parent fact never clusters, so both bylines repeat.
-    view.rerender(
-      <ChannelScreen anchorId={ANCHOR} anchorNoun="this session" page={feedPage(items)} />,
-    );
-    expect(screen.getAllByText('alex')).toHaveLength(2);
-  });
-
-  it('a clustered root keeps its thread footer — clustering hides the byline, never the branch', () => {
-    const first = msg({ id: 'msg-a', createdAt: '2026-07-29T11:24:00.000Z' });
     const second = msg({
       id: 'msg-b',
+      parentId: ANCHOR,
       createdAt: '2026-07-29T11:26:00.000Z',
       replyCount: 2,
       lastReplyAt: '2026-07-29T13:00:00.000Z',
       replyParticipants: [NOOR],
-    });
+    } as Partial<MessageView>);
     render(
       <ChannelScreen
         {...base}
@@ -490,7 +479,8 @@ describe('author-run clustering in threads mode', () => {
         onOpenThread={vi.fn()}
       />,
     );
-    expect(screen.getAllByText('alex')).toHaveLength(1);
+    expect(screen.getAllByText('alex')).toHaveLength(2);
+    expect(screen.queryByTestId('chs-parent')).toBeNull();
     expect(screen.getByRole('button', { name: /open thread · 2 replies/i })).toBeTruthy();
   });
 });

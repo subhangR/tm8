@@ -151,7 +151,7 @@ async function liveAgentSession(
       [sessionId, randomUUID()],
     );
     await c.query(
-      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($3, $1, $2, 'relates_to', $4)`,
+      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($3, $2, $1, 'participates_in', $4)`,
       [sessionId, ids.TA, ids.S, ids[`member:${launcher}`]],
     );
   });
@@ -284,8 +284,9 @@ describe('gh-1 — a space-credential delete ends the rows of the sessions it ki
     expect(result.failures).toEqual([]);
     expect(runtime.pty.hasSession(sessionId)).toBe(false);
     expect(await row(sessionId)).toMatchObject({
-      status: 'exited',
-      ended_kind: 'stopped_by_operator',
+      // 301 (Spec D1 §3): containment is a process fact, not an operator's stop.
+      status: 'failed',
+      ended_kind: 'credential_revoked',
       ended_reason: DELETED,
     });
   });
@@ -302,8 +303,9 @@ describe('gh-2 — the member Disconnect and SC-6 member removal end the rows to
     expect(result.failures.filter((f) => f.step === 'agentSession')).toEqual([]);
     expect(runtime.pty.hasSession(sessionId)).toBe(false);
     expect(await row(sessionId)).toMatchObject({
-      status: 'exited',
-      ended_kind: 'stopped_by_operator',
+      // 301 (Spec D1 §3): containment is a process fact, not an operator's stop.
+      status: 'failed',
+      ended_kind: 'credential_revoked',
       ended_reason: DISCONNECTED,
     });
   });
@@ -317,8 +319,9 @@ describe('gh-2 — the member Disconnect and SC-6 member removal end the rows to
     expect(result.terminatedSessionIds).toEqual([sessionId]);
     expect(result.failures).toEqual([]);
     expect(await row(sessionId)).toMatchObject({
-      status: 'exited',
-      ended_kind: 'stopped_by_operator',
+      // 301 (Spec D1 §3): containment is a process fact, not an operator's stop.
+      status: 'failed',
+      ended_kind: 'credential_revoked',
       ended_reason: REMOVED,
     });
   });
@@ -376,7 +379,7 @@ describe('gh-4 — one transition, no stomp, terminate distinct, no secret', () 
     runtime.pty.write(sessionId, 'exit 0\n');
     await exited;
     // The exit's own ending, written by handlePtyExit under the launcher.
-    await vi.waitFor(async () => expect(await row(sessionId)).toMatchObject({ status: 'exited', ended_kind: 'completed' }), {
+    await vi.waitFor(async () => expect(await row(sessionId)).toMatchObject({ status: 'exited', ended_kind: 'exited_clean' }), {
       timeout: 10_000,
     });
     const ended = await row(sessionId);

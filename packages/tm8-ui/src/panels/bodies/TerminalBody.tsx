@@ -1,8 +1,10 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
+import { ToolRunChip } from '../../tools/ToolRunChip';
+import '../../tools/tools.css';
 import type { SessionLiveness } from '../../data/seam';
 import { useShellKind } from '../../mobile';
-import { SessionWaitingBanner } from '../../attention/SessionWaitingBanner';
+import type { ActionRef } from '../../domain';
 import {
   ExitedFallback,
   LiveTerminal,
@@ -108,6 +110,14 @@ export interface TerminalBodyProps {
    * terminal is already showing you.
    */
   statsSurface?: ReactNode;
+  /**
+   * SPEC D1 §5.6 — the session outcome verbs the ended canvas offers beside
+   * Resume (Complete, Stop for good). Absent ⇒ those buttons render refused,
+   * as Resume does unwired.
+   */
+  onSessionVerb?: (ref: ActionRef) => void;
+  /** Resolve an actor id to a name, for "Stopped by <actor>". */
+  actorName?: (actorId: string) => string | undefined;
 }
 
 export function TerminalBody({
@@ -124,6 +134,8 @@ export function TerminalBody({
   resumeDisabledReason,
   onMarkExited,
   statsSurface,
+  onSessionVerb,
+  actorName,
 }: TerminalBodyProps) {
   const row = toSessionRow(detail);
   const presentation = presentSession({
@@ -234,11 +246,7 @@ export function TerminalBody({
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
-      {/* ATTENTION v2 (chapter 4 "Session"): the banner carries the REAL
-          reason this session raised; PTY silence alone no longer draws one
-          (G1). */}
-      <SessionWaitingBanner sessionId={detail.id} tone="dark" />
-
+      {'toolRun' in detail.state && detail.state.toolRun && <ToolRunChip run={detail.state.toolRun} shellLive={liveness === 'live'} />}
       <div className="pn-terminal-stage" data-testid="terminal-stage" ref={stageRef}>
         <SessionCanvas
           presentation={presentation}
@@ -257,6 +265,9 @@ export function TerminalBody({
           {...(resuming ? { resuming } : {})}
           {...(resumeDisabledReason ? { resumeDisabledReason } : {})}
           {...(onMarkExited ? { onMarkExited } : {})}
+          sessionState={detail.state}
+          {...(onSessionVerb ? { onSessionVerb } : {})}
+          {...(actorName ? { actorName } : {})}
           liveTerminalRef={liveTerminalRef}
           {...(onPhone
             ? {
@@ -331,6 +342,9 @@ function SessionCanvas({
   resuming,
   resumeDisabledReason,
   onMarkExited,
+  sessionState,
+  onSessionVerb,
+  actorName,
   liveTerminalRef,
   fontSize,
   onGeometry,
@@ -350,6 +364,9 @@ function SessionCanvas({
   resuming?: boolean;
   resumeDisabledReason?: string;
   onMarkExited?: () => void;
+  sessionState?: unknown;
+  onSessionVerb?: (ref: ActionRef) => void;
+  actorName?: (actorId: string) => string | undefined;
   liveTerminalRef?: React.Ref<LiveTerminalHandle>;
   /** Phone only — the modifier bar's font control. Absent everywhere else, so
       the desktop terminal keeps `TERMINAL_FONT_SIZE` untouched. */
@@ -388,6 +405,8 @@ function SessionCanvas({
           label={livenessLabel}
           reason={livenessReason}
           {...(onMarkExited ? { onMarkExited } : {})}
+          {...(onResume ? { onResume } : {})}
+          {...(resuming ? { resuming } : {})}
         />
       );
 
@@ -416,8 +435,10 @@ function SessionCanvas({
           {...(onResume ? { onResume } : {})}
           {...(resuming ? { resuming } : {})}
           {...(resumeDisabledReason ? { resumeDisabledReason } : {})}
+          sessionState={sessionState}
+          {...(onSessionVerb ? { onSessionVerb } : {})}
+          {...(actorName ? { actorName } : {})}
         />
       );
   }
 }
-

@@ -1,0 +1,321 @@
+// @vitest-environment jsdom
+/**
+ * D31 (2026-10-06): the desktop has three modes — Work · Design · Observe —
+ * lands on Work, and every retired desktop address lands in Work. Driven
+ * through the real GateApp and router, as a link or a reload would arrive.
+ *
+ * The phone and the legacy desktop (`shell/desktop-modes.ts`) are pinned NOT
+ * to change: the phone keeps Home as its chat screen (D16).
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
+import { GateApp } from './GateApp';
+import { resetNav } from '../stores/navStore';
+import { screenStackStore } from '../stores/screenStackStore';
+import { createMemoryTarget, type MemoryTarget } from '../routes';
+import { FIXTURE_SPACE_ID } from '../fixtures';
+import { SHELL_OVERRIDE_KEY } from '../mobile';
+import { DESKTOP_MODES_KEY } from '../shell/desktop-modes';
+import type { WorkspaceListStore } from '../tab-workspace/bridge/workspaceList';
+import { getWorkspaceRuntime } from '../tab-workspace/runtime/dispatch';
+
+/* The fixture node has no workspace bridge, so the switcher's list store is
+   captured here and proved capable by hand for the `g w` cases. */
+const listStores = vi.hoisted(() => [] as WorkspaceListStore[]);
+const listKeys = vi.hoisted(() => [] as [string, string][]);
+vi.mock('../tab-workspace/bridge/workspaceList', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../tab-workspace/bridge/workspaceList')>();
+  return {
+    ...real,
+    getWorkspaceListStore: (viewerId: string, spaceId: string) => {
+      const store = real.getWorkspaceListStore(viewerId, spaceId);
+      if (!listStores.includes(store)) {
+        listStores.push(store);
+        listKeys.push([viewerId, spaceId]);
+      }
+      return store;
+    },
+  };
+});
+
+const SPACE = FIXTURE_SPACE_ID;
+const TASK = 'task-4f8c2a9e';
+
+let storage: Map<string, string>;
+function installStorage(): Map<string, string> {
+  const map = new Map<string, string>();
+  const store = {
+    getItem: (k: string) => map.get(k) ?? null,
+    setItem: (k: string, v: string) => void map.set(k, String(v)),
+    removeItem: (k: string) => void map.delete(k),
+    clear: () => map.clear(),
+    key: (i: number) => [...map.keys()][i] ?? null,
+    get length() {
+      return map.size;
+    },
+  };
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: store });
+  Object.defineProperty(window, 'localStorage', { configurable: true, value: store });
+  return map;
+}
+
+beforeEach(() => {
+  storage = installStorage();
+  resetNav();
+  screenStackStore.getState().clearAll();
+});
+afterEach(cleanup);
+
+const mount = (target: MemoryTarget) => render(<GateApp routerTarget={target} />);
+const at = (path: string) => createMemoryTarget(`#/s/${SPACE}${path}`);
+
+async function settle(ms = 120): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  });
+}
+
+describe('the default landing is Home', () => {
+  it('lands the bare space on Home, at its canonical /home address', async () => {
+    const target = createMemoryTarget(`#/s/${SPACE}`);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home`));
+  });
+
+  it('keeps /tabs and /work as permanent aliases, rewritten in place to /home', async () => {
+    for (const alias of ['/tabs', '/work']) {
+      const target = at(alias);
+      const view = mount(target);
+      await waitFor(() => view.getByTestId('tab-workspace'));
+      await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home`));
+      view.unmount();
+    }
+  });
+});
+
+describe('retired desktop addresses land in Work (replace history)', () => {
+  it('bare /home → Home (the tabs view)', async () => {
+    const target = at('/home');
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home`));
+  });
+
+  it('/home/k/{slug} → Work with that kind in the browser', async () => {
+    const target = at('/home/k/docs');
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    await waitFor(() =>
+      expect(view.container.querySelector('.tws-rail-kind[data-kind="doc"][aria-current="true"]')).not.toBeNull(),
+    );
+    expect(target.getHash()).toBe(`#/s/${SPACE}/home`);
+  });
+
+  it('k/{slug} for a Work kind → Work with that kind in the browser', async () => {
+    const target = at('/k/tasks');
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    await waitFor(() =>
+      expect(view.container.querySelector('.tws-rail-kind[data-kind="task"][aria-current="true"]')).not.toBeNull(),
+    );
+    expect(view.queryByTestId('entity-view')).toBeNull();
+  });
+
+  it('the old Work with a stack (?p=) opens it as the active tab', async () => {
+    const target = at(`/workspace?p=${TASK}`);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home?tab=${TASK}`));
+    expect(view.queryByTestId('workspace-grid')).toBeNull();
+  });
+
+  it('e/{id} for a Work kind → that entity as the active tab', async () => {
+    const target = at(`/e/${TASK}`);
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    await waitFor(() => expect(target.getHash()).toBe(`#/s/${SPACE}/home?tab=${TASK}`));
+  });
+
+  it('/board → Home', async () => {
+    const target = at('/board');
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    /* Work restores the tabs this viewer already has open in the space. */
+    await waitFor(() => expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/home(\\?tab=|$)`)));
+    expect(view.queryByTestId('board-screen')).toBeNull();
+  });
+
+  it('leaves Design, Observe, Settings and Help where they are', async () => {
+    for (const path of ['/graph', '/craft', '/settings', '/help']) {
+      resetNav();
+      const target = at(path);
+      const view = mount(target);
+      await settle();
+      expect(view.queryByTestId('tab-workspace')).toBeNull();
+      expect(target.getHash()).toBe(`#/s/${SPACE}${path}`);
+      view.unmount();
+    }
+  });
+});
+
+describe('who is NOT redirected', () => {
+  it('the phone keeps Home as its chat screen (D16)', async () => {
+    storage.set(SHELL_OVERRIDE_KEY, 'mobile');
+    const target = at('/home');
+    const view = mount(target);
+    await settle(200);
+    expect(view.queryByTestId('tab-workspace')).toBeNull();
+    expect(target.getHash()).toBe(`#/s/${SPACE}/home`);
+    /* The phone's /home is its chat screen, never the removed desktop Home. */
+    await waitFor(() => view.getByTestId('chat-home-screen'));
+    expect(view.queryByTestId('home-rail')).toBeNull();
+  });
+
+  it('the legacy desktop does NOT keep Home: the dashboard is removed, /home is the tabs view', async () => {
+    storage.set(DESKTOP_MODES_KEY, 'legacy');
+    const target = at('/home');
+    const view = mount(target);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/home(\\?|$)`));
+  });
+
+  it('the legacy desktop restores a remembered Home as Work', async () => {
+    storage.set(DESKTOP_MODES_KEY, 'legacy');
+    storage.set(
+      'tm8.last-place.v1.local',
+      JSON.stringify({ spaceId: SPACE, targets: { [SPACE]: { type: 'view', ref: 'dashboard' } } }),
+    );
+    const view = render(<GateApp />);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+  });
+});
+
+/*
+ * WORK, NOT HOME (coordinator, 2026-10-16). The Craft redesign labelled this
+ * mode "Home" while a Home DASHBOARD still existed beside it; the dashboard is
+ * removed (bccf73741), so the selector names the workspace again and "Home" is
+ * the retired word here — which is why it joins the retired list below.
+ */
+describe('the selector is Work · Craft · Observe · Settings', () => {
+  it('in Work: the view menu lists exactly the four modes, Work current', async () => {
+    const view = mount(at('/work'));
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    const trigger = view.getByTestId('tws-view-select');
+    expect(trigger.textContent).toContain('Work');
+    fireEvent.click(trigger);
+    const rows = within(view.getByRole('menu', { name: 'Views' })).getAllByRole('menuitemradio');
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Work', 'Craft', 'Observe', 'Settings']);
+    expect(rows[0]!.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('on Observe: the bar leads with the four modes and no retired view anywhere', async () => {
+    const view = mount(at('/graph'));
+    const tabs = await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
+    const pill = within(tabs).getByTestId('top-view-switcher');
+    expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim())).toEqual([
+      'Work',
+      'Craft',
+      'Observe',
+      'Settings',
+    ]);
+    const labels = [...tabs.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim());
+    for (const retired of ['Home', 'Workspace', 'Board', 'Design', 'Graph']) expect(labels).not.toContain(retired);
+  });
+
+  it('the tab scope button leads the tab strip, before every tab (Craft redesign §2)', async () => {
+    const view = mount(at('/home'));
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    const scope = view.getByTestId('tws-scope');
+    const tabs = view.getByRole('tablist', { name: 'Open tabs' });
+    expect(scope.closest('.tws-ts-scope')).not.toBeNull();
+    expect(scope.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("Home's rail keeps Needs you, you and expand at the bottom, and no tools face", async () => {
+    const view = mount(at('/work'));
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    const controls = view.getByRole('group', { name: 'Rail controls' });
+    const bottom = [...controls.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
+    expect(bottom).toEqual(['Needs you', 'Account: Ada', 'Expand sidebar']);
+    expect(view.queryByTestId('tws-rail-switch')).toBeNull();
+    expect(view.queryByRole('group', { name: 'Settings and tools' })).toBeNull();
+  });
+});
+
+describe('Craft: the crafts list is not the 2nd panel', () => {
+  it('the crafts home draws no crafts list in the frame panel', async () => {
+    const view = mount(at('/craft'));
+    await waitFor(() => view.getByTestId('crafts-home'));
+    expect(view.queryByRole('navigation', { name: 'Crafts' })).toBeNull();
+    expect(view.queryByTestId('crf-side')).toBeNull();
+  });
+});
+
+describe('the palette', () => {
+  const openPalette = async (view: ReturnType<typeof mount>) => {
+    fireEvent.keyDown(window, { key: '/' });
+    return waitFor(() => view.getByTestId('command-palette'));
+  };
+  const rowLabels = (palette: HTMLElement) =>
+    [...palette.querySelectorAll('[data-testid="palette-row"] .pal__row-label')].map((n) => n.textContent);
+
+  it('offers Home, and opening it lands on Home (the tabs view, not the old chat Home)', async () => {
+    const target = at('/graph');
+    const view = mount(target);
+    await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
+    const palette = await openPalette(view);
+    fireEvent.change(palette.querySelector('input') as HTMLInputElement, { target: { value: 'Work' } });
+    const row = await waitFor(() => {
+      const found = [...palette.querySelectorAll<HTMLElement>('[data-testid="palette-row"]')].find(
+        (n) => n.querySelector('.pal__row-label')?.textContent === 'Work',
+      );
+      if (!found) throw new Error('no Work row');
+      return found;
+    });
+    fireEvent.click(row);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    expect(target.getHash()).toMatch(new RegExp(`^#/s/${SPACE}/home(\\?tab=|$)`));
+    expect(view.queryByTestId('workspace-grid')).toBeNull();
+  });
+
+  it('has no row for a retired view', async () => {
+    const view = mount(at('/graph'));
+    await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
+    const palette = await openPalette(view);
+    for (const retired of ['Home', 'Workspace']) {
+      fireEvent.change(palette.querySelector('input') as HTMLInputElement, { target: { value: retired } });
+      await settle(40);
+      expect(rowLabels(palette)).not.toContain(retired);
+    }
+  });
+
+  it('lists Channels once (the view row, not the kind row too)', async () => {
+    const view = mount(at('/graph'));
+    await waitFor(() => view.getByRole('tablist', { name: 'Screens' }));
+    const palette = await openPalette(view);
+    expect(rowLabels(palette).filter((label) => label === 'Channels')).toHaveLength(1);
+  });
+});
+
+describe('Work is a remembered place', () => {
+  it('a restore with Home remembered lands on Work instead', async () => {
+    storage.set(
+      'tm8.last-place.v1.local',
+      JSON.stringify({ spaceId: SPACE, targets: { [SPACE]: { type: 'view', ref: 'dashboard' } } }),
+    );
+    const view = render(<GateApp />);
+    await waitFor(() => view.getByTestId('tab-workspace'));
+  });
+
+  it('entering Work writes it to last-place', async () => {
+    const view = mount(at('/work'));
+    await waitFor(() => view.getByTestId('tab-workspace'));
+    await waitFor(() => {
+      const record = JSON.parse(storage.get('tm8.last-place.v1.local') ?? '{}') as {
+        targets?: Record<string, unknown>;
+      };
+      expect(record.targets?.[SPACE]).toEqual({ type: 'work' });
+    });
+  });
+});

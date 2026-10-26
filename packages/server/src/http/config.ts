@@ -11,10 +11,12 @@ import { isAbsolute, join, resolve } from 'node:path';
 
 import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 
+import { DEFAULT_CHAT_IDLE_TIMEOUT_MS, DEFAULT_CHAT_TOOL_TIMEOUT_MS } from '../chat/fenced-turn.js';
 import {
   CLIPBOARD_MAX_BYTES_DEFAULT,
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
+import { MCP_AUDIT_RETENTION_DAYS_DEFAULT } from '../scheduler/jobs/mcp-audit-retention.js';
 import { DEFAULT_AUTH_RATE_LIMITS, type AuthRateLimits } from './auth-rate-limit.js';
 import { DEFAULT_STYLE_RATE_LIMITS, type StyleRateLimits } from './style-rate-limit.js';
 import type { SpaceSessionsMode } from './types.js';
@@ -64,6 +66,8 @@ export interface ServerConfig {
   readonly clipboardMaxBytes?: number;
   /** Days a clipboard date-bucket survives (`TM8_CLIPBOARD_RETENTION_DAYS`, 0 = keep). */
   readonly clipboardRetentionDays?: number;
+  /** Days an MCP call audit row survives (`TM8_MCP_AUDIT_RETENTION_DAYS`, 0 = keep). §5.6. */
+  readonly mcpAuditRetentionDays?: number;
   /** Seed/repair launchable personas and the current project at boot. */
   readonly launchBootstrap?: boolean;
   /** Absolute current project registered by launch bootstrap. */
@@ -146,6 +150,20 @@ export interface ServerConfig {
    */
   readonly publicOrigin?: string;
   /**
+   * W9c: space links across servers (`TM8_REMOTE_SPACE_LINKS=on`). Ships DARK:
+   * default off, and off is today's behaviour exactly — a link to another
+   * server refuses `space_link_remote_disabled`, `spaceLinks.inbound.grant`
+   * refuses, and the server-to-server routes (`/link/v1/*`) answer 404.
+   */
+  readonly remoteSpaceLinks?: boolean;
+  /**
+   * DEV ONLY (`TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK=1`): lets the remote-link
+   * client reach a server whose base URL is plain http on a loopback address,
+   * so two servers on one machine can link. The guarded HTTPS client and its
+   * SSRF policy are untouched; every other target still goes through it.
+   */
+  readonly remoteSpaceLinksAllowLoopback?: boolean;
+  /**
    * Upper bound on the Postgres pool (`TM8_DB_POOL_MAX`). Default 8.
    *
    * This number IS the node's read concurrency: the pool queues past it and
@@ -166,6 +184,31 @@ export interface ServerConfig {
    * the wrong ceiling.
    */
   readonly dbStatementTimeoutMs?: number;
+  /**
+   * How long a chat turn tolerates TOTAL silence from the harness before it is
+   * stopped (`TM8_CHAT_IDLE_TIMEOUT_MS`). Default 1800000 (30 min).
+   *
+   * This is the idle limit only: it does NOT apply while a tool call is in
+   * flight — see `chatToolTimeoutMs`, which exists because the Claude adapter
+   * emits no observation between a tool starting and its result arriving, so
+   * for two releases any tool slower than this limit killed the turn and
+   * reported it to the human as an interrupted delivery.
+   *
+   * Lower this to fail a wedged agent faster, but not far: a tool result is
+   * followed by silence until the next COMPLETE assistant message, and that
+   * gap spends THIS budget rather than the tool one.
+   */
+  readonly chatIdleTimeoutMs?: number;
+  /**
+   * The silence a chat turn tolerates while at least one tool call is running
+   * (`TM8_CHAT_TOOL_TIMEOUT_MS`). Default 1800000, equal to the idle default,
+   * so out of the box the two behave as one 30-minute limit. Raised to
+   * `chatIdleTimeoutMs` if set below it.
+   *
+   * The runtime lease is heartbeaten every 30s and each beat extends it by ten
+   * minutes, so a wait this long never loses the lease.
+   */
+  readonly chatToolTimeoutMs?: number;
   /**
    * Self-hosted LiveKit SFU, for voice channels. All three or none — a node
    * with a URL and no secret cannot mint a token, so a half-set environment is
@@ -460,11 +503,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new ConfigError(`TM8_PORT must be a valid port number, got ${JSON.stringify(env.TM8_PORT)}`);
   }
 
-  // S1. The refusal, not a warning.
+  // S1. The refusal, not a warning. Token auth (S8) exists now, so the reason
+  // is no longer "not implemented": the node binds loopback and a reverse proxy
+  // that terminates TLS is the one supported way in from another machine. A
+  // bare 0.0.0.0 would hand every client on the network a plaintext password
+  // form, and in `single` mode a forwarded-header-free path to the auto-owner.
   if (!isLoopback(host)) {
     throw new ConfigError(
-      `refusing to bind ${host}:${port} — non-loopback binding requires token auth (10-SECURITY S1/S8), ` +
-        `which is not implemented yet. Unset TM8_BIND to bind 127.0.0.1.`,
+      `refusing to bind ${host}:${port} — tm8 always binds loopback. To reach this node from another ` +
+        `machine, keep TM8_BIND unset (127.0.0.1) and put a TLS reverse proxy in front of it with ` +
+        `TM8_NODE_MODE=multi and TM8_PUBLIC_ORIGIN=https://<your-host> — see docs/ops/OPERATOR-GUIDE.md.`,
     );
   }
 
@@ -497,6 +545,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       `TM8_DB_STATEMENT_TIMEOUT_MS must be a positive integer, got ${JSON.stringify(dbStatementTimeoutRaw)}`,
     );
   }
+
+  // Both chat budgets REFUSE a zero: `deadline(promise, 0)` fires on the next
+  // tick, so a zero here would not mean "no limit", it would fail every turn.
+  const chatIdleTimeoutMs = envPositiveInt(
+    env.TM8_CHAT_IDLE_TIMEOUT_MS, 'TM8_CHAT_IDLE_TIMEOUT_MS', DEFAULT_CHAT_IDLE_TIMEOUT_MS);
+  const chatToolTimeoutMs = envPositiveInt(
+    env.TM8_CHAT_TOOL_TIMEOUT_MS, 'TM8_CHAT_TOOL_TIMEOUT_MS', DEFAULT_CHAT_TOOL_TIMEOUT_MS);
 
   // An unrecognised value REFUSES rather than falling back to `single`. A typo
   // (`TM8_NODE_MODE=multiplayer`) silently defaulting to the permissive mode is
@@ -557,6 +612,38 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 
   const preview = resolvePreview(env, host, port, extraAllowedHostnames, publicOrigin, allowedOrigins);
 
+  // The public origin is the name this node is reached by, so it is allowed by
+  // default — Host and Origin both. Before this, an operator who set
+  // TM8_PUBLIC_ORIGIN (the claim link) also had to repeat its hostname in
+  // TM8_ALLOWED_HOSTNAMES, or every proxied browser got a 403 naming neither.
+  // Derived AFTER resolvePreview so its boot refusals keep naming the variable
+  // the operator actually wrote. The origin joins TM8_ALLOWED_ORIGINS only when
+  // that list is in use: a non-empty list switches the Origin check to exact
+  // matching, and switching it on here would refuse the loopback origins.
+  if (publicOrigin) {
+    const publicHost = new URL(publicOrigin).hostname.toLowerCase();
+    if (!isLoopback(publicHost) && !extraAllowedHostnames.includes(publicHost)) {
+      extraAllowedHostnames.push(publicHost);
+    }
+    if (allowedOrigins.length > 0 && !allowedOrigins.includes(publicOrigin)) {
+      allowedOrigins.push(publicOrigin);
+    }
+  }
+  // An exact-origin list must not lock out the node's OWN loopback origin. With
+  // only the public https origin listed, a browser on the box at
+  // http://127.0.0.1:<port> — the address install.sh, the claim banner and an
+  // ssh tunnel all hand out — had every API call refused and saw a blank page.
+  // The Host allowlist already admits the loopback names, so this widens
+  // nothing a loopback browser could not already reach. A loopback name the
+  // second-origin preview owns stays out (security.ts partitions it).
+  if (allowedOrigins.length > 0) {
+    for (const name of ['127.0.0.1', 'localhost', '[::1]']) {
+      if (preview && !preview.sameOrigin && preview.host === name) continue;
+      const own = `http://${name}:${port}`;
+      if (!allowedOrigins.includes(own)) allowedOrigins.push(own);
+    }
+  }
+
   const dataDir = resolveServerDataDir(env);
   const clipboardDir = resolveClipboardDir(env, dataDir);
   const containers = resolveContainersConfig(env, dataDir);
@@ -569,6 +656,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     env.TM8_CLIPBOARD_RETENTION_DAYS,
     'TM8_CLIPBOARD_RETENTION_DAYS',
     CLIPBOARD_RETENTION_DAYS_DEFAULT,
+  );
+  const mcpAuditRetentionDays = envNonNegativeInt(
+    env.TM8_MCP_AUDIT_RETENTION_DAYS,
+    'TM8_MCP_AUDIT_RETENTION_DAYS',
+    MCP_AUDIT_RETENTION_DAYS_DEFAULT,
   );
 
   return {
@@ -585,6 +677,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     clipboardDir,
     clipboardMaxBytes,
     clipboardRetentionDays,
+    mcpAuditRetentionDays,
     launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
@@ -592,6 +685,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     nodeMode,
     spaceSessions,
     ...(publicOrigin ? { publicOrigin } : {}),
+    // Present only when on, so an unset switch leaves the config as it was.
+    ...(envBoolean(env.TM8_REMOTE_SPACE_LINKS, 'TM8_REMOTE_SPACE_LINKS', false) ? { remoteSpaceLinks: true } : {}),
+    ...(envBoolean(env.TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK, 'TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK', false)
+      ? { remoteSpaceLinksAllowLoopback: true } : {}),
     // `multi` implies the kill switch. The explicit env var still wins when it
     // asks for MORE restriction (a hardened single-player node), and can never
     // ask for less: `||` here means no combination of the two can produce a
@@ -635,6 +732,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     },
     dbPoolMax,
     dbStatementTimeoutMs,
+    chatIdleTimeoutMs,
+    chatToolTimeoutMs,
     ...(livekit ? { livekit } : {}),
   };
 }

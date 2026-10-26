@@ -7,8 +7,7 @@
  *   2. no server source holds a private copy (an array/set literal of the two
  *      kinds, or an `authKind === 'browser' || … 'cli'` chain);
  *   3. a catalog binding is `humanOnly` iff its registration is wrapped in
- *      `requireHumanSession` / `requireHumanLinkSession` /
- *      `requireHumanOpRequestSession`, per file.
+ *      `requireHumanSession` / `requireHumanLinkSession`, per file.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -61,19 +60,37 @@ describe('HUMAN_AUTH_KINDS', () => {
 describe('catalog humanOnly ⇔ registered through a human guard', () => {
   const FILES = [
     'packages/server/src/facade/handlers/w2/credentials.ts',
+    'packages/server/src/facade/handlers/w2/inbox-read-marks.ts',
     'packages/server/src/facade/handlers/w2/space-links.ts',
     'packages/server/src/facade/handlers/w2/servers.ts',
-    'packages/server/src/facade/handlers/w2/op-requests.ts',
     // 284: only `spaces.styleDefault.set` is human-only; the style reads and
     // personal writes stay open to agents (spec §7).
     'packages/server/src/facade/handlers/w2/styles.ts',
+    // 345: `mcp.servers.request` is the one human-only operation registered
+    // from the DEFINITIONS file rather than the runtime one — it needs no MCP
+    // runtime bridge, only a member and a Space.
+    'packages/server/src/mcp/definitions.ts',
+    'packages/server/src/mcp/handlers.ts',
+    // §5.5 (357): all three `mcp.tokens.*` are human-only. A token that acts as
+    // a member is minted and revoked by that member at a keyboard — never by
+    // their agent carrying their identity, and never by another MCP token.
+    'packages/server/src/mcp/tokens.ts',
+    // §5.6 (346): the audit read is a human oversight surface (lead ruling on #1321).
+    'packages/server/src/mcp/audit.ts',
+    'packages/server/src/tools/handlers.ts',
+    // §10.4: `chat.getMcpSelections` is the one chat operation registered
+    // through `requireHumanSession`. Its siblings rely on the family's own
+    // `refuseChatRuntimeBearer` plus a human gate inside their RPC, and
+    // `read_mcp_launch_selections` has no such gate — so this door carries the
+    // wrapper for real and the catalog flags it.
+    'packages/server/src/chat/handlers.ts',
   ];
 
   it('matches op by op, not by prefix', () => {
     const wrapped = new Set<string>();
     for (const file of FILES) {
       const text = readFileSync(join(ROOT, file), 'utf8');
-      for (const match of text.matchAll(/'([A-Za-z.]+)':\s*requireHuman(?:Link|OpRequest)?Session\(/g)) {
+      for (const match of text.matchAll(/'([A-Za-z.]+)':\s*requireHuman(?:Link)?Session\(/g)) {
         wrapped.add(match[1]!);
       }
     }
@@ -81,7 +98,7 @@ describe('catalog humanOnly ⇔ registered through a human guard', () => {
     expect([...flagged].sort()).toEqual([...wrapped].sort());
     // The reads beside them stay open to agents.
     for (const op of ['spaceLinks.list', 'spaceLinks.audit', 'spaceLinks.invoke', 'servers.get', 'servers.list', 'servers.probe',
-      'opRequests.create', 'opRequests.list', 'opRequests.get', 'spaces.styleDefault.get', 'styles.push']) {
+      'spaces.styleDefault.get', 'styles.push']) {
       expect(flagged.has(op)).toBe(false);
     }
   });

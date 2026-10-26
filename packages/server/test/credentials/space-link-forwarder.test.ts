@@ -18,6 +18,7 @@ import type { FacadeDeps } from '../../src/facade/deps.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import {
   SPACE_LINK_OFFLINE,
+  SPACE_LINK_REMOTE_UNSUPPORTED,
   SPACE_LINK_REMOTE_DISABLED,
   SPACE_LINK_REMOTE_REFUSED,
   SPACE_LINK_SIGNED_OUT,
@@ -88,7 +89,8 @@ const GET_DOC = { op: 'entities.get', params: { id: DOC } };
 
 describe('W7 forward seam — a remote link is forwarded, never resolved here', () => {
   it('ok — forwarded with the server, the op, the input and the chain plus home; audited ok; store.use never reached', async () => {
-    const h = harness(SERVER, async () => ({ kind: 'ok', status: 200, body: { id: DOC, title: 'B doc' } }));
+    // W9c: the target answers { result, auditId }; the result is the op's data.
+    const h = harness(SERVER, async () => ({ kind: 'ok', status: 200, body: { result: { id: DOC, title: 'B doc' }, auditId: 'b-audit' } }));
     const res = await h.run({ op: 'entities.patch', params: { id: DOC }, input: { title: 'x' } });
     expect(res.result).toEqual({ id: DOC, title: 'B doc' });
     expect(h.use).not.toHaveBeenCalled();
@@ -146,6 +148,16 @@ describe('W7 forward seam — a remote link is forwarded, never resolved here', 
     expect(error).toMatchObject({ code: 'forbidden', details: { reason: SPACE_LINK_REMOTE_DISABLED } });
     expect(h.use).not.toHaveBeenCalled();
     expect(h.audits.at(-1)).toMatchObject({ result: 'error', reason: 'remote_links_disabled' });
+  });
+
+  it('unsupported (W9c: the target has no remote-link route) — its own message, not retryable, NOT signed out', async () => {
+    const h = harness(SERVER, async () => ({ kind: 'unsupported' }));
+    const error = await failure(h.run(GET_DOC));
+    expect(error).toMatchObject({
+      code: 'upstream_unavailable', retryable: false, details: { reason: SPACE_LINK_REMOTE_UNSUPPORTED },
+      message: 'target server does not support remote space links (upgrade it or enable TM8_REMOTE_SPACE_LINKS)',
+    });
+    expect(h.audits.at(-1)).toMatchObject({ result: 'error', reason: 'remote_unsupported' });
   });
 
   it('refused by B — re-typed with B\'s code, no B text in the audit', async () => {
@@ -232,9 +244,11 @@ describe('W8 — a remote invoke on this node refuses cleanly (forwarding disabl
     return { run, audits, use, local, forward };
   }
 
-  it('the composition root wires the disabled forwarder, with no switch past it', () => {
+  it('the composition root wires the disabled forwarder unless TM8_REMOTE_SPACE_LINKS is on (W9c: dark by default)', () => {
     const index = readFileSync(fileURLToPath(new URL('../../src/facade/index.ts', import.meta.url)), 'utf8');
-    expect(index).toMatch(/remoteInvokeForwarder: new DisabledRemoteInvokeForwarder\(\),/);
+    expect(index).toMatch(/remoteInvokeForwarder: deps\.remoteInvokeForwarder \?\? new DisabledRemoteInvokeForwarder\(\),/);
+    const main = readFileSync(fileURLToPath(new URL('../../src/main.ts', import.meta.url)), 'utf8');
+    expect(main).toMatch(/config\.remoteSpaceLinks === true\s*\?\s*\{\s*remoteInvokeForwarder: new HttpsRemoteInvokeForwarder/);
     const forwarderSrc = readFileSync(fileURLToPath(new URL('../../src/remote/forwarder.ts', import.meta.url)), 'utf8');
     expect(forwarderSrc).not.toMatch(/process\.env|fetch\(|guardedHttps|request\(/);
   });
@@ -256,7 +270,7 @@ describe('W8 — a remote invoke on this node refuses cleanly (forwarding disabl
 
   it('positive — the same default forwarder, given ok, carries the result: the refusal is the forwarder, not the seam', async () => {
     const h = productionHarness();
-    h.forward.mockResolvedValueOnce({ kind: 'ok', status: 200, body: { id: DOC } });
+    h.forward.mockResolvedValueOnce({ kind: 'ok', status: 200, body: { result: { id: DOC }, auditId: 'b-audit' } });
     await expect(h.run()).resolves.toMatchObject({ result: { id: DOC } });
     expect(h.use).not.toHaveBeenCalled();
   });

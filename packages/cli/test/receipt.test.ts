@@ -20,6 +20,7 @@ import { createOutput, type OutputFormat } from '../src/output.js';
 import {
   clampTitle,
   deprecationNotice,
+  nextAfterTick,
   renderReceiptHuman,
   resolveReceiptMode,
   successReceipt,
@@ -197,14 +198,14 @@ describe('successReceipt: per op', () => {
     expect(r.refs).toEqual([{ kind: 'commit', id: '01a0cf19-fd27-7bd6-80fe-bbf517dd7d50', url: 'https://github.com/o/r/commit/abc' }]);
   });
 
-  it('entity.create: parentId, version.to 1, status.to open, created_in ref', () => {
+  it('entity.create: parentId, version.to 1, status.to open, a chained edge ref', () => {
     const r = successReceipt(
       'entity.create',
       commandResult(taskDetail({ version: 1, status: 'open' }), [taskDetail()]),
-      { refs: [{ kind: 'edge', type: 'created_in', id: '01a0cf19-58c1-743c-9822-cbd391dca6f5' }] },
+      { refs: [{ kind: 'edge', type: 'attached_to', id: '01a0cf19-58c1-743c-9822-cbd391dca6f5' }] },
     );
     expect(r).toMatchObject({ parentId: PARENT, version: { to: 1 }, status: { to: 'open' } });
-    expect(r.refs).toEqual([{ kind: 'edge', type: 'created_in', id: '01a0cf19-58c1-743c-9822-cbd391dca6f5' }]);
+    expect(r.refs).toEqual([{ kind: 'edge', type: 'attached_to', id: '01a0cf19-58c1-743c-9822-cbd391dca6f5' }]);
     expectLean(r);
     expect(bytes(r)).toBeLessThanOrEqual(500);
   });
@@ -337,6 +338,78 @@ describe('successReceipt: per op', () => {
   });
 });
 
+// P0h: a tick that leaves nothing open names the step after it (Spec D1 §6.3 R3).
+function tickedTask(done: boolean[], opts: { status?: string; gate?: string; version?: number } = {}) {
+  const base = taskDetail({ status: opts.status ?? 'working', version: opts.version ?? 7 });
+  return {
+    ...base,
+    state: { ...(base.state as Record<string, unknown>), completionGate: opts.gate ?? 'none' },
+    content: {
+      kind: 'task',
+      description: '',
+      acceptanceCriteria: done.map((d, i) => ({ id: `ac${i + 1}`, done: d, text: `criterion ${i + 1}` })),
+    },
+  };
+}
+
+describe('task.tick: done/total, open ids and next (P0h)', () => {
+  it('a partial tick reports done/total and the open ids, and no next', () => {
+    const r = successReceipt('task.tick', commandResult(tickedTask([true, false, false])), { expectedVersion: 6 });
+    expect(r.acceptance).toEqual({ done: 1, total: 3 });
+    expect(r.open).toEqual(['ac2', 'ac3']);
+    expect(r).not.toHaveProperty('next');
+    expect(renderReceiptHuman(r)).toContain('acceptance:1/3');
+    expect(renderReceiptHuman(r)).toContain('open ac2 ac3');
+    expect(renderReceiptHuman(r)).not.toContain('next:');
+  });
+
+  it('the last tick names task complete at the new version', () => {
+    const r = successReceipt('task.tick', commandResult(tickedTask([true, true])), { expectedVersion: 6, actorId: ME });
+    expect(r.acceptance).toEqual({ done: 2, total: 2 });
+    expect(r.open).toEqual([]);
+    expect(r.next).toBe(`tm8 task complete ${TASK} --expect-version 7 --by ${ME}`);
+    const line = renderReceiptHuman(r);
+    expect(line).not.toContain('\n');
+    expect(line).toContain('acceptance:2/2');
+    expect(line).toContain(`next: tm8 task complete ${TASK} --expect-version 7 --by ${ME}`);
+    expect(bytes(r)).toBeLessThanOrEqual(500);
+  });
+
+  it('with no known actor, next leaves --by <actor-id> for the caller to fill', () => {
+    const r = successReceipt('task.tick', commandResult(tickedTask([true])));
+    expect(r.next).toBe(`tm8 task complete ${TASK} --expect-version 7 --by <actor-id>`);
+  });
+
+  it('a task with the opt-in pr_merged gate is moved to in_review instead', () => {
+    const r = successReceipt('task.tick', commandResult(tickedTask([true], { gate: 'pr_merged' })));
+    expect(r.next).toBe(`tm8 task transition ${TASK} in_review`);
+  });
+
+  it('a Server-built receipt keeps the Server\'s next, fills a --by placeholder, and renders it', () => {
+    const server = (by: string) => ({
+      schemaVersion: 'tm8.receipt.v1', ok: true, op: 'task.tick', id: TASK, kind: 'task',
+      version: { from: 6, to: 7 }, acceptance: { done: 2, total: 2 }, open: [],
+      next: `tm8 task complete ${TASK} --expect-version 7 --by ${by}`, refs: [], warnings: [],
+    });
+    const named = successReceipt('task.tick', server(SESSION), { actorId: ME });
+    expect(named.next).toBe(`tm8 task complete ${TASK} --expect-version 7 --by ${SESSION}`);
+    expect(renderReceiptHuman(named)).toContain(`next: tm8 task complete ${TASK} --expect-version 7 --by ${SESSION}`);
+    const filled = successReceipt('task.tick', server('<actor-id>'), { actorId: ME });
+    expect(filled.next).toBe(`tm8 task complete ${TASK} --expect-version 7 --by ${ME}`);
+    expect(successReceipt('task.tick', server('<actor-id>')).next).toContain('--by <actor-id>');
+  });
+
+  it('nextAfterTick: nothing while criteria are open, on an untick, or once the task is past the step', () => {
+    expect(nextAfterTick(TASK, 'working', 'none', 4, 1, 3)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'working', 'none', 4, 0, 0)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'done', 'none', 4, 0, 2)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'cancelled', 'none', 4, 0, 2)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'in_review', 'pr_merged', 4, 0, 2)).toBeUndefined();
+    expect(nextAfterTick(TASK, 'in_review', 'none', 4, 0, 2, ME)).toBe(`tm8 task complete ${TASK} --expect-version 4 --by ${ME}`);
+    expect(nextAfterTick(TASK, 'open', undefined, 4, 0, 2)).toBe(`tm8 task complete ${TASK} --expect-version 4 --by <actor-id>`);
+  });
+});
+
 describe('passthrough (§9.13) and limits', () => {
   it('undo and server warnings are carried verbatim; CLI-verified warnings follow them', () => {
     const undo = { token: 'undo_abc', label: 'restore title', expiresAt: '2026-09-23T17:00:00Z' };
@@ -380,7 +453,7 @@ describe('successReceipt: a server receipt (phase 2)', () => {
   });
 
   it('adds only the CLI\'s own facts: chained refs, verified warnings, --mutation-id', () => {
-    const ref = { kind: 'edge', type: 'created_in', id: 'e1', to: SESSION };
+    const ref = { kind: 'edge', type: 'attached_to', id: 'e1', to: SESSION };
     const warning = { code: 'session_link_failed', message: 'x' };
     const r = successReceipt('entity.update', SERVER_NOOP, { refs: [ref], warnings: [warning], mutationId: 'm-1' });
     expect(r.refs).toEqual([ref]);
@@ -631,7 +704,7 @@ describe('commands, receipt mode', () => {
     expect(JSON.parse(r.stdout)).toMatchObject({ op: 'session.terminate', status: { to: 'exited' }, ended: 'terminated' });
   });
 
-  it('task link-pr asks for a server receipt, and chains created_in from its refs (§9.9, phase 2)', async () => {
+  it('task link-pr asks for a server receipt and chains no session edge: the server records authored_from (308)', async () => {
     const serverReceipt = {
       schemaVersion: 'tm8.receipt.v1', ok: true, op: 'task.link-pr', id: TASK, kind: 'task', title: TYPICAL_TITLE,
       version: { from: 2, to: 3 }, changed: ['edge:tracks'],
@@ -641,14 +714,11 @@ describe('commands, receipt mode', () => {
       ],
       warnings: [],
     };
-    replies = {
-      '/commands/link-pr': serverReceipt,
-      '/v2/edges': { edge: { id: '01a0cf19-fd30-7000-8000-00000000c1e0', type: 'created_in' }, patches: [] },
-    };
+    replies = { '/commands/link-pr': serverReceipt };
     const r = await drive(['task', 'link-pr', TASK, 'https://github.com/subhangR/tm8/pull/653', '--format', 'json'], 'receipt', { TM8_SESSION_ID: SESSION });
     expect(r.code, r.stderr).toBe(0);
     expect(seen[0]?.search).toBe('?return=receipt');
-    expect(seen.find((s) => s.pathname === '/v2/edges')?.body).toMatchObject({ srcId: PR, dstId: SESSION, type: 'created_in' });
+    expect(seen.find((s) => s.pathname === '/v2/edges')).toBeUndefined();
     expect(JSON.parse(r.stdout)).toEqual(serverReceipt);
   });
 
@@ -659,16 +729,14 @@ describe('commands, receipt mode', () => {
     expect(seen[0]?.search).toBe('');
   });
 
-  it('an older Server ignores ?return=receipt: the full result is projected, and link-pr still chains (§9.9)', async () => {
+  it('an older Server ignores ?return=receipt: the full result is projected, with no chained edge', async () => {
     replies = {
       '/commands/link-pr': commandResult(taskDetail({ outgoing: [{ type: 'tracks', edges: [tracks] }] }), [taskDetail(), prSummary]),
-      '/v2/edges': { edge: { id: '01a0cf19-fd30-7000-8000-00000000c1e0', type: 'created_in' }, patches: [] },
     };
     const r = await drive(['task', 'link-pr', TASK, 'https://github.com/subhangR/tm8/pull/653', '--format', 'json'], 'receipt', { TM8_SESSION_ID: SESSION });
     expect(r.code, r.stderr).toBe(0);
     expect(seen[0]?.search).toBe('?return=receipt'); // asked, and was ignored
-    const claim = seen.find((s) => s.pathname === '/v2/edges');
-    expect(claim?.body).toMatchObject({ srcId: PR, dstId: SESSION, type: 'created_in' });
+    expect(seen.find((s) => s.pathname === '/v2/edges')).toBeUndefined();
     expect((JSON.parse(r.stdout) as Receipt).refs).toContainEqual(expect.objectContaining({ kind: 'pull_request', id: PR }));
   });
 });

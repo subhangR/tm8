@@ -32,6 +32,12 @@ export interface SpaceSwitcherProps {
   activeSpaceId: SpaceId | null;
   /** Mirrors the rail's discrete width: collapsed renders the monogram only. */
   collapsed: boolean;
+  /**
+   * Opt-in single-line trigger (Workspace left header, design log R4): the
+   * space name and a chevron, the server line moved to the tooltip; collapsed
+   * draws the space initial. Default false keeps the card trigger.
+   */
+  quiet?: boolean;
   onSelectServer(id: string): void;
   onSelectSpace(id: SpaceId): void;
   onAddServer?(): void;
@@ -77,30 +83,53 @@ export function SpaceSwitcher(props: SpaceSwitcherProps) {
 
   return (
     <div className="shell-switcher" ref={rootRef} data-testid="space-switcher">
-      <button
-        type="button"
-        className="shell-switcher__trigger"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={`Server and space: ${label}`}
-        title={props.collapsed ? label : undefined}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="shell-switcher__monogram" aria-hidden="true">{monogramOf(active)}</span>
-        {!props.collapsed ? (
-          <span className="shell-switcher__names">
-            <span className="shell-switcher__space">{activeSpace?.name ?? 'no space'}</span>
-            <span className="shell-switcher__server-line">
-              <span
-                className={`shell-rail__server-status shell-rail__server-status--${active?.reachability ?? 'checking'}`}
-                aria-hidden="true"
-              />
-              {active?.label ?? 'server'}
+      {props.quiet ? (
+        <button
+          type="button"
+          className="shell-switcher__trigger shell-switcher__trigger--quiet"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={`Server and space: ${label}`}
+          title={label}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {props.collapsed ? (
+            <span className="shell-switcher__monogram" aria-hidden="true">
+              {(activeSpace?.name ?? '?').charAt(0).toUpperCase()}
             </span>
-          </span>
-        ) : null}
-        {!props.collapsed ? <span className="shell-switcher__caret" aria-hidden="true">{open ? '▾' : '▸'}</span> : null}
-      </button>
+          ) : (
+            <>
+              <span className="shell-switcher__space">{activeSpace?.name ?? 'no space'}</span>
+              <span className="shell-switcher__caret" aria-hidden="true">▾</span>
+            </>
+          )}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="shell-switcher__trigger"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={`Server and space: ${label}`}
+          title={props.collapsed ? label : undefined}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <span className="shell-switcher__monogram" aria-hidden="true">{monogramOf(active)}</span>
+          {!props.collapsed ? (
+            <span className="shell-switcher__names">
+              <span className="shell-switcher__space">{activeSpace?.name ?? 'no space'}</span>
+              <span className="shell-switcher__server-line">
+                <span
+                  className={`shell-rail__server-status shell-rail__server-status--${active?.reachability ?? 'checking'}`}
+                  aria-hidden="true"
+                />
+                {active?.label ?? 'server'}
+              </span>
+            </span>
+          ) : null}
+          {!props.collapsed ? <span className="shell-switcher__caret" aria-hidden="true">{open ? '▾' : '▸'}</span> : null}
+        </button>
+      )}
 
       {open ? (
         <div className="shell-switcher__pop" role="dialog" aria-label="Switch server or space">

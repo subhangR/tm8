@@ -59,6 +59,9 @@ export interface HeaderRow {
   file_name: string | null;
   file_mime: string | null;
   file_size: string | number | null;
+  story_title?: string | null;
+  story_description?: string | null;
+  story_bytes?: number | null;
   task_title: string | null;
   task_description: string | null;
   task_bytes: number | null;
@@ -158,6 +161,9 @@ const HEADER_SQL = `
          ), ${L}) end as drawing_text,
          octet_length(drw.elements::text) as drawing_bytes,
          f.name as file_name, f.mime_type as file_mime, f.size_bytes as file_size,
+         sty.title as story_title,
+         left(sty.description, ${L}) as story_description,
+         octet_length(sty.description) as story_bytes,
          t.title as task_title,
          left(t.description, ${L}) as task_description,
          octet_length(t.description) as task_bytes,
@@ -194,6 +200,7 @@ const HEADER_SQL = `
     left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
     left join public.drawings drw     on e.kind = 'drawing'     and drw.entity_id = e.id
     left join public.files f          on e.kind = 'file'        and f.entity_id = e.id
+    left join public.stories sty      on e.kind = 'story'       and sty.entity_id = e.id
     left join public.tasks t          on e.kind = 'task'        and t.entity_id = e.id
     left join public.collections col  on e.kind = 'collection'  and col.entity_id = e.id
     left join public.entity_headers eh on eh.entity_id = e.id
@@ -236,6 +243,8 @@ function factsOf(row: HeaderRow): HeaderFacts | null {
       return { kind: 'drawing', text: safeText(row.drawing_text, L), bytes: num(row.drawing_bytes) };
     case 'file':
       return { kind: 'file', name: safeText(row.file_name) ?? 'File', mime: safeText(row.file_mime), bytes: num(row.file_size) };
+    case 'story':
+      return { kind: 'story', description: safeText(row.story_description ?? null, L), bytes: num(row.story_bytes ?? null) };
     case 'task':
       return { kind: 'task', description: safeText(row.task_description, L), bytes: num(row.task_bytes) };
     case 'collection':

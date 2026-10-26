@@ -18,6 +18,35 @@ import {
 } from './fleet/use-fleet-entities';
 import type { ChatEntityResolver } from './EntityChip';
 import type { ChatHomeScreenProps } from './ChatHomeScreen';
+import { createdHereReaderFromSeam } from './created-here/reader';
+import type { ChatJevPort } from './new-chat-jev';
+
+/**
+ * ✦ Ask Jev's reads for the new-chat composer, over the seam: `launch.suggest`,
+ * the space's home anchor (its default channel) and whether the viewer can run
+ * Codex — their own OpenAI login or a space OpenAI credential ready for them.
+ * Null when the seam has no Jev port: the composer then shows no ✦ at all.
+ */
+export function chatJevPortFromSeam(seam: Seam): ChatJevPort | undefined {
+  const jev = seam.commands.jev;
+  if (!jev) return undefined;
+  return {
+    jev,
+    async homeAnchor(spaceId) {
+      return (await seam.spaceSettings(spaceId as SpaceId)).defaultChannelId;
+    },
+    async codexAvailable(spaceId) {
+      const [mine, space] = await Promise.allSettled([
+        seam.credentials.status(),
+        seam.credentials.space.readiness(spaceId as SpaceId),
+      ]);
+      const own = mine.status === 'fulfilled'
+        && mine.value.providers.some((row) => row.provider === 'openai' && row.connected);
+      const shared = space.status === 'fulfilled' && space.value.canLaunch.providers.openai?.ready === true;
+      return own || shared;
+    },
+  };
+}
 
 const SplitChatHomeScreen = lazy(async () => {
   const module = await import('./ChatHomeScreen');
@@ -36,6 +65,8 @@ export interface ChatHomeSurfaceProps {
   composerSeed?: ChatHomeScreenProps['composerSeed'];
   /** Pass-through: the entity chat's new-chat settings (§3.4). */
   newChatSeed?: ChatHomeScreenProps['newChatSeed'];
+  /** Pass-through: a host keeping the composer drafts (Workspace's per-tab chat). */
+  composerDrafts?: ChatHomeScreenProps['composerDrafts'];
   /** Pass-through: the host's own new-conversation intro. */
   newThreadIntro?: ChatHomeScreenProps['newThreadIntro'];
   /** Pass-through: a host's note under a tool call. */
@@ -66,6 +97,7 @@ export interface ChatHomeSurfaceProps {
   onThreadSelected?: ChatHomeScreenProps['onThreadSelected'];
   /** Craft's solo conversation + the two publishes a hosted picker needs. */
   soloConversation?: ChatHomeScreenProps['soloConversation'];
+  composerLayout?: ChatHomeScreenProps['composerLayout'];
   coldStart?: ChatHomeScreenProps['coldStart'];
   onThreadsChange?: ChatHomeScreenProps['onThreadsChange'];
   onSelectionChange?: ChatHomeScreenProps['onSelectionChange'];
@@ -121,6 +153,9 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     () => (id, opts) => seam.connections(id, opts),
     [seam],
   );
+  /** The created-here strip's reads and session verbs, over the same seam. */
+  const createdHere = useMemo(() => createdHereReaderFromSeam(seam), [seam]);
+  const jev = useMemo(() => chatJevPortFromSeam(seam), [seam]);
   const models = modelCatalog(nodeKey).map((model) => ({
     model: model.model,
     label: model.label,
@@ -138,9 +173,11 @@ export function ChatHomeSurface({ seam, nodeKey, bridge, onOpenEntity, ...screen
     readEntity,
     livenessOf,
     connections,
+    createdHere,
     onOpenEntity,
     attach,
     assetHref: seam.files.downloadHref,
+    ...(jev ? { jev } : {}),
   };
   return (
     <Suspense fallback={<div className="tch-load" role="status">Loading Chat…</div>}>

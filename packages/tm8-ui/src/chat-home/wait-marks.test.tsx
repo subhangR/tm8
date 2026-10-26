@@ -71,7 +71,7 @@ function streamingThreads(count: number): ChatThreadDetail[] {
 }
 
 describe('chat waiting marks', () => {
-  it('turns the mark in the send button while a turn runs, and takes it away when the turn ends', async () => {
+  it('turns the send button into ■ Stop while a turn runs', async () => {
     const { port } = createChatHomeFixturePort();
     const view = mount(port);
     await settled(view);
@@ -85,7 +85,8 @@ describe('chat waiting marks', () => {
     fireEvent.click(view.getByRole('button', { name: /send/i }));
 
     const working = await view.findByTestId('tch-send-working');
-    expect(working.querySelector('[data-testid="ribbon-mark"]')).not.toBeNull();
+    expect(working.querySelector('.tch-send__stop')).not.toBeNull();
+    expect(working.getAttribute('aria-label')).toMatch(/stop this turn/i);
   });
 
   it('marks the transcript while a turn is pending', async () => {

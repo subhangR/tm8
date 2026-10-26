@@ -8,6 +8,7 @@ import {
   INDEX_DERIVED_HEADER_CHARS,
   serializeContextEntry,
   serializeContextIndex,
+  TASK_CONTEXT_RESERVE_V2,
   untrustedData,
   utf8Bytes,
 } from '@tm8/prompt';
@@ -52,6 +53,15 @@ function compose(context: SpawnContext, opts: { on?: boolean; replay?: string[];
   });
   const prompt = composePrompt(manifest, { sessionId: 'session', baseUrl: 'http://localhost' });
   return { manifest, prompt };
+}
+
+/**
+ * The same manifest re-rendered as a stored pre-stamp (v1) launch: new
+ * launches are v2, but the v1 snapshot (`<linked>`, linked-names) still renders
+ * every manifest written before the stamp existed.
+ */
+function storedV1(manifest: ReturnType<typeof compose>['manifest']) {
+  return composePrompt({ ...manifest, promptVersion: '1' }, { sessionId: 'session', baseUrl: 'http://localhost' });
 }
 
 describe('the switch (launch card v3: always on)', () => {
@@ -160,38 +170,24 @@ describe('on: the trim records every drop (§2.3)', () => {
     const total = utf8Bytes(`${prompt.system}\n\n${prompt.task}`);
     expect(total).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
     const perEntry = utf8Bytes(serializeContextEntry(group.entries[0]!)) + 1;
-    expect(BYTE_BUDGETS.combinedInitialInjection - total).toBeLessThan(perEntry * 2);
+    // Less the room held back for the v2 task context the spawn path embeds.
+    expect(BYTE_BUDGETS.combinedInitialInjection - TASK_CONTEXT_RESERVE_V2 - total).toBeLessThan(perEntry * 2);
     expect(prompt.task).not.toContain('A longer linked document title, number 0');
   });
 
-  it('never buys the index room by moving an inline task body out to references (review #832)', () => {
-    // A task body near the ceiling: the baseline inlines it, and handing the
-    // title room back must not grow the index until the composer gives up on
-    // inlining. Swept, because only some body sizes land on the edge.
+  it('a v2 launch never inlines the task body, and the index leaves the task context its room', () => {
+    // v1's review #832 (an index buying room by moving an inline body out) has
+    // no v2 analogue: the body arrives in the DTO the spawn path embeds, and the
+    // fit holds TASK_CONTEXT_RESERVE_V2 back for it.
     const linked = Array.from({ length: 60 }, (_, i) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `A long linked document title, number ${i} ${'t'.repeat(60)}` }));
-    let inlineBaselines = 0;
-    let credited = 0;
-    for (let size = 8000; size <= 20000; size += 250) {
+    for (const size of [5000, 12000, 20000]) {
       const context = ctx({ tasks: [task({ description: 'd'.repeat(size), linked, linkedTotal: linked.length })], headers: linked.map((l) => docHeader(l.entityId)) });
-      if (compose(context).prompt.task.includes('delivery="reference"')) continue;
-      inlineBaselines += 1;
       const { manifest, prompt } = compose(context, { on: true });
-      expect(prompt.task, `description ${size}`).not.toContain('delivery="reference"');
-      expect(prompt.task).toContain('d'.repeat(size));
+      expect(manifest.promptVersion).toBe('2');
+      expect(prompt.task, `description ${size}`).not.toContain('d'.repeat(100));
       const total = utf8Bytes(`${prompt.system}\n\n${prompt.task}`);
-      expect(total).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
-      // And the credit still does its job inline: with entries left out, the
-      // prompt ends within two entries of the ceiling, not a title block short.
-      const refs = manifest.contextIndex!.groups.find((g) => g.name === 'references');
-      if (refs && refs.omitted > 0 && refs.entries.length > 0) {
-        credited += 1;
-        const perEntry = utf8Bytes(serializeContextEntry(refs.entries[0]!)) + 1;
-        expect(BYTE_BUDGETS.combinedInitialInjection - total, `description ${size}`).toBeLessThan(perEntry * 2);
-      }
+      expect(total + TASK_CONTEXT_RESERVE_V2, `description ${size}`).toBeLessThanOrEqual(BYTE_BUDGETS.combinedInitialInjection);
     }
-    // Not vacuous: most sizes inline, and entries were left out (so the credit ran) on them.
-    expect(inlineBaselines).toBeGreaterThan(30);
-    expect(credited).toBeGreaterThan(30);
   });
 
   it('skills take what remains: a whole-entry skill drop is byte-budget in every record', () => {
@@ -354,7 +350,7 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
   });
 
   it('(a) the v1 snapshot drops only the titles the index names; <linked> keeps every id and the unread count', () => {
-    const { prompt } = compose(context, { on: true });
+    const prompt = storedV1(compose(context, { on: true }).manifest);
     expect(prompt.task).toContain('<entity id="doc-1" kind="doc" link="relates_to" />');
     expect(prompt.task).toContain('<entity id="doc-2" kind="doc" link="relates_to" />');
     expect(prompt.task).toContain('omitted="44"');
@@ -362,7 +358,8 @@ describe('I5a follow-ups (a) (b) (d): no repeated titles, unread declared, deriv
   });
 
   it('(a) off: the snapshot is byte-identical to before (titles in linked-names)', () => {
-    const { manifest, prompt } = compose(context);
+    const { manifest } = compose(context);
+    const prompt = storedV1(manifest);
     expect(manifest.contextIndex).toBeUndefined();
     expect(prompt.task).toContain(untrustedData({
       type: 'linked-names',
@@ -696,6 +693,8 @@ describe('launch card v3: files ride in <attachments>, and <linked> follows the 
     expect(prompt.task).not.toContain('doc-2');
     // What no other section carries stays: the teammate's own link.
     expect(prompt.task).toContain('<entity id="persona" kind="team_member" link="relates_to" />');
+    // A stored v1 manifest renders the same picks.
+    expect(storedV1(manifest).task).toContain('<entity id="doc-1" kind="doc" link="relates_to" />');
   });
 
   it('a file is in exactly one section, and a fitted link is named once', () => {
@@ -719,6 +718,9 @@ describe('launch card v3: files ride in <attachments>, and <linked> follows the 
       headers: many.map((l) => ({ ...docHeader(l.entityId), whenToUse: `open ${l.entityId} ${'w'.repeat(4000)}` })),
       references: many.map((l) => ({ entityId: l.entityId, kind: 'doc', title: l.title, via: 'linked' as const, link: 'relates_to' })),
     }), { on: true });
+    const v1 = storedV1(manifest);
+    // v2 renders the same <linked> identity line and name for a dropped link.
+    expect(prompt.task).toContain('<linked task="task-1"');
     const fitted = new Set(manifest.contextIndex!.groups.find((g) => g.name === 'references')!.entries.map((e) => e.id));
     const dropped = manifest.context!.dropped!.filter((d) => d.group === 'references' && d.level === 'entry').map((d) => d.entityId);
     expect(dropped.length).toBeGreaterThan(0);
@@ -726,18 +728,27 @@ describe('launch card v3: files ride in <attachments>, and <linked> follows the 
     expect(gone).toBeDefined();
     expect(fitted.has(gone)).toBe(false);
     // Its identity line and its name stay in the snapshot; a fitted one is named only by the index.
-    expect(prompt.task).toContain(`<entity id="${gone}" kind="doc" link="relates_to" />`);
+    expect(v1.task).toContain(`<entity id="${gone}" kind="doc" link="relates_to" />`);
     const named = (id: string): string => `&quot;entityId&quot;:&quot;${id}&quot;`;
-    expect(prompt.task).toContain(named(gone));
+    expect(v1.task).toContain(named(gone));
     const kept = [...fitted][0]!;
-    expect(prompt.task).not.toContain(named(kept));
+    expect(v1.task).not.toContain(named(kept));
+    {
+      const turn = prompt.task;
+      expect(turn).toContain(`<entity id="${gone}" kind="doc" link="relates_to" />`);
+      expect(turn).toContain(named(gone));
+      expect(turn).not.toContain(named(kept));
+    }
+    // The references group also says how many it left out and how to list them.
+    expect(prompt.system).toContain('fetch="tm8 entity context');
   });
 
   it('without a reference selection every task file is attached, once, and no link is repeated in <linked>', () => {
-    const { prompt } = compose(ctx({ tasks: [task({ linked, attachments }), task({ id: 'task-2', attachments: [attachments[0]!] })], headers: [docHeader('doc-1')] }), { on: true });
+    const { manifest, prompt } = compose(ctx({ tasks: [task({ linked, attachments }), task({ id: 'task-2', attachments: [attachments[0]!] })], headers: [docHeader('doc-1')] }), { on: true });
     expect(prompt.task.match(/<file entity_id="file-own-1"/g)).toHaveLength(1);
     expect(prompt.task).toContain('<file entity_id="file-own-2"');
-    expect(prompt.task).toContain('<entity id="doc-1" kind="doc" link="relates_to" />');
+    expect(storedV1(manifest).task).toContain('<entity id="doc-1" kind="doc" link="relates_to" />');
+    expect(prompt.task.match(/<entity id="doc-1" kind="doc" link="relates_to" \/>/g)).toHaveLength(1);
   });
 });
 

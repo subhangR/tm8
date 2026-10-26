@@ -112,9 +112,43 @@ describe('config (S1 — loopback only)', () => {
     expect(() => loadConfig({ TM8_DISABLE_AUTO_OWNER: 'maybe' })).toThrow(ConfigError);
   });
 
-  it('REFUSES to start on a non-loopback bind (no token auth exists yet)', () => {
+  it('REFUSES to start on a non-loopback bind, and points at the proxy + multi-mode recipe', () => {
     expect(() => loadConfig({ TM8_BIND: '0.0.0.0' })).toThrow(ConfigError);
-    expect(() => loadConfig({ TM8_BIND: '192.168.1.10' })).toThrow(/requires token auth/);
+    expect(() => loadConfig({ TM8_BIND: '192.168.1.10' })).toThrow(/reverse proxy/);
+    expect(() => loadConfig({ TM8_BIND: '192.168.1.10' })).toThrow(/TM8_NODE_MODE=multi/);
+    expect(() => loadConfig({ TM8_BIND: '192.168.1.10' })).not.toThrow(/not implemented/);
+  });
+
+  it('allows TM8_PUBLIC_ORIGIN by default: its hostname joins the Host allowlist', () => {
+    const config = loadConfig({ TM8_PUBLIC_ORIGIN: 'https://Tm8.Example.com', TM8_PREVIEW_ENABLED: '0' });
+    expect(config.extraAllowedHostnames).toEqual(['tm8.example.com']);
+    // No exact list asked for, so the Origin check stays hostname-based.
+    expect(config.allowedOrigins).toEqual([]);
+    // Not duplicated when the operator also listed it.
+    expect(loadConfig({
+      TM8_PUBLIC_ORIGIN: 'https://tm8.example.com',
+      TM8_ALLOWED_HOSTNAMES: 'tm8.example.com',
+      TM8_PREVIEW_ENABLED: '0',
+    }).extraAllowedHostnames).toEqual(['tm8.example.com']);
+    // A loopback public origin adds nothing.
+    expect(loadConfig({ TM8_PUBLIC_ORIGIN: 'http://127.0.0.1:4611', TM8_PREVIEW_ENABLED: '0' })
+      .extraAllowedHostnames).toEqual([]);
+  });
+
+  it('an exact-origin list keeps the public origin and the node\'s own loopback origins', () => {
+    const config = loadConfig({
+      TM8_PORT: '17777',
+      TM8_PUBLIC_ORIGIN: 'https://tm8.example.com',
+      TM8_ALLOWED_ORIGINS: 'https://console.example.com',
+      TM8_PREVIEW_ENABLED: '0',
+    });
+    expect(config.allowedOrigins).toEqual([
+      'https://console.example.com',
+      'https://tm8.example.com',
+      'http://127.0.0.1:17777',
+      'http://localhost:17777',
+      'http://[::1]:17777',
+    ]);
   });
 
   it('accepts the loopback spellings', () => {
@@ -127,7 +161,13 @@ describe('config (S1 — loopback only)', () => {
     expect(loadConfig({
       TM8_ALLOWED_ORIGINS: 'https://tm8.sh, https://console.tm8.sh:8443',
       TM8_PREVIEW_ENABLED: '0',
-    }).allowedOrigins).toEqual(['https://tm8.sh', 'https://console.tm8.sh:8443']);
+    }).allowedOrigins).toEqual([
+      'https://tm8.sh',
+      'https://console.tm8.sh:8443',
+      'http://127.0.0.1:4610',
+      'http://localhost:4610',
+      'http://[::1]:4610',
+    ]);
     expect(() => loadConfig({
       TM8_ENV: 'prod',
       TM8_ALLOWED_ORIGINS: 'http://tm8.sh',

@@ -26,6 +26,9 @@ import { FIXTURE_SPACE_ID, fixtureSummaries } from './fixtures';
  * Usage: /tree-dev.html
  *   ?kind=task     any kind with a fixture row; task, story, doc, container …
  *   ?open=1        expand every parent once mounted (default: collapsed)
+ *   ?tab=working   the list query returns only rows with this status, so a
+ *                  matching child brings its parent in as a CONTEXT row
+ *   ?inline=1      the pinned-only rail's inline toolbar (`toolbarInline`)
  *   ?theme=dark    the dark ground
  *   ?width=420     the panel width, to exercise the narrow container queries
  *   ?shell=mobile  the phone shell's row geometry (`mobile-screens.css`)
@@ -74,10 +77,29 @@ const rows: readonly EntitySummary[] = SHAPE.map(([title, parent, status], index
   /* Only a task carries a workflow word; every other kind keeps its own state. */
   state: template.kind === 'task'
     ? ({ ...template.state, status } as EntitySummary['state'])
-    : template.state,
+    : template.state.kind === 'story'
+      ? { ...template.state, taskProgress: storyTally(index) }
+      : template.state,
 }));
 
-const rowsFor = (_filter: QueryFilter): readonly EntitySummary[] => rows;
+/** A different task tally per story row, so the list's progress bars vary. */
+function storyTally(index: number) {
+  const work = index === SHAPE.length - 1 ? 0 : 3 + ((index * 5) % 9);
+  const done = index % 4 === 1 ? work : Math.floor((work * (index % 5)) / 5);
+  const inProgress = Math.min(work - done, index % 3);
+  const blocked = Math.min(work - done - inProgress, index % 7 === 5 ? 1 : 0);
+  return { work, done, inProgress, blocked, toDo: work - done - inProgress - blocked, cancelled: 0 };
+}
+
+/* Honours the tree's two reads (`idIn` for context parents, `parentIn` for an
+   opened row's children) so `?tab=` behaves like a node's status tab. */
+const tab = params.get('tab');
+const rowsFor = (filter: QueryFilter): readonly EntitySummary[] => {
+  const f = filter as { idIn?: string[]; parentIn?: string[] };
+  if (f.idIn) return rows.filter((row) => f.idIn!.includes(row.id));
+  if (f.parentIn) return rows.filter((row) => row.parentId !== null && f.parentIn!.includes(row.parentId));
+  return tab ? rows.filter((row) => (row.state as { status?: string }).status === tab) : rows;
+};
 
 function useOpenTree() {
   useEffect(() => {
@@ -114,7 +136,7 @@ function TreeDev() {
       data-shell={shell ?? undefined}
       style={{ padding: 20, width, boxSizing: 'border-box' }}
     >
-      <EntityListPanel kind={kind} rowsFor={rowsFor} ctx={ctx} />
+      <EntityListPanel kind={kind} rowsFor={rowsFor} ctx={ctx} toolbarInline={params.get('inline') === '1'} />
     </div>
   );
 }

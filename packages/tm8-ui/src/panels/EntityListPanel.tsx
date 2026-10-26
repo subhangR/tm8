@@ -1,5 +1,6 @@
+import { useEntityListSelection } from '../seen-entities/EntitySeen';
 import { AttentionChipView, useAttentionOptional, useEntityChip } from '../attention';
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { JevPort } from '../jev/port';
 import type {
@@ -42,9 +43,16 @@ import {
   ALL_MODES,
   KindIcon,
   REASONS,
+  crossTabBreadcrumb,
+  groupSessionRows,
+  isSessionState,
+  sessionLineTwo,
+  offeredCountOf,
+  sessionRowWord,
+  type GroupBulk,
+  type SessionClaim,
   toRowFacts,
   VIEWER_ACTOR,
-  allKinds,
   collectionKinds,
   countLabel,
   getKind,
@@ -74,6 +82,8 @@ import {
 import { ReasonNote } from './honesty/ReasonNote';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
+import { useRunningGrace } from './list/useRunningGrace';
+import './session/session-outcome.css';
 import {
   EntityControlStrip,
   RowAction,
@@ -84,25 +94,28 @@ import {
   type SessionSharingPatch,
 } from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
-import { CategoryGlyph, hasCategoryGlyph } from './list/CategoryGlyph';
+import { CategoryGlyph, TabGlyph, hasCategoryGlyph, hasTabGlyph } from './list/CategoryGlyph';
 import { MobileSheet, useMobileSurface } from '../mobile';
-import { MaestroStatusGlyph, MaestroTaskTile } from './list/MaestroTaskTile';
-import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
+import { MaestroStatusGlyph, MaestroTaskTile, type TaskTileProgress } from './list/MaestroTaskTile';
+import { type LinkedPullRequestFacts } from '../pull-requests';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
-import { ChildCountBadge } from './list/ChildCountBadge';
+import { ChildCountToggle } from './list/ChildCountBadge';
+import { RowLead, ToneKindIcon, leadTooltip } from './list/RowLead';
+import { TileProgressBar } from './list/TileProgressBar';
 import { PendingFormsChip, hasPendingFormsChip } from '../forms/PendingFormsChip';
 import { usePendingForms } from '../forms/pending';
-import { SessionLaneLine, WORKTREE_RELATION, sessionLaneOf } from '../git/SessionLane';
-import { TileCountBadges, hasTileCounts } from './list/TileCountBadges';
-import { countBadgeVisible, facetsForAnatomy, useRowView } from './list/row-view';
-import type { TileCountFacet } from '../domain/tile-counts';
+import { TileLinkCounts } from './list/TileLinkCounts';
+import { actionGlyph, allKinds, hasTileLinkCounts, launchedRowsFilter, tileChildCount, treeParentOf } from '../domain';
+import { TILE_LINK_GROUPS, UNCOUNTED_LINK_GROUPS } from '../domain/tile-counts';
+import { TileSignal, UrgentMark, isUrgent, signalIsAvatar } from './list/TileSignal';
+import { SessionDetails } from './list/SessionDetails';
+import { facetsForAnatomy, hiddenLinkGroups, linkFacet, useRowView } from './list/row-view';
+import { groupOf, groupOptionsFor, rootsOnly, useListPrefs, type ListGroupBy } from './list/list-prefs';
 import {
   routeMessagePulse,
   type PulseSegment,
   type SessionPulseKind,
 } from './list/message-pulse';
-import { relatedOfKind } from './list/related';
-import { RelatedGroup } from './list/RelatedGroup';
 import type { MessagePulse } from './list/useMessagePulses';
 import { TileFlightLayer, type ResolvedFlight } from './list/TileFlightLayer';
 import { type LaunchTeammateOption } from './launch/LaunchQuickConfig';
@@ -116,6 +129,9 @@ import { newLaunchMutationId, type LoadInstalledPlugins } from '../domain/launch
 import { AttentionTileSubtitle, attentionTileLine } from '../attention/AttentionTileSubtitle';
 import { isNeedsMeFilter, needsMeCount, needsMeRecheckAt } from '../attention/needs-me';
 import { SettingsHomeLink } from './SettingsHomeLink';
+import { useFreshGlow, useRetainLeaving } from '../domain/useFreshGlow';
+
+const rowId = (row: EntitySummary): string => row.id;
 
 const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
 
@@ -130,23 +146,57 @@ const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
  */
 export type ListPicker = 'filters' | 'people' | 'sets' | 'sort' | 'view';
 
-/**
- * The live-session kind for the tile's LEADING relation chip, selected by
- * CAPABILITY (the one kind with a `liveTreatment`), never by name — the same
- * §15.2 rule WorkspaceView uses for its empty-centre roster.
- */
-const SESSION_CHIP_KIND = allKinds().find((kind) => kind.list.liveTreatment != null)?.kind;
+/** The narrowing a host may remember for one kind (`initialFilters` / `onFiltersChange`). */
+export interface ListFilterState {
+  selected: Readonly<Record<string, readonly string[]>>;
+  selectedPeople: readonly string[];
+  sortKey: SortKey | undefined;
+  lensId: string | null;
+}
+
+/** Which body `renderEmpty` is asked for: still reading, nothing at all, or nothing matching. */
+export type ListEmptyState =
+  | { reason: 'loading' }
+  /** `tier` names the open lifecycle tier when IT is empty but the kind is not known to be. */
+  | { reason: 'empty'; tier?: string }
+  | { reason: 'search'; query: string };
 
 /**
- * A relation chip may expand only into a real collection kind — registry
- * DATA, so the message tallies (whose `human-message` / `agent-message`
- * badge kinds resolve to no collection) stay counts, exactly the v1 ruling.
+ * A remembered filter state, kept only where it still names this kind's
+ * filters, options and sorts — a stale seed degrades to the default.
  */
-const EXPANDABLE_KINDS: ReadonlySet<string> = new Set(
-  collectionKinds().map((config) => config.kind),
-);
-const isExpandableKind = (kind: string): boolean => EXPANDABLE_KINDS.has(kind);
-const NO_LINKED: readonly EntitySummary[] = Object.freeze([]);
+function seedFilters(config: KindConfig, seed: unknown): ListFilterState | null {
+  if (typeof seed !== 'object' || seed === null) return null;
+  const raw = seed as Partial<Record<keyof ListFilterState, unknown>>;
+  const selected: Record<string, readonly string[]> = {};
+  if (typeof raw.selected === 'object' && raw.selected !== null) {
+    for (const spec of config.list.filters) {
+      const ids = (raw.selected as Record<string, unknown>)[spec.id];
+      if (!Array.isArray(ids)) continue;
+      const kept = ids.filter(
+        (id): id is string => typeof id === 'string' && spec.options.some((o) => o.id === id),
+      );
+      if (kept.length > 0) selected[spec.id] = spec.multi ? kept : kept.slice(0, 1);
+    }
+  }
+  const selectedPeople = Array.isArray(raw.selectedPeople)
+    ? raw.selectedPeople.filter((id): id is string => typeof id === 'string')
+    : [];
+  const sortKey = config.list.sort.find((s) => s.key === raw.sortKey)?.key;
+  const lensId = config.list.membership && typeof raw.lensId === 'string' ? raw.lensId : null;
+  return { selected, selectedPeople, sortKey, lensId };
+}
+
+/* GONE WITH THE RELATION ACCORDION (task 01a1469f): `SESSION_CHIP_KIND` named
+   the kind the leading sessions chip opened, and `EXPANDABLE_KINDS` /
+   `isExpandableKind` decided which count badges were doors into an inline
+   group. No tile expands anything inline any more — a count opens its group in
+   the detail panel (§6) — so all three are deleted rather than left as
+   plausible-looking helpers nobody calls. */
+/* The `⋯` half of `FilterRow` renders no People and no lens; frozen empties
+   keep its props stable across renders rather than new arrays every time. */
+const NO_PEOPLE: readonly ActorSummary[] = Object.freeze([]);
+const NO_SELECTED: readonly string[] = Object.freeze([]);
 
 /**
  * EntityListPanel — the other universal primitive (L3).
@@ -194,6 +244,17 @@ export interface EntityListPanelProps {
    */
   rowsFor: (filter: QueryFilter, sort?: SortKey) => readonly EntitySummary[];
   /**
+   * One host-supplied fact under a row's title, from a read the summary does
+   * not carry (a project's working folder and trust). Null for a row with
+   * nothing to add, so its height is unchanged.
+   */
+  rowNoteOf?: (row: EntitySummary) => ReactNode | null;
+  /**
+   * Rows of ANOTHER kind, for the rows this list's rows launched (331,
+   * `list.launches`: the chat list's sessions). Absent ⇒ nothing nests.
+   */
+  rowsForKind?: (kind: string) => (filter: QueryFilter, sort?: SortKey) => readonly EntitySummary[];
+  /**
    * Paging truth for the SAME (filter, sort) the rows came from.
    *
    * Absent ⇒ this host has not wired paging, and the panel says `N` rather
@@ -233,15 +294,32 @@ export interface EntityListPanelProps {
   /** Real `working_on` targets for session tiles, projected by the shell. */
   linkedTasksOf?: (id: string) => readonly EntitySummary[];
   /**
-   * The inverse projection: `working_on` SOURCES per target, from the same
-   * gate-graph edges. This is what lets a task tile carry its sessions chip
-   * BEFORE anyone hydrates the row's connections — the workspace already
-   * holds these edges, so the count is free and live (user ruling
-   * 2026-08-16: sessions ride the tile, leading position).
+   * STILL DECLARED, NO LONGER READ BY A TILE (task 01a1469f). Both fed chips
+   * §6 cut: `linkedSessionsOf` the leading sessions chip, `linkedPullRequestsOf`
+   * the PR chips. They stay on the props because four hosts pass them
+   * (`WorkspaceView`, `Browser`, `EntityView`, `ChannelView`) and
+   * `linkedPullRequestsOf` is live data the DETAIL panel still renders —
+   * removing them here would be a four-file change that buys nothing and
+   * would have to be undone the day a row wants either fact again.
+   *
+   * Named as unread rather than left looking wired: a prop a reader assumes
+   * drives something is worse than one that says it does not.
    */
   linkedSessionsOf?: (id: string) => readonly EntitySummary[];
-  /** Tracked PR facts from the graph/entity projection, live by entity id. */
   linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
+
+  /**
+   * THE COUNTS LINE'S DOOR (§6, approved 2026-10-16): clicking a count opens
+   * THAT GROUP IN THE DETAIL PANEL — "never inline under the row", which is
+   * the relation accordion this replaced.
+   *
+   * `groupKind` is the registry kind the group names (`doc`, `pull_request`,
+   * …), carried as DATA from `TILE_LINK_GROUPS` so neither this panel nor the
+   * component maps a group id to a kind. Absent ⇒ the counts are plain text,
+   * which is the honest rendering on a surface with no detail panel to open
+   * (the `k/` collection screen, the dev harnesses).
+   */
+  onOpenLinks?: (entityId: string, groupKind: string) => void;
 
   selectedId?: string | null;
   /** True at the 200/220px floors: metas drop, badges abbreviate. */
@@ -328,7 +406,63 @@ export interface EntityListPanelProps {
    * DOM — the shell calls this on the FOCUSED panel.
    */
   searchInputRef?: React.Ref<HTMLInputElement>;
-  onSelect?: (id: string) => void;
+  /**
+   * HOST-REMEMBERED SEARCH AND FILTERS (Workspace browser, Spec A §5). The
+   * panel still owns the live state; these SEED it at mount and REPORT every
+   * change, so a host that remounts the panel per kind restores that kind's
+   * state. A seed that names options this kind no longer has is dropped, never
+   * applied. Absent ⇒ the panel starts empty and reports nothing (Home, Work).
+   */
+  initialQuery?: string;
+  onQueryChange?: (query: string) => void;
+  /**
+   * The HOST draws the search box (the pinned-only rail's panel top row) and
+   * hands the text down: the panel follows `query` whenever it changes and
+   * draws no search row of its own. Absent ⇒ the panel owns its search.
+   */
+  query?: string;
+  searchInHost?: boolean;
+  initialFilters?: unknown;
+  onFiltersChange?: (filters: ListFilterState) => void;
+  /** The scroll box (`.lp__body`), for a host that remembers scroll. */
+  bodyRef?: React.Ref<HTMLDivElement>;
+  /**
+   * The host's own empty, no-match and loading body for an unfiltered band.
+   * Absent ⇒ the panel's own sentences (and no loading state).
+   */
+  renderEmpty?: (state: ListEmptyState) => ReactNode;
+  /**
+   * OPT-IN BROWSER CHROME (Workspace browser, list-panel change list round 2
+   * item 8): three one-line rows. Row 1 is `[toolbarStart][Search][toolbarEnd]`
+   * (the host's kind control and + New around this panel's own search), row 2
+   * the lifecycle tiers (`CategoryTabs`, hidden when every row is known to sit
+   * in the open tier), row 3 the filter bar with its chips. Rows 2 and 3 scroll
+   * sideways rather than wrap. No counts footer, and the `f` cap moves to the
+   * search tooltip. Absent ⇒ `'rows'`: as before (Home, Work).
+   */
+  chrome?: 'rows' | 'toolbar';
+  /** `chrome="toolbar"`: drawn before / after the search on row 1. */
+  toolbarStart?: ReactNode;
+  toolbarEnd?: ReactNode;
+  /**
+   * `chrome="toolbar"`: the pinned-only rail's stack (Subhang 2026-10-17) —
+   * the full search bar with the funnel and `⋯`, then the kind's name with
+   * `toolbarStart` / `toolbarEnd` at its end, then the lifecycle tiers as
+   * tabs. Absent ⇒ the one-row header and the host's own create row.
+   */
+  toolbarInline?: boolean;
+  /**
+   * OPT-IN ROW LEAD (Workspace browser): no disclosure chevron slot on any
+   * anatomy. The leading icon is the kind icon tinted by status (sessions keep
+   * their agent tile), carries the child count as a subscript, and IS the
+   * expand button when the row has children — the only control that changes
+   * expansion. A revealed ancestor latches open (`useTreeDisclosure`
+   * `latchReveal`), and a focused tree item takes Right / Left / Enter.
+   * Absent ⇒ `'chevron'`: every anatomy as before (Home, Work, Board).
+   */
+  rowLead?: 'chevron' | 'icon';
+  /** `kind` is the ROW's kind: a nested launched row (331) is not the list's. */
+  onSelect?: (id: string, kind?: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
   /**
    * Which of the header verbs this host can actually PERFORM.
@@ -347,6 +481,24 @@ export interface EntityListPanelProps {
   wiredActions?: readonly ActionRef[];
   /** Session-row close command; separate from generic header/list actions. */
   onTerminate?: (entityId: string) => void;
+  /**
+   * Spec D1 §5 — the session outcome verbs (Complete dialog, Stop, Dismiss,
+   * Mark lost). See `ControlHost.onSessionVerb`.
+   */
+  onSessionVerb?: (ref: ActionRef, entityId: string) => void;
+  /**
+   * Spec D1 §5.3 — a session tab group's bulk verb ("Resume all", "Complete
+   * all", "Stop all finished") over the group's row ids. Absent ⇒ the group
+   * headers draw no bulk button.
+   */
+  onSessionBulk?: (bulk: GroupBulk, entityIds: readonly string[]) => void;
+  /**
+   * Spec D1 §6.8 — a session's `working_on` claims (active and ended), for
+   * the row word ("Ready to complete", "Idle 3h") and line 2 ("Working · 2
+   * tasks · 1 done"). Absent or `undefined` ⇒ claims unknown, which is not
+   * "none".
+   */
+  linkedClaimsOf?: (sessionId: string) => readonly SessionClaim[] | undefined;
   /** The other half of that row's tail slot — see `ControlHost.onResume`. */
   onResume?: (entityId: string) => void;
   /** The row's sharing slot (187) — see `ControlHost.onShareSession`. */
@@ -594,7 +746,9 @@ function placeHoverBar(event: ReactPointerEvent<HTMLElement>): void {
   tile.setAttribute('data-hoverbar', room < HOVERBAR_RISE_PX ? 'inside' : 'above');
 }
 
-export function EntityListPanel(props: EntityListPanelProps) {
+export function EntityListPanel(input: EntityListPanelProps) {
+  const onSelect = useEntityListSelection(input.onSelect);
+  const props = { ...input, ...(onSelect ? { onSelect } : {}) };
   const config = getKind(props.kind);
   const list = config.list;
   const listAttentionApi = useAttentionOptional();
@@ -660,10 +814,18 @@ export function EntityListPanel(props: EntityListPanelProps) {
    * `multi`, so several of its options can be active at once, while a
    * non-multi spec holds at most one.
    */
-  const [selected, setSelected] = useState<Readonly<Record<string, readonly string[]>>>({});
-  const [selectedPeople, setSelectedPeople] = useState<readonly string[]>([]);
-  const [sortKey, setSortKey] = useState(list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key);
-  const [query, setQuery] = useState('');
+  /* Read once: a host-remembered seed (`initialFilters`) for the state below. */
+  const [seed] = useState(() => seedFilters(config, props.initialFilters));
+  const [selected, setSelected] = useState<Readonly<Record<string, readonly string[]>>>(seed?.selected ?? {});
+  const [selectedPeople, setSelectedPeople] = useState<readonly string[]>(seed?.selectedPeople ?? []);
+  const [sortKey, setSortKey] = useState(
+    seed?.sortKey ?? list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key,
+  );
+  const [query, setQuery] = useState(props.query ?? props.initialQuery ?? '');
+  /* A host-drawn search box leads; the panel follows it. */
+  useEffect(() => {
+    if (props.query !== undefined) setQuery(props.query);
+  }, [props.query]);
   // §1.1: route-held when the host passes it. `props.mode` null-ish means "the
   // route says nothing", which reads the registry default. There is no local
   // state behind it any more — with the switcher gone nothing inside the panel
@@ -712,7 +874,33 @@ export function EntityListPanel(props: EntityListPanelProps) {
    * page (deleted, renamed out of the recency window) deactivates the lens
    * rather than filtering by an id the menu can no longer explain.
    */
-  const [lensId, setLensId] = useState<string | null>(null);
+  const [lensId, setLensId] = useState<string | null>(seed?.lensId ?? null);
+  /* REPORTED, not owned: the host remembers, the panel stays the writer. The
+     mount's own values are not reported back — they are the seed. */
+  const { onQueryChange, onFiltersChange } = props;
+  const reportedQuery = useRef(query);
+  useEffect(() => {
+    if (reportedQuery.current === query) return;
+    reportedQuery.current = query;
+    /* A host-drawn search box already holds the text; reporting it back would
+       race the next keystroke and bounce between the two. */
+    if (props.searchInHost) return;
+    onQueryChange?.(query);
+  }, [query, onQueryChange, props.searchInHost]);
+  const reportedFilters = useRef<ListFilterState>({ selected, selectedPeople, sortKey, lensId });
+  useEffect(() => {
+    const prev = reportedFilters.current;
+    if (
+      prev.selected === selected &&
+      prev.selectedPeople === selectedPeople &&
+      prev.sortKey === sortKey &&
+      prev.lensId === lensId
+    ) {
+      return;
+    }
+    reportedFilters.current = { selected, selectedPeople, sortKey, lensId };
+    onFiltersChange?.(reportedFilters.current);
+  }, [selected, selectedPeople, sortKey, lensId, onFiltersChange]);
   const lensSet =
     list.membership && lensId
       ? ((props.membershipSets ?? []).find((set) => set.id === lensId) ?? null)
@@ -754,6 +942,30 @@ export function EntityListPanel(props: EntityListPanelProps) {
     tab,
     ...tabCount(props, config, tab),
   }));
+  const toolbar = props.chrome === 'toolbar';
+  /* An empty band under a tier says which tier is empty; "none yet" is only
+     for a kind every tier's exact count says has no rows at all. */
+  const kindEmpty = tabCounts.every((c) => c.exact && c.n === 0);
+  const hostEmpty = props.renderEmpty;
+  const bandProps: EntityListPanelProps =
+    hostEmpty && activeTab && !kindEmpty
+      ? {
+          ...props,
+          renderEmpty: (state) =>
+            hostEmpty(state.reason === 'empty' ? { reason: 'empty', tier: activeTab.label } : state),
+        }
+      : props;
+  /* NO LIFECYCLE TO SLICE: every count is exact and every row sits in the
+     open tier (a teammate list reads 14 / 0 / 0 / 0). Hiding then strands
+     nothing, because the other tiers are known to be empty. */
+  const singleTier =
+    tabCounts.length > 0 &&
+    tabCounts.every((c) => c.exact && (c.tab.id === activeTab?.id || c.n === 0));
+  const tierRow = toolbar && mode !== 'board' && (list.categories?.length ?? 0) > 0 && !singleTier;
+  /* Spec D1 §5.3.1 case 7: every session this panel has loaded, across its
+     tabs, so a child whose parent sits in ANOTHER tab can name it ("↳ under
+     Coordinator X (Completed)"). The same reads the tab counts just made. */
+  const crumbs = useSessionCrumbs(props, config, activeTab?.id ?? null);
   /* The selector total's `+` — carried only when a tab's number is still the
      loaded length rather than the server's. Once every tab reports an exact
      total the sum IS exact, and the hedge disappears on its own. */
@@ -767,9 +979,86 @@ export function EntityListPanel(props: EntityListPanelProps) {
       ? `${tabCounts.reduce((n, c) => n + c.n, 0)}${anyTabTruncated ? '+' : ''}`
       : undefined;
 
+  /* chrome="toolbar": every narrowing in ONE funnel popover, pinned at the
+     end of the tier row (or of row 1 when the kind has no tiers). */
+  const funnel = toolbar ? (
+    <FilterRow
+      config={config}
+      picker={picker}
+      onPicker={setPicker}
+      selected={selected}
+      onToggleOption={(specId, optionId, multi) =>
+        setSelected((prev) => {
+          const current = prev[specId] ?? [];
+          const on = current.includes(optionId);
+          const next = on
+            ? current.filter((id) => id !== optionId)
+            : multi
+              ? [...current, optionId]
+              : [optionId];
+          return { ...prev, [specId]: next };
+        })
+      }
+      sortKey={sortKey}
+      onSort={setSortKey}
+      viewerActorId={props.ctx.viewerActorId}
+      people={members.length > 1 ? members : []}
+      selectedPeople={selectedPeople}
+      onTogglePerson={(actorId) =>
+        setSelectedPeople((current) =>
+          current.includes(actorId)
+            ? current.filter((id) => id !== actorId)
+            : [...current, actorId],
+        )
+      }
+      membership={list.membership}
+      membershipSets={props.membershipSets}
+      lensSet={lensSet}
+      onLens={setLensId}
+      merged
+      glyph={props.toolbarInline ? 'settings' : 'funnel'}
+      allInOne={props.toolbarInline}
+      /* The tiers are tabs in that layout, so status is not a filter too. */
+      {...(props.toolbarInline && tierRow ? { omitFilterIds: ['status'] } : {})}
+    />
+  ) : null;
+  /* The `⋯` half of the same component — View and Sort. One `FilterRow`
+     rendered twice with different sections, never two copies of the option
+     lists: that is how the phone's lens ended up a release behind the
+     desktop's, which `narrowing`'s own header records. */
+  const more = toolbar ? (
+    <FilterRow
+      config={config}
+      picker={picker}
+      onPicker={setPicker}
+      selected={selected}
+      onToggleOption={() => undefined}
+      sortKey={sortKey}
+      onSort={setSortKey}
+      viewerActorId={props.ctx.viewerActorId}
+      people={NO_PEOPLE}
+      selectedPeople={NO_SELECTED}
+      onTogglePerson={() => undefined}
+      lensSet={null}
+      onLens={() => undefined}
+      merged
+      section="view"
+    />
+  ) : null;
+  /**
+   * THE NUMBER BESIDE THE TITLE. The open tier's own count when the kind has
+   * tiers (the dropdown beside it names which tier that is), else the kind's
+   * total. NOT the sum across tiers while one tier is shown: a header reading
+   * `Tasks 266` over eleven visible rows is a number about something the
+   * reader cannot see.
+   */
+  const headCount = tierRow
+    ? (tabCounts.find((c) => c.tab.id === categoryTabId)?.label ?? kindTotal)
+    : kindTotal;
+
   return (
     <section
-      className={props.compact ? 'lp lp--compact' : 'lp'}
+      className={`${props.compact ? 'lp lp--compact' : 'lp'}${toolbar ? ' lp--toolbar' : ''}`}
       data-testid="entity-list-panel"
       data-kind={config.kind}
       aria-label={config.labelPlural}
@@ -782,7 +1071,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
         <KindSelector
           config={config}
           total={kindTotal}
-          liveCount={liveCountFor(props, config, activeTab)}
+          liveCount={liveCountFor(props, config, activeTab, tabCounts)}
+          alert={alertCountFor(config, tabCounts, setCategoryTabId)}
           onKindChange={props.onKindChange}
         />
       )}
@@ -797,6 +1087,117 @@ export function EntityListPanel(props: EntityListPanelProps) {
         {...(props.wiredActions ? { wiredActions: props.wiredActions } : {})}
       />
 
+      {toolbar ? (
+        <>
+          {/*
+            THE HOST'S CREATE ROW. `toolbarStart` / `toolbarEnd` is where the
+            Workspace browser puts its `[+ | kind ▾]` box; it is NOT list
+            chrome and it is on its way out — design doc §5 moves New to the
+            top of the navigator column, where the kind is chosen ONCE. Until
+            that lands (task 01a1469d), it keeps its own row, and the row is
+            not drawn at all on the surfaces that pass neither slot.
+          */}
+          {!props.toolbarInline && (props.toolbarStart || props.toolbarEnd) ? (
+            <div className="lp__toolrow">
+              {props.toolbarStart}
+              {props.toolbarEnd}
+            </div>
+          ) : null}
+          {/*
+            THE LIST HEADER, ONE ROW (design doc 01a1465d §5, approved
+            2026-10-16):
+
+                Tasks 18   [Open ▾]            ⌕  ⨝  ⋯
+
+            It replaces FOUR stacked bands — a bordered search row, a 28px
+            lifecycle rail, a filter-chip row and a View picker — which between
+            them spent ~120px of a 300px-wide column before the first row of
+            actual work. The facts did not go anywhere: the tier is the
+            dropdown, the filters are the funnel, View and Sort are the `⋯`,
+            and search is the 🔍 that expands over the title.
+          */}
+          {props.toolbarInline ? (
+            /*
+             * THE PINNED-ONLY RAIL'S STACK (Subhang, 2026-10-17):
+             *
+             *     [⌕ Search tasks…                ]
+             *     Tasks [⚙]               [+|☑ ▾]
+             *     To Do · In progress · Done …
+             *
+             * The full search bar leads; the kind's name, its one settings
+             * control and the host's new box share the next row; the lifecycle
+             * tiers are the tab row again, not a dropdown, for the kinds that
+             * have them. There is no `⋯` in this layout.
+             */
+            <>
+              {props.searchInHost ? null : (
+                <div className="lp__searchline" data-testid="list-searchline">
+                  <SearchRow
+                    config={config}
+                    query={query}
+                    onQuery={setQuery}
+                    inputRef={props.searchInputRef}
+                  />
+                </div>
+              )}
+              <div className="lp__head lp__head--stack" data-testid="list-head">
+                <h2 className="lp__headtitle">
+                  {/* The name only (Subhang 2026-10-17): each tier's count is
+                      on its tab. */}
+                  <span className="lp__headname">{config.labelPlural}</span>
+                </h2>
+                {/* ONE settings control beside the title; no `⋯` here. */}
+                {funnel}
+                {props.toolbarStart || props.toolbarEnd ? (
+                  <div className="lp__headtools">
+                    {props.toolbarStart}
+                    {props.toolbarEnd}
+                  </div>
+                ) : null}
+              </div>
+              {tierRow && list.categories ? (
+                <CategoryTabs
+                  tabs={list.categories}
+                  activeTabId={categoryTabId}
+                  onTab={setCategoryTabId}
+                  tabLabel={(tab: StatusCategoryTab) =>
+                    tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
+                  }
+                  compactWhenNarrow
+                />
+              ) : null}
+            </>
+          ) : (
+          <div className="lp__head" data-testid="list-head">
+            <h2 className="lp__headtitle">
+              <span className="lp__headname">{config.labelPlural}</span>
+              {/* The visible population, from the same `tabCounts` the tier
+                  dropdown's options read — one number, one source. */}
+              {headCount ? <span className="lp__headcount">{headCount}</span> : null}
+            </h2>
+            {tierRow && list.categories ? (
+              <TierMenu
+                tabs={list.categories}
+                activeTabId={categoryTabId}
+                onTab={setCategoryTabId}
+                tabLabel={(tab: StatusCategoryTab) =>
+                  tabCounts.find((c) => c.tab.id === tab.id)?.label ?? '0'
+                }
+              />
+            ) : null}
+            <HeaderSearch
+              config={config}
+              query={query}
+              onQuery={setQuery}
+              inputRef={props.searchInputRef}
+            />
+            {funnel}
+            {more}
+          </div>
+          )}
+        </>
+      ) : (
+        <>
       <SearchRow
         config={config}
         query={query}
@@ -842,7 +1243,6 @@ export function EntityListPanel(props: EntityListPanelProps) {
            read one of them — the tab row is `CategoryTabs`, a separate
            component one element up, and has been since tabs got their own
            row. Four props that compute a count nobody renders. */
-        compact={props.compact}
         people={members.length > 1 ? members : []}
         selectedPeople={selectedPeople}
         onTogglePerson={(actorId) =>
@@ -857,6 +1257,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
         lensSet={lensSet}
         onLens={setLensId}
       />
+        </>
+      )}
 
       {/* THE LENS SAYS WHAT IT HIDES. A kind-scoped list showing one set's
           members is NOT the set: a mixed collection holds items of every
@@ -868,7 +1270,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         <LensNote set={lensSet} filter={lensFilter} props={props} config={config} />
       ) : null}
 
-      <div className="lp__body" onPointerOver={placeHoverBar}>
+      <div className="lp__body" ref={props.bodyRef} onPointerOver={placeHoverBar}>
         {needsMeActive ? (
           /* ATTENTION v2 — "Needs me" is the attention QUEUE, one flat list in
              queue order (needs-me.ts). Tabs, sections, people chips and the
@@ -937,12 +1339,13 @@ export function EntityListPanel(props: EntityListPanelProps) {
                   return next;
                 })
               }
-              props={props}
+              props={bandProps}
               config={config}
               query={query}
             />
           ))
         ) : (
+          <SessionCrumbContext.Provider value={crumbs}>
           <Band
             label={null}
             filter={bandFilter(
@@ -955,10 +1358,12 @@ export function EntityListPanel(props: EntityListPanelProps) {
               lensFilter,
             )}
             sort={sortKey}
-            props={props}
+            props={bandProps}
             config={config}
             query={query}
+            tabId={activeTab?.id ?? null}
           />
+          </SessionCrumbContext.Provider>
         )}
       </div>
 
@@ -972,7 +1377,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
           the tab above already shows them. */}
       {/* Not for overlapping tabs (`tabTotal`): "12 all · 3 equipped · 9 not
           equipped" reads as a breakdown that adds up, and it does not. */}
-      {tabCounts.length > 0 && !list.tabTotal ? (
+      {tabCounts.length > 0 && !list.tabTotal && !toolbar ? (
         <div className="lp__foot" data-testid="list-footer">
           {tabCounts.map((c) => `${c.label} ${c.tab.label.toLowerCase()}`).join(' · ')}
         </div>
@@ -1227,13 +1632,38 @@ function liveCountFor(
   props: EntityListPanelProps,
   config: KindConfig,
   tab: StatusCategoryTab | null,
+  tabCounts: readonly { tab: StatusCategoryTab; n: number }[] = [],
 ): string | null {
   const spec = config.list.liveCount;
-  if (!spec || !props.liveIds) return null;
+  if (!spec) return null;
+  /* Spec D1 §5.3: "● N running" IS the Running tab's count — the server's
+     total for that tab, whichever tab is open. Stale and unverified rows are
+     in it on purpose: the tab holds them until the reaper says lost. */
+  if (spec.tab) {
+    const counted = tabCounts.find((c) => c.tab.id === spec.tab);
+    if (counted) return spec.label(counted.n);
+  }
+  if (!props.liveIds) return null;
   const merged = narrow(spec.filter, tab?.filter);
   const rows = merged === null ? NO_ROWS : props.rowsFor(merged);
   const live = new Set(props.liveIds);
   return spec.label(rows.filter((r) => live.has(r.id)).length);
+}
+
+/**
+ * Spec D1 §5.3: "⚠ M interrupted" beside the running count, linking to its
+ * tab. Null at zero — an alert that says nothing is not drawn.
+ */
+function alertCountFor(
+  config: KindConfig,
+  tabCounts: readonly { tab: StatusCategoryTab; n: number }[],
+  onTab: (id: string) => void,
+): { label: string; onClick: () => void } | null {
+  const spec = config.list.liveCount?.alertTab;
+  if (!spec) return null;
+  const counted = tabCounts.find((c) => c.tab.id === spec.tab);
+  if (!counted || counted.n === 0) return null;
+  return { label: spec.label(counted.n), onClick: () => onTab(spec.tab) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1244,8 +1674,11 @@ function KindSelector({
   config,
   total,
   liveCount,
+  alert,
   onKindChange,
 }: {
+  /** Spec D1 §5.3 — "⚠ M interrupted", which opens that tab. */
+  alert?: { label: string; onClick: () => void } | null;
   config: KindConfig;
   /**
    * Sum of the lifecycle tabs — T0-1 draws it beside the kind name.
@@ -1283,6 +1716,11 @@ function KindSelector({
         <span className="lp__livecount" data-testid="list-live-count">
           {liveCount}
         </span>
+      ) : null}
+      {alert ? (
+        <button type="button" className="lp__livecount lp__livecount--alert" data-testid="list-alert-count" onClick={alert.onClick}>
+          {alert.label}
+        </button>
       ) : null}
       {open ? (
         <ul className="lp__kindmenu" role="menu">
@@ -1445,7 +1883,7 @@ function QuickStart({
       data-testid="list-quick-start"
       onClick={() => onAction?.(ref_, ctx.entityId ?? '')}
     >
-      {`${def.icon} ${def.label}`}
+      {actionGlyph(def)} {def.label}
     </button>
   );
 }
@@ -1519,11 +1957,14 @@ function SearchRow({
   query,
   onQuery,
   inputRef,
+  hint = true,
 }: {
   config: KindConfig;
   query: string;
   onQuery: (q: string) => void;
   inputRef?: React.Ref<HTMLInputElement>;
+  /** False ⇒ no `f` key cap; the shortcut is named in the tooltip instead. */
+  hint?: boolean;
 }) {
   return (
     <div className="lp__searchrow">
@@ -1539,8 +1980,181 @@ function SearchRow({
         aria-label={`Search ${config.labelPlural.toLowerCase()}`}
         onChange={(e) => onQuery(e.target.value)}
         data-testid="list-search"
+        {...(hint ? {} : { title: `Search ${config.labelPlural.toLowerCase()} (F)` })}
       />
-      <kbd className="lp__searchrow-key">f</kbd>
+      {hint ? <kbd className="lp__searchrow-key">f</kbd> : null}
+    </div>
+  );
+}
+
+/**
+ * THE TIER DROPDOWN — `[Open ▾]` beside the list title (design doc 01a1465d
+ * §5, approved 2026-10-16). It replaces the tier ROW, which `CategoryTabs`
+ * still draws on every surface that is not the one-row header.
+ *
+ * WHY A MENU RATHER THAN FOUR SEGMENTS. The row was a 28px control spanning
+ * the panel, so the lifecycle axis cost a whole band of the column's height
+ * and still clipped `Cancelled` at the narrow widths (see `.lp__tierrow`'s
+ * own comment). You are in exactly one tier at a time and you change it
+ * rarely; that is a menu's shape, not a segmented control's. The trigger
+ * carries the CURRENT tier's word, so nothing is hidden — what is hidden is
+ * the three you are not in.
+ *
+ * THE COUNTS COME ALONG. Each option keeps the count the tab drew, from the
+ * same `tabCounts` read, so the dropdown and the title's own number cannot
+ * disagree. The trigger does NOT repeat the active tier's count: the title
+ * one slot to its left already is that number.
+ */
+function TierMenu({
+  tabs,
+  activeTabId,
+  onTab,
+  tabLabel,
+}: {
+  tabs: readonly StatusCategoryTab[];
+  activeTabId: string | null;
+  onTab: (id: string) => void;
+  tabLabel: (tab: StatusCategoryTab) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismissable(open, ref, useCallback(() => setOpen(false), []));
+  const active = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+  if (!active) return null;
+  return (
+    <div className="lp__tiermenu" ref={ref}>
+      <button
+        type="button"
+        className="lp__tiertrigger"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={`Lifecycle: ${active.label}`}
+        title="Lifecycle"
+        data-testid="list-tier-trigger"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="lp__tierword">{active.label}</span>
+        <span className="lp__tiercaret" aria-hidden>▾</span>
+      </button>
+      {open ? (
+        <div className="lp__filtermenu lp__tierpop" role="menu" data-testid="list-tier-menu">
+          {tabs.map((tab) => {
+            const on = tab.id === active.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={on}
+                className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                data-tier={tab.id}
+                onClick={() => {
+                  onTab(tab.id);
+                  setOpen(false);
+                }}
+              >
+                <span className="lp__optlabel">{tab.label}</span>
+                {/* Spec D1 §5.3: an alerting tier's count is a red badge above zero. */}
+                <span
+                  className={tab.alert && tabLabel(tab) !== '0' ? 'lp__tab-count lp__tab-count--alert' : 'lp__tab-count'}
+                  data-alert={tab.alert && tabLabel(tab) !== '0' ? 'true' : undefined}
+                >
+                  {tabLabel(tab)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * THE EXPANDING SEARCH — a 🔍 that becomes the field, in the one-row header
+ * (§5). Collapsed it is one 24px glyph; open it takes the row's free space.
+ *
+ * THE INPUT IS ALWAYS MOUNTED, and that is the load-bearing decision here.
+ * The `list.search` command focuses this panel's `searchInputRef` and never
+ * touches the DOM itself (see `SearchRow`'s header) — a ref to an UNMOUNTED
+ * input is a no-op, so an unmount-when-closed field would have silently
+ * killed the keyboard path, with the binding still in the contract and the
+ * help sheet still advertising it. Mounted-but-collapsed keeps one focus
+ * target: `f` focuses it, focus expands it, and the glyph just focuses it too.
+ *
+ * ESC CLEARS, THEN CLOSES (§5) — two presses, in that order, because the
+ * first press on a field with text in it must not also throw away the width
+ * the reader was typing into. A field that is already empty closes on the
+ * first press. Layer 4 makes Esc blur a focused field; this handler runs
+ * first and stops the event while it still has work of its own to do.
+ *
+ * THE KEY IS `f`, NOT `/`, AND THAT CONTRADICTS §7 ON PURPOSE. The design doc
+ * asks for `/`; D36 (`keyboard/contract.ts`) rules that `/` is the command
+ * palette's GUARANTEED path because ⌘K is browser-owned on Chrome Win/Linux
+ * and Firefox everywhere, and a focused list is the most common focus state —
+ * spending `/` here leaves the palette unreachable on half the matrix. So the
+ * expanding field is wired to the EXISTING guaranteed binding and `/` is left
+ * alone. Flagged for Subhang rather than decided here; moving it is one line
+ * in `keyboard/contract.ts` if he rules the other way.
+ */
+function HeaderSearch({
+  config,
+  query,
+  onQuery,
+  inputRef,
+}: {
+  config: KindConfig;
+  query: string;
+  onQuery: (q: string) => void;
+  inputRef?: React.Ref<HTMLInputElement>;
+}) {
+  const [focused, setFocused] = useState(false);
+  const own = useRef<HTMLInputElement>(null);
+  /* A query survives a blur: a list narrowed by text must keep saying so. */
+  const open = focused || query.length > 0;
+  const label = `Search ${config.labelPlural.toLowerCase()}`;
+  return (
+    <div className="lp__headsearch" data-open={open ? 'true' : undefined} data-testid="list-search-cell">
+      <button
+        type="button"
+        className="lp__headsearch-glyph"
+        aria-label={label}
+        aria-expanded={open}
+        title={`${label} (F)`}
+        data-testid="list-search-open"
+        onClick={() => own.current?.focus()}
+      >
+        <span aria-hidden>⌕</span>
+      </button>
+      <input
+        ref={(node) => {
+          own.current = node;
+          if (typeof inputRef === 'function') inputRef(node);
+          else if (inputRef) (inputRef as { current: HTMLInputElement | null }).current = node;
+        }}
+        className="lp__headsearch-input"
+        type="search"
+        value={query}
+        placeholder={label}
+        aria-label={label}
+        data-testid="list-search"
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={(event) => onQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return;
+          if (query.length > 0) {
+            /* Clear FIRST, and keep the field — and keep the event, so layer 4
+               does not blur the thing the reader is still using. */
+            event.stopPropagation();
+            event.preventDefault();
+            onQuery('');
+            return;
+          }
+          setFocused(false);
+          own.current?.blur();
+        }}
+      />
     </div>
   );
 }
@@ -1557,13 +2171,66 @@ function CategoryTabs({
   activeTabId,
   onTab,
   tabLabel,
+  compactWhenNarrow = false,
 }: {
   tabs?: readonly StatusCategoryTab[];
   activeTabId: string | null;
   onTab: (id: string) => void;
   /** Already rendered — `50+` when the page is saturated, `50` when it is all. */
   tabLabel: (tab: StatusCategoryTab) => string;
+  /**
+   * MARKS WHEN THE WORDS WOULD BE CUT (pinned-only rail, Subhang 2026-10-17):
+   * once any tab's word is clipped, every tab draws its mark and count, the
+   * name moving to the tooltip and the accessible name. The row goes back to
+   * words when the column is wider again than where it switched.
+   */
+  compactWhenNarrow?: boolean;
 }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  const narrowRef = useRef(false);
+  const switchedAt = useRef(0);
+  const countsKey = (tabs ?? []).map((tab) => `${tab.id}:${tabLabel(tab)}`).join('|');
+  useLayoutEffect(() => {
+    const el = rowRef.current;
+    if (!compactWhenNarrow || !el) return;
+    /* THE ROW DOES NOT SHRINK — it keeps its words' width and the panel clips
+       it — so "cut" is measured against what its PARENT gives it, and it is
+       the parent whose resizes are watched. */
+    const parent = el.parentElement;
+    const available = () => {
+      if (!parent) return el.clientWidth;
+      const cs = getComputedStyle(el);
+      return parent.clientWidth - parseFloat(cs.marginLeft || '0') - parseFloat(cs.marginRight || '0');
+    };
+    const measure = () => {
+      const room = available();
+      if (!narrowRef.current) {
+        /* What the words NEED: first tab's left edge to the last tab's right.
+           Not `scrollWidth` — the row itself stretches to its parent. */
+        const kids = el.children;
+        const need =
+          kids.length > 0
+            ? kids[kids.length - 1]!.getBoundingClientRect().right - kids[0]!.getBoundingClientRect().left
+            : 0;
+        const clipped =
+          need > room + 1 ||
+          Array.from(el.querySelectorAll<HTMLElement>('.lp__tab-word')).some((word) => word.scrollWidth > word.clientWidth + 1);
+        if (clipped) {
+          switchedAt.current = room;
+          narrowRef.current = true;
+          setNarrow(true);
+        }
+      } else if (room > switchedAt.current + 8) {
+        narrowRef.current = false;
+        setNarrow(false);
+      }
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(parent ?? el);
+    return () => observer?.disconnect();
+  }, [compactWhenNarrow, countsKey, narrow]);
   /*
    * THE PHONE DRAWS THE MARKS AND NOT THE WORDS — owner ruling, 2026-08-19.
    *
@@ -1584,12 +2251,37 @@ function CategoryTabs({
    */
   const { oneSurface } = useMobileSurface();
   if (!tabs || tabs.length === 0) return null;
+  const marks = narrow && tabs.every((tab) => hasTabGlyph(tab.id));
   return (
-    <div className="lp__tierrow" role="tablist" aria-label="Lifecycle">
+    <div className="lp__tierrow" role="tablist" aria-label="Lifecycle" ref={rowRef} data-marks={marks || undefined}>
       {tabs.map((tab) => {
         // A kind's own tabs (skills) have no category mark, so on one surface
         // they keep their word rather than render an empty glyph.
         const glyph = oneSurface && hasCategoryGlyph(tab.id) ? tab.id : null;
+        if (marks && !glyph) {
+          const alerting = tab.alert && tabLabel(tab) !== '0';
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={tab.id === activeTabId}
+              className={tab.id === activeTabId ? 'lp__tab lp__tab--active lp__tab--mark' : 'lp__tab lp__tab--mark'}
+              onClick={() => onTab(tab.id)}
+              aria-label={`${tab.label}, ${tabLabel(tab)}`}
+              title={`${tab.label} · ${tabLabel(tab)}`}
+              data-tab-id={tab.id}
+            >
+              <TabGlyph id={tab.id} />
+              <span
+                className={alerting ? 'lp__tab-count lp__tab-count--alert' : 'lp__tab-count'}
+                data-alert={alerting ? 'true' : undefined}
+              >
+                {tabLabel(tab)}
+              </span>
+            </button>
+          );
+        }
         return (
         <button
           key={tab.id}
@@ -1612,7 +2304,13 @@ function CategoryTabs({
                   (see .lp__tab-word in panels.css) — a count that truncates is
                   a wrong number, which is worse than a shortened one. */}
               <span className="lp__tab-word">{tab.label}</span>
-              <span className="lp__tab-count">{tabLabel(tab)}</span>
+              {/* Spec D1 §5.3: an alerting tab's count is a red badge above zero. */}
+              <span
+                className={tab.alert && tabLabel(tab) !== '0' ? 'lp__tab-count lp__tab-count--alert' : 'lp__tab-count'}
+                data-alert={tab.alert && tabLabel(tab) !== '0' ? 'true' : undefined}
+              >
+                {tabLabel(tab)}
+              </span>
             </>
           )}
         </button>
@@ -1622,11 +2320,41 @@ function CategoryTabs({
   );
 }
 
-/** An open eye on the 16×16 grid — the `View ▾` chip's compact face. */
+/*
+ * THE FILTER ROW IS ICONS, NOT WORDS. Each trigger is a glyph on the 16×16
+ * grid with its name in `aria-label` and `title`, so the row fits at every
+ * width without clipping its last chip, and a screen reader still hears the
+ * word. The count badge stays: it is state, not a label.
+ */
+/** A funnel — the same shape as the phone's narrowing cluster (`NarrowGlyph`). */
+const FILTER_MARK = ['M2.5 3.5H13.5L9.25 8.5V13L6.75 11.5V8.5Z'];
+/** Settings sliders — two rails with a knob each — for the pinned-only rail's
+    one list-settings control (Subhang 2026-10-17: "like a settings icon"). */
+const SETTINGS_MARK = [
+  'M2.5 5h5.5',
+  'M11.5 5h2',
+  'M9.75 3.5a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3',
+  'M2.5 11h2',
+  'M8 11h5.5',
+  'M6.25 9.5a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3',
+];
+/** A head and shoulders. */
+const PEOPLE_MARK = [
+  'M10.4 5.4a2.4 2.4 0 1 1 -4.8 0a2.4 2.4 0 1 1 4.8 0Z',
+  'M3 13.5c.6-2.6 2.6-4 5-4s4.4 1.4 5 4',
+];
+/** Stacked sets — a collection is a curated set of rows. */
+const SETS_MARK = [
+  'M2.5 5.5h8.5v8H2.5z',
+  'M5 3h8.5v8',
+];
+/** An open eye — which facts each row shows. */
 const VIEW_MARK = [
   'M1.5 8C3.2 4.9 5.4 3.5 8 3.5s4.8 1.4 6.5 4.5C12.8 11.1 10.6 12.5 8 12.5S3.2 11.1 1.5 8Z',
   'M10 8a2 2 0 1 1 -4 0a2 2 0 1 1 4 0Z',
 ];
+/** A descending arrow beside shortening bars — the order rows arrive in. */
+const SORT_MARK = ['M4.5 2.5v11', 'M2 11l2.5 2.5L7 11', 'M9 4h5', 'M9 8h3.5', 'M9 12h2'];
 
 function FilterRow({
   config,
@@ -1636,7 +2364,6 @@ function FilterRow({
   onToggleOption,
   sortKey,
   onSort,
-  compact,
   people,
   selectedPeople,
   onTogglePerson,
@@ -1645,6 +2372,11 @@ function FilterRow({
   membershipSets,
   lensSet,
   onLens,
+  merged = false,
+  section = 'narrow',
+  glyph = 'funnel',
+  allInOne = false,
+  omitFilterIds,
 }: {
   config: KindConfig;
   /** Which of the four is open. Held by the panel — see `ListPicker`. */
@@ -1654,7 +2386,6 @@ function FilterRow({
   onToggleOption: (specId: string, optionId: string, multi: boolean) => void;
   sortKey: SortKey | undefined;
   onSort: (key: SortKey) => void;
-  compact?: boolean;
   people: readonly ActorSummary[];
   selectedPeople: readonly string[];
   onTogglePerson: (actorId: string) => void;
@@ -1667,6 +2398,32 @@ function FilterRow({
   /** The active lens, resolved to its summary (title for the chip). */
   lensSet: EntitySummary | null;
   onLens: (setId: string | null) => void;
+  /** One funnel and one popover with every axis (`chrome="toolbar"`). */
+  merged?: boolean;
+  /**
+   * WHICH HALF OF THE MERGED POPOVER THIS INSTANCE IS (one-row header, design
+   * doc 01a1465d §5). Only read when `merged`.
+   *
+   *   'narrow' — the funnel: what the list CONTAINS. Filter, People, the
+   *              collection lens. Narrowing the population is one idea.
+   *   'view'   — the `⋯`: how the rows LOOK. View facets and Sort.
+   *
+   * They were one popover with five sections, and the ruling split them
+   * because the funnel glyph promises narrowing and half of what was behind it
+   * narrowed nothing: hiding the avatars changed no row's membership. Two
+   * triggers, two ideas, and the Reset in each only resets its own.
+   */
+  section?: 'narrow' | 'view';
+  /** The merged narrowing trigger's mark: the funnel, or settings sliders. */
+  glyph?: 'funnel' | 'settings';
+  /**
+   * ONE "LIST SETTINGS" MENU (pinned-only rail, Subhang 2026-10-17): the
+   * narrowing trigger also carries Sort, Group by and View (with Show
+   * sub-items), and there is no `⋯`. Only read when `merged`.
+   */
+  allInOne?: boolean;
+  /** Filter specs not offered here (the status filter where tiers are tabs). */
+  omitFilterIds?: readonly string[];
 }) {
   const setPicker = onPicker;
   const barRef = useRef<HTMLDivElement>(null);
@@ -1685,7 +2442,13 @@ function FilterRow({
    */
   const { oneSurface, sheetHost } = useMobileSurface();
   const inSheet = oneSurface && sheetHost !== null;
-  useDismissable(!inSheet && picker !== null, barRef, useCallback(() => setPicker(null), [setPicker]));
+  /* EACH TRIGGER DISMISSES ITS OWN MENU. The funnel and the `⋯` are two
+     FilterRows over ONE `picker`; when both listened for any open picker, a
+     pointerdown inside the `⋯` menu was "outside" the funnel's bar, and the
+     funnel closed the `⋯` before the option's click landed. */
+  const mine =
+    picker !== null && (section === 'view' ? picker === 'view' : !merged || picker !== 'view');
+  useDismissable(!inSheet && mine, barRef, useCallback(() => setPicker(null), [setPicker]));
   const sort = config.list.sort;
   const current = sort.find((s) => s.key === sortKey) ?? sort[0];
   /* VIEW — which facts each row draws (row-view.ts). Only the facets this
@@ -1695,6 +2458,9 @@ function FilterRow({
   const view = useRowView(config.kind);
   const viewFacets = facetsForAnatomy(config.list.tile.anatomy);
   const hiddenFacetCount = viewFacets.filter((spec) => view.hidden.has(spec.id)).length;
+  const listPrefs = useListPrefs(config.kind);
+  const groupOptions = groupOptionsFor(config.kind);
+  const filterSpecs = omitFilterIds ? config.list.filters.filter((spec) => !omitFilterIds.includes(spec.id)) : config.list.filters;
 
   const active = config.list.filters.flatMap((spec) =>
     (selected[spec.id] ?? []).flatMap((optionId) => {
@@ -1747,6 +2513,368 @@ function FilterRow({
     );
   };
 
+  /* The option lists, one per narrowing menu below. */
+  const filterOptions = (
+    <>
+          {filterSpecs.map((spec) => (
+            <div key={spec.id}>
+              <div className="lp__filtergroup">{merged ? spec.label : spec.label.toUpperCase()}</div>
+              {spec.options.map((option) => {
+                const on = (selected[spec.id] ?? []).includes(option.id);
+                // OFFERED AND REFUSED, never offered and inert. An option
+                // naming the viewer with no viewer resolved would query
+                // nobody and answer "you have nothing", which is a claim
+                // about the data made out of ignorance about the identity.
+                const blocked = needsViewer(option.filter) && !viewerActorId;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={on}
+                    disabled={blocked}
+                    title={
+                      blocked
+                        ? 'Not available: this workspace has not resolved who you are, so “me” has no id to match.'
+                        : undefined
+                    }
+                    className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                    onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
+                  >
+                    {/* A REAL BOX, NOT A TRAILING TICK. These options combine,
+                        and a `✓` that appears only after the click cannot say
+                        so beforehand — the affordance has to be visible while
+                        the option is still off. Drawn, not an <input>: the
+                        button already owns `role="menuitemcheckbox"` and its
+                        `aria-checked`, so a nested input would be a second,
+                        conflicting control in the same accessible node. */}
+                    <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
+                    <span className="lp__optlabel">{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+    </>
+  );
+  const setsOptions = membership ? (
+    <>
+          {(membershipSets ?? []).length === 0 ? (
+            /* An empty page is a real answer, said in its own words — never a
+               bare menu that reads as "the space has none" when the truth may
+               be "none exist YET". The sets source is a bounded recency page,
+               so this is also where that bound is stated. */
+            <p className="lp__filterempty" data-testid="collection-lens-empty">
+              {`No ${membership.label.toLowerCase()} yet — create one from its own list. This menu offers the most recent page once any exist.`}
+            </p>
+          ) : (
+            (membershipSets ?? []).map((set) => {
+              const on = lensSet?.id === set.id;
+              return (
+                <button
+                  key={set.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={on}
+                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                  data-testid="collection-lens-option"
+                  onClick={() => {
+                    onLens(on ? null : set.id);
+                    if (!merged) setPicker(null);
+                  }}
+                >
+                  <KindIcon kind={set.kind} />
+                  {set.title}
+                  {on ? <span className="lp__filtercheck">✓</span> : null}
+                </button>
+              );
+            })
+          )}
+    </>
+  ) : null;
+  const viewOptions = (
+    <>
+            {viewFacets.map((spec) => {
+              const on = view.shows(spec.id);
+              return (
+                <button
+                  key={spec.id}
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={on}
+                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                  data-facet={spec.id}
+                  onClick={() => view.toggle(spec.id)}
+                >
+                  <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
+                  <span className="lp__optlabel">{spec.label}</span>
+                </button>
+              );
+            })}
+    </>
+  );
+  const peopleOptions = (
+    <>
+          {people.map((person) => {
+            const on = selectedPeople.includes(person.id);
+            return (
+              <button
+                key={person.id}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={on}
+                className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                onClick={() => onTogglePerson(person.id)}
+              >
+                <Avatar
+                  actorId={person.id}
+                  provenance={person.isAgent ? 'agent' : 'human'}
+                  label={person.displayName}
+                  size={20}
+                  src={person.avatar ?? null}
+                />
+                <span>{person.displayName}</span>
+                {on ? <span className="lp__filtercheck">✓</span> : null}
+              </button>
+            );
+          })}
+    </>
+  );
+  const sortOptions = (
+    <>
+          {sort.map((spec) => (
+            <button
+              key={spec.key}
+              type="button"
+              role="menuitemradio"
+              aria-checked={spec.key === current?.key}
+              className={
+                spec.key === current?.key ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'
+              }
+              onClick={() => {
+                onSort(spec.key);
+                if (!merged) setPicker(null);
+              }}
+            >
+              {spec.label}
+              {spec.key === current?.key ? <span className="lp__filtercheck">✓</span> : null}
+            </button>
+          ))}
+    </>
+  );
+
+  if (merged) {
+    const defaultSort = sort.find((s) => s.default)?.key ?? sort[0]?.key;
+    const sortChanged = current && current.key !== defaultSort ? 1 : 0;
+    /* WHICH LINKS A ROW SHOWS (Subhang 2026-10-17): one switch per group
+       on the counts line, in BOTH layouts — the rail's List settings and the
+       default `⋯` — over the same facet store. Off while the whole line is
+       off, and a group the server does not count yet says so rather than
+       looking broken. */
+    const linkGroupsHidden = hiddenLinkGroups(view.hidden).size;
+    const linksSection = viewFacets.some((spec) => spec.id === 'counts') ? (
+      <section className="lp__funnelsection" aria-label="Links on rows" data-testid="list-links-section">
+        <div className="t-eyebrow">Links on rows</div>
+        {TILE_LINK_GROUPS.map((group) => {
+          const facet = linkFacet(group.id);
+          const lineOn = view.shows('counts');
+          const on = lineOn && view.shows(facet);
+          const pending = UNCOUNTED_LINK_GROUPS.has(group.id);
+          const name = getKind(group.kind).labelPlural;
+          return (
+            <button
+              key={group.id}
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={on}
+              aria-disabled={!lineOn || undefined}
+              className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+              data-link-group={group.id}
+              title={pending ? `${name} are not counted by the server yet, so rows show none for now` : name}
+              onClick={() => {
+                if (lineOn) view.toggle(facet);
+              }}
+            >
+              <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
+              <KindIcon kind={group.kind} size={14} />
+              <span className="lp__optlabel">{name}</span>
+              {pending ? <span className="lp__opthint">not counted yet</span> : null}
+            </button>
+          );
+        })}
+      </section>
+    ) : null;
+
+    /* THE BADGE COUNTS WHAT IS NOT DEFAULT — in THIS trigger's own sections,
+       so a hidden avatar never puts a number on the funnel and an active
+       filter never puts one on the `⋯`. A badge that counts somebody else's
+       state is a badge the reader cannot act on. */
+    const changed =
+      section === 'view'
+        ? hiddenFacetCount + sortChanged + linkGroupsHidden
+        : activeFilterCount + selectedPeople.length + (lensSet ? 1 : 0) +
+          (allInOne ? hiddenFacetCount + sortChanged + listPrefs.changed + linkGroupsHidden : 0);
+
+    /* `⋯` and the funnel must not share a picker key, or opening one would
+       read as the other being open. `view` is already in `ListPicker`. */
+    const key: ListPicker = section === 'view' ? 'view' : 'filters';
+    const open = picker === key;
+    const label = section === 'view' ? 'View and sort' : allInOne ? 'List settings' : 'Filters';
+    const body =
+      section === 'view' ? (
+        <>
+          {viewFacets.length > 0 ? (
+            <section className="lp__funnelsection" aria-label="View">
+              <div className="t-eyebrow">View</div>
+              {viewOptions}
+            </section>
+          ) : null}
+          {current ? (
+            <section className="lp__funnelsection" aria-label="Sort">
+              <div className="t-eyebrow">Sort</div>
+              {sortOptions}
+            </section>
+          ) : null}
+          {linksSection}
+        </>
+      ) : (
+        <>
+          {filterSpecs.length > 0 ? (
+            <section className="lp__funnelsection" aria-label="Filter">
+              <div className="t-eyebrow">Filter</div>
+              {filterOptions}
+            </section>
+          ) : null}
+          {people.length > 1 ? (
+            <section className="lp__funnelsection" aria-label="People">
+              <div className="t-eyebrow">People</div>
+              {peopleOptions}
+            </section>
+          ) : null}
+          {membership && membershipSets !== undefined ? (
+            <section className="lp__funnelsection" aria-label={membership.label}>
+              <div className="t-eyebrow">{membership.label}</div>
+              {setsOptions}
+            </section>
+          ) : null}
+          {allInOne && current ? (
+            <section className="lp__funnelsection" aria-label="Sort">
+              <div className="t-eyebrow">Sort</div>
+              {sortOptions}
+            </section>
+          ) : null}
+          {allInOne && groupOptions.length > 1 ? (
+            <section className="lp__funnelsection" aria-label="Group by">
+              <div className="t-eyebrow">Group by</div>
+              {groupOptions.map((option) => {
+                const on = listPrefs.groupBy === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={on}
+                    className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                    data-group-by={option.id}
+                    onClick={() => listPrefs.setGroupBy(option.id as ListGroupBy)}
+                  >
+                    {option.label}
+                    {on ? <span className="lp__filtercheck">✓</span> : null}
+                  </button>
+                );
+              })}
+            </section>
+          ) : null}
+          {allInOne && (viewFacets.length > 0 || config.list.tree) ? (
+            <section className="lp__funnelsection" aria-label="View">
+              <div className="t-eyebrow">View</div>
+              {viewOptions}
+              {config.list.tree ? (
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={listPrefs.subItems}
+                  className={listPrefs.subItems ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                  data-testid="list-subitems-toggle"
+                  onClick={() => listPrefs.setSubItems(!listPrefs.subItems)}
+                >
+                  <span className="lp__optbox" aria-hidden data-on={listPrefs.subItems ? 'yes' : 'no'} />
+                  <span className="lp__optlabel">Show sub-items</span>
+                </button>
+              ) : null}
+            </section>
+          ) : null}
+          {allInOne ? linksSection : null}
+        </>
+      );
+
+    return (
+      <div className="lp__filterbar lp__filterbar--merged" ref={barRef}>
+        <button
+          type="button"
+          className={section === 'view' ? 'lp__chip lp__chip--icon lp__more' : 'lp__chip lp__chip--icon lp__funnel'}
+          onClick={() => setPicker(open ? null : key)}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          aria-label={changed > 0 ? `${label}, ${changed} changed` : label}
+          title={label}
+          data-testid={section === 'view' ? 'list-more-trigger' : 'filter-trigger'}
+        >
+          {section === 'view' ? (
+            <span className="lp__more-glyph" aria-hidden>⋯</span>
+          ) : (
+            <VectorIcon paths={glyph === 'settings' ? SETTINGS_MARK : FILTER_MARK} size={16} />
+          )}
+          {changed > 0 ? <span className="lp__chip-count">{changed}</span> : null}
+        </button>
+        {narrowing(
+          key,
+          label,
+          section === 'view' ? 'list-more-menu' : 'filter-menu',
+          'lp__filtermenu lp__filtermenu--merged lp__filtermenu--withfoot',
+          (
+            <>
+              <div className="lp__filteropts">{body}</div>
+              <div className="lp__filterfoot">
+                <button
+                  type="button"
+                  className="lp__filterclear"
+                  data-testid={section === 'view' ? 'list-more-clear-all' : 'filter-clear-all'}
+                  disabled={changed === 0}
+                  onClick={() => {
+                    if (section === 'view') {
+                      if (hiddenFacetCount > 0 || linkGroupsHidden > 0) view.reset();
+                      if (defaultSort && current && current.key !== defaultSort) onSort(defaultSort);
+                      return;
+                    }
+                    for (const { spec, option } of active) onToggleOption(spec.id, option.id, spec.multi ?? false);
+                    for (const actorId of selectedPeople) onTogglePerson(actorId);
+                    if (lensSet) onLens(null);
+                    if (allInOne) {
+                      if (hiddenFacetCount > 0 || linkGroupsHidden > 0) view.reset();
+                      if (defaultSort && current && current.key !== defaultSort) onSort(defaultSort);
+                      if (listPrefs.changed > 0) listPrefs.reset();
+                    }
+                  }}
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  className="lp__filterdone"
+                  data-testid={section === 'view' ? 'list-more-done' : 'filter-done'}
+                  onClick={() => setPicker(null)}
+                >
+                  Done
+                </button>
+              </div>
+            </>
+          ),
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="lp__filterbar" ref={barRef}>
     <div className="lp__filters">
@@ -1791,35 +2919,39 @@ function FilterRow({
       {config.list.filters.length > 0 ? (
         <button
           type="button"
-          className="lp__chip"
+          className="lp__chip lp__chip--icon"
           onClick={() => setPicker(picker === 'filters' ? null : 'filters')}
           aria-expanded={picker === 'filters'}
           aria-haspopup="menu"
+          aria-label="Filter"
+          title="Filter"
           data-testid="filter-trigger"
         >
-          Filter
+          <VectorIcon paths={FILTER_MARK} size={15} />
           {activeFilterCount > 0 ? (
             <span className="lp__chip-count">{activeFilterCount}</span>
-          ) : (
-            <span className="lp__chip-caret" aria-hidden>▾</span>
-          )}
+          ) : null}
         </button>
       ) : null}
       {people.length > 1 ? (
         <button
           type="button"
-          className={selectedPeople.length > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
+          className={
+            selectedPeople.length > 0
+              ? 'lp__chip lp__chip--icon lp__chip--active'
+              : 'lp__chip lp__chip--icon'
+          }
           onClick={() => setPicker(picker === 'people' ? null : 'people')}
           aria-expanded={picker === 'people'}
           aria-haspopup="menu"
+          aria-label="People"
+          title="People"
           data-testid="people-filter-trigger"
         >
-          People
+          <VectorIcon paths={PEOPLE_MARK} size={15} />
           {selectedPeople.length > 0 ? (
             <span className="lp__chip-count">{selectedPeople.length}</span>
-          ) : (
-            <span className="lp__chip-caret" aria-hidden>▾</span>
-          )}
+          ) : null}
         </button>
       ) : null}
       {/* The collection lens trigger. Rendered exactly when the registry
@@ -1841,37 +2973,37 @@ function FilterRow({
         ) : (
           <button
             type="button"
-            className="lp__chip"
+            className="lp__chip lp__chip--icon"
             onClick={() => setPicker(picker === 'sets' ? null : 'sets')}
             aria-expanded={picker === 'sets'}
             aria-haspopup="menu"
+            aria-label={membership.label}
+            title={membership.label}
             data-testid="collection-lens-trigger"
           >
-            {membership.label}
-            <span className="lp__chip-caret" aria-hidden>▾</span>
+            <VectorIcon paths={SETS_MARK} size={15} />
           </button>
         )
       ) : null}
       {viewFacets.length > 0 ? (
         <button
           type="button"
-          className={hiddenFacetCount > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
+          className={
+            hiddenFacetCount > 0
+              ? 'lp__chip lp__chip--icon lp__chip--active'
+              : 'lp__chip lp__chip--icon'
+          }
           onClick={() => setPicker(picker === 'view' ? null : 'view')}
           aria-expanded={picker === 'view'}
           aria-haspopup="menu"
           title={hiddenFacetCount > 0 ? `Row view: ${hiddenFacetCount} hidden` : 'Choose what each row shows'}
-          aria-label={compact ? 'View' : undefined}
+          aria-label="View"
           data-testid="row-view-trigger"
         >
-          {/* At the floor the chip collapses to its glyph, as sort does: the
-              240px row already clips Collections, and a fourth word would push
-              People under the knife too. */}
-          {compact ? <VectorIcon paths={VIEW_MARK} size={13} /> : 'View'}
+          <VectorIcon paths={VIEW_MARK} size={15} />
           {hiddenFacetCount > 0 ? (
             <span className="lp__chip-count">{hiddenFacetCount}</span>
-          ) : (
-            <span className="lp__chip-caret" aria-hidden>▾</span>
-          )}
+          ) : null}
         </button>
       ) : null}
 
@@ -1885,16 +3017,18 @@ function FilterRow({
       {current ? (
         <button
           type="button"
-          className="lp__chip"
+          className="lp__chip lp__chip--icon"
           onClick={() => setPicker(picker === 'sort' ? null : 'sort')}
           aria-expanded={picker === 'sort'}
           aria-haspopup="menu"
+          aria-label={`Sort: ${current.label}`}
           title={`Sorted by ${current.label}`}
+          data-changed={current.key !== (sort.find((s) => s.default)?.key ?? sort[0]?.key) ? 'true' : undefined}
           data-testid="sort-trigger"
         >
-          {/* At the floor the sort chip collapses to its glyph — T0-3 frame 4
-              draws exactly `↓`. The chip never disappears. */}
-          {compact ? '↓' : `↓ ${current.label}`}
+          {/* The current order is named in the title and the open menu's ✓;
+              the chip itself is only the glyph. */}
+          <VectorIcon paths={SORT_MARK} size={15} />
         </button>
       ) : null}
 
@@ -1902,24 +3036,7 @@ function FilterRow({
       {narrowing('sort', 'Sort', 'sort-menu', 'lp__filtermenu lp__filtermenu--sort', (
         <>
           <div className="lp__filtergroup">SORT BY</div>
-          {sort.map((spec) => (
-            <button
-              key={spec.key}
-              type="button"
-              role="menuitemradio"
-              aria-checked={spec.key === current?.key}
-              className={
-                spec.key === current?.key ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'
-              }
-              onClick={() => {
-                onSort(spec.key);
-                setPicker(null);
-              }}
-            >
-              {spec.label}
-              {spec.key === current?.key ? <span className="lp__filtercheck">✓</span> : null}
-            </button>
-          ))}
+          {sortOptions}
         </>
       ))}
       {/* Rendered OUTSIDE the clipping row, inside the positioned bar: the row
@@ -1930,45 +3047,7 @@ function FilterRow({
         <>
           {/* The options scroll; the footer below does not. */}
           <div className="lp__filteropts">
-          {config.list.filters.map((spec) => (
-            <div key={spec.id}>
-              <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
-              {spec.options.map((option) => {
-                const on = (selected[spec.id] ?? []).includes(option.id);
-                // OFFERED AND REFUSED, never offered and inert. An option
-                // naming the viewer with no viewer resolved would query
-                // nobody and answer "you have nothing", which is a claim
-                // about the data made out of ignorance about the identity.
-                const blocked = needsViewer(option.filter) && !viewerActorId;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={on}
-                    disabled={blocked}
-                    title={
-                      blocked
-                        ? 'Not available: this workspace has not resolved who you are, so “me” has no id to match.'
-                        : undefined
-                    }
-                    className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                    onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
-                  >
-                    {/* A REAL BOX, NOT A TRAILING TICK. These options combine,
-                        and a `✓` that appears only after the click cannot say
-                        so beforehand — the affordance has to be visible while
-                        the option is still off. Drawn, not an <input>: the
-                        button already owns `role="menuitemcheckbox"` and its
-                        `aria-checked`, so a nested input would be a second,
-                        conflicting control in the same accessible node. */}
-                    <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
-                    <span className="lp__optlabel">{option.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          {filterOptions}
           </div>
           {/* CLEARING WAS ONLY EVER REACHABLE BY HUNTING CHIPS. Every active
               option spawned a dismissable chip in the bar, so undoing four
@@ -2005,60 +3084,14 @@ function FilterRow({
       {membership ? narrowing('sets', membership.label, 'collection-lens-menu', 'lp__filtermenu', (
         <>
           <div className="lp__filtergroup">{membership.label.toUpperCase()}</div>
-          {(membershipSets ?? []).length === 0 ? (
-            /* An empty page is a real answer, said in its own words — never a
-               bare menu that reads as "the space has none" when the truth may
-               be "none exist YET". The sets source is a bounded recency page,
-               so this is also where that bound is stated. */
-            <p className="lp__filterempty" data-testid="collection-lens-empty">
-              {`No ${membership.label.toLowerCase()} yet — create one from its own list. This menu offers the most recent page once any exist.`}
-            </p>
-          ) : (
-            (membershipSets ?? []).map((set) => {
-              const on = lensSet?.id === set.id;
-              return (
-                <button
-                  key={set.id}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={on}
-                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                  data-testid="collection-lens-option"
-                  onClick={() => {
-                    onLens(on ? null : set.id);
-                    setPicker(null);
-                  }}
-                >
-                  <KindIcon kind={set.kind} />
-                  {set.title}
-                  {on ? <span className="lp__filtercheck">✓</span> : null}
-                </button>
-              );
-            })
-          )}
+          {setsOptions}
         </>
       )) : null}
       {narrowing('view', 'View', 'row-view-menu', 'lp__filtermenu lp__filtermenu--withfoot', (
         <>
           <div className="lp__filteropts">
             <div className="lp__filtergroup">SHOW ON EACH ROW</div>
-            {viewFacets.map((spec) => {
-              const on = view.shows(spec.id);
-              return (
-                <button
-                  key={spec.id}
-                  type="button"
-                  role="menuitemcheckbox"
-                  aria-checked={on}
-                  className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                  data-facet={spec.id}
-                  onClick={() => view.toggle(spec.id)}
-                >
-                  <span className="lp__optbox" aria-hidden data-on={on ? 'yes' : 'no'} />
-                  <span className="lp__optlabel">{spec.label}</span>
-                </button>
-              );
-            })}
+          {viewOptions}
           </div>
           <div className="lp__filterfoot">
             <button
@@ -2084,29 +3117,7 @@ function FilterRow({
       {narrowing('people', 'People', 'people-filter-menu', 'lp__filtermenu', (
         <>
           <div className="lp__filtergroup">PEOPLE</div>
-          {people.map((person) => {
-            const on = selectedPeople.includes(person.id);
-            return (
-              <button
-                key={person.id}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={on}
-                className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
-                onClick={() => onTogglePerson(person.id)}
-              >
-                <Avatar
-                  actorId={person.id}
-                  provenance={person.isAgent ? 'agent' : 'human'}
-                  label={person.displayName}
-                  size={20}
-                  src={person.avatar ?? null}
-                />
-                <span>{person.displayName}</span>
-                {on ? <span className="lp__filtercheck">✓</span> : null}
-              </button>
-            );
-          })}
+          {peopleOptions}
         </>
       ))}
     </div>
@@ -2753,7 +3764,14 @@ function Band({
   props,
   config,
   query,
+  tabId = null,
 }: {
+  /**
+   * Spec D1 §5.3: the open tab, for the session tabs' grouping (Running's
+   * "Finished, still open" divider, Interrupted's reason groups) and the
+   * Running grace (§5.3.1 case 12). Any other tab id renders ungrouped.
+   */
+  tabId?: string | null;
   label: string | null;
   /**
    * The band's own already-narrowed query, or `null` when the section, the
@@ -2771,7 +3789,8 @@ function Band({
   query?: string;
 }) {
   const bandAttention = useAttentionOptional();
-  const rows = filter === null ? NO_ROWS : props.rowsFor(filter, sort);
+  /* A row deleted live stays for its exit (R41) — see `useRetainLeaving`. */
+  const rows = useRetainLeaving(filter === null ? NO_ROWS : props.rowsFor(filter, sort), rowId);
   const page = filter === null ? undefined : props.pageStateOf?.(filter, sort);
   /* "Needs me" reads LOADING for a bounded time per pulled root; nothing else
      re-renders a quiet list when that time runs out, so wake once then. */
@@ -2784,8 +3803,24 @@ function Band({
     const timer = setTimeout(() => wake((n) => n + 1), Math.max(0, due - Date.now()) + 50);
     return () => clearTimeout(timer);
   }, [needsMeLoadingNow, rows]);
-  const visible = matching(rows, query ?? '');
+  /* §5.3.1 case 12: a row that just left Running lingers ~10 s. Gated on the
+     tab alone ('running' is a session tab id only), not on the rows: gating on
+     "every row is a session" switched grace off exactly when the last running
+     row left, so that row vanished at once. A row whose process the store
+     records as ended gets none: it closed, it is not flickering. */
+  const livenessOf = props.livenessOf;
+  const graced = useRunningGrace(rows, tabId === 'running', undefined, livenessOf
+    ? (id) => livenessOf(id) === 'not-running'
+    : undefined);
+  const visible = matching(graced, query ?? '');
+  const sessionRows = visible.length > 0 && visible.every((r) => isSessionState(r.state));
   const attentionIds = attentionIdsOf(visible, props, config);
+  const groups = sessionRows
+    ? groupSessionRows(tabId, visible, (r) => r.state, (r) => ({ claims: props.linkedClaimsOf?.(r.id) }))
+    : null;
+  const bulkGroups = props.onSessionBulk
+    ? (groups ?? []).filter((group) => group.label !== null && group.bulk !== null)
+    : [];
 
   if (label && collapsed) {
     // A collapsed section reduces to ONE clickable line pinned at the bottom —
@@ -2843,6 +3878,14 @@ function Band({
                   : 'Nothing needs you.'
             }
           />
+        ) : props.renderEmpty ? (
+          props.renderEmpty(
+            query && query.trim().length > 0
+              ? { reason: 'search', query: query.trim() }
+              : page?.loading
+                ? { reason: 'loading' }
+                : { reason: 'empty' },
+          )
         ) : query && query.trim().length > 0 ? (
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}
@@ -2861,7 +3904,33 @@ function Band({
           />
         )
       ) : (
-        <TreeRows rows={visible} props={props} config={config} attentionIds={attentionIds} />
+        <>
+          {/* THE TREE IS NEVER BROKEN UP (Subhang, 2026-10-17: "the tree
+              structure of the sessions should always be maintained"). The
+              tab's groups used to render as separate lists — "Finished, still
+              open (N)" under Running, one list per reason under Interrupted —
+              and a tree only nests a row whose parent is in the SAME list, so
+              every group split re-rooted the children it took. The groups now
+              keep only their bulk verbs, as a strip above ONE tree; which
+              state a row is in is the row's own coloured signal. */}
+          {/* A group earns a line only when it carries a verb this host can
+              run: a bare "Finished, still open (1)" over one tree reads as a
+              header for every row below it. */}
+          {bulkGroups.length > 0 ? (
+            <div className="lp__sgroups" data-testid="session-groups">
+              {bulkGroups.map((group) => (
+                <SessionGroupHeader
+                  key={group.id}
+                  label={group.label!}
+                  bulk={group.bulk}
+                  ids={group.rows.map((r) => r.id)}
+                  onBulk={props.onSessionBulk}
+                />
+              ))}
+            </div>
+          ) : null}
+          <TreeRows rows={visible} props={props} config={config} attentionIds={attentionIds} />
+        </>
       )}
 
       {/* PAGING IS THE BAND'S, because the query is the band's. Rendered after
@@ -2875,6 +3944,77 @@ function Band({
       ) : null}
     </>
   );
+}
+
+const BULK_LABEL: Readonly<Record<Exclude<GroupBulk, null>, string>> = {
+  'complete-all': 'Complete all',
+  'resume-all': 'Resume all',
+  'reconnect-resume-all': 'Resume all',
+  'stop-all-finished': 'Stop all finished',
+};
+
+/**
+ * A session tab group's header (Spec D1 §5.3): "Server restart (12)" with its
+ * bulk verb. Credentials say "Reconnect, then resume all" — resuming before
+ * the credential is back would only fail again.
+ */
+function SessionGroupHeader({
+  label,
+  bulk,
+  ids,
+  onBulk,
+}: {
+  label: string;
+  bulk: GroupBulk;
+  ids: readonly string[];
+  onBulk?: (bulk: GroupBulk, ids: readonly string[]) => void;
+}) {
+  return (
+    <div className="lp__sgroup" data-testid="session-group" data-bulk={bulk ?? undefined}>
+      <span>{label}</span>
+      {bulk === 'reconnect-resume-all' ? (
+        <span className="lp__sgroup-hint">Reconnect the credential in Settings, then</span>
+      ) : null}
+      {bulk && onBulk ? (
+        <button
+          type="button"
+          className="lp__sgroup-bulk"
+          data-testid="session-group-bulk"
+          onClick={() => onBulk(bulk, ids)}
+        >
+          {BULK_LABEL[bulk]}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Spec D1 §5.3.1 case 7 — what a session row needs to name a parent in another tab. */
+interface SessionCrumbs {
+  tabId: string | null;
+  rowOf: (id: string) => EntitySummary | undefined;
+}
+
+const SessionCrumbContext = createContext<SessionCrumbs | null>(null);
+
+/**
+ * Every session row loaded under any of this panel's tabs, by id. Reads the
+ * same filters the tab counts read (so it asks the store nothing new), and
+ * only for a tab row whose rows are sessions.
+ */
+function useSessionCrumbs(props: EntityListPanelProps, config: KindConfig, tabId: string | null): SessionCrumbs | null {
+  const tabs = config.list.categories ?? [];
+  const index = new Map<string, EntitySummary>();
+  for (const tab of tabs) {
+    const merged = bandFilter(tab.filter, tab, {}, config, props.ctx);
+    if (merged === null) continue;
+    for (const row of props.rowsFor(merged)) {
+      if (!isSessionState(row.state)) return null;
+      index.set(row.id, row);
+    }
+  }
+  if (index.size === 0) return null;
+  return { tabId, rowOf: (id) => index.get(id) };
 }
 
 /**
@@ -2956,7 +4096,7 @@ function attentionIdsOf(
  * row at the wrong indent.
  */
 function TreeRows({
-  rows,
+  rows: listRows,
   props,
   config,
   attentionIds,
@@ -2979,10 +4119,112 @@ function TreeRows({
    * See `kit/useTreeDisclosure` for why the set is safe to persist and how the
    * selection is kept visible without being written to storage.
    */
+  /* THE ROWS THESE ROWS LAUNCHED (331): a chat's sessions, loaded for the
+     listed launchers and nested under them by `treeParentOf`. */
+  const launches = config.list.tree ? config.list.launches : undefined;
+  const launchedFilter = useMemo(
+    () => (launches ? launchedRowsFilter(listRows.map((row) => row.id)) : null),
+    [launches, listRows],
+  );
+  const launched =
+    launches && launchedFilter && props.rowsForKind
+      ? props.rowsForKind(launches)(launchedFilter as QueryFilter)
+      : NO_ROWS;
+  const rows = useMemo(
+    () => (launched.length === 0 ? listRows : [...listRows, ...launched.filter((row) => !listRows.some((r) => r.id === row.id))]),
+    [listRows, launched],
+  );
   const revealed = useMemo(() => ancestorPath(rows, props.selectedId), [rows, props.selectedId]);
-  const disclosure = useTreeDisclosure(`list:${config.kind}`, revealed);
+  const leadMode = props.rowLead === 'icon';
+  const disclosure = useTreeDisclosure(
+    `list:${config.kind}`,
+    revealed,
+    leadMode ? { latchReveal: true } : undefined,
+  );
 
-  const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
+  /* The pinned-only rail's list settings (`list-prefs.ts`): sub-items hidden ⇒
+     the roots alone, flat; Group by ⇒ the roots under one heading per group.
+     Every other host keeps the tree exactly as before. */
+  const listPrefs = useListPrefs(config.kind);
+  const inlinePrefs = Boolean(props.toolbarInline);
+  const showSubItems = !inlinePrefs || listPrefs.subItems;
+  const groupBy: ListGroupBy = inlinePrefs ? listPrefs.groupBy : 'none';
+  /* THE CHILDREN OF THE OPEN ROWS (task 01a14b92). A status tab and a page
+     filter the ROOTS; an open row's children ride along whatever their status,
+     read per open row so a child on another tab or page is not lost. A chat's
+     launched sessions are already loaded above. */
+  const hierarchical = Boolean(config.list.tree) && showSubItems;
+  /* THE PARENTS OF THE ROWS THAT MATCHED (Subhang, 2026-10-18: "for tasks
+     whose parent is completed, the parent also should be shown in the in
+     progress, but with a completed tick"). A row whose parent is on another
+     tab or page brings that parent — and its ancestors — in as CONTEXT: drawn
+     in place with its own status, open, holding only the rows that matched.
+     Otherwise most subtasks would sit orphaned at the top level of To do and
+     In progress. */
+  const contextLists: (readonly EntitySummary[])[] = [];
+  if (hierarchical) {
+    const readOwn = props.rowsForKind?.(config.kind) ?? props.rowsFor;
+    const have = new Set(rows.map((row) => row.id));
+    let frontier: readonly EntitySummary[] = rows;
+    for (let level = 0; level < MAX_FETCHED_DEPTH && frontier.length > 0; level += 1) {
+      const missing = [...new Set(frontier.flatMap((row) => {
+        const up = sameKindParentOf(row, config);
+        return up && !have.has(up) ? [up] : [];
+      }))].sort().slice(0, CONTEXT_PARENTS_PER_READ);
+      if (missing.length === 0) break;
+      const parents = keepOnly(readOwn({ idIn: missing } as QueryFilter), 'id', missing);
+      contextLists.push(parents);
+      for (const parent of parents) have.add(parent.id);
+      frontier = parents;
+    }
+  }
+  const contextRows = useMergedRows(rows, contextLists, placeContextParents);
+  const contextIds = useMemo(() => {
+    if (contextRows === rows) return EMPTY_IDS;
+    const own = new Set(rows.map((row) => row.id));
+    return new Set(contextRows.filter((row) => !own.has(row.id)).map((row) => row.id));
+  }, [contextRows, rows]);
+  /* A context parent starts SHUT like every other row (Subhang, 2026-10-18:
+     "the task list should show COLLAPSED by default") — its subscript says how
+     many matched rows opening it shows. Opening or shutting it is a gesture
+     like any other, so it goes to the same remembered disclosure set. */
+  const isOpen = disclosure.isExpanded;
+  const toggleOpen = disclosure.toggle;
+
+  const childLists: (readonly EntitySummary[])[] = [];
+  if (hierarchical) {
+    const asked = new Set<string>();
+    let frontier: readonly EntitySummary[] = contextRows;
+    for (let level = 0; level < MAX_FETCHED_DEPTH && frontier.length > 0; level += 1) {
+      const next: EntitySummary[] = [];
+      for (const row of frontier) {
+        /* A context parent shows only what matched; reading all its
+           children would refill the tab with the rows it filtered out. */
+        if (asked.has(row.id) || contextIds.has(row.id) || !isOpen(row.id)) continue;
+        asked.add(row.id);
+        const read = childrenReadOf(row, config, props);
+        if (!read) continue;
+        const children = keepOnly(read.rowsFor(read.filter), 'treeParent', [row.id]);
+        childLists.push(children);
+        next.push(...children);
+      }
+      frontier = next;
+    }
+  }
+  const treeRows = useMergedRows(contextRows, childLists, appendNew);
+  const shownRows = useMemo(() => (showSubItems ? treeRows : rootsOnly(treeRows)), [treeRows, showSubItems]);
+  const roots = useMemo(() => buildTileTree(shownRows, hierarchical), [shownRows, hierarchical]);
+  const groups = useMemo(() => {
+    if (groupBy === 'none') return null;
+    const byKey = new Map<string, { key: string; label: string; rank: number; nodes: TileTreeNode[] }>();
+    for (const node of roots) {
+      const group = groupOf(node.row, groupBy);
+      const entry = byKey.get(group.key) ?? { ...group, nodes: [] };
+      entry.nodes.push(node);
+      byKey.set(group.key, entry);
+    }
+    return [...byKey.values()].sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
+  }, [roots, groupBy]);
 
   /**
    * Live session traffic — delegation, completion and messages — resolved
@@ -2994,13 +4236,46 @@ function TreeRows({
    * by the selection routes as the open row it is drawn as.
    */
   const pulse = useMemo(
-    () => resolvePulses(rows, disclosure.isExpanded, props.messagePulses, config),
-    [rows, disclosure, props.messagePulses, config],
+    () => resolvePulses(shownRows, isOpen, props.messagePulses, config),
+    [shownRows, isOpen, props.messagePulses, config],
   );
 
   const renderNode = (node: TileTreeNode): React.ReactNode => {
-    const isCollapsed = !disclosure.isExpanded(node.row.id);
-    const hasChildren = node.children.length > 0;
+    const isCollapsed = !isOpen(node.row.id);
+    const isContext = contextIds.has(node.row.id);
+    /* The TRUE count, not the loaded one (task 01a14b92) — the subscript says
+       how many there are, and opening the row reads them. */
+    const childCount = !hierarchical
+      ? 0
+      : isContext
+        /* A context parent holds only the rows that matched; its count says
+           what opening it shows. */
+        ? node.children.length
+        : tileChildCount(node.row, node.children.length, nestsLaunched(node.row.kind, config));
+    const hasChildren = childCount > 0;
+    /* rowLead="icon": the tree item itself takes the keys — Right opens,
+       Left shuts or moves to the parent, Enter opens the row. The innermost
+       item handles a key and stops it, so an ancestor never acts twice. */
+    const onTreeKey =
+      leadMode && config.list.tree
+        ? (event: React.KeyboardEvent<HTMLDivElement>) => {
+            const target = event.target as HTMLElement;
+            if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
+            if (event.key === 'ArrowRight') {
+              if (hasChildren && isCollapsed) toggleOpen(node.row.id);
+            } else if (event.key === 'ArrowLeft') {
+              if (hasChildren && !isCollapsed) toggleOpen(node.row.id);
+              else event.currentTarget.parentElement?.closest<HTMLElement>('[role="treeitem"]')?.focus();
+            } else if (event.key === 'Enter') {
+              if (target !== event.currentTarget && !target.hasAttribute('data-lead-toggle')) return;
+              selectRow(props, node.row);
+            } else {
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        : undefined;
     const wire = pulse.segments.get(node.row.id);
     const endpoint = pulse.endpoints.get(node.row.id);
     return (
@@ -3010,6 +4285,8 @@ function TreeRows({
         role={config.list.tree ? 'treeitem' : 'listitem'}
         aria-expanded={config.list.tree && hasChildren ? !isCollapsed : undefined}
         aria-selected={config.list.tree ? props.selectedId === node.row.id : undefined}
+        tabIndex={onTreeKey ? -1 : undefined}
+        onKeyDown={onTreeKey}
         /* Presentation only. The underlying event is already represented by
            the rows it changes; narrating the same transition from a decorative
            wire would duplicate announcements. */
@@ -3021,13 +4298,16 @@ function TreeRows({
           row={node.row}
           depth={node.depth}
           props={props}
-          config={config}
+          /* A launched row (a chat's session) is drawn as ITS kind. */
+          config={node.row.kind === config.kind ? config : getKind(node.row.kind)}
           attention={attentionIds?.has(node.row.id) ?? false}
-          childCount={node.children.length}
+          childCount={childCount}
           expanded={!isCollapsed}
-          onToggleChildren={hasChildren ? () => disclosure.toggle(node.row.id) : undefined}
+          onToggleChildren={hasChildren ? () => toggleOpen(node.row.id) : undefined}
+          context={isContext}
+          {...(node.parentOutside ? { parentOutside: node.parentOutside } : {})}
         />
-        {hasChildren && !isCollapsed ? (
+        {node.children.length > 0 && !isCollapsed ? (
           <div
             className="lp__children"
             role="group"
@@ -3050,13 +4330,55 @@ function TreeRows({
 
   return (
     <div className={treeClass(config)} role={config.list.tree ? 'tree' : 'list'}>
-      {roots.map(renderNode)}
+      {groups
+        ? groups.map((group) => (
+            <div key={group.key} className="lp__group" role="group" aria-label={group.label} data-testid="list-group">
+              <div className="lp__grouphead" aria-hidden>
+                <span className="lp__groupname">{group.label}</span>
+                <span className="lp__groupcount">{group.nodes.length}</span>
+              </div>
+              {group.nodes.map(renderNode)}
+            </div>
+          ))
+        : roots.map(renderNode)}
       {/* LAST, and out of flow. The layer measures against this container, so
           it must be a child of it; rendering it after the rows keeps it above
           them without a stacking context that would trap the row menus.
  */}
       {pulse.flights.length > 0 ? <TileFlightLayer flights={pulse.flights} /> : null}
     </div>
+  );
+}
+
+/**
+ * `↑ parent` — a root that is not really a root (task 01a14b92). Its parent is
+ * on another status tab or not loaded, so the row says it belongs somewhere
+ * and opens that parent, rather than passing for a top-level row.
+ */
+function ParentCrumb({
+  parentId,
+  rowTitle,
+  onOpen,
+}: {
+  parentId: string;
+  rowTitle: string;
+  onOpen?: ((id: string) => void) | undefined;
+}) {
+  return (
+    <button
+      type="button"
+      className="lp__upcrumb"
+      data-testid="parent-crumb"
+      title="Open the parent — it is on another tab or not loaded"
+      aria-label={`Open the parent of ${rowTitle}`}
+      disabled={!onOpen}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen?.(parentId);
+      }}
+    >
+      ↑ parent
+    </button>
   );
 }
 
@@ -3081,6 +4403,32 @@ function TileChevron() {
   );
 }
 
+/**
+ * A ROW WHOSE TREE CHILDREN ARE THE SESSIONS IT LAUNCHED — a chat, a session
+ * (`treeParentOf`, 330/331). Its children are counted by `counters.sessions`,
+ * not `childCount`, and drawn by nesting.
+ */
+const LAUNCHED_KINDS: ReadonlySet<string> = new Set(
+  allKinds().flatMap((kind) => (kind.list.launches ? [kind.list.launches] : [])),
+);
+
+export function nestsLaunched(kind: string, config: KindConfig): boolean {
+  if (!config.list.tree) return false;
+  return LAUNCHED_KINDS.has(kind) || Boolean(getKind(kind).list.launches);
+}
+
+/**
+ * NEST, DON'T COUNT (task 01a14b92). A launcher's sessions are its children:
+ * the lead icon's subscript counts them and expanding draws them. The counts
+ * line's `sessions N` was the same `launched_by` edge said a second time, with
+ * a second click meaning, so a tree row drops it. The counter stays on the
+ * server for the detail panel.
+ */
+function withoutLaunchedCount(hidden: ReadonlySet<string>, kind: string, config: KindConfig): ReadonlySet<string> {
+  if (!nestsLaunched(kind, config)) return hidden;
+  return new Set([...hidden, 'sessions']);
+}
+
 /** Control cards are an attached column; every other anatomy stays gapped. */
 function treeClass(config: KindConfig): string {
   if (config.list.tile.anatomy === 'control-card') return 'lp__tree lp__tree--control';
@@ -3092,6 +4440,132 @@ interface TileTreeNode {
   row: EntitySummary;
   children: TileTreeNode[];
   depth: number;
+  /**
+   * A root that HAS a parent, which is not in this list — on another status
+   * tab, or not loaded (task 01a14b92). The tile says so with `↑ parent`
+   * instead of passing itself off as a top-level row.
+   */
+  parentOutside?: string;
+}
+
+/** How deep open rows are followed when reading their children. */
+const MAX_FETCHED_DEPTH = 8;
+
+/**
+ * Which read answers an open row's children: a launcher's sessions by
+ * `launched_by`, every other tree row by `parent_id`. Null where the list
+ * already holds them (a chat's sessions, `list.launches`) or no read exists.
+ */
+function childrenReadOf(
+  row: EntitySummary,
+  config: KindConfig,
+  props: EntityListPanelProps,
+): { rowsFor: (filter: QueryFilter) => readonly EntitySummary[]; filter: QueryFilter } | null {
+  if (row.kind !== config.kind && !LAUNCHED_KINDS.has(row.kind)) return null;
+  if (getKind(row.kind).list.launches) return null;
+  const rowsFor = props.rowsForKind?.(row.kind) ?? (row.kind === props.kind ? props.rowsFor : null);
+  if (!rowsFor) return null;
+  const filter = (LAUNCHED_KINDS.has(row.kind) ? { launchedBy: [row.id] } : { parentIn: [row.id] }) as QueryFilter;
+  return { rowsFor, filter };
+}
+
+const EMPTY_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * The rows of a read that ARE what was asked for — by id, or by tree parent.
+ * The node already filters; a host whose `rowsFor` predates `idIn`/`parentIn`
+ * would hand back its whole list, and every row would become a context parent
+ * or a child. Cached per source array so an unchanged read keeps one identity.
+ */
+const kept = new WeakMap<readonly EntitySummary[], Map<string, readonly EntitySummary[]>>();
+
+function keepOnly(
+  list: readonly EntitySummary[],
+  by: 'id' | 'treeParent',
+  ids: readonly string[],
+): readonly EntitySummary[] {
+  const key = `${by}:${ids.join(',')}`;
+  const forList = kept.get(list) ?? new Map<string, readonly EntitySummary[]>();
+  kept.set(list, forList);
+  const hit = forList.get(key);
+  if (hit) return hit;
+  const wanted = new Set(ids);
+  const out = list.filter((row) => wanted.has(by === 'id' ? row.id : (treeParentOf(row) ?? '')));
+  const result = out.length === list.length ? list : out;
+  forList.set(key, result);
+  return result;
+}
+
+/** One read's bound, as `launchedRowsFilter`'s — the contract caps `idIn` at 200. */
+const CONTEXT_PARENTS_PER_READ = 100;
+
+/** A row's `parent_id` parent when the list nests by it (not a launcher). */
+function sameKindParentOf(row: EntitySummary, config: KindConfig): string | null {
+  /* The session anatomy says it its own way (`↳ under <parent>`, D1 §5.3). */
+  if (config.list.tile.anatomy === 'session-tree') return null;
+  if (row.kind !== config.kind || !row.parentId) return null;
+  return treeParentOf(row) === row.parentId ? row.parentId : null;
+}
+
+type RowMerge = (base: readonly EntitySummary[], extra: readonly EntitySummary[]) => readonly EntitySummary[];
+
+/** Extra rows after the list's own, in arrival order. */
+const appendNew: RowMerge = (base, extra) => [...base, ...extra];
+
+/**
+ * Context parents IN PLACE: each is drawn where the first row under it was,
+ * so a subtask's position in the list (activity order) is still where its
+ * family appears, not at the bottom.
+ */
+const placeContextParents: RowMerge = (base, extra) => {
+  const byId = new Map(extra.map((row) => [row.id, row]));
+  const placed = new Set<string>();
+  const out: EntitySummary[] = [];
+  for (const row of base) {
+    const chain: EntitySummary[] = [];
+    let up = row.parentId ? byId.get(row.parentId) : undefined;
+    while (up && !placed.has(up.id)) {
+      chain.unshift(up);
+      placed.add(up.id);
+      up = up.parentId ? byId.get(up.parentId) : undefined;
+    }
+    out.push(...chain, row);
+  }
+  for (const row of extra) if (!placed.has(row.id)) out.push(row);
+  return out;
+};
+
+/**
+ * The list's rows plus rows read for the tree (context parents, open rows'
+ * children), deduplicated, with a STABLE identity while none of the inputs
+ * changed: every memo and effect below keys on the array, and a fresh one per
+ * render would recompute them all.
+ */
+function useMergedRows(
+  base: readonly EntitySummary[],
+  extras: readonly (readonly EntitySummary[])[],
+  merge: RowMerge,
+): readonly EntitySummary[] {
+  const memo = useRef<{ base: readonly EntitySummary[]; extras: readonly (readonly EntitySummary[])[]; out: readonly EntitySummary[] } | null>(null);
+  const prev = memo.current;
+  if (prev && prev.base === base && prev.extras.length === extras.length && prev.extras.every((list, i) => list === extras[i])) {
+    return prev.out;
+  }
+  let out: readonly EntitySummary[] = base;
+  if (extras.some((list) => list.length > 0)) {
+    const seen = new Set(base.map((row) => row.id));
+    const fresh: EntitySummary[] = [];
+    for (const list of extras) {
+      for (const row of list) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        fresh.push(row);
+      }
+    }
+    if (fresh.length > 0) out = merge(base, fresh);
+  }
+  memo.current = { base, extras, out };
+  return out;
 }
 
 /**
@@ -3099,13 +4573,25 @@ interface TileTreeNode {
  * parent roots its child instead of hiding it. The `seen` guard also keeps a
  * malformed parent cycle visible as roots rather than recursing forever.
  */
+/**
+ * Opens a row. A row of ANOTHER kind than the list's (a chat's launched
+ * session, 331) names its kind, so the host opens it as what it is; a row of
+ * the list's own kind is opened by id alone, as it always was.
+ */
+function selectRow(props: EntityListPanelProps, row: EntitySummary): void {
+  if (row.kind === props.kind) props.onSelect?.(row.id);
+  else props.onSelect?.(row.id, row.kind);
+}
+
 function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): TileTreeNode[] {
   if (!hierarchical) return rows.map((row) => ({ row, children: [], depth: 0 }));
 
   const present = new Set(rows.map((row) => row.id));
   const childrenOf = new Map<string | null, EntitySummary[]>();
   for (const row of rows) {
-    const parent = row.parentId && present.has(row.parentId) ? row.parentId : null;
+    // 330: a session nests under its launcher (`launched_by`), not a parent.
+    const up = treeParentOf(row);
+    const parent = up && present.has(up) ? up : null;
     childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), row]);
   }
 
@@ -3121,7 +4607,14 @@ function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): T
     };
   };
 
-  const roots = (childrenOf.get(null) ?? []).map((row) => attach(row, 0));
+  const roots = (childrenOf.get(null) ?? []).map((row) => {
+    const node = attach(row, 0);
+    /* Only a `parent_id` parent: a launched session's launcher has its own
+       crumb on the session anatomy. */
+    return row.parentId && !present.has(row.parentId) && treeParentOf(row) === row.parentId
+      ? { ...node, parentOutside: row.parentId }
+      : node;
+  });
   for (const row of rows) {
     if (!seen.has(row.id)) roots.push(attach(row, 0));
   }
@@ -3190,7 +4683,10 @@ function resolvePulses(
   // this page is a root here, and the route must agree with what is drawn.
   const present = new Set(rows.map((row) => row.id));
   const parents = new Map<string, string | null>(
-    rows.map((row) => [row.id, row.parentId && present.has(row.parentId) ? row.parentId : null]),
+    rows.map((row) => {
+      const up = treeParentOf(row);
+      return [row.id, up && present.has(up) ? up : null];
+    }),
   );
   const parentOf = (id: string) => parents.get(id);
 
@@ -3305,6 +4801,8 @@ export function Tile({
   childCount = 0,
   expanded = false,
   onToggleChildren,
+  parentOutside,
+  context = false,
   path,
 }: {
   row: EntitySummary;
@@ -3315,6 +4813,14 @@ export function Tile({
   childCount?: number;
   expanded?: boolean;
   onToggleChildren?: () => void;
+  /** This root's parent, when the parent is not in the list (`↑ parent`). */
+  parentOutside?: string;
+  /**
+   * A parent drawn only to hold rows that matched this tab (a done task above
+   * its in-progress subtasks). Its own status mark says what it is; the row is
+   * quieter so it reads as the frame, not as a match.
+   */
+  context?: boolean;
   /**
    * The relation-traversal path: every entity id this tile hangs UNDER via
    * open relation groups, so an edge pointing back at an ancestor is
@@ -3324,6 +4830,8 @@ export function Tile({
   path?: ReadonlySet<string>;
 }) {
   const { oneSurface } = useMobileSurface();
+  const glow = useFreshGlow(row.id);
+  const crumbs = useContext(SessionCrumbContext);
   /* Attention v2 (chapter 4): a CHIP replaces the words "Needs attention".
      `attention` also carries a kind's derived predicate (session liveness),
      which has no request behind it and keeps the old label. With the store
@@ -3333,16 +4841,26 @@ export function Tile({
   const flagged = attentionApi ? chip != null || (attention && !row.badges.attention) : attention;
   const chipView = chip ? <AttentionChipView chip={chip} /> : null;
   const list = config.list;
+  /* The kind's own done-of-total figure, if it declares one (story: tasks). */
+  const progress = list.tile.progress?.(row) ?? null;
   const controlCard = list.tile.anatomy === 'control-card';
   const sessionTree = list.tile.anatomy === 'session-tree';
-  /* The viewer's `View ▾` choice for THIS row's kind (row-view.ts) — a
-     session nested under a task follows the Sessions list's choice. */
+  /* The viewer's View choice for THIS row's kind (row-view.ts, now reached
+     through the list header's `⋯`) — a session nested under a task follows
+     the Sessions list's choice. */
   const view = useRowView(config.kind);
-  const countVisible = (facet: TileCountFacet): boolean => countBadgeVisible(facet, view.hidden);
   /* Forms this session asked the viewer to answer (decision 11). One batched
-     read serves every tile in the list — see `forms/pending.ts`. */
+     read serves every tile in the list — see `forms/pending.ts`.
+     It feeds the WAITING state two ways, and both survive the cut: the row's
+     own word (`sessionRowWord`, below) and — on a standard row — the waiting
+     ring that is the session's one signal.
+     THE CHIP SURVIVES TOO, and that is a judgment worth stating. §6's cut list
+     is a list of FACTS about an entity (its model, its lane, its tallies);
+     "two forms are waiting on YOU" is a REQUEST, which is the same category as
+     the attention chip §6 keeps, and it is the only place a queued answer is
+     said at all. Its `forms` SWITCH is gone with the rest of them — a request
+     is not a facet you turn off. */
   const pendingFormsRead = usePendingForms(sessionTree ? row.id : null);
-  const pendingForms = view.shows('forms') ? pendingFormsRead : null;
   const verdict = props.livenessOf?.(row.id);
   /* ATTENTION v2 (F1, tab 4-5): the subtitle under the chip — a session or
      chat's `waiting on you: …`, a roll-up root's `n requests · own, via …`.
@@ -3363,72 +4881,38 @@ export function Tile({
   const [flowRef, setFlowRef] = useState<ActionRef | null>(null);
   /** Maestro's trailing chevron opens row facts independently of Run. */
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  /** The `⋯` row menu (§6). Row-local for the same reason `flowRef` is. */
+  const [rowMenuOpen, setRowMenuOpen] = useState(false);
   /** Bounds for the expand's outside-click dismissal — the trigger lives here too. */
   const tileRef = useRef<HTMLDivElement>(null);
+  /* The ⋯ menu closes on a pointer outside this tile. Same hook the filter
+     popover uses, so one dismissal rule serves both. */
+  useDismissable(rowMenuOpen, tileRef, useCallback(() => setRowMenuOpen(false), []));
 
   /**
-   * THE RELATIONAL PANEL (user ruling 2026-08-16): the tile's relation chips
-   * open the linked entities of ONE kind inline under the row. One group per
-   * tile — clicking another chip REPLACES the open one (the accordion the
-   * ruling chose); clicking the open chip closes it. Row-local for the same
-   * reason `flowRef` is: outside state would need an "only one open"
-   * register this panel has no owner for.
+   * NO RELATION ACCORDION ANY MORE (ruling 2026-10-16, message 01a14695-6b54).
+   *
+   * A tile used to open the linked entities of one kind INLINE under the row.
+   * Three things were wrong with it and only the third is obvious once the row
+   * is quiet: a list whose rows grow other rows cannot be scanned, its height
+   * depends on its graph rather than on its population, and every chip that
+   * opened one was a second meaning for a click on a number. The counts line
+   * replaces all of it — `§6`: "clicking a count opens THAT GROUP IN THE
+   * DETAIL PANEL, never inline under the row".
+   *
+   * What left with it: `openRelation`, `toggleRelation`, `countedRelationOf`,
+   * the `RelatedGroup` block, the leading sessions chip, the PR chips and the
+   * worktree door. `props.connectionsOf` is still read by the control strip
+   * inside an EXPANDED row, which is a surface with room for the graph.
    */
-  const [openRelation, setOpenRelation] = useState<{
-    kind: string;
-    /* The counted edge, captured AT CLICK TIME from the badge's own spec —
-       a live counter update that removes the badge must not retroactively
-       widen an already-open group to "every relation". */
-    edge?: { type: string; direction: 'incoming' | 'outgoing' };
-  } | null>(null);
-  /** The group's stable DOM id — the chips' `aria-controls` target. */
-  const relatedGroupId = useId();
-  const connections = props.connectionsOf?.(row.id);
-  /** This tile's own id joins the path its expansion hands down. */
-  const nestedPath = useMemo<ReadonlySet<string>>(() => {
-    const ids = new Set(path ?? []);
-    ids.add(row.id);
-    return ids;
-  }, [path, row.id]);
-  const linkedSessions =
-    (SESSION_CHIP_KIND ? props.linkedSessionsOf?.(row.id) : undefined) ?? NO_LINKED;
-  const sessionRows = SESSION_CHIP_KIND
-    ? relatedOfKind(row.id, connections, SESSION_CHIP_KIND, linkedSessions, path)
-    : NO_LINKED;
-  const toggleRelation = (
-    kind: string,
-    edge?: { type: string; direction: 'incoming' | 'outgoing' },
-  ): void => {
-    /* Opening asks for the row's detail exactly like the control strip does —
-       `connectionsOf` is backed by hydration, so an unhydrated row would
-       otherwise say "loading" forever. The fill is idempotent (see
-       `onNeedDetail`), so a re-click cannot stampede the seam. */
-    if (openRelation?.kind !== kind && connections === undefined) props.onNeedDetail?.(row.id);
-    setOpenRelation((prev) => (prev?.kind === kind ? null : { kind, ...(edge ? { edge } : {}) }));
-  };
-
-  /**
-   * THE SHARED VISIBLE COUNT (PR #272 re-review, blocking): once this row's
-   * connections are hydrated, a count badge shows the length of the EXACT
-   * read its group renders — same edge spec, same traversal path — so chip
-   * and rows cannot disagree, including the deterministic case where the
-   * counted peer is an ancestor of this very expansion (the chip then
-   * reads zero and unmounts). Before hydration the server counter remains
-   * the discovery value and the group withholds any numeric claim.
-   */
-  const countedRelationOf = (
-    kind: string,
-    relation?: { type: string; direction: 'incoming' | 'outgoing' },
-  ): number | undefined =>
-    connections === undefined || !isExpandableKind(kind)
-      ? undefined
-      : relatedOfKind(row.id, connections, kind, NO_LINKED, path, relation).length;
 
   const streaming = Boolean(
     list.tile.pulse && props.activity?.[row.id] && treatment?.streamingLabel,
   );
 
   // ---- the Z1 badge vocabulary, from registry DATA ------------------------
+  const rowNote = props.rowNoteOf?.(row) ?? null;
+
   const slots = list.tile.badges
     .map((spec) => renderBadge(spec.source, row))
     .filter((slot): slot is TileSlot => slot != null);
@@ -3501,115 +4985,76 @@ export function Tile({
   const completed = row.category === 'done';
   const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
   const controlFacts = controlCard ? factsForControlCard(row) : null;
-  // Session tiles carry the same chip slot: the index resolves a session's
-  // PRs through its working_on task's tracks edges.
-  const linkedPullRequests = (controlCard || sessionTree) && view.shows('prs') ? (props.linkedPullRequestsOf?.(row.id) ?? []) : [];
-
   /**
-   * The LEADING sessions chip (user ruling 2026-08-16: "sessions also, at the
-   * start, with terminal icons and number"). Counted from the graph
-   * projection UNION the row's connections, path-suppressed — the same read
-   * the open group renders from, so the chip can never promise a row the
-   * group refuses to draw.
+   * THE COUNTS LINE — the row's only second line, and the only thing left of
+   * the badge sub-row (§6; `domain/tile-counts.ts` owns the five groups and
+   * their order). Asked BEFORE the element is built: a JSX element is truthy
+   * even when it renders null, and whether this row is 29px or ~43px tall
+   * depends on the answer.
+   *
+   * `view.shows('counts')` is the viewer's switch for it; the groups whose
+   * counters the server does not send yet simply are not in it, so a node that
+   * predates task 01a14655-e507 draws the docs and memories it does count and
+   * nothing where it counts nothing.
    */
-  const sessionsOpen = openRelation?.kind === SESSION_CHIP_KIND;
-  const sessionsPlural = SESSION_CHIP_KIND
-    ? `${sessionRows.length} linked ${getKind(SESSION_CHIP_KIND).label.toLowerCase()}${sessionRows.length === 1 ? '' : 's'}`
-    : '';
-  const sessionChip = SESSION_CHIP_KIND && sessionRows.length > 0 && view.shows('sessions_chip') ? (
-    <button
-      type="button"
-      className={
-        sessionsOpen
-          ? 'pn-st__count pn-st__count--btn pn-st__count--open'
-          : 'pn-st__count pn-st__count--btn'
-      }
-      data-testid="session-chip"
-      data-count-kind={SESSION_CHIP_KIND}
-      data-relation-owner={relatedGroupId}
-      title={`${sessionsPlural} — click to show them under this row`}
-      /* The visible content is a decorative glyph and a number; the name
-         must say kind, count and action itself (PR #272 review, 3). */
-      aria-label={`${sessionsOpen ? 'Hide' : 'Show'} ${sessionsPlural} under this row`}
-      aria-expanded={sessionsOpen}
-      aria-controls={sessionsOpen ? relatedGroupId : undefined}
-      onClick={(event) => {
-        event.stopPropagation();
-        toggleRelation(SESSION_CHIP_KIND);
-      }}
-    >
-      <KindIcon kind={SESSION_CHIP_KIND} size={12} />
-      {sessionRows.length}
-    </button>
+  /* The per-link switches (List settings): a group the viewer turned off is
+     not drawn, and a row whose only counts are hidden ones has no line. */
+  const hiddenGroups = withoutLaunchedCount(hiddenLinkGroups(view.hidden), row.kind, config);
+  const showCounts = view.shows('counts') && hasTileLinkCounts(row.counters, hiddenGroups);
+  const countsLine = showCounts ? (
+    <TileLinkCounts
+      counters={row.counters}
+      entityId={row.id}
+      hiddenGroups={hiddenGroups}
+      {...(props.onOpenLinks ? { onOpenGroup: props.onOpenLinks } : {})}
+    />
   ) : null;
 
-  /** ONE badge sub-row for EVERY anatomy — session-tree, control-card and
-      standard alike, or traversal would dead-end at the first doc: sessions
-      chip first, then PR chips (on the anatomies that resolve them), then
-      the count badges — doors where a count names a real collection kind.
-      Clickability requires a wired `connectionsOf`; without the projection
-      an opened group could never fill. */
-  const tileBadges =
-    sessionChip != null || linkedPullRequests.length > 0 || hasTileCounts(row.counters, countVisible) || hasPendingFormsChip(pendingForms) ? (
-      <>
-        <PendingFormsChip pending={pendingForms} />
-        {sessionChip}
-        {linkedPullRequests.length > 0 ? (
-          <LinkedPullRequestChips pullRequests={linkedPullRequests} placement="tile" />
-        ) : null}
-        <TileCountBadges
-          counters={row.counters}
-          humanAuthors={row.badges.humanMessageAuthors}
-          openKind={openRelation?.kind ?? null}
-          onToggleKind={props.connectionsOf ? toggleRelation : undefined}
-          expandableKind={isExpandableKind}
-          controlsId={relatedGroupId}
-          countOf={countedRelationOf}
-          visible={countVisible}
-        />
-      </>
-    ) : undefined;
+  /**
+   * THE PROGRESS METER, AND WHEN A TASK HAS ONE (§6; QA finding 3, ruled
+   * 2026-10-17). A meter is a statement about a subtree, so it is drawn only
+   * where there is one: `childCount` is the lead icon's child subscript, which
+   * keeps the subscript and the meter one answer. The View switch still governs —
+   * a viewer who turned progress off sees none either way.
+   *
+   * Narrowed to the figure itself rather than left a boolean so the slot below
+   * can hand it straight to `TileProgressBar` without re-testing `progress`.
+   */
+  const progressShown = progress !== null && view.shows('progress') && childCount > 0 ? progress : null;
 
   /**
-   * The open relation group, rendered AFTER the tile at the tile's own level
-   * — offset stays the hierarchy tree's vocabulary; a thin rail marks
-   * ownership instead (see RelatedGroup). Rows are REAL tiles of their own
-   * kind (the 2026-08-13 rule), so a session under a task is the same
-   * MaestroSessionTile the sessions list draws, liveness and terminate
-   * included — and each nested tile carries its own chips, which is what
-   * makes the graph traversable in the panel itself.
+   * THE ONE SIGNAL, and the kind's own declaration of which it is
+   * (`list.tile.signal`). The avatar shape is drawn from the `avatar` slot the
+   * badge sources already resolved — see `TileSignal`'s header for why it is
+   * not re-derived in there.
    */
-  const relatedRows = openRelation
-    ? relatedOfKind(
-        row.id,
-        connections,
-        openRelation.kind,
-        openRelation.kind === SESSION_CHIP_KIND ? linkedSessions : NO_LINKED,
-        nestedPath,
-        openRelation.edge,
-      )
-    : NO_LINKED;
-  const relatedBlock = openRelation ? (
-    <RelatedGroup
-      id={relatedGroupId}
-      kind={openRelation.kind}
-      label={getKind(openRelation.kind).labelPlural}
-      count={relatedRows.length}
-      loading={connections === undefined}
-      onClose={() => setOpenRelation(null)}
-    >
-      {relatedRows.map((related) => (
-        <Tile
-          key={related.id}
-          row={related}
-          props={props}
-          config={getKind(related.kind)}
-          path={nestedPath}
-        />
-      ))}
-    </RelatedGroup>
-  ) : null;
+  const signalSpec = list.tile.signal;
+  const signalAvatar = signalIsAvatar(signalSpec) && avatar != null && view.shows('avatar');
+  const urgent = isUrgent(row);
 
+  /* rowLead="icon": one leading icon replaces the chevron and the status mark. */
+  const leadMode = props.rowLead === 'icon';
+  const leadIcon = (
+    <ToneKindIcon
+      kind={row.kind}
+      tone={statusWord ? statusTone : null}
+      hollow={Boolean(statusWord) && statusHollow}
+      streaming={streaming}
+    />
+  );
+  const lead = leadMode ? (
+    <RowLead
+      icon={leadIcon}
+      rowTitle={row.title}
+      tooltip={leadTooltip(statusTitle, getKind(row.kind).label)}
+      childCount={childCount}
+      expanded={expanded}
+      onToggle={onToggleChildren}
+    />
+  ) : null;
+  const parentCrumb = parentOutside ? (
+    <ParentCrumb parentId={parentOutside} rowTitle={row.title} onOpen={props.onSelect} />
+  ) : null;
   if (sessionTree) {
     const state = row.state as unknown as Record<string, unknown>;
     const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
@@ -3620,21 +5065,45 @@ export function Tile({
     // The persona behind the run, when the server resolved one. Read off the
     // summary rather than the graph so the tile's identity cannot flicker on a
     // page that happened to miss the `participates_in` edge.
-    const teammate = view.shows('agent_avatar') ? actorSummaryOrNull(state.teammate) : null;
-    const model = view.shows('model') && typeof state.model === 'string' ? state.model : null;
+    /* THE PERSONA STAYS, and that is a reading of §6 worth stating. The cut
+       list names the "agent tool"; it does not name the face. On this anatomy
+       the face IS the kind glyph — `AgentTile` draws the teammate inside the
+       tool mark, tinted by state — which is exactly what §6 keeps ("the
+       session glyph tinted by its state"). Nulling it would make every agent
+       session look like a bare terminal, which is the defect
+       `MaestroSessionTile`'s own header records as already fixed once. What
+       went is the MODEL NAME beside it, which is a word, not a glyph. */
+    const teammate = actorSummaryOrNull(state.teammate);
     const live = verdict === 'live';
-    // The lane facts ride the summary state (107) — no edge read needed, so
-    // the badge cannot flicker when the bounded graph page misses an edge.
-    const lane = sessionLaneOf(row.state);
+    /* SPEC D1 §5.1/§5.2: the row word, its line 2 and the avatar's process
+       dot, from the outcome × process derivation every session surface shares.
+       Waiting = an idle process with forms pending for the viewer (§5.1 row 3). */
+    const wordCtx = {
+      claims: props.linkedClaimsOf?.(row.id),
+      // §6.3 R1 / scenario 16: offered tasks are on the row, never claims.
+      offered: offeredCountOf(row.state),
+      streaming,
+      waiting: recordedStatus === 'idle' && pendingFormsRead !== null,
+      activityAt: row.activityAt,
+      actorName: (id: string) => props.members?.find((m) => m.id === id)?.displayName,
+    };
+    const sessionWord = sessionRowWord(row.state, verdict, wordCtx);
+    const lineTwo = sessionLineTwo(row.state, verdict, wordCtx);
+    const launcher = treeParentOf(row);
+    const crumb = crumbs && launcher && depth === 0
+      ? crossTabBreadcrumb(crumbs.rowOf(launcher), crumbs.tabId)
+      : null;
     return (
-      <>
       <MaestroSessionTile
+        leadMode={leadMode}
         id={row.id}
         title={row.title || 'Session'}
         agentTool={agentTool}
         sessionKind={sessionKind}
         teammate={teammate}
-        model={model}
+        /* The model name is cut (§6). The prop stays because `MaestroSessionTile`
+           is also the EXPANDED row, and null is how that is said here. */
+        model={null}
         status={recordedStatus}
         attention={flagged}
         attentionChip={chipView}
@@ -3646,36 +5115,71 @@ export function Tile({
         streaming={streaming}
         statusTone={statusTone}
         statusTitle={statusTitle}
-        /* Path-suppressed: a session expanded UNDER a task must not offer
-           that same task as a chip one level down — the loop the ruling
-           names (parent → child → parent renders once). */
-        tasks={view.shows('linked_tasks') ? (props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false)) : NO_LINKED}
-        /* The list tile's lane is COMPACT (user ruling 2026-09-24): a minted
-           `tm8/<uuid>` branch collapses to the worktree mark, and the mark is
-           a relation DOOR onto the session's worktree tile — same accordion
-           as every other chip. A door needs the connections projection to
-           ever fill, exactly like the count badges. */
-        lane={lane !== null && view.shows('lane') ? (
-          <SessionLaneLine
-            lane={lane}
-            compact
-            door={props.connectionsOf ? {
-              open: openRelation?.kind === WORKTREE_RELATION.kind,
-              onToggle: () => toggleRelation(WORKTREE_RELATION.kind, WORKTREE_RELATION.edge),
-              controlsId: relatedGroupId,
-            } : undefined}
-          />
-        ) : undefined}
-        badges={attentionLine || tileBadges ? (
+        word={sessionWord}
+        lineTwo={lineTwo}
+        crumb={crumb}
+        /* The quiet row's three slots, same three the other two anatomies get
+           (§6; coordinator ruling 2026-10-17). The signal is built from the
+           WORD's own derivation rather than from the verdict again — see
+           `TileSignal` — so the mark and the word can never disagree. */
+        signal={
+          sessionWord ? (
+            <TileSignal
+              row={row}
+              spec={list.tile.signal}
+              session={{
+                icon: sessionWord.icon,
+                tone: sessionWord.tone,
+                label: sessionWord.word,
+                reason: sessionWord.reason,
+                streaming,
+                case: sessionWord.case,
+              }}
+            />
+          ) : undefined
+        }
+        time={<Timestamp className="lp__time" at={row.activityAt} title="last activity" />}
+        rowMenu={(verbs) => (
+          <span className="lp__rowmenu" data-open={rowMenuOpen ? 'true' : undefined}>
+            <button
+              type="button"
+              className="lp__rowmenu-trigger"
+              title="Row actions"
+              aria-label={`Actions for ${row.title}`}
+              aria-expanded={rowMenuOpen}
+              aria-haspopup="menu"
+              data-testid="row-menu-trigger"
+              onClick={(event) => {
+                event.stopPropagation();
+                setRowMenuOpen((open) => !open);
+              }}
+            >
+              <span aria-hidden>⋯</span>
+            </button>
+            <span
+              className="lp__rowmenu-pop lp__cluster"
+              role="menu"
+              data-testid="row-menu"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {verbs}
+            </span>
+          </span>
+        )}
+        /* The lane line is cut from the collapsed row (§6: the branch and the
+           worktree are detail-panel facts) and so is its worktree door, which
+           was the last of the inline relation accordion on this anatomy. */
+        badges={attentionLine || countsLine || hasPendingFormsChip(pendingFormsRead) ? (
           <>
             <AttentionTileSubtitle line={attentionLine} />
-            {tileBadges}
+            <PendingFormsChip pending={pendingFormsRead} />
+            {countsLine}
           </>
         ) : null}
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
-        onSelect={() => props.onSelect?.(row.id)}
+        onSelect={() => selectRow(props, row)}
         actions={(own) => (
           <RowActionCluster
             row={row}
@@ -3689,17 +5193,39 @@ export function Tile({
             anatomyActions={own}
           />
         )}
-        detail={<EntityControlStrip row={row} props={props} config={config} omitArchive={oneSurface} />}
+        /* THE EXPANDED SESSION — its own facts, then the D67 strip (compact
+           chips) for state and archive. Linked tasks are path-suppressed as
+           before: a session expanded under a task must not offer that task
+           back. Links are drawn whatever the View's counts switch says: the
+           switch thins the COLLAPSED row, and an expanded row is asking. */
+        detail={
+          <SessionDetails
+            id={row.id}
+            state={row.state}
+            word={sessionWord}
+            tasks={(props.linkedTasksOf?.(row.id) ?? []).filter((task) => !(path?.has(task.id) ?? false))}
+            links={hasTileLinkCounts(row.counters, hiddenGroups) ? (
+              <TileLinkCounts
+                counters={row.counters}
+                entityId={row.id}
+                hiddenGroups={hiddenGroups}
+                {...(props.onOpenLinks ? { onOpenGroup: props.onOpenLinks } : {})}
+              />
+            ) : null}
+            {...(props.onSelect ? { onOpenTask: props.onSelect } : {})}
+            controls={<EntityControlStrip row={row} props={props} config={config} variant="chips" omitArchive={oneSurface} />}
+          />
+        }
       />
-      {relatedBlock}
-      </>
     );
   }
 
   if (controlCard && controlFacts) {
     return (
-      <>
       <MaestroTaskTile
+        /* The lead icon IS the disclosure and wears the count on its corner
+           (task 01a14b92: one rule for every tree kind, no `▸ N` chip). */
+        lead={lead ?? undefined}
         rootRef={tileRef}
         id={row.id}
         title={row.title}
@@ -3713,7 +5239,9 @@ export function Tile({
         childCount={childCount}
         childrenExpanded={expanded}
         onToggleChildren={onToggleChildren}
-        onSelect={() => props.onSelect?.(row.id)}
+        parentCrumb={parentCrumb ?? undefined}
+        context={context}
+        onSelect={() => selectRow(props, row)}
         status={{
           label: statusWord ?? 'no status',
           title: statusTitle,
@@ -3721,6 +5249,52 @@ export function Tile({
           hollow: statusHollow,
           streaming,
         }}
+        /* The quiet row's three slots (§6), identical to the standard tile's
+           — one answer to "what does a row show", drawn by two anatomies. */
+        urgent={urgent ? <UrgentMark title={row.title} /> : undefined}
+        time={<Timestamp className="lp__time" at={row.activityAt} title="last activity" />}
+        rowMenu={
+          <span className="lp__rowmenu" data-open={rowMenuOpen ? 'true' : undefined}>
+            <button
+              type="button"
+              /* NOT `lp__rowaction`: that class means A ROW VERB, and the R5 #9 test
+                 reads it to assert that every live one is a launch verb. This is
+                 a DOOR onto the verbs, which is a different thing, so it carries
+                 its own class and its own rule. */
+              className="lp__rowmenu-trigger"
+              title="Row actions"
+              aria-label={`Actions for ${row.title}`}
+              aria-expanded={rowMenuOpen}
+              aria-haspopup="menu"
+              data-testid="row-menu-trigger"
+              onClick={(event) => {
+                event.stopPropagation();
+                setRowMenuOpen((open) => !open);
+              }}
+            >
+              <span aria-hidden>⋯</span>
+            </button>
+            {/* The verbs live BEHIND the trigger here too, so the two
+                anatomies answer "where are a row's verbs" the same way. The
+                details opener stays in `pn-tt__actions` below, where it has
+                always been — the opener belongs to the row, not to the menu. */}
+            <span
+              className="lp__rowmenu-pop lp__cluster"
+              role="menu"
+              data-testid="row-menu"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <RowActionCluster
+                row={row}
+                props={props}
+                config={config}
+                openFlow={flowRef}
+                onFlow={setFlowRef}
+                onOpenLaunch={props.launch?.onFullOptions}
+              />
+            </span>
+          </span>
+        }
         /* The mark becomes the state control — the same one the expanded strip
            mounts, so the collapsed row writes through exactly the gates and
            refusals the open row does.
@@ -3747,24 +5321,43 @@ export function Tile({
         }
         assignees={view.shows('avatar') ? controlFacts.assignees : EMPTY_MEMBERS}
         creator={view.shows('avatar') ? controlFacts.creator : null}
-        badges={attentionLine || tileBadges ? (
+        /* No attention roll-up line here: the chip on the title row already
+           says it, and the criteria count rides the progress bar alone. */
+        /*
+         * LINE 2 EXISTS ONLY WHEN SOMETHING IS ON IT (§6; QA finding 3, ruled
+         * 2026-10-17). `badges` IS the second line — a non-null value is a
+         * `pn-tt__badges` band under the title — so the condition here is the
+         * row's height.
+         *
+         * `progress` is non-null for EVERY task: `taskTileProgress` returns a
+         * figure as soon as the summary carries a percent, which it does for a
+         * leaf with nothing in it. So this slot used to be non-null on every
+         * task row and every one of them drew a `0%` meter on a second line.
+         * A leaf task with no counts measured 49.4px where §6 asks for 30.
+         *
+         * `progressShown` adds the fact that makes a meter mean something:
+         * SUBTASKS. `childCount` is the same number the lead icon's subscript draws, so
+         * the meter and the subscript appear and disappear together — a row that
+         * says it has children is the row that says how far they have got. A
+         * leaf task's own acceptance figure goes with it, which is §6's call:
+         * the anatomy lists counts as the one second-row fact.
+         */
+        badges={countsLine || progressShown ? (
           <>
-            <AttentionTileSubtitle line={attentionLine} />
-            {tileBadges}
+            {/* 307: the task's weighted progress, as the standard tile draws it.
+                FIRST, before the counts: the count set varies row to row, so a
+                bar drawn after it starts at a different x on every task and
+                the column cannot be scanned. Leading, it lines up. */}
+            {progressShown ? <TileProgressBar progress={progressShown} /> : null}
+            {countsLine}
           </>
         ) : null}
-        /* The same cluster the standard tile draws, in the same order — one
-           component, not a second copy. The control-card's own chevron lives
-           inside `MaestroTaskTile` after this slot, so no `trailing` here. */
-        actions={
-          <RowActionCluster
-            row={row}
-            props={props}
-            config={config}
-            openFlow={flowRef}
-            onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions}
-          />
-        }
+        /* NULL ON PURPOSE: the cluster moved behind the `⋯` above (§6), so
+           `pn-tt__actions` holds only the details opener. The slot stays in
+           `MaestroTaskTile`'s type because it is also the phone's path — see
+           its `oneSurface` branch — and because a host that wants the verbs in
+           the row rather than behind a door should be able to say so. */
+        actions={null}
         detailsExpanded={controlExpanded}
         flowOpen={flowRef !== null}
         onToggleDetails={() => {
@@ -3830,14 +5423,12 @@ export function Tile({
           <Timestamp className="pn-tt__time" at={row.activityAt} prefix="active" title="last activity" />
         </div>
       </MaestroTaskTile>
-      {relatedBlock}
-      </>
     );
   }
 
   return (
-    <>
     <div
+      {...glow.attrs}
       ref={tileRef}
       className={[
         'lp__tile',
@@ -3855,6 +5446,7 @@ export function Tile({
       data-depth={depth}
       data-tree={config.list.tree ? 'true' : undefined}
       data-children={childCount > 0 ? childCount : undefined}
+      data-context={context ? 'true' : undefined}
       data-flow={flowRef ? 'open' : undefined}
       /* The task tile has carried this since #435; the standard anatomy needed
          it for the same reason. The phone drops the row's verbs while the row
@@ -3863,37 +5455,32 @@ export function Tile({
       data-details={detailsExpanded ? 'open' : undefined}
       data-streaming={streaming ? 'true' : 'false'}
     >
-      <div className="lp__tile-main" onClick={() => props.onSelect?.(row.id)}>
-        {/* Line 1 — disclosure · status mark · avatar · title · status. */}
-        <div className="lp__row1">
-          {config.list.tree ? (
-            onToggleChildren ? (
-              <button
-                type="button"
-                className={expanded ? 'lp__disclosure lp__disclosure--expanded' : 'lp__disclosure'}
-                aria-label={`${expanded ? 'Collapse' : 'Expand'} ${row.title}, ${childCount} ${childCount === 1 ? 'child' : 'children'}`}
-                aria-expanded={expanded}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onToggleChildren();
-                }}
-              >
-                <span aria-hidden><TileChevron /></span>
-              </button>
-            ) : (
-              <span className="lp__disclosure lp__disclosure--empty" aria-hidden>
-                <TileChevron />
-              </span>
-            )
-          ) : null}
+      <div className="lp__tile-main" onClick={() => selectRow(props, row)}>
+        {/*
+          LINE 1 OF THE QUIET ROW (§6, approved 2026-10-16):
 
+              [status mark]  Title ……  [one signal]  [time]
+
+          and nothing else. What used to sit between the title and the right
+          edge — the mono meta strip (model, agent tool, share and drive mode,
+          axes, due date), the priority tag, the status WORD as a pill, the
+          sessions chip, the PR chips and the message tallies — is gone, not
+          switched off. Seven facts competing for one line is why no reader
+          could find the one that had changed.
+
+          THE STATUS WORD IS NOT LOST, IT IS UNDRAWN. The mark keeps it in
+          `title` and in screen-reader text, so "colour and glyph only" costs
+          a sighted reader a hover and costs a screen-reader user nothing.
+        */}
+        <div className="lp__row1">
+          {lead ?? (
           <span
             className={`lp__statusmark lp__statusmark--${statusTone}`}
-            aria-hidden
             title={statusTitle}
           >
             {statusWord ? (
               <span
+                aria-hidden
                 className={[
                   'lp__dot',
                   `lp__dot--${statusTone}`,
@@ -3904,16 +5491,28 @@ export function Tile({
                   .join(' ')}
               />
             ) : (
-              <span className="lp__kindmark"><KindIcon kind={config.kind} /></span>
+              <span className="lp__kindmark" aria-hidden><KindIcon kind={config.kind} /></span>
             )}
-            {/* The leading icon carries the sub-entity count on its corner,
-                as the session tile's agent icon carries sub-sessions. */}
-            <ChildCountBadge count={childCount} />
+            {/* THE WORD, FOR A READER WHO CANNOT SEE THE COLOUR. The mark used
+                to be `aria-hidden` wholesale, which was honest while a status
+                PILL spelt the word out two slots to the right. With the pill
+                cut, hiding this would delete the status from the accessible
+                row entirely — the one thing §6 says to keep. */}
+            {statusWord ? <span className="sr-only">{statusWord}</span> : null}
+            {/* The children, on the mark's corner — the disclosure (task
+                01a14b92). The host without the lead icon gets the same corner. */}
+            {onToggleChildren ? (
+              <ChildCountToggle
+                count={childCount}
+                expanded={expanded}
+                rowTitle={row.title}
+                onToggle={onToggleChildren}
+              />
+            ) : null}
           </span>
+          )}
 
-          {/* 15, not 20 — 17px is the tallest thing a session row contains and
-              therefore the height of every row in every list. */}
-          {avatar && view.shows('avatar') ? <Avatar actorId={avatar.actorId} provenance={avatar.provenance} label={avatar.label} size={15} src={avatar.src ?? null} /> : null}
+          {urgent ? <UrgentMark title={row.title} /> : null}
 
           <button
             type="button"
@@ -3936,38 +5535,35 @@ export function Tile({
             aria-current={selected ? 'true' : undefined}
             onClick={(event) => {
               event.stopPropagation();
-              props.onSelect?.(row.id);
+              selectRow(props, row);
             }}
           >
             {row.title}
+            {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
           </button>
 
-          {/* Quiet facts and the priority tag ride IN the row, the way a
-              session carries its model inline — they used to be a second line,
-              which is what made every non-session row twice a session row's
-              height. Both ellipsise before the title gives up any width. */}
-          {metas.length > 0 && view.shows('meta') ? (
-            <span className="lp__meta" title={metas.join(' · ')}>
-              {metas.join(' · ')}
-            </span>
-          ) : null}
-          {tag && view.shows('meta') ? (
-            <span className={`lp__tag kit-pill--${tag.tone}`}>
-              {props.compact ? tag.label.slice(0, 2) : tag.label}
-            </span>
-          ) : null}
+          {parentCrumb}
+          {/* THE ONE SIGNAL. For task and PR that is the assignee avatar, which
+              is why it is drawn from the `avatar` slot the badge sources already
+              resolved rather than a second read of the same actor; every other
+              shape comes from `TileSignal`. 15, not 20 — 17px is the tallest
+              thing a session row contains and therefore the height of every row
+              in every list. */}
+          <span className="lp__signalslot">
+            {signalAvatar && avatar ? (
+              <Avatar actorId={avatar.actorId} provenance={avatar.provenance} label={avatar.label} size={15} src={avatar.src ?? null} />
+            ) : (
+              <TileSignal row={row} spec={signalSpec} />
+            )}
+          </span>
 
-          {/* The badge slot YIELDS to the action cluster on hover — the card
-              never grows, so hovering cannot reflow the list under the cursor. */}
+          {/* THE RIGHT-HAND SLOT, still `lp__badges`, and down from four
+              occupants to two. The STATUS WORD pill left it (§6: colour and
+              glyph only) and so did the three message tallies. What stays is
+              the attention chip — a REQUEST, not a facet, and never on §6's
+              list of what a row stops saying — and the progress figure. */}
           <span className="lp__badges">
             {chipView ?? (flagged ? (
-              /* WHY it needs attention was `title`-only, and `title` renders on
-                 hover and nowhere else — so on a phone this row said "Needs
-                 attention" and refused to say why, with the reason present in
-                 the data and reachable by nobody. Attention is a core concept
-                 here; a request with an unreadable reason is a demand.
-                 The mouse loses nothing: `.hon-tip` still opens on hover, and
-                 now on focus and on tap as well. */
               row.badges.attention?.latestReason ? (
                 <ReasonNote
                   className="lp__attention-label"
@@ -3981,66 +5577,119 @@ export function Tile({
                 <span className="lp__attention-label">Needs attention</span>
               )
             ) : null)}
-            {statusWord && view.shows('status_word') ? (
-              <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
-                {statusWord}
-              </span>
-            ) : null}
+            {progress && view.shows('progress') ? <TileProgressBar progress={progress} /> : null}
           </span>
 
-          <span className="lp__rowactions lp__cluster">
-            {/* Collections · Run · Archive — the shared frame. See
-                `RowActionCluster` for why the order lives there and not in
-                three separate JSX literals. */}
-            <RowActionCluster
-              row={row}
-              props={props}
-              config={config}
-              openFlow={flowRef}
-              onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions}
-              trailing={
-                /* D67 — the details disclosure, on EVERY standard tile.
-                   DELIBERATELY NOT the leading `lp__disclosure`: that chevron
-                   means "show this row's CHILDREN" on tree kinds, and giving one
-                   control two meanings would make a doc's expand ambiguous. This
-                   one trails the row, matching the control-card's `pn-tt__ind`. */
-                <button
-                  type="button"
-                  /* `--ind` names it the OPENER, the way `pn-tt__ind` does on
-                     the task tile. The phone hides this cluster's verbs while
-                     the row is closed and must keep exactly this one; a
-                     structural selector would break the day a verb is added
-                     after it. */
-                  className={
-                    detailsExpanded
-                      ? 'lp__rowaction lp__rowaction--ind lp__rowaction--on'
-                      : 'lp__rowaction lp__rowaction--ind'
-                  }
-                  title="Details"
-                  aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}
-                  aria-expanded={detailsExpanded}
-                  data-testid="row-details-toggle"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setDetailsExpanded((open) => !open);
-                  }}
-                >
-                  <span aria-hidden><TileChevron /></span>
-                </button>
-              }
-            />
+          {/* THE TIME, AND IT YIELDS. `activityAt`, not `updatedAt`: the list's
+              default order IS `activityAt_desc`, and a row whose time disagreed
+              with its own position would be worse than no time at all. On hover
+              CSS hides it and the `⋯` menu takes the same slot (§6), so the
+              row never changes width under the pointer. */}
+          <Timestamp className="lp__time" at={row.activityAt} title="last activity" />
+
+          {/* D67 — THE DETAILS DISCLOSURE, AND IT STAYS IN THE ROW.
+              DELIBERATELY NOT inside the `⋯` below: the expand is not a verb,
+              it is the row's second state, and the phone keeps exactly this
+              one control while hiding the verbs. Also deliberately not the
+              child subscript on the lead icon — that means "show this row's CHILDREN" on tree kinds,
+              and giving one control two meanings would make a doc's expand
+              ambiguous. */}
+          <button
+            type="button"
+            /* `--ind` names it the OPENER, the way `pn-tt__ind` does on the
+               task tile. A structural selector would break the day a verb is
+               added after it. */
+            className={
+              detailsExpanded
+                ? 'lp__rowaction lp__rowaction--ind lp__rowaction--on'
+                : 'lp__rowaction lp__rowaction--ind'
+            }
+            title="Details"
+            aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}
+            aria-expanded={detailsExpanded}
+            data-testid="row-details-toggle"
+            onClick={(event) => {
+              event.stopPropagation();
+              setDetailsExpanded((open) => !open);
+            }}
+          >
+            <span aria-hidden><TileChevron /></span>
+          </button>
+
+          {/*
+            THE ⋯ ROW MENU (§6: "on hover the time hides and a ⋯ row menu
+            appears"). ONE control in the time's slot, and the verbs behind it.
+
+            IT WRAPS `RowActionCluster` RATHER THAN RE-LISTING THE VERBS. Every
+            verb's gate, refusal reason and launch flow lives in that component
+            (`controls/EntityControls.tsx`); a hand-written menu here would be a
+            second copy of `rowActions` that goes stale the first time a kind
+            changes, and the three-state honesty (unwired renders refused) would
+            have to be rebuilt. So the cluster still draws the verbs — it is the
+            container around it that changed from "five icons, always on hover"
+            to "one ⋯, then the icons".
+
+            Row-local open state, like `flowRef` above and for the same reason:
+            an "only one menu open" register would need an owner this panel has
+            none of, and the menu closes on pointerdown outside itself.
+          */}
+          <span className="lp__rowmenu" data-open={rowMenuOpen ? 'true' : undefined}>
+            <button
+              type="button"
+              /* NOT `lp__rowaction`: that class means A ROW VERB, and the R5 #9 test
+                 reads it to assert that every live one is a launch verb. This is
+                 a DOOR onto the verbs, which is a different thing, so it carries
+                 its own class and its own rule. */
+              className="lp__rowmenu-trigger"
+              title="Row actions"
+              aria-label={`Actions for ${row.title}`}
+              aria-expanded={rowMenuOpen}
+              aria-haspopup="menu"
+              data-testid="row-menu-trigger"
+              onClick={(event) => {
+                event.stopPropagation();
+                setRowMenuOpen((open) => !open);
+              }}
+            >
+              <span aria-hidden>⋯</span>
+            </button>
+            {/* MOUNTED WHILE SHUT, AND HIDDEN BY CSS ALONE — not by `hidden`,
+                and the difference is the phone.
+                
+                On a coarse pointer there is no hover and the `⋯` is
+                redundant, so the stylesheet draws this cluster IN the row at
+                rest, exactly as the row drew it before this change (the
+                ruling `.lp__rowactions` carries). An `hidden` attribute would
+                beat that rule and leave a touch device with no row verbs at
+                all — which is the defect `.lp__rowactions`'s own comment
+                records having shipped once. So the open state is a CSS fact
+                (`.lp__rowmenu[data-open]`), and the one place that decides
+                whether a surface needs the door is the stylesheet. */}
+            <span
+              className="lp__rowmenu-pop lp__cluster"
+              role="menu"
+              data-testid="row-menu"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <RowActionCluster
+                row={row}
+                props={props}
+                config={config}
+                openFlow={flowRef}
+                onFlow={setFlowRef} onOpenLaunch={props.launch?.onFullOptions}
+              />
+            </span>
           </span>
 
         </div>
       </div>
 
-      {/* THE RELATION BAND, ON THE STANDARD ANATOMY TOO (PR #272 review,
-          blocking 2): the graph is traversable through EVERY tile, so a doc
-          expanded under a task carries the same chips and can keep going.
-          Rendered as its own sub-row because the standard tile's main row
-          holds the 17px floor. */}
+      {/* LINE 2, AND THE ONLY ONE: the counts line. Its own sub-row because
+          line 1 holds the 29px floor — a row with counts measures ~43px and a
+          row without them is unchanged, which is the §6 geometry. */}
       <AttentionTileSubtitle line={attentionLine} />
-      {tileBadges ? <div className="lp__tile-badges">{tileBadges}</div> : null}
+      {rowNote ? <div className="lp__tile-note" data-testid="row-note">{rowNote}</div> : null}
+      {countsLine ? <div className="lp__tile-counts">{countsLine}</div> : null}
 
       {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}
 
@@ -4081,8 +5730,6 @@ export function Tile({
         </div>
       ) : null}
     </div>
-    {relatedBlock}
-    </>
   );
 }
 
@@ -4091,6 +5738,18 @@ interface ControlCardFacts {
   /** Never null in practice — every row carries a creator. */
   creator: EntitySummary['createdBy'] | null;
   meta: string[];
+}
+
+/** `state.acceptance` as done/total, or null when the row carries no criteria. */
+export function acceptanceProgressOf(row: EntitySummary): TaskTileProgress | null {
+  const acceptance = (row.state as unknown as Record<string, unknown>).acceptance as
+    | { completed?: unknown; total?: unknown }
+    | undefined;
+  if (typeof acceptance?.total !== 'number' || acceptance.total <= 0) return null;
+  return {
+    done: typeof acceptance.completed === 'number' ? acceptance.completed : 0,
+    total: acceptance.total,
+  };
 }
 
 /**
@@ -4110,10 +5769,8 @@ function factsForControlCard(row: EntitySummary): ControlCardFacts {
       typeof (value as { displayName?: unknown }).displayName === 'string',
   );
   const meta: string[] = [];
-  const acceptance = state.acceptance as { completed?: unknown; total?: unknown } | undefined;
-  if (typeof acceptance?.total === 'number' && acceptance.total > 0) {
-    meta.push(`${typeof acceptance.completed === 'number' ? acceptance.completed : 0}/${acceptance.total} criteria`);
-  }
+  const acceptance = acceptanceProgressOf(row);
+  if (acceptance) meta.push(`${acceptance.done}/${acceptance.total} criteria`);
   if (typeof state.dueDate === 'string' && state.dueDate) meta.push(`due ${state.dueDate}`);
   const blockers = row.badges.blocked?.unresolvedHardDependencyCount ?? 0;
   if (blockers > 0) meta.push(`${blockers} ${blockers === 1 ? 'blocker' : 'blockers'}`);

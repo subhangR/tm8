@@ -1,7 +1,11 @@
+import { McpPicker } from '../mcp/McpPicker';
+import type { McpSelection } from '../mcp/port';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   ContextBudgets,
   CredentialsServiceKeysStatusView,
+  EntityId,
   ExecutionDispatchResult,
   ExecutionSpawnInput,
   SpawnSelectionGroup,
@@ -26,6 +30,7 @@ import {
 } from '../domain/launch';
 import { modelCatalog } from '../domain/model-catalog';
 import { currentNodeKey } from '../domain/launch';
+import { CRAFT_KIND } from '../domain/craft';
 import {
   formatRunCost,
   JEV_ENTITY_GROUPS,
@@ -51,6 +56,8 @@ import { addToEdits, buildStrip, STRIP_KINDS, stripKindOf, type StripJev, type S
 import { clearDraft, readDraft, writeDraft } from './launch-draft';
 import { describePicks, readPicks, readRemember, writePicks, writeRemember, type RememberedPicks } from './launch-picks';
 import { useLaunchComposerState } from './useLaunchComposerState';
+import { useOverlayHost } from '../kit/useOverlayHost';
+import { rosterForLaunchScope, useCraftLaunchScope } from './launch-scope';
 /* The popup mounts WITHOUT the screen, so it carries the stylesheets itself —
    the same mounting-styles-it rule the screen's import states. */
 import './new-session.css';
@@ -196,6 +203,20 @@ const groupOf = (row: { kind: string }): SpawnSelectionGroup => (
   row.kind === 'memory' ? 'memories' : row.kind === 'skill' ? 'skills' : 'references'
 );
 
+
+/**
+ * The notes box's placeholder. Continuing reads the old transcript first; a
+ * DESIGN says what Run does with it (Craft → Designs, D4: the agent creates
+ * what its graph pages describe); anything else keeps its own text.
+ */
+export function notesPlaceholderFor(subjectKind: string | undefined, continuing: boolean): string {
+  if (continuing) return 'Notes for the new session (optional) — it reads this session’s transcript first…';
+  if (subjectKind === CRAFT_KIND) {
+    return 'Run this craft: the agent creates what its graph pages describe. Notes or extra context (optional)…';
+  }
+  return 'Notes or extra context for this launch — the task stays as written.';
+}
+
 export function LaunchComposerPopup({
   subject,
   spaceId,
@@ -219,10 +240,13 @@ export function LaunchComposerPopup({
   jevKeyStatus,
   sessionsSince,
 }: LaunchComposerPopupProps) {
+  const overlay = useOverlayHost();
   /* The panels' option shapes, adapted ONCE into the composer's vocabulary.
      Absent facts stay absent — no invented owner, no invented path. */
+  /* In a craft, Auto is the Crafter (launch-scope.tsx). */
+  const launchScope = useCraftLaunchScope();
   const teammateRows = useMemo<readonly LaunchTeammate[]>(
-    () => teammates.map((t) => ({
+    () => rosterForLaunchScope(teammates, launchScope).map((t) => ({
       id: t.id,
       name: t.label,
       initial: t.label.charAt(0).toUpperCase(),
@@ -230,7 +254,7 @@ export function LaunchComposerPopup({
       agentTool: t.agentTool ?? '',
       owner: '',
     })),
-    [teammates],
+    [teammates, launchScope],
   );
   const projectRows = useMemo<readonly LaunchProject[]>(
     () => projects.map((p) => ({
@@ -423,6 +447,8 @@ export function LaunchComposerPopup({
   const [timedOut, setTimedOut] = useState<null | 'checking' | 'found' | 'none' | 'unknown'>(null);
   const openedAt = useRef(new Date().toISOString());
 
+  const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
+  const [mcpReady, setMcpReady] = useState(true);
   const spawnKey = useRef(keyLedger(() => newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId()));
   const dispatchKey = useRef(keyLedger(newLaunchMutationId));
 
@@ -437,7 +463,7 @@ export function LaunchComposerPopup({
     : !verdict.ok ? verdict.reason
       /* An edited group's defaults are re-reading: wait, or that group would
          launch on its defaults and drop the person's removals. */
-      : selection.launchBlock
+      : (!mcpReady ? "Choose a connected account for each connector." : null) ?? selection.launchBlock
         ?? (uploading > 0 ? `Waiting for ${String(uploading)} upload${uploading === 1 ? '' : 's'} to finish before launching.` : null);
 
   /* DRAFT: kept while the card is open, cleared by a successful commit. */
@@ -510,14 +536,20 @@ export function LaunchComposerPopup({
       ...(promptExtra ? { promptExtra } : {}),
     };
     const launched = { ...config };
-    const inputWith = (id: string) => buildSpawnInput({
-      clientMutationId: id,
-      spaceId,
-      config: { ...config, ...launchFields },
-      // Still named `taskIds` on the wire; the server maps a non-task
-      // subject through `derive_task_for_entity` (064).
-      taskIds: subjectTaskIds,
-      title: defaultTitle,
+    const inputWith = (id: string) => ({
+      ...buildSpawnInput({
+        clientMutationId: id,
+        spaceId,
+        config: { ...config, ...launchFields, mcpSelections },
+        // Still named `taskIds` on the wire; the server maps a non-task
+        // subject through `derive_task_for_entity` (064).
+        taskIds: subjectTaskIds,
+        title: defaultTitle,
+      }),
+      /* A Run inside a craft is ABOUT the craft: the node writes session
+         -[about]-> craft in the spawn, which lets the session manage that
+         craft's tabs (L3). Outside a craft the key is absent. */
+      ...(launchScope ? { aboutEntityId: launchScope.craftId as EntityId } : {}),
     });
     /* ONE KEY PER UNCHANGED LAUNCH: a retry of the same launch reuses its
        key, so the node's ledger replays the session instead of starting a
@@ -872,11 +904,31 @@ export function LaunchComposerPopup({
 
   const heading = `${verbLabel ?? 'Run'} configuration`;
 
-  return (
+  /* Portalled out of the trigger's subtree so the scrim covers the whole
+     shell — see `useOverlayHost`. */
+  if (!overlay.host) return <span ref={overlay.marker} hidden />;
+
+  return createPortal(
     <div className="nsx-popup nsx-popup--card" role="dialog" aria-modal="true" aria-label={heading} data-testid="launch-quick-config">
       {/* The scrim IS the outside: any click on it is a click away. */}
       <div className="nsx-popup__scrim" onClick={onDismiss} aria-hidden="true" />
       <LaunchCardV3
+        connectors={(
+          /* §10.5: the launch grid, with D4's note — `Full` restores plugins
+             and skills, never the launcher's personal Claude connectors. */
+          <McpPicker
+            teamMemberId={config.teamMemberId ?? undefined}
+            targetId={subject.id}
+            value={mcpSelections}
+            onChange={setMcpSelections}
+            onReady={setMcpReady}
+            disabled={pending}
+            layout="grid"
+            notice={bind.harnessSurface === 'inherit'
+              ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
+              : 'Personal Claude app connectors aren’t loaded, whatever the harness.'}
+          />
+        )}
         verbLabel={verbLabel ?? 'Run'}
         verb={verb}
         onVerbChange={(next) => bind.onModeChange(next)}
@@ -911,9 +963,7 @@ export function LaunchComposerPopup({
         }}
         notes={notes}
         onNotesChange={setNotes}
-        notesPlaceholder={continuing
-          ? 'Notes for the new session (optional) — it reads this session’s transcript first…'
-          : 'Notes or extra context for this launch — the task stays as written.'}
+        notesPlaceholder={notesPlaceholderFor(subject.kind, continuing)}
         strip={strip}
         stripRefusal={stripLock ?? stripNotice}
         stripLoading={stripLoading}
@@ -975,7 +1025,8 @@ export function LaunchComposerPopup({
         jevModel={jevModel}
         jevTeammate={jevTeammate}
       />
-    </div>
+    </div>,
+    overlay.host,
   );
 }
 

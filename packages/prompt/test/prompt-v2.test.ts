@@ -6,10 +6,14 @@ import {
   BYTE_BUDGETS,
   composePrompt,
   HEADER_AUTHORING_RULE,
+  PLACEMENT_RULE,
+  COORDINATOR_SUBTASK_RULE,
   instructionFor,
   DEFAULT_PROMPT_VERSION,
   isPromptVersion,
-  KERNEL_TEMPLATE_V2,
+  LEGACY_PROMPT_VERSION,
+  TASK_CONTEXT_RESERVE_V2,
+  taskContextReserveV2,
   PROMPT_VERSIONS,
   promptVersionFor,
   primaryContextBudgetV2,
@@ -19,6 +23,7 @@ import {
   type PromptManifest,
   type PromptRuntime,
 } from '../src/index.js';
+import { WORKER_ROUTINE_V1 } from '../src/worker-routine.js';
 
 // Ids shaped like the real ones, so the size ceilings below are measured on
 // realistic bytes rather than on `task-1`.
@@ -87,22 +92,28 @@ function embedded(task: string, type = 'entity-context'): unknown[] {
 }
 
 describe('prompt versions', () => {
-  it('offers v1 and v2, and keeps v1 the default until the §6.2 evaluation flips it', () => {
+  it('offers v1 and v2, makes v2 the default for new launches, and reads an absent stamp as v1', () => {
     expect(PROMPT_VERSIONS).toEqual(['1', '2']);
     expect(isPromptVersion('2')).toBe(true);
-    expect(DEFAULT_PROMPT_VERSION).toBe('1');
+    expect(DEFAULT_PROMPT_VERSION).toBe('2');
+    expect(LEGACY_PROMPT_VERSION).toBe('1');
+    const { promptVersion: _stamp, ...unstamped } = { ...base, promptVersion: '1' };
+    const legacy = composePrompt(unstamped, runtime);
+    expect(legacy.metadata.promptVersion).toBe('1');
+    expect(legacy.system).toBe(composePrompt({ ...base, promptVersion: '1' }, runtime).system);
+    expect(legacy.system).toMatch(/^<tm8_system_prompt version="1\.0"/);
   });
 
-  it('selects v2 from the profile kernelTemplate, for every mode', () => {
-    const snapshot = { agentProjection: { promptPolicy: { kernelTemplate: KERNEL_TEMPLATE_V2 } } };
-    for (const mode of AGENT_MODES) {
-      expect(promptVersionFor({ mode, profileSnapshot: snapshot }), mode).toBe('2');
-    }
-    expect(promptVersionFor({ mode: 'planner', profileSnapshot: snapshot })).toBe('1');
-    const core = { agentProjection: { promptPolicy: { kernelTemplate: 'tm8.core.v1' } } };
-    expect(promptVersionFor({ mode: 'worker', profileSnapshot: core })).toBe('1');
-    expect(promptVersionFor({ mode: 'worker', profileSnapshot: { profile: {} } })).toBe('1');
-    expect(promptVersionFor({ mode: 'worker' })).toBe('1');
+  it('stamps v2 for every mode with no profile, and v1 for a mode v2 does not cover', () => {
+    for (const mode of AGENT_MODES) expect(promptVersionFor({ mode }), mode).toBe('2');
+    expect(promptVersionFor({ mode: 'planner' })).toBe('1');
+    expect(promptVersionFor({ mode: null })).toBe('1');
+  });
+
+  it('reserves room for the embedded task context only on a v2 launch with a task', () => {
+    expect(taskContextReserveV2({ ...base, promptVersion: '2' })).toBe(TASK_CONTEXT_RESERVE_V2);
+    expect(taskContextReserveV2({ ...base, promptVersion: '1' })).toBe(0);
+    expect(taskContextReserveV2({ ...base, promptVersion: '2', tasks: [] })).toBe(0);
   });
 
   it('keeps v1 byte-identical for a manifest stamped "1"', () => {
@@ -253,14 +264,20 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
     coordinator: { sessionId: '01a0d2d9-9f15-76ac-941b-66cfb7347cf5' },
   };
   const docRuntime: PromptRuntime = { sessionId: DOC_SESSION, baseUrl: 'http://127.0.0.1:7778' };
+  // Re-measured on main a1542b579 with Spec D1's `tm8 session complete` line
+  // (+99 B worker / +94 B coordinator) and P0g's worker routine stacked on
+  // main's placement rules; ceilings = measured + 9 B. P0g/owner own the
+  // budget call. MEASURED.
   const sizes: Record<AgentMode, { bytes: number; ceiling: number; graph: boolean }> = {
     // Doc 01a0d708 §3: each is doc 01a0d456's size plus base rule 4 (+243 B),
-    // then +24 B for rule 4's good/bad example (task 01a0da5a, doc 01a0da65 D6).
-    worker: { bytes: 2991, ceiling: 3000, graph: true },
-    'coordinated-worker': { bytes: 3333, ceiling: 3350, graph: true },
-    coordinator: { bytes: 3899, ceiling: 4000, graph: true },
-    'coordinated-coordinator': { bytes: 4241, ceiling: 4250, graph: true },
-    dispatcher: { bytes: 3195, ceiling: 3200, graph: false },
+    // then +24 B for rule 4's good/bad example (task 01a0da5a, doc 01a0da65 D6),
+    // then +815 B for base rule 5, placement (P0f 01a111b2-a4c8), and +142 B on
+    // the two coordinator layers for the subtask sentence.
+    worker: { bytes: 4685, ceiling: 4694, graph: true },
+    'coordinated-worker': { bytes: 5027, ceiling: 5036, graph: true },
+    coordinator: { bytes: 5075, ceiling: 5084, graph: true },
+    'coordinated-coordinator': { bytes: 5417, ceiling: 5426, graph: true },
+    dispatcher: { bytes: 4010, ceiling: 4050, graph: false },
   };
 
   it('renders each mode at the doc\'s size, within its ceiling', () => {
@@ -272,8 +289,8 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
     }
   });
 
-  it('keeps the base at 1,736 B (1,469 approved + rule 4 with its example)', () => {
-    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(1736);
+  it('keeps the base at 2,551 B (1,469 approved + rule 4 with its example + rule 5)', () => {
+    expect(utf8Bytes(BASE_PROMPT_V2)).toBe(2551);
   });
 
   it('matches its snapshot, per mode', () => {
@@ -285,8 +302,8 @@ describe('v2 sizes, measured on doc 01a0d456\'s own fixture', () => {
 });
 
 describe('header authoring rule (doc 01a0d708)', () => {
-  it('is the last rule of the base, and the base names each flag exactly once', () => {
-    expect(BASE_PROMPT_V2.endsWith(`\n4. ${HEADER_AUTHORING_RULE}\n</tm8>`)).toBe(true);
+  it('is rule 4 of the base, and the base names each flag exactly once', () => {
+    expect(BASE_PROMPT_V2).toContain(`\n4. ${HEADER_AUTHORING_RULE}\n5. `);
     expect(count(BASE_PROMPT_V2, '--when-to-use')).toBe(1);
     expect(count(BASE_PROMPT_V2, '--summary')).toBe(1);
   });
@@ -314,6 +331,53 @@ describe('header authoring rule (doc 01a0d708)', () => {
   });
 });
 
+describe('placement rule (Design Rules 01a10c5d §2.4, P0f)', () => {
+  it('is the last rule of the v2 base, said once in every mode', () => {
+    expect(BASE_PROMPT_V2.endsWith(`\n5. ${PLACEMENT_RULE}\n</tm8>`)).toBe(true);
+    for (const mode of AGENT_MODES) {
+      const e = composePrompt({ ...base, mode, coordinator: { sessionId: COORD } }, runtime);
+      expect(count(e.system, 'decide where it belongs from what it is about'), mode).toBe(1);
+    }
+  });
+
+  it('appears exactly once in every v1 mode instruction: as routine step 4, or beside the header rule', () => {
+    for (const mode of AGENT_MODES) {
+      const text = instructionFor(mode);
+      expect(count(text, 'decide where it belongs from what it is about'), mode).toBe(1);
+      // A mode without the worker routine (P0g) keeps it just before the header rule.
+      if (!text.includes(WORKER_ROUTINE_V1)) {
+        expect(text.endsWith(` ${PLACEMENT_RULE} ${HEADER_AUTHORING_RULE}`), mode).toBe(true);
+      } else {
+        expect(text).toContain(`(4) Put what you create in its place: ${PLACEMENT_RULE}`);
+      }
+    }
+  });
+
+  it('chooses the parent from what the entity is about: existing same-kind parent, root, umbrella, cross-kind edge, follow-up, story root', () => {
+    expect(PLACEMENT_RULE).toContain('from what it is about, not from the task you happen to be on');
+    expect(PLACEMENT_RULE).toContain('part of an existing entity of the same kind');
+    expect(PLACEMENT_RULE).toContain('--parent');
+    expect(PLACEMENT_RULE).toContain('If it is part of nothing, make it a root.');
+    expect(PLACEMENT_RULE).toContain('move them under it with `tm8 entity move`');
+    expect(PLACEMENT_RULE).toContain('Never parent across kinds');
+    expect(PLACEMENT_RULE).toContain('tm8 edge create <task-id> produces <new-id>');
+    expect(PLACEMENT_RULE).toContain('Follow-up work is a root linked to its origin');
+    expect(PLACEMENT_RULE).toContain('tm8 collection add <story-id> <root-id>');
+    // The v1 frame entity-escapes a double quote; the rule carries none.
+    expect(PLACEMENT_RULE).not.toContain('"');
+    expect(COORDINATOR_SUBTASK_RULE).not.toContain('"');
+  });
+
+  it('tells coordinators, and only coordinators, to make each unit a subtask', () => {
+    for (const mode of AGENT_MODES) {
+      const coordinates = mode === 'coordinator' || mode === 'coordinated-coordinator';
+      expect(instructionFor(mode).includes(COORDINATOR_SUBTASK_RULE), mode).toBe(coordinates);
+      const e = composePrompt({ ...base, mode, coordinator: { sessionId: COORD } }, runtime);
+      expect(e.system.includes('as a subtask of your task'), mode).toBe(coordinates);
+    }
+  });
+});
+
 describe('v2 coordinated modes (Q10)', () => {
   const coordinated: PromptManifest = { ...base, mode: 'coordinated-worker', coordinator: { sessionId: COORD } };
 
@@ -322,10 +386,45 @@ describe('v2 coordinated modes (Q10)', () => {
     expect(chat.system).toContain(`<coordination coordinator_session="${COORD}" kind="chat">`);
   });
 
+  it('tells a chat-spawned worker its answer must be durable, with v1\'s sentence in place of the session line', () => {
+    const chat = composePrompt({ ...coordinated, coordinator: { sessionId: COORD, kind: 'chat' } }, runtime);
+    expect(chat.system).toContain('A CHAT spawned you and is waiting on a durable answer.');
+    expect(chat.system).toContain(`\`tm8 message send --to ${COORD} "<body>"\``);
+    expect(chat.system).toContain('Never send that completion report to the assignment or task anchor');
+    // The session line ("to the task and to it in one send") would contradict it.
+    expect(chat.system).not.toContain('A coordinator is waiting on you.');
+    const session = composePrompt(coordinated, runtime);
+    expect(session.system).toContain('A coordinator is waiting on you.');
+    expect(session.system).not.toContain('A CHAT spawned you');
+  });
+
   it('throws without a coordinator id, as v1 does', () => {
     expect(() => composePrompt({ ...coordinated, coordinator: null }, runtime)).toThrow(/coordinator session id/);
     expect(() => composePrompt({ ...coordinated, mode: 'coordinated-coordinator', coordinator: null }, runtime))
       .toThrow(/coordinator session id/);
+  });
+});
+
+describe('v2 linked references (the attach palette, task.linked)', () => {
+  const link = (i: number) => ({ entityId: `doc-${i}`, kind: 'doc', link: 'relates_to', title: `Doc ${i}` });
+  const withLinks = (linked: ReturnType<typeof link>[], linkedTotal: number): PromptManifest =>
+    ({ ...base, tasks: [{ ...base.tasks![0]!, linked, linkedTotal }] });
+
+  it('renders the task\'s links with the v1 caps, and declares the "N more" total', () => {
+    const linked = Array.from({ length: 20 }, (_, i) => link(i));
+    const { task } = composePrompt(withLinks(linked, 30), { ...runtime, taskContext: { taskId: TASK, dto } });
+    expect(task).toContain(`<linked task="${TASK}" count="30" omitted="14" fetch_with="tm8 entity context &lt;entity-id&gt;">`);
+    expect(task).toContain('<entity id="doc-0" kind="doc" link="relates_to" />');
+    expect(task).toContain('<entity id="doc-15" kind="doc" link="relates_to" />');
+    expect(task).not.toContain('doc-16');
+    expect(task).toContain('<untrusted_data type="linked-names"');
+    // After the snapshot, inside the task turn.
+    expect(task.indexOf('<linked ')).toBeGreaterThan(task.indexOf('type="entity-context"'));
+    expect(task.indexOf('<linked ')).toBeLessThan(task.indexOf('</tm8_task_prompt>'));
+  });
+
+  it('renders nothing for a task without links', () => {
+    expect(composePrompt(base, runtime).task).not.toContain('<linked');
   });
 });
 

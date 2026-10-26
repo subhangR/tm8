@@ -150,7 +150,9 @@ describe('what an ended session says about itself', () => {
     // same authority every other arm of the canvas switch reads.
     const failed = render(<TerminalBody detail={endedDetail(sessionFailed)} liveness="not-running" />);
     expect(failed.getByTestId('session-exited-fallback').dataset.outcome).toBe('failed');
-    expect(failed.getByTestId('session-exited-fallback').textContent).toContain('Session failed');
+    // Spec D1 §5.6: the canvas names the ending for the work — an open session
+    // that failed with no recorded ending is "Failed to start" (§5.1 row 11).
+    expect(failed.getByTestId('session-exited-fallback').textContent).toContain('Failed to start');
     failed.unmount();
 
     const exited = render(<TerminalBody detail={endedDetail(sessionExited)} liveness="not-running" />);

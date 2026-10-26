@@ -4,7 +4,7 @@
  * once signed in, the one-time legacy migration, and the live events.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ATELIER_DARK, ATELIER_LIGHT, type DurableWorkspaceEvent, type StyleDoc, type StylePrefsView } from '@tm8/contract';
+import { CHATGPT_DARK, CHATGPT_LIGHT, type DurableWorkspaceEvent, type StyleDoc, type StylePrefsView } from '@tm8/contract';
 
 import {
   ACTIVE_STYLE_ELEMENT_ID,
@@ -134,7 +134,7 @@ describe('style sync — §3.6 resolution', () => {
     startStyleSync(fake.seam, { spaceId: SPACE, viewerMemberId: ME });
     await settle();
     expect(getStyleState().source).toBe('os');
-    expect(getStyleState().ref).toBe(ATELIER_LIGHT.id);
+    expect(getStyleState().ref).toBe(CHATGPT_LIGHT.id);
     expect(fake.setPrefs).not.toHaveBeenCalled();
   });
 
@@ -148,10 +148,10 @@ describe('style sync — §3.6 resolution', () => {
   });
 
   it('prefs outrank the space default', async () => {
-    const fake = fakeSeam({ prefs: prefsView({ currentStyle: ATELIER_DARK.id }), defaultStyle: STYLE_REF });
+    const fake = fakeSeam({ prefs: prefsView({ currentStyle: CHATGPT_DARK.id }), defaultStyle: STYLE_REF });
     startStyleSync(fake.seam, { spaceId: SPACE, viewerMemberId: ME });
     await settle();
-    expect(getStyleState().ref).toBe(ATELIER_DARK.id);
+    expect(getStyleState().ref).toBe(CHATGPT_DARK.id);
   });
 
   it('an unreadable current style paints the prefs snapshot and reads as removed', async () => {
@@ -170,10 +170,10 @@ describe('style sync — §3.6 resolution', () => {
 
   it('follow OS with a dark style paints the dark half while the OS is dark', async () => {
     stubOs(true);
-    const fake = fakeSeam({ prefs: prefsView({ darkStyle: ATELIER_DARK.id, followOs: true }) });
+    const fake = fakeSeam({ prefs: prefsView({ darkStyle: CHATGPT_DARK.id, followOs: true }) });
     startStyleSync(fake.seam, { spaceId: SPACE, viewerMemberId: ME });
     await settle();
-    expect(getStyleState().ref).toBe(ATELIER_DARK.id);
+    expect(getStyleState().ref).toBe(CHATGPT_DARK.id);
   });
 });
 
@@ -185,7 +185,7 @@ describe('style sync — §10.1 legacy migration', () => {
     startStyleSync(fake.seam, { spaceId: SPACE, viewerMemberId: ME });
     await settle();
     expect(fake.setPrefs).toHaveBeenCalledWith(
-      expect.objectContaining({ expectedRevision: 0, currentStyle: ATELIER_DARK.id, followOs: false }),
+      expect.objectContaining({ expectedRevision: 0, currentStyle: CHATGPT_DARK.id, followOs: false }),
     );
     expect(localStorage.getItem('tm8ui.theme')).toBeNull();
     expect(getStyleState().source).toBe('prefs');
@@ -199,7 +199,7 @@ describe('style sync — §10.1 legacy migration', () => {
     await settle();
     expect(fake.setPrefs).not.toHaveBeenCalled();
     expect(localStorage.getItem('tm8ui.theme')).toBeNull();
-    expect(getStyleState().ref).toBe(ATELIER_LIGHT.id);
+    expect(getStyleState().ref).toBe(CHATGPT_LIGHT.id);
   });
 
   it('a node that predates styles keeps the local choice and the legacy key', async () => {
@@ -210,7 +210,7 @@ describe('style sync — §10.1 legacy migration', () => {
     await settle();
     expect(fake.setPrefs).not.toHaveBeenCalled();
     expect(localStorage.getItem('tm8ui.theme')).toBe('dark');
-    expect(getStyleState().ref).toBe(ATELIER_DARK.id);
+    expect(getStyleState().ref).toBe(CHATGPT_DARK.id);
   });
 });
 
@@ -239,7 +239,7 @@ describe('style sync — the boot cache', () => {
       JSON.stringify({ docs: { current: { ref: STYLE_REF, doc: { nope: 1 } }, dark: null }, hash: 'x', followOs: false, revision: 3 }),
     );
     __resetStyleStoreForTests();
-    expect(getStyleState().ref).toBe(ATELIER_LIGHT.id);
+    expect(getStyleState().ref).toBe(CHATGPT_LIGHT.id);
   });
 });
 
@@ -315,7 +315,7 @@ describe('style sync — writes', () => {
     await settle();
     setTheme('dark');
     await settle();
-    expect(fake.setPrefs).toHaveBeenCalledWith(expect.objectContaining({ currentStyle: ATELIER_DARK.id }));
+    expect(fake.setPrefs).toHaveBeenCalledWith(expect.objectContaining({ currentStyle: CHATGPT_DARK.id }));
     expect(localStorage.getItem('tm8ui.theme')).toBeNull();
   });
 });

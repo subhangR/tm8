@@ -78,21 +78,34 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'all',                 // skill scan --all
   'off',                 // entity react --off
   'ready',               // entity query --ready
+  'story-page',          // entity get: explicit full story page
   'roots',               // entity query --roots — top-level rows only (= --parent none)
   'unread',              // inbox list --unread
   'until-match',         // event watch --until-match
   'events',              // event changes --events — thin rows instead of the digest
   'overwrite',           // file download --overwrite
   'force',               // session terminate --force
+  'stop',                // session terminate --stop — end the work without completing (Spec D1)
+  'complete',            // session terminate --complete — complete the work, then close
+  'mark-lost',           // session terminate --mark-lost — record a process that is gone
+  'close-process',       // session complete --close-process (closes even with live launched sessions)
+  'keep-process',        // session complete --keep-process — leave the process open
+  'keep-open',           // tool run — retain the interactive shell after tool exit
   'grant-only',          // session attach --grant-only
   'presence',            // event watch --presence
   'confirm-untrusted',   // session spawn --confirm-untrusted
   'force-new-task',      // session spawn/dispatch --force-new-task
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
-  'no-session-link',     // entity create — suppress the automatic created_in edge
+  'no-session-link',     // entity create — accepted, no effect since 308 (the server records authored_from)
+  'shared',              // mcp connect --shared — connect on behalf of the whole Space
+  'all-spaces',          // mcp tokens create --all-spaces — every Space I belong to now or join later
+  'no-activate',         // workspace tabs open / files open --no-activate
+  'preview',             // workspace files open --preview — the one preview tab, not a kept one
+  'discard',             // workspace delete --discard
   'clear',               // task axis --clear
   'untick',              // task tick --untick
+  'claim',               // task transition --claim — also record the caller as working_on
   'node-admin',          // auth signup --node-admin
   'print-token',         // auth login — print instead of storing per-server
   'show',                // auth claim --show — reprint the on-box claim token
@@ -118,6 +131,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'draft',               // form create — start as a draft (humans' default)
   'first',               // form question add|move — put the question first
   'include-revoked',     // node path-grant list — add revoked grants (282)
+  'allow-spawn',         // link grant — the target's own spawn switch for a remote link (W9c)
   // Styles (styles spec v8 §5).
   'mine',                // style list — personal styles only
   'space-only',          // style list — space styles only
@@ -126,6 +140,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'follow-os',           // style use — pick the dark style when the OS is dark...
   'no-follow-os',        // ...and its opposite; passing both is refused
   'trust-css',           // style use — allow the named space style's css
+  'detach', 'close', 'value-stdin', // tool launch / hidden secret input
 ]);
 
 /**
@@ -162,6 +177,20 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
  * reads that set to report published-vs-parseable flag arity.
  */
 export const COMMAND_SCOPED_GLOBALS: ReadonlySet<string> = new Set(['version']);
+
+/**
+ * Bare flags that are bare on ONE command path only, because the same name
+ * takes a value elsewhere: `tm8 session transcript --last <count>` but
+ * `tm8 workspace reorder <ws> --last` (API 01a115c4 §8.4). The path is the
+ * leading bare words seen so far, so the flag must follow the command path
+ * (§3's EBNF puts command options there). Everywhere else the name keeps its
+ * value arity.
+ */
+export const PATH_SCOPED_BOOLEANS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['last', new Set(['workspace reorder'])],
+  ['source', new Set(['tool show'])],
+  ['output', new Set(['tool run-show'])],
+]);
 
 /**
  * Retired options. `--json` is not merely unknown: an agent that learned the
@@ -332,6 +361,12 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     if (tok === undefined) continue;
 
     if (tok === '--') {
+      if (positionals.length === 2 && positionals[0] === 'tool' && positionals[1] === 'run') {
+        const name = argv[i + 1];
+        if (name !== undefined) positionals.push(name);
+        passthrough = argv.slice(i + 2);
+        break;
+      }
       passthrough = argv.slice(i + 1);
       break;
     }
@@ -345,6 +380,12 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
       // Only a bare word can begin a command path, so bare `-` (stdin, handled
       // above) deliberately does not flip this.
       sawCommandToken = true;
+      // A tool owns every token after its name, including globals, bools,
+      // short flags and --help. Its declaration supplies their arity later.
+      if (positionals.length === 3 && positionals[0] === 'tool' && positionals[1] === 'run') {
+        passthrough = argv.slice(i + 1);
+        break;
+      }
       continue;
     }
     if (!tok.startsWith('--')) {
@@ -389,6 +430,10 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     // row, and the value-taking rule would eat each one as the previous one's
     // value. The variable namespace is open, so it cannot be an allowlist.
     if (body.startsWith('pn-')) {
+      record(body, true);
+      continue;
+    }
+    if (PATH_SCOPED_BOOLEANS.get(body)?.has(positionals.slice(0, 2).join(' '))) {
       record(body, true);
       continue;
     }

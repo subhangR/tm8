@@ -5,8 +5,9 @@
  *     untouched; a 044 row gets an entity only through `adopt` (node admin),
  *     and `server_directory` shows it once, before and after.
  *   · add/remove are human-only and space-scoped; remove is creator or admin.
- *   · the sealed gate row: own-row RLS, no ciphertext/nonce for tm8_app, AAD
- *     bound to the row, and `open` refuses an agent.
+ *   · the gate row (W9c, 301: the stored human gate session is RETIRED):
+ *     store and open refuse every kind (0A000), tm8_app still has no grant
+ *     on ciphertext/nonce, the AAD stays bound to the row.
  *   · a server in a space the caller is not in is P0002, like a missing one.
  *
  * Fixture: spaces A and B. H owns A; H2 is a member of A; H3 owns B only.
@@ -225,54 +226,34 @@ describe('add / get / remove — human-only, space-scoped', () => {
   });
 });
 
-describe('the sealed gate row', () => {
-  it('own row only, no ciphertext for tm8_app, AAD bound to the row; open refuses an agent, POSITIVE browser', async () => {
+describe('the gate row — W9c retired the stored human gate session (301)', () => {
+  it('store and open refuse every session kind (0A000); no stored bytes; tm8_app has no ciphertext grant; AAD still bound', async () => {
     const server = await add(f.identityH, f.spaceA, 'gate');
+    // The seal context still names the caller's own row (sign-out keeps working).
     const ctx = await as(f.identityH, (q) => q.rpc<{ homeSpaceId: string; serverId: string; memberId: string }>(
       'server_gate_seal_context', [server.id]));
     expect(ctx).toEqual({ homeSpaceId: f.spaceA, serverId: server.id, memberId: f.memberHA });
 
-    const ciphertext = randomBytes(48);
-    const nonce = randomBytes(12);
-    await as(f.identityH, (q) => q.rpc('store_server_gate_token', [
-      server.id, new Date(Date.now() + 3_600_000).toISOString(), ciphertext, nonce, cmid()]));
+    for (const authKind of ['browser', 'cli', 'agent', 'agent_runtime', 'link']) {
+      expect(await outcome(() => as(f.identityH, (q) => q.rpc('store_server_gate_token', [
+        server.id, new Date(Date.now() + 3_600_000).toISOString(), randomBytes(48), randomBytes(12), cmid()]), { authKind })))
+        .toBe('0A000');
+      expect(await outcome(() => as(f.identityH, (q) => q.rpc('open_server_gate_token', [server.id]), { authKind })))
+        .toBe('0A000');
+    }
+    expect(await database.query('select 1 from public.server_gate_tokens where ciphertext is not null')).toHaveLength(0);
 
     // tm8_app has no column grant on ciphertext / nonce.
     expect(await outcome(() => as(f.identityH, (q) => q.query(
       `select ciphertext from public.server_gate_tokens where server_id = $1`, [server.id])))).toBe('42501');
-    // RLS: H sees their row; H2 (same space) sees none of H's.
-    const mine = await as(f.identityH, (q) => q.query<{ member_id: string; aad: string; status: string }>(
-      `select member_id::text, aad, status from public.server_gate_tokens where server_id = $1`, [server.id]));
-    expect(mine).toEqual([{ member_id: f.memberHA, aad: `server-gate|${f.spaceA}|${server.id}|${f.memberHA}`, status: 'signed_in' }]);
-    const theirs = await as(f.identityH2, (q) => q.query(
-      `select 1 from public.server_gate_tokens where server_id = $1`, [server.id]));
-    expect(theirs).toHaveLength(0);
-
     // The AAD cannot be pointed at another row.
     expect(await outcome(() => database.query(
       `update public.server_gate_tokens set aad = 'server-gate|' || $2 || '|' || server_id || '|' || member_id
         where server_id = $1`, [server.id, f.spaceB]))).toBe('23514');
-
-    // open: agent and agent_runtime refused; the browser gets its own bytes back.
-    expect(await outcome(() => as(f.identityH, (q) => q.rpc('open_server_gate_token', [server.id]), { authKind: 'agent' }))).toBe('42501');
-    expect(await outcome(() => as(f.identityH, (q) => q.rpc('open_server_gate_token', [server.id]), { authKind: 'agent_runtime' }))).toBe('42501');
-    const opened = await as(f.identityH, (q) => q.rpc<{ ciphertext: string; nonce: string; memberId: string }>(
-      'open_server_gate_token', [server.id]));
-    expect(Buffer.from(opened.ciphertext, 'base64').equals(ciphertext)).toBe(true);
-    expect(opened.memberId).toBe(f.memberHA);
-
-    // H2 has no session of their own: signed out (23514), not H's bytes.
-    expect(await outcome(() => as(f.identityH2, (q) => q.rpc('open_server_gate_token', [server.id])))).toBe('23514');
-    // An outsider: P0002.
-    expect(await outcome(() => as(f.identityH3, (q) => q.rpc('open_server_gate_token', [server.id])))).toBe('P0002');
-
-    // sign out forgets the bytes; open then refuses.
+    // POSITIVE: sign-out still answers, and the row reads signed out.
     await as(f.identityH, (q) => q.rpc('sign_out_server', [server.id, cmid()]));
-    const [row] = await database.query<{ ciphertext: Buffer | null; nonce: Buffer | null; status: string }>(
-      `select ciphertext, nonce, status from public.server_gate_tokens where server_id = $1 and member_id = $2`,
-      [server.id, f.memberHA]);
-    expect(row).toEqual({ ciphertext: null, nonce: null, status: 'signed_out' });
-    expect(await outcome(() => as(f.identityH, (q) => q.rpc('open_server_gate_token', [server.id])))).toBe('23514');
+    const got = await as(f.identityH, (q) => q.rpc<{ mine: { status: string } | null }>('get_server', [server.id]));
+    expect(got.mine?.status ?? 'signed_out').toBe('signed_out');
   });
 
   it('no server response carries a sealed field', async () => {
@@ -454,9 +435,9 @@ describe('W8 (c)1 — the §8b exemption is definer-owned: a forged tm8.server_l
     Number((await database.query<{ n: string }>('select count(*) as n from public.server_gate_tokens where server_id = $1', [id]))[0]!.n);
   const ledgerRows = async (clientMutationId: string): Promise<number> =>
     Number((await database.query<{ n: string }>('select count(*) as n from public.command_ledger where client_mutation_id = $1', [clientMutationId]))[0]!.n);
+  // W9c: nothing stores a gate session any more; the seal context still makes the member's row.
   const storeGate = (identityId: string, serverId: string): Promise<unknown> =>
-    as(identityId, (q) => q.rpc('store_server_gate_token', [
-      serverId, new Date(Date.now() + 3_600_000).toISOString(), randomBytes(48), randomBytes(12), cmid()]));
+    as(identityId, (q) => q.rpc('server_gate_seal_context', [serverId]));
 
   it('tm8_app has no grant on the marker table and no UPDATE on public.entities; an ordinary caller cannot write the marker', async () => {
     const [privileges] = await database.query<Record<string, boolean>>(`select
@@ -511,7 +492,7 @@ describe('W8 (c)1 — the §8b exemption is definer-owned: a forged tm8.server_l
   });
 
   it('a link still targets the server: the forged-setting delete is refused, gate rows stay, no ledger row; POSITIVE: once the link goes, a space admin removes it, gate rows gone, ledger row written', async () => {
-    // H2 (plain member of A) creates it and signs in; H owns A.
+    // H2 (plain member of A) creates it and holds a gate row; H owns A.
     const id = (await add(f.identityH2, f.spaceA, 'forged-linked')).id;
     await storeGate(f.identityH2, id);
     const pointLink = (target: string | null) => database.query(`set session_replication_role = replica;

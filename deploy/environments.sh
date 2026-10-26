@@ -118,22 +118,41 @@ tm8_env_load() {
   # always talk to an older one and pg_dump refuses only the reverse.
   TM8_ENV_PG_MAJOR="${TM8_PG_MAJOR:-16}"
 
-  # --- derived: connection URLs --------------------------------------------
-  # The superuser URL owns the schema and runs migrations. The app URL is what
-  # the server authenticates as for graph reads/writes. The delivery URL must
-  # AUTHENTICATE as tm8_delivery_worker — not merely be able to SET ROLE to it
-  # (packages/server/src/facade/services/w2/execution.ts asserts this), which is
-  # why loopback trust is a real install step and not a nicety.
   TM8_ENV_SUPERUSER="${TM8_PG_SUPERUSER:-tm8}"
-  TM8_ENV_SUPERUSER_URL="postgres://${TM8_ENV_SUPERUSER}@127.0.0.1:${TM8_ENV_PG_PORT}/${TM8_ENV_DATABASE}"
-  TM8_ENV_MAINTENANCE_URL="postgres://${TM8_ENV_SUPERUSER}@127.0.0.1:${TM8_ENV_PG_PORT}/postgres"
-  TM8_ENV_DATABASE_URL="$TM8_ENV_SUPERUSER_URL"
-  TM8_ENV_DELIVERY_URL="postgres://tm8_delivery_worker@127.0.0.1:${TM8_ENV_PG_PORT}/${TM8_ENV_DATABASE}"
+  _tm8_env_derive_urls
 
   export TM8_ENV_NAME TM8_ENV_SERVER_PORT TM8_ENV_PROXY_PORT TM8_ENV_VITE_PORT \
          TM8_ENV_PG_PORT TM8_ENV_PG_CLUSTER TM8_ENV_DATABASE TM8_ENV_UNITS \
          TM8_ENV_BUILD_UI TM8_ENV_LOG_LEVEL TM8_ENV_SERVER_ENV TM8_ENV_PG_MAJOR \
          TM8_ENV_SUPERUSER TM8_ENV_SUPERUSER_URL TM8_ENV_MAINTENANCE_URL \
+         TM8_ENV_DATABASE_URL TM8_ENV_DELIVERY_URL
+}
+
+# --- derived: connection URLs ----------------------------------------------
+# The superuser URL owns the schema and runs migrations. The app URL is what
+# the server authenticates as for graph reads/writes. The delivery URL must
+# AUTHENTICATE as tm8_delivery_worker — not merely be able to SET ROLE to it
+# (packages/server/src/facade/services/w2/execution.ts asserts this), which is
+# why loopback trust is a real install step and not a nicety.
+_tm8_env_derive_urls() {
+  TM8_ENV_SUPERUSER_URL="postgres://${TM8_ENV_SUPERUSER}@127.0.0.1:${TM8_ENV_PG_PORT}/${TM8_ENV_DATABASE}"
+  TM8_ENV_MAINTENANCE_URL="postgres://${TM8_ENV_SUPERUSER}@127.0.0.1:${TM8_ENV_PG_PORT}/postgres"
+  TM8_ENV_DATABASE_URL="$TM8_ENV_SUPERUSER_URL"
+  TM8_ENV_DELIVERY_URL="postgres://tm8_delivery_worker@127.0.0.1:${TM8_ENV_PG_PORT}/${TM8_ENV_DATABASE}"
+}
+
+# Move a loaded slot onto other ports — the server's, the cluster's, or both —
+# and re-derive every URL from them. The table above is what a slot IS on the
+# box it was written for; on another machine those ports may already be taken
+# (a laptop running the live node's cluster on 5442 is the case that made this
+# necessary), and an installer with no way off them adopts whatever answers.
+# Usage: tm8_env_override_ports <server-port|""> <pg-port|"">
+tm8_env_override_ports() {
+  local server="${1:-}" pg="${2:-}"
+  [[ -n "$server" ]] && TM8_ENV_SERVER_PORT="$server"
+  [[ -n "$pg" ]] && TM8_ENV_PG_PORT="$pg"
+  _tm8_env_derive_urls
+  export TM8_ENV_SERVER_PORT TM8_ENV_PG_PORT TM8_ENV_SUPERUSER_URL TM8_ENV_MAINTENANCE_URL \
          TM8_ENV_DATABASE_URL TM8_ENV_DELIVERY_URL
 }
 

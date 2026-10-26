@@ -106,27 +106,27 @@ describe('chatMarkdownSource', () => {
 describe('the feed renders a message body as markdown', () => {
   it('bold, a heading and a list are DRAWN, not printed as their source', () => {
     const { container } = renderBody(msg('## Status\n\n**done** and:\n\n- one\n- two'));
-    expect(container.querySelector('.chs-text h2')?.textContent).toBe('Status');
-    expect(container.querySelector('.chs-text strong')?.textContent).toBe('done');
-    expect(container.querySelectorAll('.chs-text li')).toHaveLength(2);
+    expect(container.querySelector('.tch-user-body h2')?.textContent).toBe('Status');
+    expect(container.querySelector('.tch-user-body strong')?.textContent).toBe('done');
+    expect(container.querySelectorAll('.tch-user-body li')).toHaveLength(2);
     expect(container.textContent).not.toContain('**done**');
   });
 
   it('a fenced block renders as a real code box with its language named', () => {
     const { container } = renderBody(msg('```sql\nselect 1;\n```'));
-    const fence = container.querySelector('.chs-text .md-fence');
+    const fence = container.querySelector('.tch-user-body .md-fence');
     expect(fence?.getAttribute('data-lang')).toBe('sql');
     expect(fence?.querySelector('code')?.textContent).toBe('select 1;');
   });
 
   it('a GFM table becomes a table', () => {
     const { container } = renderBody(msg('| a | b |\n| --- | --- |\n| 1 | 2 |'));
-    expect(container.querySelectorAll('.chs-text .md-table th')).toHaveLength(2);
+    expect(container.querySelectorAll('.tch-user-body .md-table th')).toHaveLength(2);
   });
 
   it('RAW HTML IS NOT RENDERED — a message body is untrusted text other members read', () => {
     const { container } = renderBody(msg('hi <img src=x onerror="alert(1)"> there'));
-    expect(container.querySelector('.chs-text img')).toBeNull();
+    expect(container.querySelector('.tch-user-body img')).toBeNull();
     expect(container.textContent).toContain('onerror');
   });
 
@@ -154,7 +154,7 @@ describe('the feed renders a message body as markdown', () => {
    */
   it('a mention INSIDE emphasis keeps both — the body is never cut at its offsets', () => {
     const { container } = renderBody(msg('**bold @Haiku 4.5 more**', [HAIKU]), vi.fn());
-    const strong = container.querySelector('.chs-text strong');
+    const strong = container.querySelector('.tch-user-body strong');
     expect(strong?.querySelector('.chs-mention-inline')?.textContent).toBe('@Haiku 4.5');
     expect(strong?.textContent).toBe('bold @Haiku 4.5 more');
     expect(container.textContent).not.toContain('**');
@@ -162,7 +162,7 @@ describe('the feed renders a message body as markdown', () => {
 
   it('a hand-written link that only LOOKS like a mention stays an ordinary link', () => {
     const { container } = renderBody(msg('[x](#tm8-mention-ent-nobody)', []));
-    const link = container.querySelector('.chs-text a');
+    const link = container.querySelector('.tch-user-body a');
     expect(link?.className).toBe('md-link');
     expect(container.querySelector('.chs-mention-inline')).toBeNull();
   });

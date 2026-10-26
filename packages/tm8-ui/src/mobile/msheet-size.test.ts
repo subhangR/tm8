@@ -151,3 +151,23 @@ describe('regression guards over the whole sheet block', () => {
     expect(css).not.toMatch(/\[style\*=[^\]]*keyboard/);
   });
 });
+
+describe('the session page forms banner', () => {
+  it('keeps its height under the surface row instead of taking the transcript\'s shrink', () => {
+    /* F4: shrinkable beside a transcript whose basis is its whole scrollback,
+       the banner showed 55px of 138. Its 70% cap (pending-forms.css) scrolls. */
+    expect(block(".pn-work-session-content > .pf-banner {")).toMatch(/flex-shrink:\s*0/);
+  });
+
+  it('gives a form row\'s title its own line: the meta goes under it and ellipsizes', () => {
+    /* fix-formrow: at 360 the nowrap meta took the row and the title showed 'P'. */
+    const row = block(".pf-banner__row {");
+    expect(row).toMatch(/display:\s*grid/);
+    expect(row).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto/);
+    const meta = block(".pf-banner__row > .pf-banner__meta {");
+    expect(meta).toMatch(/grid-row:\s*2/);
+    expect(meta).toMatch(/min-width:\s*0/);
+    expect(meta).toMatch(/text-overflow:\s*ellipsis/);
+    expect(block(".pf-banner__row > .pn-btn {")).toMatch(/grid-row:\s*1 \/ span 2/);
+  });
+});

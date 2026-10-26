@@ -211,6 +211,7 @@ const ADMIN_SPACE_OPERATIONS = new Set<OperationName>([
   'spaces.taskAxes.delete',
   'projects.link',
   'spaces.projects.create',
+  'spaces.projects.clone',
   'projects.unlink',
   'entityKinds.create',
   'entityKinds.update',
@@ -225,7 +226,10 @@ const ADMIN_SPACE_OPERATIONS = new Set<OperationName>([
 // refuses the kind outright (it is in RESTRICTED_LIFECYCLE_KINDS), so listing
 // it here would advertise an action the only door for it refuses. A container
 // is renamed through `containers.update`.
-const EDITABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill']);
+// `story` is editable: title, description and — its only status door (288) —
+// `content.status`, so a story's action list must offer `entities.patch`.
+// `craft` (304) is editable: title and description.
+const EDITABLE_KINDS = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'story', 'craft']);
 // READING structure vs CHANGING it — one set could not answer both once
 // `container` arrived, and conflating them is how an action list comes to
 // advertise a verb the door refuses.
@@ -261,6 +265,18 @@ function operationParams(operation: OperationName): string[] {
 function structurallyAvailable(operation: OperationName, row: ActionContextRow): boolean {
   const live = row.deleted_at === null;
   switch (operation) {
+    case 'tools.get':
+    case 'tools.help':
+    case 'tools.update':
+    case 'tools.config.set':
+    case 'tools.config.unset':
+    case 'tools.secrets.bind':
+    case 'tools.secrets.unbind':
+    case 'tools.run':
+    case 'tools.runs.list':
+      return live && row.kind === 'tool';
+    case 'tools.runs.get':
+      return live && row.kind === 'work_session';
     case 'entities.get':
     case 'entities.activity':
     case 'entities.connections':
@@ -833,7 +849,8 @@ async function discover(
     // never the filtered or ranked view: two views of the same capability
     // state must carry the same epoch, and a client comparing epochs must not
     // see a change that is only a change of presentation.
-    const authorized = registry.implemented().filter((operation) => isAvailable(operation, row));
+    const authorized = registry.implemented().filter((operation) =>
+      isAvailable(operation, row) && (ctx.identity.apiScope !== 'read' || getOperation(operation).kind === 'read')); 
     // The same allow-list as 083's `require_human_auth_kind()`: a `link`
     // session is NOT human. Joined with each binding's `humanOnly` into the
     // row's `refused`, once, here.

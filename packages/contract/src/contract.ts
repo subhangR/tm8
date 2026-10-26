@@ -18,13 +18,18 @@
  */
 
 import type { EffectiveSkills, SkillReference } from './skill-reference.js';
+import type { McpSelection, McpServerEntity } from './mcp.js';
+import type { ToolEntity, ToolRun } from './tools.js';
 import type { OperationName } from './catalog.js';
 import type { FormQuestionRow, FormSectionRow, FormSettings, FormStatus } from './forms.js';
-import type { OpRequestStatus } from './op-requests.js';
 import type { RelevanceLevel } from './launch-suggest.js';
 import type { CoherenceFinding } from './orchestration.js';
 import type { EntityHeaderView, HeaderTextInput } from './selection-header.js';
 import type { EntityContextStory, StoryContent, StoryState } from './story.js';
+import type { CraftContent, CraftState, EntityContextCraftPage } from './craft.js';
+import type { LaunchModelEffort } from './launch-models.js';
+import type { WorkspacePrompt, WorkspaceSummary, WorkspaceSummaryCauseKind, WorkspaceWindowCap } from './workspace-bridge.js';
+import type { TaskProgress } from './progress.js';
 import type { ResolvedStyle, StyleClamp, StyleDoc, StyleWarning } from './style.js';
 
 // ===========================================================================
@@ -86,10 +91,6 @@ export type CoreEntityKind =
   | 'space_link'
   // A remote tm8 server a space link points at (W8). Registered with W6's kinds.
   | 'server'
-  // Op requests (280, L5): an agent's typed request for a human-only op. A
-  // human approves (the server runs the op as the approver) or denies it.
-  // Born only from `opRequests.create`.
-  | 'op_request'
   // Stories (migration 283, 2026-10-02): a title, a description and a status;
   // things put in by hand as `contains` edges are its roots, and everything
   // connected to them follows. Progress and the page are computed at read
@@ -99,7 +100,10 @@ export type CoreEntityKind =
   // READ-ONLY theme in a space. Born and re-versioned only by `styles.push`;
   // `entities.create`/`entities.patch` refuse it. Personal styles are NOT
   // entities (they live in `personal_styles`, owner-only).
-  | 'style';
+  | 'style' | 'mcp_server' | 'tool'
+  // Crafts (migration 304 as `design`, renamed by 322 on 2026-10-10): an ordered set of
+  // PAGES, each any entity, held as ordered `contains` edges. See ./craft.ts.
+  | 'craft';
 
 /** A credential entity's visibility (W10a): who may launch on it. */
 export type CredentialVisibility = 'private' | 'public';
@@ -186,6 +190,15 @@ export interface EntityCounters {
    */
   docs?: number;
   memories?: number;
+  /**
+   * Tracked pull requests / attached artifacts / attached drawings (329),
+   * under the same additive-optional law as `docs`/`memories`.
+   */
+  prs?: number;
+  artifacts?: number;
+  drawings?: number;
+  /** Work sessions this entity launched (`launched_by`, 331), same law. */
+  sessions?: number;
   /** Server-computed from the caller's reaction edge — always present (DEV-10). */
   viewerReaction: 'like' | 'dislike' | 'star' | null;
 }
@@ -246,6 +259,14 @@ export interface EntitySummary {
    */
   capabilities?: EntityCapabilities;
   /**
+   * Live direct-child count (`parent_id`, not deleted) — the TRUE number a
+   * list tile's child subscript draws, where the rows on screen may be one
+   * page and one status tab of them (task 01a14b92). Optional for the same
+   * rolling-node reason as `capabilities`: absent = never counted, and the
+   * tile falls back to the children it has loaded.
+   */
+  childCount?: number;
+  /**
    * Which of the four lifecycle buckets this entity currently sits in —
    * denormalized from its status onto the envelope, because this is the
    * predicate every tab, filter and rollup reads.
@@ -281,12 +302,16 @@ export interface TaskAssignment {
 }
 
 export type CoreEntityState =
+  | McpServerEntity
+  | ToolEntity
   | { kind: 'task'; status: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; startDate?: string | null;
       assignees: ActorSummary[];
       /** Additive: absent on payloads produced before assignment provenance shipped. */
       assignments?: TaskAssignment[];
       acceptance: { total: number; completed: number };
+      /** 307: points-weighted subtree progress; additive, absent on older payloads. */
+      progress?: TaskProgress;
       /**
        * 082's opt-in completion gate, ADDITIVE and OPTIONAL. 'pr_merged'
        * means `complete` will REFUSE while a tracked PR is unmerged or
@@ -336,6 +361,12 @@ export type CoreEntityState =
   // said it was still computing the merge. Absence is not a verdict.
   | { kind: 'pull_request'; repository: string; number: number; state: string;
       url?: string; fetchedAt?: string | null; stale: boolean;
+      /**
+       * 306 (P0e): when tracking last ASKED the provider about this PR, whatever
+       * it answered. `fetchedAt` is when facts last changed. `stale` is true
+       * when it was never polled, or is open and unpolled for over an hour.
+       */
+      lastPolledAt?: string | null;
       ciStatus?: 'passing' | 'failing' | 'pending' | null;
       mergeState?: 'clean' | 'conflicted' | 'unknown' | null;
       /**
@@ -345,7 +376,7 @@ export type CoreEntityState =
        * NOTHING for it. Carried on the summary because it is the mechanical
        * association key — a PR whose `headRef` equals a session's
        * `checkoutBranch` is that session's PR without anyone remembering to
-       * link it (107), at LOWER confidence than created_in/in_worktree.
+       * link it (107), at LOWER confidence than authored_from/in_worktree.
        */
       headRef?: string | null }
   | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
@@ -392,7 +423,7 @@ export type CoreEntityState =
        * behaviour — so a frozen server degrades to showing everything rather
        * than to showing nothing.
        *
-       * WRITE EVERY CLIENT FILTER AS `sessionKind !== 'credential'`, NEVER AS
+       * Session lists hide credential and tool runs with a deny-list, NEVER AS
        * `=== 'agent'`. SQL surfaces test the positive (`session_kind =
        * 'agent'`, credential-catalog.ts:506) because the database column is
        * NOT NULL; TypeScript surfaces must test the INVERSE, because here the
@@ -412,6 +443,8 @@ export type CoreEntityState =
        * value, re-derive BOTH sides yourself; do not read either as covered.
        */
       sessionKind?: WorkSessionKind;
+      /** The pinned tool run; PTY status is independent of its outcome. */
+      toolRun?: ToolRun;
       /**
        * THE SESSION'S LANE FACTS (107) — "what am I working on, git-wise",
        * answerable from every list/tile read without a second fetch and
@@ -467,6 +500,40 @@ export type CoreEntityState =
        */
       endedKind?: WorkSessionEndedKind | null;
       endedReason?: string | null;
+      /**
+       * IS THE WORK FINISHED (Spec D1 §3, migration 299) — a second field,
+       * deliberately separate from `status`, which only says whether the
+       * PROCESS is alive. `open` until `session complete` (with a receipt) or an
+       * operator's Stop settles it; no process event — exit, crash, restart,
+       * reaper, terminate — ever writes it. `completed` is a STATUS MARKER,
+       * not a gate (owner ruling, 6 Oct): the session may keep messaging and
+       * working, and resume or claiming a new task reopens it (logged,
+       * `outcomeSource` names who reopened it). `stopped` reopens through resume.
+       *
+       * Additive: absent = a node that predates 299 (treat as `open`).
+       */
+      outcome?: WorkSessionOutcome;
+      outcomeAt?: string | null;
+      /** The actor (member or teammate) who completed or stopped it. */
+      outcomeBy?: string | null;
+      /** The close-out message `session complete` recorded. Only on `completed`. */
+      receiptMessageId?: string | null;
+      outcomeSource?: WorkSessionOutcomeSource | null;
+      /** The operator's note when stopping ("Not needed any more"). */
+      outcomeNote?: string | null;
+      /**
+       * Spec D1 R1 (301): tasks OFFERED to this session — handed to it and not
+       * withdrawn — that it has never claimed. Not claims: no robot, no
+       * `working_on`, until the session runs `task transition --claim`.
+       */
+      offeredTaskIds?: string[];
+      /**
+       * 330: the chat or session that launched this one — its `launched_by`
+       * edge. Lineage is an edge, not `parentId` (a chat is not a session's
+       * parent). Absent = a node that predates the field; null = launched by
+       * a person, with no chat or session behind it.
+       */
+      launchedBy?: string | null;
       /**
        * WHO IS RUNNING THIS SESSION — the persona resolved through the
        * session's most recent `participates_in` edge, the SAME hop
@@ -534,6 +601,8 @@ export type CoreEntityState =
    * last activity. Computed by `internal.story_summary` on BOTH read paths.
    */
   | StoryState
+  /** A craft's page count and page kinds in order (304/322), `internal.craft_summary` on BOTH read paths. */
+  | CraftState
   /** A form's row facts (209): where it is in its lifecycle, and how long. */
   | { kind: 'form'; status: FormStatus; questionCount: number }
   /** A space credential's row facts (W10a). Never the secret, hint or login. */
@@ -547,8 +616,6 @@ export type CoreEntityState =
    */
   | { kind: 'space_link' }
   | { kind: 'server' }
-  /** An op request's row facts (280): which op, and where it is. */
-  | { kind: 'op_request'; op: string; status: OpRequestStatus }
   /**
    * A space style's row facts (284, spec §4.3). The FULL document rides on the
    * state on purpose (sign-off decision): `entity.upsert` after a push is how
@@ -571,6 +638,11 @@ export type CoreEntityState =
    */
   | { kind: 'chat'; teammateId: EntityId; model: string; provider: string; agentTool: string;
       mode: ChatMode; workdirMode: ChatWorkdirMode; projectId: EntityId | null;
+      credentialSelection?: ChatCredentialSelection;
+      credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
+      reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+      configRevision?: number;
+      runtime?: import('./chat-runtime.js').ChatRuntimeState;
       runtimeState: 'cold' | 'live' | 'stopped';
       turnState: 'idle' | 'queued' | 'running';
       turnCount: number; lastTurnAt: string | null;
@@ -627,6 +699,13 @@ export interface EntityBadges {
   blocked?: { unresolvedHardDependencyCount: number; waitingOn: EntitySummary[] };
   pulls?: PullState[];
   workingActors?: LiveWork[];
+  /**
+   * Whether anyone is really on a `working` or `blocked` task (P0g, owner
+   * policy 6 Oct 2026: flag only, never an automatic status change). Derived
+   * from the task's active `working_on` claims on every read. ABSENT for any
+   * other status, and on a node predating the field.
+   */
+  liveSession?: TaskLiveSession;
   /**
    * The pull requests this task `tracks`, projected onto the task's OWN
    * summary. Newest-first by link recency, capped — see
@@ -828,6 +907,27 @@ export interface PullState {
 
 export interface LiveWork { actor: ActorSummary; task: EntitySummary; startedAt: string; note?: string | null }
 
+/**
+ * `badges.liveSession` (P0g). `state`:
+ * - `live`: a session with an open outcome and a live process holds an active claim;
+ * - `session_down`: the only session claims belong to sessions whose process is
+ *   gone (crashed, lost, exited) but whose outcome is still open: "Session crashed";
+ * - `person`: no session, but a person holds a claim and acted on the task in the
+ *   last 7 days;
+ * - `person_idle`: a person holds a claim with no activity from them for 7 days:
+ *   "No activity 7d";
+ * - `no_session`: no active claim at all: "No live session".
+ * `since` is when that state began, when known (the claim start, the session's
+ * process change, the holder's last activity, or the latest claim end).
+ */
+export type TaskLiveSessionState = 'live' | 'session_down' | 'person' | 'person_idle' | 'no_session';
+export interface TaskLiveSession {
+  state: TaskLiveSessionState;
+  since: string | null;
+  /** The session behind `live` / `session_down`, else null. */
+  sessionId: EntityId | null;
+}
+
 export interface EntityDetail extends EntitySummary {
   content: EntityContent;
   hierarchy: Hierarchy;
@@ -913,6 +1013,8 @@ export interface GraphNode {
 export interface GraphEdgeSpec { src?: string; dst?: string; type?: string; note?: string; [extra: string]: unknown }
 
 export type CoreEntityContent =
+  | McpServerEntity
+  | ToolEntity
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
   | { kind: 'channel'; topic: string; pinned: EntitySummary[]; autoTabs: ChannelTab[] }
@@ -985,6 +1087,8 @@ export type CoreEntityContent =
       appState: Record<string, unknown>; files: Record<string, unknown> }
   /** A story's description, plus the computed page on a detail read (283). */
   | StoryContent
+  /** A craft's description, plus its ordered pages on a detail read (304/322). */
+  | CraftContent
   /**
    * A form (209), everything its panel needs in one read: settings with
    * defaults applied, and sections and questions in order. Responses are not
@@ -996,8 +1100,6 @@ export type CoreEntityContent =
   /** Space links (250, W6): content is `spaceLinks.list`'s; see EntityState. */
   | { kind: 'space_link' }
   | { kind: 'server' }
-  /** An op request (280): its state's facts; the rest is `opRequests.get`'s. */
-  | { kind: 'op_request'; op: string; status: OpRequestStatus }
   /** A space style (284): the same facts as its state plus the description. */
   | { kind: 'style'; description: string | null; doc: StyleDoc; resolvedHash: string | null;
       pushedBy: EntityId; pushedAt: string; sourceOwnerIdentityId: string; tags: string[] }
@@ -1187,6 +1289,36 @@ export interface CollectionQuery {
      */
     workedByActorId?: EntityId;
     /**
+     * Additive (327, the chat's created-here strip): the ROOTS made in this
+     * chat or work session — entities whose server-recorded `authored_from`
+     * names it (a session also counts when it is the session's parent, so a
+     * pre-327 spawn is not lost). An entity whose parent was ALSO made there
+     * is not a root and is left to the parent's subtree. Messages and forms
+     * never count: every post in a chat carries `authored_from` too.
+     * Rollup (task 01a14a91): what a session spawned under it (at any depth)
+     * made counts as made here as well.
+     */
+    createdIn?: EntityId;
+    /**
+     * Additive (331, the chat list's launched sessions): work_sessions whose
+     * `launched_by` edge (330) names ANY of these chats or sessions. Bounded
+     * (at most 200 ids) — it is one list page's launchers, never a space.
+     */
+    launchedBy?: EntityId[];
+    /**
+     * Additive (tile children, task 01a14b92): rows whose `parent_id` is ANY
+     * of these — the children an expanded list row draws, whatever their
+     * status, so a status tab filters roots and the children ride along.
+     * Bounded like `launchedBy`: one list page's expanded rows.
+     */
+    parentIn?: EntityId[];
+    /**
+     * Additive (task 01a14b92): these rows by id — the parents a status tab
+     * shows as CONTEXT above the children that matched it, so a subtask whose
+     * parent is done is not orphaned in In progress. Bounded the same way.
+     */
+    idIn?: EntityId[];
+    /**
      * Facade-defined server-preset expansions BEYOND the doc'd filter list
      * (flagged upstream): they make the `getHome` preset queries reproducible
      * on re-execution. Actor scope = the actor's member + owned team_members.
@@ -1207,6 +1339,15 @@ export interface CollectionQuery {
      * zero is worse than a refusal that names the mechanism.
      */
     sessionStatus?: WorkSessionStatus[];
+    /**
+     * 301 (Spec D1 §5.3): work_sessions whose OUTCOME is one of these. Same
+     * kind-narrowing as `sessionStatus` (NULL for every non-session row). The
+     * session tabs are this crossed with `sessionStatus`: Running = any
+     * outcome but stopped with a live-recorded process; Interrupted = open
+     * with an ended process; Completed = completed with an ended process;
+     * Stopped = stopped.
+     */
+    sessionOutcome?: WorkSessionOutcome[];
     /**
      * Additive: entities whose `activityAt` is at or after this instant — a
      * TIME WINDOW, expressed as an absolute ISO timestamp rather than a
@@ -1286,7 +1427,7 @@ export interface CollectionQuery {
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   /** `priority` added 2026-08-16 (Board tab wave) — same additive posture as the rest of the union. */
   groupBy?: 'status'|'assignee'|'priority'|`axis:${string}`;
-  sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'startDate'|'priority';
+  sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'startDate'|'priority'|'progress';
   cursor?: Cursor; limit?: number;
 }
 
@@ -1363,7 +1504,14 @@ export interface MessageThinkingPart extends MessagePartBase {
 
 export interface MessageTextPart extends MessagePartBase {
   kind: 'text';
-  payload: { text: string };
+  payload: {
+    text: string;
+    /** Native item identity and revision support corrected final snapshots. */
+    itemId?: string;
+    revision?: number;
+    operation?: 'append' | 'replace';
+    phase?: 'commentary' | 'final' | 'unknown';
+  };
 }
 
 export interface MessageToolCallPart extends MessagePartBase {
@@ -1441,7 +1589,36 @@ export type ChatWorkdirMode = 'project' | 'scratch';
  * Craft blueprint, the task, the pull request — is a relation (`about`), which
  * a human can see and correct, rather than a hidden binding column.
  */
+/** Model credentials for one chat; secrets never travel in this selection. */
+export interface ChatCredentialSelection {
+  source: 'auto' | LaunchCredentialSource;
+  /** Only for source=space. Absent means the space default. */
+  credentialId?: EntityId;
+}
+export interface SetChatCredentialsInput {
+  credentialSelection: ChatCredentialSelection;
+  expectedConfigRevision?: number;
+  clientMutationId?: string;
+}
+export interface SetChatCredentialsResult extends SetChatCredentialsInput {
+  chatId: EntityId;
+  configRevision?: number;
+  credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
+  appliesAt?: 'next_claim';
+}
+
+/** Stop the chat's running turn. Queued turns behind it still run. */
+export type InterruptChatInput = Record<string, never>;
+export interface InterruptChatResult {
+  chatId: EntityId;
+  /** `requested`: the running turn will end and its done frame says how. `not_running`: nothing to stop. */
+  disposition: 'requested' | 'not_running';
+}
+
 export interface StartChatInput {
+  credentialSelection?: ChatCredentialSelection;
+  reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+  mcpSelections?: McpSelection[];
   spaceId: SpaceId;
   teammateId: EntityId;
   model: string;
@@ -1460,6 +1637,8 @@ export interface StartChatInput {
   attachmentIds?: EntityId[];
   /** The entity this chat is about; written as an `about` edge. */
   aboutId?: EntityId | null;
+  /** The opening turn's Coordinator team (328) — see `PostMessageInput.team`. */
+  team?: ChatTurnTeam;
   clientMutationId: string;
 }
 
@@ -1470,33 +1649,25 @@ export interface StartChatResult {
 }
 
 /**
- * MOVE A RUNNING CHAT ONTO ANOTHER MODEL (276).
- *
- * The model used to be a write-once fact for a chat's whole life, so finishing a
- * conversation on a stronger model meant abandoning the conversation. It does
- * not any more: a Claude Code session carries turns from different models and
- * `--resume` keeps the transcript across the switch, so the chat's model is a
- * setting, and the turn records what actually ran it.
- *
- * STICKY, NOT PER-MESSAGE. This moves the chat; every turn claimed after it runs
- * on the new model until it is moved again. A turn already claimed keeps the
- * model it was stamped with — the claim is the serialization point, so a switch
- * can never rewrite a run that is already under way.
- *
- * `agentTool` is the one axis that cannot move: chat runs claude-code only, and
- * a tool change would invalidate the native session the resume depends on. The
- * server resolves the tool from the launch catalog and the database refuses a
- * mismatch.
+ * Atomically change the desired model, effort and optional credential choice.
+ * Turns claimed after this mutation use its configuration revision; an active
+ * turn retains its immutable snapshot. The catalog selects the harness and
+ * inference provider. Switching harnesses keeps the tm8 conversation through
+ * verified native resume or a bounded portable history seed.
  */
 export interface SetChatModelInput {
   /**
-   * A `LAUNCH_MODEL_CATALOG` id whose `agentTool` matches the chat's.
+   * A model admitted by the launch catalog and the chat adapter registry.
    *
    * The chat is addressed by the PATH (`/v2/chats/:id/model`) and so is absent
    * here, like every other `:id`-addressed command: two places to name the same
    * chat is two places for them to disagree.
    */
   model: string;
+  reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+  credentialSelection?: ChatCredentialSelection;
+  expectedConfigRevision?: number;
+  clientMutationId?: string;
 }
 
 export interface SetChatModelResult {
@@ -1504,6 +1675,12 @@ export interface SetChatModelResult {
   model: string;
   /** Server-resolved from the catalog; decides which API-key backend is used. */
   provider: string;
+  agentTool?: string;
+  reasoningEffort?: import('./launch-models.js').LaunchModelEffort | null;
+  credentialSelection?: ChatCredentialSelection;
+  credentialIntent?: import('./chat-runtime.js').ChatCredentialIntent;
+  configRevision?: number;
+  appliesAt?: 'next_claim';
 }
 
 export interface ChatTurnDeltaFrame {
@@ -1585,6 +1762,7 @@ export interface WorkspaceEventEnvelope {
  * client-synthesized and never carry one.
  */
 export type WorkspaceEvent = WorkspaceEventEnvelope & (
+ | { type: 'entity.seen'; entityId: EntityId; seenAt: string; clientMutationId?: string }
  | { type: 'entity.upsert'|'entity.deleted'; entity: EntitySummary; clientMutationId?: string }
  /**
   * The entity's recency hint moved and NOTHING ELSE did — an edge was written
@@ -1604,6 +1782,25 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'entity.activity_touched'; id: EntityId; kind: EntityKind; activityAt: string;
      clientMutationId?: string }
  | { type: 'edge.upsert'|'edge.deleted'; edge: EdgeView; clientMutationId?: string }
+ /**
+  * Spec D1 §4.6 (299). The two halves of a session's state move separately and
+  * say so separately: the OUTCOME of the work, and the PROCESS. Both come from
+  * triggers on `work_sessions`, so every writer emits them. They do not replace
+  * the session's `entity.upsert` (which still carries the full summary); they
+  * are the signal a consumer listens to for the from -> to.
+  */
+ | { type: 'session.outcome_changed'; sessionId: EntityId; from: WorkSessionOutcome; to: WorkSessionOutcome;
+     outcomeBy: EntityId | null; receiptMessageId: EntityId | null;
+     outcomeSource: WorkSessionOutcomeSource | null; clientMutationId?: string }
+ | { type: 'session.process_changed'; sessionId: EntityId; from: WorkSessionStatus; to: WorkSessionStatus;
+     endedKind: WorkSessionEndedKind | null; endedReason: string | null; clientMutationId?: string }
+ /**
+  * A `working_on` claim ended (Spec D1 §6.3 R4). The edge row is KEPT with
+  * `props.endedAt`/`props.endReason` (its own `edge.upsert` carries that); this
+  * names the ending so the map can play it without diffing props.
+  */
+ | { type: 'edge.ended'; edgeId: string; edgeType: 'working_on'; sourceId: EntityId; targetId: EntityId;
+     endReason: ClaimEndReason; endedAt: string; clientMutationId?: string }
  | { type: 'message.created'|'message.updated'|'message.deleted'; anchorId: EntityId;
      // ENVELOPE provenance, sitting next to `anchorId` (the target): the SENDER
      // work session the message was authored FROM, so a consumer can animate a
@@ -1768,7 +1965,186 @@ export type WorkspaceControlFrame =
    * Ephemeral by construction (DEV-4): this never produces a durable row, never
    * advances the durable cursor, and is not replayable.
    */
-  | { type: 'presence.set'; spaceId: SpaceId; entityId: EntityId; viewing: boolean; typing: boolean };
+  | { type: 'presence.set'; spaceId: SpaceId; entityId: EntityId; viewing: boolean; typing: boolean }
+  /**
+   * Workspace remote bridge (Spec C §1): announce or refresh this window as a
+   * live Workspace instance. Authorized like `subscribe`; the member is derived
+   * from the socket's identity, never sent. Re-sent on change and as a heartbeat.
+   */
+  | {
+      type: 'workspace.register';
+      spaceId: SpaceId;
+      instanceId: string;
+      windowId: string;
+      focused: boolean;
+      visible: boolean;
+      view: string;
+      mounted: boolean;
+      revision: number;
+      lastFocusedAt?: string;
+      /** `multiWorkspace`: this window keeps per-workspace queues (S9/S10). Absent: an old window. */
+      caps?: WorkspaceWindowCap[];
+      /** The workspace the window shows; null = the synthetic "Main". */
+      workspaceId?: string | null;
+    }
+  /** Give up an instance. Unauthorized, like `unsubscribe`. */
+  | { type: 'workspace.unregister'; instanceId: string }
+  /**
+   * The window's answer to a forwarded `workspace.command`. Honoured only on
+   * the connection that owns `instanceId`.
+   */
+  | { type: 'workspace.result'; instanceId: string; requestId: string; result: Record<string, unknown> }
+  /**
+   * Spec D §3: a command this window committed locally, for the node to apply
+   * to the stored workspace. `ids` are the ids its reducer minted, in order, so
+   * the node's reduce produces the identical result. Accepted only from a
+   * registered window on a human (browser / auto-owner) socket.
+   */
+  | {
+      type: 'workspace.apply';
+      spaceId: SpaceId;
+      instanceId: string;
+      requestId: string;
+      env: Record<string, unknown>;
+      ids: string[];
+      /**
+       * The workspace the window committed it in (R9): a string applies there,
+       * null means the synthetic "Main" it saw, absent is an old window (S9:
+       * the active workspace).
+       */
+      workspaceId?: string | null;
+    }
+  /** Spec D §6: the one-time import of this browser's legacy workspace state. */
+  | {
+      type: 'workspace.import';
+      spaceId: SpaceId;
+      instanceId: string;
+      state: Record<string, unknown>;
+      drafts: { draftId: string; kind: string; values: Record<string, unknown> }[];
+      /** Only null: an import only ever creates the first workspace. */
+      workspaceId?: null;
+    }
+  /** Spec D §3: a debounced draft write (per-field, last writer wins). */
+  | {
+      type: 'workspace.draft.patch';
+      spaceId: SpaceId;
+      instanceId: string;
+      draftId: string;
+      kind: string;
+      fields: Record<string, { v?: unknown; base: number }>;
+      /** Must own the draft; absent: the draft's owner. */
+      workspaceId?: string;
+    };
+
+/** Spec D §3, node → the identity's windows only: the stored workspace after a commit. */
+export interface WorkspaceStateFrame {
+  type: 'workspace.state';
+  spaceId: SpaceId;
+  revision: number;
+  /** Null when this identity has no workspace row in the space yet. */
+  state: Record<string, unknown> | null;
+  /** Whose state this is; null = the synthetic "Main". Old windows ignore it. */
+  workspaceId: string | null;
+  /** Whether it is the active workspace. A window without `multiWorkspace` only ever gets the active one. */
+  active: boolean;
+  /**
+   * What caused this commit: the window command it answers (`instanceId`), or
+   * for an HTTP write (an agent or the CLI) who made it (`actor`), so the UI
+   * can name them (API doc §7.3).
+   */
+  cause?: {
+    instanceId?: string;
+    requestId: string;
+    result: Record<string, unknown>;
+    actor?: { actorClass: 'human' | 'agent'; actorName?: string };
+  };
+}
+
+/** Spec D §3, node → the sending window only: a command it sent that did not commit. */
+export interface WorkspaceAppliedFrame {
+  type: 'workspace.applied';
+  spaceId: SpaceId;
+  requestId: string;
+  /** The workspace the command resolved to; absent when it was refused before resolving. */
+  workspaceId?: string | null;
+  result: Record<string, unknown>;
+}
+
+/** Spec D §3, node → the identity's windows: one draft's values after a write. */
+export interface WorkspaceDraftFrame {
+  type: 'workspace.draft';
+  spaceId: SpaceId;
+  /** The workspace that owns the draft. */
+  workspaceId: string | null;
+  draftId: string;
+  kind?: string;
+  revision: number;
+  /** `{name: {v, r}}` — each field's value and revision. Absent when deleted. */
+  fields?: Record<string, { v: unknown; r: number }>;
+  deleted?: boolean;
+  /** The window whose write this was (it already shows the values). */
+  sourceInstanceId?: string;
+}
+
+/**
+ * Multiple workspaces (API doc 01a115c4 §7.3), node → the identity's CAPABLE
+ * windows only: the active workspace changed. The new active state and its
+ * drafts follow, then a `workspace.summary`.
+ */
+export interface WorkspaceSwitchedFrame {
+  type: 'workspace.switched';
+  spaceId: SpaceId;
+  workspaceId: string;
+  previousWorkspaceId: string | null;
+  listRevision: number;
+  at: string;
+}
+
+/** §7.3, capable windows only: the workspace list after any change to it. Drop one older than the last seen `listRevision`. */
+export interface WorkspaceSummaryFrame {
+  type: 'workspace.summary';
+  spaceId: SpaceId;
+  listRevision: number;
+  activeWorkspaceId: string | null;
+  items: WorkspaceSummary[];
+  cause?: { kind: WorkspaceSummaryCauseKind; workspaceId: string; actorClass: 'human' | 'agent'; actorName?: string };
+}
+
+/** §7.3, capable windows only: an agent's Switch/Stay or Delete/Keep prompt, on open and on every state change (D8). */
+export interface WorkspacePromptFrame {
+  type: 'workspace.prompt';
+  spaceId: SpaceId;
+  prompt: WorkspacePrompt;
+}
+
+/** §7.3, the sending capable window only: its `workspace.draft.patch` was not written. */
+export interface WorkspaceDraftRejectedFrame {
+  type: 'workspace.draft.rejected';
+  spaceId: SpaceId;
+  workspaceId: string | null;
+  draftId: string;
+  reason: 'workspace_not_found' | 'not_found' | 'limit_exceeded' | 'payload_too_large';
+}
+
+/**
+ * Server → ONE client: run a Workspace command in that window (Spec C §1).
+ * Sent to the connection that owns `instanceId`, never fanned out. The window
+ * dispatches it with `source: 'remote'` and answers with `workspace.result`.
+ */
+export interface WorkspaceBridgeCommandFrame {
+  type: 'workspace.command';
+  requestId: string;
+  instanceId: string;
+  command: string;
+  args?: unknown;
+  expectedRevision?: number;
+  /** The resolved target workspace (API doc §7.3). */
+  workspaceId?: string | null;
+  /** Who is behind the call: an agent session, or the human's own CLI. */
+  actorClass: 'human' | 'agent';
+  /** The calling actor's display name, for the window's "<name> opened …" notice. */
+  actorName?: string;
+}
 
 /**
  * The ONLY server→client message on this socket that is not a `WorkspaceEvent`.
@@ -2753,7 +3129,7 @@ export type SpaceCredentialProviderName = 'anthropic' | 'openai' | 'github';
  * Jev's key), and never handed to a session — the spawn reader refuses them
  * in SQL and in TS, and `session_space_credentials` cannot hold one.
  */
-export type ServerOnlyCredentialProviderName = 'typesafe';
+export type ServerOnlyCredentialProviderName = 'typesafe' | 'mcp' | 'tool';
 
 /** Every provider a space credential row can carry: launchable or server-only. */
 export type SpaceCredentialStoredProviderName = SpaceCredentialProviderName | ServerOnlyCredentialProviderName;
@@ -2798,6 +3174,12 @@ export interface SpaceCredentialView {
   visibility?: SpaceCredentialVisibilityName;
   /** An owned public credential's consent to be the space default. */
   mayBeSpaceDefault?: boolean;
+  /**
+   * 992 (task 01a10201): the caller is a grantee of this PRIVATE credential —
+   * they may launch on it; its login and key hint stay masked. Optional for
+   * the same reason as the three above.
+   */
+  sharedWithMe?: boolean;
 }
 
 /** Who may launch on a space credential (doc 13 §3a). */
@@ -2846,6 +3228,54 @@ export interface CredentialsSpaceSetVisibilityResult {
   credential: SpaceCredentialView;
   terminatedAgentSessionIds: string[];
   failures: Array<{ sessionId: string; reason: string }>;
+}
+
+/**
+ * `credentials.space.share` (992) — the OWNER shares their PRIVATE credential
+ * with one active member of its space, who may then launch on it (pinned or as
+ * their own default). The secret, key hint and vendor login stay masked for
+ * the grantee. A public or space-owned credential needs no share.
+ */
+export interface CredentialsSpaceShareInput {
+  /** The grantee's account id, or their member entity id in the credential's space. */
+  granteeAccountId: string;
+  clientMutationId?: string;
+}
+
+/** One grantee of a private space credential. */
+export interface SpaceCredentialShareView {
+  granteeAccountId: string;
+  grantedByAccountId: string;
+  createdAt: string;
+  /** The grantee's member entity in the credential's space; null once they left. Absent on an older server. */
+  granteeMemberId?: string | null;
+  granteeDisplayName?: string | null;
+}
+
+export interface CredentialsSpaceShareResult extends SpaceCredentialShareView {
+  credentialId: string;
+  spaceId: string;
+  /** False when it was already shared with this member (idempotent). */
+  shared: boolean;
+}
+
+/**
+ * `credentials.space.unshare` — the owner or a space admin. Clears the
+ * grantee's own default on it and kills the grantee's live sessions on it.
+ */
+export interface CredentialsSpaceUnshareResult {
+  credentialId: string;
+  granteeAccountId: string;
+  /** False when there was no share to withdraw. */
+  unshared: boolean;
+  terminatedAgentSessionIds: string[];
+  failures: Array<{ sessionId: string; reason: string }>;
+}
+
+/** `credentials.space.shares` — every grantee to the owner or an admin; a member sees only their own row. */
+export interface CredentialsSpaceSharesView {
+  credentialId: string;
+  shares: SpaceCredentialShareView[];
 }
 
 /**
@@ -3237,9 +3667,6 @@ export type CreatableEntityKind = Exclude<
   // caller belongs to both spaces; `server` has no door in W6.
   | 'space_link'
   | 'server'
-  // `op_request` is born ONLY from `opRequests.create` (280), which validates
-  // the op against the allow-list and raises the approve item.
-  | 'op_request'
   // `style` is born ONLY from `styles.push` (284): a space style is read-only
   // and every version is a deliberate publish from a personal style.
   | 'style'
@@ -3258,7 +3685,7 @@ export interface CreateEntityInput extends CommandContext {
   /**
    * An authored selection header, written in the same transaction as the
    * entity (`entities.header.set` semantics). Only kinds that can carry one
-   * (team_member, doc, artifact, drawing, file, task, collection) accept it.
+   * (team_member, doc, artifact, drawing, file, task, collection, story) accept it.
    */
   header?: HeaderTextInput;
 }
@@ -3460,6 +3887,28 @@ export interface PostMessageInput extends CommandContext {
    * enqueued chat turn runs under it (else the thread's default mode applies).
    */
   mode?: ChatMode;
+  /**
+   * Optional per-turn Coordinator team chosen at send time. Only meaningful
+   * when the post targets a chat thread: the Server stores it beside the turn
+   * and writes it into the agent's prompt as a `[team: …]` line, so it never
+   * appears in the message body or the transcript. Omitted ⇒ no team line.
+   */
+  team?: ChatTurnTeam;
+}
+
+/** One owner a Coordinator may hand work to: a teammate, or a model-only worker. */
+export interface ChatTurnTeamMember {
+  /** Display name — the teammate's name, or `Worker` for a model-only worker. */
+  name: string;
+  /** Present for a picked teammate. */
+  teammateId?: EntityId;
+  /** Model label as the composer shows it, e.g. `Claude Opus 5.5 (1M)`. */
+  model?: string;
+  effort?: LaunchModelEffort;
+}
+
+export interface ChatTurnTeam {
+  members: ChatTurnTeamMember[];
 }
 
 /** Accepted only at the versioned input migration boundary. */
@@ -3483,6 +3932,12 @@ export interface MessageDeliveryDisposition {
   reason?: string;
   /** Present on `accepted`, to follow the row to its settlement. */
   deliveryId?: string;
+  /**
+   * D2 (301/302): one plain sentence for the sender when there is something to
+   * say beyond the slug — e.g. `recipient_session_closed`: "session <id> is
+   * closed (completed, process exited); not delivered live".
+   */
+  detail?: string;
 }
 
 export interface MessageBatchResult {
@@ -3496,6 +3951,11 @@ export interface MessageBatchResult {
    * the batch owed nobody a live copy — not that delivery failed.
    */
   delivery?: MessageDeliveryDisposition[];
+  /**
+   * Advisories on a stored batch, e.g. `task_still_working` (P0g): the sending
+   * session holds an anchored task that is still `working`. Absent when none.
+   */
+  warnings?: ResultWarning[];
 }
 
 export interface PatchMessageInput extends CommandContext {
@@ -3527,7 +3987,14 @@ export interface CompleteTaskInput extends CommandContext {
 }
 
 export interface PullInput extends CommandContext { localId?: string | null; pinnedVersion: number }
-export interface WorkInput extends CommandContext { status: WorkStatus; startedAt?: string; note?: string | null }
+/**
+ * A status transition writes the status and nothing else. `claim: true` also
+ * records the caller as `working_on` the task (with `startedAt`/`note` on that
+ * edge); without it no edge is created — an auditor moving a task to
+ * `in_review` is not its worker (#32). An edge the caller already holds
+ * follows the transition either way.
+ */
+export interface WorkInput extends CommandContext { status: WorkStatus; startedAt?: string; note?: string | null; claim?: boolean }
 
 export interface TrackingRefreshInput extends CommandContext { entityIds?: EntityId[] }
 
@@ -3705,6 +4172,12 @@ export interface UpdateSpaceInput extends CommandContext {
    */
   sessionShareDefault?: 'none' | 'space';
   sessionDriveDefault?: WorkSessionDriveMode;
+  /**
+   * 301 (Spec D1, owner ruling Q3): minutes a COMPLETED session's process may
+   * stay idle before the node closes it (recorded `exited_clean`). 0 = never.
+   * Default 30. Writable through `spaces.update` by a space admin.
+   */
+  sessionAutoCloseMinutes?: number;
 }
 
 /**
@@ -4240,6 +4713,12 @@ export interface SpaceSummary {
    */
   sessionShareDefault?: 'none' | 'space';
   sessionDriveDefault?: WorkSessionDriveMode;
+  /**
+   * 301 (Spec D1, owner ruling Q3): minutes a COMPLETED session's process may
+   * stay idle before the node closes it (recorded `exited_clean`). 0 = never.
+   * Default 30. Writable through `spaces.update` by a space admin.
+   */
+  sessionAutoCloseMinutes?: number;
 }
 
 /** GET /v2/spaces/:spaceId/navigation */
@@ -4251,19 +4730,13 @@ export interface SpaceNavigation {
 }
 export interface NavChannelNode { entity: EntitySummary; childCount: number; children: NavChannelNode[] }
 
+export interface EntitySeenResult { entityId: EntityId; seenAt: string }
+
 /**
- * One kind's pair of rail counters.
- *
- * `total` is every live entity of the kind the caller may read; `unseen` is the
- * subset they have never opened, or have not opened since it last changed.
- * They are separate numbers rather than one filtered number because the rail
- * draws them in different slots — a plain trailing total and a distinct unseen
- * mark — and collapsing them would lose the distinction it renders.
- *
- * `unseen` is derived from the caller's own read marks, so it is the one
- * genuinely PER-VIEWER field here, in the same sense as
- * `EntityCounters.viewerReaction` (DEV-10). It is deliberately NOT sourced from
- * `attention`, which is space-wide and therefore cannot express "new to me".
+ * Per-viewer rail counts. `total` counts all readable, non-archived entities.
+ * `unseen` counts entities created since this member's rollout/join baseline
+ * that they have never activated in an entity list. Seen is permanent; message
+ * read cursors, edits, and ordinary detail navigation do not affect it.
  */
 export interface KindCounts { total: number; unseen: number }
 
@@ -4571,7 +5044,7 @@ export type WorkSessionDriveMode = 'owner' | 'space';
 
 /**
  * What a work_session IS, mirroring 083's `work_sessions.session_kind` as
- * widened by 101.
+ * widened by 101, 177 and 318.
  *
  * `agent` is ordinary work. `credential` is a private login terminal minted by
  * `credentials.loginSessions.start` so a member can authenticate an agent tool
@@ -4587,7 +5060,8 @@ export type WorkSessionDriveMode = 'owner' | 'space';
  * to find it in the session list, so the deny-list filters that hide
  * `credential` must continue to SHOW this.
  */
-export type WorkSessionKind = 'agent' | 'credential' | 'shell';
+// Tool runs belong in the tool's history; their PTY may remain live after exit.
+export type WorkSessionKind = 'agent' | 'credential' | 'shell' | 'container_exec' | 'tool';
 
 /**
  * Where a session's working directory lives — `work_sessions.workdir_mode`'s
@@ -4621,7 +5095,9 @@ export type WorkSessionWorkdirMode = 'project' | 'worktree' | 'scratch';
  *                          beats picking the nearest plausible value.
  */
 export type WorkSessionEndedKind =
-  | 'completed'
+  // 299: renamed from `completed`. A clean exit (code 0) says nothing about
+  // the work — whether it finished is `outcome`, not this.
+  | 'exited_clean'
   | 'stopped_by_operator'
   | 'server_restart'
   | 'out_of_memory'
@@ -4635,7 +5111,34 @@ export type WorkSessionEndedKind =
   // only one of the two that means something broke.
   | 'container_stopped'
   | 'runtime_lost'
+  // 299: the ghost reaper found the record live and no process for N minutes.
+  | 'lost'
+  // 299: credential containment. Was recorded as `stopped_by_operator`,
+  // though no operator chose it.
+  | 'credential_revoked'
   | 'unknown';
+
+/**
+ * IS THE WORK FINISHED — `work_sessions.outcome` (299, Spec D1 §3). Separate
+ * from `WorkSessionStatus`, which is the process. Crashes, restarts, lost and
+ * revoked credentials are process facts: the outcome stays `open`.
+ */
+export type WorkSessionOutcome = 'open' | 'completed' | 'stopped';
+/** Who settled the outcome: the session itself, an operator, or the 299 backfill. */
+export type WorkSessionOutcomeSource = 'self' | 'operator' | 'backfill';
+/**
+ * Why a `working_on` claim ended (Spec D1 §6.3 R4). Ended claims keep their
+ * edge row with `props.endedAt` and `props.endReason`; reads of current work
+ * skip them.
+ */
+export type ClaimEndReason =
+  | 'task_done'
+  | 'task_cancelled'
+  | 'released'
+  | 'session_completed'
+  | 'session_stopped'
+  | 'task_reset'
+  | 'backfill';
 
 
 // --- containers (TM8-CONTAINERS-DESIGN §4, migration 177) -------------------
@@ -5226,7 +5729,7 @@ export interface ProjectBranchTopology {
 }
 
 /**
- * The tm8 work session a commit's `created_in` provenance edge names
+ * The tm8 work session a commit's `authored_from` provenance edge names
  * (082's `record_session_commit` mints the edge; this type is the read side).
  *
  * ABSENT FACTS ARE ABSENT CLAIMS: consumers receive `null` when no edge
@@ -5258,7 +5761,7 @@ export interface ProjectFileRevision {
   deletions: number | null;
   /** The path AT that revision — history follows renames. */
   path: string;
-  /** `created_in` join; null = no tm8 session recorded this commit. */
+  /** `authored_from` join; null = no tm8 session recorded this commit. */
   session: CommitSessionAttribution | null;
 }
 
@@ -5298,7 +5801,7 @@ export interface ProjectBlameHunk {
   committedAt: string;
   summary: string;
   uncommitted: boolean;
-  /** `created_in` join; null = no tm8 session recorded this commit. */
+  /** `authored_from` join; null = no tm8 session recorded this commit. */
   session: CommitSessionAttribution | null;
 }
 
@@ -5469,11 +5972,71 @@ export interface SpaceProject {
   updatedAt: string;
 }
 
-/** POST /v2/spaces/:spaceId/projects/create — a space admin names the space's project on a folder granted to it. */
+/**
+ * POST /v2/spaces/:spaceId/projects/create — a space admin names the space's
+ * project. Exactly one of:
+ *   - `folderId`: a folder already granted to the space;
+ *   - `workingDir`: a folder on the node, registered and granted in the same
+ *     step (migration 326). For a space admin who is not a node admin the path
+ *     must lie inside an explicitly configured `TM8_PROJECT_ROOTS`.
+ */
+/**
+ * `spaces.projects.create`. Three shapes: `folderId` names the project on a
+ * folder already granted to the Space; `workingDir` registers that folder (a
+ * leading `~/` is the node's home); NEITHER registers the home default
+ * `~/<projectDirName(name)>`, creating it when missing (`project-home.ts`).
+ */
 export interface SpaceProjectCreateInput extends CommandContext {
-  folderId: ProjectId;
-  /** Defaults to the folder's name. */
+  folderId?: ProjectId;
+  workingDir?: string;
+  /** With `workingDir`: create it when it is one missing child of an allowed directory. */
+  ensureWorkingDir?: boolean;
+  /** Without `folderId`. Only a node admin may register a folder `trusted`. */
+  trust?: ProjectTrustLevel;
+  /** Defaults to the folder's name; required without `folderId`. */
   name?: string;
+}
+
+/** POST /v2/spaces/:spaceId/projects/clone — clone a GitHub repository onto the node as a job. */
+export interface ProjectCloneInput extends CommandContext {
+  /** `https://github.com/owner/repo(.git)`, `github.com/owner/repo` or `owner/repo`. Never with credentials in it. */
+  repoUrl: string;
+  /** An existing directory inside the caller's allowed project roots. */
+  destinationParent: string;
+  /** The one new directory created beneath `destinationParent`; defaults to the repository name. */
+  directoryName?: string;
+  /** The space's project name; defaults to the repository name. */
+  name?: string;
+  /** Check out this branch instead of the remote's default. */
+  branch?: string;
+  /** Only a node admin may register the clone `trusted`. */
+  trust?: ProjectTrustLevel;
+}
+
+export type ProjectCloneJobStatus = 'queued' | 'cloning' | 'registering' | 'succeeded' | 'failed';
+
+/** Whose GitHub credential the clone used: the caller's, the space's, the node's, or none (public). */
+export type ProjectCloneCredentialSource = 'member' | 'space' | 'node' | 'none';
+
+export interface ProjectCloneJob {
+  id: string;
+  spaceId: SpaceId;
+  /** The normalized remote recorded on the project; never carries a credential. */
+  repoUrl: string;
+  directoryName: string;
+  /** Present only for a gate (node) admin, as with every folder path. */
+  workingDir?: string;
+  status: ProjectCloneJobStatus;
+  credentialSource: ProjectCloneCredentialSource | null;
+  /** The branch checked out from the remote's HEAD, once the clone has landed. */
+  defaultBranch: string | null;
+  /** The space's project, once `succeeded`. */
+  project: SpaceProject | null;
+  /** Why it `failed`; credential material is redacted before it is stored. */
+  error: { code: string; message: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
 }
 
 export interface GateFolderGrant {
@@ -5671,6 +6234,7 @@ export interface SpawnSelection {
 export type LaunchHarnessSurface = 'minimal' | 'inherit';
 
 export interface ExecutionSpawnInput extends CommandContext {
+  mcpSelections?: McpSelection[];
   clientMutationId: string;
   spaceId: SpaceId;
   /** The persona to run; authorization resolves through its owner (T-L7). */
@@ -5683,6 +6247,15 @@ export interface ExecutionSpawnInput extends CommandContext {
   parentSessionId?: EntityId;
   /** Tasks the session works on — become `working_on` edges. */
   taskIds?: EntityId[];
+  /** Direct story anchor, exclusive with taskIds, newTask and forceNewTask. Creates no task. */
+  storyId?: EntityId;
+  /**
+   * What the session is ABOUT: written as `session -[about]-> aboutEntityId`
+   * in the spawn transaction, after checking the caller can read it. Only an
+   * edge written at spawn binds the session to it (e.g. a craft's workspace,
+   * Craft doc 01a1255d §4); one added later binds nothing.
+   */
+  aboutEntityId?: EntityId;
   /**
    * When a `taskIds` entry is a non-task entity, mint a NEW derived task for
    * it even when an open one exists — the "start a different piece of work
@@ -6036,6 +6609,53 @@ export interface ExecutionPromptInput extends CommandContext {
  */
 export interface ExecutionTerminateInput extends CommandContext {
   force?: boolean;
+  /**
+   * Spec D1 §4.2. What terminating an OPEN session does to the work: `stop`
+   * (end it without completing: claims released, outcome `stopped`) or
+   * `complete` (run `execution.complete` first, then close). Omitted on an
+   * open session → `stop`. A completed or stopped session needs neither —
+   * terminate then only closes the process.
+   */
+  outcome?: 'stop' | 'complete';
+  /** With `outcome: 'complete'`: the close-out message (else the latest on the anchor). */
+  receiptMessageId?: string;
+  /** With `outcome: 'stop'`: why ("Not needed any more"). */
+  note?: string;
+  /**
+   * Spec D1 §5.6 "Mark lost": record that the process is gone (`failed /
+   * lost`) — the ghost reaper, now, for this one session. A process fact only:
+   * needs no `outcome`, and is refused (`conflict` / `process_live`) while the
+   * node still holds a live process for it.
+   */
+  markLost?: boolean;
+}
+
+/**
+ * execution.complete — POST /v2/entities/:id/commands/complete-session
+ * (Spec D1 §4.1). Settles the outcome as `completed`: the claim check first
+ * (`claims_open`, listing each task still working), then the receipt rule
+ * (`receipt_required` / `receipt_not_on_anchor`), then every remaining claim
+ * ends with `session_completed`. Then a live process closes at once as
+ * `exited_clean` — after the reply when the session completes itself — unless
+ * `closeProcess: false`, or the session still has live sessions it launched
+ * (the auto-close job closes it later). Idempotent on an already-completed
+ * session; refused on a stopped one (`session_stopped`). Completion is a
+ * status marker: a later claim or a resume reopens the session.
+ */
+export interface ExecutionCompleteInput extends CommandContext {
+  receiptMessageId?: string;
+  /** Absent ⇒ close a live agent process; `false` keeps it open; `true` always closes. */
+  closeProcess?: boolean;
+}
+
+/**
+ * entities.commands.release — POST /v2/entities/:id/commands/release
+ * (Spec D1 §6.3 R4). Ends the caller's own claim on a task with a hand-off
+ * note; the task keeps its status. Inside an agent session the claim is the
+ * session's.
+ */
+export interface ReleaseInput extends CommandContext {
+  note: string;
 }
 
 /**
@@ -6419,6 +7039,85 @@ export interface SessionGitDiff {
    * from "a file with 400 added lines".
    */
   untracked: boolean;
+  checkedAt: string;
+}
+
+/**
+ * One file a session's own checkout changed — working tree vs the merge-base
+ * of HEAD and the remote's default branch, so committed and uncommitted work
+ * both count.
+ */
+export interface SessionCheckoutFile {
+  /** Relative to the checkout root. */
+  path: string;
+  /** A added · M modified · D deleted · R renamed (path = destination) · ? untracked. */
+  change: 'A' | 'M' | 'D' | 'R' | '?';
+  /** null when git cannot count lines (binary, or an untracked file too big to count). */
+  additions: number | null;
+  deletions: number | null;
+  /** True when the working tree still differs from HEAD here — not yet committed. */
+  uncommitted: boolean;
+}
+
+/** A git checkout discovered inside a session's working directory. */
+export interface SessionCheckout {
+  /** Its directory relative to the session's working directory ('.' for the dir itself). The identity `execution.gitCheckoutDiff` takes. */
+  name: string;
+  /** True for a project-mode session's SHARED checkout — the changes are not only this session's. */
+  shared: boolean;
+  /** False when git could not read it; every list below is then empty. */
+  readable: boolean;
+  branch: string | null;
+  /** `remote.origin.url` with any embedded credentials removed. */
+  remote: string | null;
+  /** The ref the files are measured against (e.g. `origin/main`); null = uncommitted vs HEAD only. */
+  baseRef: string | null;
+  mergeBaseOid: string | null;
+  headOid: string | null;
+  /** Commits on HEAD that `baseRef` lacks. */
+  ahead: number | null;
+  /** `git status` entries — edits not yet committed. */
+  uncommitted: number;
+  lastCommitAt: string | null;
+  files: SessionCheckoutFile[];
+  filesTruncated: boolean;
+  /** Over ALL changed files, not only the returned ones. */
+  stat: { filesChanged: number; additions: number; deletions: number };
+}
+
+/**
+ * execution.gitCheckouts — GET /v2/work-sessions/:workSessionId/git/checkouts.
+ * For a session WITHOUT a tm8 worktree: every git checkout found in its own
+ * working directory (two levels down at most), read-only. A worktree session
+ * answers `available:false, unavailableReason:'has_worktree'` — its lane is
+ * `execution.gitStatus`'s.
+ */
+export interface SessionCheckouts {
+  sessionId: EntityId;
+  available: boolean;
+  unavailableReason: 'has_worktree' | 'no_workdir' | 'workdir_missing' | 'node_has_no_data_dir' | null;
+  /** Most recently committed first. */
+  checkouts: SessionCheckout[];
+  checkoutsTruncated: boolean;
+  checkedAt: string;
+}
+
+/**
+ * execution.gitCheckoutDiff — GET /v2/work-sessions/:workSessionId/git/checkouts/diff?checkout=&path=.
+ * One file's diff in one discovered checkout. Both names must come from the
+ * listing; anything else is `not_found`.
+ */
+export interface SessionCheckoutDiff {
+  sessionId: EntityId;
+  checkout: string;
+  path: string;
+  change: SessionCheckoutFile['change'];
+  additions: number | null;
+  deletions: number | null;
+  baseRef: string | null;
+  /** Unified diff text, capped at `maxBytes`. */
+  diff: string;
+  diffTruncated: boolean;
   checkedAt: string;
 }
 
@@ -7384,11 +8083,16 @@ export interface EntityFeedPage {
 export type EntityContextSection = 'summary' | 'hierarchy' | 'connections' | 'messages' | 'activity' | 'actions';
 
 /**
- * The v2 section names (c904 §2.10). `summary` is accepted as an alias of
- * `assignment`; `activity` is not a v2 section. v1 keeps `EntityContextSection`.
+ * The v2 section names (c904 §2.10), then every core field a default v2 read
+ * returns (#12, #33). `summary` is accepted as an alias of `assignment`,
+ * `children`/`parent` of `hierarchy`, `acceptanceWrite` of `acceptance` and
+ * `parentMessage` of `anchor`; `activity` is not a v2 section. v1 keeps
+ * `EntityContextSection`.
  */
 export type EntityContextV2Section =
-  | 'assignment' | 'summary' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions';
+  | 'assignment' | 'summary' | 'hierarchy' | 'blockers' | 'connections' | 'messages' | 'actions'
+  | 'acceptance' | 'acceptanceWrite' | 'header' | 'assignees' | 'gate' | 'children' | 'parent'
+  | 'story' | 'tasks' | 'anchor' | 'parentMessage' | 'attachments' | 'pages';
 
 export interface EntityContextQuery {
   /**
@@ -7411,8 +8115,9 @@ export interface EntityContextQuery {
   actionsSchema?: 'v1' | 'v2';
   /**
    * v2 only: continues the ONE paged section in `sections` (hierarchy,
-   * blockers, connections or messages). Context-owned: the token binds entity,
-   * section, edge-type filter and order, and is never an `entities.children`
+   * blockers, connections, messages or story — a story cursor continues one
+   * list of the story card). Context-owned: the token binds entity,
+   * section, edge-type filter (or story list) and order, and is never an `entities.children`
    * or `entities.connections` cursor.
    */
   cursor?: string;
@@ -7630,7 +8335,16 @@ export interface EntityContextV2View {
   exitedAt?: string | null;
   endedKind?: string | null;
   endedReason?: string | null;
+  /** 299 (Spec D1): open | completed | stopped — the work, not the process. */
+  outcome?: string | null;
+  receiptMessageId?: string | null;
   tasks?: EntityContextRef[];
+  /**
+   * 330 (chat and work_session): the sessions this one launched — their
+   * `launched_by` edges — live first. Not `children`: a launched session has
+   * no parent.
+   */
+  launchedSessions?: EntityContextRef[];
   // chat
   runtimeState?: string | null;
   turnState?: string | null;
@@ -7641,6 +8355,8 @@ export interface EntityContextV2View {
   projectId?: string | null;
   // story (283): the page projected small for an agent.
   story?: EntityContextStory;
+  // craft (304/322): its pages in page order (kind, title, id, position).
+  pages?: EntityContextCraftPage[];
   // message
   anchor?: EntityContextRef;
   parentMessage?: EntityContextRef | null;
@@ -8285,7 +9001,7 @@ export interface StylePrefsSetResult {
 
 export interface SpaceStyleDefaultView {
   spaceId: SpaceId;
-  /** `builtin:atelier-light` when no row exists (revision 0). */
+  /** `builtin:chatgpt-light` (`BUILTIN_STYLE_IDS.light`) when no row exists (revision 0). */
   defaultStyle: string;
   setBy: EntityId | null;
   revision: number;

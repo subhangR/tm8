@@ -10,18 +10,22 @@ export function Chip({
   onClick,
   children,
   title,
+  kind,
 }: {
   glyph?: ReactNode;
   onClick?: () => void;
   children: ReactNode;
   title?: string;
+  /** The entity kind the chip stands for, stamped as `data-kind` so a scope
+      can tint its mark by kind family (panels.css, the Links tab). */
+  kind?: string;
 }) {
   /* `glyph` is a NODE, not a character: kind marks are drawn (domain/KindIcon)
      because twenty text glyphs cannot stay distinct at this size. A string
      still works and still renders — the callers that pass a text mark for a
      non-kind thing did not have to change. */
   return (
-    <button type="button" className="kit-chip" onClick={onClick} title={title}>
+    <button type="button" className="kit-chip" onClick={onClick} title={title} data-kind={kind}>
       {glyph ? (
         <span aria-hidden className="kit-chip__glyph">
           {glyph}

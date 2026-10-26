@@ -36,6 +36,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import {
   BUILTIN_STYLES,
   BUILTIN_STYLE_IDS,
+  OFFERED_BUILTIN_STYLES,
   importStyle,
   parseStyleRef,
   styleDocForBuiltin,
@@ -319,7 +320,7 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
 
   /* Candidates for the follow-OS dark half: anything this picker can name. */
   const darkOptions: { ref: string; title: string }[] = [
-    ...Object.values(BUILTIN_STYLES).map((b) => ({ ref: b.id as string, title: b.title })),
+    ...OFFERED_BUILTIN_STYLES.map((b) => ({ ref: b.id as string, title: b.title })),
     ...lists.mine.map((m) => ({ ref: m.ref, title: m.title })),
     ...lists.space.map((s) => ({ ref: s.ref, title: s.title })),
   ];
@@ -487,7 +488,7 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
           <section className="stylepick__group" aria-label="built-in styles">
             <h4 className="stylepick__head">Built-in</h4>
             <ul className="stylepick__list">
-              {Object.values(BUILTIN_STYLES).map((b) => (
+              {OFFERED_BUILTIN_STYLES.map((b) => (
                 <Row
                   key={b.id}
                   title={b.title}
@@ -576,7 +577,7 @@ export function StylePicker({ seam, spaceId, members, variant = 'menu' }: StyleP
               onClick={() => void use(BUILTIN_STYLE_IDS.light)}
               data-testid="style-reset"
             >
-              Reset to {BUILTIN_STYLES[BUILTIN_STYLE_IDS.light]?.title ?? 'Atelier Light'}
+              Reset to {BUILTIN_STYLES[BUILTIN_STYLE_IDS.light]?.title ?? 'ChatGPT Light'}
             </button>
           </section>
         </div>

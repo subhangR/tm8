@@ -289,6 +289,20 @@ describe('coalesced refresh, reconnect and resync — on every anchor, not just 
     expect(h.feed).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
+
+  it('reads again after the effect re-attaches the same disposed controller (StrictMode remount)', async () => {
+    const h = harness();
+    h.feed.mockResolvedValue(page([item('a', '2026-10-18T00:00:00.000Z')]));
+    const { controller, entry } = build(h);
+    // mount → cleanup → mount, on ONE memoised controller
+    controller.attach()();
+    controller.dispose();
+    const detach = controller.attach();
+    await controller.loadNewest();
+    expect(entry().phase).toBe('ready');
+    expect(entry().page?.items.map((i) => i.itemId)).toEqual(['a']);
+    detach();
+  });
 });
 
 describe('the branch read, available on any anchor and never crossed with another', () => {

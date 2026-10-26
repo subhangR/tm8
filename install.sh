@@ -11,6 +11,10 @@
 #   ./install.sh --reset                DROP the database and re-migrate (asks first)
 #   ./install.sh --uninstall            stop + remove the service, keep the data
 #   ./install.sh --dry-run              print every step, change nothing
+#   ./install.sh --port 4710 --pg-port 5599   move the slot off ports already in use
+#   ./install.sh --adopt-cluster        reuse a Postgres on the slot's port that this
+#                                        installer did not create (it refuses otherwise)
+#   ./install.sh --no-backup            skip the pg_dump taken before a re-run migrates
 #
 # WHAT THIS FIXES
 #
@@ -44,9 +48,11 @@
 #   9  the data and workspace directories
 #  10  the 90-odd migrations applied — the server does NOT migrate at boot
 #  11  something to keep the process alive
-#  12  an agent CLI (claude or codex) the host is LOGGED IN to — tm8 stores no
-#      agent credential, so a spawned session runs the host's login or nothing.
-#      Checked in PHASE 1 (warn, never block) and authoritatively by `tm8 doctor`.
+#  12  an agent CLI (claude or codex) the node's OS user is LOGGED IN to, for
+#      sessions on the node's own credential. (Members can also connect their
+#      own, or a space's, under Settings → Credentials; those need no host login.)
+#      Checked as the run user (warn, never block) and by `tm8 doctor`; a spawn
+#      on the node's login with none is refused by name.
 #
 # Seeding is the one thing that already worked and still needs no step: once the
 # schema is current and the server boots, the loopback auto-owner creates the
@@ -106,6 +112,15 @@ USE_SERVICE=0
 DRY_RUN=0
 ASSUME_YES=0
 CONFIGURE_HBA=""     # "" = only when we created the cluster; 1 = always; 0 = never
+# A cluster already listening on the slot's port is reused only when it carries
+# this installer's marker (see PHASE 2) or the operator says so. Before this, ANY
+# Postgres on the port was "adopted": its pg_hba asked to trust loopback, a
+# superuser role added, a database created — and on a laptop that already runs
+# a tm8 node, 5442 is that node's live cluster.
+ADOPT_CLUSTER=0
+DO_BACKUP=1
+PORT_OVERRIDE=""
+PG_PORT_OVERRIDE=""
 MODE=install
 
 while [[ $# -gt 0 ]]; do
@@ -119,6 +134,12 @@ while [[ $# -gt 0 ]]; do
     --no-start)     DO_START=0 ;;
     --no-build)     DO_BUILD=0 ;;
     --no-migrate)   DO_MIGRATE=0 ;;
+    --port)         shift; [[ $# -gt 0 ]] || die "--port needs a value"; PORT_OVERRIDE="$1" ;;
+    --port=*)       PORT_OVERRIDE="${1#*=}" ;;
+    --pg-port)      shift; [[ $# -gt 0 ]] || die "--pg-port needs a value"; PG_PORT_OVERRIDE="$1" ;;
+    --pg-port=*)    PG_PORT_OVERRIDE="${1#*=}" ;;
+    --adopt-cluster) ADOPT_CLUSTER=1 ;;
+    --no-backup)    DO_BACKUP=0 ;;
     --configure-pg-hba)    CONFIGURE_HBA=1 ;;
     --no-configure-pg-hba) CONFIGURE_HBA=0 ;;
     --status)       MODE=status ;;
@@ -127,13 +148,19 @@ while [[ $# -gt 0 ]]; do
     --print-env)    MODE=print-env ;;
     --dry-run)      DRY_RUN=1 ;;
     --yes|-y)       ASSUME_YES=1 ;;
-    -h|--help)      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)      sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)              die "unknown flag $1 (try --help)" ;;
   esac
   shift
 done
 
 tm8_env_load "$SLOT" || exit 2
+for p in "$PORT_OVERRIDE" "$PG_PORT_OVERRIDE"; do
+  [[ -z "$p" || "$p" =~ ^[0-9]+$ && "$p" -gt 0 && "$p" -lt 65536 ]] || die "not a port: $p"
+done
+if [[ -n "$PORT_OVERRIDE$PG_PORT_OVERRIDE" ]]; then
+  tm8_env_override_ports "$PORT_OVERRIDE" "$PG_PORT_OVERRIDE"
+fi
 
 # A Linux service implies the system layout (/opt, /etc, a system account) and
 # vice versa, but each can be asked for alone: a --service install into a user
@@ -283,13 +310,13 @@ find_psql() {
 can_query() {
   local url="$1"
   [[ -n "${PSQL:-}" ]] || return 1
-  "$PSQL" "$url" -tAc 'select 1' >/dev/null 2>&1
+  "$PSQL" -w "$url" -tAc 'select 1' >/dev/null 2>&1
 }
 
 # One scalar out of Postgres, or empty.
 pg_scalar() {
   local url="$1" sql="$2"
-  "$PSQL" "$url" -tAc "$sql" 2>/dev/null | head -1 | tr -d '[:space:]' || true
+  "$PSQL" -w "$url" -tAc "$sql" 2>/dev/null | head -1 | tr -d '[:space:]' || true
 }
 
 # A superuser psql invocation on this cluster, however we can get one.
@@ -342,6 +369,21 @@ su_scalar() {
     sudo)
       if (( IS_ROOT )); then runuser -u "$SU_SUDO_USER" -- "$PSQL" -p "$TM8_ENV_PG_PORT" -tAc "$sql" 2>/dev/null | head -1 | tr -d '[:space:]' || true
       else sudo -u "$SU_SUDO_USER" "$PSQL" -p "$TM8_ENV_PG_PORT" -tAc "$sql" 2>/dev/null | head -1 | tr -d '[:space:]' || true; fi
+      ;;
+  esac
+}
+
+# A whole text value as the superuser, lines and spacing kept. For reading
+# pg_hba.conf through the server: Debian keeps it 0640 postgres:postgres, so the
+# installing user cannot read the file itself and the trust check could only
+# answer "cannot tell".
+su_text() {
+  local sql="$1"
+  case "$SU_KIND" in
+    url)  "$PSQL" "$SU_URL" -tAc "$sql" 2>/dev/null || true ;;
+    sudo)
+      if (( IS_ROOT )); then runuser -u "$SU_SUDO_USER" -- "$PSQL" -p "$TM8_ENV_PG_PORT" -tAc "$sql" 2>/dev/null || true
+      else sudo -u "$SU_SUDO_USER" "$PSQL" -p "$TM8_ENV_PG_PORT" -tAc "$sql" 2>/dev/null || true; fi
       ;;
   esac
 }
@@ -413,6 +455,35 @@ TM8_SESSION_CAP=unlimited
 #   refused with \`Host "localhost:PORT" is not this node\`.
 TM8_IDEMPOTENCY_ENABLED=0
 TM8_PREVIEW_ENABLED=0
+ENVFILE
+  if [[ "$SLOT" == prod ]]; then render_shared_node_block; fi
+}
+
+# The prod slot is a SHARED node: other machines reach it through a reverse
+# proxy. Without these lines it booted `single`, where anything reaching the
+# loopback socket with no forwarding header — an agent that drops its bearer,
+# an ssh tunnel — is the node owner. Commented stubs, not guesses: the origin is
+# the operator's to name. TM8_PUBLIC_ORIGIN in the installer's environment fills
+# it in. docs/ops/OPERATOR-GUIDE.md walks the proxy + TLS setup.
+render_shared_node_block() {
+  local origin="${TM8_PUBLIC_ORIGIN:-}" origin_line='#TM8_PUBLIC_ORIGIN=https://tm8.example.com'
+  [[ -n "$origin" ]] && origin_line="TM8_PUBLIC_ORIGIN=$origin"
+  cat <<ENVFILE
+
+# --- A SHARED node — reached from other machines through a TLS reverse proxy ---
+# multi: no loopback auto-owner. Every caller signs in — the owner claims the node
+# with the setup token, everyone else joins with an invite. See OPERATOR-GUIDE.md.
+TM8_NODE_MODE=multi
+# The https origin people open (your proxy). Its hostname is allowed as Host and
+# Origin by default, and it is the origin of the first-run claim link.
+${origin_line}
+# More names the proxy answers to (comma-separated hostnames):
+#TM8_ALLOWED_HOSTNAMES=
+# Exact-origin mode (https only under TM8_ENV=prod). The server adds this node's
+# own loopback origins (http://127.0.0.1:${TM8_ENV_SERVER_PORT}, localhost, [::1]) itself:
+#TM8_ALLOWED_ORIGINS=${origin:-https://tm8.example.com}
+# Folders members may pick projects from (':'-separated). Unset = the whole disk:
+#TM8_PROJECT_ROOTS=/srv/tm8/projects
 ENVFILE
 }
 
@@ -896,52 +967,98 @@ fi
 # AND login, honouring TM8_AGENT_CMD — is `tm8 doctor`; this phase runs before
 # the CLI is built, so it is the early, cheap surfacing of the same fact, and it
 # points there.
-if [[ -n "${TM8_AGENT_CMD:-}" ]]; then
-  acmd_bin="${TM8_AGENT_CMD%% *}"
-  if command -v "$acmd_bin" >/dev/null 2>&1 || [[ -x "$acmd_bin" ]]; then
-    ok "agent CLI: TM8_AGENT_CMD=$TM8_AGENT_CMD (found)"
-  else
-    warn "TM8_AGENT_CMD=$TM8_AGENT_CMD but '$acmd_bin' is not on PATH — every spawn would die with exit 127"
+# Run a command as another OS user, for the agent-login check below. The
+# service user has a nologin shell, so this never goes through a login shell.
+as_user() {
+  local user="$1"; shift
+  if [[ "$user" == "$(id -un)" ]]; then "$@"
+  elif (( IS_ROOT )) && command -v runuser >/dev/null; then runuser -u "$user" -- "$@"
+  elif (( IS_ROOT || HAVE_SUDO )); then sudo -u "$user" -H "$@"
+  else return 125; fi
+}
+
+# The agent CLI login, checked as the user the NODE runs as. A system-layout
+# service runs as $TM8_ENV_RUN_USER (tm8), whose HOME is not the operator's:
+# checking the invoking user (root) reported "authenticated" and then every
+# spawn hung at Claude Code's first-run screen. WARN, never block.
+check_agent_cli() {
+  local user="$1" prefix='' found=0 out
+  [[ "$user" == "$(id -un)" ]] || prefix="sudo -u $user -H "
+  if [[ -n "${TM8_AGENT_CMD:-}" ]]; then
+    local acmd_bin="${TM8_AGENT_CMD%% *}"
+    if as_user "$user" bash -c "command -v '$acmd_bin'" >/dev/null 2>&1 || [[ -x "$acmd_bin" ]]; then
+      ok "agent CLI: TM8_AGENT_CMD=$TM8_AGENT_CMD (found, as $user)"
+    else
+      warn "TM8_AGENT_CMD=$TM8_AGENT_CMD but '$acmd_bin' is not on $user's PATH — every spawn would die with exit 127"
+    fi
+    return 0
   fi
+  if as_user "$user" bash -c 'command -v claude' >/dev/null 2>&1; then
+    found=1
+    out="$(as_user "$user" claude auth status 2>/dev/null || true)"
+    if [[ "$out" =~ \"loggedIn\"[[:space:]]*:[[:space:]]*true ]]; then
+      ok "agent CLI: claude — logged in as OS user $user"
+    elif [[ "$out" =~ \"loggedIn\"[[:space:]]*:[[:space:]]*false ]]; then
+      warn "agent CLI: claude is installed but OS user $user is NOT logged in — a session on the node's login is refused"
+      printf '        %sclaude auth login\n' "$prefix"
+    else
+      # An older claude without `auth status`, or a Keychain login not readable
+      # here: unknown is reported as unknown, not as broken.
+      ok "agent CLI: claude — present for $user; login state unknown (verify: tm8 doctor)"
+    fi
+  fi
+  if as_user "$user" bash -c 'command -v codex' >/dev/null 2>&1; then
+    found=1
+    if as_user "$user" codex login status 2>&1 | grep -qi 'logged in' \
+       && ! as_user "$user" codex login status 2>&1 | grep -qi 'not logged in'; then
+      ok "agent CLI: codex — logged in as OS user $user"
+    else
+      warn "agent CLI: codex is installed but OS user $user is not logged in"
+      printf '        %scodex login\n' "$prefix"
+    fi
+  fi
+  if (( ! found )); then
+    warn "no agent CLI (claude or codex) on $user's PATH — tm8 will install fine but cannot run an agent"
+    info "on the node's own login, sessions are refused until one is installed and logged in as $user"
+    info "(members can still launch on their own or a space credential). Install and log in:"
+    printf '        npm i -g @anthropic-ai/claude-code && %sclaude auth login\n' "$prefix"
+    printf '        npm i -g @openai/codex && %scodex login\n' "$prefix"
+  fi
+}
+
+if [[ "$LAYOUT" == user ]]; then
+  check_agent_cli "$(id -un)"
 else
-  agent_found=0
-  if command -v claude >/dev/null 2>&1; then
-    agent_found=1
-    if [[ -f "$HOME/.claude.json" ]] && grep -q '"oauthAccount"' "$HOME/.claude.json" 2>/dev/null; then
-      ok "agent CLI: claude ($(command -v claude)) — authenticated"
-    else
-      # Claude Code can keep its token in the login Keychain, which is not
-      # cheaply readable here, so unknown is reported as unknown, not as broken.
-      ok "agent CLI: claude ($(command -v claude)) — present; login state unknown (verify: tm8 doctor)"
-    fi
-  fi
-  if command -v codex >/dev/null 2>&1; then
-    agent_found=1
-    if [[ -f "${CODEX_HOME:-$HOME/.codex}/auth.json" ]]; then
-      ok "agent CLI: codex ($(command -v codex)) — authenticated"
-    else
-      warn "agent CLI: codex ($(command -v codex)) — present but NOT authenticated (run: codex login)"
-    fi
-  fi
-  if (( ! agent_found )); then
-    warn "no agent CLI found (claude or codex) — tm8 will install fine but cannot run an agent."
-    info "a tm8 session runs the host's claude/codex; with neither installed every spawn"
-    info "sits at \"running\" and never finishes, the refusal visible only in the terminal."
-    info "install one and log in, then re-check with 'tm8 doctor':"
-    printf '        npm i -g @anthropic-ai/claude-code    # then run: claude       (to log in)\n'
-    printf '        npm i -g @openai/codex                 # then run: codex login\n'
-  fi
+  dim "agent CLI login is checked as $TM8_ENV_RUN_USER once that account exists (after the env file)"
 fi
 
 # --- PHASE 2: the cluster ----------------------------------------------------
 phase "Postgres cluster on $TM8_ENV_PG_PORT"
 
 CREATED_CLUSTER=0
+
+# Debian names a cluster <major>/<name>, and its unit postgresql@<major>-<name>.
+# Installing the postgresql package creates <major>/main on 5432 — the dev
+# slot's cluster NAME, on another port — so on a fresh server pg_createcluster
+# refused with "cluster configuration already exists" and the installer blamed
+# root. Use the real name of whatever cluster owns this port, and a tm8 name
+# when the slot's is already taken elsewhere.
+DEB_CLUSTER_ON_PORT=""
+if [[ "$PLATFORM" == linux ]] && command -v pg_lsclusters >/dev/null; then
+  DEB_CLUSTER_ON_PORT="$(pg_lsclusters -h 2>/dev/null | awk -v p="$TM8_ENV_PG_PORT" '$3 == p { print $1, $2; exit }' || true)"
+  if [[ -n "$DEB_CLUSTER_ON_PORT" ]]; then
+    TM8_ENV_PG_MAJOR="${DEB_CLUSTER_ON_PORT%% *}"; TM8_ENV_PG_CLUSTER="${DEB_CLUSTER_ON_PORT#* }"
+  elif pg_lsclusters -h 2>/dev/null \
+       | awk -v m="$TM8_ENV_PG_MAJOR" -v c="$TM8_ENV_PG_CLUSTER" '$1 == m && $2 == c { f = 1 } END { exit !f }'; then
+    info "cluster $TM8_ENV_PG_MAJOR/$TM8_ENV_PG_CLUSTER already exists on another port — this slot gets $TM8_ENV_PG_MAJOR/tm8_$SLOT"
+    TM8_ENV_PG_CLUSTER="tm8_$SLOT"
+  fi
+fi
 cluster_listening() {
-  "$PSQL" "postgres://127.0.0.1:$TM8_ENV_PG_PORT/postgres" -tAc 'select 1' >/dev/null 2>&1 && return 0
+  "$PSQL" -w "postgres://127.0.0.1:$TM8_ENV_PG_PORT/postgres" -tAc 'select 1' >/dev/null 2>&1 && return 0
   # A refused ROLE still proves a listener; only a refused CONNECTION does not.
   local err
-  err="$("$PSQL" "postgres://127.0.0.1:$TM8_ENV_PG_PORT/postgres" -tAc 'select 1' 2>&1 || true)"
+  err="$("$PSQL" -w "postgres://127.0.0.1:$TM8_ENV_PG_PORT/postgres" -tAc 'select 1' 2>&1 || true)"
   case "$err" in
     *"could not connect"*|*"Connection refused"*|*"could not translate"*) return 1 ;;
     '') return 1 ;;
@@ -949,8 +1066,32 @@ cluster_listening() {
   esac
 }
 
+# The marker: a comment on the tm8 superuser ROLE, which is a cluster-wide
+# (shared) object, so it says something about the CLUSTER rather than about one
+# database in it. Written in PHASE 3 on a cluster this installer created, or on
+# one the operator adopted with --adopt-cluster. No spaces in it: su_scalar
+# strips whitespace from what it reads.
+CLUSTER_MARKER="tm8-install.sh:cluster"
+cluster_has_marker() {
+  find_superuser "$TM8_ENV_PG_PORT" || return 1
+  [[ "$(su_scalar "select shobj_description(oid, 'pg_authid') from pg_roles where rolname = '$TM8_ENV_SUPERUSER'")" == "$CLUSTER_MARKER" ]]
+}
+
 if cluster_listening; then
-  ok "a cluster is already listening on $TM8_ENV_PG_PORT — adopting it"
+  if cluster_has_marker; then
+    ok "the cluster on $TM8_ENV_PG_PORT carries this installer's marker — reusing it"
+  elif (( ADOPT_CLUSTER )); then
+    warn "adopting the cluster on $TM8_ENV_PG_PORT (--adopt-cluster) — it will be marked as tm8's"
+  else
+    die "a Postgres cluster is already listening on $TM8_ENV_PG_PORT, and this installer did not create it.
+      Refusing to adopt it: adopting adds a superuser role and a database to it, and
+      may ask its pg_hba to trust loopback. On a machine that already runs tm8,
+      $TM8_ENV_PG_PORT is likely that node's LIVE cluster.
+      Either install onto a free port, which creates a cluster of its own:
+        $0 --env $SLOT --pg-port <free port>${PORT_OVERRIDE:+ --port $PORT_OVERRIDE}
+      or, if this cluster IS meant for tm8 (an install from before this check):
+        $0 --env $SLOT${PG_PORT_OVERRIDE:+ --pg-port $PG_PORT_OVERRIDE}${PORT_OVERRIDE:+ --port $PORT_OVERRIDE} --adopt-cluster"
+  fi
   # macOS service install: make sure the adopted cluster is under launchd so it
   # survives a reboot. If launchd already owns it, this just refreshes the plist;
   # if a hand-started postmaster holds the port, we do NOT fight it — the plist is
@@ -976,7 +1117,11 @@ else
   info "nothing on $TM8_ENV_PG_PORT — creating a cluster"
   case "$PLATFORM" in
     linux)
-      if command -v pg_createcluster >/dev/null; then
+      if [[ -n "$DEB_CLUSTER_ON_PORT" ]]; then
+        # Creating over it fails; starting it silently would skip the marker check.
+        die "cluster ${DEB_CLUSTER_ON_PORT/ //} owns port $TM8_ENV_PG_PORT but is not accepting connections.
+      Start it and re-run:  sudo systemctl start postgresql@${DEB_CLUSTER_ON_PORT/ /-}"
+      elif command -v pg_createcluster >/dev/null; then
         # Debian/Ubuntu: a managed cluster, so it gets a systemd unit
         # (postgresql@<major>-<name>) and comes back after a reboot. That is the
         # whole difference between this and the hand-started postmaster that used
@@ -1081,6 +1226,12 @@ else
     su_sql "create role \"$TM8_ENV_SUPERUSER\" login superuser createdb createrole"
     ok "role $TM8_ENV_SUPERUSER created (superuser — it owns the schema and runs migrations)"
   fi
+  # Mark the cluster as this installer's, so a re-run reuses it without
+  # --adopt-cluster and a foreign one is still refused (PHASE 2).
+  if (( CREATED_CLUSTER || ADOPT_CLUSTER )); then
+    su_sql "comment on role \"$TM8_ENV_SUPERUSER\" is '$CLUSTER_MARKER'"
+    ok "cluster marked as tm8's ($CLUSTER_MARKER on role $TM8_ENV_SUPERUSER)"
+  fi
 fi
 
 # pg_hba: check first, change only when allowed.
@@ -1089,19 +1240,30 @@ if (( ! DRY_RUN )); then
   hba_path="$(su_scalar 'show hba_file')"
 fi
 
+# The rule that decides a loopback login, for the check below and for the
+# message when it fails.
+HBA_FIRST=""
 hba_trusts_loopback() {
-  [[ -n "$hba_path" && -r "$hba_path" ]] || return 2      # cannot tell
+  [[ -n "$hba_path" ]] || return 2                         # cannot tell
+  # Read through the server when the file is not ours to read. On Debian it is
+  # 0640 postgres:postgres, so a plain `-r` test made every non-root install of
+  # an adopted cluster report "cannot tell" — on exactly the machines whose
+  # default rule is scram-sha-256.
+  local content
+  if [[ -r "$hba_path" ]]; then content="$(cat "$hba_path")"
+  else content="$(su_text "select pg_read_file('$hba_path')")"; fi
+  [[ -n "$content" ]] || return 2
   # pg_hba is FIRST MATCH WINS, so the presence of a trust line proves nothing:
   # it has to be the first rule matching a loopback host connection. A trust line
   # sitting below the distribution's default `host all all 127.0.0.1/32
   # scram-sha-256` never fires, phase 4 dies with `fe_sendauth: no password
   # supplied`, and every re-run still reports "already trusts loopback".
-  local first
-  first="$(grep -E '^[[:space:]]*host(ssl|nossl)?[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128|samehost)[[:space:]]+' "$hba_path" | head -n 1)"
-  [[ -n "$first" ]] || return 1
-  [[ "$first" =~ [[:space:]]trust([[:space:]]|$) ]]
+  HBA_FIRST="$(grep -E '^[[:space:]]*host(ssl|nossl)?[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128|samehost)[[:space:]]+' <<<"$content" | head -n 1 || true)"
+  [[ -n "$HBA_FIRST" ]] || return 1
+  [[ "$HBA_FIRST" =~ [[:space:]]trust([[:space:]]|$) ]]
 }
 
+HBA_RELOADED=0
 want_hba=0
 if [[ "$CONFIGURE_HBA" == 1 ]]; then want_hba=1
 elif [[ "$CONFIGURE_HBA" == 0 ]]; then want_hba=0
@@ -1131,9 +1293,19 @@ else
       # Prepended, never appended: pg_hba takes the FIRST matching rule, so below
       # the distribution's default scram-sha-256 lines these two would be dead
       # config. Rewritten through the original path so mode and owner survive.
-      act_sh "printf '# tm8: loopback trust. tm8_app and tm8_delivery_worker are created by\n# migrations 001/015 with LOGIN and no password, and the delivery path must\n# AUTHENTICATE as tm8_delivery_worker rather than SET ROLE to it. Safe only\n# because listen_addresses is 127.0.0.1.\n# These sit at the top because pg_hba is first match wins.\nhost all all 127.0.0.1/32 trust\nhost all all ::1/128 trust\n\n' | cat - '$hba_path' > '$hba_path.tm8-new' && cat '$hba_path.tm8-new' > '$hba_path' && rm -f '$hba_path.tm8-new'"
-      as_root systemctl reload "postgresql@$TM8_ENV_PG_MAJOR-$TM8_ENV_PG_CLUSTER" 2>/dev/null \
-        || act "$PSQL" "${SU_URL:-postgres://$TM8_ENV_SUPERUSER@127.0.0.1:$TM8_ENV_PG_PORT/postgres}" -qc 'select pg_reload_conf()' >/dev/null 2>&1 \
+      # As root when the file is not ours: Debian's belongs to postgres.
+      hba_write="printf '# tm8: loopback trust. tm8_app and tm8_delivery_worker are created by\n# migrations 001/015 with LOGIN and no password, and the delivery path must\n# AUTHENTICATE as tm8_delivery_worker rather than SET ROLE to it. Safe only\n# because listen_addresses is 127.0.0.1.\n# These sit at the top because pg_hba is first match wins.\nhost all all 127.0.0.1/32 trust\nhost all all ::1/128 trust\n\n' | cat - '$hba_path' > '$hba_path.tm8-new' && cat '$hba_path.tm8-new' > '$hba_path' && rm -f '$hba_path.tm8-new'"
+      if [[ -w "$hba_path" && -w "$(dirname "$hba_path")" ]]; then
+        act_sh "$hba_write" || die "could not rewrite $hba_path"
+      else
+        as_root bash -c "$hba_write" \
+          || { need_root_hint "bash -c \"$hba_write\""; die "cannot write $hba_path as $(id -un)"; }
+      fi
+      # Through the superuser connection rather than systemctl: the unit name is a
+      # guess on an adopted cluster, and the old psql fallback logged in as the
+      # role that could not log in yet.
+      HBA_RELOADED=1
+      su_sql 'select pg_reload_conf()' >/dev/null \
         || warn "could not reload the cluster — reload it for pg_hba to take effect"
       ok "loopback trust added to $hba_path"
     else
@@ -1141,16 +1313,44 @@ else
     fi
   else
     if (( rc == 2 )); then
-      warn "cannot read pg_hba.conf ($hba_path) — unable to confirm loopback trust"
+      warn "cannot read pg_hba.conf (${hba_path:-path unknown}) — unable to confirm loopback trust"
     else
       warn "pg_hba does NOT trust loopback on this adopted cluster"
     fi
     info "tm8_delivery_worker is created passwordless by migration 015, so without"
     info "trust it cannot authenticate and messages are stored but never delivered."
-    info "Add to ${hba_path:-pg_hba.conf}, then reload:"
+    info "Add to the TOP of ${hba_path:-pg_hba.conf} (first match wins), then reload:"
     printf '        host all all 127.0.0.1/32 trust\n'
     info "Or re-run with --configure-pg-hba to have this installer do it."
   fi
+fi
+
+# The gate. Everything after this phase connects as $TM8_ENV_SUPERUSER over
+# 127.0.0.1 with no password. Without this check a cluster that refuses it got
+# a database created in it, and the failure surfaced in phase 4 as "check
+# phase 3" — after phase 3's warning had scrolled away.
+if (( ! DRY_RUN )); then
+  deadline=$((SECONDS + (HBA_RELOADED ? 10 : 0)))   # a reload lands asynchronously
+  until can_query "$TM8_ENV_MAINTENANCE_URL"; do
+    if (( SECONDS >= deadline )); then
+      err="$("$PSQL" -w "$TM8_ENV_MAINTENANCE_URL" -tAc 'select 1' 2>&1 | head -n 1 || true)"
+      reload_hint="sudo -u postgres psql -p $TM8_ENV_PG_PORT -c 'select pg_reload_conf()'"
+      [[ "$SU_KIND" == url ]] && reload_hint="psql '$SU_URL' -c 'select pg_reload_conf()'"
+      die "role $TM8_ENV_SUPERUSER cannot log in over 127.0.0.1:$TM8_ENV_PG_PORT without a password,
+      so nothing after this phase can work. Postgres said:
+        ${err:-<no output>}
+      ${HBA_FIRST:+The first loopback rule in $hba_path is:
+        $HBA_FIRST
+      }Re-run with --configure-pg-hba to have this installer put loopback trust at
+      the top of ${hba_path:-pg_hba.conf} and reload, or add these lines yourself ABOVE
+      every other host line (pg_hba is first match wins):
+        host all all 127.0.0.1/32 trust
+        host all all ::1/128 trust
+      then reload:  $reload_hint"
+    fi
+    sleep 1
+  done
+  ok "role $TM8_ENV_SUPERUSER logs in over loopback"
 fi
 
 # --- PHASE 4: the database ---------------------------------------------------
@@ -1162,7 +1362,7 @@ elif [[ "$(su_scalar "select 1 from pg_database where datname='$TM8_ENV_DATABASE
   ok "database $TM8_ENV_DATABASE present"
 else
   su_sql "create database \"$TM8_ENV_DATABASE\" owner \"$TM8_ENV_SUPERUSER\""
-  ok "database $TM8_ENV_DATABASE created EMPTY — it has no schema until phase 10"
+  ok "database $TM8_ENV_DATABASE created EMPTY — it has no schema until phase 9"
 fi
 
 if [[ "$MODE" == reset ]]; then
@@ -1179,8 +1379,11 @@ fi
 
 if (( ! DRY_RUN )); then
   can_query "$TM8_ENV_DATABASE_URL" \
-    || die "created the database but cannot query $TM8_ENV_DATABASE_URL.
-      This is the state pg_isready calls healthy. Check loopback trust in pg_hba (phase 3)."
+    || die "created the database but cannot query $TM8_ENV_DATABASE_URL, though phase 3
+      logged in to the postgres database as the same role over the same address.
+      So a pg_hba rule names $TM8_ENV_DATABASE (or a database list) above the loopback
+      trust lines: rules are first match wins. Check $TM8_ENV_DATABASE's rows in:
+        select line_number, database, user_name, address, auth_method from pg_hba_file_rules;"
   ok "authenticated query on $TM8_ENV_DATABASE succeeds"
 fi
 
@@ -1315,11 +1518,65 @@ for d in "$TM8_ENV_DATA_DIR" "$TM8_ENV_PROJECT_DIR"; do
   fi
 done
 
+if [[ "$LAYOUT" != user ]]; then
+  if (( DRY_RUN )) && ! getent passwd "$TM8_ENV_RUN_USER" >/dev/null 2>&1; then
+    dim "(dry-run) would check the agent CLI login as $TM8_ENV_RUN_USER"
+  else
+    check_agent_cli "$TM8_ENV_RUN_USER"
+  fi
+fi
+
+# What the env file says about reach. Read it when we can; root-owned and
+# unreadable, fall back to what this run would have written.
+env_value() {
+  local key="$1" line=''
+  if [[ -r "$TM8_ENV_ENVFILE" ]]; then
+    line="$(grep -E "^${key}=" "$TM8_ENV_ENVFILE" | tail -1 || true)"
+  elif (( IS_ROOT || HAVE_SUDO )) && [[ -e "$TM8_ENV_ENVFILE" ]]; then
+    line="$(as_root grep -E "^${key}=" "$TM8_ENV_ENVFILE" 2>/dev/null | tail -1 || true)"
+  else
+    line="$(render_env_file | grep -E "^${key}=" | tail -1 || true)"
+  fi
+  printf '%s' "${line#*=}"
+}
+NODE_MODE="$(env_value TM8_NODE_MODE)"; NODE_MODE="${NODE_MODE:-single}"
+PUBLIC_ORIGIN="$(env_value TM8_PUBLIC_ORIGIN)"
+if [[ "$SLOT" == prod ]]; then
+  if [[ "$NODE_MODE" != multi ]]; then
+    warn "$TM8_ENV_ENVFILE has TM8_NODE_MODE=$NODE_MODE — on a shared node, anything reaching"
+    info "127.0.0.1:$TM8_ENV_SERVER_PORT directly is the owner. Set TM8_NODE_MODE=multi (docs/ops/OPERATOR-GUIDE.md)."
+  fi
+  if [[ -z "$PUBLIC_ORIGIN" ]]; then
+    warn "TM8_PUBLIC_ORIGIN is not set in $TM8_ENV_ENVFILE — browsers through your proxy get a 403"
+    info "and the claim link names 127.0.0.1. Set it to the https origin people open, then restart."
+  fi
+fi
+
 # --- PHASE 9: migrations -----------------------------------------------------
 phase "Migrations"
 if (( DO_MIGRATE )); then
   total="$(ls -1 "$TM8_ENV_CHECKOUT"/db/migrations/*.sql 2>/dev/null | wc -l | tr -d ' ')"
   info "$total migration files on disk; forward-only and checksum-locked"
+  # A re-run migrates a database that may hold real work, and migrations are
+  # forward-only: the dump is the only way back. Taken only when something is
+  # pending, kept to the newest five per database.
+  applied_now="$(pg_scalar "$TM8_ENV_DATABASE_URL" "select count(*) from applied_migrations" 2>/dev/null || true)"
+  if [[ -n "$applied_now" && "$applied_now" -gt 0 && "$applied_now" -lt "$total" ]]; then
+    backup_dir="${TM8_BACKUP_DIR:-$(dirname "$TM8_ENV_DATA_DIR")/backups}"
+    backup_file="$backup_dir/${TM8_ENV_DATABASE}-$(date -u +%Y%m%dT%H%M%SZ)-m${applied_now}.dump"
+    if (( ! DO_BACKUP )); then
+      warn "$((total - applied_now)) pending migration(s) and --no-backup: migrating with no dump to roll back to"
+    elif [[ ! -x "$PG_DUMP" ]]; then
+      die "$((total - applied_now)) migration(s) are pending and there is no pg_dump beside $PSQL to back up first.
+      Install the Postgres $TM8_ENV_PG_MAJOR client, or re-run with --no-backup to migrate without one."
+    else
+      info "$((total - applied_now)) pending — backing up $TM8_ENV_DATABASE first"
+      dump_cmd="umask 077 && mkdir -p '$backup_dir' && '$PG_DUMP' -Fc -f '$backup_file' '$TM8_ENV_SUPERUSER_URL' && ls -1t '$backup_dir'/${TM8_ENV_DATABASE}-*.dump | tail -n +6 | xargs rm -f"
+      if [[ "$LAYOUT" == system ]]; then as_root bash -c "$dump_cmd" || die "pg_dump to $backup_file failed"
+      else act_sh "$dump_cmd" || die "pg_dump to $backup_file failed"; fi
+      did "backup: $backup_file (restore: pg_restore --clean -d $TM8_ENV_DATABASE <file>)"
+    fi
+  fi
   # As the SUPERUSER url, not the service's. A tm8_app URL gets "permission
   # denied for schema public" trying to create applied_migrations.
   # migrate.mjs refuses port 5442 unless told --i-mean-prod. dev and prod share
@@ -1330,7 +1587,8 @@ if (( DO_MIGRATE )); then
       left it (one transaction per file), so fix forward and re-run."
   did "schema current"
 else
-  warn "skipped (--no-migrate) — the server will refuse to start on a schema mismatch"
+  warn "skipped (--no-migrate) — the server does NOT check the schema at boot: an unmigrated"
+  info "database boots and fails at the first query that needs a newer table. Migrate before starting."
 fi
 
 # --- PHASE 10: service -------------------------------------------------------
@@ -1423,7 +1681,9 @@ verify_running() {
   # A healthy /health proves SOMETHING is serving, not that it is what this run
   # built — a stale process answers exactly the same. Prove the unit entered
   # active during this run, so the no-op above cannot come back silently.
-  if (( USE_SYSTEMD )) && command -v systemctl >/dev/null; then
+  # USE_SERVICE, not USE_SYSTEMD: the latter was never defined, and under
+  # `set -u` reading it aborted a healthy install right here.
+  if (( USE_SERVICE )) && [[ "$SERVICE_KIND" == systemd ]] && command -v systemctl >/dev/null; then
     local entered entered_epoch
     entered="$(systemctl show "$UNIT_NAME" -p ActiveEnterTimestamp --value 2>/dev/null || true)"
     entered_epoch="$(date -d "$entered" +%s 2>/dev/null || echo 0)"
@@ -1450,7 +1710,12 @@ verify_running() {
   # /health passing is not proof the product works — a real read through the
   # catalog is. This is the check that would have caught "graph: NOT CONFIGURED".
   local cli="$TM8_ENV_CHECKOUT/packages/cli/dist/tm8"
-  if [[ -x "$cli" ]]; then
+  if [[ "${NODE_MODE:-single}" == multi ]]; then
+    # No loopback owner in multi mode, so an anonymous read is refused by
+    # design — that is the mode working, not the graph failing.
+    dim "multi mode: no loopback owner, so the anonymous catalog read is skipped"
+    dim "claim the node with the setup token: $TM8_ENV_DATA_DIR/setup-token (or the boot log)"
+  elif [[ -x "$cli" ]]; then
     # A CLEAN env, then our own base URL. Without the strip, an installer run
     # from inside a tm8 agent session reads that session's TM8_AGENT_TOKEN and
     # reports `unauthenticated: invalid token` against a server that is fine.
@@ -1549,19 +1814,28 @@ if (( DRY_RUN )); then
   exit 0
 fi
 printf '\n%s✓ tm8 %s installed%s  (%dm%02ds)\n' "$GRN" "$SLOT" "$OFF" $((elapsed / 60)) $((elapsed % 60))
-if [[ -n "$TM8_ENV_PROXY_PORT" && "$SLOT" != dev ]]; then
+if [[ -n "${PUBLIC_ORIGIN:-}" ]]; then
+  printf '  open %s   ·  server 127.0.0.1:%s  ·  db %s\n' \
+    "$PUBLIC_ORIGIN" "$TM8_ENV_SERVER_PORT" "$TM8_ENV_DATABASE"
+elif [[ "$SLOT" == prod ]]; then
+  # 7777 is the proxy on the box this table was written for; on a fresh server
+  # nothing listens there until you put one in front.
+  printf '  server http://127.0.0.1:%s  ·  db %s\n' "$TM8_ENV_SERVER_PORT" "$TM8_ENV_DATABASE"
+  printf '  reach it from other machines through a TLS proxy: docs/ops/OPERATOR-GUIDE.md\n'
+elif [[ -n "$TM8_ENV_PROXY_PORT" && "$SLOT" != dev ]]; then
   printf '  open http://127.0.0.1:%s   ·  server 127.0.0.1:%s  ·  db %s\n' \
     "$TM8_ENV_PROXY_PORT" "$TM8_ENV_SERVER_PORT" "$TM8_ENV_DATABASE"
 else
   printf '  server http://127.0.0.1:%s  ·  db %s\n' "$TM8_ENV_SERVER_PORT" "$TM8_ENV_DATABASE"
 fi
-printf '  status:    %s --env %s --status\n' "$0" "$SLOT"
+printf '  status:    %s --env %s%s --status\n' "$0" "$SLOT" \
+  "${PORT_OVERRIDE:+ --port $PORT_OVERRIDE}${PG_PORT_OVERRIDE:+ --pg-port $PG_PORT_OVERRIDE}"
 printf '  env file:  %s\n' "$TM8_ENV_ENVFILE"
 # The agent login is the one prerequisite this installer can only WARN about, so
 # it earns a line in the summary: a healthy node with no logged-in agent spawns
 # sessions that sit at "running" forever. `tm8 doctor` reports presence AND login.
 if [[ -x "$TM8_ENV_CHECKOUT/packages/cli/dist/tm8" ]]; then
-  printf '  agents:    %s/packages/cli/dist/tm8 doctor   (claude/codex installed AND logged in? tm8 stores no agent login)\n' "$TM8_ENV_CHECKOUT"
+  printf '  agents:    %s/packages/cli/dist/tm8 doctor   (claude/codex logged in as the node OS user? members can also bring their own)\n' "$TM8_ENV_CHECKOUT"
 else
-  printf '  agents:    tm8 doctor   (claude/codex installed AND logged in? tm8 stores no agent login)\n'
+  printf '  agents:    tm8 doctor   (claude/codex logged in as the node OS user? members can also bring their own)\n'
 fi

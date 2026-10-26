@@ -169,7 +169,7 @@ describe('CONTAINER_GUIDES ride the closed catalog, adding no row', () => {
       expect(getOperation(operation).name).toBe(operation);
     }
     // No `mcp.` shadow family, and no container row invented for MCP's benefit.
-    expect(OPERATIONS.some((o) => o.name.startsWith('mcp.'))).toBe(false);
+    expect(OPERATIONS.some((o) => o.name === 'mcp.servers.list')).toBe(true);
   });
 
   it('the guides appear in the tm8_act directory, with their catalog binding', async () => {

@@ -34,7 +34,10 @@ export function filesystemAccessPortFromSeam(
   if (!grants) return null;
   const setup = seam.projectSetup;
   return {
-    viewer: async () => ({ isNodeAdmin: (await seam.identity()).isNodeAdmin === true }),
+    viewer: async () => {
+      const identity = await seam.identity();
+      return { isNodeAdmin: identity.isNodeAdmin === true || identity.isOwner === true };
+    },
     list: (includeRevoked) => grants.list(includeRevoked),
     accounts: () => grants.accounts(),
     create: (accountId, rootPath, note) => grants.create(accountId, rootPath, note),

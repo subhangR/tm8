@@ -30,6 +30,11 @@
  * someone else's identity.
  */
 export interface DbClaims {
+  /** Immutable scope from the verified auth session; used only to narrow tool minting. */
+  readonly apiScope?: 'read' | 'write' | undefined;
+  /** → `tm8.auth_session_id`. Immutable verified token-row identity; runtime
+   * authorization re-reads its generation ownership at the effect boundary. */
+  readonly authSessionId?: string | undefined;
   /** → `SET LOCAL tm8.identity_id`. The authenticated identity row. */
   readonly identityId?: string | undefined;
   /** → `SET LOCAL tm8.actor_id`. The effective author (acting-as target). */
@@ -79,7 +84,34 @@ export interface DbClaims {
    * (`test/via-link-claim-forwarding.test.ts`): dropping it fails OPEN.
    */
   readonly viaLinkId?: string | undefined;
+  /**
+   * → `SET LOCAL tm8.work_session_id`. The eighth claim (299, Spec D1): the
+   * work session an AGENT bearer was minted for, from
+   * `auth_sessions.work_session_id`. Read by `internal.caller_work_session`, so
+   * a claim made from inside a session (`task transition --claim`, `task
+   * release`, `session complete`) is the SESSION's, not the teammate's the token
+   * acts as. Written once by the issuing RPC and never updated; SQL re-checks it
+   * names a session in the target space. Omitted binds as `''`: not a session.
+   */
+  readonly workSessionId?: string | undefined;
+  /**
+   * → `SET LOCAL tm8.background_job`. The ninth claim (306, P0e): the name of
+   * the IN-PROCESS scheduler job this transaction runs for. Only the tracking
+   * jobs built in main.ts set it; no HTTP, CLI or MCP claims builder does, and
+   * `identity/claims.ts` never binds it. `internal.is_tracking_worker()` reads it
+   * to let the tracking doors span spaces — and nothing else does. A name
+   * outside `BACKGROUND_JOB_CLAIMS` binds as `''`.
+   */
+  readonly backgroundJob?: BackgroundJobClaim | undefined;
 }
+
+/**
+ * The only values `tm8.background_job` may carry. Closed on purpose: the claim
+ * widens what a tracking door accepts, so the set of callers that can hold it
+ * is a list a reviewer can read.
+ */
+export const BACKGROUND_JOB_CLAIMS = ['tracking.observer', 'tracking.forge-watcher'] as const;
+export type BackgroundJobClaim = (typeof BACKGROUND_JOB_CLAIMS)[number];
 
 /** A handle to one open transaction. Valid only inside `Db.tx`'s callback. */
 export interface Querier {

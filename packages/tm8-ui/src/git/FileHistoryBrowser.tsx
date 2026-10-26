@@ -7,7 +7,7 @@ import './project-git.css';
 
 /**
  * THE FILE-HISTORY BROWSER — the revisions of one path in a linked project's
- * working directory (Tier 1 #10), each carrying its `created_in` session
+ * working directory (Tier 1 #10), each carrying its `authored_from` session
  * attribution, with the selected revision's patch rendered through the kit's
  * EXISTING bounded DiffView (#74) — no second diff renderer.
  *

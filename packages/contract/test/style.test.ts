@@ -11,7 +11,7 @@ import {
   ATELIER_DARK,
   ATELIER_LIGHT,
   BUILTIN_STYLES,
-  BUILTIN_STYLE_IDS,
+  ATELIER_STYLE_IDS,
   STYLE_REGISTRY,
   STYLE_EXPORT_FOUNDATION_MARKER,
   StyleDocSchema,
@@ -32,11 +32,11 @@ import {
 
 const doc = (vars: Record<string, string> = {}, css: string | null = null): StyleDoc => ({
   schemaVersion: 1,
-  foundation: BUILTIN_STYLE_IDS.light,
+  foundation: ATELIER_STYLE_IDS.light,
   vars,
   css,
 });
-const dark = (vars: Record<string, string> = {}): StyleDoc => ({ ...doc(vars), foundation: BUILTIN_STYLE_IDS.dark });
+const dark = (vars: Record<string, string> = {}): StyleDoc => ({ ...doc(vars), foundation: ATELIER_STYLE_IDS.dark });
 const codes = (r: { warnings: { code: string; key: string | null }[] }) => r.warnings.map((w) => `${w.code}:${w.key}`);
 const entry = (key: string) => STYLE_REGISTRY.entries.find((e) => e.key === key) as StyleRegistryEntry;
 const colourKeys = new Set(STYLE_REGISTRY.entries.filter((e) => e.kind === 'colour').map((e) => e.key));
@@ -272,7 +272,7 @@ describe('normalizeStyleDoc — the stored form', () => {
     );
     expect(n.doc).toEqual({
       schemaVersion: 1,
-      foundation: BUILTIN_STYLE_IDS.light,
+      foundation: ATELIER_STYLE_IDS.light,
       vars: { '--pn-fs-body': '64px', '--pn-ink': '#000' },
       css: '.cv2-root .a {\n  color: red;\n}\n',
     });

@@ -630,3 +630,146 @@ describe('B2: a null-runner firing leaves a request the dispatcher can read', ()
     expect(Number(rows[0]!.n)).toBeGreaterThanOrEqual(2);
   });
 });
+
+/**
+ * 348 — the executor hands the loop id to the SPAWN, not to a later edge write.
+ *
+ * The pg cells in `mcp-provenance.pg.test.ts` prove what `execution_spawn` does
+ * with the argument. What they cannot see is the WIRING: that `fire()` actually
+ * passes it, and passes it as a SERVER FACT in the second parameter rather than
+ * as a `SpawnRequest` field a client could set. That is what this asserts, with
+ * a fake SpawnService so the argument itself is observable.
+ *
+ * Why it matters that the ARGUMENT is checked and not just the resulting edge:
+ * a `SpawnRequest.triggeredByLoopId` would produce exactly the same edge and
+ * exactly the same provenance, while being reachable from the wire. The
+ * separation IS the security property, so the separation is what is tested.
+ */
+describe('348: fire() passes the loop id as a server fact, not on the SpawnRequest', () => {
+  function appDb(): Db {
+    const run = async <T>(claims: DbClaims, fn: (client: {
+      query: (sql: string, params?: readonly unknown[]) => Promise<{ rows: unknown[] }>;
+    }) => Promise<T>): Promise<T> =>
+      database.transaction(async (client) => {
+        await client.query('set local role tm8_app');
+        await client.query(
+          `select set_config('tm8.identity_id',$1,true),set_config('tm8.actor_id','',true),
+                  set_config('tm8.node_admin','false',true),set_config('tm8.request_id','req-loop-fire',true)`,
+          [claims.identityId ?? fixture.identityId],
+        );
+        return fn(client as never);
+      });
+    return {
+      query: async <R>(claims: DbClaims, sql: string, params: readonly unknown[] = []): Promise<R[]> =>
+        run(claims, async (c) => (await c.query(sql, [...params])).rows as R[]),
+      rpc: async <T>(claims: DbClaims, name: string, args: readonly unknown[] = []): Promise<T> =>
+        run(claims, async (c) => {
+          const ph = args.map((_, i) => `$${i + 1}`).join(',');
+          const rows = await c.query(`select ${name}(${ph}) result`, [...args]);
+          return (rows.rows[0] as { result: T }).result;
+        }),
+      tx: async <T>(claims: DbClaims, fn: (q: unknown) => Promise<T>): Promise<T> =>
+        run(claims, async (c) =>
+          fn({
+            query: async (sql: string, params: readonly unknown[] = []) =>
+              (await c.query(sql, [...params])).rows,
+            rpc: async (name: string, args: readonly unknown[] = []) => {
+              const ph = args.map((_, i) => `$${i + 1}`).join(',');
+              const rows = await c.query(`select ${name}(${ph}) result`, [...args]);
+              return (rows.rows[0] as { result: unknown }).result;
+            },
+          })),
+    } as unknown as Db;
+  }
+
+  it('the loop id arrives in the SERVER-FACTS argument and never on the request', async () => {
+    const loopId = await createLoop('Server-fact firing');
+    const seen: { request: Record<string, unknown>; server: Record<string, unknown> | undefined }[] = [];
+    const port = createLoopExecutorPort({
+      db: appDb(),
+      pty: { liveSessionIds: () => [] } as never,
+      spawnService: {
+        spawn: async (_auth: unknown, request: Record<string, unknown>, server?: Record<string, unknown>) => {
+          seen.push({ request, server });
+          return { sessionId: '00000000-0000-4000-8000-00000000beef' };
+        },
+      } as never,
+      resolveOwner: async () => ({ identityId: fixture.identityId, isNodeAdmin: true }) as never,
+    });
+
+    await port.fire(
+      {
+        entityId: loopId, spaceId: fixture.spaceId, title: 'Server-fact firing',
+        schedule: 'every 1d', teamMemberId: fixture.teamMemberId, subjectId: null,
+        prompt: 'do the thing', config: null, version: 1,
+      },
+      { identityId: fixture.identityId, nodeAdmin: false, requestId: 'req-loop-fire' },
+      new Date('2026-08-09T10:00:00Z'),
+    );
+
+    expect(seen).toHaveLength(1);
+    // IN the server facts...
+    expect(seen[0]!.server).toEqual({ triggeredByLoopId: loopId });
+    // ...and NOWHERE on the request, under that name or any other. A loop id on
+    // the request would be reachable from `execution.spawn`'s wire input.
+    expect(seen[0]!.request).not.toHaveProperty('triggeredByLoopId');
+    expect(Object.values(seen[0]!.request)).not.toContain(loopId);
+  });
+
+  it('the session edge is NOT written again after the spawn on the direct branch', async () => {
+    /*
+     * The ordering fix is a MOVE, not an addition. A leftover post-spawn
+     * `writeTriggeredBy` would still be best-effort, and would quietly become
+     * the thing that writes the edge again if anyone later dropped the spawn
+     * argument — hiding the regression this task exists to fix.
+     *
+     * The fake SpawnService writes no edge at all, so if the executor still
+     * wrote one afterwards there would be exactly one; there must be none.
+     */
+    const loopId = await createLoop('No second write');
+    /*
+     * A REAL session row, not an invented uuid. With a dangling id `write_edge`
+     * fails on the missing entity and `writeTriggeredBy` swallows it, so the
+     * edge count is zero whether or not the post-spawn write is still there —
+     * the cell would pass against unmutated AND mutated source alike. Caught by
+     * running the revert-proof and seeing this cell stay green.
+     */
+    const spawnedSessionId = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const id = (await client.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
+      await client.query(
+        `insert into public.entities(id,space_id,kind,parent_id,position,created_by)
+         values($1,$2,'work_session',null,0,$3)`, [id, fixture.spaceId, fixture.memberId]);
+      await client.query(
+        `insert into public.work_sessions(entity_id,title,status,node_id)
+         values($1,'Spawned by the fake','running','node-local')`, [id]);
+      return id;
+    });
+    const port = createLoopExecutorPort({
+      db: appDb(),
+      pty: { liveSessionIds: () => [] } as never,
+      spawnService: { spawn: async () => ({ sessionId: spawnedSessionId }) } as never,
+      resolveOwner: async () => ({ identityId: fixture.identityId, isNodeAdmin: true }) as never,
+    });
+    await port.fire(
+      {
+        entityId: loopId, spaceId: fixture.spaceId, title: 'No second write',
+        schedule: 'every 1d', teamMemberId: fixture.teamMemberId, subjectId: null,
+        prompt: 'do the thing', config: null, version: 1,
+      },
+      { identityId: fixture.identityId, nodeAdmin: false, requestId: 'req-loop-fire' },
+      new Date('2026-08-09T11:00:00Z'),
+    );
+    const rows = await database.query<{ n: string }>(
+      `select count(*)::text n from public.edges where src_id=$1 and dst_id=$2 and type='triggered_by'`,
+      [spawnedSessionId, loopId]);
+    expect(rows[0]!.n).toBe('0');
+
+    // CONTROL: the TASK edge is still written, and still best-effort run
+    // history. Only the SESSION edge moved into the spawn.
+    const taskEdges = await database.query<{ n: string }>(
+      `select count(*)::text n from public.edges e join public.entities s on s.id=e.src_id
+        where e.dst_id=$1 and e.type='triggered_by' and s.kind='task'`, [loopId]);
+    expect(Number(taskEdges[0]!.n)).toBe(1);
+  });
+});

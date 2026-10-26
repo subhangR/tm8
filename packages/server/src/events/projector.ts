@@ -1,4 +1,7 @@
-import type { EffectiveSkills, OpRequestStatus } from '@tm8/contract';
+import { TOOL_CONTENT_SQL, TOOL_RUN_SQL, toolBindingActorIds, projectToolView, projectToolRun } from '../tools/projection.js';
+import { McpServerDefinitionSchema } from '@tm8/contract';
+import { attachChatRuntimeFacts } from '../chat/public-state.js';
+import type { EffectiveSkills, TaskLiveSession } from '@tm8/contract';
 /**
  * Entity hydration for the event stream — the `EntityProjector` seam.
  *
@@ -52,7 +55,7 @@ import type { Querier } from '../db/types.js';
 // The ONE unread definition, shared with the facade assembler on purpose — see
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
-import { chatContextOf, isEndedKind, loadChatSubjects, loadUnreadCounts, storySummaryOf, type ChatSubject } from '../facade/entity-read.js';
+import { chatContextOf, isEndedKind, outcomeFacts, loadChatSubjects, loadUnreadCounts, storySummaryOf, craftSummaryOf, taskProgressOf, type ChatSubject } from '../facade/entity-read.js';
 // The ONE narrowing of the status columns, shared with the read path. Both
 // files used to narrow `work_status` on their own and DISAGREED about an
 // unrecognised value; `facade/status.ts` is the fix and its docblock is the
@@ -67,8 +70,10 @@ import { loadHumanMessageAuthorIds, type HumanMessageAuthorIds } from '../facade
 import {
   loadLinkedPullRequestBadges,
   projectForgeFacts,
+  projectTrackingFreshness,
   type LinkedPullRequestBadges,
 } from '../tracking/pr-projection.js';
+import { loadTaskLiveSessionBadges } from '../tracking/live-session-projection.js';
 
 /**
  * Thrown when the database holds an entity kind the FROZEN contract does not
@@ -216,6 +221,12 @@ interface SummaryRow {
   /** Link counters (108); optional keeps pre-108 row fixtures source-compatible. */
   docs?: number | null;
   memories?: number | null;
+  /** Link counters (329), optional for the same reason. */
+  prs?: number | null;
+  artifacts?: number | null;
+  drawings?: number | null;
+  /** Launched sessions (331), optional for the same reason. */
+  sessions?: number | null;
   task_title: string | null;
   task_description: string | null;
   work_status: string | null;
@@ -268,6 +279,14 @@ interface SummaryRow {
   ws_ended_kind: string | null;
   ws_skills?: EffectiveSkills | null;
   ws_ended_reason: string | null;
+  ws_outcome?: string | null;
+  ws_outcome_at?: Date | string | null;
+  ws_outcome_by?: string | null;
+  ws_receipt_message_id?: string | null;
+  ws_outcome_source?: string | null;
+  ws_outcome_note?: string | null;
+  ws_offered_task_ids?: string[] | null;
+  ws_launched_by?: string | null;
   file_name: string | null;
   file_mime_type: string | null;
   file_size_bytes: string | number | null;
@@ -280,6 +299,7 @@ interface SummaryRow {
   pr_head_ref: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
+  pr_last_polled_at: Date | string | null;
   commit_repo: string | null;
   commit_sha: string | null;
   commit_message: string | null;
@@ -310,6 +330,11 @@ interface SummaryRow {
   loop_last_error: string | null;
   chat_title: string | null;
   chat_teammate_id: string | null;
+  chat_credential_selection?: import('@tm8/contract').ChatCredentialSelection | null;
+  chat_credential_intent?: import('@tm8/contract').ChatCredentialIntent | null;
+  chat_reasoning_effort?: import('@tm8/contract').LaunchModelEffort | null;
+  chat_config_revision?: string | number | null;
+  chat_runtime_public?: import('@tm8/contract').ChatRuntimeState;
   chat_model: string | null;
   chat_provider: string | null;
   chat_agent_tool: string | null;
@@ -328,9 +353,15 @@ interface SummaryRow {
   drawing_title: string | null;
   drawing_format: string | null;
   drawing_element_count: number | null;
+  mcp_definition?: unknown;
+  tool_content?: unknown; ws_tool_run?: unknown; ws_session_kind?: string | null;
   story_title: string | null;
   story_description: string | null;
   story_summary: unknown;
+  craft_title?: string | null;
+  craft_description?: string | null;
+  craft_summary?: unknown;
+  task_progress?: unknown;
   sty_title?: string | null;
   sty_description?: string | null;
   sty_schema_version?: number | null;
@@ -354,9 +385,6 @@ interface SummaryRow {
   cred_owner_account_id: string | null;
   srv_name: string | null;
   srv_base_url: string | null;
-  opr_title: string | null;
-  opr_op: string | null;
-  opr_status: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -404,6 +432,7 @@ select
   e.status_category,
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   c.human_messages, c.agent_messages, c.docs, c.memories,
+  c.prs, c.artifacts, c.drawings, c.sessions,
   t.title            as task_title,
   t.description      as task_description,
   t.work_status, t.priority, t.axes, t.due_date, t.start_date,
@@ -448,6 +477,22 @@ select
   ws.workdir_mode    as ws_workdir_mode,
   ws.ended_kind      as ws_ended_kind,
   ws.ended_reason    as ws_ended_reason,
+  ws.outcome         as ws_outcome,
+  ws.outcome_at      as ws_outcome_at,
+  ws.outcome_by      as ws_outcome_by,
+  ws.receipt_message_id as ws_receipt_message_id,
+  ws.outcome_source  as ws_outcome_source,
+  ws.outcome_note    as ws_outcome_note,
+  case when ws.entity_id is null then null else (select coalesce(array_agg(distinct sh.source_entity_id::text), '{}')
+     from public.session_handoffs sh
+     join public.entities ot on ot.id = sh.source_entity_id and ot.kind = 'task' and ot.deleted_at is null
+    where sh.target_work_session_id = ws.entity_id and sh.withdrawn_at is null
+      and not exists (select 1 from public.edges oc
+                       where oc.src_id = ws.entity_id and oc.dst_id = sh.source_entity_id
+                         and oc.type = 'working_on')) end as ws_offered_task_ids,
+  -- 330: who launched it — the launched_by edge, not parent_id.
+  case when ws.entity_id is null then null else (select lb.dst_id::text from public.edges lb
+    where lb.src_id = ws.entity_id and lb.type = 'launched_by' limit 1) end as ws_launched_by,
   ws.skills as ws_skills,
   f.name             as file_name,
   f.mime_type        as file_mime_type,
@@ -461,6 +506,9 @@ select
   pr.head_ref        as pr_head_ref,
   pr.url             as pr_url,
   pr.fetched_at      as pr_fetched_at,
+  -- 306's column, read through the row so position-pinned suites that stop
+  -- the chain before 306 still run this shared SQL.
+  (to_jsonb(pr) ->> 'last_polled_at') as pr_last_polled_at,
   cm.repo            as commit_repo,
   cm.sha             as commit_sha,
   cm.message         as commit_message,
@@ -498,6 +546,10 @@ select
   lp.last_error      as loop_last_error,
   cht.title          as chat_title,
   cht.teammate_id    as chat_teammate_id,
+  to_jsonb(cht)->'credential_selection' as chat_credential_selection,
+  to_jsonb(cht)->'credential_intent' as chat_credential_intent,
+  to_jsonb(cht)->>'reasoning_effort' as chat_reasoning_effort,
+  to_jsonb(cht)->>'config_revision' as chat_config_revision,
   cht.model          as chat_model,
   cht.provider       as chat_provider,
   cht.agent_tool     as chat_agent_tool,
@@ -518,11 +570,21 @@ select
   -- The element COUNT only: a scene is the largest payload any kind carries
   -- and the event path must never move it. The elements are content.
   coalesce(jsonb_array_length(drw.elements), 0) as drawing_element_count,
+  mcp.definition as mcp_definition,
+  ${TOOL_CONTENT_SQL} as tool_content,
+  ${TOOL_RUN_SQL} as ws_tool_run,
+  ws.session_kind as ws_session_kind,
   sty.title          as story_title,
   sty.description    as story_description,
   -- 283: the SAME function entity-read.ts selects — the twins mirror by
   -- construction. Computed at projection time, never stored.
   case when e.kind = 'story' then internal.story_summary(e.id) end as story_summary,
+  -- 304: the SAME summary function entity-read.ts selects.
+  dsg.title          as craft_title,
+  dsg.description    as craft_description,
+  case when e.kind = 'craft' then internal.craft_summary(e.id) end as craft_summary,
+  -- 307: likewise the SAME function entity-read.ts selects.
+  case when e.kind = 'task' then internal.task_progress(e.id) end as task_progress,
   -- Space styles (284): the WHOLE document rides the summary on purpose (spec
   -- §4.3, sign-off): entity.upsert after a push is how every viewer on the
   -- style repaints. Bounded by the doors: ≤ 200 vars of ≤ 512 chars, css ≤ 16 KiB.
@@ -554,10 +616,6 @@ select
   -- row draws. servers holds no secret. MIRRORS entity-read.ts.
   srv.name             as srv_name,
   srv.base_url         as srv_base_url,
-  -- Op requests (L5, 280): title, op, status. MIRRORS entity-read.ts.
-  opr.title            as opr_title,
-  opr.op               as opr_op,
-  opr.status           as opr_status,
   wt.project_id      as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
@@ -629,11 +687,12 @@ left join lateral (
 left join public.graphs gr           on gr.entity_id = e.id
 left join public.drawings drw         on drw.entity_id = e.id
 left join public.stories sty          on sty.entity_id = e.id
+left join public.crafts dsg          on e.kind = 'craft' and dsg.entity_id = e.id
+left join public.mcp_servers mcp on e.kind='mcp_server' and mcp.entity_id=e.id
 left join public.styles stl           on e.kind = 'style' and stl.entity_id = e.id
 left join public.forms frm            on frm.entity_id = e.id
 left join public.space_credentials scr on e.kind = 'credential' and scr.id = e.id
 left join public.servers srv          on e.kind = 'server' and srv.entity_id = e.id
-left join public.op_requests opr      on e.kind = 'op_request' and opr.entity_id = e.id
 left join public.containers ctr      on ctr.entity_id = e.id
 -- No container_runtime_state join, and no runtime_ref / host_spec columns.
 -- Usage is CONTENT, not summary state, and heartbeats deliberately emit no
@@ -726,6 +785,7 @@ export class PgEntityProjector implements EntityProjector {
 
     const rows = await q.query<SummaryRow>(SUMMARY_SQL, [unique]);
     if (rows.length === 0) return out;
+    await attachChatRuntimeFacts(q, rows);
 
     const humanMessageAuthors = await loadHumanMessageAuthorIds(q, unique);
 
@@ -735,6 +795,7 @@ export class PgEntityProjector implements EntityProjector {
     const actorIds = new Set<string>();
     for (const r of rows) {
       actorIds.add(r.created_by);
+      for (const id of toolBindingActorIds(r.tool_content)) actorIds.add(id);
       if (r.msg_author_id !== null) actorIds.add(r.msg_author_id);
     }
     for (const authors of humanMessageAuthors.values()) {
@@ -859,6 +920,9 @@ export class PgEntityProjector implements EntityProjector {
     // being unlinked. Same loader as the facade assembler, so the two answers
     // cannot drift. Skipped entirely when no task is in the batch.
     const pullRequests = await loadLinkedPullRequestBadges(q, rows);
+    // `badges.liveSession` (P0g): the same loader as the facade assembler, for
+    // the pull-request reason above. Skipped entirely when no task is in the batch.
+    const liveSessions = await loadTaskLiveSessionBadges(q, rows);
     // Each chat's `about` subject — the SAME loader as the facade assembler, for
     // the pull-request reason above: a subject chip that rendered on load and
     // vanished on the next `entity.upsert` would read as the link being removed.
@@ -871,7 +935,8 @@ export class PgEntityProjector implements EntityProjector {
         this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], assignments.get(r.id) ?? [],
           memberIds.get(r.id) ?? [],
           viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts, containsCounts,
-          pullRequests.get(r.id), humanMessageAuthors.get(r.id), chatSubjects),
+          pullRequests.get(r.id), humanMessageAuthors.get(r.id), chatSubjects,
+          liveSessions.get(r.id)),
       );
     }
     return out;
@@ -951,6 +1016,7 @@ export class PgEntityProjector implements EntityProjector {
     pullRequests: LinkedPullRequestBadges | undefined,
     humanMessageAuthors: HumanMessageAuthorIds | undefined,
     chatSubjects: ReadonlyMap<string, ChatSubject>,
+    liveSession?: TaskLiveSession,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -965,6 +1031,10 @@ export class PgEntityProjector implements EntityProjector {
       // and projects 0 like its five elders.
       docs: r.docs ?? 0,
       memories: r.memories ?? 0,
+      prs: r.prs ?? 0,
+      artifacts: r.artifacts ?? 0,
+      drawings: r.drawings ?? 0,
+      sessions: r.sessions ?? 0,
       viewerReaction,
     };
 
@@ -1014,6 +1084,8 @@ export class PgEntityProjector implements EntityProjector {
               ...(pullRequests.truncated ? { pullRequestsTruncated: true } : {}),
             }
           : {}),
+        // MIRRORS badgesOf: emitted whenever the loader answered.
+        ...(liveSession ? { liveSession } : {}),
       },
     };
 
@@ -1124,9 +1196,14 @@ export class PgEntityProjector implements EntityProjector {
       case 'drawing':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.drawing_title ?? 'Drawing';
+      case 'tool': return projectToolView(r, new Map()).definition.name;
+      case 'mcp_server': return McpServerDefinitionSchema.parse(r.mcp_definition).name;
       case 'story':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.story_title ?? 'Story';
+      case 'craft':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf.
+        return r.craft_title ?? 'Craft';
       case 'style':
         // Its own detail-row title — MIRRORS entity-read.ts titleOf.
         return r.sty_title ?? 'Style';
@@ -1155,9 +1232,6 @@ export class PgEntityProjector implements EntityProjector {
       case 'space_link':
         // Never the target's name (P8) — MIRRORS entity-read.ts titleOf.
         return 'Space link';
-      case 'op_request':
-        // Its own title — MIRRORS entity-read.ts titleOf.
-        return r.opr_title ?? 'Op request';
       default:
         // Custom c:* kinds: no title column exists. `fields.title` is the
         // convention when the kind schema declares one.
@@ -1199,6 +1273,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'graph' ? r.graph_type
       : r.kind === 'drawing' ? r.drawing_format
       : r.kind === 'story' ? r.story_description
+      : r.kind === 'craft' ? (r.craft_description ?? null)
       : r.kind === 'style' ? (r.sty_description ?? null)
       : r.kind === 'form' ? r.form_description
       : r.kind === 'credential' ? r.cred_provider
@@ -1255,6 +1330,8 @@ export class PgEntityProjector implements EntityProjector {
             assignedAt: assignment.assignedAt,
           })),
           acceptance: { total: criteria.length, completed },
+          // MIRRORS entity-read.ts stateOf: the same `internal.task_progress`.
+          ...taskProgressOf(r.task_progress),
           completionGate: r.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
         };
       }
@@ -1333,6 +1410,8 @@ export class PgEntityProjector implements EntityProjector {
       case 'work_session':
         return {
           kind: 'work_session',
+          ...(r.ws_session_kind ? { sessionKind: r.ws_session_kind as import('@tm8/contract').WorkSessionKind } : {}),
+          ...(r.ws_tool_run ? { toolRun: projectToolRun(r.ws_tool_run, actors.get(r.created_by) ?? null) } : {}),
           ...(r.ws_skills ? { skills: r.ws_skills } : {}),
           status: oneOf(r.ws_status, WS_STATUSES, 'spawning'),
           agentTool: r.ws_agent_tool,
@@ -1368,6 +1447,10 @@ export class PgEntityProjector implements EntityProjector {
           // to prevent. An unrecognised kind projects null, never through.
           endedKind: isEndedKind(r.ws_ended_kind) ? r.ws_ended_kind : null,
           endedReason: r.ws_ended_reason ?? null,
+          // 299 — the outcome facts, the same helper as entity-read.
+          ...outcomeFacts(r),
+          ...(Array.isArray(r.ws_offered_task_ids) ? { offeredTaskIds: r.ws_offered_task_ids } : {}),
+          ...(r.ws_launched_by !== undefined ? { launchedBy: r.ws_launched_by } : {}),
         };
       case 'file':
         return {
@@ -1382,10 +1465,8 @@ export class PgEntityProjector implements EntityProjector {
           repository: r.pr_repo ?? '',
           number: r.pr_number ?? 0,
           state: r.pr_state ?? 'open',
-          fetchedAt: iso(r.pr_fetched_at),
-          // `stale` is "the mirror is older than the upstream", which needs a
-          // tracking comparison. Never fetched ⇒ definitionally stale.
-          stale: r.pr_fetched_at === null,
+          // 306: never polled, or open and unpolled past the threshold.
+          ...projectTrackingFreshness(r.pr_state, r.pr_fetched_at, r.pr_last_polled_at),
           ...projectForgeFacts(r.pr_ci_status, r.pr_mergeable_state, r.pr_head_ref),
         };
         return r.pr_url === null ? base : { ...base, url: r.pr_url };
@@ -1483,10 +1564,16 @@ export class PgEntityProjector implements EntityProjector {
           format: r.drawing_format ?? 'excalidraw',
           elementCount: r.drawing_element_count ?? 0,
         };
+      case 'tool': return { kind: 'tool', ...projectToolView(r, actors) };
+      case 'mcp_server': return { kind: 'mcp_server', definition: McpServerDefinitionSchema.parse(r.mcp_definition) };
       case 'story':
         // MIRRORS entity-read.ts stateOf: the same `internal.story_summary`
         // jsonb through the same coercion.
         return storySummaryOf(r.story_summary);
+      case 'craft':
+        // MIRRORS entity-read.ts stateOf: the same `internal.craft_summary`
+        // jsonb through the same coercion.
+        return craftSummaryOf(r.craft_summary);
       case 'form':
         // MIRRORS entity-read.ts stateOf: lifecycle status and question count.
         return {
@@ -1511,10 +1598,22 @@ export class PgEntityProjector implements EntityProjector {
         // tile changes shape depending on which door answered.
         return {
           kind: 'chat',
-          teammateId: r.chat_teammate_id ?? '',
-          model: r.chat_model ?? '',
-          provider: r.chat_provider ?? '',
-          agentTool: r.chat_agent_tool ?? '',
+          credentialSelection: r.chat_credential_selection ?? { source: 'auto' },
+          ...(r.chat_config_revision != null ? {
+            configRevision: Number(r.chat_config_revision),
+            reasoningEffort: r.chat_reasoning_effort ?? null,
+            ...(r.chat_credential_intent ? { credentialIntent: r.chat_credential_intent } : {}),
+            ...(r.chat_runtime_public ? { runtime: r.chat_runtime_public } : {}),
+          } : {}),
+          // The `chats_select` policy hides a DELETED chat's row, so an edge
+          // naming a deleted chat (330's launched_by backfill made hundreds)
+          // reads nulls here. Empty strings fail the WorkspaceEvent contract
+          // and wedge the space's feed at that seq; fall back to values the
+          // contract accepts. MIRRORED in entity-read.ts stateOf.
+          teammateId: r.chat_teammate_id ?? r.created_by,
+          model: r.chat_model ?? 'unknown',
+          provider: r.chat_provider ?? 'unknown',
+          agentTool: r.chat_agent_tool ?? 'unknown',
           mode: (r.chat_mode ?? 'ask') as ChatMode,
           workdirMode: (r.chat_workdir_mode ?? 'scratch') as ChatWorkdirMode,
           projectId: r.chat_project_id,
@@ -1573,9 +1672,6 @@ export class PgEntityProjector implements EntityProjector {
         // link. MIRRORS entity-read.ts stateOf. Without this arm the default
         // below raises EntityKindDriftError for every space_link event.
         return { kind: r.kind };
-      case 'op_request':
-        // 280 (L5): which op, and where it is. MIRRORS entity-read.ts stateOf.
-        return { kind: 'op_request', op: r.opr_op ?? '', status: (r.opr_status ?? 'pending') as OpRequestStatus };
       case 'style':
         // 284: the full document, so a push repaints every viewer on the style
         // with no fetch (spec §4.3). MIRRORS entity-read.ts stateOf.

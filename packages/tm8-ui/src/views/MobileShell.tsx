@@ -31,20 +31,21 @@
  * honesty rule the desktop switch was repaired to follow.
  */
 import { AttentionHeaderButton, AttentionSheet } from '../attention/AttentionSheet';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useAttentionOptional } from '../attention';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ActorSummary, EntityId, EntityKind, SpaceId } from '@tm8/contract';
-import { MobileFrame, MobileSurfaceProvider } from '../mobile';
+import { MobileFrame, MobileSurfaceProvider, type PhoneUp } from '../mobile';
 import { MobileAccountSheet } from '../mobile/MobileAccountSheet';
 import '../mobile/mobile-chrome.css';
 import '../mobile/mobile-screens.css';
+import '../mobile/mobile-noscroll.css';
 import { CopyLinkControl } from '../share';
 import { Avatar, BootLoader, VectorIcon } from '../kit';
 import type { Theme } from '../theme/useTheme';
 import { isUnbuiltViewRef } from './view-ref-screens';
-import { CHANNEL_KIND, getKind, placeholderNameFor, slugOfKind, type KindArt } from '../domain';
-import { placeholderTitleFor, useNewTask } from '../authoring';
-import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
+import { CHANNEL_KIND, getKind, slugOfKind, type KindArt } from '../domain';
+import { screenKeyOf, screenStackStore, useScreenStack } from '../stores/screenStackStore';
 import { VIEW_PRESENTATION, type MenuTarget } from '../shell';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import type { DetailReasons } from '../panels';
@@ -53,12 +54,19 @@ import { EntityView } from './EntityView';
 import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
 import { ChannelView } from './ChannelView';
 import { InboxView } from './InboxView';
-import { openEntityOnPhone } from './openEntityOnPhone';
+import { openEntityOnPhone, withEntityKind, type NavigateOptions } from './openEntityOnPhone';
+import { readFleetEntity } from '../chat-home/fleet/use-fleet-entities';
+import { PhoneEntityPage } from '../mobile-pages';
+import { usePagePlace } from '../mobile/usePagePlace';
+import { useEdgeSwipe } from '../mobile/useEdgeSwipe';
+import { backStepOf, phoneHistory, resetToChatFloor, topEntry, usePhoneHistory } from '../stores/phoneHistory';
 import { ChatHomeSurface } from '../chat-home';
 import { HelpScreen } from '../help';
 import type { ChatThreadSummary } from '../chat-home/types';
 import type { ChatHomeL2Bridge } from '../chat-home/real-port';
 import { MobileDrawer, anyUnseen } from '../mobile/MobileDrawer';
+import { usePresence } from '../mobile/layerMotion';
+import { useOverlayEntry } from '../stores/overlayHistory';
 import { EntityChatSlot, useChatSlot } from '../entity-chat';
 import { navStore } from '../stores/navStore';
 import { MobileThreadsSheet } from '../mobile/MobileThreadsSheet';
@@ -68,7 +76,8 @@ export interface MobileShellProps {
   data: GateData & { pull?: (id: string) => void };
   spaceId: SpaceId;
   activeTarget: MenuTarget | null;
-  navigateTo(target: MenuTarget): void;
+  /** `opts.open` shows an entity ON the target as one address — see `openEntityOnPhone`. */
+  navigateTo(target: MenuTarget, opts?: NavigateOptions): void;
   openEntity: EntityId | null;
   serverBaseUrl?: string;
   reasons: DetailReasons;
@@ -86,6 +95,16 @@ export interface MobileShellProps {
    */
   chatBridge?: ChatHomeL2Bridge;
   spaceLabel?: string;
+  /**
+   * The Settings screen, built by `GateApp` from the same mount (and the same
+   * ports) the desktop uses, in its `stacked` arrangement. Absent or null ⇒
+   * the refusal card, which is still the truth where no port was served.
+   *
+   * A function of the shell's own account-sheet opener, because Settings has
+   * no Appearance section: its Appearance row points at `MobileAccountSheet`,
+   * where light / dark already lives, rather than copying it (mockup 01a14cc4).
+   */
+  settingsScreen?: ((openAccount: (() => void) | undefined) => ReactNode) | null;
 
   /*
    * THE ACCOUNT AFFORDANCE'S INPUTS — DEF-003.
@@ -112,6 +131,16 @@ export interface MobileShellProps {
    * the entity chevron is not drawn, per the honest-absence rule.
    */
   onStepUp?: (target: MenuTarget) => void;
+  /**
+   * BACK, through the host's router (`history.back()`): the ‹ when the entry
+   * below is one this tab wrote (CONTRACT §5 rulings 1 and 5).
+   */
+  onBack?: () => void;
+  /**
+   * REPLACE the page with `target`: the ‹ on a cold link (Up to the kind's
+   * list, ruling 4) or over the drawer's Chat floor (ruling 3).
+   */
+  onReplace?: (target: MenuTarget) => void;
   /** Theme, controlled by the host so the phone writes the same state the root
       stamp reads — a second `useTheme()` here would be a second truth. */
   theme?: Theme;
@@ -226,6 +255,10 @@ const MENU_ART: KindArt = ['M2.5 4.25h11', 'M2.5 8h11', 'M2.5 11.75h7'];
  * the card explains which arrangement has no phone layout, and naming the thing
  * exactly is what makes that honest rather than vague.
  */
+function onChatScreenOf(activeTarget: MenuTarget | null): boolean {
+  return activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
+}
+
 function titleOf(activeTarget: MenuTarget | null, nameOfEntity?: (target: { ref: string; kind: string }) => string | null): string {
   if (!activeTarget) return 'Not found';
 
@@ -340,22 +373,20 @@ export function useSpaceScopedChat(spaceId: SpaceId): {
   return { threads, setThreads, threadsKnown, threadId, setThreadId };
 }
 
-/**
- * WHAT THE DRAWER'S SECOND VERB MAKES.
- *
- * Named HERE and not in the drawer, because the drawer is the file that is
- * not allowed to know a kind — it reads the word off the registry from this.
- * A shell choosing a default kind is ordinary (`GateApp.DEFAULT_LEFT_KIND` is
- * the same choice for the same reason); a NAVIGATION PANEL spelling one is
- * how the two shells start drifting.
- *
- * TASK, and not chat or session: the other verb in that section already makes
- * a conversation, and a session is born by launching rather than by a ＋.
- */
-const DRAWER_CREATE_KIND: EntityKind = 'task';
-
 export function MobileShell(props: MobileShellProps) {
   const { data, activeTarget, navigateTo, spaceId } = props;
+
+  /* THE WORKSPACE (tabs) VIEW IS DESKTOP-ONLY (Spec A §2): the phone does not
+     list it, and a `#/…/tabs` link opened here falls back to Home — replace,
+     so Back does not return to an address this shell cannot draw. */
+  useEffect(() => {
+    const fallBack = (state: ReturnType<typeof navStore.getState>) => {
+      if (state.view.view !== 'tabs') return;
+      navStore.setState((s) => ({ view: { view: 'home' }, history: 'replace', revision: s.revision + 1 }));
+    };
+    fallBack(navStore.getState());
+    return navStore.subscribe(fallBack);
+  }, []);
 
   /*
    * THE UP AFFORDANCE, on the store's blessed seam and nothing else.
@@ -408,7 +439,33 @@ export function MobileShell(props: MobileShellProps) {
     activeTarget?.type === 'entity' && slugOfKind(activeTarget.kind)
       ? { type: 'kind', ref: activeTarget.kind }
       : null;
-  const showUp = Boolean(screenStack.selected) || Boolean(upTarget && props.onStepUp);
+  /*
+   * WHAT ‹ DOES (CONTRACT §5 rulings 1-6, owner 2026-10-18), read off the
+   * phone's projection of the one history (`stores/phoneHistory.ts`):
+   *
+   *   - an entry of ours is directly below → BACK, `history.back()` through the
+   *     host. The page below returns with its scroll and draft, and the system
+   *     Back and this button can never disagree, because they are one action.
+   *   - the drawer's Chat floor is below (ruling 3) → replace with Chat.
+   *   - nothing of ours below (a cold link, ruling 4) and an entity is open →
+   *     UP, which REPLACES the page with its kind's list.
+   *
+   * A host that wires neither verb (fixtures, older harnesses) keeps the
+   * original stack pop / step-up below, unchanged.
+   */
+  const backStep = usePhoneHistory(backStepOf);
+  const upList: MenuTarget | null =
+    activeTarget?.type === 'kind' && screenStack.selected ? { type: 'kind', ref: activeTarget.ref } : upTarget;
+  const chevron: { label: string; run: () => void } | null =
+    backStep === 'back' && props.onBack
+      ? { label: 'Back', run: props.onBack }
+      : backStep === 'chat' && props.onReplace && !onChatScreenOf(activeTarget)
+        ? { label: 'Back to Chat', run: () => props.onReplace?.({ type: 'view', ref: 'dashboard' }) }
+        : upList && props.onReplace
+          ? { label: `Up to ${getKind(upList.ref).labelPlural}`, run: () => props.onReplace?.(upList) }
+          : null;
+  const showUp = chevron !== null || Boolean(screenStack.selected) || Boolean(upTarget && props.onStepUp);
+  const goBack = chevron?.run ?? null;
   /*
    * DEF-034's lookup, SUMMARY FIRST and detail as the fallback — the same order
    * `capabilitiesOf` documents and for the same reason. A channel reached from
@@ -417,10 +474,18 @@ export function MobileShell(props: MobileShellProps) {
    * `undefined` for the other arrival, which is precisely the cold-link case
    * this row is about.
    */
-  const title = titleOf(activeTarget, (target) => {
+  const nameOfEntity = (target: { ref: string; kind: string }) => {
     const row = data.rowsFor(target.kind)(undefined).find((r) => r.id === target.ref);
     return row?.title ?? data.detailOf(target.ref)?.title ?? null;
-  });
+  };
+  /* A DOCUMENT OPEN ON ITS LIST IS NAMED BY ITSELF (owner ruling 2026-10-19):
+     the reader page drops its own title row on the phone, so the header's one
+     line is ‹ and the doc's name rather than ‹ and "Docs". */
+  const openReader =
+    activeTarget?.type === 'kind' && screenStack.selected && getKind(activeTarget.ref).panel.archetype === 'reader'
+      ? nameOfEntity({ ref: screenStack.selected, kind: activeTarget.ref })
+      : null;
+  const title = openReader ?? titleOf(activeTarget, nameOfEntity);
   const [accountOpen, setAccountOpen] = useState(false);
   const [attentionOpen, setAttentionOpen] = useState(false);
 
@@ -441,6 +506,51 @@ export function MobileShell(props: MobileShellProps) {
    * always-present full-frame overlay costs nothing.
    */
   const [sheetHost, setSheetHost] = useState<HTMLDivElement | null>(null);
+
+  /*
+   * ── PUSH AND POP FEEL LIKE PUSH AND POP (t-nav) ─────────────────────────
+   *
+   * The content region is the frame's, found from the sheet host the frame
+   * already gives this shell (both live in one `.mobile-frame`). Three things
+   * hang off it, all keyed to the TOP ENTRY of the phone's stack:
+   *
+   *   - the slide: a push comes in from the right over 280ms, a pop returns
+   *     from a 28% parallax (the entity-lists mockup's numbers). List↔entity
+   *     on one kind screen is left to the phone list's own slide (t-lists),
+   *     so nothing slides twice. Reduced motion: no travel.
+   *   - each entry's scroll and composer draft (ruling 5, `usePagePlace`).
+   *   - the iOS-standalone edge swipe (ruling 2, `useEdgeSwipe`).
+   */
+  const [contentEl, setContentEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setContentEl(sheetHost?.closest('.mobile-frame')?.querySelector<HTMLElement>('.mobile-frame__content') ?? null);
+  }, [sheetHost]);
+  const topSeq = usePhoneHistory((s) => topEntry(s)?.seq ?? null);
+  usePagePlace(contentEl, topSeq);
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+  const swipeBack = useCallback(() => goBackRef.current?.(), []);
+  useEdgeSwipe(contentEl, goBack ? swipeBack : null);
+  const screenNow = { kind: activeTarget?.type === 'kind' ? activeTarget.ref : null, open: screenStack.selected };
+  const screenThen = useRef(screenNow);
+  useLayoutEffect(() => {
+    const then = screenThen.current;
+    screenThen.current = screenNow;
+    if (topSeq === null || !contentEl) return;
+    const op = phoneHistory.getState().lastOp;
+    if (op !== 'push' && op !== 'pop') return;
+    if (then.kind !== null && then.kind === screenNow.kind && (then.open === null || screenNow.open === null)) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const page = contentEl.firstElementChild as HTMLElement | null;
+    page?.animate?.(
+      op === 'push'
+        ? [{ transform: 'translateX(100%)' }, { transform: 'none' }]
+        : [{ transform: 'translateX(-28%)', opacity: 0.6 }, { transform: 'none', opacity: 1 }],
+      { duration: 280, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+    );
+    // Once per arrival on an entry; `screenNow` is read, not watched.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topSeq, contentEl]);
 
   /*
    * ── THE CHAT SCREEN IS ONE SURFACE, AND ITS INVENTORY LIVES IN A SHEET ────
@@ -493,6 +603,14 @@ export function MobileShell(props: MobileShellProps) {
    */
   const [drawerOpen, setDrawerOpen] = useState(false);
   /*
+   * THE DRAWER'S BACK ENTRY AND ITS EXIT (task t-layers). Android Back pops
+   * the drawer's same-URL marker and closes it; every other close goes
+   * through `closeDrawer`, which takes the marker off again. `usePresence`
+   * keeps it mounted through the slide out (none under reduced motion).
+   */
+  const closeDrawer = useOverlayEntry(drawerOpen, () => setDrawerOpen(false));
+  const drawerPresence = usePresence(drawerOpen);
+  /*
    * THE CONVERSATION LIST'S OWN SURFACE (task 01a0a5f2).
    *
    * It used to be the drawer's first section, rendered inline, and it grew
@@ -508,51 +626,43 @@ export function MobileShell(props: MobileShellProps) {
      shell's only job is to hold nothing else. `threadsKnown` rides along
      INSIDE it rather than sitting here, because a space switch has to clear
      it with the rows it describes — see the hook's own note. */
-  const { threads, setThreads, threadsKnown, threadId, setThreadId } =
+  const { threads, setThreads, threadId, setThreadId } =
     useSpaceScopedChat(spaceId);
   const onChatScreen = activeTarget?.type === 'view' && activeTarget.ref === 'dashboard';
 
   /*
-   * ── THE DRAWER'S SECOND VERB, ON THE CREATE PATH THAT ALREADY EXISTS ─────
+   * THE DRAWER IS TOP-LEVEL NAVIGATION (CONTRACT §5 ruling 3, 2026-10-18): a
+   * drawer destination — a kind tree's item or See all, a pin, a foot row —
+   * RESETS the stack to [Chat, destination] rather than pushing on top of
+   * whatever was open. Chat is the shell's floor (the `dashboard` root), so the
+   * reset is: empty every screen's entity stack, then navigate. An item then
+   * opens as the ONLY entry on its kind's screen, so Up lands on that kind's
+   * list and the next Up on Chat, never on an entity left open before.
    *
-   * `useNewTask` is the whole flow — it is what `EntityCreateControl` runs,
-   * what Home's kind cell ＋ runs and what the Work tab's ＋ runs. Calling it
-   * here gives the phone drawer the SAME create rather than a phone-shaped
-   * copy of it: one placeholder grammar, one double-press guard, one refusal
-   * vocabulary. The oracle's shape holds unchanged — the task exists the
-   * instant you press, named "Untitled task", and the panel's inline title
-   * editor is what names it.
-   *
-   * IT LANDS ON THE NEW TASK, because on a phone it has to. The desktop can
-   * create into a list column the reader is already looking at; this shell has
-   * one surface, so a create that left the drawer's screen up would be a press
-   * with no visible consequence — the exact "I click and nothing happens"
-   * failure the authoring lane's R7 is written against. `openEntityOnPhone` is
-   * the shell's own way in, so this builds no route of its own.
+   * Browser history still gets its ordinary push (ruling 1: Back is real
+   * history and is never fought); what resets is the in-app stack Up walks.
    */
-  const newTaskConfig = getKind(DRAWER_CREATE_KIND);
-  const newTask = useNewTask({
-    spaceId,
-    kind: DRAWER_CREATE_KIND,
-    placeholderTitle: placeholderNameFor(newTaskConfig, placeholderTitleFor(newTaskConfig.label)),
-    commands: data.seam.commands,
-    onCreated: (id) => openEntityOnPhone(navigateTo, id, DRAWER_CREATE_KIND),
-  });
-  /* A REFUSAL IS SAID OUT LOUD. The drawer is gone by the time the create
-     answers, so the notice rail is the only place left that can carry it —
-     the same handling Home gives the same flow. */
-  const { onNotice } = props;
-  useEffect(() => {
-    if (newTask.state.phase !== 'refused') return;
-    onNotice({
-      id: 'mobile-drawer-new-entity-refused',
-      tone: 'error',
-      title: newTask.state.failure.cause,
-      body: newTask.state.failure.detail,
-      ttlMs: 8_000,
-    });
-    newTask.dismiss();
-  }, [newTask, onNotice]);
+  /* THE DRAWER'S "NEEDS YOU" COUNT — the number `AttentionHeaderButton` and
+     the sheet title draw: mine when any are mine, else all. */
+  const attention = useAttentionOptional();
+  const attentionCounts = attention ? attention.counts() : null;
+  const needsYouCount = attentionCounts
+    ? attentionCounts.mine > 0
+      ? attentionCounts.mine
+      : attentionCounts.all
+    : 0;
+  const resetScreenStacks = useCallback(() => {
+    screenStackStore.getState().clearAll();
+    /* The ‹ stack too: what follows lands as the only entry above Chat. */
+    resetToChatFloor();
+  }, []);
+  const drawerNavigateTo = useCallback(
+    (target: MenuTarget) => {
+      resetScreenStacks();
+      navigateTo(target);
+    },
+    [navigateTo, resetScreenStacks],
+  );
 
   /*
    * ── UNSEEN HAD TO SURVIVE THE TAB BAR (owner ruling 5) ──────────────────
@@ -567,64 +677,104 @@ export function MobileShell(props: MobileShellProps) {
    * established. ABSENT IS NOT ZERO, and it is not "unread" either.
    */
   const unseen = anyUnseen(data.countsFor);
+  /*
+   * THE CHAT SCREEN HAS NO HEADER (task t-topbar, product ruling over audit
+   * B2), so the attention segment that lives in the header has nowhere to sit
+   * there. Its fact rides on the floating ☰ as the same dot unread does: a
+   * request waiting on YOU is a reason to open the menu. Mine only — "waiting
+   * on someone" is not a reason to interrupt the one screen with no chrome.
+   */
+  const attentionMine = attentionCounts ? attentionCounts.mine : 0;
+  const menuDot = onChatScreen ? unseen === true || attentionMine > 0 : unseen === true;
+  const menuLabel = [
+    'Navigation',
+    unseen === true ? 'unread items' : null,
+    onChatScreen && attentionMine > 0 ? `${attentionMine} need you` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
-  /* The link affordance is in the header for the same reason it is in the
-     desktop tab bar: the thing being shared is THE PAGE. On a phone it matters
-     more, not less — a phone is where links are received and forwarded. */
-  const header = (
-    <div className="mobile-header" data-chrome={onChatScreen ? 'chat' : undefined}>
-      {/* ☰ — ON EVERY SCREEN NOW (owner ruling 4), because it is the only
-          navigation this shell has left. It used to appear on the chat screen
-          alone and open the conversation inventory; the drawer's FIRST section
-          is that same inventory, so nothing was taken away — the control's
-          reach was widened and its contents grew by 26 destinations.
+  /* ☰ — ON EVERY SCREEN (owner ruling 4), because it is the only navigation
+     this shell has left. In the header everywhere but chat; FLOATING over the
+     transcript on chat, where there is no header to hold it.
 
-          IT CARRIES THE UNREAD FACT. `unseen === true` draws the indicator;
-          `false` and `null` both draw nothing, and they are different states
-          for a reason the `unseen` block above states in full. */}
-      <button
-        type="button"
-        className="mobile-header__menu"
-        data-testid="mobile-drawer-menu"
-        aria-haspopup="dialog"
-        aria-expanded={drawerOpen}
-        aria-label={unseen === true ? 'Navigation, unread items' : 'Navigation'}
-        onClick={() => setDrawerOpen(true)}
-      >
-        <VectorIcon paths={MENU_ART} size={20} strokeWidth={1.6} />
-        {unseen === true ? <span className="mobile-header__dot" aria-hidden /> : null}
-      </button>
+     IT CARRIES THE UNREAD FACT. `unseen === true` draws the indicator;
+     `false` and `null` both draw nothing, and they are different states for a
+     reason the `unseen` block above states in full. */
+  const menuButton = (
+    <button
+      type="button"
+      className={onChatScreen ? 'mobile-header__menu mobile-float-menu' : 'mobile-header__menu'}
+      data-testid="mobile-drawer-menu"
+      aria-haspopup="dialog"
+      aria-expanded={drawerOpen}
+      aria-label={menuLabel}
+      onClick={() => setDrawerOpen(true)}
+    >
+      <VectorIcon paths={MENU_ART} size={20} strokeWidth={1.6} />
+      {menuDot ? (
+        <span
+          className="mobile-header__dot"
+          /* Waiting-on-you outranks unread: it wears the attention tone. */
+          {...(onChatScreen && attentionMine > 0 ? { 'data-tone': 'wait' } : {})}
+          aria-hidden
+        />
+      ) : null}
+    </button>
+  );
+
+  /* NO HEADER ON THE CHAT SCREEN (task t-topbar). The transcript runs to the
+     top edge under a floating ☰; New chat is in the drawer, and the account
+     is the drawer's foot row. Every other screen keeps the header, where the
+     title is the only thing that names the screen. */
+  const upLabel = chevron?.label ?? `Up to ${upTarget ? getKind(upTarget.ref).labelPlural : title}`;
+  const runUp = () => {
+    if (chevron) {
+      chevron.run();
+      return;
+    }
+    if (screenStack.selected) {
+      screenStack.pop();
+      return;
+    }
+    if (upTarget) props.onStepUp?.(upTarget);
+  };
+  /*
+   * THE SAME ‹ FOR A SCREEN THAT HIDES THIS HEADER (the immersive session
+   * page). The press reads the latest closure through a ref, so the context
+   * value changes only when the label or the presence does, not every render.
+   */
+  const runUpRef = useRef(runUp);
+  runUpRef.current = runUp;
+  const upForScreen = useMemo<PhoneUp | null>(
+    () => (showUp && !onChatScreen ? { label: upLabel, run: () => runUpRef.current() } : null),
+    [showUp, onChatScreen, upLabel],
+  );
+  const header = onChatScreen ? null : (
+    <div className="mobile-header">
+      {menuButton}
       {/* Rendered ONLY when something is open. A chevron at a screen root would
           be dead chrome that either does nothing or leaves the app; the ☰
           beside it is the navigation there. The two coexist and mean different
           things — ☰ goes to a destination, the chevron goes UP one screen —
           which is exactly the distinction the tab bar could never draw. */}
-      {showUp && !onChatScreen ? (
+      {showUp ? (
         <button
           type="button"
           className="mobile-header__back"
           /* The label names WHERE UP GOES, which for an entity is its
              collection and for an open entity on a kind screen is that screen.
              "Up to Tasks" is a promise the press then keeps. */
-          aria-label={`Up to ${upTarget ? getKind(upTarget.ref).labelPlural : title}`}
-          onClick={() => {
-            if (screenStack.selected) {
-              screenStack.pop();
-              return;
-            }
-            if (upTarget) props.onStepUp?.(upTarget);
-          }}
+          aria-label={upLabel}
+          data-testid="mobile-header-back"
+          onClick={runUp}
         >
           <VectorIcon paths={CHEVRON_UP_ART} size={20} strokeWidth={1.6} />
         </button>
       ) : null}
-      {/* NOT ON THE CHAT SCREEN. The eyebrow + "Home" pair names a destination
-          the tab bar is already showing as current, and the screen below it is
-          a blank canvas whose whole job is to invite a first message. Two rows
-          of chrome captioning an empty page is the clutter this screen was
-          reported for. Every other screen keeps them: there the title names
-          something the tab bar cannot (a channel, an entity, a refusal). */}
-      {onChatScreen ? null : (
+      {/* The chat screen has no header at all now (see `header` above); on
+          every screen that does, the title names something nothing else on
+          the screen can (a channel, an entity, a refusal). */}
       <span className="mobile-header__titles">
         <span className="mobile-header__space">{props.spaceLabel ?? 'tm8'}</span>
         {/*
@@ -645,7 +795,6 @@ export function MobileShell(props: MobileShellProps) {
         */}
         <span className="mobile-header__title">{title}</span>
       </span>
-      )}
       {/* COPY LINK IS IN THE DRAWER NOW (owner ruling, 2026-08-19).
           It sat here beside the title, and the reasoning held — the thing being
           shared is a PAGE — but the header is 53px shared by five things and
@@ -693,7 +842,7 @@ export function MobileShell(props: MobileShellProps) {
        it conditionally, so an unfilled one leaves no dead band — see the block
        where `TABS` used to be for why it is unfilled. */
     <MobileFrame
-      header={header}
+      {...(header ? { header } : { float: menuButton })}
       notices={props.notices}
       sheet={<div className="msheet-host" ref={setSheetHost} />}
     >
@@ -702,7 +851,7 @@ export function MobileShell(props: MobileShellProps) {
           sits outside — a boundary that took the sheet host down with the
           screen would leave the next screen unable to open one at all. */}
       <CatchBoundary label="mobile-view">
-        <MobileSurfaceProvider sheetHost={sheetHost}>
+        <MobileSurfaceProvider sheetHost={sheetHost} up={upForScreen}>
           {screenFor(props, {
             soloConversation: true,
             routeThreadId: threadId,
@@ -710,6 +859,7 @@ export function MobileShell(props: MobileShellProps) {
                that a space switch cannot leave the flag behind. */
             onThreadsChange: setThreads,
             onSelectionChange: setThreadId,
+            openAccount: props.viewerActor ? () => setAccountOpen(true) : undefined,
           })}
           {/* THE DRAWER. Rendered beside the screen rather than inside it,
               exactly like the account sheet below: it portals through the
@@ -722,11 +872,13 @@ export function MobileShell(props: MobileShellProps) {
               shell state (there is still no `?thread=` route, see above), so a
               thread picked from the Docs screen has to send the viewer to the
               chat screen or the pick would silently do nothing visible. */}
-          {drawerOpen ? (
+          {drawerPresence.mounted ? (
             <MobileDrawer
+              closing={drawerPresence.closing}
               spaceLabel={props.spaceLabel ?? 'tm8'}
+              spaceId={spaceId}
               activeTarget={activeTarget}
-              navigateTo={navigateTo}
+              navigateTo={drawerNavigateTo}
               countsFor={data.countsFor}
               /* The header's Copy link, re-hosted. Built HERE because the
                  address is the shell's answer — `activeTarget` and the open
@@ -741,22 +893,31 @@ export function MobileShell(props: MobileShellProps) {
                   />
                 )
               }
-              /* ABSENT UNTIL THE CHAT SCREEN HAS PUBLISHED. `threads` starts
-                 `[]` here and is filled by `onThreadsChange`, so a `0` before
-                 that first publish would state a fact nobody established —
-                 the same absent-is-not-zero rule the kind counters follow. */
-              {...(threadsKnown ? { chatCount: threads.length } : {})}
-              onOpenChats={() => setChatsOpen(true)}
-              newEntityKind={DRAWER_CREATE_KIND}
-              newEntityUnavailable={newTask.unavailable}
-              onNewEntity={() => {
-                void newTask.create();
-                setDrawerOpen(false);
+              /* THE TREES READ THE SAME ROWS THE PHONE LIST DRAWS — the
+                 unfiltered read, hydrated per kind when its section opens. */
+              rowsOf={(kind) => data.rowsFor(kind)(undefined)}
+              ensureKind={data.ensureKind}
+              livenessOf={data.livenessOf}
+              onOpenEntity={(id, kind) => {
+                resetScreenStacks();
+                openEntityOnPhone(navigateTo, id, kind);
               }}
+              /* PICKING A CONVERSATION ALSO NAVIGATES, exactly as the
+                 conversation list's pick does below. Chat is the stack's
+                 floor, so a reset leaves nothing above it. */
+              onOpenChat={(id) => {
+                resetScreenStacks();
+                setThreadId(id);
+                if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
+              }}
+              onOpenChats={() => setChatsOpen(true)}
+              needsYouCount={needsYouCount}
+              onOpenAttention={() => setAttentionOpen(true)}
               onNewThread={() => {
+                resetScreenStacks();
                 setThreadId(null);
                 if (!onChatScreen) navigateTo({ type: 'view', ref: 'dashboard' });
-                setDrawerOpen(false);
+                closeDrawer();
               }}
               {...(props.viewerActor
                 ? {
@@ -764,7 +925,7 @@ export function MobileShell(props: MobileShellProps) {
                     accountName: props.viewerActor.displayName,
                   }
                 : {})}
-              onDismiss={() => setDrawerOpen(false)}
+              onDismiss={closeDrawer}
             />
           ) : null}
           {/*
@@ -880,8 +1041,12 @@ function PhoneChatSheet({ shell, sheetHost }: { shell: MobileShellProps; sheetHo
   const open = (id: EntityId) => {
     navStore.getState().closeChat();
     if (id === shell.openEntity) return;
-    const kind = data.detailOf(id)?.kind;
-    if (kind) openEntityOnPhone(shell.navigateTo, id, kind);
+    withEntityKind(
+      id,
+      (ref) => data.detailOf(ref)?.kind,
+      (ref) => data.seam.entity(ref),
+      (ref, kind) => openEntityOnPhone(shell.navigateTo, ref, kind),
+    );
   };
   return createPortal(
     <div
@@ -918,6 +1083,8 @@ interface ChatHosting {
   /** The screen's RESOLVED selection coming back up — see the block over
    *  `threadId` for why a one-way push left "New conversation" inert. */
   readonly onSelectionChange: (rootId: EntityId | null) => void;
+  /** Opens the account sheet; absent where the shell has no viewer to show. */
+  readonly openAccount: (() => void) | undefined;
 }
 
 function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
@@ -996,6 +1163,7 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
         {...(props.serverBaseUrl ? { serverBaseUrl: props.serverBaseUrl } : {})}
         {...(props.viewerMemberId ? { viewerMemberId: props.viewerMemberId } : {})}
         onKindChange={(next) => props.navigateTo({ type: 'kind', ref: next })}
+        onOpenEntityPage={(id, kind) => openEntityOnPhone(props.navigateTo, id, kind)}
         /*
          * DEF-045 — THE LAYOUT MODE IS ROUTE STATE, AND THIS ARM WAS DROPPING IT.
          *
@@ -1018,6 +1186,16 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
         {...(activeTarget.mode !== undefined ? { mode: activeTarget.mode } : {})}
         {...(activeTarget.groupBy !== undefined ? { groupBy: activeTarget.groupBy } : {})}
         onGroupBy={(g) => props.navigateTo({ ...activeTarget, groupBy: g })}
+        /* THE PHONE LIST'S SORT AND NARROWING ARE ROUTE STATE (t-lists), the
+           same as `groupBy` above: a sorted, filtered list survives a reload
+           and travels with a shared link. Defaults are left out of the
+           address, so an untouched list keeps its plain `k/` URL. */
+        {...(activeTarget.sortBy !== undefined ? { sortBy: activeTarget.sortBy } : {})}
+        {...(activeTarget.pick !== undefined ? { pick: activeTarget.pick } : {})}
+        onListPick={(next) => {
+          const { sortBy: _sort, pick: _pick, ...rest } = activeTarget;
+          props.navigateTo({ ...rest, ...next });
+        }}
         /*
          * DEF-004 — THE PHONE'S DOOR INTO LAUNCH, and it is THIS arm because
          * there is nowhere else it could be.
@@ -1083,14 +1261,19 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
      * like two products.
      */
     if (activeTarget.kind !== CHANNEL_KIND) {
+      /* THE GENERIC ENTITY PAGE (CONTRACT §5 ruling 7) — a kind with no phone
+         screen and no list (a voice room, a message) still opens as a page:
+         what it is, what it says, what it links to. It replaced the "doesn't
+         have a phone screen" card, which stopped the reader at the door. */
+      const detail = data.detailOf(activeTarget.ref);
+      if (!detail) props.data.pull?.(activeTarget.ref);
       return (
-        <div className="mobile-empty" data-testid="mobile-unbuilt-voice-view">
-          <p>“{titleOf(activeTarget)}” doesn’t have a phone screen in this build.</p>
-          <p>
-            This entity exists and the link is a real address — there is just no screen behind it
-            here. Nothing is hidden.
-          </p>
-        </div>
+        <PhoneEntityPage
+          detail={detail}
+          connections={data.connectionsOf(activeTarget.ref)}
+          messages={data.messagesOf(activeTarget.ref)}
+          onOpenEntity={(id, kind) => openEntityOnPhone(props.navigateTo, id as EntityId, kind)}
+        />
       );
     }
     return (
@@ -1100,6 +1283,16 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
         reasons={reasons}
         onNotice={onNotice}
         {...(props.serverBaseUrl ? { serverBaseUrl: props.serverBaseUrl } : {})}
+        /* EVERY CHIP PUSHES THE ENTITY'S PAGE (CONTRACT §4 ruling 1), as on the
+           chat transcript: one push, no aside peek, Back is the channel. */
+        onOpenEntityPage={(id) =>
+          withEntityKind(
+            id,
+            (ref) => data.detailOf(ref)?.kind,
+            (ref) => readFleetEntity(ref, (r) => data.seam.entity(r)),
+            (ref, kind) => openEntityOnPhone(props.navigateTo, ref, kind),
+          )
+        }
       />
     );
   }
@@ -1138,25 +1331,17 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
    * told so out loud. Silence there would be RULE R13's failure verbatim: a
    * control that renders, presses and does nothing.
    *
-   * STILL OPEN, AND NOT SILENTLY: chat's tool-call chips are the other consumer
-   * this row names. They are Lane A's surface and Lane A consumes this seam;
-   * this arm wires the inbox half only.
+   * Chat's chips are the other consumer this row named; they are wired on the
+   * `dashboard` arm below (t-chips), through the same seam.
    */
   switch (activeTarget.ref) {
     case 'inbox':
       return (
         <InboxView
           seam={data.seam}
-          onOpenEntity={(id, kind) => {
-            if (openEntityOnPhone(props.navigateTo, id, kind)) return;
-            onNotice({
-              id: `open-entity:${id}`,
-              tone: 'info',
-              title: getKind(kind).label,
-              body: 'This kind has no phone screen in this build, so there is nowhere to open it. The link still names it.',
-              ttlMs: 6000,
-            });
-          }}
+          /* Every kind opens now (ruling 7): a kind with no phone screen
+             gets the generic entity page, so the E3 toast is gone. */
+          onOpenEntity={(id, kind) => openEntityOnPhone(props.navigateTo, id, kind)}
         />
       );
     case 'help':
@@ -1168,6 +1353,16 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
          `stacked` makes it one column: the contents, then a page over them
          with a back verb. */
       return <HelpScreen stacked />;
+    case 'settings':
+      /* SETTINGS IS ON THE PHONE (audit E1). Chat defaults, credentials and
+         members are things people do from a phone, and the desktop shell's
+         sections already lay out in one column; `stacked` gives them a list
+         to start from and a way back. */
+      {
+        const screen = props.settingsScreen?.(chat.openAccount);
+        if (screen) return screen;
+      }
+      return <RefusalCard target={activeTarget} navigateTo={props.navigateTo} />;
     case 'dashboard':
       return (
         <ChatHomeSurface
@@ -1184,10 +1379,22 @@ function screenFor(props: MobileShellProps, chat: ChatHosting): ReactNode {
           onSelectionChange={chat.onSelectionChange}
           viewerName={props.viewerActor?.displayName}
           {...(props.viewerActor ? { viewerId: props.viewerActor.id } : {})}
+          /* EVERY CHIP PUSHES THE ENTITY'S PAGE (t-chips, CONTRACT §4): a ref
+             or tool-call chip in the transcript, a created-here row, the
+             `about` chip. One push, so Back is the transcript at the scroll
+             left. The kind is the read the chip already made (cached). */
+          onOpenEntity={(id) =>
+            withEntityKind(
+              id,
+              (ref) => data.detailOf(ref)?.kind,
+              (ref) => readFleetEntity(ref, (r) => data.seam.entity(r)),
+              (ref, kind) => openEntityOnPhone(props.navigateTo, ref, kind),
+            )
+          }
         />
       );
     default:
-      /* WORKSPACE, GRAPH, GIT, FILES, MESSAGES, SETTINGS, FEED — real screens
+      /* WORKSPACE, GRAPH, GIT, FILES, MESSAGES, FEED — real screens
          with no phone arrangement yet. Named individually rather than lumped,
          because "not built for this screen size" is a different statement from
          "does not exist", and a viewer who followed a link here should be told

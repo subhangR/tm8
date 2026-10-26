@@ -21,11 +21,16 @@
 
 /** Event type → the payload keys holding its subject entity ids. */
 export const EVENT_SUBJECT_KEYS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  'entity.seen': ['entityId'],
   'entity.upsert': ['id'],
   'entity.deleted': ['id'],
   'entity.activity_touched': ['id'],
   'edge.upsert': ['src_id', 'dst_id'],
   'edge.deleted': ['src_id', 'dst_id'],
+  // Spec D1 (299): the session, and a claim's two ends.
+  'session.outcome_changed': ['id'],
+  'session.process_changed': ['id'],
+  'edge.ended': ['src_id', 'dst_id'],
   'message.created': ['entity_id', 'anchor_id'],
   'message.updated': ['entity_id', 'anchor_id'],
   'message.deleted': ['entity_id', 'anchor_id'],

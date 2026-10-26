@@ -362,12 +362,12 @@ export async function run(argv: readonly string[]): Promise<ExitCode> {
     const exit = await dispatch(invocation, out, (path) => {
       commandPath = path;
     });
-    journal.finish({ path: commandPath, argv, exitCode: exit });
+    journal.finish({ path: commandPath, argv, exitCode: exit, quiet: out.quiet });
     return exit;
   } catch (err) {
     out.error(errorLines(err));
     const exit = exitCodeFor(err);
-    journal.finish({ path: commandPath, argv, exitCode: exit, error: err });
+    journal.finish({ path: commandPath, argv, exitCode: exit, error: err, quiet: out.quiet });
     return exit;
   } finally {
     setActiveLink(undefined);

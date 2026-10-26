@@ -29,6 +29,7 @@ import { composeKernel } from './kernel.js';
 import { CONTEXT_INDEX_INSTRUCTION } from './context-index.js';
 import {
   BASE_PROMPT_V2,
+  chatCoordinationLineV2,
   coordinationLineV2,
   orientationLineV2,
   roleLayerV2,
@@ -504,9 +505,8 @@ const DISCOVERY_ENTRIES: readonly PromptEntry[] = [
 ];
 
 const V2_GATE =
-  'On a launch whose pinned Interaction Profile sets ' +
-  'promptPolicy.kernelTemplate "tm8.core.v2" (manifest promptVersion "2"). v1 stays the default ' +
-  'until the spec ca8d §6.2 evaluation passes.';
+  'On every launch (manifest promptVersion "2"), the default since 2026-10-13. A stored manifest ' +
+  'without the stamp still re-renders as v1.';
 
 const FRAME_ENTRIES: readonly PromptEntry[] = [
   {
@@ -565,6 +565,18 @@ const FRAME_ENTRIES: readonly PromptEntry[] = [
     source: 'packages/prompt/src/prompt-v2.ts',
     injectedWhen: `Inside <coordination>, after the role layer, for coordinated-worker and coordinated-coordinator. ${V2_GATE}`,
     text: coordinationLineV2('{coordinatorSessionId}'),
+  },
+  {
+    id: 'frame.coordination-chat-v2',
+    categoryId: 'frame',
+    title: 'Coordinated modifier, chat coordinator (v2.0)',
+    summary:
+      'In place of the session line when a chat spawned the agent: the answer must be durable, sent to the chat, never to the task anchor.',
+    status: 'live',
+    rendering: 'composed',
+    source: 'packages/prompt/src/prompt-v2.ts',
+    injectedWhen: `Inside <coordination kind="chat">, for coordinated-worker and coordinated-coordinator. ${V2_GATE}`,
+    text: chatCoordinationLineV2('{coordinatorSessionId}'),
   },
   {
     id: 'frame.orientation-v2',

@@ -12,7 +12,10 @@
  * host wires a resume for this panel, which it does only for a session that
  * has ended. The server still decides whether this viewer may resume it.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useDismissable } from '../panels/useDismissable';
+import { useAnchoredPopover } from '../kit/anchoredPopover';
 import { Timestamp } from '../kit';
 import { FillTab } from './FillTab';
 import {
@@ -31,8 +34,15 @@ export function PendingFormsBanner({
   sessionId,
   onResume,
   resuming = false,
+  variant = 'banner',
 }: {
   sessionId: string;
+  /**
+   * `chip` (Workspace session head, design log R16): one attention chip,
+   * "● N forms waiting", whose click opens this same banner in an anchored
+   * popover. Default `banner`: unchanged.
+   */
+  variant?: 'banner' | 'chip';
   /** Resume this session. Absent ⇒ the queued line says so, with no button. */
   onResume?: () => void;
   resuming?: boolean;
@@ -43,7 +53,7 @@ export function PendingFormsBanner({
   if (!store || !pending || (pending.total === 0 && pending.queued === 0)) return null;
 
   const hidden = pending.total - pending.forms.length;
-  return (
+  const banner = (
     <section className="pf-banner" data-testid="pending-forms-banner" aria-label="Forms waiting on you">
       {pending.total > 0 ? (
         <>
@@ -76,6 +86,99 @@ export function PendingFormsBanner({
       ) : null}
     </section>
   );
+  if (variant === 'chip') {
+    const label = pending.total > 0 ? formsWaitingText(pending.total) : answersQueuedText(pending.queued);
+    const tooltip = pending.forms.map((item) => item.title).join('\n') || label;
+    return (
+      <PendingFormsChip label={label} tooltip={tooltip} count={pending.total > 0 ? pending.total : pending.queued}>
+        {banner}
+      </PendingFormsChip>
+    );
+  }
+  return banner;
+}
+
+function PendingFormsChip({
+  label,
+  tooltip,
+  count,
+  children,
+}: {
+  label: string;
+  tooltip: string;
+  count: number;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  useDismissable(open, [ref, pop], useCallback(() => {
+    setOpen(false);
+    trigger.current?.focus();
+  }, []));
+  /* FIXED, BESIDE THE CHIP, CLAMPED TO THE VIEWPORT (task 01a112b9): the chip
+     sits in the right action strip, so the form opens to its left, top-aligned,
+     and is pushed up rather than run off the bottom of a short window.
+     It is PORTALLED to the outermost themed root, out of the strip: inside it
+     the form sat in the strip's stacking context (under the tab's title bar)
+     and took the strip's icon-button styling (28px buttons). */
+  const style = useAnchoredPopover(
+    open,
+    () => trigger.current?.getBoundingClientRect(),
+    pop,
+    { side: 'left', align: 'start', gap: 14 },
+  );
+  /* Placement starts hidden. Focusing before that first measurement is
+     ignored by browsers, leaving keyboard focus behind in the strip. */
+  useEffect(() => {
+    if (open && style.visibility !== 'hidden') pop.current?.focus();
+  }, [open, style.visibility]);
+  return (
+    <div className="pf-chip" ref={ref}>
+      <button
+        ref={trigger}
+        type="button"
+        className="att-chip att-chip--wait pf-chip__trigger"
+        title={tooltip}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-testid="pending-forms-chip"
+        data-count={count}
+        aria-label={label}
+        onClick={() => setOpen((was) => !was)}
+      >
+        <span className="att-chip__b" aria-hidden>●</span>
+        <span>{label}</span>
+      </button>
+      {open ? createPortal(
+        <div
+          ref={pop}
+          className="pf-chip__pop"
+          role="dialog"
+          aria-label="Forms waiting on you"
+          tabIndex={-1}
+          style={style}
+          data-testid="pending-forms-popover"
+          // React portal events still bubble through the strip's toolbar.
+          // Keep Home/End and arrow keys with the form and its scroll region.
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          {children}
+        </div>,
+        portalHostOf(ref.current),
+      ) : null}
+    </div>
+  );
+}
+
+/** The outermost `.cv2-root` holding `el` (its theme tokens and zoom), else the body. */
+export function portalHostOf(el: HTMLElement | null): HTMLElement {
+  let host: HTMLElement | null = null;
+  for (let node = el?.closest<HTMLElement>('.cv2-root') ?? null; node; node = node.parentElement?.closest<HTMLElement>('.cv2-root') ?? null) {
+    host = node;
+  }
+  return host ?? document.body;
 }
 
 function PendingFormRow({

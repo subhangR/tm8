@@ -173,7 +173,7 @@ export async function canonicalDirectory(raw: string): Promise<string> {
 export async function listProjectDirectories(
   requestedPath?: string,
   rawRoots?: readonly string[],
-  scope: 'roots' | 'grants' = 'roots',
+  scope: 'roots' | 'grants' | 'space' = 'roots',
 ): Promise<ProjectDirectoryListing> {
   const roots = await canonicalRoots(rawRoots ? [...rawRoots] : undefined);
   const outside = scope === 'grants' ? OUTSIDE_PATH_GRANTS : OUTSIDE_PROJECT_ROOTS;
@@ -182,7 +182,7 @@ export async function listProjectDirectories(
   // lexically under a grant: otherwise `not_found` versus `forbidden` would
   // tell a member which paths exist anywhere on the node. The containment
   // check after the realpath still decides — this one only closes the oracle.
-  if (scope === 'grants' && requested && isAbsolute(requested)) {
+  if (scope !== 'roots' && requested && isAbsolute(requested)) {
     requireAllowed(resolve(requested), roots, outside);
   }
   const current = await canonicalDirectory(requested || await defaultStartPath(roots));

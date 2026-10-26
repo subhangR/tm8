@@ -33,6 +33,8 @@ export const KIND_GROUPS: ReadonlyArray<{ group: KindGroup; title: string }> = [
 ];
 
 export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
+  tool: { group: 'runtime', summary: 'a reusable bash or python script with declared inputs and recorded runs', createWith: ['tool create'] },
+  mcp_server: { group: 'runtime', summary: 'an approved external tool connector; credentials are separate', createWith: ['mcp server create'] },
   task: {
     group: 'work',
     summary: 'work with a status, assignees, acceptance criteria and an optional gate',
@@ -49,6 +51,11 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     group: 'work',
     summary: 'one line of work: what you put in, everything that follows from it, and its progress',
     createWith: ['entity create story', 'collection add'],
+  },
+  craft: {
+    group: 'work',
+    summary: 'an ordered set of pages (graphs, docs, artifacts, drawings, crafts) crafted together and launched as one',
+    createWith: ['entity create craft', 'collection add'],
   },
 
   message: {
@@ -119,11 +126,6 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     createWith: [],
   },
   server: { group: 'runtime', summary: 'a remote tm8 server a space link points at', createWith: [] },
-  op_request: {
-    group: 'runtime',
-    summary: 'an agent\'s request for a human-only operation; a human approves (it runs as them) or denies it',
-    createWith: ['request create'],
-  },
   member: { group: 'people', summary: 'a human in the space', createWith: ['auth signup', 'space invite create'] },
   team_member: {
     group: 'people',

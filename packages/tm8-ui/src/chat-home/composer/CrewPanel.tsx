@@ -150,7 +150,7 @@ export function CrewPanel({ crew, onChange, teammates, models, permission, polic
                       </select>
                     </label>
                     {capped ? (
-                      <p className="tch-optform__warn" role="note" data-testid={`${wid}-capped`}>
+                      <p className="tch-optform__capped" role="note" data-testid={`${wid}-capped`}>
                         Capped to {accessMode}: a worker cannot exceed the thread's permission.
                       </p>
                     ) : null}

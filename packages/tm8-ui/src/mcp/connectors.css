@@ -1,0 +1,464 @@
+/**
+ * The Connectors page (§10.1/§10.3). Tokens only — `src/hex-ban.test.ts` walks
+ * every stylesheet in the UI and fails on a raw hex value, and both themes have
+ * to work, which the `--pn-*` tokens invert and a literal does not.
+ *
+ * It is its own file rather than more of `mcp.css` because `mcp.css` is shared
+ * with the chat/launch picker and the task equipment block; a table rule
+ * written there would reach two surfaces it was never measured on.
+ */
+
+.mcp-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- the tab strip ------------------------------------------------------- */
+
+.mcp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.mcp-tabs__grow {
+  flex: 1;
+  min-width: 12px;
+}
+
+.mcp-tabs > button {
+  padding: 5px 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mcp-tabs > button[aria-pressed='true'] {
+  border-color: rgba(var(--pn-brand-rgb), 0.5);
+  background: rgba(var(--pn-brand-rgb), 0.12);
+  color: var(--pn-ink);
+}
+
+.mcp-search input,
+.mcp-filter select {
+  padding: 4px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm, 6px);
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font: inherit;
+}
+
+/* A `details` popover, so the filter and the + Add menu need no portal and
+   close on Escape without a listener. */
+.mcp-filter,
+.mcp-add {
+  position: relative;
+}
+
+.mcp-filter > summary,
+.mcp-add > summary {
+  list-style: none;
+  padding: 4px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 999px;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.mcp-filter > summary::-webkit-details-marker,
+.mcp-add > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mcp-filter > div,
+.mcp-add > div {
+  position: absolute;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md, 8px);
+  background: var(--pn-paper);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.mcp-add > div > button,
+.mcp-filter > div > button {
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--pn-r-sm, 6px);
+  background: transparent;
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mcp-add > div > button:hover,
+.mcp-filter > div > button:hover {
+  background: var(--pn-surface-2, rgba(var(--pn-brand-rgb), 0.08));
+}
+
+/* --- the table ----------------------------------------------------------- */
+
+.mcp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.mcp-table th,
+.mcp-table td {
+  padding: 8px var(--set-gutter, 18px);
+  border-bottom: 1px solid var(--pn-line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.mcp-table th {
+  color: var(--pn-ink-2);
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.mcp-table tbody tr:hover {
+  background: color-mix(in srgb, var(--pn-ink) 4%, transparent);
+}
+
+.mcp-cell--address {
+  max-width: 22em;
+  overflow-wrap: anywhere;
+}
+
+.mcp-row__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mcp-row__open:hover > span:not(.mcp-logo):not(.mcp-pill) {
+  text-decoration: underline;
+}
+
+.mcp-row--invalid {
+  background: color-mix(in srgb, var(--pn-danger, var(--pn-ink)) 8%, transparent);
+}
+
+/* Three skeleton rows read as "still loading"; a spinner over an empty table
+   reads as "there is nothing here", which is a different sentence. */
+.mcp-row--skeleton span {
+  display: block;
+  height: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pn-ink) 10%, transparent);
+}
+
+.mcp-logo {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm, 6px);
+  background: var(--pn-surface-2, color-mix(in srgb, var(--pn-ink) 5%, transparent));
+  font-size: 12px;
+  line-height: 1;
+}
+
+.mcp-pill {
+  padding: 1px 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: 999px;
+  color: var(--pn-ink-2);
+  font-size: 0.75em;
+  font-weight: 500;
+}
+
+/* --- status -------------------------------------------------------------- */
+
+.mcp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mcp-status__text {
+  overflow-wrap: anywhere;
+}
+
+.mcp-status--ok {
+  color: var(--pn-ok, var(--pn-ink));
+}
+
+/* THE CAUTION RAMP, AND IT IS ONLY LEGAL HERE (S32). `--pn-warn` does not
+   exist — `tokens.css` defines `--pn-wait`/`--pn-wait-soft`, and both invert
+   with the theme — so every warning state in this file was painting as plain
+   ink and a member could not tell "Needs reconnect" from "Connected" by
+   colour. No fallback: a fallback is what hid the dead token for this long.
+   `connectors.css` is imported only by the settings surfaces (the Connectors
+   table, the drawer, the .mcp.json import), never by the composer, which is
+   why amber may appear here and not in `mcp.css`. */
+.mcp-status--warn {
+  color: var(--pn-wait);
+}
+
+.mcp-status--wait,
+.mcp-status--off {
+  color: var(--pn-ink-2);
+}
+
+.mcp-note {
+  color: var(--pn-ink-2);
+  font-size: 0.9em;
+}
+
+.mcp-strict {
+  margin-top: 16px;
+  padding: 10px var(--set-gutter, 18px);
+  border-top: 1px solid var(--pn-line);
+}
+
+.mcp-empty {
+  padding: 24px var(--set-gutter, 18px);
+  color: var(--pn-ink-2);
+  text-align: center;
+}
+
+/* --- banners, cards, drawer --------------------------------------------- */
+
+.mcp-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md, 8px);
+}
+
+.mcp-banner p {
+  margin: 0;
+}
+
+.mcp-banner--warn {
+  border-color: color-mix(in srgb, var(--pn-wait) 45%, transparent);
+  /* The soft half of the ramp, rather than a hand-rolled 10% mix of it: the
+     token is the one place the fill's alpha is tuned per theme. */
+  background: var(--pn-wait-soft);
+}
+
+.mcp-banner--wait {
+  display: block;
+  background: color-mix(in srgb, var(--pn-ink) 4%, transparent);
+}
+
+.mcp-requests {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mcp-requests li {
+  padding: 6px 0;
+  border-top: 1px solid var(--pn-line);
+}
+
+.mcp-discover-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  padding: 0 var(--set-gutter, 18px);
+}
+
+.mcp-discover header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-discover h3 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.mcp-scopes {
+  margin: 6px 0;
+  padding-left: 1.1em;
+  color: var(--pn-ink-2);
+  font-size: 0.9em;
+}
+
+/* The drawer is a panel in the flow rather than a fixed overlay: the section
+   body is the one scroller (SECTION-CONTRACT §3), and a second scrolling
+   surface pinned over it would take the overflow and clip this one. */
+.mcp-drawer {
+  margin: 16px var(--set-gutter, 18px);
+  padding: 14px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md, 8px);
+  background: var(--pn-surface-2, color-mix(in srgb, var(--pn-ink) 3%, transparent));
+}
+
+.mcp-drawer__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.mcp-drawer__head h3 {
+  margin: 0;
+  font-size: 1.05em;
+}
+
+.mcp-drawer__head p {
+  margin: 2px 0 0;
+}
+
+.mcp-drawer__close {
+  margin-left: auto;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-size: 1.2em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mcp-drawer__group {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--pn-line);
+}
+
+.mcp-drawer__group h4 {
+  margin: 0 0 8px;
+  font-size: 0.95em;
+}
+
+.mcp-drawer__group--danger {
+  border-top-color: color-mix(in srgb, var(--pn-danger, var(--pn-ink)) 35%, transparent);
+}
+
+.mcp-connection {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--pn-line);
+}
+
+.mcp-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0 0 8px;
+}
+
+.mcp-facts dt {
+  color: var(--pn-ink-2);
+  font-size: 0.9em;
+}
+
+.mcp-facts dd {
+  margin: 0;
+}
+
+.mcp-toggle {
+  display: block;
+  margin: 6px 0;
+  font-weight: 400;
+}
+
+.mcp-scope {
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm, 6px);
+}
+
+.mcp-tool--unavailable {
+  color: var(--pn-ink-2);
+}
+
+.mcp-confirm {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md, 8px);
+  background: var(--pn-paper);
+}
+
+.mcp-confirm--danger {
+  border-color: color-mix(in srgb, var(--pn-danger, var(--pn-ink)) 45%, transparent);
+}
+
+/* --- import ------------------------------------------------------------- */
+
+.mcp-import__field {
+  display: block;
+  font-weight: 600;
+}
+
+.mcp-import__field textarea {
+  width: 100%;
+  min-height: 140px;
+  box-sizing: border-box;
+  font-family: var(--pn-mono, ui-monospace, monospace);
+  font-size: 0.9em;
+}
+
+.mcp-import__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.mcp-table--import td,
+.mcp-table--import th {
+  padding: 6px 10px;
+}
+
+.mcp-badge {
+  padding: 1px 6px;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  font-size: 0.75em;
+  font-weight: 500;
+}
+
+/* S10's "Limited access" badge, among others. Its border is `currentcolor`,
+   so the one declaration colours the ring too. */
+.mcp-badge--warn {
+  color: var(--pn-wait);
+}

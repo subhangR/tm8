@@ -18,6 +18,7 @@ import type {
   EntityCapabilities,
   EntityId,
   EntityKind,
+  EntitySummary,
   SpaceId,
   StatusCategory,
 } from '@tm8/contract';
@@ -142,6 +143,30 @@ export type TileBadgeSource =
   // counters, present on every summary
   | 'points'
   | 'messages';
+
+/**
+ * One row's progress as `tile.progress` reports it. The bands follow
+ * `StoryProgress`: disjoint, and `done + inProgress + blocked <= work`.
+ * `noun` names what is counted, for the tooltip ("3 of 8 tasks done").
+ */
+export interface TileProgress {
+  done: number;
+  work: number;
+  inProgress?: number;
+  blocked?: number;
+  noun?: string;
+  /**
+   * 307: a points-weighted percent (floored). When set the bar fills to it and
+   * the figure reads `N%`; the bands above are not drawn.
+   */
+  percent?: number;
+  /** Text after the figure: own criteria (`3/4`) or weighted points (`5/9 pts`). */
+  detail?: string;
+  /** A short flag after the figure — a done task whose subtree is not: `subtasks open`. */
+  marker?: string;
+  /** The tooltip, replacing the generated one. */
+  label?: string;
+}
 
 export interface TileBadgeSpec {
   source: TileBadgeSource;
@@ -377,6 +402,20 @@ export type ActionRef =
   // between and the verb commits directly.
   | 'start-terminal'
   | 'terminate'
+  // SPEC D1 §5 — the session OUTCOME verbs. `complete-session` opens the
+  // Complete dialog (receipt + claim check), not the task tick; `close-process`
+  // is Terminate on a session whose work is already settled (no dialog);
+  // `follow-up` starts a follow-up session for a completed one (§4.5, D4);
+  // `dismiss-session` sets outcome `stopped` on an Interrupted row; `mark-lost`
+  // records a stale session's process as lost (§5.6); `reopen-session` is the
+  // logged resume of a COMPLETED session (Q2 = B), confirmed first. `sessionVerbsOf` in
+  // `domain/session-outcome.ts` picks which of them a row offers.
+  | 'complete-session'
+  | 'close-process'
+  | 'follow-up'
+  | 'reopen-session'
+  | 'dismiss-session'
+  | 'mark-lost'
   // THE OTHER HALF OF THE PROCESS CONTROL. Terminate ends a run; this brings
   // an ended one back with the agent's own conversation restored
   // (`execution.resume`, a v1 catalog operation since the contract was
@@ -477,7 +516,14 @@ export type ActionRef =
   | 'container-destroy'
   | 'container-terminal'
   | 'container-screen'
-  | 'new-container';
+  | 'new-container'
+  /*
+   * THE PROJECT BIRTH VERB (task 01a13574). A project is not a generic
+   * entity create — the node refuses `entities.create` for the kind — so the
+   * Projects list's ＋ opens the Add project sheet: a folder on the node, an
+   * uploaded folder, or a GitHub clone.
+   */
+  | 'add-project';
 
 export type ActionAvailability = { kind: 'available' } | { kind: 'disabled'; reason: string };
 
@@ -514,6 +560,12 @@ export interface ActionContext {
    */
   category?: StatusCategory;
   /**
+   * Spec D1: the work_session's own state arm (outcome + process), when the
+   * target is one. The process control and the outcome verbs read it through
+   * `domain/session-outcome.ts`; absent ⇒ the category/liveness rule above.
+   */
+  sessionState?: unknown;
+  /**
    * WHO IS LOOKING — the viewer's own actor id in this space, resolved by the
    * shell from the identity read.
    *
@@ -544,6 +596,13 @@ export interface ActionDef {
   id: ActionRef;
   label: string;
   icon: IconRef;
+  /**
+   * A DRAWN mark for the verb, on the `KIND_ART` grid. Present, it replaces
+   * `icon` wherever a surface can draw (`actionGlyph`); `icon` remains the
+   * text fallback. Set where the verb shares a kind's meaning — `chat-about`
+   * wears the chat mark, so chat is one picture everywhere.
+   */
+  art?: KindArt;
   availability(ctx: ActionContext): ActionAvailability;
   run(ctx: ActionContext): Promise<void> | void;
   /**
@@ -630,7 +689,30 @@ export interface StatusCategoryTab {
   id: StatusCategory | (string & {});
   label: string;
   filter: QueryFilter;
+  /**
+   * Spec D1 §5.3: a tab whose count is a call to act (sessions' Interrupted).
+   * Its count renders as a red badge whenever it is above zero.
+   */
+  alert?: boolean;
 }
+
+/**
+ * THE SHAPE OF A KIND'S ONE SIGNAL (`ListConfig.tile.signal`).
+ *
+ *   avatar   — the assignee / owner face the kind's badge sources already
+ *              resolve. Drawn by the tile from its existing `avatar` slot, so
+ *              a row has exactly one answer to "whose face is this".
+ *   liveness — the seam's verdict: a filled dot while the process is up, a
+ *              ring while it waits on the viewer, ✓ / ✕ once it ended. NOT the
+ *              record's status field (R-UI-5).
+ *   count    — a number on `state[field]`; zero and absence both draw nothing.
+ *   presence — a busy/idle dot, busy being `state[field]` present.
+ */
+export type TileSignalSpec =
+  | { from: 'avatar' }
+  | { from: 'liveness' }
+  | { from: 'count'; field: string; label: string }
+  | { from: 'presence'; field: string };
 
 export interface ListConfig {
   /** task: current / completed. */
@@ -685,7 +767,7 @@ export interface ListConfig {
    * this kind does not declare falls back to the first, so the panel cannot be
    * pointed at a band it has no button for.
    */
-  defaultCategory?: StatusCategory;
+  defaultCategory?: StatusCategory | (string & {});
   /** task subtree; session coordinator→worker. */
   /**
    * `messagePulse` binds the tree's hairlines to live message provenance: a
@@ -695,6 +777,12 @@ export interface ListConfig {
    * animates the wire those draw.
    */
   tree?: { by: 'hierarchy'; guideLines: boolean; messagePulse?: boolean };
+  /**
+   * THE ROWS THIS LIST'S ROWS LAUNCHED, nested under them (331). Names the
+   * kind loaded alongside the list (`work_session`) through
+   * `launchedRowsFilter`; each drawn with ITS kind's anatomy. Needs `tree`.
+   */
+  launches?: string;
   tile: {
     badges: readonly TileBadgeSpec[];
     /**
@@ -705,9 +793,41 @@ export interface ListConfig {
     anatomy?: 'standard' | 'control-card' | 'session-tree';
     /** The two-source law: pool activity signal, gated on a `live` verdict (F1). */
     pulse?: PulseBinding;
+    /**
+     * A done-of-total figure drawn as a small bar at the row's right edge
+     * (standard anatomy). A projection of what the row already carries — the
+     * tile never fetches for it — and `null` means "no figure for this row",
+     * which draws nothing rather than an empty bar.
+     */
+    progress?: (row: EntitySummary) => TileProgress | null;
+    /**
+     * THE ONE SIGNAL this kind's row draws (design doc 01a1465d §6, approved
+     * 2026-10-16). Absent ⇒ the row draws none, which is the answer for
+     * docs, artifacts, memories, files and most of the registry.
+     *
+     * Declared here rather than derived in the tile because WHICH fact is a
+     * kind's live one is a registry judgment: a chat's is its unread count, a
+     * session's is whether the process is up. The renderer
+     * (`panels/list/TileSignal.tsx`) knows the four SHAPES and no kinds.
+     */
+    signal?: TileSignalSpec;
   };
   /** '● N live'. The count is rows ∩ the seam liveness snapshot, never a derivation. */
-  liveCount?: { filter: QueryFilter; label: (n: number) => string };
+  liveCount?: {
+    filter: QueryFilter;
+    label: (n: number) => string;
+    /**
+     * Spec D1 §5.3: "● N running equals the Running tab count". When set, the
+     * header number IS that tab's own count (its server total), whichever tab
+     * is open — not rows ∩ the live set of the open tab.
+     */
+    tab?: string;
+    /**
+     * A second header chip naming an alerting tab's count ("⚠ M interrupted"),
+     * which switches to that tab when pressed. Rendered only above zero.
+     */
+    alertTab?: { tab: string; label: (n: number) => string };
+  };
   quickCreate: boolean;
   quickLaunch?: ActionRef;
   /**
@@ -1021,6 +1141,11 @@ export interface ListRowFacts {
   status: string | null;
   /** Unresolved hard-dependency count off `EntityBadges.blocked`. */
   blockedCount: number;
+  /**
+   * The work_session's whole state arm, when the row is one (Spec D1): the
+   * attention predicate needs the outcome and the ending, not only `status`.
+   */
+  sessionState?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -1036,6 +1161,8 @@ export type BodyArchetype =
   // F4 (#648): a file-backed body with its equipment. Named for what the
   // body SHOWS, never after a kind (§15.2 no-branching).
   | 'equipment'
+  /** Stored source, declared inputs, configuration and recorded executions. */
+  | 'scripted'
   | 'terminal'
   // Surface wave (kind-bodies-2): project's governed body and
   // interaction_profile's restricted body.
@@ -1132,6 +1259,9 @@ export type ContentBlockKind =
   | 'trust-card'
   | 'live-sessions'
   | 'unlink-footer'
+  // …the project page's git and filterable work list (task 01a15a00)…
+  | 'git-status'
+  | 'work-list'
   // …and the restricted body's five.
   | 'status-banner'
   | 'preview'
@@ -1184,11 +1314,7 @@ export type ContentBlockKind =
   // its facts, and the per-item verbs `actions.list` says are live. The spec is
   // `PanelConfig.managed`, because verb slots are a list and block params are
   // scalars.
-  | 'managed'
-  // …and the APPROVE CARD (L5, 280): a request for a human-only operation —
-  // what it would run, why, and where it stands — with Approve / Deny when the
-  // viewer may decide it. Named for what it draws, not for the kind (§15.2).
-  | 'approval';
+  | 'managed';
 
 export interface ContentBlockRef {
   block: ContentBlockKind;
@@ -1287,6 +1413,40 @@ export interface PanelConfig {
    */
   gitSection?: boolean;
   /**
+   * WATCH LIVE — the panel offers `◉ Watch live` when the entity's description
+   * carries a `live: <command>` line (`panels/detail/LiveScreenButton.tsx`).
+   */
+  liveScreen?: boolean;
+  /**
+   * THE PAGE LAYOUT of the embedded body (task 01a1163a, scope settled with
+   * the owner in form 01a1164f): `'two-column'` puts the writing in a
+   * wide main column and every property in a sticky rail beside it.
+   *
+   * What it changes, all derived from this one field so no component asks the
+   * kind (§15.2):
+   *   · the control strip moves from the band above the body into the rail,
+   *     drawn as labelled rows rather than chips;
+   *   · the composed metadata grid joins the rail too, so a fact is drawn once;
+   *   · the title in the host's title bar is a live field at rest, not a
+   *     double-click rename;
+   *   · criteria are written one gesture at a time (tick, add, edit, reorder,
+   *     remove), never staged behind a Save pill.
+   *
+   * Absent ⇒ the stacked body every other kind keeps. Narrow panels stack the
+   * rail above the main column (CSS), so this is a desktop decision only.
+   */
+  layout?: 'two-column';
+  /**
+   * EDGES THE RAIL DRAWS AS PROPERTIES, with add and remove in place — the
+   * task page's "Depends on" and "Blocks" (mockup r6). Same row shape as
+   * `attachPalette`: the one kind the picker searches, the edge a pick
+   * writes, and which end the open entity is, so one edge type read from
+   * both ends gives two rows. Read only by a `layout: 'two-column'` page;
+   * there the rows own their edges, so LINKED does not draw them again.
+   * Elsewhere they stay in LINKED, as before.
+   */
+  railRelations?: readonly AttachPaletteRow[];
+  /**
    * THE BODY OWNS ITS OWN BOTTOM EDGE, and this says which way.
    *
    * EITHER value means the panel mounts no AttachmentStrip, no attention
@@ -1300,12 +1460,23 @@ export interface PanelConfig {
    *     exists to show it (owner ruling 2026-08-20, the artifact screen). Its
    *     controls ride the panel bar instead of a row of their own, and it takes
    *     every pixel between that bar and the panel edge.
+   *   · 'canvas' — the body IS the whole panel, from the top edge down (task
+   *     01a101c5, the story view). No title row, no tab row: the panel's verbs
+   *     float over the body's top-right corner, the body is the only tab, and
+   *     the kind's messages ride the body as a section of their own.
    *
    * Absent ⇒ the ordinary stacked body, which keeps all three. The gates read
    * PRESENCE rather than each value, so a third composition cannot arrive and
    * silently inherit a footer nobody chose for it.
    */
-  composition?: 'chat' | 'frame';
+  composition?: 'chat' | 'frame' | 'canvas';
+  /**
+   * `false` ⇒ a Workspace tab draws no title bar over this body (task
+   * 01a12506, the drawing). The body starts directly under the tab strip and
+   * the tab's own label names it; renaming stays on the strip's Edit. Absent ⇒
+   * the 36px title bar every other tab has.
+   */
+  titleBar?: false;
   /**
    * The kind's conversation surface, when it is not the archetype's default.
    *
@@ -1460,12 +1631,15 @@ export interface EditFieldSpec {
 
 /** A kind's Settings home: the section that manages it, and the link's words. */
 export interface SettingsHome {
-  section: 'space-credentials' | 'space-links';
+  section: 'space-credentials' | 'space-links' | 'connectors';
   label: string;
 }
 
 export interface KindConfig {
-  kind: CoreEntityKind | CustomKindFallback;
+  /** This kind supports direct MCP catalog equipment editing. Server permissions still decide access. */
+  mcpEquipment?: boolean;
+  /** A core kind, the `c:*` fallback row, or a registered custom kind (`registerCustomKinds`). */
+  kind: CoreEntityKind | CustomKindFallback | CustomEntityKind;
   label: string;
   labelPlural: string;
   /**
@@ -1531,6 +1705,18 @@ export interface KindConfig {
    * affordance at all.
    */
   createForm?: 'scheduled-work' | 'file-upload' | 'skill-file';
+  /**
+   * NEW CREATES THE RECORD AT ONCE, NOT A FORM (Kalai, 2026-10-07: instant
+   * create for every kind whose only required field is its title). The draft
+   * tab creates it under its placeholder title and becomes its tab:
+   *
+   * - `'editor'` lands in the body's editor with the caret in the title (a doc);
+   * - `'title'` lands on its page with the title selected, so typing names it.
+   *
+   * Left untitled and untouched, it is deleted once no tab holds it
+   * (`useAbandonedSweep`). Absent ⇒ New opens this kind's create form.
+   */
+  createInstant?: 'editor' | 'title';
   /**
    * The create control ALSO offers "with header…" beside the immediate ＋: the
    * optional "When should an agent open this?" / "What does it hold?" fields,

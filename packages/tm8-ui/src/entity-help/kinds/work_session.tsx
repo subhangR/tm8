@@ -78,7 +78,7 @@ function Heartbeat() {
       </div>
       <ul className="ehs-sess__verbs" aria-label="What a person can do about it">
         <li className="ehs-in" style={at(2900)}>
-          <span className="ehs-chip ehs-chip--brass">✓ tick</span> files it under Done. The process keeps running.
+          <span className="ehs-chip ehs-chip--brass">✓ tick</span> files it under Done and closes the process.
         </li>
         <li className="ehs-in" style={at(3150)}>
           <span className="ehs-chip ehs-chip--block">terminate</span> ends the process. It files under Done because it
@@ -278,7 +278,7 @@ export const WORK_SESSION_HELP: KindHelpModule = {
         A session is the busiest junction in the graph. Look first for <strong>working on</strong> (its tasks) and{' '}
         <strong>acting as</strong> (the teammate responsible for it). Then comes where it runs: its project, its
         worktree lane, and the credential and container it runs on. Last are the edges the server draws as it works,
-        like who it messaged, what was created in it and who dispatched it.
+        like who it messaged, what was created in it and who launched it.
       </p>
     ),
     notes: {
@@ -286,11 +286,10 @@ export const WORK_SESSION_HELP: KindHelpModule = {
       participates_in: 'The teammate responsible for this session.',
       in_project: 'The Space’s project whose folder the session works in.',
       in_worktree: 'The isolated lane it works in, on its own tm8/<worktree-id> branch.',
-      'dispatched_by:outgoing': 'The dispatcher session that chose the teammate and spawned this one. Its reasoning is a message on the task.',
-      'dispatched_by:incoming': 'Sessions this dispatcher spawned.',
+      'launched_by:outgoing': 'The chat or session that launched this one. Recorded by the server at spawn; it is where this session reports.',
+      'launched_by:incoming': 'Sessions this one launched, with their live status.',
       messaged: 'Drawn by the server from message deliveries: which sessions this one addressed, and which addressed it.',
-      'created_in:incoming': 'Entities created during this session. The client asserts this; authored here is the verified form.',
-      'authored_from:incoming': 'Messages, memories, artifacts and forms the server recorded as written from inside this session.',
+      'authored_from:incoming': 'Everything made during this session, recorded by the server: messages, forms, memories, artifacts, commits, pull requests and docs.',
       runs_on: 'The credential this session runs on. Written only by the credential binding, never by hand.',
       selected_profile: 'The interaction profile pinned at launch, fixed for the session’s life.',
       runs_in: 'The container its process tree runs inside.',

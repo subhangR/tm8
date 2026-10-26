@@ -1,3 +1,5 @@
+import { MCP_COMMANDS } from './mcp.js';
+import { TOOL_COMMANDS } from './tool.js';
 /**
  * THE COMMAND REGISTRY — the one composition point.
  *
@@ -47,6 +49,7 @@ import { SAVED_VIEW_COMMANDS } from './saved-view.js';
 import { ACTION_COMMANDS } from './action.js';
 import { EVENT_COMMANDS } from './event.js';
 import { PRESENCE_COMMANDS } from './presence.js';
+import { WORKSPACE_COMMANDS } from './workspace.js';
 import { PROJECT_COMMANDS } from './project.js';
 import { FILE_COMMANDS } from './file.js';
 import { MESSAGE_COMMANDS } from './message.js';
@@ -73,8 +76,8 @@ import { CONTAINER_COMMANDS } from './container.js';
 import { FORM_COMMANDS } from './form.js';
 import { LINK_COMMANDS } from './link.js';
 import { DISCOVERABILITY_COMMANDS } from './discoverability.js';
-import { REQUEST_COMMANDS } from './request.js';
 import { STYLE_COMMANDS } from './style.js';
+import { CREDENTIAL_COMMANDS } from './credential.js';
 
 /**
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
@@ -118,6 +121,8 @@ export const COMMANDS: CommandModule[] = [
   ...SERVER_COMMANDS,
   ...KIND_COMMANDS,
   ...SKILL_COMMANDS,
+  ...MCP_COMMANDS,
+  ...TOOL_COMMANDS,
   ...SPACE_COMMANDS,
   ...IDENTITY_COMMANDS,
   ...AUTH_COMMANDS,
@@ -130,6 +135,7 @@ export const COMMANDS: CommandModule[] = [
   ...ACTION_COMMANDS,
   ...EVENT_COMMANDS,
   ...PRESENCE_COMMANDS,
+  ...WORKSPACE_COMMANDS,
   ...PROJECT_COMMANDS,
   ...FILE_COMMANDS,
   ...MESSAGE_COMMANDS,
@@ -155,8 +161,8 @@ export const COMMANDS: CommandModule[] = [
   ...FORM_COMMANDS,
   ...LINK_COMMANDS,
   ...DISCOVERABILITY_COMMANDS,
-  ...REQUEST_COMMANDS,
   ...STYLE_COMMANDS,
+  ...CREDENTIAL_COMMANDS,
 ];
 
 const REGISTERED = new Map<string, CommandModule>(COMMANDS.map((c) => [c.path.join(' '), c]));

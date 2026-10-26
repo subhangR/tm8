@@ -1,0 +1,17 @@
+/* THE MINIMAP (task 01a1090f): bottom-right of the game HUD, above the hint bar. */
+.cv2-root .sgm-minimap { position: absolute; right: 24px; bottom: 74px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
+.cv2-root .sgm-minimap > * { pointer-events: auto; }
+.cv2-root .sgm-minimap__toggle { box-shadow: 0 4px 18px color-mix(in srgb, var(--pn-ink) 12%, transparent); }
+.cv2-root .sgm-minimap__toggle:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 3px; }
+.cv2-root .sgm-minimap__canvas {
+  display: block; box-sizing: border-box; cursor: crosshair; border-radius: 14px;
+  border: 2px solid color-mix(in srgb, var(--pn-card) 80%, transparent);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--pn-ink) 18%, transparent);
+}
+.cv2-root .sgm-minimap__canvas[hidden] { display: none; }
+.cv2-root .sgm--duel .sgm-minimap { opacity: 0; pointer-events: none; }
+.cv2-root .sgm--duel .sgm-minimap > * { pointer-events: none; }
+@container (max-width: 700px) {
+  .cv2-root .sgm-minimap { right: 12px; bottom: 136px; }
+  .cv2-root .sgm-minimap__canvas { width: 120px !important; height: 120px !important; }
+}

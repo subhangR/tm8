@@ -28,13 +28,15 @@ import { rootBirthAction, rootBirthDispatch } from '../panels/ListRootHeader';
 import { SESSION_START_ACTIONS } from './useSessionStart';
 import { CHAT_ABOUT_ACTIONS } from './useChatAbout';
 import { NEW_CONTAINER_ACTIONS } from './useNewContainerSheet';
+import { ADD_PROJECT_ACTIONS } from './useAddProjectSheet';
 
-/** The union the hosts compose. Named here from the same two constants the
+/** The union the hosts compose. Named here from the same constants the
  *  hooks export, so a hook that gains a verb widens this with it. */
 const DISPATCHABLE = new Set<string>([
   ...SESSION_START_ACTIONS,
   ...CHAT_ABOUT_ACTIONS,
   ...NEW_CONTAINER_ACTIONS,
+  ...ADD_PROJECT_ACTIONS,
 ]);
 
 describe('birth verbs and the dispatchers behind them', () => {
@@ -45,10 +47,11 @@ describe('birth verbs and the dispatchers behind them', () => {
 
     // NOT VACUOUS: a comparison over an empty set reports success, and this
     // one would if `quickStart` were ever renamed out from under
-    // `rootBirthAction`. Three kinds declare one today — work_session
-    // (`start-terminal`), chat (`chat-about`) and container
-    // (`new-container`); the last two are exactly the ones that were inert.
-    expect(declared.length).toBeGreaterThanOrEqual(3);
+    // `rootBirthAction`. Four kinds declare one today — work_session
+    // (`start-terminal`), chat (`chat-about`), container (`new-container`)
+    // and project (`add-project`); chat and container are exactly the ones
+    // that were inert.
+    expect(declared.length).toBeGreaterThanOrEqual(4);
 
     const unperformable = declared.filter(([, action]) => !DISPATCHABLE.has(action));
     expect(unperformable).toEqual([]);

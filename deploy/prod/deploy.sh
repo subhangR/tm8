@@ -3,6 +3,14 @@
 # tm8 PROD deploy — ONE command: build this checkout from scratch, migrate the
 # prod database, and (re)start prod on 7777 / 7778.
 #
+# NOT A SERVER RECIPE. "prod" here is the maintainer's LAPTOP stable node
+# (7777/7778, database tm8_stable on 5442, build in ~/.local/share/tm8-stable), run as
+# the logged-in user from a checkout — not the `prod` slot of
+# deploy/environments.sh (17777, tm8_prod, /opt/tm8/prod) that install.sh
+# builds. To set up or upgrade a server, use install.sh and
+# docs/ops/OPERATOR-GUIDE.md; to ship a ref to the tm8.sh hosts, use
+# deploy/utho/deploy.sh.
+#
 #   bun run prod                       # or: ./deploy/prod/deploy.sh
 #   ./deploy/prod/deploy.sh --rollback # swap the previous build back in
 #   ./deploy/prod/deploy.sh --restart  # restart the current build, no rebuild

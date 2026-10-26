@@ -36,6 +36,7 @@ import {
   resolveProfileChain,
 } from './index';
 import type { ListConfig } from './types';
+import { CRAFT_KIND } from './craft';
 
 const CORE_KINDS = CoreEntityKindSchema.options;
 
@@ -45,7 +46,7 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 29 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 34 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
@@ -60,11 +61,12 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
     // 25 -> 26 (W10a): `credential`; 26 -> 28 (W6): `space_link` + `server`.
-    // 28 -> 29 (L5, migration 280): `op_request`.
     // 28 -> 29 (283): `story`.
     // MEASURED: CoreEntityKindSchema.options.length.
-    // 28 -> 29 (280): `op_request`. 29 -> 31 (283, 284): `story`, `style`.
-    expect(CORE_KINDS.length).toBe(31);
+    // 29 -> 30 (284): `style`.
+    // 30 -> 31 (296): metadata-only MCP catalog definitions.
+    // 31 -> 32 (304): `design`, an ordered set of pages (Craft → Designs).
+    expect(CORE_KINDS.length).toBe(33);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -348,22 +350,27 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
    * the assertion exact (rather than `toContain`) is what stops the toolbar
    * silently re-growing the two verbs the original ruling turned away.
    */
-  it('the task DETAIL toolbar keeps Run and Edit, and nothing else', () => {
-    // Chat beside Run is the one addition since (entity chat §3.2).
-    expect(getKind('task').panel.primaries).toEqual(['run', 'chat-about', 'edit']);
+  it('the task DETAIL toolbar keeps Run, and nothing else', () => {
+    // Chat beside Run is the one addition since (entity chat §3.2). Edit left
+    // with the dialog (task 01a1163a): the page edits every field in place.
+    expect(getKind('task').panel.primaries).toEqual(['run', 'chat-about']);
   });
 
-  it('5. PHASE 7 — a session partitions by CATEGORY, like every other kind', () => {
-    // The session tabs used to be keyed on `sessionStatus` literals, which is
-    // how a session that CRASHED came to be filed under "Done". Its states now
-    // declare their own categories (registry data) and its TABS are the same
-    // four every kind draws — one partition, one vocabulary, no kind-specific
-    // tab row left in this file.
-    const tabs = getKind('work_session').list.categories;
-    expect(tabs?.map((t) => t.id)).toEqual(['to_do', 'in_progress', 'done', 'cancelled']);
-    for (const tab of tabs ?? []) {
-      expect(tab.filter).toEqual({ category: [tab.id], deleted: 'exclude' });
-    }
+  it('5. SPEC D1 §5.3 — a session tabs by process liveness, then outcome (its own row)', () => {
+    // Was: the shared four, by category. The owner's 6 Oct decision gives
+    // sessions Running · Interrupted · Completed · Stopped, and the shared
+    // category stays underneath for story progress and cross-kind views.
+    const list = getKind('work_session').list;
+    expect(list.categories?.map((t) => t.id)).toEqual(['running', 'interrupted', 'completed', 'stopped']);
+    expect(list.categories?.map((t) => t.filter)).toEqual([
+      { sessionStatus: ['spawning', 'running', 'idle'], sessionOutcome: ['open', 'completed'], deleted: 'exclude' },
+      { sessionStatus: ['exited', 'failed'], sessionOutcome: ['open'], deleted: 'exclude' },
+      { sessionStatus: ['exited', 'failed'], sessionOutcome: ['completed'], deleted: 'exclude' },
+      { sessionOutcome: ['stopped'], deleted: 'exclude' },
+    ]);
+    expect(list.defaultCategory).toBe('running');
+    // They PARTITION (stale rows are recorded live), so no total tab.
+    expect(list.tabTotal).toBeUndefined();
   });
 
   it('5b. PHASE 7 — the session state options carry the ruled categories', () => {
@@ -379,10 +386,12 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       ['spawning', 'to_do'],
       ['running', 'in_progress'],
       ['idle', 'in_progress'],
-      // `failed` is `done`, NOT `cancelled`: failure is a runtime fact that
-      // gets a badge, and the run did reach its end — nobody cancelled it.
-      ['exited', 'done'],
-      ['failed', 'done'],
+      // SPEC D1 §3.2: for an OPEN session an ended process is unfinished
+      // work, `in_progress` — completed → done and stopped → cancelled come
+      // from the OUTCOME, which this status-keyed table cannot see
+      // (`sessionCategoryOf` in domain/session-outcome.ts can).
+      ['exited', 'in_progress'],
+      ['failed', 'in_progress'],
     ]);
   });
 
@@ -424,7 +433,8 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
    * tabs by whether anyone equips it and whether its files are still there.
    * Listed literally, like FACT_KINDS, so adding a kind is a deliberate edit.
    */
-  const OWN_TAB_KINDS = ['skill'];
+  // Spec D1 §5.3: sessions joined, with Running · Interrupted · Completed · Stopped.
+  const OWN_TAB_KINDS = ['skill', 'work_session'];
 
   it('skill tabs by its own facts: All · Equipped · Not equipped · Missing files', () => {
     const list = getKind('skill').list;
@@ -440,7 +450,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(list.filters.some((f) => f.id === 'missing')).toBe(false);
     // Only kinds whose tabs overlap name a total tab.
     for (const row of allKinds()) {
-      if (!OWN_TAB_KINDS.includes(row.kind)) expect(row.list.tabTotal, row.kind).toBeUndefined();
+      if (row.kind !== 'skill') expect(row.list.tabTotal, row.kind).toBeUndefined();
     }
   });
 
@@ -557,8 +567,13 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   });
 
   it('6. live count → list.liveCount', () => {
+    // Spec D1 §5.3: "● N running" is the Running tab's count, and
+    // "⚠ M interrupted" links to the Interrupted tab.
     const liveCount = getKind('work_session').list.liveCount;
-    expect(liveCount?.label(3)).toBe('● 3 live');
+    expect(liveCount?.label(3)).toBe('● 3 running');
+    expect(liveCount?.tab).toBe('running');
+    expect(liveCount?.alertTab?.tab).toBe('interrupted');
+    expect(liveCount?.alertTab?.label(2)).toBe('⚠ 2 interrupted');
   });
 
   it('7. quick launch → list.quickLaunch', () => {
@@ -581,6 +596,9 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       'sections',
       'categories',
       'tree',
+      /* Opened 2026-10-17 (331, task 01a14af9): the rows a list's rows
+         LAUNCHED, nested under them — the chat list's sessions. */
+      'launches',
       'tile',
       'liveCount',
       'quickCreate',
@@ -1217,7 +1235,10 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
     //   · 'frame' — the artifact panel IS the viewer (owner ruling 2026-08-20).
     //     A strip and a footer stapled under a viewport were most of the ~320px
     //     of chrome that ruling removed.
-    const expected: Record<string, 'chat' | 'frame' | undefined> = {
+    //   · 'canvas' — the story page IS the panel from its top edge down, with
+    //     its messages as a section (task 01a101c5): no title row, no tabs, no
+    //     strip, no footer.
+    const expected: Record<string, 'chat' | 'frame' | 'canvas' | undefined> = {
       channel: 'chat',
       work_session: 'chat',
       artifact: 'frame',
@@ -1230,6 +1251,12 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
       // edge for the artifact's reason: a strip and a footer stapled under a
       // frame are chrome the panel exists to get out of the way of.
       container: 'frame',
+      // The drawing's tab IS the canvas (task 01a12506): the Excalidraw
+      // viewport takes the body, its save status rides the strip.
+      drawing: 'frame',
+      // The graph's tab IS the graph (task 01a14c16), as the drawing's is.
+      graph: 'frame',
+      story: 'canvas',
     };
     for (const row of allKinds()) {
       expect(row.panel.composition, String(row.kind)).toBe(expected[row.kind]);
@@ -1467,6 +1494,17 @@ describe('the ActionRef registry (§2.5)', () => {
     expect(resolveAction('terminate').availability(base)).toEqual({ kind: 'available' });
   });
 
+  it('RESUME is offered on a STALE session — the node marks it lost and resumes it', () => {
+    // The record still says running/idle, so the session has not "ended" —
+    // but nothing is answering, and `execution.resume` now records the lost
+    // verdict itself rather than making the user wait out the reaper.
+    const running = { kind: 'work_session', status: 'running', outcome: 'open' } as unknown;
+    const base = { spaceId: 's', entityId: 'sess-1', sessionState: running } as const;
+    expect(resolveAction('resume').availability({ ...base, liveness: 'stale' })).toEqual({ kind: 'available' });
+    // A live one is still refused: there is a process to talk to.
+    expect(resolveAction('resume').availability({ ...base, liveness: 'live' }).kind).toBe('disabled');
+  });
+
   it('and refuses it on a row that has already ended', () => {
     // The one refusal left, and it is a statement rather than a capability
     // guess: a row under Done with nothing answering cannot be ended again.
@@ -1680,59 +1718,28 @@ describe('§15.1 — edit declares its fields, and fields declare their verb', (
   });
 
   /**
-   * THE TASK'S DUE DATE — the write surface the field never had.
+   * THE TASK HAS NO EDIT DIALOG (task 01a1163a, owner ruling in form
+   * 01a1164f). Its page edits in place, so the dialog's three rows — title and
+   * both dates — were a second door to fields the page already writes. What
+   * this pins is that nothing was lost when the door closed:
    *
-   * `dueDate` was modelled end to end and fillable only from the CLI: the
-   * column, the `PatchTaskInput` member, the `::date` sort (`BY_DUE`, offered
-   * on this very row) and the read projection all existed with no control
-   * behind them. The three things pinned here are the three that make it work
-   * rather than merely appear:
-   *
-   *   · `valueType: 'date'` — a calendar day, matching a `date` column. A
-   *     plain text field would let a locale string reach a column that refuses
-   *     it, and a datetime control would invent precision the column cannot
-   *     hold.
-   *   · `readFrom: 'state'` — the server projects `due_date` onto
-   *     `EntityState` and leaves it out of `contentOf`, so a field seeded from
-   *     content opens BLANK on a task that has a due date. Since an empty date
-   *     is an explicit `null`, that blank is a pending deletion: open the
-   *     dialog, press Save, lose the date. This is the assertion that would
-   *     have caught it.
-   *   · NOT `required` — `tasks.due_date` is nullable, so "no due date" is a
-   *     value the database holds rather than a hole in the record.
+   *   · both dates are still strip controls, so each is still writable and each
+   *     sort still has something a human can fill;
+   *   · the title is still inline-editable;
+   *   · the verb went with its fields (§15.1), so no surface offers an Edit
+   *     that would open an empty form.
    */
-  it('the task offers a Title and BOTH dates, read from state, written to content', () => {
-    const fields = getKind('task').editFields ?? [];
-    expect(fields.map((f) => f.label)).toEqual(['Title', 'Start date', 'Due date']);
-
-    /* THE SAME FOUR PROPERTIES ON EACH, checked in a loop rather than written
-       twice: both columns are nullable `date`s whose halves live apart — the
-       server projects them onto `state` and leaves them out of `contentOf` —
-       so a `readFrom` missing on either opens the dialog blank on a task that
-       HAS the value and clears it on Save. That is a silent data loss, and it
-       is the one property here worth holding for every date rather than for
-       the one that happened to be written first. */
-    for (const source of ['startDate', 'dueDate']) {
-      const field = fields.find((f) => f.source === source);
-      expect(field, source).toBeDefined();
-      expect(field?.target).toBe('content');
-      expect(field?.readFrom).toBe('state');
-      expect(field?.valueType).toBe('date');
-      expect(field?.required ?? false).toBe(false);
-
-      // Each sort now has something a human can fill — `dueDate`'s row existed
-      // and could only be filled by the CLI; `startDate`'s ships filled.
-      expect(getKind('task').list.sort.map((s) => s.key)).toContain(source);
+  it('the task edits in place: no dialog fields, no Edit verb, every field still writable', () => {
+    const task = getKind('task');
+    expect(task.editFields ?? []).toEqual([]);
+    expect(task.panel.primaries ?? []).not.toContain('edit');
+    expect(task.panel.layout).toBe('two-column');
+    expect(task.list.inlineEdit?.title).toBe(true);
+    const dates = (task.list.dateControls ?? []).map((c) => c.source);
+    expect(dates).toEqual(['startDate', 'dueDate']);
+    for (const source of dates) {
+      expect(task.list.sort.map((s) => s.key)).toContain(source);
     }
-
-    /* The dialog row and the strip control are the SAME registry `source` and
-       the same patch, so the two surfaces cannot disagree about a field name.
-       Holding it here is what would catch a date added to one and not the
-       other — the state the due date sat in for as long as it was invisible. */
-    const strip = getKind('task').list.dateControls ?? [];
-    expect(strip.map((c) => c.source)).toEqual(
-      fields.filter((f) => f.valueType === 'date').map((f) => f.source),
-    );
   });
 
   it('the channel offers exactly Name and an OPTIONAL Topic (user ruling 2026-08-07)', () => {

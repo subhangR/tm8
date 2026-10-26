@@ -428,7 +428,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // namespace. Always present; its METHODS are feature-detected against
       // the catalog, so S4 adding the rows does not move this list.
       'attentionV2',
-      'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
+      'complete', 'createEdge', 'createEntity', 'createEntityKind', 'createTask', 'deleteEdge', 'deleteEntity',
       // 2026-08-09: `dispatch` — `execution.dispatch` (Dreamer & Dispatcher
       // D5). It sorts next to `deleteEntity` and reads nothing like it, which
       // is precisely why this list is hand-maintained: the seam cannot gain a
@@ -466,6 +466,7 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // unknown. Inserted at its sorted position.
       'launchDefaults',
       'markRead',
+      'markSeen',
       // Amendment 11 (2026-08-13): `tracking.pr.merge` — the FORGE WRITE, and
       // the counterpart to `gitMerge`'s deliberate exclusion from the tracking
       // side. It sorts between `markRead` and `moveEntity`, beside nothing it
@@ -487,9 +488,6 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // space_link, server). Not a new wire call: `managedPortFromSeam`
       // re-exposes existing seam methods keyed by operation name.
       'managed',
-      // L5 (280): the approve card's port. Not a new wire call either: it is
-      // `seam.opRequests` itself, re-exposed where the detail panel reads.
-      'opRequests',
       'prompt', 'react',
       // `resolveAttention` shipped into the seam without this lock being
       // updated, so the guard was red in-tree before the attention inbox
@@ -546,7 +544,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // the next turn runs on whatever the chat is set to when that turn is
       // CLAIMED, so `setChatModel` is a chat-level write and not a field on
       // `postTurn`. Sorts between revokeInvite and setEntityHeader.
+      'setChatCredentials',
       'setChatModel',
+      // Chat turn management: `chat.interrupt` — the composer's ■ / Esc. The
+      // port had a Stop button and no write behind it.
+      'interruptChat',
       // 2026-08-12: `startTerminal` — `execution.terminal.start`, a VANILLA
       // TERMINAL (101). Sorts after `spawn`, which is where it reads like it
       // belongs and is a coincidence worth not relying on.
@@ -590,6 +592,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // unequip, preview), one namespaced member. Appended like the rows above.
       'skills',
       'terminate',
+      // Tools 4 (approved design 01a12587 §4.3): stored tool operations,
+      // including version-pinned runs that open a retained terminal.
+      'tools',
       // 2026-08-16 (attention history): `updateAttentionRequest` — the
       // PER-REQUEST write. `resolveAttention` above is the bulk verb and
       // cannot address one row or say 'dismissed', so a quarter of the status
@@ -601,8 +606,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // 187 follow-through: `updateSpace` — `spaces.update`, a PATCH. The
       // Session sharing settings section writes the two space-wide defaults
       // through it, one key per click; absent keys are left alone.
-      'updateSpace',
+      'updateMenu', 'updateSpace',
       'upsertReadMark', 'work',
+      // Spec D1 §4.1 / §6.3 R4: `execution.complete` and the task release
+      // ("Hand off") behind the Complete dialog.
+      'completeSession', 'releaseClaim',
     ].sort());
     expect(Object.keys(seam.liveness).sort()).toEqual(['onChange', 'refresh', 'statusOf']);
     // Amendment 3 (2026-08-01, attachments): `downloadHref` — the one seam

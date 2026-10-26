@@ -91,7 +91,7 @@ describe('WorkSessionContent', () => {
     expect(screen.getByText('native terminal')).toBeTruthy();
     expect(
       screen.getAllByRole('tab').map((tab) => tab.textContent),
-    ).toEqual(['Terminal', 'Transcript', 'Changes', 'Git', 'Debug', 'Graph']);
+    ).toEqual(['Terminal', 'Transcript', 'Changes', 'Git', 'Debug', 'Graph', 'Launch context']);
     // The retired name is gone from the strip entirely.
     expect(screen.queryByRole('tab', { name: 'Chat' })).toBeNull();
     expect(screen.getByTestId('work-session-transcript-surface')).toBeTruthy();
@@ -263,13 +263,15 @@ describe('WorkSessionContent', () => {
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Terminal' }), { key: 'ArrowRight' });
     expect(screen.getByText('transcript-preserved')).toBeTruthy();
     expect(transcriptScroll.scrollTop).toBe(123);
-    // End jumps to the LAST surface — Graph. The transcript pane stays mounted
-    // (its scroll survives), the terminal too.
+    // End jumps to the LAST surface — Launch context. The transcript pane stays
+    // mounted (its scroll survives), the terminal too.
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Transcript' }), { key: 'End' });
+    expect(onSurfaceChange).toHaveBeenLastCalledWith('context');
+    expect(screen.getByRole('tab', { name: 'Launch context' }).getAttribute('aria-selected')).toBe('true');
+    // ArrowLeft twice walks back over Graph onto Debug, so the walk still
+    // covers the chips that used to be last.
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Launch context' }), { key: 'ArrowLeft' });
     expect(onSurfaceChange).toHaveBeenLastCalledWith('graph');
-    expect(screen.getByRole('tab', { name: 'Graph' }).getAttribute('aria-selected')).toBe('true');
-    // ArrowLeft walks back onto Debug, so the walk still covers the chip that
-    // used to be last.
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Graph' }), { key: 'ArrowLeft' });
     expect(onSurfaceChange).toHaveBeenLastCalledWith('debug');
     expect(screen.getByRole('tab', { name: 'Debug' }).getAttribute('aria-selected')).toBe('true');

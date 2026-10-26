@@ -466,8 +466,26 @@ describe('W7p 083 — the linking human\'s model login is not offered', () => {
 });
 
 /** A via_link agent under `L` (authKind 'agent', viaLinkId set): a real child of the link session. */
-async function childOf(L: Linked, spaceSessions?: 'off'): Promise<DbClaims> {
-  return claimsForToken((await mintChild(L.mintClaims)).token, spaceSessions);
+async function childOf(L: Linked): Promise<DbClaims> {
+  return claimsForToken((await mintChild(L.mintClaims)).token);
+}
+
+/**
+ * The same child with NO Space pin. PREDICATE-ONLY CONTROL (B32): unreachable
+ * via a real session since B20 (226's CHECK + the always-pinned kinds).
+ *
+ * This used to be `childOf(L, 'off')`: resolve the real token under
+ * `TM8_SPACE_SESSIONS=off`, which dropped `sessionSpaceId`. B20 (Q15) pins
+ * agent, agent_runtime and link rows in every mode, so no mode produces an
+ * unpinned agent any more and 226's `auth_sessions_pinned_kinds_have_space`
+ * makes the row itself impossible. 206's `target_space_id` predicate still has
+ * to be covered on its own, so the claims are built directly instead of being
+ * manufactured out of a node setting — which also stops this cell from
+ * depending on what `off` happens to mean.
+ */
+async function unpinnedChildOf(L: Linked): Promise<DbClaims> {
+  const pinned = await childOf(L);
+  return { ...pinned, sessionSpaceId: undefined };
 }
 
 describe('W7p 206 — a link-bound caller gets the target default only, while its own row allows it', () => {
@@ -526,10 +544,11 @@ describe('W7p 206 — each predicate of the link admission refuses on its own', 
     expect(await outcome(() => read206(child))).toBe('42501');
   });
 
-  it('wrong launch space: unpinned claims (TM8_SPACE_SESSIONS=off) launching into A, where H is a member, are refused', async () => {
+  it('wrong launch space: unpinned claims launching into A, where H is a member, are refused', async () => {
     const L = await linked();
-    const unpinned = await childOf(L, 'off');
+    const unpinned = await unpinnedChildOf(L);
     expect(unpinned.sessionSpaceId).toBeUndefined();
+    expect(unpinned.authKind).toBe('agent');
     expect(unpinned.viaLinkId).toBe(L.link.id);
     // A has its own default, so only the target predicate stands between
     // this caller and A's key.

@@ -28,7 +28,9 @@
 
 import type { Db, DbClaims } from '../db/types.js';
 import type { JobContext, JobOutcome, ScheduledJob } from '../scheduler/types.js';
-import { GithubClient, resolveGithubToken } from './github.js';
+import { TrackingClients, type TrackingTokenResolver } from './clients.js';
+import type { GithubClient } from './github.js';
+import { trackingClientsFor } from './loops.js';
 
 export const TRACKING_OBSERVER_JOB_NAME = 'tracking.observer';
 
@@ -57,7 +59,12 @@ export interface TrackingObserverOptions {
    * their node holding the queue.
    */
   claims: () => Promise<DbClaims>;
+  /** Tests: one client for every space. Production resolves per space (`resolveToken`). */
   client?: GithubClient;
+  /** 306: a space's own GitHub token credential, used for that space's rows only. */
+  resolveToken?: TrackingTokenResolver;
+  /** Per-space clients and rate-limit backoff; the job wrapper keeps one for its lifetime. */
+  clients?: TrackingClients;
   /** Requests per tick. Small on purpose — this is a poller, not a backfill. */
   batchSize?: number;
   /**
@@ -86,7 +93,8 @@ export async function runTrackingObserverTick(
   log?: (message: string) => void,
 ): Promise<JobOutcome> {
   const ctxLogger = log;
-  const client = options.client ?? new GithubClient({ token: resolveGithubToken() });
+  const clients = options.clients ?? trackingClientsFor(options, log);
+  clients.beginTick();
   const claims = await options.claims();
 
   const claimed = await options.db.rpc<{ claimed?: unknown }>(
@@ -114,6 +122,15 @@ export async function runTrackingObserverTick(
   for (const request of requests) {
     const problems: string[] = [];
     let succeeded = 0;
+    // 306: every target in a request belongs to the request's space, so one
+    // client — that space's credential, or the node fallback — serves them all.
+    const { client, budget: spend } = await clients.forSpace(request.spaceId);
+    if (clients.isLimited(spend)) {
+      // Not attempted at all: leave it claimed, as for a rate limit mid-request.
+      abandoned += 1;
+      rateLimited = true;
+      continue;
+    }
     // Distinguish "I stopped early" from "I finished". Completing a request
     // whose targets were never fetched is the exact defect this file's header
     // opens by naming, and it is only avoidable if the loop records WHY it ended.
@@ -140,10 +157,25 @@ export async function runTrackingObserverTick(
       // already claimed in this batch, leaving them `running` until the stale
       // window. One bad row would take the batch down with it, every tick.
       let outcome: string;
+      let retryAtMs: number | undefined;
       try {
-        outcome = await refreshOne(options.db, claims, client, target, signal);
+        const result = await refreshOne(options.db, claims, client, target, signal);
+        outcome = result.outcome;
+        retryAtMs = result.retryAtMs;
       } catch (error) {
         outcome = `apply failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
+      // 306 §2: the row was looked at. A rate limit is not evidence about it.
+      if (outcome !== 'rate_limited') {
+        try {
+          await options.db.rpc(claims, 'public.record_tracking_poll', [
+            target.entityId,
+            outcome === 'refreshed' ? null : outcome,
+          ]);
+        } catch (error) {
+          ctxLogger?.(`tracking.observer: could not record poll of ${target.entityId}: ${
+            error instanceof Error ? error.message : String(error)}`);
+        }
       }
 
       if (outcome === 'refreshed') {
@@ -151,6 +183,7 @@ export async function runTrackingObserverTick(
         succeeded += 1;
       } else if (outcome === 'rate_limited') {
         rateLimited = true;
+        clients.markLimited(spend, retryAtMs);
         stoppedEarly = true;
         break;
       } else {
@@ -168,7 +201,7 @@ export async function runTrackingObserverTick(
       // shutdown and every job timeout, so this is an ordinary path, not an
       // exotic one.
       abandoned += 1;
-      if (rateLimited) break;
+      // Another request may spend a different budget (another space's token).
       continue;
     }
 
@@ -203,7 +236,8 @@ export async function runTrackingObserverTick(
       unresolved,
       abandoned,
       rateLimited,
-      authenticated: client.authenticated,
+      limitedBudgets: clients.limitedBudgets(),
+      fallbackAuthenticated: clients.fallbackAuthenticated,
     },
   };
 }
@@ -214,18 +248,22 @@ async function refreshOne(
   client: GithubClient,
   target: ClaimedTarget,
   signal: AbortSignal | undefined,
-): Promise<'refreshed' | 'rate_limited' | string> {
-  if (!target.repo) return 'no repo recorded';
+): Promise<{ outcome: 'refreshed' | 'rate_limited' | string; retryAtMs?: number | undefined }> {
+  if (!target.repo) return { outcome: 'no repo recorded' };
 
   if (target.kind === 'pull_request') {
-    if (target.number === null) return 'no pull request number recorded';
+    if (target.number === null) return { outcome: 'no pull request number recorded' };
     const res = await client.pullRequest(target.repo, target.number, signal);
-    if (!res.ok) return res.reason === 'rate_limited' ? 'rate_limited' : `${res.reason}: ${res.detail}`;
+    if (!res.ok) {
+      return res.reason === 'rate_limited'
+        ? { outcome: 'rate_limited', retryAtMs: res.retryAtMs }
+        : { outcome: `${res.reason}: ${res.detail}` };
+    }
     // This door sends no `if-none-match` (an explicit refresh REQUEST means
     // someone wants the facts re-read), so a 304 here would be the provider
     // answering a question we did not ask. Treated as "learned nothing" rather
     // than asserted as a refresh.
-    if (res.notModified === true) return 'provider answered 304 to an unconditional request';
+    if (res.notModified === true) return { outcome: 'provider answered 304 to an unconditional request' };
     await db.rpc(claims, 'public.apply_pull_request_facts', [
       target.entityId,
       res.value.title,
@@ -236,13 +274,37 @@ async function refreshOne(
       res.value.baseRef,
       res.value.mergeableState,
     ]);
-    return 'refreshed';
+    // 306: a refresh reads CI too. The rollup comes back from the door that
+    // stores the check rows, exactly as the watcher does it, so the column and
+    // the facts behind it agree. A checks failure does not undo the PR facts.
+    if (res.value.headSha !== null) {
+      const runs = await client.checkRuns(target.repo, res.value.headSha, signal);
+      if (!runs.ok) {
+        if (runs.reason === 'rate_limited') return { outcome: 'rate_limited', retryAtMs: runs.retryAtMs };
+        return { outcome: `checks ${runs.reason}: ${runs.detail}` };
+      }
+      if (runs.notModified !== true) {
+        const applied = await db.rpc<{ ciStatus?: string | null }>(claims, 'public.apply_pr_check_facts', [
+          target.entityId, res.value.headSha, JSON.stringify(runs.value),
+        ]);
+        if (applied?.ciStatus !== null && applied?.ciStatus !== undefined) {
+          await db.rpc(claims, 'public.apply_pull_request_facts', [
+            target.entityId, null, null, null, applied.ciStatus, null, null, null,
+          ]);
+        }
+      }
+    }
+    return { outcome: 'refreshed' };
   }
 
-  if (target.sha === null) return 'no commit sha recorded';
+  if (target.sha === null) return { outcome: 'no commit sha recorded' };
   const res = await client.commit(target.repo, target.sha, signal);
-  if (!res.ok) return res.reason === 'rate_limited' ? 'rate_limited' : `${res.reason}: ${res.detail}`;
-  if (res.notModified === true) return 'provider answered 304 to an unconditional request';
+  if (!res.ok) {
+    return res.reason === 'rate_limited'
+      ? { outcome: 'rate_limited', retryAtMs: res.retryAtMs }
+      : { outcome: `${res.reason}: ${res.detail}` };
+  }
+  if (res.notModified === true) return { outcome: 'provider answered 304 to an unconditional request' };
   await db.rpc(claims, 'public.apply_commit_facts', [
     target.entityId,
     res.value.message,
@@ -250,7 +312,7 @@ async function refreshOne(
     res.value.committedAt,
     res.value.url,
   ]);
-  return 'refreshed';
+  return { outcome: 'refreshed' };
 }
 
 /** The door returns jsonb; parse it defensively rather than casting and hoping. */
@@ -287,6 +349,7 @@ function normalizeClaimed(raw: unknown): ClaimedRequest[] {
 }
 
 export function createTrackingObserverJob(options: TrackingObserverOptions): ScheduledJob {
+  let clients = options.clients;
   return {
     name: TRACKING_OBSERVER_JOB_NAME,
     // A minute is short enough that `tracking.refresh`'s 202 becomes true
@@ -298,7 +361,9 @@ export function createTrackingObserverJob(options: TrackingObserverOptions): Sch
     runOnStart: options.runOnStart ?? true,
     timeoutMs: 2 * 60_000,
     async run(ctx: JobContext): Promise<JobOutcome> {
-      return runTrackingObserverTick(options, ctx.signal, (m) => { ctx.logger.warn(m); });
+      const log = (m: string): void => { ctx.logger.warn(m); };
+      clients ??= trackingClientsFor(options, log);
+      return runTrackingObserverTick({ ...options, clients }, ctx.signal, log);
     },
   };
 }

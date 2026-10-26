@@ -382,23 +382,65 @@
   box-shadow: var(--pn-sh-sm);
 }
 
-.tch-explain__body { padding: 14px; }
-.tch-explain__heading { min-width: 0; }
-.tch-explain__heading > span {
-  display: block;
-  margin-bottom: 3px;
-  color: var(--pn-ink-4);
-  font: var(--pn-fs-tick) var(--pn-mono);
-  letter-spacing: var(--pn-track-label);
-  text-transform: uppercase;
+.tch-explain__body { padding: 12px 14px 14px; }
+/* ONE header line: glyph + title, actions at the right (proposal 01a14a8d §3).
+   No uppercase eyebrow — the kind word is the glyph's accessible name. */
+.tch-explain__heading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.tch-explain__glyph {
+  flex: none;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-label)/1 var(--pn-mono);
+}
+.tch-explain__kind {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .tch-explain__heading h3 {
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
   color: var(--pn-ink);
-  font-family: var(--pn-serif);
-  font-size: var(--pn-fs-title);
-  font-weight: 500;
+  font: 600 var(--pn-fs-body)/1.3 var(--pn-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.tch-explain__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tch-explain__head .tch-explain__heading { flex: 1; }
+.tch-explain__actions { display: flex; align-items: center; gap: 2px; }
+.tch-explain__actions button {
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--pn-r-xs);
+  background: none;
+  color: var(--pn-ink-3);
+  font: var(--pn-fs-micro) var(--pn-ui);
+  cursor: pointer;
+}
+.tch-explain__actions button:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+.tch-explain__actions button + button::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--pn-ink-4);
+}
+/* A tall diagram does not take the transcript: 320px, one press from whole. */
+.tch-explain__frame {
+  max-height: 320px;
+  overflow: hidden;
+}
+.tch-explain__frame[data-expanded] { max-height: none; }
 .tch-explain__caption {
   margin: 10px 0 0;
   color: var(--pn-ink-3);
@@ -408,14 +450,8 @@
 .tch-explain__pending { padding: 18px 14px; color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
 
 .tch-explain__source {
-  margin-top: 10px;
-  color: var(--pn-ink-3);
-  font: var(--pn-fs-tick) var(--pn-mono);
-}
-.tch-explain__source summary { cursor: pointer; }
-.tch-explain__source pre {
   overflow-x: auto;
-  margin: 7px 0 0;
+  margin: 10px 0 0;
   padding: 9px;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
@@ -559,7 +595,7 @@
   display: block;
   width: auto;
   max-width: 100%;
-  max-height: 460px;
+  max-height: 320px;
   margin: 12px auto 0;
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
@@ -593,8 +629,7 @@
   gap: 2px;
 }
 
-.tch-ledger__reads,
-.tch-ledger__transition {
+.tch-ledger__reads {
   display: flex;
   gap: var(--pn-space-2);
   align-items: baseline;
@@ -603,8 +638,7 @@
 }
 
 /* The read line is a BUTTON (S3b): the expansion is its press destination.
-   Same sentence anatomy as its siblings above — the reset strips the button
-   chrome so the three line types keep reading as one family. */
+   The reset strips the button chrome so it keeps reading as a sentence. */
 button.tch-ledger__reads {
   padding: 0;
   border: none;
@@ -622,31 +656,6 @@ button.tch-ledger__reads:hover { color: var(--pn-ink-2); }
 .tch-ledger__readtree {
   margin: 2px 0 4px;
   padding-left: var(--pn-space-4);
-}
-
-.tch-ledger__entity {
-  max-width: 260px;
-  overflow: hidden;
-  color: var(--pn-ink-2);
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* A real button only when the host can open entities — same split, same
-   affordance family as the entity chip it replaces. */
-button.tch-ledger__open {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--pn-ink-2);
-  font: inherit;
-  cursor: pointer;
-}
-
-button.tch-ledger__open:hover {
-  color: var(--pn-brand-2);
-  text-decoration: underline;
 }
 
 .tch-entity-chip {
@@ -724,7 +733,7 @@ button.tch-entity-chip:hover {
 .tch-composer-wrap {
   flex: none;
   width: min(760px, calc(100% - 32px));
-  margin: 0 auto var(--pn-space-3);
+  margin: 0 auto var(--pn-space-2);
   /* A query container, so the foot degrades by the COMPOSER's width, not the
      viewport's — the pane beside a 380px column and an open aside is far
      narrower than the window. The skill popover is unaffected: its containing
@@ -781,7 +790,7 @@ button.tch-entity-chip:hover {
   margin-top: auto;
 }
 .tch-conversation[data-empty] .tch-composer-wrap {
-  margin: 0 auto auto;
+  margin: auto auto var(--pn-space-2);
 }
 
 /* NO TRAY-ONLY VARIANT ANY MORE. A `[data-chrome='tray']` rule made this wrap
@@ -849,21 +858,16 @@ button.tch-entity-chip:hover {
 /* The chip tabs and the +N overflow left with the tray's chips (S4) —
    the ledger panel below is where the thread's entities live now. */
 
+/* NO YELLOW IN THE COMPOSER (Subhang, 2026-10-18). Why Send is refused rides
+   INSIDE the card in muted ink; the full reason is also Send's tooltip. */
 .tch-refusal {
-  margin: 0 4px 5px;
-  color: var(--pn-wait);
+  margin: 0;
+  padding: 2px 2px 0;
+  color: var(--pn-ink-3);
   font-size: var(--pn-fs-fine);
 }
 
-.tch-continuable {
-  margin: 0 0 7px;
-  color: var(--pn-wait);
-  font: var(--pn-fs-fine) var(--pn-mono);
-}
 
-.tch-composer-wrap[data-phase='stopped-continuable'] .tch-composer {
-  border-color: color-mix(in srgb, var(--pn-wait) 45%, var(--pn-border));
-}
 
 /* The card shell (border, field, foot geometry) is `ComposerCard`'s —
    `.ri-card` in rich-input.css. Only what is genuinely Chat Home's stays. */
@@ -901,7 +905,7 @@ button.tch-entity-chip:hover {
   white-space: nowrap;
 }
 
-.tch-phase { margin-left: auto; color: var(--pn-wait); font: var(--pn-fs-tick) var(--pn-mono); }
+.tch-phase { margin-left: auto; color: var(--pn-ink-3); font: var(--pn-fs-tick) var(--pn-mono); }
 
 /* SEND NEVER GIVES, AND THIS IS THE RULE THE OVERLAP BUG WAS MISSING.
    Everything else in the foot refused to shrink — `.tch-pick` is a flex item
@@ -1410,9 +1414,11 @@ button.tch-entity-chip:hover {
    the top of the canvas that the old header panel and chip rows were taking. */
 .tch-picks {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 5px;
   min-width: 0;
+  flex-shrink: 1;
   margin-left: var(--pn-space-1);
 }
 /* THE TRIGGERS ARE THE FOOT'S SHOCK ABSORBER, so every link in the chain has
@@ -1886,7 +1892,16 @@ button.tch-entity-chip:hover {
   margin-top: 0;
 }
 .cv2-root[data-shell='mobile'] .tch-conversation .tch-composer-wrap {
-  margin: auto auto var(--pn-space-3);
+  margin: auto auto calc(10px + var(--mobile-safe-bottom, 0px));
+}
+
+/* THE DOCK CLEARS THE HOME INDICATOR ONLY WHILE THERE IS ONE (composer-states
+   mockup §1, t-safe). With the keyboard up the indicator is under the keys, so
+   the safe-area term goes and the card sits 10px above them. `data-keyboard` is
+   stamped on iOS (overlay inset) and on Android (resized viewport). See
+   `mobile/useKeyboardUp.ts`. */
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-conversation .tch-composer-wrap {
+  margin-bottom: 10px;
 }
 
 /* Full-bleed but for one gutter: at 390px the desktop's 32px inset spends 8%
@@ -1920,38 +1935,56 @@ button.tch-entity-chip:hover {
   padding-inline: var(--pn-space-4);
 }
 
+/* Mockup §1a: h1 22/28, caption 14. */
+.cv2-root[data-shell='mobile'] .tch-welcome h1 {
+  font-size: var(--pn-fs-h2);
+  line-height: 28px;
+}
+.cv2-root[data-shell='mobile'] .tch-welcome p {
+  font-size: var(--pn-fs-body);
+}
+
+/* THE HERO COLLAPSES WHILE THE KEYBOARD IS UP (mockup §1b, audit A5). The mark
+   and the caption go, and the h1 drops to one muted 17px line just above the
+   card. That gives back ~180px of a ~510px visible frame to the conversation. */
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome {
+  justify-content: flex-end;
+  padding-bottom: var(--pn-space-3);
+}
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome p {
+  display: none;
+}
+/* `RibbonMark` draws itself with an inline `display: block`, which beats any
+   stylesheet rule but an important one: without it the mark stayed at 58px
+   with the keyboard up (capture-keyboard-geometry, once its frame matched). */
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome__mark {
+  display: none !important;
+}
+.cv2-root[data-shell='mobile'] .mobile-frame[data-keyboard='up'] .tch-welcome h1 {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+}
+
 
 /* --- THE FOOT IS ONE ROW, AND IT HAS TO STAY ONE ROW --------------------- */
 
-/* WHAT WENT WRONG WHEN THE TOUCH FLOOR LANDED. Growing every control to 44px
-   (DEF-026, above) took a foot built for a 760px desktop pane and asked it to
-   hold five 44px controls in 342px. It wrapped: attach on its own line, three
-   pick triggers on the next, Send on a third — 150px of composer chrome under
-   a one-line field, and the primary action of the primary screen at the very
-   bottom edge of the phone. The floor was right; the ROW was never re-laid.
+/* ＋ · MODE · MODEL · slack · SEND (composer-states mockup §6, audit A3).
 
-   SO THE ROW SCROLLS INSTEAD OF WRAPPING. Attach and Send are pinned to the
-   two ends where a thumb expects them, and the thread settings — mode,
-   teammate, model — take whatever is left and scroll sideways when they do not
-   fit. Nothing is hidden and nothing is compressed to an ellipsis it did not
-   need: the roster is variable-length by construction (a node can offer any
-   number of teammates and models), so a layout that must fit ALL of them in
-   342px is a layout that must lie about one of them. */
+   SUPERSEDES THE SCROLLING STRIP. The thread settings used to scroll sideways
+   inside the foot so that nothing was ever ellipsized. The mockup rules the
+   other way and states the arithmetic that makes it safe: the inner foot is
+   viewport − 38 (322 / 352 / 392 at 360 / 390 / 430), and the widest it can
+   ask for is ＋ 44 + mode 96 + model 120 + disc 44 + four 6px gaps = 328. That
+   is 6px over at 360, so the slack collapses to 0 and the model pill gives up
+   the 6 — nothing scrolls sideways and nothing is cut mid-glyph. A pill's
+   label ellipsizes and its ▾ never does; the full name is in the pill's sheet.
+
+   The gap, padding and the 44px floor of `.ri-card__foot` are the shared
+   card's (`rich-input.css`); this file only orders and sizes chat's items. */
 .cv2-root[data-shell='mobile'] .ri-card__foot {
   flex-wrap: nowrap;
-  /* The gap is what the scrolling strip clips INTO. At 4px the last chip's
-     border was cut a pixel from Send's edge and the two read as one broken
-     control; 8px makes the clip legible as "there is more this way". */
-  gap: var(--pn-space-2);
-  /* THE ROW'S OWN HEIGHT, and the second half of the "too height" report. The
-     foot measured 58px against a 44px Send, so 14 of it was chrome: 8px of
-     block padding here and 6px the refused-attach control was carrying over
-     the floor (below). 3px of padding still separates Send's pill from the
-     field above it and from the card's edge, and the row lands at 50. */
-  padding: 3px var(--pn-space-2);
-  /* Nothing in this row may ever set the height by growing taller than the
-     controls in it — an image, a longer phase label or a future control would
-     otherwise silently reintroduce the same 14px. */
   align-items: center;
 }
 
@@ -1972,69 +2005,96 @@ button.tch-entity-chip:hover {
   inline-size: var(--mobile-touch-min);
 }
 
+/* The ROLE/MODE pill (and a Coordinator's team chip) lives in `.tch-picks`.
+   On the phone the strip is just a box that may shrink: no scroller, no snap. */
 .cv2-root[data-shell='mobile'] .tch-picks {
-  flex: 1;
+  flex: 0 1 auto;
   flex-wrap: nowrap;
   min-width: 0;
-  overflow-x: auto;
+  gap: 6px;
   margin-left: 0;
-  /* The strip is scrolled by the same finger that taps it; a scrollbar over a
-     44px control would eat part of the target. */
-  scrollbar-width: none;
-  /* SMOOTH, AND THAT IS THREE SEPARATE PROPERTIES DOING THREE JOBS.
-
-     `overscroll-behavior-x: contain` is the one that matters most: without it a
-     horizontal flick that reaches either end CHAINS to the ancestor, so a
-     finger that overshoots the model pill starts dragging the transcript — the
-     two scrollers are perpendicular but a real thumb swipe is never exactly
-     one axis. Containing it also stops the browser's back-navigation gesture
-     firing off the left edge of this strip, which on a chat composer costs the
-     writer their draft.
-
-     `scroll-snap-type: x proximity` settles the strip ON a pill instead of
-     halfway through one. PROXIMITY and not `mandatory`: mandatory would fight
-     a deliberate small nudge and re-centre the strip every time the finger
-     lifted, and with three items it would make the last one hard to rest on.
-
-     `scroll-behavior: smooth` is for the programmatic case — focusing a
-     trigger with a keyboard scrolls it into view, and a jump-cut there reads
-     as the row redrawing itself. */
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  scroll-behavior: smooth;
-  /* The snap ports need somewhere to land that is not flush against Send. */
-  scroll-padding-inline: var(--pn-space-1);
+  overflow: hidden;
 }
-.cv2-root[data-shell='mobile'] .tch-picks::-webkit-scrollbar { display: none; }
 .cv2-root[data-shell='mobile'] .tch-pick {
-  flex: none;
-  scroll-snap-align: start;
+  flex: 0 1 auto;
 }
+
+/* The slack sits between the pills and Send, as the mockup draws it, and
+   Send stays last. DOM order is the desktop's (slack before the model); on the
+   phone `order` moves the slack after the model without forking the markup. */
+.cv2-root[data-shell='mobile'] .ri-card__foot > .ri-foot-gap { order: 1; }
+.cv2-root[data-shell='mobile'] .ri-card__foot > .tch-send,
+.cv2-root[data-shell='mobile'] .ri-card__foot > .tch-stop { order: 2; }
+
+/* The phase word does not fit the row and the disc already carries it
+   (↑ / ■ "Agent is working"). Kept in the tree as a live status for assistive
+   tech, removed from the line. */
+.cv2-root[data-shell='mobile'] .ri-card__foot > .tch-phase {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* THE TWO PILLS: 34px tall, 13px label, mode capped at 96 and model at 120.
+   `min-width: 0` all the way down is what lets the label's ellipsis engage
+   instead of the row overflowing. */
+.cv2-root[data-shell='mobile'] .tch-picks .tch-pop,
+.cv2-root[data-shell='mobile'] .ri-card__foot > .tch-pick--model {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.cv2-root[data-shell='mobile'] .tch-picks .tch-pop__trigger,
+.cv2-root[data-shell='mobile'] .ri-card__foot > .tch-pick--model .tch-pop__trigger {
+  box-sizing: border-box;
+  min-height: 34px;
+  min-width: 0;
+  padding: 0 11px;
+  gap: 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: 17px;
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+  white-space: nowrap;
+}
+.cv2-root[data-shell='mobile'] .tch-picks .tch-pop__trigger { max-width: 96px; }
+.cv2-root[data-shell='mobile'] .ri-card__foot > .tch-pick--model { max-width: 120px; }
+.cv2-root[data-shell='mobile'] .ri-card__foot > .tch-pick--model .tch-pop__trigger { max-width: 100%; }
+.cv2-root[data-shell='mobile'] .ri-card__foot .tch-pop__value { min-width: 0; }
+.cv2-root[data-shell='mobile'] .ri-card__foot .tch-pick__caret { flex: none; }
 
 /* The trigger's own geometry is set once, in the DEF-026 block above — one rule
    per selector, so a guard that reads "the first rule matching this selector"
    cannot be reading a rule that a later one overrides. */
 
-/* Attach loses its box. At 24px the border was what made a 24px glyph findable;
-   at 44px the target is its own affordance, and a bordered square beside a
-   round Send reads as two unrelated controls. */
+/* ＋ is a 44px ring at the start of the row (mockup `.plus`). */
 .cv2-root[data-shell='mobile'] .tch-attach {
   flex: none;
   margin-right: 0;
-  border-color: transparent;
+  border-color: var(--pn-line);
   border-radius: var(--pn-r-pill);
 }
 
-/* Send is a pill pinned to the end of the row — the shape the primary action
-   has on every phone the reader already uses, and the one that survives a foot
-   whose middle is scrolling. It keeps its WORD: squeezing "Send ↑" into a 44px
-   disc clipped the label, and an icon-only primary would be the one control on
-   this screen a reader has to guess at. The padding stays for that reason. */
+/* SEND IS A 34px DISC IN A 44px TARGET. The box keeps the touch floor; the
+   5px of padding with a content-box background is what draws the smaller
+   disc, so the target and the circle are one element and cannot drift apart.
+   ■ Stop wears the same class mid-turn and gets the same footprint. */
 .cv2-root[data-shell='mobile'] .tch-send,
 .cv2-root[data-shell='mobile'] .tch-stop {
   flex: none;
   margin-left: 0;
   border-radius: var(--pn-r-pill);
+}
+.cv2-root[data-shell='mobile'] .tch-composer .ri-card__foot .tch-send {
+  box-sizing: border-box;
+  width: var(--mobile-touch-min);
+  height: var(--mobile-touch-min);
+  padding: 5px;
+  border-radius: 50%;
+  background-clip: content-box;
 }
 
 
@@ -2298,7 +2358,6 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-pop__trigger:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
 .tch-pop__value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tch-pop__sub { flex: none; color: var(--pn-ink-4); }
-.tch-pop__plus { font: 300 var(--pn-fs-title) var(--pn-ui); line-height: 1; }
 .tch-pop__gear { font: var(--pn-fs-label) var(--pn-ui); line-height: 1; }
 .tch-pop__badge {
   position: absolute;
@@ -2354,7 +2413,7 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-pickmenu__group[data-emphasis] + .tch-pickmenu__opt,
 .tch-pickmenu__opt[data-group='Act'] { box-shadow: inset 2px 0 0 var(--pn-brand); }
 .tch-pickmenu__opt[aria-disabled='true'] { cursor: not-allowed; opacity: 0.55; }
-.tch-pickmenu__hint--why { color: var(--pn-warn, var(--pn-ink-3)); }
+.tch-pickmenu__hint--why { color: var(--pn-ink-3); }
 .tch-pick--quiet .tch-pick__trigger {
   border-color: transparent;
   background: transparent;
@@ -2366,33 +2425,139 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-pick--quiet .tch-pick__trigger:hover:not(:disabled) { background: var(--pn-hover); border-color: transparent; }
 .tch-pick__glyph { flex: none; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
 
-/* -- model + effort ------------------------------------------------------- */
-.tch-pick--model .tch-pop__trigger { max-width: 190px; }
-.tch-modelmenu { display: grid; gap: 0; }
-.tch-modelmenu__list { max-height: 220px; overflow-y: auto; }
-.tch-effort {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 8px;
+/* -- model + effort: provider groups, one compact row per model, the slider - */
+.tch-pick--model .tch-pop__trigger { max-width: 220px; }
+/* The list scrolls; the effort block under it never does. The panel is
+   capped to the viewport (fitViewport), so the menu fills it as a column. */
+.tch-popmenu:has(> .tch-modelmenu) { display: flex; flex-direction: column; overflow: hidden; }
+.tch-modelmenu { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.tch-modelmenu__search {
+  display: flex;
   align-items: center;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--pn-line);
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-4);
 }
-.tch-effort__label { color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
-.tch-effort__stops { display: inline-flex; gap: 2px; border: 1px solid var(--pn-line); border-radius: var(--pn-r-pill); padding: 1px; }
-.tch-effort__stop {
+.tch-modelmenu__search input {
+  flex: 1;
+  min-width: 0;
   border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--pn-ink);
+  font: inherit;
+}
+.tch-modelmenu__list { flex: 1 1 auto; min-height: 0; max-height: 300px; overflow-y: auto; }
+.tch-modelrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: var(--pn-r-xs);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-micro);
+  cursor: pointer;
+}
+.tch-modelrow:hover,
+.tch-modelrow:focus-visible { background: var(--pn-hover); outline: none; }
+.tch-modelrow[aria-selected='true'] { color: var(--pn-ink); font-weight: 600; }
+.tch-modelrow[aria-disabled='true'] { cursor: not-allowed; opacity: 0.55; }
+.tch-modelrow__name { flex: 0 1 auto; margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tch-modelrow__why { flex: none; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); font-weight: 400; white-space: nowrap; }
+.tch-modelrow__ctx {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
   background: transparent;
   color: var(--pn-ink-3);
-  font: var(--pn-fs-tick) var(--pn-ui);
-  padding: 2px 8px;
+  font: 600 10px/14px var(--pn-mono);
   cursor: pointer;
 }
-.tch-effort__stop[aria-checked='true'] { background: var(--pn-ink); color: var(--pn-card); }
-.tch-effort__why, .tch-effort__band { grid-column: 2; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
-.tch-effort__why { color: var(--pn-warn, var(--pn-ink-3)); }
+.tch-modelrow__ctx:hover { border-color: var(--pn-line-2); color: var(--pn-ink-2); }
+.tch-modelrow__ctx[aria-pressed='true'] { border-color: var(--pn-brand); background: var(--pn-brand); color: var(--pn-paper); }
+.tch-modelrow__mark { display: inline-flex; flex: none; width: 14px; color: var(--pn-brand); }
+
+.tch-effort {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 10px 8px 4px;
+  border-top: 1px solid var(--pn-line-2);
+}
+.tch-effort__head { display: flex; align-items: baseline; justify-content: space-between; }
+.tch-effort__label { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
+.tch-effort__now { color: var(--pn-ink); font-size: var(--pn-fs-micro); font-weight: 600; }
+.tch-effort__why { color: var(--pn-ink-3); font-size: var(--pn-fs-tick); }
+.tch-effort__hint { margin: 0; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
+
+/* THE SLIDER. Inset by the thumb's radius so the end notches sit under the
+   thumb's centre, not half off the track. */
+.tch-slider {
+  position: relative;
+  height: 20px;
+  margin: 0 7px;
+  cursor: pointer;
+  touch-action: none;
+}
+.tch-slider__rail,
+.tch-slider__fill {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+}
+.tch-slider__rail { right: 0; background: var(--pn-line-2); }
+.tch-slider__fill { background: var(--pn-brand); transition: width 120ms var(--pn-ease-standard, ease); }
+.tch-slider__notch {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: var(--pn-card);
+  box-shadow: 0 0 0 1.5px var(--pn-line-2);
+}
+.tch-slider__notch[data-passed] { box-shadow: 0 0 0 1.5px var(--pn-brand); }
+.tch-slider__thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--pn-card);
+  box-shadow: 0 0 0 2px var(--pn-brand), var(--pn-sh-sm);
+  transition: left 120ms var(--pn-ease-standard, ease);
+  cursor: grab;
+}
+.tch-slider[data-dragging] .tch-slider__thumb,
+.tch-slider[data-dragging] .tch-slider__fill { transition: none; }
+.tch-slider[data-dragging] .tch-slider__thumb { cursor: grabbing; }
+.tch-slider__thumb:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 3px; }
+.tch-slider__labels { position: relative; height: 16px; margin: 0 7px; }
+.tch-slider__label {
+  position: absolute;
+  transform: translateX(-50%);
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-4);
+  font: var(--pn-fs-tick) var(--pn-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tch-slider__label:first-child { transform: none; }
+.tch-slider__label:last-child { transform: translateX(-100%); }
+.tch-slider__label:hover,
+.tch-slider__label[aria-pressed='true'] { color: var(--pn-ink); }
 
 /* -- ⚙ option form / crew gear -------------------------------------------- */
 .tch-optform { display: grid; gap: 6px; }
@@ -2412,7 +2577,7 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   font: var(--pn-fs-fine) var(--pn-ui);
   padding: 2px 6px;
 }
-.tch-optform__warn { margin: 0; color: var(--pn-warn, var(--pn-ink-3)); font-size: var(--pn-fs-tick); }
+.tch-optform__capped { margin: 0; color: var(--pn-ink-3); font-size: var(--pn-fs-tick); }
 .tch-optform__pills { display: flex; flex-wrap: wrap; gap: 4px; }
 .tch-linkbtn { border: 0; background: none; color: var(--pn-brand); font: inherit; cursor: pointer; padding: 0; }
 .tch-linkbtn:disabled { color: var(--pn-ink-4); cursor: default; }
@@ -2487,9 +2652,9 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
   align-items: center;
   gap: 10px;
   padding: 4px 8px;
-  border: 1px solid var(--pn-warn, var(--pn-line-2));
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  background: var(--pn-warn-bg, var(--pn-hover));
+  background: var(--pn-hover);
   color: var(--pn-ink-2);
   font: var(--pn-fs-fine) var(--pn-ui);
 }
@@ -2527,3 +2692,518 @@ button.tch-ledger-tree__row:focus-visible { outline: 2px solid var(--pn-brand); 
 .tch-crew__policy { display: inline-flex; flex-wrap: wrap; gap: 10px; margin-left: auto; color: var(--pn-ink-3); font-size: var(--pn-fs-tick); }
 .tch-crew__brief { margin-top: 8px; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
 .tch-crew__brief pre { margin: 4px 0 0; white-space: pre-wrap; font: var(--pn-fs-tick) var(--pn-mono); color: var(--pn-ink-3); }
+
+/* ==========================================================================
+   THE COMPOSER TOOLBAR (task 01a14a32): [+][⚙ role][👥 N] … [model·effort ▾][↑/■]
+   ========================================================================== */
+
+/* SEND IS A ROUND ICON. Muted (not brand) until there is something to send;
+   the same circle becomes ■ Stop while a turn runs. */
+.cv2-root .tch-composer .tch-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: var(--pn-space-1);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--pn-brand-2);
+  color: var(--pn-card);
+  font: 600 16px/1 var(--pn-ui);
+  cursor: pointer;
+}
+.cv2-root .tch-composer .tch-send[aria-disabled='true'] {
+  opacity: 1;
+  background: var(--pn-line);
+  color: var(--pn-ink-4);
+  cursor: default;
+}
+.cv2-root .tch-composer .tch-send--working { background: var(--pn-ink); color: var(--pn-card); }
+.cv2-root .tch-composer .tch-send--working[aria-disabled='true'] { background: var(--pn-line-2); }
+.tch-send__stop {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+/* The ＋ matches the toolbar's chips: a quiet circle, not a boxed square. */
+.cv2-root:not([data-shell='mobile']) .tch-composer .tch-attach {
+  width: 28px;
+  height: 28px;
+  margin-right: 0;
+  border-color: var(--pn-line);
+  border-radius: 50%;
+}
+
+/* ⚙ Role and 👥 N — chips on the toolbar's left. */
+.tch-settings .tch-pop__trigger,
+.tch-team .tch-pop__trigger { min-height: 28px; padding: 2px 10px 2px 8px; gap: 5px; }
+.tch-team .tch-pop__value { font-variant-numeric: tabular-nums; }
+
+/* model · effort sits quiet at the right, borderless until hovered. */
+.cv2-root:not([data-shell='mobile']) .tch-composer .tch-pick--model .tch-pop__trigger {
+  min-height: 28px;
+  border-color: transparent;
+  background: transparent;
+  max-width: 220px;
+}
+.cv2-root:not([data-shell='mobile']) .tch-composer .tch-pick--model .tch-pop__trigger:hover:not(:disabled) {
+  background: var(--pn-hover);
+}
+.tch-composer .tch-phase { margin-left: 0; margin-right: var(--pn-space-1); }
+
+/* -- the ⚙ panel: one row grammar (MenuRows.tsx) ------------------------ */
+.tch-icon { flex: none; }
+.tch-settings__panel { display: grid; }
+.tch-menu__section { display: grid; padding: 4px 0; }
+.tch-menu__section + .tch-menu__section { border-top: 1px solid var(--pn-line-2); }
+.tch-menu__heading {
+  margin: 4px 8px 2px;
+  color: var(--pn-ink-4);
+  font: 600 10px/16px var(--pn-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tch-menu__rowwrap { display: grid; }
+.tch-menu__row,
+.tch-menu__mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: var(--pn-fs-micro) var(--pn-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.tch-menu__row:hover:not([aria-disabled='true']),
+.tch-menu__row:focus-visible,
+.tch-menu__row[aria-expanded='true'],
+.tch-menu__mode:hover:not([aria-disabled='true']),
+.tch-menu__mode:focus-visible { background: var(--pn-hover); outline: none; }
+.tch-menu__row[aria-disabled='true'],
+.tch-menu__row--static { cursor: default; }
+.tch-menu__row--static:hover { background: transparent; }
+.tch-menu__label { flex: 1 1 auto; min-width: 0; color: var(--pn-ink-2); white-space: nowrap; }
+.tch-menu__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  color: var(--pn-ink);
+}
+.tch-menu__valuetext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tch-menu__row[aria-disabled='true'] .tch-menu__value { color: var(--pn-ink-3); }
+.tch-menu__chev { display: inline-flex; flex: none; width: 14px; color: var(--pn-ink-4); }
+.tch-menu__lock { color: var(--pn-ink-4); }
+.tch-menu__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+  font: 600 10px/1 var(--pn-ui);
+}
+.tch-menu__input {
+  flex: 0 1 50%;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: right;
+}
+.tch-menu__input:focus { border-color: var(--pn-line-2); outline: none; }
+.tch-menu__row--text { cursor: default; }
+
+/* Mode rows: icon · name · a few words · ✓ */
+.tch-menu__modeicon { color: var(--pn-ink-3); }
+.tch-menu__mode[aria-checked='true'] .tch-menu__modeicon { color: var(--pn-brand); }
+.tch-menu__modename { flex: none; color: var(--pn-ink); }
+.tch-menu__mode[aria-checked='true'] .tch-menu__modename { font-weight: 600; }
+.tch-menu__modehint { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--pn-ink-4); text-overflow: ellipsis; white-space: nowrap; }
+.tch-menu__mark { display: inline-flex; flex: none; width: 14px; color: var(--pn-brand); }
+.tch-menu__mode[aria-disabled='true'] { cursor: not-allowed; opacity: 0.6; }
+
+/* The switch: a 26×14 pill whose knob slides; brand when on. */
+.tch-switch {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 14px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--pn-ink-4) 55%, transparent);
+  transition: background 120ms var(--pn-ease-standard, ease);
+}
+.tch-switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pn-card);
+  transition: left 120ms var(--pn-ease-standard, ease);
+}
+.tch-switch[data-on] { background: var(--pn-brand); }
+.tch-switch[data-on] .tch-switch__knob { left: 14px; }
+
+/* The composer's project chip (ProjectChip): the project on the row. */
+.tch-project .tch-pop__trigger { max-width: 180px; }
+.tch-project__menu { display: grid; gap: 1px; }
+
+/* The submenu beside the panel (fixed; MenuRows positions it). */
+.tch-submenu {
+  display: grid;
+  min-width: 180px;
+  max-width: 280px;
+  max-height: min(320px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-md);
+}
+.tch-submenu__opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: var(--pn-fs-micro) var(--pn-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.tch-submenu__opt:hover,
+.tch-submenu__opt:focus-visible { background: var(--pn-hover); outline: none; }
+.tch-submenu__opt[aria-checked='true'] { color: var(--pn-ink); font-weight: 600; }
+.tch-submenu__opt[aria-disabled='true'] { cursor: not-allowed; opacity: 0.55; }
+.tch-submenu__text { display: grid; flex: 1 1 auto; min-width: 0; }
+.tch-submenu__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tch-submenu__hint { overflow: hidden; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.tch-submenu__hint--why { color: var(--pn-ink-3); }
+.tch-submenu__mark { display: inline-flex; flex: none; width: 14px; color: var(--pn-brand); }
+
+/* -- the 👥 picker: selected owners above the search, the rest below ---- */
+.tch-teampick { display: grid; gap: 6px; }
+.tch-teampick__picked {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.tch-teampick__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 6px;
+  border-radius: var(--pn-r-sm);
+  cursor: pointer;
+}
+.tch-teampick__row:hover { background: var(--pn-hover); }
+.tch-teampick__row--picked { cursor: default; }
+.tch-teampick__name { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--pn-ink); text-overflow: ellipsis; white-space: nowrap; }
+.tch-teampick__model { flex: none; color: var(--pn-ink-4); font-size: var(--pn-fs-tick); }
+.tch-teampick__selects { display: inline-flex; flex: none; gap: 4px; }
+.tch-teampick__selects select:first-child { width: 128px; }
+.tch-teampick__selects select:last-child { width: 76px; }
+.tch-teampick__remove {
+  flex: none;
+  width: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+.tch-teampick__remove:hover { color: var(--pn-ink); }
+.tch-teampick__add { justify-self: start; margin: 2px 6px 0; }
+.tch-teampick__search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font: inherit;
+}
+.tch-teampick__list { display: grid; gap: 1px; max-height: 240px; overflow-y: auto; }
+.tch-teampick select {
+  padding: 2px 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-paper);
+  color: var(--pn-ink-2);
+  font: inherit;
+}
+
+/* THE COMPACT COMPOSER (Craft's 2nd panel on the pinned rail): two rows at
+   most — the field with Send, then ＋ · role · model. */
+.tch-composer--compact .ri-host {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--pn-space-2);
+}
+.tch-composer--compact .ri-host > textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tch-composer--compact .ri-host > .tch-send {
+  flex: none;
+}
+.tch-composer--compact .ri-card__foot {
+  flex-wrap: nowrap;
+}
+/* The Coordinator's team, folded into ＋. */
+.tch-addmenu__extra > summary {
+  cursor: pointer;
+}
+/* The connectors picker (or its load failure), drawn in ＋ by the compact composer. */
+.tch-addmenu__connectors {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--pn-line);
+  font-size: var(--pn-fs-label);
+}
+.tch-addmenu__connectors .mcp-error {
+  margin: 0 0 4px;
+}
+
+/* --- THE PHONE'S ＋ SHEET (chat v2 mockup 01a14cba, t-clean-composer) ------
+
+   The card holds only the field and the foot, so what rides with the message
+   is listed here: "Attached to this message · N", one 48px row each with a ✕,
+   then the Add grid of 72px tiles, four to a row. `AddSheet` renders only on
+   the phone, so nothing below can reach the desktop menu. */
+.tch-addsheet { display: grid; gap: 0; padding: 0 2px 8px; }
+.tch-addsheet__label {
+  margin: 6px 4px;
+  color: var(--pn-ink-4);
+  font: 600 var(--pn-fs-label) var(--pn-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tch-addsheet__attached { display: grid; gap: 6px; margin: 0 0 6px; padding: 0; list-style: none; }
+.tch-addsheet__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 0 0 8px;
+  border-radius: var(--pn-r-md);
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.tch-addsheet__text { display: grid; flex: 1; min-width: 0; }
+.tch-addsheet__text b {
+  overflow: hidden;
+  font: 550 var(--pn-fs-body) var(--pn-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tch-addsheet__text i {
+  overflow: hidden;
+  color: var(--pn-ink-4);
+  font: var(--pn-fs-label) var(--pn-ui);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tch-addsheet__item[data-failed] .tch-addsheet__text i { color: var(--pn-block); }
+.tch-addsheet__x,
+.tch-addsheet__retry {
+  flex: none;
+  min-width: var(--mobile-touch-min);
+  height: var(--mobile-touch-min);
+  border: 0;
+  border-radius: var(--pn-r-pill);
+  background: transparent;
+  color: var(--pn-ink-4);
+  font: var(--pn-fs-body) var(--pn-ui);
+}
+.tch-addsheet__retry { min-width: 0; padding: 0 6px; color: var(--pn-brand); }
+.tch-addsheet__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+.tch-addsheet__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 72px;
+  padding: 0 2px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+  font: var(--pn-fs-label) var(--pn-ui);
+}
+.tch-addsheet__tile[aria-disabled='true'] { opacity: 0.45; }
+.tch-addsheet__icon { flex: none; font-size: var(--pn-fs-h2); line-height: 1; }
+.tch-addsheet__item .tch-addsheet__icon { font-size: var(--pn-fs-h3); }
+.tch-addsheet__back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--mobile-touch-min);
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font: 600 var(--pn-fs-label) var(--pn-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tch-addsheet__sub .tch-addmenu__skill { min-height: var(--mobile-touch-min); font-size: var(--pn-fs-body); }
+
+/* The count on ＋: the mockup's 18px brand disc at the ring's top-right. */
+.cv2-root[data-shell='mobile'] .tch-attach .tch-pop__badge {
+  top: 2px;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font: 700 var(--pn-fs-micro) / 18px var(--pn-ui);
+}
+
+/* ✦ ASK JEV IN THE NEW-CHAT FOOT (doc 01a154f2 Phase 1). One small chip
+   beside the model picker, in the foot row that already exists: the badge
+   truncates rather than wrapping, and the panel FLOATS above the chip so
+   opening it moves no other control. */
+.tch-jev { position: relative; display: inline-flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+.tch-jev .jev-entry { flex-direction: row; gap: 0; }
+.tch-jev .jev-entry__bar { flex-wrap: nowrap; }
+.tch-jev .jev-entry__button { padding: 3px 8px; font-size: var(--pn-fs-micro); max-width: 200px; }
+.tch-jev .jev-link { white-space: nowrap; font-size: var(--pn-fs-micro); }
+/* The panel states what asking cost; the foot chip stays short. */
+.tch-jev .jev-entry__button > .jev-cost { display: none; }
+.tch-jev .jev-entry__pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  width: min(520px, calc(100vw - 32px));
+  box-shadow: var(--pn-shadow-pop, 0 8px 28px rgba(0, 0, 0, 0.18));
+  border-radius: 12px;
+}
+.tch-jev .jev-panel { max-height: min(60vh, 520px); }
+
+/* What Apply put in the first message: removable, above the field. */
+.tch-jev-refs { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 2px 0; min-width: 0; }
+.tch-jev-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+}
+.tch-jev-ref__mark { color: var(--pn-brand-2); font-weight: 600; }
+.tch-jev-ref__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tch-jev-ref__remove { border: 0; background: none; color: var(--pn-ink-3); cursor: pointer; padding: 0 4px; font-size: var(--pn-fs-sm); line-height: 1; }
+.tch-jev-ref__remove:hover { color: var(--pn-ink); }
+
+/* -------------------------------------------------------------------------
+   §10.4 CONNECTORS — the ＋ sheet's section and the composer chip.
+   The rows themselves are `mcp-toggles` (mcp/mcp.css), shared with the launch
+   dialogs; these rules only place them and draw the chip.
+   ------------------------------------------------------------------------- */
+.tch-connectors {
+  min-width: 0;
+  padding: 4px 0;
+}
+
+
+.tch-connectors-chip {
+  flex: 0 0 auto;
+}
+
+.tch-connectors-chip__face {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  gap: 4px;
+}
+
+.tch-connectors-chip__n {
+  /* THROUGH THE SCALE, not a px literal (`type-scale-ban.test.ts`). 12px IS
+     `--pn-fs-label` exactly, so this is the same rendered size — it is now a
+     size the scale can move. The literal arrived with the chip and left this
+     guard red on main alongside the hex below. */
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* `[]` — every connector deliberately off. Struck through, because a plain 0
+   is indistinguishable from a Space that has no connectors at all. */
+.tch-connectors-chip__face[data-off] .tch-connectors-chip__n {
+  text-decoration: line-through;
+}
+
+/* Something switched on needs reconnecting. A dot, not a colour on the count:
+   the count is still true.
+
+   INK, NOT AMBER (S32). Two things were wrong with `var(--pn-warn, #c88a00)`:
+   `--pn-warn` is not a token this app defines — `tokens.css` has the caution
+   ramp as `--pn-wait`/`--pn-wait-soft` — so the raw hex was the value actually
+   painting, not a dead fallback, and it tripped the package hex ban. And the
+   colour it painted is the one thing the composer may not carry: "no yellow
+   shit should be shown in the chat composer" (Subhang, 2026-10-18, enforced by
+   composer-no-warning-tone.test.tsx, which reads this sheet). §10.4 drew this
+   as an amber dot; the standing rule overrides that. The dot's presence and
+   its accessible label carry "needs reconnect" — the colour never had to. */
+.tch-connectors-chip__dot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-ink-2);
+}
+
+/* INSIDE A POPOVER ONLY. The list scrolls on its own there, so a Space with
+   twenty connectors cannot push the skill checklist above it out of reach —
+   but the same rule applied to every mount CLIPPED the full-width sheet after
+   two rows and silently hid the rest of the Space's connectors, which is the
+   worse failure of the two and is exactly what the screenshot caught. */
+.tch-popmenu .tch-connectors {
+  max-height: 320px;
+  overflow-y: auto;
+}

@@ -346,6 +346,18 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
+/* Acceptance progress, trailing: quiet until every criterion is met. */
+.cv2-root .pn-tt__progress {
+  flex: 0 0 auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-tt__progress--done {
+  color: var(--pn-run);
+}
 .cv2-root .pn-tt__inline {
   display: flex;
   align-items: center;

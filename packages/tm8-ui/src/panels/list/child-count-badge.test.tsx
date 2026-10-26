@@ -27,14 +27,15 @@ const rowsFor =
 
 /** A root with `n` children and one leaf root, cloned from `template`. */
 function family(template: EntitySummary, n: number): EntitySummary[] {
-  const parent = { ...template, id: `${template.kind}-parent`, title: 'Parent', parentId: null } as EntitySummary;
+  const parent = { ...template, id: `${template.kind}-parent`, title: 'Parent', parentId: null, childCount: n } as EntitySummary;
   const kids = Array.from({ length: n }, (_, index) => ({
     ...template,
     id: `${template.kind}-kid-${index}`,
     title: `Child ${index}`,
     parentId: parent.id,
+    childCount: 0,
   }) as EntitySummary);
-  const leaf = { ...template, id: `${template.kind}-leaf`, title: 'Leaf', parentId: null } as EntitySummary;
+  const leaf = { ...template, id: `${template.kind}-leaf`, title: 'Leaf', parentId: null, childCount: 0 } as EntitySummary;
   return [parent, ...kids, leaf];
 }
 
@@ -47,19 +48,39 @@ function tileTitled(container: HTMLElement, title: string): HTMLElement {
 }
 
 describe('the sub-entity count on the leading icon', () => {
-  it('a task parent carries its subtask count on the STATUS mark, beside — not under — its chevron', () => {
+  /**
+   * ONE RULE FOR EVERY TREE KIND (task 01a14b92, superseding the quiet tile's
+   * `▸ N` chip after the title): the count is a subscript on the leading
+   * mark's corner, and it is the disclosure. Without the Workspace lead icon
+   * the task's mark is its state picker, so the count itself is the button.
+   */
+  it('a task parent carries its subtask count on the status mark, and the count is the control', () => {
     const { container } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor(family(taskGuideLines, 3))} ctx={ctx} />,
     );
     const parent = tileTitled(container, 'Parent');
-    const status = parent.querySelector('.pn-tt__status');
-    expect(status?.querySelector('[data-testid="child-count"]')?.textContent).toBe('3');
-    // The chevron is the status mark's preceding SIBLING in the row, not a
-    // layer stacked on it; the count is not a second copy beside the chevron.
-    expect(status?.previousElementSibling?.classList.contains('pn-tt__arrow')).toBe(true);
-    expect(parent.querySelector('.pn-tt__arrowCount')).toBeNull();
-    // Decorative: the disclosure control is where the count is said.
-    expect(parent.querySelector('.pn-tt__arrow')?.getAttribute('aria-label')).toBe('Expand Parent, 3 children');
+    const count = parent.querySelector<HTMLElement>('.pn-tt__status [data-testid="child-count"]')!;
+    expect(count.textContent).toBe('3');
+    expect(count.tagName).toBe('BUTTON');
+    expect(count.getAttribute('aria-label')).toBe('Expand Parent, 3 children');
+    // No chip after the title, and the chevron column is a spacer.
+    expect(parent.querySelector('.lp__kidchip')).toBeNull();
+    expect(parent.querySelector('.pn-tt__arrow')?.getAttribute('aria-label')).toBeNull();
+  });
+
+  /**
+   * THE TRUE COUNT, NOT THE LOADED ONE (task 01a14b92). A parent whose
+   * children sit on another tab or page still says how many it has — the
+   * server's `childCount` — and is still a control.
+   */
+  it('a parent whose children are not loaded still counts them from the server', () => {
+    const [parent] = family(taskGuideLines, 0);
+    const { container } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([{ ...parent!, childCount: 6 }])} ctx={ctx} />,
+    );
+    const count = tileTitled(container, 'Parent').querySelector<HTMLElement>('[data-testid="child-count"]')!;
+    expect(count.textContent).toBe('6');
+    expect(count.getAttribute('aria-label')).toBe('Expand Parent, 6 children');
   });
 
   it('a task leaf prints no count — no sub-entities is not a count of zero', () => {
@@ -69,13 +90,17 @@ describe('the sub-entity count on the leading icon', () => {
     expect(tileTitled(container, 'Leaf').querySelector('[data-testid="child-count"]')).toBeNull();
   });
 
-  it('a standard-tile parent (doc) carries its count on the kind mark', () => {
+  it('a standard-tile parent (doc) carries its count on the mark, and the count is the control', () => {
     const { container } = render(
       <EntityListPanel kind="doc" rowsFor={rowsFor(family(docLayoutSpec, 2))} ctx={ctx} />,
     );
     const parent = tileTitled(container, 'Parent');
-    expect(parent.querySelector('.lp__statusmark [data-testid="child-count"]')?.textContent).toBe('2');
-    expect(parent.querySelector('.lp__statusmark')?.previousElementSibling?.classList.contains('lp__disclosure')).toBe(true);
+    const count = parent.querySelector<HTMLElement>('.lp__statusmark [data-testid="child-count"]')!;
+    expect(count.textContent).toBe('2');
+    expect(count.tagName).toBe('BUTTON');
+    expect(count.getAttribute('aria-label')).toBe('Expand Parent, 2 children');
+    expect(count.getAttribute('aria-expanded')).toBe('false');
+    expect(parent.querySelector('.lp__kidchip')).toBeNull();
     expect(tileTitled(container, 'Leaf').querySelector('[data-testid="child-count"]')).toBeNull();
   });
 });

@@ -22,9 +22,10 @@
  * task-git and graph surfaces, so every route out of this panel lands in the
  * same place.
  */
+import { projectRecordPort } from '../projects/project-record';
 import { useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
-import { EntityDetailPanel, type ControlHost, type DetailReasons } from '../panels';
+import { EntityDetailPanel, type ControlHost, type DetailReasons, type EntityDetailPanelProps as DetailPanelProps } from '../panels';
 import type { PanelHost } from '../panels/detail/chrome';
 import type { ContentSurface } from '../routes';
 import { channelFeedPortFromGateData } from './channel-feed-port';
@@ -34,12 +35,13 @@ import type { AttachmentsPort } from '../files/port';
 import type { GateData } from './useGateData';
 import type { LaunchPort } from './useLaunchPort';
 import type { MembershipSurface } from './membershipSurface';
-import { composePanelActions, type PanelPrimaries } from './usePanelPrimaries';
+import { composePanelActions, panelSessionControlsFor, type PanelPrimaries } from './usePanelPrimaries';
 import type { ChatAbout } from './useChatAbout';
 import { useChatCounts } from '../entity-chat';
 import type { RowLifecycle } from './useRowLifecycle';
 import { mergePrPortFor } from './mergePrPort';
 import { debugSurfaceFor } from './debugSurface';
+import { watchLiveFor } from './watchLive';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
@@ -101,9 +103,14 @@ export interface AuxEntityPanelProps {
    * the aux column's reading-surface header, as before.
    */
   extraActions?: { onAction: ((ref: ActionRef) => void) | undefined; wiredActions: readonly ActionRef[] };
+  /**
+   * The Workspace tab host's opt-ins (controlled section, embedded chrome).
+   * Absent ⇒ every existing mount, unchanged.
+   */
+  panelProps?: Pick<DetailPanelProps, 'activeTab' | 'onTabChange' | 'embeddedChrome'>;
 }
 
-export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHost = 'stack', onPromote, story, extraActions }: AuxEntityPanelProps) {
+export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHost = 'stack', onPromote, story, extraActions, panelProps }: AuxEntityPanelProps) {
   const { data, attachments } = host;
   const detail = data.detailOf(entityId) ?? null;
   /* The feed port is a STATELESS adapter over the same GateData the host
@@ -136,6 +143,8 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHos
       controls={host.controls}
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
+      /* Resume, its guard, Mark lost and the outcome verbs on the session canvas. */
+      {...panelSessionControlsFor(host.primaries, entityId)}
       primaryCounts={chatCounts}
       membershipAuthoring={host.membership.authoringFor(detail)}
       launch={host.launchPort}
@@ -145,6 +154,7 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHos
       pinRefusal="Pinning lives in the Workspace"
       liveness={data.livenessOf(entityId)}
       debugSurface={debugSurfaceFor(data.seam, entityId, data.livenessOf)}
+      onWatchLive={watchLiveFor(data.seam, data.reconcileCommand, onOpenEntity)}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, entityId)}
       sessionContextSurface={sessionContextSurfaceFor(data.seam, entityId, data.livenessOf)}
       gitSurface={gitSurfaceFor(data.seam, entityId, data.livenessOf)}
@@ -202,10 +212,12 @@ export function AuxEntityPanel({ host, entityId, onOpenEntity, onClose, panelHos
       connections={data.connectionsOf(entityId)}
       linkedPullRequests={data.linkedPullRequestsOf?.(entityId) ?? []}
       linkedPullRequestsOf={data.linkedPullRequestsOf}
+      projectRecords={projectRecordPort(data.seam, data.spaceId)}
       commands={data.seam.commands}
       onSaved={data.reconcileCommand}
       onOpenEntity={(id) => onOpenEntity(id as EntityId)}
       onClose={onClose}
+      {...panelProps}
     />
   );
 }
