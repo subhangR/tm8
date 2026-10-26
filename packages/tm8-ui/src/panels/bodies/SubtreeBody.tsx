@@ -1216,6 +1216,9 @@ function CriteriaEditor({
               event.preventDefault();
               add();
             } else if (event.key === 'Escape') {
+              // Consumed, like every other field here: the screen's Esc would
+              // otherwise close the task this criterion was being added to.
+              event.preventDefault();
               setAdding('');
             }
           }}

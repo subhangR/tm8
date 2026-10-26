@@ -202,6 +202,15 @@ describe('the checklist writes each gesture', () => {
     expect((add as HTMLInputElement).value).toBe('');
   });
 
+  it('Escape abandons a new criterion without reaching the screen behind it', () => {
+    mount();
+    const add = screen.getByTestId('acceptance-add') as HTMLInputElement;
+    fireEvent.change(add, { target: { value: 'half a thought' } });
+    const delivered = fireEvent.keyDown(add, { key: 'Escape' });
+    expect(delivered).toBe(false); // default prevented ⇒ the screen's Esc stands down
+    expect(add.value).toBe('');
+  });
+
   it('renames on blur, and an unchanged blur writes nothing', async () => {
     const { patchTask } = mount();
     const texts = screen.getAllByTestId('acceptance-text');
