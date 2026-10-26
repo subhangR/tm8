@@ -62,7 +62,9 @@ export function useLaunchSheet(options: LaunchSheetOptions): LaunchSheetState {
     (id: EntityId) => {
       openedHosted.current = options.hostedIds.includes(id);
       setSubjectId(id);
-      depth.current += 1;
+      /* 1, never `+= 1`: Run on a second row while the sheet is open swaps its
+         subject, and a counter then needed two closes to give Esc back. */
+      depth.current = 1;
       options.setKeyboardContext?.({ modalDepth: depth.current });
     },
     [options],
@@ -70,7 +72,7 @@ export function useLaunchSheet(options: LaunchSheetOptions): LaunchSheetState {
 
   const close = useCallback(() => {
     setSubjectId(null);
-    depth.current = Math.max(0, depth.current - 1);
+    depth.current = 0;
     options.setKeyboardContext?.({ modalDepth: depth.current });
   }, [options]);
 
