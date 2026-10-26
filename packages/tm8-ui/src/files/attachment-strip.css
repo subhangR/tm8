@@ -470,6 +470,31 @@
 .fn-chip--attach { border-style: dashed; border-color: var(--pn-line-2); }
 .fn-chip__icon { display: inline-flex; line-height: 1; color: var(--pn-ink-3); }
 
+/* THE ICON STRIP (task 01a15e22): the kind chips beside ＋ Attach are bare
+   icons — square, borderless until hovered — so the row stays one line. The
+   word is the tooltip and the accessible name. */
+.fn-palette { align-items: center; }
+.fn-chip--icon {
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+}
+.fn-chip--icon:hover .fn-chip__icon,
+.fn-chip--icon[aria-expanded='true'] .fn-chip__icon { color: var(--pn-ink); }
+.fn-chip--icon[aria-disabled='true'] .fn-chip__icon { color: var(--pn-ink-4); }
+.fn-chip__label--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* The picker: a search box, the server's matches, and "＋ New …" for the kinds
    that may be created here. Same card, shadow and z-index as the ＋ menu. */
 .fn-picker {

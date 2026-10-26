@@ -59,6 +59,14 @@ export interface AddToTurnMenuProps {
   /** Present ⇒ the connectors picker (or its load failure) in place of the no-catalog note. */
   connectors?: ReactNode;
   /**
+   * The connectors row is PRESENT and REFUSED, with this as the reason (G13's
+   * Codex lane, a Space-link chat). Distinct from `connectors` being absent,
+   * which means this surface has no catalog at all: "not available for Codex
+   * chats yet" and "this node exposes no MCP catalog" are different facts and
+   * the menu must not render one as the other.
+   */
+  connectorsReason?: string;
+  /**
    * Phone only: everything riding with this message. The card draws none of
    * it there, so this list is where it is seen and removed, and its length is
    * the badge on ＋. Ignored off the phone, where the host draws its chips.
@@ -79,6 +87,7 @@ export function AddToTurnMenu({
   extra,
   extraLabel,
   connectors,
+  connectorsReason,
   attached = [],
 }: AddToTurnMenuProps) {
   const { oneSurface: phone } = useMobileSurface();
@@ -127,6 +136,7 @@ export function AddToTurnMenu({
           team={extra}
           teamLabel={extraLabel}
           connectors={connectors}
+          {...(connectorsReason ? { connectorsReason } : {})}
         />
       ) : (
         <div className="tch-addmenu">
@@ -176,7 +186,21 @@ export function AddToTurnMenu({
               {extra}
             </details>
           ) : null}
-          {connectors ? (
+          {connectorsReason ? (
+            /* G13 / §10.4: the row STAYS, disabled, naming the reason. An
+               absent row would read as "this node has no connectors", which
+               is a different and wrong answer for a Codex chat in a Space
+               full of them. */
+            <button
+              type="button"
+              className="tch-addmenu__row"
+              data-testid={`${testId}-connectors-off`}
+              aria-disabled
+              title={connectorsReason}
+            >
+              Connectors <span className="tch-addmenu__why">{connectorsReason}</span>
+            </button>
+          ) : connectors ? (
             <div className="tch-addmenu__connectors" data-testid={`${testId}-connectors`}>{connectors}</div>
           ) : (
             <p className="tch-addmenu__foot" role="note">
@@ -254,6 +278,7 @@ function AddSheet({
   team,
   teamLabel,
   connectors,
+  connectorsReason,
 }: {
   testId: string;
   attached: readonly AttachedItem[];
@@ -264,6 +289,7 @@ function AddSheet({
   team: ReactNode | undefined;
   teamLabel: string | undefined;
   connectors: ReactNode | undefined;
+  connectorsReason?: string;
 }) {
   /* Lives here, not in the menu, so it resets every time the sheet closes. */
   const [view, setView] = useState<SheetView>('add');
@@ -328,7 +354,9 @@ function AddSheet({
               {tile('entity', '#', 'Entity', undefined, entityReason)}
               {tile('skills', '⚡', 'Skill', () => setView('skills'))}
               {team ? tile('team', '👥', 'Team', () => setView('team')) : null}
-              {connectors ? tile('connectors', '🔌', 'Connectors', () => setView('connectors')) : null}
+              {connectorsReason
+                ? tile('connectors', '🔌', 'Connectors', undefined, connectorsReason)
+                : connectors ? tile('connectors', '🔌', 'Connectors', () => setView('connectors')) : null}
             </div>
           </>
         )}

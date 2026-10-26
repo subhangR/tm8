@@ -162,6 +162,7 @@ import {
   writeSetupDismissed,
 } from '../settings-credentials';
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
+import { McpTokensSection } from '../settings-mcp-tokens';
 import { readLastSpace, readLastTarget, WORK_PLACE, writeLastTarget } from './last-place';
 import { desktopModes } from '../shell/desktop-modes';
 import { AppFrame, useFrameSlots, type AppFrameProps } from '../shell/AppFrame';
@@ -1993,6 +1994,10 @@ export function GateApp(props: GateAppProps = {}) {
   );
   // 282: node folder grants. Node-level, so no space is bound; null off-node.
   const filesystemAccessPort = useMemo(() => filesystemAccessPortFromSeam(data.seam), [data.seam]);
+  /* §10.7: the member's own MCP tokens for external clients. Bound to the SEAM
+     ALONE — no space id — because a token is node-level and carries a Space
+     array; `mcp.tokens.*` takes no space in its path. */
+  const mcpTokensPort = useMemo(() => data.seam.mcpTokens?.() ?? null, [data.seam]);
   // W6: links from this space to the viewer's other spaces, on the same pair.
   const spaceLinksPort = useMemo(
     () => (data.spaceId ? spaceLinksPortFromSeam(data.seam, data.spaceId) : null),
@@ -2511,7 +2516,7 @@ export function GateApp(props: GateAppProps = {}) {
           data.forgetSpace(spaceId);
         }}
         sections={
-          credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort || governancePort
+          credentialsPort || branchesPort || spaceCredentialsPort || spaceLinksPort || governancePort || mcpTokensPort
             ? {
                 connectors: <McpSettings />,
                 ...(governancePort ? { kinds: <CustomKindsSettings
@@ -2522,6 +2527,7 @@ export function GateApp(props: GateAppProps = {}) {
                 ...(spaceLinksPort
                   ? { 'space-links': <SpaceLinksSection port={spaceLinksPort} onOpen={openFromSettings} /> }
                   : {}),
+                ...(mcpTokensPort ? { 'mcp-tokens': <McpTokensSection port={mcpTokensPort} /> } : {}),
                 ...(spaceCredentialsPort
                   ? {
                       /* Status only on the phone (mockup 01a14cc4): adding,

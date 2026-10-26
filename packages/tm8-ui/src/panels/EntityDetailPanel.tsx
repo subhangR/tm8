@@ -1092,6 +1092,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         trailing={gateChipFor(detail)}
         stateOptionRefusal={stateOptionRefusalFor(detail)}
         omitArchive
+        omitMembership
       />
     ) : null;
   const strip =

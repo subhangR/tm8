@@ -1,4 +1,4 @@
-import type { McpCatalogEntry, McpCredentialScope, McpCredentialStatusReason, McpServerDefinition, McpTestResult, McpUnavailableTool } from '@tm8/contract';
+import type { McpCatalogEntry, McpCredentialScope, McpCredentialStatusReason, McpServerDefinition, McpSessionProvenance, McpTestResult, McpUnavailableTool } from '@tm8/contract';
 /** UI-only values. Account metadata never contains provider credentials. */
 export interface McpSelection { serverId: string; credentialId?: string }
 export interface McpAccount {
@@ -92,4 +92,29 @@ export interface McpPort {
   share(serverId: string, credentialId: string, sharing: 'private' | 'members' | 'space', memberIds: string[]): Promise<void>;
   revoke(serverId: string, credentialId: string): Promise<void>;
   members(): Promise<{ id: string; label: string }[]>;
+  /**
+   * §10.4 — a CHAT's stored selection, and the write that changes it.
+   *
+   * `null` is an ANSWER on both sides and means the same thing in both
+   * directions: the thread has no stored row, so it runs on the Space's
+   * defaults, resolved fresh at every turn (§5.3, S21b). Reading `null` is how
+   * the sheet knows to say "Using: Space defaults"; writing `null` DELETES the
+   * row, which is what "Reset to Space defaults" does — writing today's
+   * defaults back instead would pin them and no later `defaultOn` would ever
+   * reach the thread again.
+   *
+   * `setChatSelections` ANSWERS THE STORED VALUE rather than echoing the
+   * request, so the sheet repaints from what landed instead of from what it
+   * hoped. OPTIONAL, like the two below: a host that mounts the chat surface
+   * against a build without these operations still satisfies the port, and the
+   * sheet says so rather than drawing dead switches.
+   */
+  chatSelections?(chatId: string): Promise<McpSelection[] | null>;
+  setChatSelections?(chatId: string, value: McpSelection[] | null): Promise<McpSelection[] | null>;
+  /**
+   * §10.6 — the provenance recorded for one session, as the server computed
+   * it. `recorded:false` is a normal answer (nothing bound the session, or its
+   * binding expired with its auth session), not an error, and the view says so.
+   */
+  sessionProvenance?(sessionId: string): Promise<McpSessionProvenance>;
 }

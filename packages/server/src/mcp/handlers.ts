@@ -69,14 +69,14 @@ export function registerMcpRuntimeHandlers(registry:HandlerRegistry,deps:FacadeD
   * surfaced: this is an annotation on a read, never its authority.
   */
  const limitedAccess=(definition:McpServerDefinition,rows:McpCredentialView[]):McpCredentialView[]=>{
-  // The SAME predicate the proxy routes on, narrowed by identity: only the
+  // The SAME predicate firstParty routes on (google.* catalog ids): only the
   // Google host knows a tool's scopes, so only it can answer this.
-  if(firstParty(definition)!==google)return rows;
+  if(!definition.catalogId?.startsWith('google.'))return rows;
   return rows.map(row=>{
    // An API-key connection has no OAuth grant to be partial, and a row that is
    // already revoked or pending has no coverage to report.
    if(row.authType!=='oauth2'||row.revoked||row.status==='pending')return row;
-   try{return {...row,unavailableToolCount:host.uncovered(definition,row.grantedScopes).length};}
+   try{return {...row,unavailableToolCount:google.uncovered(definition,row.grantedScopes).length};}
    catch{return row;}
   });
  };

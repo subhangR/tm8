@@ -108,6 +108,12 @@ export const OPERATIONS = [
   { name: 'mcp.tokens.create', method: 'POST', path: '/v2/mcp/tokens', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'mcp.tokens.list', method: 'GET', path: '/v2/mcp/tokens', kind: 'read', status: 'v1', humanOnly: true },
   { name: 'mcp.tokens.revoke', method: 'POST', path: '/v2/mcp/tokens/:tokenId/revoke', kind: 'command', status: 'v1', humanOnly: true },
+  // §6/§10.6 (S6). The provenance OUTCOME of a launch, for the session debug
+  // view: the recorded root, the bearer chain nearest-hop-first, the Spaces it
+  // crossed, and whether that root is still admitted to every one of them. A
+  // thin pass-through of `public.mcp_session_provenance`, which owns the whole
+  // rule — the debug view must not re-derive §6 from parts it can see.
+  { name: 'mcp.sessions.provenance', method: 'GET', path: '/v2/mcp/sessions/:sessionId/provenance', kind: 'read', status: 'v1', humanOnly: true },
   { name: 'skills.roots', method: 'GET', path: '/v2/spaces/:spaceId/skills/roots', kind: 'read', status: 'v1' },
   { name: 'skills.create', method: 'POST', path: '/v2/spaces/:spaceId/skills', kind: 'command', status: 'v1' },
   { name: 'skills.edit', method: 'PATCH', path: '/v2/skills/:id', kind: 'command', status: 'v1' },
@@ -303,6 +309,21 @@ export const OPERATIONS = [
   // requireHuman(Link)Session". `test/chat/handlers-human-only.test.ts` holds
   // every chat.* operation to the refusal instead, this one included.
   { name: 'chat.setMcpSelections',   method: 'POST',   path: '/v2/chats/:id/mcp-selections',                kind: 'command', status: 'v1' },
+  // §10.4 — READ the stored selection back. The write above answers the stored
+  // value, which is enough for the client that made it and no use at all to the
+  // one that merely OPENED the thread: §10.4's sheet has to say "Using: Space
+  // defaults" or "Using: Custom" before the user touches anything, and since
+  // 354 that distinction IS the row's existence (S21: no row = defaults).
+  //
+  // `humanOnly`, UNLIKE its sibling above, and the asymmetry is not an
+  // oversight. The write's human gate is layer 2 in SQL —
+  // `update_chat_mcp_selections` calls `internal.require_human_auth_kind()` —
+  // so the family's own `refuseChatRuntimeBearer` is all layer 1 needs there.
+  // `read_mcp_launch_selections` (298) has NO such gate: it checks
+  // `internal.entity_readable` and nothing else, so an agent session would
+  // read it. This door therefore carries `requireHumanSession` for real, and
+  // the flag says so.
+  { name: 'chat.getMcpSelections',   method: 'GET',    path: '/v2/chats/:id/mcp-selections',                kind: 'read',    status: 'v1', humanOnly: true },
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },

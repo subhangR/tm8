@@ -195,6 +195,7 @@ export {
   defaultLaunchTarget,
   describeCapacity,
   describeLaunchManifest,
+  launchConnectorFacts,
   launchHarnessFacts,
   LAUNCH_CONTEXT_ROLE_LABEL,
   LAUNCH_CONTEXT_SOURCE_LABEL,
