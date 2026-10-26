@@ -110,6 +110,8 @@ export function WebTestDialog({ detail, onClose }: { detail: EntityDetail | null
   const terminalRef = useRef<LiveTerminalHandle>(null);
   const runRef = useRef<Run | null>(null);
   runRef.current = run;
+  /* Set on unmount: a terminal whose start lands after it is nobody's to watch. */
+  const closed = useRef(false);
   const repoUrl = normalizeRepo(repo);
 
   /* Not remembered yet: find the space's website test task. */
@@ -166,6 +168,7 @@ export function WebTestDialog({ detail, onClose }: { detail: EntityDetail | null
       cases,
     };
     setRun(next);
+    runRef.current = next;
     void commands
       .startTerminal({
         clientMutationId: `web-test:${Date.now()}`,
@@ -176,6 +179,12 @@ export function WebTestDialog({ detail, onClose }: { detail: EntityDetail | null
       .then((result) => {
         gate.data.reconcileCommand(result);
         const id = (result as { entity?: { id?: string } }).entity?.id ?? null;
+        // Superseded (a newer run, an agent's run taking the screen) or closed
+        // while it started: end it, or it runs on with no screen and no stop.
+        if (closed.current || runRef.current !== next) {
+          stop(id);
+          return;
+        }
         setRun((was) => (was === next ? { ...next, terminalId: id, error: id ? null : 'The terminal did not start.' } : was));
       })
       .catch((error: unknown) => {
@@ -184,7 +193,13 @@ export function WebTestDialog({ detail, onClose }: { detail: EntityDetail | null
   };
 
   /* Closing the window ends the viewer's terminal. */
-  useEffect(() => () => stop(runRef.current?.terminalId ?? null), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    closed.current = false;
+    return () => {
+      closed.current = true;
+      stop(runRef.current?.terminalId ?? null);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Type the command once the shell has said something; the repo and words go in only when asked. */
   const terminalId = run?.terminalId ?? null;
