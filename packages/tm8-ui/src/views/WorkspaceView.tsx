@@ -55,6 +55,7 @@ import { WithChatCounts, useChatSlot } from '../entity-chat';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { useNewContainerSheet } from './useNewContainerSheet';
+import { newProjectPage } from './useNewProjectPage';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
@@ -421,6 +422,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
     { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
     { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
+    newProjectPage,
   ]);
 
   const renderPanel = useCallback(

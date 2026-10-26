@@ -2661,6 +2661,25 @@ function BoardColumn({
 // Bands, trees, tiles
 // ---------------------------------------------------------------------------
 
+/**
+ * The empty list's ONE quiet action: the kind's birth verb, when the host
+ * performs it and it is available. A kind whose only door is a page (project,
+ * 2026-10-02) otherwise shows "No projects here yet." and nothing to press,
+ * which is the dead end that report came from.
+ */
+function emptyBirth(
+  config: KindConfig,
+  props: EntityListPanelProps,
+): { actionLabel?: string; onAction?: () => void } {
+  const ref = config.list.quickStart;
+  const dispatch = props.onAction;
+  if (!ref || !dispatch) return {};
+  if (props.wiredActions && !props.wiredActions.includes(ref)) return {};
+  const def = resolveAction(ref);
+  if (def.availability(props.ctx).kind !== 'available') return {};
+  return { actionLabel: `${def.icon} ${def.label}`, onAction: () => dispatch(ref, props.ctx.entityId ?? '') };
+}
+
 function Band({
   label,
   filter,
@@ -2768,6 +2787,7 @@ function Band({
         ) : (
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}
+            {...emptyBirth(config, props)}
             sentence={
               config.settingsHome
                 ? `No ${config.labelPlural.toLowerCase()} here yet — add them in Settings.`

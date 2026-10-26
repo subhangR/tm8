@@ -899,6 +899,14 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
    * `merge-pr` draws between its verb and its confirm.
    */
   'new-container': define('new-container', 'New container', '＋', (ctx) => opGate(ctx, 'containers.create') ?? AVAILABLE),
+
+  /*
+   * Opens the Create Project page. Gated on `projects.create` only: whether
+   * THIS viewer may register a folder (node admin, unpinned) is a fact the
+   * page states with its remedy, so a non-admin still reaches the reason
+   * instead of a greyed button with no way to learn what to ask for.
+   */
+  'new-project': define('new-project', 'New project', '＋', (ctx) => opGate(ctx, 'projects.create') ?? AVAILABLE),
 };
 
 /** Resolve a ref to its definition. Total over `ActionRef` — never throws. */

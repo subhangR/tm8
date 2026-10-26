@@ -237,6 +237,7 @@ export function landingOfRoute(view: NavView): Landing | null {
       return { target: { type: 'view', ref: refOfRouteView(view.view) }, openEntity: null };
 
     case 'newSession':
+    case 'newProject':
       /*
        * A REAL SCREEN WITH NO RAIL SEAT. New Session is reached from a quick
        * action and from the sessions empty state, not from the menu, so it is

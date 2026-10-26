@@ -112,6 +112,7 @@ import {
 import { SpaceLinksSection, spaceLinksPortFromSeam } from '../settings-space-links';
 import { readLastSpace, readLastTarget, writeLastTarget } from './last-place';
 import {
+  NewProjectPage,
   NewSpaceProjectDialog,
   ProjectBranchesSection,
   type ProjectBranchesPort,
@@ -147,6 +148,8 @@ const LIVE_COUNT_KIND = 'work_session';
 
 /** The three-panel workspace — the handoff destination entity opens use. */
 const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
+/** Where Create Project returns to: the Projects list of the current Space. */
+const PROJECTS_LIST_VIEW = { view: 'kind', slug: 'projects', mode: null, q: null } as const;
 
 /* WHICH TOP BAR THIS DEVICE GETS (R21) — read ONCE, at module scope, and that
    is deliberate. Both bars mount at the top of the tree above the router, so
@@ -2207,6 +2210,33 @@ export function GateApp(props: GateAppProps = {}) {
                    rather than to a create screen that would re-create it. */
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
+              }}
+            />
+          ) : data.ready && navView.view === 'newProject' && data.spaceId ? (
+            /* Create Project (2026-10-02) — route-only, like New Session, and
+               rendered HERE because this is where the onboarding port and the
+               viewer's node-admin standing already live. */
+            <NewProjectPage
+              key={`${activeServer.id}:${data.spaceId}`}
+              space={{
+                id: data.spaceId as SpaceId,
+                name: data.spaces.find((sp) => sp.id === data.spaceId)?.name ?? 'this Space',
+              }}
+              nodeLabel={activeServer.label}
+              port={projectOnboardingPort}
+              viewerIsNodeAdmin={viewerIsNodeAdmin}
+              onCancel={() => navStore.getState().navigate(PROJECTS_LIST_VIEW)}
+              onCreated={(project, reusedExisting) => {
+                navStore.getState().navigate(PROJECTS_LIST_VIEW);
+                notices.push({
+                  id: 'project-created',
+                  tone: 'info',
+                  title: reusedExisting ? 'Existing project linked' : 'Project added',
+                  body: reusedExisting
+                    ? `That folder already had a project, “${project.name}”; it is now linked into this Space as-is.`
+                    : `“${project.name}” is now a project in this Space.`,
+                  ttlMs: 6_000,
+                });
               }}
             />
           ) : data.ready && navView.view === 'boardV2' ? (

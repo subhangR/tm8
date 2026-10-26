@@ -458,6 +458,8 @@ function parseTarget(
       /* Hyphenated in the URL, camel in the union: the segment is read by
          people and the member is read by TypeScript. */
       return { view: 'newSession' };
+    case 'new-project':
+      return { view: 'newProject' };
     case 'voice': {
       /* Shaped like `channel/{id}`, because a voice room is addressed the same
          way one channel is: an id in the path, no collection view behind it. A
@@ -560,6 +562,8 @@ function pathOf(route: Route): string {
       return `${base}/board-v2`;
     case 'newSession':
       return `${base}/new-session`;
+    case 'newProject':
+      return `${base}/new-project`;
     case 'voice':
       /* Must match `registry.ts`'s voice `routeBuilder` exactly — that builder
          is the authority and has been emitting this shape all along. */

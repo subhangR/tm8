@@ -1,0 +1,11 @@
+import { chromium } from '@playwright/test';
+const [,, url, out] = process.argv;
+const b = await chromium.launch({ executablePath: process.env.CHROME, args: ['--disable-gpu','--no-zygote','--single-process','--disable-dev-shm-usage'] });
+const p = await b.newPage({ viewport: { width: 1400, height: 900 } });
+p.on('console', m => { if (m.type()==='error') console.log('console:', m.text().slice(0,200)); });
+await p.goto(url);
+await p.waitForTimeout(8000);
+await p.screenshot({ path: out });
+console.log('title', await p.title(), 'url', p.url());
+console.log((await p.locator('body').innerText()).slice(0, 800));
+await b.close();

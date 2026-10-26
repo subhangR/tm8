@@ -80,6 +80,7 @@ import { usePanelPrimaries } from './usePanelPrimaries';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useSessionStart } from './useSessionStart';
 import { useNewContainerSheet } from './useNewContainerSheet';
+import { newProjectPage } from './useNewProjectPage';
 import type { GateData } from './useGateData';
 
 /* ---------------------------------------------------------------------------
@@ -445,6 +446,7 @@ export function HomeView(props: HomeViewProps) {
         { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
         { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
         { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
+        newProjectPage,
       ]),
     [
       sessionStart.onAction,

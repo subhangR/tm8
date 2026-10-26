@@ -477,7 +477,9 @@ export type ActionRef =
   | 'container-destroy'
   | 'container-terminal'
   | 'container-screen'
-  | 'new-container';
+  | 'new-container'
+  /** Opens the Create Project page (route `newProject`) for the current space. */
+  | 'new-project';
 
 export type ActionAvailability = { kind: 'available' } | { kind: 'disabled'; reason: string };
 

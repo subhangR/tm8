@@ -322,3 +322,20 @@
   position: relative;
   cursor: pointer;
 }
+
+/* --- Create Project page (2026-10-02): the dialog's card, in the page ---- */
+
+.project-page {
+  display: flex;
+  justify-content: center;
+  height: 100%;
+  overflow: auto;
+  padding: var(--pn-space-4);
+}
+
+.project-onboard--page {
+  max-height: none;
+  overflow: visible;
+  align-self: flex-start;
+  box-shadow: none;
+}

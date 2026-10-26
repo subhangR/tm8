@@ -82,6 +82,7 @@ import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { useNewContainerSheet } from './useNewContainerSheet';
+import { newProjectPage } from './useNewProjectPage';
 import { useRowLifecycle } from './useRowLifecycle';
 import { useMembershipSurface } from './membershipSurface';
 import type { ContentSurface } from '../routes';
@@ -625,6 +626,7 @@ export function EntityView(props: EntityViewProps) {
     { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
     { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
     { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
+    newProjectPage,
   ]);
 
   /**

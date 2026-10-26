@@ -268,6 +268,12 @@ export type NavView =
    */
   | { view: 'newSession' }
   /*
+   * CREATE PROJECT (2026-10-02, task 01a0fb4f): adds a project to the CURRENT
+   * space. Route-only for the same reasons as `newSession` — reached from the
+   * Projects list's ＋ and its empty state, never from the rail.
+   */
+  | { view: 'newProject' }
+  /*
    * A VOICE ROOM. Added 2026-08-14 to close a latent break, not to add a
    * feature.
    *

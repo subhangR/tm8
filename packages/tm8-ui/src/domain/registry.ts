@@ -1614,7 +1614,10 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '⬢', tintBy: 'none' },
     card: { fields: ['projectVersion', 'activityAt', 'createdBy'] },
     list: baseList({
+      /* Generic create is refused for this restricted kind; birth is the
+         Create Project page, opened by `new-project` (2026-10-02). */
       quickCreate: false,
+      quickStart: 'new-project',
       tile: { badges: [{ source: 'projectVersion' }] },
     }),
     panel: {
