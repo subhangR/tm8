@@ -34,8 +34,8 @@
  * conflict on its own. A conflict parks and waits for a person to choose
  * reload (take theirs) or overwrite (keep mine, at their version, explicitly).
  */
-import { useCallback, useRef, useState } from 'react';
-import type { CommandResult, EntityDetail } from '@tm8/contract';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CommandResult, EntityDetail, EntityId } from '@tm8/contract';
 import {
   classifyFailure,
   taskPatchInput,
@@ -141,6 +141,11 @@ const NO_WINNING_VERSION: UnavailableReason = {
  * draft survives a reload-less refusal exactly as it survives every other, so
  * nothing the user typed is lost by being told no.
  */
+/** The version a landed save wrote, read off the result; null when it did not say. */
+function writtenVersion(result: CommandResult): number | null {
+  return result.entity?.version ?? result.patches[0]?.version ?? null;
+}
+
 const COLLECTION_OVERWRITE: UnavailableReason = {
   cause: 'Can’t overwrite — this edit replaces a whole list',
   remedy:
@@ -162,6 +167,13 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
    */
   const draft = useRef<TaskEdits>({});
   const base = useRef<number | null>(null);
+  /** The entity the draft was staged on — a flush writes there and nowhere else. */
+  const owner = useRef<string | null>(null);
+  /** Bumped by every stage, so a landing save knows whether more was staged meanwhile. */
+  const seq = useRef(0);
+  const inFlight = useRef(false);
+  /** A `commitNow` arrived while a save was in flight: send again when it lands. */
+  const commitPending = useRef(false);
 
   const unavailable =
     commands === null
@@ -176,7 +188,9 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
 
   const stage = useCallback(
     (patch: TaskEdits) => {
+      if (detail) owner.current = detail.id;
       draft.current = { ...draft.current, ...patch };
+      seq.current += 1;
       setEdits(draft.current);
       if (base.current === null && detail) {
         base.current = detail.version;
@@ -189,23 +203,56 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
   const settle = useCallback(() => {
     draft.current = {};
     base.current = null;
+    owner.current = null;
+    commitPending.current = false;
     setEdits({});
     setBaseVersion(null);
     setState({ phase: 'clean' });
   }, []);
 
-  /** THE one place a patch is sent. Every path above lands here. */
+  /**
+   * THE one place a patch is sent. Every path above lands here.
+   *
+   * ONE SAVE AT A TIME. A second gesture while a save is in flight (a status
+   * pick right after a title Enter) would otherwise go out at the same base
+   * version and come back as a "conflict" with the user's own first write.
+   * It is staged instead, and goes out at the version the first save wrote.
+   * Edits staged mid-flight likewise stay in the draft rather than being
+   * settled away when the earlier save lands.
+   */
   const flush = useCallback(
-    async (expectedVersion: number) => {
-      if (commands === null || detail === null) return;
+    async (expectedVersion: number, commit = false): Promise<void> => {
+      const id = owner.current;
+      if (commands === null || id === null) return;
+      if (inFlight.current) {
+        if (commit) commitPending.current = true;
+        return;
+      }
       const patch = draft.current;
       if (Object.keys(patch).length === 0) return;
+      const at = seq.current;
+      inFlight.current = true;
       setState({ phase: 'saving' });
+      let again: number | null = null;
       try {
-        const result = await commands.patchTask(detail.id, taskPatchInput(patch, expectedVersion));
-        settle();
+        const result = await commands.patchTask(id as EntityId, taskPatchInput(patch, expectedVersion));
+        // A different entity took this slot while the save was in flight:
+        // its draft is not ours to settle.
+        if (owner.current === id) {
+          if (seq.current === at) {
+            settle();
+          } else {
+            base.current = writtenVersion(result) ?? expectedVersion;
+            setBaseVersion(base.current);
+            setState({ phase: 'dirty' });
+            if (commitPending.current) again = base.current;
+          }
+        }
+        commitPending.current = false;
         onSaved?.(result);
       } catch (error) {
+        commitPending.current = false;
+        if (owner.current !== id) return;
         const failure = classifyFailure(error, 'save');
         // THE DRAFT SURVIVES BOTH ARMS. "your text is kept right here" is the
         // oracle's own promise (T5-5's refusal card), and it is the difference
@@ -215,16 +262,19 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
             ? { phase: 'conflict', failure }
             : { phase: 'refused', failure },
         );
+      } finally {
+        inFlight.current = false;
       }
+      if (again !== null) await flush(again, true);
     },
-    [commands, detail, onSaved, settle],
+    [commands, onSaved, settle],
   );
 
   const edit = useCallback(
     (patch: TaskEdits) => {
       if (unavailable) return;
       stage(patch);
-      setState({ phase: 'dirty' });
+      if (!inFlight.current) setState({ phase: 'dirty' });
     },
     [stage, unavailable],
   );
@@ -241,10 +291,24 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
       // `base.current` is set by `stage` on the first edit, so this is the
       // version of the FIRST staged change even when commitNow lands on top of
       // an existing draft — the same rule, not an exception to it.
-      await flush(base.current ?? detail.version);
+      await flush(base.current ?? detail.version, true);
     },
     [detail, flush, stage, unavailable],
   );
+
+  /*
+   * A DIFFERENT ENTITY IN THE SAME SLOT starts clean. The panel that owns this
+   * hook is not keyed by id, so without this a draft staged on one task would
+   * follow the selection to the next and Save would write it there, at the
+   * first task's base version. A detail going momentarily null (a refetch of
+   * the same entity) is not a different entity and keeps the draft.
+   */
+  const detailId = detail?.id ?? null;
+  useEffect(() => {
+    if (detailId === null || owner.current === null || owner.current === detailId) return;
+    seq.current += 1;
+    settle();
+  }, [detailId, settle]);
 
   const cancel = useCallback(() => settle(), [settle]);
   const dismiss = useCallback(() => {
