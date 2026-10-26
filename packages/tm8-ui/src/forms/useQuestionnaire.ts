@@ -123,6 +123,8 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
   // so a stale page never overwrites a newer read.
   const through = useRef<FormResponseView | null>(null);
   const fetchSeq = useRef(0);
+  /** Reloads only: "Load more" supersedes a page read, never the slot read. */
+  const mineSeq = useRef(0);
 
   /** Page 1, then on through `through`: what the reader had loaded, re-read. */
   const readLoaded = useCallback(async () => {
@@ -141,9 +143,12 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
 
   const reload = useCallback(async () => {
     const seq = ++fetchSeq.current;
+    const slotSeq = ++mineSeq.current;
     try {
       const [slot, page] = await Promise.all([port.mine(detail.id), readLoaded()]);
-      setMine(slot);
+      // A newer reload owns the slot: an older one landing late would show the
+      // viewer's pre-submit slot over the one they just submitted.
+      if (slotSeq === mineSeq.current) setMine(slot);
       if (seq !== fetchSeq.current) return;
       setResponses(page.items);
       setNextCursor(page.cursor);
