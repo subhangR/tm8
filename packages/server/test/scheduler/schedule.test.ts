@@ -63,6 +63,14 @@ describe('5-field cron', () => {
     expect(iso(next)).toBe('2026-08-10T00:00:00.000Z');
   });
 
+  it('accepts 7 as Sunday in day-of-week, as standard cron does', () => {
+    // 2026-08-10 is a Monday; the next Sunday is 2026-08-16.
+    expect(iso(nextRunAt('0 9 * * 7', at('2026-08-10T12:00:00Z')))).toBe('2026-08-16T09:00:00.000Z');
+    // `5-7` is Friday through Sunday, not an out-of-range refusal.
+    expect(iso(nextRunAt('0 0 * * 5-7', at('2026-08-15T12:00:00Z')))).toBe('2026-08-16T00:00:00.000Z');
+    expect(() => assertValidSchedule('0 0 * * 8')).toThrow(ScheduleError);
+  });
+
   it('ANDs nothing when only one day field is restricted', () => {
     // Day-of-month only: the 15th, whatever weekday that is.
     expect(iso(nextRunAt('0 0 15 * *', at('2026-08-09T12:00:00Z'))))
