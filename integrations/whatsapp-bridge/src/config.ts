@@ -39,6 +39,8 @@ export type ChannelConfig = {
    * to the channel with this id instead (the self chat while testing), prefixed "[<title>]". Remove it to go live.
    */
   deliverTo?: string
+  /** What this group is for and how the team works it, for the main chat's briefing (≤800 characters). */
+  purpose?: string
 }
 
 export type ChannelTm8Override = { spaceId?: string; tokenFile?: string; defaultTeammate?: string; defaultModel?: string }
@@ -100,6 +102,8 @@ export type TranscriptionConfig = {
   language: string
   /** Longer audio is not transcribed. */
   maxDurationSec: number
+  /** A run may take this many times the audio length (+30 s) before it is killed. Raise it on a small or busy box. */
+  timeoutFactor: number
   /** How long routing waits for a transcript before posting without it (the transcript then follows as its own message). */
   waitSeconds: number
 }
@@ -129,6 +133,7 @@ export const DEFAULTS: Omit<Config, 'channels' | 'ownerJids' | 'trustedSenders'>
     threads: 4,
     language: 'auto',
     maxDurationSec: 600,
+    timeoutFactor: 2,
     waitSeconds: 20,
   },
   forms: { submitDelaySeconds: 20 },
@@ -219,7 +224,7 @@ export function parseConfig(raw: any, root: string): Config {
   const t = cfg.transcription
   if (!['local', 'none', 'openai'].includes(t.provider)) throw new Error('transcription.provider must be "local", "none" or "openai"')
   if (!/^[\w.-]+$/.test(t.model)) throw new Error('transcription.model must be a file name under transcription.modelsDir')
-  for (const k of ['threads', 'maxDurationSec', 'waitSeconds'] as const) {
+  for (const k of ['threads', 'maxDurationSec', 'waitSeconds', 'timeoutFactor'] as const) {
     if (!Number.isFinite(t[k]) || t[k] < 0) throw new Error(`transcription.${k} must be a non-negative number`)
   }
   if (cfg.approverName !== undefined && cfg.approverName !== null && (typeof cfg.approverName !== 'string' || !/^[^\n`$]{1,60}$/.test(cfg.approverName.trim()) || !cfg.approverName.trim())) {
@@ -240,6 +245,7 @@ export function parseConfig(raw: any, root: string): Config {
     if (ch.trustedSenders !== undefined) ch.trustedSenders = checkTrustedSenders(ch.trustedSenders, `channel ${ch.id}: trustedSenders`)
     checkChannelTm8(ch, root)
     checkStyle(ch)
+    if (ch.purpose !== undefined && (typeof ch.purpose !== 'string' || !ch.purpose.trim() || ch.purpose.length > 800)) throw new Error(`channel ${ch.id}: purpose must be a non-empty string of at most 800 characters`)
     if (ch.trigger !== undefined && ch.trigger !== 'mention' && ch.trigger !== 'all') throw new Error(`channel ${ch.id}: trigger must be "mention" or "all"`)
   }
   for (const ch of cfg.channels) {

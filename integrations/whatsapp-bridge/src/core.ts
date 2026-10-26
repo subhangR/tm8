@@ -697,7 +697,7 @@ export class Bridge {
     const max = this.cfg.transcription.maxDurationSec
     const started = Date.now()
     try {
-      const r = await this.transcriber.transcribe(this.media.abs(row.path), { timeoutMs: transcribeTimeoutMs(row.duration_sec, max), maxDurationSec: max })
+      const r = await this.transcriber.transcribe(this.media.abs(row.path), { timeoutMs: transcribeTimeoutMs(row.duration_sec, max, this.cfg.transcription.timeoutFactor), maxDurationSec: max })
       const ms = Date.now() - started
       const duration = row.duration_sec ?? (r.durationSec !== null ? Math.round(r.durationSec * 10) / 10 : null)
       this.store.updateMedia(id, { transcript_status: 'done', transcript: r.text, transcript_lang: r.lang, transcript_ms: ms, transcript_error: null, duration_sec: duration })

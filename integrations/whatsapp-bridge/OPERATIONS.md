@@ -90,6 +90,7 @@ Docker's healthcheck is "WhatsApp connected".
     "threads": 4,                                 // whisper threads; the box has 8 CPUs shared with everything else
     "language": "auto",                           // or a fixed ISO code, e.g. "hi"
     "maxDurationSec": 600,                        // longer audio is downloaded and attached but not transcribed
+    "timeoutFactor": 2,                           // a run may take this × the audio length + 30 s; raise it on a small or busy box (2 CPUs shared with agents: ~20)
     "waitSeconds": 20                             // routing waits this long for a transcript, then posts and sends it as a follow-up
   },
   "channels": [

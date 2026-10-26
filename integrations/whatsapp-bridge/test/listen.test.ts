@@ -151,3 +151,11 @@ describe('admin inject with sender_jid', () => {
     assert.match(t.tm8.posts.at(-1)!.body, /from "Rahul" \+91…9999 \(UNTRUSTED group member\)/)
   })
 })
+
+describe('purpose', () => {
+  test('goes into the main chat briefing; bounded', () => {
+    const cfg = load([SELF, { id: 'g', jid: GROUP, title: 'Feedback', trigger: 'all', purpose: 'User reports forwarded by the CEO.' }])
+    assert.match(briefMainChat({ cfg, ch: cfg.channels[1], name: 'g-main', tokenFile: '/t' }), /## What this group is for\nUser reports forwarded by the CEO\./)
+    assert.throws(() => load([{ id: 'g', jid: GROUP, title: 'G', purpose: 'x'.repeat(801) }]), /purpose must be/)
+  })
+})

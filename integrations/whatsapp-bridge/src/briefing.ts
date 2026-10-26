@@ -309,6 +309,7 @@ You are the group's front desk, not its worker. While you work on something your
  */
 function listenBlock(cfg: Config, ch: ChannelConfig): string {
   const parts: string[] = []
+  if (ch.purpose) parts.push(`## What this group is for\n${ch.purpose.trim()}`)
   if (ch.trigger === 'all') {
     parts.push(`## Every message in this group comes to you
 Nobody has to mention @${cfg.handle}: every message in "${ch.title}" arrives here, text, images, videos, documents and voice
@@ -318,8 +319,11 @@ handled by a person in the group. Triage each one:
   End the turn with only "skip <wa_msg_id>" (one per message).
 - A problem to look into (a user report, a screenshot, a voice note about something broken): investigate it, delegating per
   RULE 2 when it takes more than a quick look, then answer in 1 to 3 short lines: what happened, and what was done or is
-  next. Several messages about one issue (a forwarded batch: images, a voice note, a caption) get one answer, reply_to the
-  last of them.
+  next. Several messages about one issue (a forwarded batch: screenshots, a voice note, a caption) arrive one by one within a
+  minute or two: before answering, read the newest messages (GET /history?limit=20) and answer the whole issue once,
+  reply_to the last of them; "skip" the rest.
+- Investigate before you ask. Look it up yourself (the product's data, logs, code) and answer with what you found; ask the
+  group a question only when the answer can't be found without them.
 - Unsure whether to speak: don't. A person in the group can still mention @${cfg.handle} to ask you directly.`)
   }
   if (ch.deliverTo) {
