@@ -1,0 +1,123 @@
+{
+  "help": "Run the Retail Security research pipeline (research/retail-security-2026). MONTHLY mode (--stages monthly): collect every public channel for the window from the day after the previous run (build/state.json) to today, build NEW incidents/roundups/leak listings/HIBP loads from that evidence and write build/periods/<from>_<to>/ (interactive site + PDF); --period-from/--period-to rebuild any window. ANNUAL mode (build/all): public multi-channel collection, globe geometry, evidence screenshots, dual-theme interactive site, headless browser check, 46-page PDF, verification, and a local run report under build/runs/<run-id>/. Optionally publishes the site as an artifact revision and the PDF as a file (named .pdf) and posts a summary on the task. Collectors keep the hard lines: no logins, no paywall bypass, no cart/checkout, no Tor; blocked = recorded, never worked around. Run from the repo root (tm8 tool run --cwd <repo-root> retail-security-report ...).",
+  "inputs": [
+    {
+      "name": "project",
+      "required": false,
+      "type": "path",
+      "env": "RSR_PROJECT",
+      "default": "research/retail-security-2026",
+      "description": "Pipeline directory holding scripts/, raw/, build/ (relative to --cwd)."
+    },
+    {
+      "name": "stages",
+      "required": false,
+      "type": "string",
+      "env": "RSR_STAGES",
+      "default": "build",
+      "description": "Stage set or comma list. Sets: monthly (collect,reddit,social,period + geo,shots,site,check,pdf,verify,report for the new window), monthly-build (period + build stages from raw/ on disk), all (collect,reddit,social + annual build), build (geo,shots,site,check,pdf,verify,report), collect (collect,reddit,social,verify,report), verify (verify,report). Stages: collect reddit social period geo shots site check pdf verify report publish."
+    },
+    {
+      "name": "period_from",
+      "required": false,
+      "type": "string",
+      "env": "RSR_PERIOD_FROM",
+      "description": "Monthly window start YYYY-MM-DD (default: day after build/state.json last_end; very first run: first_from). Needs the period stage."
+    },
+    {
+      "name": "period_to",
+      "required": false,
+      "type": "string",
+      "env": "RSR_PERIOD_TO",
+      "description": "Monthly window end YYYY-MM-DD (default: today UTC)."
+    },
+    {
+      "name": "first_from",
+      "required": false,
+      "type": "string",
+      "env": "RSR_FIRST_FROM",
+      "default": "2026-10-01",
+      "description": "Monthly mode: start of the very first window when the ledger has no runs (so the first report covers a whole month)."
+    },
+    {
+      "name": "no_llm",
+      "required": false,
+      "type": "bool",
+      "env": "RSR_NO_LLM",
+      "default": false,
+      "description": "Monthly summaries rule-built even if ANTHROPIC_API_KEY is set."
+    },
+    {
+      "name": "model",
+      "required": false,
+      "type": "string",
+      "env": "RSR_MODEL",
+      "description": "Claude model for monthly summaries when ANTHROPIC_API_KEY is set (default claude-sonnet-5-5)."
+    },
+    {
+      "name": "publish",
+      "required": false,
+      "type": "bool",
+      "env": "RSR_PUBLISH",
+      "default": false,
+      "description": "Publish the site (artifact) and PDF (file with .pdf name) to tm8, link produces edges to --task and post a summary message."
+    },
+    {
+      "name": "artifact",
+      "required": false,
+      "type": "string",
+      "env": "RSR_ARTIFACT",
+      "description": "Existing artifact id to publish a new revision of (e.g. 01a145a6-12b8-7534-813c-3df84910a49a). Empty = new artifact."
+    },
+    {
+      "name": "task",
+      "required": false,
+      "type": "string",
+      "env": "RSR_TASK",
+      "description": "tm8 task id to link outputs to and message (e.g. 01a1451b-7c20-7917-b15e-2aa749a9b7fe)."
+    },
+    {
+      "name": "out",
+      "required": false,
+      "type": "path",
+      "env": "RSR_OUT",
+      "description": "Run-report directory (default <project>/build/runs)."
+    },
+    {
+      "name": "force",
+      "required": false,
+      "type": "bool",
+      "env": "RSR_FORCE",
+      "default": false,
+      "description": "Redo globe geometry and all evidence screenshots even if present."
+    },
+    {
+      "name": "collect_minutes",
+      "required": false,
+      "type": "int",
+      "env": "RSR_COLLECT_MINUTES",
+      "default": 120,
+      "min": 1,
+      "max": 600,
+      "description": "Timeout in minutes for each collector stage."
+    },
+    {
+      "name": "pw_image",
+      "required": false,
+      "type": "string",
+      "env": "RSR_PW_IMAGE",
+      "default": "mcr.microsoft.com/playwright:v1.64.0-noble",
+      "description": "Playwright docker image used for screenshots, the theme check and the PDF (must already be present; never prune it)."
+    },
+    {
+      "name": "browser_channel",
+      "required": false,
+      "type": "string",
+      "env": "RSR_BROWSER_CHANNEL",
+      "default": "auto",
+      "description": "Local browser for shots/check/pdf: auto (Playwright Chromium, else installed Google Chrome, else Edge) | chromium | chrome | msedge."
+    }
+  ],
+  "tm8Access": "write",
+  "timeoutSeconds": 14400
+}
