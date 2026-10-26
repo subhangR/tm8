@@ -51,13 +51,19 @@ export function useCraft(
   const activeRef = useRef(activeId);
   activeRef.current = activeId;
 
+  /* Only the newest read lands: events re-read in bursts, and a read of the
+     craft this hook showed before a switch must not paint over the new one. */
+  const readSeq = useRef(0);
   const read = useCallback(async () => {
+    const seq = ++readSeq.current;
     try {
       const next = await source.read(craftId);
+      if (seq !== readSeq.current) return;
       pageIdsRef.current = new Set(next.pages.map((page) => page.id));
       setCraft(next);
       setState('ready');
     } catch (error) {
+      if (seq !== readSeq.current) return;
       setState((error as { code?: unknown } | null)?.code === 'not_found' ? 'deleted' : 'error');
     }
   }, [source, craftId]);
@@ -66,6 +72,7 @@ export function useCraft(
     setCraft(null);
     setState('loading');
     setUpdated(new Set());
+    pageIdsRef.current = new Set();
     void read();
   }, [read, attempt]);
 
