@@ -133,6 +133,19 @@ export function createChatHomePortFromSeam(
       const refreshed = listCache.get(chatId);
       if (refreshed) return refreshed;
     }
+    /* The list read is the 100 most recent chats, so an older one — opened
+       from a link, a chip or back/forward — can never appear in it. Read the
+       chat itself before giving up. */
+    try {
+      const detail = await seam.entity(chatId);
+      const item = itemFromSummary(detail, null);
+      if (item) {
+        listSpaceCache.set(item.chatId, detail.spaceId);
+        return rememberItem(item);
+      }
+    } catch {
+      // Falls through to the refusal below, which names what was tried.
+    }
     throw new Error('This chat is not present in the latest space-wide read.');
   };
 

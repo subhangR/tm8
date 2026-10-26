@@ -202,6 +202,21 @@ describe('real chat-home seam adapter', () => {
     ).rejects.toThrow(/not present in the latest space-wide read/);
   });
 
+  it('opens a chat older than the list read by reading the chat itself', async () => {
+    // The list is the 100 most recent chats. A link or chip to an older one
+    // used to fail with "not present" no matter how many times it refreshed.
+    const { seam } = seamStub([]);
+    (seam as { messages?: unknown }).messages = vi.fn(async () => ({ items: [] }));
+    const entity = vi.fn(async () => ({ ...chatSummary(), spaceId: 'space-1' }));
+    (seam as { entity?: unknown }).entity = entity;
+    const port = createChatHomePortFromSeam(seam);
+    await port.listThreads('space-1');
+
+    const detail = await port.readThread(CHAT);
+    expect(detail.summary.rootId).toBe(CHAT);
+    expect(entity).toHaveBeenCalledWith(CHAT);
+  });
+
   it('reads a chat FLAT, and previews the last settled message', async () => {
     const { seam } = seamStub();
     const message = (id: string, body: string, extra: Record<string, unknown> = {}) => ({
