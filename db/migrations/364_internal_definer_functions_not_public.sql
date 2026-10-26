@@ -1,5 +1,5 @@
 -- =============================================================================
--- 360: no SECURITY DEFINER function in `internal` is executable by PUBLIC.
+-- 364: no SECURITY DEFINER function in `internal` is executable by PUBLIC.
 --
 -- 001-008 closed the schema with `revoke all on all functions in schema
 -- internal from public`, but that statement only reaches functions that exist
@@ -80,7 +80,7 @@ begin
      and p.prosecdef
      and has_function_privilege('public', p.oid, 'execute');
   if leaked is not null then
-    raise exception '360 VERIFY: SECURITY DEFINER functions in internal still executable by PUBLIC: %', leaked;
+    raise exception '364 VERIFY: SECURITY DEFINER functions in internal still executable by PUBLIC: %', leaked;
   end if;
 end
 $$;

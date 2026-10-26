@@ -1,12 +1,12 @@
 /**
- * Function EXECUTE grants — what PUBLIC may call (360).
+ * Function EXECUTE grants — what PUBLIC may call (364).
  *
  * `revoke all on all functions in schema internal from public` (001-008) only
  * reached the functions that existed when it ran; every later `create function`
  * gets Postgres's default EXECUTE to PUBLIC unless its migration revokes it.
  * tm8_app holds USAGE on `internal`, so a SECURITY DEFINER helper that missed
  * its revoke is callable by the app role as the function owner, past whatever
- * check its public wrapper makes. Nineteen had slipped through before 360,
+ * check its public wrapper makes. Nineteen had slipped through before 364,
  * including `internal.stop_work_session_core`, which stopped any session in any
  * space with no claims bound.
  *
