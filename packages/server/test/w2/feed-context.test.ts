@@ -339,6 +339,15 @@ function untagged(sql: string): string {
   return sql.slice(tag[0].length);
 }
 
+function withCursorInstant<T extends { created_at: string }>(
+  rows: readonly T[] | undefined,
+): Array<T & { cursor_created_at: string }> {
+  return (rows ?? []).map((row) => ({
+    cursor_created_at: row.created_at,
+    ...row,
+  }));
+}
+
 function router(stub: Stub): <R>(sql: string, params: readonly unknown[]) => Promise<R[]> {
   return async <R>(tagged: string): Promise<R[]> => {
     const sql = untagged(tagged);
@@ -346,10 +355,12 @@ function router(stub: Stub): <R>(sql: string, params: readonly unknown[]) => Pro
     switch (marker) {
       case 'entities.feed:anchor':
         return (stub.anchor ?? []) as R[];
+      // The real SELECTs always carry `cursor_created_at` (MICROS text); a stub
+      // row without it would mint a cursor whose instant is `undefined`.
       case 'entities.feed:page':
-        return (stub.page ?? []) as R[];
+        return withCursorInstant(stub.page) as R[];
       case 'entities.feed:locate':
-        return (stub.locate ?? []) as R[];
+        return withCursorInstant(stub.locate) as R[];
       case 'entities.feed:activity':
         return (stub.activity ?? []) as R[];
       case 'entities.feed:deliveries':
