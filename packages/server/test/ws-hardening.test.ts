@@ -37,6 +37,22 @@ describe('WebSocket backpressure, timeouts and inbound caps', () => {
     expect(conn.isOpen).toBe(false);
   });
 
+  it('keeps a consumer whose queue passes the stream highWaterMark but stays under the cap', () => {
+    // A peer that has not read yet: writes queue, so `write()` returns false
+    // once ~16 KiB are buffered. That is ordinary backpressure, not a slow
+    // consumer — the byte cap (default 1 MiB) is the bound, and a resume burst
+    // of a few dozen events must not trip it.
+    class StalledSocket extends FakeSocket {
+      override _write(_chunk: Buffer, _encoding: string, _done: () => void): void {}
+    }
+    const socket = new StalledSocket();
+    const conn = new WsConnection(socket, { kind: 'anonymous' });
+    for (let i = 0; i < 8; i += 1) conn.send('x'.repeat(8 * 1024));
+    expect(socket.writableLength).toBeGreaterThan(socket.writableHighWaterMark);
+    expect(conn.isOpen).toBe(true);
+    conn.close();
+  });
+
   it('enforces idle and absolute lifetimes', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const idle = new WsConnection(

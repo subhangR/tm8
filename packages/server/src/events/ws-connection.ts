@@ -261,11 +261,12 @@ export class WsConnection implements EventSink {
       return false;
     }
     try {
-      if (this.socket.write(frame) === false) {
-        this.close(CLOSE_CODE.policyViolation, 'slow consumer');
-        this.destroy();
-        return false;
-      }
+      // `write()` returning false only means the queue passed the stream's
+      // highWaterMark (16 KiB by default) — ordinary backpressure. Treating it
+      // as a slow consumer made the effective cap 16 KiB, not
+      // `maxBufferedBytes`, and a resume replay burst closed healthy sockets.
+      // The byte check above is the bound.
+      this.socket.write(frame);
       return true;
     } catch {
       this.destroy();
