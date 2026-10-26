@@ -349,8 +349,10 @@ export class GithubClient {
    * ⚠ BOUNDED AT 50 THREADS AND 10 COMMENTS PER THREAD, WITH NO PAGINATION.
    * A pull request past those bounds is silently truncated, and the review
    * signature (comment count + ids) is computed over the truncated view — so a
-   * 51st thread is never announced, and a reply past the 10th does not re-arm
-   * the nudge. Accepted for v1: a PR with fifty open conversations has a
+   * reply past the 10th does not re-arm the nudge. The window is the NEWEST 50
+   * threads (`last`), because the bound counts resolved threads too: with
+   * `first`, a long-lived PR whose oldest 50 conversations were all resolved
+   * never announced a new one. Accepted for v1: a PR with fifty open conversations has a
    * problem this loop is not going to solve, and paginating would let one
    * pathological PR spend the tick's whole GraphQL budget. Named here rather
    * than discovered later.
@@ -624,7 +626,7 @@ const REVIEW_THREADS_QUERY = `
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 50) {
+      reviewThreads(last: 50) {
         nodes {
           id
           isResolved
