@@ -4,7 +4,6 @@ import type {
   SessionJournalPage,
   SessionJournalRecord,
   SessionLaunchRecord,
-  SessionTranscriptPage,
 } from '@tm8/contract';
 import type { Seam } from '../../data/seam';
 import { describeLaunchManifest, launchSpaceCredentialIds } from '../../domain';

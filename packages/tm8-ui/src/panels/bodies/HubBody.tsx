@@ -1,6 +1,6 @@
 import type { EntityDetail, EntitySummary, MessageView } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
-import { KindIcon, getKind } from '../../domain';
+import { KindIcon } from '../../domain';
 import { Avatar, Chip, Eyebrow, Markdown, Timestamp } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';

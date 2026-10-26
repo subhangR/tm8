@@ -49,7 +49,6 @@ import { homeQuickBirthKinds, homeRootKinds } from '../domain/home-rail';
 import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { needsAttentionOf } from '../domain/needs-attention';
-import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
 import { composePanelActions, panelSessionControlsFor, usePanelPrimaries } from './usePanelPrimaries';
@@ -672,8 +671,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     (id: string) => linkedSessionsByTarget.get(id) ?? [],
     [linkedSessionsByTarget],
   );
-
-  const profileFor = launchPort.profileFor;
 
   /* Each dock owns a create-flow hook so a quick-create panel keeps the
      behavior when it crosses the center. Both run unconditionally (rules of

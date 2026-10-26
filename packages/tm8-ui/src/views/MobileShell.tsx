@@ -34,7 +34,7 @@ import { AttentionHeaderButton, AttentionSheet } from '../attention/AttentionShe
 import { useAttentionOptional } from '../attention';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { ActorSummary, EntityId, EntityKind, SpaceId } from '@tm8/contract';
+import type { ActorSummary, EntityId, SpaceId } from '@tm8/contract';
 import { MobileFrame, MobileSurfaceProvider, type PhoneUp } from '../mobile';
 import { MobileAccountSheet } from '../mobile/MobileAccountSheet';
 import '../mobile/mobile-chrome.css';
