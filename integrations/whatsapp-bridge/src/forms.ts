@@ -8,8 +8,8 @@ import { maskJid } from './briefing.js'
 import type { ChannelConfig } from './config.js'
 import { HttpError, type Bridge, type Inbound } from './core.js'
 import { stableUuid } from './media.js'
-import type { FormDeliveryRow, FormRespondentRow, OutboxPoll } from './store.js'
-import { speakerLine } from './text.js'
+import type { FormDeliveryRow, FormRespondentRow, Lang, OutboxPoll } from './store.js'
+import { asciiDigits, detectLang, speakerLine } from './text.js'
 import type { FormInfo, FormQuestionSpec } from './tm8.js'
 
 /** The question the bridge adds to a form so every response says which WhatsApp member gave it. */
@@ -47,6 +47,57 @@ export type FormQuestion = {
 }
 type Answer = { value: string } | { values: string[] } | { text: string } | { number: number }
 export type PollVote = { chatJid: string; pollId: string; voterJids: string[]; voterName: string | null; hashes: string[] }
+
+/** The bridge's own words around a form, per language. Question titles, help and options are the form author's. */
+const T = {
+  en: {
+    optionalPoll: ' (optional)',
+    optionalText: ' _(optional)_',
+    q: (n: number) => `Q${n}`,
+    scale: (min: string, max: string) => `Reply with a number from ${min} to ${max}.`,
+    one: 'Reply with one number.',
+    many: 'Reply with the numbers, e.g. "1, 3".',
+    text: (n: number) => `Reply to this message with your answer, or write "${n}: your answer".`,
+    howPolls: 'vote in the polls below',
+    howTexts: 'reply to each numbered question (or write "2: your answer")',
+    how: (parts: string[]) => `To answer, ${parts.join(' and ')}. You can change an answer any time.`,
+    needs: (q: string) => `${q} needs an answer`,
+    scaleErr: (q: string, min: number, max: number) => `${q} takes a number from ${min} to ${max}`,
+    optErr: (q: string, single: boolean, n: number) => `${q}: reply with ${single ? 'one option number' : 'option numbers'} from 1 to ${n}`,
+    oneErr: (q: string) => `${q} takes one option number`,
+    atMost: (q: string, n: number) => `${q}: pick at most ${n}`,
+    atLeast: (q: string, n: number) => `${q}: pick at least ${n}`,
+    maxLen: (q: string, n: number) => `${q} is limited to ${n} characters`,
+    minLen: (q: string, n: number) => `${q} needs at least ${n} characters`,
+    refused: (who: string | null, title: string) => `couldn't record ${who ? `${who}'s` : 'some'} answers to "${title}"; please check them and answer again`,
+  },
+  ar: {
+    optionalPoll: ' (اختياري)',
+    optionalText: ' _(اختياري)_',
+    q: (n: number) => `س${n}`,
+    scale: (min: string, max: string) => `أرسل رقمًا من ${min} إلى ${max}.`,
+    one: 'أرسل رقمًا واحدًا.',
+    many: 'أرسل الأرقام، مثلًا "1، 3".',
+    text: (n: number) => `ردّ على هذه الرسالة بإجابتك، أو اكتب "${n}: إجابتك".`,
+    howPolls: 'صوّت في الاستطلاعات أدناه',
+    howTexts: 'ردّ على كل سؤال مرقّم (أو اكتب "2: إجابتك")',
+    how: (parts: string[]) => `للإجابة، ${parts.join(' و')}. يمكنك تغيير إجابتك في أي وقت.`,
+    needs: (q: string) => `${q} يحتاج إلى إجابة`,
+    scaleErr: (q: string, min: number, max: number) => `${q}: أرسل رقمًا من ${min} إلى ${max}`,
+    optErr: (q: string, single: boolean, n: number) => `${q}: أرسل ${single ? 'رقم خيار واحد' : 'أرقام الخيارات'} من 1 إلى ${n}`,
+    oneErr: (q: string) => `${q}: اختر خيارًا واحدًا فقط`,
+    atMost: (q: string, n: number) => `${q}: اختر ${n} على الأكثر`,
+    atLeast: (q: string, n: number) => `${q}: اختر ${n} على الأقل`,
+    maxLen: (q: string, n: number) => `${q}: الحد الأقصى ${n} حرفًا`,
+    minLen: (q: string, n: number) => `${q}: يحتاج إلى ${n} حرفًا على الأقل`,
+    refused: (who: string | null, title: string) => `تعذّر تسجيل إجابات ${who ?? 'أحد المشاركين'} على "${title}"؛ يرجى مراجعتها والإجابة مرة أخرى`,
+  },
+} satisfies Record<Lang, unknown>
+
+/** The language of a form's own text: Arabic if its title and questions are mostly Arabic. */
+export function formLang(form: Pick<FormInfo, 'title' | 'description' | 'questions'>): Lang {
+  return detectLang([form.title, form.description ?? '', ...form.questions.map((q) => q.title)].join(' '))
+}
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex')
 const clip = (s: string, n: number) => ([...s].length > n ? [...s].slice(0, n - 1).join('') + '…' : s)
@@ -87,47 +138,53 @@ function scaleRange(q: FormQuestion) {
 }
 
 /** The poll for a choice question. */
-export function pollFor(q: FormQuestion): OutboxPoll {
-  const name = clip(`${q.n}. ${q.title}${q.required ? '' : ' (optional)'}`, POLL_NAME_MAX)
+export function pollFor(q: FormQuestion, lang: Lang = 'en'): OutboxPoll {
+  const name = clip(`${q.n}. ${q.title}${q.required ? '' : T[lang].optionalPoll}`, POLL_NAME_MAX)
   const selectableCount = q.type === 'single_choice' ? 1 : Math.min(q.config.maxSelected ?? 0, q.options!.length)
   return { name, values: q.options!.map((o) => o.name), selectableCount }
 }
 
 /** The numbered message for a text, scale or long choice question (without the speaker prefix). */
-export function questionText(q: FormQuestion): string {
-  const lines = [`*Q${q.n}.* ${q.title}${q.required ? '' : ' _(optional)_'}`]
+export function questionText(q: FormQuestion, lang: Lang = 'en'): string {
+  const t = T[lang]
+  const lines = [`*${t.q(q.n)}.* ${q.title}${q.required ? '' : t.optionalText}`]
   if (q.help) lines.push(clip(q.help, 300))
   if (q.type === 'scale') {
     const r = scaleRange(q)
-    lines.push(`Reply with a number from ${r.min}${r.minLabel ? ` (${r.minLabel})` : ''} to ${r.max}${r.maxLabel ? ` (${r.maxLabel})` : ''}.`)
+    lines.push(t.scale(`${r.min}${r.minLabel ? ` (${r.minLabel})` : ''}`, `${r.max}${r.maxLabel ? ` (${r.maxLabel})` : ''}`))
   } else if (q.mode === 'text' && q.options) {
     lines.push(...q.options.map((o, i) => `${i + 1}) ${o.label}`))
-    lines.push(q.type === 'single_choice' ? 'Reply with one number.' : 'Reply with the numbers, e.g. "1, 3".')
+    lines.push(q.type === 'single_choice' ? t.one : t.many)
   } else {
-    lines.push(`Reply to this message with your answer, or write "${q.n}: your answer".`)
+    lines.push(t.text(q.n))
   }
   return lines.join('\n')
 }
 
-export function introText(form: Pick<FormInfo, 'title' | 'description'>, qs: FormQuestion[]): string {
+export function introText(form: Pick<FormInfo, 'title' | 'description'>, qs: FormQuestion[], lang: Lang = 'en'): string {
+  const t = T[lang]
   const lines = [`📋 *${clip(form.title, 200)}*`]
   if (form.description) lines.push(clip(form.description.replace(/\s+/g, ' ').trim(), 300))
   const polls = qs.some((q) => q.mode === 'poll')
   const texts = qs.some((q) => q.mode === 'text')
-  const how = [polls ? 'vote in the polls below' : null, texts ? 'reply to each numbered question (or write "2: your answer")' : null].filter(Boolean)
-  lines.push(`To answer, ${how.join(' and ')}. You can change an answer any time.`)
+  const how = [polls ? t.howPolls : null, texts ? t.howTexts : null].filter((x): x is string => !!x)
+  lines.push(t.how(how))
   return lines.join('\n')
 }
 
 /** Parse a typed answer for one question; `error` is a short hint for the group. */
-export function parseTextAnswer(q: FormQuestion, raw: string): { answer: Answer } | { error: string } {
+export function parseTextAnswer(q: FormQuestion, raw: string, lang: Lang = 'en'): { answer: Answer } | { error: string } {
+  const t = T[lang]
+  const Q = t.q(q.n)
   const text = raw.trim()
-  if (!text) return { error: `Q${q.n} needs an answer` }
+  if (!text) return { error: t.needs(Q) }
+  // Numbers may come in Arabic-Indic digits; free text keeps whatever was typed.
+  const digits = asciiDigits(text)
   if (q.type === 'scale') {
     const r = scaleRange(q)
-    const m = /^(\d{1,2})(?!\d)/.exec(text)
+    const m = /^(\d{1,2})(?!\d)/.exec(digits)
     const n = m ? Number(m[1]) : NaN
-    if (!(n >= r.min && n <= r.max)) return { error: `Q${q.n} takes a number from ${r.min} to ${r.max}` }
+    if (!(n >= r.min && n <= r.max)) return { error: t.scaleErr(Q, r.min, r.max) }
     return { answer: { number: n } }
   }
   if (q.options) {
@@ -136,35 +193,39 @@ export function parseTextAnswer(q: FormQuestion, raw: string): { answer: Answer 
     const values: string[] = []
     if (byLabel) values.push(byLabel.value)
     else {
-      for (const p of text.split(/[\s,;&]+|\band\b/i).filter(Boolean)) {
+      // "1, 3", "1 and 3", "١ و ٣", "1،3"; an Arabic "و" (and) may be glued to the number.
+      for (const p of digits.split(/[\s,;&\u060C]+|\band\b/i).map((x) => x.replace(/^\u0648/, '')).filter(Boolean)) {
         const opt = /^\d{1,2}$/.test(p) ? q.options[Number(p) - 1] : undefined
-        if (!opt) return { error: `Q${q.n}: reply with ${q.type === 'single_choice' ? 'one option number' : 'option numbers'} from 1 to ${q.options.length}` }
+        if (!opt) return { error: t.optErr(Q, q.type === 'single_choice', q.options.length) }
         if (!values.includes(opt.value)) values.push(opt.value)
       }
     }
     if (q.type === 'single_choice') {
-      if (values.length !== 1) return { error: `Q${q.n} takes one option number` }
+      if (values.length !== 1) return { error: t.oneErr(Q) }
       return { answer: { value: values[0] } }
     }
     const max = q.config.maxSelected as number | undefined
-    if (max !== undefined && values.length > max) return { error: `Q${q.n}: pick at most ${max}` }
-    if (values.length < (q.config.minSelected ?? 0)) return { error: `Q${q.n}: pick at least ${q.config.minSelected}` }
+    if (max !== undefined && values.length > max) return { error: t.atMost(Q, max) }
+    if (values.length < (q.config.minSelected ?? 0)) return { error: t.atLeast(Q, q.config.minSelected) }
     return { answer: { values } }
   }
   const max = q.config.maxLength ?? (q.type === 'short_text' ? 500 : 20000)
-  if ([...text].length > max) return { error: `Q${q.n} is limited to ${max} characters` }
+  if ([...text].length > max) return { error: t.maxLen(Q, max) }
   if (q.type === 'long_text' && q.config.minLength && [...text].length < q.config.minLength) {
-    return { error: `Q${q.n} needs at least ${q.config.minLength} characters` }
+    return { error: t.minLen(Q, q.config.minLength) }
   }
   return { answer: { text } }
 }
 
-/** "2: answer", "Q2. answer", "2) answer": one segment per numbered line; text after a number line continues it. */
+/**
+ * "2: answer", "Q2. answer", "2) answer", "س٢: إجابة": one segment per numbered line; text after a number line continues
+ * it. The number may be in Arabic-Indic digits.
+ */
 export function parseNumbered(text: string): { n: number; text: string }[] | null {
   const out: { n: number; text: string }[] = []
   for (const line of text.split('\n')) {
-    const m = /^\s*[Qq]?(\d{1,2})\s*[:.)]\s*(.*)$/.exec(line)
-    if (m) out.push({ n: Number(m[1]), text: m[2] })
+    const m = /^\s*(?:[Qq]|\u0633)?([0-9\u0660-\u0669\u06F0-\u06F9]{1,2})\s*[:.)\uFF1A]\s*(.*)$/.exec(line)
+    if (m) out.push({ n: Number(asciiDigits(m[1])), text: m[2] })
     else if (out.length) out[out.length - 1].text += '\n' + line
     else return null
   }
@@ -210,6 +271,9 @@ export class Forms {
     if (unsupported.length) throw new HttpError(400, `question types the bridge can't put in WhatsApp: ${unsupported.map((q) => `${q.key} (${q.type})`).join(', ')}`)
     const qs = planQuestions(form.questions)
     if (qs.length === 0) throw new HttpError(400, 'the form has no questions')
+    // For a case: the intro answers the ask (its thread) and the bridge's words are in the case's language.
+    const kase = body?.case !== undefined && body?.case !== null && body?.case !== '' ? this.b.cases.resolve(auth, body.case) : null
+    const lang: Lang = kase?.lang ?? (body?.lang === 'ar' || body?.lang === 'en' ? body.lang : formLang(form))
     form = await this.prepare(tm8, form, ch)
 
     // One rate-limit slot for the whole form; its messages go out back to back.
@@ -219,22 +283,23 @@ export class Forms {
     const deliveryId = store.db.transaction(() => {
       const id = store.insertFormDelivery({
         form_id: formId, channel_id: ch.id, requested_by: auth.nameStr, idempotency_key: key, title: form.title,
-        questions_json: JSON.stringify(qs), allow_amend: form.settings.allowAmend === false ? 0 : 1,
+        questions_json: JSON.stringify(qs), allow_amend: form.settings.allowAmend === false ? 0 : 1, lang, case_id: kase?.task_id ?? null,
       })
       const add = (kind: 'intro' | 'poll' | 'text', questionKey: string | null, text: string, poll?: OutboxPoll) => {
-        const outboxId = store.insertOutbox({ idempotency_key: null, name: auth.nameStr, channel_id: ch.id, text, reply_to: null, poll })
+        const replyTo = kind === 'intro' ? (kase?.ask_wa_msg_id ?? null) : null
+        const outboxId = store.insertOutbox({ idempotency_key: null, name: auth.nameStr, channel_id: ch.id, text, reply_to: replyTo, poll })
         store.insertFormMessage({ outbox_id: outboxId, delivery_id: id, question_key: questionKey, kind })
       }
-      add('intro', null, speakerLine({ kind: 'main' }, introText(form, qs)))
+      add('intro', null, speakerLine({ kind: 'main' }, introText(form, qs, lang)))
       for (const q of qs) {
         if (q.mode === 'poll') {
-          const poll = pollFor(q)
+          const poll = pollFor(q, lang)
           add('poll', q.key, `[poll] ${poll.name}: ${poll.values.join(' / ')}`, poll)
-        } else add('text', q.key, speakerLine({ kind: 'main' }, questionText(q)))
+        } else add('text', q.key, speakerLine({ kind: 'main' }, questionText(q, lang)))
       }
       return id
     })()
-    this.b.log(`[forms ${ch.id}] ${auth.nameStr} put form ${formId} "${form.title}" in the group (${qs.length} questions, delivery ${deliveryId})`)
+    this.b.log(`[forms ${ch.id}] ${auth.nameStr} put form ${formId} "${form.title}" in the group (${qs.length} questions, ${lang}, delivery ${deliveryId}${kase ? `, case ${kase.task_id}` : ''})`)
     if (this.b.wa.connected()) await this.b.flushQueue()
     const d = store.formDelivery(deliveryId)!
     const sent = store.formMessagesOf(deliveryId).every((m) => m.wa_msg_id)
@@ -280,6 +345,8 @@ export class Forms {
       form_id: d.form_id,
       title: d.title,
       status: d.status,
+      lang: d.lang,
+      ...(d.case_id ? { case: d.case_id } : {}),
       intro_wa_msg_id: waOf(null),
       questions: qs.map((q) => ({ n: q.n, key: q.key, type: q.type, as: q.mode, wa_msg_id: waOf(q.key) })),
       respondents: respondents.map((r) => ({
@@ -357,7 +424,7 @@ export class Forms {
   private async applyTyped(ch: ChannelConfig, m: Inbound, d: FormDeliveryRow, items: { q: FormQuestion; raw: string }[], jids: string[]): Promise<boolean> {
     const errors: string[] = []
     for (const { q, raw } of items) {
-      const r = parseTextAnswer(q, raw)
+      const r = parseTextAnswer(q, raw, d.lang)
       if ('error' in r) errors.push(r.error)
       else {
         this.b.log(`[forms ${ch.id}] ${m.senderName ?? jids[0]} answered Q${q.n} of delivery ${d.id}`)
@@ -443,7 +510,7 @@ export class Forms {
       if (/form_answers_invalid|answers is invalid/i.test(msg)) {
         store.updateFormRespondent(r.id, { due_at: null, error: msg.slice(0, 300) })
         this.b.log(`[forms ${ch.id}] tm8 refused ${r.name ?? r.person}'s answers to form ${d.form_id}: ${msg}`)
-        await this.b.sendBridge(ch, `couldn't record ${r.name ? `${r.name}'s` : 'some'} answers to "${clip(d.title, 60)}"; please check them and answer again`, null)
+        await this.b.sendBridge(ch, T[d.lang].refused(r.name, clip(d.title, 60)), null)
         return
       }
       const attempts = r.attempts + 1

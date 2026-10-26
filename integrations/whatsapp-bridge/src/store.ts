@@ -74,6 +74,30 @@ export type FormDeliveryRow = {
   created_at: number
   checked_at: number | null
   closed_at: number | null
+  /** Language of the bridge's own text around the questions (intro, hints, errors). */
+  lang: Lang
+  /** The case task it was sent for (POST /form {case}), if any. */
+  case_id: string | null
+}
+
+export type Lang = 'en' | 'ar'
+
+/**
+ * A case (POST /case): one WhatsApp ask that a team of sessions works on. Every message sent with {case} goes to the
+ * ask's thread, in the case's language.
+ */
+export type CaseRow = {
+  task_id: string
+  channel_id: string
+  ask_wa_msg_id: string
+  lang: Lang
+  opened_by: string
+  created_at: number
+  last_ping_at: number | null
+  pings: number
+  pack_doc_id: string | null
+  pack_wa_msg_id: string | null
+  delivered_at: number | null
 }
 
 /** One message of a delivery: the intro, a poll or a numbered text question. wa_msg_id is set once it is sent. */
@@ -269,6 +293,19 @@ const SCHEMA = `
     updated_at INTEGER NOT NULL,
     UNIQUE (delivery_id, person)
   );
+  CREATE TABLE IF NOT EXISTS cases (
+    task_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    ask_wa_msg_id TEXT NOT NULL,
+    lang TEXT NOT NULL CHECK (lang IN ('en', 'ar')),
+    opened_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_ping_at INTEGER,
+    pings INTEGER NOT NULL DEFAULT 0,
+    pack_doc_id TEXT,
+    pack_wa_msg_id TEXT,
+    delivered_at INTEGER
+  );
   CREATE TABLE IF NOT EXISTS media (
     wa_msg_id TEXT PRIMARY KEY,
     channel_id TEXT NOT NULL,
@@ -310,6 +347,9 @@ export class Store {
     const outCols = new Set((this.db.prepare(`PRAGMA table_info(outbox_v1)`).all() as { name: string }[]).map((c) => c.name))
     if (!outCols.has('media_json')) this.db.exec(`ALTER TABLE outbox_v1 ADD COLUMN media_json TEXT`)
     if (!outCols.has('poll_json')) this.db.exec(`ALTER TABLE outbox_v1 ADD COLUMN poll_json TEXT`)
+    const fdCols = new Set((this.db.prepare(`PRAGMA table_info(form_deliveries)`).all() as { name: string }[]).map((c) => c.name))
+    if (!fdCols.has('lang')) this.db.exec(`ALTER TABLE form_deliveries ADD COLUMN lang TEXT NOT NULL DEFAULT 'en'`)
+    if (!fdCols.has('case_id')) this.db.exec(`ALTER TABLE form_deliveries ADD COLUMN case_id TEXT`)
     const mediaCols = new Set((this.db.prepare(`PRAGMA table_info(media)`).all() as { name: string }[]).map((c) => c.name))
     for (const [c, t] of [
       ['duration_sec', 'REAL'], ['ptt', 'INTEGER'], ['transcript_status', 'TEXT'], ['transcript', 'TEXT'], ['transcript_lang', 'TEXT'],
@@ -615,16 +655,42 @@ export class Store {
   }
 
   // ---- forms ----
-  insertFormDelivery(d: Pick<FormDeliveryRow, 'form_id' | 'channel_id' | 'requested_by' | 'idempotency_key' | 'title' | 'questions_json' | 'allow_amend'>): number {
+  insertFormDelivery(
+    d: Pick<FormDeliveryRow, 'form_id' | 'channel_id' | 'requested_by' | 'idempotency_key' | 'title' | 'questions_json' | 'allow_amend'> &
+      Partial<Pick<FormDeliveryRow, 'lang' | 'case_id'>>,
+  ): number {
     return Number(
       this.db
         .prepare(
-          `INSERT INTO form_deliveries (form_id, channel_id, requested_by, idempotency_key, title, questions_json, allow_amend, status, created_at)
-           VALUES (@form_id, @channel_id, @requested_by, @idempotency_key, @title, @questions_json, @allow_amend, 'active', @created_at)`,
+          `INSERT INTO form_deliveries (form_id, channel_id, requested_by, idempotency_key, title, questions_json, allow_amend, status, created_at, lang, case_id)
+           VALUES (@form_id, @channel_id, @requested_by, @idempotency_key, @title, @questions_json, @allow_amend, 'active', @created_at, @lang, @case_id)`,
         )
-        .run({ ...d, created_at: this.now() }).lastInsertRowid,
+        .run({ lang: 'en', case_id: null, ...d, created_at: this.now() }).lastInsertRowid,
     )
   }
+  formDeliveriesOfCase(caseId: string): FormDeliveryRow[] {
+    return this.db.prepare(`SELECT * FROM form_deliveries WHERE case_id = ? ORDER BY id`).all(caseId) as FormDeliveryRow[]
+  }
+
+  // ---- cases ----
+  insertCase(c: Pick<CaseRow, 'task_id' | 'channel_id' | 'ask_wa_msg_id' | 'lang' | 'opened_by'>) {
+    this.db
+      .prepare(`INSERT INTO cases (task_id, channel_id, ask_wa_msg_id, lang, opened_by, created_at) VALUES (@task_id, @channel_id, @ask_wa_msg_id, @lang, @opened_by, @created_at)`)
+      .run({ ...c, created_at: this.now() })
+  }
+  getCase(taskId: string): CaseRow | undefined {
+    return this.db.prepare(`SELECT * FROM cases WHERE task_id = ?`).get(taskId) as CaseRow | undefined
+  }
+  setCaseLang(taskId: string, lang: Lang) {
+    this.db.prepare(`UPDATE cases SET lang = ? WHERE task_id = ?`).run(lang, taskId)
+  }
+  recordCasePing(taskId: string) {
+    this.db.prepare(`UPDATE cases SET last_ping_at = ?, pings = pings + 1 WHERE task_id = ?`).run(this.now(), taskId)
+  }
+  recordCasePack(taskId: string, docId: string, waMsgId: string | null) {
+    this.db.prepare(`UPDATE cases SET pack_doc_id = ?, pack_wa_msg_id = ?, delivered_at = ? WHERE task_id = ?`).run(docId, waMsgId, this.now(), taskId)
+  }
+
   formDelivery(id: number): FormDeliveryRow | undefined {
     return this.db.prepare(`SELECT * FROM form_deliveries WHERE id = ?`).get(id) as FormDeliveryRow | undefined
   }

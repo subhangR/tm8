@@ -14,6 +14,8 @@ export type EntityContext = {
   /** Tasks the session works on (work sessions); the first one's title is the default name title. */
   tasks?: { id: string; title?: string; status?: string }[]
   launchedSessions?: LaunchedSession[]
+  /** Direct children (tasks: subtasks and child docs). */
+  children?: { id: string; kind: string; title?: string; status?: string }[]
   /** Chats: "running" while a turn runs; turnCount and lastTurnAt move when turns start. */
   turnState?: string
   turnCount?: number
@@ -22,7 +24,11 @@ export type EntityContext = {
 /** One part of an agent's chat-turn message: text, tool_call, tool_result, usage, done; payload is JSON. */
 export type TurnPart = { seq: number; kind: string; payload: string }
 /** A message on a chat, as the fallback relay needs it. `batch` is "chat-turn:<turn id>" for an agent's turn reply. */
-export type ChatMessage = { id: string; body: string; isAgent: boolean; batch: string | null; parts?: TurnPart[] }
+export type ChatMessage = { id: string; body: string; isAgent: boolean; batch: string | null; parts?: TurnPart[]; at?: string | null }
+/** A doc's text as stored (markdown unless format says otherwise). */
+export type DocInfo = { id: string; title: string; body: string; format: string; updatedAt: string | null }
+/** One edge of an entity: `produces` out of a task points at its deliverables. */
+export type Connection = { type: string; dir: 'in' | 'out'; other: { id: string; kind: string; title?: string } }
 export type Teammate = { id: string; title: string }
 /** A form question as tm8 stores it (config with defaults not applied). */
 export type FormQuestionSpec = { key: string; type: string; title: string; help?: string; required: boolean; config: Record<string, any> }
@@ -65,6 +71,19 @@ export interface Tm8Port {
   formAddQuestion(id: string, expectVersion: number, question: FormQuestionSpec, mutationId: string): Promise<number>
   /** Submit answers as the token's member; amendOf = the revision this one replaces (under responses: unlimited). */
   formSubmit(id: string, answers: Record<string, unknown>, o: { amendOf?: string | null; mutationId: string }): Promise<{ id: string; revision: number }>
+  /** A doc's full body (throws if the id is not a doc). */
+  docGet(id: string): Promise<DocInfo>
+  /** When an entity last changed (ISO), null if tm8 doesn't say. */
+  updatedAt(id: string): Promise<string | null>
+  /** An entity's edges (both directions). */
+  connections(id: string): Promise<Connection[]>
+}
+
+/** A uuidv7's timestamp (its first 48 bits, ms since the epoch) as ISO, null if the id isn't one. */
+export function uuidv7Time(id: string): string | null {
+  const hex = id.replace(/-/g, '')
+  if (!/^[0-9a-f]{32}$/i.test(hex) || hex[12] !== '7') return null
+  return new Date(parseInt(hex.slice(0, 12), 16)).toISOString()
 }
 
 export class Tm8Error extends Error {
@@ -166,6 +185,8 @@ export class Tm8Cli implements Tm8Port {
       body: m.content?.body ?? '',
       isAgent: !!m.state?.author?.isAgent,
       batch: m.state?.messageBatchId ?? null,
+      // message list carries no createdAt; tm8 message ids are uuidv7, so the id says when it was posted.
+      at: m.createdAt ?? uuidv7Time(m.id),
       ...(Array.isArray(m.parts) ? { parts: m.parts.map((p: any) => ({ seq: p.seq, kind: p.kind, payload: typeof p.payload === 'string' ? p.payload : JSON.stringify(p.payload ?? null) })) } : {}),
     }))
   }
@@ -250,6 +271,23 @@ export class Tm8Cli implements Tm8Port {
     const out = await this.run(['form', 'submit', id, '--answers', '-', ...(o.amendOf ? ['--amend-of', o.amendOf] : []), '--mutation-id', o.mutationId], JSON.stringify(answers))
     if (!out?.id) throw new Tm8Error('form submit returned no response id', null, JSON.stringify(out).slice(0, 300))
     return { id: out.id, revision: Number(out.revision ?? 1) }
+  }
+
+  async docGet(id: string): Promise<DocInfo> {
+    const out = await this.run(['entity', 'get', id, '--full'])
+    if (out?.kind !== 'doc') throw new Tm8Error(`${id} is not a tm8 doc`, null, '')
+    const c = out.content ?? {}
+    return { id: out.id, title: out.title ?? '', body: c.body ?? '', format: c.format ?? out.state?.format ?? 'markdown', updatedAt: out.updatedAt ?? null }
+  }
+
+  async updatedAt(id: string): Promise<string | null> {
+    const out = await this.run(['entity', 'get', id, '--full'])
+    return out?.updatedAt ?? null
+  }
+
+  async connections(id: string): Promise<Connection[]> {
+    const out = await this.run(['entity', 'context', id, '--sections', 'connections'])
+    return Array.isArray(out?.connections) ? out.connections : []
   }
 
   async stopSession(id: string, note: string, mutationId: string) {

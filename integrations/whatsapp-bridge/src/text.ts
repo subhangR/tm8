@@ -229,3 +229,20 @@ export function envelopeWaId(body: string): string | null {
   if (!first.startsWith('[whatsapp "')) return null
   return /· wa_msg_id (\S+)\]$/.exec(first)?.[1] ?? null
 }
+
+/** Arabic script letters (Arabic, Supplement, Extended-A, presentation forms). */
+const ARABIC_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g
+const LATIN_RE = /[A-Za-z]/g
+
+/** The language a person wrote in: Arabic when Arabic letters are at least as many as Latin ones, else English. */
+export function detectLang(text: string | null | undefined): 'ar' | 'en' {
+  const t = text ?? ''
+  const ar = t.match(ARABIC_RE)?.length ?? 0
+  const lat = t.match(LATIN_RE)?.length ?? 0
+  return ar > 0 && ar >= lat ? 'ar' : 'en'
+}
+
+/** Arabic-Indic and Eastern Arabic-Indic digits as ASCII, so an Arabic "3" counts as 3 in a numbered answer. */
+export function asciiDigits(s: string): string {
+  return s.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) & 0xf))
+}

@@ -24,7 +24,8 @@ import {
   type InboundMedia,
   type MediaKind,
 } from './media.js'
-import type { MediaRow, MessageRow, NameRow, OutboxMedia, OutboxPoll, OutboxRow, Store } from './store.js'
+import type { CaseRow, MediaRow, MessageRow, NameRow, OutboxMedia, OutboxPoll, OutboxRow, Store } from './store.js'
+import { Cases } from './cases.js'
 import { Forms } from './forms.js'
 import type { ChatMessage, EntityContext, Teammate, Tm8Factory, Tm8Port } from './tm8.js'
 import {
@@ -82,6 +83,9 @@ export type SayMediaInput = {
   mime?: unknown
   file_name?: unknown
   label?: unknown
+  escalate?: unknown
+  /** A case task id (POST /case): reply on the ask's thread. */
+  case?: unknown
 }
 
 export type Inbound = {
@@ -176,6 +180,8 @@ export class Bridge {
   media: MediaDir
   /** tm8 forms in the group: polls, numbered questions, answers back into tm8 (forms.ts). */
   forms: Forms
+  /** WhatsApp asks worked on by a team: thread, language, pings, the reviewed final pack (cases.ts). */
+  cases: Cases
   /** Speaker token files (<name>.token, 0600); agents read theirs, briefings only name the path. */
   tokenDir: string
   ownJids = new Set<string>()
@@ -195,6 +201,7 @@ export class Bridge {
     this.media = new MediaDir(o.mediaDir ?? path.join(os.tmpdir(), 'wa-bridge-media'))
     this.transcriber = o.transcriber ?? new NoneTranscriber()
     this.forms = new Forms(this)
+    this.cases = new Cases(this)
     // A transcription cut off by a restart is started again (resumeTranscriptions).
     store.db.prepare(`UPDATE media SET transcript_status = NULL WHERE transcript_status = 'pending'`).run()
     const now = this.now
@@ -1202,6 +1209,7 @@ export class Bridge {
     const name = this.commitSend(auth, pre.label)
     const full = speakerLine(this.speakerOf(name), text)
     const id = this.store.insertOutbox({ idempotency_key: pre.key, name: auth.nameStr, channel_id: auth.ch.id, text: full, reply_to: pre.replyTo })
+    if (pre.ping && pre.kase) this.store.recordCasePing(pre.kase.task_id)
     this.markReplied(auth.ch, auth.nameStr, pre.replyTo)
     if (name?.kind === 'chat' && pre.replyTo) this.grantThread(auth.ch, pre.replyTo, text)
     if (this.wa.connected()) await this.deliver(id)
@@ -1286,11 +1294,16 @@ export class Bridge {
   /** Shared /say and /say-media checks before anything is sent: key, label, idempotent repeat, reply_to and the thread rule. */
   private precheckSend(
     auth: { name: NameRow | null; nameStr: string; ch: ChannelConfig },
-    body: { idempotency_key?: unknown; reply_to?: unknown; label?: unknown; escalate?: unknown },
-  ): { prior: OutboxRow } | { key: string; replyTo: string | null; label: string | null } {
+    body: { idempotency_key?: unknown; reply_to?: unknown; label?: unknown; escalate?: unknown; case?: unknown; ping?: unknown },
+  ): { prior: OutboxRow } | { key: string; replyTo: string | null; label: string | null; kase: CaseRow | null; ping: boolean } {
     const key = typeof body?.idempotency_key === 'string' ? body.idempotency_key : ''
-    const replyTo = typeof body?.reply_to === 'string' && body.reply_to ? body.reply_to : null
+    let replyTo = typeof body?.reply_to === 'string' && body.reply_to ? body.reply_to : null
     if (!key || key.length > 200) throw new HttpError(400, 'idempotency_key is required (≤200 chars, unique per message)')
+    // {case}: the message belongs to that ask's thread; without its own reply_to it answers the ask.
+    const kase = body?.case !== undefined && body?.case !== null && body?.case !== '' ? this.cases.resolve(auth, body.case) : null
+    const ping = body?.ping === true
+    if (ping && !kase) throw new HttpError(400, 'ping is for case progress: pass "case" too')
+    if (kase && !replyTo) replyTo = kase.ask_wa_msg_id
     const { ch, nameStr, name } = auth
     let label: string | null = null
     if (body?.label !== undefined && body?.label !== null && body?.label !== '') {
@@ -1311,9 +1324,18 @@ export class Bridge {
     // escalation (escalate: true): a blocker, decision or question for the humans, which may start its own message.
     if (name?.kind === 'session' && !(body?.escalate === true && !replyTo)) {
       if (!replyTo) throw new HttpError(403, 'sessions must reply to a message addressed to them: pass reply_to (the wa_msg_id from your envelope)')
-      if (!this.threadAddressedTo(replyTo, nameStr)) throw new HttpError(403, `reply_to is not in a thread addressed to ${nameStr}`)
+      // A case's thread is open to every session of the group working on it.
+      const inCase = kase !== null && this.cases.inThread(replyTo, kase)
+      if (!inCase && !this.threadAddressedTo(replyTo, nameStr)) {
+        throw new HttpError(403, kase ? `reply_to is not in the thread of case ${kase.task_id}` : `reply_to is not in a thread addressed to ${nameStr}`)
+      }
     }
-    return { key, replyTo, label }
+    if (kase && replyTo && !this.cases.inThread(replyTo, kase)) throw new HttpError(400, `reply_to is not in the thread of case ${kase.task_id}`)
+    if (ping) {
+      const wait = this.cases.pingWait(kase!)
+      if (wait) throw new HttpError(429, 'one progress ping per case every 2 minutes: fold this into the next one', { retry_after_ms: wait })
+    }
+    return { key, replyTo, label, kase, ping }
   }
 
   /** Take one send's rate-limit slots (per name and per group); returns ms to wait, or 0 if taken. */
@@ -1332,6 +1354,12 @@ export class Bridge {
       this.log(`[names] ${name.name} labelled "${label}"`)
     }
     return name
+  }
+
+  /** An already-made send under this key (the answer to a retry), if any. */
+  repeatSend(nameStr: string, key: string): { status: number; body: Record<string, unknown> } | null {
+    const prior = this.store.outboxByKey(nameStr, key)
+    return prior ? this.sayResult(prior, true) : null
   }
 
   private sayResult(row: OutboxRow, duplicate: boolean) {
