@@ -9,12 +9,13 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
-import { MCP_CATALOG, type McpCatalogListResult, type McpServerView } from '@tm8/contract';
+import { MCP_CATALOG, type ChatMcpSelectionsResult, type McpCatalogListResult, type McpServerView, type McpSessionProvenance } from '@tm8/contract';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 import { createDb } from '../../src/db/client.js';
 import type { Db } from '../../src/db/types.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
 import { registerMcpDefinitionHandlers } from '../../src/mcp/definitions.js';
+import { registerChatHandlers } from '../../src/chat/handlers.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import type { RequestContext } from '../../src/http/types.js';
 vi.setConfig({ testTimeout: 60000, hookTimeout: 300000 });
@@ -94,12 +95,17 @@ beforeAll(async () => {
   database.apply(migrationFiles());
   db = createDb(database.url, { max: 4 });
   registry = new HandlerRegistry();
-  registerMcpDefinitionHandlers(registry, {
+  const facade = {
     db, config: {},
     // The loopback owner the facade falls back to; `claimsFor` prefers the
     // request's own bearer identity, which is what each call names below.
     owner: async () => ({ identityId: ADMIN, memberId: adminMember, spaceId: space }),
-  } as unknown as FacadeDeps);
+  } as unknown as FacadeDeps;
+  registerMcpDefinitionHandlers(registry, facade);
+  // §10.4's READ door lives with the rest of the chat family, and the chat
+  // RUNTIME is deliberately absent: `chat.getMcpSelections` reads a row and
+  // must work on a node whose runtime is asleep, exactly like its sibling write.
+  registerChatHandlers(registry, facade);
   await database.transaction(async (c) => {
     await c.query('set local role tm8_graph_owner');
     for (const identity of [ADMIN, MEMBER, OUTSIDE]) {
@@ -577,4 +583,96 @@ it('holds the SQL catalog equal to MCP_CATALOG, entry by entry', async () => {
     const rows = await q(MEMBER, 'select * from internal.mcp_catalog($1)', [stray]);
     expect(rows, `internal.mcp_catalog knows ${stray}`).toHaveLength(0);
   }
+});
+
+/**
+ * §10.4 / S25 — THE READ DOOR, through the real facade against a real database.
+ *
+ * `chat.getMcpSelections` exists because §10.4's sheet must know "Space
+ * defaults" from "Custom" BEFORE the user touches a switch, and since 354 that
+ * is the row's existence rather than anything in the list. Four things are
+ * asserted here and each is a thing the UI would otherwise get wrong:
+ *
+ *  - NULL IS THE ANSWER for a thread on defaults, not an error and not `[]`.
+ *    Confusing those two is how "back to the Space's defaults" would silently
+ *    become "every connector off".
+ *  - the stored list comes back verbatim after a write, so the sheet repaints
+ *    from what landed rather than from what it sent;
+ *  - `:id` MUST BE A CHAT. `read_mcp_launch_selections` is keyed by session id
+ *    and answers for a WORK SESSION just as readily, so without the check this
+ *    operation would quietly be a session-selection read on a chat path;
+ *  - a LINK caller is refused, matching §10.4's own "chats opened through a
+ *    Space link don't get connectors" — a surface that refuses to show the
+ *    list must not have a door beside it that hands the list over.
+ */
+it('answers a chat\u2019s stored selection, null for defaults, and refuses a non-chat or a link caller', async () => {
+  const pick = JSON.stringify([{ serverId: approvedServer }]);
+  // Start from defaults: whatever earlier cells left behind, cleared through
+  // the same human door the UI uses.
+  await q(MEMBER, 'select public.update_chat_mcp_selections($1,null)', [chat]);
+
+  const defaults = await call<ChatMcpSelectionsResult>('chat.getMcpSelections', MEMBER, { params: { id: chat } });
+  expect(defaults).toEqual({ chatId: chat, mcpSelections: null });
+
+  await q(MEMBER, 'select public.update_chat_mcp_selections($1,$2::jsonb)', [chat, pick]);
+  const custom = await call<ChatMcpSelectionsResult>('chat.getMcpSelections', MEMBER, { params: { id: chat } });
+  expect(custom.mcpSelections).toEqual([{ serverId: approvedServer }]);
+
+  // `[]` is its own value and must not read back as null.
+  await q(MEMBER, 'select public.update_chat_mcp_selections($1,$2::jsonb)', [chat, JSON.stringify([])]);
+  const off = await call<ChatMcpSelectionsResult>('chat.getMcpSelections', MEMBER, { params: { id: chat } });
+  expect(off.mcpSelections).toEqual([]);
+
+  // A WORK SESSION id on the chat path: not_found, never that session's list.
+  const session = randomUUID();
+  await database.transaction(async (c) => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'work_session',0,$3)", [session, space, plainMember]);
+  });
+  await expect(call('chat.getMcpSelections', MEMBER, { params: { id: session } }))
+    .rejects.toMatchObject({ code: 'not_found' });
+
+  // A human session that entered through a Space link carries `via_link` with a
+  // human auth kind, so `isHumanAuthKind` alone would admit it.
+  await expect(call('chat.getMcpSelections', MEMBER, {
+    params: { id: chat },
+    identity: { identityId: MEMBER, authKind: 'browser', viaLinkId: randomUUID() },
+  })).rejects.toMatchObject({ code: 'forbidden' });
+
+  // An AGENT session is refused by the registration's own human gate, which is
+  // the whole reason this door carries `requireHumanSession` while its sibling
+  // write relies on a human check inside its RPC.
+  await expect(call('chat.getMcpSelections', MEMBER, {
+    params: { id: chat }, identity: { identityId: MEMBER, authKind: 'agent' },
+  })).rejects.toMatchObject({ code: 'forbidden' });
+
+  await q(MEMBER, 'select public.update_chat_mcp_selections($1,null)', [chat]);
+});
+
+/**
+ * §10.6 / S6 — the provenance read is a PASS-THROUGH, and `recorded:false` is a
+ * normal answer.
+ *
+ * Nothing in this fixture binds a session, so the function's own
+ * "no binding" branch is what comes back. The debug view renders that as "No
+ * connector record for this session" rather than as a failure, which is the
+ * distinction this cell pins: a readable session with no binding must RESOLVE,
+ * not raise. The refusals (a link caller, an unreadable session) stay the
+ * function's to raise and the handler's to pass on untouched.
+ */
+it('passes public.mcp_session_provenance through, including its recorded:false answer', async () => {
+  const session = randomUUID();
+  await database.transaction(async (c) => {
+    await c.query('set local role tm8_graph_owner');
+    await c.query("insert into public.entities(id,space_id,kind,position,created_by) values($1,$2,'work_session',0,$3)", [session, space, plainMember]);
+  });
+  const answer = await call<McpSessionProvenance>('mcp.sessions.provenance', MEMBER, { params: { sessionId: session } });
+  expect(answer).toEqual({ sessionId: session, recorded: false });
+
+  // The link refusal is the RPC's, raised before any row is read, and the
+  // handler neither catches nor softens it.
+  await expect(call('mcp.sessions.provenance', MEMBER, {
+    params: { sessionId: session },
+    identity: { identityId: MEMBER, authKind: 'browser', viaLinkId: randomUUID() },
+  })).rejects.toThrow();
 });

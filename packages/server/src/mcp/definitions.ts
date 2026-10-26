@@ -1,5 +1,6 @@
 import { CollabError, McpTestResultSchema, McpServerDefinitionSchema, McpResolveInputSchema, McpServerCreateInputSchema,
   McpServerUpdateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerRequestInputSchema,
+  McpSessionProvenanceSchema,
   MCP_CATALOG, mcpCatalogEntry,
   type McpServerView, type McpResolveInput, type McpResolveResult, type McpResolvedSelection, type McpSelection,
   type McpSkippedSelection, type McpCredentialSource, type McpReadinessReason,
@@ -333,6 +334,33 @@ export function registerMcpDefinitionHandlers(registry:HandlerRegistry,deps:Faca
         [spaceId,JSON.stringify(definition),input.note??null,input.actorId??null,input.clientMutationId]);
       return publicView(await loadMcpServer(q,raw.entity.id));
     });
+  })});
+  /*
+   * §6/§10.6 (S6). The provenance OUTCOME of a launch, for the debug view.
+   *
+   * A PASS-THROUGH, and deliberately nothing more. `public.mcp_session_provenance`
+   * holds the whole of §6: it refuses a link caller, refuses a session the
+   * caller cannot read, and answers `recorded:false` for a session that has no
+   * provenance row — one nothing ever bound, or one whose binding went with its
+   * auth session when that was pruned. (It USED to mean "a chat on Space
+   * defaults" as well; 358 moved the read onto `mcp_session_bindings`, so a
+   * bound chat now answers with its real root.) Every one of those is an ANSWER
+   * this handler must not improve on.
+   * Catching the refusals to soften them, or filling in a chain from parts the
+   * facade can see, would put a second copy of the access rule in TypeScript
+   * beside the one in SQL, and the §10.6 surface would then be reporting the
+   * copy rather than the rule. The parse at the end is the only addition: it
+   * proves the shape the UI is typed against, and `recorded:false` is a member
+   * of that union rather than an error.
+   *
+   * `humanOnly`: a provenance answer names the human behind a running agent,
+   * and the view that reads it is a person's debug tab. The RPC's own gate
+   * stops a LINK caller; this one stops an agent session.
+   */
+  registry.registerAll({'mcp.sessions.provenance':requireHumanSession(async ctx=>{
+    const sessionId=requireUuidParam(ctx,'sessionId');
+    const raw=await deps.db.tx(claimsFor(await deps.owner(),ctx),q=>q.rpc<unknown>('mcp_session_provenance',[sessionId]));
+    return McpSessionProvenanceSchema.parse(raw);
   })});
   registry.register('mcp.servers.import',async ctx=>{
     const input=McpServerImportInputSchema.parse({...(ctx.body as Record<string, unknown>),spaceId:requireUuidParam(ctx,'spaceId')});

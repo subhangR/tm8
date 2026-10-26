@@ -540,40 +540,86 @@
 }
 
 /* ==========================================================================
-   THE TWO-COLUMN PAGE (`panel.layout: 'two-column'`, task 01a1163a).
+   THE TASK PAGE (`panel.layout: 'two-column'`, task 01a1163a; one column
+   since task 01a15e22).
 
-   The writing gets the room: a main column capped at 820px, FLUSH LEFT
-   (Subhang: the page reads from the same left edge as the title above it,
-   not centred in a wide pane), and a 248px rail beside it that stays in view
-   while the main column scrolls. Flex, not grid — the main column must be
-   allowed to shrink below its content, and the file bans `minmax(0` (L4).
+   One column, FLUSH LEFT and the full width of the pane (Subhang: the page
+   reads from the same left edge as the title above it; 2026-10-21: the rail
+   "is taking up the space" the messages need). The properties sit folded in
+   a `Details` row at the top.
    ========================================================================== */
 .cv2-root .sb-body--two-column {
-  padding: var(--pn-space-6) var(--pn-space-8) var(--pn-space-8);
+  padding: var(--pn-space-4) var(--pn-space-6) var(--pn-space-8);
 }
 .cv2-root .sb-layout {
   display: flex;
-  align-items: flex-start;
-  gap: 40px;
-}
-.cv2-root .sb-main {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 820px;
-  display: flex;
   flex-direction: column;
-  gap: var(--pn-space-5);
+  gap: var(--pn-space-4);
 }
-.cv2-root .sb-rail {
-  flex: none;
-  width: 248px;
-  position: sticky;
-  top: 0;
+/* Sections sit closer than the old rail page had them: an empty or folded
+   section is one hairline row, not a row and a 20px gutter. */
+.cv2-root .sb-main {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-3);
-  padding-left: var(--pn-space-4);
-  border-left: 1px solid var(--pn-x-hairline-soft);
+}
+
+/* --- the Details row ------------------------------------------------------ */
+.cv2-root .sb-details {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+.cv2-root .sb-details__head {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+  padding: var(--pn-space-1) 0 var(--pn-space-2);
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  color: var(--pn-ink-3);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .sb-details__head:hover {
+  color: var(--pn-ink-2);
+}
+.cv2-root .sb-details__head:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.cv2-root .sb-details__label {
+  flex: none;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+.cv2-root .sb-details__summary {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Open, the properties lay out in columns across the width rather than one
+   tall list: the state controls, the facts, the relations. */
+.cv2-root .sb-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--pn-space-3) var(--pn-space-8);
+  padding: var(--pn-space-1) 0 var(--pn-space-4) var(--pn-space-4);
+}
+.cv2-root .sb-rail[hidden] {
+  display: none;
+}
+.cv2-root .sb-rail > * {
+  flex: 0 1 300px;
+  min-width: 0;
 }
 /* The strip in the rail is a list of properties, not the list tile's attached
    card: no hairline, no recessed fill, a label column wide enough for
@@ -624,28 +670,23 @@
   border-color: var(--pn-brand);
   background: var(--pn-card);
 }
-/* NARROW: the rail stacks ABOVE the writing (form 01a1164f: "phone stacks the
-   columns for now"). Above, because it is the compact block — the status a
-   phone user came to change is one glance away, and the description below it
-   still has the full width. */
+
+/* GIT is self-fetching, so it cannot join the fold registry; it marks itself
+   empty (nothing tracked, no gate) and the page drops the whole fold until
+   empty sections are revealed. */
+.cv2-root .sb-body[data-empties='hidden'] .pn-fold:has(> .pn-fold__body > .pn-task-git[data-empty='true']) {
+  display: none;
+}
+
 @container panel (max-width: 760px) {
   .cv2-root .sb-body--two-column {
     padding: var(--pn-space-4);
   }
-  .cv2-root .sb-layout {
-    flex-direction: column;
-    gap: var(--pn-space-5);
-  }
-  .cv2-root .sb-main {
-    max-width: none;
-    width: 100%;
-  }
   .cv2-root .sb-rail {
-    order: -1;
-    position: static;
-    width: 100%;
     padding-left: 0;
-    border-left: 0;
+  }
+  .cv2-root .sb-rail > * {
+    flex-basis: 100%;
   }
 }
 
@@ -852,7 +893,11 @@
   visibility: visible;
 }
 
-/* --- activity, inline at the bottom of the page (PR3) -------------------- */
+/* --- messages, inline at the bottom of the page (PR3) ----------------------
+   They read from the TOP (task 01a15e22): a short conversation sits under its
+   heading, not at the foot of an empty box, and the box grows with it up to a
+   cap before it scrolls itself. The feed's bottom-anchoring strut is a chat's
+   idiom; this is a section of a page. */
 .cv2-root .sb-activity {
   display: flex;
   flex-direction: column;
@@ -872,8 +917,21 @@
 .cv2-root .sb-activity__surface {
   display: flex;
   flex-direction: column;
-  height: clamp(360px, 70vh, 720px);
+  min-height: 200px;
+  max-height: clamp(360px, 70vh, 720px);
   border: 1px solid var(--pn-x-hairline-soft);
   border-radius: 8px;
   overflow: hidden;
+}
+.cv2-root .sb-activity__surface > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cv2-root .sb-activity .chs-root {
+  height: auto;
+  /* The page's left edge, not a centred 760px column. */
+  --chs-measure: 100%;
+}
+.cv2-root .sb-activity .chs-feed__spacer {
+  display: none;
 }

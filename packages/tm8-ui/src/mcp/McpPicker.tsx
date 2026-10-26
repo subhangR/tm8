@@ -1,5 +1,5 @@
-import { ConnectorsLink } from './ConnectorsLink';
-import { useLayoutEffect, useId } from 'react';
+import { ConnectorToggleList } from './ConnectorToggleList';
+import { useLayoutEffect, useId, type ReactNode } from 'react';
 import { useMcpCatalog } from './context';
 import type { McpCatalog, McpSelection, McpServer } from './port';
 import './mcp.css';
@@ -53,12 +53,18 @@ export function selectionProblem(catalog: McpCatalog, value: McpSelection[] | un
  * sending it meant a connector connected between the page load and the launch
  * was silently left off.
  */
-export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, disabled = false, headless = false, retryClassName }: {
+export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, disabled = false, headless = false, retryClassName,
+  layout = 'list', notice, resetLabel }: {
   targetId?: string; teamMemberId?: string; value: McpSelection[] | undefined;
   onChange(value: McpSelection[] | undefined): void; onReady?(ready: boolean): void; disabled?: boolean;
   /** Keep the readiness reporting, draw nothing (the picker is drawn elsewhere, e.g. in ＋). */
   headless?: boolean;
   retryClassName?: string;
+  /** §10.5 draws the launch grid in two columns. */
+  layout?: 'list' | 'grid';
+  /** §10.5's harness ⓘ line, passed through to the shared list. */
+  notice?: ReactNode;
+  resetLabel?: string;
 }) {
   const { catalog, error, port, refresh } = useMcpCatalog(targetId, teamMemberId);
   const id = useId();
@@ -69,38 +75,29 @@ export function McpPicker({ targetId, teamMemberId, value, onChange, onReady, di
   if (!catalog.canAttach) return null;
   const attachable = catalog.servers.filter(server => server.canAttach);
   if (attachable.length === 0 && !problem) return null;
+  // §10.5: COLLAPSED BY DEFAULT to one summary line, which is also what keeps
+  // the launch card's layout from being decided by how many connectors a Space
+  // happens to hold. The summary names the connectors that are on and says
+  // whose decision that is, so the card tells the truth while shut.
   const selected = value ?? catalog.defaults;
-  // "Use defaults" is pressed exactly when the field is omitted. It used to
-  // also count the trimmed list as defaults, which is how a trimmed launch
-  // could look like an inherited one.
-  const usingDefaults = value === undefined;
+  const names = attachable.filter(server => selected.some(s => s.serverId === server.id)).map(server => server.title);
+  const summary = `Connectors: ${names.length > 0 ? names.join(', ') : 'none'}${value === undefined ? ' (Space defaults)' : ''}`;
   return <fieldset className="mcp-picker" disabled={disabled} aria-describedby={`${id}-help`}>
     <legend>Connectors</legend>
-    <p id={`${id}-help`}>Choose the tools and account for this session.</p>
-    <div className="mcp-actions">
-      <button type="button" onClick={() => onChange(undefined)} aria-pressed={usingDefaults}>Use defaults</button>
-      <button type="button" onClick={() => onChange([])} aria-pressed={value?.length === 0 && !usingDefaults}>None</button>
-      <ConnectorsLink>Manage connectors</ConnectorsLink>
-    </div>
-    {attachable.map(server => {
-      const pick = selected.find(s => s.serverId === server.id);
-      const accounts = server.accounts.filter(a => a.canUse && a.status === 'connected');
-      const unavailable = !server.approved || !server.enabled || (server.auth !== 'none' && accounts.length === 0);
-      return <div className="mcp-row" key={server.id}>
-        <label><input type="checkbox" checked={!!pick} disabled={unavailable && !pick}
-          onChange={e => onChange(e.target.checked ? [...selected, { serverId: server.id }] : selected.filter(s => s.serverId !== server.id))} />
-          <span><strong>{server.title}</strong><small>{server.description}</small></span>
-        </label>
-        {pick && server.auth !== 'none' && <label className="mcp-account">Account for {server.title}
-          <select value={pick.credentialId ?? ''} onChange={e => onChange(selected.map(s => s.serverId === server.id ? { serverId: server.id, ...(e.target.value ? { credentialId: e.target.value } : {}) } : s))}>
-            <option value="">Choose an account</option>
-            {accounts.map(a => <option value={a.id} key={a.id}>{a.label}</option>)}
-          </select>
-        </label>}
-        <small>{!server.approved ? 'Awaiting approval' : !server.enabled ? 'Disabled' : server.auth === 'none' ? 'No account needed' : accounts.length ? 'Connected' : 'Not connected'}</small>
-        {server.auth !== 'none' && accounts.length === 0 && <ConnectorsLink>Connect {server.title}</ConnectorsLink>}
-      </div>;
-    })}
-    {problem && <p role="alert" className="mcp-error">{problem}</p>}
+    <details>
+      <summary data-testid="mcp-picker-summary">{summary}</summary>
+      <p id={`${id}-help`}>Choose the connectors and account for this session.</p>
+      <ConnectorToggleList
+        catalog={catalog}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        layout={layout}
+        testId="mcp-picker-toggles"
+        {...(resetLabel ? { resetLabel } : {})}
+        {...(notice ? { notice } : {})}
+        {...(problem ? { problem } : {})}
+      />
+    </details>
   </fieldset>;
 }

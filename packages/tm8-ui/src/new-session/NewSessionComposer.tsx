@@ -177,6 +177,16 @@ export interface NewSessionComposerProps {
   /** `null` is the teammate's list; an array is this launch's exact pick. */
   plugins?: readonly string[] | null;
   onPluginsChange?(next: readonly string[] | null): void;
+  /**
+   * §10.5 — THE CONNECTORS SECTION, drawn in the ··· menu beside the harness
+   * rows because that is where this launch's "what will it be given" choices
+   * live. The host passes the picker (it owns the selection, which rides the
+   * spawn request); this component only places it and supplies the D4 note.
+   *
+   * Absent ⇒ no section at all, which is the honest rendering for a host that
+   * cannot send `mcpSelections`.
+   */
+  connectors?: ReactNode;
 
   mode: LaunchMode;
   onModeChange(next: LaunchMode): void;
@@ -191,7 +201,7 @@ export interface NewSessionComposerProps {
 }
 
 type MenuName = 'workdir' | 'dots' | 'model' | 'perm' | 'team';
-type SubName = 'cred' | 'mode' | 'harness' | 'plugins';
+type SubName = 'cred' | 'mode' | 'harness' | 'plugins' | 'connectors';
 
 /**
  * The postures this surface offers, of the domain's five. The canvas draws
@@ -303,6 +313,7 @@ export function NewSessionComposer({
   harnessApplies = false,
   harnessSurface = null,
   onHarnessChange,
+  connectors,
   installedPlugins = null,
   installedPluginsNote = null,
   pluginSkillCounts = null,
@@ -682,6 +693,36 @@ export function NewSessionComposer({
                       </button>
                     ))}
                   </div>
+                ) : null}
+
+                {/* §10.5 — CONNECTORS, next to the harness it is independent of.
+                    Placed here on purpose: D4 is the thing people get wrong
+                    (they expect `Full` to carry their personal Claude app
+                    connectors), so the correction sits where the mistake is
+                    made rather than in a help page. */}
+                {connectors ? (
+                  <>
+                    <button
+                      type="button"
+                      className="nsx-menu__row"
+                      aria-expanded={sub === 'connectors'}
+                      data-testid="nsx-connectors-row"
+                      onClick={stopThen(() => setSub((current) => (current === 'connectors' ? null : 'connectors')))}
+                    >
+                      <span>Connectors</span>
+                      <span className="nsx-menu__val">{'▸'}</span>
+                    </button>
+                    {sub === 'connectors' ? (
+                      <div className="nsx-menu__subsec" data-testid="nsx-connectors-menu">
+                        {connectors}
+                        <p className="nsx-menu__sub" role="note">
+                          {harnessSurface === 'inherit'
+                            ? 'Full restores plugins and skills, not your Claude connectors. Connectors come from this list.'
+                            : 'Personal Claude app connectors aren’t loaded, whatever the harness. Add them under Connectors.'}
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
                 ) : null}
 
                 <button

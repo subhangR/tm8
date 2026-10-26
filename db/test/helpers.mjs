@@ -462,9 +462,11 @@ export function buildWorld(tag = 'w', { url = APP_URL } = {}) {
     `select public.create_project('proj-${tag}', '/tmp/tm8-test-${tag}-${spaceA.space.id}', null, 'trusted')`,
     { ...opts, claims: claimsFor(idA, null, true) },
   );
-  ok(`select public.link_project(${uuid(spaceA.space.id)}, ${uuid(project.project.id)})`, {
+  // link_project_w2: 234 dropped 007's legacy link_project, and a folder is
+  // visible only to a gate (node) admin since then, so link with that claim.
+  ok(`select public.link_project_w2(${uuid(spaceA.space.id)}, ${uuid(project.project.id)})`, {
     ...opts,
-    claims: claimsFor(idA, memberA),
+    claims: claimsFor(idA, memberA, true),
   });
 
   return {

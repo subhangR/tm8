@@ -16,8 +16,8 @@ type Mode = 'rich' | 'source';
  * THE DOC EDIT SURFACE (New doc UX, 2026-10-07) — replaces the source/preview
  * split on the desktop and the Write⇄Preview editor on the phone.
  *
- * Same chrome as before — Done and the save state on top, the conflict banner,
- * the title, refusals, the footer — around one rich body. A body the editor
+ * The conflict banner, the title, refusals, and one row of chrome under the
+ * text — Done, the save state, the mode switch — around one rich body. A body the editor
  * cannot keep (raw HTML, say) opens as markdown source with the reason
  * stated, and any body can be switched to source by hand; switching back is
  * refused, with the reason, while the source holds something the editor would
@@ -54,55 +54,52 @@ export function RichDocView({
   const [mode, setMode] = useState<Mode>(opened ? 'rich' : 'source');
   const keepsBody = mode === 'source' ? roundTrips(save.body) : true;
 
+  const done = onCollapse ? (
+    <button type="button" className="de-btn de-btn--quiet" data-testid="doc-collapse" onClick={onCollapse}>
+      Done
+    </button>
+  ) : (
+    <DisabledIconControl
+      label="Back to reading"
+      reason={collapseRefusal ?? {
+        cause: 'Leaving isn’t connected here',
+        remedy: 'this view was mounted without a collapse dispatch',
+      }}
+    >
+      Done
+    </DisabledIconControl>
+  );
+  const modeToggle =
+    mode === 'rich' ? (
+      <button
+        type="button"
+        className="de-btn de-btn--quiet"
+        data-testid="doc-mode-source"
+        onClick={() => {
+          void save.flush();
+          setMode('source');
+        }}
+      >
+        Edit as markdown
+      </button>
+    ) : keepsBody ? (
+      <button type="button" className="de-btn de-btn--quiet" data-testid="doc-mode-rich" onClick={() => setMode('rich')}>
+        Rich editor
+      </button>
+    ) : (
+      <DisabledIconControl
+        label="Rich editor"
+        reason={{
+          cause: 'This text has markup the rich editor would drop',
+          remedy: 'usually raw HTML; it stays editable here as markdown',
+        }}
+      >
+        Rich editor
+      </DisabledIconControl>
+    );
+
   return (
     <div className="de-root de-richview" data-testid="doc-rich-view" data-mode={mode} data-doc-editor="">
-      <div className="de-bar">
-        {onCollapse ? (
-          <button type="button" className="de-btn de-btn--quiet" data-testid="doc-collapse" onClick={onCollapse}>
-            Done
-          </button>
-        ) : (
-          <DisabledIconControl
-            label="Back to reading"
-            reason={collapseRefusal ?? {
-              cause: 'Leaving isn’t connected here',
-              remedy: 'this view was mounted without a collapse dispatch',
-            }}
-          >
-            Done
-          </DisabledIconControl>
-        )}
-        <span className="de-bar__spacer" />
-        {mode === 'rich' ? (
-          <button
-            type="button"
-            className="de-btn de-btn--quiet"
-            data-testid="doc-mode-source"
-            onClick={() => {
-              void save.flush();
-              setMode('source');
-            }}
-          >
-            Edit as markdown
-          </button>
-        ) : keepsBody ? (
-          <button type="button" className="de-btn de-btn--quiet" data-testid="doc-mode-rich" onClick={() => setMode('rich')}>
-            Rich editor
-          </button>
-        ) : (
-          <DisabledIconControl
-            label="Rich editor"
-            reason={{
-              cause: 'This text has markup the rich editor would drop',
-              remedy: 'usually raw HTML; it stays editable here as markdown',
-            }}
-          >
-            Rich editor
-          </DisabledIconControl>
-        )}
-        <SaveActions save={save} />
-      </div>
-
       <ConflictBanner save={save} actor={conflictActor} />
 
       {!titleElsewhere ? (
@@ -133,12 +130,16 @@ export function RichDocView({
 
       <RefusalHost save={save} />
 
-      <div className="de-foot">
+      {/* ONE ROW OF CHROME, UNDER THE TEXT (task 01a15e22: "remove the
+          unnecessary options"). The bar above the text and the footer below
+          it were two bands for five controls and a hint the placeholder
+          already gives; the text now starts directly under the title. */}
+      <div className="de-bar de-bar--foot">
+        {done}
         <SaveWord save={save} version={detail.version} />
-        <span className="de-foot__spacer" />
-        <span className="de-foot__hint">
-          {mode === 'rich' ? 'saves as you type · / for blocks and skills · ⌘enter saves now' : 'saves as you type · ⌘enter saves now'}
-        </span>
+        <span className="de-bar__spacer" />
+        {modeToggle}
+        <SaveActions save={save} />
       </div>
     </div>
   );

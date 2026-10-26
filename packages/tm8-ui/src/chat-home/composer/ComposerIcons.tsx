@@ -34,6 +34,8 @@ export const COMPOSER_ICON_ART = {
     'M13 10.5a1.5 1.5 0 1 1 0 3a1.5 1.5 0 1 1 0-3',
   ],
   plus: ['M8 3v10', 'M3 8h10'],
+  /** Connectors — a plug: two pins, a body, and the lead that carries it. */
+  plug: ['M6 2v3', 'M10 2v3', 'M4.25 5.25h7.5v2.5a3.75 3.75 0 0 1-7.5 0z', 'M8 11.5V14'],
   chevronDown: ['M4.5 6.5L8 10l3.5-3.5'],
   chevronRight: ['M6.5 4.5L10 8l-3.5 3.5'],
   check: ['M3.5 8.5l3 3 6-7'],

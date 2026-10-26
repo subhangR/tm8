@@ -144,7 +144,14 @@ export function TaskGitSection({ seam, taskId, completionGate, onOpenEntity }: T
   const gateBlocked = completionGate === 'pr_merged' && (prs.length === 0 || blockers.length > 0);
 
   return (
-    <section className="pn-task-git" data-testid="task-git-section" aria-label="Git">
+    <section
+      className="pn-task-git"
+      data-testid="task-git-section"
+      aria-label="Git"
+      /* Nothing tracked and no gate to explain: a host may fold this away like
+         any other empty section. A gate verdict is never empty. */
+      data-empty={nothingTracked && completionGate !== 'pr_merged' ? 'true' : undefined}
+    >
       <h3 className="pn-task-git__heading">Git</h3>
 
       {completionGate === 'pr_merged' ? (
