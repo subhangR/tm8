@@ -19,6 +19,12 @@ describe('loop schedule parity with the node executor', () => {
     expect(nextLoopRunAt('0 9 1 * 1', from)?.toISOString()).toBe('2026-08-03T09:00:00.000Z');
   });
 
+  it('accepts 7 as Sunday in day-of-week, like the node', () => {
+    expect(nextLoopRunAt('0 9 * * 7', new Date('2026-08-10T12:00:00Z'))?.toISOString())
+      .toBe('2026-08-16T09:00:00.000Z');
+    expect(loopScheduleProblem('0 0 * * 5-7')).toBeNull();
+  });
+
   it('returns a visible problem for malformed and impossible schedules', () => {
     expect(loopScheduleProblem('tomorrow')).toContain('5 fields');
     expect(loopScheduleProblem('0 0 30 2 *', new Date('2026-01-01T00:00:00.000Z')))
