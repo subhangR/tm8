@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { allowedSenders, channelTm8, trustedSenders, type ChannelConfig, type Config } from './config.js'
+import { allowedSenders, channelTm8, trustedSenders, type ChannelConfig, type Config, autoReacts } from './config.js'
 import {
   IMAGE_MIMES,
   MAX_IMAGE_BYTES,
@@ -36,6 +36,7 @@ import {
   envelopeWaId,
   finalTurnText,
   generateName,
+  hasBridgeMark,
   hashToken,
   looksSecret,
   matchTeammate,
@@ -300,7 +301,8 @@ export class Bridge {
     // Loop guard 1: our own sends are in the outbox by wa_msg_id. An echo that arrives while sendText is still running
     // (before we know the id) matches a pending send of the exact same body in this chat. Anything else the owner typed,
     // even text starting with "tm8:", is the owner's.
-    const fromBridge = this.store.isOurs(m.id) || (m.fromMe && this.takePendingEcho(ch.id, m.text))
+    // Loop guard 3: a fromMe message carrying the bridge mark was sent by a bridge (another one sharing this number, or us).
+    const fromBridge = this.store.isOurs(m.id) || (m.fromMe && (hasBridgeMark(m.text) || this.takePendingEcho(ch.id, m.text)))
     const isNew = this.store.insertMessage({
       wa_msg_id: m.id,
       channel_id: ch.id,
@@ -375,12 +377,13 @@ export class Bridge {
     const wants: { name?: NameRow; main?: boolean; note?: string }[] = []
     if (m.quotedId) {
       const ob = this.store.outboxByWaId(m.quotedId)
-      if (ob && ob.name !== BRIDGE && ob.channel_id === ch.id) {
+      // A shadowed channel's messages land here (deliverTo): a reply to one goes back to its name.
+      if (ob && ob.name !== BRIDGE && (ob.channel_id === ch.id || this.channelOf(ob.channel_id)?.deliverTo === ch.id)) {
         const n = this.store.getName(ob.name)
         if (n) wants.push({ name: n })
       }
     }
-    const mentions = parseMentions(m.text)
+    const mentions = parseMentions(m.text, this.cfg.handle)
     if (m.mentionedJids.some((j) => this.ownJids.has(j))) mentions.push({ kind: 'tm8' })
     for (const mention of mentions) {
       if (mention.kind === 'tm8') {
@@ -391,6 +394,7 @@ export class Bridge {
       if (n && n.channel_id === ch.id) wants.push({ name: n })
       else wants.push({ main: true, note: `unknown name @${mention.handle}; no session has that name in this group` })
     }
+    if (wants.length === 0 && ch.trigger === 'all') wants.push({ main: true })
     if (wants.length === 0) return 'none'
     const main = this.mainName(ch)
     const byEntity = new Map<string, Target>()
@@ -1154,6 +1158,16 @@ export class Bridge {
   private async relayTurn(ch: ChannelConfig, main: NameRow, turnId: string, m: ChatMessage, waIds: string[]) {
     const replyTo = waIds.at(-1)!
     let text = finalTurnText(m.parts ?? [])
+    if (text && /^skip(\s+\S+)*\.?$/i.test(text.trim())) {
+      // "skip <wa_msg_id>": nothing in these messages needs an answer (trigger "all" chatter). Close them quietly.
+      this.store.setKv(`relayed-turn:${turnId}`, 'skipped')
+      for (const w of waIds) {
+        const r = this.store.routesTo(main.name, w)
+        if (r) this.store.setRouteStatus(r.id, 'replied')
+      }
+      this.log(`[relay] turn ${turnId} of ${main.name}: skipped ${waIds.join(', ')} (nothing to answer)`)
+      return
+    }
     if (!text || /^sent\s+\S+\.?$/i.test(text) || /^Agent turn (failed|in progress)\.?$/i.test(text)) {
       // Nothing to say (or only the RULE 1 marker): leave it to the watchdog.
       this.store.setKv(`relayed-turn:${turnId}`, 'nothing')
@@ -1397,6 +1411,7 @@ export class Bridge {
   }
 
   private async reactOn(ch: ChannelConfig, msg: MessageRow, emoji: string) {
+    if (ch.deliverTo) return // shadow mode: nothing reaches the chat, reactions included
     this.assertSendable(ch.jid)
     if (msg.wa_msg_id.startsWith(TEST_PREFIX)) return // injected test messages don't exist on WhatsApp
     const key: WaKey = msg.key_json ? JSON.parse(msg.key_json) : { remoteJid: msg.chat_jid, id: msg.wa_msg_id, fromMe: !!msg.from_me }
@@ -1405,10 +1420,12 @@ export class Bridge {
 
   /** React to a logged message; failures are logged, never thrown. */
   reactTo(ch: ChannelConfig, waId: string, emoji: string) {
-    return this.reactSafe(ch, waId, emoji)
+    return this.reactSafe(ch, waId, emoji, { auto: false })
   }
 
-  private async reactSafe(ch: ChannelConfig, waId: string, emoji: string) {
+  /** `auto`: the bridge's own status reactions (👀 ✅ ⚠️ ❌), skipped where autoReacts says so. */
+  private async reactSafe(ch: ChannelConfig, waId: string, emoji: string, o: { auto?: boolean } = {}) {
+    if ((o.auto ?? true) && !autoReacts(ch)) return
     const msg = this.store.getMessage(waId)
     if (!msg || !this.wa.connected()) return
     try {
@@ -1441,9 +1458,12 @@ export class Bridge {
       if (!row || row.status !== 'queued') return
       if (!this.wa.connected()) return
       const ch = this.channelById(row.channel_id)
-      this.assertSendable(ch.jid)
+      // Shadow mode: the row belongs to ch, but goes out in ch.deliverTo's chat, tagged with ch's title and unquoted.
+      const out = ch.deliverTo ? this.channelById(ch.deliverTo) : ch
+      this.assertSendable(out.jid)
+      const text = ch.deliverTo ? `[${ch.title}] ${row.text}` : row.text
       let quoted: { key: WaKey; message: unknown } | undefined
-      if (row.reply_to) {
+      if (row.reply_to && !ch.deliverTo) {
         const q = this.store.getMessage(row.reply_to)
         if (q?.key_json && q.message_json && q.message_json !== 'null') quoted = { key: JSON.parse(q.key_json), message: JSON.parse(q.message_json) }
       }
@@ -1451,16 +1471,17 @@ export class Bridge {
       // pending-send guard hashes that.
       const media: OutboxMedia | null = row.kind === 'media' && row.media_json ? JSON.parse(row.media_json) : null
       const poll: OutboxPoll | null = row.kind === 'poll' && row.poll_json ? JSON.parse(row.poll_json) : null
-      const logText = media ? mediaPlaceholder(media.kind, row.text, media.file_name) : row.text
-      const pending = { channelId: ch.id, hash: bodyHash(logText), at: this.now() }
+      if (poll && ch.deliverTo) poll.name = `[${ch.title}] ${poll.name}`
+      const logText = media ? mediaPlaceholder(media.kind, text, media.file_name) : text
+      const pending = { channelId: out.id, hash: bodyHash(logText), at: this.now() }
       this.pendingSends.push(pending)
       try {
         const send = (q?: { key: WaKey; message: unknown }) =>
           poll
-            ? this.wa.sendPoll(ch.jid, poll)
+            ? this.wa.sendPoll(out.jid, poll)
             : media
-              ? this.wa.sendMedia(ch.jid, { kind: media.kind, data: this.media.read(media.path), mime: media.mime, fileName: media.file_name, caption: row.text }, q)
-              : this.wa.sendText(ch.jid, row.text, q)
+              ? this.wa.sendMedia(out.jid, { kind: media.kind, data: this.media.read(media.path), mime: media.mime, fileName: media.file_name, caption: text }, q)
+              : this.wa.sendText(out.jid, text, q)
         const sent = await send(quoted).catch((e) => {
           if (!quoted) throw e
           this.log(`[out ${ch.id}] quoting ${row.reply_to} failed (${(e as Error).message}); sending unquoted`)
@@ -1469,13 +1490,13 @@ export class Bridge {
         this.store.markSent(row.id, sent.id, JSON.stringify(sent.message ?? null))
         this.store.formMessageSent(row.id, sent.id)
         this.store.upsertBridgeMessage({
-          wa_msg_id: sent.id, channel_id: ch.id, chat_jid: ch.jid, sender_jid: [...this.ownJids][0] ?? null, sender_alt_jid: null,
+          wa_msg_id: sent.id, channel_id: ch.id, chat_jid: out.jid, sender_jid: [...this.ownJids][0] ?? null, sender_alt_jid: null,
           sender_name: row.name, text: logText, quoted_wa_msg_id: row.reply_to, ts: Math.floor(this.now() / 1000), from_me: 1,
           by_name: row.name, key_json: JSON.stringify(sent.key), message_json: JSON.stringify(sent.message ?? null),
         })
         if (media) this.recordSentMedia(row.id, ch.id, sent.id, media, row.text)
         this.sendAttempts.delete(row.id)
-        this.log(`[out ${ch.id}] ${sent.id}: ${logText.slice(0, 200)}`)
+        this.log(`[out ${ch.id}${out === ch ? '' : ` → ${out.id}`}] ${sent.id}: ${logText.slice(0, 200)}`)
       } catch (e) {
         const n = (this.sendAttempts.get(row.id) ?? 0) + 1
         this.sendAttempts.set(row.id, n)
@@ -1603,15 +1624,17 @@ export class Bridge {
     if (!ch) throw new HttpError(400, 'no channels configured')
     const id = `${TEST_PREFIX}${crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase()}`
     const owner = this.cfg.ownerJids
+    // Optional sender_jid: the message is from that group member instead of the owner (replaying a group's history).
+    const member = typeof body?.sender_jid === 'string' && /^\d+@(s\.whatsapp\.net|lid)$/.test(body.sender_jid) ? body.sender_jid : null
     await this.onInbound({
-      id, chatJid: ch.jid, chatAltJid: null, fromMe: true,
-      senderJid: owner.find((j) => j.endsWith('@s.whatsapp.net')) ?? owner[0] ?? null,
-      senderAltJid: owner.find((j) => j.endsWith('@lid')) ?? null,
+      id, chatJid: ch.jid, chatAltJid: null, fromMe: !member,
+      senderJid: member ?? owner.find((j) => j.endsWith('@s.whatsapp.net')) ?? owner[0] ?? null,
+      senderAltJid: member ? null : owner.find((j) => j.endsWith('@lid')) ?? null,
       senderName: typeof body?.sender_name === 'string' ? body.sender_name : 'owner (injected test)',
       text, kind: media ? 'media' : 'text', media,
       quotedId: typeof body?.quoted_wa_msg_id === 'string' ? body.quoted_wa_msg_id : null,
       mentionedJids: [], ts: Math.floor(this.now() / 1000),
-      key: { remoteJid: ch.jid, id, fromMe: true }, message: { conversation: text },
+      key: { remoteJid: ch.jid, id, fromMe: !member }, message: { conversation: text },
     })
     return { wa_msg_id: id, routes: this.store.routesFor(id).map((r) => ({ target: r.target_name, status: r.status })) }
   }
