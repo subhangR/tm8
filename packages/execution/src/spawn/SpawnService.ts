@@ -423,6 +423,13 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * Retries of a failed-session write before the ghost reaper is left to own the
+ * row. With the 30s backoff ceiling this is roughly ten minutes at the default
+ * base delay.
+ */
+const FAILED_TRANSITION_MAX_ATTEMPTS = 20;
+
 /** Per-session bound on the usage read inside `recordShutdown`. See there. */
 const SHUTDOWN_USAGE_READ_MS = 2_000;
 
@@ -3119,6 +3126,18 @@ export class SpawnService {
     attempt: number,
   ): void {
     if (this.failedTransitionRetries.has(transition.sessionId)) return;
+    if (attempt > FAILED_TRANSITION_MAX_ATTEMPTS) {
+      // Bounded: a write refused for a reason that will not pass (revoked
+      // claims, a deleted row) would otherwise log an error every 30s and pin
+      // `auth` for the life of the process. The ghost reaper owns the row from
+      // here, exactly as it does when the process exits mid-retry.
+      this.logger?.error(
+        'SpawnService: gave up marking session failed after spawn error — left to the ghost reaper',
+        new Error(originalError),
+        { sessionId: transition.sessionId, attempts: attempt - 1 },
+      );
+      return;
+    }
     const delayMs = Math.min(
       this.failedTransitionRetryMs * 2 ** Math.min(attempt - 1, 5),
       30_000,
