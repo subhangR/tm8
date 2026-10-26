@@ -243,6 +243,33 @@ describe('lifecycle verbs refuse illegal transitions by name', () => {
     expect(graph.statusWrites[1].operation).toBeNull();
   });
 
+  it('starts a container that create { start: false } left provisioning', async () => {
+    // Before, start accepted only `stopped`, and nothing moves a never-started
+    // container there — so `start: false` minted a container no verb could run.
+    const { graph, provider, service } = build();
+    const created = await service.create(createReq({ start: false }));
+    await service.start({
+      auth: {}, containerId: created.containerId, clientMutationId: 's-1', expectedVersion: 2,
+    });
+    expect(graph.statusWrites.at(-1)?.status).toBe('running');
+    expect(provider.calls).toEqual(['create', 'start']);
+  });
+
+  it('destroys a record that never got a runtime WITHOUT calling the provider', async () => {
+    // resolveRuntime hands back `runtimeRef: ''` for such a record, and the old
+    // `if (handle)` guard was always true — so the provider was asked to
+    // destroy the empty ref.
+    const { graph, provider, service } = build({
+      provider: new FakeProvider({ failOn: { create: new ContainerError('no daemon', 'runtime') } }),
+    });
+    await expect(service.create(createReq())).rejects.toThrow(/no daemon/);
+    const containerId = graph.statusWrites[0]!.containerId;
+    provider.calls.length = 0;
+    await service.destroy({ auth: {}, containerId, clientMutationId: 'd-1', expectedVersion: 2 });
+    expect(provider.calls).toEqual([]);
+    expect(graph.statusWrites.at(-1)?.status).toBe('destroyed');
+  });
+
   it('destroy is idempotent once the record is destroyed', async () => {
     const { service } = build();
     const created = await service.create(createReq());

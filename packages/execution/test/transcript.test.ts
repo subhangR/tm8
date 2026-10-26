@@ -267,6 +267,25 @@ describe('readSessionTranscript — claude', () => {
     expect(page.stats.toolCalls).toBe(3);
   });
 
+  it('keeps a real prompt that carries an appended <system-reminder>', async () => {
+    // Claude Code appends reminder blocks to the operator's own prompt. The
+    // tag test ran before the strip, so the whole prompt vanished; a turn that
+    // is ONLY a reminder still cleans down to nothing and stays out.
+    const home = await makeHome();
+    await writeClaude(home, 'n1', [
+      claudeUser('2026-08-07T10:00:00.000Z', 'fix the login bug\n<system-reminder>be careful</system-reminder>'),
+      claudeUser('2026-08-07T10:00:01.000Z', '<system-reminder>only machinery</system-reminder>'),
+      claudeText('2026-08-07T10:00:02.000Z', 'on it'),
+    ]);
+    const page = await readSessionTranscript({
+      sessionId: 's1', agentTool: 'claude-code', nativeSessionId: 'n1', cwd: CWD, home,
+    });
+    expect(page.entries.map((e) => [e.source, e.text])).toEqual([
+      ['user', 'fix the login bug'],
+      ['assistant', 'on it'],
+    ]);
+  });
+
   it('excludes sub-agent sidechain turns from the entries', async () => {
     // A single Agent call can emit dozens of sidechain turns and bury the main
     // thread the coordinator actually asked to see.
