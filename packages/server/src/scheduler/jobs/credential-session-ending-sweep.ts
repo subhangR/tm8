@@ -1,5 +1,5 @@
 /**
- * The credential-session ending sweep (migration 365).
+ * The credential-session ending sweep (migration 366).
  *
  * A credential work session — a vendor login terminal — is minted `spawning`
  * with NO node_id (D5), so the boot ghost reconciliation and the lost-session

@@ -1183,7 +1183,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
-    // 365: a login terminal's work session has no node_id, so the boot
+    // 366: a login terminal's work session has no node_id, so the boot
     // reconciliation and the reaper below never see it. One whose login lease
     // ran out is ended here (`failed / lost`); runs at boot, then every 5 min.
     scheduler.register(

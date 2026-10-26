@@ -1758,7 +1758,7 @@ describe('206: the member-login paths do not see a space login', () => {
 // The login terminal's WORK SESSION ends — it used to read `spawning` forever
 // ===========================================================================
 
-describe('a credential work session records its ending (365)', () => {
+describe('a credential work session records its ending (366)', () => {
   const nodeAdminClaims = (): DbClaims => ({ ...humanClaims(fixture.aliceIdentity), nodeAdmin: true });
 
   async function workSession(id: string): Promise<{
