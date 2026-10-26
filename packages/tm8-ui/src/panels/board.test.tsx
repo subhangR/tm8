@@ -231,6 +231,14 @@ describe('§1.5 / §8.1 — a move is a command, one grammar for pointer and key
     const cols = getAllByTestId('board-column');
     expect(cols[1]!.className).toContain('lp__board-col--focused');
   });
+  it('keys inside the group-by select stay the select\'s', () => {
+    const onSetState = vi.fn();
+    const { getByTestId, getAllByTestId } = renderBoard({ snapshot: snapshot(), onSetState });
+    fireEvent.keyDown(getByTestId('board-groupby'), { key: 'ArrowRight', metaKey: true });
+    fireEvent.keyDown(getByTestId('board-groupby'), { key: 'ArrowRight' });
+    expect(onSetState).not.toHaveBeenCalled();
+    expect(getAllByTestId('board-column')[0]!.className).toContain('lp__board-col--focused');
+  });
 });
 
 describe('§1.6 — which kinds get a board', () => {

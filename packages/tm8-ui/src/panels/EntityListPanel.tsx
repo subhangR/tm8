@@ -3537,6 +3537,11 @@ function BoardBody({
   // §8.1 — drag is never the only path. The same dispatch as a drop, so one
   // command path serves pointer and keyboard.
   const onKeyDown = (event: React.KeyboardEvent): void => {
+    /* The board's own focus only. A key bubbling from a control inside it — the
+       group-by select's arrows, a tile button's Enter — belongs to that control;
+       handling it here swallowed the select's arrows and opened the focused
+       card on top of the button's own click. */
+    if (event.target !== event.currentTarget) return;
     const mod = event.metaKey || event.ctrlKey;
     const colCount = columns.length;
     if (colCount === 0) return;
