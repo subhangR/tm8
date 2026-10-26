@@ -211,13 +211,15 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
     ]);
     const afterTask = Number((await log.since(spaceId, 0, 500, claims())).nextCursor);
 
-    await db.rpc(claims(), 'public.post_message', [
-      task.entity.id,
+    // `post_message` is revoked (019); the live door is w2_post_message_batch.
+    await db.rpc(claims(), 'public.w2_post_message_batch', [
+      [task.entity.id],
       'progress in the thread',
+      null,
+      [],
+      [],
+      null,
       memberId,
-      null,
-      null,
-      null,
       `cmid_${randomUUID()}`,
     ]);
 
@@ -352,16 +354,17 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
    */
   it('never serves a redacted body, not even from the original captured event', async () => {
     const secret = `SECRET-${randomUUID()}`;
-    const posted = await db.rpc<CommandResult>(claims(), 'public.post_message', [
-      firstTaskId,
+    const posted = await db.rpc<{ messageIds: string[] }>(claims(), 'public.w2_post_message_batch', [
+      [firstTaskId],
       secret,
+      null,
+      [],
+      [],
+      null,
       memberId,
-      null,
-      null,
-      null,
       `cmid_${randomUUID()}`,
     ]);
-    const messageId = posted.entity.id;
+    const messageId = posted.messageIds[0]!;
 
     // Present before redaction — otherwise the test proves nothing.
     const before = await log.since(spaceId, 0, 500, claims());
@@ -370,7 +373,11 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
       'the message must be visible before redaction',
     ).toBe(true);
 
-    await db.rpc(claims(), 'public.redact_message', [messageId, memberId, `cmid_${randomUUID()}`]);
+    // `redact_message` is revoked; messages.delete tombstones through this door.
+    const [{ version }] = await db.query<{ version: number }>(
+      claims(), 'select version from public.entities where id = $1', [messageId],
+    ) as [{ version: number }];
+    await db.rpc(claims(), 'public.w2_tombstone_message', [messageId, version, memberId, `cmid_${randomUUID()}`]);
 
     const after = await log.since(spaceId, 0, 500, claims());
     const everything = JSON.stringify(after.items);
