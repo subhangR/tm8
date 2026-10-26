@@ -101,6 +101,14 @@ export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean })
   const { form, frozen, port } = q;
   const base = useMemo(() => (form ? draftOf(form) : null), [form]);
   const [work, setWork] = useState<Draft | null>(null);
+  /*
+   * The form version the working copy was started from, held until it is
+   * saved or reverted. Saving at the version current at SAVE time would let a
+   * structure edit someone else made meanwhile (which the live refetch brings
+   * in under the open working copy) pass the version check, and the port's
+   * diff would then delete what they added. Held, it is a stale refusal.
+   */
+  const [workBase, setWorkBase] = useState<number | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<BuildFailure | null>(null);
@@ -109,7 +117,12 @@ export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean })
   const dirty = work !== null && !formJsonEqual(work, base);
   const locked = frozen || form.content.status === 'cancelled';
   const issues = dirty ? specIssues(form.title, d) : [];
-  const update = (next: Partial<Draft>) => { setWork({ ...d, ...next }); setError(null); };
+  const update = (next: Partial<Draft>) => {
+    if (work === null) setWorkBase(form.version);
+    setWork({ ...d, ...next });
+    setError(null);
+  };
+  const revert = () => { setWork(null); setWorkBase(null); setError(null); };
 
   if (!canEdit) {
     return (
@@ -130,13 +143,18 @@ export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean })
         sections: renumber(d.sections),
         questions: renumber(d.questions),
         settings: d.settings,
-        expectedVersion: form.version,
+        expectedVersion: workBase ?? form.version,
       });
       q.setForm(written);
       setWork(null);
+      setWorkBase(null);
     } catch (e) {
       // Part-way: adopt what landed, keep the working copy; Retry re-diffs.
-      if (e instanceof FormsStructureSaveError) q.setForm(e.form);
+      if (e instanceof FormsStructureSaveError) {
+        q.setForm(e.form);
+        // What landed is this save's own write: the rest goes out on top of it.
+        setWorkBase(e.form.version);
+      }
       setError(failureOf(e));
     } finally {
       setSaving(false);
@@ -152,9 +170,11 @@ export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean })
     }
   };
 
+  /* Reload, then re-apply: the working copy now sits on the version just read. */
   const reload = async () => {
     setError(null);
-    await q.refetchForm();
+    const latest = await q.refetchForm();
+    if (latest && work !== null) setWorkBase(latest.version);
   };
 
   const move = (key: string, by: -1 | 1) => {
@@ -279,7 +299,7 @@ export function BuildTab({ q, canEdit }: { q: Questionnaire; canEdit: boolean })
       <div className="qn-bar qn-bar--foot">
         <span className="qn-bar__lead qn-muted">{dirty ? 'Unsaved changes' : ''}</span>
         <span className="qn-bar__actions">
-          <button type="button" className="pn-btn pn-btn--quiet" disabled={!dirty || saving} onClick={() => { setWork(null); setError(null); }}>
+          <button type="button" className="pn-btn pn-btn--quiet" disabled={!dirty || saving} onClick={revert}>
             Revert
           </button>
           <button

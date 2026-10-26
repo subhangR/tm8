@@ -180,13 +180,16 @@ export function useQuestionnaire(detail: QuestionnaireDetail) {
     }
   }, [port, detail.id, nextCursor]);
 
-  const refetchForm = useCallback(async () => {
+  /** Re-read the form's detail. Resolves the form read, or null when the read failed. */
+  const refetchForm = useCallback(async (): Promise<FormState | null> => {
     try {
       const next = await port.form(detail.id);
       setWritten((w) => newer(w, next));
       setDetailError(null);
+      return next;
     } catch (e) {
       setDetailError(errorText(e));
+      return null;
     }
   }, [port, detail.id]);
 

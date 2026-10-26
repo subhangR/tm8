@@ -512,6 +512,39 @@ describe('W3: the real port', () => {
     expect(ops.forms.get(FORM_FIXTURE_IDS.migration)!.content.questions.map((x) => x.key)).toEqual(['strategy']);
   });
 
+  it('Build: another author\'s structure edit arriving live under an open working copy is a stale refusal, not a silent overwrite', async () => {
+    const f = FORM_FIXTURE_FORMS.find((x) => x.id === FORM_FIXTURE_IDS.migration)!;
+    const ops = createFakeFormsOps({ forms: [f] });
+    let emit: ((e: never) => void) | null = null;
+    const port = createRealFormsPort({
+      ops,
+      entity: async (id) => {
+        const g = ops.forms.get(id)!;
+        return { id: g.id, title: g.title, version: g.version, content: { kind: 'form', ...structuredClone(g.content) } };
+      },
+      onEvent: (cb) => { emit = cb as never; return () => { emit = null; }; },
+    });
+    const detail = { id: f.id, title: f.title, version: f.version, content: { kind: 'form', ...f.content }, capabilities: { canEdit: true } };
+    render(
+      <FormsPortProvider port={port}>
+        <QuestionnaireBlock detail={detail as never} initialTab="build" />
+      </FormsPortProvider>,
+    );
+    await screen.findByTestId('build');
+    fireEvent.click(screen.getByLabelText('Remove risks'));
+
+    // Someone else adds a question; the live event refetches the form.
+    const server = ops.forms.get(FORM_FIXTURE_IDS.migration)!;
+    const theirs = { ...structuredClone(server.content.questions[0]!), key: 'theirs', position: 99 };
+    server.content.questions.push(theirs as never);
+    server.version += 1;
+    await act(async () => { emit?.({ type: 'entity.upsert', entity: { id: server.id, kind: 'form' } } as never); });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect((await screen.findByTestId('build-stale')).textContent).toMatch(/changed since you loaded it/);
+    expect(ops.forms.get(FORM_FIXTURE_IDS.migration)!.content.questions.map((x) => x.key)).toContain('theirs');
+  });
+
   it('Build: a stale version offers Reload rather than a raw error', async () => {
     const { ops } = mountReal(FORM_FIXTURE_IDS.migration, 'build');
     await screen.findByTestId('build');
