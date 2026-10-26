@@ -45,15 +45,24 @@ const hasher = new ScryptPasswordHasher();
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-/** R6 expiry: a runtime token is additionally revoked when its thread closes. */
+/**
+ * R6 expiry: a runtime token is additionally revoked when its thread closes.
+ *
+ * The ONE session TTL table. `link` is a member's stored session for a space
+ * link's target (251, K10), minted by `DbSpaceLinkStore`; it used to be read
+ * from `identity/service.ts`'s copy of this table, the only thing production
+ * still imported from that unwired module.
+ */
 export const SESSION_TTL_MS = {
   browser: 30 * DAY,
   cli: 90 * DAY,
   agent: 7 * DAY,
   agent_runtime: DAY,
+  link: 90 * DAY,
 } as const;
 
-export type LoginKind = keyof typeof SESSION_TTL_MS;
+/** The kinds a login or mint here produces. A `link` session is never one of them. */
+export type LoginKind = Exclude<keyof typeof SESSION_TTL_MS, 'link'>;
 
 /** `public.resolve_auth_session` result (007:110-124) — camelCase by construction. */
 export interface ResolvedAuthSession {

@@ -116,6 +116,61 @@ describe('remote server relay — credential scope', () => {
 });
 
 /**
+ * The other direction: a remote's `auth.login` answers `Set-Cookie:
+ * __Host-tm8-session=<its token>`. Relayed, the browser would file it under
+ * THIS node's host and replace the local session with a token this node never
+ * issued — signing in to a remote would sign you out here.
+ */
+describe('remote server relay — response scope', () => {
+  let upstream: Server;
+  let origin = '';
+
+  beforeAll(async () => {
+    upstream = createServer((_req, res) => {
+      res.writeHead(200, {
+        'content-type': 'text/html',
+        'set-cookie': ['__Host-tm8-session=tm8s_remote.secret; Path=/; Secure; HttpOnly', 'other=1'],
+        'access-control-allow-origin': '*',
+      });
+      res.end('<script>remote</script>');
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+    const address = upstream.address();
+    if (typeof address === 'string' || address === null) throw new Error('no upstream port');
+    origin = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => upstream.close(() => resolve()));
+  });
+
+  it('never relays a remote Set-Cookie, and serves the body sandboxed and unsniffed', async () => {
+    const proxy = createRemoteServerProxy(async () => origin);
+    const caller: RelayCaller = {
+      identity: { kind: 'bearer', identityId: 'human', authKind: 'browser' },
+      forwardAuthorization: true,
+    };
+    const relayServer = createServer((req, res) => {
+      void proxy.handleHttp(req, res, caller);
+    });
+    await new Promise<void>((resolve) => relayServer.listen(0, '127.0.0.1', resolve));
+    const addr = relayServer.address();
+    if (typeof addr === 'string' || addr === null) throw new Error('no relay port');
+    const response = await fetch(`http://127.0.0.1:${addr.port}/v2/server-connections/prod/proxy/v2/auth/login`, {
+      method: 'POST',
+      body: '{}',
+    });
+    expect(await response.text()).toBe('<script>remote</script>');
+    await new Promise<void>((resolve) => relayServer.close(() => resolve()));
+
+    expect(response.headers.get('set-cookie')).toBeNull();
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(response.headers.get('content-security-policy')).toContain('sandbox');
+  });
+});
+
+/**
  * G1: who may drive the relay, and which carrier is the caller's to hand on.
  * A stub resolver stands in for identity-resolver.ts with the SAME rules that
  * matter here — a known local token resolves, an unknown one is
