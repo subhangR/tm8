@@ -73,7 +73,7 @@ export const GIT_ENV_KEYS = [
 ] as const;
 
 /**
- * Prepended to every server-run git: no hook and no fsmonitor executes.
+ * Prepended to every server-run git: no hook, fsmonitor or signing program executes.
  *
  * `core.hooksPath` names a directory git looks hooks up in, and `/dev/null`
  * holds none — the documented way to disable them all, including the
@@ -83,7 +83,12 @@ export const GIT_ENV_KEYS = [
  * config file. No flow the server runs needs a hook: the repo's only hook is
  * pre-push (`package.json` hooks:install), and the server never pushes.
  */
-export const GIT_NO_HOOKS_ARGS = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'] as const;
+export const GIT_NO_HOOKS_ARGS = [
+  '-c', 'core.hooksPath=/dev/null',
+  '-c', 'core.fsmonitor=false',
+  // A lane-set `gpg.program` would otherwise run on every commit and merge.
+  '-c', 'commit.gpgSign=false',
+] as const;
 
 /** Build a server-run git's environment KEY BY KEY from `parentEnv`. */
 export function gitChildEnv(parentEnv: NodeJS.ProcessEnv = process.env): Record<string, string> {

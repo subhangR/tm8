@@ -752,7 +752,7 @@ export class ExecutionGitService {
       // where a non-zero git exit is not a problem.
       const ok = (code: number): boolean => code === 0 || code === 1;
       const noIndex = (extra: readonly string[]): string[] =>
-        ['diff', '--no-index', ...extra, '--', '/dev/null', wantPath];
+        ['diff', '--no-index', '--no-ext-diff', '--no-textconv', ...extra, '--', '/dev/null', wantPath];
 
       const digest = await runGit(noIndex(['--numstat']), { cwd: path });
       if (!ok(digest.code)) {
@@ -797,7 +797,9 @@ export class ExecutionGitService {
       };
     }
 
-    const numstat = await runGit(['--literal-pathspecs', 'diff', '--numstat', ...scopeArgs, ...pathArgs], { cwd: path });
+    // --no-ext-diff/--no-textconv: a lane-written diff.external or textconv
+    // driver is code the lane chose, run by the server (git-mutations deriveHunks).
+    const numstat = await runGit(['--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv', '--numstat', ...scopeArgs, ...pathArgs], { cwd: path });
     if (numstat.code !== 0) return { ...empty, headOid, baseRef, baseOid, mergeBaseOid, unavailableReason: 'worktree_unreadable' };
     const { files, additions, deletions } = parseNumstat(numstat.stdout);
 
@@ -807,7 +809,7 @@ export class ExecutionGitService {
     let diffText = '';
     let overflowed = false;
     try {
-      const diffRun = await runGit(['--literal-pathspecs', 'diff', ...scopeArgs, ...pathArgs], { cwd: path, maxBufferBytes: DIFF_BYTES_MAX + 1024 * 1024 });
+      const diffRun = await runGit(['--literal-pathspecs', 'diff', '--no-ext-diff', '--no-textconv', ...scopeArgs, ...pathArgs], { cwd: path, maxBufferBytes: DIFF_BYTES_MAX + 1024 * 1024 });
       diffText = diffRun.code === 0 ? diffRun.stdout : '';
     } catch (error) {
       const partial = (error as { stdout?: unknown }).stdout;
