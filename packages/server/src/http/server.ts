@@ -59,8 +59,11 @@ import {
 } from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
 import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
+import type { RemoteSpaceLinkRoute } from '../facade/handlers/w2/space-link-remote-route.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
+import { MCP_ENDPOINT_PATH, type McpEndpointRoute } from '../mcp/endpoint.js';
 import type { ReadAdmission } from './read-admission.js';
+import { requireWriteApiScope } from '../identity/api-scope.js';
 import { assertSpaceGate } from './space-gate.js';
 import {
   isHandlerResult,
@@ -91,6 +94,13 @@ export interface FacadeServerOptions {
   /** Non-catalog support transport: FileUploadGrant raw-byte PUT. */
   readonly fileUploadRoute?: W2FileUploadRoute;
   /**
+   * W9c: the target side of remote space links (`/link/v1/*`), POST only.
+   * Authenticates itself (pairing code or a remote link session), so it is
+   * dispatched before identity resolution, like the voice webhook. Answers
+   * nothing while `TM8_REMOTE_SPACE_LINKS` is off.
+   */
+  readonly remoteSpaceLinkRoute?: RemoteSpaceLinkRoute;
+  /**
    * Non-catalog support transport: clipboard image paste, raw bytes POST.
    * Dispatched before `readJsonBody` for the same reason as the upload PUT —
    * an image is not JSON and must never reach the JSON reader.
@@ -102,6 +112,18 @@ export interface FacadeServerOptions {
    * re-serialized one has a different digest.
    */
   readonly voiceWebhookRoute?: VoiceWebhookRoute;
+  /**
+   * §7.1 / G14: the remote MCP endpoint, `POST /mcp`. Not a catalog operation —
+   * it speaks JSON-RPC, not the DEV-6 envelope — and it resolves its own bearer,
+   * because the ONE credential it takes (an `mcp` token) is refused by the
+   * shared identity resolver on every other transport. Dispatched before
+   * `readJsonBody` for the same reason the link routes are: it reads its own
+   * body under its own cap. Absent: `/mcp` is an honest 404.
+   *
+   * It matches the EXACT path. `/mcp/oauth/callback` is the browser redirect
+   * target served by the UI, so a prefix match here would swallow it.
+   */
+  readonly mcpEndpointRoute?: McpEndpointRoute;
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
   /**
@@ -147,6 +169,8 @@ export interface FacadeServerOptions {
       failures: number;
       overruns: number;
       nextRunAt: string | null;
+      /** 306: read only for the forge watcher's `detail.health`. */
+      lastOutcome?: { detail?: Record<string, unknown> } | null;
     }>;
   } | undefined;
 
@@ -221,7 +245,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         }, opts.sessionIssuedHere).then(
-          (caller) => relay.handleUpgrade(req, socket, head, caller),
+          (caller) => {
+            requireWriteApiScope(caller.identity);
+            return relay.handleUpgrade(req, socket, head, caller);
+          },
           (error: unknown) => refuseUpgrade(socket, upgradeRefusalStatus(error),
             error instanceof Error ? error.message : String(error)),
         ).catch(() => socket.destroy());
@@ -231,8 +258,17 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         socket.destroy();
         return;
       }
-      void Promise.resolve(upgrades.handleUpgrade(req, socket, head)).catch(() => {
-        socket.destroy();
+      // Socket input bypasses HandlerRegistry. Resolve the same verified bearer
+      // and refuse read scope before terminal/event upgrade dispatch.
+      void Promise.resolve().then(() => resolveIdentity(req.headers, {
+        remoteAddress: req.socket.remoteAddress,
+        disableAutoOwner: config.disableAutoOwner === true,
+      })).then(identity => {
+        requireWriteApiScope(identity);
+        return upgrades.handleUpgrade(req, socket, head);
+      }).catch((error: unknown) => {
+        refuseUpgrade(socket, upgradeRefusalStatus(error),
+          error instanceof Error ? error.message : String(error));
       });
     });
   }
@@ -300,6 +336,11 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         // see whether the sweeps actually run — a scheduler whose only
         // observable surface is a boot-time console line is not observable.
         const jobs = opts.jobsStatus?.();
+        // 306 (P0e): is PR/commit tracking actually running? The forge
+        // watcher computes it every tick; published here so staleness and the
+        // no-token state are visible without a catalog operation.
+        const tracking = jobs?.jobs.find((job) => job.name === 'tracking.forge-watcher')
+          ?.lastOutcome?.detail?.['health'];
         sendRaw(res, dbOk === false ? 503 : 200, requestId, {
           ok: dbOk !== false,
           server: 'tm8-server',
@@ -310,6 +351,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           // The read gate in front of the pool: `queued` > 0 is a read wave
           // being held off the connections commands need.
           ...(opts.readAdmission ? { readAdmission: opts.readAdmission.stats() } : {}),
+          ...(tracking === undefined ? {} : { tracking }),
           ...(jobs === undefined ? {} : {
             jobs: jobs.jobs.map((job) => ({
               name: job.name,
@@ -339,6 +381,17 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
 
       const isApiPath = pathname === BASE_PATH || pathname.startsWith(`${BASE_PATH}/`);
 
+      // §7.1 / G14: the remote MCP endpoint. No transport identity — it resolves
+      // the one bearer the shared resolver refuses (identity/mcp-token.ts) — and
+      // AHEAD OF THE STATIC HANDLER, so a client's `GET /mcp` (Streamable
+      // HTTP's optional server-to-client stream) gets the route's honest 405
+      // instead of the SPA's index.html with a 200. EXACT path only:
+      // `/mcp/oauth/callback` is the browser redirect target the UI serves, and
+      // a prefix match here would swallow it.
+      if (opts.mcpEndpointRoute && pathname === MCP_ENDPOINT_PATH) {
+        if (await opts.mcpEndpointRoute(req, res, { requestId })) return;
+      }
+
       // Static assets never get a chance to shadow the API surface: an unknown
       // `/v2/...` path is an honest `not_found`, never an index.html with a 200.
       if (!isApiPath && method === 'GET') {
@@ -350,6 +403,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         });
+        requireWriteApiScope(identity);
         // W3: a gate session under enforce has no space to upload into.
         assertSpaceGate(config.spaceSessions, identity, undefined);
         if (await opts.fileUploadRoute(req, res, { requestId, identity })) return;
@@ -360,6 +414,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         });
+        requireWriteApiScope(identity);
         // W3: a gate session under enforce has no space to upload into.
         assertSpaceGate(config.spaceSessions, identity, undefined);
         if (await opts.clipboardUploadRoute(req, res, { requestId, identity })) return;
@@ -375,6 +430,7 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           remoteAddress: req.socket.remoteAddress,
           disableAutoOwner: config.disableAutoOwner === true,
         }, opts.sessionIssuedHere);
+        requireWriteApiScope(caller.identity);
         await opts.remoteServerProxy.handleHttp(req, res, caller);
         return;
       }
@@ -383,6 +439,12 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // authenticates it by signature instead. Before readJsonBody, deliberately.
       if (method === 'POST' && pathname === VOICE_WEBHOOK_PATH && opts.voiceWebhookRoute) {
         if (await opts.voiceWebhookRoute(req, res, { requestId })) return;
+      }
+
+      // W9c: no transport identity either: the route resolves its own bearer
+      // (a link session, accepted on this route only) or takes a pairing code.
+      if (method === 'POST' && pathname.startsWith('/link/v1/') && opts.remoteSpaceLinkRoute) {
+        if (await opts.remoteSpaceLinkRoute(req, res, { requestId })) return;
       }
 
       const { value: body } = await readJsonBody(req, config.maxBodyBytes);

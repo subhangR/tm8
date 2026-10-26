@@ -9,6 +9,7 @@
  * admission or demotion: it measures the centre, calls the engine, and hands
  * the settled result to the store (the direction A1a's DAG correction fixed).
  */
+import { projectRecordPort } from '../projects/project-record';
 import { useAttentionOptional } from '../attention';
 import { needsMeListSource } from '../attention/needs-me';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -29,6 +30,7 @@ import { EntityHelpOverlay } from '../entity-help/EntityHelpOverlay';
 import { useRowLifecycle } from './useRowLifecycle';
 import { EntityVerbs } from './EntityVerbs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
+import { claimsFromEdges, type SessionClaim } from '../domain/session-outcome';
 import {
   LEFT_PANEL_DEFAULT,
   PanelStack,
@@ -50,11 +52,13 @@ import { needsAttentionOf } from '../domain/needs-attention';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { mergePrPortFor } from './mergePrPort';
-import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
+import { composePanelActions, panelSessionControlsFor, usePanelPrimaries } from './usePanelPrimaries';
 import { WithChatCounts, useChatSlot } from '../entity-chat';
 import { composeListActions, useChatAbout } from './useChatAbout';
 import { useSessionStart } from './useSessionStart';
 import { useNewContainerSheet } from './useNewContainerSheet';
+import { useAddProjectSheet } from './useAddProjectSheet';
+import { AddProjectSheet, addProjectPort } from '../projects';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
@@ -62,6 +66,7 @@ import { openEntityAndMarkRead } from './open-entity';
 import { conversationSurfaceFor } from './conversationSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { debugSurfaceFor } from './debugSurface';
+import { watchLiveFor } from './watchLive';
 import { sessionStatsSurfaceFor } from './sessionStatsSurface';
 import { sessionContextSurfaceFor } from './sessionContextSurface';
 import { gitSurfaceFor } from './gitSurface';
@@ -70,9 +75,11 @@ import { taskGitSectionFor } from './taskGitSection';
 import { graphSurfaceFor } from './graphSurface';
 import { storySurfaceFor } from './storySurface';
 import { launchContextSurfaceFor } from './launchContextSurface';
+import { crossSpaceRefsSurfaceFor } from './crossSpaceRefsSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from './membershipSurface';
 import { representedThreadMessageCount } from './message-thread';
+import { useCustomKindsVersion } from '../data/custom-kinds';
 
 /** The session collection is selected by capability, never by panel position
     or a kind literal. The empty centre must keep showing terminals after both
@@ -130,6 +137,7 @@ export interface WorkspaceViewProps {
 }
 
 export function WorkspaceView(props: WorkspaceViewProps) {
+  useCustomKindsVersion();
   const attentionApi = useAttentionOptional();
   const { data, nav, leftKind, rightKind, menuCollapsed, reasons } = props;
   /** In-flight read marks, so a double click on a row is one write. */
@@ -279,6 +287,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     onError: notifySessionVerbFailed,
      /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs, rendered below. */
+    stateOf: (id) => data.detailOf(id)?.state,
+    onOpenEntity: (id) => nav.push?.(id as EntityId),
   });
   const handleSessionTerminate = primaries.terminate;
 
@@ -304,7 +315,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
    * nothing if only one of them consults it.
    */
   const handleSessionResume = primaries.resume;
-  const resumingId = primaries.resumingId;
 
   /** Opening is a read: it navigates and records a read mark, and never
       settles an attention request (Attention v2 — see `open-entity.ts`). */
@@ -418,10 +428,18 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   /* ONE `onAction` reaches each list panel and two hooks perform verbs for it.
      This view mounts the panel TWICE, so composing once here is also what stops
      the two sides drifting into different verb sets. */
+  /* THE PROJECTS LIST'S BIRTH SHEET (task 01a13574): Add project — a
+     folder, an upload or a GitHub clone. See `useAddProjectSheet`. */
+  const addProject = useAddProjectSheet({
+    spaceId: data.spaceId,
+    available: Boolean(data.seam.spaceProjects),
+  });
+  const addProjectSeamPort = useMemo(() => addProjectPort(data.seam, data.spaceId), [data.seam, data.spaceId]);
   const listActions = composeListActions([
     { onAction: sessionStart.onAction, wiredActions: sessionStart.wiredActions },
     { onAction: chatAbout.onAction, wiredActions: chatAbout.wiredActions },
     { onAction: newContainer.onAction, wiredActions: newContainer.wiredActions },
+        { onAction: addProject.onAction, wiredActions: addProject.wiredActions },
   ]);
 
   const renderPanel = useCallback(
@@ -477,6 +495,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     detail={detail ?? null}
                     serverBaseUrl={props.serverBaseUrl}
                     loading={!detail}
+                    projectRecords={projectRecordPort(data.seam, data.spaceId)}
                     host={host}
                     reasons={reasons}
                     ctx={{ ...ctx, entityId: id }}
@@ -507,12 +526,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     }
                     liveness={data.livenessOf(id)}
                     debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
+                    onWatchLive={watchLiveFor(data.seam, data.reconcileCommand, openEntity)}
                     sessionStatsSurface={sessionStatsSurfaceFor(data.seam, id)}
                     sessionContextSurface={sessionContextSurfaceFor(data.seam, id, data.livenessOf)}
                     gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
                     changesSurface={changesSurfaceFor(data.seam, id, data.livenessOf)}
                     taskGitSection={taskGitSectionFor(data.seam, detail, openEntity)}
                     graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
+                    crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, id)}
                     storySurface={storySurfaceFor(data.seam, id, openEntity, data.launch.teammates)}
                     launchContextSurface={launchContextSurfaceFor(data.seam, id, openEntity)}
                     attachments={attachments}
@@ -562,16 +583,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                     linkedPullRequestsOf={data.linkedPullRequestsOf}
                     mentionOptions={data.mentionOptions}
                     skillOptions={data.skillOptions}
-                    onResumeSession={() => handleSessionResume(id)}
-                    resumingSession={resumingId === id}
-                    /* The stale card's "mark exited" chip, wired to the SAME executor as
-                       the session tile's ✕ — `usePanelPrimaries.terminate` exists so the
-                       two controls cannot drift into meaning different things. Until now
-                       the chip called nothing at all, which mattered most in exactly the
-                       case it is drawn for: after a node restart, when every killed
-                       session claims to be running and only an operator at a shell could
-                       clear them. */
-                    onMarkSessionExited={() => handleSessionTerminate(id)}
+                    /* Resume, its guard, Mark lost and the outcome verbs — the
+                       same executor as the row's verbs, shared by every host. */
+                    {...panelSessionControlsFor(primaries, id)}
+                    actorNameOf={(actorId) => data.members.find((m) => m.id === actorId)?.displayName}
                     /* GAP-2 (data-wiring handover): hand the seam commands down so the
                        save path is live in the workspace panels too. */
                     commands={data.seam.commands}
@@ -622,6 +637,21 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const linkedTasksOf = useCallback(
     (id: string) => linkedTasksBySession.get(id) ?? [],
     [linkedTasksBySession],
+  );
+
+  /** Spec D1 §6.8: the same `working_on` edges as CLAIMS — with their status
+      and end — for the row's word ("Ready to complete") and line 2. */
+  const claimsBySession = useMemo(() => {
+    const bySession = new Map<string, SessionClaim[]>();
+    for (const edge of data.graph.edges) {
+      if (edge.type !== 'working_on') continue;
+      bySession.set(edge.source.id, [...(bySession.get(edge.source.id) ?? []), ...claimsFromEdges(edge.source.id, [edge])]);
+    }
+    return bySession;
+  }, [data.graph.edges]);
+  const linkedClaimsOf = useCallback(
+    (id: string): readonly SessionClaim[] | undefined => claimsBySession.get(id),
+    [claimsBySession],
   );
 
   /** The INVERSE projection from the same edges: sessions per `working_on`
@@ -798,6 +828,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const chatInCentre = useChatSlot() !== null && props.chatSlot != null;
 
   return (
+    <>
+    {/* Spec D1 §5.4/§5.5 — the outcome dialogs; fixed-position, so placement is free. */}
+    {primaries.dialog}
     <WorkspaceGrid
       layout={layout}
       centerRef={centerRef}
@@ -833,6 +866,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               loadMore: data.loadMore(leftKind),
             })}
             boardFor={data.boardFor(leftKind) as never}
+            rowsForKind={data.rowsFor}
             mode={leftLayout}
             members={data.members}
             ctx={ctx}
@@ -854,6 +888,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
                expanded inline under a task (any panel kind) deserves the same
                close the sessions list gives it. */
             onTerminate={handleSessionTerminate}
+            onSessionVerb={primaries.sessionVerb}
+            onSessionBulk={primaries.sessionBulk}
+            linkedClaimsOf={linkedClaimsOf}
             onShareSession={primaries.shareSession}
             onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
@@ -986,6 +1023,27 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               </div>
             </div>
           )}
+          {addProject.isOpen && addProjectSeamPort && (
+            <div className="pn-ncs-scrim" role="presentation" onClick={addProject.close}>
+              <div
+                className="pn-ncs-host"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Add project"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <AddProjectSheet
+                  nodeLabel="this node"
+                  port={addProjectSeamPort}
+                  onAdded={(id) => {
+                    addProject.close();
+                    if (id) (openEntity)(id as EntityId);
+                  }}
+                  onCancel={addProject.close}
+                />
+              </div>
+            </div>
+          )}
           {chatInCentre ? (
             /* The chat REPLACES the stack (Q5) rather than joining it as a
                column: the stack is `EntityId[]` and a new chat has no id. The
@@ -1031,6 +1089,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               loadMore: data.loadMore(rightKind),
             })}
             boardFor={data.boardFor(rightKind) as never}
+            rowsForKind={data.rowsFor}
             mode={rightLayout}
             members={data.members}
             ctx={ctx}
@@ -1046,6 +1105,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             onSelect={openEntity}
             /* Same rule as the left dock — see the comment there. */
             onTerminate={handleSessionTerminate}
+            onSessionVerb={primaries.sessionVerb}
+            onSessionBulk={primaries.sessionBulk}
+            linkedClaimsOf={linkedClaimsOf}
             onShareSession={primaries.shareSession}
             onResume={handleSessionResume}
             onSetState={rowLifecycle.setState}
@@ -1074,6 +1136,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         </>
       }
     />
+    </>
   );
 }
 

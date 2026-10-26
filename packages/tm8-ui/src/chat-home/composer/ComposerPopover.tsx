@@ -27,6 +27,8 @@ export interface ComposerPopoverProps {
   badge?: number;
   menuHeight?: number;
   menuWidth?: number;
+  /** Cap the surface to the viewport and scroll inside it (see `useMenuAnchor`). */
+  fitViewport?: boolean;
   testId: string;
 }
 
@@ -41,6 +43,7 @@ export function ComposerPopover({
   badge,
   menuHeight = 300,
   menuWidth = 260,
+  fitViewport = false,
   testId,
 }: ComposerPopoverProps) {
   const [open, setOpen] = useState(false);
@@ -49,7 +52,7 @@ export function ComposerPopover({
   const close = useCallback(() => setOpen(false), []);
   const { oneSurface } = useMobileSurface();
   useDismissable(open && !oneSurface, [boxRef, menuRef], close);
-  const anchor = useMenuAnchor(open && !oneSurface, boxRef, menuRef, close, menuHeight, menuWidth);
+  const anchor = useMenuAnchor(open && !oneSurface, boxRef, menuRef, close, menuHeight, menuWidth, fitViewport);
   const menuId = useId();
 
   return (

@@ -568,7 +568,7 @@ test('an agent session is still selected once 083 is in the chain', (t) => {
 // delivered to terminals (019 mints the delivery intent, post_message does not).
 // =============================================================================
 
-/** Link a PR the way production does, so `created_in` provenance exists. */
+/** Link a PR the way production does, so `authored_from` provenance exists (308). */
 function linkPrOwnedBy(number, sessionId, sha) {
   const pr = linkPr(number);
   ok(`select public.record_session_commit(${uuid(sessionId)}, 'acme/forge', ${literal(sha)})`, {

@@ -376,6 +376,16 @@ export function createAnchorFeedController({
   };
 
   const attach = (): Unsubscribe => {
+    /*
+     * ATTACHING REVIVES A DISPOSED CONTROLLER. The hook memoises the controller
+     * and disposes it in the effect cleanup, so when React re-runs that effect
+     * on the SAME controller (StrictMode's mount-unmount-mount, a remounted
+     * tab), the second run used to read through a controller that was disposed
+     * for good: every response failed `accepts`, the phase never left
+     * 'loading', and the channel sat on skeletons forever. `generation` was
+     * already bumped by dispose, so any read from before it stays discarded.
+     */
+    disposed = false;
     const offEvent = seam.onEvent((event) => {
       if (eventTouchesAnchor(event, anchorId)) scheduleRefresh();
     });

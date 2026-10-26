@@ -608,6 +608,7 @@ export interface LaunchConfig {
    * `buildSpawnInput` then drops `memoryIds`, since the contract refuses the
    * pair.
    */
+  mcpSelections?: import("../mcp/port").McpSelection[];
   selection?: {
     readonly memoryIds?: readonly EntityId[];
     readonly skillIds?: readonly EntityId[];
@@ -1054,6 +1055,7 @@ export function buildSpawnInput(args: {
   const selection = routed?.skillIds
     ? { ...config.selection, skillIds: routed.skillIds }
     : config.selection;
+  if (config.mcpSelections !== undefined) input.mcpSelections = config.mcpSelections;
   if (selection) {
     /* EXACT, and alone: `selection` IS the working set and `memoryIds` ADDS to
        it, so the node refuses both together. Copied, never sliced — a
@@ -1404,18 +1406,22 @@ export function launchHarnessFacts(manifest: Record<string, unknown> | null): {
         mono: true,
       });
     }
-    // Under `inherit` the lane strips nothing, so its record has no MCP or
-    // skill-override rows: every connector and bundled skill is on.
+    // Under `inherit` the lane strips no PLUGIN and no bundled skill, which is
+    // all the surface decides.
+    //
+    // THE "MCP servers" ROW IS GONE, and its absence is the fix (D4, §10.6).
+    // It read `all` under `inherit` and the persona's `capabilities.launch.
+    // mcpServers` keys otherwise — and BOTH were false. `--strict-mcp-config`
+    // goes on the command line before `buildAgentCommand` branches on the
+    // surface, so neither surface loads an operator MCP server, a claude.ai
+    // connector or a `.mcp.json` entry; and the persona bag `asMcpServers`
+    // admits is now always empty, so the fallback listed a set that cannot
+    // have members. A session's real connectors are surface-independent and
+    // recorded separately as `launch.connectors`, which is what
+    // `launchConnectorFacts` below reads. Saying "all" where the truth is
+    // "exactly the ones this launch selected" is the worst available answer on
+    // a screen people open to find out what an agent was given.
     const inheritRecorded = recordedSurface === 'inherit';
-    const mcpRecord = Array.isArray(harness?.mcpServers) ? readArray(harness, 'mcpServers') : null;
-    facts.push({
-      label: 'MCP servers',
-      value: inheritRecorded ? 'all'
-        : mcpRecord !== null
-          ? list(mcpRecord.flatMap((item) => readText(asObject(item), 'name') ?? []))
-          : `${list(Object.keys(readObject(declared, 'mcpServers') ?? {}))} (declared)`,
-      mono: true,
-    });
     const overrides = readObject(harness, 'skillOverrides');
     // A minimal lane switches off the skills its launch did not choose
     // (bundled, the operator's own, and the Chrome block), and lists the
@@ -1438,6 +1444,51 @@ export function launchHarnessFacts(manifest: Record<string, unknown> | null): {
     );
   }
   return { facts, recorded };
+}
+
+/**
+ * §10.6 — THE CONNECTORS A SESSION WAS ACTUALLY GIVEN, for the launch record.
+ *
+ * Source: `manifest.launch.connectors`, written by `connectorManifestRecord`
+ * at spawn as `{serverKey, serverId}` sorted by key. That record is the key →
+ * id map the launcher was handed (§4.2), so it answers the question the debug
+ * view is actually asked — "which tool prefix is which connector" — and it is
+ * written for BOTH harness surfaces, because connectors do not depend on the
+ * surface.
+ *
+ * WHAT IT CANNOT SAY, and therefore does not: the manifest records ids and
+ * keys only. No connector NAME (the entity's title is not in the manifest), no
+ * account, and no "how it was chosen" — those are the session binding's, read
+ * through `mcp.sessions.provenance` and `read_mcp_launch_selections`, not
+ * recoverable from here. An absent field is reported as "not recorded" rather
+ * than as "none": a session launched before #1317 has no record, and that is a
+ * different fact from a session that ran with no connectors.
+ */
+export function launchConnectorFacts(manifest: Record<string, unknown> | null): ManifestFact[] {
+  const launch = readObject(manifest, 'launch');
+  if (launch === null) return [];
+  const raw = launch.connectors;
+  if (!Array.isArray(raw)) {
+    // `launch` exists and names no connectors. For a manifest written since
+    // #1317 that means the launch bound none — the field is omitted when the
+    // map is empty — and for an older one it means nothing was recorded. The
+    // row cannot tell them apart, so it says the thing that is true of both.
+    return [{ label: 'Connectors', value: 'none recorded', mono: false }];
+  }
+  const entries = raw.flatMap((item) => {
+    const entry = asObject(item);
+    const key = readText(entry, 'serverKey');
+    const id = readText(entry, 'serverId');
+    return key === null ? [] : [{ key, id }];
+  });
+  if (entries.length === 0) return [{ label: 'Connectors', value: 'none recorded', mono: false }];
+  return [
+    { label: `Connectors · ${String(entries.length)}`, value: entries.map((e) => e.key).join(', '), mono: true },
+    // The ids, because a key is a per-launch name (recomputed every launch and
+    // resume) and the id is the connector. Without it a key cannot be joined
+    // to the Space's connector list.
+    ...entries.map((entry) => ({ label: `mcp__${entry.key}__*`, value: entry.id ?? 'id not recorded', mono: true })),
+  ];
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {

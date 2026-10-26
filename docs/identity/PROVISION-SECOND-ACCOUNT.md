@@ -1,100 +1,109 @@
-# Provisioning the second account — the working, documented path
+# Adding a second person to a tm8 node
 
-**Identity v2 Stage 1 · 2026-08-02.** A second human on a tm8 server needs two
-things or they log in successfully and see nothing: an **account** (RLS is
-real now — a non-member reads zero rows) and a **member row in a space**.
-`auth.signup` is node-admin gated **by design** (F1 — never open
-self-registration), so provisioning is the operator's act. This is the exact
-sequence; every command is real and was run against a live server.
+A second person needs two things, or they sign in and see nothing: an
+**account** on the node, and a **membership** in a space (RLS is real, so a
+non-member reads zero rows). Open self-registration does not exist (F1). Every
+new account starts from something the operator hands out.
 
-## 0. Where to run this
+The recommended path is an **invite**: one code creates the account and the
+membership, and the newcomer chooses their own password, so you never learn
+it. An operator-created account (§4) is the fallback.
 
-On the server's own machine (or any shell whose requests reach it over
-loopback), a credential-free CLI call is the **auto-owner** — a node admin —
-so no login is needed for the admin half. Two traps:
+## 0. Before you start: can they reach the node?
 
-- **tm8-spawned shells are agents, not humans.** They carry
-  `TM8_AGENT_TOKEN` / `TM8_SESSION_ID` / `TM8_TEAM_MEMBER_ID`, which the CLI's
-  credential store refuses (doc 13 §4.3). Acting as a human from one requires
-  `env -u TM8_AGENT_TOKEN -u TM8_SESSION_ID -u TM8_TEAM_MEMBER_ID tm8 …`.
-- **The CLI defaults to prod.** Add `--server staging` (or the right named
-  server) to every command when the target is not the default node.
+- **Same machine:** nothing to do.
+- **Another machine:** the node must be in `TM8_NODE_MODE=multi` behind a TLS
+  proxy, with `TM8_PUBLIC_ORIGIN` set. See
+  [`../ops/OPERATOR-GUIDE.md`](../ops/OPERATOR-GUIDE.md). Do **not** hand
+  someone an ssh tunnel to a `single`-mode node: a tunnel arrives on loopback
+  and is treated as the owner.
 
-## 1. The operator creates the account (node admin)
+**Which node is the CLI talking to?** `tm8` targets `http://127.0.0.1:4610` (the
+`dev` slot) unless `TM8_BASE_URL` or `~/.config/tm8/config.json` says otherwise.
+For any other node, prefix commands with `TM8_BASE_URL=<its origin>`, e.g.
+`TM8_BASE_URL=https://tm8.example.com`. `--server <name>` picks a server that is
+registered on the local node, so it is no help on a machine without one.
+
+**tm8-spawned shells are agents, not people.** They carry `TM8_AGENT_TOKEN`,
+`TM8_SESSION_ID` and `TM8_TEAM_MEMBER_ID`. To act as yourself from one, strip them:
+`env -u TM8_AGENT_TOKEN -u TM8_SESSION_ID -u TM8_TEAM_MEMBER_ID tm8 …`.
+
+## 1. You: sign in, and mint an invite
+
+On a `single` node, on its own machine, you are already the owner over loopback
+and can skip the login. On a `multi` node everybody signs in, the owner included:
+
+```sh
+tm8 auth login <your-username> --password '<your password>'
+tm8 space invite create <space-id> --max-uses 1            # --role admin for a co-admin
+```
+
+The response holds a one-time code, `inv_…`. It is a credential, so send it to the
+person privately.
+
+## 2. They: redeem it, creating their account
+
+From their own machine, against the node's public origin:
+
+```sh
+TM8_BASE_URL=https://tm8.example.com \
+  tm8 auth invite signup --code inv_… --username bob --password '<their password>' --display-name 'Bob Example'
+```
+
+The account, the membership and the use of the invite happen in one
+transaction. An invite can never create a node admin or an owner. The call
+signs them in, and the CLI stores the session per origin.
+
+The CLI is the path that works today. A browser sign-up page that redeems an
+invite is being added separately.
+
+## 3. They: sign in from a browser
+
+Open the node's URL and sign in on the sign-in card with the same username and
+password. From then on, tasks they create carry their `created_by`, name and
+initials. (Every profile starts without an avatar; initials are the normal look.)
+
+## 4. Fallback: you create the account
+
+A node admin can create the account and then invite it:
 
 ```sh
 tm8 auth signup bob --password 'a-real-password-8+' --display-name 'Bob Example'
-```
-
-Refusals mean the gate is working: `28000` = you are not authenticated at all;
-`42501` = authenticated but not a node admin.
-
-## 2. The operator invites them into a space (space admin)
-
-```sh
 tm8 space invite create <space-id> --max-uses 1
 ```
 
-The response contains the one-time **code** — hand it to Bob out of band. The
-code is a credential; the CLI notes the disclosure in its journal.
-
-## 3. Bob logs in and redeems — as Bob, not as the owner
+Bob then signs in and redeems the invite **as Bob**, because redemption binds
+the membership to the caller:
 
 ```sh
-tm8 auth login bob --password 'a-real-password-8+'   # stores Bob's credential (origin-keyed store)
-tm8 space invite redeem <code>                        # creates Bob's HUMAN membership
+TM8_BASE_URL=https://tm8.example.com tm8 auth login bob --password 'a-real-password-8+'
+TM8_BASE_URL=https://tm8.example.com tm8 space invite redeem inv_…
 ```
 
-The redeem must run under **Bob's** credential — redemption binds membership
-to the caller. On a machine where the CLI store is unavailable, `auth login`
-prints the `tm8s_…` token once; export it as `TM8_AGENT_TOKEN` for the redeem.
+Refusals mean the gate is working: `28000` means you are not authenticated;
+`42501` means you are authenticated but not a node admin.
 
-## 4. Bob signs in from a browser
+## Behind a proxy
 
-Open the UI, and on the sign-in card enter `bob` + password. The gate performs
-`auth.login`, stores the pass per server (origin-keyed, mirroring the CLI
-ruling), and every request from the app now acts as Bob — tasks he creates
-carry his `created_by`, his name, and his icon (initials until he sets an
-avatar in Settings; every profile row ships NULL, and initials are the normal
-rendering, not an error).
+A reverse proxy connects to tm8 on loopback, but that does **not** make the
+remote browser local. A request carrying `Forwarded`, `X-Forwarded-For`,
+`X-Forwarded-Host` or `X-Real-IP` is never the auto-owner. In `multi` mode
+nothing is, so the operator signs in like everyone else.
 
-**TLS is mandatory off localhost** (review finding F8): `auth.login` carries
-the password in the request body. Utho staging has a real certificate
-(`tm8-server.tail28ac62.ts.net:8888`).
+**TLS is mandatory off localhost** (review finding F8): sign-in, claim and
+invite sign-up all send the password in the request body.
 
-### Reverse-proxied and kill-switched deployments
+## The acceptance check
 
-A reverse proxy connects to tm8's loopback socket, but that does **not** make
-the remote browser local. The auto-owner arm refuses any request carrying
-`Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`, or `X-Real-IP`. Utho nginx
-sets `X-Forwarded-For`, so the gate's **"create another account"** path is an
-honest refusal there: `auth.signup` remains node-admin-only.
-
-Provision both accounts and both one-use invite codes from an on-box shell
-while local auto-owner is enabled, then have each human log in and redeem their
-code as in steps 1–3. After provisioning, a hardened node may set
-`TM8_DISABLE_AUTO_OWNER=1` and restart. That kill switch disables even bare
-loopback auto-owner; existing `tm8s_…` passes continue to authenticate. Further
-provisioning then requires a real node-admin pass or a deliberate maintenance
-window with the switch disabled.
-
-The browser acceptance harness has a login-only mode for this topology. It
-does no signup or privileged API work:
+`scripts/two-users-acceptance.mjs` (repo root, `TM8_BASE_URL=… node …`) drives
+two accounts, invites, two tasks and two distinct `created_by` values over the
+API. The browser half has a login-only mode for proxied deployments:
 
 ```sh
 E2E_LOGIN_ONLY=1 \
 E2E_SPACE_ID='<shared-space-id>' \
 E2E_AMBER_USER='amber' E2E_AMBER_PASS='<password>' \
 E2E_BOBBY_USER='bobby' E2E_BOBBY_PASS='<password>' \
-UI_URL='https://tm8-server.tail28ac62.ts.net:8888' \
-API_URL='https://tm8-server.tail28ac62.ts.net:8888' \
+UI_URL='https://tm8.example.com' API_URL='https://tm8.example.com' \
 node packages/tm8-ui/e2e/two-accounts-browser.mjs
 ```
-
-## 5. The acceptance check
-
-`scripts/two-users-acceptance.mjs` (repo root, `TM8_BASE_URL=… node …`)
-drives the whole sequence — two signups, two logins, invites, two tasks, two
-distinct `created_by` — over the API. The browser half is the gate itself:
-create/sign in as each account, make a task as each, and the two tasks show
-two different names and icons.

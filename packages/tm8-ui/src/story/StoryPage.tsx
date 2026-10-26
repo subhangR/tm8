@@ -1,9 +1,11 @@
 /**
  * THE STORY PAGE — the shell every story block mounts in (artifact 01a0fc3e
- * rev 4, top to bottom): the bar (breadcrumb + kind chip), the HERO, the FOUR
- * STATS, the graph, the team, the roots, the child stories, then the live feed
- * and what's happening beside the rail, and the playground floating over all
- * of it.
+ * rev 4, reshaped by task 01a101c5): the GRAPH first, from the panel's top
+ * edge and as tall as the panel less a peek, with the compact HEADER (crumb,
+ * title, status, key figures; the description, meta line and FOUR STATS fold
+ * behind its "details") floating over its top-left corner; then the team, the
+ * roots, the child stories, the live feed, the story's messages and what's
+ * happening beside the rail, and the playground floating over all of it.
  *
  * The shell owns exactly one piece of shared state: the node PICK. Any block
  * that draws a node reports a click through `onPick`; the playground renders
@@ -13,7 +15,7 @@
  * tallies. The one thing it counts is the by-kind breakdown under "In the
  * story", which is a label over `page.nodes`, not a progress figure.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { StatusCategory } from '@tm8/contract';
 
 import { Avatar, Pill, VectorIcon, relTime, type PillTone } from '../kit';
@@ -22,11 +24,16 @@ import { getKind } from '../domain/registry';
 import { ChildStoriesCard } from './cards/ChildStoriesCard';
 import { LiveFeed } from './cards/LiveFeed';
 import { RootsCard } from './cards/RootsCard';
-import { StoryRail } from './cards/StoryRail';
+import { StoryRail, StatusCard } from './cards/StoryRail';
+import { StoryTree } from './tree/StoryTree';
 import { TeamCard } from './cards/TeamCard';
 import { WhatsHappening } from './cards/WhatsHappening';
+import { StoryGame } from './game/StoryGame';
+import { ModeSwitch } from './game/ModeSwitch';
+import { storyGameStore, useStoryViewMode, type StoryViewMode } from './game/store';
 import { StoryGraph } from './graph/StoryGraph';
 import { StoryPlayground } from './playground/StoryPlayground';
+import { StoryMessagesSlot } from './messages-slot';
 import {
   STORY_KIND,
   TONE_WORD,
@@ -97,10 +104,13 @@ export function StoryPage({
      the action popover's anchor; the popover closing never touches the
      selection, and a right-click never drops it. */
   const [menuPick, setMenuPick] = useState<StoryNodePick | null>(null);
+  const [launchTarget, setLaunchTarget] = useState<{ id: string; storyId: string; seq: number } | null>(null);
+  const launch = (id: string) => setLaunchTarget(old => ({ id, storyId: view.id, seq: (old?.seq ?? 0) + 1 }));
+  const viewId = useId();
   // Stable: the popover's outside-pointerdown listener depends on it.
   const closeMenu = useCallback(() => setMenuPick(null), []);
   // A pick names a node of THIS story; a different story drops it.
-  useEffect(() => setMenuPick(null), [view.id]);
+  useEffect(() => { setMenuPick(null); setLaunchTarget(null); }, [view.id]);
   const [hoverRootId, setHoverRootId] = useState<string | null>(null);
   const hover = useMemo(() => ({ rootId: hoverRootId, setRootId: setHoverRootId }), [hoverRootId]);
 
@@ -124,66 +134,142 @@ export function StoryPage({
     ...(open ? { onPick } : {}),
   };
   const full = layout === 'full';
-  const graph = (
-    <StoryGraph {...block} {...(initialGraphView ? { initialView: initialGraphView } : {})} {...(full ? { fill: true } : {})} />
+  /* GRAPH FIRST, FROM THE TOP EDGE (task 01a101c5): the graph is the first
+     thing on the page and fills the panel's height less a peek of what
+     follows. The header is not a row above it any more — it floats over the
+     canvas's top-left corner as the graph's `lead`, with the description, the
+     meta row and the stat strip still folded behind its "details". */
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  // Keep the stored 'story' value as Graph for existing per-story preferences.
+  const mode = useStoryViewMode(view.id);
+  const setMode = useCallback((next: StoryViewMode) => {
+    setMenuPick(null);
+    setLaunchTarget(null);
+    storyGameStore.getState().setMode(view.id, next);
+  }, [view.id]);
+  const lead = (
+    <div className="sty-lead">
+      <StoryHero
+        view={view}
+        rename={actions.rename}
+        open={actions.open}
+        live={live ?? null}
+        expanded={detailsOpen}
+        onToggle={() => setDetailsOpen((o) => !o)}
+        extra={
+          <>
+            <StoryStats view={view} />
+            {filter.hops < 3 ? (
+              <p className="sty-hopsnote" role="status">
+                showing {plural(filter.hops, 'hop')} from the roots · the figures above are the whole story
+              </p>
+            ) : null}
+          </>
+        }
+      />
+    </div>
   );
+  const graph =
+    mode === 'game' ? (
+      <div className="sty-graphbox sty-graphbox--game">
+        <StoryGame view={view} live={live ?? null} open={open} mode={mode} onMode={setMode} showModeSwitch={false} />
+      </div>
+    ) : (
+      <div className="sty-graphbox">
+        <StoryGraph {...block} {...(initialGraphView ? { initialView: initialGraphView } : {})} fill lead={lead} />
+      </div>
+    );
+  /* The story's messages: the panel's own conversation surface, as a section
+     beside the live feed rather than a tab (absent outside a panel). */
+  const messagesSurface = useContext(StoryMessagesSlot);
+  const messages = messagesSurface ? (
+    <section className="stc-card sty-messages" aria-label="Messages" data-testid="story-messages">
+      <div className="stc-head">
+        <span className="kit-eyebrow">Messages</span>
+      </div>
+      <div className="sty-messages__body">{messagesSurface}</div>
+    </section>
+  ) : null;
 
   return (
     <div
-      className={`sty-page${full ? ' sty-page--full' : ''}`}
+      className={`sty-page${full ? ' sty-page--full' : ''}${mode === 'tree' ? ' syt-page' : ''}`}
       data-testid="story-page"
       data-story-root=""
       data-story-id={view.id}
     >
-      <StoryBar view={view} open={actions.open} />
-      <StoryHero view={view} rename={actions.rename} live={live ?? null} />
-      <StoryStats view={view} />
-      {filter.hops < 3 ? (
-        <p className="sty-hopsnote" role="status">
-          showing {plural(filter.hops, 'hop')} from the roots · the figures above are the whole story
-        </p>
-      ) : null}
-      {full ? (
-        /* FULL VIEW: the rail beside the main column, the graph in a tall
-           definite box so `fill` can grow it. */
-        <section className="sty-full">
-          <div className="sty-full__main">
-            <div className="sty-graphbox">{graph}</div>
-            <TeamCard {...block} />
-            <RootsCard {...block} />
-            <ChildStoriesCard {...block} />
-            <LiveFeed {...block} />
-            <WhatsHappening {...block} />
-          </div>
-          <aside className="sty-full__rail">
-            <StoryRail {...block} />
-          </aside>
-        </section>
-      ) : (
+      <div className="sty-viewbar">
+        <ModeSwitch mode={mode} onChange={setMode} idPrefix={viewId} panelId={`${viewId}-panel`} />
+      </div>
+      <div id={`${viewId}-panel`} role="tabpanel" aria-labelledby={`${viewId}-${mode}`} className="sty-viewpanel">
+      {mode === 'tree' ? (
         <>
-          {graph}
-          <TeamCard {...block} />
-          <RootsCard {...block} />
-          <ChildStoriesCard {...block} />
-          <section className="sty-cols">
-            <div className="sty-cols__main">
+          <div className="syt-hero">
+            <StoryHero compact view={view} rename={actions.rename} open={open} live={live ?? null}
+              expanded={detailsOpen} onToggle={() => setDetailsOpen(o => !o)}
+              extra={<><StoryStats view={view} /><StatusCard view={view} actions={actions} /></>} />
+            {actions.add && <button type="button" className="stc-btn syt-launch" title="Launch on story" onClick={() => launch(view.id)}>▷ Launch on story</button>}
+          </div>
+          <div className="syt-layout">
+            <StoryTree key={view.id} {...block} onLaunch={launch}
+              {...(filterRoute ? { onFilterKinds: (kinds: string[] | null) => filterRoute.set(null, kinds) } : {})} />
+            <aside className="syt-rail" aria-label="Story activity">
               <LiveFeed {...block} />
+              {messages}
+              <WhatsHappening {...block} />
+            </aside>
+          </div>
+        </>
+      ) : graph}
+      {mode !== 'story' ? null : (
+      <div className="sty-sections">
+        {full ? (
+          /* FULL VIEW: the rail beside the main column. */
+          <section className="sty-full">
+            <div className="sty-full__main">
+              <TeamCard {...block} />
+              <RootsCard {...block} />
+              <ChildStoriesCard {...block} />
+              <LiveFeed {...block} />
+              {messages}
               <WhatsHappening {...block} />
             </div>
-            <aside className="sty-cols__rail">
+            <aside className="sty-full__rail">
               <StoryRail {...block} />
             </aside>
           </section>
-        </>
+        ) : (
+          <>
+            <TeamCard {...block} />
+            <RootsCard {...block} />
+            <ChildStoriesCard {...block} />
+            <section className="sty-cols">
+              <div className="sty-cols__main">
+                <LiveFeed {...block} />
+                {messages}
+                <WhatsHappening {...block} />
+              </div>
+              <aside className="sty-cols__rail">
+                <StoryRail {...block} />
+              </aside>
+            </section>
+          </>
+        )}
+      </div>
       )}
-      <StoryPlayground
-        view={view}
-        actions={actions}
-        live={live}
-        pick={menuPick}
-        onClosePick={closeMenu}
-        runners={runners ?? null}
-      />
+      </div>
+      {mode === 'game' ? null : (
+        <StoryPlayground
+          key={`${view.id}-${mode}`}
+          launchTarget={launchTarget?.storyId === view.id ? launchTarget : null}
+          view={view}
+          actions={actions}
+          live={live}
+          pick={menuPick}
+          onClosePick={closeMenu}
+          runners={runners ?? null}
+        />
+      )}
     </div>
   );
 }
@@ -227,52 +313,63 @@ function useStoryFilter(storyId: string, route: StoryFilterRoute | null): StoryG
 
 /* ------------------------------------------------------------------------- */
 
-function StoryBar({ view, open }: { view: StoryView; open?: (id: string) => void }) {
+/** The parent crumb, inline in the header row: the story glyph, then the parent story when there is one. */
+function StoryCrumb({ view, open }: { view: StoryView; open?: (id: string) => void }) {
   const parent = view.page.parent;
   return (
-    <div className="sty-bar">
-      <span className="sty-bar__crumb">
-        <VectorIcon paths={KIND_ART.story} size={14} />
-        <span>{getKind(STORY_KIND).labelPlural}</span>
-        {parent ? (
-          <>
-            <span className="sty-bar__sep">/</span>
-            {open ? (
-              <button type="button" className="sty-bar__link" title="the parent story" onClick={() => open(parent.id)}>
-                {parent.title}
-              </button>
-            ) : (
-              <span title="the parent story">{parent.title}</span>
-            )}
-          </>
-        ) : null}
-        <span className="sty-bar__sep">/</span>
-        <b>{view.title}</b>
-      </span>
-      <span className="sty-kindchip">
-        <VectorIcon paths={KIND_ART.story} size={12} />
-        {getKind(STORY_KIND).label}
-      </span>
-    </div>
+    <span className="sty-bar__crumb" title={getKind(STORY_KIND).label}>
+      <VectorIcon paths={KIND_ART.story} size={14} />
+      {parent ? (
+        <>
+          {open ? (
+            <button type="button" className="sty-bar__link" title="the parent story" onClick={() => open(parent.id)}>
+              {parent.title}
+            </button>
+          ) : (
+            <span title="the parent story">{parent.title}</span>
+          )}
+          <span className="sty-bar__sep">/</span>
+        </>
+      ) : null}
+    </span>
   );
 }
 
 /* ------------------------------------------------------------------------- */
 
+/**
+ * THE HEADER — one compact row (#36): crumb, title, status, the key figures
+ * and a "details" toggle. Collapsed by default so the graph is the page; the
+ * toggle unfolds the description and the meta line here, and the page draws
+ * the stat strip under it.
+ */
 function StoryHero({
   view,
   rename,
+  open,
   live,
+  expanded,
+  onToggle,
+  extra,
+  compact = false,
 }: {
+  compact?: boolean;
   view: StoryView;
   rename?: (entityId: string, title: string) => Promise<void>;
+  open?: (id: string) => void;
   live: StoryLive | null;
+  expanded: boolean;
+  onToggle: () => void;
+  /** More of the fold: the page's stat strip and hops note, drawn under the meta line. */
+  extra?: ReactNode;
 }) {
   const { state, page } = view;
+  const tp = state.taskProgress;
   const kids = state.childStoryCount;
   const tone = view.statusCategory ? CATEGORY_TONE[view.statusCategory] : 'idle';
   // The status key, else its category in words; a read with neither draws none.
   const statusLabel = statusWord(view.status) || statusWord(view.statusCategory);
+  const detailsId = `sty-details-${view.id}`;
 
   const teammates = teammatesOf(page);
   const members = Object.values(view.people).filter((p) => !p.agent);
@@ -293,64 +390,99 @@ function StoryHero({
 
   return (
     <section
-      className="sty-hero"
+      className={`sty-hero sty-hero--compact${expanded ? ' sty-hero--open' : ''}`}
+      data-testid="story-header"
       data-landed={live?.landed.has(view.id) ? 'true' : undefined}
-      style={{ ['--sty-p' as string]: `${pct(state.taskProgress)}%` }}
+      style={{ ['--sty-p' as string]: `${pct(tp)}%` }}
     >
-      <StoryTitle id={view.id} title={view.title} rename={rename} />
-      <StoryLede text={view.description} />
-
-      {/* ONE line under the title: what the kicker and the meta row used to
-          say on two (Subhang, PR 1004: the top took ~650px). Wraps on a
-          narrow panel; nothing is dropped, only folded. */}
-      <div className="sty-herometa">
+      <div className="sty-headrow">
+        {!compact && <StoryCrumb view={view} open={open} />}
+        <StoryTitle id={view.id} title={view.title} rename={rename} />
         {statusLabel ? (
           <Pill tone={tone} dot="solid">
             {statusLabel}
           </Pill>
         ) : null}
-        <span>{plural(state.rootCount, 'root')}</span>
-        {kids > 0 ? <span>{plural(kids, 'child story', 'child stories')}</span> : null}
-        <span>{plural(state.itemCount, 'thing')}</span>
-        {onIt > 0 ? (
-          <span
-            className="sty-who"
-            title={`${plural(teammates.length, 'teammate')} · ${plural(members.length, 'member')}: ${faces.map((f) => f.label).join(', ')}`}
-          >
-            <span className="sty-stack">
-              {/* Three faces at most on the one line; the rest is a count
-                  and every name is in the title. Live teammates first. */}
-              {faces.slice(0, 3).map((f) => (
-                <Avatar
-                  key={f.id}
-                  actorId={f.id}
-                  provenance={f.agent ? 'agent' : 'human'}
-                  label={f.label}
-                  initials={f.initials}
-                  size={15}
-                  className={f.live ? 'sty-av--live' : undefined}
-                />
-              ))}
-              {faces.length > 3 ? <span className="sty-stack__more">+{faces.length - 3}</span> : null}
+        <span className="sty-headrow__figs">
+          <span title={`${tp.done} of ${plural(tp.work, 'task')} done`}>
+            <b>{tp.done}</b>/{tp.work} tasks · {pct(tp)}%
+          </span>
+          {state.liveSessionCount > 0 ? (
+            <span>
+              <b>{state.liveSessionCount}</b> live
             </span>
-            {onIt} on it
-          </span>
-        ) : null}
+          ) : null}
+          {tp.blocked > 0 ? (
+            <span className="sty-headrow__blocked">
+              <b>{tp.blocked}</b> blocked
+            </span>
+          ) : null}
+        </span>
         {live ? <LivePill live={live} /> : null}
-        {view.feed.length > 0 ? (
-          <span className="sty-who" title={`${view.feed.length}${view.feed.length >= 50 ? '+' : ''} messages across the story`}>
-            <VectorIcon paths={KIND_ART.message} size={13} />
-            {view.feed.length}
-            {view.feed.length >= 50 ? '+' : ''}
-          </span>
-        ) : null}
         {state.pendingAttentionCount > 0 ? (
           <Pill tone="wait" dot="solid" title={`${plural(state.pendingAttentionCount, 'attention request')} on the story or something in it`}>
             {state.pendingAttentionCount} attention
           </Pill>
         ) : null}
-        {state.lastActivityAt ? <span className="sty-herometa__when">active {relTime(state.lastActivityAt)}</span> : null}
+        <button
+          type="button"
+          className="sty-headrow__toggle"
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          title={expanded ? 'Hide the description and figures' : 'Show the description and figures'}
+          onClick={onToggle}
+        >
+          {expanded ? 'less' : 'details'}
+          <span aria-hidden className="sty-headrow__chev">
+            {expanded ? '▴' : '▾'}
+          </span>
+        </button>
       </div>
+
+      {expanded ? (
+        <div id={detailsId} className="sty-details">
+          <StoryLede text={view.description} />
+          <div className="sty-herometa">
+            {compact && <StoryCrumb view={view} open={open} />}
+            <span>{plural(state.rootCount, 'root')}</span>
+            {kids > 0 ? <span>{plural(kids, 'child story', 'child stories')}</span> : null}
+            <span>{plural(state.itemCount, 'thing')}</span>
+            {onIt > 0 ? (
+              <span
+                className="sty-who"
+                title={`${plural(teammates.length, 'teammate')} · ${plural(members.length, 'member')}: ${faces.map((f) => f.label).join(', ')}`}
+              >
+                <span className="sty-stack">
+                  {/* Three faces at most on the one line; the rest is a count
+                      and every name is in the title. Live teammates first. */}
+                  {faces.slice(0, 3).map((f) => (
+                    <Avatar
+                      key={f.id}
+                      actorId={f.id}
+                      provenance={f.agent ? 'agent' : 'human'}
+                      label={f.label}
+                      initials={f.initials}
+                      size={15}
+                      className={f.live ? 'sty-av--live' : undefined}
+                    />
+                  ))}
+                  {faces.length > 3 ? <span className="sty-stack__more">+{faces.length - 3}</span> : null}
+                </span>
+                {onIt} on it
+              </span>
+            ) : null}
+            {view.feed.length > 0 ? (
+              <span className="sty-who" title={`${view.feed.length}${view.feed.length >= 50 ? '+' : ''} messages across the story`}>
+                <VectorIcon paths={KIND_ART.message} size={13} />
+                {view.feed.length}
+                {view.feed.length >= 50 ? '+' : ''}
+              </span>
+            ) : null}
+            {state.lastActivityAt ? <span className="sty-herometa__when">active {relTime(state.lastActivityAt)}</span> : null}
+          </div>
+          {extra}
+        </div>
+      ) : null}
     </section>
   );
 }

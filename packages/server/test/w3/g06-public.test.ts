@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -6,6 +9,16 @@ import {
   successData,
   type W3PublicServer,
 } from './public-harness.js';
+
+// Since task 01a13574 `projects.create` checks that the folder exists (and is
+// inside the roots) even without ensureWorkingDir, so these paths are real
+// directories, canonical because the node stores the realpath.
+const SCRATCH = realpathSync(mkdtempSync(join(tmpdir(), 'tm8-w3-g06-')));
+const dirOf = (name: string): string => {
+  const dir = join(SCRATCH, name);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
 
 interface ProjectResource {
   id: string;
@@ -69,7 +82,7 @@ describe.sequential('W3.G06 projects and associations through the production Ser
     const body = {
       clientMutationId: 'w3-g06-project-create',
       name: 'W3 project',
-      workingDir: '/tmp/tm8-w3-g06',
+      workingDir: dirOf('project'),
       repoUrl: 'https://example.test/tm8.git',
       trust: 'trusted',
       defaults: { model: 'gpt-5.6', agentTool: 'codex', mode: 'worker' },
@@ -244,7 +257,7 @@ describe.sequential('W3.G06 projects and associations through the production Ser
     const capped = successData<ProjectResource>(await harness.request('POST', '/v2/projects', {
       clientMutationId: 'w3-g06-cap-project',
       name: 'W3 capped project',
-      workingDir: '/tmp/tm8-w3-g06-cap',
+      workingDir: dirOf('cap'),
     }));
     const spaces: string[] = [];
     for (let index = 0; index < 17; index += 1) {

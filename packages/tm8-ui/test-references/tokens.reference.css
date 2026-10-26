@@ -183,3 +183,115 @@
 .cv2-root .t-quote { font-family: var(--pn-serif); font-style: italic; font-weight: 400; font-size: var(--pn-fs-h3); line-height: 1.45; color: var(--pn-ink-2); }
 .cv2-root .t-mono { font-family: var(--pn-mono); font-weight: 400; font-size: var(--pn-fs-mono); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
 .cv2-root .t-code { font-family: var(--pn-mono); font-weight: 500; font-size: var(--pn-fs-mono); color: var(--pn-brand); }
+
+/* ==========================================================================
+   CHATGPT — the default built-in pair since 2026-10-14 (user ruling: "look
+   like ChatGPT, not Atelier"). Read from ChatGPT desktop screenshots: neutral
+   near-black greys with no warm or paper tint, a system sans stack for UI and
+   prose alike, hairline borders that barely show, a soft grey pill for
+   hover/selected rows, and the gold accent the reference account wears.
+
+   THESE BLOCKS ARE THE SOURCE, NOT THE PAINT. `scripts/extract-builtins.mjs`
+   reads them into `builtin:chatgpt-light` / `builtin:chatgpt-dark` — each is
+   the Atelier table of the same mode with these overrides laid over it — and
+   the style store paints the result through the injected sheet. A root that
+   opts in with `data-style="chatgpt"` (the dev harnesses) paints them straight
+   from here. Only keys the registry marks `surface` may differ between the
+   light and dark blocks; everything else lives in the light block alone, so
+   the always-dark ramp stays a pure swap of surface keys.
+   ========================================================================== */
+.cv2-root[data-style='chatgpt'] {
+  --pn-paper:    #FFFFFF;
+  --pn-surface:  #F9F9F9;
+  --pn-card:     #FFFFFF;
+  --pn-hover:    #F0F0F0;
+  --pn-active:   #E8E8E8;
+
+  --pn-line:     #ECECEC;
+  --pn-line-2:   #DEDEDE;
+
+  --pn-ink:      #0D0D0D;
+  --pn-ink-2:    #303030;
+  --pn-ink-3:    #6E6E6E;
+  --pn-ink-4:    #A3A3A3;
+
+  --pn-brand:      #9C6E14;
+  --pn-brand-2:    #8A600F;
+  --pn-brand-soft: rgba(156, 110, 20, 0.10);
+  --pn-brand-rgb:  156, 110, 20;
+
+  --pn-idle:   #9B9B9B;   --pn-idle-soft:  rgba(155, 155, 155, 0.16);
+
+  --pn-serif: ui-sans-serif, -apple-system, system-ui, 'Segoe UI', Helvetica, 'Apple Color Emoji', Arial, sans-serif, 'Segoe UI Emoji', 'Segoe UI Symbol';
+  --pn-ui:    ui-sans-serif, -apple-system, system-ui, 'Segoe UI', Helvetica, 'Apple Color Emoji', Arial, sans-serif, 'Segoe UI Emoji', 'Segoe UI Symbol';
+  --pn-mono:  ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* `.cv2-root` carries `zoom: 1.1` (app.css), so 14.5px body renders at the
+     reference's 16px and 13px rows at its 14px. */
+  --pn-fs-body: 14.5px;
+  --pn-lh-body: 1.6;
+  --pn-read-measure: 700px;
+
+  --pn-r-xs: 6px;
+  --pn-r-sm: 8px;
+  --pn-r-md: 12px;
+  --pn-r-lg: 16px;
+
+  --pn-scrim: rgba(13, 13, 13, 0.5);
+
+  --pn-sh-sm:  0 1px 2px rgba(0, 0, 0, 0.05);
+  --pn-sh-md:  0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
+  --pn-sh-pop: 0 8px 30px rgba(0, 0, 0, 0.12);
+
+  --pn-x-btn-ink-hover: #2E2E2E;
+  --pn-x-hairline-soft: #F3F3F3;
+  --pn-x-prose-ink:     #2E2E2E;
+
+  /* The terminal is near-black in both modes; neutral here, not warm. */
+  --pn-x-term-bg: #0D0D0D;
+  --pn-x-term-live-bg: #121212;
+  --pn-x-term-ghost: #4A4A4A;
+  --pn-x-term-fg: #D9D9D9;
+  --pn-x-term-cursor: #D1A54C;
+  --pn-x-term-cursor-accent: #121212;
+  --pn-x-term-sel-bg: rgba(209, 165, 76, 0.22);
+  --pn-x-term-sel-fg: #F2F2F2;
+  --pn-x-term-ansi-0: #2E2E2E;
+  --pn-x-term-ansi-7: #CCCCCC;
+  --pn-x-term-ansi-8: #666666;
+  --pn-x-term-ansi-15: #ECECEC;
+}
+
+.cv2-root[data-style='chatgpt'][data-theme='dark'],
+[data-theme='dark'] .cv2-root[data-style='chatgpt'] {
+  --pn-paper:   #0E0E0E;
+  --pn-surface: #0A0A0A;
+  --pn-card:    #212121;
+  --pn-hover:   #1C1C1C;
+  --pn-active:  #272727;
+
+  --pn-line:    #232323;
+  --pn-line-2:  #333333;
+
+  --pn-ink:     #ECECEC;
+  --pn-ink-2:   #D4D4D4;
+  --pn-ink-3:   #999999;
+  --pn-ink-4:   #6B6B6B;
+
+  --pn-brand:      #D9B25E;
+  --pn-brand-2:    #D1A54C;
+  --pn-brand-soft: rgba(217, 178, 94, 0.14);
+  --pn-brand-rgb:  217, 178, 94;
+
+  --pn-idle:  #7A7A7A;  --pn-idle-soft:  rgba(122, 122, 122, 0.20);
+
+  --pn-scrim: rgba(0, 0, 0, 0.66);
+
+  --pn-sh-sm:  0 1px 2px rgba(0, 0, 0, 0.45);
+  --pn-sh-md:  0 2px 8px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.3);
+  --pn-sh-pop: 0 16px 44px rgba(0, 0, 0, 0.6);
+
+  --pn-x-btn-ink-hover: color-mix(in srgb, var(--pn-ink) 86%, var(--pn-paper));
+  --pn-x-hairline-soft: var(--pn-hover);
+  --pn-x-prose-ink:     #E3E3E3;
+}

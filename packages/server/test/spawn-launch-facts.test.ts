@@ -36,14 +36,18 @@ class SpawnDb implements Db {
 
   async tx<T>(claims: DbClaims, run: (q: Querier) => Promise<T>): Promise<T> {
     const q: Querier = {
-      query: async <R>(sql: string): Promise<R[]> => this.answer<R>(sql),
+      query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => this.answer<R>(sql, params),
       rpc: async <T2>(fn: string, rpcArgs: readonly unknown[] = []): Promise<T2> =>
         this.rpc<T2>(claims, fn, rpcArgs),
     };
     return run(q);
   }
 
-  private answer<R>(sql: string): R[] {
+  private answer<R>(sql: string, params: readonly unknown[] = []): R[] {
+    // Visible teammate, with no equipped connectors in this launch-posture fixture.
+    if (sql.includes('internal.is_space_member($2::uuid)') && sql.includes('as allowed')) {
+      return [{ allowed: params[0] === TEAMMATE && params[1] === SPACE }] as R[];
+    }
     if (sql.includes('from public.team_members')) {
       return [{
         entity_id: TEAMMATE, name: 'Draco', role: 'PTY engineer',
@@ -73,7 +77,7 @@ class SpawnDb implements Db {
         snapshot: { profile: { source: 'core_default' } },
       } as T;
     }
-    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
+    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, identityId: 'owner-identity', kind: 'agent', spaceId: SPACE, workSessionId: SESSION, viaLinkId: null } as T;
     if (fn === 'public.issue_work_session_agent_session') return { id: AUTH_SESSION } as T;
     if (fn === 'internal.w2_record_interaction_profile_pin') {
       return {

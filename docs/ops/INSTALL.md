@@ -24,15 +24,15 @@ Eleven phases, in this order, because each one depends on the last:
 | # | Phase | Why it cannot be skipped |
 |---|---|---|
 | 1 | Prerequisites | node **22** (node-pty's prebuilds are proven on that major), bun, a Postgres **16 or newer** server and client (16 is the floor per `deploy/environments.sh`; this repo's clusters run 18), git, curl, and — to run agents — an agent CLI (`claude` or `codex`) the host is logged in to |
-| 2 | Cluster | Nothing in this repo starts Postgres — see [below](#the-sidecar-that-never-ran) |
+| 2 | Cluster | Nothing in this repo starts Postgres — see [below](#the-sidecar-that-never-ran). A cluster already on the slot's port is reused **only** if this installer created it — see [below](#a-cluster-already-on-the-port) |
 | 3 | Superuser + loopback trust | The subtle one. See [below](#why-loopback-trust-is-a-real-step) |
 | 4 | Database | Created **empty** |
 | 5 | Dependencies | `bun install`, then node-pty's `spawn-helper` made executable |
 | 6 | Build | `tsc -b` **and** a separate `vite build` — `bun run build` is tsc only |
-| 7 | Env file | Carries both database URLs |
+| 7 | Env file | Carries both database URLs. The `prod` slot also gets `TM8_NODE_MODE=multi` and stubs for `TM8_PUBLIC_ORIGIN`, `TM8_ALLOWED_*`, `TM8_PROJECT_ROOTS` |
 | 8 | Data directories | `TM8_DATA_DIR`, `TM8_PROJECT_DIR` |
-| 9 | Migrations | ~94 files. **The server does not migrate at boot** |
-| 10 | Service | A systemd unit, with `--systemd` |
+| 9 | Migrations | 300+ files. **The server does not migrate at boot.** On a re-run with pending migrations, a `pg_dump -Fc` is taken first (newest five kept; `--no-backup` skips it) |
+| 10 | Service | A systemd unit (Linux) or launchd agents (macOS), with `--service` |
 | 11 | Start + verify | Runs it, then confirms `/health` says `db:ok` and one real catalog read succeeds |
 
 **Seeding needs no phase.** Once the schema is current and the server boots, the
@@ -45,7 +45,8 @@ already worked.
 ```bash
 ./install.sh                          # dev slot into this clone, then run it
 ./install.sh --no-start               # …but leave nothing running
-./install.sh --env prod --systemd     # server install: unit file, enabled, started
+./install.sh --env prod --service     # server install: unit file, enabled, started
+./install.sh --port 4710 --pg-port 5599   # this slot on other ports (theirs are taken)
 ./install.sh --status                 # what is installed, migrated and running
 ./install.sh --dry-run                # print every step, change nothing
 ./install.sh --reset                  # DROP the database and re-migrate (asks first)
@@ -55,8 +56,27 @@ already worked.
 
 Also `bun run setup`, `bun run setup:status`, `bun run setup:dry-run`.
 
-Useful flags: `--no-start`, `--no-build`, `--no-migrate`, `--configure-pg-hba`,
-`--yes`, `--layout system|user`.
+Useful flags: `--no-start`, `--no-build`, `--no-migrate`, `--no-backup`,
+`--configure-pg-hba`, `--adopt-cluster`, `--port`, `--pg-port`, `--yes`,
+`--layout system|user`. Port overrides are written into the env file; pass them
+again to `--status`.
+
+Running a server for other people? [`OPERATOR-GUIDE.md`](OPERATOR-GUIDE.md)
+covers the service user's agent login, a reverse proxy, TLS, backups and upgrades.
+
+## A cluster already on the port
+
+Each slot has a fixed Postgres port (`dev` and `prod` share **5442**). If
+something already answers there, the installer reuses it only when it carries
+the installer's own marker — a comment, `tm8-install.sh:cluster`, on the `tm8`
+role, written when the installer created (or was told to adopt) the cluster.
+Anything else is refused, because adopting adds a superuser role and a database
+and may loosen `pg_hba`. On a laptop that already runs a tm8 node, 5442 *is*
+that node's live cluster.
+
+- A fresh cluster of your own: `./install.sh --pg-port 5599` (any free port).
+- A cluster that is tm8's but predates the marker (an older install):
+  `./install.sh --adopt-cluster` once; it is marked and later runs just reuse it.
 
 ## What "running" means per slot
 
@@ -116,6 +136,23 @@ On a cluster the installer created, it does this itself. On a cluster it
 pass `--configure-pg-hba`. Someone else's cluster is not the installer's to
 reconfigure.
 
+Phase 3 ends with a real login as `tm8` over `127.0.0.1`. When that is refused,
+the run stops there and names the `pg_hba` rule that matched first, before any
+database is created. It used to warn, create the database, and only fail in phase
+4 with "created the database but cannot query …". On a fresh Debian/Ubuntu server
+with `--pg-port 5432 --adopt-cluster`, that was the usual outcome: the stock
+`host all all 127.0.0.1/32 scram-sha-256` matched first. Re-run with
+`--configure-pg-hba`. As a non-root user that needs passwordless sudo, because
+Debian's `pg_hba.conf` belongs to `postgres`. The installer reads that file through
+the server (`pg_read_file`) and reloads with `pg_reload_conf()`, so both work under
+peer auth.
+
+Installing the `postgresql` package on Debian/Ubuntu creates cluster `<major>/main`
+on 5432. The dev slot's cluster is also named `main`, so on a fresh server
+`pg_createcluster` used to refuse it. When that name is taken on another port, the
+installer now names the slot's cluster `tm8_<slot>`. A plain `./install.sh` then
+gets a cluster of its own on 5442, and `--adopt-cluster` isn't needed.
+
 ## The sidecar that never ran
 
 `packages/server/src/sidecar/` is fourteen files of Postgres lifecycle management
@@ -143,15 +180,19 @@ to check node's version, three ports and `node_modules` — all of which are tru
 of an installation with no database at all, in which every operation answers 501.
 
 **Then run `tm8 doctor`** (the CLI, once built) — it additionally checks the
-agent CLI: whether `claude`/`codex` are on PATH AND logged in. tm8 stores no
-agent credential, so a node can pass every check above and still be unable to run
-a single agent; this is the check that says so.
+agent CLI: whether `claude`/`codex` are on PATH AND logged in. A session on the
+node's own credential runs the host's login, so a node can pass every check above
+and still be unable to run a single agent that way; this is the check that says so.
+(Members can instead connect their own or a space's credential under Settings →
+Credentials.) On a service install, log in as the service user:
+`sudo -u tm8 -H claude auth login`.
 
 | Symptom | Cause |
 |---|---|
 | `graph: NOT CONFIGURED … all operations answer 501` | No `TM8_DATABASE_URL`. Run `./install.sh`. |
 | Everything returns `501 not_implemented` | Same. A tm8 with no database looks like a running tm8. |
-| A spawned session sits at `running` and never finishes | No agent CLI the host is logged in to. tm8 runs the host's `claude`/`codex`; with none, the spawn's PTY comes up (so tm8 reads it as "running") but the agent immediately refuses in the terminal. Run `tm8 doctor`. |
+| A spawn is refused: "this session runs on the node's own claude login, and the node has none" | The node's OS user has no `claude`/`codex` login. Log in as that user (`sudo -u tm8 -H claude auth login` on a service install), or launch on a member or space credential. |
+| A session fails with `agent_onboarding_screen` | Same cause, caught after boot: Claude Code started its first-run theme picker / login screen. |
 | Messages send but never appear in a terminal | `tm8_delivery_worker` cannot authenticate. See [above](#why-loopback-trust-is-a-real-step). |
 | `503` on `/v2/execution/spawn`, or "spawning is broken" | node-pty's `spawn-helper` lost its executable bit. `bash scripts/repair-node-pty.sh`. |
 | Server is new but the UI is stale | `bun run build` is **tsc only**. The UI needs its own `vite build` (`cd packages/tm8_ui_2.0 && bun run build`). |

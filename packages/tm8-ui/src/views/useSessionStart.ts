@@ -85,8 +85,12 @@ export interface SessionStart {
   onAction?: (ref: ActionRef, entityId: string) => void;
   /** The panel's `wiredActions` prop. */
   wiredActions: readonly ActionRef[];
-  /** The same verb unwrapped, for a host with its own affordance. */
-  startTerminal: () => void;
+  /**
+   * The same verb unwrapped, for a host with its own affordance. A host that
+   * asked the member which project (the New-chat tile's Terminal) passes it;
+   * `null` is scratch. Omitted ⇒ the host's `projectId`.
+   */
+  startTerminal: (projectId?: string | null) => void;
 }
 
 export function useSessionStart(host: SessionStartHost): SessionStart {
@@ -104,7 +108,7 @@ export function useSessionStart(host: SessionStartHost): SessionStart {
    * configuration there is nothing to make visible, and the second click would
    * only be ceremony. It is also cheap to undo: terminate.
    */
-  const startTerminal = useCallback(() => {
+  const startTerminal = useCallback((picked?: string | null) => {
     /*
      * NOT a silent swallow, for the reason `usePanelPrimaries.terminate` gives:
      * `onAction` below is undefined without these, so this is unreachable from
@@ -123,7 +127,7 @@ export function useSessionStart(host: SessionStartHost): SessionStart {
       .startTerminal({
         clientMutationId: `terminal:${spaceId}:${Date.now()}`,
         spaceId,
-        projectId: projectId ?? null,
+        projectId: (picked === undefined ? projectId : picked) ?? null,
       })
       .then((result) => {
         reconcileCommand?.(result);

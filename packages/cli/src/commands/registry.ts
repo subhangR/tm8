@@ -1,3 +1,5 @@
+import { MCP_COMMANDS } from './mcp.js';
+import { TOOL_COMMANDS } from './tool.js';
 /**
  * THE COMMAND REGISTRY — the one composition point.
  *
@@ -47,6 +49,7 @@ import { SAVED_VIEW_COMMANDS } from './saved-view.js';
 import { ACTION_COMMANDS } from './action.js';
 import { EVENT_COMMANDS } from './event.js';
 import { PRESENCE_COMMANDS } from './presence.js';
+import { WORKSPACE_COMMANDS } from './workspace.js';
 import { PROJECT_COMMANDS } from './project.js';
 import { FILE_COMMANDS } from './file.js';
 import { MESSAGE_COMMANDS } from './message.js';
@@ -59,6 +62,7 @@ import { WORKTREE_GIT_TIER2_COMMANDS } from './worktree-git-tier2.js';
 import { INTERACTION_PROFILE_COMMANDS } from './interaction-profile.js';
 import { PROFILE_DEFAULT_COMMANDS } from './teammate.js';
 import { ENTITY_COMMANDS } from './entity.js';
+import { ENTITY_REF_COMMANDS } from './entity-ref.js';
 import { ATTENTION_COMMANDS } from './attention.js';
 import { TASK_COMMANDS } from './task.js';
 import { TRACKING_COMMANDS } from './tracking.js';
@@ -71,6 +75,9 @@ import { VOICE_COMMANDS } from './voice.js';
 import { CONTAINER_COMMANDS } from './container.js';
 import { FORM_COMMANDS } from './form.js';
 import { LINK_COMMANDS } from './link.js';
+import { DISCOVERABILITY_COMMANDS } from './discoverability.js';
+import { STYLE_COMMANDS } from './style.js';
+import { CREDENTIAL_COMMANDS } from './credential.js';
 
 /**
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
@@ -114,6 +121,8 @@ export const COMMANDS: CommandModule[] = [
   ...SERVER_COMMANDS,
   ...KIND_COMMANDS,
   ...SKILL_COMMANDS,
+  ...MCP_COMMANDS,
+  ...TOOL_COMMANDS,
   ...SPACE_COMMANDS,
   ...IDENTITY_COMMANDS,
   ...AUTH_COMMANDS,
@@ -126,6 +135,7 @@ export const COMMANDS: CommandModule[] = [
   ...ACTION_COMMANDS,
   ...EVENT_COMMANDS,
   ...PRESENCE_COMMANDS,
+  ...WORKSPACE_COMMANDS,
   ...PROJECT_COMMANDS,
   ...FILE_COMMANDS,
   ...MESSAGE_COMMANDS,
@@ -138,6 +148,7 @@ export const COMMANDS: CommandModule[] = [
   ...INTERACTION_PROFILE_COMMANDS,
   ...PROFILE_DEFAULT_COMMANDS,
   ...ENTITY_COMMANDS,
+  ...ENTITY_REF_COMMANDS,
   ...ATTENTION_COMMANDS,
   ...TASK_COMMANDS,
   ...TRACKING_COMMANDS,
@@ -149,6 +160,9 @@ export const COMMANDS: CommandModule[] = [
   ...CONTAINER_COMMANDS,
   ...FORM_COMMANDS,
   ...LINK_COMMANDS,
+  ...DISCOVERABILITY_COMMANDS,
+  ...STYLE_COMMANDS,
+  ...CREDENTIAL_COMMANDS,
 ];
 
 const REGISTERED = new Map<string, CommandModule>(COMMANDS.map((c) => [c.path.join(' '), c]));

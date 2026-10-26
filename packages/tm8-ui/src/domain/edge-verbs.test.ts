@@ -99,7 +99,8 @@ describe('edge verbs cover the edge registry', () => {
 
 describe('edge verbs read from the open entity’s side', () => {
   it('puts direction into the words', () => {
-    expect(edgeVerb('created_in', 'incoming')).toBe('Created here');
+    expect(edgeVerb('authored_from', 'incoming')).toBe('Made here');
+    expect(edgeVerb('created_in', 'incoming')).toBe('Made here (legacy)');
     expect(edgeVerb('working_on', 'outgoing')).toBe('Working on');
     expect(edgeVerb('depends_on', 'outgoing')).toBe('Depends on');
     expect(edgeVerb('depends_on', 'incoming')).toBe('Needed by');

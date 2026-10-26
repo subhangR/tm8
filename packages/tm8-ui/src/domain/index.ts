@@ -59,6 +59,7 @@ export type {
   StatusSource,
   TileBadgeSource,
   TileBadgeSpec,
+  TileSignalSpec,
   ValueControl,
   ValueOption,
 } from './types';
@@ -76,16 +77,29 @@ export {
   RESERVED_SLUGS,
   allKinds,
   collectionKinds,
+  customKindsVersion,
   getKind,
   isReservedSlug,
   kindBySlug,
   kindOfSlug,
+  registerCustomKinds,
   slugOfKind,
+  subscribeCustomKinds,
 } from './registry';
 
 export { KIND_ART, SURFACE_ART, SURFACE_LABEL, VIEW_ART, type KindArt } from './kind-art';
+export { CRAFT_KIND, craftContentOf, craftStateOf, type CraftContent, type CraftKind, type CraftPage, type CraftState } from './craft';
+/** @deprecated `design` is `craft` since migration 322; use the Craft names above. */
+export { DESIGN_KIND, designContentOf, designStateOf, type DesignContent, type DesignKind, type DesignPage, type DesignState } from './design';
 export { KindIcon } from './KindIcon';
-export { tileCountBadgesOf, type TileCountBadge } from './tile-counts';
+export { actionGlyph } from './actionGlyph';
+export {
+  TILE_LINK_GROUPS,
+  hasTileLinkCounts,
+  tileLinkCountsOf,
+  type TileLinkCount,
+  type TileLinkGroup,
+} from './tile-counts';
 
 export {
   PROCESS_CONTROL,
@@ -96,6 +110,7 @@ export {
   hasEnded,
   processControlFor,
   resolveAction,
+  sessionControlsFor,
   sharingControlFor,
   sessionSharingOf,
   type SessionSharing,
@@ -111,6 +126,56 @@ export {
 export { actorName, actorPresentation, LEFT_SUFFIX, type ActorPresentation } from './actors';
 
 export { needsAttentionOf, toRowFacts } from './needs-attention';
+
+/* Spec D1: the session's outcome vs its process — row word, tab, line 2,
+   verbs and the Interrupted grouping, from one pure module. */
+export {
+  RUNNING_GRACE_MS,
+  SESSION_TABS,
+  SESSION_TAB_FILTERS,
+  SESSION_TAB_LABEL,
+  activeClaims,
+  blockingClaims,
+  capRefusalHint,
+  claimTally,
+  offeredCountOf,
+  claimsFromEdges,
+  crossTabBreadcrumb,
+  endedPhraseOf,
+  groupSessionRows,
+  interruptedGroupOf,
+  isProcessRecordedLive,
+  isReadyToComplete,
+  isSessionState,
+  sessionCategoryOf,
+  sessionHeadline,
+  sessionLineTwo,
+  sessionNeedsAttentionOf,
+  sessionOutcomeOf,
+  sessionRecordOf,
+  sessionRowWord,
+  sessionTabOf,
+  sessionVerbsOf,
+  withGrace,
+} from './session-outcome';
+export { LAUNCHERS_PER_READ, launchedByOf, launchedRowsFilter, treeParentOf } from './launched-by';
+export { tileChildCount } from './tile-children';
+export type {
+  GroupBulk,
+  InterruptedGroup,
+  SessionCase,
+  SessionClaim,
+  SessionDot,
+  SessionIcon,
+  SessionOutcome,
+  SessionRecord,
+  SessionRowGroup,
+  SessionTab,
+  SessionTone,
+  SessionVerb,
+  SessionWord,
+  SessionWordContext,
+} from './session-outcome';
 
 export {
   AGENT_TOOLS,
@@ -130,6 +195,7 @@ export {
   defaultLaunchTarget,
   describeCapacity,
   describeLaunchManifest,
+  launchConnectorFacts,
   launchHarnessFacts,
   LAUNCH_CONTEXT_ROLE_LABEL,
   LAUNCH_CONTEXT_SOURCE_LABEL,
@@ -215,6 +281,7 @@ export {
   type HomeRailGroup,
   type HomeRoot,
 } from './home-rail';
+export { DRAWER_TREE_KINDS, drawerTreeKinds, isDrawerChatKind } from './drawer-trees';
 
 /**
  * The MenuTarget <-> NavView mapping. Exported from the barrel because the
@@ -241,6 +308,8 @@ export type { LaunchSourceChoice, LaunchSourceOption, LaunchSourceOptionsInput }
 export { CONVERSATION_KIND, EDGE_VERBS, edgeVerb, edgeVerbBoth, isConversationEdge } from './edge-verbs';
 export type { EdgeDirection, EdgeVerb } from './edge-verbs';
 export { EDGE_KINDS, relationsOf } from './edge-kinds';
+export { EDGE_FAMILIES, EDGE_FAMILY_LABEL, EDGE_FAMILY_ORDER, edgeFamily } from './edge-families';
+export type { EdgeFamily } from './edge-families';
 export type { EdgeKinds, KindRelation, RelationDirection } from './edge-kinds';
 export { GENERIC_ENTITY_COMMANDS, KIND_CLI_VOCABULARY, kindCliVocabulary } from './kind-nouns';
 export type { KindCliVocabulary } from './kind-nouns';

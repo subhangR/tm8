@@ -1,6 +1,19 @@
+import { mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startW3PublicServer } from '../public-harness.js';
 import { observeG06DatabaseOutcome } from '../agentic-observer.js';
+
+// Since task 01a13574 `projects.create` checks that the folder exists (and is
+// inside the roots) even without ensureWorkingDir, so these paths are real
+// directories, canonical because the node stores the realpath.
+const SCRATCH = realpathSync(mkdtempSync(join(tmpdir(), 'g06-agentic-')));
+const dirOf = (name: string): string => {
+  const dir = join(SCRATCH, name);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
 
 // Operations selected via generated discovery only (bun test/w3/discovery-adapter.ts):
 //   root                    -> nouns: space (22 ops), project (7 ops), entity (20 ops), tracking, undo, ...
@@ -48,7 +61,7 @@ describe('W3.G06 agentic generated-discovery workflow', () => {
     // 2. Create one node ProjectResource (the `project` noun) with no repo configured yet.
     const createRes = await harness.request('POST', '/v2/projects', {
       name: 'G06 Agentic Repo',
-      workingDir: '/tmp/g06-agentic-repo',
+      workingDir: dirOf('repo'),
       clientMutationId: 'g06-agentic-project-create',
     });
     expect(createRes.status).toBe(201);
@@ -59,7 +72,7 @@ describe('W3.G06 agentic generated-discovery workflow', () => {
     // 3. Replay the create command: identical body + identical clientMutationId.
     const replayRes = await harness.request('POST', '/v2/projects', {
       name: 'G06 Agentic Repo',
-      workingDir: '/tmp/g06-agentic-repo',
+      workingDir: dirOf('repo'),
       clientMutationId: 'g06-agentic-project-create',
     });
     expect(replayRes.status).toBe(201);

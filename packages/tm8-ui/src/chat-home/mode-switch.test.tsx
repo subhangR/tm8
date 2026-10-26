@@ -35,7 +35,20 @@ const MODELS: ChatModelOption[] = [
   { model: 'claude-sonnet-4-5', label: 'Sonnet 4.5', provider: 'Anthropic', agentTool: 'claude-code' },
 ];
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  /* Picks are remembered per browser (`composerPicks`); each test starts clean. */
+  localStorage.clear();
+});
+
+/** The server mode under the ⚙ role chip. */
+const modeOf = (view: ReturnType<typeof render>) =>
+  view.getByTestId('tch-settings-role').getAttribute('data-mode');
+
+function pickRole(view: ReturnType<typeof render>, role: 'worker' | 'coordinator' | 'dispatcher') {
+  fireEvent.click(view.getByTestId('tch-settings'));
+  fireEvent.click(view.getByTestId(`tch-settings-${role}`));
+}
 
 /** Mount with the fixture chat already open, so the chip is on a PINNED chat. */
 async function openChat() {
@@ -45,7 +58,9 @@ async function openChat() {
   );
   /* The fixture thread's DEFAULT mode is `plan`; waiting for it is waiting for
      the served config, which is what makes `pinned` true. */
-  await waitFor(() => expect(view.getByTestId('tch-mode').textContent).toContain('plan'));
+  await waitFor(() => expect(modeOf(view)).toBe('plan'));
+  // `plan` is one of the read/shape modes the ⚙ names Coordinator.
+  expect(view.getByTestId('tch-settings-role').textContent).toBe('Coordinator');
   return { view, controls };
 }
 
@@ -58,15 +73,17 @@ describe('changing an open chat’s mode from the composer', () => {
   it('leaves the mode chip ENABLED on an open chat', async () => {
     const { view } = await openChat();
     // The regression this guards is the reported defect verbatim.
-    expect(view.getByTestId('tch-mode').hasAttribute('disabled')).toBe(false);
+    expect(view.getByTestId('tch-settings').hasAttribute('disabled')).toBe(false);
+    fireEvent.click(view.getByTestId('tch-settings'));
+    expect(view.getByTestId('tch-settings-worker').getAttribute('aria-disabled')).toBeNull();
   });
 
   it('carries the picked mode on the NEXT turn, and shows it on the chip', async () => {
     const { view, controls } = await openChat();
-    fireEvent.click(view.getByTestId('tch-mode'));
-    fireEvent.click(view.getByTestId('tch-mode-build'));
+    pickRole(view, 'worker');
     // The trigger states the pick without being reopened.
-    expect(view.getByTestId('tch-mode').textContent).toContain('build');
+    expect(view.getByTestId('tch-settings-role').textContent).toBe('Worker');
+    expect(modeOf(view)).toBe('build');
 
     await send(view, 'Now actually make the change.');
     await waitFor(() => expect(controls.posts).toHaveLength(1));
@@ -87,8 +104,7 @@ describe('changing an open chat’s mode from the composer', () => {
 
   it('does not consume the pick with the turn that used it, and re-picking replaces it', async () => {
     const { view, controls } = await openChat();
-    fireEvent.click(view.getByTestId('tch-mode'));
-    fireEvent.click(view.getByTestId('tch-mode-build'));
+    pickRole(view, 'worker');
     await send(view, 'First.');
     await waitFor(() => expect(controls.posts).toHaveLength(1));
 
@@ -97,11 +113,10 @@ describe('changing an open chat’s mode from the composer', () => {
        turn on purpose: once a turn is in flight the composer is busy and offers
        no send button at all, so a two-send assertion here would be asserting
        against the fixture's settle sequence instead of against the pick. */
-    expect(view.getByTestId('tch-mode').textContent).toContain('build');
+    expect(modeOf(view)).toBe('build');
 
-    fireEvent.click(view.getByTestId('tch-mode'));
-    fireEvent.click(view.getByTestId('tch-mode-ask'));
-    expect(view.getByTestId('tch-mode').textContent).toContain('ask');
+    pickRole(view, 'coordinator');
+    expect(modeOf(view)).toBe('ask');
   });
 
   it('accepts the `/build` shortcut on an open chat, not just a new one', async () => {
@@ -110,12 +125,31 @@ describe('changing an open chat’s mode from the composer', () => {
     fireEvent.change(box, { target: { value: '/build' } });
     fireEvent.keyDown(box, { key: 'Enter' });
     // The slash consumed the draft and set the pick rather than posting '/build'.
-    expect(view.getByTestId('tch-mode').textContent).toContain('build');
+    expect(modeOf(view)).toBe('build');
     expect((box as HTMLTextAreaElement).value).toBe('');
     expect(controls.posts).toHaveLength(0);
 
     await send(view, 'Go.');
     await waitFor(() => expect(controls.posts).toHaveLength(1));
     expect(controls.posts[0]).toMatchObject({ mode: 'build' });
+  });
+
+  it('remembers the pick across a remount (reload)', async () => {
+    const first = await openChat();
+    pickRole(first.view, 'worker');
+    first.view.unmount();
+    const { port } = createChatHomeFixturePort();
+    const view = render(
+      <ChatHomeScreen port={port} spaceId={SPACE_ID} models={MODELS} routeThreadId={FIXTURE_CHAT} />,
+    );
+    await waitFor(() => expect(modeOf(view)).toBe('build'));
+  });
+
+  it('Esc in the field stops a running turn', async () => {
+    const { view, controls } = await openChat();
+    await send(view, 'Long job.');
+    await view.findByTestId('tch-send-working');
+    fireEvent.keyDown(view.getByLabelText('Message the chat agent'), { key: 'Escape' });
+    await waitFor(() => expect(controls.interrupts).toEqual([FIXTURE_CHAT]));
   });
 });

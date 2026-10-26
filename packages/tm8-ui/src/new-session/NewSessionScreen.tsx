@@ -1,3 +1,5 @@
+import { McpPicker } from '../mcp/McpPicker';
+import type { McpSelection } from '../mcp/port';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getKind } from '../domain';
@@ -105,6 +107,21 @@ export interface NewSessionScreenProps {
   serverBaseUrl?: string;
   skillOptions?: readonly TriggerOption[];
   attach?: (file: File) => FileUploadTask;
+  /*
+   * OPT-IN TAB HOSTING (Workspace draft tab). All absent by default, which
+   * keeps the routed screen exactly as it was.
+   *  - `initialDraft` / `initialTitle` seed the prompt and title once, on mount.
+   *  - `onValuesChange` reports every prompt or title edit.
+   *  - `onBusyChange` reports when a launch starts and when it settles.
+   *  - `onSpawned` hands the new session id to the host the moment the spawn
+   *    resolves; the screen then skips its own terminal attach, because the
+   *    host replaces it with the session's own view.
+   */
+  initialDraft?: string;
+  initialTitle?: string;
+  onValuesChange?: (values: { draft: string; title: string }) => void;
+  onBusyChange?: (busy: boolean) => void;
+  onSpawned?: (sessionId: EntityId, title: string) => void;
 }
 
 export function NewSessionScreen({
@@ -116,15 +133,22 @@ export function NewSessionScreen({
   serverBaseUrl,
   skillOptions,
   attach,
+  initialDraft,
+  initialTitle,
+  onValuesChange,
+  onBusyChange,
+  onSpawned,
 }: NewSessionScreenProps) {
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialDraft ?? '');
+  const [mcpSelections, setMcpSelections] = useState<McpSelection[] | undefined>();
+  const [mcpReady, setMcpReady] = useState(true);
   const [phase, setPhase] = useState<NewSessionPhase>('idle');
   const [sessionId, setSessionId] = useState<EntityId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
   const inFlight = useRef(false);
 
-  const [customTitle, setCustomTitle] = useState('');
+  const [customTitle, setCustomTitle] = useState(initialTitle ?? '');
 
   /*
    * THE COMPOSER'S CONFIG lives in `useLaunchComposerState`, shared verbatim
@@ -161,7 +185,7 @@ export function NewSessionScreen({
      commits is never a surprise. */
   const derived = deriveTitle(draft);
   const title = customTitle.trim() !== '' ? customTitle.trim() : derived;
-  const ready = canDeriveTitle(draft) && refusal === null && commands !== null;
+  const ready = canDeriveTitle(draft) && refusal === null && commands !== null && mcpReady;
 
   /* The slow notice is time-based BECAUSE it is a statement about elapsed
      time — it never advances the phase, it only admits the wait. */
@@ -195,7 +219,15 @@ export function NewSessionScreen({
         throw new Error('The task was created but the node did not return its id.');
       }
 
-      /* STEP 2 — the host is mounted by this render, before the spawn below.
+      /* Q13: A LAUNCH CHOICE APPLIES TO THAT LAUNCH ONLY.
+         This used to write an `equips` edge per picked connector onto the task
+         it had just minted, so choosing Gmail for one session quietly made it
+         a default for every future session on that task — and there was no
+         undo anywhere near the launch screen. Task defaults are set through
+         `McpEquipment` on the task itself, where they can be seen and removed;
+         the launch sends its choice as `mcpSelections` and nothing else.
+
+         STEP 2 — the host is mounted by this render, before the spawn below.
          See the docblock: the paint must happen first. */
       setPhase('spawning');
       await new Promise<void>((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve())); });
@@ -203,11 +235,16 @@ export function NewSessionScreen({
       const id = await spawn(buildSpawnInput({
         clientMutationId: `ns-${taskId}`,
         spaceId,
-        config,
+        config: { ...config, mcpSelections },
         taskIds: [taskId],
         title,
       }));
 
+      if (onSpawned) {
+        setPhase('idle');
+        onSpawned(id as EntityId, title);
+        return;
+      }
       setSessionId(id as EntityId);
       setPhase('attaching');
     } catch (cause) {
@@ -222,7 +259,7 @@ export function NewSessionScreen({
     } finally {
       inFlight.current = false;
     }
-  }, [ready, commands, spaceId, title, draft, config, spawn]);
+  }, [ready, commands, spaceId, title, draft, config, spawn, mcpSelections, onSpawned]);
 
   /* The hand-off. Deliberately NOT inside the spawn promise: the screen owns
      its own transition to `live`, and the host decides when the URL follows. */
@@ -239,6 +276,10 @@ export function NewSessionScreen({
 
   const transitioning = phase === 'minting' || phase === 'spawning' || phase === 'attaching';
 
+  useEffect(() => {
+    onBusyChange?.(transitioning);
+  }, [transitioning, onBusyChange]);
+
   return (
     <div className="nsx-root" data-phase={phase} data-testid="new-session-root">
       <div className="nsx-stage">
@@ -250,14 +291,33 @@ export function NewSessionScreen({
         </div>
         <NewSessionComposer
           {...bind}
+          // §10.5: the Connectors section lives IN the composer's ··· menu,
+          // beside the harness rows, instead of floating above the card where
+          // it used to sit as a bare fieldset.
+          connectors={(
+            <McpPicker
+              teamMemberId={config.teamMemberId ?? undefined}
+              value={mcpSelections}
+              onChange={setMcpSelections}
+              onReady={setMcpReady}
+              disabled={transitioning}
+              layout="grid"
+            />
+          )}
           draft={draft}
-          onDraftChange={setDraft}
+          onDraftChange={(next) => {
+            setDraft(next);
+            onValuesChange?.({ draft: next, title: customTitle });
+          }}
           onSubmit={() => { void start(); }}
           busy={transitioning}
-          refusal={error ?? refusal}
+          refusal={error ?? refusal ?? (!mcpReady ? "Choose a connected account for each connector." : null)}
           derivedTitle={derived}
           title={customTitle}
-          onTitleChange={setCustomTitle}
+          onTitleChange={(next) => {
+            setCustomTitle(next);
+            onValuesChange?.({ draft, title: next });
+          }}
           skillOptions={skillOptions}
           attach={attach}
           autoFocus

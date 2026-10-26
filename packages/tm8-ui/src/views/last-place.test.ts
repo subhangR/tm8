@@ -12,6 +12,7 @@ import {
   clearLastPlace,
   readLastSpace,
   readLastTarget,
+  WORK_PLACE,
   writeLastSpace,
   writeLastTarget,
 } from './last-place';
@@ -140,5 +141,12 @@ describe('what sign-out forgets', () => {
       },
     });
     expect(() => clearLastPlace('local')).not.toThrow();
+  });
+});
+
+describe('Work as a remembered place (D31)', () => {
+  it('stores and reads Work, which has no MenuTarget', () => {
+    writeLastTarget('local', 'space-a', WORK_PLACE);
+    expect(readLastTarget('local', 'space-a')).toEqual({ type: 'work' });
   });
 });

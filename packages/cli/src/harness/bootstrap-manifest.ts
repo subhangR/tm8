@@ -34,6 +34,7 @@ import {
   assertWithinBudget,
   COORDINATOR_KINDS,
   DEFAULT_PROMPT_VERSION,
+  LEGACY_PROMPT_VERSION,
   utf8Bytes,
   type CoordinatorKind,
 } from '@tm8/prompt';
@@ -201,8 +202,9 @@ export interface BootstrapManifestInput {
   assignment: { primaryTaskId?: string | null; taskIds?: readonly string[] };
   routing: BootstrapRouting;
   /**
-   * Defaults to `DEFAULT_PROMPT_VERSION`. Accepted rather than always derived
-   * so a manifest read back from disk keeps the frame it was stamped with.
+   * Defaults to `DEFAULT_PROMPT_VERSION` (v2). Accepted rather than always
+   * derived so a manifest read back from disk keeps the frame it was stamped
+   * with; `parseBootstrapManifest` reads an unstamped file as legacy v1.
    */
   promptVersion?: string;
 }
@@ -422,7 +424,8 @@ export function parseBootstrapManifest(raw: unknown): BootstrapManifestV2 | null
       interactionProfile: raw.interactionProfile as unknown as BootstrapInteractionProfile,
       assignment: assignment as unknown as BootstrapManifestInput['assignment'],
       routing: raw.routing as unknown as BootstrapRouting,
-      ...(raw.promptVersion === undefined ? {} : { promptVersion: raw.promptVersion as string }),
+      // A file written before the stamp existed was booted on v1, not today's default.
+      promptVersion: raw.promptVersion === undefined ? LEGACY_PROMPT_VERSION : (raw.promptVersion as string),
     });
   } catch {
     // A file claiming version 2 that does not validate is not a v2 manifest.

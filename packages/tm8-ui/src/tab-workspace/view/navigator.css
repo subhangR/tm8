@@ -1,0 +1,432 @@
+/*
+ * The merged left navigator (design doc 01a1465d-a2b7 §3A, §4), behind
+ * `tm8.ui.navigator`. Tokens only, sizes on the 4/8 grid, as `workspace.css`.
+ *
+ * IT REUSES THE RAIL'S OWN RULES rather than restating them: the column wears
+ * `.tws-nav .tws-rail` together, so every `.tws-rail-btn`, `.tws-rail-icon`,
+ * `.tws-rail-disc`, hold-ring, badge and tooltip rule in `workspace.css`
+ * already applies. What is here is only what DIFFERS — the column's width, the
+ * 30px labelled row, the lower slot, and the footer's row layout.
+ */
+
+/* --- the column ---------------------------------------------------------- */
+
+/*
+ * `.tws-nav.tws-rail`, NOT `.tws-nav`, and the doubled class is load-bearing.
+ * The column wears BOTH classes so it inherits the rail's parts, and
+ * `workspace.css` is imported AFTER this file (`TabWorkspaceView` imports
+ * `Navigator` first, then its own stylesheet). At equal specificity the later
+ * sheet wins, so a bare `.tws-nav { grid-area: nav }` loses to
+ * `.tws-rail { grid-area: rail }` — and the navigator is auto-placed into a
+ * column the grid never declared. One extra class makes the override a fact
+ * about specificity rather than about import order.
+ */
+.tws-nav.tws-rail {
+  grid-area: nav;
+  /* §3A: rows have NO gaps — the 12px rail gaps are what made ~18 kinds a
+     wall. The sections space themselves. */
+  gap: 0;
+  padding: var(--pn-space-2) 0 0;
+  overflow: visible;
+}
+/* Collapsed (§4): the 48px icon strip — ＋, the pins at 32px, ⋯, the footer. */
+.tws-nav.tws-rail[data-collapsed] {
+  align-items: stretch;
+}
+
+/* --- ＋ New (§5) --------------------------------------------------------- */
+
+.tws-nav-new {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin: 0 var(--pn-space-2) var(--pn-space-2);
+}
+.tws-nav[data-collapsed] .tws-nav-new {
+  margin: 0 6px var(--pn-space-2);
+}
+.tws-nav-new__main {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm) 0 0 var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.tws-nav[data-collapsed] .tws-nav-new__main {
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+  border-radius: var(--pn-r-sm);
+}
+.tws-nav-new__main:hover {
+  background: var(--pn-hover);
+  border-color: var(--pn-line-2);
+}
+/* REFUSED, NOT HIDDEN: a kind that cannot be created dims and says why in its
+   tooltip (the registry's own reason), and the press does nothing. */
+.tws-nav-new__main[aria-disabled='true'] {
+  color: var(--pn-ink-3);
+  cursor: default;
+}
+.tws-nav-new__glyph {
+  flex: none;
+  display: inline-flex;
+  color: var(--pn-brand);
+}
+.tws-nav-new__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-nav-new__kbd {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+.tws-nav-new__more {
+  flex: none;
+  width: 24px;
+  height: 28px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-left: 0;
+  border-radius: 0 var(--pn-r-sm) var(--pn-r-sm) 0;
+  color: var(--pn-ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+.tws-nav-new__more:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink-2);
+}
+
+/* The ▾'s kind menu, and the fold eyebrow, share the chrome menu look. */
+.tws-nav-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + var(--pn-space-1));
+  right: 0;
+  left: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+}
+.tws-nav-menu__row {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tws-nav-menu__row:hover {
+  background: var(--pn-hover);
+}
+
+/* --- the pins (§3A) ------------------------------------------------------ */
+
+.tws-nav-where {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.tws-nav-foldbtn {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  height: 20px;
+  margin: 0 var(--pn-space-3) 2px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--pn-ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+.tws-nav-eyebrow {
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tws-nav-chevron {
+  font-size: var(--pn-fs-label);
+}
+.tws-nav-foldbtn:hover {
+  color: var(--pn-ink-2);
+}
+/*
+ * FOLDED (§3A): one row of icons, which is layout B — the fold is the only
+ * difference between the two layouts, so it is a flex direction, not a mode.
+ *
+ * `.tws-nav .tws-nav-pins`, for the import-order reason the column's own rule
+ * gives: the element also wears `.tws-rail-group`, whose `gap: 12px` comes
+ * from the later sheet. At equal specificity that gap won, and the folded
+ * strip measured 6×44 + 5×12 = 324px in a 300px column — the sixth pin
+ * wrapped to a second row. Caught in a screenshot of the folded state.
+ */
+.tws-nav .tws-nav-pins {
+  gap: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.tws-nav .tws-nav-pins::-webkit-scrollbar {
+  display: none;
+}
+.tws-nav[data-folded]:not([data-collapsed]) .tws-nav-pins {
+  flex-direction: row;
+  flex-wrap: wrap;
+  padding: 0 var(--pn-space-2);
+}
+.tws-nav .tws-nav-pins[data-more-below] {
+  mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent);
+}
+.tws-nav .tws-nav-pins[data-more-above] {
+  mask-image: linear-gradient(to top, black calc(100% - 24px), transparent);
+}
+.tws-nav .tws-nav-pins[data-more-above][data-more-below] {
+  mask-image: linear-gradient(to bottom, transparent, black 24px, black calc(100% - 24px), transparent);
+}
+.tws-nav-unfold {
+  align-self: flex-start;
+  height: 20px;
+  margin: 2px var(--pn-space-3) 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--pn-ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+
+/*
+ * A PIN ROW: 30px, the full width, label after the icon, count right-aligned
+ * (§3A). The rail's 36×36 icon button is the same element — only the box
+ * changes, which is why `variant="nav"` is a class and not a component.
+ */
+.tws-nav .tws-nav-row {
+  width: calc(100% - var(--pn-space-2) * 2);
+  height: 30px;
+  margin: 0 var(--pn-space-2);
+  gap: var(--pn-space-2);
+}
+.tws-nav .tws-nav-row .tws-rail-icon {
+  width: 24px;
+  height: 30px;
+}
+/* Folded or collapsed: back to the icon box, at 32px with 2px gaps (§4). */
+.tws-nav[data-folded] .tws-nav-row,
+.tws-nav[data-collapsed] .tws-nav-row {
+  width: 32px;
+  height: 32px;
+  margin: 1px 6px;
+  gap: 0;
+}
+.tws-nav[data-folded] .tws-nav-row .tws-rail-icon,
+.tws-nav[data-collapsed] .tws-nav-row .tws-rail-icon {
+  width: 32px;
+  height: 32px;
+}
+/*
+ * THE UNSEEN BADGE, RE-PLACED FOR THE 30px ROW. On the rail's 36×36 icon
+ * button it sits 6px OUTSIDE the top-left corner, where the 48px column has
+ * room for it. In the labelled row that same rule put the number at x=2 — half
+ * off the column's left edge and floating above the row above it, which read
+ * as a stray digit rather than as Teammates' unseen count. Found in a
+ * screenshot at 1440; jsdom reports the same DOM either way.
+ */
+.tws-nav .tws-nav-row .tws-rail-unseen-badge {
+  top: 2px;
+  left: auto;
+  right: -4px;
+}
+.tws-nav[data-folded] .tws-nav-row .tws-rail-unseen-badge,
+.tws-nav[data-collapsed] .tws-nav-row .tws-rail-unseen-badge {
+  top: -2px;
+  right: auto;
+  left: 0;
+}
+
+/* The current kind's 3×20 brand bar sits flush to the column's left edge. */
+.tws-nav .tws-nav-row[aria-current='true']::before {
+  left: calc(var(--pn-space-2) * -1);
+}
+/* §4: the title truncates first; the count never does. */
+.tws-nav .tws-nav-row .tws-rail-count {
+  padding-right: var(--pn-space-1);
+}
+
+.tws-nav-allkinds {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.tws-nav-allkinds .tws-tip-anchor {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Position comes from `useAnchoredPopover` (fixed, clamped to the viewport),
+   as the rail's own cards do — see the hook's note in `Navigator.tsx`. */
+.tws-nav-kindpop {
+  position: fixed;
+  z-index: 30;
+  width: 260px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  padding: var(--pn-space-1);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-shadow: var(--pn-sh-pop);
+}
+.tws-nav-kindgrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+}
+.tws-nav-kindcell {
+  display: flex;
+  align-items: center;
+}
+.tws-nav-kindcell__open {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--pn-space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tws-nav-kindcell__open:hover {
+  background: var(--pn-hover);
+}
+.tws-nav-kindcell__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tws-nav-kindcell__pin {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+.tws-nav-kindcell__pin[aria-pressed='true'] {
+  color: var(--pn-brand);
+}
+.tws-nav-kindcell__pin:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+/* --- the lower area (§2, §9) --------------------------------------------- */
+
+/* `.tws-nav` prefixed: the element also wears `.tws-rail-rule`, which the
+   later sheet sizes to a 20px stub centred on the 48px icon column. */
+.tws-nav .tws-nav-rule {
+  width: auto;
+  margin: var(--pn-space-2) 0 0;
+}
+/*
+ * THE LIST'S OWN BOX. It is the one thing in the column that scrolls, and it
+ * must be allowed to be short: `min-height: 0` on a flex child is what lets
+ * the pins keep their height and the list give way, rather than the column
+ * growing past the viewport and taking the footer off-screen with it.
+ */
+.tws-nav-slot {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+/* The hosted browser is the whole lower area now, with no column border of
+   its own — the navigator's right border is the only one. */
+.tws-nav-slot .tws-browser,
+.tws-nav-slot .app-frame-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-right: 0;
+}
+
+/* --- the footer (§5) ----------------------------------------------------- */
+
+.tws-nav.tws-rail .tws-nav-footer {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-1) var(--pn-space-1) var(--pn-space-2);
+  border-top: 1px solid var(--pn-line);
+}
+.tws-nav-footer__end {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
+/* Collapsed: the three stack, exactly as the rail's bottom group does. */
+.tws-nav[data-collapsed] .tws-nav-footer,
+.tws-nav[data-collapsed] .tws-nav-footer__end {
+  flex-direction: column;
+  align-items: center;
+}
+
+/*
+ * COLLAPSED, THE HEADER IS THE MARK (§4).
+ *
+ * The header spans the navigator's track, so at 48px the space switcher, the
+ * mode selector and the mode's own switcher are three controls in a 48px box:
+ * at 1440×900 they painted on top of each other and read as "MIxedHome ▾".
+ * They are hidden rather than squeezed, and ⌘\ brings them straight back.
+ *
+ * NOT DONE, and called out in the close-out rather than left looking finished:
+ * §4 also moves the space and the mode INTO the avatar card while collapsed.
+ * Until that lands the palette's "Switch workspace…" row and ⌘\ are the doors.
+ */
+.tws-root[data-nav][data-nav-collapsed] .tws-left-header > :not(.tws-mark-cell) {
+  display: none;
+}

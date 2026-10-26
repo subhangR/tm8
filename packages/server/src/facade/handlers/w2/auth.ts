@@ -34,6 +34,7 @@ import type {
   AuthClaimReissueResult,
   AuthClaimResult,
   AuthClaimStatusResult,
+  ProjectIsolation,
   AuthInviteSignupInput,
   AuthInviteSignupResult,
   AuthLoginInput,
@@ -448,6 +449,22 @@ function authClaim(deps: FacadeDeps): OperationHandler {
 }
 
 /**
+ * The node's project isolation, read from the policy boot wrote
+ * (`internal.node_policy`, 234, from `gatePosture(config)`) — the same row the
+ * one-space-per-folder guard reads, so the UI can never describe a posture the
+ * database is not enforcing. Fail-closed like the SQL reader: anything but a
+ * readable `shared` is `isolated`.
+ */
+export async function readProjectIsolation(db: FacadeDeps['db']): Promise<ProjectIsolation> {
+  try {
+    const shared = await db.rpc<boolean | null>({}, 'internal.project_folders_shared', []);
+    return shared === true ? 'shared' : 'isolated';
+  } catch {
+    return 'isolated';
+  }
+}
+
+/**
  * `auth.claim.status` — the bootstrap read, answerable with no credential.
  *
  * This is the operation that lets the UI gate stop guessing. It previously
@@ -461,11 +478,15 @@ function authClaim(deps: FacadeDeps): OperationHandler {
  */
 function authClaimStatus(deps: FacadeDeps): OperationHandler {
   return async () => {
-    const claimed = await nodeIsClaimed(deps.db);
+    const [claimed, projectIsolation] = await Promise.all([
+      nodeIsClaimed(deps.db),
+      readProjectIsolation(deps.db),
+    ]);
     const mode = deps.config.nodeMode ?? 'single';
     const result: AuthClaimStatusResult = {
       claimed,
       mode,
+      projectIsolation,
       // Unclaimed: the claim token is the only way in. Claimed: an invite now
       // authorizes its bearer to self-signup (`auth.invite.signup`, 141), so
       // `invite` is the honest answer — the exact change §10.0 required in the

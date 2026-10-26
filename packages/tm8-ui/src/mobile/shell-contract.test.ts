@@ -32,6 +32,9 @@ const read = (path: string) => strip(readFileSync(new URL(path, import.meta.url)
 
 const shell = read('../views/MobileShell.tsx');
 const screens = read('./mobile-screens.css');
+/* The quiet row's phone rules live beside the desktop ones they amend, in
+   `panels.css` — see §7j′ below for why both files have to be read here. */
+const panels = read('../panels/panels.css');
 const frame = read('./mobile.css');
 const contract = readFileSync(new URL('./CONTRACT.md', import.meta.url), 'utf8');
 const gate = read('../views/GateApp.tsx');
@@ -233,15 +236,20 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
     expect(drawer).not.toMatch(/'(task|work_session|channel|doc|pull_request)'/);
   });
 
-  it('names its four sections in the ruled order', () => {
-    // Ruling 3. Chats first because it is what a reader returns to; Settings
-    // and the account at the foot rather than lost at the bottom of a long
-    // scroll.
-    const order = ['"Chats"', '"Destinations"'].map((label) => drawer.indexOf(label));
+  it('draws New chat, then the trees, then the foot — in that order (mockup v3)', () => {
+    // Ruling 3 as mockup v3 redraws it (task 01a14ccc): the one verb first,
+    // the collapsible kind trees under it, and the fixed foot (Pin kinds,
+    // Settings, Craft mode, avatar) rather than lost at the bottom of a long scroll.
+    const order = ['mobile-drawer-new-chat', 'mobile-drawer-trees', 'mdrawer__foot'].map((mark) =>
+      drawer.indexOf(mark),
+    );
     expect(order.every((at) => at >= 0)).toBe(true);
     expect(order[0]).toBeLessThan(order[1]!);
-    expect(drawer).toContain('mdrawer__foot');
+    expect(order[1]).toBeLessThan(order[2]!);
     expect(drawer).toContain('SETTINGS_REF');
+    expect(drawer).toContain('CRAFT_REF');
+    // The tree kinds come from `domain/`, so the drawer still spells none.
+    expect(drawer).toContain('drawerTreeKinds()');
   });
 
   it('is opened by the header ☰ on EVERY screen, not on the chat screen alone', () => {
@@ -295,92 +303,58 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
     expect(drawer).not.toContain('EntityListPanel');
   });
 
-  it('holds no population of its own, conversations included', () => {
+  it('opens trees that are BOUNDED, collapsed until asked, and never a population', () => {
     /*
-     * RULING 7, APPLIED TO THE ONE SECTION THAT WAS EXEMPT FROM IT.
-     *
-     * The Chats section shipped as the thread list rendered INLINE — the exact
-     * two-pane shape the rule above refuses, tolerated because nothing else
-     * could hold it. At eight conversations it put all nineteen entity kinds
-     * below a population that grows without bound (owner report 2026-09-15,
-     * task 01a0a5f2). The list is `MobileThreadsSheet` now and the drawer keeps
-     * two fixed rows: the verb, and a door.
-     *
-     * Asserted as the ABSENCE of the thread map, because that is the thing that
-     * grows. A row count would pass while the list crept back in beside it.
+     * MOCKUP v3 REPLACES RULING 7's "no list in here" (task 01a14ccc), and
+     * keeps the reason it existed. The inline thread list was refused because
+     * it grew without bound and buried every kind below it (task 01a0a5f2).
+     * A tree section is closed until tapped, reads its rows only once open,
+     * and draws a capped handful of recent items and a See all — never the
+     * population.
      */
+    expect(drawer).toMatch(/const rows = open \? ctx\.rowsOf\(config\.kind\) : null/);
+    expect(drawer).toMatch(/\.slice\(0, DRAWER_RECENT_LIMIT\)/);
+    expect(drawer).toMatch(/children\.slice\(0, DRAWER_CHILD_LIMIT\)/);
+    // Hydrated when opened, not when the drawer mounts.
+    expect(drawer).toMatch(/if \(open\) ensureKind\(config\.kind\)/);
+    // The thread list still lives in `MobileThreadsSheet`: Chats' See all opens it.
     expect(drawer).not.toMatch(/props\.threads\.map/);
     expect(drawer).not.toContain('ChatThreadSummary');
     expect(drawer).toContain('onOpenChats');
-    expect(drawer).toContain('data-testid="mobile-drawer-chats"');
-
-    // The door is still FIRST (ruling 3): Chats, then Destinations.
-    const order = ['"Chats"', '"Destinations"'].map((label) => drawer.indexOf(label));
-    expect(order[0]).toBeGreaterThan(-1);
-    expect(order[0]).toBeLessThan(order[1]!);
-
-    /*
-     * A CONVERSATION IS NOT A KIND, and the row must not dress as one. Chats
-     * live outside `collectionKinds()` on purpose — messages are
-     * `strategy: 'anchored'`, which is why `CHATS_ROOT` is a sentinel — while
-     * `channel` IS a collection kind with its own row in the Entities band.
-     * Borrowing the channel mark here would read as one population drawn twice.
-     */
-    expect(drawer).toContain('CHAT_ART');
-    expect(drawer).not.toMatch(/KindIcon kind="channel"/);
-
-    // ABSENT IS NOT ZERO: the shell only knows the count once the chat screen
-    // has published, so the counter is spread, not defaulted.
-    const shell = read('../views/MobileShell.tsx');
-    expect(shell).toContain('threadsKnown');
-    expect(shell).toMatch(/\{\.\.\.\(threadsKnown \? \{ chatCount: threads\.length \} : \{\}\)\}/);
 
     // And the sheet is a SIBLING of the screen, like the drawer and the account
     // sheet — a list that unmounted with its screen could not survive the
     // screen change that picking a conversation causes.
+    const shell = read('../views/MobileShell.tsx');
     expect(shell).toContain('<MobileThreadsSheet');
     expect(shell).toContain('setChatsOpen');
+    // The trees read the shell's own data, not a second fetch.
+    expect(shell).toMatch(/rowsOf=\{\(kind\) => data\.rowsFor\(kind\)\(undefined\)\}/);
+    expect(shell).toContain('ensureKind={data.ensureKind}');
   });
 
-  it('keeps TWO verbs in that section, and the second reuses the create that already exists', () => {
-    /*
-     * A reader who opens the drawer to START something was only ever answered
-     * one way — a conversation. Making a task meant a kind row, a list screen
-     * and its header's ＋. The second verb is that answer, one tap in.
-     *
-     * THE ROWS ARE PINNED BY WHAT THEY ARE, NOT BY THEIR WORDS: the drawer
-     * spells no kind (§15.2, and the file's own head), so "New task" appears
-     * nowhere in it — the label is read off the registry. Asserting the
-     * string here would pin the one thing this design refuses to do.
-     */
-    expect(drawer).toContain('onNewThread');
-    expect(drawer).toContain('onNewEntity');
-    expect(drawer).toContain('data-testid="mobile-drawer-new-entity"');
-    expect(drawer).toContain('palette?.createLabel');
-    expect(drawer).not.toMatch(/['"`]New task['"`]/);
-
-    /* REFUSED, NEVER HIDDEN (R7). A verb that disappears when the seam cannot
-       create teaches the reader the feature is not there. */
-    expect(drawer).toContain('newEntityUnavailable');
-    expect(drawer).toContain("'aria-disabled'");
-
-    /*
-     * AND IT IS THE SAME CREATE, not a phone-shaped copy. `useNewTask` is what
-     * `EntityCreateControl`, Home's kind cell and the Work tab all run; a
-     * second create path here would mean two placeholder grammars, two
-     * double-press guards and two refusal vocabularies for one verb.
-     */
+  it('a drawer destination RESETS the stack to [Chat, destination] (CONTRACT §5 ruling 3)', () => {
     const shell = read('../views/MobileShell.tsx');
-    expect(shell).toContain('useNewTask');
-    expect(shell).toMatch(/from '\.\.\/authoring'/);
-    expect(shell).toContain('newEntityKind={DRAWER_CREATE_KIND}');
-    /* The kind is the SHELL'S to name — see `DRAWER_CREATE_KIND`. The drawer
-       receives it; it does not know it. */
-    expect(shell).toContain('const DRAWER_CREATE_KIND');
+    // Every drawer navigation goes through the resetting wrapper, never the raw push.
+    expect(shell).toContain('navigateTo={drawerNavigateTo}');
+    expect(shell).toMatch(/resetScreenStacks\(\);\s*navigateTo\(target\);/);
+    expect(shell).toMatch(/resetScreenStacks\(\);\s*openEntityOnPhone\(navigateTo, id, kind\);/);
+    expect(shell).toContain('screenStackStore.getState().clearAll()');
+  });
 
+  it('keeps ONE verb — New chat — and spells no kind to get it', () => {
+    // Mockup v3 draws one verb. The second (New task) left with it; a task is
+    // still one tap from the Tasks tree's See all and the list's ＋.
+    expect(drawer).toContain('onNewThread');
+    expect(drawer).toContain('data-testid="mobile-drawer-new-chat"');
+    expect(drawer).not.toContain('onNewEntity');
+    expect(drawer).not.toMatch(/['"`]New task['"`]/);
+    const shell = read('../views/MobileShell.tsx');
+    expect(shell).not.toContain('DRAWER_CREATE_KIND');
     /* A VERB ROW DISMISSES. On one surface a create that left the drawer up
-       would be a press with no visible consequence. */
-    expect(shell).toMatch(/onNewEntity=\{\(\) => \{[\s\S]*?setDrawerOpen\(false\);[\s\S]*?\}\}/);
+       would be a press with no visible consequence. It dismisses through
+       `closeDrawer` (t-layers), which also takes the drawer's Back entry off. */
+    expect(shell).toMatch(/onNewThread=\{\(\) => \{[\s\S]*?closeDrawer\(\);[\s\S]*?\}\}/);
   });
 
   it('grows its targets with real geometry, never a pseudo-element', () => {
@@ -393,37 +367,43 @@ describe('the drawer replaced the tab bar, and the bar cannot come back by halve
   });
 });
 
-describe('the FAB — a create verb on the list, and an ABSENCE where there is none', () => {
+describe('the phone list’s ＋ — a create verb on the list, and an ABSENCE where there is none', () => {
+  /*
+   * The floating create button became the list header's ＋ (t-lists, phone
+   * entity-lists mockup 01a14cc0). The owner's answers B and C still hold and
+   * are what these pin; D (the FAB's reserved room) has no subject left,
+   * because the ＋ sits in the header, not over the last row.
+   */
   const entityView = read('../views/EntityView.tsx');
-  const screensCss = screens;
+  const phoneList = read('../mobile-lists/PhoneEntityList.tsx');
 
-  it('is the SAME verb the header ＋ performs, not a second create path', () => {
+  it('is the SAME verb the desktop header ＋ performs, not a second create path', () => {
     // Owner answer B. `createFlow` is the one `useNewTask` handle, with the one
-    // `onCreated` that opens the new entity with its title focused (D3). Two
-    // create paths is two chances to make differently-shaped entities.
-    expect(entityView).toMatch(/className="ev-fab"[\s\S]{0,400}createFlow\.create\(\)/);
+    // `onCreated` that opens the new entity with its title focused (D3).
+    expect(entityView).toMatch(/<PhoneEntityList[\s\S]{0,1400}onCreate: \(\) => void createFlow\.create\(\)/);
+    expect(entityView).not.toMatch(/className="ev-fab"/);
   });
 
   it('is ABSENT, not inert, for a kind with no wired create', () => {
-    // Owner answer C. Commits, worktrees and PRs are observed rather than
-    // authored. The gate is registry data and it is DELIBERATELY the same
-    // expression `createSlot` is gated on, so the FAB and the header ＋ cannot
-    // disagree about whether this kind can be born.
-    expect(entityView).toMatch(/oneSurface && !selectedId && config\.list\.quickCreate \?/);
+    // Owner answer C. The gate is the registry's `quickCreate`, the same
+    // expression `createSlot` is gated on, and the list draws no ＋ without it.
+    expect(entityView).toMatch(/config\.list\.quickCreate \? \{ onCreate:/);
+    expect(phoneList).toMatch(/\{props\.onCreate \? \(/);
   });
 
   it('never renders on a desktop, by construction rather than by a selector', () => {
     // `oneSurface` is false wherever there is no `MobileSurfaceProvider`, which
-    // is every desktop mount — so the element is not in the desktop DOM at all,
-    // and the styling is additionally scoped to the phone shell.
-    expect(screensCss).toMatch(/\.cv2-root\[data-shell='mobile'\] \.ev-fab/);
-    expect(screensCss).not.toMatch(/^\.ev-fab/m);
+    // is every desktop mount, and the desktop list section is drawn only then.
+    expect(entityView).toMatch(/\{oneSurface && !selectedId \? \(\s*<PhoneEntityList/);
+    expect(entityView).toMatch(/\{oneSurface \? null : \(\s*<section className="ev-list"/);
   });
 
   it('leaves the list room, so the last row is never trapped underneath', () => {
-    // Owner answer D. A pinned control over a scrolling list eats the final row
-    // unless the list ends above it — and NO metric in this program can see
-    // that: the row is present, laid out and measurable, it is simply covered.
+    // Owner answer D, kept as a guard: the reserve still exists for any phone
+    // list that mounts the desktop panel beside a floating control. A pinned
+    // control over a scrolling list eats the final row unless the list ends
+    // above it, and NO metric in this program can see that.
+    const screensCss = screens;
     expect(screensCss).toMatch(/\.lp__body\s*\{[^}]*padding-bottom:\s*var\(--mobile-fab-reserve\)/);
     expect(frame).toMatch(/--mobile-fab-reserve:/);
   });
@@ -505,23 +485,51 @@ describe('DEF-030 — the list chrome is a BUDGET, and it is spent in three band
     expect(listPanel).toMatch(/const narrowing = \(/);
     expect(listPanel).toMatch(/<MobileSheet title=\{title\}/);
     expect(entityView).toMatch(/picker=\{picker\}[\s\S]{0,80}onPicker=\{setPicker\}/);
-    expect(screens).toMatch(/\.cv2-root\[data-shell='mobile'\] \.ev-narrow/);
-    expect(screens).not.toMatch(/^\.ev-narrow/m);
+    /* On the phone shell the narrowing is the phone list's ⚙ sheet (t-lists):
+       the floating cluster is gone, and the sheet is the frame's MobileSheet. */
+    expect(entityView).not.toMatch(/className="ev-narrow"/);
+    expect(read('../mobile-lists/PhoneEntityList.tsx')).toMatch(/<MobileSheet title="Sort & filter"/);
   });
 
   it('clears the row verbs off the STANDARD tile too, not just the task tile', () => {
     // §7j did this for `.pn-tt__actions` — the tasks screen and nothing else.
-    // Sessions, channels and every other kind render `.lp__rowactions`, which
+    // Sessions, channels and every other kind render the standard tile, which
     // kept Archive · Collections · Run pinned open on every row AND kept the
     // float, so on a 390px channel row the opaque backing sat on top of the
     // meta: `12 unread · 2 working` rendered as `12 unre`. Laid out, measurable
     // and covered — `overflowCount` scores 0 on it, which is why only the
     // capture found it.
+    //
+    // READ AGAINST THE NAMES THAT SHIP (task 01a1469f). The quiet row moved
+    // this cluster from `.lp__rowactions` into `.lp__rowmenu-pop` behind a
+    // `⋯`, and the opener out of the cluster into the row. The §7j′ rules in
+    // `mobile-screens.css` still PARSE and still matched this regex while
+    // matching NOTHING in the DOM — a stylesheet regex cannot tell that the
+    // markup moved out from under it, which is the whole failure mode this
+    // suite exists to catch. So the invariant is asserted twice: the legacy
+    // rules must still cover any tile that still renders `.lp__rowactions`,
+    // and the quiet row must carry the same ruling under its own names.
     expect(screens).toMatch(
       /\.lp__tile:not\(\[data-details='open'\]\) \.lp__rowactions > \*:not\(\.lp__rowaction--ind\)\s*\{\s*display:\s*none/,
     );
-    // In the flow, or the lone opener goes on covering what it sits beside.
     expect(screens).toMatch(/\.lp__rowactions,[\s\S]{0,400}position:\s*static/);
+
+    // THE QUIET ROW'S OWN HALF, in `panels.css` beside the rules it amends.
+    // A closed phone row has NO `⋯`: the opener is the one control, and the
+    // full control strip it opens is a strictly larger set of verbs.
+    expect(panels).toMatch(
+      /\[data-shell='mobile'\] \.lp__tile:not\(\[data-details='open'\]\) \.lp__rowmenu \{ display: none; \}/,
+    );
+    // An open row puts them back in the flow, not hanging off a trigger
+    // nothing on a phone can hover.
+    expect(panels).toMatch(
+      /\[data-shell='mobile'\] \.lp__tile\[data-details='open'\] \.lp__rowmenu-pop \{[\s\S]{0,200}position: static/,
+    );
+    // And the opener keeps the touch floor it used to inherit from the
+    // cluster selector that no longer reaches it.
+    expect(panels).toMatch(
+      /\[data-shell='mobile'\] \.lp__row1 > \.lp__rowaction--ind,[\s\S]{0,300}min-block-size: var\(--mobile-touch-min\)/,
+    );
   });
 
   it('keeps the opener the tile knows about, and the tile says when it is open', () => {

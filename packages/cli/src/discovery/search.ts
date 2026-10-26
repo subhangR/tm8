@@ -31,15 +31,40 @@ const STOPWORDS: ReadonlySet<string> = new Set([
   'would', 'you', 'your',
 ]);
 
+/**
+ * Spellings an agent reaches for that the catalog files under another word.
+ * Each token ADDS its expansions (the original stays), so a synonym can only
+ * widen a match, never lose one. Cross-space work is the case that motivated
+ * it: the capability is a global flag (`--space <alias>`) plus the `link`
+ * noun, and neither word is what a caller types when they mean "the other
+ * Space".
+ */
+const SYNONYMS: Readonly<Record<string, readonly string[]>> = {
+  'create-task': ['create', 'task'],
+  'new-task': ['create', 'task'],
+  teammates: ['teammate'],
+  'team-member': ['teammate'],
+  'team-members': ['teammate'],
+  'cross-space': ['link'],
+  'other-space': ['cross-space', 'link'],
+  'another-space': ['cross-space', 'link'],
+  'linked-space': ['cross-space', 'link'],
+  'space-link': ['cross-space', 'link'],
+  'space-links': ['cross-space', 'link'],
+  links: ['link'],
+  linked: ['link'],
+};
+
+/** "other space", "cross space", "linked spaces" → one hyphenated token. */
+const SPACE_PHRASE = /\b(other|another|cross|linked)[\s_]+spaces?\b/g;
+
 export function tokenize(query: string): string[] {
-  return [
-    ...new Set(
-      query
-        .toLowerCase()
-        .split(/[^a-z0-9-]+/)
-        .filter((t) => t.length > 1 && !STOPWORDS.has(t)),
-    ),
-  ];
+  const base = query
+    .toLowerCase()
+    .replace(SPACE_PHRASE, (_m, w: string) => `${w}-space`)
+    .split(/[^a-z0-9-]+/)
+    .filter((t) => t.length > 1 && !STOPWORDS.has(t));
+  return [...new Set(base.flatMap((t) => [t, ...(SYNONYMS[t] ?? [])]))];
 }
 
 const EXACT_TAG = 40;
@@ -182,7 +207,8 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
   {
     intent: 'complete a task',
     all: [['complete', 'completed', 'completing', 'finish', 'finished', 'done', 'closeout']],
-    none: CRITERIA_WORDS,
+    // A story is not completed; its status is set (the route below).
+    none: [...CRITERIA_WORDS, 'story', 'stories', 'chapter'],
     candidates: [{ path: ['task', 'complete'], example: 'tm8 task complete <task-id> --expect-version <n> --by <actor-id>' }],
   },
   {
@@ -207,12 +233,50 @@ export const INTENT_ROUTES: readonly IntentRoute[] = [
     ],
   },
   {
+    intent: 'set the status of a story',
+    all: [
+      ['set', 'change', 'update', 'move', 'mark', 'transition', 'close', 'reopen', 'start'],
+      ['story', 'stories', 'chapter'],
+      ['status', 'state', 'done', 'cancelled', 'progress', 'started', 'finished'],
+    ],
+    candidates: [
+      {
+        path: ['entity', 'update'],
+        example: 'tm8 entity update <story-id> --expect-version <n> --status in_progress  (to_do|in_progress|done|cancelled or a workflow state name; manual, never derived from the story\'s contents)',
+      },
+    ],
+  },
+  {
     intent: 'post a result or blocker',
     all: [
       ['post', 'report', 'send', 'share', 'tell', 'notify', 'message', 'reply', 'respond', 'answer'],
       ['result', 'results', 'outcome', 'milestone', 'blocker', 'blocked', 'progress', 'status', 'coordinator', 'lead', 'session', 'summary', 'finding', 'findings'],
     ],
     candidates: [{ path: ['message', 'send'], example: 'tm8 message send --to <anchor-or-session-id> "<body>"' }],
+  },
+  {
+    intent: 'create a task',
+    all: [['create', 'new', 'add', 'make', 'open', 'file'], ['task', 'tasks', 'subtask', 'subtasks']],
+    none: ['issue', 'github', ...CRITERIA_WORDS],
+    candidates: [
+      { path: ['task', 'create'], example: 'tm8 task create "<title>" --parent <task-id>' },
+      { path: ['entity', 'create'], example: 'tm8 entity create task "<title>" --parent <task-id>' },
+    ],
+  },
+  {
+    intent: 'list teammates',
+    all: [['teammate', 'agents', 'personas']],
+    none: ['chat', 'skill', 'skills', 'equip', 'profile', 'interaction-profile', 'spawn', 'launch'],
+    candidates: [{ path: ['teammate', 'list'], example: 'tm8 teammate list' }],
+  },
+  {
+    intent: 'act in another Space through a space link',
+    all: [['cross-space', 'link']],
+    // `link` is also a PR, a commit, an edge and a project: those keep their own answers.
+    none: ['pr', 'pull', 'commit', 'commits', 'edge', 'edges', 'relate', 'project', 'folder', 'url'],
+    candidates: [
+      { path: ['link', 'list'], example: 'tm8 link list   then   tm8 --space <alias> entity query --kind task' },
+    ],
   },
 ];
 

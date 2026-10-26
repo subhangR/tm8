@@ -1,0 +1,16 @@
+/* A CRAFT'S NAME, BEING TYPED (CraftNameField). Tokens only. */
+
+.crf-name {
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  border: 1px solid var(--pn-ink-2);
+  border-radius: var(--pn-r-md);
+  font: inherit;
+  font-size: var(--pn-fs-label);
+}
+.crf-name:focus { outline: none; }
+.crf-name-form { display: flex; align-items: center; gap: 8px; }
+.crf-name-form .crf-name { width: min(240px, 36vw); }

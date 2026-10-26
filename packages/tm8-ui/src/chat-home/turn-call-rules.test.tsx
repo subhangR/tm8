@@ -57,7 +57,7 @@ const stepLines = (root: HTMLElement) => within(root).queryAllByTestId('chat-ste
 const errlines = (root: HTMLElement) => within(root).queryAllByTestId('chat-step-errline').map((el) => el.textContent);
 
 describe('R1 · outcomes are always visible', () => {
-  it('keeps a created card on screen when the settled turn folds its steps', () => {
+  it('keeps a created row on screen when the settled turn folds its steps', () => {
     const view = render(
       <TurnParts
         parts={[
@@ -69,7 +69,7 @@ describe('R1 · outcomes are always visible', () => {
       />,
     );
     expect(heads(view.container)[0]!.getAttribute('aria-expanded')).toBe('false');
-    expect(view.container.querySelector('.tch-ledger')?.textContent).toContain('Ship it');
+    expect(view.container.querySelector('.tch-receipt')?.textContent).toContain('Ship it');
   });
 });
 

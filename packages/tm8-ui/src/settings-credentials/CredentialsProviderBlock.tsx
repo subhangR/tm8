@@ -15,11 +15,13 @@ import type {
 import { LiveTerminal, TerminalHost, isLiveTerminalEnabled } from '../terminal';
 import { CREDENTIAL_PROVIDER_LABEL } from '../domain/launch';
 import { presentationOf, providerBinaryLabel } from './provider-presentation';
+import { ShareCredentialPanel } from './ShareCredentialPanel';
 import {
   disconnectVerdictOf,
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
+  type CredentialsSharePort,
 } from './port';
 import './credentials.css';
 
@@ -27,6 +29,7 @@ export interface CredentialsProviderBlockProps {
   port: CredentialsPort;
   /** Same-origin route prefix for the node that owns the login session. */
   serverBaseUrl?: string;
+  sharePort?: CredentialsSharePort;
 }
 
 /** A login terminal that has been opened and not yet harvested. */
@@ -54,12 +57,14 @@ const VERDICT_TONE: Record<ConnectionVerdict, 'connected' | 'disconnected' | 'un
 export function CredentialsProviderBlock({
   port,
   serverBaseUrl,
+  sharePort,
 }: CredentialsProviderBlockProps) {
   const [status, setStatus] = useState<CredentialsStatusView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingLogin | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [busy, setBusy] = useState<CredentialProviderName | null>(null);
+  const [sharing, setSharing] = useState<CredentialProviderName | null>(null);
 
   const reload = useCallback(() => {
     return port.load().then(
@@ -147,6 +152,14 @@ export function CredentialsProviderBlock({
 
       {outcome ? <OutcomeNotice outcome={outcome} /> : null}
 
+      {sharing && sharePort ? <ShareCredentialPanel
+        key={`${sharePort.currentSpaceId}:${sharing}`}
+        provider={sharing}
+        port={sharePort}
+        serverBaseUrl={serverBaseUrl}
+        onClose={() => setSharing(null)}
+      /> : null}
+
       {pending ? (
         <LoginTerminalPanel
           login={pending}
@@ -163,9 +176,10 @@ export function CredentialsProviderBlock({
               key={entry.provider}
               entry={entry}
               gitCredentialStore={status.gitCredentialStore}
-              busy={busy === entry.provider}
+              busy={busy === entry.provider || sharing !== null}
               onConnect={() => void connect(entry.provider)}
               onDisconnect={() => void disconnect(entry.provider)}
+              onShare={sharePort && !pending ? () => setSharing(entry.provider) : undefined}
             />
           ))}
         </div>
@@ -184,12 +198,14 @@ function ProviderCard({
   busy,
   onConnect,
   onDisconnect,
+  onShare,
 }: {
   entry: CredentialConnectionView;
   gitCredentialStore: 'present' | 'absent';
   busy: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  onShare?: () => void;
 }) {
   const verdict = verdictOf(entry, gitCredentialStore);
   const presentation = presentationOf(entry.provider);
@@ -237,6 +253,13 @@ function ProviderCard({
       ) : null}
 
       <div className="cred-card__actions">
+        {onShare && (verdict === 'connected-named' || verdict === 'connected-unnamed') ? <button
+          type="button"
+          className="cred-action"
+          disabled={busy}
+          onClick={onShare}
+          data-testid={`credential-share-${entry.provider}`}
+        >Share to</button> : null}
         {verdict === 'unavailable' ? (
           <span className="cred-install" data-testid={`credential-install-${entry.provider}`}>
             {presentation.binary === null ? (

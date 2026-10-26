@@ -330,7 +330,7 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
     const totalRead = captured.find((call) => call.sql.includes('count(*)::int as total'));
     for (const read of [pageRead, totalRead]) {
       expect(read).toBeDefined();
-      expect(read!.sql).toMatch(/position\(lower\(\$\d+::text\) in lower\(coalesce\(t\.title, d\.title,[^)]*\)\)\) > 0/);
+      expect(read!.sql).toMatch(/position\(lower\(\$\d+::text\) in lower\(coalesce\(t\.title, sty\.title, d\.title,[^)]*\)\)\) > 0/);
       expect(read!.sql).toMatch(/e\.kind = any\(\$\d+::text\[\]\)/);
       // Trimmed, bound, never concatenated — and `%` stays a literal character.
       expect(read!.params).toContain('50% Plan');
@@ -427,7 +427,10 @@ describe('W2.G05 collection, graph, and undo handlers', () => {
       state: 'open',
       url: 'https://github.com/subhangR/tm8/pull/89',
       fetchedAt: '2026-08-09T12:00:00.000Z',
-      stale: false,
+      // 306: never polled (no last_polled_at) and open, with facts written
+      // long ago — stale under the freshness ruling, through the same helper.
+      lastPolledAt: null,
+      stale: true,
       // The shared mapper the connections read spreads — asserting THROUGH it
       // binds the two doors to one vocabulary ('failing' / 'conflicted').
       ...projectForgeFacts('failing', 'dirty'),

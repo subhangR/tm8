@@ -61,7 +61,7 @@ describe('status header', () => {
         });
         const edges: Record<string, EdgeView[]> = {
           [sessionStale.id]: [
-            mk('e-ci', 'created_in', commitFoundation, sessionStale),
+            mk('e-ci', 'authored_from', commitFoundation, sessionStale),
             mk('e-wo', 'working_on', sessionStale, taskGuideLines),
           ],
           [taskGuideLines.id]: [mk('e-tr', 'tracks', taskGuideLines, prTransplant)],

@@ -242,6 +242,32 @@ const DROPPED_BY_LATER_MIGRATION: ReadonlyMap<string, string> = new Map([
   // second door that skipped 234's one-space-per-folder guard is not left
   // behind. See db/migrations/234_space_owned_projects.sql, section 4.
   ['public.link_project', '234_space_owned_projects.sql'],
+  // 322 renames 304's `design` kind to `craft`: the detail table is renamed
+  // (`designs` -> `crafts`) and every door and helper is re-created under its
+  // craft name with the old one dropped; 304's one-time graph backfill is
+  // dropped outright. See db/migrations/322_design_to_craft.sql, sections 2-3.
+  ['public.designs', '322_design_to_craft.sql'],
+  ['public.create_design_entity', '322_design_to_craft.sql'],
+  ['public.update_design_entity', '322_design_to_craft.sql'],
+  ['internal.assert_design_acyclic', '322_design_to_craft.sql'],
+  ['internal.design_contains_guard', '322_design_to_craft.sql'],
+  ['internal.design_summary', '322_design_to_craft.sql'],
+  ['internal.backfill_graph_designs', '322_design_to_craft.sql'],
+  // 325 removes the op_request entity kind entirely: 280's table, its doors
+  // and its helpers are dropped, not left orphaned. See
+  // db/migrations/325_drop_op_requests.sql.
+  ['public.op_requests', '325_drop_op_requests.sql'],
+  ['internal.op_request_can_decide', '325_drop_op_requests.sql'],
+  ['internal.op_request_json', '325_drop_op_requests.sql'],
+  ['internal.op_request_for_decision', '325_drop_op_requests.sql'],
+  ['internal.op_request_resolve_attention', '325_drop_op_requests.sql'],
+  ['internal.op_request_touch', '325_drop_op_requests.sql'],
+  ['public.create_op_request', '325_drop_op_requests.sql'],
+  ['public.claim_op_request', '325_drop_op_requests.sql'],
+  ['public.settle_op_request', '325_drop_op_requests.sql'],
+  ['public.deny_op_request', '325_drop_op_requests.sql'],
+  ['public.get_op_request', '325_drop_op_requests.sql'],
+  ['public.list_op_requests', '325_drop_op_requests.sql'],
 ]);
 
 function declaredObjects(sql: string): string[] {

@@ -52,6 +52,10 @@ class SpawnDb implements Db {
   async tx<T>(claims: DbClaims, run: (q: Querier) => Promise<T>): Promise<T> {
     const q: Querier = {
       query: async <R>(sql: string, args: readonly unknown[] = []): Promise<R[]> => {
+        // Visible teammate, with no equipped connectors in this parentage fixture.
+        if (sql.includes('internal.is_space_member($2::uuid)') && sql.includes('as allowed')) {
+          return [{ allowed: args[0] === TEAMMATE && args[1] === SPACE }] as R[];
+        }
         if (sql.includes('from public.team_members')) {
           return [{
             entity_id: TEAMMATE, name: 'Draco', role: 'PTY engineer',
@@ -87,7 +91,7 @@ class SpawnDb implements Db {
     }
     // 256 (W7p): the spawn port re-resolves the minted token to read its
     // via_link stamp. The real mint always resolves; no link here.
-    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
+    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, identityId: 'owner-identity', kind: 'agent', spaceId: SPACE, workSessionId: SESSION, viaLinkId: null } as T;
     if (fn === 'public.issue_work_session_agent_session') return { id: AUTH_SESSION } as T;
     if (fn === 'internal.w2_record_interaction_profile_pin') {
       return {
@@ -275,6 +279,37 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
     expect(spawn?.args[PARENT_ARG_INDEX]).toBe(CHAT);
   });
 
+  it('derives story inheritance provenance only from the bearer session', async () => {
+    const db = await runSpawn(
+      { kind: 'bearer', identityId: 'owner-identity', workSessionId: PARENT_SESSION },
+      { storyId: CHAT, sourceWorkSessionId: SESSION },
+      'work_session',
+    );
+    const spawn = db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn');
+    expect(spawn?.args[PARENT_ARG_INDEX]).toBe(PARENT_SESSION);
+    expect(spawn?.args[18]).toBe(CHAT);
+    expect(spawn?.args[19]).toBe(PARENT_SESSION);
+  });
+
+  it('does not treat a human request body as authenticated session provenance', async () => {
+    const db = await runSpawn(
+      { kind: 'auto-owner', identityId: 'owner-identity' },
+      { parentSessionId: PARENT_SESSION, sourceWorkSessionId: PARENT_SESSION },
+      'work_session',
+    );
+    const spawn = db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn');
+    expect(spawn?.args[PARENT_ARG_INDEX]).toBe(PARENT_SESSION);
+    expect(spawn?.args[19]).toBeNull();
+  });
+
+  it.each([{ taskIds: [] }, { newTask: { title: 'Work' } }, { forceNewTask: false }])(
+    'refuses explicit story/task conflicts before launch: %j', async conflict => {
+      await expect(runSpawn({ kind: 'auto-owner', identityId: 'owner-identity' }, {
+        storyId: CHAT, ...conflict,
+      })).rejects.toMatchObject({ code: 'invalid_input', details: { reason: 'story_spawn_conflict' } });
+    },
+  );
+
   it('parents nothing for a non-bearer caller, which has no runtime chat at all', async () => {
     // `coordinated-worker` needs a return address, so a root spawn from the
     // owner UI is refused rather than launched parentless — the refusal IS the
@@ -282,6 +317,53 @@ describe('execution.spawn — the parent a chat runtime cannot name (176)', () =
     // row is created, so nothing was recorded.
     await expect(runSpawn({ kind: 'auto-owner', identityId: 'owner-identity' }))
       .rejects.toThrow(/parentSessionId/);
+  });
+
+  /**
+   * 321 (Craft doc §4) — WHO BINDS A SESSION ABOUT A CRAFT AT SPAWN. An about
+   * edge written in the spawn transaction lets the session's agent command the
+   * caller's craft workspace, so the handler names who may write one: a person
+   * (`aboutEntityId`), or a chat runtime for its own sessions, whose chat comes
+   * from the verified auth row and never from the body.
+   */
+  const ABOUT = '88888888-8888-4888-8888-888888888888';
+  const aboutCall = (db: SpawnDb) => db.rpcCalls.find(({ fn }) => fn === 'public.work_session_about');
+
+  it.each([
+    ['a worker agent token', { kind: 'bearer', identityId: 'owner-identity', authKind: 'agent', workSessionId: PARENT_SESSION }],
+    ['a runtime token whose row names no chat', { kind: 'bearer', identityId: 'chat-identity', authKind: 'agent_runtime' }],
+  ] as const)('refuses aboutEntityId from %s, before anything is spawned', async (_label, identity) => {
+    let db: SpawnDb | undefined;
+    await expect((async () => { db = await runSpawn(identity as RequestIdentity, { aboutEntityId: ABOUT, parentSessionId: PARENT_SESSION }, 'work_session'); })())
+      .rejects.toMatchObject({ code: 'forbidden', details: { reason: 'about_not_allowed' } });
+    expect(db).toBeUndefined();
+  });
+
+  it('binds a person\'s aboutEntityId in the spawn transaction, with no chat', async () => {
+    const db = await runSpawn(
+      { kind: 'bearer', identityId: 'owner-identity', authKind: 'cli' },
+      { aboutEntityId: ABOUT, parentSessionId: PARENT_SESSION },
+      'work_session',
+    );
+    expect(aboutCall(db)?.args).toEqual([SESSION, ABOUT, null]);
+  });
+
+  it('takes a chat runtime\'s chat from its auth row, not from the body', async () => {
+    const db = await runSpawn(
+      { kind: 'bearer', identityId: 'chat-identity', authKind: 'agent_runtime', runtimeChatId: CHAT },
+      { aboutFromChatId: PARENT_SESSION },
+    );
+    expect(aboutCall(db)?.args).toEqual([SESSION, null, CHAT]);
+  });
+
+  it('binds nothing for a worker token that names no about', async () => {
+    const db = await runSpawn(
+      { kind: 'bearer', identityId: 'owner-identity', authKind: 'agent', workSessionId: PARENT_SESSION },
+      {},
+      'work_session',
+    );
+    expect(db.rpcCalls.some(({ fn }) => fn === 'public.execution_spawn')).toBe(true);
+    expect(aboutCall(db)).toBeUndefined();
   });
 });
 

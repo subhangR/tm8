@@ -3,9 +3,9 @@
 // A story is one entity with a title, a description and the status every kind
 // has (152). Things are put in BY HAND as `contains` edges from the story —
 // those are its ROOTS — and everything connected to a root FOLLOWS along a
-// fixed set of edge types, to a fixed depth, under a fixed row bound. Progress,
-// the graph, the team, call signs and what is happening are all COMPUTED at
-// read time from that trail; nothing here is ever stored.
+// fixed set of edge types, to a fixed depth, under a fixed row bound. The
+// graph, team, call signs and activity are computed from that trail. Progress
+// is computed from contained work (see StoryState); story status is manual.
 //
 // Where each piece is read from (no new catalog rows):
 //   * `StoryState`   — the entity's `state` on BOTH read paths (entities.get /
@@ -25,8 +25,9 @@
 //                      `page.recentMessages`.
 //   * agents         — `tm8 entity context <story>` renders the same page as
 //                      a bounded text section.
-import type { ActorSummary, StatusCategory, TeamMemberMode } from './contract.js';
+import type { ActorSummary, EntityContextV2View, StatusCategory, TeamMemberMode } from './contract.js';
 import { z } from 'zod';
+import { WeightedProgressSchema, type TaskProgress, type WeightedProgress } from './progress.js';
 
 /**
  * The edge types a story's trail follows, in both directions, from each root
@@ -35,11 +36,17 @@ import { z } from 'zod';
  * (team_member, member, project, interaction_profile, skill) and stories are
  * LEAVES: reached, never walked out of (lead ruling 2026-10-02). NOT followed, on purpose:
  * `likes`, `stars`, `pulled`, `visible_to` — reactions and access are not
- * part of the work.
+ * part of the work; `relates_to`, `depends_on`, `participates_in` and
+ * `follows_up` (Design Rules §2.3, P0b). `authored_from` is followed except from
+ * a message or form source (`internal.story_walk_skips`, 308), so a session's
+ * messages never flood a story. `created_in` was merged into `authored_from`
+ * (308) and `dispatched_by` is deprecated (303; replaced by `launched_by`, 330, which
+ * the walk does not need: a launched session's `authored_from` names its launcher). The SQL twin is `internal.story_followed_edge_types()`;
+ * db/test/canonical_edges.test.mjs asserts the two agree.
  */
 export const STORY_FOLLOWED_EDGE_TYPES = [
-  'parent', 'attached_to', 'tracks', 'working_on', 'about', 'created_in',
-  'assigned_to', 'has_member', 'produces', 'remembers', 'dispatched_by',
+  'parent', 'attached_to', 'tracks', 'working_on', 'about', 'authored_from',
+  'assigned_to', 'has_member', 'produces', 'remembers',
 ] as const;
 export type StoryFollowedEdgeType = (typeof STORY_FOLLOWED_EDGE_TYPES)[number];
 
@@ -59,7 +66,7 @@ export const STORY_EDGE_FAMILY: Readonly<Record<string, StoryEdgeFamily>> = {
   parent: 'parent',
   contains: 'story',
   about: 'story',
-  created_in: 'story',
+  authored_from: 'story',
   has_member: 'team',
   working_on: 'runs',
   assigned_to: 'runs',
@@ -70,6 +77,7 @@ export const STORY_EDGE_FAMILY: Readonly<Record<string, StoryEdgeFamily>> = {
   depends_on: 'blocks',
   blocks: 'blocks',
   dispatched_by: 'team',
+  launched_by: 'team',
   coordinates: 'team',
 };
 
@@ -96,9 +104,9 @@ export function storyCallSign(index: number): string {
 }
 
 /**
- * A progress tally over a set of followed rows. `work` = rows whose status
- * category is not `cancelled`; `done` = rows at category `done`. `blocked` =
- * work rows not done that hold an unresolved hard `depends_on`. The bands are
+ * A progress tally over contained work. `work` = rows whose status category
+ * is to_do, in_progress or done; `done` = rows at category `done`. `blocked` =
+ * unfinished rows explicitly blocked or holding an unresolved hard `depends_on`. The bands are
  * DISJOINT: `inProgress` and `toDo` exclude blocked rows, so
  * done + inProgress + toDo + blocked = work.
  */
@@ -109,16 +117,34 @@ export interface StoryProgress {
   toDo: number;
   blocked: number;
   cancelled: number;
+  /**
+   * Subset of inProgress: tasks without a directly linked, nondeleted
+   * spawning/running/idle work session (`working_on`, session -> task).
+   * This is a visibility-scoped signal, not a status change or an age test.
+   * Optional for older stored summaries; absence means unavailable, not zero.
+   */
+  staleInProgress?: number;
 }
 
 /**
  * The story's summary, carried as `state` on both read paths.
  *
- * `progress` is the ruled figure over EVERY followed row (all kinds carry a
- * status since 152). `taskProgress` is the same tally restricted to tasks —
- * what the page labels "N of M tasks done". `rollup` is `taskProgress` plus
- * every descendant story's `taskProgress` (child stories via same-kind
- * `parent_id`).
+ * The three tallies count what the story CONTAINS (migration 289), never the
+ * trail: its roots, each root's hierarchy descendants (parent -> child only —
+ * the rows `entity query --subtree <root>` returns), and its direct child
+ * stories. A story is one item; its own tasks reach a parent only through
+ * `rollup`. Rows the trail reaches sideways (sessions, their coordinators,
+ * the coordinators' tasks in other stories) are shown but never counted.
+ *
+ * - `progress`: tasks AND stories the story contains (no docs, forms,
+ *   sessions, team members, PRs).
+ * - `taskProgress`: tasks the story contains — "N of M tasks done".
+ * - `rollup`: `taskProgress` over this story's tasks united with every
+ *   descendant story's (same-kind `parent_id`), each task once.
+ *
+ * `work` excludes cancelled rows, so `work + cancelled` is the row count.
+ * `itemCount`, `liveSessionCount`, `pendingAttentionCount` and
+ * `lastActivityAt` still read the whole trail.
  */
 export interface StoryState {
   kind: 'story';
@@ -131,6 +157,11 @@ export interface StoryState {
   progress: StoryProgress;
   taskProgress: StoryProgress;
   rollup: StoryProgress;
+  /**
+   * 307: points-weighted progress over the same task set `rollup` counts.
+   * Optional for older stored summaries.
+   */
+  weighted?: WeightedProgress;
   /** Followed work sessions whose runtime is live. */
   liveSessionCount: number;
   /** Unresolved attention requests on the story or any followed row. */
@@ -154,7 +185,7 @@ export interface StoryNode {
    */
   status: string | null;
   statusCategory: StatusCategory | null;
-  /** Holds an unresolved hard `depends_on`. */
+  /** Explicitly blocked or holds an unresolved hard `depends_on`. */
   blocked: boolean;
   /** 0 for a root, 1..STORY_FOLLOW_DEPTH for followed rows; -1 for the story. */
   depth: number;
@@ -166,7 +197,39 @@ export interface StoryNode {
   live?: boolean;
   /** Work sessions only: the session's call sign. */
   callSign?: string;
+  /**
+   * Per-node tallies, set on every node of a page a server that computes
+   * them returns; absent from pages older servers (and fixtures) hand out, so
+   * readers treat `undefined` as "not known", never as 0.
+   */
+  counts?: StoryNodeCounts;
 }
+
+/**
+ * What a node carries that the graph alone cannot show: its mailbox and
+ * whether it is asking for a human. Both are computed at read time, set-based
+ * over the page's node ids, never per node.
+ */
+export interface StoryNodeCounts {
+  /**
+   * Messages anchored on the node (`messages.anchor_id`), excluding redacted
+   * messages and messages whose entity row is deleted — the same filter the
+   * page's `recentMessages` window applies, with no window: the whole mailbox.
+   */
+  messages: number;
+  /**
+   * Unresolved attention requests whose target (`attention_requests.entity_id`)
+   * is the node: status `open` or `acknowledged`, the ONE definition behind
+   * `StoryState.pendingAttentionCount` (`internal.story_summary`, migration 289),
+   * so the page's nodes sum to what the summary says.
+   */
+  pendingAttention: number;
+}
+
+export const StoryNodeCountsSchema: z.ZodType<StoryNodeCounts> = z.object({
+  messages: z.number().int().nonnegative(),
+  pendingAttention: z.number().int().nonnegative(),
+}).strict();
 
 /** One edge of the story graph, exactly as stored (or `parent` for hierarchy). */
 export interface StoryGraphEdge {
@@ -205,9 +268,20 @@ export interface StoryRoot {
   blocked: boolean;
   /** The `contains` edge position, which orders the roots. */
   position: number | null;
-  /** The root plus its followed rows. */
+  /**
+   * The root plus its hierarchy descendants, tasks and stories only (289) —
+   * never rows the trail reached sideways. `taskProgress.work + cancelled` =
+   * (root is a task ? 1 : 0) + `entity query --kind task --subtree <root>`.
+   */
   progress: StoryProgress;
   taskProgress: StoryProgress;
+  /** 307: a task root's points-weighted subtree progress (internal.task_progress). */
+  weighted?: TaskProgress;
+  /**
+   * Every hierarchy descendant of the root, any kind, unbounded by the
+   * trail's depth — the count `entity query --subtree <root>` returns.
+   */
+  descendantCount: number;
   /** Descendants by hierarchy (`parent` edges) in the trail, nearest first. */
   childIds: string[];
   /** Everything else followed from this root (non-`parent` edges). */
@@ -222,12 +296,14 @@ export interface StorySession {
   live: boolean;
   /** The work session's runtime status as stored. */
   runtimeStatus: string | null;
+  /** Model selected for this session; absent on older servers. */
+  model?: string | null;
   teamMemberId: string | null;
   mode: TeamMemberMode | null;
   /** Tasks it is `working_on` that are in the story. */
   taskIds: string[];
   rootIds: string[];
-  /** The session that dispatched or spawned it, when known. */
+  /** The session that launched it (its `launched_by` edge, 330), when that is in the story. */
   dispatchedById: string | null;
 }
 
@@ -319,15 +395,23 @@ export interface StoryContent {
   kind: 'story';
   description: string;
   page: StoryPage | null;
+  /** Bounded reader context with continuation pointers; absent on browser page reads. */
+  context?: EntityContextV2View;
 }
 
 /**
  * The create/patch door's input. A patch carries only what changed; `null`
  * MERGES in the door. Title rides the envelope's `title`.
+ *
+ * `status` is PATCH-ONLY (migration 288): a workflow category (to_do |
+ * in_progress | done | cancelled) or a state name of the story's workflow.
+ * A story's status is MANUAL — never derived from its trail; `progress` /
+ * `taskProgress` are the derived signal.
  */
 export const StoryContentInputSchema = z.object({
   kind: z.literal('story').optional(),
   description: z.string().max(20000).optional(),
+  status: z.string().trim().min(1).max(100).optional(),
 }).strict();
 
 const StoryProgressSchema = z.object({
@@ -337,6 +421,7 @@ const StoryProgressSchema = z.object({
   toDo: z.number().int().nonnegative(),
   blocked: z.number().int().nonnegative(),
   cancelled: z.number().int().nonnegative(),
+  staleInProgress: z.number().int().nonnegative().optional(),
 }).strict();
 
 export const StoryStateSchema = z.object({
@@ -347,6 +432,7 @@ export const StoryStateSchema = z.object({
   progress: StoryProgressSchema,
   taskProgress: StoryProgressSchema,
   rollup: StoryProgressSchema,
+  weighted: WeightedProgressSchema.optional(),
   liveSessionCount: z.number().int().nonnegative(),
   pendingAttentionCount: z.number().int().nonnegative(),
   lastActivityAt: z.string().nullable(),
@@ -358,6 +444,7 @@ export const StoryContentSchema = z.object({
   kind: z.literal('story'),
   description: z.string(),
   page: z.record(z.unknown()).nullable(),
+  context: z.record(z.unknown()).optional(),
 }).passthrough();
 
 /**
@@ -365,20 +452,32 @@ export const StoryContentSchema = z.object({
  * projected small for an agent. Every list is capped at 50; a cut list adds
  * an `omitted[]` entry on the view.
  */
+/**
+ * The story card on `entity context` (283). Never-drop core, so every list is
+ * one bounded page (#25): a cut list has an `omitted[]` entry (`story.roots`,
+ * `story.sessions`, …) whose `--sections story --cursor` expand continues it.
+ * A cursor page carries only the list it continues; the others are absent.
+ */
 export interface EntityContextStory {
   state: StoryState;
-  roots: Array<{
+  roots?: Array<{
     id: string; kind: string; title: string; status: string | null; statusCategory: StatusCategory | null;
-    blocked: boolean; taskProgress: StoryProgress; progress: StoryProgress; childCount: number; trailCount: number;
+    blocked: boolean; taskProgress: StoryProgress; progress: StoryProgress;
+    /** `StoryRoot.descendantCount`: matches `entity query --subtree <root>`. */
+    childCount: number;
+    /** Rows followed from the root by non-`parent` edges (shown, not counted). */
+    trailCount: number;
   }>;
   /** Counts over every followed row (depth >= 0), by kind. */
   byKind: Record<string, number>;
-  blocked: Array<{ id: string; kind: string; title: string; status: string | null }>;
-  sessions: Array<{ id: string; callSign: string; title: string; live: boolean; mode: TeamMemberMode | null;
-    teamMemberId: string | null; taskIds: string[] }>;
-  team: Array<{ id: string; kind: 'team_member' | 'member'; name: string; mode: TeamMemberMode | null;
-    parentId: string | null; live: boolean; sessionIds: string[] }>;
-  childStories: Array<{ id: string; title: string; status: string | null; taskProgress: StoryProgress;
+  blocked?: Array<{ id: string; kind: string; title: string; status: string | null }>;
+  /** `taskIds` is cut to the first few; `taskCount` is the full count, present only when cut. */
+  sessions?: Array<{ id: string; callSign: string; title: string; live: boolean; mode: TeamMemberMode | null;
+    teamMemberId: string | null; taskIds: string[]; taskCount?: number }>;
+  /** `sessionIds` is cut to the first few; `sessionCount` is the full count, present only when cut. */
+  team?: Array<{ id: string; kind: 'team_member' | 'member'; name: string; mode: TeamMemberMode | null;
+    parentId: string | null; live: boolean; sessionIds: string[]; sessionCount?: number }>;
+  childStories?: Array<{ id: string; title: string; status: string | null; taskProgress: StoryProgress;
     rollup: StoryProgress; liveSessionCount: number }>;
   truncated: boolean;
 }
@@ -386,11 +485,11 @@ export interface EntityContextStory {
 /** Loose on purpose: server-assembled, typed by `EntityContextStory`. */
 export const EntityContextStorySchema: z.ZodType<EntityContextStory> = z.object({
   state: StoryStateSchema,
-  roots: z.array(z.record(z.unknown())),
+  roots: z.array(z.record(z.unknown())).optional(),
   byKind: z.record(z.number().int().nonnegative()),
-  blocked: z.array(z.record(z.unknown())),
-  sessions: z.array(z.record(z.unknown())),
-  team: z.array(z.record(z.unknown())),
-  childStories: z.array(z.record(z.unknown())),
+  blocked: z.array(z.record(z.unknown())).optional(),
+  sessions: z.array(z.record(z.unknown())).optional(),
+  team: z.array(z.record(z.unknown())).optional(),
+  childStories: z.array(z.record(z.unknown())).optional(),
   truncated: z.boolean(),
 }).strict() as unknown as z.ZodType<EntityContextStory>;

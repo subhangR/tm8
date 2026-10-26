@@ -93,7 +93,8 @@ function tuplesAfter(sql: string, from: number): string[] {
  * `insert into edge_types (type, src_kinds, dst_kinds, …)` tuple registers a
  * type, and every `update edge_types set src_kinds/dst_kinds …` rewrites one —
  * both the `array[…]` form and the `array_append(col, 'x')` form the later
- * migrations use. The result is what `tm8 edge type list` prints on a node
+ * migrations use, plus a rename's all-rows `array_replace(col, 'old', 'new')`.
+ * The result is what `tm8 edge type list` prints on a node
  * at head, which is exactly what this file vendors.
  */
 function migratedEndpoints(): Map<string, Endpoints> {
@@ -135,6 +136,16 @@ function migratedEndpoints(): Map<string, Endpoints> {
           assignments,
         );
         if (append && !row[key].includes(append[1]!)) row[key] = [...row[key], append[1]!];
+      }
+    }
+
+    /* A kind rename (322) rewrites one kind in EVERY type's endpoints: `array_replace(col, 'old', 'new')`. */
+    for (const column of ['src_kinds', 'dst_kinds'] as const) {
+      const key = column === 'src_kinds' ? 'src' : 'dst';
+      const replace = new RegExp(`update\\s+(?:public\\.)?edge_types\\s+set[^;]*?${column}\\s*=\\s*array_replace\\(\\s*${column}\\s*,\\s*'([^']+)'\\s*,\\s*'([^']+)'\\s*\\)`, 'gi');
+      while ((m = replace.exec(sql))) {
+        const [, from, to] = m;
+        for (const row of types.values()) row[key] = row[key].map((kind) => (kind === from ? to! : kind));
       }
     }
   }

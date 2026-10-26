@@ -273,7 +273,7 @@ describe('148 — tier 3 cannot cross a project boundary either', () => {
 });
 
 describe('148 — tiers 1 and 2 are unchanged', () => {
-  it('tier 1 (created_in on the PR) still wins over a live tier-3 match', async () => {
+  it('tier 1 (authored_from on the PR) still wins over a live tier-3 match', async () => {
     const space = await seedSpace('a6', {
       repoUrl: `https://github.com/${REPO_A}.git`, branch: BRANCH, status: 'running',
     });
@@ -281,11 +281,13 @@ describe('148 — tiers 1 and 2 are unchanged', () => {
     // The tier-1 session is LIVE too, so confidence — not liveness — decides.
     const authored = await seedSession(space, 'a6-tier1', 'running');
     await owner(async (q) => {
+      await q(`select internal.w1_set_writer('entity_recorder')`);
       await q(
         `insert into public.edges(space_id, src_id, dst_id, type, created_by)
-         values ($1, $2, $3, 'created_in', $4)`,
+         values ($1, $2, $3, 'authored_from', $4)`,
         [space.spaceId, pr, authored, space.memberId],
       );
+      await q(`select internal.w1_set_writer(null)`);
     });
 
     expect(await owningSession(pr)).toBe(authored);
@@ -312,11 +314,13 @@ describe('148 — tiers 1 and 2 are unchanged', () => {
          values ($1, $2, $3, $4, 'head')`,
         [commitId, space.spaceId, REPO_A, headSha],
       );
+      await q(`select internal.w1_set_writer('entity_recorder')`);
       await q(
         `insert into public.edges(space_id, src_id, dst_id, type, created_by)
-         values ($1, $2, $3, 'created_in', $4)`,
+         values ($1, $2, $3, 'authored_from', $4)`,
         [space.spaceId, commitId, committer, space.memberId],
       );
+      await q(`select internal.w1_set_writer(null)`);
     });
 
     expect(await owningSession(pr)).toBe(committer);
@@ -347,11 +351,13 @@ describe('148 — tiers 1 and 2 are unchanged', () => {
          values ($1, $2, $3, $4, 'stranger head')`,
         [commitId, spaceB.spaceId, REPO_A, headSha],
       );
+      await q(`select internal.w1_set_writer('entity_recorder')`);
       await q(
         `insert into public.edges(space_id, src_id, dst_id, type, created_by)
-         values ($1, $2, $3, 'created_in', $4)`,
+         values ($1, $2, $3, 'authored_from', $4)`,
         [spaceB.spaceId, commitId, spaceB.sessionId, spaceB.memberId],
       );
+      await q(`select internal.w1_set_writer(null)`);
     });
 
     expect(await owningSession(pr)).toBeNull();

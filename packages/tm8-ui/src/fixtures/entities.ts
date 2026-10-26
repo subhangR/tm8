@@ -1065,6 +1065,28 @@ export const profileHouseStyle = summary({
  * hint and the vendor login never reach an entity, so there is nothing else
  * a fixture could honestly carry.
  */
+const fixtureMcpDefinition = {
+  name: 'fixture_calendar', transport: 'http' as const, url: 'https://mcp.example.test/calendar',
+  envKeys: [], headerKeys: [], auth: { type: 'none' as const }, approved: true, enabled: true,
+};
+export const mcpCalendar = summary({
+  id: 'mcp-calendar', kind: 'mcp_server', title: 'Fixture calendar',
+  excerpt: 'Shared calendar tools; credentials are selected separately.',
+  state: { kind: 'mcp_server', definition: fixtureMcpDefinition },
+});
+
+const fixtureToolDefinition = { name: 'fixture-tool', description: 'Stored tool fixture', help: '',
+  runtime: 'bash' as const, source: 'true', inputs: [], tm8Access: 'none' as const, timeoutSeconds: 900 };
+export const toolFixture = summary({ id: 'tool-fixture', kind: 'tool', title: 'Fixture tool',
+  excerpt: 'Stored source and declared inputs.', state: {kind: 'tool', definition: fixtureToolDefinition} });
+
+/** Craft (304/322) — an ordered set of pages; its pages are `contains` edges. */
+export const designCheckout = summary({
+  id: 'design-checkout', kind: 'craft', title: 'Checkout redesign',
+  excerpt: 'The new checkout, page by page.',
+  state: { kind: 'craft', pageCount: 0, pageKinds: [] },
+});
+
 export const credentialTeamKey = summary({
   id: 'cred-team-anthropic',
   kind: 'credential',
@@ -1119,6 +1141,29 @@ export const storyAsAnEntity = summary({
   createdBy: ada,
   category: 'in_progress',
   state: STORY_FIXTURE.state,
+});
+
+/**
+ * Style — a published, read-only space style (migration 284). The document is
+ * a built-in foundation with NO vars: a fixture carrying colour values would
+ * put raw colour literals in `src/` (§14), and the row facts this fixture
+ * exists to exercise — title, pusher, version — do not need any.
+ */
+export const styleMidnight = summary({
+  id: 'style-midnight',
+  kind: 'style',
+  title: 'Midnight',
+  excerpt: 'The dark house style',
+  createdBy: ada,
+  state: {
+    kind: 'style',
+    doc: { schemaVersion: 1, foundation: 'builtin:atelier-dark', vars: {}, css: null },
+    resolvedHash: null,
+    pushedBy: ada.id,
+    pushedAt: '2026-10-02T09:00:00.000Z',
+    sourceOwnerIdentityId: 'fixture-identity-ada',
+    tags: ['dark'],
+  },
 });
 
 /**
@@ -1359,8 +1404,9 @@ export const fixtureSummaries: EntitySummary[] = [
   chatLaunchPlan, chatStoppedWithWork,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
-  profileHouseStyle, credentialTeamKey, customRitual, artifactPulseBoard, drawingLoginFlow,
+  profileHouseStyle, credentialTeamKey, mcpCalendar, toolFixture, designCheckout, customRitual, artifactPulseBoard, drawingLoginFlow,
   storyAsAnEntity,
+  styleMidnight,
   ...formSummaries,
   ...containerFixtures,
 ];
@@ -1736,8 +1782,8 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     content: { kind: 'commit', filesChanged: 21 },
     connections: {
       // 082 provenance: the commit was produced IN the live session.
-      outgoing: [{ type: 'created_in', direction: 'outgoing', label: 'created in', edges: [
-        edge('edge-created-in-1', 'created_in', snap(commitFoundation), snap(sessionLive), forge),
+      outgoing: [{ type: 'authored_from', direction: 'outgoing', label: 'made during', edges: [
+        edge('edge-authored-from-1', 'authored_from', snap(commitFoundation), snap(sessionLive), forge),
       ] }],
       incoming: [],
       unresolvedHardDependencyCount: 0,
@@ -1869,8 +1915,34 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     },
   }),
 
+  [toolFixture.id]: detail(toolFixture, {content: {kind: 'tool', definition: fixtureToolDefinition}, capabilities: CAPS_READONLY}),
+
+  [mcpCalendar.id]: detail(mcpCalendar, {
+    content: { kind: 'mcp_server', definition: fixtureMcpDefinition },
+    capabilities: CAPS_READONLY,
+  }),
+
+  [designCheckout.id]: detail(designCheckout, {
+    content: { kind: 'craft', description: 'The new checkout, page by page.', pages: [] },
+  }),
+
   [credentialTeamKey.id]: detail(credentialTeamKey, {
     content: { kind: 'credential', provider: 'anthropic', shape: 'api_key', visibility: 'public', status: 'active', ownerAccountId: null },
+  }),
+
+  [styleMidnight.id]: detail(styleMidnight, {
+    content: {
+      kind: 'style',
+      description: 'The dark house style',
+      doc: { schemaVersion: 1, foundation: 'builtin:atelier-dark', vars: {}, css: null },
+      resolvedHash: null,
+      pushedBy: ada.id,
+      pushedAt: '2026-10-02T09:00:00.000Z',
+      sourceOwnerIdentityId: 'fixture-identity-ada',
+      tags: ['dark'],
+    },
+    // Read-only by construction (284): new versions arrive only by push.
+    capabilities: CAPS_READONLY,
   }),
 
   [customRitual.id]: detail(customRitual, {

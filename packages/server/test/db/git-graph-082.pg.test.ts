@@ -7,7 +7,7 @@
  *     `git.pr_state_changed` row on `workspace_events`; a refresh that learns
  *     nothing authors nothing (the observer's "I looked" must stay silent).
  *  2. `record_session_commit` mints the commit mirror ONCE (link_commit's
- *     dedupe key), stamps exactly one `created_in` edge commit→session, and
+ *     dedupe key), stamps exactly one `authored_from` edge commit→session (308; was `created_in`), and
  *     the insert trigger authors `git.commit_recorded`.
  *  3. A worktree status transition authors `git.worktree_status_changed`.
  *  4. The completion gate: DEFAULT behaviour unchanged (an open tracked PR
@@ -178,7 +178,7 @@ describe('082 — git facts on the ledger, provenance, and the completion gate',
       q.rpc('apply_pull_request_facts', [prEntityId, null, 'open', null, null]));
   });
 
-  it('record_session_commit mints once, converges on retry, and stamps ONE created_in edge', async () => {
+  it('record_session_commit mints once, converges on retry, and stamps ONE authored_from edge', async () => {
     const sha = 'b'.repeat(40);
     const first = await asApp(database, fixture.identityId, (q) =>
       q.rpc<Record<string, unknown>>('record_session_commit', [
@@ -196,7 +196,7 @@ describe('082 — git facts on the ledger, provenance, and the completion gate',
 
     // Provenance is an ordinary edge read: which session produced commit X.
     const edges = await database.query<{ dst_id: string }>(
-      `select dst_id from public.edges where src_id=$1 and type='created_in'`, [commitEntityId]);
+      `select dst_id from public.edges where src_id=$1 and type='authored_from'`, [commitEntityId]);
     expect(edges).toEqual([{ dst_id: fixture.workSessionId }]);
 
     const recorded = await events('git.commit_recorded');

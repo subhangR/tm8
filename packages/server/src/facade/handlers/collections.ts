@@ -37,10 +37,12 @@ import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor, commandEnvelope, limitOf, MAX_LIMIT, requireUuidParam } from '../context.js';
 import {
-  assembleSummaries, ENTITY_COLUMNS, ENTITY_FROM, MICROS, type EntityRow,
+  assembleSummaries, withChildCounts, ENTITY_COLUMNS, ENTITY_FROM, MICROS, type EntityRow,
 } from '../entity-read.js';
 import { toCommandResult, type RpcCommandResult } from './entities.js';
 import { runsOnListedFrom } from '../services/w2/runs-on-visibility.js';
+import { storyRootWarnings } from '../placement-guidance.js';
+import { withHeaderWarnings } from '../../headers/write.js';
 
 // ---------------------------------------------------------------------------
 // Sorting
@@ -75,6 +77,11 @@ interface SortSpec {
  * "nulls last" as a simple row comparison, and getting that subtly wrong loses
  * rows at a page boundary. A sentinel makes the column total-ordered.
  */
+const PROGRESS_SORT_SQL = `coalesce(case e.kind
+    when 'task' then (internal.task_progress(e.id) ->> 'percent')::int
+    when 'story' then (internal.story_summary(e.id) -> 'weighted' ->> 'percent')::int
+  end, 101)`;
+
 const SORTS: Record<SortName, SortSpec> = {
   activityAt_desc: {
     expr: 'e.activity_at', dir: 'desc', cast: 'timestamptz', cursorExpr: MICROS('e.activity_at'),
@@ -108,6 +115,15 @@ const SORTS: Record<SortName, SortSpec> = {
     dir: 'asc',
     cast: 'integer',
     cursorExpr: "case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end",
+  },
+  // 307: least progress first — the weighted percent a task or story row
+  // carries. No figure (no countable work, or another kind) sorts last on the
+  // sentinel 101, for the same keyset reason as `dueDate`.
+  progress: {
+    expr: PROGRESS_SORT_SQL,
+    dir: 'asc',
+    cast: 'integer',
+    cursorExpr: PROGRESS_SORT_SQL,
   },
 };
 
@@ -266,7 +282,7 @@ const UNBLOCKED_PREDICATE = `not exists (
  * A memory's title is derived from its statement, so the statement is what
  * is searched. Kinds without an arm here never match a title search.
  */
-const TITLE_TEXT = `coalesce(t.title, d.title, ws.title, drw.title, sk.name, sp.name,
+const TITLE_TEXT = `coalesce(t.title, sty.title, d.title, ws.title, drw.title, sk.name, sp.name,
   tm.name, mem.display_name, col.name, ch.name, vc.name, f.name, memo.statement,
   art.name, lp.title, gr.title, cht.title, ctr.title, pr.title, ppd.name, '')`;
 
@@ -276,7 +292,7 @@ const TITLE_TEXT = `coalesce(t.title, d.title, ws.title, drw.title, sk.name, sp.
  * carries. Not a task's or doc's body — that is prose, and a word anywhere in
  * it would bury the title hits under every page that mentions it.
  */
-const DESCRIPTION_TEXT = `coalesce(sk.description, sp.description, art.description, col.description, '')`;
+const DESCRIPTION_TEXT = `coalesce(sk.description, sp.description, art.description, col.description, sty.description, '')`;
 
 /**
  * `filters.words` as the words it requires: lowercased, split on whitespace
@@ -389,6 +405,10 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   if (f.sessionStatus && f.sessionStatus.length > 0) {
     where.push(`ws.status = any(${p.add(f.sessionStatus)}::text[])`);
   }
+  // 301 (Spec D1 §5.3): the outcome axis, same kind-narrowing.
+  if (f.sessionOutcome && f.sessionOutcome.length > 0) {
+    where.push(`ws.outcome = any(${p.add(f.sessionOutcome)}::text[])`);
+  }
 
   // Memory text (the MCP `memory_search` tool): rows whose statement,
   // mechanism, subject scope or does-not-establish text contains ANY of the
@@ -458,6 +478,8 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
   // every row that is not a work_session at all, and a plain `<>` would drop
   // the entire graph.
   where.push(`ws.session_kind is distinct from 'credential'`);
+  // Tool sessions live in their tool's run history, including retained PTYs.
+  where.push(`ws.session_kind is distinct from 'tool'`);
 
   if (f.axes) {
     for (const [axis, values] of Object.entries(f.axes)) {
@@ -548,6 +570,61 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     )`);
   }
 
+  if (f.createdIn) {
+    // 327: "made here" is the server-recorded `authored_from` (entity -> chat
+    // or session); a session also counts by its launcher (`launched_by`, 330),
+    // which pre-327 spawns carry without authored_from. Roots only: a child whose parent was
+    // made here too belongs to that parent's subtree.
+    //
+    // ROLLUP (task 01a14a91): what a session spawned here made counts too, so
+    // a doc a child worker wrote shows in the chat's strip. The origin set is
+    // the origin plus every work session under it by spawn parent (bounded
+    // depth); the array is uncorrelated, so it is computed once per query.
+    const origin = p.add(assertUuid(f.createdIn, 'filters.createdIn'));
+    const origins = sessionTreeIds(origin);
+    const madeHere = (alias: string) => `(exists (
+        select 1 from public.edges ca
+         where ca.src_id = ${alias}.id and ca.type = 'authored_from' and ca.dst_id = any(${origins})
+      ) or ${spawnedDirectlyBy(alias, origin)})`;
+    where.push(`e.kind not in ('message', 'form')`);
+    where.push(madeHere('e'));
+    where.push(`not exists (
+      select 1 from public.entities cp
+       where cp.id = e.parent_id and cp.deleted_at is null and ${madeHere('cp')}
+    )`);
+    /* 330: a launched session's "parent" is its launcher (`launched_by`), not
+       parent_id — so a session launched by a session made here is that
+       session's child, not a root of its own. */
+    where.push(`not exists (
+      select 1 from public.edges lbp
+        join public.entities cp on cp.id = lbp.dst_id
+       where lbp.src_id = e.id and lbp.type = 'launched_by'
+         and cp.deleted_at is null and ${madeHere('cp')}
+    )`);
+  }
+
+  if (f.launchedBy) {
+    // 331: the sessions these chats or sessions LAUNCHED (`launched_by`, 330)
+    // — the chat list nests them under their launcher. Kind-narrowing: only a
+    // work_session carries the edge.
+    where.push(`exists (
+      select 1 from public.edges lb
+       where lb.src_id = e.id and lb.type = 'launched_by'
+         and lb.dst_id = any(${p.add(assertUuids(f.launchedBy, 'filters.launchedBy'))}::uuid[])
+    )`);
+  }
+
+  if (f.parentIn) {
+    // Tile children (task 01a14b92): the direct children of the rows a list
+    // has expanded, by `parent_id`, whatever their status.
+    where.push(`e.parent_id = any(${p.add(assertUuids(f.parentIn, 'filters.parentIn'))}::uuid[])`);
+  }
+
+  if (f.idIn) {
+    // The parents a status tab shows as context (task 01a14b92), by id.
+    where.push(`e.id = any(${p.add(assertUuids(f.idIn, 'filters.idIn'))}::uuid[])`);
+  }
+
   if (f.inFlightForActorId) {
     // "In flight for me" = pulled or being worked on by an actor in my scope,
     // and not finished. Actor scope is the member row plus the personas it
@@ -559,7 +636,17 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
        join public.entities we on we.id = w.src_id
        left join public.team_members wtm on wtm.entity_id = we.id
        where w.dst_id = e.id and w.type in ('working_on','pulled')
-         and (w.src_id = ${actor} or wtm.owner_member_id = ${actor})
+         -- 299: an ended claim is history, not flight.
+         and (w.type <> 'working_on' or (w.props->>'endedAt') is null)
+         and (w.src_id = ${actor} or wtm.owner_member_id = ${actor}
+              -- 299: a claim made inside an agent session is the SESSION's;
+              -- it is in flight for whoever its persona belongs to.
+              -- 309: its teammate is participates_in (teammate -> session).
+              or exists (
+                select 1 from public.edges r
+                  join public.team_members rtm on rtm.entity_id = r.src_id
+                 where r.dst_id = w.src_id and r.type = 'participates_in'
+                   and (r.src_id = ${actor} or rtm.owner_member_id = ${actor})))
     )`);
   }
 
@@ -745,7 +832,7 @@ export async function queryCollection(
 
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const items = await assembleSummaries(q, pageRows, viewerIdentityId);
+  const items = await withChildCounts(q, await assembleSummaries(q, pageRows, viewerIdentityId));
 
   const last = pageRows[pageRows.length - 1];
   const page: Page<EntitySummary> = {
@@ -931,7 +1018,8 @@ export function collectionsAddItem(deps: FacadeDeps): OperationHandler {
     const collectionId = requireUuidParam(ctx, 'id');
     const input = ctx.body as CollectionAddItemInput;
     const envelope = commandEnvelope(ctx);
-    return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+    const claims = claimsFor(owner, ctx, envelope);
+    const result = await deps.db.tx(claims, async (q) => {
       const raw = await q.rpc<RpcCommandResult>('set_collection_item', [
         collectionId,
         input.entityId,
@@ -941,6 +1029,8 @@ export function collectionsAddItem(deps: FacadeDeps): OperationHandler {
       ]);
       return toCommandResult(q, raw, owner.identityId);
     });
+    // P0f: only roots belong in a story; say so after the add commits.
+    return withHeaderWarnings(result, await storyRootWarnings(deps.db, claims, collectionId, input.entityId));
   };
 }
 
@@ -960,4 +1050,47 @@ export function collectionsRemoveItem(deps: FacadeDeps): OperationHandler {
       return toCommandResult(q, raw, owner.identityId);
     });
   };
+}
+
+/*
+ * SPAWN LINEAGE, said once (task 01a14a91). The created-here rollup reads "the
+ * sessions spawned by X" through these two fragments only, so moving lineage
+ * off `parent_id` (task 01a14a9e, a `spawned_by` edge) changes them and
+ * nothing else. Both take a bound SQL parameter or column expression.
+ */
+
+/** `<alias>` is a work session spawned directly by `origin`. */
+function spawnedDirectlyBy(alias: string, origin: string): string {
+  /* 330: lineage is the `launched_by` edge (session -> launcher). parent_id is
+     kept as a fallback for any row migrate_launched_by has not converted. */
+  return `(${alias}.kind = 'work_session' and (exists (
+        select 1 from public.edges lb
+         where lb.src_id = ${alias}.id and lb.type = 'launched_by' and lb.dst_id = ${origin}
+      ) or ${alias}.parent_id = ${origin}))`;
+}
+
+/** `origin` plus every work session launched under it, at any depth (bounded),
+ *  through `launched_by` edges (330) or a legacy parent_id: an uncorrelated
+ *  uuid[] the planner computes once per query. */
+function sessionTreeIds(origin: string): string {
+  return `array(
+        with recursive tree(id, depth) as (
+          select ${origin}::uuid, 0
+          union all
+          select c.id, tree.depth + 1
+            from tree
+            join lateral (
+              select lb.src_id as id
+                from public.edges lb
+                join public.entities s on s.id = lb.src_id
+               where lb.dst_id = tree.id and lb.type = 'launched_by'
+                 and s.kind = 'work_session' and s.deleted_at is null
+              union
+              select s.id
+                from public.entities s
+               where s.parent_id = tree.id
+                 and s.kind = 'work_session' and s.deleted_at is null
+            ) c on true
+           where tree.depth < 8
+        ) select id from tree)`;
 }

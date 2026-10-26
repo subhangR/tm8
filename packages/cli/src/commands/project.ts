@@ -271,7 +271,7 @@ async function projectBranches(cmd: CommandContext): Promise<ExitCode> {
 
 /**
  * `project file-history` — the revisions of one path, newest first, each with
- * its `created_in` session attribution when the graph recorded one. A READ,
+ * its `authored_from` session attribution when the graph recorded one. A READ,
  * argv-only git server-side; the path travels as a `?path=` pathspec and the
  * directory always comes from the project row.
  */
@@ -293,7 +293,7 @@ async function projectFileHistory(cmd: CommandContext): Promise<ExitCode> {
 /**
  * `project blame` — working-tree blame of one path, hunks with commit oid and
  * the SESSION that produced the commit. Absent facts are absent claims: a
- * commit with no `created_in` edge renders "no tm8 session recorded".
+ * commit with no `authored_from` edge renders "no tm8 session recorded".
  */
 async function projectBlame(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('project blame', cmd.options.value('mutation-id'));
@@ -329,6 +329,14 @@ async function projectCreate(cmd: CommandContext): Promise<ExitCode> {
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'projects.create', {
     body: withActor(cmd, body),
   });
+  // Lane D B4: a node folder in no Space is not usable yet; say what makes it so.
+  const created = (data ?? {}) as { id?: unknown; activeLinkCount?: unknown };
+  if (created.activeLinkCount === 0 && typeof created.id === 'string') {
+    cmd.out.note(
+      `next: tm8 project link ${created.id} --space <space-id> puts it in a Space. ` +
+        'To add a project to a Space in one step, use tm8 project add --working-dir <path> --name <name> or tm8 project clone <github-repo> --dest <path>.',
+    );
+  }
   cmd.out.data(data, renderProject);
   return EXIT_OK;
 }
@@ -422,21 +430,85 @@ async function projectSpaceList(cmd: CommandContext): Promise<ExitCode> {
  * `project add <folder-id>` — a Space admin names the Space's project on a
  * folder granted to that Space (W11). A folder that belongs to another Space
  * is refused.
+ *
+ * `project add --working-dir <path> --name <name>` (migration 326) registers a
+ * folder on the node instead, granting it to the Space in the same step. A
+ * Space admin who is not a node admin may do so only inside an explicitly
+ * configured TM8_PROJECT_ROOTS.
+ *
+ * `project add --name <name>` alone registers the default folder `~/<name>`,
+ * which the server creates (and refuses if it already exists).
  */
 async function projectAdd(cmd: CommandContext): Promise<ExitCode> {
-  const folderId = requireArg(cmd.args[0], 'project add', '<folder-id>');
+  const workingDirRaw = cmd.options.value('working-dir');
   const spaceId = requireSpace(cmd.ctx);
   const body: Record<string, unknown> = {
-    folderId,
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
   };
-  const name = cmd.options.value('name');
-  if (name !== undefined) body.name = name;
+  if (workingDirRaw !== undefined) {
+    if (cmd.args[0] !== undefined) {
+      throw new CliError('project add takes a <folder-id> OR --working-dir, not both', EXIT_USAGE);
+    }
+    body.workingDir = workingDirOf(workingDirRaw);
+    if (cmd.options.bool('ensure-working-dir')) body.ensureWorkingDir = true;
+    const trust = closedChoice(cmd.options.value('trust'), TRUST_LEVELS, 'trust');
+    if (trust !== undefined) body.trust = trust;
+    body.name = cmd.options.require('name');
+  } else if (cmd.args[0] === undefined && cmd.options.value('name') !== undefined) {
+    /* Neither a folder nor a path: the server creates the default ~/<name>. */
+    const trust = closedChoice(cmd.options.value('trust'), TRUST_LEVELS, 'trust');
+    if (trust !== undefined) body.trust = trust;
+    body.name = cmd.options.require('name');
+  } else {
+    body.folderId = requireArg(cmd.args[0], 'project add', '<folder-id>');
+    const name = cmd.options.value('name');
+    if (name !== undefined) body.name = name;
+  }
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.projects.create', {
     params: { spaceId },
     body: withActor(cmd, body),
   });
   cmd.out.data(data, renderSpaceProjectDetail);
+  return EXIT_OK;
+}
+
+/**
+ * `project clone <repo> --dest <absolute-parent>` — clone a GitHub repository
+ * onto the node as a job (task 01a13574). Answers at once with the job; read it
+ * with `project clone-status <job-id>` until it is succeeded or failed. The
+ * node picks the credential (yours, then the Space's, then the node's).
+ */
+async function projectClone(cmd: CommandContext): Promise<ExitCode> {
+  const repoUrl = requireArg(cmd.args[0], 'project clone', '<github-repo>');
+  const spaceId = requireSpace(cmd.ctx);
+  const body: Record<string, unknown> = {
+    repoUrl,
+    destinationParent: workingDirOf(cmd.options.require('dest')),
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  for (const [option, field] of [['dir', 'directoryName'], ['name', 'name'], ['branch', 'branch']] as const) {
+    const value = cmd.options.value(option);
+    if (value !== undefined) body[field] = value;
+  }
+  const trust = closedChoice(cmd.options.value('trust'), TRUST_LEVELS, 'trust');
+  if (trust !== undefined) body.trust = trust;
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.projects.clone', {
+    params: { spaceId },
+    body: withActor(cmd, body),
+  });
+  cmd.out.data(data, renderCloneJob);
+  return EXIT_OK;
+}
+
+/** `project clone-status <job-id>` — one clone job's status. */
+async function projectCloneStatus(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('project clone-status', cmd.options.value('mutation-id'));
+  const jobId = requireArg(cmd.args[0], 'project clone-status', '<job-id>');
+  const spaceId = requireSpace(cmd.ctx);
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'spaces.projects.cloneJobs.get', {
+    params: { spaceId, jobId },
+  });
+  cmd.out.data(data, renderCloneJob);
   return EXIT_OK;
 }
 
@@ -751,6 +823,25 @@ function renderSpaceProjectDetail(dto: unknown): string {
   ].join('\n');
 }
 
+function renderCloneJob(dto: unknown): string {
+  const j = (dto ?? {}) as {
+    id?: unknown; status?: unknown; repoUrl?: unknown; directoryName?: unknown; credentialSource?: unknown;
+    defaultBranch?: unknown; project?: { id?: unknown } | null; error?: { code?: unknown; message?: unknown } | null;
+  };
+  const lines = [
+    `job: ${String(j.id)}  ${String(j.status)}`,
+    `repo: ${String(j.repoUrl)} -> ${String(j.directoryName)}`,
+  ];
+  if (j.credentialSource) lines.push(`credential: ${String(j.credentialSource)}`);
+  if (j.defaultBranch) lines.push(`default branch: ${String(j.defaultBranch)}`);
+  if (j.project) lines.push(`projectEntityId: ${String(j.project.id)}`);
+  if (j.error) lines.push(`error (${String(j.error.code)}): ${String(j.error.message)}`);
+  if (j.status === 'queued' || j.status === 'cloning' || j.status === 'registering') {
+    lines.push(`poll: tm8 project clone-status ${String(j.id)}`);
+  }
+  return lines.join('\n');
+}
+
 function renderFolders(dto: unknown): string {
   const rows = (Array.isArray(dto) ? dto : []) as Array<{
     id?: unknown; name?: unknown; workingDir?: unknown; trust?: unknown;
@@ -791,6 +882,8 @@ export const PROJECT_COMMANDS: CommandModule[] = [
   { path: ['project', 'link'], run: projectLink },
   { path: ['project', 'space-list'], run: projectSpaceList },
   { path: ['project', 'add'], run: projectAdd },
+  { path: ['project', 'clone'], run: projectClone },
+  { path: ['project', 'clone-status'], run: projectCloneStatus },
   { path: ['project', 'folders'], run: projectFolders },
   { path: ['project', 'folder-add'], run: projectFolderAdd },
   { path: ['project', 'unlink'], run: projectUnlink },

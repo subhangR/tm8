@@ -18,9 +18,11 @@ import { RibbonMark } from './RibbonMark';
  * would also spend the signal that makes the BOOT mark mean "waiting". So the
  * ribbon holds its rest pose, and turning is reserved for wait states.
  *
- * The letters inherit their font, size and colour from the brand line that
- * hosts them — mono/brass at 11.5px in the tab bar, 13px on the auth and
- * invite stages — so this adds no type of its own and no webfont.
+ * The letters inherit their font and size from the brand line that hosts them
+ * — mono at 11.5px in the tab bar, 13px on the auth and invite stages — so
+ * this adds no type of its own and no webfont. Colour is the one thing they do
+ * NOT inherit: the mark is monochrome (ink letters, a silver 8), so a host
+ * that still paints its brand line brass does not tint it.
  *
  * ACCESSIBILITY. The whole thing is one image with the accessible name "tm8":
  * the "8" is a drawing, so without a name a reader would announce a bare "tm".

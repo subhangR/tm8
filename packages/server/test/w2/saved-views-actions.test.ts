@@ -400,6 +400,9 @@ describe('W2.G09 saved views and action discovery', () => {
     expect(link).toContain('entities.get');
     for (const op of ['entities.delete', 'entities.move', 'entities.patch']) expect(link).not.toContain(op);
     expect(await listFor('doc')).toEqual(expect.arrayContaining(['entities.get', 'entities.delete', 'entities.move', 'entities.patch']));
+    // 288: a story's status door is `entities.patch` (`content.status`), so
+    // its action list must offer it — before 288 a story had no status verb.
+    expect(await listFor('story')).toContain('entities.patch');
   });
 
   it('lists a working task\'s own operations first, most relevant first, and withholds global ones', async () => {

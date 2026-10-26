@@ -272,13 +272,29 @@ function hydratedQuery(
 }
 
 describe('W2.G08 inbox and read-mark handlers', () => {
-  it('exports one registration seam for exactly the three frozen operations', () => {
+  it('exports one registration seam for read markers and list-only seen state', () => {
     const registry = registryFor(new FakeDb());
     expect(registry.implemented()).toEqual([
+      'entities.markSeen',
       'inbox.list',
       'inbox.markRead',
       'readMarks.upsert',
     ]);
+  });
+
+  it('marks seen as the browser member and refuses agents before touching the database', async () => {
+    const db = new FakeDb();
+    const registry = registryFor(db);
+    const input = request('entities.markSeen', {
+      params: { id: IDS.target }, body: { clientMutationId: 'seen-once' },
+    });
+    input.identity = { kind: 'bearer', authKind: 'browser', identityId: 'signed-in-viewer' };
+    await handler(registry, 'entities.markSeen')(input);
+    expect(db.rpcCalls).toEqual([{ fn: 'mark_entity_seen', args: [IDS.target, 'seen-once'] }]);
+    expect(db.claims[0]).toMatchObject({ identityId: 'signed-in-viewer', authKind: 'browser' });
+    input.identity = { ...input.identity, authKind: 'agent' };
+    await expect(handler(registry, 'entities.markSeen')(input)).rejects.toMatchObject({ code: 'forbidden' });
+    expect(db.rpcCalls).toHaveLength(1);
   });
 
   it('lists the authenticated Member inbox, maps the frozen item, and fingerprints the complete page', async () => {

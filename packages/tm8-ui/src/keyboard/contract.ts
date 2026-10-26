@@ -56,6 +56,7 @@ export type KeyCommand =
   | 'list.next'
   | 'list.prev'
   | 'list.open'
+  | 'list.status'
   | 'list.primary'
   | 'list.create'
   | 'list.search'
@@ -67,7 +68,60 @@ export type KeyCommand =
   | 'panel.pin'
   | 'modal.close'
   | 'text.blur'
-  | 'terminal.blur';
+  | 'terminal.blur'
+  /** Open the keyboard-shortcut help overlay. */
+  | 'help.open'
+  // -- Workspace (Work) ------------------------------------------------------
+  // Emitted like every other command; the shell hands them to the mounted
+  // Work view (`tab-workspace/keys.ts`), which owns tabs, drafts and the browser.
+  | 'work.craft.toggle'
+  /** Focus the Work browser; `ref` (optional) is the kind to show in it first. */
+  | 'work.browser.focus'
+  /**
+   * Open the navigator's All kinds popover (design doc 01a1465d-a2b7 §5, §7).
+   *
+   * `l ;` AND NOT ⌘K. §7 offered ⌘K "if it isn't already taken by the command
+   * palette" — it is (`palette.mod-k`, and `/` is the palette's guaranteed
+   * path on the platforms where the browser owns ⌘K). Kinds stay searchable
+   * from the palette, which already lists every one of them, and the
+   * navigator's own door is this chord.
+   */
+  | 'work.nav.kinds'
+  | 'work.tab.next'
+  | 'work.tab.prev'
+  /** `ref` is the 1-based position; `9` is the LAST tab, as in every browser. */
+  | 'work.tab.nth'
+  | 'work.tab.close'
+  /** `ref` is the kind to draft. */
+  | 'work.create'
+  /** The New tab: search the space, or pick a kind to make. */
+  | 'work.newTab'
+  | 'work.chat.focus'
+  /** Launch a session on the open tab's entity (the list's own `r` does the selected row). */
+  | 'work.launch'
+  /** `ref` is the tab section: `entity`, `connections` or `messages`. */
+  | 'work.tab.section'
+  | 'work.tab.chat'
+  | 'work.tab.fullscreen'
+  /** Out of a focused terminal, or back into the visible one. */
+  | 'terminal.toggle'
+  /** Open the workspace switcher with focus in its list (API doc 01a115c4 §10). */
+  | 'workspace.switcher'
+  // -- Launch card (the New session screen) -----------------------------------
+  // Never emitted by the controller: the card handles its own keys
+  // (`new-session/launch-keys.ts`); these name its rows in the help overlay.
+  | 'launch.card'
+  | 'launch.model'
+  | 'launch.effort'
+  | 'launch.permission'
+  | 'launch.teammate'
+  | 'launch.workdir'
+  | 'launch.worktree'
+  | 'launch.options'
+  | 'launch.prompt'
+  | 'launch.submit'
+  | 'launch.menu.next'
+  | 'launch.menu.prev';
 
 export interface Binding {
   id: string;
@@ -88,6 +142,13 @@ export interface Binding {
   match: KeyMatcher;
   /** Platforms where the browser owns this chord — never advertised there. */
   browserOwnedOn?: readonly Platform[];
+  /**
+   * `true` ⇒ the row is DOCUMENTATION of a key a surface handles itself (the
+   * tab strip's Mod+Alt chords, the Work browser's own row cursor). The
+   * controller never matches it; the help overlay still lists it, so the one
+   * table stays the one place a shortcut is discoverable from.
+   */
+  surfaceOwned?: boolean;
 }
 
 /** A normalized key event — no DOM required, so every row is unit-testable. */
@@ -135,7 +196,14 @@ export function isBrowserReserved(input: KeyInput, platform: Platform): boolean 
  * `attachCustomKeyEventHandler`, so ZERO bytes reach the PTY.
  */
 export function isTerminalBlurChord(input: KeyInput): boolean {
-  return input.code === 'Backquote' && input.ctrlKey;
+  if (!input.ctrlKey) return false;
+  if (input.code === 'Backquote') return true;
+  return isTerminalToggleChord(input);
+}
+
+/** `Ctrl+]` — physical Ctrl, no other modifier. Leaves a terminal, or returns to one. */
+export function isTerminalToggleChord(input: KeyInput): boolean {
+  return input.code === 'BracketRight' && input.ctrlKey && !input.metaKey && !input.altKey && !input.shiftKey;
 }
 
 /**
@@ -167,8 +235,20 @@ export function isTerminalPasteChord(input: KeyInput): boolean {
   return input.ctrlKey || input.metaKey;
 }
 
-/** The `g` chord lead. */
+/** The `g` chord lead — GO somewhere. */
 export const CHORD_LEAD = 'g';
+
+/** The `n` chord lead — NEW: a creation draft of the named kind. */
+export const CREATE_LEAD = 'n';
+
+/** The `l` chord lead — LIST: show a kind in the Work browser and focus it. */
+export const LIST_LEAD = 'l';
+
+/** The `t` chord lead — TAB: an action on the open Work tab. */
+export const TAB_LEAD = 't';
+
+/** Every chord lead the controller opens a window for. */
+export const CHORD_LEADS: readonly string[] = [CHORD_LEAD, CREATE_LEAD, LIST_LEAD, TAB_LEAD];
 
 /**
  * D16: the `g`-chord window. The LLD leaves the duration to build time; 1500ms
@@ -178,6 +258,161 @@ export const CHORD_LEAD = 'g';
 export const CHORD_WINDOW_MS = 1500;
 
 const chord = (key: string): KeyMatcher => ({ type: 'chord', lead: CHORD_LEAD, key });
+const createChord = (key: string): KeyMatcher => ({ type: 'chord', lead: CREATE_LEAD, key });
+const listChord = (key: string): KeyMatcher => ({ type: 'chord', lead: LIST_LEAD, key });
+const tabChord = (key: string): KeyMatcher => ({ type: 'chord', lead: TAB_LEAD, key });
+const plain = (key: string): KeyMatcher => ({ type: 'plain', key });
+
+/**
+ * `l` + a kind letter shows that kind in the Work browser and moves focus into
+ * it; `l l` focuses the browser as it is. Same letters as `n`.
+ */
+const LIST_CHORDS: readonly Binding[] = (
+  [
+    ['l', undefined, 'Focus the list'],
+    ['t', 'task', 'List tasks'],
+    ['d', 'doc', 'List docs'],
+    ['s', 'work_session', 'List sessions'],
+    ['c', 'chat', 'List chats'],
+    ['f', 'form', 'List forms'],
+    ['a', 'artifact', 'List artifacts'],
+    ['p', 'project', 'List projects'],
+    ['x', 'drawing', 'List drawings'],
+    ['m', 'team_member', 'List teammates'],
+  ] as const
+).map(([key, kind, label]) => ({
+  id: `l.${kind ?? 'focus'}`,
+  layer: 'global' as const,
+  keys: `l ${key}`,
+  label,
+  command: 'work.browser.focus' as const,
+  ...(kind ? { ref: kind } : {}),
+  guaranteed: true,
+  match: listChord(key),
+}));
+
+/** The `ref` prefix `l 1`…`l 9` send: the Nth kind in the icon rail's Pinned group. */
+export const PIN_REF_PREFIX = 'pin:';
+
+/**
+ * `l 1`…`l 9` (user ruling, task 01a1156f): the Nth PINNED kind on the Work
+ * icon rail, top to bottom — the same as clicking it, then focus the list. The
+ * pins are the user's, so the label names the position, not a kind.
+ */
+const LIST_PIN_CHORDS: readonly Binding[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((n) => ({
+  id: `l.pin.${n}`,
+  layer: 'global' as const,
+  keys: `l ${n}`,
+  label: `List pinned kind ${n}`,
+  command: 'work.browser.focus' as const,
+  ref: `${PIN_REF_PREFIX}${n}`,
+  guaranteed: true,
+  match: listChord(n),
+}));
+
+/**
+ * `1`…`9` jump to a Work tab by position. Plain digits, not Mod+digit: Mod+1…9
+ * is the browser's own tab switcher everywhere, so it is never bound.
+ */
+const TAB_NTH: readonly Binding[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((n) => ({
+  id: `work.tab.${n}`,
+  layer: 'global' as const,
+  keys: n,
+  label: n === '9' ? 'Go to last tab' : `Go to tab ${n}`,
+  command: 'work.tab.nth' as const,
+  ref: n,
+  guaranteed: true,
+  match: plain(n),
+}));
+
+/**
+ * THE KINDS YOU MAKE FROM WORK, in the order they are offered (Kalai,
+ * 2026-10-07). The New tab's main row (the first `NEW_MAIN_COUNT`) and its
+ * More menu, the ⌘K palette's New rows and the `n` chords all read this one
+ * list, so a kind cannot be offered in one place and missing from another.
+ * No file (it is uploaded, not made) and no pull request (it comes from git).
+ *
+ * The letters echo the `g` and `l` chords where a kind has one (`l t` Tasks,
+ * `n t` New task), so one mnemonic serves both. `n n` is the New tab itself.
+ */
+export const NEW_KINDS = [
+  { kind: 'task', key: 't', label: 'New task' },
+  { kind: 'doc', key: 'd', label: 'New doc' },
+  { kind: 'work_session', key: 's', label: 'New session' },
+  { kind: 'chat', key: 'c', label: 'New chat' },
+  { kind: 'form', key: 'f', label: 'New form' },
+  { kind: 'drawing', key: 'x', label: 'New drawing' },
+  { kind: 'story', key: 'y', label: 'New story' },
+  { kind: 'collection', key: 'o', label: 'New collection' },
+  { kind: 'channel', key: 'h', label: 'New channel' },
+  { kind: 'skill', key: 'k', label: 'New skill' },
+  { kind: 'team_member', key: 'm', label: 'New teammate' },
+] as const;
+
+export type NewKind = (typeof NEW_KINDS)[number]['kind'];
+
+/** How many of `NEW_KINDS` the New tab shows as cards; the rest sit under More. */
+export const NEW_MAIN_COUNT = 4;
+
+/** Mod+N is the browser's new window — never bound. */
+const CREATE_CHORDS: readonly Binding[] = [
+  { id: 'n.tab', layer: 'global', keys: 'n n', label: 'New tab', command: 'work.newTab', guaranteed: true, match: createChord('n') },
+  ...NEW_KINDS.map(({ kind, key, label }) => ({
+    id: `n.${kind}`,
+    layer: 'global' as const,
+    keys: `n ${key}`,
+    label,
+    command: 'work.create' as const,
+    ref: kind,
+    guaranteed: true,
+    match: createChord(key),
+  })),
+];
+
+/**
+ * THE LAUNCH CARD'S KEYS — one letter per control, live while focus is on the
+ * card but NOT in its prompt or title (Esc gets you there, `i` goes back). The
+ * card matches on these, and the help rows below are built from them, so the
+ * overlay cannot name a letter the card does not answer to.
+ */
+export const LAUNCH_KEYS = {
+  model: 'm',
+  effort: 'e',
+  permission: 'p',
+  teammate: 'a',
+  workdir: 'o',
+  worktree: 'b',
+  options: '.',
+  prompt: 'i',
+} as const;
+
+export type LaunchKeyAction = keyof typeof LAUNCH_KEYS;
+
+const LAUNCH_ROWS: readonly Binding[] = (
+  [
+    ['launch.card', 'Escape', 'Esc', 'Leave the prompt for the card (again: close the menu, then the card)'],
+    ['launch.model', LAUNCH_KEYS.model, LAUNCH_KEYS.model, 'Model'],
+    ['launch.effort', LAUNCH_KEYS.effort, LAUNCH_KEYS.effort, 'Cycle reasoning effort'],
+    ['launch.permission', LAUNCH_KEYS.permission, LAUNCH_KEYS.permission, 'Permission mode'],
+    ['launch.teammate', LAUNCH_KEYS.teammate, LAUNCH_KEYS.teammate, 'Teammate (agent)'],
+    ['launch.workdir', LAUNCH_KEYS.workdir, LAUNCH_KEYS.workdir, 'Working directory'],
+    ['launch.worktree', LAUNCH_KEYS.worktree, LAUNCH_KEYS.worktree, 'Worktree ⇄ current branch'],
+    ['launch.options', LAUNCH_KEYS.options, LAUNCH_KEYS.options, 'More options (···)'],
+    ['launch.prompt', LAUNCH_KEYS.prompt, LAUNCH_KEYS.prompt, 'Back into the prompt'],
+    ['launch.submit', 'Enter', 'Enter', 'Launch'],
+    ['launch.menu.next', 'ArrowDown', '↓', 'Next option in the open menu'],
+    ['launch.menu.prev', 'ArrowUp', '↑', 'Previous option in the open menu'],
+  ] as const
+).map(([command, key, keys, label]) => ({
+  id: command,
+  layer: 'focus' as const,
+  keys,
+  label,
+  command,
+  guaranteed: true,
+  surfaceOwned: true,
+  match: plain(key),
+}));
 
 /**
  * THE TABLE. Order within the array is irrelevant — the LAYER decides
@@ -222,9 +457,55 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'g.projects', layer: 'global', keys: 'g p', label: 'Projects', command: 'nav.kind', ref: 'projects', guaranteed: true, match: chord('p') },
   { id: 'g.channels', layer: 'global', keys: 'g c', label: 'Channels', command: 'nav.view', ref: 'channels', guaranteed: true, match: chord('c') },
   { id: 'g.inbox', layer: 'global', keys: 'g i', label: 'Inbox', command: 'nav.view', ref: 'inbox', guaranteed: true, match: chord('i') },
+  {
+    id: 'help.open',
+    layer: 'global',
+    keys: '?',
+    label: 'Keyboard shortcuts',
+    command: 'help.open',
+    guaranteed: true,
+    match: plain('?'),
+  },
   // `g ,` is the GUARANTEED Settings path: Mod+, is browser Settings on
   // Chrome/macOS and Safari/macOS, so it is not bound at all.
   { id: 'g.settings', layer: 'global', keys: 'g ,', label: 'Settings', command: 'nav.view', ref: 'settings', guaranteed: true, match: chord(',') },
+  // Not a navigation chord: it opens the switcher, which names its own destinations.
+  { id: 'g.workspace', layer: 'global', keys: 'g w', label: 'Switch workspace', command: 'workspace.switcher', guaranteed: true, match: chord('w') },
+
+  // -- Workspace (Work) -------------------------------------------------------
+  // Plain keys and chords only — browser-proof by construction, and dead while
+  // typing (layer 4). Every one also has a pointer path in the Work view.
+  // `d`, not `c` (Craft rename 2026-10-10): plain `c` is already create-here.
+  { id: 'work.craft', layer: 'global', keys: 'd', label: 'Toggle Craft mode', command: 'work.craft.toggle', guaranteed: true, match: plain('d') },
+  ...LIST_CHORDS,
+  ...LIST_PIN_CHORDS,
+  /* `l ;` — All kinds, under the same `l` lead every list door uses. */
+  { id: 'l.allkinds', layer: 'global', keys: 'l ;', label: 'All kinds', command: 'work.nav.kinds', guaranteed: true, match: listChord(';') },
+  { id: 'work.tab.next', layer: 'global', keys: ']', label: 'Next tab', command: 'work.tab.next', guaranteed: true, match: plain(']') },
+  { id: 'work.tab.prev', layer: 'global', keys: '[', label: 'Previous tab', command: 'work.tab.prev', guaranteed: true, match: plain('[') },
+  ...TAB_NTH,
+  // Plain `w`, never Mod+W (browser-reserved: closes the browser tab).
+  { id: 'work.tab.close', layer: 'global', keys: 'w', label: 'Close tab', command: 'work.tab.close', guaranteed: true, match: plain('w') },
+  { id: 'work.chat', layer: 'global', keys: 'm', label: 'Focus chat', command: 'work.chat.focus', guaranteed: true, match: plain('m') },
+  { id: 'work.launch', layer: 'global', keys: 'r', label: 'Launch a session on this', command: 'work.launch', guaranteed: true, match: plain('r') },
+  // `t` + a letter: the open tab's own controls (the action strip's buttons).
+  { id: 't.entity', layer: 'global', keys: 't e', label: 'Tab: details', command: 'work.tab.section', ref: 'entity', guaranteed: true, match: tabChord('e') },
+  // `t l` also FOCUSES the links list, where j/k move and Enter opens (the
+  // Lists rows below; the list handles them itself, like the Work browser).
+  { id: 't.links', layer: 'global', keys: 't l', label: 'Tab: links (focus the list)', command: 'work.tab.section', ref: 'connections', guaranteed: true, match: tabChord('l') },
+  { id: 't.messages', layer: 'global', keys: 't m', label: 'Tab: messages', command: 'work.tab.section', ref: 'messages', guaranteed: true, match: tabChord('m') },
+  { id: 't.chat', layer: 'global', keys: 't c', label: 'Tab: open / close chat', command: 'work.tab.chat', guaranteed: true, match: tabChord('c') },
+  { id: 't.fullscreen', layer: 'global', keys: 't f', label: 'Tab: full screen', command: 'work.tab.fullscreen', guaranteed: true, match: tabChord('f') },
+  { id: 't.launch', layer: 'global', keys: 't r', label: 'Tab: launch a session', command: 'work.launch', guaranteed: true, match: tabChord('r') },
+  // `c` creates in the browser's current kind (the `list.create` meaning,
+  // promoted to chrome so it works without a focused list).
+  { id: 'work.create.here', layer: 'global', keys: 'c', label: 'New in the current list', command: 'list.create', guaranteed: true, match: plain('c') },
+  ...CREATE_CHORDS,
+  /* The tab strip handles these itself (it matches on `event.code`, which an
+     Option-modified key on macOS needs). Listed so they are discoverable. */
+  { id: 'work.tab.next.mod', layer: 'global', keys: 'Mod+Alt+→', label: 'Next tab', command: 'work.tab.next', guaranteed: false, surfaceOwned: true, match: { type: 'mod', key: 'ArrowRight' } },
+  { id: 'work.tab.prev.mod', layer: 'global', keys: 'Mod+Alt+←', label: 'Previous tab', command: 'work.tab.prev', guaranteed: false, surfaceOwned: true, match: { type: 'mod', key: 'ArrowLeft' } },
+  { id: 'work.tab.close.mod', layer: 'global', keys: 'Mod+Alt+W', label: 'Close tab', command: 'work.tab.close', guaranteed: false, surfaceOwned: true, match: { type: 'mod', key: 'w' } },
 
   // -- Lists ----------------------------------------------------------------
   { id: 'list.next.j', layer: 'focus', keys: 'j', label: 'Next item', command: 'list.next', guaranteed: true, match: { type: 'plain', key: 'j' } },
@@ -233,6 +514,11 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'list.prev.arrow', layer: 'focus', keys: '↑', label: 'Previous item', command: 'list.prev', guaranteed: true, match: { type: 'plain', key: 'ArrowUp' } },
   { id: 'list.open', layer: 'focus', keys: 'Enter', label: 'Open', command: 'list.open', guaranteed: true, match: { type: 'plain', key: 'Enter' } },
   { id: 'list.primary', layer: 'focus', keys: 'Mod+Enter', label: 'Primary action', command: 'list.primary', guaranteed: false, match: { type: 'mod', key: 'Enter' } },
+  /* The list's lifecycle tabs (Running · Interrupted · …, To Do · In Progress · …),
+     stepped from the Work list's row cursor (task 01a1156f). */
+  { id: 'list.status.prev', layer: 'focus', keys: '←', label: 'Previous status tab', command: 'list.status', ref: 'prev', guaranteed: true, surfaceOwned: true, match: { type: 'plain', key: 'ArrowLeft' } },
+  { id: 'list.status.next', layer: 'focus', keys: '→', label: 'Next status tab', command: 'list.status', ref: 'next', guaranteed: true, surfaceOwned: true, match: { type: 'plain', key: 'ArrowRight' } },
+  { id: 'list.launch', layer: 'focus', keys: 'r', label: 'Launch a session on the selected item', command: 'work.launch', guaranteed: true, surfaceOwned: true, match: { type: 'plain', key: 'r' } },
   { id: 'list.create', layer: 'focus', keys: 'c', label: 'Create in this kind', command: 'list.create', guaranteed: true, match: { type: 'plain', key: 'c' } },
   /**
    * D36 — in-panel list search is `f`, NOT `/`.
@@ -293,6 +579,26 @@ export const BINDINGS: readonly Binding[] = [
     guaranteed: true,
     match: { type: 'code', code: 'Backquote', ctrl: true },
   },
+  /**
+   * `Ctrl+]` — the easy terminal chord, BOTH ways (user ruling, task 01a113aa).
+   * Inside a focused terminal the terminal itself intercepts it (zero bytes to
+   * the PTY, like Ctrl+`); anywhere else it is a global chord that puts focus
+   * back in the visible terminal. Physical `Ctrl` on every platform, matched on
+   * `event.code` so layout cannot break it. Live while typing: it carries a
+   * modifier, so no text field ever wanted it.
+   */
+  {
+    id: 'terminal.toggle',
+    layer: 'global',
+    keys: 'Ctrl+]',
+    label: 'Leave / return to the terminal',
+    command: 'terminal.toggle',
+    guaranteed: true,
+    match: { type: 'code', code: 'BracketRight', ctrl: true },
+  },
+
+  // -- Launch card ----------------------------------------------------------
+  ...LAUNCH_ROWS,
 ];
 
 /**
@@ -303,4 +609,36 @@ export const BINDINGS: readonly Binding[] = [
 export function isAdvertised(binding: Binding, platform: Platform): boolean {
   if (binding.guaranteed) return true;
   return !(binding.browserOwnedOn ?? []).includes(platform);
+}
+
+/** Help-overlay sections, in display order. */
+export type BindingGroup = 'Focus' | 'Workspace' | 'Create' | 'Launch' | 'Navigate' | 'Lists' | 'General';
+
+/**
+ * `Focus` leads: leaving a text field or a terminal is what makes every other
+ * shortcut reachable, so it is the first thing the help overlay teaches.
+ */
+export const BINDING_GROUPS: readonly BindingGroup[] = ['Focus', 'Lists', 'Workspace', 'Create', 'Launch', 'Navigate', 'General'];
+
+/** Which help section a binding belongs to — derived, so no row can forget one. */
+export function bindingGroup(binding: Binding): BindingGroup {
+  if (binding.command.startsWith('launch.')) return 'Launch';
+  if (binding.command === 'text.blur' || binding.command.startsWith('terminal.')) return 'Focus';
+  if (binding.command === 'work.create' || binding.command === 'work.newTab' || binding.command === 'list.create') return 'Create';
+  if (binding.command === 'work.browser.focus' || binding.layer === 'focus') return 'Lists';
+  if (binding.command.startsWith('work.') || binding.command === 'workspace.switcher') return 'Workspace';
+  if (binding.command === 'nav.view' || binding.command === 'nav.kind') return 'Navigate';
+  return 'General';
+}
+
+/**
+ * The FIRST advertised hint for a command (and ref), for UI that names a
+ * shortcut next to the thing it does — palette rows, tooltips. `null` when
+ * the command has no advertised binding on this platform.
+ */
+export function hintFor(command: KeyCommand, ref: string | undefined, platform: Platform): string | null {
+  const hit = BINDINGS.find(
+    (b) => b.command === command && (ref === undefined || b.ref === ref) && isAdvertised(b, platform),
+  );
+  return hit ? hit.keys : null;
 }

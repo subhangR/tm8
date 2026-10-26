@@ -1,0 +1,9 @@
+{
+  "help": "Check whitespace-separated HTTP(S) URLs. Exit 0 if every final response is 2xx/3xx, 1 on any failure, 2 on an empty list. Example: tm8 tool run url-check --urls 'https://example.com https://example.org'",
+  "tm8Access": "none",
+  "timeoutSeconds": 120,
+  "inputs": [
+    { "name": "urls", "type": "string", "required": true, "description": "Whitespace-separated HTTP(S) URLs" },
+    { "name": "timeout", "type": "int", "min": 1, "max": 60, "default": 10, "description": "Maximum seconds per URL" }
+  ]
+}

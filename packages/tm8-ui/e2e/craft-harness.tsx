@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { EntityId } from '@tm8/contract';
-import { CraftScreen } from '../src/craft/CraftScreen';
+import { CraftScreen, type CraftTarget } from '../src/craft/CraftScreen';
+import { fixtureCraftSource } from '../src/craft/craft-source';
+import type { WorkspaceGateHandles } from '../src/tab-workspace';
 import { createFixtureSeam } from '../src/data';
 import { FIXTURE_SPACE_ID } from '../src/fixtures';
 import type { DetailReasons } from '../src/panels';
@@ -25,7 +27,9 @@ import '../src/terminal/terminal.css';
  * under it. The vitest suite proves structure and arithmetic; only a browser
  * proves any of the above.
  *
- * It mounts the REAL `CraftScreen` over the fixture seam, with the same
+ * It mounts the REAL `CraftScreen` (Craft → Crafts) over the fixture seam
+ * and a fixture craft whose pages are the drawn graph, a second graph, a
+ * doc and a nested craft, with the same
  * `useGateData` injection port `EntityView`'s harness uses — so the entity
  * column here is the shipping `AuxEntityPanel`, not a stand-in for it.
  *
@@ -48,6 +52,7 @@ import '../src/terminal/terminal.css';
  *   /e2e/craft-harness.html?scenario=typical
  */
 const SPACE = FIXTURE_SPACE_ID;
+const CRAFT = 'harness-craft' as EntityId;
 
 const REASONS: DetailReasons = {
   presenceHollow: 'Presence isn’t measured yet.',
@@ -85,11 +90,11 @@ const SCENARIO = new URLSearchParams(window.location.search).get('scenario') ?? 
 const PLAN_NODES = [
   { id: 'tm-res', spec: { kind: 'team_member', title: 'Research Scout' } },
   { id: 'tm-wr', spec: { kind: 'team_member', title: 'Copy Writer' } },
-  { id: 'tm-des', spec: { kind: 'team_member', title: 'Design Lead' } },
+  { id: 'tm-des', spec: { kind: 'team_member', title: 'Craft Lead' } },
   { id: 't-research', spec: { kind: 'task', title: 'Research competitor pricing', hint: 'five closest rivals' } },
   { id: 'd-brief', spec: { kind: 'doc', title: 'Pricing brief', hint: 'findings + recommendation' } },
   { id: 't-copy', spec: { kind: 'task', title: 'Write the pricing page copy' } },
-  { id: 't-design', spec: { kind: 'task', title: 'Design the pricing table', hint: 'three tiers' } },
+  { id: 't-craft', spec: { kind: 'task', title: 'Craft the pricing table', hint: 'three tiers' } },
   { id: 'a-mock', spec: { kind: 'artifact', title: 'Pricing page mock' } },
   { id: 'd-copy', spec: { kind: 'doc', title: 'Page copy' } },
   { id: 't-review', spec: { kind: 'task', title: 'Review copy against the mock' } },
@@ -101,17 +106,17 @@ const PLAN_EDGES = [
   { src: 't-research', dst: 'tm-res', type: 'assigned_to' },
   { src: 't-copy', dst: 'tm-wr', type: 'assigned_to' },
   { src: 't-review', dst: 'tm-wr', type: 'assigned_to' },
-  { src: 't-design', dst: 'tm-des', type: 'assigned_to' },
+  { src: 't-craft', dst: 'tm-des', type: 'assigned_to' },
   { src: 't-research', dst: 'd-brief', type: 'produces' },
   { src: 't-copy', dst: 'd-brief', type: 'consumes' },
-  { src: 't-design', dst: 'd-brief', type: 'consumes' },
+  { src: 't-craft', dst: 'd-brief', type: 'consumes' },
   { src: 't-copy', dst: 'd-copy', type: 'produces' },
-  { src: 't-design', dst: 'a-mock', type: 'produces' },
+  { src: 't-craft', dst: 'a-mock', type: 'produces' },
   { src: 't-review', dst: 'd-copy', type: 'consumes' },
   { src: 't-review', dst: 'a-mock', type: 'consumes' },
   { src: 't-ship', dst: 't-review', type: 'depends_on', note: 'nothing ships unreviewed' },
   { src: 't-copy', dst: 'm-voice', type: 'remembers' },
-  { src: 't-design', dst: 's-figma', type: 'equips' },
+  { src: 't-craft', dst: 's-figma', type: 'equips' },
 ];
 
 /** ~40 nodes: five workstreams of four tasks, each consuming the last stream's doc. */
@@ -160,6 +165,32 @@ function Harness() {
   const seam = useMemo(() => createFixtureSeam(), []);
   const data = useGateData({ leftKind: 'task', rightKind: 'task', seam });
   const [seeded, setSeeded] = useState(false);
+  const source = useMemo(() => fixtureCraftSource(seam, SPACE, [{ id: CRAFT, title: 'Craft UI fixes' }]), [seam]);
+  const [target, setTarget] = useState<CraftTarget>({ craftId: CRAFT });
+  /* The Workspace handles the page bodies and the strip read — the parts a
+     craft touches; navigation out of the harness is a no-op. */
+  const gate = useMemo(
+    () =>
+      ({
+        data,
+        reasons: REASONS,
+        serverBaseUrl: undefined,
+        viewerMemberId: 'ada',
+        onNotice: () => undefined,
+        openPalette: () => undefined,
+        navigateTo: () => undefined,
+        navigateView: () => undefined,
+        goHome: () => undefined,
+        openInbox: () => undefined,
+        viewTabs: [],
+        shellTabs: [],
+        activeViewTabId: null,
+        onSelectViewTab: () => undefined,
+        switcherSlot: null,
+        accountSlot: undefined,
+      }) as WorkspaceGateHandles,
+    [data],
+  );
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
@@ -169,7 +200,7 @@ function Harness() {
       /* Seeded FIRST so it is the OLDER row: the studio adopts the most
          recent graph on cold start, and the harness wants to open on the
          drawn one. */
-      await seam.commands.createEntity({
+      const older = await seam.commands.createEntity({
         clientMutationId: 'craft-harness-0',
         spaceId: SPACE,
         kind: 'graph',
@@ -212,6 +243,14 @@ function Harness() {
           },
         });
       }
+      /* The craft: the drawn graph first, then the older graph, a doc and a nested craft. */
+      if (id) await source.placePage(CRAFT, id, 1);
+      if (older.entity) await source.placePage(CRAFT, older.entity.id as EntityId, 2);
+      const doc = await seam.query({ spaceId: SPACE, kinds: ['doc'], limit: 1 });
+      if (doc.page.items[0]) await source.placePage(CRAFT, doc.page.items[0].id, 3);
+      const nested = await source.createPage(CRAFT, 'design', 4);
+      source.crafts.get(nested)!.title = 'Backend';
+      if (older.entity) await source.placePage(nested, older.entity.id as EntityId, 1);
       if (alive) setSeeded(true);
     })();
     return () => {
@@ -234,12 +273,21 @@ function Harness() {
         theme
       </button>
       {seeded && data.ready ? (
-        <CraftScreen
-          seam={seam}
-          spaceId={SPACE}
-          nodeKey="fixture"
-          panelHost={{ data, reasons: REASONS, viewerMemberId: 'ada' }}
-        />
+        target.craftId ? (
+          <CraftScreen
+            seam={seam}
+            spaceId={SPACE}
+            nodeKey="fixture"
+            source={source}
+            craftId={target.craftId}
+            pageId={target.pageId}
+            onNavigate={setTarget}
+            gate={gate}
+            panelHost={{ data, reasons: REASONS, viewerMemberId: 'ada' }}
+          />
+        ) : (
+          <p data-testid="harness-home">Crafts home</p>
+        )
       ) : (
         <p data-testid="harness-booting">Seeding the studio…</p>
       )}

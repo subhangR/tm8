@@ -1,0 +1,124 @@
+/* ── PIN KINDS (drawer mockup v3, task 01a14ccc) ────────────────────────────
+   The sheet that toggles the desktop rail's pins from the phone drawer. Its own
+   file so the drawer's stylesheet stays the drawer's. */
+
+/* OVER THE DRAWER. Both portal into `.msheet-host`; the drawer takes z 40, and
+   a sheet opened from it is mounted after it, so this lifts exactly that case
+   and leaves every other sheet's stacking alone. */
+.mdrawer ~ .msheet {
+  z-index: 41;
+}
+
+.mpins {
+  padding: var(--pn-space-2) var(--pn-space-4) var(--pn-space-3);
+}
+
+.mpins__lede {
+  margin: 0 0 var(--pn-space-2);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+.mpins__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mpins__list > li + li {
+  border-top: 1px solid var(--pn-line);
+}
+
+/* REAL height, as in the drawer: the whole row is the switch's target. */
+.mpins__row {
+  inline-size: 100%;
+  min-block-size: 48px;
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: 0;
+  text-align: start;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  color: var(--pn-ink);
+}
+
+.mpins__row--toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mpins__row--toggle:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+  border-radius: var(--pn-r-sm);
+}
+
+.mpins__mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 20px;
+  color: var(--pn-ink-2);
+}
+
+.mpins__name {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mpins__fixed {
+  flex: 0 0 auto;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+/* The switch: 44×26 track, 20px knob — the mockup's, drawn from tokens. */
+.mpins__switch {
+  flex: 0 0 auto;
+  position: relative;
+  inline-size: 44px;
+  block-size: 26px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-line);
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.mpins__switch::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline-start: 3px;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 50%;
+  background: var(--pn-ink-3);
+  transition:
+    transform var(--pn-dur-fast) var(--pn-ease-standard),
+    background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.mpins__row[aria-checked='true'] .mpins__switch {
+  background: var(--pn-brand);
+}
+
+.mpins__row[aria-checked='true'] .mpins__switch::after {
+  transform: translateX(18px);
+  background: var(--pn-paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mpins__switch,
+  .mpins__switch::after {
+    transition: none;
+  }
+}

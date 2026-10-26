@@ -103,7 +103,11 @@ describe('LaunchContextSection', () => {
     // Nothing recorded: every row names its source.
     expect(harness).toContain('Harness surfaceminimal (declared)');
     expect(harness).toContain('Pluginssales (declared)');
-    expect(harness).toContain('MCP serversgithub (declared)');
+    // §10.6 / D4: there is NO "MCP servers" row any more. It read `all` under
+    // `inherit` and the persona's always-empty `capabilities.launch.mcpServers`
+    // bag otherwise, and both were false — neither surface loads an operator
+    // MCP server. A session's real connectors are their own strip below.
+    expect(harness).not.toContain('MCP servers');
     expect(harness).not.toContain('gh-mcp');
     expect(harness).toContain('Harness skillstrimmed (declared)');
     expect(harness).toContain('Native skills1');
@@ -133,7 +137,7 @@ describe('LaunchContextSection', () => {
     // #731-era record: plugins only, so the surface is the pick, tagged.
     expect(harness).toContain('Harness surfaceinherit (picked)');
     expect(harness).toContain('Pluginsfigma@market');
-    expect(harness).toContain('MCP serversgithub (declared)');
+    expect(harness).not.toContain('MCP servers');
     expect(harness).toContain('Plugins deniedslack@market (not allowlisted)');
     expect(harness).not.toContain('sales');
     unmount();
@@ -148,7 +152,7 @@ describe('LaunchContextSection', () => {
     unmount2();
   });
 
-  it('shows the recorded surface, MCP servers and bundled-skill trim once launch.harness carries them', () => {
+  it('shows the recorded surface and the bundled-skill trim once launch.harness carries them', () => {
     const base = record();
     const launch = base.manifest!.launch as Record<string, unknown>;
     const full = record({
@@ -173,10 +177,49 @@ describe('LaunchContextSection', () => {
     const text = render(<LaunchContextSection state={{ phase: 'ready', record: full }} />)
       .getByTestId('launch-context-harness').textContent ?? '';
     expect(text).toContain('Harness surfaceminimal (env)');
-    expect(text).toContain('MCP serverslinear');
+    // The persona bag is NOT the lane's connectors and is no longer drawn as
+    // though it were (D4): `linear` here is a `capabilities.launch.mcpServers`
+    // entry, which `asMcpServers` now refuses to launch at all.
+    expect(text).not.toContain('linear');
     expect(text).not.toContain('github');
     expect(text).toContain('Harness skillstrimmed (2 off, 1 name-only)');
     expect(text).not.toMatch(/\((declared|picked)\)/);
+  });
+
+  /*
+   * §10.6 — THE CONNECTORS STRIP, which is the row that replaces the D4
+   * falsehood. One cell, because it is the whole point of the change: the
+   * screen now says which connectors a session actually got and which tool
+   * prefix each answers to, instead of "all".
+   */
+  it('names the connectors a session was given, with the tool prefix of each', () => {
+    const base = record();
+    const launch = base.manifest!.launch as Record<string, unknown>;
+    const withConnectors = record({
+      manifest: {
+        ...base.manifest,
+        launch: {
+          ...launch,
+          connectors: [
+            { serverKey: 'gmail', serverId: '019f0000-0000-7000-8000-00000000c001' },
+            { serverKey: 'linear', serverId: '019f0000-0000-7000-8000-00000000c002' },
+          ],
+        },
+      },
+    });
+    const text = render(<LaunchContextSection state={{ phase: 'ready', record: withConnectors }} />)
+      .getByTestId('launch-context-connectors').textContent ?? '';
+    expect(text).toContain('Connectors · 2');
+    expect(text).toContain('gmail, linear');
+    // The prefix → id map, which is the one thing only this record carries.
+    expect(text).toContain('mcp__gmail__*');
+    expect(text).toContain('019f0000-0000-7000-8000-00000000c001');
+  });
+
+  it('says a launch recorded no connectors rather than implying it had them all', () => {
+    const text = render(<LaunchContextSection state={{ phase: 'ready', record: record() }} />)
+      .getByTestId('launch-context-connectors').textContent ?? '';
+    expect(text).toContain('Connectorsnone recorded');
   });
 
   it("hides the declared harness when the viewer cannot read the teammate", () => {

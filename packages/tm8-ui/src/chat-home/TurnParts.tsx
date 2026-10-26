@@ -1,21 +1,14 @@
-import { Fragment, memo, useId, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, memo, useId, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
-import { Markdown } from '../kit';
-import { type ChatEntityResolver } from './EntityChip';
+import { Markdown, MARKDOWN_COMPONENTS, type MarkdownComponents } from '../kit';
+import { EntityChip, type ChatEntityResolver } from './EntityChip';
 import { ExplanationToolCard } from './ExplanationToolCard';
-import { CreatedCard, EditLine, TransitionRow } from './LedgerCards';
 import { LedgerTree } from './ledger-tree';
-import { explanationToolName } from './explanation-tools';
-import {
-  buildChatLedger,
-  foldChatLedger,
-  kindWord,
-  readCountPairs,
-  type ChatLedger,
-  type LedgerCreate,
-  type LedgerTransition,
-} from './ledger';
-import { projectTurnParts, type ProjectedTurnPart } from './turn-model';
+import { buildChatLedger, foldChatLedger, kindWord, readCountPairs, type ChatLedger } from './ledger';
+import { isEntityIdLike } from './payload-walk';
+import { buildTurnReceipt, type TurnReceipt as TurnReceiptModel } from './turn-receipt';
+import { TurnReceipt } from './TurnReceipt';
+import { projectTurnParts } from './turn-model';
 import {
   buildStepLines,
   buildStepViews,
@@ -27,9 +20,8 @@ import {
   type StepView,
 } from './turn-step-lines';
 import { toolStepState, turnEndSeq, type ToolStepPart, type ToolStepState } from './turn-steps';
-import { DocEditLine, StepErrorLine, TurnSteps } from './TurnSteps';
+import { StepErrorLine, TurnSteps } from './TurnSteps';
 import type { ChatTurn, ChatTurnPart, ChatUsage } from './types';
-import { bareToolName } from './write-classifier';
 
 export interface TurnPartsProps {
   parts: readonly ChatTurnPart[];
@@ -94,19 +86,17 @@ export function TurnParts({
 }: TurnPartsProps) {
   const projected = useMemo(() => projectTurnParts(parts), [parts]);
   /**
-   * THE LEDGER, NOT THE CALLS. A turn that read nine entities used to draw
-   * nine boxes; then it drew a chip row; now it says what happened to the
-   * graph (design ruling 1; advisor D9–D11):
+   * THE LEDGER, NOT THE CALLS. A turn says what happened to the graph, never
+   * which tools it called (design ruling 1; graph-seeds R8):
    *
-   *   Read 3 tasks, 4 docs, 5 memories        ← ONE quiet counted line per turn
-   *   ┃ ◆ Task 1 · New task · under ◆ P  CREATED ← a highlighted card per create
-   *   ◆ Task 1  [working] → [done]             ← a pill line per transition
-   *   ✎ Edited ◆ Task 1 (acceptance criteria)   ← ONE quiet line for the edits
+   *   Read 3 tasks, 4 docs, 5 memories          ← ONE quiet counted line per turn
+   *   ┌ + ☐ Task 1        [Worker ● live] working ← ONE receipt per run, one row
+   *   └ → ☐ Task 2   criteria ticked · ● done     per entity (proposal 01a14a8d)
    *
    * Everything comes from the ledger fold (`ledger.ts`) — the same model the
    * sticky panel and the graph stage project — so the transcript can never
    * disagree with them. No tool name, no box, no payload ever renders
-   * (graph-seeds R8; `no-tool-boxes.test.tsx` pins all three bans).
+   * (`no-tool-boxes.test.tsx` pins all three bans).
    */
   const threadLedger = useMemo(() => {
     if (ledger) return ledger;
@@ -135,37 +125,29 @@ export function TurnParts({
     [turnLedger],
   );
 
-  const createsBySeq = useMemo(() => {
-    const map = new Map<number, LedgerCreate>();
-    for (const create of turnLedger?.creates ?? []) map.set(create.seq, create);
-    return map;
-  }, [turnLedger]);
-  const transitionsBySeq = useMemo(() => {
-    const map = new Map<number, LedgerTransition>();
-    for (const transition of turnLedger?.transitions ?? []) map.set(transition.seq, transition);
-    return map;
-  }, [turnLedger]);
-  /* The turn's edits draw ONE line, anchored at the first of them (D11). A
-     host's note is its own sentence for its call — Craft's names the
-     blueprint nodes a patch changed — so the generic line steps aside for
-     any edit a host already narrated, rather than saying it twice. */
-  const lineEdits = useMemo(() => {
-    const edits = turnLedger?.edits ?? [];
-    if (!toolNote) return edits;
-    return edits.filter((edit) => {
+  /* A host's note is its own sentence for its call — Craft's names the
+     blueprint nodes a patch changed — so the receipt's generic edit steps
+     aside for any edit a host already narrated, rather than saying it twice. */
+  const narratedSeqs = useMemo(() => {
+    const seqs = new Set<number>();
+    if (!toolNote) return seqs;
+    for (const edit of turnLedger?.edits ?? []) {
       const call = plainTools.find((tool) => tool.seq === edit.seq);
-      return !call || toolNote({ name: call.name, args: call.args, result: call.result, state: call.state }) == null;
-    });
+      if (call && toolNote({ name: call.name, args: call.args, result: call.result, state: call.state }) != null) {
+        seqs.add(edit.seq);
+      }
+    }
+    return seqs;
   }, [turnLedger, toolNote, plainTools]);
-  const editAnchorSeq = lineEdits[0]?.seq ?? null;
 
   /**
    * THE STEP LIST (advisor D7/D8/D15). Every plain call is a STEP with a
    * reader-visible state, and each run of steps between two pieces of content
    * draws one quiet block: a running step pulses from its first `running`
    * part, before any result; a failed one is ✕; completed reads fold into
-   * counted lines. The turn is live until its last part is a `done`/`error`
-   * or the host says it is over.
+   * counted lines. A write the run's receipt draws is not a line: its row is
+   * its step. The turn is live until its last part is a `done`/`error` or the
+   * host says it is over.
    */
   const endSeq = useMemo(() => turnEndSeq(parts), [parts]);
   const lastSeq = useMemo(() => parts.reduce((max, part) => Math.max(max, part.seq), -1), [parts]);
@@ -184,20 +166,40 @@ export function TurnParts({
     return last;
   }, [projected]);
 
-  /** The ledger block for ONE call — the lines it produced, verbatim from
-   *  before the step list; each run draws its calls' blocks above its steps. */
+  /** One receipt per run, folded from the run's slice of the turn ledger. */
+  const receipts = useMemo(() => {
+    const out = new Map<string, TurnReceiptModel>();
+    for (const segment of segments) {
+      if (segment.kind !== 'run') continue;
+      const steps = segment.items.flatMap((item) => (item.kind === 'step' ? [item.part] : []));
+      out.set(
+        segment.key,
+        buildTurnReceipt({ steps, views, turn: turnLedger, labels: threadLedger.labels, skipEdits: narratedSeqs }),
+      );
+    }
+    return out;
+  }, [segments, views, turnLedger, threadLedger, narratedSeqs]);
+  const receiptSeqs = useMemo(() => {
+    const retried = new Set<number>();
+    const drawn = new Set<number>();
+    for (const receipt of receipts.values()) {
+      for (const seq of receipt.retried) retried.add(seq);
+      for (const seq of receipt.seqs) drawn.add(seq);
+    }
+    return { retried, drawn };
+  }, [receipts]);
+
+  /** The quiet lines ONE call carries outside the receipt: the turn's read
+   *  sentence, at its first plain call, and a host's note under its call. */
   const ledgerLines = (part: ToolStepPart, view: StepView | undefined) => {
-    const create = createsBySeq.get(part.seq);
-    const transition = transitionsBySeq.get(part.seq);
     const readsHere = part.seq === readAnchorSeq && readPairs.length > 0;
-    const editsHere = part.seq === editAnchorSeq;
     const note = toolNote?.({
       name: part.name,
       args: part.args,
       result: part.result,
       state: view?.state ?? part.state,
     }) ?? null;
-    if (!create && !transition && !readsHere && !editsHere && note == null) return null;
+    if (!readsHere && note == null) return null;
     return (
       <div className="tch-ledger" key={part.seq}>
         {readsHere && turnLedger ? (
@@ -209,37 +211,9 @@ export function TurnParts({
             resolveEntity={resolveEntity}
           />
         ) : null}
-        {create ? (
-          <CreateLine
-            create={create}
-            ledger={threadLedger}
-            onOpenEntity={onOpenEntity}
-          />
-        ) : null}
-        {transition ? (
-          <TransitionLine
-            transition={transition}
-            ledger={threadLedger}
-            onOpenEntity={onOpenEntity}
-          />
-        ) : null}
-        {editsHere ? (
-          <EditLine edits={lineEdits} ledger={threadLedger} onOpenEntity={onOpenEntity} />
-        ) : null}
         {note}
       </div>
     );
-  };
-
-  /** A settled `doc_update`'s edit line (D11/D17), with the call's outcomes. */
-  const docEdit = (part: ToolStepPart, view: StepView | undefined) => {
-    if (view?.state !== 'completed' || bareToolName(part.name) !== 'doc_update') return null;
-    const args = part.args as { docId?: unknown; title?: unknown } | null | undefined;
-    const docId = typeof args?.docId === 'string' ? args.docId : null;
-    const title =
-      (typeof args?.title === 'string' && args.title.trim() ? args.title.trim() : null) ??
-      (docId ? threadLedger.labels.get(docId)?.title ?? null : null);
-    return <DocEditLine key={`edit:${part.seq}`} docId={docId} title={title} onOpenEntity={onOpenEntity} />;
   };
 
   /**
@@ -250,7 +224,9 @@ export function TurnParts({
    * - a press opens every run's list, or folds them all (R3).
    * Failures never fold away: each keeps its errline at its run (R5 signed
    * off as "never recovered", R6 folds identical ones, R7 holds by
-   * construction) and counts in the header's `· N failed`.
+   * construction) and counts in the header's `· N failed`. A refused WRITE
+   * is its receipt's red row instead, and one a later call fixed is only
+   * `· N retried`.
    */
   const [turnOpen, setTurnOpen] = useState<boolean | null>(null);
   const runKeys = useMemo(
@@ -260,31 +236,46 @@ export function TurnParts({
   const lastSegment = segments[segments.length - 1];
   const currentRunKey = turnLive && lastSegment?.kind === 'run' ? lastSegment.key : null;
   const turnSummary = useMemo(
-    () => summarizeRun(segments.flatMap((segment) => (segment.kind === 'run' ? segment.items : [])), views),
-    [segments, views],
+    () =>
+      summarizeRun(
+        segments.flatMap((segment) => (segment.kind === 'run' ? segment.items : [])),
+        views,
+        receiptSeqs,
+      ),
+    [segments, views, receiptSeqs],
   );
   // A turn whose only run is the one it is in reads as open; a press folds it.
   const turnExpanded = turnOpen ?? (currentRunKey !== null && runKeys.length === 1);
   const runOpen = (key: string): boolean => turnOpen ?? key === currentRunKey;
 
+  /* The prose's id chips read the host through ONE stable ref: a text block
+     must not re-render (and remount its links) on every streaming delta just
+     because the fold's labels moved on. */
+  const proseChips = useRef<ProseChipHost>({});
+  proseChips.current = { onOpenEntity, resolveEntity, suppressEntityIds, labels: threadLedger.labels };
+
   const renderRun = (key: string, items: readonly RunItem[]) => {
     const steps = items.flatMap((item) => (item.kind === 'step' ? [item.part] : []));
+    const receipt = receipts.get(key);
+    const drawn = receipt?.seqs;
     const failed = steps.flatMap((part) => {
       const view = views.get(part.seq);
-      return view?.state === 'error' ? [view] : [];
+      return view?.state === 'error' && !drawn?.has(part.seq) ? [view] : [];
     });
-    /* D15 §5: the run's outcomes first — its calls' ledger lines in seq
-       order, then any edit lines, then its failures (D13, folded per R6) —
+    /* The run's outcomes first — its read line and host notes, then ONE
+       receipt for every write, then any other failure (D13, folded per R6) —
        and the step block last, so the live step is the last thing on screen. */
     return (
       <Fragment key={key}>
         {steps.map((part) => ledgerLines(part, views.get(part.seq)))}
-        {steps.map((part) => docEdit(part, views.get(part.seq)))}
+        {receipt && receipt.rows.length > 0 ? (
+          <TurnReceipt receipt={receipt} ledger={threadLedger} onOpenEntity={onOpenEntity} />
+        ) : null}
         {foldFailures(failed).map((group) => (
           <StepErrorLine key={`err:${group.first.seq}`} view={group.first} count={group.count} retried={group.retried} />
         ))}
         <TurnSteps
-          lines={buildStepLines(items, views)}
+          lines={buildStepLines(items, views, drawn)}
           head={
             key === runKeys[0]
               ? { summary: turnSummary, expanded: turnExpanded, onToggle: () => setTurnOpen(!turnExpanded) }
@@ -313,7 +304,13 @@ export function TurnParts({
           );
         }
         if (part.kind === 'text') {
-          return <TurnText key={part.seq} source={part.text} />;
+          return (
+            <TurnText
+              key={part.seq}
+              source={part.text}
+              chips={proseChips}
+            />
+          );
         }
         if (part.kind === 'tool') {
           // Only the `explain_*` presentations reach here (`isStepTool`).
@@ -355,9 +352,55 @@ export function TurnParts({
  * focus on one was dropped. Settled text must not move while the turn streams
  * below it.
  */
-const TurnText = memo(function TurnText({ source }: { source: string }) {
-  return <Markdown source={source} className="tch-answer" testId="chat-turn-text" />;
+const TurnText = memo(function TurnText({
+  source,
+  chips,
+}: {
+  source: string;
+  chips: MutableRefObject<ProseChipHost>;
+}) {
+  const components = useMemo(() => proseChipComponents(chips), [chips]);
+  return <Markdown source={source} className="tch-answer" testId="chat-turn-text" components={components} />;
 });
+
+/** What a prose chip needs from the host, read at render time. */
+interface ProseChipHost {
+  onOpenEntity?: ((id: EntityId) => void) | undefined;
+  resolveEntity?: ChatEntityResolver | undefined;
+  /** This thread's own message ids — never chipped. */
+  suppressEntityIds?: ReadonlySet<string> | undefined;
+  /** What the fold already knows of an id, so a chip is titled on first paint. */
+  labels?: ChatLedger['labels'] | undefined;
+}
+
+/**
+ * AN ENTITY ID IN THE PROSE IS AN ENTITY CHIP. Agents paste the id of what
+ * they made in a code span — `01a14a83-…` — beside a title they already
+ * restated; the chip names it (resolving a late title), opens it, and turns a
+ * raw UUID into the one thing a reader can use. Only a code span that is
+ * EXACTLY an id: a fence, or code that merely contains one, stays code. This
+ * thread's own message ids stay code too (`suppressEntityIds`).
+ */
+function proseChipComponents(chips: MutableRefObject<ProseChipHost>): MarkdownComponents {
+  const fallback = MARKDOWN_COMPONENTS.code as (props: Record<string, unknown>) => ReactNode;
+  return {
+    code(props) {
+      const text = String(props.children ?? '').trim();
+      const { onOpenEntity, resolveEntity, suppressEntityIds, labels } = chips.current;
+      if (!props.className && isEntityIdLike(text) && !suppressEntityIds?.has(text)) {
+        const known = labels?.get(text);
+        return (
+          <EntityChip
+            refInfo={{ id: text as EntityId, ...(known?.kind ? { kind: known.kind } : {}), ...(known?.title ? { title: known.title } : {}) }}
+            resolve={resolveEntity}
+            onOpen={onOpenEntity}
+          />
+        );
+      }
+      return fallback(props as Record<string, unknown>);
+    },
+  };
+}
 
 /**
  * `Read 3 tasks, 4 docs, 5 memories` — the whole surviving trace of every
@@ -416,37 +459,6 @@ function ReadLine({
       ) : null}
     </>
   );
-}
-
-/**
- * What the chat MADE: a highlighted card per created entity or spawned
- * session, and a pill line per status transition it caused — both drawn by
- * `LedgerCards.tsx` (advisor D9–D11, D17). These two names stay as the seam
- * the per-call ledger block calls, so the block's shape (lane 3's) and the
- * cards' design (lane 4's) can move independently.
- */
-function CreateLine({
-  create,
-  ledger,
-  onOpenEntity,
-}: {
-  create: LedgerCreate;
-  ledger: ChatLedger;
-  onOpenEntity?: ((id: EntityId) => void) | undefined;
-}) {
-  return <CreatedCard create={create} ledger={ledger} onOpenEntity={onOpenEntity} />;
-}
-
-function TransitionLine({
-  transition,
-  ledger,
-  onOpenEntity,
-}: {
-  transition: LedgerTransition;
-  ledger: ChatLedger;
-  onOpenEntity?: ((id: EntityId) => void) | undefined;
-}) {
-  return <TransitionRow transition={transition} ledger={ledger} onOpenEntity={onOpenEntity} />;
 }
 
 /**

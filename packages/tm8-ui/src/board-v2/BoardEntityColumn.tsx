@@ -70,6 +70,8 @@ export function BoardEntityColumn({
       }),
     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs, rendered below. */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
   const membership = useMembershipSurface({
     spaceId: data.spaceId,
@@ -124,6 +126,10 @@ export function BoardEntityColumn({
   };
 
   return (
-    <AuxEntityPanel host={host} entityId={entityId} onOpenEntity={onOpenEntity} onClose={onClose} />
+    <>
+      {/* Spec D1 §5.4/§5.5 — the session outcome dialogs (fixed-position). */}
+      {primaries.dialog}
+      <AuxEntityPanel host={host} entityId={entityId} onOpenEntity={onOpenEntity} onClose={onClose} />
+    </>
   );
 }

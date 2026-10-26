@@ -1,0 +1,842 @@
+/**
+ * `tm8 workspace …` — read and drive YOUR OWN Workspace (Spec C doc
+ * 01a1111d-589e, Spec D doc 01a11171-3aba).
+ *
+ *   workspace.get             GET  /v2/spaces/:spaceId/workspace
+ *   workspace.list            GET  /v2/spaces/:spaceId/workspaces
+ *   workspace.instances.list  GET  /v2/spaces/:spaceId/workspace/instances
+ *   workspace.inspect         GET  /v2/spaces/:spaceId/workspace/inspect
+ *   workspace.command         POST /v2/spaces/:spaceId/workspace/commands
+ *   workspace.drafts.patch    POST /v2/spaces/:spaceId/workspace/drafts/:draftId
+ *   workspace.create          POST   /v2/spaces/:spaceId/workspaces
+ *   workspace.update          PATCH  /v2/spaces/:spaceId/workspaces/:workspaceId
+ *   workspace.reorder         POST   /v2/spaces/:spaceId/workspaces/:workspaceId/move
+ *   workspace.delete          DELETE /v2/spaces/:spaceId/workspaces/:workspaceId
+ *   workspace.switch          POST   /v2/spaces/:spaceId/workspaces/:workspaceId/activate
+ *   workspace.prompts.resolve POST   /v2/spaces/:spaceId/workspace/prompts/:promptId
+ *
+ * MANAGING THE LIST (API doc 01a115c4 §8.2). `<ws>` is a workspace id or its
+ * name (case-insensitive), resolved through `workspace.list` before any write.
+ * Creating never switches. Reordering and answering prompts are the human's:
+ * an agent gets `human_only` (exit 4). An agent's `use`, and its `delete` of
+ * anything but its own off-screen clean workspace, only ASK the human: exit 16
+ * with the prompt id (D6, D8).
+ *
+ * WHICH WORKSPACE (§8.1). Content verbs take `--workspace <id|name>` (resolved
+ * through `workspace.list` before anything is sent; never switches) and the
+ * pin `--expect-workspace <id>`: if the command would land anywhere else it is
+ * refused (`workspace_switched` / `workspace_mismatch`, exit 6) and nothing
+ * changes.
+ *
+ * Every mutating verb is sugar over the ONE `workspace.command` row: it builds
+ * the same `{command, args}` the window's own UI dispatches. The node applies
+ * it to your STORED workspace (no window needed) and every open window of
+ * yours updates; only focus, dialogs and the route still need a live window,
+ * where the node forwards the command.
+ *
+ * WHOSE WINDOW. The node answers for the caller's identity only. An agent
+ * token carries its owner's identity, so an agent reaches the windows of the
+ * human it works for and nobody else's. With no `--instance`, the node picks
+ * the only live window, or the only focused one; otherwise it refuses with the
+ * candidates (`ambiguous_target`).
+ *
+ * IDEMPOTENCY. Each run sends a fresh `--request-id` unless one is given. The
+ * same id with the same arguments returns the recorded result and never runs
+ * twice; the same id with different arguments is refused
+ * (`request_id_reused`). After a timeout (`no_reply`, exit 7), retry with the
+ * SAME `--request-id`.
+ *
+ * CRAFT WORKSPACES (Craft redesign doc 01a1255d §3, §4). `--craft <craft-id>`
+ * turns `get` and `tabs open|close|move|focus|activate` to YOUR tabs on that
+ * craft (`workspace.crafts.get` / `workspace.crafts.command`), and
+ * `tm8 workspace crafts [list|get|open|close|move]` reads and arranges your
+ * open-crafts list. A tab opens only on the craft or one of its direct pages
+ * (`not_a_page`: add the page to the craft first); the overview tab is pinned
+ * (`pinned`). An agent may change a craft's tabs only from a chat or session
+ * started on that craft (`forbidden` / `not_craft_session`, exit 4).
+ *
+ * EXIT CODES. 0 applied / no_op. 16 requires_user_choice: the window is showing
+ * the human a choice (unsaved changes, add a kind to the scope) and only the
+ * human can answer it. 4 rejected for permission, 2 rejected for invalid
+ * arguments, 6 any other rejection or a revision conflict.
+ */
+import { randomUUID } from 'node:crypto';
+
+import {
+  type CraftWorkspace,
+  type CraftWorkspaceCommandResult,
+  type CraftWorkspaceListResult,
+  WORKSPACE_DIALOG_IDS,
+  normalizeKindAlias,
+  type WorkspaceListResult,
+  type WorkspaceManageResult,
+  type WorkspaceRef,
+  type WorkspaceSummary,
+} from '@tm8/contract';
+
+import { requireSpace } from '../context.js';
+import { clientFor, observedInvoke } from '../discovery/observe.js';
+import {
+  CliError,
+  EXIT_CONFLICT,
+  EXIT_FORBIDDEN,
+  EXIT_NOT_FOUND,
+  EXIT_OK,
+  EXIT_USAGE,
+  EXIT_USER_CHOICE,
+  type ExitCode,
+} from '../exit.js';
+import { refuseMutationId } from '../mutation.js';
+import type { CommandContext, CommandModule } from '../run.js';
+
+interface RemoteResult {
+  requestId?: string;
+  instanceId?: string;
+  status?: string;
+  revision?: number;
+  tabId?: string;
+  outcome?: string;
+  tabIds?: string[];
+  outcomes?: string[];
+  unavailableEntityIds?: string[];
+  reason?: string;
+  pendingInteractionId?: string;
+  choices?: string[];
+  inspection?: Record<string, unknown>;
+  dialogId?: string;
+  dialogState?: string;
+  activation?: string;
+  workspace?: WorkspaceRef;
+  expectedWorkspaceId?: string;
+  activeWorkspaceId?: string | null;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const SCOPE_MODES: Record<string, 'mixed' | 'byType'> = { mixed: 'mixed', 'by-type': 'byType', bytype: 'byType' };
+
+function usage(message: string, hint: string): never {
+  throw new CliError(message, EXIT_USAGE, { hint });
+}
+
+function arg(cmd: CommandContext, index: number, name: string, hint: string): string {
+  const value = cmd.args[index];
+  if (value === undefined || value === '') usage(`${cmd.path.join(' ')} requires <${name}>`, hint);
+  return value;
+}
+
+function integerOption(cmd: CommandContext, name: string): number | undefined {
+  const raw = cmd.options.value(name);
+  if (raw === undefined) return undefined;
+  if (!/^\d+$/.test(raw)) usage(`--${name} expects a non-negative integer, got ${JSON.stringify(raw)}`, `--${name} <n>`);
+  return Number(raw);
+}
+
+/** The status → exit code mapping, documented in the noun help. */
+export function exitForResult(result: Pick<RemoteResult, 'status' | 'reason'>): ExitCode {
+  switch (result.status) {
+    case 'applied':
+    case 'no_op':
+      return EXIT_OK;
+    case 'requires_user_choice':
+      return EXIT_USER_CHOICE;
+    case 'rejected':
+      if (result.reason === 'permission_denied') return EXIT_FORBIDDEN;
+      if (result.reason === 'invalid_arguments' || result.reason === 'unsupported_kind' || result.reason === 'unsupported_dialog') {
+        return EXIT_USAGE;
+      }
+      return EXIT_CONFLICT;
+    default:
+      return EXIT_CONFLICT;
+  }
+}
+
+/**
+ * §8.4: the second line of every result, naming the workspace it acted on.
+ * A pin that lost (`workspace_switched` / `workspace_mismatch`) adds what was
+ * expected and what is active.
+ */
+function workspaceLines(r: { workspace?: WorkspaceRef; reason?: string; expectedWorkspaceId?: string; activeWorkspaceId?: string | null }): string[] {
+  const w = r.workspace;
+  const lines = w
+    ? [`workspace: ${w.name} (${w.id ?? 'no row yet'}) [${w.resolvedBy}${w.active ? '' : ' · not on screen'}]`]
+    : ['workspace: ?'];
+  if (r.reason === 'workspace_switched' || r.reason === 'workspace_mismatch') {
+    lines.push(`expected ${r.expectedWorkspaceId ?? '?'} · active ${r.activeWorkspaceId ?? '?'}`);
+  }
+  return lines;
+}
+
+function renderResult(data: unknown): string {
+  const r = data as RemoteResult;
+  const lines = [`${r.status ?? '?'}${r.reason ? ` (${r.reason})` : ''}  revision ${r.revision ?? '?'}`, ...workspaceLines(r)];
+  if (r.tabIds && r.tabIds.length > 1) {
+    r.tabIds.forEach((id, i) => lines.push(`tab: ${id}${r.outcomes?.[i] ? ` (${r.outcomes[i]})` : ''}`));
+  } else if (r.tabId) lines.push(`tab: ${r.tabId}${r.outcome ? ` (${r.outcome})` : ''}`);
+  if (r.unavailableEntityIds?.length) lines.push(`unavailable: ${r.unavailableEntityIds.join(', ')} (nothing was opened)`);
+  if (r.dialogId) lines.push(`dialog: ${r.dialogId}${r.dialogState ? ` ${r.dialogState}` : ''}`);
+  if (r.activation) lines.push(`window: ${r.activation.replace('_', ' ')}`);
+  if (r.pendingInteractionId) {
+    lines.push(`waiting for the human: interaction ${r.pendingInteractionId} [${(r.choices ?? []).join(', ')}]`);
+  }
+  if (r.inspection) lines.push(renderInspection(r.inspection));
+  lines.push(`instance: ${r.instanceId ?? '?'}  request: ${r.requestId ?? '?'}`);
+  return lines.join('\n');
+}
+
+function renderInspection(raw: Record<string, unknown>): string {
+  const tabs = (raw['orderedTabIds'] as Array<Record<string, unknown>> | undefined) ?? [];
+  const visible = new Set((raw['visibleTabIds'] as string[] | undefined) ?? []);
+  const presentation = raw['presentation'] as { surface?: string; tabId?: string } | undefined;
+  const scope = raw['scope'] as { mode?: string; selectedTypeIds?: string[] } | undefined;
+  const lines = [
+    `scope: ${scope?.mode === 'byType' ? `by type (${(scope.selectedTypeIds ?? []).join(', ')})` : 'mixed'}`,
+    `active: ${presentation?.surface === 'tab' ? presentation.tabId : 'start'}`,
+    `tabs (${tabs.length}, ${visible.size} visible):`,
+  ];
+  for (const tab of tabs) {
+    const id = String(tab['id']);
+    const marks = `${presentation?.tabId === id ? '*' : ' '}${visible.has(id) ? ' ' : 'h'}`;
+    const what = tab['type'] === 'entity' ? `${String(tab['kind'])} ${String(tab['entityId'])}`
+      : tab['type'] === 'draft' ? `draft ${String(tab['kind'])}${tab['dirty'] ? ' (dirty)' : ''}`
+      : String(tab['type']);
+    lines.push(`  ${marks} ${id}  ${what}`);
+  }
+  const pending = raw['pending'] as { reason?: string; id?: string } | undefined;
+  if (pending) lines.push(`pending: ${pending.reason} (${pending.id})`);
+  return lines.join('\n');
+}
+
+/**
+ * §8.1: `--workspace <id|name>` → `workspaceId` (a name resolves through
+ * `workspace.list`, before any write), `--expect-workspace <id>` →
+ * `expectedWorkspaceId` (an id only: the pin is meant to be exact).
+ */
+async function targetFlags(cmd: CommandContext, spaceId: string): Promise<{ workspaceId?: string; expectedWorkspaceId?: string }> {
+  const named = cmd.options.value('workspace');
+  const expected = cmd.options.value('expect-workspace');
+  if (expected !== undefined && !UUID_RE.test(expected)) {
+    usage(`--expect-workspace takes a workspace id, got ${JSON.stringify(expected)}`, '--expect-workspace <id>  (the workspace.id of your first result)');
+  }
+  let workspaceId: string | undefined;
+  if (named !== undefined) {
+    const listed = await observedInvoke<WorkspaceListResult>(clientFor(cmd.ctx), 'workspace.list', { params: { spaceId } });
+    workspaceId = resolveWs(listed, named).id;
+  }
+  return {
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    ...(expected === undefined ? {} : { expectedWorkspaceId: expected }),
+  };
+}
+
+/** Send one Workspace command through the node and print the window's Result. */
+async function send(cmd: CommandContext, command: string, args?: unknown): Promise<ExitCode> {
+  refuseMutationId(cmd.path.join(' '), cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const target = await targetFlags(cmd, spaceId);
+  const instanceId = cmd.options.value('instance');
+  const expectedRevision = integerOption(cmd, 'expect-revision');
+  const waitMs = integerOption(cmd, 'wait-ms');
+  const requestId = cmd.options.value('request-id') ?? randomUUID();
+
+  const result = await observedInvoke<RemoteResult>(clientFor(cmd.ctx), 'workspace.command', {
+    params: { spaceId },
+    body: {
+      requestId,
+      command,
+      ...(args === undefined ? {} : { args }),
+      ...target,
+      ...(instanceId ? { instanceId } : {}),
+      ...(expectedRevision === undefined ? {} : { expectedRevision }),
+      ...(waitMs === undefined ? {} : { timeoutMs: waitMs }),
+    },
+  });
+  cmd.out.data(result, renderResult);
+  return exitForResult(result);
+}
+
+async function instances(cmd: CommandContext): Promise<ExitCode> {
+  const spaceId = requireSpace(cmd.ctx);
+  const list = await observedInvoke<{ items: Array<Record<string, unknown>> }>(clientFor(cmd.ctx), 'workspace.instances.list', {
+    params: { spaceId },
+  });
+  cmd.out.data(list, (data) => {
+    const items = (data as typeof list).items;
+    if (items.length === 0) return 'no live Workspace window (open the app in a browser, signed in as you)';
+    return items
+      .map((i) => `${String(i['instanceId'])}  ${i['focused'] ? 'focused' : '       '}  ${i['visible'] ? 'visible' : 'hidden '}  view=${String(i['view'])}${i['mounted'] ? '' : ' (workspace not open)'}  rev=${String(i['revision'])}  seen ${String(i['lastSeen'])}`)
+      .join('\n');
+  });
+  return EXIT_OK;
+}
+
+async function inspect(cmd: CommandContext): Promise<ExitCode> {
+  const spaceId = requireSpace(cmd.ctx);
+  const instanceId = cmd.options.value('instance');
+  const query = { ...(await targetFlags(cmd, spaceId)), ...(instanceId ? { instanceId } : {}) };
+  const result = await observedInvoke<RemoteResult>(clientFor(cmd.ctx), 'workspace.inspect', {
+    params: { spaceId },
+    ...(Object.keys(query).length > 0 ? { query } : {}),
+  });
+  cmd.out.data(result, renderResult);
+  return exitForResult(result);
+}
+
+const OPEN_HINT = 'tm8 workspace tabs open <kind> <entity-id> [<kind> <entity-id> …] [--no-activate]';
+
+async function get(cmd: CommandContext): Promise<ExitCode> {
+  const spaceId = requireSpace(cmd.ctx);
+  const stored = await observedInvoke<{ revision: number; state: Record<string, unknown>; drafts: unknown[]; windows: number; workspace?: WorkspaceRef }>(
+    clientFor(cmd.ctx), 'workspace.get', { params: { spaceId }, query: await targetFlags(cmd, spaceId) },
+  );
+  cmd.out.data(stored, (data) => {
+    const s = data as typeof stored;
+    const head = [`revision ${s.revision} · ${s.drafts.length} draft(s) · ${s.windows} live window(s)`, ...workspaceLines(s)];
+    if (s.revision === 0) return [...head, 'no stored workspace in this Space yet'].join('\n');
+    const inspection = renderInspection({
+      orderedTabIds: (s.state['orderedTabIds'] as string[]).map((id) => ({ id, ...(s.state['tabs'] as Record<string, Record<string, unknown>>)[id] })),
+      visibleTabIds: s.state['orderedTabIds'],
+      presentation: s.state['presentation'],
+      scope: s.state['scope'],
+    });
+    return [...head, inspection].join('\n');
+  });
+  return EXIT_OK;
+}
+
+async function list(cmd: CommandContext): Promise<ExitCode> {
+  const spaceId = requireSpace(cmd.ctx);
+  const listed = await observedInvoke<WorkspaceListResult>(clientFor(cmd.ctx), 'workspace.list', { params: { spaceId } });
+  cmd.out.data(listed, (data) => {
+    const l = data as WorkspaceListResult;
+    const lines = l.items.map((w) =>
+      `${w.active ? '*' : ' '} ${w.name}  (${w.id ?? 'no row yet'})  ${w.tabCount} tabs  ${w.draftCount} drafts${w.agentChangedSinceActive ? '  ●' : ''}`);
+    for (const p of l.prompts) {
+      lines.push(p.state === 'open'
+        ? `waiting for the human: ${promptQuestion(p)} prompt ${p.promptId}`
+        : `prompt ${p.promptId} (${promptQuestion(p)}): ${p.state}`);
+    }
+    return lines.join('\n');
+  });
+  return EXIT_OK;
+}
+
+const WS_HINT = 'tm8 workspace list  (a workspace is named by its id or its name)';
+
+/** `<ws>`: an id, else a case-insensitive exact name, among the caller's workspaces (§8.2). */
+function resolveWs(listed: WorkspaceListResult, raw: string): WorkspaceSummary & { id: string } {
+  const lower = raw.toLowerCase();
+  const hit = listed.items.find((w) => w.id === raw) ?? listed.items.find((w) => w.name.toLowerCase() === lower);
+  if (!hit || hit.id === null) {
+    throw new CliError(`no workspace ${JSON.stringify(raw)} in this Space`, EXIT_NOT_FOUND, { hint: WS_HINT });
+  }
+  return hit as WorkspaceSummary & { id: string };
+}
+
+interface Managing {
+  spaceId: string;
+  requestId: string;
+  listed: WorkspaceListResult;
+}
+
+/** The common prologue of a management verb: no --mutation-id, a request id, and the list to resolve `<ws>` against. */
+async function managing(cmd: CommandContext): Promise<Managing> {
+  refuseMutationId(cmd.path.join(' '), cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const listed = await observedInvoke<WorkspaceListResult>(clientFor(cmd.ctx), 'workspace.list', { params: { spaceId } });
+  return { spaceId, requestId: cmd.options.value('request-id') ?? randomUUID(), listed };
+}
+
+const label = (w: { name: string; id: string | null }) => `${w.name} (${w.id ?? 'no row yet'})`;
+
+const promptQuestion = (p: { kind: 'switch' | 'delete'; workspaceName: string }) =>
+  `${p.kind === 'switch' ? 'switch to' : 'delete'} ${p.workspaceName}?`;
+
+/** A management result: the verb's own line when applied (§8.2), else what stopped it. */
+function renderManaged(r: WorkspaceManageResult, applied: (r: WorkspaceManageResult) => string): string {
+  if (r.status === 'applied') return applied(r);
+  if (r.status === 'no_op') return `no change: ${label(r.workspace)}`;
+  const lines = [`${r.status}${r.reason ? ` (${r.reason})` : ''}: ${label(r.workspace)}`];
+  if (r.reason === 'workspace_switched') lines.push(`expected ${r.expectedWorkspaceId ?? '?'} · active ${r.activeWorkspaceId}`);
+  if (r.dirtyDraftIds?.length) lines.push(`unsaved drafts: ${r.dirtyDraftIds.join(', ')} (pass --discard to drop them)`);
+  if (r.prompt && r.prompt.state === 'open') {
+    lines.push(`waiting for the human: ${promptQuestion(r.prompt)} [${(r.choices ?? []).join(', ')}] prompt ${r.prompt.promptId}`);
+  }
+  return lines.join('\n');
+}
+
+async function create(cmd: CommandContext): Promise<ExitCode> {
+  const m = await managing(cmd);
+  const name = cmd.args[0];
+  const color = cmd.options.value('color');
+  const before = cmd.options.value('before');
+  const result = await observedInvoke<WorkspaceManageResult>(clientFor(cmd.ctx), 'workspace.create', {
+    params: { spaceId: m.spaceId },
+    body: {
+      requestId: m.requestId,
+      ...(name === undefined || name === '' ? {} : { name }),
+      ...(color === undefined ? {} : { color: color === 'none' ? null : color }),
+      ...(before === undefined ? {} : { beforeWorkspaceId: resolveWs(m.listed, before).id }),
+    },
+  });
+  cmd.out.data(result, (data) => renderManaged(data as WorkspaceManageResult, (r) =>
+    `created ${label(r.workspace)} · not active · switch with: tm8 workspace use ${JSON.stringify(r.workspace.name)}`));
+  return exitForResult(result);
+}
+
+async function update(cmd: CommandContext, field: 'name' | 'color'): Promise<ExitCode> {
+  const hint = field === 'name' ? 'tm8 workspace rename <ws> <name>' : 'tm8 workspace color <ws> <color|none>';
+  const m = await managing(cmd);
+  const target = resolveWs(m.listed, arg(cmd, 0, 'ws', hint));
+  const value = arg(cmd, 1, field, hint);
+  const result = await observedInvoke<WorkspaceManageResult>(clientFor(cmd.ctx), 'workspace.update', {
+    params: { spaceId: m.spaceId, workspaceId: target.id },
+    body: { requestId: m.requestId, ...(field === 'name' ? { name: value } : { color: value === 'none' ? null : value }) },
+  });
+  cmd.out.data(result, (data) => renderManaged(data as WorkspaceManageResult, (r) => field === 'name'
+    ? `renamed ${target.name} → ${r.workspace.name} (${target.id})`
+    : `${label(r.workspace)} colour: ${r.workspace.color ?? 'none'}`));
+  return exitForResult(result);
+}
+
+async function reorder(cmd: CommandContext): Promise<ExitCode> {
+  const hint = 'tm8 workspace reorder <ws> (--before <ws> | --last)';
+  const m = await managing(cmd);
+  const target = resolveWs(m.listed, arg(cmd, 0, 'ws', hint));
+  const before = cmd.options.value('before');
+  const last = cmd.options.bool('last');
+  if ((before === undefined) === !last) usage('name exactly one of --before <ws> and --last', hint);
+  const result = await observedInvoke<WorkspaceManageResult>(clientFor(cmd.ctx), 'workspace.reorder', {
+    params: { spaceId: m.spaceId, workspaceId: target.id },
+    body: { requestId: m.requestId, beforeWorkspaceId: before === undefined ? null : resolveWs(m.listed, before).id },
+  });
+  // The new order, from the list the verb resolved against.
+  const others = m.listed.items.filter((w) => w.id !== target.id);
+  const order = others.map((w) => w.name);
+  order.splice(Math.min(result.workspace.position, order.length), 0, target.name);
+  cmd.out.data(result, (data) => renderManaged(data as WorkspaceManageResult, () => order.map((n, i) => `${i + 1}. ${n}`).join('\n')));
+  return exitForResult(result);
+}
+
+async function remove(cmd: CommandContext): Promise<ExitCode> {
+  const m = await managing(cmd);
+  const target = resolveWs(m.listed, arg(cmd, 0, 'ws', 'tm8 workspace delete <ws> [--discard]'));
+  const result = await observedInvoke<WorkspaceManageResult>(clientFor(cmd.ctx), 'workspace.delete', {
+    params: { spaceId: m.spaceId, workspaceId: target.id },
+    query: { requestId: m.requestId, ...(cmd.options.bool('discard') ? { discard: 'true' } : {}) },
+  });
+  cmd.out.data(result, (data) => renderManaged(data as WorkspaceManageResult, (r) => {
+    const active = m.listed.items.find((w) => w.id === r.activeWorkspaceId);
+    return `deleted ${label(target)}; active: ${active ? label(active) : r.activeWorkspaceId}`;
+  }));
+  return exitForResult(result);
+}
+
+async function use(cmd: CommandContext): Promise<ExitCode> {
+  const m = await managing(cmd);
+  const target = resolveWs(m.listed, arg(cmd, 0, 'ws', 'tm8 workspace use <ws>'));
+  const result = await observedInvoke<WorkspaceManageResult>(clientFor(cmd.ctx), 'workspace.switch', {
+    params: { spaceId: m.spaceId, workspaceId: target.id },
+    body: { requestId: m.requestId },
+  });
+  cmd.out.data(result, (data) => renderManaged(data as WorkspaceManageResult, (r) => `active: ${label(r.workspace)}`));
+  return exitForResult(result);
+}
+
+/** `tm8 workspace prompts resolve <prompt-id> accept|decline [--discard]` (§5.12): the human's answer. */
+async function promptsResolve(cmd: CommandContext): Promise<ExitCode> {
+  const hint = 'tm8 workspace prompts resolve <prompt-id> accept|decline [--discard]';
+  refuseMutationId(cmd.path.join(' '), cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const promptId = arg(cmd, 0, 'prompt-id', hint);
+  const choice = arg(cmd, 1, 'accept|decline', hint);
+  if (choice !== 'accept' && choice !== 'decline') usage(`answer accept or decline, got ${JSON.stringify(choice)}`, hint);
+  const result = await observedInvoke<WorkspaceManageResult>(clientFor(cmd.ctx), 'workspace.prompts.resolve', {
+    params: { spaceId, promptId },
+    body: { requestId: cmd.options.value('request-id') ?? randomUUID(), choice, ...(cmd.options.bool('discard') ? { discard: true } : {}) },
+  });
+  cmd.out.data(result, (data) => {
+    const r = data as WorkspaceManageResult;
+    if (r.status !== 'applied' && r.status !== 'no_op') return renderManaged(r, () => '');
+    const active = `active: ${r.activeWorkspaceId}`;
+    return r.prompt ? `prompt ${r.prompt.promptId} (${promptQuestion(r.prompt)}): ${r.prompt.state} · ${active}` : active;
+  });
+  return exitForResult(result);
+}
+
+function parseField(raw: string, flag: string): [string, string] {
+  const at = raw.indexOf('=');
+  if (at <= 0) usage(`--${flag} expects <name>=<value>, got ${JSON.stringify(raw)}`, `--${flag} title=<text>`);
+  return [raw.slice(0, at), raw.slice(at + 1)];
+}
+
+async function draftsSet(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId(cmd.path.join(' '), cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const draftId = arg(cmd, 0, 'draft-id', 'tm8 workspace drafts set <draft-id> --field <name>=<value>');
+  const bases = new Map(cmd.options.values('base').map((raw) => {
+    const [name, rev] = parseField(raw, 'base');
+    if (!/^\d+$/.test(rev)) usage('--base expects <name>=<revision>', '--base title=3');
+    return [name, Number(rev)] as const;
+  }));
+  const fields: Record<string, { v: unknown; base?: number }> = {};
+  for (const raw of cmd.options.values('field')) {
+    const [name, text] = parseField(raw, 'field');
+    let v: unknown = text;
+    try {
+      v = JSON.parse(text);
+    } catch {
+      // Plain text.
+    }
+    fields[name] = { v, ...(bases.has(name) ? { base: bases.get(name) } : {}) };
+  }
+  if (Object.keys(fields).length === 0) usage('name at least one --field', 'tm8 workspace drafts set <draft-id> --field title=<text>');
+  const result = await observedInvoke<{ revision: number; fields: Record<string, { v: unknown; r: number }>; overwrote: string[]; workspace?: WorkspaceRef }>(
+    clientFor(cmd.ctx), 'workspace.drafts.patch', { params: { spaceId, draftId }, body: { fields, ...(await targetFlags(cmd, spaceId)) } },
+  );
+  cmd.out.data(result, (data) => {
+    const r = data as typeof result;
+    const lines = [`draft ${draftId} revision ${r.revision}`, ...workspaceLines(r)];
+    for (const [name, { r: rev }] of Object.entries(r.fields)) lines.push(`  ${name}  r${rev}`);
+    if (r.overwrote.length > 0) lines.push(`overwrote newer edits to: ${r.overwrote.join(', ')}`);
+    return lines.join('\n');
+  });
+  return EXIT_OK;
+}
+
+
+// ── craft workspaces (doc 01a1255d §3, §4) ──────────────────────────────────
+
+const CRAFT_TABS_HINT = 'tm8 workspace --craft <craft-id> {get | tabs open <kind> <id> | tabs close <tab|entity> | tabs move <tab|entity> --before <tab|last> | tabs focus <tab|entity>}';
+
+/** `--craft <craft-id>`, when given. */
+function craftFlag(cmd: CommandContext): string | undefined {
+  const raw = cmd.options.value('craft');
+  if (raw === undefined) return undefined;
+  if (!UUID_RE.test(raw)) usage(`--craft takes a craft id, got ${JSON.stringify(raw)}`, CRAFT_TABS_HINT);
+  return raw;
+}
+
+/**
+ * A tab named by its tab id or by the entity it shows, resolved against the
+ * workspace as it is now: a tab id wins, then the entity a tab shows. Both are
+ * uuids, so the shape of the argument cannot tell them apart.
+ */
+async function craftTabId(cmd: CommandContext, craftId: string, raw: string, ws?: CraftWorkspace): Promise<string> {
+  const now = ws ?? await craftFetch(cmd, craftId);
+  const tab = now.state.tabs.find((t) => t.id === raw) ?? now.state.tabs.find((t) => t.entityId === raw);
+  if (!tab) throw new CliError(`no tab ${raw} (by tab id or the entity it shows)`, EXIT_NOT_FOUND, { hint: `tm8 workspace --craft ${craftId} get` });
+  return tab.id;
+}
+
+function craftFetch(cmd: CommandContext, craftId: string): Promise<CraftWorkspace> {
+  return observedInvoke<CraftWorkspace>(clientFor(cmd.ctx), 'workspace.crafts.get', { params: { spaceId: requireSpace(cmd.ctx), craftId } });
+}
+
+function renderCraft(ws: CraftWorkspace): string {
+  const head = `craft ${ws.craftId}  revision ${ws.revision}  ${ws.open ? 'open' : 'closed'}${ws.workspaceId === null ? '  (no row yet)' : ''}`;
+  const tabs = ws.state.tabs.map((t) =>
+    `${t.id === ws.state.activeTabId ? '*' : ' '} ${t.kind.padEnd(8)} ${t.entityId}  tab=${t.id}${t.pinned ? '  (overview, pinned)' : ''}`);
+  return [head, ...tabs].join('\n');
+}
+
+async function craftSend(cmd: CommandContext, craftId: string, command: string, args?: unknown): Promise<ExitCode> {
+  refuseMutationId(cmd.path.join(' '), cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const expectedRevision = integerOption(cmd, 'expect-revision');
+  const requestId = cmd.options.value('request-id') ?? randomUUID();
+  const result = await observedInvoke<CraftWorkspaceCommandResult>(clientFor(cmd.ctx), 'workspace.crafts.command', {
+    params: { spaceId, craftId },
+    body: {
+      requestId,
+      command,
+      ...(args === undefined ? {} : { args }),
+      ...(expectedRevision === undefined ? {} : { expectedRevision }),
+    },
+  });
+  cmd.out.data(result, (data) => {
+    const r = data as CraftWorkspaceCommandResult;
+    const line = [r.status, r.reason, r.outcome, r.tabId ? `tab=${r.tabId}` : undefined].filter(Boolean).join('  ');
+    const hint = r.reason === 'not_a_page' ? '\nthat entity is not a page of this craft: add it to the craft first, then open it' : '';
+    return `${line}${hint}\n${renderCraft(r.workspace)}`;
+  });
+  return exitForResult(result);
+}
+
+async function craftGet(cmd: CommandContext, craftId: string): Promise<ExitCode> {
+  const spaceId = requireSpace(cmd.ctx);
+  const ws = await observedInvoke<CraftWorkspace>(clientFor(cmd.ctx), 'workspace.crafts.get', { params: { spaceId, craftId } });
+  cmd.out.data(ws, (data) => renderCraft(data as CraftWorkspace));
+  return EXIT_OK;
+}
+
+async function craftList(cmd: CommandContext): Promise<ExitCode> {
+  const spaceId = requireSpace(cmd.ctx);
+  const listed = await observedInvoke<CraftWorkspaceListResult>(clientFor(cmd.ctx), 'workspace.crafts.list', { params: { spaceId } });
+  cmd.out.data(listed, (data) => {
+    const l = data as CraftWorkspaceListResult;
+    if (l.items.length === 0) return 'no craft workspaces in this Space yet';
+    const open = l.items.filter((w) => w.open).length;
+    return [
+      `${open}/${l.openCap} open`,
+      ...l.items.map((w) => `${w.open ? 'open  ' : 'closed'}  ${w.craftId}  ${w.state.tabs.length} tab(s)`),
+    ].join('\n');
+  });
+  return EXIT_OK;
+}
+
+/** `--before <craft-id|last>` for the open-crafts list. */
+function beforeCraft(cmd: CommandContext, required: boolean): string | null | undefined {
+  const raw = cmd.options.value('before');
+  if (raw === undefined) {
+    if (required) usage('craft move needs --before <craft-id|last>', 'tm8 workspace crafts move <craft-id> --before <craft-id|last>');
+    return undefined;
+  }
+  if (raw === 'last') return null;
+  if (!UUID_RE.test(raw)) usage(`--before takes a craft id or "last", got ${JSON.stringify(raw)}`, '--before <craft-id|last>');
+  return raw;
+}
+
+function craftArg(cmd: CommandContext, hint: string): string {
+  const id = arg(cmd, 0, 'craft-id', hint);
+  if (!UUID_RE.test(id)) usage(`not a craft id: ${JSON.stringify(id)}`, hint);
+  return id;
+}
+
+/** A `tabs …` verb: the craft form with `--craft`, else the Home one. */
+function tabsVerb(home: (cmd: CommandContext) => Promise<ExitCode>, craft: (cmd: CommandContext, craftId: string) => Promise<ExitCode>) {
+  return (cmd: CommandContext): Promise<ExitCode> => {
+    const craftId = craftFlag(cmd);
+    return craftId === undefined ? home(cmd) : craft(cmd, craftId);
+  };
+}
+
+const CRAFT_COMMANDS: CommandModule[] = [
+  { path: ['workspace', 'crafts'], run: craftList },
+  { path: ['workspace', 'crafts', 'list'], run: craftList },
+  { path: ['workspace', 'crafts', 'get'], run: (cmd) => craftGet(cmd, craftArg(cmd, 'tm8 workspace crafts get <craft-id>')) },
+  {
+    path: ['workspace', 'crafts', 'open'],
+    run: (cmd) => {
+      const craftId = craftArg(cmd, 'tm8 workspace crafts open <craft-id> [--before <craft-id|last>]');
+      const before = beforeCraft(cmd, false);
+      return craftSend(cmd, craftId, 'craft.open', before === undefined ? undefined : { beforeCraftId: before });
+    },
+  },
+  { path: ['workspace', 'crafts', 'close'], run: (cmd) => craftSend(cmd, craftArg(cmd, 'tm8 workspace crafts close <craft-id>'), 'craft.close') },
+  {
+    path: ['workspace', 'crafts', 'move'],
+    run: (cmd) => {
+      const craftId = craftArg(cmd, 'tm8 workspace crafts move <craft-id> --before <craft-id|last>');
+      return craftSend(cmd, craftId, 'craft.move', { beforeCraftId: beforeCraft(cmd, true) });
+    },
+  },
+  {
+    path: ['workspace', 'crafts', 'command'],
+    run: (cmd) => {
+      const hint = 'tm8 workspace crafts command <craft-id> <command> [--args <json>]';
+      const craftId = craftArg(cmd, hint);
+      const name = arg(cmd, 1, 'command', hint);
+      const raw = cmd.options.value('args');
+      let args: unknown;
+      if (raw !== undefined) {
+        try {
+          args = JSON.parse(raw);
+        } catch {
+          usage('--args must be JSON', hint);
+        }
+      }
+      return craftSend(cmd, craftId, name, args);
+    },
+  },
+];
+
+const craftTabsOpen = async (cmd: CommandContext, craftId: string): Promise<ExitCode> => {
+  const hint = 'tm8 workspace --craft <craft-id> tabs open <kind> <entity-id> [--before <tab|entity>] [--no-activate]';
+  const kind = arg(cmd, 0, 'kind', hint);
+  const entityId = arg(cmd, 1, 'entity-id', hint);
+  if (cmd.args.length > 2) usage('a craft opens one tab at a time', hint);
+  const before = cmd.options.value('before');
+  const beforeTabId = before === undefined || before === 'last' ? null : await craftTabId(cmd, craftId, before);
+  return craftSend(cmd, craftId, 'tabs.open', {
+    kind,
+    entityId,
+    ...(cmd.options.bool('no-activate') ? { activate: false } : {}),
+    ...(before === undefined ? {} : { beforeTabId }),
+  });
+};
+
+/** Resolve `--before <tab|entity|last>` to a tab id. */
+async function craftBeforeTab(cmd: CommandContext, craftId: string, hint: string, ws: CraftWorkspace): Promise<string | null> {
+  const raw = cmd.options.value('before');
+  if (raw === undefined) usage('tabs move needs --before <tab|entity|last>', hint);
+  if (raw === 'last') return null;
+  return craftTabId(cmd, craftId, raw, ws);
+}
+
+export const WORKSPACE_COMMANDS: CommandModule[] = [
+  ...CRAFT_COMMANDS,
+  { path: ['workspace', 'instances'], run: instances },
+  { path: ['workspace', 'inspect'], run: inspect },
+  { path: ['workspace', 'get'], run: tabsVerb(get, craftGet) },
+  { path: ['workspace', 'list'], run: list },
+  { path: ['workspace', 'create'], run: create },
+  { path: ['workspace', 'rename'], run: (cmd) => update(cmd, 'name') },
+  { path: ['workspace', 'color'], run: (cmd) => update(cmd, 'color') },
+  { path: ['workspace', 'reorder'], run: reorder },
+  { path: ['workspace', 'delete'], run: remove },
+  { path: ['workspace', 'use'], run: use },
+  { path: ['workspace', 'drafts', 'set'], run: draftsSet },
+  { path: ['workspace', 'prompts', 'resolve'], run: promptsResolve },
+  {
+    path: ['workspace', 'command'],
+    run: (cmd) => {
+      const name = arg(cmd, 0, 'command', 'tm8 workspace command workspace.tabs.open --args \'{"kind":"task","entityId":"<id>"}\'');
+      const raw = cmd.options.value('args');
+      let args: unknown;
+      if (raw !== undefined) {
+        try {
+          args = JSON.parse(raw);
+        } catch {
+          usage('--args must be JSON', '--args \'{"tabId":"<tab-id>"}\'');
+        }
+      }
+      return send(cmd, name, args);
+    },
+  },
+  {
+    path: ['workspace', 'tabs', 'open'],
+    run: tabsVerb((cmd) => {
+      const kind = normalizeKindAlias(arg(cmd, 0, 'kind', OPEN_HINT));
+      const entityId = arg(cmd, 1, 'entity-id', OPEN_HINT);
+      const subview = cmd.options.value('subview');
+      const options = {
+        ...(cmd.options.bool('no-activate') ? { activate: false } : {}),
+        ...(subview ? { subview } : {}),
+      };
+      // §8.3: two or more pairs are one all-or-nothing batch; one pair keeps
+      // the single shape, so it still works against an older node.
+      if (cmd.args.length <= 2) return send(cmd, 'workspace.tabs.open', { kind, entityId, ...options });
+      if (cmd.args.length % 2 !== 0) usage('tabs open takes <kind> <entity-id> pairs', OPEN_HINT);
+      const entities = [];
+      for (let i = 0; i < cmd.args.length; i += 2) entities.push({ kind: cmd.args[i]!, entityId: cmd.args[i + 1]! });
+      return send(cmd, 'workspace.tabs.open', { entities, ...options });
+    }, craftTabsOpen),
+  },
+  {
+    path: ['workspace', 'tabs', 'close'],
+    run: tabsVerb(
+      (cmd) => send(cmd, 'workspace.tabs.close', { tabId: arg(cmd, 0, 'tab-id', 'tm8 workspace tabs close <tab-id>') }),
+      async (cmd, craftId) => craftSend(cmd, craftId, 'tabs.close', { tabId: await craftTabId(cmd, craftId, arg(cmd, 0, 'tab|entity', CRAFT_TABS_HINT)) }),
+    ),
+  },
+  {
+    path: ['workspace', 'tabs', 'close-visible'],
+    run: (cmd) => {
+      const except = cmd.options.value('except');
+      return send(cmd, 'workspace.tabs.closeVisible', except ? { except } : {});
+    },
+  },
+  {
+    path: ['workspace', 'files', 'open'],
+    run: (cmd) => {
+      const hint = 'tm8 workspace files open <project-id> <path> [--preview] [--no-activate]';
+      const projectId = arg(cmd, 0, 'project-id', hint);
+      const path = arg(cmd, 1, 'path', hint);
+      return send(cmd, 'workspace.files.open', {
+        projectId,
+        path,
+        preview: cmd.options.bool('preview'),
+        ...(cmd.options.bool('no-activate') ? { activate: false } : {}),
+      });
+    },
+  },
+  {
+    path: ['workspace', 'tabs', 'activate'],
+    run: tabsVerb(
+      (cmd) => send(cmd, 'workspace.tabs.activate', { tabId: arg(cmd, 0, 'tab-id', 'tm8 workspace tabs activate <tab-id>') }),
+      async (cmd, craftId) => craftSend(cmd, craftId, 'tabs.activate', { tabId: await craftTabId(cmd, craftId, arg(cmd, 0, 'tab|entity', CRAFT_TABS_HINT)) }),
+    ),
+  },
+  {
+    // `focus` is the craft spelling of activate (the Crafter persona uses it).
+    path: ['workspace', 'tabs', 'focus'],
+    run: tabsVerb(
+      (cmd) => send(cmd, 'workspace.tabs.activate', { tabId: arg(cmd, 0, 'tab-id', 'tm8 workspace tabs focus <tab-id>') }),
+      async (cmd, craftId) => craftSend(cmd, craftId, 'tabs.activate', { tabId: await craftTabId(cmd, craftId, arg(cmd, 0, 'tab|entity', CRAFT_TABS_HINT)) }),
+    ),
+  },
+  {
+    path: ['workspace', 'tabs', 'move'],
+    run: tabsVerb((cmd) => {
+      const tabId = arg(cmd, 0, 'tab-id', 'tm8 workspace tabs move <tab-id> [--before <tab-id>]');
+      const before = cmd.options.value('before');
+      return send(cmd, 'workspace.tabs.move', { tabId, ...(before ? { beforeTabId: before } : {}) });
+    }, async (cmd, craftId) => {
+      const hint = 'tm8 workspace --craft <craft-id> tabs move <tab|entity> --before <tab|entity|last>';
+      const raw = arg(cmd, 0, 'tab|entity', hint);
+      const ws = await craftFetch(cmd, craftId);
+      return craftSend(cmd, craftId, 'tabs.move', { tabId: await craftTabId(cmd, craftId, raw, ws), beforeTabId: await craftBeforeTab(cmd, craftId, hint, ws) });
+    }),
+  },
+  {
+    path: ['workspace', 'scope', 'set'],
+    run: (cmd) => {
+      const hint = 'tm8 workspace scope set mixed | by-type [<kind>...] [--kinds a,b]';
+      const mode = SCOPE_MODES[arg(cmd, 0, 'mode', hint).toLowerCase()];
+      if (!mode) usage('scope mode must be `mixed` or `by-type`', hint);
+      if (mode === 'mixed') return send(cmd, 'workspace.tabScope.set', { mode });
+      const kinds = [...cmd.args.slice(1), ...(cmd.options.value('kinds')?.split(',') ?? [])]
+        .map((k) => k.trim())
+        .filter((k) => k !== '');
+      return send(cmd, 'workspace.tabScope.set', { mode, ...(kinds.length ? { selectedTypeIds: kinds } : {}) });
+    },
+  },
+  {
+    path: ['workspace', 'drafts', 'open'],
+    run: (cmd) => send(cmd, 'workspace.drafts.open', { kind: normalizeKindAlias(arg(cmd, 0, 'kind', 'tm8 workspace drafts open <kind>')) }),
+  },
+  {
+    path: ['workspace', 'browser', 'set'],
+    run: (cmd) => {
+      const kind = cmd.options.value('kind');
+      const query = cmd.options.value('search');
+      return send(cmd, 'workspace.browser.set', { browserId: 'main', ...(kind ? { kind } : {}), ...(query !== undefined ? { query } : {}) });
+    },
+  },
+  {
+    path: ['workspace', 'layout', 'set'],
+    run: (cmd) => {
+      const expandedRaw = cmd.options.value('expanded');
+      if (expandedRaw !== undefined && expandedRaw !== 'true' && expandedRaw !== 'false') {
+        usage('--expanded expects true or false', '--expanded true');
+      }
+      const browserWidth = integerOption(cmd, 'browser-width');
+      const chatWidth = integerOption(cmd, 'chat-width');
+      return send(cmd, 'workspace.layout.set', {
+        ...(expandedRaw === undefined ? {} : { expanded: expandedRaw === 'true' }),
+        ...(browserWidth === undefined ? {} : { browserWidth }),
+        ...(chatWidth === undefined ? {} : { chatWidth }),
+      });
+    },
+  },
+  {
+    path: ['workspace', 'dialogs', 'open'],
+    run: (cmd) => send(cmd, 'workspace.dialogs.open', { dialogId: dialogArg(cmd) }),
+  },
+  {
+    path: ['workspace', 'dialogs', 'close'],
+    run: (cmd) => send(cmd, 'workspace.dialogs.close', { dialogId: dialogArg(cmd) }),
+  },
+  {
+    path: ['workspace', 'view', 'set'],
+    run: (cmd) => send(cmd, 'workspace.view.set', { view: arg(cmd, 0, 'view', 'tm8 workspace view set tabs') }),
+  },
+];
+
+function dialogArg(cmd: CommandContext): string {
+  const hint = `tm8 workspace dialogs ${cmd.path[2]} <${WORKSPACE_DIALOG_IDS.join('|')}>`;
+  const id = arg(cmd, 0, 'dialog-id', hint);
+  if (!(WORKSPACE_DIALOG_IDS as readonly string[]).includes(id)) usage(`unknown dialog ${JSON.stringify(id)}`, hint);
+  return id;
+}

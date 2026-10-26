@@ -348,6 +348,11 @@ export function mergeSummary(
   state: Pick<DomainState, 'entities' | 'details'>,
   summary: EntitySummary,
 ): Pick<DomainState, 'entities'> & Partial<Pick<DomainState, 'details'>> {
+  /* `childCount` arrives only on list reads (task 01a14b92); an event's
+     summary does not carry it, and dropping it would shrink a tile's child
+     subscript to the rows that happen to be loaded. Kept until a read says. */
+  const known = state.entities[summary.id]?.childCount;
+  if (summary.childCount === undefined && known !== undefined) summary = { ...summary, childCount: known };
   const out: Pick<DomainState, 'entities'> & Partial<Pick<DomainState, 'details'>> = {
     entities: { ...state.entities, [summary.id]: summary },
   };

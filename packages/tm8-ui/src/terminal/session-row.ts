@@ -1,4 +1,5 @@
 import type { ActorSummary, EntitySummary, WorkSessionStatus } from '@tm8/contract';
+import { treeParentOf } from '../domain/launched-by';
 
 /**
  * SessionRow — the narrow view-model the live-session bar and the roster
@@ -49,6 +50,11 @@ export interface SessionRow {
   exitedAt?: string | null;
   /** Coordinator → worker nesting; the roster draws one guide level. */
   parentSessionId?: string | null;
+  /**
+   * Spec D1: the summary's whole state arm, so a roster can read the OUTCOME
+   * (completed / stopped / open) beside the process — `domain/session-outcome`.
+   */
+  sessionState?: unknown;
 }
 
 /**
@@ -78,6 +84,8 @@ export function toSessionRow(summary: EntitySummary, meta?: string): SessionRow 
     recordedStatus: status,
     startedAt,
     exitedAt,
-    parentSessionId: summary.parentId,
+    // 330: the launcher (`launched_by`), with the legacy parent as fallback.
+    parentSessionId: treeParentOf(summary),
+    sessionState: summary.state,
   };
 }

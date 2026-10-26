@@ -992,3 +992,67 @@
   color: var(--pn-ink-3);
   margin-top: 2px;
 }
+
+/* Fresh / leaving nodes (domain/freshEntities.ts, R40/R41). A node is a
+   positioned card: a --pn-brand stroke held 2s that fades back to the node's
+   OWN stroke (no 100% keyframe, so it lands on whatever heat or selection
+   set), with no fill change; a leaving node fades in place without collapsing. */
+@keyframes gv-fresh-stroke {
+  0%,
+  6.667% {
+    border-color: var(--pn-brand);
+  }
+}
+@keyframes gv-leaving {
+  to {
+    opacity: 0;
+  }
+}
+.cv2-root .gv-node[data-fresh][data-fresh] {
+  background-image: none;
+  animation: gv-fresh-stroke 30s linear var(--pn-fresh-delay, 0ms) both;
+}
+.cv2-root .gv-node[data-leaving][data-leaving] {
+  overflow: visible;
+  animation: gv-leaving 1200ms var(--pn-ease-standard) calc(800ms + var(--pn-fresh-delay, 0ms)) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .gv-node[data-fresh][data-fresh] {
+    animation: none;
+    border-color: var(--pn-brand);
+  }
+  .cv2-root .gv-node[data-leaving][data-leaving] {
+    animation: none;
+  }
+}
+
+/* OBSERVE IN THE APP FRAME (shell alignment, 2026-10-06): the controls stack
+   in the panel beside the rail, the counts sit in the top band, zoom/fit in
+   the right action strip. */
+.gv-toolbar--panel {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-3);
+  border-bottom: 0;
+}
+.gv-toolbar--panel .gv-toolbar__spacer { display: none; }
+.gv-toolbar--panel .gv-lens { flex-wrap: wrap; align-self: flex-start; }
+.gv-toolbar--panel > * { max-width: 100%; }
+.app-frame-panel .gv-banner {
+  margin: 0 var(--pn-space-3) var(--pn-space-3);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-radius-2, 6px);
+  font-size: var(--pn-fs-xs, 12px);
+}
+.app-frame-top-host .gv-toolbar__count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gv-toolbar__zoom--strip { flex-direction: column; gap: var(--pn-space-1); }
+.gv-screen__peek-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-1) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  flex: none;
+}

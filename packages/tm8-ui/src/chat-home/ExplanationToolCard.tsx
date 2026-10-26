@@ -36,15 +36,7 @@ export function ExplanationToolCard(props: ExplanationToolCardProps) {
   return (
     <ExplanationFrame part={part}>
       {presentation?.kind === 'diagram' ? (
-        <section className="tch-explain__body" data-testid="explain-diagram">
-          <PresentationHeading title={presentation.title} eyebrow="Mermaid diagram" />
-          <Mermaid source={presentation.source} testId="chat-mermaid" />
-          {presentation.caption ? <p className="tch-explain__caption">{presentation.caption}</p> : null}
-          <details className="tch-explain__source">
-            <summary>View Mermaid source</summary>
-            <pre><code>{presentation.source}</code></pre>
-          </details>
-        </section>
+        <DiagramCard title={presentation.title} source={presentation.source} caption={presentation.caption} />
       ) : presentation?.kind === 'graph' ? (
         <GraphCard
           graph={presentation}
@@ -97,12 +89,61 @@ function ExplanationFrame({
   );
 }
 
-function PresentationHeading({ title, eyebrow }: { title: string; eyebrow: string }) {
+/**
+ * ONE header line (proposal 01a14a8d §3): a quiet glyph and the title. The
+ * uppercase eyebrow ("MERMAID DIAGRAM") is gone from sight — the content says
+ * what it is — and stays as the glyph's accessible name, so a screen reader
+ * still hears it.
+ */
+function PresentationHeading({ title, eyebrow, glyph }: { title: string; eyebrow: string; glyph: string }) {
   return (
     <header className="tch-explain__heading">
-      <span>{eyebrow}</span>
+      <span className="tch-explain__glyph" title={eyebrow} aria-hidden>
+        {glyph}
+      </span>
+      <span className="tch-explain__kind">{eyebrow}</span>
       <h3>{title}</h3>
     </header>
+  );
+}
+
+/**
+ * A diagram: its header carries the two controls the card has — `source`
+ * (the Mermaid text, once a `<details>` under the drawing) and `expand` (the
+ * frame is capped at 320px so a tall chart does not take the transcript).
+ */
+function DiagramCard({ title, source, caption }: { title: string; source: string; caption?: string | undefined }) {
+  const [showSource, setShowSource] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const sourceId = useId();
+  return (
+    <section className="tch-explain__body" data-testid="explain-diagram">
+      <div className="tch-explain__head">
+        <PresentationHeading title={title} eyebrow="Mermaid diagram" glyph="⌘" />
+        <div className="tch-explain__actions">
+          <button
+            type="button"
+            aria-expanded={showSource}
+            aria-controls={showSource ? sourceId : undefined}
+            onClick={() => setShowSource((v) => !v)}
+          >
+            source
+          </button>
+          <button type="button" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+            {expanded ? 'collapse' : 'expand'}
+          </button>
+        </div>
+      </div>
+      <div className="tch-explain__frame" data-expanded={expanded ? '' : undefined}>
+        <Mermaid source={source} testId="chat-mermaid" />
+      </div>
+      {caption ? <p className="tch-explain__caption">{caption}</p> : null}
+      {showSource ? (
+        <pre className="tch-explain__source" id={sourceId}>
+          <code>{source}</code>
+        </pre>
+      ) : null}
+    </section>
   );
 }
 
@@ -120,7 +161,7 @@ function GraphCard({
   const pendingMarker = `${markerSeed}-pending`;
   return (
     <section className="tch-explain__body" data-testid="explain-graph">
-      <PresentationHeading title={graph.title} eyebrow="Focused graph" />
+      <PresentationHeading title={graph.title} eyebrow="Focused graph" glyph="⋔" />
       <div className="tch-xgraph__legend" aria-label="Relationship legend">
         <span data-basis="persisted">solid · persisted tm8 relationship</span>
         <span data-basis="inferred">dashed · agent-inferred explanation</span>
@@ -237,6 +278,7 @@ function CodeCard({ code }: { code: CodePresentation }) {
         <PresentationHeading
           title={code.title}
           eyebrow={code.sourceKind === 'repository' ? 'Repository excerpt' : 'Illustrative code'}
+          glyph="‹›"
         />
         <div className="tch-code__actions">
           <span>{code.language}</span>
@@ -296,7 +338,7 @@ function AssetCard({
   return (
     <section className="tch-explain__body tch-asset" data-testid="explain-asset">
       <div className="tch-asset__head">
-        <PresentationHeading title={asset.title} eyebrow="tm8 file" />
+        <PresentationHeading title={asset.title} eyebrow="tm8 file" glyph="◫" />
         {onOpenEntity ? (
           <button type="button" onClick={() => onOpenEntity(asset.fileEntityId as EntityId)}>
             Open entity

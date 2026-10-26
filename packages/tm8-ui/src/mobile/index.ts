@@ -74,7 +74,8 @@ export type { MobileFrameProps } from './MobileFrame';
  * model, which `no-router-fork.test.ts` fails the build over and is right to.
  */
 export { MobileSurfaceProvider, useMobileSurface } from './surface';
-export type { MobileSurface, MobileSurfaceProviderProps } from './surface';
+export type { MobileSurface, MobileSurfaceProviderProps, PhoneUp } from './surface';
+export { MessagesDoorProvider, useMessagesDoor, type MessagesDoor } from './messagesDoor';
 
 export { MobileSheet } from './MobileSheet';
 export type { MobileSheetProps } from './MobileSheet';

@@ -408,7 +408,7 @@ export function createDomainStore(
 export type Membership = 'in' | 'out' | 'unknown';
 
 /** The filter clauses this module can decide. Everything else ⇒ 'unknown'. */
-const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'category']);
+const DECIDABLE_CLAUSES = new Set(['deleted', 'status', 'sessionStatus', 'sessionOutcome', 'category', 'launchedBy', 'parentIn', 'idIn']);
 
 export function membershipOf(filter: unknown, summary: EntitySummary): Membership {
   const clauses: Record<string, unknown> =
@@ -428,10 +428,19 @@ export function membershipOf(filter: unknown, summary: EntitySummary): Membershi
   const state = summary.state as unknown as Record<string, unknown>;
   if (!matchesAxis(clauses.status, state.status)) return 'out';
   if (!matchesAxis(clauses.sessionStatus, state.status)) return 'out';
+  // 301 (Spec D1): a session from a pre-301 node carries no outcome; it is open.
+  if (!matchesAxis(clauses.sessionOutcome,
+    summary.kind === 'work_session' ? (state.outcome ?? 'open') : undefined)) return 'out';
   /* Phase 1's envelope fact (PR #353): `category` rides the SUMMARY, so the
      clause is decidable here exactly like the status axes — an absent
      category never matches a present clause (`NULL = any(...)` semantics). */
   if (!matchesAxis(clauses.category, summary.category)) return 'out';
+  /* 331: the launcher rides the session's state (`launchedBy`, 330), so a
+     session launched from a listed chat arrives live. */
+  if (!matchesAxis(clauses.launchedBy, state.launchedBy)) return 'out';
+  /* Tile children (task 01a14b92): an expanded row's children, by parent. */
+  if (!matchesAxis(clauses.parentIn, summary.parentId ?? undefined)) return 'out';
+  if (!matchesAxis(clauses.idIn, summary.id)) return 'out';
 
   return 'in';
 }
@@ -532,6 +541,15 @@ const ORDERINGS: Record<
     },
     dir: 1,
   },
+  /** 307: `coalesce(<weighted percent>, 101)` — a task's `progress`, a story's `weighted`. */
+  progress: {
+    of: (r) => {
+      const s = r.state;
+      const percent = s.kind === 'task' ? s.progress?.percent : s.kind === 'story' ? s.weighted?.percent : undefined;
+      return typeof percent === 'number' ? percent : 101;
+    },
+    dir: 1,
+  },
 };
 
 /**
@@ -595,7 +613,7 @@ export function projectRows(input: RowProjection): EntitySummary[] {
     // nothing rather than an empty shell. (Every read ingests, so this is the
     // transient window between a read landing and its ingest, not a leak.)
     if (!row) continue;
-    if (isCredentialLoginSession(row)) continue;
+    if (isHiddenWorkSession(row)) continue;
     if (membershipOf(filter, row) === 'out') continue;
     base.push(row);
   }
@@ -607,7 +625,7 @@ export function projectRows(input: RowProjection): EntitySummary[] {
         !seen.has(e.id) &&
         e.kind === kind &&
         e.spaceId === spaceId &&
-        !isCredentialLoginSession(e) &&
+        !isHiddenWorkSession(e) &&
         membershipOf(filter, e) === 'in',
     )
     .sort(compare);
@@ -638,7 +656,8 @@ export function projectRows(input: RowProjection): EntitySummary[] {
  * a session bar built and never mounted, and a per-surface filter would have
  * missed it and every future sibling.
  *
- * WRITTEN AS `!== 'credential'`, NEVER `=== 'agent'` — and this inversion is
+ * Tool runs are hidden here too: the tool page owns their run history (318).
+ * WRITTEN AS a deny-list, NEVER `=== 'agent'` — and this inversion is
  * the whole point of the function. The field is OPTIONAL: a node predating
  * 082, or a row hydrated from a payload cached before the column shipped,
  * carries no `sessionKind` at all. Testing the positive would classify every
@@ -651,9 +670,9 @@ export function projectRows(input: RowProjection): EntitySummary[] {
  * for a security guard the safe default is deny, for a visibility filter the
  * safe default is show.
  */
-function isCredentialLoginSession(row: EntitySummary): boolean {
+function isHiddenWorkSession(row: EntitySummary): boolean {
   const state = row.state as { sessionKind?: unknown } | null | undefined;
-  return state?.sessionKind === 'credential';
+  return state?.sessionKind === 'credential' || state?.sessionKind === 'tool';
 }
 
 // --- narrow selector helpers (mirroring collab-v2 graph.ts) -----------------

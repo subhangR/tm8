@@ -14,8 +14,13 @@ import type {
 } from '@tm8/contract';
 
 import type { PickedFile } from '../files-explorer/picker';
-import { filesFromInput } from '../files-explorer/picker';
-import { broadWorkingDirReason, broadWorkingDirWarning } from './working-dir-risk';
+import {
+  ProjectFolderBrowser,
+  ProjectSourceFields,
+  repoFolderName,
+  useProjectSourceDraft,
+  type SourceKind,
+} from './project-source';
 
 import './projects.css';
 
@@ -179,12 +184,7 @@ export function isGithubUrl(raw: string): boolean {
   }
 }
 
-/** `https://github.com/owner/repo(.git)` → `repo`; '' when unreadable. */
-export function repoFolderName(raw: string): string {
-  const value = raw.trim().replace(/\.git$/, '');
-  const tail = value.split(/[/:]/).filter(Boolean).pop() ?? '';
-  return /^[^\\/]+$/.test(tail) && tail !== '.' && tail !== '..' ? tail : '';
-}
+export { repoFolderName };
 
 function memoryStatement(
   spaceName: string,
@@ -348,8 +348,6 @@ export const FOLDER_CONNECT_FORBIDDEN =
 export const FOLDER_UPLOAD_UNAVAILABLE =
   'This node does not serve the folder-upload operations, so bytes cannot be sent from the browser here. Browse to a folder on the node instead.';
 
-type SourceKind = ProjectSource['kind'];
-
 export interface NewSpaceProjectDialogProps {
   open: boolean;
   nodeLabel: string;
@@ -369,25 +367,16 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
   const [spaceName, setSpaceName] = useState('');
   const [addProject, setAddProject] = useState(false);
   const [projectName, setProjectName] = useState('');
-  const [sourceKind, setSourceKind] = useState<SourceKind>('folder');
-  const [workingDir, setWorkingDir] = useState('');
-  const [ensureWorkingDir, setEnsureWorkingDir] = useState(false);
-  const [repoUrl, setRepoUrl] = useState('');
-  const [picked, setPicked] = useState<PickedFile[]>([]);
-  const [refusedCount, setRefusedCount] = useState(0);
-  const [destinationParent, setDestinationParent] = useState('');
-  const [uploadRootName, setUploadRootName] = useState('');
   const [trusted, setTrusted] = useState(false);
-  const [browserOpen, setBrowserOpen] = useState(false);
-  const [browserMode, setBrowserMode] = useState<'workingDir' | 'destinationParent'>('workingDir');
-  const [listing, setListing] = useState<ProjectDirectoryListing | null>(null);
-  const [browserBusy, setBrowserBusy] = useState(false);
-  const [browserError, setBrowserError] = useState<string | null>(null);
-  const [newFolderName, setNewFolderName] = useState('');
+  const [validation, setValidation] = useState<string | null>(null);
+  const draft = useProjectSourceDraft({
+    directories: (path) => props.port.directories(path),
+    onSuggestName: (name) => { if (!projectName) setProjectName(name); },
+    onEdit: () => setValidation(null),
+  });
   const [busy, setBusy] = useState(false);
   const [currentStage, setCurrentStage] = useState<OnboardingStage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [validation, setValidation] = useState<string | null>(null);
   const ids = useRef<OnboardingMutationIds | null>(null);
   const cancelUpload = useRef<(() => void) | null>(null);
   /**
@@ -412,80 +401,15 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
 
   if (!props.open) return null;
 
-  const browse = async (path?: string) => {
-    setBrowserOpen(true);
-    setBrowserBusy(true);
-    setBrowserError(null);
-    try {
-      setListing(await props.port.directories(path));
-    } catch (cause) {
-      setBrowserError(String((cause as { message?: unknown } | null)?.message ?? cause));
-    } finally {
-      setBrowserBusy(false);
-    }
-  };
-
-  const openBrowser = (mode: 'workingDir' | 'destinationParent') => {
-    setBrowserMode(mode);
-    void browse();
-  };
-
-  const useCurrent = () => {
-    if (!listing) return;
-    if (browserMode === 'destinationParent') setDestinationParent(listing.path);
-    else {
-      setWorkingDir(listing.path);
-      setEnsureWorkingDir(false);
-    }
-    setBrowserOpen(false);
-  };
-
-  /**
-   * `workingDir` is only ever set from the browser, so a listing has normally
-   * been seen by the time either of these matters; the regex is the fallback
-   * for a restored/typed value, not the primary source.
-   */
-  const separatorFor = (path: string): '/' | '\\' =>
-    listing?.separator ?? (/^[A-Za-z]:[\\/]/.test(path) ? '\\' : '/');
-  /** The consequence at the moment of the click, in the browser. */
-  const browsingBroad = listing ? broadWorkingDirReason(listing.path, listing.separator) : null;
-  /** The same consequence, kept visible on the selection until submit. */
-  const selectedBroad = workingDir ? broadWorkingDirReason(workingDir, separatorFor(workingDir)) : null;
-
-  const cleanFolderName = newFolderName.trim();
-  const validFolderName = cleanFolderName.length > 0
-    && cleanFolderName !== '.'
-    && cleanFolderName !== '..'
-    && !/[\\/]/.test(cleanFolderName);
-  const useNew = () => {
-    if (!listing || !validFolderName || browserMode !== 'workingDir') return;
-    const seam = listing.path.endsWith(listing.separator) ? '' : listing.separator;
-    setWorkingDir(`${listing.path}${seam}${cleanFolderName}`);
-    setEnsureWorkingDir(true);
-    setBrowserOpen(false);
-  };
-
-  const onPick = (list: FileList | null) => {
-    const result = filesFromInput(list);
-    setPicked(result.files);
-    setRefusedCount(result.refused.length);
-    setValidation(null);
-    if (!uploadRootName) {
-      const first = result.files[0]?.relativePath ?? '';
-      const root = first.includes('/') ? first.split('/')[0]! : '';
-      if (root) setUploadRootName(root);
-      if (root && !projectName) setProjectName(root);
-    }
-  };
-
   const currentSource = (): ProjectSource => {
-    if (sourceKind === 'upload') {
-      return { kind: 'upload', destinationParent, rootName: uploadRootName.trim(), files: picked };
+    const kind: SourceKind = draft.sourceKind;
+    if (kind === 'upload') {
+      return { kind: 'upload', destinationParent: draft.destinationParent, rootName: draft.rootName.trim(), files: draft.picked };
     }
-    if (sourceKind === 'github') {
-      return { kind: 'github', repoUrl, workingDir, ensureWorkingDir };
+    if (kind === 'github') {
+      return { kind: 'github', repoUrl: draft.repoUrl, workingDir: draft.workingDir, ensureWorkingDir: draft.ensureWorkingDir };
     }
-    return { kind: 'folder', workingDir, ensureWorkingDir };
+    return { kind: 'folder', workingDir: draft.workingDir, ensureWorkingDir: draft.ensureWorkingDir };
   };
 
   const buildInput = (): ProjectOnboardingInput => ({
@@ -499,17 +423,8 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
     setSpaceName('');
     setAddProject(false);
     setProjectName('');
-    setSourceKind('folder');
-    setWorkingDir('');
-    setEnsureWorkingDir(false);
-    setRepoUrl('');
-    setPicked([]);
-    setRefusedCount(0);
-    setDestinationParent('');
-    setUploadRootName('');
+    draft.reset();
     setTrusted(false);
-    setListing(null);
-    setNewFolderName('');
     setValidation(null);
   };
 
@@ -568,68 +483,8 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
           <button type="button" className="project-onboard__close" onClick={props.onDismiss} disabled={busy} aria-label="Close">×</button>
         </header>
 
-        {browserOpen ? (
-          <div className="project-browser">
-            <div className="project-browser__head">
-              <button type="button" className="project-onboard__button" onClick={() => setBrowserOpen(false)}>← Form</button>
-              <strong>
-                {browserMode === 'destinationParent'
-                  ? `Choose where the upload lands on ${props.nodeLabel}`
-                  : `Browse folders on ${props.nodeLabel}`}
-              </strong>
-            </div>
-            {listing ? (
-              <>
-                <div className="project-browser__roots" aria-label="Allowed roots">
-                  {listing.roots.map((root) => (
-                    <button type="button" key={root} onClick={() => void browse(root)}>{root}</button>
-                  ))}
-                </div>
-                <div className="project-browser__path" title={listing.path}>{listing.path}</div>
-                {browsingBroad && browserMode === 'workingDir' ? (
-                  <p className="project-onboard__warning" role="alert">{broadWorkingDirWarning(browsingBroad)}</p>
-                ) : null}
-                <div className="project-browser__actions">
-                  <button type="button" className="project-onboard__button project-onboard__button--primary" onClick={useCurrent}>Use this folder</button>
-                  {listing.parentPath ? (
-                    <button type="button" className="project-onboard__button" onClick={() => void browse(listing.parentPath!)}>↑ Parent</button>
-                  ) : null}
-                </div>
-                <ul className="project-browser__list" aria-label="Folders">
-                  {listing.directories.map((directory) => (
-                    <li key={directory.path}>
-                      <button type="button" onClick={() => void browse(directory.path)}>
-                        <span aria-hidden="true">▱</span> {directory.name}
-                      </button>
-                    </li>
-                  ))}
-                  {!browserBusy && listing.directories.length === 0 ? <li className="project-browser__empty">No child folders</li> : null}
-                </ul>
-                {listing.truncated ? <p className="project-onboard__note">Only the first 500 folders are shown.</p> : null}
-                {browserMode === 'workingDir' ? (
-                  <div className="project-browser__new">
-                    <label htmlFor="project-new-folder">Create a new folder here</label>
-                    <div>
-                      <input
-                        id="project-new-folder"
-                        value={newFolderName}
-                        onChange={(event) => setNewFolderName(event.target.value)}
-                        placeholder="folder-name"
-                      />
-                      <button type="button" className="project-onboard__button" onClick={useNew} disabled={!validFolderName}>Use new folder</button>
-                    </div>
-                    {newFolderName && !validFolderName ? <span role="alert">Use one folder name without slashes.</span> : null}
-                  </div>
-                ) : (
-                  <p className="project-onboard__note">
-                    The uploaded folder is created inside the folder you choose here.
-                  </p>
-                )}
-              </>
-            ) : null}
-            {browserBusy ? <p className="project-onboard__note" role="status">Reading folders…</p> : null}
-            {browserError ? <p className="project-onboard__error" role="alert">{browserError}</p> : null}
-          </div>
+        {draft.browser.open ? (
+          <ProjectFolderBrowser draft={draft} nodeLabel={props.nodeLabel} />
         ) : (
           <form className="project-onboard__form" onSubmit={submit}>
             <label>
@@ -664,121 +519,12 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
                   <input value={projectName} onChange={(event) => { setProjectName(event.target.value); setValidation(null); }} />
                 </label>
 
-                <div className="project-onboard__field" role="radiogroup" aria-label="Project source">
-                  <span>Where do its files come from?</span>
-                  <label className="project-onboard__radio">
-                    <input
-                      type="radio"
-                      name="project-source"
-                      checked={sourceKind === 'folder'}
-                      onChange={() => { setSourceKind('folder'); setValidation(null); }}
-                    />
-                    <span>A folder already on {props.nodeLabel}</span>
-                  </label>
-                  <label className="project-onboard__radio">
-                    <input
-                      type="radio"
-                      name="project-source"
-                      checked={sourceKind === 'upload'}
-                      disabled={uploadUnavailable}
-                      onChange={() => { setSourceKind('upload'); setValidation(null); }}
-                    />
-                    <span>Upload a folder or files from this computer</span>
-                  </label>
-                  <label className="project-onboard__radio">
-                    <input
-                      type="radio"
-                      name="project-source"
-                      checked={sourceKind === 'github'}
-                      onChange={() => { setSourceKind('github'); setValidation(null); }}
-                    />
-                    <span>A GitHub repository</span>
-                  </label>
-                  {uploadUnavailable ? <p className="project-onboard__note">{FOLDER_UPLOAD_UNAVAILABLE}</p> : null}
-                </div>
-
-                {sourceKind === 'folder' || sourceKind === 'github' ? (
-                  <div className="project-onboard__field">
-                    <span>{sourceKind === 'github' ? `Folder for the repository on ${props.nodeLabel}` : `Local folder on ${props.nodeLabel}`}</span>
-                    <div className="project-onboard__folder-row">
-                      <code>{workingDir || 'No folder selected'}</code>
-                      <button type="button" className="project-onboard__button" onClick={() => openBrowser('workingDir')}>Browse folders</button>
-                    </div>
-                    {ensureWorkingDir ? <small>This folder will be created when you submit.</small> : null}
-                    {selectedBroad ? (
-                      <p className="project-onboard__warning" role="alert">{broadWorkingDirWarning(selectedBroad)}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {sourceKind === 'github' ? (
-                  <>
-                    <label>
-                      <span>GitHub repository URL</span>
-                      <input
-                        value={repoUrl}
-                        placeholder="https://github.com/owner/repo"
-                        onChange={(event) => {
-                          setRepoUrl(event.target.value);
-                          setValidation(null);
-                          if (!projectName) {
-                            const suggested = repoFolderName(event.target.value);
-                            if (suggested) setProjectName(suggested);
-                          }
-                        }}
-                      />
-                    </label>
-                    <p className="project-onboard__note">
-                      The repository URL is recorded on the project. Nothing is cloned now — clone it from the
-                      project once the Space exists.
-                    </p>
-                  </>
-                ) : null}
-
-                {sourceKind === 'upload' ? (
-                  <div className="project-onboard__field">
-                    <span>Folder or files to upload</span>
-                    <div className="project-onboard__upload-row">
-                      <label className="project-onboard__button">
-                        Choose folder
-                        <input
-                          type="file"
-                          aria-label="Choose folder"
-                          multiple
-                          // Non-standard attributes, spread because React's DOM
-                          // typings have no member for either.
-                          {...{ webkitdirectory: '', directory: '' }}
-                          onChange={(event) => onPick(event.target.files)}
-                        />
-                      </label>
-                      <label className="project-onboard__button">
-                        Choose files
-                        <input
-                          type="file"
-                          aria-label="Choose files"
-                          multiple
-                          onChange={(event) => onPick(event.target.files)}
-                        />
-                      </label>
-                    </div>
-                    {picked.length > 0 ? (
-                      <small>{picked.length} file{picked.length === 1 ? '' : 's'} selected.</small>
-                    ) : null}
-                    {refusedCount > 0 ? (
-                      <p className="project-onboard__error" role="alert">
-                        {refusedCount} path{refusedCount === 1 ? ' was' : 's were'} refused for an unsafe shape and will not be uploaded.
-                      </p>
-                    ) : null}
-                    <label>
-                      <span>New folder name on {props.nodeLabel}</span>
-                      <input value={uploadRootName} onChange={(event) => { setUploadRootName(event.target.value); setValidation(null); }} placeholder="folder-name" />
-                    </label>
-                    <div className="project-onboard__folder-row">
-                      <code>{destinationParent || 'No destination chosen'}</code>
-                      <button type="button" className="project-onboard__button" onClick={() => openBrowser('destinationParent')}>Choose destination</button>
-                    </div>
-                  </div>
-                ) : null}
+                <ProjectSourceFields
+                  draft={draft}
+                  nodeLabel={props.nodeLabel}
+                  githubMode="record"
+                  uploadUnavailableReason={uploadUnavailable ? FOLDER_UPLOAD_UNAVAILABLE : null}
+                />
 
                 <label className="project-onboard__trust">
                   <input type="checkbox" checked={trusted} onChange={(event) => setTrusted(event.target.checked)} />

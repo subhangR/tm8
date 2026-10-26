@@ -22,13 +22,19 @@
  * server, schema or authorization change behind any of this; the whole feature
  * is the client learning to say where it is.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget, type MemoryTarget } from '../routes';
 import { FIXTURE_SPACE_ID } from '../fixtures';
+
+/* D31: this suite copies links from kind screens and the old Work, which the
+   three-mode desktop redirects into Work; it pins the pre-D31 desktop. Work's
+   own Copy link (`/work?tab=`) and the redirects of these old links are
+   pinned in `three-modes.test.tsx` and `routes/codec.test.ts`. */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 const SPACE = FIXTURE_SPACE_ID;
 

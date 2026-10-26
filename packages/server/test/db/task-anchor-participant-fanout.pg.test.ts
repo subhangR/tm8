@@ -34,7 +34,7 @@ interface Fixture {
   taskId: string;
   /** `working_on` the task — 121's only class, and the message author below. */
   workerSessionId: string;
-  /** `created_in` the task, working NOTHING, live. The coordinator. */
+  /** `authored_from` the task, working NOTHING, live. The coordinator. */
   openerSessionId: string;
   /** Has posted on the task, works nothing, opened nothing, live. */
   speakerSessionId: string;
@@ -48,7 +48,7 @@ interface Fixture {
   orphanTaskId: string;
   /**
    * Opened by the SHELL session, worked by `speakerSessionId`. Its own task
-   * because `edges_created_in_source_idx` (066) is unique on the source: an
+   * because `edges_authored_from_source_idx` is unique on the source: an
    * entity has exactly one birth session, so the OPENED class can never
    * contribute more than one target and two openers cannot be tested on one
    * task.
@@ -57,16 +57,16 @@ interface Fixture {
   /**
    * OPENED IN ISOLATION. Nobody works it, nobody has spoken on it, and its
    * opener is a session that is a member of nothing else — so a route to
-   * `soleOpenerSessionId` can only have come from `created_in`.
+   * `soleOpenerSessionId` can only have come from `authored_from`.
    *
    * This exists because review found the first version of this file's OPENED
    * coverage to be load-bearing on the ORDER of two `it()` blocks: the SPOKEN
-   * test posts as the opener, permanently enrolling it, so with `created_in`
+   * test posts as the opener, permanently enrolling it, so with `authored_from`
    * deleted and those two tests swapped the whole file stayed green with the
    * OPENED class entirely absent — the class that carries a third of the fix.
    */
   openedOnlyTaskId: string;
-  /** `created_in` -> `openedOnlyTaskId`, and a member of nothing else. */
+  /** `authored_from` -> `openedOnlyTaskId`, and a member of nothing else. */
   soleOpenerSessionId: string;
 }
 
@@ -213,14 +213,17 @@ async function seed(scratch: W1ScratchDatabase): Promise<Fixture> {
       [base.spaceId, base.workerSessionId, base.taskId, base.speakerSessionId,
         base.alice, base.shellTaskId],
     );
-    // `created_in` runs the other way: task -> the session that opened it.
+    // `authored_from` runs the other way: task -> the session that opened it.
+    // The server records it (308), so the fixture writes as that recorder.
+    await client.query(`select internal.w1_set_writer('entity_recorder')`);
     await client.query(
       `insert into public.edges(space_id,src_id,dst_id,type,created_by) values
-       ($1,$2,$3,'created_in',$5),($1,$4,$6,'created_in',$5),
-       ($1,$7,$8,'created_in',$5)`,
+       ($1,$2,$3,'authored_from',$5),($1,$4,$6,'authored_from',$5),
+       ($1,$7,$8,'authored_from',$5)`,
       [base.spaceId, base.taskId, base.openerSessionId, base.shellTaskId,
         base.alice, base.shellSessionId, base.openedOnlyTaskId, base.soleOpenerSessionId],
     );
+    await client.query(`select internal.w1_set_writer(null)`);
 
     return base;
   });
@@ -248,14 +251,14 @@ afterAll(async () => {
 
 describe.sequential('task-anchor participant fan-out (163)', () => {
   it('OPENED alone reaches a session, on a task nobody works and nobody has spoken on', async () => {
-    // THE ISOLATING TEST FOR `created_in`, and it is first on purpose.
+    // THE ISOLATING TEST FOR `authored_from`, and it is first on purpose.
     //
     // Review showed that the class carrying a THIRD of this fix had no test of
     // its own: every assertion naming the opener ran on `fixture.taskId`, where
     // another test posts as that opener and enrols it via SPOKEN, so deleting
-    // the `created_in` edge and swapping two `it()` blocks left the whole file
+    // the `authored_from` edge and swapping two `it()` blocks left the whole file
     // green with OPENED entirely absent. Here the only relation in existence is
-    // `created_in`, so this expectation cannot be satisfied for a second reason
+    // `authored_from`, so this expectation cannot be satisfied for a second reason
     // no matter what order anything runs in.
     const messageId = await newMessage({
       anchorId: fixture.openedOnlyTaskId, body: 'a human asks, on a task with one opener',

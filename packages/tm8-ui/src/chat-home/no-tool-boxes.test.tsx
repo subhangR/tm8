@@ -96,20 +96,24 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
     expect(view.queryByTestId('chat-touched-entities')).toBeNull();
   });
 
-  it('draws one highlighted card per created entity, naming where it landed', () => {
-    /* Was: a line per create, indented 16px under an in-thread parent. The
-       card (advisor D9) SAYS the parent instead — `under ◆ Task 21` — which
-       also works for a parent created in another thread, where the indent
-       had nothing to indent under. */
+  it('draws one receipt row per created entity, nesting a child under its parent', () => {
+    /* The receipt (proposal 01a14a8d B): a child made in the same run sits
+       indented under its parent's row; a parent made elsewhere is SAID —
+       `under ◆ Task 21`. The root is never said, and "Created" is the mark,
+       never a pill. */
     const parts = [...create(TASK_ID), ...create(CHILD_ID, TASK_ID)];
     const view = render(<TurnParts parts={parts} />);
 
-    const cards = view.getAllByTestId('chat-ledger-create');
-    expect(cards).toHaveLength(2);
-    expect(cards[0]!.textContent).toContain('Task 21');
-    expect(cards[0]!.textContent).toContain('New task · at the root');
-    expect(cards[0]!.textContent).toContain('Created');
-    expect(cards[1]!.textContent).toContain('New task · under Task 21');
+    const rows = view.getAllByTestId('chat-ledger-create');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain('Task 21');
+    expect(rows[0]!.textContent).not.toContain('root');
+    expect(rows[0]!.textContent).not.toMatch(/created/i);
+    expect(rows[1]!.dataset.depth).toBe('1');
+    expect(view.getAllByTestId('chat-receipt')).toHaveLength(1);
+
+    const elsewhere = render(<TurnParts parts={create('019f0000-0000-7000-8000-000000000077', TASK_ID)} />);
+    expect(within(elsewhere.container).getByTestId('chat-receipt-meta').textContent).toContain('under');
   });
 
   it('draws a transition line, one-sided when the prior status was never read here', () => {
@@ -122,10 +126,11 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
     ];
     const view = render(<TurnParts parts={parts} />);
 
-    const line = view.getByTestId('chat-ledger-transition');
+    const row = view.getByTestId('chat-receipt-row');
+    expect(row.dataset.mark).toBe('moved');
+    expect(within(row).getByTestId('chat-receipt-state').textContent).toBe('working');
     // An invented left side would be a lie about history; absence is honest.
-    expect(line.textContent).toContain('→ working');
-    expect(line.querySelector('[data-side="from"]')).toBeNull();
+    expect(row.getAttribute('title')).toBe('→ working');
   });
 
   it('fills the from-side when the entity was read earlier in the same fold', () => {
@@ -140,7 +145,7 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
       ),
     ];
     const view = render(<TurnParts parts={parts} />);
-    expect(view.getByTestId('chat-ledger-transition').textContent).toContain('working → done');
+    expect(view.getByTestId('chat-receipt-row').getAttribute('title')).toBe('working → done');
   });
 
   it('draws no LEDGER line when the calls touched nothing — only a counted step', () => {
@@ -156,7 +161,7 @@ describe('a plain tool call draws its ledger line and nothing else', () => {
     const view = render(<TurnParts parts={parts} />);
     expect(view.queryByTestId('chat-ledger-reads')).toBeNull();
     expect(view.queryByTestId('chat-ledger-create')).toBeNull();
-    expect(view.queryByTestId('chat-ledger-transition')).toBeNull();
+    expect(view.queryByTestId('chat-receipt')).toBeNull();
     // The settled call contributes to the run header's count…
     expect(view.getByTestId('chat-steps-head').textContent).toContain('1 step · ran a shell command');
     // …and the bans hold: no card, no tool name, no payload.

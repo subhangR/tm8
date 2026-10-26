@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import { IconBtn } from '../kit';
 import { readActiveServerId } from '../servers/server-key';
@@ -41,7 +41,17 @@ import { TransferDialog } from './TransferDialog';
  * button, and any future kind that genuinely is "not yet" belongs behind a
  * reason on the DIALOG, where there is room for one.
  */
-export function TransferControl({ detail }: { detail: EntityDetail }) {
+export function TransferControl({
+  detail,
+  trigger,
+}: {
+  detail: EntityDetail;
+  /**
+   * Draw the trigger elsewhere (the Workspace ⋯ menu). The dialog stays
+   * mounted here, so it survives the menu closing. Absent ⇒ the icon button.
+   */
+  trigger?: (open: () => void) => ReactNode;
+}) {
   const [servers, setServers] = useState<TransferServer[] | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -67,9 +77,13 @@ export function TransferControl({ detail }: { detail: EntityDetail }) {
 
   return (
     <>
-      <IconBtn label="Transfer to another server" onClick={() => setOpen(true)}>
-        ⇄
-      </IconBtn>
+      {trigger ? (
+        trigger(() => setOpen(true))
+      ) : (
+        <IconBtn label="Transfer to another server" onClick={() => setOpen(true)}>
+          ⇄
+        </IconBtn>
+      )}
       {open ? (
         <TransferDialog
           subject={detail}

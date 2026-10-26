@@ -21,11 +21,16 @@
 
 /** Event type → the payload keys holding its subject entity ids. */
 export const EVENT_SUBJECT_KEYS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  'entity.seen': ['entityId'],
   'entity.upsert': ['id'],
   'entity.deleted': ['id'],
   'entity.activity_touched': ['id'],
   'edge.upsert': ['src_id', 'dst_id'],
   'edge.deleted': ['src_id', 'dst_id'],
+  // Spec D1 (299): the session, and a claim's two ends.
+  'session.outcome_changed': ['id'],
+  'session.process_changed': ['id'],
+  'edge.ended': ['src_id', 'dst_id'],
   'message.created': ['entity_id', 'anchor_id'],
   'message.updated': ['entity_id', 'anchor_id'],
   'message.deleted': ['entity_id', 'anchor_id'],
@@ -42,6 +47,12 @@ export const EVENT_SUBJECT_KEYS: Readonly<Record<string, readonly string[]>> = O
 export const SUBJECTLESS_EVENT_TYPES: readonly string[] = Object.freeze([
   'menu.updated',
   'space.default_channel.updated',
+  // Styles (284). A personal style is not an entity and a preference or a
+  // default is about no entity, so all three index as '{}' — the SQL twin's
+  // `else array[]` arm already says so with no change.
+  'space.style_default.updated',
+  'personal_style.updated',
+  'identity.style_prefs.updated',
 ]);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

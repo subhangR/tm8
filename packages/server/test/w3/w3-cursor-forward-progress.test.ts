@@ -87,6 +87,15 @@ describe.sequential('W3 cursor forward progress (third direction)', () => {
       );
       if (patched.status < 200 || patched.status >= 300) break;
       version = patched.body.data?.version ?? version + 1;
+      // 310 folds one actor's repeated body saves within 10 minutes into one
+      // row. Age this run's row past that window so the next patch starts a
+      // new one. A whole-interval shift keeps the microsecond remainder.
+      await harness.database.query(
+        `update public.activity set created_at = created_at - interval '11 minutes'
+          where id = (select id from public.activity where entity_id = $1
+                       order by created_at desc, id desc limit 1)`,
+        [entityId],
+      );
     }
   }, 180_000);
 

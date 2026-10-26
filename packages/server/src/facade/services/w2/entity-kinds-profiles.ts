@@ -219,7 +219,10 @@ export class W2EntityKindsProfileService {
         spaceId,
         input.kind,
         input.icon ?? null,
-        input.fieldSchema,
+        // node-postgres sends a JS array as a Postgres array literal (`{"{…}"}`),
+        // which the `jsonb` parameter rejects — and `[]` arrives as the object
+        // `{}`. Objects serialize as JSON, so only the array needs stringifying.
+        JSON.stringify(input.fieldSchema),
         input.capabilities ?? {},
         envelope.actorId ?? null,
         cmid,

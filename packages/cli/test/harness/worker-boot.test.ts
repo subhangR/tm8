@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { readManifest } from '../../src/manifest.js';
 import { composePrompt } from '../../src/prompt.js';
-import { BYTE_BUDGETS, DEFAULT_PROMPT_VERSION, utf8Bytes } from '@tm8/prompt';
+import { BYTE_BUDGETS, DEFAULT_PROMPT_VERSION, LEGACY_PROMPT_VERSION, utf8Bytes } from '@tm8/prompt';
 
 const V2 = fileURLToPath(new URL('../fixtures/manifest.v2.json', import.meta.url));
 const V1 = fileURLToPath(new URL('../fixtures/manifest.sample.json', import.meta.url));
@@ -107,8 +107,10 @@ describe('promptVersion (spec ca8d §6.3)', () => {
     }
   });
 
-  it('a manifest written before the stamp reads as the default frame', () => {
+  it('a manifest written before the stamp reads as the legacy v1 frame, not the v2 default', () => {
     const { promptVersion: _dropped, ...unstamped } = readManifest(V1);
-    expect(composePrompt(unstamped).metadata.promptVersion).toBe(DEFAULT_PROMPT_VERSION);
+    expect(composePrompt(unstamped).metadata.promptVersion).toBe(LEGACY_PROMPT_VERSION);
+    expect(composePrompt(unstamped).metadata.promptVersion).not.toBe(DEFAULT_PROMPT_VERSION);
+    expect(composePrompt(unstamped).system).toContain('<tm8_system_prompt version="1.0"');
   });
 });

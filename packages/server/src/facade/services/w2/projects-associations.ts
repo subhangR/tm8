@@ -1,7 +1,13 @@
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
+
 import { scanSpaceSkills } from '../../../skills/service.js';
 import {
   CollabError,
+  expandHomePath,
   isCollabError,
+  projectDirName,
   type ActorSummary,
   type CorrectProjectAssociationInput,
   type EdgeCorrectionResult,
@@ -45,8 +51,10 @@ import {
   listProjectDirectories,
   requireAllowed,
 } from './project-directories.js';
+import { PathGrantsService } from './path-grants.js';
+import { explicitProjectRoots, isSpaceAdmin, requireTrustAllowed, spaceProjectRoots } from './space-project-roots.js';
 import type { DbClaims } from '../../../db/types.js';
-import { projectForgeFacts } from '../../../tracking/pr-projection.js';
+import { projectForgeFacts, projectTrackingFreshness } from '../../../tracking/pr-projection.js';
 
 /** `?staleAfterDays=` — absent means "use the module's own default". */
 function positiveInt(raw: string | null, field: string): number | undefined {
@@ -96,7 +104,7 @@ export interface ResolvedProjectRow {
   defaults: Record<string, unknown> | null;
 }
 
-interface SpaceProjectRow {
+export interface SpaceProjectRow {
   project_id: string;
   folder_id: string;
   name: string;
@@ -145,7 +153,7 @@ export function isGateAdmin(claims: DbClaims): boolean {
   return claims.nodeAdmin === true && !claims.sessionSpaceId;
 }
 
-function toSpaceProject(spaceId: string, row: SpaceProjectRow): SpaceProject {
+export function toSpaceProject(spaceId: string, row: SpaceProjectRow): SpaceProject {
   return {
     id: row.project_id,
     spaceId,
@@ -218,6 +226,7 @@ interface CorrectionEdgeRow {
   pr_head_ref: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
+  pr_last_polled_at: Date | string | null;
   commit_repo: string | null;
   commit_sha: string | null;
   commit_message: string | null;
@@ -325,8 +334,7 @@ function artifactSummary(row: CorrectionEdgeRow, createdBy: ActorSummary): Entit
         number: Number(row.pr_number ?? 0),
         state: row.pr_state ?? 'open',
         ...(row.pr_url ? { url: row.pr_url } : {}),
-        fetchedAt: isoOrNull(row.pr_fetched_at),
-        stale: row.pr_fetched_at === null,
+        ...projectTrackingFreshness(row.pr_state, row.pr_fetched_at, row.pr_last_polled_at),
         ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state, row.pr_head_ref),
       },
     };
@@ -379,7 +387,7 @@ async function loadCorrectionEdge(
             case artifact_reaction.type when 'likes' then 'like'
                  when 'dislikes' then 'dislike' when 'stars' then 'star' end artifact_viewer_reaction,
             pr.title pr_title, pr.repo pr_repo, pr.number pr_number, pr.state pr_state,
-            pr.url pr_url, pr.fetched_at pr_fetched_at,
+            pr.url pr_url, pr.fetched_at pr_fetched_at, (to_jsonb(pr) ->> 'last_polled_at') pr_last_polled_at,
             pr.ci_status pr_ci_status, pr.mergeable_state pr_mergeable_state,
             pr.head_ref pr_head_ref,
             commit_row.repo commit_repo, commit_row.sha commit_sha,
@@ -451,29 +459,44 @@ export class W2ProjectsAssociationsService {
   readonly listProjectDirectories = async (ctx: RequestContext) => {
     const owner = await this.deps.owner();
     const claims = claimsFor(owner, ctx);
-    // NODE-ADMIN ONLY, and it is the create rule that decides this rather than
-    // a fresh judgement about listings: `createProject` below refuses every
-    // non-admin on BOTH branches, so a non-admin who browses can never act on
-    // what they find. Browsing was the odd one out — the one filesystem verb
-    // open to any authenticated user — and that was survivable only while a
-    // node had a single account.
+    // A NODE ADMIN browses every TM8_PROJECT_ROOTS entry; NOBODY ELSE browses
+    // anything they were not granted (migration 282, design doc 01a0fb62 §4).
     //
-    // It stopped being survivable once space roles became writable and
-    // invite-bound signup made ordinary members routine and numerous: the
-    // default browse scope is the OS filesystem root (see
-    // `project-directories.ts`), and `project-files.ts` shares the same
-    // `canonicalRoots`/`requireAllowed`, so the scope governs reading file
-    // CONTENTS too. The secret filter there is a denylist, and a denylist over
-    // one home directory is a different proposition from a denylist over the
-    // whole filesystem: it fails open on whatever nobody thought to list.
-    //
-    // What remains for non-admins is unchanged and is the honest surface for
-    // them: the files of a project an admin already linked, read through
-    // `projects.files.list` and scoped to that project's working directory.
-    if (claims.nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to browse node directories');
+    // Browsing used to be node-admin only, full stop. The default browse scope
+    // is the OS filesystem root, `project-files.ts` shares the same
+    // `canonicalRoots`/`requireAllowed`, and its secret filter is a denylist —
+    // a denylist over the whole filesystem fails open on whatever nobody
+    // thought to list. That stays true, which is why a member's scope is not
+    // "the roots minus something" but only the roots a node admin named for
+    // them, each realpath'd and confined to the canonical roots on every call
+    // (`grantedBrowseRoots`). A space-pinned session is never a node admin
+    // (K6), so even a node admin browses only their own grants from inside a
+    // space.
+    if (claims.nodeAdmin === true) {
+      return listProjectDirectories(ctx.query.get('path') ?? undefined);
     }
-    return listProjectDirectories(ctx.query.get('path') ?? undefined);
+    // `?spaceId=` (task 01a13574): a space admin choosing where that space's
+    // new project lives browses the node's EXPLICIT TM8_PROJECT_ROOTS — the
+    // same window `spaces.projects.create` / `.clone` will accept. Never the
+    // unset default (`/`): with no roots configured this falls through to the
+    // caller's own grants, exactly as before.
+    const spaceId = optionalUuid(ctx.query.get('spaceId'), 'spaceId');
+    if (spaceId && explicitProjectRoots() && await isSpaceAdmin(this.deps.db, claims, spaceId)) {
+      return listProjectDirectories(
+        ctx.query.get('path') ?? undefined,
+        await spaceProjectRoots(this.deps.db, claims, spaceId),
+        'space',
+      );
+    }
+    const roots = await new PathGrantsService(this.deps).browseRoots(claims);
+    if (roots.length === 0) {
+      throw new CollabError(
+        'forbidden',
+        'no folder on this node is granted to you; ask a node admin to grant you a folder path (Settings -> Node -> Filesystem access)',
+        { details: { reason: 'path_grant_required' } },
+      );
+    }
+    return listProjectDirectories(ctx.query.get('path') ?? undefined, roots, 'grants');
   };
 
   /**
@@ -639,8 +662,9 @@ export class W2ProjectsAssociationsService {
   }
 
   /**
-   * The attribution join — commit sha → `commits` row → `created_in` edge →
-   * work_session (→ its teammate over the newest `relates_to` edge). Read
+   * The attribution join — commit sha → `commits` row → `authored_from` edge
+   * (308; it replaced `created_in`) → work_session (→ its teammate over the
+   * newest `participates_in` edge). Read
    * under the caller's claims so RLS decides what provenance is visible.
    *
    * ABSENT FACTS ARE ABSENT CLAIMS: a sha with no row here gets NO entry in
@@ -669,13 +693,13 @@ export class W2ProjectsAssociationsService {
               ws.entity_id as session_id, ws.title as session_title, ws.agent_tool,
               tm.entity_id as team_member_id, tm.name as team_member_name
          from public.commits c
-         join public.edges e on e.src_id = c.entity_id and e.type = 'created_in'
+         join public.edges e on e.src_id = c.entity_id and e.type = 'authored_from'
          join public.work_sessions ws on ws.entity_id = e.dst_id
          left join lateral (
            select t.entity_id, t.name
              from public.edges ed
-             join public.team_members t on t.entity_id = ed.dst_id
-            where ed.src_id = ws.entity_id and ed.type = 'relates_to'
+             join public.team_members t on t.entity_id = ed.src_id
+            where ed.dst_id = ws.entity_id and ed.type = 'participates_in'
             order by ed.created_at desc
             limit 1
          ) tm on true
@@ -684,7 +708,7 @@ export class W2ProjectsAssociationsService {
       [unique],
     );
     for (const row of rows) {
-      // One `created_in` per commit ENTITY; if the same sha is mirrored in
+      // One `authored_from` per commit ENTITY; if the same sha is mirrored in
       // two visible spaces, first (oldest) recorded provenance wins here.
       if (attribution.has(row.sha)) continue;
       attribution.set(row.sha, {
@@ -792,12 +816,23 @@ export class W2ProjectsAssociationsService {
         'forbidden',
         input.ensureWorkingDir
           ? 'node-admin access is required to create a project directory'
-          : 'node-admin access is required to create a project',
+          // Lane D B1: name the path that works without node admin.
+          : 'node-admin access is required to create a project; a space admin adds one to their own space with '
+            + 'tm8 project add --working-dir (or Add project on the Projects list), and a member asks a space admin',
       );
     }
-    const workingDir = input.ensureWorkingDir
-      ? await ensureProjectWorkingDirectory(input.workingDir)
-      : input.workingDir;
+    // Without `ensureWorkingDir` this used to record the supplied string as-is:
+    // no existence check, no canonicalization and no TM8_PROJECT_ROOTS
+    // containment — the one folder-registering path that skipped all three
+    // (audit 01a13570 §4). It now answers to the same rules as
+    // `gate.folders.create`.
+    let workingDir: string;
+    if (input.ensureWorkingDir) {
+      workingDir = await ensureProjectWorkingDirectory(input.workingDir);
+    } else {
+      workingDir = await canonicalDirectory(input.workingDir);
+      requireAllowed(workingDir, await canonicalRoots());
+    }
     const raw = await this.deps.db.rpc<ProjectMutationResult>(
       claims,
       'create_project',
@@ -862,11 +897,18 @@ export class W2ProjectsAssociationsService {
     const input = ctx.body as SpaceProjectCreateInput;
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    const raw = await this.deps.db.rpc<{ spaceId: string; folderId: string; projectId: string }>(
-      claims,
-      'create_space_project',
-      [spaceId, input.folderId, input.name ?? null, envelope.clientMutationId ?? null],
-    );
+    const raw = input.folderId === undefined
+      ? await this.registerSpaceFolder(claims, spaceId, {
+          name: input.name ?? '',
+          ...newProjectFolder(input),
+          trust: input.trust ?? 'untrusted',
+          clientMutationId: envelope.clientMutationId ?? null,
+        })
+      : await this.deps.db.rpc<{ spaceId: string; folderId: string; projectId: string }>(
+          claims,
+          'create_space_project',
+          [spaceId, input.folderId, input.name ?? null, envelope.clientMutationId ?? null],
+        );
     await scanSpaceSkills(this.deps.db, claims, raw.spaceId, { root: raw.folderId });
     const rows = await this.deps.db.query<SpaceProjectRow>(
       claims,
@@ -877,6 +919,32 @@ export class W2ProjectsAssociationsService {
     if (!row) throw new CollabError('not_found', `no such project: ${raw.projectId}`);
     return toSpaceProject(raw.spaceId, row);
   };
+
+  /**
+   * `spaces.projects.create` without `folderId` (migration 326): a space admin
+   * registers a folder inside their allowed roots, grants it to the space and
+   * names the project, in one step.
+   *
+   * The roots are decided — and a non-admin refused — before the filesystem is
+   * touched (`spaceProjectRoots`). Containment is checked LEXICALLY first, so a
+   * path outside the window is refused without a stat that would tell the
+   * caller whether it exists, and again on the realpath, so a symlink inside
+   * the window cannot point out of it.
+   */
+  private async registerSpaceFolder(
+    claims: DbClaims,
+    spaceId: string,
+    input: {
+      name: string; workingDir: string; ensureWorkingDir: boolean;
+      trust: 'trusted' | 'untrusted'; clientMutationId: string | null;
+      repoUrl?: string | null; defaultBranch?: string | null;
+    },
+  ): Promise<{ spaceId: string; folderId: string; projectId: string }> {
+    const roots = await spaceProjectRoots(this.deps.db, claims, spaceId);
+    requireTrustAllowed(claims, input.trust);
+    const workingDir = await allowedWorkingDir(input.workingDir, roots, input.ensureWorkingDir);
+    return registerSpaceFolderRow(this.deps.db, claims, spaceId, { ...input, workingDir });
+  }
 
   /** `gate.folders.list` — every folder on this server with its grant(s). Gate admins only (T32). */
   readonly listGateFolders = async (ctx: RequestContext): Promise<GateFolder[]> => {
@@ -900,7 +968,16 @@ export class W2ProjectsAssociationsService {
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
     if (!isGateAdmin(claims)) {
-      throw new CollabError('forbidden', 'gate-admin access is required to register a folder');
+      // The refusal names the space admin's door (spaces.projects.create with
+      // workingDir, or spaces.projects.clone): an agent session acting for a
+      // space admin has no gate claim and lands here first (task 01a13ba3).
+      throw new CollabError(
+        'forbidden',
+        'gate-admin access is required to register a folder; a space admin adds a project to their own space with ' +
+          'tm8 project add --working-dir <path> --name <name> or tm8 project clone <github-repo> --dest <path> ' +
+          '(inside TM8_PROJECT_ROOTS, untrusted until a node admin trusts it)',
+        { details: { reason: 'gate_admin_required', spaceAdminPath: 'spaces.projects.create' } },
+      );
     }
     let workingDir: string;
     if (input.ensureWorkingDir) {
@@ -999,4 +1076,76 @@ export class W2ProjectsAssociationsService {
       normalizeFrozenProjectReason(error);
     }
   };
+}
+
+/**
+ * The canonical working directory for a folder a space is about to hold, or a
+ * refusal: absolute, lexically inside `roots` (no stat outside them), then
+ * either created as one missing child (`ensure`) or required to exist, and
+ * inside `roots` again after the realpath.
+ */
+export async function allowedWorkingDir(raw: string, roots: readonly string[], ensure: boolean): Promise<string> {
+  if (!isAbsolute(raw)) throw new CollabError('invalid_input', 'project workingDir must be absolute');
+  requireAllowed(resolve(raw), roots);
+  if (ensure) return ensureProjectWorkingDirectory(raw, roots);
+  const canonical = await canonicalDirectory(raw);
+  requireAllowed(canonical, roots);
+  return canonical;
+}
+
+/**
+ * THE FOLDER a `spaces.projects.create` without `folderId` registers.
+ *
+ * A given `workingDir` is used as is, a leading `~/` expanded against the
+ * node's home. With NO `workingDir` the project gets the home default,
+ * `~/<projectDirName(name)>`, created by the caller's ensure step. The default
+ * must be a NEW folder: an existing `~/prod-data` reached by naming a project
+ * "prod-data" would be a folder nobody chose, so it is refused and the caller
+ * is told to name it explicitly if that is what they meant.
+ */
+export function newProjectFolder(
+  input: Pick<SpaceProjectCreateInput, 'name' | 'workingDir' | 'ensureWorkingDir'>,
+  home: string = homedir(),
+): { workingDir: string; ensureWorkingDir: boolean } {
+  if (input.workingDir !== undefined) {
+    return { workingDir: expandHomePath(input.workingDir, home), ensureWorkingDir: input.ensureWorkingDir === true };
+  }
+  const dir = projectDirName(input.name ?? '');
+  if (!dir) {
+    throw new CollabError('invalid_input', 'the project name gives no folder name for its default directory; pass workingDir');
+  }
+  const workingDir = join(home, dir);
+  if (existsSync(workingDir)) {
+    throw new CollabError(
+      'conflict',
+      `the default directory ~/${dir} already exists; pass it as workingDir to use it, or choose another name`,
+      { details: { reason: 'default_working_dir_exists' } },
+    );
+  }
+  return { workingDir, ensureWorkingDir: true };
+}
+
+/** `register_space_folder` (324). The path must already be canonical and inside the caller's roots. */
+export async function registerSpaceFolderRow(
+  db: FacadeDeps['db'],
+  claims: DbClaims,
+  spaceId: string,
+  input: {
+    name: string; workingDir: string; trust: 'trusted' | 'untrusted';
+    clientMutationId: string | null; repoUrl?: string | null; defaultBranch?: string | null;
+  },
+): Promise<{ spaceId: string; folderId: string; projectId: string }> {
+  return db.rpc<{ spaceId: string; folderId: string; projectId: string }>(
+    claims,
+    'register_space_folder',
+    [
+      spaceId,
+      input.name,
+      input.workingDir,
+      input.repoUrl ?? null,
+      input.defaultBranch ?? null,
+      input.trust,
+      input.clientMutationId,
+    ],
+  );
 }

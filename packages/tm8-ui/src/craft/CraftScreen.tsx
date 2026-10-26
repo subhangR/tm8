@@ -1,957 +1,650 @@
 /**
- * CRAFT — the blueprint studio (Craft P1, task 01a00a31; design doc
- * 01a00a17-2d18 v2.1, rulings R1-R3).
+ * ONE CRAFT — `/craft/{craft}[/{page}]` (Craft redesign doc 01a1255d §3).
  *
- * ONE HEADER, THREE REGIONS: the studio header names the blueprint, the
- * conversation about it, the view and the one committing verb; below it a
- * craft-mode chat on the left, ABOUT the selected `graph` entity (contextual
- * chat — `ChatCreateInput.aboutId`, written as an `about` edge by
- * `chat.start` — with the mode PINNED to 'craft'); the blueprint in the
- * middle, in the view the reader picked; and, when a node is selected, its
- * INSPECTOR on the right — which is also where an opened entity lands (it
- * replaces the inspector's body; never a fourth column).
+ *   ‹ Crafts · Title ▾
+ *   [chat about the craft] ┃ [pages ▾][Overview][Plan ×][Brief ×]  [side] [strip]
+ *                           ┃ [the selected tab's body]
  *
- * CHAT ↔ CANVAS: a node selected anywhere (canvas, outline, table, a finding)
- * is selected everywhere; "Ask about this" seeds the composer with a link to
- * the node; each agent patch is DIFFED against the previous fold and the
- * strip over the canvas says what changed, its entries selecting the nodes.
- * The canvas dispatches on `graphType` (R3): 'entity' draws the card
- * blueprint, 'mermaid' renders the diagram source through the same Mermaid
- * component docs use, and an unknown type says so honestly.
+ *  · LEFT, the craft's chats and sessions (`CraftSidePanel`), in the app frame's second panel.
+ *  · MIDDLE, THIS PERSON'S tabs on the craft (`CraftTabStrip`, backed by their
+ *    craft workspace — `useCraftWorkspace`), Overview pinned first. Overview
+ *    is `CraftOverview`; a graph page is the blueprint canvas (`GraphPage`); a
+ *    page that is itself a craft opens inline as that craft's overview; every
+ *    other kind is the Workspace entity body. Closing a tab never removes a
+ *    page; pages are added and removed from [pages ▾].
+ *  · RIGHT, ONLY the selected tab's entity strip, exactly as in Home: its
+ *    options on top, Links · Messages · Chat, Run, Expand below. Overview
+ *    selected ⇒ the craft's own strip. The tab keeps its own side column
+ *    (Chat · Messages · Links), beside the body, never in place of it.
  *
- * LIVE BY EVENTS: the agent's guarded patches to the row arrive as durable
- * `entity.upsert` events; the canvas re-reads the row on each one. No
- * polling, no transcript folding — the ROW is the one source of truth (R1).
- *
- * ORCHESTRATE: the affordance posts the APPROVAL into the selected craft
- * thread — nothing more (R2: materialization is the agent's, and it begins
- * only when approval lands in-thread). Zero new catalog ops anywhere here:
- * list = collections.query, create = entities.create, approve =
- * messages.post.
+ * The route mirrors the selected tab (no page ⇒ Overview).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-
-import { blueprintNodeRef, orchestrationNodeKind, ORCHESTRATION_NODE_KINDS, type EntityDetail, type EntityId, type EntitySummary, type SpaceId } from '@tm8/contract';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useStore } from 'zustand';
+import type { EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
-import { createChatHomePortFromSeam, type ChatHomeL2Bridge } from '../chat-home/real-port';
-import { ChatHomeSurface } from '../chat-home/ChatHomeSurface';
-import type { ChatThreadSummary } from '../chat-home/types';
+import type { ChatHomeL2Bridge } from '../chat-home/real-port';
 import type { TriggerOption } from '../rich-input';
-import { Mermaid } from '../kit/Mermaid';
+import { getKind, KindIcon } from '../domain';
 import { PanelResizer, useElementWidth, usePanelWidth } from '../kit';
-import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
-import { blueprintView, nodeRefId } from './blueprint-model';
-import type { BlueprintView, RefInfo, RefTitles } from './blueprint-types';
-import { BlueprintCanvas } from './BlueprintCanvas';
-import { BlueprintOutline } from './BlueprintOutline';
-import { BlueprintTable } from './BlueprintTable';
-import { CraftChatPicker } from './CraftChatPicker';
-import { CraftChatIntro, CraftEmptyState } from './CraftEmptyState';
-import { NodeInspector } from './NodeInspector';
-import { FindingsChip, GraphPicker, OrchestrateButton, ViewSwitcher } from './StudioHeader';
-import { diffBlueprintViews, isEmptyDiff, summarizeDiff, type BlueprintDiff } from './blueprint-diff';
-import { availableViews, resolveView, type CraftViewId } from './presentation';
-import { nodeByKey, titleOf } from './canvas-nav';
-import { BlueprintTurnNote, graphWriteOf, type ToolNoteCall } from './turn-notes';
+import { build, emptyPanels, normalize } from '../routes';
+import type { WorkspaceGateHandles } from '../tab-workspace';
+import {
+  ActionStrip,
+  ChatDock,
+  EmbeddedWorkspace,
+  EntityChromeContext,
+  EntityTabBody,
+  getKindAdapter,
+  useEmbeddedRuntime,
+  useEntityChromeValue,
+  type WorkspaceRuntime,
+} from '../tab-workspace/embed';
 import { HostedEntityColumn } from '../views/hostedEntityColumn';
+import { useFrameSlots } from '../shell/AppFrame';
+import { isPinnedRailEnabled } from '../tab-workspace/view/navigatorFlag';
+import { CraftSidePanel } from './CraftSidePanel';
+import { GraphPage, type ToolNote } from './GraphPage';
+import { CraftOverview } from './CraftOverview';
+import { CraftNameField } from './CraftNameField';
+import { CraftTabStrip } from './CraftTabStrip';
+import { CraftPageTabs } from './CraftPageTabs';
+import { craftWorkspacesPortOf, useCraftWorkspace } from './useCraftWorkspace';
+import { useCraft, type CraftHandle } from './useCraft';
+import type { CraftPageRow, CraftSource, NewPageKind } from './craft-source';
+import type { CraftsSource } from './crafts-source';
 import type { CraftPanelHostProps } from './types';
+import { useEmbeddedTab } from './use-embedded-tab';
 import '../session-graph/session-graph.css';
 import './craft.css';
+import './craft-screen.css';
+
+/** Where the screen navigates: no craft ⇒ the Crafts home. */
+export interface CraftTarget {
+  craftId?: EntityId;
+  pageId?: EntityId;
+}
 
 export interface CraftScreenProps {
   seam: Seam;
   spaceId: SpaceId;
   nodeKey: string;
-  bridge?: ChatHomeL2Bridge;
-  skillOptions?: readonly TriggerOption[];
-  viewerName?: string;
-  viewerId?: string;
+  source: CraftSource;
+  craftId: EntityId;
+  pageId?: EntityId | undefined;
+  onNavigate(target: CraftTarget): void;
+  /** The home's source, for the title's ▾ craft switcher. Absent ⇒ the title is plain text. */
+  crafts?: CraftsSource | undefined;
   /**
-   * The shell bundle region C is built from. Present ⇒ a chip press opens
-   * the entity in Craft's OWN third column, and the studio survives the
-   * press; absent ⇒ there is no column and chips fall back to `onOpenEntity`.
+   * The Workspace handles. Present ⇒ non-graph pages render the Workspace
+   * entity body and the action strip is mounted; absent (harness mounts) ⇒
+   * a page that is not a graph or craft says what it is and offers Open.
    */
-  panelHost?: CraftPanelHostProps;
+  gate?: WorkspaceGateHandles | undefined;
+  /** Present ⇒ an entity opened from the chat lands in a column over the page. */
+  panelHost?: CraftPanelHostProps | undefined;
+  bridge?: ChatHomeL2Bridge | undefined;
+  skillOptions?: readonly TriggerOption[] | undefined;
+  viewerName?: string | undefined;
+  viewerId?: string | undefined;
+  onNotice?: ((text: string) => void) | undefined;
   /**
-   * The shell's entity-open verb — the FALLBACK route, used only when no
-   * `panelHost` is supplied. The shell's version leaves Craft entirely
-   * (it navigates to the workspace and unmounts this screen, taking the
-   * selected graph, thread and glow baseline with it), which is why an
-   * in-screen column is the better answer wherever one can be built.
+   * Inside the app frame: the craft's chats and sessions (`CraftSidePanel`)
+   * fill the frame's own panel column beside the rail — the 2nd panel — and
+   * this screen draws no header of its own (its title goes to the frame's
+   * top band). Unframed hosts keep the chat as this screen's left column.
    */
-  onOpenEntity?: (id: EntityId) => void;
-  onNotice?: (text: string) => void;
+  framed?: boolean | undefined;
 }
 
-/** One frozen empty set, so "no selection" never mints a new identity. */
-const EMPTY_ABOUT: ReadonlySet<EntityId> = new Set();
-
-/** Set equality by membership — the only question `aboutSelected` is asked. */
-function sameIds(current: ReadonlySet<EntityId>, next: readonly EntityId[]): boolean {
-  return current.size === next.length && next.every((id) => current.has(id));
-}
-
-let craftSeq = 0;
-const cmid = (tag: string) => `craft:${tag}:${Date.now()}:${(craftSeq += 1)}`;
-
-/** The chat pane's default and floor. The floor is the composer's: narrower
- *  than this and the mode chip, agent select and Send wrap onto three rows. */
+/** The chat pane's default and floor (the composer's: narrower wraps it to three rows). */
 const CHAT_DEFAULT = 440;
 const CHAT_MIN = 360;
-/** The canvas keeps at least this much, so dragging can never erase it. */
-const CANVAS_MIN = 320;
-/** The inspector / region C column. Same numbers as every other reading column in the app. */
-const DETAIL_DEFAULT = 380;
-const DETAIL_MIN = 320;
-/**
- * Below this studio width the inspector OVERLAYS the canvas's right edge
- * instead of taking width from it (coordinator ruling on the design audit):
- * three columns under ~1280px leave a canvas too narrow to read a flow in.
- */
-const OVERLAY_BELOW = 1280;
-/**
- * The separator track (8px) plus the aside's own 1px border — nothing in this
- * package sets `box-sizing: border-box` globally, so that border ADDS. Copied
- * from `ChannelView`'s `CHV_ASIDE_CHROME` for exactly the same reason.
- */
+/** The pages keep at least this much, so dragging can never erase them. */
+const PAGES_MIN = 320;
+/** The separator track (8px) plus the pane's 1px border. */
 const PANE_CHROME = 8 + 1;
 
-export function CraftScreen({
-  seam,
-  spaceId,
-  nodeKey,
-  bridge,
-  skillOptions,
-  viewerName,
-  viewerId,
-  panelHost,
-  onOpenEntity,
-  onNotice,
-}: CraftScreenProps) {
-  const [graphs, setGraphs] = useState<readonly EntitySummary[]>([]);
-  const [selectedId, setSelectedId] = useState<EntityId | null>(null);
-  const [detail, setDetail] = useState<EntityDetail | null>(null);
-  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [refTitles, setRefTitles] = useState<RefTitles>(new Map());
-  /**
-   * The craft thread the approval posts into.
-   *
-   * Fed by the chat surface's RESOLVED selection (`onSelectionChange`), not
-   * by its navigation report — so the cold-start auto-open counts. It has to:
-   * the pane header names the open conversation, and a header captioned
-   * "New craft conversation" above a plainly-loaded thread would be a lie
-   * the viewer can see. Orchestrate reads the same value and is enabled a
-   * little sooner for it, which is correct — an auto-opened thread IS open.
-   */
-  const [activeThreadId, setActiveThreadId] = useState<EntityId | null>(null);
-  /**
-   * What the PICKER asked for, handed down as `routeThreadId`. `undefined`
-   * means "nothing asked yet" — the chat screen keeps its cold-start
-   * auto-open; `null` is the explicit ＋ (the new-conversation composer).
-   *
-   * IT TRACKS THE RESOLVED SELECTION, and it has to. `routeThreadId` is
-   * compared BY VALUE, while the chat screen moves its own selection when a
-   * send creates a thread — so a request left naming the value it asked for
-   * last goes stale the moment those two diverge, and re-asking for it is
-   * then a no-op React drops before the adoption effect can see it. That is
-   * not hypothetical: ＋ after a send left the request on `null` while the
-   * screen sat in the new thread, and the button stopped working for the
-   * rest of the session. A request that mirrors what is actually open can
-   * always be moved away from.
-   */
-  const [requestedThreadId, setRequestedThreadId] = useState<EntityId | null | undefined>(undefined);
-  /** The conversation list, published up by the chat screen's ONE read. */
-  const [threads, setThreads] = useState<readonly ChatThreadSummary[]>([]);
-  const [approving, setApproving] = useState(false);
-  /**
-   * What the LATEST agent patch changed, diffed against the previous fold of
-   * the same row. Durable until the next patch or a dismiss — the old 2.6s
-   * glow was motion nobody could read back after looking away.
-   */
-  const [lastDiff, setLastDiff] = useState<BlueprintDiff | null>(null);
-  /**
-   * Every patch diff seen live, by the ROW VERSION it produced — what lets a
-   * turn in the transcript name the nodes ITS patch changed, not just the
-   * latest one. Session memory: a thread reopened later falls back to "updated
-   * the blueprint" (see `turn-notes.tsx`).
-   */
-  const [diffByVersion, setDiffByVersion] = useState<ReadonlyMap<number, BlueprintDiff>>(new Map());
-  const prevViewRef = useRef<{ id: EntityId; version: number; view: BlueprintView } | null>(null);
-  const selectedRef = useRef<EntityId | null>(null);
-  selectedRef.current = selectedId;
-  /** The selected NODE (row-local key) — one selection shared by every view and the inspector. */
-  const [pickedNode, setNodeKey] = useState<string | null>(null);
-  const [viewChoice, setViewChoice] = useState<CraftViewId>('flow');
-  const [chatCollapsed, setChatCollapsed] = useState(false);
+/** `/craft/{craft}` as an absolute URL — what the craft's "Copy link" copies. */
+function craftLinkUrl(spaceId: SpaceId, craftId: EntityId): string {
+  const { hash } = build(normalize({ spaceId, target: { view: 'craft', craftId }, panels: emptyPanels() }));
+  return new URL(hash, window.location.href).toString();
+}
+
+const noop = () => undefined;
+
+export function CraftScreen(props: CraftScreenProps) {
+  const { seam, spaceId, nodeKey, source, craftId, pageId, onNavigate, gate, panelHost, onNotice, framed = false } = props;
+  const frame = useFrameSlots();
+  const frameTop = frame.top;
+  /* THE PINNED RAIL (task 01a14b46): the band is the only chrome — the
+     craft switcher, then the pages as tabs and [+]. No page row, no card
+     header, no inset frame; the page's controls are in the right strip. */
+  const pinnedRail = useMemo(() => isPinnedRailEnabled(), []);
+  const pinned = framed && pinnedRail;
+  const runtime = useEmbeddedRuntime(props.viewerId ?? 'viewer', spaceId);
+  const expanded = useStore(runtime.store, (s) => s.layout.expanded);
+
+  /* THE STRIP'S EXPAND IS THE FRAME'S: expanding hides the frame's rail, panel
+     and header, as Work's does; the frame's own "Restore navigation" restores. */
+  const setFrameExpanded = frame.setExpanded;
+  useEffect(() => {
+    setFrameExpanded?.(expanded);
+  }, [expanded, setFrameExpanded]);
+  const frameWasExpanded = useRef(frame.expanded);
+  useEffect(() => {
+    const was = frameWasExpanded.current;
+    frameWasExpanded.current = frame.expanded;
+    if (was && !frame.expanded && runtime.store.getState().layout.expanded) {
+      runtime.dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'click' });
+    }
+  }, [frame.expanded, runtime]);
+
   const [composerSeed, setComposerSeed] = useState<{ text: string; nonce: number } | undefined>(undefined);
-
-  const refreshList = useCallback(async () => {
-    const result = await seam.query({ spaceId, kinds: ['graph'], sort: 'activityAt_desc', limit: 50 });
-    setGraphs(result.page.items);
-    /* A studio with nothing selected adopts the first graph that exists —
-       the crafted-from-chat row appears without a manual pick. */
-    const first = result.page.items[0]?.id as EntityId | undefined;
-    if (first !== undefined && selectedRef.current === null) setSelectedId(first);
-    return result.page.items;
-  }, [seam, spaceId]);
-
-  const readRow = useCallback(
-    async (id: EntityId) => {
-      try {
-        const row = await seam.entity(id);
-        /* Guard a stale settle: the read that matters is the selected row's. */
-        if (selectedRef.current === id) {
-          setDetail(row);
-          setLoadState('ready');
-        }
-      } catch {
-        if (selectedRef.current === id) setLoadState('error');
-      }
-    },
-    [seam],
-  );
-
-  /* Hydrate: list, then select the most recent graph (if any). */
-  useEffect(() => {
-    let alive = true;
-    setLoadState('loading');
-    refreshList()
-      .then((items) => {
-        if (!alive) return;
-        setSelectedId((current) => current ?? ((items[0]?.id as EntityId | undefined) ?? null));
-        if (items.length === 0) setLoadState('ready');
-      })
-      .catch(() => alive && setLoadState('error'));
-    return () => {
-      alive = false;
-    };
-  }, [refreshList]);
-
-  /* The selected row's read, and the switch reset. */
-  useEffect(() => {
-    setActiveThreadId(null);
-    setNodeKey(null);
-    setLastDiff(null);
-    setDiffByVersion(new Map());
-    if (!selectedId) {
-      setDetail(null);
-      return;
-    }
-    setLoadState('loading');
-    void readRow(selectedId);
-  }, [selectedId, readRow]);
-
-  /**
-   * SWITCHING BLUEPRINTS SWITCHES CONVERSATIONS, because the two headers
-   * claim to be one hierarchy: this graph, and the chats about it. Landing on
-   * the space's most recent thread — which is what the chat screen's own
-   * cold-start would do — could easily belong to a different blueprint, and
-   * the header would then name a conversation the canvas has nothing to do
-   * with. No craft thread on this graph yet ⇒ the composer, which is the
-   * honest place to start one.
-   *
-   * IT WAITS FOR THE LIST. Resolving against an empty `threads` would answer
-   * "no conversation here" before anything had been read, and the answer
-   * would stick — so an unresolved graph re-tries on each publish. A space
-   * with genuinely no threads never resolves and never needs to: the chat
-   * screen has nothing to auto-open either, and both land on the composer.
-   */
-  /* The SAME port `ChatHomeSurface` builds from this seam — `createChatHomePortFromSeam`
-     is a pure factory over it, so this is one construction, not a second
-     reader with its own cache. */
-  const port = useMemo(() => createChatHomePortFromSeam(seam, bridge), [seam, bridge]);
-
-  /**
-   * WHICH CHATS ARE ABOUT THE SELECTED BLUEPRINT — ONE READ, asked of the
-   * blueprint rather than of every chat.
-   *
-   * The filter used to be `thread.anchorId === selectedId`, and that field was
-   * filled by `listThreads` paying one `entities.connections` call PER CHAT to
-   * discover each one's subject: a documented N+1 on the space-wide read,
-   * carried by every host of the chat surface to serve this one picker. The
-   * edge is chat → subject, so its INCOMING side on the blueprint answers for
-   * all of them at once, and only Craft — the only surface that scopes by
-   * subject — pays for it.
-   *
-   * RE-RUN WHEN THE THREAD LIST'S MEMBERSHIP CHANGES, deliberately: a send
-   * that creates a craft chat writes a new `about` edge, and the list publish
-   * is the signal that it happened. Keyed on the ROOT IDS rather than on the
-   * `threads` array, because that array's identity changes on every publish
-   * including ones that changed nothing.
-   *
-   * AND IT SETTLES RATHER THAN RE-SETTING. An unconditional `setAboutSelected`
-   * re-renders this screen on every publish, and the canvas's freshness diff
-   * (below) is render-order sensitive: measured, the extra render made
-   * `craft-screen.test.tsx > renders the ROW on the canvas` fail about one run
-   * in three — a real nondeterminism this screen did not have before, not a
-   * pre-existing flake. Writing only on a genuine change removes it.
-   *
-   * An empty set before the read lands is not "no chats"; the effect below
-   * waits for `threads` for the same reason.
-   */
-  const [aboutSelected, setAboutSelected] = useState<ReadonlySet<EntityId>>(EMPTY_ABOUT);
-  const threadKey = threads.map((thread) => thread.rootId).join(',');
-  useEffect(() => {
-    if (!selectedId) {
-      setAboutSelected((current) => (current.size === 0 ? current : EMPTY_ABOUT));
-      return;
-    }
-    let live = true;
-    void port.chatIdsAbout(selectedId).then((ids) => {
-      if (!live) return;
-      setAboutSelected((current) => (sameIds(current, ids) ? current : new Set(ids)));
-    });
-    return () => { live = false; };
-  }, [port, selectedId, threadKey]);
-
-  const resolvedForRef = useRef<EntityId | null>(null);
-  useEffect(() => {
-    if (!selectedId || resolvedForRef.current === selectedId) return;
-    if (threads.length === 0) return;
-    resolvedForRef.current = selectedId;
-    const scoped = threads.filter(
-      (thread) => thread.config.mode === 'craft' && aboutSelected.has(thread.rootId),
-    );
-    setRequestedThreadId(scoped[0]?.rootId ?? null);
-  }, [selectedId, threads, aboutSelected]);
-
-  /**
-   * THE RESOLVED SELECTION, ADOPTED — the header's subject and the request
-   * move together.
-   *
-   * The chat screen is not only steered; it also STEERS ITSELF, and the send
-   * that turns the composer into a real thread is the case that matters.
-   * Recording that in `requestedThreadId` too is what keeps ＋ and the picker
-   * able to move away from wherever the screen actually landed. Both writes
-   * are no-ops when nothing changed, so this cannot cycle with the publish
-   * effect that calls it.
-   */
-  /**
-   * THE HOST DRIVING ITS OWN SELECTION — the picker's rows and ＋.
-   *
-   * BOTH HALVES MOVE HERE, and that is not a duplicate of `adoptSelection`
-   * below. The chat screen SUPPRESSES its selection publish when the thread it
-   * resolved is the one the host just pushed down (the echo guard in
-   * `ChatHomeScreen`), so a host-driven change is exactly the case that never
-   * comes back — and `activeThreadId` is what the picker reads for its label.
-   *
-   * Setting only `requestedThreadId` therefore steered the chat correctly and
-   * left the picker naming the thread it had just left: ＋ opened the composer
-   * while the row above it still said "Draft the blueprint.". Waiting for the
-   * echo cannot fix that, because the echo is deliberately not sent.
-   */
-  const requestThread = useCallback((id: EntityId | null) => {
-    setRequestedThreadId(id);
-    setActiveThreadId(id);
-  }, []);
-
-  const adoptSelection = useCallback((id: EntityId | null) => {
-    setActiveThreadId(id);
-    /* `undefined` is left alone. It means "nothing asked yet", and the mount
-       publishes a null selection before anything has been read — collapsing
-       that to an explicit `null` would forbid the chat's cold-start auto-open
-       before the blueprint resolve above has had its say. */
-    setRequestedThreadId((asked) => (asked === undefined ? asked : id));
-  }, []);
-
-  /* LIVE: a durable entity event for the selected row re-reads it; any graph
-     upsert refreshes the picker (a rename, a new blueprint from chat). */
-  useEffect(() => {
-    return seam.onEvent((event) => {
-      if (event.type !== 'entity.upsert' && event.type !== 'entity.deleted') return;
-      if (event.entity.kind !== 'graph') return;
-      void refreshList();
-      if (event.entity.id === selectedRef.current) {
-        if (event.type === 'entity.deleted') setSelectedId(null);
-        else void readRow(event.entity.id as EntityId);
-      }
-    });
-  }, [seam, refreshList, readRow]);
-
-  /* Resolve reference-node titles the row names (bounded, cached by id). */
-  const content = detail?.content;
-  useEffect(() => {
-    if (!content || (content as { kind?: string }).kind !== 'graph') return;
-    /* Resolve through the SAME pin the canvas folds with (`nodeRefId`): a spec's
-       row-local key is not an entity id, and fetching it was what printed
-       "unavailable entity" on every spec card. */
-    const nodes = (content as { nodes?: Parameters<typeof nodeRefId>[0][] }).nodes ?? [];
-    const wanted = [...new Set(nodes.map((node) => nodeRefId(node)).filter((id): id is EntityId => id !== null))]
-      .filter((id) => !refTitles.has(id))
-      .slice(0, 24);
-    if (wanted.length === 0) return;
-    let alive = true;
-    void Promise.allSettled(wanted.map((id) => seam.entity(id as EntityId))).then((settled) => {
-      if (!alive) return;
-      setRefTitles((current) => {
-        const next = new Map(current);
-        settled.forEach((result, index) => {
-          const id = wanted[index];
-          if (!id) return;
-          if (result.status === 'fulfilled') {
-            next.set(id, refInfoOf(result.value));
-          } else {
-            /* Honestly marked: the row references something this read cannot see. */
-            next.set(id, { kind: 'entity', title: 'unavailable entity' });
-          }
-        });
-        return next;
-      });
-    });
-    return () => {
-      alive = false;
-    };
-  }, [content, refTitles, seam]);
-
-  /* THE LIVE MAP: after Orchestrate the references are real tasks whose
-     status moves. A durable upsert for an entity the blueprint references
-     re-reads just that one, so the card's stripe and pulse follow it. */
-  const refIdsRef = useRef(refTitles);
-  refIdsRef.current = refTitles;
-  useEffect(() => {
-    return seam.onEvent((event) => {
-      if (event.type !== 'entity.upsert') return;
-      const id = event.entity.id as EntityId;
-      if (!refIdsRef.current.has(id)) return;
-      void seam.entity(id).then(
-        (entity) => setRefTitles((current) => new Map(current).set(id, refInfoOf(entity))),
-        () => undefined,
-      );
-    });
-  }, [seam]);
-
-  const createGraph = useCallback(async () => {
-    try {
-      const result = await seam.commands.createEntity({
-        clientMutationId: cmid('new'),
-        spaceId,
-        kind: 'graph',
-        title: 'Untitled graph',
-        content: { graphType: 'entity' },
-      });
-      await refreshList();
-      const id = result.entity?.id as EntityId | undefined;
-      if (id) setSelectedId(id);
-    } catch (error) {
-      onNotice?.(error instanceof Error ? error.message : 'Could not create the graph.');
-    }
-  }, [seam, spaceId, refreshList, onNotice]);
-
-  const approveOrchestrate = useCallback(async () => {
-    if (!selectedId || !activeThreadId || approving) return;
-    setApproving(true);
-    try {
-      /* The whole affordance (design §4): approval lands IN the thread; the
-         craft agent materializes from there via existing delegation. */
-      await seam.commands.postMessage({
-        clientMutationId: cmid('approve'),
-        anchorIds: [selectedId],
-        parentMessageId: activeThreadId,
-        body: 'Approved — orchestrate this blueprint.',
-      });
-      onNotice?.('Approval posted into the craft thread.');
-    } catch (error) {
-      onNotice?.(error instanceof Error ? error.message : 'Could not post the approval.');
-    } finally {
-      setApproving(false);
-    }
-  }, [selectedId, activeThreadId, approving, seam, onNotice]);
-
-  /* Lanes is the only view that changes the LAYOUT (swimlanes); Outline and
-     Table read `lists`, which are layout-independent, from the flow fold. */
-  const view = useMemo(
-    () => (content && (content as { kind?: string }).kind === 'graph'
-      ? blueprintView(content, refTitles, { mode: viewChoice === 'lanes' ? 'swimlane' : 'flow' })
-      : null),
-    [content, refTitles, viewChoice],
-  );
-  const viewId: CraftViewId = view ? resolveView(viewChoice, view) : 'flow';
-  const selectedNode = view && pickedNode && nodeByKey(view, pickedNode) ? pickedNode : null;
-
-  /**
-   * THE WIDTH SOLVER. `usePanelWidth` holds what the viewer ASKED FOR,
-   * unclamped, so narrowing the window once cannot overwrite the preference
-   * (see its docblock); this screen clamps for PAINT, because it is the one
-   * holding the measurement. `maxWidth` is measured rather than assumed — the
-   * shell's own rail is variable, so the space available here is not a
-   * function of the window.
-   */
-  const splitRef = useRef<HTMLDivElement | null>(null);
-  const splitWidth = useElementWidth(splitRef);
-  const { width: askedWidth, setWidth: setChatWidth, reset: resetChatWidth } = usePanelWidth(
-    'craft.chat',
-    CHAT_DEFAULT,
-    CHAT_MIN,
-  );
-  const detailPref = usePanelWidth('craft.inspector', DETAIL_DEFAULT, DETAIL_MIN);
-
-  /**
-   * REGION C — the entity a chip opened.
-   *
-   * In the screen stack, NOT in `useState`: the rail unmounts Craft whenever
-   * the viewer looks at another screen, and a local cell would drop the open
-   * entity on the way out and back. Keyed by the view, which is what
-   * `screenKeyOf.view` exists for.
-   */
-  const screen = useScreenStack(screenKeyOf.view('craft'));
-  const canHostPanel = panelHost !== undefined;
-  const detailId = canHostPanel ? screen.selected : null;
-  /* The right column is open for an opened entity OR a selected node, and it
-     OVERLAYS the canvas below the breakpoint rather than taking its width. */
-  const sideOpen = detailId !== null || selectedNode !== null;
-  const overlay = splitWidth > 0 && splitWidth < OVERLAY_BELOW;
-
-  /* Region C's room comes out of the split BEFORE the chat's ceiling is
-     computed, or a wide chat plus an open panel would leave the canvas below
-     its floor — the three-region arithmetic EntityView spells out. */
-  const detailMax = splitWidth > 0
-    ? Math.max(DETAIL_MIN, splitWidth - CHAT_MIN - CANVAS_MIN - PANE_CHROME * 2)
-    : Number.POSITIVE_INFINITY;
-  const detailWidth = Math.min(Math.max(DETAIL_MIN, detailPref.width), detailMax);
-  const detailRoom = sideOpen && !overlay ? detailWidth + PANE_CHROME : 0;
-  /* Before the first measurement there is no honest ceiling, so the asked-for
-     width paints as-is rather than being clamped against a zero. */
-  const chatMax = splitWidth > 0
-    ? Math.max(CHAT_MIN, splitWidth - CANVAS_MIN - PANE_CHROME - detailRoom)
-    : Number.POSITIVE_INFINITY;
-  const chatWidth = Math.min(Math.max(CHAT_MIN, askedWidth), chatMax);
-
-  /**
-   * A CHIP PRESS LANDS IN REGION C when the shell gave us one to land in, and
-   * leaves the screen only when it did not. The blueprint cards and every
-   * chat chip converge on this one verb.
-   */
-  const openEntity = useCallback(
-    (id: EntityId) => {
-      if (canHostPanel) screen.open(id);
-      else onOpenEntity?.(id);
-    },
-    [canHostPanel, screen, onOpenEntity],
-  );
-
-  /* ESC CLOSES THE COLUMN — one rung at a time, and only ours: an opened
-     entity first (back to the inspector), then the inspector. `defaultPrevented`
-     keeps a dialog, a popover or the canvas's own Escape ahead of us. */
-  useEffect(() => {
-    if (!sideOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
-      event.preventDefault();
-      if (detailId) screen.pop();
-      else setNodeKey(null);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [sideOpen, detailId, screen]);
-
-  /* WHAT THE PATCH CHANGED: diff consecutive folds of the SAME row. Switching
-     graphs resets the baseline so a freshly opened blueprint does not arrive
-     "changed" wholesale; a fold that changed nothing (a re-read, a view
-     switch) leaves the last diff standing. */
-  /* Keyed on the ROW VERSION, not on the fold: resolving a reference's title
-     re-folds the view too, and "4f8c2a9e… → Session tree guide lines" is the
-     host catching up, not the agent changing the plan. */
-  const rowVersion = detail?.version ?? null;
-  useEffect(() => {
-    if (!view || !selectedId || rowVersion === null) return;
-    const prev = prevViewRef.current;
-    if (prev && prev.id === selectedId && prev.version === rowVersion) {
-      prevViewRef.current = { ...prev, view };
-      return;
-    }
-    prevViewRef.current = { id: selectedId, version: rowVersion, view };
-    if (!prev || prev.id !== selectedId) return;
-    const diff = diffBlueprintViews(prev.view, view);
-    if (!isEmptyDiff(diff)) {
-      setLastDiff(diff);
-      setDiffByVersion((current) => new Map(current).set(rowVersion, diff));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowVersion, selectedId, view]);
-
-  const selectNode = useCallback((key: string | null) => {
-    setNodeKey(key);
-    if (key !== null) screen.clear();
-  }, [screen]);
-
-  /* "Ask about this": a link to the node, in the one spelling the craft
-     prompt teaches (`blueprintNodeRef`, @tm8/contract). */
-  const askAbout = useCallback((key: string) => {
-    if (!view || !selectedId) return;
-    setChatCollapsed(false);
-    setComposerSeed((was) => ({
-      text: blueprintNodeRef(selectedId, key, titleOf(view, key)),
-      nonce: (was?.nonce ?? 0) + 1,
-    }));
-  }, [view, selectedId]);
-
+  const [chatCollapsed, setChatCollapsed] = useState(false);
   const seedPrompt = useCallback((text: string) => {
     setChatCollapsed(false);
     setComposerSeed((was) => ({ text, nonce: (was?.nonce ?? 0) + 1 }));
   }, []);
 
-  /**
-   * What Orchestrate would do with the specs. Only MATERIALIZABLE, rank-placed
-   * kinds are "created". Teammates (attach-placed) and kinds the orchestrator
-   * never creates (skills, people) are listed BY NAME as things the human
-   * confirms — the craft prompt says teammate specs are proposals, and a
-   * pre-flight that promised to create them would be the canvas contradicting
-   * the agent.
-   */
-  const plan = useMemo(() => {
-    const create: [string, number][] = [];
-    const confirm: { label: string; names: string[] }[] = [];
-    if (!view) return { create, confirm };
-    const counts = new Map<string, number>();
-    const toConfirm = new Map<string, string[]>();
-    const note = (kind: string, label: string, title: string) => {
-      const def = orchestrationNodeKind(kind);
-      if (def && def.materializable && def.placement === 'rank') {
-        counts.set(label, (counts.get(label) ?? 0) + 1);
-      } else {
-        toConfirm.set(label, [...(toConfirm.get(label) ?? []), title]);
-      }
-    };
-    view.cards.filter((card) => card.isSpec).forEach((card) => note(card.kind, card.kindLabel, card.title));
-    view.attached.filter((node) => node.isSpec)
-      .forEach((node) => note(node.kind, orchestrationNodeKind(node.kind)?.label ?? 'Teammate', node.title));
-    const plural = (label: string, n: number) => (n === 1 ? label : orchestrationNodeKindPlural(label));
-    counts.forEach((n, label) => create.push([plural(label, n), n]));
-    toConfirm.forEach((names, label) => confirm.push({ label: plural(label, names.length), names }));
-    return { create, confirm };
-  }, [view]);
+  /* The transcript note for calls that wrote the ACTIVE graph page. A function
+     value, so it is stored through an updater, never as one. */
+  const [toolNote, setToolNote] = useState<ToolNote | null>(null);
+  const publishToolNote = useCallback((note: ToolNote | null) => setToolNote(() => note), []);
 
-  /* The transcript side of chat ↔ canvas: a call that wrote THIS blueprint
-     gets a line naming what it changed, each node a button onto the canvas. */
-  const toolNote = useCallback(
-    (call: ToolNoteCall) => {
-      const write = graphWriteOf(call, selectedId);
-      if (!write) return null;
-      const diff = write.version !== null ? diffByVersion.get(write.version) ?? null : null;
-      return <BlueprintTurnNote write={write} diff={diff} view={view} onSelect={selectNode} />;
+  /* The page on screen, fed back to `useCraft` for its "updated" marks. */
+  const [lookingAt, setLookingAt] = useState<EntityId | null>(pageId ?? null);
+  const handle = useCraft(source, craftId, lookingAt, onNotice);
+  const pageIds = useMemo(
+    () => (handle.state === 'ready' ? new Set<string>(handle.pages.map((page) => page.id)) : null),
+    [handle.state, handle.pages],
+  );
+  /* THE SELECTED TAB: this person's active tab — a page of this craft, or the
+     craft's own overview. */
+  const tabs = useCraftWorkspace(craftWorkspacesPortOf(seam), spaceId, craftId, pageIds, onNotice);
+  const activePage = tabs.activeTab.pinned ? null : (handle.pages.find((page) => page.id === tabs.activeTab.entityId) ?? null);
+  useEffect(() => setLookingAt(activePage?.id ?? null), [activePage?.id]);
+  const pagesRef = useRef(handle.pages);
+  pagesRef.current = handle.pages;
+  /* The updated mark clears on the page being looked at. */
+  useEffect(() => {
+    if (activePage) handle.seen(activePage.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePage?.id, handle.seen, handle.updated]);
+
+  /* DELETED WHILE OPEN (the overview strip's Delete, or anyone's) ⇒ back to the
+     Crafts home. A link to an already-deleted craft keeps its notice. */
+  const craftGone = handle.state === 'deleted' || gate?.data.detailOf(craftId)?.deletedAt != null;
+  const sawCraft = useRef(false);
+  useEffect(() => {
+    sawCraft.current = false;
+  }, [craftId]);
+  useEffect(() => {
+    if (!craftGone) {
+      if (handle.state === 'ready') sawCraft.current = true;
+    } else if (sawCraft.current) {
+      sawCraft.current = false;
+      onNavigate({});
+    }
+  }, [craftGone, handle.state, onNavigate]);
+
+  /* THE ROUTE MIRRORS THE ACTIVE TAB. The workspace's active tab is the
+     truth (another window or the craft agent may move it); the URL follows it
+     — no page ⇒ the overview — and a URL the viewer brought (a shared link,
+     Back) opens or focuses its tab once. `routedRef` is the page the route
+     was last reconciled to; a route that differs is the viewer's ask. */
+  const openTab = tabs.open;
+  const activateTab = tabs.activate;
+  const routedRef = useRef<EntityId | undefined | null>(null);
+  const activeRoute = tabs.activeTab.pinned ? undefined : (tabs.activeTab.entityId as EntityId);
+  useEffect(() => {
+    if (!tabs.loaded || routedRef.current !== pageId) return;
+    if (activeRoute === pageId) return;
+    routedRef.current = activeRoute;
+    onNavigate(activeRoute ? { craftId, pageId: activeRoute } : { craftId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs.loaded, activeRoute]);
+  useEffect(() => {
+    if (!tabs.loaded || handle.state !== 'ready' || routedRef.current === pageId) return;
+    routedRef.current = pageId;
+    if (!pageId) {
+      /* Pinned: a craft opens on its first page; the Overview is in [+]. */
+      const first = pinned ? handle.pages[0] : undefined;
+      if (first) void openTab(first.kind, first.id);
+      else activateTab(craftId);
+      return;
+    }
+    const page = handle.pages.find((row) => row.id === pageId);
+    if (page) void openTab(page.kind, page.id);
+    else onNavigate(activeRoute ? { craftId, pageId: activeRoute } : { craftId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs.loaded, pageId, handle.state, handle.pages]);
+
+  /* Open (or focus) a page's tab; the route follows. */
+  const selectPage = useCallback(
+    (id: EntityId) => {
+      /* A page added a moment ago may not be on screen yet: read its kind. */
+      const known = pagesRef.current.find((row) => row.id === id);
+      const page = known ? Promise.resolve(known) : source.read(craftId).then((read) => read.pages.find((row) => row.id === id));
+      void page.then((row) => row && openTab(row.kind, row.id), () => undefined);
     },
-    [selectedId, diffByVersion, view, selectNode],
+    [openTab, craftId, source],
   );
 
-  const isEntityGraph = view?.graphType === 'entity';
-  const viewOptions = view && isEntityGraph && view.cards.length > 0 ? availableViews(view) : [];
-  const findings = isEntityGraph && view ? view.findings : [];
-  const orchestrateBlocked = !selectedId
-    ? 'Select a blueprint first.'
-    : !view || view.cards.length === 0
-      ? 'The blueprint is empty — ask the chat to draft it first.'
-      : !activeThreadId
-        ? 'Open or start a craft conversation first — the approval posts into it.'
-        : null;
-  const marked = lastDiff ? { cards: lastDiff.marked, lines: lastDiff.markedLines } : undefined;
-  const describedBy = 'crf-canvas-help';
+  /* An entity opened from the chat or a page: a page of this craft is
+     selected; anything else opens in the column over the page (or leaves). */
+  const [detailId, setDetailId] = useState<EntityId | null>(null);
+  const openEntity = useCallback(
+    (id: EntityId) => {
+      if (pagesRef.current.some((page) => page.id === id)) {
+        setDetailId(null);
+        selectPage(id);
+      } else if (panelHost) setDetailId(id);
+      else if (gate) gate.navigateView({ view: 'entity', entityId: id, origin: null });
+    },
+    [panelHost, gate, selectPage],
+  );
+  useEffect(() => {
+    if (!detailId) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      setDetailId(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [detailId]);
 
-  return (
-    <div className="crf-root" data-testid="craft-screen">
-      {/* ONE HEADER for the studio: which plan › which conversation, how to
-          look at it, and the one committing verb. It replaced two pane
-          headers that each carried an unrelated picker and a ＋. */}
-      <header className="crf-head" data-testid="crf-head">
-        <button
-          type="button"
-          className="crf-head__chat"
-          data-testid="crf-chat-toggle"
-          aria-pressed={!chatCollapsed}
-          aria-controls="crf-chat-pane"
-          title={chatCollapsed ? 'Show the conversation' : 'Hide the conversation'}
-          onClick={() => setChatCollapsed((was) => !was)}
-        >
-          <svg width={16} height={16} viewBox="0 0 16 16" aria-hidden>
-            <rect x={1.5} y={2.5} width={13} height={11} rx={2} />
-            <path d={chatCollapsed ? 'M6 2.5 V13.5' : 'M6 2.5 V13.5 M2 5 H5 M2 7.5 H5'} />
-          </svg>
-        </button>
-        <GraphPicker
-          graphs={graphs}
-          selectedId={selectedId}
-          onSelect={(id) => setSelectedId(id)}
-          onCreate={() => void createGraph()}
-        />
-        <span className="crf-head__sep" aria-hidden>›</span>
-        <CraftChatPicker
-          threads={threads}
-          aboutSelected={aboutSelected}
-          selectedId={activeThreadId}
-          onSelect={requestThread}
-          onNewChat={() => {
-            setChatCollapsed(false);
-            requestThread(null);
-          }}
-        />
-        <span className="crf-head__fill" />
-        <ViewSwitcher options={viewOptions} value={viewId} onChange={setViewChoice} />
-        <FindingsChip
-          findings={findings}
-          onClick={() => {
-            const first = findings.find((finding) => finding.nodes.length > 0);
-            if (first) selectNode(first.nodes[0]!);
-          }}
-        />
-        <OrchestrateButton
-          findings={findings}
-          plan={plan.create}
-          confirm={plan.confirm}
-          disabledReason={orchestrateBlocked}
-          approving={approving}
-          onApprove={() => void approveOrchestrate()}
-          onShowNode={(key) => selectNode(key)}
-        />
-      </header>
-      <div
-        className={['crf-split', ...(overlay ? ['crf-split--overlay'] : [])].join(' ')}
-        ref={splitRef}
-        style={{ '--crf-chat': `${chatWidth}px`, '--crf-detail': `${detailWidth}px` } as CSSProperties}
-      >
-        <section className="crf-chat" id="crf-chat-pane" aria-label="Craft conversation" hidden={chatCollapsed}>
-          <div className="crf-chat__body">
-            <ChatHomeSurface
-              seam={seam}
-              spaceId={spaceId}
-              nodeKey={nodeKey}
-              bridge={bridge}
-              /* Contextual chat: a new thread here is ABOUT the blueprint row,
-                 written as an `about` edge by `chat.start`. No graph selected
-                 yet ⇒ no subject, which is bare Home's shape.
+  /* THE WIDTH SOLVER: `usePanelWidth` holds what the viewer asked for; this
+     screen clamps for paint against the measured split. */
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const splitWidth = useElementWidth(splitRef);
+  const chatPref = usePanelWidth('craft.chat', CHAT_DEFAULT, CHAT_MIN);
+  const chatMax = splitWidth > 0 ? Math.max(CHAT_MIN, splitWidth - PAGES_MIN - PANE_CHROME) : Number.POSITIVE_INFINITY;
+  const chatWidth = Math.min(Math.max(CHAT_MIN, chatPref.width), chatMax);
 
-                 THE PROP WAS `anchorId` AND NOTHING READ IT. Wave 1 renamed
-                 `ChatHomeSurfaceProps.anchorId` to `aboutId` with the model
-                 underneath it, and this spread kept the old key — a JSX spread
-                 of a conditional expression gets no excess-property check, so
-                 it compiled and silently dropped the subject. Every craft chat
-                 started since has had no `about` edge. */
-              {...(selectedId ? { aboutId: selectedId } : {})}
-              pinnedMode="craft"
-              composerSeed={composerSeed}
-              newThreadIntro={<CraftChatIntro onPrompt={seedPrompt} />}
-              toolNote={toolNote}
-              skillOptions={skillOptions}
-              onOpenEntity={openEntity}
-              /* The thread column is this screen's, drawn as the header's
-                 conversation crumb. `routeThreadId` is authoritative in solo mode. */
-              soloConversation
-              routeThreadId={requestedThreadId}
-              onThreadsChange={setThreads}
-              onSelectionChange={adoptSelection}
-              viewerName={viewerName}
-              viewerId={viewerId}
-            />
+  /* ONE STRIP, THE SELECTED TAB'S (Workspace hosts only): exactly Home's — the
+     entity's own options on top; Links · Messages · Chat, Run, Expand and More
+     below — over one chrome seam, for the one body mounted. The overview's
+     subject is the craft itself. */
+  const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
+  const chrome = useEntityChromeValue(mainEl);
+  const ownerTab = useEmbeddedTab(runtime, gate && !activePage ? craftId : null, gate && !activePage ? 'craft' : null);
+  const pageTab = useEmbeddedTab(runtime, gate && activePage ? activePage.id : null, gate && activePage ? activePage.kind : null);
+  const stripTab = activePage ? pageTab : ownerTab;
+  const chatHidden = chatCollapsed || expanded;
+  /* Without a strip, the graph's controls need a home of their own. */
+  const [liteSlot, setLiteSlot] = useState<HTMLDivElement | null>(null);
+  const controlsSlot = gate ? chrome.kindSlot : liteSlot;
+
+  const title = handle.craft?.title ?? '';
+  const onNewPage = useNewPage(handle, seedPrompt, (id) => selectPage(id));
+
+  const body: ReactNode =
+    handle.state === 'loading' ? (
+      <p className="crf-empty" role="status">Loading the craft…</p>
+    ) : handle.state === 'deleted' ? (
+      <div className="crf-empty" data-testid="dsn-deleted">
+        <p>This craft was deleted.</p>
+        <button type="button" className="dsn-btn" onClick={() => onNavigate({})}>Back to Crafts</button>
+      </div>
+    ) : handle.state === 'error' ? (
+      <div className="crf-empty" data-testid="dsn-error">
+        <p>This craft could not be read.</p>
+        <button type="button" className="dsn-btn" onClick={handle.retry}>Retry</button>
+      </div>
+    ) : activePage ? (
+      <PageBody
+        key={activePage.id}
+        page={activePage}
+        seam={seam}
+        source={source}
+        gate={gate}
+        runtime={runtime}
+        controlsSlot={controlsSlot}
+        pinned={pinned}
+        onAsk={seedPrompt}
+        onOpenEntity={openEntity}
+        onToolNote={publishToolNote}
+      />
+    ) : (
+      /* THE OVERVIEW — the craft's own tab (its detail panel: every page live, stacked). */
+      <CraftOverview
+        tab={ownerTab}
+        pages={handle.pages}
+        panel={{ seam, source, gate, runtime, onOpenPage: selectPage, onAsk: seedPrompt, onOpenEntity: openEntity, onNotice, ...(pinned ? { frameless: true, controlsSlot } : {}) }}
+        onOpenEntity={openEntity}
+        onClose={() => onNavigate({})}
+      />
+    );
+
+  /* The craft's chats and sessions (spec §3, 2nd panel): framed, the frame's
+     own panel column beside the rail; unframed, the left column here. */
+  const sidePanel = (
+    <CraftSidePanel
+      seam={seam}
+      spaceId={spaceId}
+      nodeKey={nodeKey}
+      craftId={craftId}
+      title={title}
+      gate={gate}
+      runtime={runtime}
+      bridge={props.bridge}
+      skillOptions={props.skillOptions}
+      viewerName={props.viewerName}
+      viewerId={props.viewerId}
+      composerSeed={composerSeed}
+      onPrompt={seedPrompt}
+      toolNote={toolNote ?? undefined}
+      onOpenEntity={openEntity}
+      onNotice={onNotice}
+      pinned={pinned}
+    />
+  );
+  const chatPane = (
+    <section className="crf-chat" id="crf-chat-pane" aria-label="Craft chat" hidden={chatHidden}>
+      {sidePanel}
+    </section>
+  );
+  const chatResizer = (
+    <PanelResizer
+      side="left"
+      label="Craft chat"
+      controls="crf-chat-pane"
+      width={chatWidth}
+      minWidth={CHAT_MIN}
+      maxWidth={chatMax}
+      onResize={chatPref.setWidth}
+      onReset={chatPref.reset}
+    />
+  );
+  const toggleChat = () => {
+    if (expanded) runtime.dispatch({ command: 'workspace.layout.set', args: { expanded: false }, source: 'click' });
+    else setChatCollapsed((was) => !was);
+  };
+  const chatToggle = (
+    <button
+      type="button"
+      className="crf-head__chat"
+      data-testid="crf-chat-toggle"
+      aria-pressed={!chatHidden}
+      aria-controls="crf-chat-pane"
+      title={chatHidden ? 'Show the chat' : 'Hide the chat'}
+      onClick={toggleChat}
+    >
+      <svg width={16} height={16} viewBox="0 0 16 16" aria-hidden>
+        <rect x={1.5} y={2.5} width={13} height={11} rx={2} />
+        <path d={chatHidden ? 'M6 2.5 V13.5' : 'M6 2.5 V13.5 M2 5 H5 M2 7.5 H5'} />
+      </svg>
+    </button>
+  );
+
+  const pagesSection = (
+    <section className="dsn-main" aria-label={`Pages of ${title || 'the craft'}`} data-testid="dsn-main">
+      {handle.state === 'ready' && !pinned ? (
+        <CraftTabStrip
+          tabs={tabs.tabs}
+          activeTabId={tabs.activeTab.id}
+          pages={handle.pages}
+          craftTitle={title}
+          updated={handle.updated}
+          onSelect={activateTab}
+          onClose={tabs.close}
+          onMove={tabs.move}
+          onOpenPage={(page) => selectPage(page.id)}
+          onRemovePage={(id) => {
+            /* The node drops the page's tab; the strip hides it at once. */
+            void handle.remove(id);
+          }}
+          onNew={onNewPage}
+          onAddExisting={(id) => void handle.addExisting(id).then((ok) => ok && selectPage(id))}
+          candidates={(text) => source.candidates(text)}
+        />
+      ) : null}
+      <div className="dsn-band">
+        <div className="dsn-content" ref={setMainEl}>
+          <div className="dsn-page" data-testid="dsn-page">
+            {gate ? <EntityChromeContext.Provider value={chrome}>{body}</EntityChromeContext.Provider> : body}
           </div>
-        </section>
-        {/* The floor is the CANVAS's, measured — see `chatMax`. A handle that
-            could drag the blueprint to nothing would be the zero-floored
-            track the layout law forbids. */}
-        {chatCollapsed ? null : (
-          <PanelResizer
-            side="left"
-            label="Craft conversation"
-            controls="crf-chat-pane"
-            width={chatWidth}
-            minWidth={CHAT_MIN}
-            maxWidth={chatMax}
-            onResize={setChatWidth}
-            onReset={resetChatWidth}
-          />
-        )}
-        <section className="crf-canvas" aria-label="Blueprint" data-testid="crf-canvas-pane">
-          {lastDiff && isEntityGraph ? (
-            <DiffStrip
-              diff={lastDiff}
-              view={view!}
-              onSelect={selectNode}
-              onDismiss={() => setLastDiff(null)}
-            />
-          ) : null}
-          <div className="crf-canvas__body">
-            {loadState === 'error' ? (
-              <p className="crf-empty">This blueprint could not be read. Pick another from the header, or retry.</p>
-            ) : !selectedId ? (
-              loadState === 'loading' ? (
-                <p className="crf-empty" role="status">Loading blueprints…</p>
-              ) : (
-                <CraftEmptyState hasGraph={false} onPrompt={seedPrompt} onCreate={() => void createGraph()} />
-              )
-            ) : !view ? (
-              <p className="crf-empty" role="status">Loading the blueprint…</p>
-            ) : view.graphType === 'mermaid' ? (
-              view.source ? (
-                <div className="crf-mermaid" data-testid="crf-mermaid">
-                  <Mermaid source={view.source} testId="crf-mermaid-svg" />
-                </div>
-              ) : (
-                <p className="crf-empty">A mermaid graph with no source yet — ask the chat to sketch one.</p>
-              )
-            ) : view.graphType === 'entity' ? (
-              view.cards.length === 0 ? (
-                <CraftEmptyState hasGraph onPrompt={seedPrompt} />
-              ) : (
-                <>
-                  <p id={describedBy} className="crf-sr">
-                    Arrow keys move between nodes, Enter inspects the selected node, f finds, 0 fits the whole plan,
-                    and full stop focuses a node&apos;s neighbourhood. The Outline and Table views list the same blueprint as text.
-                  </p>
-                  {viewId === 'outline' ? (
-                    <div className="crf-scroll">
-                      <BlueprintOutline
-                        view={view}
-                        selectedKey={selectedNode}
-                        onSelect={selectNode}
-                        marked={lastDiff?.marked}
-                      />
-                    </div>
-                  ) : viewId === 'table' ? (
-                    <div className="crf-scroll">
-                      <BlueprintTable
-                        view={view}
-                        selectedKey={selectedNode}
-                        onSelect={selectNode}
-                        marked={lastDiff?.marked}
-                      />
-                    </div>
-                  ) : (
-                    <BlueprintCanvas
-                      /* A new blueprint or a new layout gets a fresh camera. */
-                      key={`${selectedId}:${viewId}`}
-                      view={view}
-                      ariaLabel={`Blueprint ${detail?.title ?? ''}: ${view.cards.length} nodes, ${view.lines.length} edges`}
-                      describedBy={describedBy}
-                      selectedKey={selectedNode}
-                      onSelect={selectNode}
-                      marked={marked}
-                    />
-                  )}
-                </>
-              )
-            ) : (
-              <p className="crf-empty" data-testid="crf-unknown-type">
-                {`Graph type “${view.graphType}” has no renderer in this build — the row is intact; a future type renders here.`}
-              </p>
-            )}
-          </div>
-        </section>
-        {/*
-          THE RIGHT COLUMN — the selected node's inspector, or the entity an
-          "Open entity" / chat chip opened, which REPLACES the inspector's body
-          (with a back arrow to it) rather than opening a fourth column.
-          Rendered ONLY while something is open: an aside kept at
-          `display:none` would still mount that entity's panel behind an
-          invisible region, which is the rule `EntityView` states and obeys.
-        */}
-        {sideOpen && (selectedNode || (detailId && panelHost)) ? (
-          <>
-            {overlay ? null : (
-              <PanelResizer
-                side="right"
-                label="Inspector"
-                controls="crf-detail-pane"
-                width={detailWidth}
-                minWidth={DETAIL_MIN}
-                maxWidth={detailMax}
-                onResize={detailPref.setWidth}
-                onReset={detailPref.reset}
-              />
-            )}
-            <aside
-              className="crf-detail"
-              id="crf-detail-pane"
-              aria-label={detailId ? 'Entity details' : 'Node inspector'}
-              data-testid="crf-detail"
-              data-overlay={overlay || undefined}
-            >
-              {detailId && panelHost ? (
-                <>
-                  {selectedNode ? (
-                    <button type="button" className="crf-back" data-testid="crf-back" onClick={() => screen.clear()}>
-                      <span aria-hidden>‹</span> Back to the node
-                    </button>
-                  ) : null}
-                  <div className="crf-detail__entity">
-                    <HostedEntityColumn
-                      {...panelHost}
-                      entityId={detailId}
-                      /* Drilling REPLACES this column's subject — never a fourth. */
-                      onOpenEntity={(id) => screen.open(id)}
-                      onClose={() => screen.clear()}
-                    />
-                  </div>
-                </>
-              ) : view && selectedNode ? (
-                <NodeInspector
-                  view={view}
-                  selectedKey={selectedNode}
-                  onSelect={selectNode}
-                  onOpenEntity={openEntity}
-                  onAsk={askAbout}
-                  onClose={() => setNodeKey(null)}
+          {detailId && panelHost ? (
+            <aside className="crf-detail" data-overlay aria-label="Entity details" data-testid="crf-detail">
+              <div className="crf-detail__entity">
+                <HostedEntityColumn
+                  {...panelHost}
+                  entityId={detailId}
+                  onOpenEntity={(id) => setDetailId(id as EntityId)}
+                  onClose={() => setDetailId(null)}
                 />
-              ) : null}
+              </div>
             </aside>
-          </>
-        ) : null}
+          ) : null}
+        </div>
+        {/* The selected tab's side column — Links · Messages · Chat — as in
+            the Workspace; each page (and the overview) keeps its own. */}
+        {gate && stripTab ? <ChatDock tab={stripTab} onOpenEntity={(id) => openEntity(id as EntityId)} /> : null}
+        {gate && stripTab ? (
+          <EntityChromeContext.Provider value={chrome}>
+            <ActionStrip tab={stripTab} linkUrl={activePage ? undefined : craftLinkUrl(spaceId, craftId)} />
+          </EntityChromeContext.Provider>
+        ) : gate ? null : (
+          <div className="dsn-strip-lite" ref={setLiteSlot} data-testid="dsn-strip-lite" />
+        )}
+      </div>
+    </section>
+  );
+
+  const screen = (
+    <div className="crf-root dsn-root" data-testid="craft-screen">
+      {framed ? (
+        !frameTop ? null : pinned ? (
+          /* The craft's name is the band's switcher; the band adds only the pages. */
+          handle.state === 'ready' ? createPortal(
+            <CraftPageTabs
+              craftId={craftId}
+              pages={handle.pages}
+              activePageId={activePage?.id ?? null}
+              craftTitle={title}
+              updated={handle.updated}
+              onSelect={(page) => selectPage(page.id)}
+              onOverview={() => activateTab(craftId)}
+              onNew={onNewPage}
+              onAddExisting={(id) => void handle.addExisting(id).then((ok) => ok && selectPage(id))}
+              onRemovePage={(id) => void handle.remove(id)}
+              candidates={(text) => source.candidates(text)}
+            />,
+            frameTop,
+          ) : null
+        ) : createPortal(
+          <div className="dsn-frame-top" data-testid="dsn-head">
+            <CraftTitle className="dsn-frame-top__title" title={title} canRename={handle.state === 'ready'} onRename={handle.rename} />
+          </div>,
+          frameTop,
+        )
+      ) : <header className="crf-head dsn-head" data-testid="dsn-head">
+        {chatToggle}
+        <button type="button" className="dsn-crumb" data-testid="dsn-back" onClick={() => onNavigate({})}>
+          <span aria-hidden>‹</span> Crafts
+        </button>
+        <span className="crf-head__sep" aria-hidden>·</span>
+        {/* Switching crafts is the top bar's job now (CraftHeaderSwitcher). */}
+        <h1 className="dsn-title" data-testid="dsn-title">
+          <CraftTitle title={title} canRename={handle.state === 'ready'} onRename={handle.rename} />
+        </h1>
+        <span className="crf-head__fill" />
+      </header>}
+      <div className="crf-split" ref={splitRef} style={{ '--crf-chat': `${chatWidth}px` } as CSSProperties}>
+        {framed ? null : chatPane}
+        {framed || chatHidden ? null : chatResizer}
+        {pagesSection}
+        {framed && frame.panel ? createPortal(sidePanel, frame.panel) : null}
       </div>
     </div>
   );
+
+  return gate ? (
+    <EmbeddedWorkspace runtime={runtime} gate={gate}>
+      {screen}
+    </EmbeddedWorkspace>
+  ) : (
+    screen
+  );
 }
 
-/** The live overlay a reference node carries: its status, and whether a session is on it now. */
-function refInfoOf(entity: EntityDetail): RefInfo {
-  const state = entity.state as { kind?: string; status?: string } | undefined;
-  return {
-    kind: entity.kind,
-    title: entity.title,
-    status: state && typeof state.status === 'string' ? state.status : null,
-    live: (entity.badges?.workingActors?.length ?? 0) > 0,
-  };
+/** `[+ page]`: create and open; Artifact asks the agent, which is the one door artifacts have. */
+function useNewPage(handle: CraftHandle, ask: (text: string) => void, open: (id: EntityId) => void) {
+  return useCallback(
+    (kind: NewPageKind) => {
+      if (kind === 'artifact') {
+        ask('Add an artifact page to this craft: ');
+        return;
+      }
+      void handle.createPage(kind).then((id) => id && open(id));
+    },
+    [handle, ask, open],
+  );
+}
+
+interface PageBodyProps {
+  page: CraftPageRow;
+  seam: Seam;
+  source: CraftSource;
+  gate: WorkspaceGateHandles | undefined;
+  runtime: WorkspaceRuntime;
+  /** The strip TOP's kind slot (or the lite strip without a Workspace host). */
+  controlsSlot: HTMLElement | null;
+  /** The pinned rail: a page's Find and Open are strip buttons too. */
+  pinned?: boolean | undefined;
+  onAsk(text: string): void;
+  onOpenEntity(id: EntityId): void;
+  onToolNote(note: ToolNote | null): void;
 }
 
 /**
- * THE DIFF STRIP — what the latest agent patch changed, over the canvas. The
- * entries are buttons that select the node (and so open the inspector), so
- * "the agent added Draft API spec" is one press from seeing it.
+ * One page's body, in its kind's full view. A page that is itself a craft is
+ * that craft's overview, inline — no nested page rows.
  */
-function DiffStrip({
-  diff,
-  view,
-  onSelect,
-  onDismiss,
-}: {
-  diff: BlueprintDiff;
-  view: BlueprintView;
-  onSelect(key: string): void;
-  onDismiss(): void;
-}) {
-  const entries = [
-    ...diff.added.map((key) => ({ key, verb: 'added' })),
-    ...diff.changed.map((key) => ({ key, verb: 'changed' })),
-  ].slice(0, 6);
-  const more = diff.added.length + diff.changed.length - entries.length;
+function PageBody(props: PageBodyProps) {
+  const { page, seam, gate, runtime } = props;
+  if (page.kind === 'craft') return <CraftPage {...props} />;
+  if (page.kind === 'graph') {
+    return (
+      <>
+        <GraphPage
+          seam={seam}
+          graphId={page.id}
+          controlsSlot={props.controlsSlot}
+          stripFind={props.pinned}
+          onOpen={props.pinned && gate ? () => gate.navigateView({ view: 'entity', entityId: page.id, origin: null }) : undefined}
+          onAsk={props.onAsk}
+          onOpenEntity={props.onOpenEntity}
+          onToolNote={props.onToolNote}
+        />
+        {gate ? <GraphChrome page={page} runtime={runtime} onOpenEntity={props.onOpenEntity} /> : null}
+      </>
+    );
+  }
+  if (!gate) return <PlainPage page={page} onOpen={() => props.onOpenEntity(page.id)} />;
+  return <WorkspacePage page={page} runtime={runtime} onOpenEntity={props.onOpenEntity} />;
+}
+
+/**
+ * A PAGE THAT IS ITSELF A CRAFT (doc §3): one tab, showing that craft's own
+ * overview in place. Its pages are not tabs here — they are not pages of
+ * this craft.
+ */
+function CraftPage({ page, seam, source, gate, runtime, onAsk, onOpenEntity }: PageBodyProps) {
+  const nested = useCraft(source, page.id, null);
+  const tab = useEmbeddedTab(runtime, gate ? page.id : null, gate ? page.kind : null);
   return (
-    <div className="crf-diff" role="status" data-testid="crf-diff">
-      <span className="crf-diff__lead">Blueprint updated</span>
-      <span className="crf-diff__sum" data-testid="crf-diff-summary">{summarizeDiff(diff)}</span>
-      <span className="crf-diff__items">
-        {entries.map(({ key, verb }) => (
-          <button type="button" key={key} className="crf-diff__item" data-verb={verb} onClick={() => onSelect(key)}>
-            {titleOf(view, key)}
-          </button>
-        ))}
-        {more > 0 ? <span className="crf-diff__more">{`+${more} more`}</span> : null}
-        {diff.removed.slice(0, 3).map((node) => (
-          <span key={node.key} className="crf-diff__item crf-diff__item--gone" title="Removed">{node.title}</span>
-        ))}
-      </span>
-      <button type="button" className="crf-diff__close" aria-label="Dismiss the change summary" onClick={onDismiss}>
-        ×
-      </button>
+    <div className="dsn-nested" data-testid="dsn-nested" data-craft={page.id}>
+      <CraftOverview tab={tab} pages={nested.pages} panel={{ seam, source, gate, runtime, onAsk, onOpenPage: onOpenEntity, onOpenEntity }} onOpenEntity={onOpenEntity} onClose={noop} />
     </div>
   );
 }
 
-/** "Task" → "Tasks", from the vocabulary's own plural; unknown labels get an "s". */
-function orchestrationNodeKindPlural(label: string): string {
-  return ORCHESTRATION_NODE_KINDS.find((kind) => kind.label === label)?.plural ?? `${label}s`;
+/** A non-graph page: the Workspace entity adapter's body, in the private runtime. */
+function WorkspacePage({
+  page,
+  runtime,
+  onOpenEntity,
+}: {
+  page: CraftPageRow;
+  runtime: WorkspaceRuntime;
+  onOpenEntity(id: EntityId): void;
+}) {
+  const tab = useEmbeddedTab(runtime, page.id, page.kind);
+  if (!tab) return null;
+  return (
+    <div className="dsn-entity tws-entity-main tws-entity-host">
+      <EntityTabBody
+        tab={tab}
+        adapter={getKindAdapter(page.kind)}
+        onOpenEntity={(id) => onOpenEntity(id as EntityId)}
+        onClose={noop}
+      />
+    </div>
+  );
+}
+
+/**
+ * A GRAPH PAGE'S STRIP. The canvas is the body (Craft is where a graph is
+ * built), but the strip must be the graph's own, exactly as in Home: Run,
+ * Edit, Links · Messages, Rename and Delete. Those are drawn by the entity
+ * panel into the strip's slots, so its body is mounted HIDDEN: only its
+ * portals show, and it loads the detail the strip's Links/Messages read.
+ */
+function GraphChrome({ page, runtime, onOpenEntity }: { page: CraftPageRow; runtime: WorkspaceRuntime; onOpenEntity(id: EntityId): void }) {
+  const tab = useEmbeddedTab(runtime, page.id, page.kind);
+  if (!tab) return null;
+  return (
+    <div hidden className="dsn-graph-chrome" data-testid="dsn-graph-chrome">
+      <EntityTabBody tab={tab} adapter={getKindAdapter(page.kind)} onOpenEntity={(id) => onOpenEntity(id as EntityId)} onClose={noop} />
+    </div>
+  );
+}
+
+/** The craft's name in its own header: press it to rename (Subhang 2026-10-18). */
+function CraftTitle({ title, canRename, onRename, className }: { title: string; canRename: boolean; onRename(title: string): Promise<boolean>; className?: string }) {
+  const [renaming, setRenaming] = useState(false);
+  const shown = title || 'Untitled craft';
+  if (renaming) {
+    return (
+      <CraftNameField
+        initial={shown}
+        label="Rename craft"
+        className="dsn-title__rename"
+        testId="dsn-title-rename"
+        onCommit={(name) => {
+          setRenaming(false);
+          void onRename(name);
+        }}
+        onCancel={() => setRenaming(false)}
+      />
+    );
+  }
+  if (!canRename) return <span className={className}>{title}</span>;
+  return (
+    <button
+      type="button"
+      className={className ? `dsn-title__btn ${className}` : 'dsn-title__btn'}
+      title="Rename craft"
+      data-testid="dsn-title-btn"
+      onClick={() => setRenaming(true)}
+    >
+      {shown}
+    </button>
+  );
+}
+
+/** Without a Workspace host (harness mounts): what the page is, and Open. */
+function PlainPage({ page, onOpen }: { page: CraftPageRow; onOpen(): void }) {
+  return (
+    <div className="dsn-plain" data-testid="dsn-plain-page">
+      <KindIcon kind={page.kind} size={24} />
+      <h2 className="dsn-plain__title">{page.title}</h2>
+      <p className="dsn-plain__line">{getKind(page.kind).label}</p>
+      <button type="button" className="dsn-btn" onClick={onOpen}>Open</button>
+    </div>
+  );
 }

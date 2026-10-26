@@ -2,9 +2,9 @@
 /**
  * `toolNote` — a host's one-line note under a tool call (Craft names the
  * blueprint nodes a patch changed). Absent, a plain patch call draws its
- * counted step (advisor D15) and the ledger's quiet edit line (D11) — never a
- * box, the tool name or its payload; present, the host's sentence STANDS IN
- * for that edit line rather than saying the same edit twice.
+ * counted step (advisor D15) and the receipt's edited row — never a box, the
+ * tool name or its payload; present, the host's sentence STANDS IN for that
+ * row rather than saying the same edit twice.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
@@ -27,10 +27,12 @@ const parts: ChatTurnPart[] = [
 ];
 
 describe('toolNote', () => {
-  it('absent: a plain patch call draws its counted step and the quiet edit line — nothing else', () => {
+  it('absent: a plain patch call draws its counted step and the receipt’s edited row — nothing else', () => {
     const view = render(<TurnParts parts={parts} />);
     expect(view.getByTestId('chat-steps-head').textContent).toContain('1 step');
-    expect(view.getByTestId('chat-ledger-edit').textContent).toMatch(/^✎ Edited Graph \(nodes\)$/);
+    const row = view.getByTestId('chat-receipt-row');
+    expect(row.dataset.mark).toBe('edited');
+    expect(row.textContent).toBe('✎Graphnodes');
     expect(view.container.textContent).not.toContain('tm8_act');
     expect(view.container.textContent).not.toContain('entities.patch');
   });
@@ -47,8 +49,8 @@ describe('toolNote', () => {
       />,
     );
     expect(view.getByTestId('host-note').textContent).toBe('Updated the blueprint');
-    // The host narrated this edit; the generic line does not repeat it.
-    expect(view.queryByTestId('chat-ledger-edit')).toBeNull();
+    // The host narrated this edit; the receipt does not repeat it.
+    expect(view.queryByTestId('chat-receipt')).toBeNull();
     expect(view.container.textContent).not.toContain('tm8_act');
     expect(view.container.textContent).not.toContain('entities.patch');
     const last = seen[seen.length - 1]!;
@@ -62,6 +64,6 @@ describe('toolNote', () => {
     cleanup();
     const view = render(<TurnParts parts={parts} toolNote={() => null} />);
     expect(view.container.textContent).toBe(bare);
-    expect(view.getByTestId('chat-ledger-edit')).toBeTruthy();
+    expect(view.getByTestId('chat-receipt-row')).toBeTruthy();
   });
 });

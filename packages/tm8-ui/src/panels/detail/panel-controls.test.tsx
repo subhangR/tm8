@@ -72,7 +72,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { ActorSummary, EntityDetail, EntityId } from '@tm8/contract';
-import { REASONS as DOMAIN_REASONS, getKind, type ActionContext } from '../../domain';
+import { REASONS as DOMAIN_REASONS, getKind, sessionHeadline, type ActionContext } from '../../domain';
 import {
   FIXTURE_SPACE_ID,
   fixtureDetails,
@@ -330,7 +330,14 @@ describe('the way back — done and archived both reopen', () => {
 
   it('completing still routes through the gated completion verb', () => {
     const h = host();
-    const { getByTestId } = panel(taskAt('working'), h);
+    /* A ticked checklist: with one open, the picker refuses Done itself and
+       says why (task-page.test), so the click never reaches the verb. */
+    const content = TASK.content as unknown as { acceptanceCriteria?: { done: boolean }[] };
+    const ticked = {
+      ...content,
+      acceptanceCriteria: (content.acceptanceCriteria ?? []).map((c) => ({ ...c, done: true })),
+    } as unknown as EntityDetail['content'];
+    const { getByTestId } = panel(taskAt('working', { content: ticked }), h);
     pick(getByTestId, 'row-state-select', 'done');
 
     // `done` is the ONE value the database refuses on both write doors.
@@ -448,7 +455,12 @@ describe('the strip is ONE ROW, and it sits UNDER THE TABS', () => {
     if (!status) throw new Error('the work_session fixture must carry a status');
 
     const { getByTestId } = panel(session, host({ kind: 'work_session' }));
-    expect(getByTestId('panel-header').textContent).toContain(status.replace(/_/g, ' '));
+    // Spec D1 §5.6: the pill is the session's row WORD (Working, Completed,
+    // Crashed: …) — the process folded into the outcome, from the same
+    // derivation as the list row.
+    expect(getByTestId('session-panel-pill').textContent).toBe(
+      sessionHeadline(session.state, undefined) ?? '',
+    );
   });
 });
 
