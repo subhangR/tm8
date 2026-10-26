@@ -11,6 +11,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   OWNER_URL,
+  LEGACY_LAUNCH,
+  bindLegacyCredential,
   buildWorld,
   claimsFor,
   cmid,
@@ -18,6 +20,7 @@ import {
   json,
   literal,
   ok,
+  postMessageSql,
   rows,
   runRaw,
   scalar,
@@ -248,9 +251,7 @@ test('optimistic concurrency: a stale expectedVersion is a 40001 carrying the cu
 // Messages
 // -----------------------------------------------------------------------------
 test('a message\'s identity, anchor, author and thread root are immutable', () => {
-  const message = json(`select public.post_message(${uuid(w.channelA)}, 'original')`, {
-    claims: w.claimsA,
-  }).entity.id;
+  const message = json(postMessageSql(w.channelA, 'original'), { claims: w.claimsA }).messageIds[0];
   denied(
     'validate_message: update messages set anchor_id',
     `update public.messages set anchor_id = ${uuid(w.taskA)} where entity_id = ${uuid(message)}`,
@@ -381,8 +382,15 @@ function spawnSession(title) {
   ).entity.id;
 }
 
+/** A spawned session that has recorded its credential binding, so it may run (273). */
+function runnableSession(title) {
+  const session = spawnSession(title);
+  bindLegacyCredential(session, { claims: w.claimsA });
+  return session;
+}
+
 test('work_session.status has a SINGLE writer (R29): any other path is refused', () => {
-  const session = spawnSession('single writer probe');
+  const session = runnableSession('single writer probe');
   denied(
     'guard_work_session_status: a direct UPDATE of status, even as the schema owner',
     `update public.work_sessions set status = 'running' where entity_id = ${uuid(session)}`,
@@ -417,7 +425,7 @@ test('work_session.status has a SINGLE writer (R29): any other path is refused',
 });
 
 test('terminal work_session states are terminal: a late frame cannot resurrect a session', () => {
-  const session = spawnSession('terminal probe');
+  const session = runnableSession('terminal probe');
   ok(`select public.work_session_transition(${uuid(session)}, 'running')`, { claims: w.claimsA });
   ok(`select public.work_session_transition(${uuid(session)}, 'exited', 0)`, { claims: w.claimsA });
 
@@ -452,11 +460,16 @@ test('terminal work_session states are terminal: a late frame cannot resurrect a
   );
 });
 
+/** A manifest literal carrying the launch block 273 requires (see LEGACY_LAUNCH). */
+function manifest(fields) {
+  return `${literal(JSON.stringify({ ...fields, launch: LEGACY_LAUNCH }))}::jsonb`;
+}
+
 test('session_manifests store env var NAMES, never values (S15)', () => {
   const session = spawnSession('manifest probe');
   ok(
     `select public.record_session_manifest(${uuid(session)},
-       '{"prompt":"hello","skills":[]}'::jsonb, array['ANTHROPIC_API_KEY','TM8_SESSION_TOKEN'])`,
+       ${manifest({ prompt: 'hello', skills: [] })}, array['ANTHROPIC_API_KEY','TM8_SESSION_TOKEN'])`,
     { claims: w.claimsA },
   );
   assert.equal(
@@ -470,18 +483,18 @@ test('session_manifests store env var NAMES, never values (S15)', () => {
   denied(
     'guard_manifest_secrets: a manifest containing an sk- credential value',
     `select public.record_session_manifest(${uuid(session)},
-       '{"env":{"ANTHROPIC_API_KEY":"sk-ant-abcdefghijklmnop0123456789"}}'::jsonb)`,
+       ${manifest({ env: { ANTHROPIC_API_KEY: 'sk-ant-abcdefghijklmnop0123456789' } })})`,
     { claims: w.claimsA, expect: '23514' },
   );
   denied(
     'guard_manifest_secrets: a manifest containing a ghp_ token',
     `select public.record_session_manifest(${uuid(session)},
-       '{"env":{"GITHUB_TOKEN":"ghp_abcdefghijklmnopqrstuvwxyz0123"}}'::jsonb)`,
+       ${manifest({ env: { GITHUB_TOKEN: 'ghp_abcdefghijklmnopqrstuvwxyz0123' } })})`,
     { claims: w.claimsA, expect: '23514' },
   );
   denied(
     'guard_manifest_secrets: env_var_names holding a VALUE rather than a name',
-    `select public.record_session_manifest(${uuid(session)}, '{}'::jsonb,
+    `select public.record_session_manifest(${uuid(session)}, ${manifest({})},
        array['sk-ant-not-a-name'])`,
     { claims: w.claimsA, expect: '22023' },
   );
@@ -492,7 +505,7 @@ test('session_manifests store env var NAMES, never values (S15)', () => {
   // Benign hyphenated text must record cleanly…
   ok(
     `select public.record_session_manifest(${uuid(session)},
-       '{"prompt":"work the fix/task-acceptance-criteria-cleanup branch and the task-0123456789abcdef slug"}'::jsonb,
+       ${manifest({ prompt: 'work the fix/task-acceptance-criteria-cleanup branch and the task-0123456789abcdef slug' })},
        array[]::text[],
        'the disk-usage-monitoring-alerts dashboard is described in task-bodies-and-content',
        'resume agent/task-tile-row-controls-extra where it left off')`,
@@ -503,12 +516,12 @@ test('session_manifests store env var NAMES, never values (S15)', () => {
   denied(
     'guard_manifest_secrets: an sk-ant-oat OAuth-shaped value in the manifest',
     `select public.record_session_manifest(${uuid(session)},
-       '{"tasks":[{"description":"key: sk-ant-oat01-${'A'.repeat(80)}"}]}'::jsonb)`,
+       ${manifest({ tasks: [{ description: `key: sk-ant-oat01-${'A'.repeat(80)}` }] })})`,
     { claims: w.claimsA, expect: '23514' },
   );
   denied(
     'guard_manifest_secrets: a github_pat_ token in the task prompt',
-    `select public.record_session_manifest(${uuid(session)}, '{}'::jsonb,
+    `select public.record_session_manifest(${uuid(session)}, ${manifest({})},
        array[]::text[], null, 'use github_pat_${'z'.repeat(60)} to push')`,
     { claims: w.claimsA, expect: '23514' },
   );
@@ -535,7 +548,7 @@ test('the capture trigger fires INSIDE the mutation\'s transaction, and only com
     `begin;\n` +
     `select set_config('tm8.identity_id', ${literal(w.identityA)}, true);\n` +
     `select set_config('tm8.actor_id', ${literal(w.memberA)}, true);\n` +
-    `select public.post_message(${uuid(w.channelA)}, ${literal(probe)});\n` +
+    `${postMessageSql(w.channelA, probe)};\n` +
     `select 'in-txn:' || count(*) from public.workspace_events\n` +
     `  where space_id = ${uuid(w.spaceA)} and payload ->> 'body' = ${literal(probe)};\n` +
     `rollback;\n` +
@@ -558,8 +571,7 @@ test('the capture trigger fires INSIDE the mutation\'s transaction, and only com
 test('the capture trigger stamps the cmid, so a client can reconcile its own optimistic write', () => {
   const id = cmid('stamp');
   ok(
-    `select public.post_message(${uuid(w.channelA)}, 'stamped', null, null, '[]'::jsonb, '[]'::jsonb,
-       ${literal(id)})`,
+    postMessageSql(w.channelA, 'stamped', { clientMutationId: id }),
     { claims: w.claimsA },
   );
   const stamped = Number(
