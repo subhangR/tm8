@@ -409,15 +409,18 @@ export function useDocSave<C>(options: DocSaveOptions<C>): DocSaveHandle {
 
   /*
    * A DIFFERENT DOCUMENT IN THE SAME SLOT starts clean. The old draft is not
-   * carried onto it: under autosave it is already on the device and comes
-   * back when its own document opens; without autosave the host has already
-   * left the editor (see `ReaderSurface`).
+   * carried onto it: under autosave it is sent first, the way leaving the
+   * editor sends it (the host panel is not keyed by id, so this IS leaving),
+   * and the device copy covers a send that fails; without autosave the host
+   * has already left the editor (see `ReaderSurface`). `flush` reads the draft
+   * and its owner before its first await, so resetting right after is safe.
    */
   const detailId = detail?.id ?? null;
   const lastId = useRef(detailId);
   useEffect(() => {
     if (detailId === lastId.current) return;
     lastId.current = detailId;
+    if (autosave && phase.current === 'dirty' && base.current !== null) void flush(base.current);
     draft.current = {};
     base.current = null;
     owner.current = null;
@@ -427,7 +430,7 @@ export function useDocSave<C>(options: DocSaveOptions<C>): DocSaveHandle {
     setBaseVersion(null);
     setSavedVersion(null);
     setState({ phase: 'clean' });
-  }, [detailId, setState]);
+  }, [autosave, detailId, flush, setState]);
 
   /* RESTORE a device copy once per document, when it says something the
      server does not. Same text ⇒ the save landed; the copy is just dropped. */
