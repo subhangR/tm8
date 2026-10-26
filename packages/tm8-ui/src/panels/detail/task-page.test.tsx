@@ -156,6 +156,18 @@ describe('the two-column page', () => {
     expect(lastPatch(patchTask)).toMatchObject({ title: 'Redesign the task detail page', expectedVersion: TASK.version });
   });
 
+  it('Escape abandons a title edit: it writes nothing and puts the title back', async () => {
+    const { patchTask } = mount();
+    const field = screen.getByTestId('panel-embedded-title-input') as HTMLInputElement;
+    field.focus();
+    fireEvent.change(field, { target: { value: 'A rename I changed my mind about' } });
+    await act(async () => {
+      fireEvent.keyDown(field, { key: 'Escape' });
+    });
+    expect(patchTask).not.toHaveBeenCalled();
+    expect(field.value).toBe('Redesign the task page');
+  });
+
   it('writes the estimate on commit, and an emptied one as a clear', async () => {
     const { patchTask } = mount();
     const points = screen.getByTestId('subtree-points') as HTMLInputElement;
