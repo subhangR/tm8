@@ -172,12 +172,6 @@ async function dispatch(
     return EXIT_USAGE;
   }
 
-  for (const retired of RETIRED_COMMANDS) {
-    if (retired.matches(positionals)) {
-      throw new RetiredCommandError(retired.command, retired.replacement);
-    }
-  }
-
   const registered = (path: readonly string[]): boolean => isRegisteredPath(path);
   const match =
     splitCommandPath(positionals, registered) ??
@@ -186,6 +180,15 @@ async function dispatch(
     splitCommandPath(positionals, isCommandPath);
 
   if (!match) {
+    // Only an UNRESOLVED path can be retired vocabulary. Checked after the
+    // match, never before it: a resolved command's arguments are payload, so
+    // `tm8 message send --to <id> progress` is a message whose body is the
+    // word "progress", not the retired `progress` verb.
+    for (const retired of RETIRED_COMMANDS) {
+      if (retired.matches(positionals)) {
+        throw new RetiredCommandError(retired.command, retired.replacement);
+      }
+    }
     if (globals.help) {
       out.data({ usage: USAGE }, (dto) => dto.usage);
       return EXIT_OK;
