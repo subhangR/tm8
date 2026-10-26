@@ -1042,21 +1042,29 @@ describe('W2.G13 feed `around` anchoring', () => {
     const decoded = decodeCursor(page.previousCursor!);
     expect(decoded.k).toHaveLength(3);
     // It points at the FIRST item on the page — the boundary a caller pages
-    // backwards from — and carries this feed's fingerprint, not another's.
+    // backwards from — and carries this feed's fingerprint for the OPPOSITE
+    // order: redeemed in the request's own order it would re-read this page.
     expect(decoded.k[2]).toBe(page.items[0]!.itemId);
     expect(decoded.k[0]).toBe(feedCursorFingerprint({
       entityId: IDS.task,
       // 098: the unscoped request above resolved `default` on a task anchor.
       scope: 'task_discussion_v1',
-      order: 'newest',
+      order: 'oldest',
       predicates: FEED_SCOPE_PREDICATES.task_discussion_v1,
     }));
 
-    // And it round-trips: the same feed accepts it rather than rejecting its own
-    // token, which is the failure `handoffs.list` actually shipped.
+    // And it round-trips: the same feed accepts it in the reverse order rather
+    // than rejecting its own token, which is the failure `handoffs.list`
+    // actually shipped...
+    await expect(
+      feedOn(stubWithLead).run(
+        `scope=task_discussion_v1&order=oldest&cursor=${encodeURIComponent(page.previousCursor!)}`,
+      ),
+    ).resolves.toBeTruthy();
+    // ...and refuses it in the request's own order, where it would page forward.
     await expect(
       feedOn(stubWithLead).run(`scope=task_discussion_v1&cursor=${encodeURIComponent(page.previousCursor!)}`),
-    ).resolves.toBeTruthy();
+    ).rejects.toMatchObject({ code: 'invalid_cursor' });
   });
 });
 

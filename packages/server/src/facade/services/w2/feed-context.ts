@@ -1051,10 +1051,18 @@ export class W2FeedContextService {
         });
         const first = rows[0];
         const last = tail.rows.at(-1);
+        // A cursor is a keyset position plus a direction, and the direction is
+        // the ORDER it is redeemed with. Paging back from `first` in this
+        // request's own order would re-read this page, so `previousCursor` is
+        // fingerprinted for the opposite order: redeemed with it, the forward
+        // window runs backward from the page's first item.
+        const reverseFingerprint = feedCursorFingerprint({
+          entityId: id, scope, order: order === 'newest' ? 'oldest' : 'newest', predicates,
+        });
         return this.assemblePage(q, viewerIdentityId, {
           scope, predicates, fingerprint, rows,
           nextCursor: tail.hasMore && last ? cursorAt(fingerprint, last) : null,
-          previousCursor: lead.hasMore && first ? cursorAt(fingerprint, first) : null,
+          previousCursor: lead.hasMore && first ? cursorAt(reverseFingerprint, first) : null,
         });
       }
 
