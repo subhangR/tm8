@@ -49,7 +49,7 @@ export function blueprintLabelSize(text: string): BlueprintSize {
 }
 
 export type BlueprintMode = 'flow' | 'swimlane';
-/** LR: flow runs left → right (default). TB: top → bottom. */
+/** TB: flow runs top → bottom (default). LR: left → right. */
 export type BlueprintDirection = 'LR' | 'TB';
 /** Swimlane grouping: by assignee (default), by node kind, or by `spec.phase`. */
 export type BlueprintLaneBy = 'assignee' | 'kind' | 'phase';
@@ -57,6 +57,8 @@ export type BlueprintLaneBy = 'assignee' | 'kind' | 'phase';
 export interface BlueprintViewOptions {
   mode?: BlueprintMode;
   direction?: BlueprintDirection;
+  /** How routes are drawn: an S-curve at each jog (default) or rounded orthogonal elbows. */
+  edgeStyle?: 'orthogonal' | 'curved';
   laneBy?: BlueprintLaneBy;
 }
 

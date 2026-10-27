@@ -21,6 +21,8 @@ export const CONTEXT_LOAD_TAGS = [
   // v2 only (M2/S3a): each v2 section loader has its own tag, so the
   // statement counter can prove what the v2 default does NOT load.
   'assignees', 'blockers', 'gate', 'tasks', 'connections',
+  // 330: a chat's or session's launched sessions (`launched_by`).
+  'launched',
   // The selection header (headers design T3): one statement, header kinds only.
   'header',
 ] as const;

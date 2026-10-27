@@ -301,18 +301,27 @@ interface EdgeTypeLike {
   sourceKinds?: unknown;
   destinationKinds?: unknown;
   acyclic?: unknown;
+  description?: unknown;
+  replacedBy?: unknown;
 }
 
-/** `edgeTypes.list` answers a bare array — the endpoint rule IS the payload. */
+/**
+ * `edgeTypes.list` answers a bare array — the endpoint rule IS the payload.
+ * Each type prints its one-line meaning under its endpoints (303, Design Rules
+ * §2.3), and a deprecated type says what replaces it.
+ */
 export function renderEdgeTypes(dto: unknown): string {
   if (!Array.isArray(dto)) return JSON.stringify(dto);
   const rows = dto as EdgeTypeLike[];
   if (rows.length === 0) return 'no edge types';
   const kinds = (v: unknown): string => (Array.isArray(v) ? v.join(',') : '?');
   return rows
-    .map((r) =>
-      `${String(r.type ?? '?')}  ${kinds(r.sourceKinds)} --> ${kinds(r.destinationKinds)}` +
-      (r.acyclic === true ? '  [acyclic]' : ''))
+    .map((r) => {
+      const head = `${String(r.type ?? '?')}  ${kinds(r.sourceKinds)} --> ${kinds(r.destinationKinds)}` +
+        (r.acyclic === true ? '  [acyclic]' : '') +
+        (typeof r.replacedBy === 'string' ? `  [deprecated: use ${r.replacedBy}]` : '');
+      return typeof r.description === 'string' && r.description !== '' ? `${head}\n    ${r.description}` : head;
+    })
     .join('\n');
 }
 

@@ -199,19 +199,21 @@ describe('155 — the envelope category tracks work_sessions.status', () => {
     expect((await statusOf(sessionId)).status_category).toBe('in_progress');
   });
 
-  it('exited is done — the reported defect, in one line', async () => {
+  it('exited leaves To Do — and, since 299, an OPEN exited session is in_progress, not done', async () => {
     const sessionId = await createSession('exited');
     await transition(sessionId, 'running');
     await transition(sessionId, 'exited');
 
     // Before 155 this row read `to_do` forever while its glyph read `exited`.
+    // 299 (Spec D1 §3.2): a process ending says nothing about the work. Until
+    // `session complete` or a Stop settles the outcome, it is unfinished.
     expect(await statusOf(sessionId)).toMatchObject({
       session_status: 'exited',
-      status_category: 'done',
+      status_category: 'in_progress',
     });
   });
 
-  it('failed is done as well, and NOTHING is cancelled', async () => {
+  it('failed is in_progress as well, and no PROCESS status files anything under cancelled', async () => {
     // The client's standing ruling, mirrored rather than made in SQL: failure is
     // a runtime fact that gets a badge, and the run reached its end — nobody
     // cancelled it. `terminate` produces `exited`, so no session status maps to
@@ -219,7 +221,8 @@ describe('155 — the envelope category tracks work_sessions.status', () => {
     const sessionId = await createSession('failed');
     await transition(sessionId, 'running');
     await transition(sessionId, 'failed');
-    expect((await statusOf(sessionId)).status_category).toBe('done');
+    // 299: in_progress — a crash is a process fact, the work is still open.
+    expect((await statusOf(sessionId)).status_category).toBe('in_progress');
 
     const cancelled = await database.query<{ n: string }>(
       `select count(*) n from public.entities e
@@ -229,13 +232,13 @@ describe('155 — the envelope category tracks work_sessions.status', () => {
     expect(Number(cancelled[0]!.n)).toBe(0);
   });
 
-  it('a session that dies before it ever ran still reaches done', async () => {
+  it('a session that dies before it ever ran still leaves To Do', async () => {
     // `to_do -> done` is ruled allowed (149), which is what lets a session that
     // never reported `running` — the twelve stuck `spawning` rows the cleanup
     // terminated — leave the To Do tab when it finally exits.
     const sessionId = await createSession('stillborn');
     await transition(sessionId, 'exited');
-    expect((await statusOf(sessionId)).status_category).toBe('done');
+    expect((await statusOf(sessionId)).status_category).toBe('in_progress');
   });
 });
 
@@ -248,9 +251,10 @@ describe('155 — the mapping is what keeps resume and the one-event law working
     const sessionId = await createSession('resumable');
     await transition(sessionId, 'running');
     await transition(sessionId, 'exited');
-    expect((await statusOf(sessionId)).status_category).toBe('done');
+    expect((await statusOf(sessionId)).status_category).toBe('in_progress');
 
-    // THE case that fixes the mapping. `done -> to_do` is 149's reopen;
+    // THE case that fixes the mapping. (299: from in_progress now, the 173
+    // un-start arm; the reasoning about `spawning -> to_do` is unchanged.) `done -> to_do` is 149's reopen;
     // `done -> in_progress` is not allowed at all, so a `spawning ->
     // in_progress` mapping would make this call raise 23514.
     await asApp((q) =>
@@ -297,7 +301,7 @@ describe('155 — the backfill left no session disagreeing with its status', () 
       `select count(*) n
          from public.entities e
          join public.work_sessions ws on ws.entity_id = e.id
-        where e.status_category is distinct from internal.session_status_category(ws.status)`,
+        where e.status_category is distinct from internal.session_category(ws.outcome, ws.status)`,
     );
     expect(Number(rows[0]!.n)).toBe(0);
   });

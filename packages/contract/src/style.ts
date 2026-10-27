@@ -277,9 +277,31 @@ const CONTRAST_RULES: readonly { fg: StyleCssVar; bg: StyleCssVar; min: number }
   { fg: '--pn-x-term-fg', bg: '--pn-x-term-live-bg', min: 4.5 },
 ];
 
+/** One contrast pair the lint checks: `ratio` is null when a colour cannot be evaluated. */
+export interface StyleContrastCheck {
+  fg: StyleCssVar;
+  bg: StyleCssVar;
+  min: number;
+  ratio: number | null;
+}
+
+/**
+ * Every pair the contrast lint checks, with its ratio — the lint's warnings
+ * and the editor's contrast strip (§9.2) read the same list.
+ *
+ * ANSI slot 0 is excluded: it is the terminal's own black and sits next to
+ * the background in every palette worth shipping (Atelier's is 1.39:1), so a
+ * floor on it would make the shipped default warn forever. Slots 1-15 are
+ * foreground colours and are checked at 2:1.
+ */
+export function styleContrastChecks(table: StyleTokenTable): StyleContrastCheck[] {
+  const rules = [...CONTRAST_RULES];
+  for (let i = 1; i < 16; i++) rules.push({ fg: ansiVar(i), bg: '--pn-x-term-live-bg', min: 2 });
+  return rules.map((r) => ({ ...r, ratio: contrastRatio(table[r.fg], table[r.bg]) }));
+}
+
 function lintContrast(table: StyleTokenTable, warnings: StyleWarning[]): void {
-  const check = (fg: StyleCssVar, bg: StyleCssVar, min: number) => {
-    const ratio = contrastRatio(table[fg], table[bg]);
+  for (const { fg, bg, min, ratio } of styleContrastChecks(table)) {
     if (ratio !== null && ratio < min) {
       warnings.push({
         code: 'low-contrast',
@@ -287,13 +309,7 @@ function lintContrast(table: StyleTokenTable, warnings: StyleWarning[]): void {
         message: `contrast ${ratio.toFixed(2)}:1 is below ${min}:1`,
       });
     }
-  };
-  for (const rule of CONTRAST_RULES) check(rule.fg, rule.bg, rule.min);
-  /* ANSI slot 0 is excluded: it is the terminal's own black and sits next to
-     the background in every palette worth shipping (Atelier's is 1.39:1), so
-     a floor on it would make the shipped default warn forever. Slots 1-15 are
-     foreground colours and are linted at 2:1. */
-  for (let i = 1; i < 16; i++) check(ansiVar(i), '--pn-x-term-live-bg', 2);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -320,9 +336,10 @@ function sortedTable(table: StyleTokenTable): StyleTokenTable {
 /**
  * `table` with every bare `var(--pn-x)` value replaced by x's value, one hop —
  * what the browser computes for those keys. Used only where a consumer cannot
- * read `var()`; the sheet itself keeps the references.
+ * read `var()` (xterm, the contrast lint, the editor's swatches); the sheet
+ * itself keeps the references.
  */
-function concrete(table: StyleTokenTable): StyleTokenTable {
+export function concreteStyleTable(table: StyleTokenTable): StyleTokenTable {
   const out: StyleTokenTable = { ...table };
   for (const [key, value] of Object.entries(table) as [StyleCssVar, string][]) {
     const target = varReference(value);
@@ -513,9 +530,9 @@ export function resolveStyle(
   }
 
   // 5
-  const brand = toRgb(concrete(table)['--pn-brand']);
+  const brand = toRgb(concreteStyleTable(table)['--pn-brand']);
   if (brand) table['--pn-brand-rgb'] = `${brand[0]}, ${brand[1]}, ${brand[2]}`;
-  const paper = toRgb(concrete(table)['--pn-paper']);
+  const paper = toRgb(concreteStyleTable(table)['--pn-paper']);
   const darkish = paper ? relativeLuminance(paper) < 0.5 : false;
 
   // 6
@@ -534,14 +551,14 @@ export function resolveStyle(
   const cssVars = sortedTable(table);
   /* The canvas cannot read var(): xterm gets the table of the scope it
      renders in (the always-dark ramp when there is one), made concrete. */
-  const xterm = buildXterm(concrete(alwaysDarkCssVars ?? cssVars));
+  const xterm = buildXterm(concreteStyleTable(alwaysDarkCssVars ?? cssVars));
 
   // 8
   const sanitised = sanitizeStyleCss(doc?.css);
   warnings.push(...sanitised.warnings);
 
   // 9
-  lintContrast(concrete(cssVars), warnings);
+  lintContrast(concreteStyleTable(cssVars), warnings);
 
   // 10
   const hash = `sha256:${sha256Hex(

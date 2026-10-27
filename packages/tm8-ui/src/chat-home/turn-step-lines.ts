@@ -10,9 +10,10 @@
  *
  * Inside a run, lines fold for scanning (D15 §4): consecutive SETTLED steps of
  * one read-class category, or shell commands, become one counted line — `Read
- * 12 files`, `Ran 8 commands`. Writes never fold, so the list matches the
- * outcomes drawn above it one to one. A running, failed or stopped step always
- * stands alone. Consecutive thinking parts fold into one quiet `Thought` line,
+ * 12 files`, `Ran 8 commands`. A write the turn receipt draws is not a line
+ * at all (D15's one-line-per-write reversed by the receipt ruling, proposal
+ * 01a14a8d): its row IS its step, so `omit` leaves it out; the header still
+ * counts it. A running, failed or stopped step always stands alone. Consecutive thinking parts fold into one quiet `Thought` line,
  * which is not a step and does not count.
  */
 import { explanationToolName } from './explanation-tools';
@@ -179,6 +180,7 @@ export type StepLine =
 export function buildStepLines(
   items: readonly RunItem[],
   views: ReadonlyMap<number, StepView>,
+  omit?: ReadonlySet<number>,
 ): StepLine[] {
   const lines: StepLine[] = [];
   let group: StepView[] = [];
@@ -207,7 +209,7 @@ export function buildStepLines(
       continue;
     }
     const view = views.get(item.part.seq);
-    if (!view) continue;
+    if (!view || omit?.has(item.part.seq)) continue;
     if (view.state === 'completed' && view.words.merges) {
       if (group.length > 0 && group[0]!.words.category !== view.words.category) flush();
       group.push(view);
@@ -244,6 +246,8 @@ export interface RunSummary {
   /** Tool calls in the run. Thinking is not a step. */
   steps: number;
   failed: number;
+  /** Failed writes a later call fixed — counted here, never drawn (D13). */
+  retried: number;
   running: boolean;
   /** `read 12 files, ran 8 commands` — the top two verb groups (D15 §1). */
   groups: string;
@@ -252,18 +256,30 @@ export interface RunSummary {
 export function summarizeRun(
   items: readonly RunItem[],
   views: ReadonlyMap<number, StepView>,
+  receipt: {
+    /** Failed calls the receipt folded as retried: `· N retried`, not failed. */
+    retried?: ReadonlySet<number> | undefined;
+    /** Calls the receipt draws: counted as steps, never named in the groups
+     *  (the receipt already says them). */
+    drawn?: ReadonlySet<number> | undefined;
+  } = {},
 ): RunSummary {
   const byCategory = new Map<string, ToolStepWords[]>();
   let steps = 0;
   let failed = 0;
+  let retried = 0;
   let running = false;
   for (const item of items) {
     if (item.kind !== 'step') continue;
     const view = views.get(item.part.seq);
     if (!view) continue;
     steps += 1;
-    if (view.state === 'error') failed += 1;
+    if (view.state === 'error') {
+      if (receipt.retried?.has(view.seq)) retried += 1;
+      else failed += 1;
+    }
     if (view.state === 'running') running = true;
+    if (receipt.drawn?.has(view.seq)) continue;
     const bucket = byCategory.get(view.words.category);
     if (bucket) bucket.push(view.words);
     else byCategory.set(view.words.category, [view.words]);
@@ -274,7 +290,7 @@ export function summarizeRun(
     .slice(0, 2)
     .map((words) => lowerFirst(groupDone(words)))
     .join(', ');
-  return { steps, failed, running, groups };
+  return { steps, failed, retried, running, groups };
 }
 
 /** Steps held by lines — what an "earlier steps" button is counting. */

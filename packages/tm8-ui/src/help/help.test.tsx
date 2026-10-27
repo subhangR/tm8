@@ -356,24 +356,25 @@ describe('the help route', () => {
     expect(build(bare!).hash).toBe(`#/s/${SPACE}/help`);
   });
 
-  it('is the final tab, owns current state, and has no duplicate ? control', async () => {
-    const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/home`)} />);
-    await waitFor(() => view.getByTestId('space-tab-bar'));
-    const tablist = view.getByRole('tablist', { name: 'Screens' });
-    const tabs = [...tablist.querySelectorAll<HTMLElement>('[role="tab"]')];
-    expect(tabs.map((tab) => tab.textContent)).toEqual([
-      // 'Chats' joined the spine 2026-09-03 (migration 180) and left again
-      // 2026-09-05 (migration 184) — its door is Home's icon rail now.
-      // 'CodeBrain' joined 2026-09-01 (migration 173) and left 2026-09-15
-      // (migration 186) when #610 deleted the only build that had its screen.
-      // Help is still the FINAL tab, which is what this case is actually about.
-      'Home', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
-    ]);
+  it('opens from the palette, names itself in the selector, and has no duplicate ? control', async () => {
+    /* Shell alignment (2026-10-06): no desktop screen carries the top bar any
+       more; Observe sits in Work's frame. The rail's tools face is gone (task
+       01a122ea-b5d9), so Help's door is the palette's Help row. */
+    const view = render(<GateApp routerTarget={createMemoryTarget(`#/s/${SPACE}/graph`)} />);
+    await waitFor(() => view.getByTestId('app-frame'));
+    expect(view.queryByTestId('space-tab-bar')).toBeNull();
+    expect(view.getByTestId('tws-rail').querySelector('[data-rail-tool]')).toBeNull();
     expect(view.queryByTestId('open-help')).toBeNull();
 
-    fireEvent.click(view.getByRole('tab', { name: 'Help' }));
+    fireEvent.keyDown(window, { key: '/' });
+    const palette = await waitFor(() => view.getByTestId('command-palette'));
+    const row = [...palette.querySelectorAll<HTMLElement>('[data-testid="palette-row"]')].find(
+      (r) => r.querySelector('.pal__row-label')?.textContent === 'Help',
+    );
+    expect(row).toBeDefined();
+    fireEvent.click(row!);
     await waitFor(() => view.getByTestId('help-screen'));
-    expect(view.getByRole('tab', { name: 'Help' }).getAttribute('aria-selected')).toBe('true');
+    expect(view.getByTestId('tws-view-select').textContent).toContain('Help');
     view.unmount();
   });
 });

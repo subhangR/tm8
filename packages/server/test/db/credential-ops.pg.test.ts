@@ -602,18 +602,33 @@ describe('N13 / F-R13a — the providers overload: resume\'s window, resume\'s a
     });
   });
 
-  it('F-R13a (4): in the resume window, a member who cannot act as the session\'s persona is refused, and nothing is deleted', async () => {
+  it('F-R13a (4): in the resume window, a caller who cannot act as the session\'s persona is refused, and nothing is deleted', async () => {
     const cred = await create(A, { visibility: 'public' });
     const s = await session(ids[`member:S:${A}`]!);
-    // The persona is A's own member entity: A may act as it (can_act_as), B may not.
-    await asOwner((c) => c.query(
-      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'relates_to', $3)`,
-      [ids.S, s, ids[`member:S:${A}`]]));
+    // 309: the session's teammate is participates_in (teammate -> session), and
+    // any active member may act as a live teammate of the space (075). So the
+    // refusal is reachable when the teammate is deactivated: nobody may act as
+    // it then, and the re-point must change nothing.
+    const persona = await asOwner(async (c) => {
+      const id = await newId(c);
+      await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'team_member', 0, $3)`,
+        [id, ids.S, ids[`member:S:${A}`]]);
+      await c.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity)
+                     values ($1, $2, 'A persona', 'worker', 'persona')`, [id, ids[`member:S:${A}`]]);
+      await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'participates_in', $4)`,
+        [ids.S, id, s, ids[`member:S:${A}`]]);
+      return id;
+    });
+    const deactivate = (on: boolean) => asOwner((c) => c.query(
+      `update public.team_members set deactivated_at = ${on ? 'now()' : 'null'} where entity_id = $1`, [persona]));
     await record(claims(A), s, cred);
     await resumeWindow(s);
     const before = await recorded(s);
+    await deactivate(true);
     expect(await outcome(() => store.repointSession(claims(B), s, ['openai']))).toBe('42501');
+    expect(await outcome(() => store.repointSession(claims(A), s, ['openai']))).toBe('42501');
     expect(await recorded(s)).toEqual(before);
+    await deactivate(false);
     expect(await store.repointSession(claims(A), s, ['anthropic'])).toMatchObject({ launcherAccountId: accounts[A] });
   });
 
@@ -631,7 +646,7 @@ describe('N13 / F-R13a — the providers overload: resume\'s window, resume\'s a
   });
 });
 
-describe('991 / 01a0fb56 — the 1-arg re-point carries the resume gate too (unreadable-posture path)', () => {
+describe('367 / 01a0fb56 — the 1-arg re-point carries the resume gate too (unreadable-posture path)', () => {
   const rows = (s: string) => asOwner(async (c) => (await c.query<{ provider: string; launcher: string | null; touched: boolean }>(
     `select provider, launcher_account_id::text launcher, updated_at <> recorded_at touched
        from public.session_space_credentials where work_session_id = $1 order by provider`, [s])).rows);
@@ -660,17 +675,32 @@ describe('991 / 01a0fb56 — the 1-arg re-point carries the resume gate too (unr
     expect(await rows(s)).toEqual(before);
   });
 
-  it('in the resume window, a member who cannot act as the persona is refused (42501), rows unchanged; the persona\'s own member re-points', async () => {
+  it('in the resume window, a caller who cannot act as the session\'s persona is refused (42501), rows unchanged; once it may, it re-points', async () => {
     const cred = await create(A, { visibility: 'public' });
     const s = await session(ids[`member:S:${A}`]!);
-    await asOwner((c) => c.query(
-      `insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'relates_to', $3)`,
-      [ids.S, s, ids[`member:S:${A}`]]));
+    // As F-R13a (4): 309's participates_in teammate (teammate -> session); any
+    // active member may act as a live teammate (075), so the refusal is reached
+    // through a deactivated one.
+    const persona = await asOwner(async (c) => {
+      const id = await newId(c);
+      await c.query(`insert into public.entities(id, space_id, kind, position, created_by) values ($1, $2, 'team_member', 0, $3)`,
+        [id, ids.S, ids[`member:S:${A}`]]);
+      await c.query(`insert into public.team_members(entity_id, owner_member_id, name, role, identity)
+                     values ($1, $2, 'A persona', 'worker', 'persona')`, [id, ids[`member:S:${A}`]]);
+      await c.query(`insert into public.edges(space_id, src_id, dst_id, type, created_by) values ($1, $2, $3, 'participates_in', $4)`,
+        [ids.S, id, s, ids[`member:S:${A}`]]);
+      return id;
+    });
+    const deactivate = (on: boolean) => asOwner((c) => c.query(
+      `update public.team_members set deactivated_at = ${on ? 'now()' : 'null'} where entity_id = $1`, [persona]));
     await record(claims(A), s, cred);
     await resumeWindow(s);
     const before = await rows(s);
+    await deactivate(true);
     expect(await outcome(() => store.repointSession(claims(B), s))).toBe('42501');
+    expect(await outcome(() => store.repointSession(claims(A), s))).toBe('42501');
     expect(await rows(s)).toEqual(before);
+    await deactivate(false);
     expect(await store.repointSession(claims(A), s)).toMatchObject({ launcherAccountId: accounts[A] });
   });
 
@@ -688,7 +718,7 @@ describe('991 / 01a0fb56 — the 1-arg re-point carries the resume gate too (unr
 });
 
 
-describe('991 / 01a0fb58 — expire_pending_space_credentials: an identity is required, agents stay admitted, and nothing in SQL calls it', () => {
+describe('367 / 01a0fb58 — expire_pending_space_credentials: an identity is required, agents stay admitted, and nothing in SQL calls it', () => {
   it('no identity in the claims is refused and deletes nothing; browser and agent run it', async () => {
     // A pending login whose terminal has closed and whose expiry has passed: what the sweep removes.
     const login = await store.startLogin(claims(A), { spaceId: ids.S!, provider: 'anthropic', label: label('expire'), sessionCap: 100 });
@@ -713,7 +743,7 @@ describe('991 / 01a0fb58 — expire_pending_space_credentials: an identity is re
   });
 });
 
-describe('991 / 01a0fb59-5ec0 — F-R13b: a re-point tombstones the unresolved providers\' rows; history readers keep them, live readers ignore them', () => {
+describe('367 / 01a0fb59-5ec0 — F-R13b: a re-point tombstones the unresolved providers\' rows; history readers keep them, live readers ignore them', () => {
   const live = (s: string) => asOwner(async (c) => (await c.query(
     'select provider from public.session_space_credentials where work_session_id = $1', [s])).rows);
   const history = (s: string) => asOwner(async (c) => (await c.query<{ provider: string; credential: string; superseded_by: string | null }>(

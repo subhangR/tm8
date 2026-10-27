@@ -18,7 +18,7 @@ import {
   serializeBootstrapManifest,
   type BootstrapManifestInput,
 } from '../../src/harness/index.js';
-import { BYTE_BUDGETS, BudgetExceededError, DEFAULT_PROMPT_VERSION, utf8Bytes } from '@tm8/prompt';
+import { BYTE_BUDGETS, BudgetExceededError, DEFAULT_PROMPT_VERSION, LEGACY_PROMPT_VERSION, utf8Bytes } from '@tm8/prompt';
 
 const INPUT: BootstrapManifestInput = {
   server: {
@@ -77,8 +77,11 @@ describe('shape', () => {
   it('stamps promptVersion from @tm8/prompt, and keeps a stamped value on re-parse (§6.3)', () => {
     const manifest = composeBootstrapManifest(INPUT);
     expect(manifest.promptVersion).toBe(DEFAULT_PROMPT_VERSION);
-    expect(manifest.promptVersion).toBe('1');
-    expect(parseBootstrapManifest(JSON.parse(JSON.stringify(manifest)))?.promptVersion).toBe('1');
+    expect(manifest.promptVersion).toBe('2');
+    expect(parseBootstrapManifest(JSON.parse(JSON.stringify(manifest)))?.promptVersion).toBe('2');
+    // A file written before the stamp existed was booted on v1, and reads so.
+    const { promptVersion: _stamp, ...unstamped } = manifest;
+    expect(parseBootstrapManifest(JSON.parse(JSON.stringify(unstamped)))?.promptVersion).toBe(LEGACY_PROMPT_VERSION);
     expect(() => composeBootstrapManifest({ ...INPUT, promptVersion: '' })).toThrow(
       InvalidBootstrapManifestError,
     );

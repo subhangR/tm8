@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
-import { defaultChatTeammateId } from './default-teammate';
+import { craftTeammateId, defaultChatTeammateId } from './default-teammate';
 
 const t = (id: string, label: string) => ({ id: id as EntityId, label });
-const ROSTER = [t('w', 'Worker'), t('r', 'Reviewer'), t('g', 'Graph Architect')];
+const ROSTER = [t('w', 'Worker'), t('r', 'Reviewer'), t('g', 'Graph Architect'), t('c', 'Crafter')];
 
 describe('defaultChatTeammateId', () => {
-  it('a Craft chat starts with the Graph Architect', () => {
-    expect(defaultChatTeammateId(ROSTER, { pinnedMode: 'craft' })).toBe('g');
+  it('a Craft chat starts with the Crafter, not the Graph Architect', () => {
+    expect(defaultChatTeammateId(ROSTER, { pinnedMode: 'craft' })).toBe('c');
   });
 
   it('any other chat starts with the first teammate listed', () => {
@@ -20,11 +20,19 @@ describe('defaultChatTeammateId', () => {
   });
 
   it('a seeded pick the space no longer has is ignored', () => {
-    expect(defaultChatTeammateId(ROSTER, { seeded: 'gone', pinnedMode: 'craft' })).toBe('g');
+    expect(defaultChatTeammateId(ROSTER, { seeded: 'gone', pinnedMode: 'craft' })).toBe('c');
   });
 
-  it('Craft with no Graph Architect falls through to the first teammate, and no roster to nobody', () => {
+  it('Craft without a Crafter falls back to the Graph Architect, then the first teammate, then nobody', () => {
+    expect(defaultChatTeammateId(ROSTER.slice(0, 3), { pinnedMode: 'craft' })).toBe('g');
     expect(defaultChatTeammateId([t('w', 'Worker')], { pinnedMode: 'craft' })).toBe('w');
     expect(defaultChatTeammateId([], { pinnedMode: 'craft' })).toBe('');
+  });
+});
+
+describe('craftTeammateId', () => {
+  it('is the Crafter for a craft session launch, null when neither craft role is on the roster', () => {
+    expect(craftTeammateId(ROSTER)).toBe('c');
+    expect(craftTeammateId([t('w', 'Worker')])).toBeNull();
   });
 });

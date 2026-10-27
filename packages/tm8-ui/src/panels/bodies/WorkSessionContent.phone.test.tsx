@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { MobileSurfaceProvider } from '../../mobile';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MessagesDoorProvider, MobileSurfaceProvider, type MessagesDoor, type PhoneUp } from '../../mobile';
 import { WorkSessionContent } from './WorkSessionContent';
 
 /**
@@ -217,7 +217,7 @@ describe('WorkSessionContent on a phone', () => {
    * proves the fork is a fork: no provider, six tabs, terminal default, and
    * the marker absent.
    */
-  it('leaves the desktop arrangement alone — six surfaces, terminal first, no marker', () => {
+  it('leaves the desktop arrangement alone — seven surfaces, terminal first, no marker', () => {
     render(
       <WorkSessionContent
         sessionId={SESSION}
@@ -234,9 +234,90 @@ describe('WorkSessionContent on a phone', () => {
       'Git',
       'Debug',
       'Graph',
+      'Launch context',
     ]);
     expect(screen.getByTestId('work-session-content').dataset.surface).toBe('terminal');
     expect(screen.getByTestId('work-session-content').dataset.arrangement).toBe('desktop');
     expect(screen.queryByTestId('work-session-surface-refused-marker')).toBeNull();
+  });
+
+  /*
+   * THE SESSION PAGE'S ‹ AND ITS MESSAGES (follow-up to t-nav). Immersive hides
+   * the frame header, so the row carries the header's ‹ (the same action,
+   * handed down by the shell) and a door to the Discussion sheet in place of a
+   * section that would sit under the composer dock.
+   */
+  function sessionPage(up: PhoneUp | null, door: MessagesDoor | null) {
+    return render(
+      <MobileSurfaceProvider sheetHost={null} up={up}>
+        <MessagesDoorProvider value={door}>
+          <WorkSessionContent
+            sessionId={SESSION}
+            profile={null}
+            terminal={<div>native terminal</div>}
+            transcript={<div>agent transcript</div>}
+          />
+        </MessagesDoorProvider>
+      </MobileSurfaceProvider>,
+    );
+  }
+
+  it('draws the header’s ‹ in the immersive row, and hands it back when the header returns', () => {
+    const run = vi.fn();
+    sessionPage({ label: 'Back', run }, null);
+    const up = screen.getByTestId('session-up');
+    expect(up.getAttribute('aria-label')).toBe('Back');
+    fireEvent.click(up);
+    expect(run).toHaveBeenCalledOnce();
+    /* Details shown: the frame header is back with its own ‹, so one, not two. */
+    fireEvent.click(screen.getByRole('button', { name: 'Show session details and navigation' }));
+    expect(screen.queryByTestId('session-up')).toBeNull();
+  });
+
+  it('draws no ‹ where the header would draw none', () => {
+    sessionPage(null, null);
+    expect(screen.queryByTestId('session-up')).toBeNull();
+  });
+
+  it('opens the discussion from a Messages door with the thread’s count, in both modes', () => {
+    const open = vi.fn();
+    sessionPage(null, { count: 4, open });
+    const door = screen.getByTestId('session-messages-open');
+    expect(door.getAttribute('aria-label')).toBe('Messages, 4');
+    expect(door.textContent).toBe('4');
+    fireEvent.click(door);
+    expect(open).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Show session details and navigation' }));
+    expect(screen.getByTestId('session-messages-open')).toBeTruthy();
+  });
+
+  /* F4: the panel drew the forms banner above this row, so with the frame
+     header hidden it read as sitting under the session's bar. The phone draws
+     it here, right after the row; the desktop panel keeps drawing its own. */
+  it('draws the forms banner directly under the surface row', () => {
+    const banner = <section data-testid="pending-forms-banner">1 form waiting</section>;
+    const view = phone(
+      <WorkSessionContent
+        sessionId={SESSION}
+        profile={null}
+        terminal={<div>native terminal</div>}
+        transcript={<div>agent transcript</div>}
+        belowSwitch={banner}
+      />,
+    );
+    const row = screen.getByRole('tablist').closest('.pn-surface-switch');
+    expect(row?.nextElementSibling).toBe(screen.getByTestId('pending-forms-banner'));
+    view.unmount();
+
+    render(
+      <WorkSessionContent
+        sessionId={SESSION}
+        profile={null}
+        terminal={<div>native terminal</div>}
+        transcript={<div>agent transcript</div>}
+        belowSwitch={banner}
+      />,
+    );
+    expect(screen.queryByTestId('pending-forms-banner')).toBeNull();
   });
 });

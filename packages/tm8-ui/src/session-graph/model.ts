@@ -75,16 +75,20 @@ const RELATION_LABELS: Readonly<Record<string, string>> = {
   'participates_in:out': 'Participates in',
   'relates_to:out': 'Related to',
   'relates_to:in': 'Related from',
-  'created_in:in': 'Created here',
-  'created_in:out': 'Created in',
-  'authored_from:in': 'Wrote',
-  'authored_from:out': 'Written from',
+  'created_in:in': 'Made here (legacy)',
+  'created_in:out': 'Made during (unverified, legacy)',
+  'authored_from:in': 'Made here',
+  'authored_from:out': 'Made during',
   'anchored_to:in': 'Addressed to it',
   'anchored_to:out': 'Anchored to',
   'messaged:out': 'Messaged',
   'messaged:in': 'Messaged by',
+  'launched_by:out': 'Launched by',
+  'launched_by:in': 'Launched',
   'dispatched_by:out': 'Dispatched by',
   'dispatched_by:in': 'Dispatched',
+  'follows_up:out': 'Follows up',
+  'follows_up:in': 'Followed up by',
   'depends_on:out': 'Depends on',
   'depends_on:in': 'Blocks',
   'completed_by:in': 'Completed by',
@@ -338,7 +342,7 @@ export function buildSessionGraph(input: BuildInput): SessionGraph {
       if (parentCell && parentCell.sort !== 'fold' && parentCell.hub && hop > 1) continue;
 
       for (const relation of relationsOf(parentId, parentEdges)) {
-        // Hiding is a FOCUS control: switching "Wrote" off means "not from the
+        // Hiding is a FOCUS control: switching "Made here" off means "not from the
         // session", not "nowhere in the graph", so it only filters hop 1.
         if (hop === 1 && hidden.has(relation.key)) continue;
 

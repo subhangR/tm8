@@ -16,6 +16,7 @@ import type { EntityId } from '@tm8/contract';
 import {
   TALLY_MAX_NODES,
   buildChatLedger,
+  isLedgerWrite,
   readCountPairs,
 } from './ledger';
 import { walkPayload } from './payload-walk';
@@ -792,5 +793,93 @@ describe('edits (advisor D11)', () => {
     expect(ledger.turns[0]!.edits).toEqual([]);
     expect(ledger.creates).toEqual([]);
     expect(ledger.turns[0]!.reads.total).toBe(0);
+  });
+});
+
+describe('the receipt’s inputs — links, content previews, untitled memories', () => {
+  const ACT = 'mcp__tm8__tm8_act';
+  const ok = { schemaVersion: 'tm8.receipt.v1', ok: true };
+
+  it('records an accepted edges.create with its ends and type, and nothing for a refused one', () => {
+    const ledger = buildChatLedger([
+      turn(
+        call({ operation: 'edges.create', body: { srcId: TASK, dstId: DOC, type: 'produces' } }, ok, ACT),
+        call(
+          { operation: 'edges.create', body: { srcId: TASK, dstId: MEMORY, type: 'about' } },
+          { schemaVersion: 'tm8.mcp.error.v1', error: { code: 'forbidden' } },
+          ACT,
+        ),
+      ),
+    ]);
+    const [only] = ledger.turns;
+    expect(only!.edges.map(({ srcId, dstId, type }) => ({ srcId, dstId, type }))).toEqual([
+      { srcId: TASK, dstId: DOC, type: 'produces' },
+    ]);
+    // A link is something the turn DID: the turn is not empty, and it read nothing.
+    expect(only!.empty).toBe(false);
+    expect(only!.reads.total).toBe(0);
+  });
+
+  it('carries a doc’s first prose line, word count and outline from its own args', () => {
+    const ledger = buildChatLedger([
+      turn(
+        call(
+          { spaceId: 'sp', title: 'Runbook', body: '# Runbook\n\n- Restart the **worker** with [the script](x).\n\nThen wait.' },
+          { entity: { id: DOC, kind: 'doc', title: 'Runbook' } },
+          'mcp__tm8__doc_create',
+        ),
+      ),
+    ]);
+    const preview = ledger.creates[0]!.preview!;
+    expect(preview.line).toBe('Restart the worker with the script.');
+    expect(preview.words).toBe(9);
+    expect(preview.outline!.map((line) => line.heading)).toEqual([true, false, false]);
+  });
+
+  it('carries an artifact’s description and file count, and a drawing’s element counts', () => {
+    const ledger = buildChatLedger([
+      turn(
+        call(
+          { spaceId: 'sp', name: 'Mockups', description: 'Before vs after', files: [{ path: 'index.html' }, { path: 'a.css' }] },
+          { entity: { id: DOC, kind: 'artifact', title: 'Mockups' } },
+          'mcp__tm8__artifact_create',
+        ),
+        call(
+          { operation: 'entities.create', body: { kind: 'drawing', title: 'Fold', content: { elements: [
+            { type: 'rectangle', x: 0, y: 0, width: 4, height: 4 },
+            { type: 'arrow', x: 4, y: 2, width: 4, height: 0 },
+            { type: 'text', x: 0, y: 8, width: 4, height: 1 },
+            { type: 'ellipse', x: 8, y: 0, width: 4, height: 4, isDeleted: true },
+          ] } } },
+          { ...ok, id: TASK_CHILD, kind: 'drawing', title: 'Fold' },
+          ACT,
+        ),
+      ),
+    ]);
+    expect(ledger.creates[0]!.preview).toEqual({ line: 'Before vs after', files: 2 });
+    expect(ledger.creates[1]!.preview).toMatchObject({ shapes: 1, connectors: 1 });
+    expect(ledger.creates[1]!.preview!.boxes).toHaveLength(2);
+  });
+
+  it('names an untitled memory by its statement, never just “Memory”', () => {
+    const ledger = buildChatLedger([
+      turn(call({ spaceId: 'sp', statement: 'Spawn, do not dispatch\nbecause…' }, { entity: { id: MEMORY, kind: 'memory' } }, 'mcp__tm8__memory_write')),
+    ]);
+    expect(ledger.creates[0]!.title).toBe('Spawn, do not dispatch');
+    expect(ledger.labels.get(MEMORY)?.title).toBe('Spawn, do not dispatch');
+  });
+
+  it('isLedgerWrite: exactly the writes the receipt draws', () => {
+    expect(isLedgerWrite(ACT, { operation: 'entities.create' })).toBe(true);
+    expect(isLedgerWrite(ACT, { operation: 'edges.create' })).toBe(true);
+    expect(isLedgerWrite(ACT, { operation: 'entities.commands.tick' })).toBe(true);
+    expect(isLedgerWrite('mcp__tm8__delegate', { operation: 'execution.spawn' })).toBe(true);
+    expect(isLedgerWrite('mcp__tm8__doc_update', { docId: DOC })).toBe(true);
+    expect(isLedgerWrite('mcp__tm8__memory_write', {})).toBe(true);
+    // Writes the receipt has no row for stay step lines.
+    expect(isLedgerWrite(ACT, { operation: 'messages.post' })).toBe(false);
+    expect(isLedgerWrite(ACT, { operation: 'entities.delete' })).toBe(false);
+    expect(isLedgerWrite('mcp__tm8__tm8_read', { operation: 'entities.get' })).toBe(false);
+    expect(isLedgerWrite('Bash', { command: 'ls' })).toBe(false);
   });
 });

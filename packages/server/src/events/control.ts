@@ -32,6 +32,8 @@
  * variant.
  */
 import {
+  CollabError,
+  isHumanAuthKind,
   WorkspaceControlFrameSchema,
   type SpaceId,
   type WorkspaceControlAck,
@@ -44,6 +46,8 @@ import type { RequestIdentity, SpaceSessionsMode } from '../http/types.js';
 import { MAX_POLL_LIMIT, type DurableEventLog } from './poll.js';
 import type { PresenceStore } from './presence.js';
 import type { SubscriptionRegistry } from './subscriptions.js';
+import { isCapable, type WorkspaceBridge } from '../workspace/bridge.js';
+import type { WorkspaceService } from '../workspace/service.js';
 import type { EventSink } from './ws-connection.js';
 
 /**
@@ -152,6 +156,17 @@ export interface ControlChannelDeps {
   readonly highWaterMark?: (identity: RequestIdentity, spaceId: string) => Promise<number | null>;
   /** A control frame that failed for a reason the client cannot fix. */
   readonly onError?: (message: string) => void;
+  /** The Workspace remote bridge (Spec C). Absent = `workspace.*` frames refused. */
+  readonly workspace?: {
+    readonly bridge: WorkspaceBridge;
+    /**
+     * The caller's ACTIVE member in `spaceId`, read as the caller. The window
+     * never names its own member; this is the only source of it.
+     */
+    readonly memberFor: (identity: RequestIdentity, spaceId: string) => Promise<string | null>;
+    /** Spec D: the stored workspace. Absent = windows get no state and cannot write. */
+    readonly service?: WorkspaceService;
+  };
 }
 
 export interface ControlChannel {
@@ -161,6 +176,12 @@ export interface ControlChannel {
 
 /** How many events one `resume` may replay before the client must ask again. */
 export const MAX_RESUME_BATCH = MAX_POLL_LIMIT;
+
+/** A failed window write's reason: the error's own (`request_id_reused`, …), else its code. */
+function rejection(error: unknown): string {
+  if (error instanceof CollabError && typeof error.details?.['reason'] === 'string') return error.details['reason'];
+  return error instanceof Error && 'code' in error ? String((error as { code: unknown }).code) : 'failed';
+}
 
 function refuse(sink: EventSink, ack: WorkspaceControlAck): void {
   try {
@@ -290,6 +311,139 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
         });
         return;
       }
+
+      case 'workspace.register': {
+        const workspace = deps.workspace;
+        if (workspace === undefined) {
+          refuse(sink, { type: 'control.refused', frame: frame.type, spaceId: frame.spaceId, reason: 'forbidden' });
+          return;
+        }
+        // AUTHORIZE FIRST — the same space read `subscribe` makes — then
+        // resolve who the window is from the socket, never from the frame.
+        if (!(await authorized(sink, 'workspace.register', frame.spaceId))) return;
+        const claims = await claimsFor(sink.identity);
+        const memberId = claims.identityId ? await workspace.memberFor(sink.identity, frame.spaceId) : null;
+        const known = claims.identityId ? workspace.bridge.list(claims.identityId, frame.spaceId).some((i) => i.instanceId === frame.instanceId) : false;
+        if (!claims.identityId || memberId === null
+          || !workspace.bridge.register(sink, claims.identityId, memberId, frame)) {
+          refuse(sink, { type: 'control.refused', frame: 'workspace.register', spaceId: frame.spaceId, reason: 'forbidden' });
+          return;
+        }
+        // Spec D §3: a window that just (re)registered gets the stored
+        // workspace and its drafts — this socket only. A heartbeat does not.
+        if (!known && workspace.service) {
+          const capable = (frame.caps ?? []).includes('multiWorkspace');
+          const shown = await workspace.service.snapshot(claims, frame.spaceId, capable, (out) => {
+            try {
+              sink.send(JSON.stringify(out));
+            } catch {
+              // The close path drops the instance.
+            }
+          });
+          workspace.bridge.shows(frame.instanceId, shown);
+        }
+        return;
+      }
+
+      case 'workspace.apply':
+      case 'workspace.import':
+      case 'workspace.draft.patch': {
+        const workspace = deps.workspace;
+        const service = workspace?.service;
+        // Only a registered window on a HUMAN socket writes this way; agents
+        // and the CLI use HTTP (source 'remote'), so they can never pose as
+        // the human's own clicks — the gate for interactions.resolve.
+        const human = sink.identity.kind === 'auto-owner' || isHumanAuthKind(sink.identity.authKind);
+        const claims = await claimsFor(sink.identity);
+        const owns = workspace && claims.identityId
+          && workspace.bridge.list(claims.identityId, frame.spaceId).some((i) => i.instanceId === frame.instanceId);
+        if (!service || !human || !owns || !claims.identityId) {
+          refuse(sink, { type: 'control.refused', frame: frame.type, spaceId: frame.spaceId, reason: 'forbidden' });
+          return;
+        }
+        if (frame.type === 'workspace.apply') {
+          // Through the request-id record: a window resends what it could not
+          // see confirmed after a reconnect, and a resend must not apply twice.
+          // The frame's own workspaceId is hashed (D5; absent from an old
+          // window) and addresses the write (R9, §3.2 step 1).
+          const identityId = claims.identityId;
+          const addressed = frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId };
+          await workspace.bridge.recorded(
+            identityId,
+            `window:${frame.requestId}`,
+            { spaceId: frame.spaceId, env: frame.env, ids: frame.ids, ...addressed },
+            30_000,
+            async () => {
+              const result = await service.apply(claims, frame.spaceId, {
+                env: frame.env as never,
+                ids: frame.ids,
+                requestId: frame.requestId,
+                origin: { kind: 'window', instanceId: frame.instanceId },
+                target: { frame: addressed },
+              });
+              return { ...result, requestId: frame.requestId, instanceId: frame.instanceId } as never;
+            },
+          ).then((result) => {
+            // A replayed record still owes this window its answer.
+            if (result && (result as { status?: string }).status !== undefined) {
+              const workspaceId = (result as { workspace?: { id: string | null } }).workspace?.id ?? null;
+              workspace.bridge.push(identityId, frame.spaceId, {
+                type: 'workspace.applied', spaceId: frame.spaceId, workspaceId, requestId: frame.requestId, result,
+              }, { only: frame.instanceId });
+            }
+          }).catch((error: unknown) => {
+            // A failure is still an answer: the window rolls the command back.
+            try {
+              sink.send(JSON.stringify({
+                type: 'workspace.applied',
+                spaceId: frame.spaceId,
+                ...(frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId }),
+                requestId: frame.requestId,
+                result: { status: 'rejected', revision: 0, reason: rejection(error) },
+              }));
+            } catch {
+              // ignore
+            }
+          });
+        } else if (frame.type === 'workspace.import') {
+          await service.importLegacy(claims, frame.spaceId, frame.state, frame.drafts);
+        } else {
+          try {
+            await service.patchDraft(claims, frame.spaceId, frame.draftId, frame.fields, { kind: 'window', instanceId: frame.instanceId }, {
+              frame: frame.workspaceId === undefined ? {} : { workspaceId: frame.workspaceId },
+            });
+          } catch (error) {
+            // A capable window learns its typing was not kept (§7.3); an old
+            // one has no frame for it.
+            const sender = workspace.bridge.list(claims.identityId, frame.spaceId).find((i) => i.instanceId === frame.instanceId);
+            if (sender && isCapable(sender)) {
+              workspace.bridge.push(claims.identityId, frame.spaceId, {
+                type: 'workspace.draft.rejected',
+                spaceId: frame.spaceId,
+                workspaceId: frame.workspaceId ?? null,
+                draftId: frame.draftId,
+                reason: draftRejection(error),
+              }, { only: frame.instanceId });
+            }
+            throw error;
+          }
+        }
+        return;
+      }
+
+      case 'workspace.unregister': {
+        // Deliberately unauthorized, like `unsubscribe`: the bridge only drops
+        // an instance from the connection that holds it.
+        deps.workspace?.bridge.unregister(sink, frame.instanceId);
+        return;
+      }
+
+      case 'workspace.result': {
+        // No authorization beyond the bridge's own check: a result counts only
+        // on the connection that owns the instance, for a forward in flight.
+        deps.workspace?.bridge.acceptResult(sink, frame);
+        return;
+      }
     }
   }
 
@@ -328,7 +482,23 @@ export function createControlChannel(deps: ControlChannelDeps): ControlChannel {
   };
 }
 
-const FRAME_TYPES = new Set<string>(['subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set']);
+const FRAME_TYPES = new Set<string>([
+  'subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set',
+  'workspace.register', 'workspace.unregister', 'workspace.result',
+  'workspace.apply', 'workspace.import', 'workspace.draft.patch',
+]);
+
+/** Why a window's draft write failed, as `workspace.draft.rejected` names it. */
+function draftRejection(error: unknown): 'workspace_not_found' | 'not_found' | 'limit_exceeded' | 'payload_too_large' {
+  const reason = (error as { details?: { reason?: unknown } } | null)?.details?.reason;
+  if (reason === 'workspace_not_found' || reason === 'workspace_switched') return 'workspace_not_found';
+  switch ((error as { code?: unknown } | null)?.code) {
+    case '53400': return 'limit_exceeded';
+    case '54000': return 'payload_too_large';
+    case 'P0002': return 'workspace_not_found';
+    default: return 'not_found';
+  }
+}
 
 function isFrameType(value: string): value is WorkspaceControlFrame['type'] {
   return FRAME_TYPES.has(value);

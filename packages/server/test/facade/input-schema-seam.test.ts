@@ -257,6 +257,10 @@ function acceptedKeys(schema: unknown, depth = 0): Set<string> | null {
  * and `UndoCommandInput`. Neither is a defect; both are shapes the contract
  * does not name 1:1. They are simply outside what this guard can prove.
  *
+ * MCP operations are contract-owned but their imported schemas are not
+ * represented by the declaration walker above. They are therefore tracked in
+ * the identity-only set below and checked by explicit binding assertions.
+ *
  * `skills.scan` is the fifteenth and the exception to "two schemas": it binds
  * `SkillScanInputSchema`, declared beside its handler in `skills/handlers.ts`,
  * because the contract names the scan's RESULT, not its request. F4's
@@ -268,6 +272,7 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'commands.undo',
   'edges.delete',
   'entities.delete',
+  'entities.markSeen', // Uses the server-local RequiredCommandContextSchema.
   'entities.restore',
   'projects.unlink',
   'readMarks.upsert',
@@ -283,6 +288,25 @@ const NO_CONTRACT_TYPE_TO_COMPARE: readonly string[] = [
   'spaces.taskAxes.delete',
   'spaces.taskWorkflows.delete',
   'spaces.workflows.delete',
+];
+
+/** Contract-owned schemas whose runtime identity is checked below. */
+const CONTRACT_IDENTITY_ONLY_OPERATIONS: readonly string[] = [
+  'mcp.credentials.create',
+  'mcp.credentials.revoke',
+  'mcp.credentials.rotate',
+  'mcp.credentials.share',
+  'mcp.credentials.unshare',
+  'mcp.oauth.begin',
+  'mcp.oauth.callback',
+  'mcp.proxy.request',
+  'mcp.resolve',
+  'mcp.servers.create',
+  'mcp.servers.delete',
+  'mcp.servers.import',
+  'mcp.servers.test',
+  'mcp.servers.update',
+  'tools.create','tools.update','tools.config.set','tools.config.unset','tools.secrets.bind','tools.secrets.unbind','tools.run',
 ];
 
 interface ParityRow {
@@ -381,7 +405,35 @@ describe('INPUT_SCHEMAS field parity with the contract types', () => {
   });
 
   /** Exactly, for the reason in the comment on the constant. */
-  it('the uncomparable set is exactly the enumerated local-schema operations', () => {
-    expect([...scan.uncomparable].sort()).toEqual([...NO_CONTRACT_TYPE_TO_COMPARE].sort());
+  it('the uncomparable set is exactly the local and identity-only operations', () => {
+    expect([...scan.uncomparable].sort()).toEqual(
+      [...NO_CONTRACT_TYPE_TO_COMPARE, ...CONTRACT_IDENTITY_ONLY_OPERATIONS].sort(),
+    );
+  });
+
+  it('binds every MCP and tool input operation to its exported contract schema by identity', () => {
+    const contractSchemas: Record<string, unknown> = {
+      'tools.create': contract.ToolCreateInputSchema, 'tools.update': contract.ToolUpdateInputSchema,
+      'tools.config.set': contract.ToolConfigSetInputSchema, 'tools.config.unset': contract.ToolConfigUnsetInputSchema,
+      'tools.secrets.bind': contract.ToolSecretBindInputSchema, 'tools.secrets.unbind': contract.ToolSecretUnbindInputSchema,
+      'tools.run': contract.ToolRunInputSchema,
+      'mcp.servers.create': contract.McpServerCreateInputSchema,
+      'mcp.servers.update': contract.McpServerUpdateInputSchema,
+      'mcp.servers.delete': contract.McpServerDeleteInputSchema,
+      'mcp.servers.import': contract.McpServerImportInputSchema,
+      'mcp.servers.test': contract.McpServerTestInputSchema,
+      'mcp.resolve': contract.McpResolveInputSchema,
+      'mcp.credentials.create': contract.McpCredentialCreateInputSchema,
+      'mcp.credentials.rotate': contract.McpCredentialRotateInputSchema,
+      'mcp.credentials.revoke': contract.McpCredentialCommandInputSchema,
+      'mcp.credentials.share': contract.McpCredentialShareInputSchema,
+      'mcp.credentials.unshare': contract.McpCredentialCommandInputSchema,
+      'mcp.oauth.begin': contract.McpOAuthBeginInputSchema,
+      'mcp.oauth.callback': contract.McpOAuthCallbackInputSchema,
+      'mcp.proxy.request': contract.McpProxyRequestInputSchema,
+    };
+    for (const [operation, schema] of Object.entries(contractSchemas)) {
+      expect(INPUT_SCHEMAS[operation as keyof typeof INPUT_SCHEMAS], operation).toBe(schema);
+    }
   });
 });

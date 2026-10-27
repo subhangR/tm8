@@ -146,7 +146,7 @@ const RETIRED_MODEL_TEAMMATE_ROLE = 'Launch persona';
  * skipped, because spawn and resume both resolve the persona as a LIVE entity
  * and deleting it under a working agent would strand that agent. The next boot
  * tries again, so each one goes once its sessions have exited. A session names
- * its teammate by a `relates_to` edge (every `spawn_work_session` since 048).
+ * its teammate by a `participates_in` edge (written by spawn itself since 303).
  *
  * Soft-delete only — `entities.restore` brings one back, and the sessions,
  * messages and memories that point at it keep their history.
@@ -163,10 +163,10 @@ async function retireModelTeammates(q: Querier, spaceId: string): Promise<number
         and not exists (
           select 1
             from public.edges edge
-            join public.entities session_row on session_row.id = edge.src_id
+            join public.entities session_row on session_row.id = edge.dst_id
             join public.work_sessions session on session.entity_id = session_row.id
-           where edge.dst_id = entity_row.id
-             and edge.type = 'relates_to'
+           where edge.src_id = entity_row.id
+             and edge.type = 'participates_in'
              and session_row.deleted_at is null
              and session.status in ('spawning', 'running', 'idle'))
       order by 1`,
@@ -346,12 +346,41 @@ const TEAMMATE_MANAGER_PERSONA =
   + 'the same way: propose merges, retirements and persona fixes, with reasons.';
 
 const GRAPH_ARCHITECT_PERSONA =
-  'You design with the graph as your material. In a Craft chat you draw the '
-  + 'blueprint for what someone wants built: the tasks, the teammates who own '
-  + 'them, the memories and skills they need, and the edges between them. Keep '
-  + 'the blueprint honest — every node something that can really exist, every '
-  + 'edge a relation tm8 really has. Teammate specs are proposals for a human '
-  + 'to confirm; nothing is materialized until the blueprint is approved.';
+  'You design with the graph as your material. In a Craft chat you shape a '
+  + 'design: its ordered pages — blueprint graphs, docs, artifacts, drawings, '
+  + 'nested designs — added, reordered and removed as you work, each written '
+  + 'through its own kind\'s door. A blueprint page draws what someone wants '
+  + 'built: the tasks, the teammates who own them, the memories and skills '
+  + 'they need, and the edges between them. Keep it honest — every node '
+  + 'something that can really exist, every edge a relation tm8 really has. '
+  + 'Teammate specs are proposals for a human to confirm. A blueprint is a '
+  + 'plan: nothing is materialized while crafting; Run on the design builds it.';
+
+/**
+ * The default teammate of every Craft chat and session (owner decisions §5),
+ * taking that seat from the Graph Architect, which stays seeded. A craft is
+ * the `design` entity on the wire until the kind rename lands; the persona
+ * says craft because that is the word the human sees.
+ */
+const CRAFTER_PERSONA =
+  'You build crafts with the human. A craft is an ordered set of pages — '
+  + 'blueprint graphs, docs, artifacts, drawings, nested crafts — and you '
+  + 'create, edit, reorder and remove them as the work needs: add or move a '
+  + 'page through the craft\'s membership (collections.addItem with a position '
+  + 're-positions; collections.removeItem takes a page out without deleting '
+  + 'it), and write each page through its own kind\'s door. You also manage '
+  + 'the human\'s craft workspace — the page tabs they have open — with '
+  + '`tm8 workspace tabs open|close|move|activate|focus … --craft <craft-id>` '
+  + '(e.g. `tm8 workspace tabs open <kind> <entity-id> --craft <craft-id>`, '
+  + '`tm8 workspace tabs move <tab|entity> --before <tab|entity|last> --craft '
+  + '<craft-id>`), and their open crafts with `tm8 workspace crafts --space '
+  + '<space-id>` and `tm8 workspace crafts open|close|move <craft-id>`. A tab '
+  + 'opens only on a page of the craft, so add the page '
+  + 'first; closing a tab never removes a page, and the pinned overview tab '
+  + 'stays first. Open the page you just built so the human sees it; close or '
+  + 'reorder their tabs only when they ask. A blueprint page is a plan: '
+  + 'nothing is materialized while crafting; Run on the craft builds it. Say '
+  + 'in a line what you changed after each edit.';
 
 /** The seeded roster, in seeding order. Names come from HOUSE_TEAMMATE_NAMES. */
 const HOUSE_TEAMMATES: readonly HouseTeammate[] = [
@@ -361,6 +390,7 @@ const HOUSE_TEAMMATES: readonly HouseTeammate[] = [
   { key: 'helper', role: 'Helper', mode: 'worker', model: 'claude-sonnet-5', agentTool: 'claude-code', persona: HELPER_PERSONA },
   { key: 'teammateManager', role: 'Teammate Manager', mode: 'worker', model: TOP_MODEL, agentTool: 'claude-code', persona: TEAMMATE_MANAGER_PERSONA },
   { key: 'graphArchitect', role: 'Graph Architect', mode: 'worker', model: TOP_MODEL, agentTool: 'claude-code', persona: GRAPH_ARCHITECT_PERSONA },
+  { key: 'crafter', role: 'Crafter', mode: 'worker', model: TOP_MODEL, agentTool: 'claude-code', persona: CRAFTER_PERSONA },
   // The Dreamer (D7/D8) — a worker teammate, not a fifth mode. What makes it
   // the Dreamer is its persona and its loop: "not a new mechanism".
   { key: 'dreamer', role: 'Dreamer', mode: 'worker', model: DREAMER_MODEL, agentTool: DREAMER_AGENT_TOOL, persona: DREAMER_PERSONA },

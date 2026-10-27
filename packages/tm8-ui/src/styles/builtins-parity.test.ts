@@ -21,6 +21,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  ATELIER_STYLE_IDS,
   BUILTIN_STYLES,
   BUILTIN_STYLE_IDS,
   STYLE_REGISTRY,
@@ -46,36 +47,43 @@ const light = extracted['atelier-light']!.tokens;
 const dark = extracted['atelier-dark']!.tokens;
 const termKeys = Object.keys(TERMINAL_DEFAULTS as Record<string, string>);
 const cssKeys = Object.keys(light).filter((k) => !termKeys.includes(k));
+const BUILTIN_NAMES = ['atelier-light', 'atelier-dark', 'chatgpt-light', 'chatgpt-dark'];
 
 const committed = (name: string): string =>
   readFileSync(new URL(`../../../contract/src/builtins/${name}.json`, import.meta.url), 'utf8');
 
 describe('built-in styles stay in sync with tokens.css', () => {
-  it('extracts both built-ins, each with the whole table', () => {
-    expect(Object.keys(extracted).sort()).toEqual(['atelier-dark', 'atelier-light']);
+  it('extracts every built-in, each with the whole table', () => {
+    expect(Object.keys(extracted).sort()).toEqual(['atelier-dark', 'atelier-light', 'chatgpt-dark', 'chatgpt-light']);
+    for (const builtin of Object.values(extracted)) {
+      expect(Object.keys(builtin.tokens).sort()).toEqual(Object.keys(light).sort());
+    }
     /* Guards the guard: a scan that matched nothing would make every equality
        below compare two empty tables and pass forever. */
     expect(cssKeys.length).toBeGreaterThan(100);
   });
 
-  it.each(['atelier-light', 'atelier-dark'])('%s.json is byte-identical to a fresh extraction', (name) => {
+  it.each(BUILTIN_NAMES)('%s.json is byte-identical to a fresh extraction', (name) => {
     expect(committed(name)).toBe(serialise(extracted[name]));
   });
 
-  it.each(['atelier-light', 'atelier-dark'])('the bundled %s is the extracted one', (name) => {
+  it.each(BUILTIN_NAMES)('the bundled %s is the extracted one', (name) => {
     const builtin = extracted[name]!;
     expect(BUILTIN_STYLES[builtin.id]?.tokens).toEqual(builtin.tokens);
   });
 
-  it.each(['atelier-light', 'atelier-dark'])('resolveStyle is the identity on %s', (name) => {
+  it.each(BUILTIN_NAMES)('resolveStyle is the identity on %s', (name) => {
     const builtin = extracted[name]!;
     const resolved = resolveStyle(styleDocForBuiltin(builtin.id));
     expect(resolved.cssVars).toEqual(builtin.tokens);
     expect(resolved.warnings).toEqual([]);
   });
 
-  it('paints every always-dark scope with the dark table, from either built-in', () => {
+  it('paints every always-dark scope with the dark table of its own pair, from either half', () => {
     for (const id of Object.values(BUILTIN_STYLE_IDS)) {
+      expect(resolveStyle(styleDocForBuiltin(id)).alwaysDarkCssVars).toEqual(extracted['chatgpt-dark']!.tokens);
+    }
+    for (const id of Object.values(ATELIER_STYLE_IDS)) {
       expect(resolveStyle(styleDocForBuiltin(id)).alwaysDarkCssVars).toEqual(dark);
     }
   });
@@ -93,6 +101,17 @@ describe('the variable registry matches the CSS', () => {
     const flips = cssKeys.filter((k) => light[k] !== dark[k]).sort();
     const surface = STYLE_REGISTRY.entries.filter((e) => e.surface).map((e) => e.key).sort();
     expect(surface).toEqual(flips);
+  });
+
+  it('lets the ChatGPT pair differ only on surface keys', () => {
+    /* The always-dark ramp swaps surface keys and nothing else, so a ChatGPT
+       key that flipped between modes without being `surface` would leak the
+       light value into the terminal strip. Type, radii and the terminal
+       palette belong in the light block alone. */
+    const gl = extracted['chatgpt-light']!.tokens;
+    const gd = extracted['chatgpt-dark']!.tokens;
+    const surface = new Set(STYLE_REGISTRY.entries.filter((e) => e.surface).map((e) => e.key));
+    expect(cssKeys.filter((k) => gl[k] !== gd[k] && !surface.has(k))).toEqual([]);
   });
 
   it('puts the terminal option keys in the terminal-option group with an xterm sink (chrome excepted)', () => {

@@ -23,6 +23,13 @@ import type {
   IconRef,
 } from './types';
 import type { LaunchMode } from './launch';
+import { KIND_ART } from './kind-art';
+import {
+  isProcessRecordedLive,
+  isSessionState,
+  sessionRecordOf,
+  sessionVerbsOf,
+} from './session-outcome';
 
 const AVAILABLE: ActionAvailability = { kind: 'available' };
 
@@ -49,7 +56,7 @@ export const REASONS = {
   cannotReact: 'Reactions are not available on this entity.',
   cannotGrantPoints: 'You do not have permission to grant points here.',
   notLive: 'This session is not live — there is nothing running to act on.',
-  alreadyEnded: 'This session has already ended — it is under Done.',
+  alreadyEnded: 'This session’s process has already ended.',
   /* Resume's refusal, and the exact complement of the line above. It is
      reached only where the tail slot is drawn without the swap (the palette,
      a surface that names the verb directly); on a row the swap means this
@@ -265,14 +272,27 @@ function endableGate(ctx: ActionContext): ActionAvailability | null {
  * honest, whereas adding a status field to this context to pre-empt it would
  * make this layer COMPUTE a verdict it is supposed to present (R-UI-5).
  */
-export function hasEnded(ctx: Pick<ActionContext, 'category' | 'liveness'>): boolean {
+export function hasEnded(ctx: Pick<ActionContext, 'category' | 'liveness' | 'sessionState'>): boolean {
+  /* SPEC D1: with the session's own state in hand the question is the
+     PROCESS's, asked directly — the category now follows the OUTCOME (§3.2),
+     so a crashed open session is `in_progress` and a completed one still
+     streaming is `done`, and neither says whether anything is running. */
+  const session = sessionRecordOf(ctx.sessionState);
+  if (session) return !isProcessRecordedLive(session.status);
   return ctx.category === 'done' && ctx.liveness !== 'live';
 }
 
 /** The literal complement of `endableGate`'s refusal — see `hasEnded`. */
 function resumableGate(ctx: ActionContext): ActionAvailability | null {
   if (!ctx.entityId) return disabled(REASONS.noEntity);
-  if (!hasEnded(ctx)) return disabled(REASONS.notEnded);
+  /* A STALE session (its record says live, the node holds no PTY) is
+     resumable too: `execution.resume` marks the ghost lost and relaunches it,
+     so the user does not wait out the reaper. Only with the session's own
+     record in hand — that is when `sessionVerbsOf` picks the row's verbs and
+     offers Resume beside Terminate on purpose. Without it the one-slot swap
+     (`processControlFor`) still needs the two gates to be exact complements. */
+  const staleSession = sessionRecordOf(ctx.sessionState) !== null && ctx.liveness === 'stale';
+  if (!hasEnded(ctx) && !staleSession) return disabled(REASONS.notEnded);
   return null;
 }
 
@@ -301,9 +321,42 @@ export const PROCESS_CONTROL = {
  */
 export function processControlFor(
   ref: ActionRef,
-  ctx: Pick<ActionContext, 'category' | 'liveness'>,
+  ctx: Pick<ActionContext, 'category' | 'liveness' | 'sessionState'>,
 ): ActionRef {
   return ref === PROCESS_CONTROL.running && hasEnded(ctx) ? PROCESS_CONTROL.ended : ref;
+}
+
+/**
+ * SPEC D1 §5.2 — A SESSION'S VERBS COME FROM ITS OUTCOME AND ITS PROCESS, not
+ * from one swap. The declared `complete` (the tick) and `terminate` slots are
+ * replaced, in place, by the verbs `sessionVerbsOf` gives this row:
+ *
+ *   working / waiting           Complete · Terminate (Terminate opens §5.4)
+ *   completed, process open     Stop (closes the process only, no dialog)
+ *   completed, process closed   Follow-up
+ *   stopped                     Resume
+ *   crashed / lost / ended …    Resume · Complete · Dismiss
+ *
+ * Every other declared verb passes through. Returns null for a row that is
+ * not a session, so the caller keeps `processControlFor`'s one-slot swap.
+ */
+export function sessionControlsFor(
+  declared: readonly ActionRef[],
+  ctx: Pick<ActionContext, 'liveness' | 'sessionState'>,
+): ActionRef[] | null {
+  if (!isSessionState(ctx.sessionState)) return null;
+  const verbs = sessionVerbsOf(ctx.sessionState, ctx.liveness);
+  const out: ActionRef[] = [];
+  let placed = false;
+  for (const ref of declared) {
+    if (ref === 'complete' || ref === PROCESS_CONTROL.running) {
+      if (!placed) out.push(...verbs);
+      placed = true;
+      continue;
+    }
+    out.push(ref);
+  }
+  return out;
 }
 
 /**
@@ -634,6 +687,71 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   ),
 
   /**
+   * SPEC D1 §5.5 — COMPLETE THE SESSION'S WORK. Opens the Complete dialog
+   * (receipt, claimed tasks, "Also close the process"); the dialog sends
+   * `execution.complete`. Not the task tick: a session's completion needs a
+   * receipt and passes the claim check, and it is not a toggle.
+   */
+  'complete-session': define(
+    'complete-session',
+    'Complete',
+    '✓',
+    (ctx) => opGate(ctx, 'execution.complete') ?? (ctx.entityId ? AVAILABLE : disabled(REASONS.noEntity)),
+  ),
+
+  /**
+   * §5.2 / §5.4 — "Stop" on a ✓ row, "Close process" in the panel: terminate
+   * with NO outcome, which the node only accepts once the work is settled.
+   * No dialog — the outcome is already decided and stays as it is.
+   */
+  'close-process': define(
+    'close-process',
+    'Stop',
+    '■',
+    (ctx) => opGate(ctx, 'execution.terminate') ?? (ctx.entityId ? AVAILABLE : disabled(REASONS.noEntity)),
+  ),
+
+  /**
+   * §4.5 — start a follow-up session for a completed one. Deferred: the
+   * `follows_up` session edge and the receipt-carrying first prompt are D4.
+   */
+  'follow-up': deferred(
+    'follow-up',
+    'Follow-up',
+    '↪',
+    'Follow-up sessions are coming with D4. Start a new session on the same tasks for now.',
+  ),
+
+  /**
+   * Q2 = B — REOPEN A COMPLETED SESSION: `execution.resume`, which the node
+   * now allows on a completed session whose process has ended (outcome
+   * completed → open, logged). Its own ref rather than `resume` because it
+   * asks first ("its receipt stays in history") and says what it does.
+   */
+  'reopen-session': define(
+    'reopen-session',
+    'Reopen (resume)',
+    '↺',
+    (ctx) => opGate(ctx, 'execution.resume') ?? (ctx.entityId ? AVAILABLE : disabled(REASONS.noEntity)),
+  ),
+
+  /** §5.3 Interrupted — "Dismiss": terminate with outcome `stop`, the row moves to Stopped. */
+  'dismiss-session': define(
+    'dismiss-session',
+    'Dismiss',
+    '✕',
+    (ctx) => opGate(ctx, 'execution.terminate') ?? (ctx.entityId ? AVAILABLE : disabled(REASONS.noEntity)),
+  ),
+
+  /** §5.6 Stale — "Mark lost": the ghost reaper, now, for this session (`markLost`). */
+  'mark-lost': define(
+    'mark-lost',
+    'Mark lost',
+    '⌀',
+    (ctx) => opGate(ctx, 'execution.terminate') ?? (ctx.entityId ? AVAILABLE : disabled(REASONS.noEntity)),
+  ),
+
+  /**
    * THE OTHER HALF OF THE PROCESS CONTROL — `execution.resume`.
    *
    * A finished session row used to offer two controls and neither worked: a
@@ -785,22 +903,28 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
    * five sections are about an execution — project, worktree, posture. A chat
    * is configured in its own composer, which is where this verb lands.
    */
-  'chat-about': define(
-    'chat-about',
-    /* "Chat", not "Chat about this" (design 01a0da4e §3.2): the verb now sits
-       beside Run in every detail header, where the subject is the panel it is
-       drawn on and a longer word only costs the bar its width. */
-    'Chat',
-    '❝',
-    /*
-     * A SUBJECT IS OPTIONAL. Every other entity verb refuses without one
-     * because it acts ON the row; this one opens a composer, and a composer
-     * with no subject bound is bare Home's new conversation — the honest
-     * reading of pressing it from the Chats list HEADER, which has no row.
-     * So the only gate is the operation the composer will commit.
-     */
-    (ctx) => opGate(ctx, 'chat.start') ?? AVAILABLE,
-  ),
+  'chat-about': {
+    /* DRAWN, not the ❝ it wore as text: a verb that opens a chat wears THE
+       chat mark, the same array the kind, the rail and the ActionStrip draw.
+       `icon` stays as the text fallback for string-only surfaces. */
+    art: KIND_ART.chat,
+    ...define(
+      'chat-about',
+      /* "Chat", not "Chat about this" (design 01a0da4e §3.2): the verb now sits
+         beside Run in every detail header, where the subject is the panel it is
+         drawn on and a longer word only costs the bar its width. */
+      'Chat',
+      '❝',
+      /*
+       * A SUBJECT IS OPTIONAL. Every other entity verb refuses without one
+       * because it acts ON the row; this one opens a composer, and a composer
+       * with no subject bound is bare Home's new conversation — the honest
+       * reading of pressing it from the Chats list HEADER, which has no row.
+       * So the only gate is the operation the composer will commit.
+       */
+      (ctx) => opGate(ctx, 'chat.start') ?? AVAILABLE,
+    ),
+  },
 
   /*
    * CONTAINER LIFECYCLE (Design §13.1). Each gates on its OWN catalog
@@ -899,6 +1023,16 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
    * `merge-pr` draws between its verb and its confirm.
    */
   'new-container': define('new-container', 'New container', '＋', (ctx) => opGate(ctx, 'containers.create') ?? AVAILABLE),
+
+  /*
+   * THE PROJECT BIRTH VERB (task 01a13574): opens the Add project sheet, which
+   * commits `spaces.projects.create` (a folder), the folder-upload lifecycle,
+   * or `spaces.projects.clone`. Gated on `spaces.projects.create`, the one
+   * every source ends in. Whether THIS viewer may add (a space admin, inside
+   * the node's allowed roots) is the node's answer, shown in the sheet — the
+   * same division `new-container` draws.
+   */
+  'add-project': define('add-project', 'Add project', '＋', (ctx) => opGate(ctx, 'spaces.projects.create') ?? AVAILABLE),
 };
 
 /** Resolve a ref to its definition. Total over `ActionRef` — never throws. */

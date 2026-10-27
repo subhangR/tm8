@@ -13,6 +13,10 @@
 //   * ONE TRANSACTION PER FILE — a failed migration leaves nothing behind
 //   * an `applied_migrations` ledger with a content checksum, so re-running is a
 //     no-op and an edited-after-apply file is a loud error, not silent drift
+//   * ONE RUNNER AT A TIME — `up` holds a Postgres advisory lock for the whole
+//     run, so two deploys (or a deploy and an install) against the same database
+//     queue instead of both applying the same pending file (a waiting run gives
+//     up after $TM8_MIGRATE_LOCK_TIMEOUT, default 10min)
 //   * ZERO npm dependencies: it drives `psql`, which the sidecar already ships.
 //     (Same discipline as tools/rigs — no lockfile churn for a dev tool.)
 //
@@ -22,7 +26,7 @@
 // =============================================================================
 
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -174,6 +178,97 @@ function appliedMap(url) {
   return new Map(rows.map(([filename, checksum]) => [filename, checksum]));
 }
 
+// --- the run lock -----------------------------------------------------------
+// Two `up`s against one database used to both read the same ledger, both see
+// the same file pending and both apply it: the second either failed on an
+// object that already existed or, for a data migration, ran it twice before
+// tripping over the ledger's primary key. So `up` takes a session-level
+// advisory lock before it reads the ledger and keeps it until the last file.
+//
+// Every psql call here is its own connection, and a session lock dies with its
+// session, so the lock lives in one psql kept open on stdin for the whole run.
+// Closing stdin ends that session and releases it; so does this process dying,
+// because the server drops the lock with the connection. Advisory locks are
+// per-database, so runs against different databases never wait on each other.
+// The holder shows up in pg_stat_activity as application_name 'tm8 db/migrate.mjs'.
+const LOCK_KEY = '8389423504455985010'; // 'tm8:migr' read as a bigint
+const LOCK_APP_NAME = 'tm8 db/migrate.mjs';
+
+function lockTimeout() {
+  const value = process.env.TM8_MIGRATE_LOCK_TIMEOUT || '10min';
+  // Interpolated into SQL below, so only a Postgres interval-ish literal passes.
+  if (!/^\d+(ms|s|min|h)?$/.test(value)) {
+    fail(`TM8_MIGRATE_LOCK_TIMEOUT must look like 30s, 10min or 600000ms, got: ${value}`);
+  }
+  return value;
+}
+
+function acquireMigrationLock(url) {
+  const timeout = lockTimeout();
+  return new Promise((resolveLock, rejectLock) => {
+    const child = spawn(PSQL, ['--no-psqlrc', '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-q', url], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PGAPPNAME: LOCK_APP_NAME },
+    });
+    let held = false;
+    let stdout = '';
+    let stderr = '';
+    const closed = new Promise((resolveClosed) => child.on('close', resolveClosed));
+
+    child.on('error', (error) => rejectLock(new Error(`could not run ${PSQL}: ${error.message}`)));
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+      let newline;
+      while ((newline = stdout.indexOf('\n')) >= 0) {
+        const line = stdout.slice(0, newline).trim();
+        stdout = stdout.slice(newline + 1);
+        const [state, backendPid] = line.split(':');
+        if (state === 'try' && backendPid === 'false') {
+          console.log(`waiting for another migration run on this database to finish (up to ${timeout})`);
+          child.stdin.write(
+            `set lock_timeout = '${timeout}';\n` +
+              `select 'held:' || pg_backend_pid() from (select pg_advisory_lock(${LOCK_KEY})) s;\n`,
+          );
+        } else if (state === 'held') {
+          held = true;
+          resolveLock({
+            async release() {
+              // The run is synchronous, so a holder that died mid-run (server
+              // restart, terminated backend) is only noticeable now: ask the
+              // server whether that backend still has the lock.
+              const still = query(
+                url,
+                `select exists (select 1 from pg_locks where locktype = 'advisory' and granted and pid = ${Number(backendPid)})`,
+              );
+              if (still[0]?.[0] !== 't') {
+                console.warn('warning: the migration lock was lost before the run finished; another runner may have overlapped');
+              }
+              child.stdin.end();
+              await closed;
+            },
+          });
+        }
+      }
+    });
+    child.on('exit', (code) => {
+      if (held) return;
+      const reason = /lock timeout/i.test(stderr)
+        ? `another migration run held the lock for longer than ${timeout} (TM8_MIGRATE_LOCK_TIMEOUT)`
+        : `psql exited with ${code}: ${stderr.trim()}`;
+      rejectLock(new Error(`could not take the migration lock: ${reason}`));
+    });
+
+    child.stdin.on('error', () => {}); // an early psql exit is reported by 'exit'
+    // One round trip when the lock is free: try, and on success report the pid.
+    child.stdin.write(
+      `select case when pg_try_advisory_lock(${LOCK_KEY}) then 'held:' || pg_backend_pid() else 'try:false' end;\n`,
+    );
+  });
+}
+
 // --- commands ---------------------------------------------------------------
 function cmdStatus(url) {
   if (!canConnect(url)) {
@@ -207,10 +302,26 @@ function cmdStatus(url) {
   if (drifted) process.exitCode = 1;
 }
 
-function cmdUp(url, { dryRun }) {
+async function cmdUp(url, { dryRun }) {
   if (!canConnect(url)) {
     fail(`database unreachable: ${redact(url)}\n  run: node db/migrate.mjs create-db`);
   }
+  // A dry run writes nothing, so it neither needs the lock nor waits behind one.
+  if (dryRun) return applyPending(url, { dryRun });
+  let lock;
+  try {
+    lock = await acquireMigrationLock(url);
+  } catch (error) {
+    fail(error.message);
+  }
+  try {
+    applyPending(url, { dryRun });
+  } finally {
+    await lock.release();
+  }
+}
+
+function applyPending(url, { dryRun }) {
   ensureLedger(url);
   const applied = appliedMap(url);
   const files = migrationFiles();
@@ -307,7 +418,7 @@ function cmdCreateDb(url) {
   console.log(`created database ${name}`);
 }
 
-function cmdReset(url, { force }) {
+async function cmdReset(url, { force }) {
   if (!force && process.env.TM8_ALLOW_RESET !== '1') {
     fail('reset DROPS the database. Re-run with --force (or TM8_ALLOW_RESET=1).');
   }
@@ -318,7 +429,7 @@ function cmdReset(url, { force }) {
   if (!res.ok) fail(`could not drop database ${name}`);
   console.log(`dropped database ${name}`);
   cmdCreateDb(url);
-  cmdUp(url, { dryRun: false });
+  await cmdUp(url, { dryRun: false });
 }
 
 // --- utilities --------------------------------------------------------------
@@ -353,18 +464,18 @@ switch (command) {
     cmdStatus(url);
     break;
   case 'up':
-    cmdUp(url, { dryRun: flags.has('--dry-run') || flags.has('-n') });
+    await cmdUp(url, { dryRun: flags.has('--dry-run') || flags.has('-n') });
     break;
   case 'create-db':
     cmdCreateDb(url);
     break;
   case 'reset':
-    cmdReset(url, { force: flags.has('--force') || flags.has('-f') });
+    await cmdReset(url, { force: flags.has('--force') || flags.has('-f') });
     break;
   case 'help':
   case '--help':
   case '-h':
-    console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 24).join('\n').replace(/^\/\/ ?/gm, ''));
+    console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 25).join('\n').replace(/^\/\/ ?/gm, ''));
     break;
   default:
     fail(`unknown command: ${command} (try: status | up | create-db | reset | help)`);

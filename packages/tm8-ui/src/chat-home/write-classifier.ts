@@ -135,10 +135,14 @@ export function operationOf(args: unknown): string | null {
   return typeof operation === 'string' ? operation : null;
 }
 
-/** Write-ness of one tool call: the closed operation set first, the verb
+/** Reads whose NAME trips the verb regex: `spaceLinks.*` carries "link"
+ *  (both joined `tm8_read` in #1208), so it would fold as an edit. */
+const READ_OPS: ReadonlySet<string> = new Set(['spaceLinks.list', 'spaceLinks.audit']);
+
+/** Write-ness of one tool call: the closed operation sets first, the verb
  *  regex second, the tool name only when no operation is present at all. */
 export function isWriteCall(name: string, args: unknown): boolean {
   const operation = operationOf(args);
-  if (operation !== null) return WRITE_OPS.has(operation) || WRITE_VERB.test(operation);
+  if (operation !== null) return WRITE_OPS.has(operation) || (!READ_OPS.has(operation) && WRITE_VERB.test(operation));
   return WRITE_VERB.test(bareToolName(name));
 }

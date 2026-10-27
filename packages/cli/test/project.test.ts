@@ -33,6 +33,7 @@ import {
   ProjectCreateInputSchema,
   ProjectLinkInputSchema,
   SpaceProjectCreateInputSchema,
+  ProjectCloneInputSchema,
   ProjectUpdateInputSchema,
 } from '@tm8/contract';
 import { parseInvocation } from '../src/args.js';
@@ -165,6 +166,8 @@ describe('the project module registers exactly its projected paths', () => {
       'project association correct',
       'project blame',
       'project branches',
+      'project clone',
+      'project clone-status',
       'project contention',
       'project create',
       'project file-history',
@@ -210,8 +213,12 @@ describe('G06 owns no paging surface — asserted at the SCHEMA, not by grepping
    */
   const PAGING = /cursor|limit|after|before|seq|page|offset/i;
 
-  const membersOf = (schema: unknown): string[] =>
-    Object.keys((schema as { _def: { shape: () => Record<string, unknown> } })._def.shape());
+  // A refined schema (superRefine: spaces.projects.create's one-of rule) wraps
+  // its object in `_def.schema`; the members are the inner object's.
+  const membersOf = (schema: unknown): string[] => {
+    const def = (schema as { _def: { shape?: () => Record<string, unknown>; schema?: unknown } })._def;
+    return def.shape ? Object.keys(def.shape()) : membersOf(def.schema);
+  };
 
   it('no G06 input schema carries a cursor, limit, or any other paging member', () => {
     const rows: [string, unknown][] = [
@@ -219,12 +226,13 @@ describe('G06 owns no paging surface — asserted at the SCHEMA, not by grepping
       ['projects.update', ProjectUpdateInputSchema],
       ['projects.link', ProjectLinkInputSchema],
       ['spaces.projects.create', SpaceProjectCreateInputSchema],
+      ['spaces.projects.clone', ProjectCloneInputSchema],
       ['projects.associations.correct', CorrectProjectAssociationInputSchema],
       ['files.uploadInit', FileUploadInitInputSchema],
       ['files.uploadComplete', FileUploadCompleteInputSchema],
     ];
     // A loop that silently iterates zero rows is the classic vacuous pass.
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(8);
     for (const [name, schema] of rows) {
       const members = membersOf(schema);
       expect(members.length, `${name} introspected to an EMPTY shape`).toBeGreaterThan(0);
@@ -538,6 +546,22 @@ describe('tm8 project add — the Space project on a granted folder (W11)', () =
     const r = await invoke(['project', 'add', PROJECT, '--space', SPACE]);
     expect(r.stdout).toMatch(/projectEntityId[^\n]*00000000-0000-7000-8000-0000000000dd/);
     expect(r.stdout).toMatch(/folderId[^\n]*00000000-0000-7000-8000-0000000000bb/);
+  });
+
+  it('--name alone asks for the home default: no folderId and no workingDir in the body', async () => {
+    respond = () => ({ status: 201, body: ADDED });
+    const r = await invoke(['project', 'add', '--space', SPACE, '--name', 'Docs Site']);
+    expect(r.code).toBe(0);
+    const body = requests[0]?.body as Record<string, unknown>;
+    expect(body.name).toBe('Docs Site');
+    expect('folderId' in body).toBe(false);
+    expect('workingDir' in body).toBe(false);
+  });
+
+  it('with neither a folder id nor --name it still asks for the folder id', async () => {
+    const r = await invoke(['project', 'add', '--space', SPACE]);
+    expect(r.code).toBe(2);
+    expect(requests).toEqual([]);
   });
 
   it('requires a Space in context', async () => {

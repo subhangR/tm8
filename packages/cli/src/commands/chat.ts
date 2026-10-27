@@ -1,3 +1,4 @@
+import { mcpSelectionFlag } from './mcp.js';
 /**
  * `tm8 chat start|list|show|send|turns` — the chat noun (spec §6, L2-cli).
  *
@@ -41,6 +42,8 @@
  * friendlier spelling that quietly lost the version guard would be worse than
  * none.
  */
+import { McpSelectionsSchema } from '@tm8/contract';
+import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
@@ -107,7 +110,7 @@ function requireFlag(cmd: CommandContext, flag: string, placeholder: string, why
 async function chatStart(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [
     'teammate', 'model', 'mode', 'workdir', 'project', 'about', 'title',
-    'body', 'attach', 'mutation-id',
+    'body', 'attach', 'mutation-id', 'mcp-selections',
   ]);
 
   const teammateId = requireFlag(
@@ -164,6 +167,8 @@ async function chatStart(cmd: CommandContext): Promise<ExitCode> {
   const attachmentIds = uniqueInOrder(cmd.options.values('attach'));
   if (attachmentIds.length > 0) request.attachmentIds = attachmentIds;
 
+  const mcpSelections = await mcpSelectionFlag(cmd);
+  if (mcpSelections !== undefined) request.mcpSelections = mcpSelections;
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.start', { body: request });
   cmd.out.data(data, renderStarted);
   return EXIT_OK;
@@ -194,6 +199,32 @@ function renderStarted(dto: unknown): string {
  * saying out loud in the rendered result, because a caller who expected an
  * immediate change would otherwise read the current answer as proof it failed.
  */
+async function chatCredentials(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('chat credentials', cmd.options.value('mutation-id'));
+  assertKnownOptions(cmd, ['credential']);
+  const chatId = requireArg(cmd, 0, '<chat-id>');
+  const source = requireArg(cmd, 1, '<auto|member|space|node>');
+  if (!['auto', 'member', 'space', 'node'].includes(source)) throw new CliError('credential source must be auto, member, space or node', EXIT_USAGE);
+  const credentialId = cmd.options.value('credential');
+  if (credentialId && source !== 'space') throw new CliError('--credential requires source space', EXIT_USAGE);
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.setCredentials', {
+    params: { id: chatId }, body: { credentialSelection: { source, ...(credentialId ? { credentialId } : {}) } },
+  });
+  cmd.out.data(data, () => 'Credential selection saved; applies to the next claimed turn.');
+  return EXIT_OK;
+}
+
+/** The composer's ■, for the terminal: stops the running turn, not the queue. */
+async function chatStop(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('chat stop', cmd.options.value('mutation-id'));
+  assertKnownOptions(cmd, []);
+  const chatId = requireArg(cmd, 0, '<chat-id>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.interrupt', { params: { id: chatId }, body: {} });
+  cmd.out.data(data, (dto) => ((dto ?? {}) as { disposition?: unknown }).disposition === 'requested'
+    ? 'Stop requested; the running turn will end.' : 'Nothing to stop: no turn is running for this chat on this node.');
+  return EXIT_OK;
+}
+
 async function chatModel(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('chat model', cmd.options.value('mutation-id'));
   assertKnownOptions(cmd, []);
@@ -205,6 +236,55 @@ async function chatModel(cmd: CommandContext): Promise<ExitCode> {
   });
   cmd.out.data(data, renderModelSet);
   return EXIT_OK;
+}
+
+/**
+ * `tm8 chat connectors <chat-id> --input <json>` — change a live thread's
+ * connectors (G4).
+ *
+ * THREE VALUES, ALL DISTINCT, and that is the whole reason this takes a JSON
+ * source rather than repeatable `--connector` flags: `null` means "back to the
+ * defaults", resolved fresh at each turn; `[]` means every connector off; and a
+ * non-empty array replaces the selection. A flag-shaped spelling cannot express
+ * the difference between the first two, which is exactly the distinction the
+ * stored row carries.
+ */
+async function chatConnectors(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('chat connectors', cmd.options.value('mutation-id'));
+  assertKnownOptions(cmd, ['input']);
+  const chatId = requireArg(cmd, 0, '<chat-id>');
+  const source = cmd.options.value('input');
+  if (source === undefined) {
+    throw new CliError('--input is required: a JSON array of {serverId,credentialId?}, [] for none, or null for defaults', EXIT_USAGE);
+  }
+  const raw = await readJsonSource(source);
+  let mcpSelections: unknown = null;
+  if (raw !== null) {
+    const parsed = McpSelectionsSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new CliError('--input must be null, [], or an array of {serverId,credentialId?}', EXIT_USAGE);
+    }
+    mcpSelections = parsed.data;
+  }
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'chat.setMcpSelections', {
+    params: { id: chatId }, body: { mcpSelections },
+  });
+  cmd.out.data(data, renderChatConnectors);
+  return EXIT_OK;
+}
+
+function renderChatConnectors(dto: unknown): string {
+  const stored = ((dto ?? {}) as { mcpSelections?: unknown }).mcpSelections;
+  if (stored === null || stored === undefined) {
+    return 'Connectors cleared: this chat is back on the defaults, resolved at each turn.';
+  }
+  const picks = Array.isArray(stored) ? stored : [];
+  if (picks.length === 0) return 'Every connector is off for this chat, from its next turn.';
+  return [`${picks.length} connector${picks.length === 1 ? '' : 's'} selected, from this chat's next turn:`,
+    ...picks.map((pick) => {
+      const row = (pick ?? {}) as { serverId?: unknown; credentialId?: unknown };
+      return `  ${String(row.serverId)}${row.credentialId ? `  (account ${String(row.credentialId)})` : ''}`;
+    })].join('\n');
 }
 
 function renderModelSet(dto: unknown): string {
@@ -420,6 +500,9 @@ function renderTurnRows(dto: unknown): string {
 export const CHAT_COMMANDS: CommandModule[] = [
   { path: ['chat', 'start'], run: chatStart },
   { path: ['chat', 'model'], run: chatModel },
+  { path: ['chat', 'stop'], run: chatStop },
+  { path: ['chat', 'credentials'], run: chatCredentials },
+  { path: ['chat', 'connectors'], run: chatConnectors },
   { path: ['chat', 'list'], run: chatList },
   { path: ['chat', 'show'], run: chatShow },
   { path: ['chat', 'send'], run: chatSend },

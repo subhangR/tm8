@@ -20,17 +20,19 @@ describe('Chat responsive and preference gates', () => {
     // anything out, so this pins the three facts that make them one rail:
     // the token exists, the feed's children ride it, and the composer points
     // at the SAME token rather than a number of its own.
-    expect(/\.chs-root\s*\{[\s\S]*?--chs-measure:\s*min\(1100px,\s*100%\)/.test(css)).toBe(true);
+    // 2026-10-18: the rail is chat's 760px column (`.tch-transcript`), so a
+    // channel and a chat read identically in the same pane.
+    expect(/\.chs-root\s*\{[\s\S]*?--chs-measure:\s*min\(760px,\s*100%\)/.test(css)).toBe(true);
     expect(css).toMatch(
       /\.chs-feed > :not\(\.chs-feed__spacer\)\s*\{[^}]*width:\s*var\(--chs-measure\);[^}]*margin-inline:\s*auto/s,
     );
     expect(css).toMatch(
       /\.chs-composer > :not\(\.chs-mention-picker\)\s*\{[^}]*width:\s*var\(--chs-measure\);[^}]*margin-inline:\s*auto/s,
     );
-    // `min(…, 100%)` and not a clamp or a bare 1100px: the rail has to
+    // `min(…, 100%)` and not a clamp or a bare width: the rail has to
     // degrade to the full width inside the ~360px thread pane and the 440px
     // phone container, where those blocks below still get the last word.
-    expect(css).not.toMatch(/--chs-measure:\s*1100px/);
+    expect(css).not.toMatch(/--chs-measure:\s*\d+px/);
     // The 70ch LINE measure is a different job and stays where it was.
     expect(css).toMatch(/\.chs-text\s*\{[^}]*max-width:\s*70ch/s);
   });
@@ -86,5 +88,25 @@ describe('Chat responsive and preference gates', () => {
     expect(active, 'the active-row rule must exist').toBeTruthy();
     expect(active).toMatch(/background:\s*var\(--pn-brand-soft\)/);
     expect(active).toMatch(/border-color:\s*var\(--pn-brand\)/);
+  });
+  it('puts phone message actions in flow under the turn, never over its byline or text', () => {
+    // Verify F6 (2026-10-18): pinned open by the 440 container block, the
+    // absolutely-positioned bar's 44px ↩ tiles covered the author and first
+    // line of every message in the phone Discussion sheet. On the phone the
+    // bar is turn chrome: static, plain, on the bubble's side.
+    const phone = /\.cv2-root\[data-shell='mobile'\] \.chs-row--turn \.chs-actions\s*\{([^}]*)\}/s.exec(css)?.[1] ?? '';
+    expect(phone).toMatch(/position:\s*static/);
+    expect(phone).toMatch(/opacity:\s*1/);
+    expect(phone).toMatch(/border:\s*none/);
+    expect(css).toMatch(
+      /\.cv2-root\[data-shell='mobile'\] \.chs-row--turn\[data-own\] \.chs-actions\s*\{[^}]*justify-content:\s*flex-end/s,
+    );
+    // The reply target keeps the 44px floor.
+    expect(css).toMatch(
+      /\.cv2-root\[data-shell='mobile'\] \.chs-row--turn \.chs-iconbtn\s*\{[^}]*min-width:\s*var\(--mobile-touch-min, 44px\);[^}]*min-height:\s*var\(--mobile-touch-min, 44px\)/s,
+    );
+    // It must come AFTER the generic turn placement, or the cascade loses it.
+    expect(css.indexOf(".cv2-root[data-shell='mobile'] .chs-row--turn .chs-actions"))
+      .toBeGreaterThan(css.indexOf('.chs-row--turn .chs-actions { top: -10px'));
   });
 });

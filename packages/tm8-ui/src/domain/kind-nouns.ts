@@ -77,6 +77,9 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   // A story has no catalog noun (283 rides entities.create/patch); its roots go in
   // and out through the collection verbs, and spawning on it hands the story over.
   story: { nouns: [], commands: ['collection add', 'collection remove', 'session spawn'] },
+  // A craft rides the same doors as a story: its pages go in and out through
+  // the collection verbs (with --position), and Run hands the craft over.
+  craft: { nouns: [], commands: ['collection add', 'collection remove', 'session spawn'] },
   graph: { nouns: ['graph'], commands: ['saved-view list', 'saved-view create'] },
   member: {
     nouns: [],
@@ -118,7 +121,22 @@ export const KIND_CLI_VOCABULARY: Readonly<Record<string, KindCliVocabulary>> = 
   },
   credential: { nouns: ['credential'], commands: ['space credential-readiness get', 'session spawn'] },
   space_link: { nouns: ['space-link'], commands: [] },
+  // 284: a space style is written only by `tm8 style push`; the noun owns it.
+  style: { nouns: ['style'], commands: [] },
   server: { nouns: ['server'], commands: ['identity get', 'node mode'] },
+  tool: { nouns: ['tool'], commands: [] },
+  mcp_server: {
+    nouns: [],
+    commands: [
+      'mcp server list',
+      'mcp server get',
+      'mcp server create',
+      'mcp server update',
+      'mcp server delete',
+      'mcp server import',
+      'mcp server test',
+    ],
+  },
   loop: { nouns: [], commands: ['entity query', 'session spawn'] },
   spell: { nouns: [], commands: ['skill equip', 'entity query'] },
   container: { nouns: ['container'], commands: [] },

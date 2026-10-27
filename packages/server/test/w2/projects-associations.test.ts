@@ -55,9 +55,20 @@ const PROJECT_ROW = {
 
 class FakeDb implements Db {
   readonly calls: Array<{ fn: string; args: readonly unknown[] }> = [];
+  /** What `my_path_grants` (282) answers: the caller's live grants. */
+  pathGrants: Array<{ rootPath: string }> = [];
   queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async () => [];
   rpcImpl: <T>(fn: string, args: readonly unknown[]) => Promise<T> = async (fn, args) => {
     this.calls.push({ fn, args });
+    if (fn === 'my_path_grants') {
+      return this.pathGrants.map((grant, index) => ({
+        id: `00000000-0000-7000-8000-0000000007${String(index).padStart(2, '0')}`,
+        accountId: OWNER.accountId,
+        mode: 'select',
+        grantedAt: '2026-10-02T08:00:00.000Z',
+        ...grant,
+      })) as T;
+    }
     if (fn === 'correct_project_association') {
       return {
         artifactId: IDS.artifact,
@@ -146,6 +157,8 @@ describe('W2.G06 projects and association correction facade', () => {
       'projects.list',
       'projects.unlink',
       'projects.update',
+      'spaces.projects.clone',
+      'spaces.projects.cloneJobs.get',
       'spaces.projects.create',
       'spaces.projects.list',
     ]);
@@ -252,11 +265,11 @@ describe('W2.G06 projects and association correction facade', () => {
     // is not once space roles are writable and invite-bound signup makes
     // ordinary members routine, because the default browse scope is the OS
     // filesystem root and `project-files.ts` shares the same roots to read
-    // file CONTENTS. A non-admin cannot create a project from what they find
-    // (below), so browsing bought them nothing anyway.
+    // file CONTENTS. A non-admin browses only what a node admin granted them
+    // (282), and with no grant that is nothing — refused with the reason.
     await expect(handler(registry, 'projects.directories.list')(
       request('projects.directories.list', { identity }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
+    )).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'path_grant_required' } });
 
     // The node admin still browses, so the picker itself is not broken.
     const listing = await handler(registry, 'projects.directories.list')(
@@ -359,11 +372,22 @@ describe('W2.G06 projects and association correction facade', () => {
   it('routes create/link/unlink only through named definer RPCs with the frozen wire results', async () => {
     const db = new FakeDb();
     const registry = registered(db);
-    const created = await handler(registry, 'projects.create')(
-      request('projects.create', {
-        body: { name: 'tm8', workingDir: '/tmp/tm8', clientMutationId: 'g06-create' },
-      }),
-    );
+    // projects.create now checks the folder exists inside TM8_PROJECT_ROOTS.
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'tm8-g06-create-')));
+    const previousRoots = process.env.TM8_PROJECT_ROOTS;
+    process.env.TM8_PROJECT_ROOTS = scratch;
+    let created;
+    try {
+      created = await handler(registry, 'projects.create')(
+        request('projects.create', {
+          body: { name: 'tm8', workingDir: scratch, clientMutationId: 'g06-create' },
+        }),
+      );
+    } finally {
+      if (previousRoots === undefined) delete process.env.TM8_PROJECT_ROOTS;
+      else process.env.TM8_PROJECT_ROOTS = previousRoots;
+      await rm(scratch, { recursive: true, force: true });
+    }
     expect(created).toMatchObject({ kind: 'json', status: 201 });
     await handler(registry, 'projects.link')(
       request('projects.link', {
@@ -517,6 +541,342 @@ describe('projects.branches.list — the working directory comes from the ROW', 
       ).rejects.toMatchObject({ code: 'invalid_input' });
     } finally {
       await cleanup();
+    }
+  });
+});
+
+describe('projects.directories.list for a path-grant holder (282)', () => {
+  const member = {
+    kind: 'bearer' as const,
+    identityId: 'granted-member',
+    token: 'test-token',
+    nodeAdmin: false,
+  };
+
+  async function withTree<T>(fn: (root: string) => Promise<T>): Promise<T> {
+    const previous = process.env.TM8_PROJECT_ROOTS;
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'tm8-path-grants-')));
+    try {
+      await mkdir(join(scratch, 'granted', 'repo-a'), { recursive: true });
+      await mkdir(join(scratch, 'granted', 'repo-b'));
+      await mkdir(join(scratch, 'secret', 'keys'), { recursive: true });
+      await mkdir(join(scratch, 'outside-roots'));
+      // A symlink under the granted root that points OUT of it.
+      await symlink(join(scratch, 'secret'), join(scratch, 'granted', 'escape'));
+      process.env.TM8_PROJECT_ROOTS = scratch;
+      return await fn(scratch);
+    } finally {
+      if (previous === undefined) delete process.env.TM8_PROJECT_ROOTS;
+      else process.env.TM8_PROJECT_ROOTS = previous;
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }
+
+  function list(db: FakeDb, path?: string) {
+    return handler(registered(db), 'projects.directories.list')(
+      request('projects.directories.list', {
+        identity: member,
+        ...(path ? { query: new URLSearchParams({ path }).toString() } : {}),
+      }),
+    );
+  }
+
+  it('browses inside a live grant and offers only the granted roots', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      db.pathGrants = [{ rootPath: join(scratch, 'granted') }];
+      const listing = ProjectDirectoryListingSchema.parse(await list(db));
+      expect(listing.roots).toEqual([join(scratch, 'granted')]);
+      expect(listing.path).toBe(join(scratch, 'granted'));
+      expect(listing.parentPath).toBeNull();
+      // The symlink row is omitted, exactly as for a node admin.
+      expect(listing.directories.map((d) => d.name)).toEqual(['repo-a', 'repo-b']);
+
+      const child = ProjectDirectoryListingSchema.parse(await list(db, join(scratch, 'granted', 'repo-a')));
+      expect(child.parentPath).toBe(join(scratch, 'granted'));
+    });
+  });
+
+  it('refuses a path outside every grant the same way whether or not it exists', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      db.pathGrants = [{ rootPath: join(scratch, 'granted') }];
+      for (const path of [join(scratch, 'secret'), join(scratch, 'does-not-exist'), join(scratch, 'granted', '..', 'secret')]) {
+        await expect(list(db, path)).rejects.toMatchObject({
+          code: 'forbidden',
+          message: 'project directory is outside the folders a node admin granted you',
+        });
+      }
+    });
+  });
+
+  it('refuses a symlink under a granted root that escapes it', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      db.pathGrants = [{ rootPath: join(scratch, 'granted') }];
+      await expect(list(db, join(scratch, 'granted', 'escape'))).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(list(db, join(scratch, 'granted', 'escape', 'keys'))).rejects.toMatchObject({ code: 'forbidden' });
+    });
+  });
+
+  it('confines grants to TM8_PROJECT_ROOTS, collapses nested grants and skips a vanished one', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      db.pathGrants = [
+        { rootPath: join(scratch, 'granted', 'repo-a') },
+        { rootPath: join(scratch, 'granted') },
+        { rootPath: join(scratch, 'gone') },
+        { rootPath: '/' },
+      ];
+      // Narrow the node's roots to `granted`: the `/` grant is outside them now.
+      process.env.TM8_PROJECT_ROOTS = join(scratch, 'granted');
+      const listing = ProjectDirectoryListingSchema.parse(await list(db));
+      expect(listing.roots).toEqual([join(scratch, 'granted')]);
+
+      // A symlinked GRANT that resolves outside the roots is dropped too.
+      db.pathGrants = [{ rootPath: join(scratch, 'granted', 'escape') }];
+      await expect(list(db)).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'path_grant_required' } });
+    });
+  });
+
+  it('drops a grant whose directory was swapped for a symlink after it was granted', async () => {
+    await withTree(async (scratch) => {
+      const db = new FakeDb();
+      // Granted while it was a real directory...
+      db.pathGrants = [{ rootPath: join(scratch, 'granted', 'repo-b') }];
+      expect(ProjectDirectoryListingSchema.parse(await list(db)).roots).toEqual([join(scratch, 'granted', 'repo-b')]);
+      // ...then replaced by a link to the top of the node's roots. Inside
+      // TM8_PROJECT_ROOTS, so containment alone would have adopted it.
+      await rm(join(scratch, 'granted', 'repo-b'), { recursive: true });
+      await symlink(scratch, join(scratch, 'granted', 'repo-b'));
+      await expect(list(db)).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'path_grant_required' } });
+      await expect(list(db, join(scratch, 'secret'))).rejects.toMatchObject({ code: 'forbidden' });
+    });
+  });
+});
+
+
+describe('adding a project to a space inside the allowed roots (task 01a13574)', () => {
+  const SPACE_ADMIN = { kind: 'bearer', identityId: 'g06-space-admin', nodeAdmin: false } as RequestContext['identity'];
+
+  /** A FakeDb that answers `is_space_admin` and the space's project read. */
+  function spaceDb(spaceAdmin: boolean): FakeDb {
+    const db = new FakeDb();
+    db.queryImpl = (async <R>(sql: string) => {
+      if (sql.includes('internal.is_space_admin')) return [{ admin: spaceAdmin }] as R[];
+      if (sql.includes('space_projects_for_caller')) {
+        return [{
+          project_id: IDS.project, folder_id: IDS.artifact, name: 'added', repo_url: null,
+          trust: 'untrusted', defaults: {}, materialized_version: 1,
+          created_at: '2026-10-13T10:00:00.000Z', updated_at: '2026-10-13T10:00:00.000Z',
+        }] as R[];
+      }
+      return [] as R[];
+    }) as FakeDb['queryImpl'];
+    const base = db.rpcImpl;
+    db.rpcImpl = (async <T>(fn: string, args: readonly unknown[]) => {
+      if (fn === 'register_space_folder') {
+        db.calls.push({ fn, args });
+        return { spaceId: args[0], folderId: IDS.artifact, projectId: IDS.project, created: true } as T;
+      }
+      return base<T>(fn, args);
+    }) as FakeDb['rpcImpl'];
+    return db;
+  }
+
+  async function withRoots<T>(roots: string | undefined, run: () => Promise<T>): Promise<T> {
+    const previous = process.env.TM8_PROJECT_ROOTS;
+    if (roots === undefined) delete process.env.TM8_PROJECT_ROOTS;
+    else process.env.TM8_PROJECT_ROOTS = roots;
+    try {
+      return await run();
+    } finally {
+      if (previous === undefined) delete process.env.TM8_PROJECT_ROOTS;
+      else process.env.TM8_PROJECT_ROOTS = previous;
+    }
+  }
+
+  async function scratchTree(): Promise<{ root: string; outside: string; cleanup: () => Promise<void> }> {
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'tm8-space-add-')));
+    const root = join(scratch, 'root');
+    const outside = join(scratch, 'outside');
+    await mkdir(join(root, 'existing'), { recursive: true });
+    await mkdir(outside);
+    return { root, outside, cleanup: () => rm(scratch, { recursive: true, force: true }) };
+  }
+
+  function addRequest(body: Record<string, unknown>, identity = SPACE_ADMIN) {
+    return request('spaces.projects.create', { params: { spaceId: IDS.space }, body, identity });
+  }
+
+  it('projects.create without ensureWorkingDir refuses a missing folder and one outside the roots', async () => {
+    const tree = await scratchTree();
+    try {
+      await withRoots(tree.root, async () => {
+        const create = handler(registered(new FakeDb()), 'projects.create');
+        // Lane D B2, verbatim: this used to SUCCEED for a node admin and list the bogus path.
+        await expect(create(request('projects.create', {
+          body: { name: 'ghost2', workingDir: '/nonexistent/xyz' },
+        }))).rejects.toMatchObject({ code: 'not_found' });
+        await expect(create(request('projects.create', {
+          body: { name: 'x', workingDir: join(tree.root, 'missing') },
+        }))).rejects.toMatchObject({ code: 'not_found' });
+        await expect(create(request('projects.create', {
+          body: { name: 'x', workingDir: tree.outside },
+        }))).rejects.toMatchObject({ code: 'forbidden' });
+        // A symlink inside the roots that points out of them is followed, then refused.
+        await symlink(tree.outside, join(tree.root, 'escape'));
+        await expect(create(request('projects.create', {
+          body: { name: 'x', workingDir: join(tree.root, 'escape') },
+        }))).rejects.toMatchObject({ code: 'forbidden' });
+      });
+    } finally {
+      await tree.cleanup();
+    }
+  });
+
+  it('a space admin registers an existing folder inside the roots through register_space_folder', async () => {
+    const tree = await scratchTree();
+    try {
+      const db = spaceDb(true);
+      const result = await withRoots(tree.root, () => handler(registered(db), 'spaces.projects.create')(
+        addRequest({ name: 'added', workingDir: join(tree.root, 'existing') }),
+      ));
+      expect(result).toMatchObject({ kind: 'json', status: 201, data: { id: IDS.project, spaceId: IDS.space } });
+      const call = db.calls.find((c) => c.fn === 'register_space_folder')!;
+      expect(call.args).toEqual([IDS.space, 'added', join(tree.root, 'existing'), null, null, 'untrusted', null]);
+      expect(db.calls.map((c) => c.fn)).not.toContain('create_space_project');
+    } finally {
+      await tree.cleanup();
+    }
+  });
+
+  it('a space admin may create one new folder with ensureWorkingDir', async () => {
+    const tree = await scratchTree();
+    try {
+      const db = spaceDb(true);
+      await withRoots(tree.root, () => handler(registered(db), 'spaces.projects.create')(
+        addRequest({ name: 'fresh', workingDir: join(tree.root, 'fresh'), ensureWorkingDir: true }),
+      ));
+      expect(db.calls.find((c) => c.fn === 'register_space_folder')!.args[2]).toBe(join(tree.root, 'fresh'));
+    } finally {
+      await tree.cleanup();
+    }
+  });
+
+  // Task 01a13ba3: an Orchestrator session on tm8.sh, acting for a space admin,
+  // ran `project folder-add` (gate.folders.create) and was refused with no way
+  // forward. A pinned session never holds node admin (claimsFor, K6), even
+  // when its human does, so the gate stays shut; the space admin's door is open.
+  it('an agent session pinned to the space adds a project untrusted, and the gate refusal names that door', async () => {
+    const tree = await scratchTree();
+    const AGENT = {
+      kind: 'bearer', identityId: 'g06-space-admin', nodeAdmin: true, sessionSpaceId: IDS.space, authKind: 'agent',
+    } as RequestContext['identity'];
+    try {
+      const db = spaceDb(true);
+      await withRoots(tree.root, async () => {
+        await handler(registered(db), 'spaces.projects.create')(
+          addRequest({ name: 'by-agent', workingDir: join(tree.root, 'existing') }, AGENT),
+        );
+        await expect(handler(registered(db), 'gate.folders.create')(request('gate.folders.create', {
+          body: { name: 'by-agent', workingDir: join(tree.root, 'existing') }, identity: AGENT,
+        }))).rejects.toMatchObject({
+          code: 'forbidden',
+          message: expect.stringContaining('tm8 project add --working-dir <path> --name <name>'),
+        });
+      });
+      const call = db.calls.find((c) => c.fn === 'register_space_folder')!;
+      expect(call.args).toEqual([IDS.space, 'by-agent', join(tree.root, 'existing'), null, null, 'untrusted', null]);
+    } finally {
+      await tree.cleanup();
+    }
+  });
+
+  it('refuses a space admin outside the roots, and creates nothing there', async () => {
+    const tree = await scratchTree();
+    try {
+      const db = spaceDb(true);
+      const create = handler(registered(db), 'spaces.projects.create');
+      await withRoots(tree.root, async () => {
+        await expect(create(addRequest({ name: 'x', workingDir: tree.outside }))).rejects.toMatchObject({ code: 'forbidden' });
+        await expect(create(addRequest({ name: 'x', workingDir: join(tree.outside, 'new'), ensureWorkingDir: true })))
+          .rejects.toMatchObject({ code: 'forbidden' });
+        await expect(create(addRequest({ name: 'x', workingDir: join(tree.root, '..', 'outside') })))
+          .rejects.toMatchObject({ code: 'forbidden' });
+      });
+      await expect(readFile(join(tree.outside, 'new'))).rejects.toThrow();
+      expect(db.calls.map((c) => c.fn)).not.toContain('register_space_folder');
+    } finally {
+      await tree.cleanup();
+    }
+  });
+
+  it('refuses a space admin when TM8_PROJECT_ROOTS is unset (the default would be the filesystem root)', async () => {
+    const tree = await scratchTree();
+    try {
+      const db = spaceDb(true);
+      await withRoots(undefined, async () => {
+        await expect(handler(registered(db), 'spaces.projects.create')(
+          addRequest({ name: 'x', workingDir: join(tree.root, 'existing') }),
+        )).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'project_roots_unset' } });
+      });
+      expect(db.calls.map((c) => c.fn)).not.toContain('register_space_folder');
+    } finally {
+      await tree.cleanup();
+    }
+  });
+
+  it('refuses a member who is not a space admin before touching the filesystem', async () => {
+    const tree = await scratchTree();
+    try {
+      const db = spaceDb(false);
+      await withRoots(tree.root, async () => {
+        await expect(handler(registered(db), 'spaces.projects.create')(
+          addRequest({ name: 'x', workingDir: join(tree.root, 'made'), ensureWorkingDir: true }),
+        )).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'space_admin_required' } });
+      });
+      await expect(readFile(join(tree.root, 'made'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await tree.cleanup();
+    }
+  });
+
+  it('refuses trust from a space admin who is not a node admin; a node admin may trust, roots unset', async () => {
+    const tree = await scratchTree();
+    try {
+      const db = spaceDb(true);
+      await withRoots(tree.root, async () => {
+        await expect(handler(registered(db), 'spaces.projects.create')(
+          addRequest({ name: 'x', workingDir: join(tree.root, 'existing'), trust: 'trusted' }),
+        )).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'trust_requires_node_admin' } });
+      });
+      await withRoots(undefined, () => handler(registered(db), 'spaces.projects.create')(
+        addRequest({ name: 'x', workingDir: join(tree.root, 'existing'), trust: 'trusted' },
+          { kind: 'auto-owner', identityId: OWNER.identityId }),
+      ));
+      expect(db.calls.find((c) => c.fn === 'register_space_folder')!.args[5]).toBe('trusted');
+    } finally {
+      await tree.cleanup();
+    }
+  });
+
+  it('lets a space admin browse the explicit roots with ?spaceId=, and only a space admin', async () => {
+    const tree = await scratchTree();
+    try {
+      await withRoots(tree.root, async () => {
+        const listing = await handler(registered(spaceDb(true)), 'projects.directories.list')(
+          request('projects.directories.list', { query: `spaceId=${IDS.space}&path=${encodeURIComponent(tree.root)}`, identity: SPACE_ADMIN }),
+        ) as { roots: string[]; directories: Array<{ name: string }> };
+        expect(listing.roots).toEqual([tree.root]);
+        expect(listing.directories.map((d) => d.name)).toEqual(['existing']);
+        // Not a space admin, no grants: the old refusal.
+        await expect(handler(registered(spaceDb(false)), 'projects.directories.list')(
+          request('projects.directories.list', { query: `spaceId=${IDS.space}`, identity: SPACE_ADMIN }),
+        )).rejects.toMatchObject({ code: 'forbidden' });
+      });
+    } finally {
+      await tree.cleanup();
     }
   });
 });

@@ -1,10 +1,16 @@
 node_modules
 dist/
+dist-map-studio/
 *.tsbuildinfo
 .DS_Store
 .env
 .env.local
 .env.*.local
+# A system install's service user (tm8) has the checkout as its HOME, so its
+# agent logins land here. Never commit them.
+/.claude.json
+/.claude.json.backup*
+/.codex/
 target/
 coverage/
 test-results/

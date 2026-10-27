@@ -1,32 +1,9 @@
 import type { ChatTurnUsage, SessionTranscriptContext } from '@tm8/contract';
-import type { ChatMode } from '@tm8/contract';
+import type { ChatMode, ChatCredentialSelection } from '@tm8/contract';
 
-/**
- * C1 runtime port. This intentionally mirrors packages/execution's chat lane
- * without importing its concrete adapters, so the server can be composed and
- * tested before the provider-specific branch is merged.
- */
-export type TurnItem =
-  | { readonly kind: 'thinking'; readonly text: string }
-  | { readonly kind: 'text'; readonly text: string }
-  | {
-      readonly kind: 'tool_call';
-      readonly id: string;
-      readonly name: string;
-      readonly args: unknown;
-      readonly state: 'running' | 'completed' | 'error';
-    }
-  | {
-      readonly kind: 'tool_result';
-      readonly tool_call_id: string;
-      readonly content: unknown;
-      readonly is_error: boolean;
-    }
-  | ({ readonly kind: 'usage' } & ChatTurnUsage)
-  /** The thread's latest context reading: stored on the chat, never a part. */
-  | { readonly kind: 'context'; readonly context: SessionTranscriptContext }
-  | { readonly kind: 'error'; readonly code: string; readonly message: string }
-  | { readonly kind: 'done'; readonly reason: 'success' | 'error' | 'interrupted' | 'closed' };
+/** Legacy shim; execution owns the runtime contract. */
+export type { TurnItem } from '@tm8/execution';
+import type { TurnItem } from '@tm8/execution';
 
 export interface StartAgentThreadInput {
   readonly threadId: string;
@@ -69,8 +46,13 @@ export interface ChatLaunchConfig {
 }
 
 export interface ChatLaunchConfigInput {
+  /** Verified requesting session row; never accepted from a model or request body. */
+  readonly requesterAuthSessionId?: string;
   /** 176: the chat entity. Was `rootMessageId` while a chat was a message. */
   readonly chatId: string;
+  readonly credentialSelection?: ChatCredentialSelection;
+  /** Preflight checks access without rewriting any live credential home. */
+  readonly credentialValidationOnly?: boolean;
   /** Human whose current turn authorizes this runtime token. */
   readonly requesterIdentityId: string;
   /**
@@ -92,3 +74,28 @@ export interface ChatLaunchConfigInput {
 export type ResolveChatLaunchConfig = (
   input: ChatLaunchConfigInput,
 ) => Promise<ChatLaunchConfig>;
+
+/** Rechecked before every turn, separately from the cold-start MCP token mint. */
+export type ResolveChatCredentialEnv = (
+  input: ChatLaunchConfigInput,
+) => Promise<Readonly<Record<string, string>>>;
+
+/**
+ * The connectors THIS turn would actually get (§5.3, S21c), resolved without
+ * binding anything.
+ *
+ * Read before every turn, for the same reason `ResolveChatCredentialEnv` is: a
+ * live headless child cannot be handed a new `--mcp-config` or
+ * `--allowed-tools`, so a selection that has moved since the child started has
+ * to close it and resume. It is deliberately NOT part of `ChatLaunchConfig`,
+ * which is resolved only on a cold or post-interrupt start and mints a token on
+ * the way — that mint is exactly what must not happen on a turn that reuses its
+ * child.
+ *
+ * `null` means "could not find out", and the caller treats it as no
+ * information rather than as a failure: a turn that would have reused its child
+ * must not die because a read that only detects CHANGE could not be taken.
+ */
+export type ResolveChatMcpSelection = (
+  input: ChatLaunchConfigInput,
+) => Promise<readonly { readonly serverId: string; readonly credentialId?: string }[] | null>;

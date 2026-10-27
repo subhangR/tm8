@@ -17,6 +17,7 @@ export type {
   PanelTab,
   ParseOutcome,
   QValue,
+  ListPick,
   Route,
 } from './types';
 
@@ -30,9 +31,10 @@ export {
   emptyPanels,
 } from './types';
 
-export { build, defaultRoute, normalize, parse } from './codec';
+export { build, defaultRoute, homeAsTabs, normalize, parse, workRedirectOf } from './codec';
+export type { WorkRedirect } from './codec';
 export { decodeQ, encodeQ } from './q';
 export { redirect } from './redirects';
 export type { DeferredFeature, RedirectOutcome } from './redirects';
-export { createBrowserTarget, createMemoryTarget } from './transport';
+export { OVERLAY_STATE_KEY, createBrowserTarget, createMemoryTarget, hashOfPathLink, overlayIdOf } from './transport';
 export type { MemoryTarget, RouterTarget } from './transport';

@@ -1,4 +1,4 @@
-import type { ChatMode, ChatWorkdirMode, CommandResult, EntityId, EntitySummary, MessageBatchResult, MessageView, SessionTranscriptContext, SpaceId } from '@tm8/contract';
+import { chatCredentialProviderForModel, type ChatCredentialIntent, type ChatRuntimeState, type LaunchModelEffort, type ChatCredentialSelection, type ChatMode, type ChatWorkdirMode, type CommandResult, type EntityId, type EntitySummary, type MessageBatchResult, type MessageView, type SessionTranscriptContext, type SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import {
   CHAT_HOME_FIXTURE_THREAD,
@@ -32,6 +32,11 @@ interface ChatListItem {
   about?: ChatThreadSummary['about'];
   teammateId: EntityId;
   model: string;
+  credentialSelection?: ChatCredentialSelection;
+  credentialIntent?: ChatCredentialIntent;
+  reasoningEffort?: LaunchModelEffort | null;
+  configRevision?: number;
+  runtime?: ChatRuntimeState;
   mode: ChatMode;
   workdirMode: ChatWorkdirMode;
   projectId: EntityId | null;
@@ -64,6 +69,11 @@ function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): Chat
     ...(state.about !== undefined ? { about: state.about } : {}),
     teammateId: state.teammateId,
     model: state.model,
+    credentialSelection: state.credentialSelection,
+    credentialIntent: state.credentialIntent,
+    reasoningEffort: state.reasoningEffort,
+    configRevision: state.configRevision,
+    runtime: state.runtime,
     mode: state.mode,
     workdirMode: state.workdirMode,
     projectId: state.projectId,
@@ -71,13 +81,14 @@ function itemFromSummary(summary: EntitySummary, aboutId: EntityId | null): Chat
     lastTurnAt: state.lastTurnAt,
     title: summary.title,
     turnCount: state.turnCount,
-    // The two axes the server projects separately, folded to the one word this
-    // surface draws. `turnState` is the queue, `runtimeState` the child: a
-    // chat with nothing queued whose runtime stopped is continuable, which is
-    // a different thing from idle and the composer says so.
-    state: state.turnState === 'running' || state.turnState === 'queued'
-      ? 'streaming'
-      : state.runtimeState === 'stopped' ? 'stopped-continuable' : 'idle',
+    // Only the QUEUE decides this word. `runtimeState` used to too — 'stopped'
+    // read as "Stopped · continuable" — but since the harness runtime (332)
+    // every settled turn closes its child and writes 'stopped', so every chat
+    // that had ever answered opened as if someone had pressed Stop. Worse, that
+    // state pinned the composer: another participant's turn streaming into the
+    // chat was drawn as stopped, with no ■. A Stop the viewer pressed is still
+    // drawn as stopped — the screen sets that itself, from the press.
+    state: state.turnState === 'running' || state.turnState === 'queued' ? 'streaming' : 'idle',
     runtimeState: state.runtimeState,
     context: state.context ?? null,
   };
@@ -142,6 +153,7 @@ export function createChatHomePortFromSeam(
         // absent is passed through as absent so no filter pretends to know.
         ...(state && 'mode' in state ? { mode: state.mode ?? null } : {}),
         ...(state && 'permissionMode' in state ? { permissionMode: state.permissionMode ?? null } : {}),
+        ...(state?.model ? { model: state.model } : {}),
       };
     });
   };
@@ -241,6 +253,18 @@ export function createChatHomePortFromSeam(
     }
   };
 
+  const rememberItem = (incoming: ChatListItem): ChatListItem => {
+    const cached = listCache.get(incoming.chatId);
+    const item = cached && incoming.configRevision !== undefined && cached.configRevision !== undefined
+      && cached.configRevision > incoming.configRevision
+      ? { ...incoming, model: cached.model, credentialSelection: cached.credentialSelection,
+          credentialIntent: cached.credentialIntent, reasoningEffort: cached.reasoningEffort,
+          configRevision: cached.configRevision, runtime: cached.runtime }
+      : incoming;
+    listCache.set(item.chatId, item);
+    return item;
+  };
+
   const listThreads: ChatHomePort['listThreads'] = async (spaceId) => {
     lastSpaceId = spaceId;
     const [result, teammates] = await Promise.all([
@@ -252,9 +276,9 @@ export function createChatHomePortFromSeam(
       /* The subject rides each summary's `state.about` (§3.6), batched by the
          server for the whole page — no read per row here. */
       .map((summary) => itemFromSummary(summary, null))
-      .filter((item): item is ChatListItem => item !== null);
+      .filter((item): item is ChatListItem => item !== null)
+      .map(rememberItem);
     for (const item of items) {
-      listCache.set(item.chatId, item);
       listSpaceCache.set(item.chatId, spaceId);
     }
     return items.map<ChatThreadSummary>((item) => ({
@@ -272,6 +296,11 @@ export function createChatHomePortFromSeam(
         teammateLabel: labels.get(item.teammateId) ?? 'Agent teammate',
         model: item.model,
         modelLabel: item.model,
+        credentialSelection: item.credentialSelection,
+        credentialIntent: item.credentialIntent,
+        reasoningEffort: item.reasoningEffort,
+        configRevision: item.configRevision,
+        runtime: item.runtime,
         mode: item.mode,
         workdirMode: item.workdirMode,
         projectId: item.projectId,
@@ -352,6 +381,11 @@ export function createChatHomePortFromSeam(
             teammateLabel,
             model: item.model,
             modelLabel: item.model,
+            credentialSelection: item.credentialSelection,
+            credentialIntent: item.credentialIntent,
+            reasoningEffort: item.reasoningEffort,
+            configRevision: item.configRevision,
+            runtime: item.runtime,
             mode: item.mode,
             workdirMode: item.workdirMode,
             projectId: item.projectId,
@@ -376,14 +410,18 @@ export function createChatHomePortFromSeam(
           spaceId: input.spaceId as SpaceId,
           teammateId: input.teammateId,
           model: input.model,
+          ...(input.reasoningEffort !== undefined ? { reasoningEffort: input.reasoningEffort } : {}),
+          ...(input.credentialSelection ? { credentialSelection: input.credentialSelection } : {}),
           mode: input.mode,
           // The rail's project control (write-once, empty state only). A
           // composer that offers none still sends `scratch` explicitly.
           workdirMode: input.workdirMode ?? 'scratch',
           ...(input.workdirMode === 'project' && input.projectId ? { projectId: input.projectId } : {}),
           body: input.body,
+          ...(input.mcpSelections !== undefined ? { mcpSelections: input.mcpSelections } : {}),
           ...(input.title ? { title: input.title } : {}),
           ...(input.aboutId ? { aboutId: input.aboutId } : {}),
+          ...(input.team ? { team: input.team } : {}),
           /* Omitted rather than sent empty: the server validates the array when
              it is present, and an empty one is a claim about files nobody
              staged. */
@@ -393,7 +431,7 @@ export function createChatHomePortFromSeam(
         // Seed the cache from what THIS port just wrote, so the immediate
         // create -> read -> post sequence never races the next list read.
         if (item) {
-          listCache.set(item.chatId, item);
+          rememberItem(item);
           listSpaceCache.set(item.chatId, input.spaceId);
         }
         lastSpaceId = input.spaceId;
@@ -427,11 +465,53 @@ export function createChatHomePortFromSeam(
         // is said, and sending shownMode unconditionally would instead write a
         // requested_chat_mode onto every turn nobody redirected.
         ...(input.mode ? { mode: input.mode } : {}),
+        // 328: the Coordinator's team, only when it is not the default.
+        ...(input.team ? { team: input.team } : {}),
       });
       return { messageId: messageIdFrom(result) };
     },
+    async credentialOptions(spaceId, model) {
+      const provider = model ? chatCredentialProviderForModel(model) : 'anthropic';
+      if (!provider || provider === 'kimi' || provider === 'groq') return [];
+      const [listed, identity] = await Promise.all([
+        seam.credentials.space.list(spaceId as SpaceId), seam.identity(),
+      ]);
+      return listed.credentials.filter(row => row.provider === provider && row.status === 'active'
+        && (row.ownerAccountId === null || row.visibility === 'public'
+          || row.ownerAccountId === identity.accountId || row.sharedWithMe))
+        .map(row => ({ id: row.id, label: row.label }));
+    },
+    /* The ■ / Esc. Before `chat.interrupt` existed this port had no `interrupt`,
+       so the composer drew Stop disabled on every real node. */
+    async interrupt(chatId) {
+      await seam.commands.interruptChat(chatId);
+    },
+    async setCredentials(input) {
+      const cachedBefore = listCache.get(input.chatId);
+      const revision = input.expectedConfigRevision ?? cachedBefore?.configRevision;
+      const result = await seam.commands.setChatCredentials(input.chatId, {
+        credentialSelection: input.credentialSelection,
+        ...(revision !== undefined ? { expectedConfigRevision: revision } : {}),
+        ...(input.clientMutationId ? { clientMutationId: input.clientMutationId } : {}),
+      });
+      const cached = listCache.get(input.chatId);
+      if (cached && (result.configRevision === undefined || (cached.configRevision ?? 0) <= result.configRevision)) {
+        listCache.set(input.chatId, { ...cached, credentialSelection: result.credentialSelection,
+          ...(result.credentialIntent ? { credentialIntent: result.credentialIntent } : {}),
+          ...(result.configRevision !== undefined ? { configRevision: result.configRevision } : {}) });
+      }
+      return result.credentialSelection;
+    },
     async setModel(input) {
-      const result = await seam.commands.setChatModel(input.chatId, { model: input.model });
+      const cachedBefore = listCache.get(input.chatId);
+      const revision = input.expectedConfigRevision ?? cachedBefore?.configRevision;
+      const result = await seam.commands.setChatModel(input.chatId, {
+        model: input.model,
+        ...(input.reasoningEffort !== undefined ? { reasoningEffort: input.reasoningEffort } : {}),
+        ...(input.credentialSelection ? { credentialSelection: input.credentialSelection } : {}),
+        ...(revision !== undefined ? { expectedConfigRevision: revision } : {}),
+        ...(input.clientMutationId ? { clientMutationId: input.clientMutationId } : {}),
+      });
       /* THE CACHE FOLLOWS THE WRITE, for the same reason `create` seeds it:
          `readThread` takes a chat's config from `listCache`, and nothing
          refreshes it between list reads — so switching model and immediately
@@ -439,8 +519,14 @@ export function createChatHomePortFromSeam(
          been dropped. The next list read still overrides this with the server's
          own answer. */
       const cached = listCache.get(input.chatId);
-      if (cached) listCache.set(input.chatId, { ...cached, model: result.model });
-      return { model: result.model, provider: result.provider };
+      if (cached && (result.configRevision === undefined || (cached.configRevision ?? 0) <= result.configRevision)) {
+        listCache.set(input.chatId, { ...cached, model: result.model,
+          ...(result.reasoningEffort !== undefined ? { reasoningEffort: result.reasoningEffort } : {}),
+          ...(result.credentialSelection ? { credentialSelection: result.credentialSelection } : {}),
+          ...(result.credentialIntent ? { credentialIntent: result.credentialIntent } : {}),
+          ...(result.configRevision !== undefined ? { configRevision: result.configRevision } : {}) });
+      }
+      return result;
     },
     subscribe(listener) {
       return seam.onChatTurn((frame) => {

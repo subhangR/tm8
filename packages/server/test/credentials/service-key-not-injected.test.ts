@@ -38,7 +38,11 @@ class SpawnDb implements Db {
 
   async tx<T>(claims: DbClaims, run: (q: Querier) => Promise<T>): Promise<T> {
     return run({
-      query: async <R>(sql: string): Promise<R[]> => {
+      query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
+        // Visible teammate, with no MCP equipment in this credential-leak fixture.
+        if (sql.includes('internal.is_space_member($2::uuid)') && sql.includes('as allowed')) {
+          return [{ allowed: params[0] === TEAMMATE && params[1] === SPACE }] as R[];
+        }
         if (sql.includes('from public.team_members')) {
           return [{
             entity_id: TEAMMATE, name: 'Claude Teammate', role: 'worker', identity: 'persona', memories: [],
@@ -60,7 +64,7 @@ class SpawnDb implements Db {
     if (fn === 'public.execution_spawn') return { entity: { id: SESSION }, patches: [], __tm8_replayed: false } as T;
     // 256 (W7p): the spawn port re-resolves the minted token to read its
     // via_link stamp. The real mint always resolves; no link here.
-    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, viaLinkId: null } as T;
+    if (fn === 'resolve_auth_session') return { sessionId: AUTH_SESSION, identityId: 'owner-identity', kind: 'agent', spaceId: SPACE, workSessionId: SESSION, viaLinkId: null } as T;
     if (fn === 'public.issue_work_session_agent_session') return { id: AUTH_SESSION } as T;
     if (fn === 'internal.w2_resolve_interaction_profile_for_launch') {
       return {

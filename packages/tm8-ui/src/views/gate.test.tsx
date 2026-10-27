@@ -14,10 +14,16 @@
  * failure that makes a screenshot impossible in the first place (a boot order
  * that throws, a missing export, a prop contract that drifted between lanes).
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { navStore, resetNav } from '../stores/navStore';
+
+/* D31: this suite pins the pre-D31 desktop composition (Home, the old Work,
+   Board), which only the legacy desktop still reaches until stage (c) deletes
+   it. The three-mode selector, landing and redirects are pinned in
+   `three-modes.test.tsx`. */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 const renderGate = () => {
   resetNav();
@@ -120,12 +126,14 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // being asserted independently of it.
     // The View switcher (task 01a0dc6d, 2026-09-26): the four VIEWS lead the
     // row inside one pill, and Craft/Settings/Help follow as plain tabs.
+    // Home (the `chats` group) left the row with the Home dashboard: its
+    // `dashboard` view now lands in the workspace on every desktop.
     expect(labels).toEqual([
-      'Home', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
+      'Workspace', 'Work', 'Board', 'Graph', 'Craft', 'Settings', 'Help',
     ]);
     const pill = within(tabs).getByTestId('top-view-switcher');
     expect([...pill.querySelectorAll('[role="tab"]')].map((n) => n.textContent?.trim()))
-      .toEqual(['Home', 'Work', 'Board', 'Graph']);
+      .toEqual(['Workspace', 'Work', 'Board', 'Graph']);
 
     // The rail is absent as a matter of design, so none of its furniture is
     // half-rendered either — a stray group or divider would mean a rail came
@@ -216,15 +224,19 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const names = [...empty.querySelectorAll('.shell-empty__name')].map((n) => n.textContent);
     const words = [...empty.querySelectorAll('.shell-empty__word')].map((n) => n.textContent);
     expect(names).toContain('forge');
-    expect(words).toContain('running');
-    // …and the stale one honestly labelled, never as live (D6).
-    expect(words).toContain('stale — node restarted');
+    // Spec D1 §5.7: the roster speaks the shared row word. A live session
+    // reads Working; the stale one is honestly labelled, never as live (D6);
+    // and the fixture's EXITED session with no outcome is unfinished work —
+    // "ended, not completed", in the attention group, not Recently completed.
+    expect(words).toContain('working');
+    expect(words).toContain('stale');
+    expect(words).toContain('ended, not completed');
     // Attention v2 (G1, tab 8): session health is status, not "needs you" —
     // with the attention module mounted the group is relabelled, and "Needs
     // attention" is the attention queue (empty in this fixture).
-    within(empty).getByRole('heading', { name: 'Stale or failed, 2' });
+    within(empty).getByRole('heading', { name: 'Stale or failed, 3' });
     within(empty).getByRole('heading', { name: 'Running, 1' });
-    within(empty).getByRole('heading', { name: 'Recently completed, 1' });
+    expect(within(empty).queryByRole('heading', { name: /Recently completed/ })).toBeNull();
 
     // The grammar lesson.
     getByText('Click any task or session to open it here.');
@@ -239,10 +251,11 @@ describe('THE GATE — composed T0-1 master screen', () => {
     const groups = [...empty.querySelectorAll('.shell-empty__group')].map((group) =>
       group.getAttribute('data-testid'),
     );
+    // Spec D1: "Recently completed" is outcome = completed; the fixture has
+    // none (its exited session's work is still open, so it needs attention).
     expect(groups).toEqual([
       'empty-session-group-attention',
       'empty-session-group-running',
-      'empty-session-group-completed',
     ]);
     const running = getByTestId('empty-session-group-running');
     expect(running.querySelector('.shell-empty__name')?.textContent).toBe('forge');
@@ -378,9 +391,12 @@ describe('THE GATE — composed T0-1 master screen', () => {
     } as typeof ResizeObserver;
     const view = renderGate();
     try {
+      // The bar mounts before startup restores the saved workspace route.
+      // Wait for that restoration before exercising a user navigation.
+      await waitFor(() => view.getByTestId('workspace-grid'));
       const select = await waitFor(() => view.getByTestId('top-view-switcher-select') as HTMLSelectElement);
       expect([...select.options].filter((o) => !o.disabled).map((o) => o.textContent))
-        .toEqual(['Home', 'Work', 'Board', 'Graph']);
+        .toEqual(['Workspace', 'Work', 'Board', 'Graph']);
 
       fireEvent.change(select, { target: { value: 'graph' } });
       await waitFor(() => view.getByTestId('graph-screen'));
@@ -591,13 +607,13 @@ describe('detail screens keep what you were looking at', () => {
     const openedText = await settled();
     expect(openedText.length).toBeGreaterThan(0);
 
-    // LEAVE — Home is a different branch of GateApp's view ternary, so
+    // LEAVE — Work is a different branch of GateApp's view ternary, so
     // EntityView really unmounts. That is the step that used to destroy the
-    // selection, and the assertion below is that it no longer does. The Home
+    // selection, and the assertion below is that it no longer does. The Work
     // TAB is the door now that the rail is gone; it is the same branch either
-    // way.
+    // way. (The mode was labelled "Home" until the Home dashboard was removed.)
     fireEvent.click(within(view.getByRole('tablist', { name: 'Screens' }))
-      .getByRole('tab', { name: 'Home' }));
+      .getByRole('tab', { name: 'Work' }));
     await waitFor(() => expect(view.queryByTestId('entity-view')).toBeNull());
 
     // COME BACK.

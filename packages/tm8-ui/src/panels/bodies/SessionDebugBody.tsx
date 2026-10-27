@@ -9,6 +9,7 @@ import type {
 import type { Seam } from '../../data/seam';
 import { describeLaunchManifest, launchSpaceCredentialIds } from '../../domain';
 import { absTime, clockTime } from '../../kit/time';
+import { ConnectorsSection } from './SessionConnectorsSection';
 import { DisabledAction } from '../honesty/DisabledWithReason';
 import { TranscriptTurns } from '../../transcript/TranscriptTurns';
 import { useSessionTranscript } from '../../transcript/useSessionTranscript';
@@ -166,6 +167,7 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
     return (
       <div className="pn-debug" data-testid="session-debug-body">
         <LaunchSection state={launch} credentialLabels={credentialLabels} />
+        <ConnectorsSection sessionId={sessionId} manifest={manifest} />
         <TranscriptSection state={transcript} />
         <div className="pn-debug__empty" data-testid="session-debug-error">
           <DisabledAction
@@ -183,6 +185,10 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
   return (
     <div className="pn-debug" data-testid="session-debug-body">
       <LaunchSection state={launch} credentialLabels={credentialLabels} />
+      {/* §10.6 — CONNECTORS: what this session was given, and the human behind
+          it. Its own read, so a provenance refusal blanks neither the manifest
+          above nor the journal below. */}
+      <ConnectorsSection sessionId={sessionId} manifest={manifest} />
       <TranscriptSection state={transcript} />
       <DebugHeader page={page} />
       {page.available ? (

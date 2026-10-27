@@ -1,3 +1,6 @@
+import { mkdtempSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -6,6 +9,10 @@ import {
   successData,
   type W3PublicServer,
 } from './public-harness.js';
+
+// Since task 01a13574 `projects.create` checks that the folder exists, so the
+// project below points at a real (canonical) directory.
+const G02_PROJECT_DIR = realpathSync(mkdtempSync(join(tmpdir(), 'tm8-w3-g02-')));
 
 /**
  * W3 public gate for W2.G02 — the nineteen universal-entity, entity-command and
@@ -571,7 +578,7 @@ describe.sequential('W3.G02 universal entities, commands and tracking through th
       await harness.request('POST', '/v2/projects', {
         clientMutationId: 'w3-g02-project-create',
         name: 'W3 G02 project',
-        workingDir: '/tmp/tm8-w3-g02',
+        workingDir: G02_PROJECT_DIR,
       }),
     );
     successData(await harness.request('POST', `/v2/spaces/${spaceId}/projects`, {

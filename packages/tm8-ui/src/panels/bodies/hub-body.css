@@ -127,6 +127,10 @@
   max-height: 38%;
   border-bottom: 1px solid var(--pn-line);
 }
+/* Nothing to say above the feed (no topic, pins or tabs): no strip. Its 24px
+   of padding and a rule over an empty box read as a broken header — the feed
+   draws its own top edge. */
+.cv2-root .hub-body--with-feed:empty { display: none; }
 .cv2-root .pn-hub-feed {
   flex: 1 1 auto;
   min-height: 0;

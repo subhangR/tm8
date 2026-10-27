@@ -1,0 +1,15 @@
+/* The kept new-chat screen (keptChatSurface.tsx): the outlet, the node it
+   carries and the screen's own root all fill the slot, as the root did. */
+.tch-kept-outlet,
+.tch-kept-outlet > * {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+}
+.tch-kept-outlet > * > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}

@@ -114,15 +114,13 @@ describe('F1: launch.harness records surface, source, MCP servers and skill over
     });
   });
 
-  it('records persona MCP server NAMES only, never their configs', () => {
+  it('rejects legacy persona MCP configuration before recording an audit', () => {
     const context = ctx({
       teamMember: member({
         capabilities: { launch: { mcpServers: { linear: { type: 'http', url: 'https://x', headers: { Authorization: 'Bearer secret' } }, a: { type: 'stdio' } } } },
       }),
     });
-    const { manifest } = compose(context);
-    expect(manifest.launch.harness?.mcpServers).toEqual([{ name: 'a', source: 'persona' }, { name: 'linear', source: 'persona' }]);
-    expect(JSON.stringify(manifest.launch.harness)).not.toContain('secret');
+    expect(() => compose(context)).toThrow('Legacy raw MCP configuration is disabled');
   });
 
   it('names who chose the surface: launch pick, env, persona', () => {

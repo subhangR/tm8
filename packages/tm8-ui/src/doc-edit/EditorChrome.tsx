@@ -64,6 +64,10 @@ export function StanceToggle({
  * live in the banner, and the button says why it is not one of them.
  */
 export function SaveActions({ save }: { save: DocSaveHandle }) {
+  /* AUTOSAVE HAS NO SAVE BUTTON AND NO DISCARD. The footer word carries the
+     state, the banner carries a conflict, and ⌘enter still saves at once. A
+     refusal to edit at all is still stated, so read-only never looks broken. */
+  if (save.autosave && !save.unavailable) return null;
   if (save.unavailable) {
     return (
       <DisabledAction reason={save.unavailable} label="Save">
@@ -261,6 +265,7 @@ export function saveWordOf(
   save: DocSaveHandle,
   version: number | null,
 ): { tone: 'idle' | 'wait' | 'run' | 'info' | 'block'; word: string } {
+  if (save.autosave) return autosaveWordOf(save, version);
   switch (save.state.phase) {
     case 'saving':
       return { tone: 'wait', word: 'saving…' };
@@ -279,6 +284,32 @@ export function saveWordOf(
     default: {
       if (save.savedVersion !== null) return { tone: 'run', word: `saved · v${save.savedVersion} · just now` };
       return { tone: 'idle', word: version === null ? 'saved' : `saved · v${version}` };
+    }
+  }
+}
+
+/**
+ * The footer word under AUTOSAVE: the person never presses Save, so the word
+ * answers the only question left — "is my text safe?". A refused save says
+ * where the text is (this device, `localDraft.ts`) rather than only that it
+ * failed.
+ */
+function autosaveWordOf(
+  save: DocSaveHandle,
+  version: number | null,
+): { tone: 'idle' | 'wait' | 'run' | 'info' | 'block'; word: string } {
+  switch (save.state.phase) {
+    case 'saving':
+      return { tone: 'wait', word: 'Saving…' };
+    case 'dirty':
+      return { tone: 'wait', word: 'Editing' };
+    case 'conflict':
+      return { tone: 'info', word: 'Conflict — see banner' };
+    case 'refused':
+      return { tone: 'block', word: 'Kept on this device — not saved yet' };
+    case 'clean': {
+      const v = save.savedVersion ?? version;
+      return { tone: 'run', word: v === null ? 'Saved' : `Saved · v${v}` };
     }
   }
 }

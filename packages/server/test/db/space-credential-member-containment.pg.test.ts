@@ -93,7 +93,7 @@ async function setSessionStatus(sessionId: string, status: string): Promise<void
   });
 }
 
-/** 991 (01a0fb56): a re-point runs only in the resume window: the run ended, then execution_resume. */
+/** 367 (01a0fb56): a re-point runs only in the resume window: the run ended, then execution_resume. */
 async function resumeWindow(sessionId: string, who: DbClaims): Promise<void> {
   await setSessionStatus(sessionId, 'exited');
   await db.rpc(who, 'execution_resume', [sessionId, 100_000]);

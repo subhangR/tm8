@@ -1,0 +1,204 @@
+/* THE STYLE PICKER (styles spec v8 §9.1) — one disclosure row under the
+   account menu's light/dark toggle, and the same markup in the phone sheet.
+   Tokens only: every colour, size and radius here is a --pn-* variable, so a
+   style restyles its own picker like everything else. */
+.cv2-root .stylepick {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cv2-root .stylepick__toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 12px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .stylepick__toggle:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .stylepick__caret {
+  width: 15px;
+  flex: none;
+  text-align: center;
+  color: var(--pn-ink-3);
+}
+.cv2-root .stylepick__spacer {
+  flex: 1;
+}
+.cv2-root .stylepick__current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.cv2-root .stylepick__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 4px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.cv2-root .stylepick__group {
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .stylepick__group--foot {
+  border-top: 1px solid var(--pn-line);
+  padding-top: 4px;
+  gap: 2px;
+}
+.cv2-root .stylepick__head {
+  margin: 4px 0 0;
+  padding: 0 12px 0 35px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.cv2-root .stylepick__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cv2-root .stylepick__item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+}
+.cv2-root .stylepick__item:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .stylepick__use {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .stylepick__use:disabled {
+  cursor: progress;
+}
+.cv2-root .stylepick__mark {
+  width: 15px;
+  flex: none;
+  text-align: center;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-label);
+}
+.cv2-root .stylepick__use[aria-pressed='true'] .stylepick__mark {
+  color: var(--pn-brand);
+}
+.cv2-root .stylepick__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cv2-root .stylepick__title {
+  font-size: var(--pn-fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .stylepick__meta {
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+.cv2-root .stylepick__badge {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-info-soft);
+  color: var(--pn-info);
+  font-size: var(--pn-fs-fine);
+}
+.cv2-root .stylepick__actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.cv2-root .stylepick__action,
+.cv2-root .stylepick__reset {
+  appearance: none;
+  border: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root .stylepick__reset {
+  align-self: flex-start;
+  margin: 2px 12px 0 35px;
+}
+.cv2-root .stylepick__action:hover,
+.cv2-root .stylepick__reset:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .stylepick__follow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 12px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+}
+.cv2-root .stylepick__select {
+  max-width: 140px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+}
+.cv2-root .stylepick__error,
+.cv2-root .stylepick__note {
+  margin: 0;
+  padding: 2px 12px 2px 35px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+}
+.cv2-root .stylepick__error {
+  color: var(--pn-wait);
+}
+/* The phone sheet: bigger touch targets, no menu indent. */
+.cv2-root .stylepick--sheet .stylepick__toggle,
+.cv2-root .stylepick--sheet .stylepick__use {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.cv2-root .stylepick__create {
+  display: flex;
+  gap: 4px;
+  padding: 4px 12px 0;
+}

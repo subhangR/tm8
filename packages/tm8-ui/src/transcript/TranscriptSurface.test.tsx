@@ -147,7 +147,7 @@ describe('the Transcript surface', () => {
   it('renders the turns oldest-first, as the server sends them', async () => {
     render(<TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />);
     const turns = await screen.findByTestId('transcript-turns');
-    const texts = [...turns.querySelectorAll('.tr-turn')].map((n) => n.textContent ?? '');
+    const texts = [...turns.querySelectorAll('.tch-turn')].map((n) => n.textContent ?? '');
     expect(texts).toHaveLength(2);
     expect(texts[0]).toMatch(/Fix the resize race/);
     expect(texts[1]).toMatch(/Reading the PTY resize path/);
@@ -162,18 +162,65 @@ describe('the Transcript surface', () => {
   it('labels the input side by role and never claims it was the viewer', async () => {
     render(<TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />);
     const turns = await screen.findByTestId('transcript-turns');
-    const input = turns.querySelector('.tr-turn[data-source="user"]');
+    const input = turns.querySelector('[data-testid="transcript-turn-user"]');
     expect(input).not.toBeNull();
-    expect(input!.getAttribute('data-input')).toBe('true');
+    // Chat's own sidedness attribute: the input side is where chat puts the
+    // viewer's turn, which is the geometry and nothing more.
+    expect(input!.getAttribute('data-self')).toBe('true');
     // The byline's own name, not the whole turn — the avatar monogram runs
     // straight into the label in `textContent`.
-    expect(input!.querySelector('.tr-turn__byline strong')!.textContent).toBe('user');
+    expect(input!.querySelector('.tch-turn__byline strong')!.textContent).toBe('user');
     expect(
-      input!.querySelector('.tr-turn__byline')!.textContent,
+      input!.querySelector('.tch-turn__byline')!.textContent,
     ).not.toMatch(/\byou\b/i);
     expect(
-      turns.querySelector('.tr-turn[data-source="assistant"]')!.getAttribute('data-input'),
+      turns.querySelector('[data-testid="transcript-turn-assistant"]')!.getAttribute('data-self'),
     ).toBe('false');
+  });
+
+  /**
+   * THE TRANSCRIPT IS CHAT'S THREAD (Subhang, 2026-10-18: "look and behave
+   * EXACTLY like the chat view"). Pinned by the markup chat's own components
+   * emit, so a return to a lifted copy of the geometry reds here.
+   */
+  it('draws every turn with the chat thread’s own turn component', async () => {
+    render(<TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />);
+    const turns = await screen.findByTestId('transcript-turns');
+    const user = turns.querySelector('[data-testid="transcript-turn-user"]')!;
+    const agent = turns.querySelector('[data-testid="transcript-turn-assistant"]')!;
+    expect(user.classList.contains('tch-turn')).toBe(true);
+    expect(user.getAttribute('data-role')).toBe('user');
+    // A typed input is chat's bubble…
+    expect(user.querySelector('[data-testid="chat-user-body"]')!.textContent).toMatch(/Fix the resize race/);
+    // …and an agent's words are chat's answer column, drawn as a text part.
+    expect(agent.getAttribute('data-role')).toBe('assistant');
+    expect(agent.querySelector('.tch-parts [data-testid="chat-turn-text"]')!.textContent)
+      .toMatch(/Reading the PTY resize path/);
+    expect(agent.querySelector('[data-testid="chat-user-body"]')).toBeNull();
+    // A transcript has no chat mode, so no mode chip is invented for it.
+    expect(turns.querySelector('.tch-mode-chip')).toBeNull();
+    // No lifted copy left behind.
+    expect(turns.querySelector('.tr-turn')).toBeNull();
+  });
+
+  it('says a turn the read cut short was cut by the read, inside the turn', async () => {
+    const cut = page({
+      entries: [{ at: '2026-08-18T10:00:00.000Z', source: 'assistant', text: 'A very long answer', truncated: true }],
+    });
+    render(<TranscriptSurface seam={seamWith(cut)} sessionId={SESSION} liveness="live" />);
+    const turn = await screen.findByTestId('transcript-turn-assistant');
+    expect(turn.textContent).toMatch(/A very long answer/);
+    expect(turn.textContent).toMatch(/cut short by the transcript read, not by the agent/);
+  });
+
+  /* The way back to the end is chat's dock, and it is absent while the reader
+     is at the end — jsdom has no layout, so "at the end" is the only state it
+     can render, and the pill must not be drawn there. */
+  it('shows no Jump-to-latest pill to a reader who is already at the end', async () => {
+    render(<TranscriptSurface seam={seamWith(page())} sessionId={SESSION} liveness="live" />);
+    await screen.findByTestId('transcript-turns');
+    expect(screen.queryByTestId('chat-jump-latest')).toBeNull();
+    expect(screen.getByTestId('transcript-surface').querySelector('.tch-transcript')).not.toBeNull();
   });
 
   // A window that does not reach the first byte has turns above the first one
@@ -236,7 +283,7 @@ describe('the Transcript surface', () => {
       fireEvent.click(screen.getByTestId('transcript-load-older'));
       await screen.findByText('the first turn');
 
-      const texts = [...screen.getByTestId('transcript-turns').querySelectorAll('.tr-turn')]
+      const texts = [...screen.getByTestId('transcript-turns').querySelectorAll('.tch-turn')]
         .map((n) => n.textContent ?? '');
       // Oldest-first across the whole walk: the accumulation reads as one
       // conversation, not as three windows stacked in arrival order.

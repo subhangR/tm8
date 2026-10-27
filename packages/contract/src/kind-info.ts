@@ -33,6 +33,8 @@ export const KIND_GROUPS: ReadonlyArray<{ group: KindGroup; title: string }> = [
 ];
 
 export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
+  tool: { group: 'runtime', summary: 'a reusable bash or python script with declared inputs and recorded runs', createWith: ['tool create'] },
+  mcp_server: { group: 'runtime', summary: 'an approved external tool connector; credentials are separate', createWith: ['mcp server create'] },
   task: {
     group: 'work',
     summary: 'work with a status, assignees, acceptance criteria and an optional gate',
@@ -49,6 +51,11 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
     group: 'work',
     summary: 'one line of work: what you put in, everything that follows from it, and its progress',
     createWith: ['entity create story', 'collection add'],
+  },
+  craft: {
+    group: 'work',
+    summary: 'an ordered set of pages (graphs, docs, artifacts, drawings, crafts) crafted together and launched as one',
+    createWith: ['entity create craft', 'collection add'],
   },
 
   message: {
@@ -72,6 +79,11 @@ export const CORE_KIND_INFO: Readonly<Record<CoreEntityKind, KindInfo>> = {
   doc: { group: 'knowledge', summary: 'a markdown document', createWith: ['entity create doc'] },
   file: { group: 'knowledge', summary: 'an uploaded file', createWith: ['file upload'] },
   drawing: { group: 'knowledge', summary: 'a hand-drawn canvas', createWith: ['entity create drawing'] },
+  style: {
+    group: 'knowledge',
+    summary: 'a published, read-only UI theme in the space; new versions arrive by push',
+    createWith: ['style push'],
+  },
   graph: { group: 'knowledge', summary: 'a diagram or flow of entities', createWith: ['entity create graph'] },
   memory: {
     group: 'knowledge',

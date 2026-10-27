@@ -60,7 +60,7 @@ const sourceFiles = ownedFiles
 
 describe('src/home — the lane guards', () => {
   it('scans a non-empty file set (a green run over zero files proves nothing)', () => {
-    expect(sourceFiles.length).toBeGreaterThan(3);
+    expect(sourceFiles.length).toBeGreaterThan(0);
   });
 
   it('§15.2 — no file in src/home names an entity kind', () => {

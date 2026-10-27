@@ -114,10 +114,11 @@ describe('the Run verb opens a flow instead of dispatching', () => {
 
     const config = getByTestId('launch-quick-config');
     expect(config).toBeTruthy();
-    // The Maestro layout is one component: launch controls live in the same
-    // expanded card region as the row facts, never in a detached popover.
-    expect(config.closest('.pn-tt__meta')).not.toBeNull();
-    expect(config.closest('[data-anatomy="control-card"]')).toBe(getAllByTestId('list-tile')[0]);
+    // #1070: the launch popup portals to the outermost `.cv2-root` (body
+    // here) so its scrim covers the shell chrome; it no longer renders inside
+    // the row's card, whose stacking context trapped it.
+    expect(config.closest('[data-anatomy="control-card"]')).toBeNull();
+    expect(getAllByTestId('list-tile')[0].contains(config)).toBe(false);
     // The whole point: opening a configuration is not launching.
     expect(onAction).not.toHaveBeenCalled();
   });

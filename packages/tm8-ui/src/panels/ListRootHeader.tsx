@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 
-import { KindIcon, getKind, resolveAction, type ActionRef } from '../domain';
+import { KindIcon, actionGlyph, getKind, resolveAction, type ActionRef } from '../domain';
 import { openEntityHelp } from '../entity-help/entityHelpStore';
 import { useDismissable } from './useDismissable';
 import './list-root-header.css';
@@ -88,7 +88,7 @@ export function rootBirthDispatch(
 
 /** What a kind's ＋ half WEARS and says — a glyph, a name, and a promise. */
 interface BirthVerb {
-  glyph: string;
+  glyph: ReactNode;
   /** The `aria-label`: "New task", "Terminal". */
   label: string;
   /** The title: what pressing it will actually do. */
@@ -100,7 +100,7 @@ function birthVerbFor(option: ListRootOption): BirthVerb {
   if (action) {
     const def = resolveAction(action);
     return {
-      glyph: def.icon,
+      glyph: actionGlyph(def),
       label: def.label,
       promise: `Start a ${def.label.toLowerCase()} and open it — ${option.label.toLowerCase()} are started, not authored`,
     };
@@ -180,6 +180,16 @@ export interface ListRootHeaderProps {
    * that is never refused and never hidden.
    */
   onHelp?: ((kind: string, from: HTMLElement | null) => void) | undefined;
+  /**
+   * OPT-IN: THE CELL AS ONE MENU BUTTON (Workspace browser, Spec A §5).
+   * Present ⇒ the cell is a single `[◫ Kind ▾]` control with this accessible
+   * name that opens the kind menu; there is no tab, no ＋, no caret and no (?)
+   * mark — the host draws its own create. Absent ⇒ the split cell above,
+   * unchanged (Home, Work).
+   */
+  kindMenuLabel?: string | undefined;
+  /** With `kindMenuLabel`: draw only the kind icon and ▾, no kind word. */
+  kindMenuIconOnly?: boolean | undefined;
 }
 
 /**
@@ -247,6 +257,68 @@ export function ListRootHeader(props: ListRootHeaderProps) {
           ))}
         </div>
       ) : null}
+      {props.kindMenuLabel !== undefined ? (
+        cell ? (
+          <div className="tch-rootcell tch-rootcell--kind tch-rootcell--menu" ref={menuRef}>
+            <button
+              type="button"
+              ref={caretRef}
+              className="tch-rootcell__label"
+              aria-label={props.kindMenuLabel}
+              title={props.kindMenuLabel}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              data-kind={cell.kind}
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <span className="tch-rootcell__glyph" aria-hidden>
+                <KindIcon kind={cell.kind} />
+              </span>
+              {props.kindMenuIconOnly ? null : <span className="tch-rootcell__name">{cell.label}</span>}
+              <span className="tch-rootcell__chevron" aria-hidden>▾</span>
+            </button>
+            {menuOpen && options ? (
+              <ul className="tch-rootmenu" role="menu" aria-label="Entity lists">
+                {options.map((option) => (
+                  <li key={option.kind} className="tch-rootitem">
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={option.kind === current}
+                      className={
+                        option.kind === current ? 'tch-rootopt tch-rootopt--current' : 'tch-rootopt'
+                      }
+                      onClick={() => {
+                        setMenuOpen(false);
+                        caretRef.current?.focus();
+                        props.onPickKind(option.kind);
+                      }}
+                    >
+                      <KindIcon kind={option.kind} />
+                      {option.label}
+                    </button>
+                    {/* The per-row ＋ in the one-button menu too, when the host
+                        wires it (the pinned-only rail's new box): one press
+                        opens New for that kind and lands the list on it. */}
+                    {onCreateKind ? (
+                      <RowBirth
+                        option={option}
+                        refusal={props.createKindUnavailable?.(option.kind) ?? null}
+                        onBirth={() => {
+                          setMenuOpen(false);
+                          caretRef.current?.focus();
+                          onCreateKind(option.kind);
+                          props.onPickKind(option.kind);
+                        }}
+                      />
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null
+      ) : (
       <div className="tch-roots" role="tablist" aria-label={props.rootsLabel}>
         {cell ? (
           <div
@@ -373,6 +445,7 @@ export function ListRootHeader(props: ListRootHeaderProps) {
           </div>
         ) : null}
       </div>
+      )}
     </div>
   );
 }

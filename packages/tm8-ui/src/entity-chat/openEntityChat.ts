@@ -25,7 +25,7 @@ export async function openEntityChat(seam: ChatsAboutSeam, aboutId: EntityId): P
 
 /**
  * WHICH SURFACES DRAW THE SLOT IN THEIR OWN LAYOUT — the seam lanes D and E
- * flip (§3.1: Home's third column / overlay, Work's centre, the phone sheet).
+ * flip (§3.1: Work's centre, the phone sheet).
  *
  * `false` for every other surface: until a layout hosts the slot itself, the
  * shell's `EntityChatDock` draws it as a sheet from the right over whatever
@@ -34,8 +34,9 @@ export async function openEntityChat(seam: ChatsAboutSeam, aboutId: EntityId): P
  * in its own layout; the dock then stands aside on that view by itself.
  */
 export function surfaceHostsChatSlot(view: NavView): boolean {
-  /* Home: the third column / <1200px overlay (lane D, `HomeView`).
-     Work: the slot replaces the centre panel stack (`WorkspaceView`).
-     The phone never mounts the dock at all — `MobileShell` hosts its own sheet. */
-  return view.view === 'home' || view.view === 'workspace';
+  /* Work: the slot replaces the centre panel stack (`WorkspaceView`). Home's
+     third column went with the Home dashboard; a desktop `/home` redirects
+     into Work. The phone never mounts the dock at all — `MobileShell` hosts
+     its own sheet. */
+  return view.view === 'workspace';
 }

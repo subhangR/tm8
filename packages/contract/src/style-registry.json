@@ -1021,6 +1021,13 @@
       "surface": true
     },
     {
+      "key": "--pn-x-claude",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Claude mark",
+      "surface": false
+    },
+    {
       "key": "--pn-x-dia-1",
       "kind": "colour",
       "group": "extras",
@@ -1081,6 +1088,34 @@
       "kind": "colour",
       "group": "extras",
       "label": "Hairline soft",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-mark-rest",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Mark rest",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-mark-silver",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Mark silver",
+      "surface": false
+    },
+    {
+      "key": "--pn-x-mark-turn",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Mark turn",
+      "surface": true
+    },
+    {
+      "key": "--pn-x-page-bg",
+      "kind": "colour",
+      "group": "extras",
+      "label": "Page background",
       "surface": true
     },
     {

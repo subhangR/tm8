@@ -4,7 +4,14 @@ import type { PillTone } from '../../kit';
 import { Avatar } from '../../kit';
 import { actorName } from '../../domain/actors';
 import { useMobileSurface } from '../../mobile/surface';
+import { useFreshGlow } from '../../domain/useFreshGlow';
+import { ChildCountToggle } from './ChildCountBadge';
 import './maestro-task-tile.css';
+
+export interface TaskTileProgress {
+  done: number;
+  total: number;
+}
 
 export interface MaestroTaskTileProps {
   /* React 19 widened `useRef<T>(null)` to `RefObject<T | null>`; a prop typed
@@ -36,6 +43,10 @@ export interface MaestroTaskTileProps {
   childCount: number;
   childrenExpanded: boolean;
   onToggleChildren?: () => void;
+  /** `↑ parent`, after the title, when this root's parent is not listed. */
+  parentCrumb?: ReactNode;
+  /** Drawn only to hold subtasks that matched the tab (task 01a14b92). */
+  context?: boolean;
   onSelect?: () => void;
   status: {
     label: string;
@@ -55,6 +66,19 @@ export interface MaestroTaskTileProps {
    * host owns, and a refused control must wear the same mark as a live one.
    */
   statusControl?: ReactNode;
+  /**
+   * The Workspace browser's leading icon (`rowLead="icon"`). Present ⇒ it
+   * replaces the chevron slot AND the status mark (the status control with
+   * it); the visually-hidden status word stays. Absent ⇒ as before.
+   */
+  lead?: ReactNode;
+  /**
+   * Acceptance criteria done of total, drawn as a trailing `3/8` on the
+   * collapsed row. The lead mode drops the status mark, so without this the
+   * Work browser's task rows said nothing about how far along a task is.
+   * Absent, or `total === 0`, draws nothing: no criteria is not 0%.
+   */
+  progress?: TaskTileProgress | null;
   assignees: readonly ActorSummary[];
   /**
    * Provenance, shown only when nobody is assigned. Almost every task in a
@@ -66,6 +90,19 @@ export interface MaestroTaskTileProps {
   creator: ActorSummary | null;
   /** Compact facts that stay visible on the collapsed tile. */
   badges?: ReactNode;
+  /**
+   * THE QUIET ROW'S THREE NEW SLOTS (task 01a1469f, design doc 01a1465d §6).
+   * Handed in as nodes rather than derived here, because every one of them is
+   * a fact about the ENTITY and this component knows no kind: `urgent` is the
+   * only priority a row still shows, `time` is the row's own clock, and
+   * `rowMenu` is the `⋯` that takes the time's place on hover.
+   *
+   * The ORDER they land in is this component's business and not the host's,
+   * which is the same reason `actions` is one slot rather than three.
+   */
+  urgent?: ReactNode;
+  time?: ReactNode;
+  rowMenu?: ReactNode;
   actions: ReactNode;
   detailsExpanded: boolean;
   flowOpen: boolean;
@@ -94,9 +131,16 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     childCount,
     childrenExpanded,
     onToggleChildren,
+    parentCrumb,
+    context = false,
     onSelect,
     status,
     statusControl,
+    urgent,
+    time,
+    rowMenu,
+    lead,
+    progress,
     assignees,
     creator,
     badges,
@@ -108,9 +152,11 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
   } = props;
   const { oneSurface } = useMobileSurface();
   const hasChildren = childCount > 0 && onToggleChildren != null;
+  const glow = useFreshGlow(id);
 
   return (
     <div
+      {...glow.attrs}
       ref={rootRef}
       className={[
         'pn-tt',
@@ -132,40 +178,39 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
       data-depth={depth}
       data-tree="true"
       data-children={childCount || undefined}
+      data-context={context ? 'true' : undefined}
       data-details={detailsExpanded ? 'open' : undefined}
       data-flow={flowOpen ? 'open' : undefined}
       data-streaming={status.streaming ? 'true' : 'false'}
       data-anatomy="control-card"
     >
       <div className="pn-tt__main" onClick={onSelect}>
-        {hasChildren ? (
-          <button
-            type="button"
-            className={
-              childrenExpanded ? 'pn-tt__arrow pn-tt__arrow--expanded' : 'pn-tt__arrow'
-            }
-            aria-label={`${childrenExpanded ? 'Collapse' : 'Expand'} ${title}, ${childCount} ${childCount === 1 ? 'child' : 'children'}`}
-            aria-expanded={childrenExpanded}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleChildren();
-            }}
-          >
-            <ChevronRight />
-          </button>
-        ) : (
-          <span className="pn-tt__arrow pn-tt__arrow--empty" aria-hidden>
-            <ChevronRight />
+        {lead ? (
+          <span className="pn-tt__status pn-tt__status--lead">
+            {lead}
+            <span className="pn-tt__status-text">{status.label}</span>
           </span>
-        )}
-        {childCount > 0 ? <span className="pn-tt__arrowCount">{childCount}</span> : null}
+        ) : (
+          <>
+        {/* THE CHEVRON SLOT IS A SPACER NOW. The children are the count on
+            the status mark's corner (task 01a14b92), so this keeps the column
+            the status mark lines up in and stops being a control — two
+            controls with the accessible name "Expand X, 2 children" on one row
+            read as one broken control. */}
+        <span className="pn-tt__arrow pn-tt__arrow--empty" aria-hidden>
+          <ChevronRight />
+        </span>
 
         {/* The visually-hidden word stays in BOTH forms: it is the row's own
             read-out of the fact, and a status a sighted user reads as a dot
             must not become unreadable to a screen reader merely because the
             dot has become pressable. The wrapper's `title` does go when a
             control is present — the control carries its own, and two native
-            tooltips on one 16px target is one too many. */}
+            tooltips on one 16px target is one too many.
+
+            The subtask count rides this icon's corner, as the sub-session
+            count rides the agent icon — it used to sit in a `display: none`
+            node beside a chevron that was drawn OVER this dot. */}
         <span className="pn-tt__status" title={statusControl ? undefined : (status.title ?? status.label)}>
           {statusControl ?? (
             <MaestroStatusGlyph
@@ -175,7 +220,22 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
             />
           )}
           <span className="pn-tt__status-text">{status.label}</span>
+          {/* The children, on the status mark's corner — the disclosure. The
+              mark itself is the state picker here, so the count is the button
+              (task 01a14b92: one rule for every tree kind, no `▸ N` chip). */}
+          {hasChildren ? (
+            <ChildCountToggle
+              count={childCount}
+              expanded={childrenExpanded}
+              rowTitle={title}
+              onToggle={onToggleChildren}
+            />
+          ) : null}
         </span>
+          </>
+        )}
+
+        {urgent}
 
         <button
           type="button"
@@ -188,7 +248,12 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           }}
         >
           {title}
+          {glow.srSuffix ? <span className="sr-only">{glow.srSuffix}</span> : null}
         </button>
+
+        {parentCrumb}
+
+        <TaskProgressFigure progress={progress} />
 
         {assignees.length > 0 ? (
           <div className="pn-tt__inline">
@@ -234,6 +299,12 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
 
         {attentionChip ?? (attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null)}
 
+        {/* THE TIME, AND THE `⋯` THAT TAKES ITS SLOT ON HOVER (§6). Both are
+            `flex: none` in the same trailing position and only one is drawn at
+            a time, so the row's width is identical hovered and not. */}
+        {time}
+        {rowMenu}
+
         <div className="pn-tt__actions lp__cluster">
           {!oneSurface || detailsExpanded ? actions : null}
           <button
@@ -259,6 +330,26 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** The row's `done/total` criteria figure; nothing when there are no criteria. */
+export function TaskProgressFigure({ progress }: { progress?: TaskTileProgress | null }) {
+  if (!progress || progress.total <= 0) return null;
+  const done = Math.max(0, Math.min(progress.done, progress.total));
+  const complete = done >= progress.total;
+  const label = `${done} of ${progress.total} acceptance criteria done`;
+  return (
+    <span
+      className={complete ? 'pn-tt__progress pn-tt__progress--done' : 'pn-tt__progress'}
+      role="img"
+      aria-label={label}
+      title={label}
+      data-testid="task-progress"
+      data-complete={complete ? 'true' : 'false'}
+    >
+      {done}/{progress.total}
+    </span>
   );
 }
 

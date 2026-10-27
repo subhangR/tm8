@@ -5,7 +5,7 @@
  *   birth       `link_pull_request` (017:534-579): find-or-create by
  *               (space, provider, repo, number), state 'open', title
  *               'repo #n', then a task ⟶ PR `tracks` edge; the CLI adds a
- *               best-effort `created_in` edge to the calling session.
+ *               best-effort `authored_from` edge to the calling session.
  *   states      open | draft | merged | closed (001:623); GitHub's
  *               `merged_at` wins over `closed` (tracking/github.ts).
  *   observing   the forge watcher (90 s, open/draft PRs some task tracks)
@@ -318,7 +318,7 @@ export const PULL_REQUEST_HELP: KindHelpModule = {
 
     notes: {
       tracks: 'A task pointing at the PR that delivers it. The watcher only watches PRs that some task tracks.',
-      created_in: 'The session the PR was linked from. CI failures and merge conflicts are posted there.',
+      authored_from: 'The session the PR was made during, recorded by the server. CI failures and merge conflicts are posted there.',
       in_worktree: 'The worktree the PR is associated with in this Space.',
       in_project: 'The project the PR is counted under.',
       attached_to: 'The PR pinned as context onto another entity.',

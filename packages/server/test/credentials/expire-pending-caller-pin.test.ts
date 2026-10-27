@@ -2,8 +2,8 @@
  * 01a0fb58-2260 — the caller set of `expire_pending_space_credentials`, pinned.
  *
  * The RPC deletes node-wide (every expired pending login, in every space), so
- * who may reach it is part of its guard: 991 requires an identity and refuses
- * a link-bound caller (990), and admits agent kinds as 206 always did. This
+ * who may reach it is part of its guard: 367 requires an identity and refuses
+ * a link-bound caller (366), and admits agent kinds as 206 always did. This
  * pins the TS side — exactly one RPC call site (the store), and the store's
  * `expirePending` reached only from CredentialSessions' two login paths — so
  * a new caller is a deliberate, reviewed edit here. The SQL side (no function

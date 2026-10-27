@@ -1,0 +1,310 @@
+/* Spec D1 §5.4 / §5.5 — the session outcome dialogs. The MembershipConfirm
+   shape (settings-space/membership-confirm.css), wider, because these list a
+   session's claimed tasks and hold a receipt. */
+.so-dialog__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--pn-ink) 28%, transparent);
+}
+.so-dialog {
+  width: 380px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  box-sizing: border-box;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink);
+}
+.so-dialog__title {
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.so-dialog__subject {
+  font-weight: 400;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+.so-dialog__section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.so-dialog__label {
+  font-size: var(--pn-fs-fine);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pn-ink-3);
+}
+.so-dialog__muted {
+  margin: 0;
+  color: var(--pn-ink-3);
+  line-height: 1.5;
+}
+.so-dialog__quote {
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--pn-line-2);
+  background: var(--pn-card);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow: auto;
+}
+.so-dialog__text {
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  padding: 6px;
+}
+.so-dialog__claims {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.so-dialog__claim {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.so-dialog__claimtitle {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.so-dialog__claimstatus {
+  color: var(--pn-ink-3);
+}
+.so-dialog__claimstatus--open {
+  color: var(--pn-wait);
+  font-weight: 600;
+}
+.so-dialog__claimacts {
+  display: inline-flex;
+  gap: 6px;
+}
+.so-dialog__handoff {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.so-dialog__row {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.so-dialog__link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--pn-info, var(--pn-ink-2));
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.so-dialog__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.so-dialog__error {
+  margin: 0;
+  line-height: 1.45;
+  color: var(--pn-block);
+}
+.so-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+.so-dialog__cancel,
+.so-dialog__go {
+  padding: 4px 11px;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.so-dialog__cancel {
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+.so-dialog__go--done {
+  border: 1px solid var(--pn-run);
+  background: var(--pn-run);
+  color: var(--pn-paper);
+}
+.so-dialog__go--stop {
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-block);
+}
+.so-dialog__go:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* SPEC D1 §5.2's WORD AND LINE 2 ARE NO LONGER DRAWN ON THE LIST ROW
+   (task 01a1469f, coordinator ruling 2026-10-17). `.pn-st__word` became
+   `.pn-st__signal` — a mark, with the word kept in `title` and in
+   screen-reader text, which is §6's rule for every kind's status — and line 2
+   was a restatement of the clock that now sits on line 1.
+
+   THE RULES ARE DELETED RATHER THAN LEFT. `sessionRowWord` and
+   `sessionLineTwo` are untouched and four other surfaces still call them, but
+   none of those render THESE class names: `SubtreeBody`, `detail/chrome`,
+   `SessionFallback` and `EmptyCenter` each draw the sentence in their own
+   markup. A rule nobody emits is a rule the next reader has to disprove. */
+.pn-st__signal {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+.pn-st__crumb {
+  font-size: var(--pn-fs-fine);
+  color: var(--pn-ink-3);
+  padding-left: 40px;
+}
+.pn-agent__pdot {
+  position: absolute;
+  left: -2px;
+  bottom: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1px solid var(--pn-card);
+}
+.pn-agent__pdot--green { background: var(--pn-run); }
+.pn-agent__pdot--amber { background: var(--pn-wait); }
+.pn-agent__pdot--amber-hollow { background: var(--pn-card); border: 1.5px solid var(--pn-wait); }
+.pn-agent__pdot--red { background: var(--pn-block); }
+.pn-agent__pdot--grey { background: var(--pn-ink-4); }
+.lp__rowaction--fixed {
+  color: var(--pn-run);
+  cursor: default;
+}
+
+/* Spec D1 §5.3 — the session tab groups' bulk verbs, as one strip above the
+   tab's single tree (the groups no longer split the tree). */
+.lp__sgroups {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--pn-line);
+}
+/* Spec D1 §5.3 — the session tab groups and their bulk verbs. */
+.lp__sgroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px 2px;
+  font-size: var(--pn-fs-fine);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pn-ink-3);
+}
+.lp__sgroup-bulk {
+  margin-left: auto;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-fine);
+  padding: 1px 7px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.lp__sgroup-hint {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.lp__tab-count--alert {
+  color: var(--pn-paper);
+  background: var(--pn-block);
+  border-radius: 8px;
+  padding: 0 5px;
+}
+.lp__livecount--alert {
+  color: var(--pn-block);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+/* THE EXPANDED SESSION (SessionDetails, 2026-10-17): a status line, then a
+   two-column fact list — label left, value right — then the D67 chips. */
+.pn-sd {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 8px 8px 30px;
+  padding: 8px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm, 6px);
+  background: var(--pn-card);
+  cursor: default;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+}
+.pn-sd__status { display: flex; flex-direction: column; gap: 2px; padding-left: 8px; border-left: 3px solid var(--pn-ink-4); }
+.pn-sd__status--run { border-left-color: var(--pn-run); }
+.pn-sd__status--wait { border-left-color: var(--pn-wait); }
+.pn-sd__status--block { border-left-color: var(--pn-block); }
+.pn-sd__status--idle { border-left-color: var(--pn-idle); }
+.pn-sd__status--done { border-left-color: var(--pn-info); }
+.pn-sd__status--done[data-session-case='completed'] { border-left-color: var(--pn-run); }
+.pn-sd__statusword { font-weight: 600; color: var(--pn-ink); }
+.pn-sd__reason { color: var(--pn-ink-3); line-height: 1.35; }
+.pn-sd__facts { display: grid; grid-template-columns: max-content minmax(120px, 1fr); column-gap: 12px; row-gap: 4px; margin: 0; }
+.pn-sd__fact { display: contents; }
+.pn-sd__fact > dt { color: var(--pn-ink-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; line-height: 18px; }
+.pn-sd__fact > dd { margin: 0; min-width: 0; line-height: 18px; overflow-wrap: anywhere; }
+.pn-sd__model { font-family: var(--pn-mono); color: var(--pn-ink); }
+.pn-sd__mono { font-family: var(--pn-mono); }
+.pn-sd__muted { color: var(--pn-ink-3); }
+.pn-sd__tasks { display: flex; flex-direction: column; gap: 2px; }
+.pn-sd__task { display: flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+button.pn-sd__task { cursor: pointer; }
+button.pn-sd__task:hover .pn-sd__tasktitle { text-decoration: underline; }
+.pn-sd__taskstatus { flex: none; font-size: 10px; padding: 0 5px; border-radius: 8px; background: var(--pn-idle-soft); color: var(--pn-ink-2); }
+.pn-sd__taskstatus--working, .pn-sd__taskstatus--in_progress { background: var(--pn-run-soft); color: var(--pn-run); }
+.pn-sd__taskstatus--blocked { background: var(--pn-block-soft); color: var(--pn-block); }
+.pn-sd__taskstatus--in_review { background: var(--pn-info-soft); color: var(--pn-info); }
+.pn-sd__taskstatus--done, .pn-sd__taskstatus--completed { background: var(--pn-run-soft); color: var(--pn-run); }
+.pn-sd__tasktitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-sd__id { padding: 0; border: 0; background: none; color: var(--pn-ink-2); font: inherit; font-family: var(--pn-mono); font-size: 10.5px; cursor: pointer; text-align: left; }
+.pn-sd__controls { padding-top: 6px; border-top: 1px solid var(--pn-line); }
