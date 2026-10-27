@@ -3427,7 +3427,7 @@ export interface CredentialsSpaceReadinessView {
     activeSpaceOwnedCredentials: number;
     reason: CredentialReadinessPollReason | null;
   };
-  /** R1/S7b: the space's R2 seeding verdict over the providers it USES (migration 995). */
+  /** R1/S7b: the space's R2 seeding verdict over the providers it USES (migration 370). */
   seeding: CredentialSeedingView;
 }
 

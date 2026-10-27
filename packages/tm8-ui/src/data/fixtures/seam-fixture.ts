@@ -5931,7 +5931,7 @@ export function createFixtureSeam(): FixtureSeam {
           }
           const pollable = inSpace.filter((c) => c.provider === 'github' && (c.ownerAccountId ?? null) === null && c.visibility !== 'private');
           const poll = pollable.filter((c) => c.status === 'active').sort((a, b) => Number(b.isDefault) - Number(a.isDefault))[0] ?? null;
-          // S7b (migration 995): the fixture has no session manifests, so its spaces
+          // S7b (migration 370): the fixture has no session manifests, so its spaces
           // are taken to launch Claude with git (anthropic + github used, openai never).
           // The seeding verdict is the space default under the policy, as on the server.
           const usedProviders: SpaceCredentialProviderName[] = ['anthropic', 'github'];

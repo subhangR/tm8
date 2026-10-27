@@ -1,4 +1,4 @@
--- 995 (placeholder; the Release Owner sets the ordinal at the merge position after 273)
+-- 370 (authored as placeholder 995 on PR #955; renumbered above main's top 367 at merge, per the PR-cleanup ordinal rule; 368/369 are held by parked #847/#947)
 -- =============================================================================
 -- Readiness PER USED PROVIDER: make the R2 seeding gate reachable. Task
 -- 01a0e75e (R1/S7b), spec doc 01a0e248 §8.3 and §11 row S9 ("re-run §8.3 daily
@@ -367,7 +367,7 @@ comment on function public.space_credential_readiness(uuid) is
   'Doc 01a0e248 S7: per-space credential readiness, TWO thresholds (canLaunch: '
   'caller''s active my_default or space default per provider, policy allowing; '
   'canPoll: an active space-owned public github credential). Active only, '
-  'metadata only, member-scoped; seeding (995): the providers the space used in 30 days and the R2 gate '
+  'metadata only, member-scoped; seeding (370): the providers the space used in 30 days and the R2 gate '
   'verdict, caller-independent. Read the headers of migrations space_credential_readiness and '
   'space_credential_readiness_per_used_provider before changing it.';
 
