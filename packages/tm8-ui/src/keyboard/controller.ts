@@ -12,7 +12,7 @@
  */
 import {
   BINDINGS,
-  CHORD_LEAD,
+  CHORD_LEADS,
   CHORD_WINDOW_MS,
   hasMod,
   isBrowserReserved,
@@ -89,7 +89,14 @@ const DEFAULT_CONTEXT: Omit<KeyboardContext, 'platform'> = {
   focusScope: false,
 };
 
-function matches(binding: Binding, input: KeyInput, platform: Platform, chordOpen: boolean): boolean {
+/**
+ * `chord` is the OPEN chord lead, or null. A plain key or Mod chord only
+ * matches with no chord open; a chord row only matches under its own lead.
+ */
+function matches(binding: Binding, input: KeyInput, platform: Platform, chord: string | null): boolean {
+  // A surface-owned row is documentation: the surface handles the key itself.
+  if (binding.surfaceOwned) return false;
+  const chordOpen = chord !== null;
   const m = binding.match;
   switch (m.type) {
     case 'plain':
@@ -102,7 +109,7 @@ function matches(binding: Binding, input: KeyInput, platform: Platform, chordOpe
         !input.altKey
       );
     case 'chord':
-      return chordOpen && input.key === m.key && !input.ctrlKey && !input.metaKey && !input.altKey;
+      return chord === m.lead && input.key === m.key && !input.ctrlKey && !input.metaKey && !input.altKey;
     case 'mod':
       return (
         !chordOpen &&
@@ -119,10 +126,10 @@ function findBinding(
   layer: KeyLayer,
   input: KeyInput,
   platform: Platform,
-  chordOpen: boolean,
+  chord: string | null,
 ): Binding | null {
   return (
-    BINDINGS.find((b) => b.layer === layer && matches(b, input, platform, chordOpen)) ?? null
+    BINDINGS.find((b) => b.layer === layer && matches(b, input, platform, chord)) ?? null
   );
 }
 
@@ -137,14 +144,16 @@ export function createKeyboardController(
 
   let context: KeyboardContext = { platform, ...DEFAULT_CONTEXT };
   let chordOpenedAt: number | null = null;
+  let chordLeadKey: string | null = null;
 
-  const chordOpen = (): boolean => {
-    if (chordOpenedAt === null) return false;
+  /** The open chord lead, or null once the window has lapsed. */
+  const chordOpen = (): string | null => {
+    if (chordOpenedAt === null) return null;
     if (now() - chordOpenedAt > chordWindowMs) {
       chordOpenedAt = null;
-      return false;
+      return null;
     }
-    return true;
+    return chordLeadKey;
   };
 
   const fire = (layer: KeyLayer, binding: Binding): KeyResult => {
@@ -184,7 +193,7 @@ export function createKeyboardController(
     // AND the surface check, never one of them.
     if (context.terminalFocused && context.terminalSurface === 'terminal') {
       if (isTerminalBlurChord(input)) {
-        const binding = findBinding('terminal', input, context.platform, false);
+        const binding = findBinding('terminal', input, context.platform, null);
         chordOpenedAt = null;
         if (binding) return fire('terminal', binding);
       }
@@ -204,13 +213,14 @@ export function createKeyboardController(
     if (context.textEntry || context.surfaceOwnsKeys) {
       chordOpenedAt = null;
       const binding =
-        (context.textEntry ? findBinding('text-entry', input, context.platform, false) : null) ??
-        // Mod-chords stay live where receivable; plain keys do not.
+        (context.textEntry ? findBinding('text-entry', input, context.platform, null) : null) ??
+        // Modified chords (Mod, and the physical Ctrl+code ones) stay live
+        // where receivable; plain keys do not.
         BINDINGS.find(
           (b) =>
-            b.match.type === 'mod' &&
+            (b.match.type === 'mod' || (b.match.type === 'code' && b.layer === 'global')) &&
             b.layer !== 'text-entry' &&
-            matches(b, input, context.platform, false),
+            matches(b, input, context.platform, null),
         ) ??
         null;
       if (binding) return fire(binding.layer, binding);
@@ -226,8 +236,8 @@ export function createKeyboardController(
     if (open) {
       chordOpenedAt = null;
       const binding =
-        findBinding('global', input, context.platform, true) ??
-        findBinding('focus', input, context.platform, true);
+        findBinding('global', input, context.platform, open) ??
+        findBinding('focus', input, context.platform, open);
       if (binding) return fire(binding.layer, binding);
       // Any non-mapped second key CANCELS the chord — and is consumed, so a
       // mistyped chord can never fall through and fire a plain-key binding.
@@ -235,23 +245,24 @@ export function createKeyboardController(
     }
 
     if (
-      input.key === CHORD_LEAD &&
+      CHORD_LEADS.includes(input.key) &&
       !input.ctrlKey &&
       !input.metaKey &&
       !input.altKey
     ) {
       chordOpenedAt = now();
+      chordLeadKey = input.key;
       return { handled: true, consumed: true, layer: 'global', reason: 'chord-open' };
     }
 
     // -- Layer 5: focused list / panel. --------------------------------------
     if (context.focusScope) {
-      const binding = findBinding('focus', input, context.platform, false);
+      const binding = findBinding('focus', input, context.platform, null);
       if (binding) return fire('focus', binding);
     }
 
     // -- Layer 6: global chrome. ---------------------------------------------
-    const binding = findBinding('global', input, context.platform, false);
+    const binding = findBinding('global', input, context.platform, null);
     if (binding) return fire('global', binding);
 
     return { handled: false, consumed: false, layer: null, reason: 'no-binding' };
@@ -263,7 +274,7 @@ export function createKeyboardController(
       context = { ...context, ...patch };
     },
     getContext: () => context,
-    chordLead: () => (chordOpen() ? CHORD_LEAD : null),
+    chordLead: () => chordOpen(),
     install(win = window) {
       const listener = (event: KeyboardEvent) => {
         const result = handle({

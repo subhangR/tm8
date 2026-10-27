@@ -1,8 +1,8 @@
 /**
  * Spawn-on-story (task 01a0fc77): the story side of a launch.
  *
- *   * `loadStoryContextForTask` — the nearest story containing the primary
- *     task, folded into the bounded `PromptStoryContext` every prompt frame
+ *   * `loadStoryContextForTask` — the session's direct story anchor, or the
+ *     nearest story containing its primary task, folded into the bounded `PromptStoryContext` every prompt frame
  *     renders. Membership is the backend's reverse trail walk,
  *     `public.stories_containing(task)` (282): the same edge set, depth and
  *     bound the story page follows, so "the prompt says this task is in the
@@ -58,12 +58,13 @@ const TITLE_TABLES: ReadonlyArray<readonly [table: string, column: string]> = [
   ['tasks', 'title'], ['stories', 'title'], ['work_sessions', 'title'], ['documents', 'title'],
   ['artifacts', 'name'], ['collections', 'name'], ['team_members', 'name'], ['pull_requests', 'title'],
   ['files', 'name'], ['drawings', 'title'], ['chats', 'title'], ['channels', 'name'], ['loops', 'title'],
-  ['forms', 'title'], ['skills', 'name'],
+  ['forms', 'title'], ['skills', 'name'], ['graphs', 'title'], ['crafts', 'title'],
 ];
-const TITLE_JOINS = TITLE_TABLES
+/** Shared with spawn-design.ts: a design's pages are read the same way. */
+export const TITLE_JOINS = TITLE_TABLES
   .map(([table], i) => `left join public.${table} tt${i} on tt${i}.entity_id = e.id`)
   .join('\n           ');
-const TITLE_SELECT = `coalesce(${TITLE_TABLES.map(([, column], i) => `tt${i}.${column}`).join(', ')})`;
+export const TITLE_SELECT = `coalesce(${TITLE_TABLES.map(([, column], i) => `tt${i}.${column}`).join(', ')})`;
 
 /** The runtime states `internal.story_summary` counts as live. */
 const LIVE_RUNTIME = new Set(['spawning', 'running', 'idle']);
@@ -94,9 +95,16 @@ async function storiesContaining(db: Db, claims: DbClaims, entityId: string): Pr
 export async function loadStoryContextForTask(
   db: Db,
   claims: DbClaims,
-  taskId: string,
+  taskId?: string,
+  sessionId?: string,
 ): Promise<PromptStoryContext | null> {
-  const hits = await storiesContaining(db, claims, taskId);
+  const direct = sessionId ? await db.tx(claims, q => q.query<StoryHit>(
+    `select st.entity_id story_id, e.id root_id, 0 depth, st.title
+       from public.edges c join public.stories st on st.entity_id=c.src_id
+       join public.entities e on e.id=c.dst_id and e.deleted_at is null
+       join public.entities se on se.id=st.entity_id and se.deleted_at is null
+       where c.dst_id=$1 and c.type='contains' order by c.created_at,c.id limit 1`, [sessionId])) : [];
+  const hits = direct.length ? direct : taskId ? await storiesContaining(db, claims, taskId) : [];
   const nearest = hits[0];
   if (!nearest) return null;
   const others = hits.slice(1, 1 + STORY_PROMPT_LIMITS.others).map((h) => ({
@@ -106,7 +114,7 @@ export async function loadStoryContextForTask(
   const ref: PromptStoryContext = {
     id: nearest.story_id,
     title: cap(nearest.title ?? '', STORY_PROMPT_LIMITS.title).text,
-    taskId,
+    taskId: direct.length ? null : taskId ?? null,
     viaRootId: nearest.root_id,
     depth: Number(nearest.depth),
     snapshot: 'unavailable',

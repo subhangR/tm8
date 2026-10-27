@@ -68,6 +68,20 @@ export interface MobileSurface {
    * that gives each of those to its rightful owner; see `MobileSheet`.
    */
   readonly sheetHost: HTMLElement | null;
+  /**
+   * The header's ‹, for a screen that hides the header. The phone session page
+   * is immersive (the frame header is `display: none` so the terminal keeps its
+   * height), and every pushed page still owes its reader a ‹ (CONTRACT §5), so
+   * that screen redraws this one in its own row. ONE action, read off the same
+   * history projection the header reads; `null` where the header draws none.
+   */
+  readonly up?: PhoneUp | null;
+}
+
+/** What the header's ‹ would do here: its label ("Back", "Up to Sessions") and the press. */
+export interface PhoneUp {
+  readonly label: string;
+  readonly run: () => void;
 }
 
 const DESKTOP: MobileSurface = { oneSurface: false, sheetHost: null };
@@ -86,6 +100,7 @@ export function useMobileSurface(): MobileSurface {
 
 export interface MobileSurfaceProviderProps {
   readonly sheetHost: HTMLElement | null;
+  readonly up?: PhoneUp | null;
   readonly children: ReactNode;
 }
 
@@ -97,10 +112,10 @@ export interface MobileSurfaceProviderProps {
  * be handed `false` would be a way to get the phone shell's chrome with the
  * desktop's arrangement inside it — a combination no viewer should ever see.
  */
-export function MobileSurfaceProvider({ sheetHost, children }: MobileSurfaceProviderProps) {
+export function MobileSurfaceProvider({ sheetHost, up = null, children }: MobileSurfaceProviderProps) {
   const [terminalActionsHost, setTerminalActionsHost] = useState<HTMLElement | null>(null);
   const value = useMemo<MobileSurface>(() => ({
-    oneSurface: true, sheetHost, terminalActionsHost, setTerminalActionsHost,
-  }), [sheetHost, terminalActionsHost]);
+    oneSurface: true, sheetHost, terminalActionsHost, setTerminalActionsHost, up,
+  }), [sheetHost, terminalActionsHost, up]);
   return <MobileSurfaceContext.Provider value={value}>{children}</MobileSurfaceContext.Provider>;
 }

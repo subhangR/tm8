@@ -25,10 +25,12 @@ import type {
 import { EntityDetailPanel, type DetailReasons, type LaunchSources } from '../panels';
 import type { ActionContext, ActionRef } from '../domain/types';
 import type { Notice } from '../shell/notices';
-import { usePanelPrimaries } from '../views/usePanelPrimaries';
+import { panelSessionControlsFor, usePanelPrimaries } from '../views/usePanelPrimaries';
 import type { Seam, SessionLiveness } from '../data/seam';
-import { GraphView, type GraphTimelineStep } from './GraphView';
+import { projectRecordPort } from '../projects/project-record';
+import { GraphView, type GraphFrameHosts, type GraphTimelineStep } from './GraphView';
 import { debugSurfaceFor } from '../views/debugSurface';
+import { watchLiveFor } from '../views/watchLive';
 import { sessionStatsSurfaceFor } from '../views/sessionStatsSurface';
 import { sessionContextSurfaceFor } from '../views/sessionContextSurface';
 import { gitSurfaceFor } from '../views/gitSurface';
@@ -38,6 +40,7 @@ import { taskGitSectionFor } from '../views/taskGitSection';
 import { graphSurfaceFor } from '../views/graphSurface';
 import { storySurfaceFor } from '../views/storySurface';
 import { launchContextSurfaceFor } from '../views/launchContextSurface';
+import { crossSpaceRefsSurfaceFor } from '../views/crossSpaceRefsSurface';
 import { attachmentsFor } from '../files/port';
 import { useMembershipSurface } from '../views/membershipSurface';
 import { conversationSurfaceFor } from '../views/conversationSurface';
@@ -88,6 +91,10 @@ export interface GraphScreenData {
 }
 
 export interface GraphScreenProps {
+  /** App-frame hosts (Observe in the Work shell): controls, counts and graph actions render there. */
+  hosts?: GraphFrameHosts | undefined;
+  /** The peek aside's "Open in Work": opens the selected entity as a Work tab. */
+  onOpenInWork?: ((id: EntityId) => void) | undefined;
   data: GraphScreenData;
   serverBaseUrl?: string;
   reasons: DetailReasons;
@@ -180,11 +187,17 @@ export function GraphScreen(props: GraphScreenProps) {
     ...(data.reconcileCommand ? { reconcileCommand: data.reconcileCommand } : {}),
     ...(props.onNotice
       ? {
-          onError: (_verb: ActionRef, _entityId: string, error: unknown) =>
+          onError: (verb: ActionRef, _entityId: string, error: unknown) =>
             props.onNotice?.({
               id: 'session-terminate-failed',
               tone: 'error',
-              title: 'Session could not be terminated',
+              /* The same hook now fires Resume and Mark lost from this panel's
+                 canvas too, so the title names the verb that was refused. */
+              title: verb === 'resume'
+                ? 'Session could not be resumed'
+                : verb === 'mark-lost'
+                  ? 'Session could not be marked lost'
+                  : 'Session could not be terminated',
               body: String((error as { message?: string })?.message ?? error),
               ttlMs: 6_000,
             }),
@@ -192,6 +205,8 @@ export function GraphScreen(props: GraphScreenProps) {
       : {}),
     /* The version the viewer is LOOKING AT — see `versionOf` on the hook. */
     versionOf: (id) => data.detailOf(id)?.version,
+    /* Spec D1 §5.4/§5.5: opts in to the outcome dialogs, rendered below. */
+    stateOf: (id) => data.detailOf(id)?.state,
   });
 
   // Esc walks DOWN one level per press (EntityView's ladder, same reasons):
@@ -216,15 +231,20 @@ export function GraphScreen(props: GraphScreenProps) {
   )) data.pull?.(selectedId);
 
   const detailPanel = selectedId ? (
+    <>
+    {primaries.dialog}
     <EntityDetailPanel
       detail={detail ?? null}
       serverBaseUrl={props.serverBaseUrl}
       loading={!detail}
+      projectRecords={data.seam ? projectRecordPort(data.seam, ctx.spaceId) : null}
       host="stack"
       reasons={reasons}
       ctx={{ ...ctx, entityId: selectedId }}
       onAction={primaries.forEntity(selectedId)}
       wiredActions={primaries.wiredActions}
+      /* Resume, its guard, Mark lost and the outcome verbs on the session canvas. */
+      {...panelSessionControlsFor(primaries, selectedId)}
       membershipAuthoring={membership.authoringFor(detail)}
       launch={props.launch}
       // `data.seam` is optional on this narrow port, so the helper answers
@@ -237,6 +257,7 @@ export function GraphScreen(props: GraphScreenProps) {
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      onWatchLive={watchLiveFor(data.seam, data.reconcileCommand, (id) => setSelectedId(id))}
       sessionStatsSurface={sessionStatsSurfaceFor(data.seam, selectedId)}
       sessionContextSurface={sessionContextSurfaceFor(data.seam, selectedId, data.livenessOf)}
       gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
@@ -245,6 +266,7 @@ export function GraphScreen(props: GraphScreenProps) {
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
         setSelectedId(id as EntityId),
       )}
+      crossSpaceRefsSurface={crossSpaceRefsSurfaceFor(data.seam, selectedId)}
       launchContextSurface={launchContextSurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
       storySurface={storySurfaceFor(data.seam, selectedId, (id) => setSelectedId(id as EntityId))}
       attachments={attachments}
@@ -303,10 +325,12 @@ export function GraphScreen(props: GraphScreenProps) {
         setMode('aside');
       }}
     />
+    </>
   ) : null;
 
   const graph = (
     <GraphView
+      hosts={props.hosts}
       nodes={props.nodes}
       edges={props.edges}
       timeline={props.timeline}
@@ -376,6 +400,20 @@ export function GraphScreen(props: GraphScreenProps) {
         </section>
         {selectedId ? (
           <aside className="gv-screen__aside" aria-label="Entity details" data-testid="graph-screen-aside">
+            {props.onOpenInWork ? (
+              <div className="gv-screen__peek-bar">
+                <span className="gv-screen__crumb">peek</span>
+                <span className="gv-screen__spacer" />
+                <button
+                  type="button"
+                  className="gv-filter gv-filter--action"
+                  data-testid="graph-open-in-work"
+                  onClick={() => props.onOpenInWork?.(selectedId)}
+                >
+                  Open in Work ↗
+                </button>
+              </div>
+            ) : null}
             {detailPanel}
           </aside>
         ) : null}

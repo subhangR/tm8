@@ -50,6 +50,19 @@ describe('S2 — Host allowlist (unit)', () => {
     }
   });
 
+  it('names the env vars that fix a refusal, so a proxied operator is not left guessing', () => {
+    const message = checkHost({ host: 'tm8.example.com' }, TEST_CONFIG).refusal?.message ?? '';
+    expect(message).toContain('TM8_PUBLIC_ORIGIN');
+    expect(message).toContain('TM8_ALLOWED_HOSTNAMES');
+    const origin = checkOrigin({ origin: 'https://tm8.example.com' }, TEST_CONFIG).refusal?.message ?? '';
+    expect(origin).toContain('TM8_PUBLIC_ORIGIN');
+    const exact = checkOrigin(
+      { origin: 'https://other.example.com' },
+      { ...TEST_CONFIG, allowedOrigins: ['https://tm8.example.com'] },
+    ).refusal?.message ?? '';
+    expect(exact).toContain('TM8_ALLOWED_ORIGINS');
+  });
+
   it('allows an absent Host (non-browser client; browsers always send one)', () => {
     expect(checkHost({}, TEST_CONFIG).refusal).toBeUndefined();
   });

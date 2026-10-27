@@ -58,6 +58,8 @@ export const RECEIPT_OPS = [
   'message.reply',
   'session.spawn',
   'session.terminate',
+  'collection.add',
+  'collection.remove',
 ] as const;
 export type ReceiptOp = (typeof RECEIPT_OPS)[number];
 
@@ -129,14 +131,18 @@ export interface Receipt {
 
 /** What the command knows that the result does not: argv, and follow-up writes. */
 export interface ReceiptInput {
+  collectionId?: string;
+  entityId?: string;
   /** `--expect-version`, when the caller passed one. The only source of `version.from`. */
   expectedVersion?: number;
-  /** Rows a chained CLI request created after the main write (e.g. `created_in`). */
+  /** Rows a chained CLI request created after the main write. */
   refs?: ReceiptRef[];
   /** Facts the CLI verified itself (a chained write that did not land). */
   warnings?: ReceiptWarning[];
   /** `task complete --by …`: which completed_by edges this write made. */
   completerIds?: readonly string[];
+  /** `task tick`: the caller's own actor id, named as `--by` in the receipt's `next`. */
+  actorId?: string;
   /** `task link-pr|link-commit <url>`: fallback when the entity carries none. */
   url?: string;
   /** `session spawn`: the worktree checkout path, when the CLI read it. */
@@ -277,6 +283,13 @@ function entityReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receip
       const open = criteria.filter((c) => isRecord(c) && c.done !== true).map((c) => str(rec(c).id) ?? '');
       receipt.acceptance = { done: criteria.length - open.length, total: criteria.length };
       receipt.open = capped(open, 'open', receipt);
+      const state = rec(entity.state);
+      const id = str(entity.id);
+      const next = id === undefined || typeof entity.version !== 'number'
+        ? undefined
+        : nextAfterTick(id, str(state.status), str(state.completionGate), entity.version, open.length, criteria.length,
+          input.actorId);
+      if (next !== undefined) receipt.next = next;
     }
   }
 
@@ -294,6 +307,30 @@ function entityReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Receip
   }
 
   return tail(receipt, dto, input, refs);
+}
+
+/**
+ * The step a tick that leaves nothing open hands the holder (Spec D1 §6.3 R3,
+ * P0h): complete the task, or, under the `pr_merged` gate, move it to
+ * `in_review`. The Server builds the same `next` into its own receipt
+ * (`nextAfterTick` in packages/server/src/facade/receipt.ts); this is the
+ * projection for a Server that predates it, and the two stay in step.
+ */
+export function nextAfterTick(
+  id: string,
+  status: string | undefined,
+  gate: string | undefined,
+  version: number,
+  open: number,
+  total: number,
+  by?: string,
+): string | undefined {
+  if (total === 0 || open > 0) return undefined;
+  if (status === 'done' || status === 'cancelled') return undefined;
+  if (gate === 'pr_merged') {
+    return status === 'in_review' ? undefined : `tm8 task transition ${id} in_review`;
+  }
+  return `tm8 task complete ${id} --expect-version ${version} --by ${by || '<actor-id>'}`;
 }
 
 /** The first `patches[]` summary of a kind — where link-pr/commit put the artifact. */
@@ -343,6 +380,7 @@ function messageReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput): Recei
       session: d.targetWorkSessionId,
       status: d.status,
       ...(typeof d.reason === 'string' ? { reason: d.reason } : {}),
+      ...(typeof d.detail === 'string' ? { detail: d.detail } : {}),
     }));
   }
   receipt.warnings = warningsOf(dto, input);
@@ -470,6 +508,10 @@ export function successReceipt(op: ReceiptOp, dto: unknown, input: ReceiptInput 
 
 function fromServer(dto: Receipt, input: ReceiptInput): Receipt {
   const receipt: Receipt = { ...dto };
+  // A Server that did not know the actor leaves `--by <actor-id>` for the caller to fill.
+  if (typeof receipt.next === 'string' && input.actorId !== undefined) {
+    receipt.next = receipt.next.replace('--by <actor-id>', `--by ${input.actorId}`);
+  }
   const refs = Array.isArray(dto.refs) ? (dto.refs as ReceiptRef[]) : [];
   receipt.refs = [...refs, ...(input.refs ?? [])];
   receipt.warnings = warningsOf(dto, input);
@@ -492,6 +534,15 @@ function projectSuccess(op: ReceiptOp, dto: unknown, input: ReceiptInput): Recei
       return spawnReceipt(op, dto, input);
     case 'session.terminate':
       return terminateReceipt(op, dto, input);
+    case 'collection.add':
+    case 'collection.remove': {
+      const edge = rec(rec(dto).edge);
+      const receipt = head(op, {}, input);
+      receipt.id = input.collectionId ?? str(rec(edge.source).id);
+      receipt.entityId = input.entityId ?? str(rec(edge.target).id);
+      const edgeId = str(edge.id);
+      return tail(receipt, dto, input, edgeId ? [{ kind: 'edge', id: edgeId, type: 'contains', to: receipt.entityId as string }] : []);
+    }
     default:
       return entityReceipt(op, dto, input);
   }
@@ -598,6 +649,14 @@ export function renderReceiptHuman(receipt: Receipt): string {
     }
     if (typeof receipt.branch === 'string') head.push(`branch:${receipt.branch}`);
     head.push(...postureHead(receipt));
+    // A tick says how far the checklist got, what is left, and the step after
+    // the last one (P0h): an agent that reads only the text still sees it.
+    const acceptance = rec(receipt.acceptance);
+    if (typeof acceptance.done === 'number' && typeof acceptance.total === 'number') {
+      head.push(`acceptance:${acceptance.done}/${acceptance.total}`);
+      const open = Array.isArray(receipt.open) ? receipt.open : [];
+      if (open.length > 0) clauses.push(`open ${open.join(' ')}`);
+    }
     const credentials = credentialsClause(receipt);
     if (credentials !== undefined) clauses.push(credentials);
     for (const ref of (receipt.refs as ReceiptRef[] | undefined) ?? []) clauses.push(refText(ref));
@@ -614,6 +673,10 @@ export function renderReceiptHuman(receipt: Receipt): string {
     const reason = str(warnings.find((w) => w.code === 'no_change')?.message);
     clauses.unshift(reason === undefined ? 'NO CHANGE' : `NO CHANGE (${reason})`);
   }
-  for (const w of warnings) if (w.code !== 'no_change') clauses.push(warningText(w));
+  // `task_still_working` is printed once, as a stderr notice (status-nudge.ts).
+  for (const w of warnings) {
+    if (w.code !== 'no_change' && w.code !== 'task_still_working') clauses.push(warningText(w));
+  }
+  if (typeof receipt.next === 'string') clauses.push(`next: ${receipt.next}`);
   return [head.join(' '), ...clauses].join(' · ');
 }

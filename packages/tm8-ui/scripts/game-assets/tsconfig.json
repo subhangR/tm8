@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "target":"ES2022", "lib":["ES2022","DOM"], "module":"ESNext", "moduleResolution":"Bundler", "jsx":"react-jsx", "resolveJsonModule":true, "allowSyntheticDefaultImports":true, "skipLibCheck":true, "strict":true, "noEmit":true, "types":["vite/client"] },
+  "include":["../../src/story/game/imported-assets/**/*.ts", "../../src/story/game/imported-assets/**/*.tsx"]
+}

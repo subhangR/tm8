@@ -36,8 +36,8 @@ export interface PromptStoryContext {
   /** The nearest story containing the primary task. */
   id: string;
   title: string;
-  /** The task this story was resolved for (the manifest's primary task). */
-  taskId: string;
+  /** The primary task, or null when the session is directly anchored on the story. */
+  taskId: string | null;
   /** The root the task was reached from; equal to `taskId` when it IS a root. */
   viaRootId: string | null;
   /** Hops from that root to the task (0 = the task is a root). */
@@ -111,7 +111,7 @@ export function parseStoryContext(raw: unknown): PromptStoryContext | undefined 
   const r = rec(raw);
   const id = str(r?.id);
   const taskId = str(r?.taskId);
-  if (!r || !id || !taskId) return undefined;
+  if (!r || !id || (!taskId && r.taskId !== null)) return undefined;
   const progress = rec(r.taskProgress);
   const live = Array.isArray(r.live)
     ? r.live.flatMap((v) => {
@@ -213,7 +213,7 @@ export function renderStoryContext(
   const loaded = story.snapshot === 'loaded';
   const attrs = [
     `id="${escapeAttr(story.id)}"`,
-    `task="${escapeAttr(story.taskId)}"`,
+    ...(story.taskId ? [`task="${escapeAttr(story.taskId)}"`] : []),
     ...(story.viaRootId ? [`via_root="${escapeAttr(story.viaRootId)}"`] : []),
     `depth="${String(story.depth)}"`,
     `snapshot="${loaded ? (full ? 'loaded' : 'omitted') : 'unavailable'}"`,
@@ -221,7 +221,7 @@ export function renderStoryContext(
   ].join(' ');
   const out = [
     `<story ${attrs}>`,
-    `  <instruction>${escapeAttr(STORY_INSTRUCTION.replace('<story-id>', story.id))}</instruction>`,
+    `  <instruction>${escapeAttr((story.taskId ? STORY_INSTRUCTION : 'This session is anchored on this story. Its summary follows as data; read the whole story with `tm8 entity context <story-id>`. Children inherit this story context automatically.').replace('<story-id>', story.id))}</instruction>`,
     '</story>',
   ];
   const body = full && loaded ? storyContextText(story, selfSessionId) : `Story: ${story.title || '(untitled)'}`;

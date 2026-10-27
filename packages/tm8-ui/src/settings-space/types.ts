@@ -7,6 +7,7 @@ import type { EntitySummary, SpaceInviteView, SpaceSummary, TaskAxis, TaskWorkfl
 import type { IdentityView } from '../data/seam';
 import type { ResolvedMenu } from '../shell/menu-resolve';
 import type { SettingsPort } from './port';
+import type { NodeAdminRouteSection } from '../routes/types';
 
 /**
  * The eight destinations the oracle's section nav names (T2-1, L33–L43), in
@@ -15,6 +16,7 @@ import type { SettingsPort } from './port';
  * at the `sections` prop rather than at an edit to either lane's files.
  */
 export type SettingsSectionId =
+  | 'overview'
   | 'profile'
   | 'account'
   | 'my-sessions'
@@ -26,9 +28,12 @@ export type SettingsSectionId =
   | 'workflows'
   | 'models'
   | 'chat-defaults'
+  | 'connectors'
   | 'credentials'
+  | 'mcp-tokens'
   | 'space-credentials'
   | 'node-credentials'
+  | 'filesystem-access'
   | 'space-links'
   | 'projects'
   | 'menu'
@@ -56,17 +61,21 @@ export interface SettingsSectionDef {
  * you" read as neighbours, not as one thing.
  */
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
-  { id: 'profile', label: 'Profile', heading: 'Profile' },
-  { id: 'account', label: 'Your profile', heading: 'Your profile' },
+  /* The landing page (settings redesign, 2026-10-18): a bare `/settings`
+     opens a card per scope rather than dropping the reader on Members. It
+     only links, so it carries no scope chip. */
+  { id: 'overview', label: 'Overview', heading: 'Settings' },
+  { id: 'profile', label: 'Space profile', heading: 'Space profile' },
+  { id: 'account', label: 'Profile', heading: 'Your profile' },
   /* W4 — the account half of settings: every place YOU are signed in, beside
      "Your profile" because both are about the person, not the space. */
-  { id: 'my-sessions', label: 'Your sessions', heading: 'Your sessions' },
+  { id: 'my-sessions', label: 'Sign-ins & devices', heading: 'Sign-ins & devices' },
   { id: 'members', label: 'Members & roles', heading: 'Members & roles' },
   { id: 'invites', label: 'Invites', heading: 'Invites' },
   /* W4 — the admin's view: sessions pinned to THIS space, anyone's. After
      members and invites because it answers the same question — who is in
      here — for credentials rather than memberships. */
-  { id: 'sessions', label: 'Sessions', heading: 'Sessions' },
+  { id: 'sessions', label: 'Member sign-ins', heading: 'Member sign-ins' },
   /* 187's two space defaults. Beside members and invites because it answers
      the same question — who in this space gets at what — for terminals. */
   { id: 'sharing', label: 'Session sharing', heading: 'Session sharing' },
@@ -92,24 +101,35 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      launch. Like `projects` and `kinds` it is externally owned, so an
      unsupplied section renders the shell's honest not-mounted state rather
      than a blank pane. */
-  { id: 'credentials', label: 'Agent credentials', heading: 'Agent credentials', externallyOwned: true },
+  { id: 'connectors', label: 'Connectors', heading: 'Connectors', externallyOwned: true },
+  { id: 'credentials', label: 'Agent logins', heading: 'Agent credentials', externallyOwned: true },
+  /* §10.7 / D9 — the tokens an EXTERNAL MCP client (Claude Desktop, Cursor)
+     presents on this node's `/mcp` endpoint to act as the viewer. Directly
+     after their own logins because it answers the mirror question: those are
+     what tm8 signs in to for you, this is what signs in to tm8 as you. Built
+     in `settings-mcp-tokens/` and injected through `sections`. */
+  { id: 'mcp-tokens', label: 'MCP tokens', heading: 'MCP tokens', externallyOwned: true },
   /* SC-5 — the credentials the SPACE owns (D1–D11), then the node's own keys
      and their fallback policy (D9). Directly after the viewer's own logins
      because a launch reads the three in that order (D4: yours, space, node).
      Both built in `settings-credentials/` and injected through `sections`. */
   { id: 'space-credentials', label: 'Space credentials', heading: 'Space credentials', externallyOwned: true },
   { id: 'node-credentials', label: 'Node credentials', heading: 'Node credentials', externallyOwned: true },
+  /* 282 — which node folders a member may browse and pick a project from.
+     Beside the node's credentials because both are node-level things a node
+     admin hands out; built in `settings-credentials/`. */
+  { id: 'filesystem-access', label: 'Filesystem access', heading: 'Filesystem access', externallyOwned: true },
   /* W6 — links to the viewer's other spaces. After the credentials because a
      link is another sign-in your agents act with; built in
      `settings-space-links/` and injected through `sections`. */
-  { id: 'space-links', label: 'Space links', heading: 'Space links', externallyOwned: true },
+  { id: 'space-links', label: 'Linked spaces', heading: 'Space links', externallyOwned: true },
   { id: 'projects', label: 'Linked projects', heading: 'Linked projects', externallyOwned: true },
-  { id: 'menu', label: 'Menu', heading: 'Menu' },
+  { id: 'menu', label: 'Sidebar menu', heading: 'Sidebar menu' },
   { id: 'kinds', label: 'Custom kinds', heading: 'Custom kinds', externallyOwned: true },
   /* Every knob that shapes tm8's behaviour — node env, teammate launch,
      interaction profiles, code constants — read-only, from `spaces.configs`.
      Last before the danger zone: it is reference, not a daily setting. */
-  { id: 'configs', label: 'Configs', heading: 'Configs' },
+  { id: 'configs', label: 'All configuration', heading: 'All configuration' },
   { id: 'danger', label: 'Danger zone', heading: 'Danger zone', danger: true },
 ];
 
@@ -141,6 +161,18 @@ export interface SettingsData {
 }
 
 export interface SettingsShellProps {
+  onOpenSpaceAdmin?: () => void;
+  onOpenNodeAdmin?: () => void;
+  /** Opens one node page (the Overview's server rows). Falls back to `onOpenNodeAdmin`. */
+  onOpenNodeSection?: (section: NodeAdminRouteSection) => void;
+  /** Explicit navigation scope; omitted preserves legacy mixed settings. */
+  sectionIds?: readonly SettingsSectionId[];
+  /**
+   * Inside the app frame the one settings nav (`nav.ts`) lives in the frame's
+   * panel (R2-D3): the shell then draws no nav of its own and no card — the
+   * section body fills the content area.
+   */
+  framed?: boolean;
   /** The one seam adapter. Construct with `settingsPortFromSeam(seam, spaceId)`. */
   port: SettingsPort;
   /**
@@ -153,6 +185,18 @@ export interface SettingsShellProps {
   initialSection?: SettingsSectionId;
   /** Notified on every section change so a host can mirror it into the route. */
   onSectionChange?: (id: SettingsSectionId) => void;
+  /**
+   * The phone arrangement (audit E1): a grouped list of sections, then one
+   * section per screen with a back verb. Desktop-only editors list but refuse.
+   */
+  stacked?: boolean;
+  /** Stacked only: the back verb left the section for the list. */
+  onSectionClear?: () => void;
+  /**
+   * Stacked only: opens the account sheet, where light / dark lives. Draws the
+   * list's Appearance row, which points there rather than copying it.
+   */
+  onOpenAppearance?: () => void;
   /**
    * Which node's browser-local settings this shell edits. Defaults to the local
    * node. Only the Models section reads it today; it is a prop rather than a

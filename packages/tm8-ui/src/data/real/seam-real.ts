@@ -1,3 +1,6 @@
+import { createMcpPort } from '../../mcp/adapter';
+import { createMcpTokensPort } from '../../settings-mcp-tokens/port';
+import { createToolPort } from '../../tools/adapter';
 /**
  * `createRealSeam()` — the HTTP + WS implementation of the co-owned Facade seam
  * (LLD §5–§6, §9). Drop-in interchangeable with `createFixtureSeam()`: both are
@@ -64,6 +67,8 @@ import {
   type ContentionReport,
   type ProjectFileBlame,
   type ProjectFileHistory,
+  type SessionCheckoutDiff,
+  type SessionCheckouts,
   type SessionGitDiff,
   type SessionGitStatus,
   type SessionJournalPage,
@@ -233,6 +238,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
   const stopCookieWatch = options.spaceSession?.onCookieChanged?.(() => connection.reconnect());
 
   const seam: RealSeam = {
+    mcp: (spaceId) => createMcpPort(http, seam, spaceId),
+    mcpTokens: () => createMcpTokensPort(http, seam),
     // -- lifecycle -----------------------------------------------------------
 
     /**
@@ -326,6 +333,29 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       connection.onChatTurn((frame) =>
         cb(chatTurnFrameFromWire(frame as unknown as WireChatTurnFrame))),
     onChatContext: (cb) => connection.onChatContext(cb),
+    craftWorkspaces: {
+      list: (spaceId) => ops.listCraftWorkspaces(spaceId as SpaceId),
+      get: (spaceId, craftId) => ops.getCraftWorkspace(spaceId as SpaceId, craftId),
+      command: (spaceId, craftId, input) => ops.commandCraftWorkspace(spaceId as SpaceId, craftId, input),
+      onPush: (cb) => connection.onCraftWorkspacePush(cb),
+    },
+    workspaceBridge: {
+      send: (frame) => connection.sendWorkspace(frame),
+      onCommand: (cb) => connection.onWorkspaceCommand(cb),
+      onOpen: (cb) => connection.onSocketOpen(cb),
+      onSync: (cb) => connection.onWorkspaceSync(cb),
+      isOpen: () => connection.getConnection().phase === 'live',
+      onStatus: (cb) => connection.onConnection((state) => cb(state.phase === 'live')),
+      manage: {
+        list: (spaceId) => ops.listWorkspaces(spaceId as SpaceId),
+        create: (spaceId, input) => ops.createWorkspace(spaceId as SpaceId, input),
+        update: (spaceId, workspaceId, input) => ops.updateWorkspace(spaceId as SpaceId, workspaceId, input),
+        reorder: (spaceId, workspaceId, before) => ops.reorderWorkspace(spaceId as SpaceId, workspaceId, before),
+        remove: (spaceId, workspaceId, discard) => ops.deleteWorkspace(spaceId as SpaceId, workspaceId, discard),
+        switch: (spaceId, workspaceId, expected) => ops.switchWorkspace(spaceId as SpaceId, workspaceId, expected),
+        resolvePrompt: (spaceId, promptId, choice, discard) => ops.resolveWorkspacePrompt(spaceId as SpaceId, promptId, choice, discard),
+      },
+    },
     onConnection: (cb) => connection.onConnection(cb),
     getConnection: () => connection.getConnection(),
     onResync: (cb) => connection.onResync(cb),
@@ -347,6 +377,19 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     chatDefaults: (spaceId: SpaceId): Promise<ChatDefaultsView> => ops.chatDefaults(spaceId),
     setChatDefaults: (spaceId: SpaceId, defaults: Record<string, ChatDefault | null>): Promise<ChatDefaultsView> =>
       ops.setChatDefaults(spaceId, defaults),
+    stylePrefs: () => ops.stylePrefs(),
+    setStylePrefs: (input) => ops.setStylePrefs(input),
+    styleDefault: (spaceId: SpaceId) => ops.styleDefault(spaceId),
+    style: (ref: string) => ops.style(ref),
+    styles: (spaceId: SpaceId) => ops.styles(spaceId),
+    personalStyles: () => ops.personalStyles(),
+    pullStyle: (ref: string, title?: string) => ops.pullStyle(ref, title),
+    createPersonalStyle: (input) => ops.createPersonalStyle(input),
+    updatePersonalStyle: (id: string, input) => ops.updatePersonalStyle(id, input),
+    deletePersonalStyle: (id: string, expectedVersion?: number) => ops.deletePersonalStyle(id, expectedVersion),
+    pushStyle: (input) => ops.pushStyle(input),
+    resolveStyleDoc: (doc) => ops.resolveStyleDoc(doc),
+    styleVersions: (entityId: string, cursor?: string | null) => ops.styleVersions(entityId, cursor),
     workflows: (spaceId: SpaceId): Promise<Workflow[]> => ops.workflows(spaceId),
     previewInvite: (code: string): Promise<InvitePreview> => ops.previewInvite(code),
     counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),
@@ -381,6 +424,15 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       createProject: (input) => ops.createProject(input),
       linkProject: (spaceId, input) => ops.linkProject(spaceId, input),
       listProjects: () => ops.projects(),
+    },
+    projectAdmin: {
+      update: (projectId, input) => ops.updateProject(projectId, input),
+    },
+    spaceProjects: {
+      directories: (spaceId, path) => ops.spaceProjectDirectories(spaceId, path),
+      add: (spaceId, input) => ops.addSpaceProject(spaceId, input),
+      clone: (spaceId, input) => ops.cloneSpaceProject(spaceId, input),
+      cloneJob: (spaceId, jobId) => ops.spaceProjectCloneJob(spaceId, jobId),
     },
     projectFiles: {
       list: (projectId, path) => ops.projectFiles(projectId, path),
@@ -419,6 +471,13 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     gitStatus: (workSessionId: EntityId): Promise<SessionGitStatus> => ops.gitStatus(workSessionId),
     gitDiff: (workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> =>
       ops.gitDiff(workSessionId, opts),
+    gitCheckouts: (workSessionId: EntityId): Promise<SessionCheckouts> => ops.gitCheckouts(workSessionId),
+    gitCheckoutDiff: (
+      workSessionId: EntityId,
+      checkout: string,
+      path: string,
+      opts?: { maxBytes?: number },
+    ): Promise<SessionCheckoutDiff> => ops.gitCheckoutDiff(workSessionId, checkout, path, opts),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
     attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
       ops.attentionRequests(input),
@@ -462,6 +521,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         ops.removeFromCollection(collectionId, entityId, ctx),
       postMessage: (input) => ops.postMessage(input),
       startChat: (input) => ops.startChat(input),
+      setChatCredentials: (chatId, input) => ops.setChatCredentials(chatId, input),
+      interruptChat: (chatId) => ops.interruptChat(chatId),
       setChatModel: (chatId, input) => ops.setChatModel(chatId, input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
@@ -472,6 +533,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       setMemberRole: (spaceId, memberId, input) => ops.setMemberRole(spaceId, memberId, input),
       leaveSpace: (spaceId) => ops.leaveSpace(spaceId),
       removeMember: (spaceId, memberId) => ops.removeMember(spaceId, memberId),
+      createEntityKind: (spaceId, input) => ops.createEntityKind(spaceId, input),
+      updateMenu: (spaceId, input) => ops.updateMenu(spaceId, input),
       updateSpace: (spaceId, input) => ops.updateSpace(spaceId, input),
       createInvite: (spaceId, input) => ops.createInvite(spaceId, input),
       // `ctx` defaults to `{}` rather than being forwarded as `undefined`: the
@@ -492,6 +555,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
        * time itself inside `mark_read` — sending the client's clock would be a
        * 400, and honouring it would let a skewed client mark the future read.
        */
+      markSeen: (entityId) => ops.markSeen(entityId),
       upsertReadMark: (anchorId, lastReadAt) => {
         void lastReadAt;
         return ops.upsertReadMark(anchorId);
@@ -504,6 +568,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       dispatch: (input) => ops.dispatch(input),
       prompt: (id, input) => ops.prompt(id, input),
       terminate: (id, input) => ops.terminate(id, input),
+      completeSession: (id, input) => ops.completeSession(id, input),
+      releaseClaim: (taskId, input) => ops.releaseClaim(taskId, input),
       shareSession: (id, input) => ops.shareSession(id, input),
       resume: (id, input) => ops.resume(id, input),
       gitCheckpoint: (id, input) => ops.gitCheckpoint(id, input),
@@ -546,6 +612,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         setPolicy: (spaceId, provider, allowedSources) =>
           ops.spaceCredentialsSetPolicy(spaceId, provider, allowedSources),
         setVisibility: (credentialId, visibility) => ops.spaceCredentialsSetVisibility(credentialId, visibility),
+        share: (credentialId, granteeAccountId) => ops.spaceCredentialsShare(credentialId, granteeAccountId),
+        unshare: (credentialId, granteeAccountId) => ops.spaceCredentialsUnshare(credentialId, granteeAccountId),
+        shares: (credentialId) => ops.spaceCredentialsShares(credentialId),
         spaceDefaultConsent: (credentialId, allowed) => ops.spaceCredentialsDefaultConsent(credentialId, allowed),
         claim: (credentialId) => ops.spaceCredentialsClaim(credentialId),
         setMyDefault: (credentialId) => ops.spaceCredentialsSetMyDefault(credentialId),
@@ -559,6 +628,16 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       },
     },
 
+    // -- filesystem path grants (282) ----------------------------------------
+
+    pathGrants: {
+      list: (includeRevoked) => ops.nodePathGrantsList(includeRevoked),
+      create: (accountId, rootPath, note) => ops.nodePathGrantsCreate(accountId, rootPath, note),
+      revoke: (grantId) => ops.nodePathGrantsRevoke(grantId),
+      accounts: () => ops.nodeAccountsList(),
+      mine: () => ops.myPathGrants(),
+    },
+
     // -- space links (W6) ----------------------------------------------------
 
     spaceLinks: {
@@ -570,10 +649,20 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       remove: (linkId) => ops.spaceLinksMutate('spaceLinks.remove', linkId),
       setSpawn: (linkId, allowSpawn, spawnBudget) => ops.spaceLinksSetSpawn(linkId, allowSpawn, spawnBudget),
       audit: (linkId) => ops.spaceLinksAudit(linkId),
+      inbound: {
+        list: (spaceId) => ops.spaceLinksInboundList(spaceId),
+        audit: (spaceId, linkId) => ops.spaceLinksInboundAudit(spaceId, linkId),
+        revoke: (spaceId, linkId) => ops.spaceLinksInboundMutate('spaceLinks.inbound.revoke', spaceId, linkId),
+        restore: (spaceId, linkId) => ops.spaceLinksInboundMutate('spaceLinks.inbound.restore', spaceId, linkId),
+      },
     },
 
     // -- remote servers (W8) --------------------------------------------------
 
+    crossSpaceRefs: {
+      list: (entityId) => ops.crossSpaceRefsList(entityId),
+      remove: (entityId, refId) => ops.crossSpaceRefsRemove(entityId, refId),
+    },
     servers: {
       get: (serverId) => ops.serversGet(serverId),
       probe: (serverId) => ops.serversProbe(serverId),
@@ -606,5 +695,6 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
      finished object. This therefore REQUIRES an unfrozen seam; freezing
      `seam` or `seam.commands` would break it here and nowhere else. */
   seam.commands.managed = managedPortFromSeam(seam);
+  seam.commands.tools = createToolPort(http, seam);
   return seam;
 }

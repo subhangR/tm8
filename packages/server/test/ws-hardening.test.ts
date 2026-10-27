@@ -91,11 +91,15 @@ describe('WebSocket backpressure, timeouts and inbound caps', () => {
     expect(rate.readyState).toBe(PTY_SOCKET_STATE.closed);
   });
 
-  it('closes a slow PTY consumer at the configured queue cap', () => {
+  it('closes a PTY consumer that stays over the queue cap past the grace window', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const socket = new FakeSocket();
-    Object.defineProperty(socket, 'writableLength', { configurable: true, get: () => 100 });
-    const conn = new PtyWsConnection(socket, {}, { maxBufferedBytes: 110 });
+    // The stub stays over the cap after the write, as a stalled peer's queue would.
+    Object.defineProperty(socket, 'writableLength', { configurable: true, get: () => 120 });
+    const conn = new PtyWsConnection(socket, {}, { maxBufferedBytes: 110, slowConsumerGraceMs: 50 });
     conn.send(Buffer.from('this frame cannot fit'));
+    expect(conn.readyState).toBe(PTY_SOCKET_STATE.open);
+    vi.advanceTimersByTime(51);
     expect(conn.readyState).toBe(PTY_SOCKET_STATE.closed);
   });
 

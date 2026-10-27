@@ -52,6 +52,7 @@ import { execFile } from 'node:child_process';
 import { accessSync, constants, statSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { homedir, userInfo } from 'node:os';
 
 import { readFile } from 'node:fs/promises';
 
@@ -220,6 +221,12 @@ export interface ProbeResult {
   authMethod: string | null;
   /** Human-readable explanation, recorded whenever `connected` is false. */
   detail: string | null;
+  /**
+   * Set only when the CLI answered, and the answer was a definite "no login".
+   * `stale` alone cannot say that: it also covers an answer this build could
+   * not read. The pre-spawn check refuses on this and never on mere doubt.
+   */
+  loggedOut?: true;
 }
 
 export interface CommandOutcome {
@@ -470,6 +477,7 @@ function readAnthropicProbe(outcome: CommandOutcome): ProbeResult {
       connected: false,
       status: 'stale',
       detail: 'claude auth status reports loggedIn=false — the login was not completed',
+      loggedOut: true,
     };
   }
   return {
@@ -586,6 +594,7 @@ function readOpenAiProbe(outcome: CommandOutcome): ProbeResult {
       connected: false,
       status: 'stale',
       detail: 'codex login status reports no active login',
+      loggedOut: true,
     };
   } catch {
     // Fall through to the text reading below. Not an error: the format is
@@ -601,6 +610,16 @@ function readOpenAiProbe(outcome: CommandOutcome): ProbeResult {
       login: email,
       authMethod: null,
       detail: null,
+    };
+  }
+
+  if (/not logged in/i.test(text)) {
+    return {
+      ...base,
+      connected: false,
+      status: 'stale',
+      detail: 'codex login status reports Not logged in',
+      loggedOut: true,
     };
   }
 
@@ -984,4 +1003,91 @@ export async function captureGitHubToken(input: {
     throw new Error('GitHub credential token could not be extracted safely');
   }
   return token;
+}
+
+/** The agent CLIs a session can run on the node's own login. */
+export type NodeAgentLoginProvider = 'anthropic' | 'openai';
+
+/**
+ * Does THIS node's OS user have a login an agent can run on?
+ *
+ * - `usable`  — the CLI confirmed a login, or the env carries an API key.
+ * - `missing` — the CLI is absent, or answered with a definite "not logged in".
+ * - `unknown` — the CLI answered something this build cannot read. Never a
+ *   reason to refuse: a doubt is not a "no".
+ */
+export type NodeAgentLoginVerdict = 'usable' | 'missing' | 'unknown';
+
+export interface NodeAgentLoginStatus {
+  provider: NodeAgentLoginProvider;
+  /** The CLI a session runs for this provider. */
+  binary: 'claude' | 'codex';
+  verdict: NodeAgentLoginVerdict;
+  /** The OS user (and its HOME) whose login was probed: a service runs as its own user. */
+  runAs: string;
+  home: string;
+  login: string | null;
+  detail: string | null;
+  /** The exact command that fixes `missing`, as the user the node runs as. */
+  fix: string;
+}
+
+const NODE_AGENT_API_KEY_ENV: Record<NodeAgentLoginProvider, readonly string[]> = {
+  anthropic: ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'],
+  openai: ['OPENAI_API_KEY', 'CODEX_API_KEY'],
+};
+
+/**
+ * The node-credential login check. One answer for two readers: the pre-spawn
+ * refusal (a session on `source=node` with no login used to hang forever at
+ * Claude Code's first-run theme picker), and the Node admin views that say
+ * "node has a usable claude/codex login: yes/no (as user X)".
+ *
+ * `env` must be the environment a session's child gets (HOME,
+ * CLAUDE_CONFIG_DIR, CODEX_HOME, PATH): the login lives under that HOME, and
+ * a systemd service's HOME is its run user's, not the operator's.
+ */
+export async function probeNodeAgentLogin(input: {
+  provider: NodeAgentLoginProvider;
+  env: Record<string, string>;
+  cwd: string;
+  run?: CommandRunner;
+  resolveBinary?: CredentialBinaryResolver;
+}): Promise<NodeAgentLoginStatus> {
+  const { provider, env } = input;
+  const binary = provider === 'anthropic' ? 'claude' : 'codex';
+  const runAs = env['USER'] || env['LOGNAME'] || safeUsername();
+  const home = env['HOME'] || homedir();
+  const loginVerb = provider === 'anthropic' ? 'claude auth login' : 'codex login';
+  // `sudo -u <user> -H` is the form that works from an operator's shell: a
+  // service user has a nologin shell and its own HOME, where the login lands.
+  const fix = `sudo -u ${runAs} -H ${loginVerb}`;
+  const base = { provider, binary, runAs, home, fix } as const;
+
+  const keyVar = NODE_AGENT_API_KEY_ENV[provider].find((name) => (env[name] ?? '').trim() !== '');
+  if (keyVar) {
+    return { ...base, verdict: 'usable', login: null, detail: `${keyVar} is set in the node's environment` };
+  }
+
+  const result = await runCredentialProbe({
+    provider,
+    env,
+    cwd: input.cwd,
+    ...(input.run ? { run: input.run } : {}),
+    ...(input.resolveBinary ? { resolveBinary: input.resolveBinary } : {}),
+  });
+  const verdict: NodeAgentLoginVerdict = result.connected
+    ? 'usable'
+    : result.status === 'unavailable' || result.loggedOut === true
+      ? 'missing'
+      : 'unknown';
+  return { ...base, verdict, login: result.login, detail: result.detail };
+}
+
+function safeUsername(): string {
+  try {
+    return userInfo().username;
+  } catch {
+    return 'the server user';
+  }
 }

@@ -41,7 +41,9 @@ import {
   CLIPBOARD_MAX_BYTES_DEFAULT,
   CLIPBOARD_RETENTION_DAYS_DEFAULT,
 } from '../files/clipboard-store.js';
+import { MCP_AUDIT_RETENTION_DAYS_DEFAULT } from '../scheduler/jobs/mcp-audit-retention.js';
 import { DEFAULT_AUTH_RATE_LIMITS, RATE_LIMITED_AUTH_OPS } from '../http/auth-rate-limit.js';
+import { DEFAULT_STYLE_RATE_LIMITS } from '../http/style-rate-limit.js';
 import { CANDIDATE_LIMIT, TEXT_LIMIT } from '../jev/candidates.js';
 import { CRITICAL_SCORE } from '../jev/groups.js';
 
@@ -104,6 +106,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_ALLOWED_HOSTNAMES', group: 'Network & access', summary: 'Extra Host header names accepted (comma-separated).', default: null, definedIn: CONFIG },
   { name: 'TM8_ALLOWED_ORIGINS', group: 'Network & access', summary: 'Extra browser origins accepted (comma-separated).', default: null, definedIn: CONFIG },
   { name: 'TM8_NODE_MODE', group: 'Network & access', summary: 'single: a loopback browser holding the launch cookie is the owner. multi: everyone signs in.', default: 'single', definedIn: CONFIG },
+  { name: 'TM8_REMOTE_SPACE_LINKS', group: 'Network & access', summary: 'W9c: space links across servers. On: a link to a space on another server forwards spaceLinks.invoke over HTTPS, spaceLinks.inbound.grant works, and this node answers /link/v1/claim|invoke|revoke. Off (default): today\'s behaviour, remote links refuse space_link_remote_disabled. Read once at boot.', default: 'off', definedIn: CONFIG },
+  { name: 'TM8_REMOTE_SPACE_LINKS_ALLOW_LOOPBACK', group: 'Network & access', summary: 'DEV ONLY. Lets the remote-link client reach a server whose base URL is plain http(s) on a loopback address, so two servers on one machine can link. Every other target still goes through the SSRF-guarded HTTPS client.', default: 'off', definedIn: CONFIG },
   { name: 'TM8_SPACE_SESSIONS', group: 'Network & access', summary: 'off | agents | enforce. agents pins agent tokens to their session\'s space (226/227); enforce also refuses a human gate session (no space) everything but spaces.list, auth.* and node admin until it calls auth.space.enter (W3). Every mode but off binds a human session auth.space.enter pinned. Read once at boot.', default: 'agents', definedIn: CONFIG },
   { name: 'TM8_DISABLE_AUTO_OWNER', group: 'Network & access', summary: 'Turns off the loopback auto-owner arm. Implied by multi.', default: 'false', definedIn: CONFIG },
   { name: 'TM8_AUTO_OWNER_COOKIE', group: 'Network & access', summary: 'required | off. required: a loopback BROWSER is the owner only with the launch cookie from the one-time URL `tm8 open` prints; a local process with no token stays the owner, as before. off: a loopback browser is the owner without the cookie, as before.', default: 'required', definedIn: CONFIG },
@@ -113,6 +117,13 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_AUTH_ATTEMPT_WINDOW_MS', group: 'Network & access', summary: 'Window for the per-client auth attempt count.', default: String(DEFAULT_AUTH_RATE_LIMITS.attemptWindowMs), definedIn: CONFIG },
   { name: 'TM8_AUTH_MAX_FAILURES', group: 'Network & access', summary: 'Consecutive auth failures per principal before refusal.', default: String(DEFAULT_AUTH_RATE_LIMITS.maxFailuresPerPrincipal), definedIn: CONFIG },
   { name: 'TM8_AUTH_FAILURE_WINDOW_MS', group: 'Network & access', summary: 'Window for the per-principal failure count.', default: String(DEFAULT_AUTH_RATE_LIMITS.failureWindowMs), definedIn: CONFIG },
+  { name: 'TM8_STYLE_EDIT_MAX', group: 'Network & access', summary: 'Style edits (personal create/update/delete, pull) per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.editPerMinute), definedIn: CONFIG },
+  { name: 'TM8_STYLE_EDIT_BURST', group: 'Network & access', summary: 'Style edit burst per identity per 5 s; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.editBurst), definedIn: CONFIG },
+  { name: 'TM8_STYLE_PUBLISH_MAX', group: 'Network & access', summary: 'Style push/remove per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.publishPerMinute), definedIn: CONFIG },
+  { name: 'TM8_STYLE_PUBLISH_BURST', group: 'Network & access', summary: 'Style push/remove burst per identity per 10 s; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.publishBurst), definedIn: CONFIG },
+  { name: 'TM8_STYLE_RESOLVE_MAX', group: 'Network & access', summary: 'styles.resolve per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.resolvePerMinute), definedIn: CONFIG },
+  { name: 'TM8_STYLE_PREFS_MAX', group: 'Network & access', summary: 'Style preference writes per identity per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.prefsPerMinute), definedIn: CONFIG },
+  { name: 'TM8_STYLE_DEFAULT_MAX', group: 'Network & access', summary: 'Space default-style writes per space per minute; 0 disables.', default: String(DEFAULT_STYLE_RATE_LIMITS.defaultPerMinute), definedIn: CONFIG },
   { name: 'TM8_UI_DIR', group: 'Network & access', summary: 'Built web UI bundle served for non-/v2 paths. Unset in dev, where Vite serves the UI.', default: null, definedIn: CONFIG },
 
   // ── Storage & database ───────────────────────────────────────────────
@@ -125,6 +136,7 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_CLIPBOARD_DIR', group: 'Storage & database', summary: 'Where pasted clipboard images land; exported to every agent.', default: '<data dir>/clipboard', definedIn: CONFIG },
   { name: 'TM8_CLIPBOARD_MAX_BYTES', group: 'Storage & database', summary: 'Per-image ceiling for a clipboard paste.', default: String(CLIPBOARD_MAX_BYTES_DEFAULT), definedIn: CONFIG },
   { name: 'TM8_CLIPBOARD_RETENTION_DAYS', group: 'Storage & database', summary: 'Days a clipboard bucket survives (0 = keep).', default: String(CLIPBOARD_RETENTION_DAYS_DEFAULT), definedIn: CONFIG },
+  { name: 'TM8_MCP_AUDIT_RETENTION_DAYS', group: 'Storage & database', summary: 'Days an MCP call audit row survives (0 = keep).', default: String(MCP_AUDIT_RETENTION_DAYS_DEFAULT), definedIn: CONFIG },
   { name: 'TM8_PG_PORT', group: 'Storage & database', summary: 'Port of the bundled Postgres sidecar.', default: '5442', definedIn: SIDECAR },
   { name: 'TM8_PG_APP_ROLE', group: 'Storage & database', summary: 'Role the server connects as.', default: 'tm8_app', definedIn: SIDECAR },
   { name: 'TM8_PG_DATABASE', group: 'Storage & database', summary: 'Sidecar database name.', default: 'tm8', definedIn: SIDECAR },
@@ -147,9 +159,11 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'TM8_PERMISSION_MODE', group: 'Lane launch', summary: 'Permission mode for every lane that does not request an access mode. Outranks the persona.', default: 'auto', definedIn: MANIFEST },
   { name: 'TM8_REQUIRE_CODEX_SANDBOX', group: 'Lane launch', summary: 'Refuses a Codex lane whose sandbox cannot be verified (1).', default: 'off', definedIn: SPAWN },
   { name: 'TM8_AUTO_TRUST_WORKSPACE', group: 'Lane launch', summary: 'Pre-trusts a lane\'s worktree in the agent config so it starts without a trust prompt (false turns it off).', default: 'true', definedIn: 'packages/execution/src/spawn/workspace-trust.ts' },
+  { name: 'TM8_LOST_SESSION_AFTER_MIN', group: 'Lane launch', summary: 'Minutes without a live process before an open session is marked lost.', default: '10', definedIn: 'packages/server/src/scheduler/jobs/lost-session-reaper.ts' },
   { name: 'TM8_SESSION_CAP', group: 'Lane launch', summary: 'Concurrent agent sessions this node runs.', default: '64', definedIn: EXEC_HANDLERS },
   { name: 'TM8_TERMINAL_CAP', group: 'Lane launch', summary: 'Concurrent human terminals this node runs.', default: '4', definedIn: EXEC_HANDLERS },
   { name: 'TM8_WORKTREE_CAP', group: 'Lane launch', summary: 'Concurrent worktree lanes (0 = unlimited).', default: '0', definedIn: EXEC_HANDLERS },
+  { name: 'TM8_NODE_AGENT_LOGIN_CHECK', group: 'Lane launch', summary: 'Refuses a source=node spawn on a host with no claude/codex login, and answers Node admin\'s usable-login row (0 turns it off, for a node whose login the probe cannot see).', default: 'on', definedIn: EXEC_HANDLERS },
   { name: 'TM8_LAUNCH_BOOTSTRAP', group: 'Lane launch', summary: 'Seeds launchable personas and the current project at boot (0 turns it off).', default: 'on', definedIn: CONFIG },
   { name: 'TM8_PROJECT_DIR', group: 'Lane launch', summary: 'Project the launch bootstrap registers.', default: 'the server\'s working directory', definedIn: CONFIG },
   { name: 'TM8_PROJECT_ROOTS', group: 'Lane launch', summary: 'Directories offered when linking a project.', default: null, definedIn: 'packages/server/src/facade/services/w2/project-directories.ts' },
@@ -158,6 +172,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'HERMES_HOME', group: 'Lane launch', summary: 'Hermes home scanned for skills.', default: null, definedIn: 'packages/server/src/skills/service.ts' },
   { name: 'CLAUDE_MANAGED_SETTINGS_DIR', group: 'Lane launch', summary: 'Claude Code managed-settings directory scanned for skills.', default: '/etc/claude-code', definedIn: 'packages/server/src/skills/service.ts' },
   { name: 'TM8_CHAT_SKILLS_DIR', group: 'Lane launch', summary: 'Skills plugin directory chat threads load.', default: null, definedIn: MAIN },
+  { name: 'TM8_CHAT_IDLE_TIMEOUT_MS', group: 'Lane launch', summary: 'Total silence a chat turn tolerates from the agent before it is stopped. Does not apply while a tool runs.', default: '1800000', definedIn: CONFIG },
+  { name: 'TM8_CHAT_TOOL_TIMEOUT_MS', group: 'Lane launch', summary: 'Silence a chat turn tolerates while one of the agent\'s tool calls is still running. Raised to the idle limit if set below it.', default: '1800000', definedIn: CONFIG },
 
   // ── Containers ───────────────────────────────────────────────────────
   { name: 'TM8_CONTAINERS', group: 'Containers', summary: 'Container runtime gate (off disables it).', default: 'on', definedIn: CONFIG },
@@ -184,6 +200,8 @@ export const NODE_ENV: readonly EnvKnob[] = [
   { name: 'OPENAI_API_KEY', group: 'Keys', summary: 'Node fallback OpenAI key for launches.', default: null, definedIn: NODE_KEYS, secret: true },
   { name: 'GH_TOKEN', group: 'Keys', summary: 'Node fallback GitHub token (launches and PR tracking).', default: null, definedIn: NODE_KEYS, secret: true },
   { name: 'GITHUB_TOKEN', group: 'Keys', summary: 'Alternative name for the node GitHub token.', default: null, definedIn: NODE_KEYS, secret: true },
+  { name: 'TM8_GOOGLE_OAUTH_CLIENT_ID', group: 'Keys', summary: 'Client ID of this node\'s Google OAuth client, for the Gmail, Calendar and Drive connectors. Read at each connect and refresh.', default: null, definedIn: MAIN },
+  { name: 'TM8_MCP_CLIENT_SECRET_GOOGLE', group: 'Keys', summary: 'Client secret of the Google OAuth client named by TM8_GOOGLE_OAUTH_CLIENT_ID. Never stored in a connection.', default: null, definedIn: MAIN, secret: true },
   { name: 'TM8_GITHUB_TOKEN', group: 'Keys', summary: 'GitHub token PR tracking prefers over GITHUB_TOKEN / GH_TOKEN.', default: null, definedIn: 'packages/server/src/tracking/github.ts', secret: true },
 ];
 
@@ -213,6 +231,7 @@ export const CLI_ENV: readonly EnvKnob[] = [
  * completeness test accepts a read of one of these without a registry entry.
  */
 export const NOT_CONFIG_ENV: Readonly<Record<string, string>> = {
+  TM8_CHAT_ID: 'set by tm8 on each chat thread for the connector bridge',
   TM8_SESSION_ID: 'set by tm8 on each spawned session',
   TM8_AGENT_TOKEN: 'set by tm8 on each spawned session',
   TM8_AGENT_RUNTIME_TOKEN: 'set by tm8 on each chat thread',
@@ -223,6 +242,7 @@ export const NOT_CONFIG_ENV: Readonly<Record<string, string>> = {
   TM8_JOURNAL_PATH: 'set by tm8 on each spawned session',
   TM8_PROJECT_ID: 'set by tm8 on each spawned session',
   TM8_MODEL: 'set by tm8 on each spawned session',
+  TM8_MODE: 'set by tm8 on each spawned session (the session mode; read by tm8 whoami)',
   TM8_GIT_LOGIN: 'set by tm8 on each spawned session',
   TM8_CHAT_MODE: 'set by tm8 on each chat thread',
 };
@@ -250,6 +270,7 @@ export const NOT_POLICY_CONSTANTS: Readonly<Record<string, string>> = {
   CHROME_RECORD_NAME: 'the label launch.harness records --no-chrome under, not a setting',
   TRUSTED_CONTROL_TYPES: 'the closed vocabulary of control envelope types',
   DISCOVERY_PROMPT_FORM: 'prompt wording, shown on the Prompts page',
+  COORDINATION_INSTRUCTION_CHAT: 'prompt wording for a chat-spawned worker, not a setting',
   COORDINATOR_KINDS: 'the closed vocabulary of coordinator anchors',
   ZERO_COST: 'the zero value of Jev cost accounting',
 };
@@ -290,7 +311,7 @@ export const CODE_CONSTANTS: readonly CodeConstant[] = [
 export const TEAMMATE_KNOBS: readonly (SubjectKnob & { envName?: string })[] = [
   { name: 'capabilities.launch.harnessSurface', summary: 'Harness surface a Claude lane boots with.', default: 'minimal', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', envName: 'TM8_HARNESS_SURFACE' },
   { name: 'capabilities.launch.plugins', summary: 'Plugins a minimal lane keeps. Plugins with skill entities belong in equips instead (scripts/migrate-launch-plugins-to-equips.mjs, human-run).', default: 'none', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona' },
-  { name: 'capabilities.launch.mcpServers', summary: 'MCP servers a minimal lane loads (--mcp-config under --strict-mcp-config). Server names only; their configs can hold credentials.', default: 'none', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', display: (v) => (v && typeof v === 'object' ? Object.keys(v as object) : v) },
+  { name: 'capabilities.launch.mcpServers', summary: 'Legacy raw MCP configuration (disabled for launch). Names only; use registered connectors and account selections.', default: 'none', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', display: (v) => (v && typeof v === 'object' ? Object.keys(v as object) : v) },
   { name: 'capabilities.launch.readHints', summary: 'Large-read hint hook on a Claude lane.', default: 'false', definedIn: MANIFEST, anchor: 'function memberLaunchPreferences', change: 'persona', envName: 'TM8_READ_HINTS' },
   { name: 'agent_tool', summary: 'Agent harness the teammate launches.', default: null, definedIn: EXEC_HANDLERS, anchor: 'tm.agent_tool', change: 'persona' },
   { name: 'model', summary: 'Model the teammate launches with.', default: null, definedIn: EXEC_HANDLERS, anchor: 'tm.model', change: 'persona' },
@@ -301,7 +322,7 @@ const CORE_DRAFT = 'db/migrations/079_core_draft_prompt_policy_repair.sql';
 
 /** Interaction-profile values, by JSON path into the draft, against the core default. */
 export const PROFILE_KNOBS: readonly SubjectKnob[] = [
-  { name: 'promptPolicy.kernelTemplate', summary: 'Kernel prompt template sessions on this profile get.', default: 'tm8.core.v1', definedIn: CORE_DRAFT, change: 'profile' },
+  { name: 'promptPolicy.kernelTemplate', summary: 'Recorded only: since 2026-10-13 every session gets the v2 prompt frame whatever this says.', default: 'tm8.core.v1', definedIn: CORE_DRAFT, change: 'profile' },
   { name: 'promptPolicy.manifestMaxBytes', summary: 'Launch manifest byte ceiling (≤ BYTE_BUDGETS.manifest).', default: '4096', definedIn: CORE_DRAFT, change: 'profile' },
   { name: 'promptPolicy.kernelMaxBytes', summary: 'Kernel prompt byte ceiling (≤ BYTE_BUDGETS.kernel).', default: '6144', definedIn: CORE_DRAFT, change: 'profile' },
   { name: 'promptPolicy.initialContextMaxBytes', summary: 'Initial context byte ceiling.', default: '32768', definedIn: CORE_DRAFT, change: 'profile' },

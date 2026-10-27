@@ -12,7 +12,7 @@
  *
  * WHAT IT COVERS. A refusal or a lost answer from the ONE write a command
  * exists to make. Local usage errors never reach a server and print nothing
- * here, and the best-effort chained writes (`created_in` claims) already
+ * here, and the best-effort chained writes (none since 308: `created_in` is retired) already
  * surface as success-receipt warnings.
  *
  * THE SHAPES:
@@ -214,11 +214,14 @@ export function tickCommand(id: string, gate: GateFacts | undefined): string | u
 // Classification
 // ---------------------------------------------------------------------------
 
-/** A transport error, or a retryable 5xx: the write may or may not have landed. */
+/** A lost/malformed success or retryable 5xx may have committed the write. */
 export function isAmbiguous(err: unknown): boolean {
   if (err instanceof TransportError) return true;
   if (err instanceof ProtocolError) {
-    return err.status !== undefined && err.status >= 500 && err.exitCode === EXIT_RETRYABLE;
+    return err.status !== undefined && (
+      (err.status >= 200 && err.status < 300)
+      || (err.status >= 500 && err.exitCode === EXIT_RETRYABLE)
+    );
   }
   if (err instanceof ApiError) return err.status >= 500 && err.retryable;
   return false;

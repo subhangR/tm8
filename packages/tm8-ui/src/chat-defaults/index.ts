@@ -11,4 +11,15 @@ export { useChatDefaults, loadChatDefaults, saveChatDefaults, type ChatDefaultsS
 export { resolveChatDefault, type ChatDefaultResolution, type ChatDefaultResolveContext } from './resolve';
 export { chatDefaultKindRows, customKindLabel, type ChatDefaultKindRow } from './kinds';
 export { loadChatDefaultsOptions, type ChatDefaultsOptions, type ChatDefaultsTeammate } from './options';
-export { lastChatMode, lastChatPicks, rememberChatMode, rememberChatStart, type LastChatPicks } from './lastUsed';
+export {
+  composerPicksScope,
+  lastChatMode,
+  lastChatPicks,
+  lastComposerPicks,
+  rememberChatMode,
+  rememberChatStart,
+  rememberComposerPick,
+  type ComposerPick,
+  type LastChatPicks,
+  type LastComposerPicks,
+} from './lastUsed';

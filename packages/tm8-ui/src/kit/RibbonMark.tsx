@@ -132,7 +132,7 @@ function parseColor(css: string): V3 | null {
 }
 
 /** Posterized print-style shading. k in 0..1, 0.5 = base ink. */
-function shade(b: V3, k: number) {
+function shade(b: V3, k: number): V3 {
   let r: number;
   let g: number;
   let bl: number;
@@ -147,7 +147,79 @@ function shade(b: V3, k: number) {
     g = b[1] + (255 - b[1]) * f;
     bl = b[2] + (255 - b[2]) * f;
   }
-  return `rgb(${r | 0},${g | 0},${bl | 0})`;
+  return [r, g, bl];
+}
+
+const rgb = (c: V3) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+const mixV = (a: V3, b: V3, f: number): V3 => [
+  a[0] + (b[0] - a[0]) * f,
+  a[1] + (b[1] - a[1]) * f,
+  a[2] + (b[2] - a[2]) * f,
+];
+const smoothstep = (e0: number, e1: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
+/* -- finish ----------------------------------------------------------------
+   HOW THE BAND IS COLOURED, separate from how it is lit. `ink` is the design
+   source's own: one base colour walked toward black and white by `shade`.
+   `eclipse` is the tm8 mark's monochrome finish (task 01a14b96 — Subhang
+   picked "Eclipse × Moon phase" from the variants artifact 01a14b99):
+
+   - ECLIPSE. The band is split between two poles, black and white, by a
+     terminator that travels the length of the ribbon once per loop. Being a
+     Möbius band it has one side, so the terminator never has a back to hide
+     on — every stretch of band flips pole as it passes.
+   - MOON PHASE. The halves also swing: each one travels HALFWAY to the
+     opposite pole (`POLE_SWING`), arriving exactly at the turnaround where
+     the spin hands over to the rewind, and swings back by the seam, so the
+     loop stays seamless. Half, not all the way: a full swing took each half
+     (and the letters) to the paper's own colour, where they vanished.
+   - A thin silver seam runs along the terminator, so the hand-over reads as a
+     line of light rather than a smear.
+
+   The poles are tokens (`--pn-x-mark-rest` / `--pn-x-mark-turn` in
+   styles/canvas-extra.css) and the dark theme swaps them, so the two themes
+   are exact polar opposites. The channels below are only the pre-resolve
+   fallback, mirroring the light theme. */
+export type RibbonFinish = 'ink' | 'eclipse';
+
+const FALLBACK_REST: V3 = [12, 13, 15];
+const FALLBACK_TURN: V3 = [248, 249, 250];
+const POLE_TOKENS = ['--pn-x-mark-rest', '--pn-x-mark-turn'] as const;
+
+/** 0 at rest, 1 at the turnaround (t = total / 2), back to 0 at the seam. */
+export function ribbonPhase(t: number, total = RIBBON_LOOP_SECONDS) {
+  return 0.5 - 0.5 * Math.cos((TAU * t) / total);
+}
+
+/**
+ * Lighting for a pole. `shade` is wrong here: it walks AWAY from its base, so
+ * at pure black or white half its ramp hits a ceiling and the band goes flat
+ * (see the PICK A MID-TONE note on `INK_TOKENS`). Instead a grey that tracks
+ * the light is blended in at a fixed share — black stays dark and white stays
+ * light whatever the face does, so the two halves keep their contrast, and
+ * both still turn visibly through the light.
+ */
+const LIGHT_SHARE = 0.28;
+function lightPole(c: V3, k: number): V3 {
+  const l = 255 * k;
+  return mixV(c, [l, l, l], LIGHT_SHARE);
+}
+
+/** How far toward the opposite pole a half travels at the turnaround. */
+export const POLE_SWING = 0.5;
+
+function eclipseFill(rest: V3, turn: V3, k: number, u: number, T: number, total: number): V3 {
+  const ph = POLE_SWING * ribbonPhase(T, total);
+  const toneA = mixV(rest, turn, ph);
+  const toneB = mixV(turn, rest, ph);
+  // Signed distance to the terminator, which advances one band-length per loop.
+  const d = Math.sin(TAU * (u - T / total));
+  const lit = lightPole(mixV(toneA, toneB, smoothstep(-0.12, 0.12, d)), k);
+  const seam = Math.exp(-(d * d) / (2 * 0.05 * 0.05));
+  return mixV(lit, mixV(rest, turn, 0.6), 0.75 * seam);
 }
 
 /* -- motion ---------------------------------------------------------------
@@ -177,6 +249,8 @@ function animate(from: number, to: number, start: number, end: number, ease: (t:
  */
 export type RibbonMotion = 'spin-rewind' | 'clock-counter';
 
+export const RIBBON_LOOP_SECONDS = 2;
+
 const MOTION: Record<RibbonMotion, { mid: number; total: number; ease: (t: number) => number }> = {
   // Spin up / Ease off / Rewind / Settle — accelerates away, then unwinds.
   'spin-rewind': { mid: 1, total: 2, ease: easeInOutCubic },
@@ -184,7 +258,6 @@ const MOTION: Record<RibbonMotion, { mid: number; total: number; ease: (t: numbe
   'clock-counter': { mid: 1, total: 2, ease: easeInOutSine },
 };
 
-export const RIBBON_LOOP_SECONDS = 2;
 
 /* -- the shared clock -----------------------------------------------------
    ONE rAF for the whole module, not one per mark. Marks that mount together
@@ -271,15 +344,37 @@ function useInk(explicit: string | undefined, el: SVGSVGElement | null): V3 {
   return resolved ?? FALLBACK_INK;
 }
 
-function useLoopTime(animated: boolean) {
-  const [t, setT] = useState(0);
+/**
+ * Join the mark's own clock without rendering a mark — for anything that has
+ * to move in step with it (the boot letters breathe with the ribbon). Honours
+ * reduced motion the same way the mark does: never subscribes, so the caller
+ * holds its t=0 pose. `onTick` should be stable or the subscription churns.
+ */
+export function useRibbonClock(onTick: (t: number) => void, enabled = true) {
   useEffect(() => {
-    if (!animated) return;
+    if (!enabled) return;
     if (prefersReducedMotion()) return;
     if (typeof requestAnimationFrame !== 'function') return;
-    return subscribe(setT);
-  }, [animated]);
+    return subscribe(onTick);
+  }, [onTick, enabled]);
+}
+
+function useLoopTime(animated: boolean) {
+  const [t, setT] = useState(0);
+  useRibbonClock(setT, animated);
   return animated ? t : 0;
+}
+
+/** The two poles for the `eclipse` finish, read from the mounted theme once. */
+function usePoles(enabled: boolean, el: SVGSVGElement | null): [V3, V3] {
+  const [resolved, setResolved] = useState<[V3, V3] | null>(null);
+  useEffect(() => {
+    if (!enabled || !el || typeof getComputedStyle !== 'function') return;
+    const style = getComputedStyle(el);
+    const [r, t] = POLE_TOKENS.map((name) => parseColor(style.getPropertyValue(name) ?? ''));
+    setResolved([r ?? FALLBACK_REST, t ?? FALLBACK_TURN]);
+  }, [enabled, el]);
+  return resolved ?? [FALLBACK_REST, FALLBACK_TURN];
 }
 
 /* -- the mark -------------------------------------------------------------- */
@@ -304,6 +399,7 @@ export function RibbonMark({
   layout = 'mark',
   animated = true,
   ink,
+  finish = 'ink',
   segments = N_SEG,
   className,
 }: {
@@ -326,6 +422,12 @@ export function RibbonMark({
    */
   ink?: string;
   /**
+   * How the band is coloured — see `RibbonFinish`. `ink` (the default) keeps
+   * every existing mount as it was; `eclipse` is the tm8 brand finish and
+   * ignores `ink`.
+   */
+  finish?: RibbonFinish;
+  /**
    * How many quads the band is built from. 150 is what the design authored and
    * what any mark large enough to show them should keep. Small mounts pass
    * fewer — see `N_SEG` for why that is a budget rather than a downgrade.
@@ -335,6 +437,7 @@ export function RibbonMark({
 }) {
   const [el, setEl] = useState<SVGSVGElement | null>(null);
   const baseInk = useInk(ink, el);
+  const [rest, turn] = usePoles(finish === 'eclipse', el);
   const T = useLoopTime(animated);
   const { mid, total, ease } = MOTION[motion];
   const { S, W, H, tilt: tiltBase } = LAYOUT[layout];
@@ -388,7 +491,9 @@ export function RibbonMark({
     quads.push({
       z: (pA[2] + A2[2] + B2[2] + pB[2]) / 4,
       i,
-      fill: shade(baseInk, k),
+      fill: rgb(
+        finish === 'eclipse' ? eclipseFill(rest, turn, k, u, T, total) : shade(baseInk, k),
+      ),
       pts: `${a[0].toFixed(1)},${a[1].toFixed(1)} ${b[0].toFixed(1)},${b[1].toFixed(1)} ${c[0].toFixed(1)},${c[1].toFixed(1)} ${d[0].toFixed(1)},${d[1].toFixed(1)}`,
     });
     pA = A2;

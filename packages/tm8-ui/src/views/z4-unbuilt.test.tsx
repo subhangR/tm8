@@ -24,7 +24,7 @@
  *      view, and that host does not exist yet. A specified route with no screen
  *      is not an unrecognised route, and telling the reader otherwise is false.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityId } from '@tm8/contract';
 import { GateApp } from './GateApp';
@@ -32,6 +32,10 @@ import { navStore, resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
 import { createMemoryTarget } from '../routes';
 import { FIXTURE_SPACE_ID } from '../fixtures';
+
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 const SPACE = FIXTURE_SPACE_ID;
 

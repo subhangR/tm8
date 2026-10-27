@@ -59,6 +59,61 @@ export interface OperationBinding {
 export const BASE_PATH = '/v2';
 
 export const OPERATIONS = [
+  { name: 'tools.create', method: 'POST', path: '/v2/spaces/:spaceId/tools', kind: 'command', status: 'v1' },
+  { name: 'tools.update', method: 'PATCH', path: '/v2/tools/:toolId', kind: 'command', status: 'v1' },
+  { name: 'tools.get', method: 'GET', path: '/v2/tools/:toolId', kind: 'read', status: 'v1' },
+  { name: 'tools.list', method: 'GET', path: '/v2/spaces/:spaceId/tools', kind: 'read', status: 'v1' },
+  { name: 'tools.help', method: 'GET', path: '/v2/tools/:toolId/help', kind: 'read', status: 'v1' },
+  { name: 'tools.config.set', method: 'PUT', path: '/v2/tools/:toolId/config', kind: 'command', status: 'v1' },
+  { name: 'tools.config.unset', method: 'POST', path: '/v2/tools/:toolId/config/unset', kind: 'command', status: 'v1' },
+  { name: 'tools.secrets.bind', method: 'POST', path: '/v2/tools/:toolId/secrets/bind', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'tools.secrets.unbind', method: 'POST', path: '/v2/tools/:toolId/secrets/unbind', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'tools.run', method: 'POST', path: '/v2/tools/:toolId/run', kind: 'command', status: 'v1' },
+  { name: 'tools.runs.list', method: 'GET', path: '/v2/tools/:toolId/runs', kind: 'read', status: 'v1' },
+  { name: 'tools.runs.get', method: 'GET', path: '/v2/tool-runs/:sessionId', kind: 'read', status: 'v1' },
+  { name: 'mcp.credentials.rotate', method: 'POST', path: '/v2/mcp/credentials/:credentialId/rotate', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.servers.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'read', status: 'v1' },
+  { name: 'mcp.servers.get', method: 'GET', path: '/v2/mcp/servers/:serverId', kind: 'read', status: 'v1' },
+  { name: 'mcp.servers.create', method: 'POST', path: '/v2/spaces/:spaceId/mcp/servers', kind: 'command', status: 'v1' },
+  { name: 'mcp.servers.update', method: 'PATCH', path: '/v2/mcp/servers/:serverId', kind: 'command', status: 'v1' },
+  { name: 'mcp.servers.delete', method: 'DELETE', path: '/v2/mcp/servers/:serverId', kind: 'command', status: 'v1' },
+  { name: 'mcp.servers.import', method: 'POST', path: '/v2/spaces/:spaceId/mcp/servers/import', kind: 'command', status: 'v1' },
+  { name: 'mcp.servers.test', method: 'POST', path: '/v2/mcp/servers/:serverId/test', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.resolve', method: 'POST', path: '/v2/spaces/:spaceId/mcp/resolve', kind: 'read', status: 'v1' },
+  { name: 'mcp.credentials.create', method: 'POST', path: '/v2/mcp/servers/:serverId/credentials', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.credentials.list', method: 'GET', path: '/v2/mcp/servers/:serverId/credentials', kind: 'read', status: 'v1' },
+  { name: 'mcp.credentials.readiness', method: 'GET', path: '/v2/mcp/credentials/:credentialId/readiness', kind: 'read', status: 'v1' },
+  { name: 'mcp.credentials.revoke', method: 'POST', path: '/v2/mcp/credentials/:credentialId/revoke', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.credentials.share', method: 'POST', path: '/v2/mcp/credentials/:credentialId/share', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.credentials.unshare', method: 'POST', path: '/v2/mcp/credentials/:credentialId/unshare', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.oauth.begin', method: 'POST', path: '/v2/mcp/servers/:serverId/oauth/begin', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.oauth.callback', method: 'POST', path: '/v2/mcp/oauth/callback', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.audit.list', method: 'GET', path: '/v2/spaces/:spaceId/mcp/audit', kind: 'read', status: 'v1', humanOnly: true },
+  { name: 'mcp.proxy.request', method: 'POST', path: '/v2/mcp/sessions/:sessionId/servers/:serverId', kind: 'command', status: 'v1' },
+  // §11. The connector catalog (§8.2) is NODE-level static data, so the Space is
+  // an optional QUERY param: given one, each entry also reports where it is
+  // already registered there, which is what Discover's "Added" / "Requested"
+  // states read (B16).
+  { name: 'mcp.catalog.list', method: 'GET', path: '/v2/mcp/catalog', kind: 'read', status: 'v1' },
+  // A MEMBER asks the Space's admins to add a connector. It creates the
+  // connector UNAPPROVED — inert until an admin approves with
+  // `mcp.servers.update` — plus an attention request on it (B13, §10.1).
+  { name: 'mcp.servers.request', method: 'POST', path: '/v2/spaces/:spaceId/mcp/servers/request', kind: 'command', status: 'v1', humanOnly: true },
+  // §5.5 / D9. Member-owned, NODE-level tokens (no `:spaceId` in the path, by
+  // design): one token acts as its member across the Spaces it lists, and the
+  // Space it may touch is checked per call on `/mcp`. humanOnly on all three —
+  // a credential that acts as a member is minted by that member, never by their
+  // agent carrying their identity — and an `mcp` token can reach none of them,
+  // because every non-/mcp transport refuses it outright.
+  { name: 'mcp.tokens.create', method: 'POST', path: '/v2/mcp/tokens', kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'mcp.tokens.list', method: 'GET', path: '/v2/mcp/tokens', kind: 'read', status: 'v1', humanOnly: true },
+  { name: 'mcp.tokens.revoke', method: 'POST', path: '/v2/mcp/tokens/:tokenId/revoke', kind: 'command', status: 'v1', humanOnly: true },
+  // §6/§10.6 (S6). The provenance OUTCOME of a launch, for the session debug
+  // view: the recorded root, the bearer chain nearest-hop-first, the Spaces it
+  // crossed, and whether that root is still admitted to every one of them. A
+  // thin pass-through of `public.mcp_session_provenance`, which owns the whole
+  // rule — the debug view must not re-derive §6 from parts it can see.
+  { name: 'mcp.sessions.provenance', method: 'GET', path: '/v2/mcp/sessions/:sessionId/provenance', kind: 'read', status: 'v1', humanOnly: true },
   { name: 'skills.roots', method: 'GET', path: '/v2/spaces/:spaceId/skills/roots', kind: 'read', status: 'v1' },
   { name: 'skills.create', method: 'POST', path: '/v2/spaces/:spaceId/skills', kind: 'command', status: 'v1' },
   { name: 'skills.edit', method: 'PATCH', path: '/v2/skills/:id', kind: 'command', status: 'v1' },
@@ -123,6 +178,21 @@ export const OPERATIONS = [
   { name: 'spaceLinks.invoke',   method: 'POST',   path: '/v2/spaces/:spaceId/space-links/:link/invoke', kind: 'command', status: 'v1' },
   // W7: the home-space audit of invokes — the member's own rows, all rows for a home admin.
   { name: 'spaceLinks.audit',    method: 'GET',    path: '/v2/space-links/:linkId/audit',     kind: 'read',    status: 'v1' },
+  // 278 (D2): the TARGET side. An admin of :spaceId sees the links into it and
+  // the calls made through them, and revokes or restores a link. Reads pass a
+  // link; revoke/restore are human-only in SQL and refused through a link.
+  { name: 'spaceLinks.inbound.list',    method: 'GET',  path: '/v2/spaces/:spaceId/space-links/inbound',                 kind: 'read',    status: 'v1' },
+  { name: 'spaceLinks.inbound.audit',   method: 'GET',  path: '/v2/spaces/:spaceId/space-links/inbound/audit',           kind: 'read',    status: 'v1' },
+  { name: 'spaceLinks.inbound.revoke',  method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/revoke',  kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'spaceLinks.inbound.restore', method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/:linkId/restore', kind: 'command', status: 'v1', humanOnly: true },
+  // W9c (301): a member of :spaceId lets a space on ANOTHER server act here as
+  // them; returns a one-time pairing code for that server's spaceLinks.login.
+  { name: 'spaceLinks.inbound.grant',   method: 'POST', path: '/v2/spaces/:spaceId/space-links/inbound/grant',           kind: 'command', status: 'v1', humanOnly: true },
+  // L3 (279): an entity's references into linked spaces. Not edges (D3); add
+  // needs the caller's own signed-in link (D7) and reads B through it first.
+  { name: 'entities.refs.list',   method: 'GET',    path: '/v2/entities/:id/refs',             kind: 'read',    status: 'v1' },
+  { name: 'entities.refs.add',    method: 'POST',   path: '/v2/entities/:id/refs',             kind: 'command', status: 'v1' },
+  { name: 'entities.refs.remove', method: 'DELETE', path: '/v2/entities/:id/refs/:refId',      kind: 'command', status: 'v1' },
   // Remote servers (W8, 261): `server` entities over 044's read-only rows.
   // add/adopt/remove are human-only in SQL; no response carries a gate token.
   { name: 'servers.list',   method: 'GET',  path: '/v2/spaces/:spaceId/servers',  kind: 'read',    status: 'v1' },
@@ -190,6 +260,8 @@ export const OPERATIONS = [
   // entities — closed kind-command namespace (02 §3.2)
   { name: 'entities.commands.complete',   method: 'POST', path: '/v2/entities/:id/commands/complete',       kind: 'command', status: 'v1' },
   { name: 'entities.commands.work',       method: 'POST', path: '/v2/entities/:id/commands/work',           kind: 'command', status: 'v1' },
+  // 299 (Spec D1 R4): end the caller's claim on a task with a hand-off note.
+  { name: 'entities.commands.release',    method: 'POST', path: '/v2/entities/:id/commands/release',        kind: 'command', status: 'v1' },
   { name: 'entities.commands.pull',       method: 'POST', path: '/v2/entities/:id/commands/pull',           kind: 'command', status: 'v1' },
   { name: 'entities.commands.linkPr',     method: 'POST', path: '/v2/entities/:id/commands/link-pr',        kind: 'command', status: 'v1' },
   { name: 'entities.commands.linkCommit', method: 'POST', path: '/v2/entities/:id/commands/link-commit',    kind: 'command', status: 'v1' },
@@ -223,7 +295,35 @@ export const OPERATIONS = [
   // 276 — move a running chat onto another model. Sticky: it changes the chat,
   // and every turn claimed afterwards runs on the new model. A turn already
   // claimed keeps the model it was stamped with.
+  { name: 'chat.setCredentials', method: 'POST', path: '/v2/chats/:id/credentials', kind: 'command', status: 'v1' },
   { name: 'chat.setModel',           method: 'POST',   path: '/v2/chats/:id/model',                         kind: 'command', status: 'v1' },
+  // Stop the running turn (the composer's ■ / Esc). Before this the UI had a
+  // Stop button and the server had no operation behind it.
+  { name: 'chat.interrupt',          method: 'POST',   path: '/v2/chats/:id/interrupt',                     kind: 'command', status: 'v1' },
+  // G4 — change a LIVE thread's connectors. Before this, a chat's selection was
+  // written once at creation (`save_chat_mcp_selections`, `on conflict do
+  // nothing`) and there was no way to change it afterwards.
+  // No `humanOnly` flag: the chat family carries its own guard
+  // (`refuseChatRuntimeBearer`, chat/handlers.ts) rather than
+  // `requireHumanSession`, and the flag's invariant is "flagged iff wrapped in
+  // requireHuman(Link)Session". `test/chat/handlers-human-only.test.ts` holds
+  // every chat.* operation to the refusal instead, this one included.
+  { name: 'chat.setMcpSelections',   method: 'POST',   path: '/v2/chats/:id/mcp-selections',                kind: 'command', status: 'v1' },
+  // §10.4 — READ the stored selection back. The write above answers the stored
+  // value, which is enough for the client that made it and no use at all to the
+  // one that merely OPENED the thread: §10.4's sheet has to say "Using: Space
+  // defaults" or "Using: Custom" before the user touches anything, and since
+  // 354 that distinction IS the row's existence (S21: no row = defaults).
+  //
+  // `humanOnly`, UNLIKE its sibling above, and the asymmetry is not an
+  // oversight. The write's human gate is layer 2 in SQL —
+  // `update_chat_mcp_selections` calls `internal.require_human_auth_kind()` —
+  // so the family's own `refuseChatRuntimeBearer` is all layer 1 needs there.
+  // `read_mcp_launch_selections` (298) has NO such gate: it checks
+  // `internal.entity_readable` and nothing else, so an agent session would
+  // read it. This door therefore carries `requireHumanSession` for real, and
+  // the flag says so.
+  { name: 'chat.getMcpSelections',   method: 'GET',    path: '/v2/chats/:id/mcp-selections',                kind: 'read',    status: 'v1', humanOnly: true },
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },
@@ -257,6 +357,12 @@ export const OPERATIONS = [
   // `single` node may link one folder into several spaces.
   { name: 'spaces.projects.list',    method: 'GET',    path: '/v2/spaces/:spaceId/projects',                kind: 'read',    status: 'v1' },
   { name: 'spaces.projects.create',  method: 'POST',   path: '/v2/spaces/:spaceId/projects/create',         kind: 'command', status: 'v1' },
+  // A space admin's GitHub clone (task 01a13574): a JOB, because a clone can
+  // outlast any HTTP deadline. `clone` answers 202 with the job; the get reads
+  // its status until it lands on `succeeded` (with the space's project) or
+  // `failed`. The token never reaches the request, the remote or a log.
+  { name: 'spaces.projects.clone',         method: 'POST', path: '/v2/spaces/:spaceId/projects/clone',              kind: 'command', status: 'v1' },
+  { name: 'spaces.projects.cloneJobs.get', method: 'GET',  path: '/v2/spaces/:spaceId/projects/clone-jobs/:jobId', kind: 'read',    status: 'v1' },
   { name: 'gate.folders.list',       method: 'GET',    path: '/v2/gate/folders',                            kind: 'read',    status: 'v1' },
   { name: 'gate.folders.create',     method: 'POST',   path: '/v2/gate/folders',                            kind: 'command', status: 'v1' },
   { name: 'projects.unlink',         method: 'DELETE', path: '/v2/spaces/:spaceId/projects/:projectId',     kind: 'command', status: 'v1' },
@@ -300,6 +406,7 @@ export const OPERATIONS = [
   // per-member read state
   { name: 'inbox.list',              method: 'GET',    path: '/v2/inbox',                                   kind: 'read',    status: 'v1' },
   { name: 'inbox.markRead',          method: 'PUT',    path: '/v2/inbox/:notificationId/read',              kind: 'command', status: 'v1' },
+  { name: 'entities.markSeen', method: 'PUT', path: '/v2/entities/:id/seen', kind: 'command', status: 'v1', humanOnly: true },
   { name: 'readMarks.upsert',        method: 'PUT',    path: '/v2/read-marks/:anchorId',                    kind: 'command', status: 'v1' },
 
   // saved views
@@ -319,6 +426,35 @@ export const OPERATIONS = [
   { name: 'events.changes',          method: 'GET',    path: '/v2/spaces/:spaceId/events/changes',          kind: 'read',    status: 'v1' },
   { name: 'presence.get',            method: 'GET',    path: '/v2/entities/:id/presence',                   kind: 'read',    status: 'v1' },
 
+  // Workspace remote bridge (Spec C, doc 01a1111d-589e): agents and the CLI
+  // drive the caller's OWN live Workspace windows. The window side rides
+  // `events.subscribe` as `workspace.*` control frames; nothing is durable.
+  { name: 'workspace.instances.list', method: 'GET',   path: '/v2/spaces/:spaceId/workspace/instances',     kind: 'read',    status: 'v1' },
+  { name: 'workspace.inspect',       method: 'GET',    path: '/v2/spaces/:spaceId/workspace/inspect',       kind: 'read',    status: 'v1' },
+  { name: 'workspace.command',       method: 'POST',   path: '/v2/spaces/:spaceId/workspace/commands',      kind: 'command', status: 'v1' },
+  // Spec D (doc 01a11171-3aba): the caller's STORED workspace, readable and
+  // writable with no window open.
+  { name: 'workspace.get',           method: 'GET',    path: '/v2/spaces/:spaceId/workspace',               kind: 'read',    status: 'v1' },
+  { name: 'workspace.drafts.patch',  method: 'POST',   path: '/v2/spaces/:spaceId/workspace/drafts/:draftId', kind: 'command', status: 'v1' },
+  // Multiple workspaces (API doc 01a115c4 §5.6): the caller's workspaces in
+  // the space. Plural path = the list; the singular one = a workspace's content.
+  { name: 'workspace.list',          method: 'GET',    path: '/v2/spaces/:spaceId/workspaces',              kind: 'read',    status: 'v1' },
+  // §5.7–§5.11: managing the list. Creating never switches; an agent's switch
+  // or delete never applies (D6); reorder is the human's alone.
+  { name: 'workspace.create',        method: 'POST',   path: '/v2/spaces/:spaceId/workspaces',              kind: 'command', status: 'v1' },
+  { name: 'workspace.update',        method: 'PATCH',  path: '/v2/spaces/:spaceId/workspaces/:workspaceId', kind: 'command', status: 'v1' },
+  { name: 'workspace.reorder',       method: 'POST',   path: '/v2/spaces/:spaceId/workspaces/:workspaceId/move', kind: 'command', status: 'v1' },
+  { name: 'workspace.delete',        method: 'DELETE', path: '/v2/spaces/:spaceId/workspaces/:workspaceId', kind: 'command', status: 'v1' },
+  { name: 'workspace.switch',        method: 'POST',   path: '/v2/spaces/:spaceId/workspaces/:workspaceId/activate', kind: 'command', status: 'v1' },
+  // §5.12: the human's answer to an agent's Switch/Stay or Delete/Keep prompt
+  // (D8: the prompts live in the node's memory). Humans only.
+  { name: 'workspace.prompts.resolve', method: 'POST', path: '/v2/spaces/:spaceId/workspace/prompts/:promptId', kind: 'command', status: 'v1' },
+  // Craft workspaces (Craft redesign doc 01a1255d §3, §4): the caller's tabs on
+  // each craft, and their open-crafts list. Hidden from the Home list above.
+  { name: 'workspace.crafts.list',   method: 'GET',    path: '/v2/spaces/:spaceId/craft-workspaces',        kind: 'read',    status: 'v1' },
+  { name: 'workspace.crafts.get',    method: 'GET',    path: '/v2/spaces/:spaceId/craft-workspaces/:craftId', kind: 'read',  status: 'v1' },
+  { name: 'workspace.crafts.command', method: 'POST',  path: '/v2/spaces/:spaceId/craft-workspaces/:craftId/commands', kind: 'command', status: 'v1' },
+
   // execution.* family (R16) — server-hosted PTY is the only spawn path (AM-1)
   { name: 'execution.spawn',          method: 'POST',  path: '/v2/execution/spawn',                         kind: 'command', status: 'v1' },
   // A VANILLA TERMINAL (101) — a shell session with no agent attached. Its own
@@ -330,6 +466,10 @@ export const OPERATIONS = [
   { name: 'execution.terminate',      method: 'POST',  path: '/v2/entities/:id/commands/terminate',         kind: 'command', status: 'v1' },
   { name: 'execution.streams.attach', method: 'POST',  path: '/v2/entities/:id/commands/streams-attach',    kind: 'command', status: 'v1' },
   { name: 'execution.resume',         method: 'POST',  path: '/v2/entities/:id/commands/resume',            kind: 'command', status: 'v1' },
+  // 299 (Spec D1 §4.1): settle the session's OUTCOME as completed — receipt +
+  // claim check. A separate door from `entities.commands.complete` so it can
+  // name a receipt and close the process; the row tick routes to the same SQL.
+  { name: 'execution.complete',       method: 'POST',  path: '/v2/entities/:id/commands/complete-session',  kind: 'command', status: 'v1' },
   // 187 — the session's own sharing dials. A command on the session entity
   // rather than a field on `entities.patch`, because the guard is not "may you
   // edit this row" but "may you widen who sees its BYTES", and only the owner
@@ -360,6 +500,10 @@ export const OPERATIONS = [
   // no worktree answers `available:false` with a named reason, never a 500.
   { name: 'execution.gitStatus',      method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/status',      kind: 'read',    status: 'v1' },
   { name: 'execution.gitDiff',        method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/diff',        kind: 'read',    status: 'v1' },
+  // What a session WITHOUT a worktree changed: the git checkouts in its own
+  // working directory, read-only. Paths derive from the session row only.
+  { name: 'execution.gitCheckouts',   method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/checkouts',      kind: 'read',    status: 'v1' },
+  { name: 'execution.gitCheckoutDiff', method: 'GET',  path: '/v2/work-sessions/:workSessionId/git/checkouts/diff', kind: 'read',    status: 'v1' },
   { name: 'execution.gitCheckpoint',  method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/checkpoint',  kind: 'command', status: 'v1' },
   { name: 'execution.gitRollback',    method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/rollback',    kind: 'command', status: 'v1' },
   { name: 'execution.gitCommit',      method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/commit',      kind: 'command', status: 'v1' },
@@ -447,6 +591,27 @@ export const OPERATIONS = [
   // profile — display name, avatar, email, and the cross-server `globalId`
   // claim. Server-authorized, no space, no actor.
   { name: 'identity.profile.update',                     method: 'POST',   path: '/v2/identity/profile',                                               kind: 'command', status: 'v1' },
+
+  // Styles (styles spec 01a0fc22 v8 §4.1, migration 284). PERSONAL styles are
+  // the caller's own (owner-only table, no space); SPACE styles are read-only
+  // `style` entities written only by `styles.push`. `styles.resolve` is a read:
+  // it lints a document and stores nothing. The space default is human-admin
+  // only (`require_human_space_admin`), so agents cannot set it.
+  { name: 'styles.personal.list',                      method: 'GET',   path: '/v2/identity/styles',                                        kind: 'read',    status: 'v1' },
+  { name: 'styles.personal.create',                    method: 'POST',  path: '/v2/identity/styles',                                        kind: 'command', status: 'v1' },
+  { name: 'styles.personal.update',                    method: 'PATCH', path: '/v2/identity/styles/:id',                                    kind: 'command', status: 'v1' },
+  { name: 'styles.personal.delete',                    method: 'DELETE', path: '/v2/identity/styles/:id',                                    kind: 'command', status: 'v1' },
+  { name: 'styles.list',                               method: 'GET',   path: '/v2/spaces/:spaceId/styles',                                 kind: 'read',    status: 'v1' },
+  { name: 'styles.get',                                method: 'GET',   path: '/v2/styles/:ref',                                            kind: 'read',    status: 'v1' },
+  { name: 'styles.push',                               method: 'POST',  path: '/v2/styles/push',                                            kind: 'command', status: 'v1' },
+  { name: 'styles.pull',                               method: 'POST',  path: '/v2/styles/:ref/pull',                                       kind: 'command', status: 'v1' },
+  { name: 'styles.remove',                             method: 'POST',  path: '/v2/styles/:ref/remove',                                     kind: 'command', status: 'v1' },
+  { name: 'styles.resolve',                            method: 'POST',  path: '/v2/styles/resolve',                                         kind: 'read',    status: 'v1' },
+  { name: 'styles.export',                             method: 'GET',   path: '/v2/styles/:ref/export',                                     kind: 'read',    status: 'v1' },
+  { name: 'identity.stylePrefs.get',                   method: 'GET',   path: '/v2/identity/style-prefs',                                   kind: 'read',    status: 'v1' },
+  { name: 'identity.stylePrefs.set',                   method: 'PUT',   path: '/v2/identity/style-prefs',                                   kind: 'command', status: 'v1' },
+  { name: 'spaces.styleDefault.get',                   method: 'GET',   path: '/v2/spaces/:spaceId/style-default',                          kind: 'read',    status: 'v1' },
+  { name: 'spaces.styleDefault.set',                   method: 'PUT',   path: '/v2/spaces/:spaceId/style-default',                          kind: 'command', status: 'v1', humanOnly: true },
 
   // Identity v2 Stage 1 (doc 4 §6): local accounts. The four operations the UI
   // asked for as MISSING_AUTH_OPS — now wired by its gate as GATE_AUTH_OPS
@@ -579,6 +744,11 @@ export const OPERATIONS = [
   { name: 'credentials.space.rename',                    method: 'PATCH',  path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1', humanOnly: true },
   { name: 'credentials.space.delete',                    method: 'DELETE', path: '/v2/space-credentials/:credentialId',                                kind: 'command', status: 'v1', humanOnly: true },
   { name: 'credentials.space.setVisibility',             method: 'PUT',    path: '/v2/space-credentials/:credentialId/visibility',                     kind: 'command', status: 'v1', humanOnly: true },
+  // 992 (task 01a10201): the owner shares a PRIVATE credential with one member;
+  // the owner or a space admin withdraws it (killing the grantee's sessions).
+  { name: 'credentials.space.share',                     method: 'POST',   path: '/v2/space-credentials/:credentialId/shares',                         kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.unshare',                   method: 'DELETE', path: '/v2/space-credentials/:credentialId/shares/:granteeAccountId',       kind: 'command', status: 'v1', humanOnly: true },
+  { name: 'credentials.space.shares',                    method: 'GET',    path: '/v2/space-credentials/:credentialId/shares',                         kind: 'read',    status: 'v1', humanOnly: true },
   { name: 'credentials.space.spaceDefaultConsent',       method: 'PUT',    path: '/v2/space-credentials/:credentialId/space-default-consent',          kind: 'command', status: 'v1', humanOnly: true },
   // W10d (doc 13 §7 step 2): add your own server-level GitHub token to this
   // space as a PRIVATE credential — read, probed and re-sealed in TS server-side;
@@ -594,6 +764,15 @@ export const OPERATIONS = [
   // The node's own fallback credentials (D5/D9): node admin, and human-only.
   { name: 'node.credentials.status',                     method: 'GET',    path: '/v2/node/credentials',                                               kind: 'read',    status: 'v1', humanOnly: true },
   { name: 'node.credentials.policy.set',                 method: 'PUT',    path: '/v2/node/credential-policy/:provider',                               kind: 'command', status: 'v1', humanOnly: true },
+  // Space-scoped projects L1 (migration 282, doc 01a0fb62 §4): a node admin
+  // grants one account one filesystem root to browse and select under. Gate
+  // admin on the server and in SQL; `identity.pathGrants.list` is the caller's
+  // own live grants, what the Create Project page reads.
+  { name: 'node.pathGrants.list',                        method: 'GET',    path: '/v2/node/path-grants',                                               kind: 'read',    status: 'v1' },
+  { name: 'node.pathGrants.create',                      method: 'POST',   path: '/v2/node/path-grants',                                               kind: 'command', status: 'v1' },
+  { name: 'node.pathGrants.revoke',                      method: 'POST',   path: '/v2/node/path-grants/:grantId/revoke',                               kind: 'command', status: 'v1' },
+  { name: 'node.accounts.list',                          method: 'GET',    path: '/v2/node/accounts',                                                  kind: 'read',    status: 'v1' },
+  { name: 'identity.pathGrants.list',                    method: 'GET',    path: '/v2/identity/path-grants',                                           kind: 'read',    status: 'v1' },
   // Host metrics for the desktop status strip: node admin, human sessions only.
   { name: 'node.metrics.get',                            method: 'GET',    path: '/v2/node/metrics',                                                   kind: 'read',    status: 'v1' },
 

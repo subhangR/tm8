@@ -173,6 +173,23 @@ describe.sequential('W2.G05 collection, graph, and undo PostgreSQL semantics', (
     expect(rows[0]!.args).toContain('p_client_mutation_id text');
   });
 
+  it('finds stories by title and by words across title and description under RLS', async () => {
+    const storyId = await database.transaction(async (c) => {
+      await c.query('set local role tm8_graph_owner');
+      const id = (await c.query<{ id: string }>('select internal.new_id()::text id')).rows[0]!.id;
+      await c.query(`insert into public.entities(id, space_id, kind, created_by) values ($1, $2, 'story', $3)`, [id, fixture.spaceId, fixture.memberId]);
+      await c.query(`insert into public.stories(entity_id, title, description) values ($1, 'Aurora release', 'Candidate launch work')`, [id]);
+      return id;
+    });
+    for (const filters of [{ titleContains: 'AURORA' }, { words: 'aurora candidate' }]) {
+      const query = { spaceId: fixture.spaceId, kinds: ['story'], filters, limit: 10 };
+      const result = await asApp(database, fixture.identityId, q => queryCollection(q, query, fixture.identityId));
+      expect(result.page.items.map(item => item.id)).toEqual([storyId]);
+      const hidden = await asApp(database, fixture.outsiderIdentityId, q => queryCollection(q, query, fixture.outsiderIdentityId));
+      expect(hidden.page.items).toEqual([]);
+    }
+  });
+
   it('executes collection filters, hierarchy, grouping, and fingerprinted keyset paging through RLS', async () => {
     const query: CollectionQuery = {
       spaceId: fixture.spaceId,

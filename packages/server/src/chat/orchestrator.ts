@@ -1,17 +1,28 @@
+import { createHash, randomUUID } from 'node:crypto';
 import {
   MessagePartSchema,
+  launchModel,
+  CollabError,
+  type LaunchModelEffort,
   type ChatMode,
+  type ChatCredentialSelection,
   type ChatTurnUsage,
   type MessageView,
   type SessionTranscriptContext,
 } from '@tm8/contract';
+import type { HarnessRegistry } from '@tm8/execution';
+import { executeFencedTurn, type ActiveChatHarness, type FencedClaim, type FencedTurnOptions } from './fenced-turn.js';
+import type { createChatPreparedLaunchResolver } from './harness-composition.js';
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
-import { chatModeLine } from './compose.js';
+import { chatModeLine, chatTeamLine } from './compose.js';
 import type { ChatTurnPublisher } from './publisher.js';
 import type {
   AgentRuntime,
   ResolveChatLaunchConfig,
+  ResolveChatCredentialEnv,
+  ResolveChatMcpSelection,
+  ChatLaunchConfigInput,
   StartAgentThreadInput,
   TurnItem,
 } from './runtime.js';
@@ -23,7 +34,7 @@ interface ChatTurnAttachment {
   readonly mime?: string | null;
 }
 
-interface ClaimedTurn {
+export interface ClaimedTurn {
   readonly turnId: string;
   readonly chatId: string;
   readonly userMessageId: string;
@@ -61,6 +72,7 @@ interface ClaimedTurn {
   readonly requestedBySessionId?: string | null;
   readonly requestedByChatId?: string | null;
   readonly teammateId: string;
+  readonly credentialSelection?: ChatCredentialSelection;
   readonly model: string;
   readonly provider: string;
   readonly agentTool: string;
@@ -77,9 +89,28 @@ interface BatchRpcResult {
 
 export interface ChatOrchestratorOptions {
   readonly db: Db;
-  readonly runtime: AgentRuntime;
+  readonly runtime?: AgentRuntime;
+  readonly registry?: HarnessRegistry;
+  readonly resolvePreparedLaunch?: ReturnType<typeof createChatPreparedLaunchResolver>;
+  readonly nodeId?: string;
+  readonly bootId?: string;
+  readonly historyBudgetBytes?: number;
+  /**
+   * Per-turn step limits handed to every `executeFencedTurn`. Only the two
+   * observation budgets are configured in production (`TM8_CHAT_IDLE_TIMEOUT_MS`,
+   * `TM8_CHAT_TOOL_TIMEOUT_MS`); the rest keep the defaults in fenced-turn.ts.
+   */
+  readonly turnTimeouts?: FencedTurnOptions['timeouts'];
   readonly publisher: ChatTurnPublisher;
-  readonly resolveLaunchConfig: ResolveChatLaunchConfig;
+  readonly resolveLaunchConfig?: ResolveChatLaunchConfig;
+  readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
+  /**
+   * §5.3 / S21c. Read before every turn so a selection that moved since the
+   * live child started closes it. Optional, and a composition that omits it
+   * gets exactly the old behaviour: `mcpSelectionFingerprint(undefined)` is a
+   * constant, so it can never differ from itself.
+   */
+  readonly resolveMcpSelection?: ResolveChatMcpSelection;
   readonly onError?: (error: unknown) => void;
   /**
    * Node-scoped claims for the boot liveness sweep (PR188 review F2). Only the
@@ -87,6 +118,34 @@ export interface ChatOrchestratorOptions {
    * queries ever run against their fixtures.
    */
   readonly sweepClaims?: DbClaims;
+}
+
+function credentialFingerprint(env: Readonly<Record<string, string>> | undefined): string {
+  return createHash('sha256').update(
+    JSON.stringify(Object.entries(env ?? {}).sort(([a], [b]) => a.localeCompare(b))),
+  ).digest('hex');
+}
+
+/**
+ * The connectors a live child was started with, as one comparable value (§5.3).
+ *
+ * Sorted, so the resolver's order never reads as a change, and the account is
+ * part of it: moving a connector from one connected Google account to another
+ * is a different `--mcp-config` even though the same connector stays on.
+ *
+ * `undefined` (no resolver injected) and `null` (the resolver could not find
+ * out) both fold to the SAME constant. That is what keeps the comparison a
+ * no-op for a composition without the port, and what makes a resolver that
+ * starts failing cost one restart rather than one per turn.
+ */
+function mcpSelectionFingerprint(
+  selections: readonly { readonly serverId: string; readonly credentialId?: string }[] | null | undefined,
+): string {
+  if (!selections) return 'unresolved';
+  return selections
+    .map(s => `${s.serverId}:${s.credentialId ?? ''}`)
+    .sort((a, b) => a.localeCompare(b))
+    .join(',');
 }
 
 function claims(identityId: string): DbClaims {
@@ -250,12 +309,22 @@ async function aboutLine(db: Db, turn: ClaimedTurn): Promise<string | null> {
   });
 }
 
-function promptFor(turn: ClaimedTurn, about: string | null): string {
+/**
+ * The team line (328): read from the TURN, not the body, so the composer's 👥
+ * pick reaches the agent without ever showing in the transcript. Read as the
+ * configuring human, like the subject line.
+ */
+async function teamLine(db: Db, turn: ClaimedTurn): Promise<string | null> {
+  const team = await db.rpc<unknown>(claims(turn.requesterIdentityId), 'chat_turn_team', [turn.turnId]);
+  return chatTeamLine(team);
+}
+
+function promptFor(turn: ClaimedTurn, about: string | null, team: string | null = null): string {
   // The mode line leads every turn — it is the per-turn selector the mode-
   // neutral system prompt defers to, and turn.chatMode is the effective mode
   // (the turn's own override, else the chat default; resolved in SQL).
   const mode = chatModeLine(turn.chatMode);
-  const subject = about ? [about] : [];
+  const subject = [...(team ? [team] : []), ...(about ? [about] : [])];
   const files = attachmentLines(turn);
   const attribution = attributionLine(turn);
   const from = attribution ? [attribution] : [];
@@ -281,6 +350,8 @@ export class ChatOrchestrator {
     readonly threadId: string;
     readonly authorizationIdentityId: string;
     readonly authorizationAuthKind: string | null;
+    readonly credentialFingerprint: string;
+    readonly credentialInput: ChatLaunchConfigInput;
     // 276: the model the LIVE CHILD was spawned on, which is not always the
     // model the chat is set to any more — `chat.setModel` moves the row while
     // this process keeps a child running on the old one. Recording what
@@ -290,9 +361,121 @@ export class ChatOrchestrator {
     // derived from the model by the launch catalog, so one model is one
     // provider and comparing both would add a field that cannot disagree.
     readonly model: string;
+    /**
+     * §5.3. The connectors this child was actually started with. Recorded for
+     * the same reason `model` is: `chat.setMcpSelections` moves the row, and an
+     * admin flipping `defaultOn` or a human connecting an account moves what
+     * the defaults resolve to, while this process keeps a child running on the
+     * `--mcp-config` and `--allowed-tools` it booted with. Both are startup
+     * values on a running process, so noticing the difference is the only way
+     * the change can ever arrive.
+     */
+    readonly mcpSelectionFingerprint: string;
   }>();
 
-  constructor(private readonly options: ChatOrchestratorOptions) {}
+  private readonly activeHarnesses=new Map<string,ActiveChatHarness>();
+  /** The turn each chat's drain is executing right now, from claim to settle. */
+  private readonly claimedTurns=new Map<string,string>();
+  /**
+   * A Stop that found no running attempt to cancel — the turn was still
+   * preparing, opening, or between track and submit. Keyed by chat, holding
+   * the TURN it was meant for, so a latch can never stop the next queued turn
+   * (often another person's message).
+   */
+  private readonly stopLatches=new Map<string,string>();
+  private recoverySweep: ReturnType<typeof setInterval> | undefined;
+  private readonly bootId: string;
+  constructor(private readonly options: ChatOrchestratorOptions) {
+    this.bootId=options.bootId ?? randomUUID();
+    if (options.registry && (!options.nodeId || !options.resolvePreparedLaunch)) {
+      throw new Error('Production chat requires node identity and prepared launch resolver');
+    }
+  }
+
+  async admitConfiguration(input:{model:string;reasoningEffort:LaunchModelEffort|null}):Promise<void> {
+    const entry=launchModel(input.model);
+    if (!entry || input.reasoningEffort!==null && !entry.efforts.includes(input.reasoningEffort as never)) {
+      throw new CollabError('invalid_input','Chat model or effort is not supported');
+    }
+    if (this.options.registry) await this.options.registry.admit({
+      harness:entry.agentTool==='claude-code' ? 'claude' : 'codex',provider:entry.provider,model:entry.model,
+      reasoningEffort:input.reasoningEffort,serviceTier:null,
+    },['portableBootstrap']);
+  }
+
+  /**
+   * Stop the chat's running turn. `requested` means the turn will end (its own
+   * done frame says how); `not_running` means this node has nothing to stop.
+   *
+   * A turn that has been claimed but has no cancellable attempt yet — it is
+   * preparing its launch, opening the harness, or about to submit — used to be
+   * a silent no-op here, so Stop pressed in the first seconds of a turn did
+   * nothing. Such a stop is latched against the claimed turn and the turn reads
+   * it before it dispatches (see `stopRequested` in fenced-turn.ts).
+   */
+  async interrupt(chatId:string):Promise<'requested'|'not_running'> {
+    const active=this.activeHarnesses.get(chatId);
+    if (active) {
+      const receipt=await active.session.cancel(active.attempt,'user').catch(error=>{ this.options.onError?.(error); return null; });
+      if (receipt?.disposition==='requested' || receipt?.disposition==='already_terminal') return 'requested';
+    }
+    const claimed=this.claimedTurns.get(chatId);
+    if (claimed) { this.stopLatches.set(chatId,claimed); return 'requested'; }
+    if (this.options.registry) return 'not_running';
+    // Legacy (pre-harness) runtime: a thread that is not running throws.
+    return await this.options.runtime?.interrupt(chatId).catch(() => false) ? 'requested' : 'not_running';
+  }
+
+  /**
+   * Recover turns whose owner died or stopped renewing its lease, then drain
+   * the queues behind them — on boot AND periodically.
+   *
+   * Boot alone was not enough. A turn whose settlement or release failed keeps
+   * the chat's lease, `claim_next_chat_turn` refuses every claim behind it, and
+   * nothing woke that chat again when the lease ran out: every later message
+   * queued silently until the next server restart. `recover_chat_attempt` only
+   * acts on a lease that has expired (or on this node's previous boot), so
+   * running it on an interval never steals a live turn.
+   */
+  startRecoverySweep(intervalMs=60_000): void {
+    if (!this.options.sweepClaims || !this.options.registry || this.recoverySweep) return;
+    let running=false;
+    this.recoverySweep=setInterval(() => {
+      if (running) return;
+      running=true;
+      void this.recoverStale().catch(error=>this.options.onError?.(error)).finally(() => { running=false; });
+    },intervalMs);
+    this.recoverySweep.unref?.();
+  }
+
+  stopRecoverySweep(): void {
+    if (this.recoverySweep) clearInterval(this.recoverySweep);
+    this.recoverySweep=undefined;
+  }
+
+  private async recoverStale(): Promise<void> {
+    const sweep=this.options.sweepClaims;
+    if (!sweep) return;
+    const rows=await this.options.db.query<{entity_id:string;configured_by_identity_id:string;turn_id:string;attempt_no:number}>(sweep,
+      `select c.entity_id,c.configured_by_identity_id,t.turn_id,t.attempt_no
+       from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
+       where (t.state='running' or (c.runtime_phase='closing' and c.active_execution_snapshot_id=t.execution_snapshot_id))
+         and ((c.node_id=$1 and c.runtime_owner_boot_id is distinct from $2)
+         or coalesce(c.runtime_lease_expires_at,t.lease_expires_at)<=now()) order by t.turn_ordinal`,
+      [this.options.nodeId,this.bootId]);
+    for (const row of rows) {
+      try {
+        await this.options.db.rpc(claims(row.configured_by_identity_id),
+          'recover_chat_attempt',[row.entity_id,row.turn_id,row.attempt_no,{nodeId:this.options.nodeId,bootId:this.bootId}]);
+      } catch (error) { this.options.onError?.(error); }
+    }
+    const queued=await this.options.db.query<{entity_id:string;configured_by_identity_id:string}>(sweep,
+      `select distinct c.entity_id,c.configured_by_identity_id from public.chats c join public.chat_turns t on t.chat_id=c.entity_id
+       where t.state='queued' and (c.node_id=$1 or c.node_id is null or c.runtime_lease_expires_at is null
+         or c.runtime_lease_expires_at<=now())`,[this.options.nodeId]);
+    for (const row of queued) void this.wake(row.entity_id,row.configured_by_identity_id);
+  }
+
 
   /**
    * F2 (PR188 review): reconcile durable state with process reality at boot.
@@ -310,6 +493,10 @@ export class ChatOrchestrator {
   async reconcileOnBoot(): Promise<void> {
     const sweep = this.options.sweepClaims;
     if (!sweep) return;
+    if (this.options.registry) {
+      await this.recoverStale();
+      return;
+    }
     try {
       const stale = await this.options.db.query<{
         entity_id: string;
@@ -411,13 +598,40 @@ export class ChatOrchestrator {
 
   private async drain(chatId: string, requesterIdentityId: string): Promise<void> {
     for (;;) {
-      const turn = await this.options.db.rpc<ClaimedTurn | null>(
-        claims(requesterIdentityId),
-        'claim_next_chat_turn',
-        [chatId],
-      );
-      if (!turn) return;
-      await this.runTurn(turn);
+      if (this.options.registry && this.options.resolvePreparedLaunch) {
+        const leaseToken=randomUUID();
+        const turn=await this.options.db.rpc<FencedClaim|null>(claims(requesterIdentityId),'claim_next_chat_turn',[
+          chatId,2,{nodeId:this.options.nodeId,bootId:this.bootId,
+            leaseTokenHash:createHash('sha256').update(leaseToken).digest('hex')}]);
+        if (!turn) return;
+        this.claimedTurns.set(chatId,turn.turnId);
+        try {
+          // The team line (328) rides on the production path too; it used to be
+          // read only by the legacy runtime, so a coordinator's 👥 pick never
+          // reached a harness-run chat.
+          const prompt=promptFor(turn,await this.readAbout(turn),await this.readTeam(turn));
+          await executeFencedTurn({db:this.options.db,registry:this.options.registry,
+            resolvePreparedLaunch:this.options.resolvePreparedLaunch,publisher:this.options.publisher,turn,leaseToken,
+            prompt,historyBudgetBytes:this.options.historyBudgetBytes ?? 32768,
+            createAgentMessage:()=>this.createAgentMessage(turn),track:active=>this.activeHarnesses.set(chatId,active),
+            untrack:()=>this.activeHarnesses.delete(chatId),onError:this.options.onError,
+            stopRequested:()=>this.stopLatches.get(chatId)===turn.turnId,
+            ...(this.options.turnTimeouts ? {timeouts:this.options.turnTimeouts} : {}),
+            onReleased:()=>{ void this.wake(chatId,requesterIdentityId); }});
+        } catch (error) {
+          // One turn that could not settle must not end the drain for the turns
+          // queued behind it. The next claim refuses while that turn still holds
+          // the lease; the recovery sweep settles it once the lease expires.
+          this.options.onError?.(error);
+        } finally {
+          this.claimedTurns.delete(chatId);
+          if (this.stopLatches.get(chatId)===turn.turnId) this.stopLatches.delete(chatId);
+        }
+      } else {
+        const turn=await this.options.db.rpc<ClaimedTurn|null>(claims(requesterIdentityId),'claim_next_chat_turn',[chatId]);
+        if (!turn) return;
+        await this.runTurn(turn);
+      }
     }
   }
 
@@ -426,6 +640,22 @@ export class ChatOrchestrator {
    * onError and the turn goes out without the line, rather than failing a turn
    * the human is waiting on.
    */
+  /**
+   * The team is context too, and best-effort the same way. A node whose
+   * database predates 328 has no `chat_turn_team` yet: that is not an error
+   * worth reporting on every turn, just a turn without the line.
+   */
+  private async readTeam(turn: ClaimedTurn): Promise<string | null> {
+    try {
+      return await teamLine(this.options.db, turn);
+    } catch (error) {
+      const failure = error as { code?: string; details?: { sqlstate?: string } } | null;
+      // 42883 undefined_function: raw from pg, or preserved by db/errors.ts.
+      if (failure?.code !== '42883' && failure?.details?.sqlstate !== '42883') this.options.onError?.(error);
+      return null;
+    }
+  }
+
   private async readAbout(turn: ClaimedTurn): Promise<string | null> {
     try {
       return await aboutLine(this.options.db, turn);
@@ -495,7 +725,8 @@ export class ChatOrchestrator {
     try {
       const threadId = await this.ensureRuntime(turn);
       const about = await this.readAbout(turn);
-      for await (const item of this.options.runtime.sendTurn(threadId, { text: promptFor(turn, about) })) {
+      const team = await this.readTeam(turn);
+      for await (const item of this.options.runtime!.sendTurn(threadId, { text: promptFor(turn, about, team) })) {
         // F6 (PR188 review): claude emits an empty thinking block on some
         // turns; persisting it draws an empty "Thinking" disclosure. Skip it —
         // absence of thought is not a part.
@@ -526,7 +757,7 @@ export class ChatOrchestrator {
       'complete_chat_turn',
       [
         turn.turnId,
-        terminal.reason === 'success' || terminal.reason === 'closed' ? 'completed' : 'error',
+        terminal.reason === 'success' ? 'completed' : 'error',
         text,
         finalUsage,
         totalCost,
@@ -551,7 +782,7 @@ export class ChatOrchestrator {
       const currentLive = this.liveChats.get(turn.chatId);
       this.liveChats.delete(turn.chatId);
       if (currentLive) {
-        await this.options.runtime.close(currentLive.threadId).catch(() => undefined);
+        await this.options.runtime!.close(currentLive.threadId).catch(() => undefined);
         await this.options.db.rpc(
           claims(turn.requesterIdentityId),
           'mark_chat_runtime_state',
@@ -603,10 +834,55 @@ export class ChatOrchestrator {
     return result;
   }
 
+  /** Credential mutations also stop already-running chats that lose their selection. */
+  async recheckCredentials(): Promise<void> {
+    await Promise.all([...this.activeHarnesses.values()].map(async active=>{
+      try { await active.revalidate(); } catch { await active.session.cancel(active.attempt,'revocation'); }
+    }));
+    if (!this.options.resolveCredentialEnv) return;
+    await Promise.all([...this.liveChats.entries()].map(async ([chatId, live]) => {
+      try {
+        let matches = false;
+        try {
+          const env = await this.options.resolveCredentialEnv!(live.credentialInput);
+          matches = credentialFingerprint(env) === live.credentialFingerprint;
+        } catch { /* Unreadable policy/credential refuses continued reuse. */ }
+        if (matches || this.liveChats.get(chatId) !== live) return;
+        await this.options.runtime!.close(live.threadId);
+        if (this.liveChats.get(chatId) !== live) return;
+        this.liveChats.delete(chatId);
+        await this.options.db.rpc(claims(live.credentialInput.requesterIdentityId),
+          'mark_chat_runtime_state', [chatId, 'stopped']);
+      } catch (error) { this.options.onError?.(error); }
+    }));
+  }
+
+  async validateCredentialSelection(input: ChatLaunchConfigInput): Promise<void> {
+    await this.options.resolveCredentialEnv?.({ ...input, credentialValidationOnly: true });
+  }
+
   private async ensureRuntime(turn: ClaimedTurn): Promise<string> {
     const authorizationIdentityId = turn.requestedByIdentityId ?? turn.requesterIdentityId;
     const authorizationAuthKind = turn.requestedByAuthKind
       ?? (authorizationIdentityId === turn.requesterIdentityId ? turn.requesterAuthKind ?? null : null);
+    const credentialInput: ChatLaunchConfigInput = {
+      credentialSelection: turn.credentialSelection,
+      chatId: turn.chatId, requesterIdentityId: authorizationIdentityId,
+      requesterAuthKind: authorizationAuthKind, teammateId: turn.teammateId,
+      model: turn.model, provider: turn.provider, agentTool: turn.agentTool,
+      chatMode: turn.chatMode, spaceId: turn.spaceId, cwd: turn.cwd,
+      mode: turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new',
+    };
+    // Do not reuse a process whose credential or policy has changed. The MCP
+    // token mint stays cold-start-only so reuse never invalidates a live token.
+    const credentialEnv = await this.options.resolveCredentialEnv?.(credentialInput);
+    const fingerprint = credentialFingerprint(credentialEnv);
+    // Resolved, never bound: `bind` needs a fresh `agent_runtime` token and that
+    // mint replaces the live child's own token, so asking `bind` whether to
+    // rebind would revoke the credential of the child it means to keep.
+    const mcpFingerprint = mcpSelectionFingerprint(
+      await this.options.resolveMcpSelection?.(credentialInput),
+    );
     const live = this.liveChats.get(turn.chatId);
     // A live child is reused only when NOTHING that was fixed at spawn has
     // moved. Authorization was the original reason (a different human must not
@@ -620,6 +896,8 @@ export class ChatOrchestrator {
       live?.authorizationIdentityId === authorizationIdentityId
       && live.authorizationAuthKind === authorizationAuthKind
       && live.model === turn.model
+      && live.credentialFingerprint === fingerprint
+      && live.mcpSelectionFingerprint === mcpFingerprint
     ) return live.threadId;
     // True when we just tore a live child down, whatever the reason. It is not
     // named for the reason because the CONSEQUENCE is what the next line needs:
@@ -627,7 +905,7 @@ export class ChatOrchestrator {
     // start a new one, or the switch would cost the user the conversation.
     let closedLiveRuntime = false;
     if (live) {
-      await this.options.runtime.close(live.threadId);
+      await this.options.runtime!.close(live.threadId);
       this.liveChats.delete(turn.chatId);
       await this.options.db.rpc(
         claims(turn.requesterIdentityId),
@@ -637,19 +915,7 @@ export class ChatOrchestrator {
       closedLiveRuntime = true;
     }
     const mode = closedLiveRuntime || turn.runtimeState === 'stopped' ? 'resume-after-interrupt' : 'new';
-    const launch = await this.options.resolveLaunchConfig({
-      chatId: turn.chatId,
-      requesterIdentityId: authorizationIdentityId,
-      requesterAuthKind: authorizationAuthKind,
-      teammateId: turn.teammateId,
-      model: turn.model,
-      provider: turn.provider,
-      agentTool: turn.agentTool,
-      chatMode: turn.chatMode,
-      spaceId: turn.spaceId,
-      cwd: turn.cwd,
-      mode,
-    });
+    const launch = await this.options.resolveLaunchConfig!({ ...credentialInput, mode });
     const runtimeCwd = launch.cwd ?? turn.cwd;
     const input: StartAgentThreadInput = {
       threadId: turn.chatId,
@@ -660,23 +926,39 @@ export class ChatOrchestrator {
       mcpConfigPath: launch.mcpConfigPath,
       availableTools: launch.availableTools,
       allowedTools: launch.allowedTools,
-      ...(launch.env ? { env: launch.env } : {}),
+      ...((launch.env || credentialEnv) ? { env: { ...launch.env, ...credentialEnv } } : {}),
       ...(mode === 'resume-after-interrupt'
         ? { resume: { nativeSessionId: turn.nativeSessionId, cwd: runtimeCwd } }
         : {}),
     };
-    const started = await this.options.runtime.startThread(input);
+    // A provider can list MCP tools during startThread. Publish the authorized
+    // starting runtime before entering it, and fail closed if startup fails.
+    await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'live']);
+    let started;
+    try {
+      started = await this.options.runtime!.startThread(input);
+      // A revoke can commit while startThread awaits the vendor's boot. It
+      // found no registered live chat then, so close that race before sending.
+      if (this.options.resolveCredentialEnv) {
+        const bootEnv = await this.options.resolveCredentialEnv(credentialInput);
+        if (credentialFingerprint(bootEnv) !== fingerprint) {
+          throw new Error('chat model credential changed during startup — retry the turn');
+        }
+      }
+    } catch (error) {
+      if (started) await this.options.runtime!.close(started.threadId);
+      await this.options.db.rpc(claims(turn.requesterIdentityId), 'mark_chat_runtime_state', [turn.chatId, 'stopped']);
+      throw error;
+    }
     this.liveChats.set(turn.chatId, {
       threadId: started.threadId,
       authorizationIdentityId,
       authorizationAuthKind,
       model: turn.model,
+      credentialFingerprint: fingerprint,
+      mcpSelectionFingerprint: mcpFingerprint,
+      credentialInput,
     });
-    await this.options.db.rpc(
-      claims(turn.requesterIdentityId),
-      'mark_chat_runtime_state',
-      [turn.chatId, 'live'],
-    );
     return started.threadId;
   }
 }

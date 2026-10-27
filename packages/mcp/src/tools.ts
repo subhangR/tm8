@@ -22,6 +22,7 @@ import {
   type DirectToolContext,
 } from './direct-tools.js';
 import { DIRECT_TOOL_NAMES, parseChatMode, toolPermission } from './modes.js';
+import { humanOnlyLinkRefusal, isSpaceLinkOperation, linkSafe } from './space-links.js';
 
 export const GRAPH_TOOL_NAMES = [
   'tm8_overview',
@@ -113,6 +114,19 @@ const READ_GUIDES = [
   guide('events.poll', 'Page durable space events after a sequence.', {
     params: { spaceId: '<space-id>' }, query: { since: '0', limit: '50' },
   }),
+  /* Space links (W6/W7): reads open to every home member, agents included.
+     Without them a model cannot tell which Spaces this one links to — the
+     space_link entity deliberately carries no row facts. Results are scrubbed
+     (space-links.ts); every link write stays human-only and off this surface. */
+  guide('spaceLinks.list', 'List this Space\'s links to other Spaces: link id, targetSpaceId, targetSpaceName '
+    + '(null unless you, or the human you act for while signed in on the link, are a member of the target), and your own row '
+    + '(mine.status signed_in|signed_out|left|unreachable, alias, expiresAt, allowSpawn). '
+    + 'Adding or signing in to a link is human-only.', {
+    params: { spaceId: '<home-space-id>' },
+  }),
+  guide('spaceLinks.audit', 'Page the calls made through one link from this Space (your own rows; every row for a home admin).', {
+    params: { linkId: '<link-id>' }, query: { limit: '50' },
+  }),
 ] as const satisfies readonly OperationGuide[];
 
 const ACT_GUIDES = [
@@ -126,7 +140,7 @@ const ACT_GUIDES = [
      Hierarchy is homogeneous — a parent and its direct children share one kind
      and one Space — so the summary says so rather than letting a model discover
      it by rejection. */
-  guide('entities.create', 'Create a graph entity (including a task). Pass parentId to nest it under an existing entity of the SAME kind — a parent and its direct children share one kind and one Space. Add header {whenToUse: when a later session should open it, not its title; summary: what it holds} to a doc, artifact, drawing, task or collection someone may need later.', {
+  guide('entities.create', 'Create a graph entity (including a task). Choose parentId from what the entity is about: an existing entity of the SAME kind it is part of (a subtask under the task it breaks down, a sub-doc under the doc it details, a child story), or none when it is part of nothing — a parent and its direct children share one kind and one Space. A cross-kind link is an edge, never a parent: a doc made for a task stays a root and the task gets a `produces` edge. Add header {whenToUse: when a later session should open it, not its title; summary: what it holds} to a doc, artifact, drawing, task or collection someone may need later.', {
     body: {
       spaceId: '<space-id>', kind: 'task', title: '<title>', parentId: '<optional-parent-id>', content: {},
       header: { whenToUse: '<when a later session should open it>', summary: '<what it holds>' },
@@ -150,8 +164,8 @@ const ACT_GUIDES = [
   guide('entities.points.add', 'Grant or award points with an audit reason.', {
     params: { id: '<entity-id>' }, body: { amount: 1, reason: 'grant' },
   }),
-  guide('entities.commands.work', 'Move a task to an allowed work status.', {
-    params: { id: '<task-id>' }, body: { status: 'working', note: '<optional-note>' },
+  guide('entities.commands.work', 'Move a task to an allowed work status. Changes only the status; claim: true also records you as working_on it (note/startedAt need the claim).', {
+    params: { id: '<task-id>' }, body: { status: 'working', claim: true, note: '<optional-note>' },
   }),
   guide('entities.commands.complete', 'Complete a task at its current version; unticked acceptance criteria refuse it (tick them with entities.commands.tick).', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, completerIds: ['<actor-id>'] },
@@ -162,7 +176,7 @@ const ACT_GUIDES = [
   guide('entities.header.clear', 'Remove an entity\'s authored selection header at its header version; it falls back to the derived one. expectedVersion is optional.', {
     params: { id: '<entity-id>' }, body: {},
   }),
-  guide('entities.commands.tick', 'Tick (done:false unticks) acceptance criteria by id; the Server merges them into the stored list.', {
+  guide('entities.commands.tick', 'Tick (done:false unticks) acceptance criteria by id, each as it is met; the Server merges them into the stored list. When none are left open the receipt\'s `next` names the step (complete the task).', {
     params: { id: '<task-id>' }, body: { expectedVersion: 1, criterionIds: ['<criterion-id>'] },
   }),
   guide('entities.commands.pull', 'Pull a task under a pinned-version guard.', {
@@ -236,10 +250,10 @@ const ACT_GUIDES = [
     + 'session a queued one waits for (to: resume).', {
     params: { responseId: '<response-id>' }, body: { to: 'new_session' },
   }),
-  guide('collections.addItem', 'Add or reposition an entity in a collection.', {
+  guide('collections.addItem', 'Add or reposition an entity in a collection, a story or a craft (a craft\'s members are its ordered pages; position orders them).', {
     params: { id: '<collection-id>' }, body: { entityId: '<entity-id>' },
   }),
-  guide('collections.removeItem', 'Remove collection membership without deleting the entity.', {
+  guide('collections.removeItem', 'Remove membership of a collection, story or craft without deleting the entity.', {
     params: { id: '<collection-id>', entityId: '<entity-id>' }, body: {},
   }),
 ] as const satisfies readonly OperationGuide[];
@@ -329,8 +343,11 @@ const DELEGATE_GUIDES = [
       },
     },
   ),
-  guide('execution.terminate', 'End a worker session. Chats are not terminated this way.', {
-    params: { id: '<work-session-id>' }, body: { force: false },
+  guide('execution.terminate', 'Close a worker session. While its work is open say outcome stop (abandon) or complete. Chats are not terminated this way.', {
+    params: { id: '<work-session-id>' }, body: { force: false, outcome: 'stop' },
+  }),
+  guide('execution.complete', 'Mark a session\'s work completed: its claims must be done, in review, blocked or released, and its latest message on the anchor is the receipt.', {
+    params: { id: '<work-session-id>' }, body: {},
   }),
   guide('execution.resume', 'Resume an exited worker with its provider-native conversation.', {
     params: { id: '<work-session-id>' }, body: {},
@@ -546,7 +563,10 @@ export class Tm8ToolRouter {
       }
       const selected = directory.find((item) => item.operation === operation);
       if (!selected) {
-        throw new ToolInputError(`${operation} is not available through ${name}; call ${name} with {} for its directory`);
+        throw new ToolInputError(
+          humanOnlyLinkRefusal(operation)
+            ?? `${operation} is not available through ${name}; call ${name} with {} for its directory`,
+        );
       }
       const options = invokeOptions(args, selected.operation);
       const data = await this.transport.invoke(selected.operation, options);
@@ -554,7 +574,7 @@ export class Tm8ToolRouter {
         schemaVersion: 'tm8.mcp.result.v1',
         tool: name,
         operation: selected.operation,
-        data,
+        data: isSpaceLinkOperation(selected.operation) ? linkSafe(data) : data,
       });
     } catch (error) {
       return failure(error);
@@ -934,8 +954,16 @@ for (const operation of MCP_MAPPED_OPERATIONS) getOperation(operation);
 // The explicit inverse proof: neither credential nor auth operation is in a
 // resident or next-level graph tool.
 for (const operation of MCP_MAPPED_OPERATIONS) {
-  if (operation.startsWith('credentials.') || operation.startsWith('auth.')) {
+  if (operation.startsWith('credentials.') || operation.startsWith('mcp.credentials.') || operation.startsWith('mcp.oauth.') || operation.startsWith('auth.')) {
     throw new Error(`credential/auth operation leaked into MCP curation: ${operation}`);
+  }
+}
+
+// Space links: reads only. Every write is human-only, and invoke (routing into
+// a linked Space) is not curated here.
+for (const operation of MCP_MAPPED_OPERATIONS) {
+  if (isSpaceLinkOperation(operation) && getOperation(operation).kind !== 'read') {
+    throw new Error(`space-link write leaked into MCP curation: ${operation}`);
   }
 }
 

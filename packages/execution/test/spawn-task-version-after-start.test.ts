@@ -9,6 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { composePrompt } from '@tm8/prompt';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { ECHO_AGENT_CMD } from '../src/spawn/manifest.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
@@ -23,7 +24,6 @@ const REQUEST = {
   projectId: '33333333-3333-4333-8333-333333333333',
   taskIds: [TASK_ID],
 };
-const V2_PROFILE = { agentProjection: { promptPolicy: { kernelTemplate: 'tm8.core.v2' } } };
 
 describe('the task turn renders the version the agent will write against', () => {
   let dataDir: string;
@@ -66,28 +66,35 @@ describe('the task turn renders the version the agent will write against', () =>
   /** The task as the server holds it when the agent sends its first request. */
   const atFirstRequest = (graph: FakeGraph) => graph.taskState.get(TASK_ID)!;
 
-  it('v1: the manifest and the trusted <task> line carry the post-start version and status', async () => {
-    const { graph, recorded } = await spawn({});
+  /** The same manifest as a stored, pre-stamp v1 launch re-renders it. */
+  const asV1 = (recorded: { manifest: Parameters<typeof composePrompt>[0]; sessionId: string }) =>
+    composePrompt({ ...recorded.manifest, promptVersion: '1' }, { sessionId: recorded.sessionId }).task;
+
+  it('the manifest, the v2 header and a v1 re-render carry the post-start version and status', async () => {
+    // No snapshot, so the v2 header reads the manifest rather than the DTO.
+    const { graph, recorded } = await spawn({ taskContext: new Error('render failed') });
     const current = atFirstRequest(graph);
     expect(current).toEqual({ version: 2, status: 'working' });
     expect(graph.taskVersionReads).toEqual([[TASK_ID]]);
     expect(recorded.manifest.tasks[0]).toMatchObject({ id: TASK_ID, version: current.version, status: current.status });
-    expect(recorded.prompts.task).toContain(`<task id="${TASK_ID}" version="${current.version}" />`);
-    expect(recorded.prompts.task).toContain('Status: working');
-    expect(recorded.prompts.task).not.toContain(`<task id="${TASK_ID}" version="1"`);
+    expect(recorded.prompts.task).toContain(`task="${TASK_ID}" version="${current.version}"`);
+    expect(asV1(recorded)).toContain(`<task id="${TASK_ID}" version="${current.version}" />`);
+    expect(asV1(recorded)).toContain('Status: working');
+    expect(asV1(recorded)).not.toContain(`<task id="${TASK_ID}" version="1"`);
   });
 
   it('v2 without a snapshot: the header names the post-start version', async () => {
-    const { graph, recorded } = await spawn({ profileSnapshot: V2_PROFILE, taskContext: new Error('render failed') });
+    const { graph, recorded } = await spawn({ taskContext: new Error('render failed') });
     expect(recorded.manifest.promptVersion).toBe('2');
     expect(recorded.prompts.task).toContain(`task="${TASK_ID}" version="${atFirstRequest(graph).version}"`);
     expect(recorded.prompts.task).not.toContain(`task="${TASK_ID}" version="1"`);
   });
 
   it('reads the version rather than predicting it: a task already started keeps its own', async () => {
-    const { graph, recorded } = await spawn({}, (g) => g.taskState.set(TASK_ID, { version: 5, status: 'working' }));
+    const { graph, recorded } = await spawn({ taskContext: new Error('render failed') }, (g) => g.taskState.set(TASK_ID, { version: 5, status: 'working' }));
     expect(atFirstRequest(graph)).toEqual({ version: 5, status: 'working' });
-    expect(recorded.prompts.task).toContain(`<task id="${TASK_ID}" version="5" />`);
+    expect(recorded.prompts.task).toContain(`task="${TASK_ID}" version="5"`);
+    expect(asV1(recorded)).toContain(`<task id="${TASK_ID}" version="5" />`);
   });
 
   it('a failed read never fails the launch: it keeps the pre-spawn values and warns', async () => {

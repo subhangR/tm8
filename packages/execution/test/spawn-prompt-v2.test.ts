@@ -1,6 +1,7 @@
-// Prompt v2 on the live spawn path (spec ca8d §2): a profile that opts a
-// worker into `tm8.core.v2` stamps the manifest, and the first turn embeds the
-// task's context DTO rendered for the new session — or degrades visibly.
+// Prompt v2 on the live spawn path (spec ca8d §2): every launch is stamped v2
+// (the default since 2026-10-13, no profile consulted), and the first turn
+// embeds the task's context DTO rendered for the new session — or degrades
+// visibly, including when the DTO would overrun the combined byte ceiling.
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,7 +21,6 @@ const REQUEST = {
   projectId: '33333333-3333-4333-8333-333333333333',
   taskIds: [TASK_ID],
 };
-const V2_PROFILE = { agentProjection: { promptPolicy: { kernelTemplate: 'tm8.core.v2' } } };
 const DTO = {
   schemaVersion: 'tm8.entity-context.v2',
   id: TASK_ID,
@@ -65,15 +65,16 @@ describe('SpawnService prompt v2', () => {
     return { graph, recorded: graph.manifests[0]! };
   }
 
-  it('keeps v1, and renders no context, when the profile does not opt in', async () => {
-    const { graph, recorded } = await spawn({});
-    expect(recorded.manifest.promptVersion).toBe('1');
-    expect(graph.taskContextReads).toEqual([]);
-    expect(recorded.prompts.system).toContain('<tm8_system_prompt version="1.0"');
+  it('stamps v2 with no profile, and ignores a profile kernelTemplate', async () => {
+    const { recorded } = await spawn({ taskContext: DTO });
+    expect(recorded.manifest.promptVersion).toBe('2');
+    const pinnedV1 = await spawn({ profileSnapshot: { agentProjection: { promptPolicy: { kernelTemplate: 'tm8.core.v1' } } }, taskContext: DTO });
+    expect(pinnedV1.recorded.manifest.promptVersion).toBe('2');
+    expect(pinnedV1.recorded.prompts.system).toContain('<tm8_system_prompt version="2.0"');
   });
 
   it('embeds the DTO rendered as the new session, and no raw body', async () => {
-    const { graph, recorded } = await spawn({ profileSnapshot: V2_PROFILE, taskContext: DTO });
+    const { graph, recorded } = await spawn({ taskContext: DTO });
     expect(recorded.manifest.promptVersion).toBe('2');
     expect(graph.taskContextReads).toHaveLength(1);
     expect(graph.taskContextReads[0]).toMatchObject({
@@ -94,14 +95,30 @@ describe('SpawnService prompt v2', () => {
   it('adds the graph line when the session cwd holds a code graph', async () => {
     await mkdir(join(projectDir, 'graphify-out'));
     await writeFile(join(projectDir, 'graphify-out', 'merged-graph.json'), '{}');
-    const { recorded } = await spawn({ profileSnapshot: V2_PROFILE, taskContext: DTO });
+    const { recorded } = await spawn({ taskContext: DTO });
     expect(recorded.prompts.system).toContain('<repo>');
   });
 
   it('launches degraded, never refused, when the render fails', async () => {
     const failure = Object.assign(new Error('boom'), { code: 'upstream_unavailable' });
-    const { recorded } = await spawn({ profileSnapshot: V2_PROFILE, taskContext: failure });
+    const { recorded } = await spawn({ taskContext: failure });
     expect(recorded.prompts.task).toContain('snapshot="unavailable" reason="upstream_unavailable"');
     expect(recorded.prompts.task).toContain(`Run \`tm8 entity context ${TASK_ID}\` before anything else.`);
+  });
+
+  it('asks the render for no more than the room the rest of the prompt leaves', async () => {
+    const { graph, recorded } = await spawn({ memories: ['m'.repeat(9000), 'n'.repeat(9000)], taskContext: DTO });
+    const asked = graph.taskContextReads[0]!.totalBytes;
+    expect(asked).toBeLessThan(16384);
+    const bytes = Buffer.byteLength(`${recorded.prompts.system}\n\n${recorded.prompts.task}`);
+    expect(bytes + asked - Buffer.byteLength(JSON.stringify(DTO))).toBeLessThanOrEqual(32768);
+    expect(recorded.prompts.task).toContain('<untrusted_data type="entity-context"');
+  });
+
+  it('degrades to the unavailable header, never a refused launch, when the DTO still overruns', async () => {
+    // Escaping grows every `<` sixfold, past anything the margin holds back.
+    const { recorded } = await spawn({ taskContext: { ...DTO, note: '<'.repeat(12000) } });
+    expect(recorded.prompts.task).toContain('snapshot="unavailable" reason="over_budget"');
+    expect(Buffer.byteLength(`${recorded.prompts.system}\n\n${recorded.prompts.task}`)).toBeLessThanOrEqual(32768);
   });
 });

@@ -17,6 +17,9 @@ import {
   statusTitle,
   type ChangeFilter,
 } from './change-state';
+import { buildChangeTree, visibleChangeRows } from './change-paths';
+import { ChangeDirRow, ChangesViewToggle, useCollapsedFolders, type ChangesView } from './ChangesTree';
+import { SessionCheckoutChanges } from './SessionCheckoutChanges';
 import './session-changes.css';
 
 /**
@@ -81,6 +84,11 @@ import './session-changes.css';
  */
 
 const POLL_MS = 5_000;
+/** How long a file whose counts moved keeps its "just changed" tag. */
+export const JUST_CHANGED_MS = 20_000;
+
+/** One file's numstat; null on a side means binary. */
+type FileStat = { added: number | null; removed: number | null };
 
 export interface SessionChangesBodyProps {
   seam: Seam;
@@ -123,17 +131,21 @@ const HUNK_VERB_LABEL: Readonly<Record<'stage' | 'unstage', string>> = {
 };
 
 /**
- * The refusal wording is written for THIS surface rather than shared with the
- * Git rail's copy: "the rail cannot show you a branch" and "there are no files
- * to review here" are different facts, and a reader is better served by the
- * one that names what they just clicked on.
+ * Why GIT cannot answer for this session. Written for THIS surface rather than
+ * shared with the Git rail's copy: "the rail cannot show you a branch" and
+ * "git cannot list this session's files" are different facts, and a reader is
+ * better served by the one that names what they just clicked on.
+ *
+ * It no longer ends the answer. The transcript fallback below it lists the
+ * files the agent wrote, so these say what git cannot do, not that there is
+ * nothing to see — a session without a lane still changed files.
  */
 const UNAVAILABLE_CAUSE: Record<string, string> = {
   no_worktree:
-    'This session has no isolated worktree, so there is no set of changed files to review — it runs in a scratch or shared project directory.',
-  worktree_not_active: 'This session’s worktree is no longer active, so its changes cannot be read.',
+    'This session has no isolated worktree — it runs in a scratch or shared project directory — so git cannot separate its changes from anyone else’s.',
+  worktree_not_active: 'This session’s worktree is no longer active, so git cannot read its changes.',
   worktree_unreadable:
-    'This session’s worktree exists but its files are not readable on this node right now.',
+    'This session’s worktree exists but its files are not readable on this node right now, so git cannot read its changes.',
 };
 
 function shortOid(oid: string | null): string {
@@ -179,6 +191,9 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
   const { oneSurface } = useMobileSurface();
   const [status, setStatus] = useState<StatusState>({ phase: 'loading' });
   const [filter, setFilter] = useState<ChangeFilter>('all');
+  // Tree on the desktop, a flat list on the phone's one narrow column (A18).
+  const [view, setView] = useState<ChangesView>(oneSurface ? 'list' : 'tree');
+  const { collapsed, toggle: toggleFolder } = useCollapsedFolders();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [diff, setDiff] = useState<DiffState>({ phase: 'idle' });
   /**
@@ -301,11 +316,77 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
     void loadStatus();
   }, [loadStatus]);
 
+  /**
+   * LINE COUNTS, AND WHICH FILES ARE MOVING. Porcelain status says a file is
+   * `M` and nothing more — a file the agent is rewriting right now reads
+   * exactly like one it touched an hour ago. The session numstat does carry
+   * the difference: one whole-session read with a one-byte text cap (the
+   * digest is always complete; only the text is cut) gives every tracked
+   * file's +/−, and a count that moved between two reads is a file that was
+   * written in between. That is what the "just changed" tag reports — an
+   * observation between two polls, never a claim about who wrote it.
+   *
+   * Untracked files carry no numstat (git has nothing to compare), so they
+   * show no counts and are never tagged. Failure is silent on purpose: the
+   * counts decorate the list, and the list stands without them.
+   */
+  const [stats, setStats] = useState<ReadonlyMap<string, FileStat>>(() => new Map());
+  const [movedAt, setMovedAt] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const statsRef = useRef<ReadonlyMap<string, FileStat> | null>(null);
+  const statsTicket = useRef(0);
+  const hunkSelRef = useRef(hunkSel);
+  useEffect(() => {
+    hunkSelRef.current = hunkSel;
+  }, [hunkSel]);
+
+  const loadStats = useCallback(async () => {
+    const ticket = ++statsTicket.current;
+    let answer: SessionGitDiff;
+    try {
+      answer = await seam.gitDiff(sessionId, { maxBytes: 1 });
+    } catch {
+      return;
+    }
+    if (ticket !== statsTicket.current || !answer.available) return;
+    const next = new Map(answer.files.map((f) => [f.path, { added: f.additions, removed: f.deletions }]));
+    const prev = statsRef.current;
+    statsRef.current = next;
+    setStats(next);
+    // The FIRST read is a baseline: everything in it is old news.
+    if (prev === null) return;
+    const moved = [...next]
+      .filter(([path, now]) => {
+        const was = prev.get(path);
+        return was === undefined || was.added !== now.added || was.removed !== now.removed;
+      })
+      .map(([path]) => path);
+    if (moved.length === 0) return;
+    const at = Date.now();
+    setMovedAt((m) => {
+      const out = new Map(m);
+      for (const path of moved) out.set(path, at);
+      return out;
+    });
+    // The open file moved under the reader: re-read it, unless they have
+    // ticked hunks in it — a re-read renumbers hunks and would drop the ticks.
+    const path = openPath.current;
+    if (path !== null && moved.includes(path) && hunkSelRef.current.size === 0) {
+      void loadDiff(path, FILTER_SCOPE[filterRef.current]);
+    }
+  }, [seam, sessionId, loadDiff]);
+
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
+
   useEffect(() => {
     if (!live) return;
-    const timer = setInterval(() => void loadStatus(), POLL_MS);
+    const timer = setInterval(() => {
+      void loadStatus();
+      void loadStats();
+    }, POLL_MS);
     return () => clearInterval(timer);
-  }, [live, loadStatus]);
+  }, [live, loadStatus, loadStats]);
 
   const runVerb = useCallback(
     async (verb: Verb, run: () => Promise<string>) => {
@@ -318,6 +399,7 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
       } finally {
         setBusy(null);
         await loadStatus();
+        void loadStats();
         const path = openPath.current;
         // The open diff is re-read too: staging a file changes which
         // comparison its bytes belong to, and a stale pane would be showing
@@ -325,7 +407,7 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
         if (path !== null) await loadDiff(path, FILTER_SCOPE[filterRef.current]);
       }
     },
-    [loadDiff, loadStatus],
+    [loadDiff, loadStatus, loadStats],
   );
 
   const files: readonly SessionGitFile[] = status.phase === 'ready' ? status.status.files : [];
@@ -437,16 +519,20 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
 
   if (!s.available) {
     const cause =
-      UNAVAILABLE_CAUSE[s.unavailableReason ?? ''] ?? 'Changed files are unavailable for this session.';
+      UNAVAILABLE_CAUSE[s.unavailableReason ?? ''] ?? 'Git cannot read changed files for this session.';
+    // Gate decision D1: a session without a lane still shows what it changed —
+    // the git checkouts in its own directory first, the transcript's edits
+    // when there are none (or the node predates that read). It used to stop
+    // at the cause, which told a reviewer how to spawn the NEXT session and
+    // nothing about this one.
     return (
-      <div className="pn-chg" data-testid="session-changes-body">
-        <div className="pn-chg__empty" data-testid="session-changes-unavailable">
-          <p className="pn-chg__note">{cause}</p>
-          {s.unavailableReason === 'no_worktree' ? (
-            <p className="pn-chg__remedy">spawn with workdir mode “worktree” to get a reviewable lane</p>
-          ) : null}
-        </div>
-      </div>
+      <SessionCheckoutChanges
+        seam={seam}
+        sessionId={sessionId}
+        live={live}
+        cause={cause}
+        noWorktree={s.unavailableReason === 'no_worktree'}
+      />
     );
   }
 
@@ -503,6 +589,131 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
               ? 'Binary — git has no lines here to divide into hunks.'
               : 'This comparison has no hunks to choose from.';
 
+  /*
+   * TREE OR LIST, over the SAME rows. The tree only groups porcelain paths by
+   * folder; every row keeps its checkbox, its verbs and its XY code, so a
+   * reviewer who switches views is never looking at a different selection.
+   */
+  const treeRows =
+    view === 'tree'
+      ? visibleChangeRows(
+          buildChangeTree(shown.map((f) => ({ rel: f.path, item: f }))),
+          collapsed,
+        )
+      : null;
+
+  const now = Date.now();
+  const justChanged = (path: string) => {
+    const at = movedAt.get(path);
+    return at !== undefined && now - at < JUST_CHANGED_MS;
+  };
+
+  const fileRow = (f: SessionGitFile, label: string, depth: number) => {
+    const isOpen = diff.phase !== 'idle' && diff.path === f.path;
+    return (
+      <li
+        key={f.path}
+        className={`pn-chg__file${isOpen ? ' pn-chg__file--open' : ''}`}
+        data-testid="session-changes-file"
+        data-path={f.path}
+        data-status={f.status}
+        data-just-changed={justChanged(f.path) ? 'true' : undefined}
+        style={{ '--pn-chg-depth': depth } as never}
+      >
+        <input
+          type="checkbox"
+          className="pn-chg__check"
+          checked={selected.has(f.path)}
+          aria-label={`Select ${f.path}`}
+          data-testid="session-changes-check"
+          data-path={f.path}
+          onChange={() => toggle(f.path)}
+        />
+        <button
+          type="button"
+          className="pn-chg__open"
+          // A tree row shows only the file's name, so its hover names the
+          // whole path; a list row already shows it. One title, not two —
+          // a nested one would replace the status gloss under the pointer.
+          title={label === f.path ? statusTitle(f) : `${f.path} — ${statusTitle(f)}`}
+          data-testid="session-changes-open"
+          data-path={f.path}
+          onClick={() => void loadDiff(f.path, scope)}
+        >
+          <code className="pn-chg__status">{f.status}</code>
+          <span className="pn-chg__path">{label}</span>
+          {isPartlyStaged(f) ? (
+            <span className="pn-chg__split-badge" title="staged and unstaged changes in the same file">
+              split
+            </span>
+          ) : null}
+        </button>
+        {justChanged(f.path) ? (
+          <span
+            className={`pn-chg__turn${live ? ' pn-chg__turn--live' : ''}`}
+            data-testid="session-changes-just-changed"
+            title="Its line counts moved since the previous refresh — written to within the last few seconds"
+          >
+            <span aria-hidden className="pn-chg__turn-dot" />
+            just changed
+          </span>
+        ) : null}
+        {stats.has(f.path) ? <RowCounts stat={stats.get(f.path)!} /> : null}
+        <span className="pn-chg__row-verbs">
+          {/* Not `disabled` — there is no verb here to disable.
+              `git add` on an unmerged path RESOLVES it, which
+              is a decision about content, not a staging step,
+              and this surface does not make that decision. */}
+          {isUnmerged(f) ? (
+            <span className="pn-chg__row-note" data-testid="session-changes-row-conflict">
+              conflicted
+            </span>
+          ) : null}
+          {isUnmerged(f) || (isStaged(f) && !isUnstaged(f)) ? null : (
+            <button
+              type="button"
+              className="pn-chg__row-verb"
+              disabled={busy !== null}
+              data-testid="session-changes-row-stage"
+              data-path={f.path}
+              onClick={() =>
+                void runVerb('stage', async () => {
+                  const r = await seam.commands.gitStage(sessionId, {
+                    action: 'stage',
+                    paths: [f.path],
+                  });
+                  return `staged ${f.path} — ${r.dirty.staged} file(s) now staged`;
+                })
+              }
+            >
+              Stage
+            </button>
+          )}
+          {isStaged(f) && !isUnmerged(f) ? (
+            <button
+              type="button"
+              className="pn-chg__row-verb"
+              disabled={busy !== null}
+              data-testid="session-changes-row-unstage"
+              data-path={f.path}
+              onClick={() =>
+                void runVerb('unstage', async () => {
+                  const r = await seam.commands.gitStage(sessionId, {
+                    action: 'unstage',
+                    paths: [f.path],
+                  });
+                  return `unstaged ${f.path} — ${r.dirty.staged} file(s) still staged (no working-tree bytes moved)`;
+                })
+              }
+            >
+              Unstage
+            </button>
+          ) : null}
+        </span>
+      </li>
+    );
+  };
+
   return (
     <div
       className="pn-chg"
@@ -526,7 +737,10 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
           type="button"
           className="pn-chg__refresh"
           data-testid="session-changes-refresh"
-          onClick={() => void loadStatus()}
+          onClick={() => {
+            void loadStatus();
+            void loadStats();
+          }}
         >
           Refresh
         </button>
@@ -629,97 +843,24 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
                     Clear selection
                   </button>
                 ) : null}
+                <ChangesViewToggle view={view} onChange={setView} />
               </div>
-              <ul className="pn-chg__files" data-testid="session-changes-files">
-                {shown.map((f) => {
-                  const isOpen = diff.phase !== 'idle' && diff.path === f.path;
-                  return (
-                    <li
-                      key={f.path}
-                      className={`pn-chg__file${isOpen ? ' pn-chg__file--open' : ''}`}
-                      data-testid="session-changes-file"
-                      data-path={f.path}
-                      data-status={f.status}
-                    >
-                      <input
-                        type="checkbox"
-                        className="pn-chg__check"
-                        checked={selected.has(f.path)}
-                        aria-label={`Select ${f.path}`}
-                        data-testid="session-changes-check"
-                        data-path={f.path}
-                        onChange={() => toggle(f.path)}
-                      />
-                      <button
-                        type="button"
-                        className="pn-chg__open"
-                        title={statusTitle(f)}
-                        data-testid="session-changes-open"
-                        data-path={f.path}
-                        onClick={() => void loadDiff(f.path, scope)}
-                      >
-                        <code className="pn-chg__status">{f.status}</code>
-                        <span className="pn-chg__path">{f.path}</span>
-                        {isPartlyStaged(f) ? (
-                          <span className="pn-chg__split-badge" title="staged and unstaged changes in the same file">
-                            split
-                          </span>
-                        ) : null}
-                      </button>
-                      <span className="pn-chg__row-verbs">
-                        {/* Not `disabled` — there is no verb here to disable.
-                            `git add` on an unmerged path RESOLVES it, which
-                            is a decision about content, not a staging step,
-                            and this surface does not make that decision. */}
-                        {isUnmerged(f) ? (
-                          <span className="pn-chg__row-note" data-testid="session-changes-row-conflict">
-                            conflicted
-                          </span>
-                        ) : null}
-                        {isUnmerged(f) || (isStaged(f) && !isUnstaged(f)) ? null : (
-                          <button
-                            type="button"
-                            className="pn-chg__row-verb"
-                            disabled={busy !== null}
-                            data-testid="session-changes-row-stage"
-                            data-path={f.path}
-                            onClick={() =>
-                              void runVerb('stage', async () => {
-                                const r = await seam.commands.gitStage(sessionId, {
-                                  action: 'stage',
-                                  paths: [f.path],
-                                });
-                                return `staged ${f.path} — ${r.dirty.staged} file(s) now staged`;
-                              })
-                            }
-                          >
-                            Stage
-                          </button>
-                        )}
-                        {isStaged(f) && !isUnmerged(f) ? (
-                          <button
-                            type="button"
-                            className="pn-chg__row-verb"
-                            disabled={busy !== null}
-                            data-testid="session-changes-row-unstage"
-                            data-path={f.path}
-                            onClick={() =>
-                              void runVerb('unstage', async () => {
-                                const r = await seam.commands.gitStage(sessionId, {
-                                  action: 'unstage',
-                                  paths: [f.path],
-                                });
-                                return `unstaged ${f.path} — ${r.dirty.staged} file(s) still staged (no working-tree bytes moved)`;
-                              })
-                            }
-                          >
-                            Unstage
-                          </button>
-                        ) : null}
-                      </span>
-                    </li>
-                  );
-                })}
+              <ul className="pn-chg__files" data-testid="session-changes-files" data-view={view}>
+                {treeRows === null
+                  ? shown.map((f) => fileRow(f, f.path, 0))
+                  : treeRows.map(({ node, depth }) =>
+                      node.kind === 'dir' ? (
+                        <ChangeDirRow
+                          key={`dir:${node.path}`}
+                          dir={node}
+                          depth={depth}
+                          open={!collapsed.has(node.path)}
+                          onToggle={() => toggleFolder(node.path)}
+                        />
+                      ) : (
+                        fileRow(node.item, node.name, depth)
+                      ),
+                    )}
               </ul>
               {s.filesTruncated ? (
                 <p className="pn-chg__note" data-testid="session-changes-truncated">
@@ -1045,5 +1186,17 @@ export function SessionChangesBody({ seam, sessionId, live }: SessionChangesBody
         </p>
       ) : null}
     </div>
+  );
+}
+
+function RowCounts({ stat }: { stat: FileStat }) {
+  if (stat.added === null || stat.removed === null) {
+    return <span className="pn-chg__row-counts pn-chg__binary">bin</span>;
+  }
+  return (
+    <span className="pn-chg__row-counts" data-testid="session-changes-row-counts">
+      <span className="pn-chg__added">+{stat.added}</span>
+      <span className="pn-chg__removed">−{stat.removed}</span>
+    </span>
   );
 }

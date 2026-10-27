@@ -26,7 +26,7 @@ import type {
   ExecutionSpawnLaunch,
   SpawnAccessModeSource,
 } from '@tm8/contract';
-import type { CoordinatorKind, PromptContextIndex, PromptStoryContext, PromptVersion } from '@tm8/prompt';
+import type { CoordinatorKind, PromptContextIndex, PromptDesignContext, PromptStoryContext, PromptVersion } from '@tm8/prompt';
 import type { WorkSessionUsage, WorkSessionUsageSource } from '../transcript/session-usage.js';
 
 export type { CoordinatorKind, ExecutionSpawnLaunch, SpawnAccessModeSource };
@@ -43,7 +43,7 @@ export type AgentMode =
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
 
 /**
- * work_sessions.ended_kind — the six classes 171's CHECK allows. Mirrored here
+ * work_sessions.ended_kind — the classes 171's CHECK allows, as widened by 177 and 299. Mirrored here
  * rather than imported from the contract, exactly as WorkSessionStatus above
  * is: this package states the database's vocabulary, and the contract states
  * the wire's. They are kept identical deliberately, not by coupling.
@@ -54,11 +54,18 @@ export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'fa
  * a legitimate death.
  */
 export type WorkSessionEndedKind =
-  | 'completed'
+  // 299: was `completed`. A clean exit says nothing about the work.
+  | 'exited_clean'
   | 'stopped_by_operator'
   | 'server_restart'
   | 'out_of_memory'
   | 'crashed'
+  // 177: container endings, missing from this mirror until 299.
+  | 'container_stopped'
+  | 'runtime_lost'
+  // 299: the ghost reaper, and credential containment.
+  | 'lost'
+  | 'credential_revoked'
   | 'unknown';
 
 /**
@@ -787,6 +794,12 @@ export interface LaunchHarnessRecord {
 }
 
 export interface CreateWorkSessionInput {
+  storyId?: string;
+  /** Written as session -[about]-> it in the same transaction as the session (321). */
+  aboutEntityId?: string;
+  /** The spawning chat runtime's own chat (server fact): its sessions inherit what it is about (321). */
+  aboutFromChatId?: string;
+  sourceWorkSessionId?: string;
   spaceId: string;
   teamMemberId: string;
   parentSessionId: string | null;
@@ -808,6 +821,40 @@ export interface CreateWorkSessionInput {
    * own transaction (267). Absent/null creates none.
    */
   newTaskTitle?: string | null;
+  /**
+   * 348: the loop this session is a FIRING of. `execution_spawn` writes the
+   * session -> loop `triggered_by` edge in its own transaction and ABORTS the
+   * spawn if it cannot, because `internal.mcp_provenance` (343) reads the
+   * schedule provenance root off exactly that edge and `bind` runs inside this
+   * spawn. See {@link SpawnServerFacts} for why it does not travel on
+   * `SpawnRequest`.
+   */
+  triggeredByLoopId?: string;
+}
+
+/**
+ * FACTS THE SERVER ESTABLISHED, which a spawn request may not carry.
+ *
+ * Deliberately a SECOND PARAMETER of {@link SpawnService.spawn} rather than
+ * fields on `SpawnRequest`, and the separation is the security property, not
+ * tidiness: `SpawnRequest` is built field by field from the wire input by the
+ * public `execution.spawn` handler, so anything living on it is something a
+ * caller can try to set. A caller cannot reach a parameter the public handler
+ * never passes.
+ *
+ * `ExecutionSpawnInputSchema` is `.strict()` as well, so a client that invents
+ * one of these names on the wire is refused by the schema rather than having it
+ * silently dropped. Two independent barriers, which is the point.
+ */
+export interface SpawnServerFacts {
+  /**
+   * The loop whose firing this spawn IS — set only by the in-process loop
+   * executor (`createLoopExecutorPort.fire`), which holds the loop row it is
+   * firing. This is §6's schedule provenance root (`loops.armed_by_member_id`,
+   * 343) and it must be a SERVER fact: a client that could name a loop here
+   * would be naming the human whose connections its session launches with.
+   */
+  triggeredByLoopId?: string;
 }
 
 export interface CreateWorkSessionResult {
@@ -931,7 +978,7 @@ export interface WorkSessionResumeInfo {
   spaceId: string;
   /** Parent work session persisted on the entity hierarchy; the coordinator return path. */
   parentSessionId: string | null;
-  /** From the `relates_to` edge; null if the edge is somehow gone. */
+  /** From the `participates_in` edge; null if the edge is somehow gone. */
   teamMemberId: string | null;
   projectId: string | null;
   taskIds: string[];
@@ -951,6 +998,12 @@ export interface WorkSessionResumeInfo {
   nativeSessionId: string | null;
   /** Exact CLAUDE_CONFIG_DIR/CODEX_HOME used for the original run. */
   agentConfigDir: string | null;
+  /**
+   * The node that owns the row (`work_sessions.node_id`). Resume marks a
+   * stale running/idle session lost only when it is THIS node's — another
+   * node's session may have a live PTY there. Absent/null ⇒ unowned.
+   */
+  nodeId?: string | null;
 }
 
 export interface ResumeWorkSessionResult {
@@ -1078,8 +1131,20 @@ export interface GraphPort {
    */
   loadStoryContext?(
     auth: GraphAuth,
-    input: { taskId: string },
+    input: { taskId?: string; sessionId?: string },
   ): Promise<PromptStoryContext | null>;
+  /**
+   * Run on a design (304): the design `taskId` was derived from (Run → the
+   * launch sheet on a design derives the session's task from it), with its
+   * ordered pages, folded into the bounded prompt shape. `null`: the task was
+   * not launched from a design. Optional; a graph without it renders no
+   * design block. A failed page read resolves with `snapshot` naming the
+   * reason rather than rejecting.
+   */
+  loadDesignContext?(
+    auth: GraphAuth,
+    input: { taskId: string },
+  ): Promise<PromptDesignContext | null>;
   /**
    * The tasks' version and status as they stand NOW, read after
    * `execution_spawn` has started them. `loadSpawnContext` reads before that
@@ -1214,6 +1279,16 @@ export interface GraphPort {
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>>;
+  /**
+   * Spec D1 Q3 (301): this node's COMPLETED sessions whose process is still
+   * recorded live and has been idle past its space's auto-close window
+   * (`public.completed_sessions_to_close`). Optional: a port without it never
+   * auto-closes anything.
+   */
+  listCompletedSessionsToClose?(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<Array<{ sessionId: string; minutes: number }>>;
 
   // --- worktree provisioning (design §4) --------------------------------------
   //
@@ -1441,6 +1516,15 @@ export interface Tm8Manifest {
      */
     harness?: LaunchHarnessRecord;
     /**
+     * The connector bridge entries this launch gave the agent: the tool prefix
+     * the model reads mapped to the connector it reaches (§4.2), sorted by key.
+     * Ids and names only — no account, no credential, no argv.
+     *
+     * Written for EVERY tool and BOTH harness surfaces, because connectors do
+     * not depend on the surface (D4). Absent when the launch bound none.
+     */
+    connectors?: { serverKey: string; serverId: string }[];
+    /**
      * Set by the workspace-trust watchdog when this lane booted into Claude
      * Code's trust dialog despite the seeded entry and tm8 answered it through
      * the PTY. Absent otherwise — never false. Written to the manifest FILE
@@ -1508,12 +1592,26 @@ export interface Tm8Manifest {
    * or the graph cannot say.
    */
   story?: PromptStoryContext;
+  /**
+   * Run on a design (304): the design the primary task was derived from, its
+   * ordered pages, read once at spawn (`GraphPort.loadDesignContext`).
+   * Absent: the task was not launched from a design, or the graph cannot say.
+   */
+  design?: PromptDesignContext;
 }
 
 // --- SpawnService inputs/outputs ---------------------------------------------
 
 /** `ExecutionSpawnInput` plus the things only the server knows. */
 export interface SpawnRequest {
+  mcpSelections?: Array<{ serverId: string; credentialId?: string }>;
+  storyId?: string;
+  /** `ExecutionSpawnInput.aboutEntityId`: the about edge written in the spawn transaction. */
+  aboutEntityId?: string;
+  /** Server fact: the chat runtime bearer's own chat, which may bind its sessions to what it is about (321). */
+  aboutFromChatId?: string;
+  /** Server verified bearer provenance; never populated from request body. */
+  sourceWorkSessionId?: string;
   spaceId: string;
   teamMemberId: string;
   /** Session that invoked this spawn; null/absent means a human-launched root. */

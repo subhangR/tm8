@@ -80,3 +80,46 @@ export function CategoryGlyph({ category }: { category: StatusCategory }) {
     </svg>
   );
 }
+
+/**
+ * THE SESSION TABS' MARKS (Running · Interrupted · Completed · Stopped), in
+ * the same family — the ring plus one stroke — for the narrow list column
+ * that draws its tabs as marks (pinned-only rail, Subhang 2026-10-17).
+ */
+const SESSION_MARKS: Readonly<Record<string, ReactElement>> = {
+  /* A play wedge: it is going. */
+  running: (
+    <>
+      {ring}
+      <path d="M6.9 5.6L10.6 8L6.9 10.4Z" fill="currentColor" />
+    </>
+  ),
+  /* Two bars: paused mid-way, waiting to be resumed. */
+  interrupted: (
+    <>
+      {ring}
+      <path d="M6.8 5.8V10.2M9.2 5.8V10.2" {...stroke} />
+    </>
+  ),
+  completed: MARKS.done,
+  /* A filled square: stopped for good. */
+  stopped: (
+    <>
+      {ring}
+      <rect x="6" y="6" width="4" height="4" rx="0.6" fill="currentColor" />
+    </>
+  ),
+};
+
+/** True for every tab id this file has a mark for: the four categories and the four session tabs. */
+export function hasTabGlyph(id: string): boolean {
+  return hasCategoryGlyph(id) || Object.prototype.hasOwnProperty.call(SESSION_MARKS, id);
+}
+
+export function TabGlyph({ id }: { id: string }) {
+  return (
+    <svg className="lp__tab-glyph" viewBox="0 0 16 16" aria-hidden focusable="false">
+      {hasCategoryGlyph(id) ? MARKS[id] : SESSION_MARKS[id]}
+    </svg>
+  );
+}

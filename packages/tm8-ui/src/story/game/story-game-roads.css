@@ -1,0 +1,23 @@
+/* Road destination signs (scene-road-labels.tsx). Positioned by .sgm-world-label; palette via --pn-* only. */
+.cv2-root .sgm-roadsign {
+  align-items: center; gap: 5px; white-space: nowrap;
+  padding: 3px 9px 3px 5px; border-radius: 999px;
+  font-size: var(--pn-fs-fine); line-height: 1.2; color: var(--pn-ink);
+  background: color-mix(in srgb, var(--pn-card) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-brand) 35%, var(--pn-line));
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--pn-ink) 12%, transparent);
+  backdrop-filter: blur(4px);
+}
+.cv2-root .sgm-roadsign__dir {
+  display: grid; place-items: center; flex: none; width: 14px; height: 14px; border-radius: 50%;
+  color: var(--pn-card); background: var(--pn-brand);
+  transform: rotate(var(--sgm-dir, 0deg));
+}
+/* A chevron pointing to screen right; the parent rotation turns it towards the destination. */
+.cv2-root .sgm-roadsign__dir::before {
+  content: ''; width: 4px; height: 4px; margin-left: -2px;
+  border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.cv2-root .sgm-roadsign__title { max-width: 150px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.cv2-root .sgm-roadsign__steps { font-family: var(--pn-mono); color: var(--pn-ink-2); }

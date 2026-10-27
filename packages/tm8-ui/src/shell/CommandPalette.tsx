@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntitySummary } from '@tm8/contract';
 import type { ActionContext, ActionRef } from '../domain';
-import { KindIcon, deferredActions, getKind, resolveAction } from '../domain';
+import { KindIcon, actionGlyph, deferredActions, getKind, resolveAction } from '../domain';
 import { ReasonNote } from '../panels/honesty/ReasonNote';
 import './palette.css';
+import './shortcuts.css';
 
 /**
  * THE COMMAND PALETTE (T1-2) — "/ or ⌘K · entities + views + actions ·
@@ -36,6 +37,11 @@ export interface PaletteView {
   glyph?: ReactNode;
   /** Absent ⇒ the view is implemented and openable. */
   disabledReason?: string;
+  /**
+   * The keyboard shortcut that does the same thing (`g t`, `n t`, `?`) — the
+   * palette is where a shortcut is DISCOVERED, so it is shown on the row.
+   */
+  hint?: string;
 }
 
 export interface CommandPaletteProps {
@@ -57,7 +63,7 @@ export interface CommandPaletteProps {
 
 type Row =
   | { kind: 'entity'; id: string; label: string; glyph: ReactNode; meta?: string; disabled?: never }
-  | { kind: 'view'; id: string; label: string; glyph: ReactNode; meta?: string; disabled?: string }
+  | { kind: 'view'; id: string; label: string; glyph: ReactNode; meta?: string; hint?: string; disabled?: string }
   | { kind: 'action'; id: ActionRef; label: string; glyph: ReactNode; meta?: string; disabled?: string };
 
 const GROUPS: readonly { key: string; label: string }[] = [
@@ -200,6 +206,7 @@ export function CommandPalette({
           <span>↑↓ navigate</span>
           <span>⏎ open</span>
           <span>⌘⏎ open + pin</span>
+          <span>? all shortcuts</span>
           <span className="pal__spacer" />
           {/* R7's named home for the deferred search-results view. The palette
               IS the search surface; the full view is honestly unavailable, and
@@ -279,6 +286,15 @@ function PaletteRow({
       </span>
       <span className="pal__row-label">{row.label}</span>
       {row.meta ? <span className="pal__row-meta">{row.meta}</span> : null}
+      {row.kind === 'view' && row.hint ? (
+        <span className="pal__row-keys" aria-label={`Shortcut ${row.hint}`} data-testid="palette-row-shortcut">
+          {row.hint.split(' ').map((cap, i) => (
+            <kbd key={i} className="pal__kbd">
+              {cap}
+            </kbd>
+          ))}
+        </span>
+      ) : null}
       {status ? <span className={`pal__row-status kit-pill--${status.tone}`}>{status.word}</span> : null}
       {selected ? (
         <span className="pal__row-hint" aria-hidden>
@@ -309,7 +325,14 @@ function buildRows(
   }
 
   for (const view of views) {
-    const row: Row = { kind: 'view', id: view.id, label: view.label, glyph: view.glyph ?? '⊙', meta: 'view' };
+    const row: Row = {
+      kind: 'view',
+      id: view.id,
+      label: view.label,
+      glyph: view.glyph ?? '⊙',
+      meta: 'view',
+      ...(view.hint ? { hint: view.hint } : {}),
+    };
     if (view.disabledReason) deferred.push({ ...row, disabled: view.disabledReason });
     else rows.push(row);
   }
@@ -317,7 +340,7 @@ function buildRows(
   for (const ref of actions) {
     const def = resolveAction(ref);
     const availability = def.availability(ctx);
-    const row: Row = { kind: 'action', id: ref, label: def.label, glyph: def.icon };
+    const row: Row = { kind: 'action', id: ref, label: def.label, glyph: actionGlyph(def) };
     if (availability.kind === 'disabled') deferred.push({ ...row, disabled: availability.reason });
     else rows.push(row);
   }
@@ -336,7 +359,7 @@ function buildRows(
       kind: 'action',
       id: def.id,
       label: def.label,
-      glyph: def.icon,
+      glyph: actionGlyph(def),
       disabled: availability.kind === 'disabled' ? availability.reason : 'not available yet',
     });
   }

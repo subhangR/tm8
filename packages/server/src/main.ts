@@ -1,3 +1,12 @@
+import { ToolRuntime } from './tools/runtime.js';
+import { McpSessionBindings } from './mcp/session-bindings.js';
+import type { McpEndpointRoute } from './mcp/endpoint.js';
+import { loadMcpServer } from './mcp/definitions.js';
+import type { GoogleHostOptions } from './mcp/first-party/google/endpoints.js';
+import { WorkspaceBridge } from './workspace/bridge.js';
+import { WorkspaceService } from './workspace/service.js';
+import { memberForClaims } from './workspace/handlers.js';
+import { McpTestResultSchema } from '@tm8/contract';
 /**
  * Bootstrap — assembles the frame and starts listening.
  *
@@ -12,7 +21,7 @@
 import type { IncomingMessage } from 'node:http';
 import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
-import { CredentialSessionLauncher } from '@tm8/execution';
+import { CredentialSessionLauncher, type HarnessRegistry } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 import { gatePosture, writeNodePolicy } from './projects/node-policy.js';
 
@@ -55,7 +64,9 @@ import { SpaceLoginHomes } from './credentials/space-credential-home.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createSpaceCredentialSweepJob } from './scheduler/jobs/space-credential-sweep.js';
+import { createCompletedAutoCloseJob, createLostSessionReaperJob, lostAfterMsFromEnv } from './scheduler/jobs/lost-session-reaper.js';
 import { createCredentialBindingSweepJob } from './scheduler/jobs/credential-binding-sweep.js';
+import { createMcpAuditRetentionJob } from './scheduler/jobs/mcp-audit-retention.js';
 import { DbSpaceCredentialStore } from './credentials/space-credential-store.js';
 import { createEventSubjectBackfillJob } from './scheduler/jobs/event-subject-backfill.js';
 import { createClipboardStore } from './files/clipboard-store.js';
@@ -89,6 +100,10 @@ import { autoOwnerResolver } from './http/security.js';
 import { announceNodeClaim } from './identity/node-claim-boot.js';
 import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
+import { HttpsRemoteInvokeForwarder } from './remote/link-forwarder.js';
+import { DbServerStore } from './remote/server-store.js';
+import { DbSpaceLinkStore } from './credentials/space-link-store.js';
+import type { RemoteSpaceLinkRoute } from './facade/handlers/w2/space-link-remote-route.js';
 import { directoryTargetResolver } from './remote/directory-resolver.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
@@ -113,11 +128,21 @@ import {
   composeChatBootstrap,
   type AgentRuntime,
   type ResolveChatLaunchConfig,
+  type ResolveChatCredentialEnv,
+  type ResolveChatMcpSelection,
+  type ResolveChatPreparedLaunch,
+  type ChatHarnessComposition,
 } from './chat/index.js';
+import { ChatCleanupRetryQueue } from './chat/cleanup-retries.js';
 
 export interface ChatBootstrapOptions {
   readonly runtime: AgentRuntime;
   readonly resolveLaunchConfig: ResolveChatLaunchConfig;
+  readonly resolveCredentialEnv?: ResolveChatCredentialEnv;
+  /** §5.3: lets a changed connector selection reach the next turn. */
+  readonly resolveMcpSelection?: ResolveChatMcpSelection;
+  readonly harnessRegistry?: HarnessRegistry;
+  readonly resolvePreparedLaunch?: ResolveChatPreparedLaunch;
   readonly onError?: (error: unknown) => void;
 }
 
@@ -130,6 +155,8 @@ export type ChatBootstrapFactory = (ctx: {
   db: Db;
   dataDir: string;
   baseUrl: string;
+  nodeId: string;
+  onCleanupFailure?: ChatHarnessComposition['onCleanupFailure'];
 }) => ChatBootstrapOptions;
 
 export interface BootstrapOptions {
@@ -162,6 +189,13 @@ export interface BootstrapOptions {
    * a deterministic one so a test run never calls a vendor over the network.
    */
   readonly spaceCredentialProbe?: SpaceCredentialProbe;
+  /**
+   * The Google first-party connector host (§8.1). Absent means the real one:
+   * Google's static endpoints and the client from TM8_GOOGLE_OAUTH_CLIENT_ID and
+   * TM8_MCP_CLIENT_SECRET_GOOGLE. A harness passes a fixture provider so a test
+   * run never calls Google.
+   */
+  readonly googleConnectors?: GoogleHostOptions;
 }
 
 export interface BootstrappedServer {
@@ -260,6 +294,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     const folders = await writeNodePolicy(config.databaseUrl, gatePosture(config));
     console.log(`  project folders: ${folders === 'shared' ? 'shared across spaces (loopback-only node)' : 'one space per folder'}`);
   }
+  // Say who the loopback socket trusts. An ssh -L tunnel lands on 127.0.0.1
+  // with no forwarding header, so on a single node it IS the owner — the one
+  // fact an operator letting a second machine in must not have to infer.
+  if ((config.nodeMode ?? 'single') === 'multi') {
+    console.log('  node mode: multi — no loopback auto-owner; every caller signs in');
+  } else if (config.disableAutoOwner !== true) {
+    console.log(
+      `  node mode: single — anything reaching ${config.host}:${config.port} directly (an ssh -L tunnel ` +
+        'included) is the owner. To let another machine in: TM8_NODE_MODE=multi behind a TLS proxy, ' +
+        'see docs/ops/OPERATOR-GUIDE.md',
+    );
+  }
   const dataDir = config.dataDir ?? resolveServerDataDir();
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
   const owner = db ? createLoopbackOwnerResolver(db) : undefined;
@@ -343,13 +389,21 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // Declared before the registration block because `presence.get` is only
   // mounted when a presence source exists — see registerEventHandlers.
   const presence = new InMemoryPresenceStore();
+  // The Workspace remote bridge (Spec C): live windows and in-flight forwards,
+  // in memory like presence, shared by the socket and the HTTP handlers.
+  const workspaceBridge = new WorkspaceBridge();
+  // Spec D: the stored workspaces, written through the shared reducer and
+  // pushed to the owner's own windows over that bridge.
+  const workspaceService = db ? new WorkspaceService({ db, bridge: workspaceBridge }) : undefined;
   const subscriptions = new SubscriptionRegistry();
+  const chatCleanupRetries = new ChatCleanupRetryQueue();
   // Factory callers get the composed context; block callers pass through
   // unchanged (every test harness injects the block form directly).
   const chatBlock: ChatBootstrapOptions | undefined =
     db && opts.chat
       ? typeof opts.chat === 'function'
-        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}` })
+        ? opts.chat({ db, dataDir, baseUrl: `http://127.0.0.1:${config.port}`, nodeId: desktopNodeId(dataDir),
+            onCleanupFailure: chatCleanupRetries.schedule })
         : opts.chat
       : undefined;
   const chat = db && chatBlock
@@ -358,6 +412,19 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         runtime: chatBlock.runtime,
         publisher: new ChatTurnPublisher(subscriptions),
         resolveLaunchConfig: chatBlock.resolveLaunchConfig,
+        // The two observation budgets are operational knobs, so they come from
+        // the environment rather than from a rebuild (see ServerConfig).
+        turnTimeouts: {
+          ...(config.chatIdleTimeoutMs !== undefined ? { observation: config.chatIdleTimeoutMs } : {}),
+          ...(config.chatToolTimeoutMs !== undefined ? { tool: config.chatToolTimeoutMs } : {}),
+        },
+        ...(chatBlock.harnessRegistry ? {
+          registry: chatBlock.harnessRegistry,
+          resolvePreparedLaunch: chatBlock.resolvePreparedLaunch!,
+          nodeId: desktopNodeId(dataDir),
+        } : {}),
+        ...(chatBlock.resolveCredentialEnv ? { resolveCredentialEnv: chatBlock.resolveCredentialEnv } : {}),
+        ...(chatBlock.resolveMcpSelection ? { resolveMcpSelection: chatBlock.resolveMcpSelection } : {}),
         ...(chatBlock.onError ? { onError: chatBlock.onError } : {}),
         // F2: only the production (factory) composition gets the boot sweep —
         // block-form test harnesses must never see sweep queries.
@@ -366,7 +433,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           : {}),
       })
     : undefined;
-  if (chat && typeof opts.chat === 'function') void chat.reconcileOnBoot();
+  if (chat && typeof opts.chat === 'function') {
+    void chat.reconcileOnBoot();
+    // Expired leases are recovered while the node runs, not only at the next boot.
+    chat.startRecoverySweep();
+  }
 
   // Voice-channel roster (voice plan §2). Ephemeral for the same reason
   // presence is, but sourced from LiveKit webhooks rather than from client
@@ -427,6 +498,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         launcher: new CredentialSessionLauncher({ pty: execution.pty }),
         agentSessions: execution.spawnService,
         streams: credentialStreams,
+        ...(chat ? { credentialsChanged: () => chat.recheckCredentials() } : {}),
         dataDir,
         ...(opts.spaceCredentialProbe ? { probeSpaceCredential: opts.spaceCredentialProbe } : {}),
       }
@@ -454,10 +526,51 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
   if (formDelivery) execution?.spawnService.onSessionLive((sessionId) => formDelivery.onSessionLive(sessionId));
 
+  let remoteSpaceLinkRoute: RemoteSpaceLinkRoute | undefined;
+  // §7.1 / G14: handed over by `registerMcpRuntimeHandlers`, built from the same
+  // proxy ports as `mcp.proxy.request`, and mounted on the HTTP frame below.
+  let mcpEndpointRoute: McpEndpointRoute | undefined;
   if (db) {
+    if (config.remoteSpaceLinks === true) {
+      console.warn(`remote space links: ON (TM8_REMOTE_SPACE_LINKS)${
+        config.remoteSpaceLinksAllowLoopback === true ? ' — DEV loopback targets allowed' : ''}`);
+    }
+    const mcpBindings = new McpSessionBindings(db);
     const serviceKeys = new DbServiceKeyStore({ db, dataDir });
     const spaceServiceKeys = new DbSpaceCredentialStore({ db, dataDir });
+    const tools = execution ? new ToolRuntime({ db, pty: execution.pty, spawnService: execution.spawnService, dataDir,
+      baseUrl: config.publicOrigin ?? `http://${config.host}:${config.port}`, nodeId: `${config.host}:${config.port}` }) : undefined;
+    if (tools && owner) {
+      const o = await owner();
+      await tools.reconcile({ identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'tool-startup-reconcile' });
+    }
     registerFacadeHandlers(registry, {
+      ...(tools ? { tools } : {}),
+      mcp: {
+        dataDir,
+        callbackUrl: `${config.publicOrigin ?? `http://${config.host}:${config.port}`}/mcp/oauth/callback`,
+        definition: (claims, serverId) => db.tx(claims, q => loadMcpServer(q, serverId)),
+        google: opts.googleConnectors ?? {
+          client: () => {
+            const clientId = process.env.TM8_GOOGLE_OAUTH_CLIENT_ID;
+            const clientSecret = process.env.TM8_MCP_CLIENT_SECRET_GOOGLE;
+            return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+          },
+        },
+        authorize: async (claims, sessionId, serverId) => {
+          if (claims.authKind === 'agent_runtime') {
+            if (!claims.authSessionId) throw new CollabError('forbidden', 'MCP runtime unavailable');
+            await db.rpc(claims, 'authorize_chat_runtime_effect', [sessionId, claims.authSessionId]);
+          }
+          return mcpBindings.authorize(claims, sessionId, serverId);
+        },
+        maxBodyBytes: config.maxBodyBytes,
+        onEndpoint: (route: McpEndpointRoute) => { mcpEndpointRoute = route; },
+        recordTest: async (claims, serverId, result) => {
+          const health = McpTestResultSchema.parse(result);
+          await db.rpc(claims, 'record_mcp_server_health', [serverId, JSON.stringify(health)]);
+        },
+      },
       db,
       config,
       owner,
@@ -470,6 +583,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         stateDir: pathResolve(dataDir, 'folder-uploads'),
       },
       ...(credentials ? { credentials } : {}),
+      // W9c, dark by default: only with TM8_REMOTE_SPACE_LINKS on does a link
+      // to another server forward, and does this node answer /link/v1/*.
+      ...(config.remoteSpaceLinks === true
+        ? {
+            remoteInvokeForwarder: new HttpsRemoteInvokeForwarder({
+              servers: new DbServerStore({ db, dataDir }),
+              links: new DbSpaceLinkStore({ db, dataDir }),
+              client: config.remoteSpaceLinksAllowLoopback === true ? { allowLoopback: true } : {},
+            }),
+            onRemoteSpaceLinkRoute: (route: RemoteSpaceLinkRoute) => { remoteSpaceLinkRoute = route; },
+          }
+        : {}),
       ...(chat ? { chat: { orchestrator: chat, dataDir } } : {}),
       membership: {
         sockets: subscriptions,
@@ -520,7 +645,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         return pinned ?? claimed;
       },
     });
-    registerEventHandlers(registry, { db, config, presence });
+    registerEventHandlers(registry, {
+      db,
+      config,
+      presence,
+      workspace: workspaceBridge,
+      ...(workspaceService ? { workspaceService } : {}),
+    });
     // The delivery seam again, and narrow for the same reason it is narrow
     // above: `execution.dispatch` pushes a trusted envelope at a dispatcher's
     // terminal, which only the delivery role may do. Absent, a dispatch still
@@ -555,6 +686,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       nodeAdmin: identity.sessionSpaceId ? false : identity.nodeAdmin === true,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
       ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
+      ...(identity.authKind ? { authKind: identity.authKind } : {}),
+      ...(identity.kind === 'bearer' && identity.sessionId ? { authSessionId: identity.sessionId } : {}),
     };
   };
 
@@ -595,6 +728,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         log: eventLog,
         claimsFor: wsClaimsFor,
         presence,
+        workspace: {
+          bridge: workspaceBridge,
+          memberFor: async (identity, spaceId) => memberForClaims(db, await wsClaimsFor(identity), spaceId),
+          ...(workspaceService ? { service: workspaceService } : {}),
+        },
         ...(pump ? { cursors: pump } : {}),
         ...(highWaterMark ? { highWaterMark } : {}),
         onError: (message) => console.warn(`ws control frame: ${message}`),
@@ -617,7 +755,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    */
   const resolveOptionalSocketIdentityId = async (
     req: IncomingMessage,
-  ): Promise<{ identityId: string; sessionSpaceId?: string; viaLinkId?: string } | undefined> => {
+  ): Promise<{ identityId: string; sessionSpaceId?: string; viaLinkId?: string; authKind?: string; authSessionId?: string } | undefined> => {
     if (!readTm8SessionCookie(req.headers) && req.headers.authorization === undefined) return undefined;
     const identity = await resolveSocketIdentity(req);
     if (!identity.identityId) return undefined;
@@ -626,6 +764,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       identityId: identity.identityId,
       ...(identity.sessionSpaceId ? { sessionSpaceId: identity.sessionSpaceId } : {}),
       ...(identity.viaLinkId ? { viaLinkId: identity.viaLinkId } : {}),
+      ...(identity.authKind ? { authKind: identity.authKind } : {}),
+      ...(identity.kind === 'bearer' && identity.sessionId ? { authSessionId: identity.sessionId } : {}),
     };
   };
 
@@ -637,6 +777,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(control ? { onClientMessage: (conn, text) => void control.handle(conn, text) } : {}),
     onDisconnect: (connId) => {
       presence.dropConnection(connId);
+      workspaceBridge.dropConnection(connId);
       pump?.forget(connId);
     },
   });
@@ -792,11 +933,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
     ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
+    ...(mcpEndpointRoute ? { mcpEndpointRoute } : {}),
+    ...(remoteSpaceLinkRoute ? { remoteSpaceLinkRoute } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
     ...(db ? { sessionIssuedHere: (token: string) => sessionIssuedHere(db, token) } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
+  server.http.once('close', () => { chatCleanupRetries.stop(); chat?.stopRecoverySweep(); });
   const { url } = await server.listen();
 
   // Retention, on boot and never on the request path: an expired date-bucket is
@@ -907,20 +1051,35 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
           }
         : {},
     );
+    // 306 (P0e): the tracking jobs span EVERY space. They run as the node's
+    // owner, who is a member of its own spaces only, so before 306 every PR
+    // linked anywhere else was never polled. `backgroundJob` is the claim the
+    // tracking doors accept instead of membership; only these two jobs bind it,
+    // and nodeAdmin is deliberately NOT what opens them.
+    const trackingCredentials = new DbSpaceCredentialStore({ db, dataDir });
+    const trackingClaims = (job: 'tracking.observer' | 'tracking.forge-watcher', requestId: string) =>
+      async () => {
+        const o = await owner();
+        return {
+          identityId: o.identityId,
+          nodeAdmin: o.isNodeAdmin,
+          requestId,
+          backgroundJob: job,
+        };
+      };
+    // Each space's own GitHub token credential reads that space's PRs only;
+    // a space without one falls back to the env token, else unauthenticated.
+    const trackingToken = (job: 'tracking.observer' | 'tracking.forge-watcher') =>
+      async (spaceId: string): Promise<string | undefined> => {
+        const token = await trackingCredentials.readTrackingToken(
+          await trackingClaims(job, `${job}:credential`)(), spaceId);
+        return token ?? undefined;
+      };
     scheduler.register(
       createTrackingObserverJob({
         db,
-        claims: async () => {
-          // The doors go through `require_space_member`, which has no
-          // node-admin bypass, so bare `{ nodeAdmin: true }` would raise 42501
-          // on every write. The node's own owner is the honest actor here.
-          const o = await owner();
-          return {
-            identityId: o.identityId,
-            nodeAdmin: o.isNodeAdmin,
-            requestId: 'tracking-observer',
-          };
-        },
+        claims: trackingClaims('tracking.observer', 'tracking-observer'),
+        resolveToken: trackingToken('tracking.observer'),
       }),
     );
     // Tier 4 git×graph: session→commit provenance from local worktrees, same
@@ -966,14 +1125,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     scheduler.register(
       createForgeWatcherJob({
         db,
-        claims: async () => {
-          const o = await owner();
-          return {
-            identityId: o.identityId,
-            nodeAdmin: o.isNodeAdmin,
-            requestId: 'forge-watcher',
-          };
-        },
+        claims: trackingClaims('tracking.forge-watcher', 'forge-watcher'),
+        resolveToken: trackingToken('tracking.forge-watcher'),
         // The same delivery machinery the `messages.post` request path uses, so
         // a nudge reaches an agent's terminal by exactly the route a human's
         // message does. Absent when there is no execution runtime: the nudge is
@@ -1057,6 +1210,29 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // §5.6 (346): MCP call audit rows past the node's retention window.
+    scheduler.register(
+      createMcpAuditRetentionJob({
+        db,
+        ...(config.mcpAuditRetentionDays !== undefined ? { retentionDays: config.mcpAuditRetentionDays } : {}),
+        claims: async () => {
+          const o = await owner();
+          return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId: 'mcp-audit-retention' };
+        },
+      }),
+    );
+    // Spec D1 §4.4 (299): the ghost reaper. A session recorded live with no
+    // process on this node for N minutes (TM8_LOST_SESSION_AFTER_MIN, default
+    // 10) becomes `failed / lost` — a process fact; its work stays open.
+    if (execution) {
+      const runtime = execution;
+      scheduler.register(createLostSessionReaperJob({
+        reap: (staleAfterMs) => runtime.reapLost(staleAfterMs),
+        staleAfterMs: lostAfterMsFromEnv(),
+      }));
+      // Owner ruling Q3: completed sessions idle past the space's window close.
+      scheduler.register(createCompletedAutoCloseJob({ close: () => runtime.closeIdleCompleted() }));
+    }
     // W10b (R8 / N8): the backstop for revoke and switch-to-private. It runs
     // once at boot — the post-boot re-check — and then every minute, killing
     // any live session left on a revoked credential, or on a private one its
@@ -1159,9 +1335,8 @@ export async function main(): Promise<void> {
     const { server, url, db, delivery, preview, scheduler, execution, claimUrl, launchCookie } = await bootstrap({
       startBackgroundJobs: true,
       ...(sidecar ? { config: await desktopServerConfig() } : {}),
-      // TM8 Chat production composition: ClaudeHeadlessAdapter + the C5-minting
-      // launch-config resolver. Without this line the chat ships dead — the
-      // orchestrator only exists when a runtime is injected (see compose.ts).
+      // The shared registry owns Claude/Codex execution. The orchestrator owns
+      // durable turn claims, portable history and generation-fenced launch grants.
       // TM8_CHAT_SKILLS_DIR, when set, is the tm8-curated Claude Code plugin
       // directory that turns the chat `Skill` tool on; unset ⇒ Skill is offered
       // but resolves nothing (no behaviour change).

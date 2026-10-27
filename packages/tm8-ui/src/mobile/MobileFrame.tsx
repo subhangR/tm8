@@ -1,17 +1,18 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useKeyboardInset } from '../terminal/useKeyboardInset';
+import { useKeyboardUp } from './useKeyboardUp';
 import './mobile.css';
 
 /**
  * THE MOBILE FRAME — the structural container §5.7's screens get composed into.
  *
- * FRAME ONLY, AND DELIBERATELY EMPTY. This is the chrome row of §5.7's
- * inventory reduced to its regions: a header, one scrolling surface, a tab bar,
- * a sheet host and a notice host. It builds NONE of them and NONE of the
- * fourteen screens — Phase 3 fills these slots, starting with what a shared
- * link lands on (§6). An honest empty frame is worth more here than half a
- * screen inventory, because every screen that lands early lands before the
- * regions it must live inside are settled.
+ * FRAME ONLY. This is the chrome row of §5.7's inventory reduced to its
+ * regions: a header, one scrolling surface, a tab bar slot, a sheet host and a
+ * notice host. It builds NONE of them and none of the screens; `MobileShell`
+ * fills the slots. The TAB BAR SLOT IS UNFILLED since owner ruling 2026-08-19
+ * (the drawer replaced the bar) and stays a slot — removing a region is a
+ * different change with a different blast radius, and an unfilled optional
+ * region renders nothing.
  *
  * IT OWNS NO ROUTING, and `no-router-fork.test.ts` holds it to that. It takes
  * rendered children and places them. Which screen is rendered into `children`
@@ -19,22 +20,20 @@ import './mobile.css';
  * as `WorkspaceView` does for the desktop shell. That is §4.3: two renderings
  * of the same state, one history.
  *
- * MOUNTED BY NOBODY, ON PURPOSE. Phase 2 owns every `GateApp.tsx` edit in this
- * lane, serialized, because two workers in that file is a merge conflict on the
- * one file whose failure mode is a silent wrong screen. See `index.ts` for the
- * exact seam Phase 2 calls.
+ * MOUNTED BY `MobileShell` ALONE, which `GateApp` mounts for the phone shell.
+ * See `index.ts` for the seam.
  *
  * ── THE TWO STRUCTURAL FACTS THAT ARE NOT DECORATION ──────────────────────
  *
  * `100dvh`, not `100vh` (§3.6). On iOS Safari `100vh` is the height the
  * viewport has with the URL bar HIDDEN, so a `100vh` shell is taller than the
  * screen for as long as the bar is showing — which is most of the time, and
- * which puts the bottom tab bar underneath it. `dvh` tracks the bar.
+ * which puts anything bottom-anchored — the composer — underneath it. `dvh`
+ * tracks the bar.
  *
- * SAFE-AREA INSETS, which exist nowhere in this codebase today (§3.6). Without
- * them the tab bar sits under the home indicator and the header under the
- * notch. They are declared as tokens rather than inlined so §7.3's drop notice
- * — a toast that must sit ABOVE the tab bar, inside the inset — can compose
+ * SAFE-AREA INSETS (§3.6). Without them the bottom of the screen sits under
+ * the home indicator and the header under the notch. They are declared as tokens rather than inlined so §7.3's drop notice
+ * — a toast that must sit ABOVE the bottom chrome, inside the inset — can compose
  * against the same numbers instead of re-deriving them.
  */
 export interface MobileFrameProps {
@@ -51,25 +50,34 @@ export interface MobileFrameProps {
    */
   readonly children?: ReactNode;
 
-  /** Bottom tab bar — §5.1's five destinations. Phase 3 fills it. */
+  /**
+   * Chrome that FLOATS over the content instead of taking a row — the chat
+   * screen's ☰, which has no header to sit in (task t-topbar). A peer of the
+   * scroller rather than a child of it, so it never scrolls with the screen.
+   */
+  readonly float?: ReactNode;
+
+  /** Bottom tab bar slot. Unfilled since owner ruling 2026-08-19 (the drawer
+   *  replaced the bar); kept as a region rather than removed. */
   readonly tabBar?: ReactNode;
 
   /**
    * Sheet host. Sheets are the mobile shell's answer to the desktop pin and
    * the desktop hover-card, so the host is a peer of the content rather than a
-   * child of it: a sheet must be able to cover the tab bar.
+   * child of it: a sheet must be able to cover the bottom chrome.
    */
   readonly sheet?: ReactNode;
 
   /**
-   * Notice host (§7.3). Positioned above the tab bar and inside the safe-area
-   * inset, which is why it is a frame region and not something a screen renders
-   * for itself — a screen does not know where the tab bar is.
+   * Notice host (§7.3). Positioned above the floating create button's reserve
+   * and inside the safe-area inset, which is why it is a frame region and not
+   * something a screen renders for itself — a screen does not know where the
+   * bottom chrome is.
    */
   readonly notices?: ReactNode;
 }
 
-export function MobileFrame({ header, children, tabBar, sheet, notices }: MobileFrameProps) {
+export function MobileFrame({ header, children, float, tabBar, sheet, notices }: MobileFrameProps) {
   /*
    * THE KEYBOARD IS A FRAME CONCERN — shell contract, §3 of `CONTRACT.md`.
    *
@@ -82,20 +90,26 @@ export function MobileFrame({ header, children, tabBar, sheet, notices }: Mobile
    *
    * WHY THE WHOLE FRAME SHRINKS rather than each bottom-anchored thing lifting
    * itself. On iOS the soft keyboard OVERLAYS the layout viewport: `innerHeight`
-   * does not change, `100dvh` does not change, and the tab bar goes under the
-   * keyboard where no finger reaches it. Shrinking the frame is the behaviour
-   * `interactive-widget=resizes-content` would give us if iOS honoured it — the
-   * whole arrangement stays on screen and above the keyboard, and every region
-   * (header, content, notices, tab bar, sheet) inherits that for free without
-   * knowing the keyboard exists. A per-region lift would have to be re-derived
-   * by every future region and forgotten by one of them.
+   * does not change, `100dvh` does not change, and the composer goes under the
+   * keyboard where no finger reaches it. Chrome for Android has done the same by
+   * default since v108 (`interactive-widget=resizes-visual`), which is why
+   * `index.html` opts into `interactive-widget=resizes-content` (audit A4,
+   * t-safe): Android then shrinks the layout viewport, and `100dvh`, natively.
+   * Shrinking the frame here is that same behaviour for iOS, which ignores the
+   * key — the whole arrangement stays on screen and above the keyboard, and
+   * every region (header, content, notices, sheet) inherits that for free
+   * without knowing the keyboard exists. A per-region lift would have to be
+   * re-derived by every future region and forgotten by one of them.
    *
    * It is inert everywhere it should be: no `visualViewport` (every desktop
-   * browser without the API) reports 0, and Android — which genuinely does
-   * resize the layout viewport — reports ~0 because `innerHeight` has already
-   * shrunk, so the frame is not shortened twice.
+   * browser without the API) reports 0, and a browser that resizes the layout
+   * viewport (Android under `resizes-content`) reports ~0 because
+   * `innerHeight` has already shrunk, so the frame is not shortened twice.
+   * Whether Android clears an OEM keyboard's own toolbar is unverified on a
+   * device.
    */
   const keyboardInset = useKeyboardInset();
+  const keyboardUp = useKeyboardUp(keyboardInset);
 
   return (
     <div
@@ -105,7 +119,12 @@ export function MobileFrame({ header, children, tabBar, sheet, notices }: Mobile
          know "is it up" rather than "how far". Absent rather than `="down"`, so
          a selector for it is a presence check and the DOM stays quiet in the
          state the app is in almost all of the time. */
-      {...(keyboardInset > 0 ? { 'data-keyboard': 'up' } : {})}
+      {...(keyboardUp ? { 'data-keyboard': 'up' } : {})}
+      /* NO HEADER, NO HEADER ROW. The grid's first track is the header's, and a
+         frame without one would auto-place the content into that `auto` row,
+         where it sizes to its content and the frame scrolls instead of it.
+         `mobile.css` reads this to drop the track and keep the top inset. */
+      {...(header ? {} : { 'data-headless': '' })}
       /* A CUSTOM PROPERTY, NOT A HEIGHT. The frame's own height composes it in
          `mobile.css` beside `100dvh` and the safe-area tokens, so the whole
          viewport arithmetic stays readable in one place in the stylesheet
@@ -122,6 +141,8 @@ export function MobileFrame({ header, children, tabBar, sheet, notices }: Mobile
       <main className="mobile-frame__content" role="main">
         {children}
       </main>
+
+      {float}
 
       {notices ? <div className="mobile-frame__notices">{notices}</div> : null}
 

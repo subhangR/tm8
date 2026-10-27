@@ -39,7 +39,7 @@ export interface PtyAttachAuthorizerDeps {
    */
   readonly resolveIdentityId?: (
     req: IncomingMessage,
-  ) => Promise<string | { identityId: string; sessionSpaceId?: string; viaLinkId?: string } | undefined>;
+  ) => Promise<string | { identityId: string; sessionSpaceId?: string; viaLinkId?: string; authKind?: string; authSessionId?: string } | undefined>;
   readonly logger?: PtyAttachAuthzLogger;
 }
 
@@ -76,11 +76,13 @@ export function createPtyAttachAuthorizer(deps: PtyAttachAuthorizerDeps): PtyAtt
     let identityId: string | undefined;
     let sessionSpaceId: string | undefined;
     let viaLinkId: string | undefined;
+    let authKind: string | undefined;
+    let authSessionId: string | undefined;
     if (deps.resolveIdentityId) {
       try {
         const resolved = await deps.resolveIdentityId(req);
         if (typeof resolved === 'string') identityId = resolved;
-        else if (resolved) ({ identityId, sessionSpaceId, viaLinkId } = resolved);
+        else if (resolved) ({ identityId, sessionSpaceId, viaLinkId, authKind, authSessionId } = resolved);
       } catch {
         // A presented but invalid/mismatched cookie is indistinguishable from
         // every other bad grant use. Do not let a valid capability override a
@@ -93,6 +95,8 @@ export function createPtyAttachAuthorizer(deps: PtyAttachAuthorizerDeps): PtyAtt
       ...(identityId ? { identityId } : {}),
       ...(sessionSpaceId ? { sessionSpaceId } : {}),
       ...(viaLinkId ? { viaLinkId } : {}),
+      ...(authKind ? { authKind } : {}),
+      ...(authSessionId ? { authSessionId } : {}),
     };
     try {
       const consumed = await deps.db.rpc<ConsumedGrant>(

@@ -107,6 +107,7 @@ class FakeSpawner implements FormSpawnPort {
   byMutation = new Map<string, string>();
   spawnError: Error | null = null;
   resumeError: Error | null = null;
+  beforeResume: (() => Promise<void>) | null = null;
   taskTurn = TASK_TURN;
   /** Held open this long, so concurrent drains really overlap a spawn. */
   spawnDelayMs = 0;
@@ -133,6 +134,7 @@ class FakeSpawner implements FormSpawnPort {
   async resume(_auth: unknown, request: { sessionId: string }): Promise<unknown> {
     this.resumes.push(request.sessionId);
     if (this.resumeError) throw this.resumeError;
+    await this.beforeResume?.();
     await setStatus(request.sessionId, 'running');
     // Fire-and-forget, as notifySessionLive does.
     if (this.onLive) void this.onLive(request.sessionId).catch(() => {});
@@ -176,8 +178,9 @@ const QUESTIONS = [
 const newId = async (): Promise<string> => (await sql(`select internal.new_id()::text id`))[0]!.id as string;
 
 /**
- * A session as execution.spawn leaves one: its teammate (relates_to), its task
- * (working_on), its parent, and a recorded manifest carrying its posture.
+ * A session as execution.spawn leaves one: its teammate (participates_in), its task
+ * (working_on), its launcher (launched_by, 330 — not a parent), and a recorded
+ * manifest carrying its posture.
  */
 async function newSession(opts: {
   status?: string;
@@ -188,16 +191,20 @@ async function newSession(opts: {
 } = {}): Promise<string> {
   const id = await newId();
   const teammate = opts.teammate ?? w.teammate;
-  await sql(`insert into public.entities(id, space_id, kind, visibility, created_by, parent_id)
-             values ($1, $2, 'work_session', 'space', $3, $4)`, [id, w.space, teammate, opts.parent ?? null]);
+  await sql(`insert into public.entities(id, space_id, kind, visibility, created_by)
+             values ($1, $2, 'work_session', 'space', $3)`, [id, w.space, teammate]);
   await sql(`insert into public.work_sessions(entity_id, title, status, share_mode, started_at,
                                               workdir_mode, mode, model, agent_tool)
              values ($1, 'Requester', $2, 'space', now(), 'scratch', 'worker', 'claude-opus-5-5', 'claude-code')`,
     [id, opts.status ?? 'running']);
   await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
              values ($1, $2, $3, 'participates_in', $2)`, [w.space, teammate, id]);
-  await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
-             values ($1, $2, $3, 'relates_to', $3)`, [w.space, id, teammate]);
+  if (opts.parent) {
+    // The spawn writer records launched_by; the guard refuses any other writer.
+    await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
+               select $1, $2, $3, 'launched_by', $4 from (select internal.w1_set_writer('spawn')) w`,
+      [w.space, id, opts.parent, teammate]);
+  }
   if (opts.task) {
     await sql(`insert into public.edges(space_id, src_id, dst_id, type, created_by)
                values ($1, $2, $3, 'working_on', $3)`, [w.space, id, opts.task]);
@@ -339,6 +346,30 @@ describe('onSessionNotLive = resume', () => {
     expect(terminal.reserves.filter((r) => r.messageId === view.messageId)).toHaveLength(1);
     expect(terminal.for(view.messageId!)).toHaveLength(1);
     expect(terminal.for(view.messageId!)[0]!.target).toBe(session);
+  });
+
+  it('holds the delivery lease until resume makes the session live', async () => {
+    const { terminal, spawner, drain, openForm, submit } = world();
+    const session = await newSession();
+    const form = await openForm(session);
+    await setStatus(session, 'exited');
+    let entered!: () => void;
+    let releaseResume!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const held = new Promise<void>((resolve) => { releaseResume = resolve; });
+    spawner.beforeResume = () => { entered(); return held; };
+    const view = await submit(form, { pick: { value: 'x' } });
+    try {
+      await started;
+      expect((await delivery(view.id)).claimed_at).not.toBeNull();
+      await Promise.all([drain.drain(), drain.drain({ workSessionId: session })]);
+      expect(spawner.resumes).toEqual([session]);
+    } finally {
+      releaseResume();
+    }
+    const row = await until(() => delivery(view.id), (r) => r.status === 'delivered');
+    expect(row.status).toBe('delivered');
+    expect(terminal.for(view.messageId!)).toHaveLength(1);
   });
 
   it('deleted: cancelled, never resumed', async () => {

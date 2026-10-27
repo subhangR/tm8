@@ -31,11 +31,15 @@
  * Tasks → Docs → Tasks resets the layout, and `GateApp`'s own comment says why
  * — "a new target has no mode yet". That is honest reset, not loss.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import { GateApp } from './GateApp';
 import { resetNav } from '../stores/navStore';
 import { screenStackStore } from '../stores/screenStackStore';
+
+/* D31: this suite drives a retired desktop view (Home, the old Work or
+   Board), which only the legacy desktop still reaches (stage (c) deletes it). */
+vi.mock('../shell/desktop-modes', () => ({ desktopModes: () => 'legacy' }));
 
 /* last-place-gate.test.tsx's stub, for its reason: the memory must survive the
    remount, and gate.test.tsx's `window.localStorage.clear()` throws here. */
@@ -64,9 +68,8 @@ const SLOW_GATE_MS = 30_000;
 
 async function openTasksScreen() {
   const view = render(<GateApp />);
-  /* Revision 12: no-memory boots land on the merged Home; Tasks rides the
-     Workspace caret ON THE WORK TAB — the rail is the active tab's contents. */
-  await waitFor(() => view.getByTestId('home-page'));
+  /* No-memory boots land in the workspace (the Home dashboard is gone). */
+  await waitFor(() => view.getByTestId('tab-workspace'));
   /* Revision 17: the Work tab retired — the guaranteed `g t` chord is the
      door to the Tasks screen now. */
   fireEvent.keyDown(window, { key: 'g' });

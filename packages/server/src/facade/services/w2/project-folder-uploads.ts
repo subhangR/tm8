@@ -28,7 +28,12 @@ import {
   normalizeProjectFolderManifest,
   type NormalizedProjectFolderManifest,
 } from './project-folder-upload.js';
-import { toProjectResource } from './projects-associations.js';
+import {
+  registerSpaceFolderRow,
+  toProjectResource,
+  type SpaceProjectRow,
+} from './projects-associations.js';
+import { requireTrustAllowed, spaceProjectRoots } from './space-project-roots.js';
 
 const UPLOAD_TTL_MS = 15 * 60 * 1_000;
 
@@ -151,17 +156,18 @@ export class W2ProjectFolderUploadService {
       refuseProtectedComponents(directory);
     }
 
-    // C1 (Lane 3): importing bytes onto the node's disk at an arbitrary
-    // in-roots destination is node-admin only, matching the createProject
-    // ensureWorkingDir precedent. Provisional policy until an owner approves
-    // a server-managed import root for ordinary members.
-    requireNodeAdmin(nodeAdmin);
+    // C1 (Lane 3): importing bytes onto the node's disk is a node admin's
+    // anywhere in the roots — and, since task 01a13574 (owner ruling, form
+    // 01a13571), a SPACE ADMIN's for their own space, but only inside an
+    // explicitly configured TM8_PROJECT_ROOTS (`spaceProjectRoots`). A member
+    // who is neither is refused here, before anything touches the disk.
     requireUnpinned(claims);
+    const roots = nodeAdmin ? await canonicalRoots() : await spaceProjectRoots(this.deps.db, claims, spaceId);
+    if (!nodeAdmin) requireTrustAllowed(claims, input.trust);
 
     // Containment BEFORE the first probe of the target: a lexically
     // out-of-jail parent is forbidden without any filesystem access, so the
     // refusal cannot disclose what exists there.
-    const roots = await canonicalRoots();
     requireAllowed(resolve(input.destinationParent), roots);
     const destinationParent = await canonicalDirectory(input.destinationParent);
     requireAllowed(destinationParent, roots);
@@ -254,11 +260,14 @@ export class W2ProjectFolderUploadService {
   readonly complete: OperationHandler = async (ctx) => {
     const folderUploadId = requireUuidParam(ctx, 'folderUploadId');
     const { claims, viewerIdentityId, nodeAdmin } = await this.requestClaims(ctx);
-    // C1: gate BEFORE the session is even looked up — a non-admin cannot
-    // probe which folderUploadIds exist.
-    requireNodeAdmin(nodeAdmin);
     requireUnpinned(claims);
+    // The session is the caller's own (identity-checked); a space admin's
+    // window is re-derived now, not trusted from init — a role or a root
+    // removed since then refuses the completion.
     const state = await this.loadState(folderUploadId, viewerIdentityId);
+    const allowedRoots = nodeAdmin
+      ? await canonicalRoots()
+      : await spaceProjectRoots(this.deps.db, claims, state.spaceId);
 
     if (new Date(state.expiresAt).getTime() <= this.now().getTime()) {
       await this.release(claims, state);
@@ -294,7 +303,7 @@ export class W2ProjectFolderUploadService {
         destinationParent: state.destinationParent,
         rootName: state.rootName,
         manifest: state.manifest,
-        allowedRoots: await canonicalRoots(),
+        allowedRoots,
         mode: state.mode,
         readBytes: async (relativePath) => {
           const file = byPath.get(relativePath);
@@ -313,10 +322,16 @@ export class W2ProjectFolderUploadService {
     // a node admin by ACCOUNT (requireNodeAdmin above); the gate RPCs re-check
     // that fact (`internal.require_node_admin`) and also read the claim, so the
     // grant runs with the claim set to the fact — never wider than the account.
-    const gateClaims: DbClaims = { ...claims, nodeAdmin: true };
-    const project = await this.resolveProject(ctx, gateClaims, state, materialized.workingDir);
-
-    await this.deps.db.rpc(gateClaims, 'grant_folder', [state.spaceId, project.id, null]);
+    let project: ProjectResource;
+    if (nodeAdmin) {
+      const gateClaims: DbClaims = { ...claims, nodeAdmin: true };
+      project = await this.resolveProject(ctx, gateClaims, state, materialized.workingDir);
+      await this.deps.db.rpc(gateClaims, 'grant_folder', [state.spaceId, project.id, null]);
+    } else {
+      // A space admin's door (migration 326): register + grant + name, and an
+      // untrusted folder unless a node admin says otherwise.
+      project = await this.registerForSpaceAdmin(claims, state, materialized.workingDir);
+    }
 
     await this.release(claims, state);
 
@@ -335,8 +350,9 @@ export class W2ProjectFolderUploadService {
 
   readonly abort: OperationHandler = async (ctx) => {
     const folderUploadId = requireUuidParam(ctx, 'folderUploadId');
-    const { claims, viewerIdentityId, nodeAdmin } = await this.requestClaims(ctx);
-    requireNodeAdmin(nodeAdmin);
+    const { claims, viewerIdentityId } = await this.requestClaims(ctx);
+    // Aborting only ever releases the caller's OWN session (identity-checked
+    // in loadState), and only init decides who may open one.
     const state = await this.loadState(folderUploadId, viewerIdentityId);
     await this.release(claims, state);
     return { patches: [] } satisfies CommandResult;
@@ -428,6 +444,38 @@ export class W2ProjectFolderUploadService {
     return toProjectResource(raw.project);
   }
 
+  /** `register_space_folder` (324), then the member-shaped project (no path). */
+  private async registerForSpaceAdmin(
+    claims: DbClaims,
+    state: FolderUploadState,
+    workingDir: string,
+  ): Promise<ProjectResource> {
+    const raw = await registerSpaceFolderRow(this.deps.db, claims, state.spaceId, {
+      name: state.projectName,
+      workingDir,
+      trust: state.trust === 'trusted' ? 'trusted' : 'untrusted',
+      clientMutationId: null,
+    });
+    const rows = await this.deps.db.query<SpaceProjectRow>(
+      claims,
+      'select * from public.space_projects_for_caller($1::uuid) where project_id = $2',
+      [raw.spaceId, raw.projectId],
+    );
+    const row = rows[0];
+    if (!row) throw new CollabError('not_found', `no such project: ${raw.projectId}`);
+    return {
+      id: row.folder_id,
+      name: row.name,
+      repoUrl: row.repo_url,
+      projectEntityId: row.project_id,
+      spaceId: raw.spaceId,
+      trust: row.trust as ProjectResource['trust'],
+      defaults: (row.defaults ?? {}) as ProjectResource['defaults'],
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString(),
+    };
+  }
+
   /** Terminal cleanup: abort still-pending slots, drop staged blobs and state. */
   private async release(claims: DbClaims, state: FolderUploadState): Promise<void> {
     await this.releaseSlots(claims, state.spaceId, state.files);
@@ -458,12 +506,6 @@ export class W2ProjectFolderUploadService {
 function requireUnpinned(claims: DbClaims): void {
   if (claims.sessionSpaceId) {
     throw new CollabError('forbidden', 'a folder import grants a gate folder, which a space-pinned session cannot do');
-  }
-}
-
-function requireNodeAdmin(nodeAdmin: boolean): void {
-  if (!nodeAdmin) {
-    throw new CollabError('forbidden', "node-admin access is required to import a folder onto the node's disk");
   }
 }
 

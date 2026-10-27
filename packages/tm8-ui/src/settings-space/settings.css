@@ -833,3 +833,363 @@
   text-transform: uppercase;
 }
 .set-board__frame { border: 1px solid var(--pn-line); border-radius: var(--pn-r-lg); padding: 16px; background: var(--pn-paper); }
+
+.set-space-admin { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.set-space-admin > h1 { margin: 0; padding: 16px; font-size: 20px; }
+
+/* --- framed (round 2, R2-D3) --------------------------------------------- */
+
+/* Inside the app frame Settings is full-bleed like Work: the nav is the
+   frame's panel, so the card, its frame padding and its centring go and the
+   section body fills the content area. The sections keep their own reading
+   measure. */
+.set-root[data-framed] {
+  padding: 0;
+  background: var(--pn-card, var(--pn-surface));
+}
+.set-root[data-framed] .set-card {
+  max-width: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+/* --- stacked (the phone, audit E1) --------------------------------------- */
+
+/* One column: a grouped list of sections, then one section per screen under a
+   back verb. Geometry is the Settings mockup's (01a14cc4): 52px rows in a
+   rounded group card, an uppercase group title, a 12px gutter. Only the phone
+   shell passes `stacked`, so none of this reaches the desktop. */
+.set-root--stacked {
+  padding: 0;
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+.set-stack {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 12px 12px calc(16px + var(--mobile-safe-bottom, 0px));
+}
+.set-stack::-webkit-scrollbar { display: none; }
+.set-stack > .set-nav__eyebrow { display: block; padding: 4px 6px 10px; }
+
+.set-stack__group { margin-bottom: 14px; }
+.set-stack__title {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  margin: 0;
+  padding: 0 6px;
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.set-stack__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.set-stack__rows > li + li { border-top: 1px solid var(--pn-line); }
+
+.set-stack__row {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  color: var(--pn-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.set-stack__row:active { background: var(--pn-hover); }
+.set-stack__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: -2px; }
+.set-stack__text { flex: 1; min-width: 0; }
+.set-stack__label,
+.set-stack__hint {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-stack__label { font-size: var(--pn-fs-title); font-weight: 550; }
+.set-stack__hint { font-size: var(--pn-fs-sm); color: var(--pn-ink-3); }
+.set-stack__row--danger .set-stack__label { color: var(--pn-block); }
+.set-stack__tag {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--pn-line);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+.set-stack__chev { flex: none; font-size: var(--pn-fs-h3); color: var(--pn-ink-3); }
+
+.set-stack__page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.set-stack__back {
+  appearance: none;
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  margin: 4px 6px 0;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-title);
+  cursor: pointer;
+}
+.set-stack__back > span:first-child { font-size: var(--pn-fs-h2); line-height: 1; }
+.set-stack__back:active { background: var(--pn-hover); }
+.set-stack__back:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.set-stack__page > .set-body { min-height: 0; }
+.set-stack__refusal { flex: 1; }
+
+/* The tile each row leads with (mockup 01a14cc4): a 30px rounded square, its
+   glyph and wash from one status family. `data-tone` names the family, so a
+   custom style repaints these with everything else. */
+.set-stack__tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  line-height: 1;
+}
+.set-stack__tile[data-tone='info'] { background: var(--pn-info-soft); color: var(--pn-info); }
+.set-stack__tile[data-tone='run'] { background: var(--pn-run-soft); color: var(--pn-run); }
+.set-stack__tile[data-tone='brand'] { background: var(--pn-brand-soft); color: var(--pn-brand); }
+.set-stack__tile[data-tone='merged'] { background: var(--pn-pr-merged-soft); color: var(--pn-pr-merged); }
+.set-stack__tile[data-tone='wait'] { background: var(--pn-wait-soft); color: var(--pn-wait); }
+.set-stack__tile[data-tone='block'] { background: var(--pn-block-soft); color: var(--pn-block); }
+.set-stack__tile[data-tone='idle'] { background: var(--pn-idle-soft); color: var(--pn-ink-3); }
+
+/* A row that opens a refusal reads quieter before it is tapped. */
+.set-stack__row--off .set-stack__label { color: var(--pn-ink-2); }
+.set-stack__row--danger.set-stack__row--off .set-stack__label { color: var(--pn-block); }
+.set-stack__tag[data-tag='read-only'],
+.set-stack__tag[data-tag='status'] {
+  border-color: transparent;
+  background: var(--pn-info-soft);
+  color: var(--pn-info);
+}
+
+/* --- the phone's touch floor inside a section (task 01a14dcc) -------------
+   The stacked list's rows are 52px; the sections they open render the
+   desktop's controls, and the census (e2e/settings-taps-census.mjs) measured
+   ~100 of them under the 44px floor (CONTRACT §6): 17–28px fields, 20px row
+   actions, a 13px checkbox. Two treatments, by what the mockup (01a14cc4)
+   draws:
+     · fields and a form's own submit are drawn full size there (46px
+       buttons), so they simply GROW to the floor. Fields also take 16px type,
+       below which iOS zooms the page on focus.
+     · row actions (Edit / Hide, Connect / Disconnect …) and the checkbox are
+       small marks beside a row's text. They keep their drawn size and the
+       ELEMENT grows to the floor: a transparent border is the margin a thumb
+       hits, `background-clip: padding-box` keeps the fill off it, and an inset
+       shadow is the outline (the composer Send disc's split). Never a
+       pseudo-element: the census measures the element's own box (§6).
+   Members' select and ✕ live in members-section.css by the same rule. Each
+   class is named rather than a blanket `button {}` (§6 forbids that), and only
+   the phone renders `.set-root--stacked`. */
+.cv2-root.set-root--stacked :is(
+  .set-field,
+  .set-account__input,
+  .set-spl__input,
+  .cred-svc__input,
+  .set-space-profile__form input,
+  .set-space-profile__form select
+) {
+  box-sizing: border-box;
+  height: auto;
+  min-height: var(--mobile-touch-min, 44px);
+  font-size: 16px;
+}
+.cv2-root.set-root--stacked :is(.set-chip, .set-add, .set-space-profile__form button) {
+  box-sizing: border-box;
+  min-height: var(--mobile-touch-min, 44px);
+  min-width: var(--mobile-touch-min, 44px);
+}
+.cv2-root.set-root--stacked :is(.set-ghost, .cred-action) {
+  box-sizing: border-box;
+  min-height: var(--mobile-touch-min, 44px);
+  min-width: var(--mobile-touch-min, 44px);
+  /* (44 - 22) / 2 above and below a 22px drawn button. */
+  border: 0 solid transparent;
+  border-block-width: 11px;
+  /* The inner corner is the outer one less the border, so the vertical radius
+     carries the 11px back and the drawn button keeps its --pn-r-sm corner. */
+  border-radius: var(--pn-r-sm) / calc(var(--pn-r-sm) + 11px);
+  padding-block: 0;
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--pn-line-2);
+}
+.cv2-root.set-root--stacked .cred-action--primary {
+  box-shadow: inset 0 0 0 1px rgba(var(--pn-brand-rgb), 0.35);
+}
+.cv2-root.set-root--stacked .set-spl__spawn { flex-wrap: wrap; column-gap: 0; }
+/* Beside the 44px box the help squeezed the bare "Allow spawn" text node to
+   one letter per line at 360px; on its own line it reads as the label's note. */
+.cv2-root.set-root--stacked .set-spl__spawn-help { flex: 1 1 100%; }
+.cv2-root.set-root--stacked .set-spl__spawn > input[type='checkbox'] {
+  appearance: none;
+  box-sizing: border-box;
+  flex: none;
+  width: var(--mobile-touch-min, 44px);
+  height: var(--mobile-touch-min, 44px);
+  /* Pulls the label word back to the drawn box's usual 6px gap. */
+  margin: 0 -7px 0 -13px;
+  /* (44 - 18) / 2 around an 18px box. */
+  border: 13px solid transparent;
+  border-radius: 17px;
+  background: var(--pn-surface);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--pn-line-2);
+  cursor: pointer;
+}
+.cv2-root.set-root--stacked .set-spl__spawn > input[type='checkbox']:checked {
+  background-color: var(--pn-brand);
+  box-shadow: inset 0 0 0 1px var(--pn-brand), inset 0 0 0 4px var(--pn-surface);
+}
+.cv2-root.set-root--stacked .set-spl__spawn > input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -13px;
+}
+
+/* --- scope chips (settings redesign, 2026-10-18) -------------------------- */
+
+/* WHO A CHANGE REACHES, on every section head and every Overview card. The
+   tone names the scope, never a judgement: info for you, idle for this
+   browser, run for the space, wait for the server — the server is the one
+   worth pausing on, because a change there reaches every space. Text always
+   carries the meaning; the tone only helps the eye find it. */
+.set-scope-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--set-scope-tone, var(--pn-ink-3)) 35%, transparent);
+  background: var(--set-scope-soft, var(--pn-hover));
+  color: var(--set-scope-tone, var(--pn-ink-3));
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.set-scope-chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.set-scope-chip[data-scope='you'] { --set-scope-tone: var(--pn-info); --set-scope-soft: var(--pn-info-soft); }
+.set-scope-chip[data-scope='browser'] { --set-scope-tone: var(--pn-ink-3); --set-scope-soft: var(--pn-idle-soft); }
+.set-scope-chip[data-scope='space'] { --set-scope-tone: var(--pn-run); --set-scope-soft: var(--pn-run-soft); }
+.set-scope-chip[data-scope='node'] { --set-scope-tone: var(--pn-wait); --set-scope-soft: var(--pn-wait-soft); }
+/* Inside a row, beside its label: same words, less ink. */
+.set-scope-chip--quiet { height: 18px; font-size: 10.5px; background: none; }
+
+/* The title and its chip share a baseline-ish centre; a long title wraps
+   before the chip is pushed off the head. */
+.set-section__title { min-width: 0; }
+
+/* --- the unframed shell's grouped nav ------------------------------------ */
+
+.set-nav__group {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+}
+.set-nav__group + .set-nav__group { margin-top: 10px; }
+.set-nav__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 14px 4px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.set-nav__scope {
+  font-family: var(--pn-ui);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--pn-ink-4);
+}
+.set-nav__row:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* NARROW: the 160px column beside the body leaves a section ~400px on a
+   small window, so below 720px the nav folds into a wrapped block of chips
+   above the body — every destination still one tap away. It WRAPS rather
+   than scrolling sideways (mobile/noscroll.test.ts), and caps its own height
+   so a short window still has room for the section. */
+@media (max-width: 720px) {
+  .set-root:not([data-framed]) .set-card { flex-direction: column; }
+  .set-root:not([data-framed]) .set-nav {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    max-height: 168px;
+    border-right: 0;
+    border-bottom: 1px solid var(--pn-line);
+  }
+  .set-root:not([data-framed]) .set-nav__eyebrow,
+  .set-root:not([data-framed]) .set-nav__heading { display: none; }
+  .set-root:not([data-framed]) .set-nav__group { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .set-root:not([data-framed]) .set-nav__group + .set-nav__group {
+    margin-top: 0;
+    padding-left: 6px;
+    border-left: 1px solid var(--pn-line);
+  }
+  .set-root:not([data-framed]) .set-nav__row { border-left: 0; border-radius: var(--pn-r-sm); padding: 5px 10px; }
+  .set-root:not([data-framed]) .set-nav__row[aria-current='true'] { padding: 5px 10px; box-shadow: inset 0 -2px 0 var(--pn-brand); }
+  .set-section__head { flex-wrap: wrap; row-gap: 6px; }
+}

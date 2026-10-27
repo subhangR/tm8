@@ -117,7 +117,11 @@ export function checkHost(headers: IncomingHttpHeaders, config: ServerConfig): S
   if (host === undefined) return ALLOWED;
   const hostname = hostnameOfHostHeader(host);
   if (hostname === null || !allowedHostnames(config).has(hostname)) {
-    return refuse(`Host ${JSON.stringify(host)} is not this node (S2 host allowlist)`);
+    return refuse(
+      `Host ${JSON.stringify(host)} is not this node (S2 host allowlist). If this is the name the node is ` +
+        `reached by, set TM8_PUBLIC_ORIGIN to its origin (or add the hostname to TM8_ALLOWED_HOSTNAMES) ` +
+        `and restart the server.`,
+    );
   }
   return ALLOWED;
 }
@@ -145,13 +149,20 @@ export function checkOrigin(headers: IncomingHttpHeaders, config: ServerConfig):
     // parsing would otherwise normalize (credentials, path, query, fragment,
     // or a trailing slash) before comparing the operator's exact allowlist.
     if (value !== parsed.origin || !config.allowedOrigins!.includes(value)) {
-      return refuse(`cross-origin request from ${parsed.origin} refused (S3 exact-origin allowlist)`);
+      return refuse(
+        `cross-origin request from ${parsed.origin} refused (S3 exact-origin allowlist). If this is the ` +
+          `node's own address, add it to TM8_ALLOWED_ORIGINS (or set TM8_PUBLIC_ORIGIN to it) and restart.`,
+      );
     }
     return ALLOWED;
   }
   // URL.hostname strips IPv6 brackets; the allowlist stores both forms.
   if (!allowedHostnames(config).has(hostname) && !allowedHostnames(config).has(`[${hostname}]`)) {
-    return refuse(`cross-origin request from ${parsed.origin} refused (S3/S4 same-origin only)`);
+    return refuse(
+      `cross-origin request from ${parsed.origin} refused (S3/S4 same-origin only). If this is the ` +
+        `node's own address, set TM8_PUBLIC_ORIGIN to it (or add ${JSON.stringify(hostname)} to ` +
+        `TM8_ALLOWED_HOSTNAMES) and restart.`,
+    );
   }
   return ALLOWED;
 }

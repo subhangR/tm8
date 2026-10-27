@@ -37,6 +37,7 @@ const PINNED: readonly { file: string; marker: string; why: string }[] = [
   { file: 'chat-home/chat-home.css', marker: '.tch-xgraph__node-kind', why: 'SVG canvas text — geometry, not type' },
   { file: 'chat-home/chat-home.css', marker: '.tch-asset__file > span', why: '20px pictographic glyph box' },
   { file: 'chat-home/chat-home.css', marker: 'mobile-frame .tch-find', why: "iOS zoom-on-focus floor — functional 16px" },
+  { file: 'chat-home/chat-home.css', marker: "[data-keyboard='up'] .tch-welcome h1", why: 'collapsed hero line, 17px per composer-states mockup §1b' },
   { file: 'channel-screen/channel-screen.css', marker: '.chs-refusal__glyph', why: '20px pictographic glyph box' },
 ];
 

@@ -17,9 +17,9 @@ import type { SpaceLinkView } from '@tm8/contract';
 import { SpaceLinksSection } from './SpaceLinksSection';
 import { spaceLinksPortFromSeam, type SpaceLinksPort } from './port';
 
-// Every sentence describes only what W6 ships: the switch is stored, nothing reads it yet.
+// Every sentence describes only what ships: since W7b the switch is enforced.
 const SPAWN_OFF_TEXT =
-  'Allow spawn is stored per link; it is enforced when cross-space spawn ships.';
+  'Allow spawn lets agents working for you start, resume or dispatch sessions in the target space through this link. Turning it off stops new ones; sessions already running keep running.';
 
 afterEach(() => cleanup());
 
@@ -66,9 +66,9 @@ describe('SpaceLinksSection', () => {
     const warning = await screen.findByTestId('space-links-warning');
     expect(warning.textContent).toMatch(/Every member of this space can see that a link to the target space exists/);
     expect(warning.textContent).toMatch(/Only you can use your own sign-in/);
-    expect(warning.textContent).toMatch(/Once cross-space spawn ships, agents working for you in this space will be able to act in the target space as you while you are signed in/);
+    expect(warning.textContent).toMatch(/Agents working for you in this space can act in the target space as you while you are signed in/);
     expect(warning.textContent).toMatch(/Allow spawn/);
-    // The stored-switch wording (enforcement arrives with cross-space spawn).
+    // The enforced-switch wording (W7b).
     expect(warning.textContent).toContain(SPAWN_OFF_TEXT);
     // Control: an empty list still draws it.
     expect(await screen.findByTestId('space-links-empty')).toBeTruthy();

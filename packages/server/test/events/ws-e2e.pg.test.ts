@@ -552,8 +552,10 @@ describe('/v2/ws coexistence — events WS and PTY WS on one upgrade path', () =
     });
 
     // Cleanup: terminate the session so teardown is not racing a live PTY.
+    // Spec D1 §4.2 (302): an open session's terminate names the work's outcome.
     await node.request('POST', `/v2/entities/${sessionId}/commands/terminate`, {
       clientMutationId: cmid(),
+      outcome: 'stop',
     });
   });
 });

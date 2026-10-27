@@ -1,3 +1,9 @@
+import { registerToolHandlers } from '../tools/handlers.js';
+import type { ToolRuntime } from '../tools/runtime.js';
+import { registerMcpRuntimeHandlers, type McpRuntimeHandlerOptions } from '../mcp/handlers.js';
+import { registerMcpDefinitionHandlers } from '../mcp/definitions.js';
+import { registerMcpAuditHandlers } from '../mcp/audit.js';
+import { registerMcpTokenHandlers } from '../mcp/tokens.js';
 import { installedPluginsFor, registerSkillHandlers } from '../skills/handlers.js';
 import { registerSkillMutations } from '../skills/mutations.js';
 import { registerJevHandlers } from '../jev/handlers.js';
@@ -71,6 +77,7 @@ import { registerW2IdentitySpacesHandlers } from './handlers/w2/identity-spaces.
 import { registerW2InboxReadMarksHandlers } from './handlers/w2/inbox-read-marks.js';
 import { registerW2MenuDefaultChannelHandlers } from './handlers/w2/menu-default-channel.js';
 import { registerW2ConfigsHandlers } from './handlers/w2/configs.js';
+import { registerW2StyleHandlers } from './handlers/w2/styles.js';
 import {
   registerW2MessagesHandoffsHandlers,
   type W2MessagesHandoffsServiceOptions,
@@ -81,6 +88,7 @@ import {
   type W2ProjectFolderUploadHandlerDeps,
 } from './handlers/w2/project-folder-uploads.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
+import { registerPathGrantHandlers } from './handlers/w2/path-grants.js';
 import { registerW2ContainerHandlers } from './handlers/w2/containers.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
@@ -91,12 +99,15 @@ import {
   type CredentialHandlerDeps,
 } from './handlers/w2/credentials.js';
 import { registerSpaceLinkHandlers, type SpaceLinkHandlerDeps } from './handlers/w2/space-links.js';
+import type { RemoteSpaceLinkRoute } from './handlers/w2/space-link-remote-route.js';
 import { registerServerHandlers } from './handlers/w2/servers.js';
-import { DisabledRemoteInvokeForwarder } from '../remote/forwarder.js';
+import { DisabledRemoteInvokeForwarder, type RemoteInvokeForwarder } from '../remote/forwarder.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 import { registerChatHandlers, type ChatHandlerDeps } from '../chat/handlers.js';
 
 export interface RegisterFacadeHandlersDeps {
+  readonly tools?: ToolRuntime;
+  readonly mcp?: McpRuntimeHandlerOptions;
   readonly db: Db;
   readonly config: ServerConfig;
   readonly owner?: FacadeDeps['owner'];
@@ -162,6 +173,14 @@ export interface RegisterFacadeHandlersDeps {
    * is not mounted (no key to seal a stored session with).
    */
   readonly spaceLinks?: SpaceLinkHandlerDeps;
+  /**
+   * W9c: the forwarder for links whose target is on another server. The
+   * composition root passes `HttpsRemoteInvokeForwarder` only while
+   * `TM8_REMOTE_SPACE_LINKS` is on; absent, `DisabledRemoteInvokeForwarder`.
+   */
+  readonly remoteInvokeForwarder?: RemoteInvokeForwarder;
+  /** W9c: receives the target-side `/link/v1/*` route for the HTTP server to mount. */
+  readonly onRemoteSpaceLinkRoute?: (route: RemoteSpaceLinkRoute) => void;
   /** TM8 Chat runtime composition; absent mounts a narrowed 503 degraded mode. */
   readonly chat?: ChatHandlerDeps;
   /**
@@ -202,7 +221,7 @@ export function registerFacadeHandlers(
     config: deps.config,
     owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
     ...(deps.launchCookie ? { launchCookie: deps.launchCookie } : {}),
-    remoteInvokeForwarder: new DisabledRemoteInvokeForwarder(),
+    remoteInvokeForwarder: deps.remoteInvokeForwarder ?? new DisabledRemoteInvokeForwarder(),
   };
 
   /**
@@ -218,6 +237,14 @@ export function registerFacadeHandlers(
    * `entities.get` and `entities.children` disagree about the same row.
    */
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
+  registerMcpDefinitionHandlers(registry, facade);
+  registerMcpAuditHandlers(registry, facade);
+  // §5.5: `mcp.tokens.*` is mounted unconditionally, like the audit read. It
+  // needs no MCP runtime — it mints and revokes rows — and a node whose
+  // `/mcp` endpoint is not wired still lets a member revoke a token.
+  registerMcpTokenHandlers(registry, facade);
+  registerToolHandlers(registry, facade, deps.tools);
+  if (deps.mcp) registerMcpRuntimeHandlers(registry, facade, deps.mcp);
   // Attention v2: the one attention module owns every attentionRequests.* op.
   registerAttentionHandlers(registry, facade);
   registerW2IdentitySpacesHandlers(registry, facade);
@@ -227,6 +254,7 @@ export function registerFacadeHandlers(
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
   registerW2ProjectsAssociationsHandlers(registry, facade);
+  registerPathGrantHandlers(registry, facade);
   // skills.preview also lists the Claude plugins a launch could load (the
   // launch ··· menu's Plugins row); that needs the credential root.
   const credentialRoot = deps.credentials?.dataDir;
@@ -313,6 +341,10 @@ export function registerFacadeHandlers(
   registerW2FeedContextHandlers(registry, facade);
   registerW2MenuDefaultChannelHandlers(registry, facade);
   registerW2ConfigsHandlers(registry, facade);
+  // Styles (migration 284, styles spec §4): personal styles, read-only space
+  // styles, prefs and the space default. The human-only default door is
+  // wrapped inside the registration.
+  registerW2StyleHandlers(registry, facade);
 
   /**
    * Containers (177). REGISTERED UNCONDITIONALLY, unlike `files` or the
@@ -346,7 +378,10 @@ export function registerFacadeHandlers(
   if (deps.credentials) registerCredentialHandlers(registry, facade, deps.credentials);
 
   // W6 space links: the writes are human-only inside the registration (and in SQL).
-  const spaceLinks = deps.spaceLinks ?? (deps.credentials ? { dataDir: deps.credentials.dataDir } : undefined);
+  const spaceLinksBase = deps.spaceLinks ?? (deps.credentials ? { dataDir: deps.credentials.dataDir } : undefined);
+  const spaceLinks = spaceLinksBase && deps.onRemoteSpaceLinkRoute
+    ? { ...spaceLinksBase, remote: { ...spaceLinksBase.remote, onRoute: deps.onRemoteSpaceLinkRoute } }
+    : spaceLinksBase;
   if (spaceLinks) registerSpaceLinkHandlers(registry, facade, spaceLinks);
   // W8 servers: the same node-key root; add/adopt/remove are human-only inside.
   if (spaceLinks) registerServerHandlers(registry, facade, { dataDir: spaceLinks.dataDir });

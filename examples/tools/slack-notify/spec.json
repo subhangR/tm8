@@ -1,0 +1,10 @@
+{
+  "help": "Post text to a Slack incoming webhook. Requires curl and python3. Slack may ignore channel overrides for app-bound webhooks. Example: tm8 tool run slack-notify --text 'Build complete' --slack-webhook-url-from-env MY_SLACK_WEBHOOK",
+  "tm8Access": "none",
+  "timeoutSeconds": 60,
+  "inputs": [
+    { "name": "text", "type": "string", "required": true, "description": "Message text" },
+    { "name": "channel", "type": "string", "description": "Optional channel override", "default": "" },
+    { "name": "slack_webhook_url", "type": "secret", "required": true, "description": "Slack incoming webhook URL" }
+  ]
+}

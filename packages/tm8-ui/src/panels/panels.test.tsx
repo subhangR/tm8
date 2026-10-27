@@ -17,6 +17,7 @@ import {
   taskGuideLines,
   taskTombstone,
   taskUuidTitle,
+  storyAsAnEntity,
   teamMemberForge,
   ada,
   noor,
@@ -111,7 +112,13 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(kindsWithFixtures.length).toBeGreaterThan(10);
   });
 
-  it.each(kindsWithFixtures.map((r) => [r.config.kind, r.detail] as const))(
+  /* A `composition: 'canvas'` kind (the story, task 01a101c5) draws no tab row
+     at all — its body is the only tab; `detail/panel-canvas.test.tsx` pins it. */
+  it.each(
+    kindsWithFixtures
+      .filter((r) => r.config.panel.composition !== 'canvas')
+      .map((r) => [r.config.kind, r.detail] as const),
+  )(
     '%s renders THREE tabs in fixed order — the first names the KIND (user ruling 2026-07-29)',
     (kind, detail) => {
       const { getByTestId } = render(
@@ -246,11 +253,14 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
       'Git',
       'Debug',
       'Graph',
+      // A session's launch context (task 01a122b9): it left the Links page
+      // when Links moved to the side column.
+      'Launch context',
     ]);
     // And they really are marks — otherwise this test would keep passing on the
     // labelled arrangement that caused the crowding.
     expect(tabEls.every((t) => t.querySelector('svg.kit-vicon') !== null)).toBe(true);
-    expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '', '']);
+    expect(tabEls.map((t) => t.textContent)).toEqual(['', '', '', '', '', '', '']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {
@@ -371,8 +381,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       (rows: readonly EntitySummary[]) =>
       (filter: QueryFilter): readonly EntitySummary[] => {
         const bands = filter.category;
-        if (!bands || bands.length === 0) return rows;
-        return rows.filter((r) => r.category !== undefined && bands.includes(r.category));
+        // Spec D1: the session tabs narrow on process status × outcome.
+        const sessionNarrowed = rows.filter((r) => {
+          const state = r.state as { status?: string; outcome?: string };
+          if (filter.sessionStatus && !filter.sessionStatus.includes(state.status as never)) return false;
+          if (filter.sessionOutcome && !filter.sessionOutcome.includes((state.outcome ?? 'open') as never)) return false;
+          return true;
+        });
+        if (!bands || bands.length === 0) return sessionNarrowed;
+        return sessionNarrowed.filter((r) => r.category !== undefined && bands.includes(r.category));
       };
 
     const running = {
@@ -423,12 +440,13 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
          failure), and this is the assertion that keeps the fix declarative — a
          later edit that hardcodes `work_session` inside EntityListPanel passes
          the test above and fails this one. */
-      expect(getKind('work_session').list.defaultCategory).toBe('in_progress');
+      // Spec D1 §5.3: sessions have their own tabs and open on Running.
+      expect(getKind('work_session').list.defaultCategory).toBe('running');
 
       const { getByRole } = render(
         <EntityListPanel kind="work_session" rowsFor={bandedRowsFor([running])} ctx={ctx} />,
       );
-      expect(getByRole('tab', { selected: true }).textContent).toContain('In Progress');
+      expect(getByRole('tab', { selected: true }).textContent).toContain('Running');
     });
 
     it('leaves every AUTHORED kind on To Do — the shared tab array is untouched', () => {
@@ -544,7 +562,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // The tool did not move out of the slot, it moved INTO the corner: two
     // sessions on the same tool are now told apart by whose face is on them.
     expect(slot?.getAttribute('data-teammate-id')).toBe('tm_fable');
-    expect(slot?.querySelector('.pn-agent__tool')?.textContent).toBe('✦');
+    // Codex is drawn as its real mark (an SVG), not the ✦ glyph it used to be.
+    expect(slot?.querySelector('.pn-agent__tool svg[data-tool-kind="codex"]')).not.toBeNull();
     expect(slot?.querySelector('.kit-avatar')?.getAttribute('aria-label')).toBe('Fable · codex');
     // No children on this row, so the third corner stays EMPTY rather than
     // printing a zero — having no sub-sessions is not a count of them.
@@ -594,7 +613,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const slot = container.querySelector('[data-agent-kind]');
     expect(slot?.querySelector('.kit-avatar')).toBeNull();
-    expect(slot?.querySelector('.pn-agent__mark')?.textContent).toBe('✳');
+    expect(slot?.querySelector('.pn-agent__mark svg[data-tool-kind="claude"]')).not.toBeNull();
     expect(slot?.getAttribute('aria-label')).toBe('claude-code');
   });
 
@@ -634,7 +653,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // The user ratified universal tabs; phase 7 made them the closed four and
     // made them IDENTICAL, which is the stronger claim: they are not four tabs
     // each kind spells its own way, they are one declaration.
-    for (const kind of ['task', 'work_session', 'doc']) {
+    for (const kind of ['task', 'doc']) {
       const panel = render(<EntityListPanel kind={kind} rowsFor={rowsFor([])} ctx={ctx} />);
       expect(
         panel.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\s*\d+\+?$/, '')),
@@ -642,6 +661,13 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       ).toEqual(['To Do', 'In Progress', 'Done', 'Cancelled']);
       panel.unmount();
     }
+    // Spec D1 §5.3 (owner decision, 6 Oct): sessions have their OWN row,
+    // split first on whether the process is alive — as skills have theirs.
+    const sessions = render(<EntityListPanel kind="work_session" rowsFor={rowsFor([])} ctx={ctx} />);
+    expect(
+      sessions.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\s*\d+\+?$/, '')),
+    ).toEqual(['Running', 'Interrupted', 'Completed', 'Stopped']);
+    sessions.unmount();
     // The sections that used to fight the tabs on the same axis are GONE.
     expect(getKind('task').list.sections).toBeUndefined();
   });
@@ -745,6 +771,41 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(nested.textContent).toContain(child.title);
   });
 
+  it('#16: child stories nest under their parent — only roots sit at the top level', () => {
+    const story = (id: string, title: string, parentId: string | null): EntitySummary => ({
+      ...storyAsAnEntity,
+      id,
+      title,
+      parentId,
+    });
+    const rootA = story('story-root-a', 'Cross-space', null);
+    const rootB = story('story-root-b', 'UI Theme', null);
+    const childA = story('story-child-a', 'Child of cross-space', rootA.id);
+    const childB1 = story('story-child-b1', 'First child of UI theme', rootB.id);
+    const childB2 = story('story-child-b2', 'Second child of UI theme', rootB.id);
+    const view = render(
+      <EntityListPanel
+        kind="story"
+        rowsFor={rowsFor([rootA, childA, rootB, childB1, childB2])}
+        ctx={ctx}
+      />,
+    );
+
+    // Collapsed by default: the two roots are the only rows drawn.
+    const titles = () => view.getAllByTestId('list-tile').map((t) => t.textContent ?? '');
+    expect(titles()).toHaveLength(2);
+    expect(titles().join(' ')).not.toContain('child');
+
+    // Expanding reveals each child INSIDE its parent's group, not beside it.
+    expandTree(view.container);
+    const groups = view.getAllByTestId('list-tile-children');
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.textContent).toContain(childA.title);
+    expect(groups[1]!.textContent).toContain(childB1.title);
+    expect(groups[1]!.textContent).toContain(childB2.title);
+    expect(groups[1]!.textContent).not.toContain(childA.title);
+  });
+
   it('THE GATE: activity on a NON-LIVE row never streams and never pulses', () => {
     // sessionStale's record says running; the seam says stale. Bytes are
     // (impossibly) attributed to it. It must still not look alive.
@@ -801,52 +862,45 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       id: 'session-codex-exited',
       state: { ...sessionLive.state, agentTool: 'codex', model: 'gpt-5.6-sol', status: 'exited' },
     } as EntitySummary;
-    const onTerminate = vi.fn();
-    const { getByTestId, getByRole, queryByText } = render(
+    const onResume = vi.fn();
+    const { getByTestId, getByRole, queryByText, queryByRole } = render(
       <EntityListPanel
         kind="work_session"
         rowsFor={rowsFor([exited])}
         ctx={ctx}
         livenessOf={() => 'not-running'}
         linkedTasksOf={() => [taskGuideLines]}
-        onTerminate={onTerminate}
+        onResume={onResume}
       />,
     );
     const tile = getByTestId('list-tile');
-    expect(tile.querySelector('[data-agent-kind="codex"] .pn-agent__mark')?.textContent).toBe('✦');
+    expect(tile.querySelector('[data-agent-kind="codex"] .pn-agent__mark svg[data-tool-kind="codex"]')).not.toBeNull();
     expect(tile.querySelector('img')).toBeNull();
-    expect(tile.textContent).toContain('gpt-5.6-sol');
+    /* THE MODEL NAME IS CUT FROM THE ROW (task 01a1469f, design doc 01a1465d
+       §6: "removed from tiles: model"). The glyph above it stays — the agent
+       mark is the session's kind glyph, not a word — and the model is a
+       detail-panel fact now. */
+    expect(tile.textContent).not.toContain('gpt-5.6-sol');
+    expect(tile.querySelector('.pn-st__model')).toBeNull();
     expect(tile.querySelector('.pn-st__radio')).toBeNull();
     expect(queryByText(taskGuideLines.title)).toBeNull();
     fireEvent.click(getByRole('button', { name: 'Expand details' }));
     expect(tile.textContent).toContain(taskGuideLines.title);
     /**
-     * TERMINATE IS OFFERED HERE, AND *THAT* IS THE FIX — 2026-08-19.
-     *
-     * Read what this row actually is: `state.status = 'exited'` and
-     * `livenessOf → 'not-running'`, but its `category` is still `in_progress`,
-     * because it is `sessionLive` with the status field overwritten. That is
-     * not an artificial fixture — it is exactly the GHOST the user reported:
-     * a row whose process is gone while the envelope still files it under
-     * In Progress.
-     *
-     * This block used to assert `hon-disabled`, on the reasoning that there is
-     * no process left to kill so the control should say so. The reasoning was
-     * wrong about the node. `SpawnService.terminate` states the opposite in
-     * its own comment — "'not_found' is not an error: terminating an
-     * already-dead session is the user cancelling something that just
-     * finished" — and writes `exited` regardless, which since 155 files the
-     * row under Done. The client was refusing an operation the server performs,
-     * and the cost was rows nobody could retire.
-     *
-     * So the verb is live and the click reaches the executor. What refuses
-     * Terminate now is the CATEGORY, not the verdict — see 'a session under
-     * DONE refuses Terminate' below.
+     * SPEC D1 §5.2 REPLACES THE 2026-08-19 GHOST RULING FOR THIS ROW. Its
+     * process has EXITED and its outcome is still open, so it is not a ghost
+     * any more — it is an Interrupted session ("Ended, not completed"), and
+     * the row offers Resume · Complete · Dismiss. Terminate has nothing left
+     * to end. (The ghost the ruling was about — record running, process gone
+     * — still offers Terminate: see 'but a GHOST session offers it'.)
      */
-    const terminate = getByRole('button', { name: 'Terminate' });
-    expect(terminate.className).not.toContain('hon-disabled');
-    fireEvent.click(terminate);
-    expect(onTerminate).toHaveBeenCalledWith(exited.id);
+    expect(queryByRole('button', { name: 'Terminate' })).toBeNull();
+    const resume = getByRole('button', { name: 'Resume' });
+    fireEvent.click(resume);
+    expect(onResume).toHaveBeenCalledWith(exited.id);
+    /* The word is the mark's accessible name now (01a1469f): same derivation,
+       same string, drawn as a glyph rather than a pill. */
+    expect(tile.querySelector('[data-testid="session-row-signal"]')?.textContent).toContain('Ended, not completed');
     expect(getByRole('button', { name: 'Copy session ID' })).toBeTruthy();
   });
 
@@ -881,58 +935,60 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(tile.querySelector('.pn-st__statusglyph')?.getAttribute('title')).toContain('unverified');
   });
 
-  it('the live COUNT is rows ∩ the seam live set — not rows whose record claims running', () => {
-    // Both fixtures carry state.status === 'running'. Only one is in the live
-    // set. A count off the record would say 2 and be an overstatement.
+  it('SPEC D1 §5.3: the header "● N running" IS the Running tab count, stale rows included', () => {
+    /*
+     * This used to be rows ∩ the seam live set of the OPEN tab (user report
+     * 2026-08-19). Spec D1 rules the header to equal the Running tab's own
+     * count: the tab holds a stale row until the reaper records it lost, and a
+     * header that disagreed with the tab under it would be the confusing
+     * number this replaced. "Stale" is said on the row itself.
+     */
     const { getByTestId } = render(
       <EntityListPanel
         kind="work_session"
         rowsFor={rowsFor([sessionLive, sessionStale])}
+        pageStateOf={(filter) => ({
+          hasMore: false,
+          loading: false,
+          total: (filter as { sessionOutcome?: string[] }).sessionOutcome?.includes('completed')
+            && (filter as { sessionStatus?: string[] }).sessionStatus?.includes('running') ? 2 : 0,
+        })}
         ctx={ctx}
         liveIds={[sessionLive.id]}
         livenessOf={(id) => (id === sessionLive.id ? 'live' : 'stale')}
       />,
     );
-    expect(getByTestId('list-live-count').textContent).toContain('1');
+    expect(getByTestId('list-live-count').textContent).toBe('● 2 running');
   });
 
-  it('and it counts the OPEN TAB, not the whole kind', () => {
-    /**
-     * USER REPORT 2026-08-19: "live session count is shown in both in progress
-     * and done. does it make sense".
-     *
-     * It did not. `liveCountFor` asked `rowsFor(spec.filter)` and never applied
-     * the tab, so one unchanging number sat beside a tab row whose every other
-     * number moved — reading, under Done, as a claim that Done holds live
-     * sessions.
-     *
-     * That was merely confusing while nothing live could BE under Done. The
-     * tick makes it wrong: a session marked done keeps running, so "live, under
-     * Done" is a real population and the badge has to be able to state its
-     * size. Both rows below are live; they sit under different tabs.
-     */
-    const inProgress = { ...sessionLive, id: 'sess-wip', category: 'in_progress' as const };
-    const filed = { ...sessionLive, id: 'sess-filed', category: 'done' as const };
+  it('SPEC D1 §5.3: "⚠ M interrupted" shows above zero and opens the Interrupted tab', () => {
+    const crashed = {
+      ...sessionLive,
+      id: 'sess-crashed',
+      state: { ...sessionLive.state, status: 'failed', endedKind: 'crashed' },
+    } as EntitySummary;
     const { getByTestId, getByRole } = render(
       <EntityListPanel
         kind="work_session"
         rowsFor={(filter) => {
-          const want = (filter as { category?: string[] }).category;
-          const rows = [inProgress, filed];
-          return want ? rows.filter((r) => want.includes(r.category)) : rows;
+          const f = filter as { sessionStatus?: string[]; sessionOutcome?: string[] };
+          return [sessionLive, crashed].filter((r) => {
+            const st = r.state as { status: string; outcome?: string };
+            return (!f.sessionStatus || f.sessionStatus.includes(st.status))
+              && (!f.sessionOutcome || f.sessionOutcome.includes(st.outcome ?? 'open'));
+          });
         }}
         ctx={ctx}
-        liveIds={[inProgress.id, filed.id]}
         livenessOf={() => 'live'}
       />,
     );
-
-    // Both rows are live, so the OLD unnarrowed count said 2 on every tab.
-    fireEvent.click(getByRole('tab', { name: /In Progress/ }));
-    expect(getByTestId('list-live-count').textContent).toContain('1');
-
-    fireEvent.click(getByRole('tab', { name: /Done/ }));
-    expect(getByTestId('list-live-count').textContent).toContain('1');
+    const alert = getByTestId('list-alert-count');
+    expect(alert.textContent).toBe('⚠ 1 interrupted');
+    // The Interrupted tab's count is the red badge.
+    const tab = getByRole('tab', { name: /Interrupted/ });
+    expect(tab.querySelector('[data-alert="true"]')?.textContent).toBe('1');
+    fireEvent.click(alert);
+    expect(getByRole('tab', { selected: true }).textContent).toContain('Interrupted');
   });
 
   it('row actions render disabled-with-reason when capabilities are UNKNOWN', () => {
@@ -960,7 +1016,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const tile = compact.getAllByTestId('list-tile')[0]!;
     expect(tile.querySelector('.pn-st__titleText')?.textContent).toBe(sessionStale.title);
-    expect(tile.querySelector('.pn-st__model')?.textContent).toBe(sessionStale.state.kind === 'work_session' ? sessionStale.state.model : null);
+    /* The model left the row with the quiet tile (01a1469f); what D34 is
+       actually about — that the floor adds no second TEXT ROW — is the
+       `pn-st__inforow` assertion below, and it still holds. */
+    expect(tile.querySelector('.pn-st__model')).toBeNull();
     expect(tile.querySelector('.pn-st__inforow')).toBeNull();
   });
 
@@ -996,10 +1055,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     // Nothing selected: exactly the trigger, the View chip and the sort chip.
     expect(chips).toHaveLength(3);
     expect(chips.length).toBeLessThan(optionCount);
-    /* Sentence case, and the caret is its own muted glyph rather than an
-       ASCII character inside the label. The BOUND is what this test holds:
-       one trigger, never one chip per option. */
-    expect(getByTestId('filter-trigger').textContent).toBe('Filter▾');
+    /* Icon only: the word lives in the accessible name, not the face. The
+       BOUND is what this test holds: one trigger, never one chip per option. */
+    expect(getByTestId('filter-trigger').textContent).toBe('');
+    expect(getByTestId('filter-trigger').getAttribute('aria-label')).toBe('Filter');
   });
 
   it('people filtering is membership-conditional and uses createdByIds', () => {
@@ -1112,12 +1171,23 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(union, `no query carried the unioned filter; saw ${JSON.stringify(seen)}`).toBeTruthy();
   });
 
-  it('at the floor the sort chip collapses to its glyph and never disappears', () => {
-    const { container } = render(
-      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} compact />,
-    );
-    const chips = [...container.querySelectorAll('.lp__filters .lp__chip')];
-    expect(chips.map((c) => c.textContent)).toContain('↓');
+  it('the filter row is icons only, each named for assistive tech', () => {
+    for (const compact of [false, true]) {
+      const { getByTestId, unmount } = render(
+        <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} compact={compact} />,
+      );
+      for (const [testId, name] of [
+        ['filter-trigger', 'Filter'],
+        ['row-view-trigger', 'View'],
+        ['sort-trigger', 'Sort: Recent activity'],
+      ] as const) {
+        const chip = getByTestId(testId);
+        expect(chip.textContent).toBe('');
+        expect(chip.querySelector('svg')).toBeTruthy();
+        expect(chip.getAttribute('aria-label')).toBe(name);
+      }
+      unmount();
+    }
   });
 
   it('both popovers dismiss on Escape and on an outside click', () => {
@@ -1354,7 +1424,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityListPanel kind="doc" rowsFor={rowsFor([docLayoutSpec])} ctx={ctx} />,
     );
     const tile = getAllByTestId('list-tile')[0]!;
-    expect(tile.querySelector('.lp__meta')?.textContent).toContain('markdown');
+    /* THE ANATOMY IS STILL GENERAL, read off what a doc row now draws. The
+       `.lp__meta` strip this used to assert (`markdown`) is cut — design doc
+       01a1465d §6 — so the general fact is checked on the parts that stayed:
+       a status mark drawn from the kind's own glyph, and the title. A doc
+       declares no `tile.signal`, which is why its signal slot is empty. */
+    expect(tile.querySelector('.lp__meta')).toBeNull();
+    expect(tile.querySelector('.lp__statusmark .lp__kindmark')).not.toBeNull();
+    expect(tile.querySelector('.lp__title')?.textContent).toContain(docLayoutSpec.title);
+    expect(tile.querySelector('.lp__signalslot')?.children.length).toBe(0);
   });
 
   it('the seam VERDICT outranks the record status badge on a session row', () => {
@@ -1436,6 +1514,32 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(panel.getAttribute('data-theme')).toBe('dark');
   });
 
+  it('the dark scope follows the SHOWN surface: terminal dark, transcript in the app theme (task 01a14c39)', () => {
+    // Subhang, 2026-10-18: the transcript reads exactly like chat, in whichever
+    // theme is on; the terminal stays black. The viewer's saved choice is the
+    // first paint's answer, so a transcript opens light with no dark flash.
+    const detail = fixtureDetails[sessionStale.id]!;
+    window.localStorage.setItem(`tm8:work-session-surface:v1:anonymous:${detail.id}`, 'transcript');
+    try {
+      const { getByTestId, container } = render(
+        <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
+      );
+      const panel = getByTestId('entity-detail-panel');
+      expect(panel.classList.contains('cv2-root')).toBe(false);
+      expect(panel.getAttribute('data-theme')).toBeNull();
+      expect(panel.getAttribute('data-always-dark')).toBeNull();
+
+      fireEvent.click(container.querySelector('button[data-surface="terminal"]')!);
+      expect(panel.classList.contains('cv2-root')).toBe(true);
+      expect(panel.getAttribute('data-theme')).toBe('dark');
+
+      fireEvent.click(container.querySelector('button[data-surface="transcript"]')!);
+      expect(panel.classList.contains('cv2-root')).toBe(false);
+    } finally {
+      window.localStorage.clear();
+    }
+  });
+
   it('R5 #4B: the header pill obeys the VERDICT, never the record, on a stale session', () => {
     // The record says running; the seam says stale. Rendering live green here
     // is the D6 lie that reached the user's screen at the gate.
@@ -1444,7 +1548,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
     );
     const header = getByTestId('panel-header');
-    expect(header.textContent).toContain('stale');
+    // Spec D1 §5.6: the pill is the session word, "Stale" (§5.1 row 9a).
+    expect(header.textContent).toContain('Stale');
     expect(header.querySelector('.kit-pill--run')).toBeNull();
   });
 
@@ -1518,8 +1623,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         liveness="live"
         onAction={(ref) => fired.push(ref)}
         /* `chat-about` — Chat beside Run (entity chat §3.2) — is wired too,
-           so the bar's only refusal-free claim stays about this host. */
-        wiredActions={['terminate', 'chat-about']}
+           so the bar's only refusal-free claim stays about this host. Spec
+           D1 §5.6: a working session's bar is Complete · Terminate. */
+        wiredActions={['complete-session', 'terminate', 'chat-about']}
         /* ▶ (continue this session, migration 200) shares the bar; with launch
            sources it is a live flow verb rather than an unwired one. */
         launch={LAUNCH_SOURCES}
@@ -1557,8 +1663,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
      * `liveness="exited"` and the `done` category are the same fixture as
      * before; only the expected control changed.
      */
+    /* Spec D1: the slot reads the session's own process × outcome, not the
+       category — so the ended run is stated on the record: a STOPPED session
+       whose process exited, whose only verb is Resume (§5.2). */
     const source = fixtureDetails[sessionStale.id]!;
-    const detail = { ...source, category: 'done' as const };
+    const detail = {
+      ...source,
+      category: 'cancelled' as const,
+      state: { ...source.state, status: 'exited', outcome: 'stopped' } as typeof source.state,
+    };
     const dispatched: string[] = [];
     const { getByTestId } = render(
       <EntityDetailPanel
@@ -1601,7 +1714,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         ctx={{ ...ctx, capabilities: detail.capabilities }}
         liveness="unknown"
         onAction={() => {}}
-        wiredActions={['terminate', 'resume', 'chat-about']}
+        wiredActions={['complete-session', 'terminate', 'resume', 'chat-about']}
         launch={LAUNCH_SOURCES}
       />,
     );
@@ -1660,9 +1773,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(within(getByTestId('panel-action-bar')).getByRole('button', { name: /run/i }));
     const slot = getByTestId('panel-action-flow');
     expect(slot.className).toContain('pn-actions__flow');
-    expect(within(slot).getByTestId('launch-quick-config')).toBeTruthy();
-    // And it lives inside the bar, so the bar is still the only row.
+    // And the slot lives inside the bar, so the bar is still the only row.
     expect(getByTestId('panel-action-bar').contains(slot)).toBe(true);
+    // #1070: the popup PORTALS out of the slot to the outermost `.cv2-root`
+    // (body here), because the slot's stacking context trapped its scrim
+    // under the shell chrome. Out of the bar entirely is still no new row.
+    const config = getByTestId('launch-quick-config');
+    expect(slot.contains(config)).toBe(false);
+    expect(getByTestId('panel-action-bar').contains(config)).toBe(false);
+    expect(document.body.contains(config)).toBe(true);
   });
 
   it('Run with NO launch sources keeps its refusal rather than opening an empty config', () => {

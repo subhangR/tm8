@@ -84,8 +84,32 @@ const window0 = (index: number): SessionTranscriptPage => ({
   hasOlder: (CURSORS[index] ?? 0) > 0,
 });
 
+/**
+ * `?fixture=session` — ONE REAL-SHAPED SESSION instead of the numbered windows:
+ * a task prompt, prose with markdown, a fenced block, a long pasted log, a
+ * failure the agent reports, and a follow-up typed into the PTY. It is what the
+ * transcript-vs-chat screenshots are taken against, so both views carry the
+ * kind of content a reader actually meets.
+ */
+const at = (minute: number) => new Date(Date.UTC(2026, 9, 17, 9, minute)).toISOString();
+const sessionPage: SessionTranscriptPage = {
+  ...window0(CURSORS.length - 1),
+  entries: [
+    { at: at(0), source: 'user', truncated: false, text: 'Fix the flaky `receipt.test.ts` link-pr timeout and open a PR. Do not merge.' },
+    { at: at(1), source: 'assistant', truncated: false, text: 'Reading the test and the receipt writer first.\n\nThe timeout is the **15s deadline** on `link-pr`; the write itself returns in ~200ms, so the wait is elsewhere.' },
+    { at: at(4), source: 'assistant', truncated: false, text: 'Found it — the test polls the receipt feed before the subscription is open:\n\n```ts\nawait cli(["task", "link-pr", id, url]);\nconst receipt = await waitForReceipt(feed, id); // feed not yet subscribed\n```\n\nMoving the subscribe above the write.' },
+    { at: at(9), source: 'assistant', truncated: true, text: `The focused suite still fails once in five runs:\n\n\`\`\`\n${Array.from({ length: 14 }, (_, i) => `FAIL  test/receipt.test.ts > link-pr > writes a receipt (run ${String(i + 1)})\n  Error: Timed out after 15000ms waiting for receipt 01a14c17-…`).join('\n')}\n\`\`\`` },
+    { at: at(11), source: 'user', truncated: false, text: 'Is it also red on main CI?' },
+    { at: at(12), source: 'assistant', truncated: false, text: '**Error:** `gh run list` failed — `HTTP 401: Bad credentials`. I cannot read main CI from this lane; comparing against the last green local run instead.' },
+    { at: at(15), source: 'assistant', truncated: false, text: 'Done. PR #1250 moves the subscribe before the write; 20/20 green locally. Linked on the task — not merged.' },
+  ],
+};
+
+const fixture = new URLSearchParams(location.search).get('fixture');
+
 const seam = {
   transcript: (_id: EntityId, opts?: { before?: number }): Promise<SessionTranscriptPage> => {
+    if (fixture === 'session') return Promise.resolve(sessionPage);
     const index = opts?.before === undefined ? 0 : CURSORS.indexOf(opts.before) + 1;
     const page = index >= 0 && index < CURSORS.length ? window0(index) : null;
     // Latency, because an instant prepend hides an anchoring bug that a real
@@ -150,11 +174,30 @@ if (liveness === 'live') {
 }
 
 document.body.className = 'cv2-root';
-document.body.setAttribute('data-theme', 'dark');
+// `?theme=light` for the light ground; dark stays the default so earlier
+// measurements against this file still reproduce.
+document.body.setAttribute('data-theme', params.get('theme') === 'light' ? 'light' : 'dark');
+// The product's default style is ChatGPT (`BUILTIN_STYLE_IDS`); without it
+// this harness drew the retired Atelier palette and no screenshot taken here
+// could be compared with `chat-dev.html`, which already sets it.
+// `?style=atelier` keeps the old ground reachable.
+const style = params.get('style') === 'atelier' ? undefined : 'chatgpt';
+if (style) document.body.setAttribute('data-style', style);
 document.body.style.margin = '0';
+/* `100%`, NOT `100vh`. The body is `.cv2-root`, which carries the app's
+   `zoom: 1.1`, and a `100vh` inside it is 110% of the window — the composer and
+   the Jump pill were drawn below the fold in every screenshot. A percentage of
+   the html box is the window's height whatever the zoom. */
+document.documentElement.style.height = '100%';
+document.body.style.height = '100%';
 
 createRoot(document.getElementById('root')!).render(
-  <div className="cv2-root" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+  <div
+    className="cv2-root"
+    data-theme={document.body.getAttribute('data-theme') ?? undefined}
+    data-style={style}
+    style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--pn-paper)' }}
+  >
     {/* The panel body's box: a bounded height with a min-height:0 child, which
         is what turns `.tr-surface__scroll` into an actual scroll container. */}
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

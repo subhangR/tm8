@@ -64,6 +64,10 @@
 }
 
 .project-onboard__form > label:not(.project-onboard__trust),
+/* The same stacked label inside the source fieldset (Add project sheet and
+   Create Space): the name, the GitHub URL and the new folder's name. */
+.project-onboard__section > label:not(.project-onboard__trust):not(.project-onboard__radio):not(.project-onboard__button),
+.project-onboard__field > label:not(.project-onboard__radio):not(.project-onboard__button),
 .project-onboard__field,
 .project-browser__new {
   display: flex;
@@ -84,7 +88,11 @@
   font: 12px/1.4 var(--pn-ui);
 }
 
-.project-onboard input:focus-visible,
+.project-onboard input:not([type='checkbox'], [type='radio']):focus-visible {
+  outline: none;
+  border-color: var(--pn-brand);
+}
+
 .project-onboard button:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: 2px;
@@ -92,6 +100,11 @@
 
 .project-onboard__folder-row {
   align-items: stretch;
+}
+
+.project-onboard__folder-row input {
+  flex: 1;
+  font-family: var(--pn-mono);
 }
 
 .project-onboard__folder-row code {
@@ -169,6 +182,15 @@
   margin: 0;
   color: var(--pn-ink-4);
   font: 9.5px/1.45 var(--pn-mono);
+}
+
+.project-onboard .project-onboard__help {
+  color: var(--pn-ink-3);
+  font: 11px/1.45 var(--pn-ui);
+}
+
+.project-onboard small code {
+  color: var(--pn-ink-2);
 }
 
 .project-onboard__error {

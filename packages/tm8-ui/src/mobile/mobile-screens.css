@@ -381,24 +381,25 @@
    is already `opacity: 1` under `(pointer: coarse)` — panels.css fixed the
    VISIBILITY of it for touch and left the 16px box.
 
-   RE-ANCHORED TO THE ROW'S LEADING CORNER rather than grown around its own
-   centre. Growing in place would put the box 8px above and 7px left of the
-   tile, where `.lp__tile { overflow: hidden }` clips it — the same
-   measures-44-draws-16 trap as 7f. Anchored at the corner the whole 44x44 is
-   inside the tile and inside the row's own height, and `place-items: center`
-   re-centres the caret in it: the glyph moves ~7px right and ~8px down and
-   reads as a disclosure gutter, which is what it now is.
-
-   IT OVERLAPS THE ROW'S LEADING MARK, deliberately and knowingly. On the tree
-   rows this control appears on, that mark is the kind glyph — decoration, not a
-   control — so the overlap costs no affordance. It is NOT applied to the task
-   tile, whose leading slot is the live state trigger of 7f; those are different
-   trees and this rule reaches only the one that has a disclosure. */
-.cv2-root[data-shell='mobile'] .lp__disclosure {
-  top: 0;
-  left: 0;
-  inline-size: var(--mobile-touch-min);
+   IN FLOW, as a 24px-wide, 44px-tall gutter — the shape `.pn-st__arrow` has
+   on the phone (see the session rules below). It used to be absolute at the
+   row's leading corner and 44x44, overlapping the kind glyph "deliberately and
+   knowingly"; once the leading icon began carrying the sub-entity count that
+   overlap hid the count, so the chevron took its own column on every anatomy,
+   the task tile's `.pn-tt__arrow` included. In flow, the box grows the row
+   rather than hanging past it, so the measures-44-draws-16 clipping trap of 7f
+   cannot recur here. */
+.cv2-root[data-shell='mobile'] .lp__disclosure,
+.cv2-root[data-shell='mobile'] .pn-tt .pn-tt__arrow {
+  inline-size: 24px;
   block-size: var(--mobile-touch-min);
+  flex: 0 0 24px;
+}
+/* The standard tile's relation band hangs under its title (`panels.css`), and
+   the title moves with the gutter: 7 + 24 + 6 + 16 + 6, less the 3px the band
+   has always led the title by. */
+.cv2-root[data-shell='mobile'] .lp__tile[data-tree='true'] .lp__tile-badges {
+  padding-left: 56px;
 }
 
 /* --- 7h. DEF-019 — kind selector and list actions (20-23px) -------------- */
@@ -658,12 +659,13 @@
 
    Restated from the same parts rather than as a new hard number, so it cannot
    drift from §7f the way the original drifted from the 16px mark: the row
-   inset, the status column and the flex gap, each named where it is defined.
+   inset, the 24px chevron gutter of §7g and its gap, the status column and the
+   flex gap, each named where it is defined.
    `--tt-indent` stays in the sum because a nested row's whole anatomy shifts
    with it and the badge line has to shift too.
    ========================================================================== */
 .cv2-root[data-shell='mobile'] .pn-tt__badges {
-  padding-inline-start: calc(7px + var(--tt-indent, 0px) + var(--mobile-touch-min) + 6px);
+  padding-inline-start: calc(7px + var(--tt-indent, 0px) + 24px + 6px + var(--mobile-touch-min) + 6px);
 }
 
 
@@ -915,6 +917,18 @@
      centres on the PANEL rather than on the space left over by the title. */
   padding: 18px var(--pn-space-3) var(--pn-space-2) var(--pn-space-4);
   border-bottom: 1px solid var(--pn-line);
+}
+
+/* DRAG TO DISMISS (audit D1). The head is the handle; the body keeps its own
+   scroll. `touch-action: none` hands the head's vertical drag to
+   `useDragDismiss` instead of to the page. */
+.msheet__head {
+  touch-action: none;
+}
+
+.msheet__panel[data-dragging] {
+  animation: none;
+  user-select: none;
 }
 
 .msheet__grip {
@@ -1510,6 +1524,80 @@
   padding-block: 0;
   gap: var(--pn-space-1);
 }
+/* The forms banner sits under the surface row, beside a transcript whose flex
+   basis is its whole scrollback. Left shrinkable it took the shrink and showed
+   55px of a 138px banner; it keeps its height and its 70% cap scrolls the rest. */
+.cv2-root[data-shell='mobile'] .pn-work-session-content > .pf-banner {
+  flex-shrink: 0;
+}
+/* A form row is title · meta · button on one line. At 360 the nowrap meta
+   ("2 questions · draft saved · Sep 24") kept its whole width and squeezed the
+   title to one letter. On the phone the meta drops under the title and both
+   ellipsize in the column beside the button, so the title keeps the line. */
+.cv2-root[data-shell='mobile'] .pf-banner__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--pn-space-2);
+  row-gap: 2px;
+}
+.cv2-root[data-shell='mobile'] .pf-banner__row > .pf-banner__title { grid-column: 1; grid-row: 1; }
+.cv2-root[data-shell='mobile'] .pf-banner__row > .pf-banner__meta {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root[data-shell='mobile'] .pf-banner__row > .pn-btn { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+/* The header's ‹ and the Messages door ride the immersive row (the frame
+   header is hidden above). At 360 the row holds ☰ · ‹ · three tabs · door, so
+   it stops wrapping and the tabs give up their 76px floor and wide tracking
+   rather than pushing the door onto a second row the terminal would pay for. */
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] > .pn-surface-switch {
+  flex-wrap: nowrap;
+  padding-inline: 4px;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .pn-surface-switch__tabs {
+  flex-wrap: nowrap;
+  gap: 2px;
+}
+.cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .pn-surface-switch__tab {
+  min-width: 0;
+  padding-inline: 7px;
+  letter-spacing: 0.02em;
+}
+.cv2-root[data-shell='mobile'] .pn-session-up,
+.cv2-root[data-shell='mobile'] .pn-session-messages {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  background: transparent;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+.cv2-root[data-shell='mobile'] .pn-session-messages {
+  margin-inline-start: auto;
+}
+.cv2-root[data-shell='mobile'] .pn-session-messages__n {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.cv2-root[data-shell='mobile'] :is(.pn-session-up, .pn-session-messages):focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+.cv2-root[data-shell='mobile'] :is(.pn-session-up, .pn-session-messages):active {
+  background: var(--pn-hover);
+}
 .cv2-root[data-shell='mobile'] .pn-session-details-toggle {
   flex: none;
   min-width: 44px;
@@ -1527,6 +1615,20 @@
   outline-offset: -2px;
 }
 
+/* THE ACTIONS BUTTON CLEARS THE SESSION COMPOSER. On Transcript the composer
+   is the last thing on the page, and the entity FAB's resting spot (12px off
+   the bottom-right) is its Send button. Lift the FAB one dock higher: the dock
+   measures 88px at rest in the immersive row and 104px with details shown.
+   While the field is being edited the FAB steps aside entirely, because the
+   field may grow past that and actions are not what a typing thumb wants. The
+   Terminal surface already carries the FAB in its key row. */
+.cv2-root[data-shell='mobile'] .mobile-frame:has(.pn-work-session-content[data-surface='transcript'] .tr-surface__foot) .efab {
+  --efab-base: calc(var(--mobile-safe-bottom, 0px) + 104px + var(--pn-space-2));
+}
+.cv2-root[data-shell='mobile'] .mobile-frame:has(.pn-work-session-content .tr-surface__foot:focus-within) .efab {
+  display: none;
+}
+
 /* The session input is a compact command row until it is being edited.
    Attachments/errors keep a full-width row above it. */
 .cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot {
@@ -1542,11 +1644,10 @@
 }
 .cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card textarea {
   min-height: 44px;
-  height: 44px;
   padding: 10px 8px;
 }
 .cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card textarea:focus {
-  height: 72px;
+  max-height: calc(4 * 1.4em + 20px);
 }
 .cv2-root[data-shell='mobile'] .pn-work-session-content[data-immersive='true'] .tr-surface__foot .ri-card__foot {
   flex-wrap: nowrap;

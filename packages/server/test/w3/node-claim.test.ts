@@ -43,10 +43,12 @@ describe('first-run node claim, over the public surface', () => {
   }
 
   it('reports itself UNCLAIMED, with no credential of any kind', async () => {
-    const status = successData<{ claimed: boolean; mode: string; signupPath: string }>(
+    const status = successData<{ claimed: boolean; mode: string; signupPath: string; projectIsolation: string }>(
       await server.request('GET', '/v2/auth/claim'),
     );
-    expect(status).toEqual({ claimed: false, mode: 'single', signupPath: 'claim' });
+    // `shared`: a loopback-only single node, read from the internal.node_policy
+    // row boot wrote from gatePosture (234), not inferred from `mode`.
+    expect(status).toEqual({ claimed: false, mode: 'single', signupPath: 'claim', projectIsolation: 'shared' });
   });
 
   it('minted a token, and stored ONLY its hash', async () => {

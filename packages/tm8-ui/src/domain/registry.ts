@@ -22,7 +22,7 @@
  * stays as the fallback a string-only surface can print. No component changed
  * shape to receive it, exactly as promised.
  */
-import type { CoreEntityKind, EntityKind } from '@tm8/contract';
+import { normalizeKindAlias, type CoreEntityKind, type CustomEntityKind, type EntityKind } from '@tm8/contract';
 import type {
   ActionRef,
   AssignControl,
@@ -43,10 +43,13 @@ import type {
 } from './types';
 import { CUSTOM_KIND_FALLBACK, VIEWER_ACTOR } from './types';
 import { KIND_ART } from './kind-art';
+import { CRAFT_KIND } from './craft';
 /* The container refusals live with the verbs that raise them, so the sentence
    a button refuses with and the sentence this row declares are one string. */
 import { CONTAINER_CAPABILITY_REASONS } from './actions';
 import type { SessionLiveness } from '../data/seam';
+import { SESSION_TABS, sessionNeedsAttentionOf } from './session-outcome';
+import { storyTileProgress, taskTileProgress } from './progress';
 
 /** WLT §2.1 reserved words — never a kind slug. */
 export const RESERVED_SLUGS: readonly string[] = [
@@ -55,6 +58,8 @@ export const RESERVED_SLUGS: readonly string[] = [
   'inbox',
   'workspace',
   'settings',
+  'space-admin',
+  'node-admin',
   'channel',
   'e',
   'k',
@@ -291,34 +296,33 @@ const SESSION_STATE_CONTROL: StateControl = {
   filterKey: 'sessionStatus',
   label: 'State',
   command: 'set-state',
-  /* A session's OBSERVED lifecycle, bucketed. `failed` is `done` and not
-     `cancelled`: under this model failure is a RUNTIME FACT that gets a badge
-     (design invariant 4), and the run itself did reach its end — nobody
-     cancelled it. `idle` is in_progress: an idle session is still alive.
+  /* A session's OBSERVED lifecycle, bucketed — for an OPEN session.
 
-     THIS TABLE IS A MIRROR, as of migration 155. The WRITER is
-     `internal.session_status_category`, and the server's own copy is
-     `SESSION_STATUS_CATEGORY` (packages/server/src/facade/status.ts) — the same
-     three-artifact arrangement 147 made for `work_status`. Nothing here
-     computes a row's tab; `EntitySummary.category` arrives with the row. These
-     categories only narrow the STATUS FILTER CHIP to the open tab, so a copy
-     that disagreed would offer `exited` as a filter under In Progress.
+     SPEC D1 §3.2: the category now comes from the OUTCOME first —
+     completed → done, stopped → cancelled — and only an open session's comes
+     from its process: spawning → to_do, everything else (running, idle,
+     exited, failed) → in_progress. An open session whose process ended is
+     unfinished: someone has to resume, complete or stop it, so it is NOT done.
+     That is why `exited` and `failed` moved here from `done` (they were done
+     under 155, when a crash filed itself as finished).
 
-     `spawning` MOVED from `in_progress` to `to_do` with 155, and it is not a
-     taste call. `public.execution_resume` returns an exited session to
-     `spawning`; under `to_do` that is the ruled `done -> to_do` REOPEN, and
-     under `in_progress` it is `done -> in_progress`, which
-     `internal.category_transition_allowed` refuses outright — the bridge would
-     have made every resume in the product a 23514. It is also 147's own
-     `pulled -> to_do` ruling ("claimed is not started") applied to the same
-     shape of fact: a spawning session has been ASKED for, and some have been
-     asking for days. */
+     THIS TABLE IS A MIRROR. The WRITER is `internal.session_category`
+     (db/migrations/302_session_outcome_and_claims.sql), the server's own copy
+     is `sessionCategory` (packages/server/src/facade/status.ts), and the
+     outcome-aware version on this side is `sessionCategoryOf`
+     (domain/session-outcome.ts). Nothing here computes a row's tab;
+     `EntitySummary.category` arrives with the row. These categories only
+     narrow the STATUS FILTER CHIP, and the session list no longer shows the
+     category tabs at all (it has Running · Interrupted · Completed · Stopped).
+
+     `spawning` stays `to_do` (155): `public.execution_resume` returns an
+     ended session to `spawning`, and under `to_do` that is the ruled reopen. */
   options: [
     { id: 'spawning', category: 'to_do' },
     { id: 'running', category: 'in_progress' },
     { id: 'idle', category: 'in_progress' },
-    { id: 'exited', category: 'done' },
-    { id: 'failed', category: 'done' },
+    { id: 'exited', category: 'in_progress' },
+    { id: 'failed', category: 'in_progress' },
   ],
   readOnlyReason:
     'A session’s state is observed, not chosen — the node reports it from the process. Use Terminate to stop a live session.',
@@ -398,6 +402,8 @@ const BY_POSITION: SortSpec = { key: 'position', label: 'Manual order' };
 const BY_DUE: SortSpec = { key: 'dueDate', label: 'Due date' };
 const BY_START: SortSpec = { key: 'startDate', label: 'Start date' };
 const BY_PRIORITY: SortSpec = { key: 'priority', label: 'Priority' };
+/* 307: least progress first (points-weighted; rows without a figure last). */
+const BY_PROGRESS: SortSpec = { key: 'progress', label: 'Progress' };
 
 /**
  * Offering a sort BESIDE the default one. Exactly one entry per kind may carry
@@ -638,27 +644,22 @@ const sessionLiveTreatment = (live: SessionLiveness): LiveTreatment => {
 };
 
 /**
- * 'NEEDS YOU' grouping — designed-but-dormant per R8.
+ * 'NEEDS YOU' grouping — the server fact plus ONE derived one (Spec D1 §5.1).
  *
- * This was written as `live === 'live' && row.status === 'idle'`, and it stayed
- * quiet for the wrong reason: `statusOf` used to answer 'not-running' for every
- * idle session, so the conjunction was UNREACHABLE. Dormancy was an accident of
- * a defect, not a property of the predicate. The moment idle was correctly
- * admitted to the live side, this fired on every quiet session at once — the
- * whole list banded as NEEDS ATTENTION, and because the attention band renders
- * flat, the session hierarchy disappeared with it.
+ * It stays dormant for LIVE sessions, deliberately: 'idle' means the PTY
+ * produced no output recently, which is QUIET, not BLOCKED, and the one time
+ * this fired on idle the whole list banded as NEEDS ATTENTION. The server's
+ * `summary.badges.attention` (which the call site ORs in) is still the only
+ * thing that can raise a live row.
  *
- * 'idle' means the PTY produced no output recently. That is QUIET, not BLOCKED.
- * An autonomous worker between turns is idle and wants nothing; an agent
- * genuinely waiting on a human is idle too, and nothing on this row tells the
- * two apart. A badge that fires on both is not a signal.
- *
- * So the grouping stays dormant DELIBERATELY now, and the only thing that can
- * raise it is an explicit server-side fact — `summary.badges.attention`, which
- * the call site already ORs in. When a real detector ships, give it a field on
- * ListRowFacts and test THAT here; do not re-derive attention from liveness.
+ * What D1 adds is a RECORDED fact, not a liveness inference: an OPEN session
+ * whose process has ENDED — crashed, lost, credential disconnected, ended
+ * without completing, failed to start. Its work is unfinished and nobody is
+ * running it, so someone has to resume, complete or stop it (§5.1 rows 7-11).
+ * A completed session's crash is a grey fact and never fires (scenario 3).
  */
-const sessionNeedsAttention = (_row: ListRowFacts, _live: SessionLiveness): boolean => false;
+const sessionNeedsAttention = (row: ListRowFacts, _live: SessionLiveness): boolean =>
+  row.sessionState !== undefined && sessionNeedsAttentionOf(row.sessionState);
 
 // ---------------------------------------------------------------------------
 // The rows
@@ -668,69 +669,22 @@ const ROWS: readonly KindConfig[] = [
   // -- task -----------------------------------------------------------------
   {
     kind: 'task',
+    mcpEquipment: true,
     label: 'Task',
     labelPlural: 'Tasks',
+    createInstant: 'title',
     icon: '◻',
     iconArt: KIND_ART.task,
-    /**
-     * TITLE AND THE TWO DATES — the write surface `dueDate` never had, and the
-     * one `startDate` is born with rather than waiting for its own report.
-     *
-     * The due date was modelled end to end and reachable from nowhere: the
-     * column, the `PatchTaskInput` member, the `::date` sort and the read
-     * projection all existed, and no control in the app wrote one. So `BY_DUE`
-     * below sorted a field only the CLI could fill, which is a sort that works
-     * perfectly and can never have anything to order.
-     *
-     * WHY THE DIALOG AND NOT A `valueControl`. That list is explicitly "an enum
-     * member of `EntityState` this kind lets a user set" — it renders a picker
-     * over declared `options`, and a calendar has none. The dialog is the
-     * surface that already draws arbitrary typed fields, so a due date is one
-     * more `editFields` row rather than a new control shape.
-     *
-     * TITLE RIDES ALONG because the dialog is "Edit task" and a form that
-     * cannot touch the name reads broken. It grants nothing new — the row and
-     * the panel header already edit the title inline (`inlineEdit.title`) — and
-     * it is not `required` theatre: `entities.title` is `not null`, so an empty
-     * one is a refusal the dialog states before spending a round trip.
-     *
-     * DESCRIPTION IS DELIBERATELY ABSENT. It is a body, not a field; the panel
-     * renders it as prose, and a three-row textarea in a dialog is where a long
-     * description goes to get truncated by hand.
+    /*
+     * NO `editFields`, AND SO NO EDIT DIALOG (task 01a1163a, owner ruling in
+     * form 01a1164f: "no Edit dialog"). The dialog was the first write surface
+     * for the two dates, and it was the right one while it was the only one.
+     * It no longer is: the two-column page (`panel.layout`) edits title, both
+     * dates and every other property in place, so a dialog repeating three of
+     * them was a second door to the same fields, and it carried their
+     * split-half `readFrom: 'state'` bookkeeping for nothing. §15.1 pins the
+     * `edit` verb to this list, so dropping it drops the verb by derivation.
      */
-    editFields: [
-      { target: 'title', label: 'Title', required: true, placeholder: 'What needs doing' },
-      {
-        target: 'content',
-        source: 'startDate',
-        /* Same split halves as `dueDate` below — projected onto `state`, absent
-           from `contentOf` — so the same `readFrom`. Without it the dialog
-           opens blank on a task that HAS a start date and Save clears it. */
-        readFrom: 'state',
-        label: 'Start date',
-        valueType: 'date',
-      },
-      {
-        target: 'content',
-        source: 'dueDate',
-        /*
-         * WRITTEN to `content.dueDate`, READ from `state.dueDate`. The server
-         * projects the column onto state (`entity-read.ts:1112`) and leaves it
-         * out of `contentOf` (`:1502-1508`), so this is the one field in the
-         * app whose two halves live in different places. Without this the
-         * dialog opens blank on a task that has a due date and Save clears it.
-         */
-        readFrom: 'state',
-        label: 'Due date',
-        /*
-         * OPTIONAL, and unusually literally so: `tasks.due_date` is a NULLABLE
-         * column, so "no due date" is a value the database holds rather than a
-         * hole in the record. Clearing the box sends an explicit `null`, which
-         * is the only thing the server reads as a clear — see `valueForWire`.
-         */
-        valueType: 'date',
-      },
-    ],
     slug: 'tasks',
     strategy: 'collection',
     defaultMode: 'list',
@@ -771,13 +725,16 @@ const ROWS: readonly KindConfig[] = [
           { source: 'pulls' },
           { source: 'workingActors' },
         ],
+        progress: taskTileProgress,
+        /* §6: a task's live fact is WHO HAS IT. */
+        signal: { from: 'avatar' },
       },
       primaryActions: ['run', 'coordinate'],
       filters: [assigneeFilter, taskAttentionFilter, statusFilter, readyToPullFilter],
       /* `BY_START` beside `BY_DUE`, in the order the two dates read: a task
          starts and then it is due. Both are offered because the task kind is
          the one that HAS them — the opt-in the `DEFAULT_SORT` note describes. */
-      sort: [...DEFAULT_SORT, BY_START, BY_DUE, BY_PRIORITY],
+      sort: [...DEFAULT_SORT, BY_START, BY_DUE, BY_PRIORITY, BY_PROGRESS],
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
       valueControls: [TASK_PRIORITY_CONTROL],
@@ -862,18 +819,28 @@ const ROWS: readonly KindConfig[] = [
         COLLECTIONS_BLOCK,
       ],
       /*
-       * The detail header keeps Run and Edit. Coordinate and Complete remain
-       * available from their task-specific surfaces, not this compact panel
-       * toolbar — but `edit` is not a fourth verb competing for that space, it
-       * is the ONLY door to `editFields` (§15.1 pins the two together, and
-       * `useEntityVerbs` drops the verb on a kind that declares nothing). A
-       * task with fields and no verb would be the "declared and unreachable"
-       * half of that rule.
+       * The detail header keeps Run. Coordinate and Complete remain available
+       * from their task-specific surfaces. `edit` LEFT with `editFields`
+       * (above): the page edits every field in place, and §15.1 would refuse
+       * the verb without the list anyway.
        */
-      primaries: ['run', 'edit'],
+      primaries: ['run'],
+      /* An agent testing this task live writes `live: <command>`; the panel
+         lights a blinking Watch live beside Run. */
+      liveScreen: true,
       // Git UI wave: tasks carry the git section (tracked PRs, provenance,
       // gate honesty). A registry field, so the panel never asks the kind.
       gitSection: true,
+      /* The writing in a wide column, the properties in a rail beside it —
+         see `PanelConfig.layout`. */
+      layout: 'two-column',
+      /* What this task waits on and what waits on it: one `depends_on` edge
+         (src task → dst task, the CLI's `task depends_on task`) read from
+         each end. */
+      railRelations: [
+        { kind: 'task', label: 'Depends on', edgeType: 'depends_on', direction: 'outgoing' },
+        { kind: 'task', label: 'Blocks', edgeType: 'depends_on', direction: 'incoming' },
+      ],
       statusPill: {
         source: 'status',
         tones: {
@@ -925,16 +892,20 @@ const ROWS: readonly KindConfig[] = [
        * on the launch node, To Do 0 / In Progress 6 / Done 471 — which is
        * exactly the report: "doesn't show me live sessions."
        *
-       * In Progress rather than Done, though Done is where 471 of the 477 are:
-       * the question this list opens on is "what is running", not "what has
-       * ever run". Done is one click away and remembered per kind once picked.
-       *
-       * NOT A NEW FILTER, and deliberately so. `filters.sessionStatus` already
-       * exists and already works (contract A22, server `ws.status = any(...)`);
-       * what was broken was never the vocabulary's ability to say `running`,
-       * only which band this panel opened on. See the PR body.
+       * SPEC D1 §5.3 keeps the answer and changes the tab it names: the list
+       * opens on RUNNING (process alive or not yet verified dead), which is
+       * the question "what is running" asked directly rather than through
+       * the category.
        */
-      defaultCategory: 'in_progress',
+      defaultCategory: 'running',
+      /* SPEC D1 §5.3 (owner decision, 6 Oct): sessions get their OWN tab row,
+         Running · Interrupted · Completed · Stopped, in place of the shared
+         four — split first on "is the process alive", then on the outcome.
+         The four partition every session (stale rows are recorded live, so
+         they stay in Running), so the counts still add up to the kind total.
+         The shared category stays underneath for story progress and the
+         cross-kind views. */
+      categories: SESSION_TABS,
       tree: { by: 'hierarchy', guideLines: true, messagePulse: true },
       tile: {
         anatomy: 'session-tree',
@@ -948,8 +919,17 @@ const ROWS: readonly KindConfig[] = [
           { source: 'workingActors' },
         ],
         pulse: { signal: 'terminal-activity', gate: 'live' },
+        /* The node's verdict, never `state.status` (R-UI-5). */
+        signal: { from: 'liveness' },
       },
-      liveCount: { filter: NOT_DELETED, label: (n) => `● ${n} live` },
+      /* §5.3 header: "● N running" IS the Running tab's count, and
+         "⚠ M interrupted" links to the Interrupted tab. */
+      liveCount: {
+        filter: NOT_DELETED,
+        label: (n) => `● ${n} running`,
+        tab: 'running',
+        alertTab: { tab: 'interrupted', label: (n) => `⚠ ${n} interrupted` },
+      },
       // Sessions are LAUNCHED, not created: `quickLaunch` below is the real
       // affordance, so the inherited quickCreate:true only mounted a Create
       // control that refuses. Same defect class as the rowActions note below —
@@ -996,34 +976,20 @@ const ROWS: readonly KindConfig[] = [
        * complete` build it, so the ruling that removed it ("a refused control
        * is not a control") no longer applies: it is not refused.
        *
-       * WHAT IT MEANS HERE, and why it is not Terminate wearing a tick. The two
-       * verbs answer different questions and now sit side by side saying so:
+       * SPEC D1 REPLACES THE 2026-08-19 TOGGLE. The tick now means "the WORK
+       * is finished" — `session complete`, with a receipt and the claim check
+       * (§4.1, §5.5) — and it is one-way: a completed row shows a fixed check
+       * that cannot be unticked. Reopening is a separate, logged act — Resume on
+       * a completed session whose process has closed (Q2 = B, owner 6 Oct) —
+       * never an untick. It still does not close the process; the Complete
+       * dialog's "Also close the process" does that.
        *
-       *   terminate  ends the PROCESS. Destructive, irreversible, and the row
-       *              lands in Done because it genuinely finished.
-       *   complete   ends the ROW'S CLAIM ON YOUR ATTENTION. The process keeps
-       *              running, the terminal keeps streaming, and the session
-       *              files itself under Done so you can come back to it.
-       *
-       * A session's STATUS remains observed — `SESSION_STATE_CONTROL.
-       * readOnlyReason` still holds and this writes nothing to it. What the
-       * tick authors is the ENVELOPE's category, which is a different column
-       * and a different question: the node says what the process is doing, the
-       * user says whether they are done with it.
-       *
-       * IT IS A TOGGLE (ruled 2026-08-19 over the one-way alternative): ticking
-       * a done session reopens it and the category goes back to following the
-       * process. `expectedVersion` is what makes a toggling command safe — a
-       * double submit is a version conflict, not a silent flip back.
-       *
-       * AND ON A FINISHED RUN IT IS NOT DRAWN AT ALL (ruled 2026-08-19, with
-       * the process control below). Both verbs above are declared for the row
-       * a session spends its ACTIVE life as; once the run has ended the tick
-       * has no subject — "is this row's claim on my attention over?" is
-       * structurally, permanently yes — so `RowActionCluster` drops it and
-       * swaps Terminate for Resume, leaving ONE control rather than two with
-       * one greyed. Measured before that: `exited` drew a refused Terminate
-       * beside a tick that dispatched, wrote, and moved nothing.
+       * PER-ROW VERBS. These three slots are what the kind HAS; which verbs a
+       * given row offers is its outcome × process (§5.2), resolved by
+       * `sessionControlsFor` (domain/actions.ts): Complete · Terminate while
+       * working, Stop on a ✓ row whose process is open, Follow-up once it has
+       * closed, Resume on a stopped one, and Resume · Complete · Dismiss on an
+       * interrupted one. Terminate on an OPEN session opens the §5.4 dialog.
        *
        * `resume` IS NOT IN THIS ARRAY, and that is a decision rather than an
        * omission. `rowActions` is STATIC per-kind data and `ActionAvailability`
@@ -1059,6 +1025,10 @@ const ROWS: readonly KindConfig[] = [
       // verb for the same reason `rowActions` omits `resume`: this array is
       // static per-kind and listing both would put a permanently refused
       // control beside the live one.
+      //
+      // SPEC D1 §5.6: the slot now expands to the row's outcome verbs
+      // (`sessionControlsFor`) — Complete · Terminate while working, Close
+      // process on a ✓ session, Resume · Complete · Dismiss when interrupted.
       primaries: ['terminate'],
       statusPill: {
         source: 'sessionStatus',
@@ -1077,6 +1047,7 @@ const ROWS: readonly KindConfig[] = [
     kind: 'doc',
     label: 'Doc',
     labelPlural: 'Docs',
+    createInstant: 'editor',
     icon: '▤',
     iconArt: KIND_ART.doc,
     slug: 'docs',
@@ -1120,6 +1091,7 @@ const ROWS: readonly KindConfig[] = [
     kind: 'channel',
     label: 'Channel',
     labelPlural: 'Channels',
+    createInstant: 'title',
     icon: '#',
     iconArt: KIND_ART.channel,
     titleGrammar: 'slug',
@@ -1179,7 +1151,10 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['channelTopic', 'unread', 'workingAgents'] },
     list: baseList({
       tree: { by: 'hierarchy', guideLines: true },
-      tile: { badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }] },
+      tile: {
+        badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }],
+        signal: { from: 'count', field: 'unreadCount', label: 'unread' },
+      },
       inlineEdit: { title: true },
       assignControl: CHANNEL_MEMBER_CONTROL,
     }),
@@ -1317,6 +1292,7 @@ const ROWS: readonly KindConfig[] = [
   // -- team_member ----------------------------------------------------------
   {
     kind: 'team_member',
+    mcpEquipment: true,
     label: 'Teammate',
     labelPlural: 'Teammates',
     icon: '◆',
@@ -1334,7 +1310,12 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '◆', tintBy: 'none' },
     card: { fields: ['owner', 'model', 'liveWork'] },
     list: baseList({
-      tile: { badges: [{ source: 'entityActor' }, { source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }] },
+      tile: {
+        badges: [{ source: 'entityActor' }, { source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }],
+        /* Busy is `state.liveWork` being present — the same field the card
+           reads two lines up, so the dot and the card cannot disagree. */
+        signal: { from: 'presence', field: 'liveWork' },
+      },
       inlineEdit: { title: true },
       tree: { by: 'hierarchy', guideLines: true },
     }),
@@ -1405,7 +1386,11 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['prState', 'repository', 'activityAt'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'prState' }, { source: 'repository' }, { source: 'messages' }] },
+      tile: {
+        badges: [{ source: 'prState' }, { source: 'repository' }, { source: 'messages' }],
+        /* §6 pairs PR with task: the face that owns it. */
+        signal: { from: 'avatar' },
+      },
     }),
     panel: {
       archetype: 'generic',
@@ -1572,6 +1557,7 @@ const ROWS: readonly KindConfig[] = [
     kind: 'collection',
     label: 'Collection',
     labelPlural: 'Collections',
+    createInstant: 'title',
     icon: '▦',
     iconArt: KIND_ART.collection,
     slug: 'collections',
@@ -1617,23 +1603,27 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '⬢', tintBy: 'none' },
     card: { fields: ['projectVersion', 'activityAt', 'createdBy'] },
     list: baseList({
+      /* NOT `quickCreate`: the node refuses a generic create for a project.
+         The birth verb is `add-project` — local folder, upload or GitHub clone
+         (task 01a13574). */
       quickCreate: false,
+      quickStart: 'add-project',
       tile: { badges: [{ source: 'projectVersion' }] },
     }),
     panel: {
       /* kind-bodies-2 handover, applied verbatim: the GOVERNED body. */
       archetype: 'governed',
+      /* The project page (task 01a15a00): the folder everything starts in,
+         its trust, its git, then everything recorded in it with a kind
+         filter. `work-list` replaced `live-sessions` — sessions are one of
+         its filters, with the same liveness word. The unlink footer is off
+         the page until `projects.unlink` has an executor: a dead button was
+         all it drew. */
       blocks: [
-        { block: 'path-row' },
+        { block: 'path-row', label: 'WORKING FOLDER' },
         { block: 'trust-card', params: { action: 'untrust' } },
-        { block: 'live-sessions' },
-        { block: 'unlink-footer', params: { action: 'unlink' } },
-        {
-          block: 'notice',
-          params: {
-            text: 'Projects are a materialized per-space projection of node-level registry rows. Editing, deleting and moving them here is refused by design — manage them in node settings.',
-          },
-        },
+        { block: 'git-status', label: 'GIT' },
+        { block: 'work-list', label: 'IN THIS PROJECT' },
       ],
       capabilityReasons: {
         canEdit: 'Projects are materialized from the node registry — they cannot be edited from a space.',
@@ -1816,7 +1806,19 @@ const ROWS: readonly KindConfig[] = [
      */
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'blueprint' }, { block: 'fields', label: 'GRAPH' }, COLLECTIONS_BLOCK],
+      /*
+       * THE TAB IS THE GRAPH (task 01a14c16, owner ruling 2026-10-18): only
+       * the canvas, with its own find, zoom, minimap and legend — the way a
+       * drawing's tab is the drawing. A `frame` takes the attachment strip
+       * and footer off, `titleBar: false` the title row. Nothing is stranded:
+       * GRAPH held only `graphType`, which the block now speaks for (a mermaid
+       * row draws its source); COLLECTIONS' `contains` edges are listed under
+       * Links in the side column, as Messages and Chat are; Edit, Run and the
+       * ⋯ menu ride the action strip.
+       */
+      composition: 'frame',
+      titleBar: false,
+      blocks: [{ block: 'blueprint' }],
       /* §15.1: declared fields must be reachable — edit is the door. */
       primaries: ['edit'],
     },
@@ -1847,6 +1849,7 @@ const ROWS: readonly KindConfig[] = [
     kind: 'drawing',
     label: 'Drawing',
     labelPlural: 'Drawings',
+    createInstant: 'title',
     icon: '✎',
     iconArt: KIND_ART.drawing,
     slug: 'drawings',
@@ -1857,11 +1860,23 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: true,
+      inlineEdit: { title: true },
       tile: { badges: [{ source: 'messages' }] },
     }),
     panel: {
       archetype: 'generic',
-      blocks: [{ block: 'canvas' }, { block: 'fields', label: 'DRAWING' }, COLLECTIONS_BLOCK],
+      /*
+       * THE TAB IS THE CANVAS (task 01a12506, owner ruling 2026-10-10): only
+       * the drawing, from under the tab bar to the bottom of the screen. A
+       * `frame` takes the attachment strip and footer off and hands the body's
+       * controls (here, the save status) to the action strip; `titleBar: false`
+       * takes the title row off. Nothing is stranded by the two blocks
+       * leaving: DRAWING held only `format`, always "excalidraw", and
+       * COLLECTIONS' `contains` edges are listed under Links in the side column.
+       */
+      composition: 'frame',
+      titleBar: false,
+      blocks: [{ block: 'canvas' }],
       primaries: ['edit'],
     },
     editFields: [
@@ -1891,6 +1906,7 @@ const ROWS: readonly KindConfig[] = [
     kind: 'story',
     label: 'Story',
     labelPlural: 'Stories',
+    createInstant: 'title',
     icon: '❧',
     iconArt: KIND_ART.story,
     slug: 'stories',
@@ -1901,7 +1917,20 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
       quickCreate: true,
-      tile: { badges: [{ source: 'messages' }] },
+      // A child story nests under its parent (#16): `parentId` is the story
+      // hierarchy, so a flat list showed every child beside the roots and
+      // read as "many root stories". Children start collapsed.
+      tree: { by: 'hierarchy', guideLines: true },
+      tile: {
+        badges: [{ source: 'messages' }],
+        // 307: the points-weighted percent and done/total points at the
+        // row's right edge — the same `weighted` the story page's ring reads.
+        // Child stories carry their own bar on their own rows.
+        progress: storyTileProgress,
+        /* A story is work with owners, like a task. */
+        signal: { from: 'avatar' },
+      },
+      sort: [...DEFAULT_SORT, BY_PROGRESS],
       inlineEdit: { title: true },
     }),
     panel: {
@@ -1911,6 +1940,9 @@ const ROWS: readonly KindConfig[] = [
       // ⤢ opens the story full screen at `e/{id}` (PR 1004): the graph wants
       // the width, and the page is a place you stay on.
       fullView: true,
+      // The graph starts at the panel's top edge: no title row, no tabs, no
+      // attach strip; messages are a section under the story (task 01a101c5).
+      composition: 'canvas',
     },
     editFields: [
       { target: 'title', label: 'Title', required: true, placeholder: 'Story as an Entity' },
@@ -1923,6 +1955,53 @@ const ROWS: readonly KindConfig[] = [
       },
     ],
     palette: { createLabel: 'New story' },
+  },
+
+  /*
+   * -- craft (an ordered set of pages; `design` until migration 322) --
+   *
+   * A page is ANY entity, held as an ordered `contains` edge; the page is the
+   * doc or graph itself and opens normally anywhere else. Its own screen is
+   * Craft (`/craft/{id}`); everywhere else a craft gets the GENERIC panel:
+   * the description, then the collections it sits in. Launchable like every
+   * kind not opted out (Run anchors a session on the craft).
+   *
+   * `quickCreate` is on: a title is a legitimate start — the craft agent adds
+   * the first page.
+   */
+  {
+    kind: 'craft',
+    label: 'Craft',
+    labelPlural: 'Crafts',
+    icon: '❐',
+    iconArt: KIND_ART.craft,
+    slug: 'crafts',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree'],
+    chip: { glyph: '❐', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: true,
+      tile: { badges: [{ source: 'messages' }] },
+      inlineEdit: { title: true },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [{ block: 'fields', label: 'CRAFT' }, COLLECTIONS_BLOCK],
+      primaries: ['edit'],
+    },
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Pricing page launch' },
+      {
+        target: 'content',
+        source: 'description',
+        label: 'Description',
+        placeholder: 'What is this craft for?',
+        multiline: true,
+      },
+    ],
+    palette: { createLabel: 'New craft' },
   },
 
   /*
@@ -1963,6 +2042,33 @@ const ROWS: readonly KindConfig[] = [
       archetype: 'generic',
       blocks: [{ block: 'questionnaire' }, COLLECTIONS_BLOCK],
     },
+  },
+
+  {
+    kind: 'tool', label: 'Tool', labelPlural: 'Tools', icon: '⌘', iconArt: KIND_ART.tool,
+    slug: 'tools', strategy: 'collection', defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⌘', tintBy: 'none' }, card: { fields: ['excerpt', 'activityAt'] },
+    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    panel: { archetype: 'scripted', blocks: [COLLECTIONS_BLOCK] },
+  },
+
+  // Catalog definitions are managed separately from their private accounts.
+  {
+    kind: 'mcp_server',
+    label: 'Connector',
+    labelPlural: 'Connectors',
+    icon: '⚿',
+    iconArt: KIND_ART.mcp_server,
+    slug: 'connectors',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⚿', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt'] },
+    settingsHome: { section: 'connectors', label: 'Manage connectors and accounts' },
+    list: baseList({ quickCreate: false, tile: { badges: [] } }),
+    panel: { archetype: 'generic', blocks: [{ block: 'settings-home' }, COLLECTIONS_BLOCK] },
   },
 
   /*
@@ -2012,7 +2118,7 @@ const ROWS: readonly KindConfig[] = [
           { key: 'provider', label: 'Provider', words: { anthropic: 'Anthropic', openai: 'OpenAI', github: 'GitHub' } },
           { key: 'shape', label: 'Kind', words: { login: 'Subscription login', api_key: 'API key', token: 'Token' } },
           { key: 'status', label: 'Status', words: { active: 'Active', stale: 'Needs attention', revoked: 'Revoked' } },
-          { key: 'visibility', label: 'Who may use it', words: { public: 'Everyone in this space', private: 'Only its owner' } },
+          { key: 'visibility', label: 'Who may use it', words: { public: 'Everyone in this space', private: 'Its owner, and anyone they share it with' } },
           { key: 'isDefault', label: 'Space default', words: { true: 'Yes', false: 'No' } },
           { key: 'keyHint', label: 'Key ends in' },
           { key: 'displayLogin', label: 'Signed in as' },
@@ -2022,7 +2128,7 @@ const ROWS: readonly KindConfig[] = [
           { operation: 'credentials.space.rename', label: 'Rename', input: { key: 'label', label: 'Name' },
             reason: 'Only its owner can rename it: for a credential this space owns, its creator or a space admin' },
           { operation: 'credentials.space.myDefault.set', label: 'Use as my default',
-            reason: 'Only its owner can make it their default, and only while it is active' },
+            reason: 'Only its owner, or someone it is shared with, can make it their default, and only while it is active' },
           { operation: 'credentials.space.setDefault', label: 'Make the space default',
             reason: 'Only its manager can make it the space default: its owner, or for a credential this space owns, its creator or a space admin' },
           { operation: 'credentials.space.setVisibility', label: 'Change who may use it',
@@ -2121,6 +2227,7 @@ const ROWS: readonly KindConfig[] = [
           { source: 'chatLastTurnAt' },
           { source: 'messages' },
         ],
+        signal: { from: 'count', field: 'unreadCount', label: 'unread' },
       },
       // The header verb is the ONE door a chat is actually born through, and
       // it is `chat-about` rather than `create` for the same reason
@@ -2138,11 +2245,19 @@ const ROWS: readonly KindConfig[] = [
       // is optional, not required.
       quickStart: 'chat-about',
       inlineEdit: { title: true },
+      /* The sessions a chat launched nest under it (Subhang 2026-10-17, "for
+         now": a chat has no sub-chats yet). Data stays as 330 left it — the
+         `launched_by` edge, no parent_id — read in `domain/launched-by.ts`. */
+      tree: { by: 'hierarchy', guideLines: true },
+      launches: 'work_session',
     }),
     panel: {
       archetype: 'conversation',
       conversation: 'chat-thread',
       composition: 'chat',
+      /* The thread IS the tab (Subhang, 2026-10-18): the 36px title row sat
+         empty over the transcript, and the tab's own label names the chat. */
+      titleBar: false,
     },
   },
 
@@ -2600,6 +2715,34 @@ const ROWS: readonly KindConfig[] = [
     },
   },
 
+  /*
+   * -- style (migration 284: a published, read-only space style) --
+   *
+   * MINIMAL BY DESIGN: this row registers the kind so lists, panels and the
+   * rail can show a space style. Choosing and editing styles happen in the
+   * account menu's picker and the style editor, not here. A space style is
+   * READ-ONLY — new versions arrive only by `styles.push` — so there is no
+   * quick create, no edit sheet and no `primaries`.
+   */
+  {
+    kind: 'style',
+    label: 'Style',
+    labelPlural: 'Styles',
+    icon: '◐',
+    iconArt: KIND_ART.style,
+    slug: 'styles',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '◐', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'createdBy' }] },
+    }),
+    panel: { archetype: 'generic', blocks: [{ block: 'fields', label: 'STYLE' }] },
+  },
+
   // -- the single custom-kind fallback row ----------------------------------
   {
     kind: CUSTOM_KIND_FALLBACK,
@@ -2760,22 +2903,92 @@ const FALLBACK = BY_KIND.get(CUSTOM_KIND_FALLBACK) as KindConfig;
  * is how custom kinds land on the generic archetype for free (LLD §2.3).
  */
 export function getKind(kind: string): KindConfig {
-  return BY_KIND.get(kind) ?? FALLBACK;
+  // `design` (renamed `craft` by 322) still resolves until KIND_ALIAS_UNTIL.
+  return BY_KIND.get(normalizeKindAlias(kind)) ?? CUSTOM_BY_KIND.get(kind) ?? FALLBACK;
+}
+
+// -- the space's custom kinds, learned at runtime ----------------------------
+//
+// The rows above are static, so a `c:*` kind the space created (`tm8 kind
+// create`) used to exist only behind a hand-typed `k/c-{name}` address: every
+// list that enumerates kinds — the Home rail, the Work rail, the kind
+// switchers, the mobile drawer — reads `collectionKinds()`, which never named
+// one. `registerCustomKinds` adds one row per custom kind, each the `c:*`
+// fallback row with its own kind, label and slug, and bumps a version that
+// `useCustomKindsVersion` re-renders on.
+let CUSTOM: readonly KindConfig[] = [];
+let CUSTOM_BY_KIND: ReadonlyMap<string, KindConfig> = new Map();
+let customVersion = 0;
+const customListeners = new Set<() => void>();
+
+/** `c:incident_report` → `Incident report`. */
+function customKindLabel(kind: string): string {
+  const words = kind.slice(2).replace(/[_-]+/g, ' ').trim();
+  return words.length === 0 ? FALLBACK.label : words[0]!.toUpperCase() + words.slice(1);
+}
+
+/** One registry row for a custom kind: the fallback archetype, addressed. */
+function customKindRow(kind: CustomEntityKind, icon: string | null | undefined): KindConfig {
+  const label = customKindLabel(kind);
+  return {
+    ...FALLBACK,
+    kind,
+    label,
+    labelPlural: label.endsWith('s') ? label : `${label}s`,
+    ...(icon ? { icon, chip: { ...FALLBACK.chip, glyph: icon } } : {}),
+    slug: `c-${kind.slice(2)}`,
+  };
+}
+
+/**
+ * Replace the registered custom kinds with this space's. Takes the
+ * `entityKinds.list` rows as-is: core rows and anything not `c:{name}` are
+ * ignored, so the caller never filters. A no-op when nothing changed.
+ */
+export function registerCustomKinds(defs: readonly { kind: string; icon?: string | null }[]): void {
+  const rows = defs
+    .filter((def): def is { kind: CustomEntityKind; icon?: string | null } =>
+      def.kind.startsWith('c:') && def.kind.length > 2 && def.kind !== CUSTOM_KIND_FALLBACK && !BY_KIND.has(def.kind))
+    .map((def) => customKindRow(def.kind, def.icon))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const same = rows.length === CUSTOM.length
+    && rows.every((row, i) => row.kind === CUSTOM[i]!.kind && row.icon === CUSTOM[i]!.icon);
+  if (same) return;
+  CUSTOM = rows;
+  CUSTOM_BY_KIND = new Map(rows.map((row) => [row.kind, row]));
+  customVersion += 1;
+  for (const listener of customListeners) listener();
+}
+
+/** Subscribe to custom-kind registration (for `useSyncExternalStore`). */
+export function subscribeCustomKinds(listener: () => void): () => void {
+  customListeners.add(listener);
+  return () => customListeners.delete(listener);
+}
+
+/** Bumps on every registration that changed the set. */
+export function customKindsVersion(): number {
+  return customVersion;
 }
 
 /** Every row, fallback included. */
 export function allKinds(): KindConfig[] {
-  return [...KINDS];
+  return [...KINDS, ...CUSTOM];
 }
 
 /** Rows the list-panel kind selector offers: `strategy === 'collection'`. */
 export function collectionKinds(): KindConfig[] {
-  return KINDS.filter((row) => row.strategy === 'collection' && row.kind !== CUSTOM_KIND_FALLBACK);
+  return [
+    ...KINDS.filter((row) => row.strategy === 'collection' && row.kind !== CUSTOM_KIND_FALLBACK),
+    ...CUSTOM,
+  ];
 }
 
 /** Slug → row, for the `k/{slug}` route and `origin` validation. */
 export function kindBySlug(slug: string): KindConfig | null {
-  return KINDS.find((row) => row.slug === slug) ?? null;
+  // An old `k/designs` link lands on crafts until KIND_ALIAS_UNTIL.
+  const wanted = slug === 'designs' ? 'crafts' : slug;
+  return KINDS.find((row) => row.slug === wanted) ?? CUSTOM.find((row) => row.slug === wanted) ?? null;
 }
 
 /** The `c:{name}` → `c-{name}` slug for a custom kind, collision-checked by callers. */

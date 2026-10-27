@@ -24,9 +24,22 @@ import type { MenuTarget } from '../shell';
 /** Bumped when the stored shape changes; a miss means the old value is ignored. */
 const KEY_PREFIX = 'tm8.last-place.v1';
 
+/**
+ * WORK (the tabs view) as a remembered place. Work is route-only — no
+ * `MenuTarget` names it — so it is remembered by this marker instead. Without
+ * it a reload or a space switch from Work never came back to Work (D31 audit).
+ */
+export interface WorkPlace {
+  type: 'work';
+}
+export const WORK_PLACE: WorkPlace = { type: 'work' };
+
+/** A remembered place: a menu target, or Work. */
+export type LastTarget = MenuTarget | WorkPlace;
+
 interface LastPlace {
   spaceId: string | null;
-  targets: Record<string, MenuTarget>;
+  targets: Record<string, LastTarget>;
 }
 
 const EMPTY: LastPlace = { spaceId: null, targets: {} };
@@ -44,9 +57,10 @@ function storage(): Storage | null {
   }
 }
 
-function isTarget(value: unknown): value is MenuTarget {
+function isTarget(value: unknown): value is LastTarget {
   if (typeof value !== 'object' || value === null) return false;
   const { type, ref, kind } = value as Record<string, unknown>;
+  if (type === 'work') return true;
   if (typeof ref !== 'string') return false;
   if (type === 'view' || type === 'kind') return true;
   return type === 'entity' && typeof kind === 'string';
@@ -61,7 +75,7 @@ function read(nodeKey: string): LastPlace {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return EMPTY;
     const { spaceId, targets } = parsed as Record<string, unknown>;
-    const kept: Record<string, MenuTarget> = {};
+    const kept: Record<string, LastTarget> = {};
     if (typeof targets === 'object' && targets !== null) {
       for (const [space, target] of Object.entries(targets)) {
         if (isTarget(target)) kept[space] = target;
@@ -94,11 +108,11 @@ export function writeLastSpace(nodeKey: string, spaceId: string): void {
 }
 
 /** The view last open inside `spaceId` on `nodeKey`, or null. */
-export function readLastTarget(nodeKey: string, spaceId: string): MenuTarget | null {
+export function readLastTarget(nodeKey: string, spaceId: string): LastTarget | null {
   return read(nodeKey).targets[spaceId] ?? null;
 }
 
-export function writeLastTarget(nodeKey: string, spaceId: string, target: MenuTarget): void {
+export function writeLastTarget(nodeKey: string, spaceId: string, target: LastTarget): void {
   const place = read(nodeKey);
   write(nodeKey, { ...place, targets: { ...place.targets, [spaceId]: target } });
 }

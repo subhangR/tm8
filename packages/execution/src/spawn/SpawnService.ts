@@ -1,3 +1,4 @@
+import { isolateCodexMcpHome } from './mcp-home.js';
 // @tm8/execution — SpawnService: the G1A loop's engine.
 //
 // Owns the four verbs the loop is made of — spawn, prompt, terminate, and the
@@ -17,14 +18,17 @@ import type {
 } from '../pty/PromptSettlementWaiter.js';
 import type { Logger, PtyActivity, PtyExitInfo, PtyKillOutcome, PtySessionStatus } from '../pty/types.js';
 import {
+  BudgetExceededError,
   BYTE_BUDGETS,
   composePrompt,
   dispatchRequestInjection,
   primaryContextBudgetV2,
   PROMPT_VERSION_V2,
   utf8Bytes,
+  type PromptEnvelope,
   type PromptRuntime,
   type PromptStoryContext,
+  type PromptDesignContext,
 } from '@tm8/prompt';
 
 import { oomKillObserved, readOomKillCount } from './oom-witness.js';
@@ -45,6 +49,15 @@ import {
   preflightCodexNetworkPolicy,
   type CodexNetworkPreflight,
 } from './codex-network-preflight.js';
+import {
+  AGENT_ONBOARDING_SCREEN,
+  NodeAgentLoginGate,
+  nodeAgentLoginProvider,
+  ONBOARDING_FAIL_READS,
+  ONBOARDING_GRACE_MS,
+  readClaudeOnboarding,
+  type NodeAgentLoginProbe,
+} from './node-agent-login.js';
 import {
   buildAgentCommand,
   childLaunchPosture,
@@ -79,15 +92,10 @@ import { knownAgentConfigDirs } from '../transcript/agent-config-dirs.js';
 import { readSessionUsage } from '../transcript/session-usage.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
 import {
-  agentCredentialProviderFor,
   type AgentCredentialHome,
   type AgentCredentialHomePort,
 } from './agent-credentials.js';
-import {
-  API_KEY_PROVIDER_DISPLAY_NAME,
-  apiKeyBackendForModel,
-  isApiKeyCredentialProvider,
-} from '../credentials/api-key-credentials.js';
+import { resolveMemberCredentialHome } from './member-credential-home.js';
 import {
   resolveSessionCredentials,
   type ResolvedSessionCredentials,
@@ -119,6 +127,7 @@ import type {
   SpawnContext,
   SpawnRequest,
   SpawnResult,
+  SpawnServerFacts,
   SpaceCredentialPort,
   SpaceCredentialProvider,
   Tm8Manifest,
@@ -136,12 +145,15 @@ import { ContextBudgetsSchema, SpawnSelectionReasonsSchema, SpawnSelectionSchema
  *   - `space_credential_deleted`: SC-3 — a space credential was deleted.
  *   - `space_credential_made_private`: W10a — its owner made it private, and
  *     this session's launcher is not the owner.
+ *   - `space_credential_unshared`: 992 — its owner (or a space admin) withdrew
+ *     the share this session's launcher held on a private credential.
  *   - `member_credential_disconnected`: the member Disconnect of their own credential.
  *   - `member_removed`: SC-6 — the launching member was removed or disabled.
  */
 export type CredentialContainmentCause =
   | 'space_credential_deleted'
   | 'space_credential_made_private'
+  | 'space_credential_unshared'
   | 'member_credential_disconnected'
   | 'member_removed';
 
@@ -156,6 +168,9 @@ export interface CredentialContainmentResult {
   recorded: boolean;
   reason?: string;
 }
+
+/** The ended reason a failed resume writes (Spec D1 §9 scenario 29). */
+export const RESUME_FAILED_PREFIX = 'Failed to resume: ';
 
 /**
  * The ending each containment records. `endedReason` is read by a person (one
@@ -178,6 +193,12 @@ const CREDENTIAL_CONTAINMENT_ENDINGS: Record<
       'credential containment: the space credential this session launched on was made private — ' +
       'PTY killed, exit code not observed',
   },
+  space_credential_unshared: {
+    endedReason: 'Stopped because the space credential it was running on is no longer shared with its launcher.',
+    error:
+      'credential containment: the share of the space credential this session launched on was withdrawn — ' +
+      'PTY killed, exit code not observed',
+  },
   member_credential_disconnected: {
     endedReason: 'Stopped because the credential it was running on was disconnected.',
     error:
@@ -198,6 +219,13 @@ export type SessionLiveCause = 'spawn' | 'resume' | 'running' | 'idle';
 export type SessionLiveListener = (sessionId: string, cause: SessionLiveCause) => void | Promise<void>;
 
 export interface SpawnServiceOptions {
+  /**
+   * Resolves and durably authorizes exact connector references after runtime
+   * token mint. It answers with `serverKey` on each selection — the tool prefix
+   * the model will read (§4.2) — derived from the definition it resolved, never
+   * from the request.
+   */
+  mcpBindings?: { bind(auth: GraphAuth, input: { sessionId: string; spaceId: string; teamMemberId: string; targetIds?: string[]; mcpSelections?: Array<{serverId: string; credentialId?: string}>; agentToken: string; resume?: boolean }): Promise<Array<{serverId: string; credentialId?: string; serverKey?: string}>> };
   graph: GraphPort;
   pty: PtyHostService;
   /** Where the agent reports back — becomes TM8_BASE_URL. */
@@ -241,6 +269,13 @@ export interface SpawnServiceOptions {
   failedTransitionRetryMs?: number;
   /** Injected only for deterministic compatibility-preflight tests. */
   codexNetworkPreflight?: CodexNetworkPreflight;
+  /**
+   * Asks whether the node's OWN claude/codex login is usable, so a session on
+   * `source=node` is refused by name instead of hanging at Claude Code's
+   * first-run screen. The server injects `probeNodeAgentLogin`; absent means
+   * unchecked, exactly as before. See ./node-agent-login.ts.
+   */
+  nodeAgentLoginProbe?: NodeAgentLoginProbe;
   /**
    * Resolves the spawning identity's own vendor credential home, so an agent
    * authenticates as the MEMBER rather than as the node's machine account.
@@ -293,6 +328,28 @@ const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
 
 /** How long a v2 launch waits for its task's context render before degrading. */
 const TASK_CONTEXT_RENDER_TIMEOUT_MS = 5_000;
+
+/**
+ * Bytes held back from a v2 DTO's room for what changes when it replaces the
+ * degraded header: the orientation line, the JSON wrapper and its escaping.
+ */
+const TASK_CONTEXT_MARGIN_BYTES = 512;
+
+/**
+ * Compose the launch prompt. A v2 DTO that still overruns the combined ceiling
+ * (escaping can grow a `<`-heavy body past the margin) degrades to the
+ * `snapshot="unavailable"` header naming the one read to run; it never fails
+ * the launch.
+ */
+function composeLaunchPrompt(manifest: Tm8Manifest, runtime: PromptRuntime): PromptEnvelope {
+  try {
+    return composePrompt(manifest, runtime);
+  } catch (error) {
+    const taskContext = runtime.taskContext;
+    if (!(error instanceof BudgetExceededError) || !taskContext || !('dto' in taskContext)) throw error;
+    return composePrompt(manifest, { ...runtime, taskContext: { taskId: taskContext.taskId, unavailable: 'over_budget' } });
+  }
+}
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
  *  graph in lifecycle states, and 'completed' is not one of the five the
@@ -428,7 +485,9 @@ function endingFromPtyExit(
     };
   }
   if (status === 'completed') {
-    return { endedKind: 'completed', endedReason: 'Finished on its own.' };
+    // 299: `exited_clean`, not `completed`. The process ended cleanly; whether
+    // the WORK is finished is the outcome, which only `session complete` sets.
+    return { endedKind: 'exited_clean', endedReason: 'The process ended by itself (exit code 0).' };
   }
   // A signal death that was NOT a memory kill. This is the deploy/restart
   // shape — but from here it is genuinely indistinguishable from an operator
@@ -512,6 +571,7 @@ export class SpawnService {
   private readonly firstPromptSettlementMs: number;
   private readonly failedTransitionRetryMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
+  private readonly nodeAgentLogin: NodeAgentLoginGate | undefined;
   private readonly credentialHome: AgentCredentialHomePort | undefined;
   private readonly gitHubCredentials: GitHubCredentialPort | undefined;
   private readonly spaceCredentials: SpaceCredentialPort | undefined;
@@ -536,6 +596,8 @@ export class SpawnService {
    * the actor who started it.
    */
   private readonly sessionAuth = new Map<string, GraphAuth>();
+  /** Tool exit codes describe the command result, rather than an agent crash. */
+  private readonly toolSessions = new Set<string>();
   /**
    * The cgroup OOM-kill counter as it stood when each session's PTY was
    * spawned (171). The exit path compares against it: an ADVANCE across a
@@ -554,7 +616,10 @@ export class SpawnService {
   /** Drain-on-live listeners (Forms W2, 214). See `onSessionLive`. */
   private readonly sessionLiveListeners = new Set<SessionLiveListener>();
 
+  private readonly mcpBindings: SpawnServiceOptions['mcpBindings'];
+
   constructor(options: SpawnServiceOptions) {
+    this.mcpBindings = options.mcpBindings;
     this.graph = options.graph;
     this.pty = options.pty;
     this.baseUrl = options.baseUrl;
@@ -569,6 +634,9 @@ export class SpawnService {
     this.firstPromptSettlementMs = options.firstPromptSettlementMs ?? 150_000;
     this.failedTransitionRetryMs = options.failedTransitionRetryMs ?? 1_000;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
+    this.nodeAgentLogin = options.nodeAgentLoginProbe
+      ? new NodeAgentLoginGate(options.nodeAgentLoginProbe)
+      : undefined;
     this.credentialHome = options.credentialHome;
     this.gitHubCredentials = options.gitHubCredentials;
     this.spaceCredentials = options.spaceCredentials;
@@ -612,58 +680,7 @@ export class SpawnService {
     model: string | null,
     source: CredentialSource | null = null,
   ): Promise<AgentCredentialHome | null> {
-    const backend = apiKeyBackendForModel(agentTool, model);
-    if (backend) {
-      const home = this.credentialHome
-        ? await this.credentialHome.resolve(auth, { agentTool, model })
-        : null;
-      const name = API_KEY_PROVIDER_DISPLAY_NAME[backend];
-      if (!home || home.provider !== backend) {
-        throw new SpawnError(
-          `${model} runs only on your own ${name} key, and no ${name} key is connected ` +
-            'for your account — connect it under Settings → Connections, or pick a model ' +
-            `that ${agentTool} runs natively`,
-          'conflict',
-          { agentTool, model, provider: backend },
-        );
-      }
-      if (home.apiKey === undefined) {
-        throw new SpawnError(
-          `${model} runs only on your own ${name} key, and your connected ${name} key ` +
-            'could not be read — reconnect it under Settings → Connections',
-          'conflict',
-          { agentTool, model, provider: backend },
-        );
-      }
-      return home;
-    }
-
-    if (source === 'node') return null;
-    const home = this.credentialHome
-      ? await this.credentialHome.resolve(auth, { agentTool, model })
-      : null;
-    if (source === 'member' && !home && agentCredentialProviderFor(agentTool)) {
-      throw new SpawnError(
-        `credentialSources.${agentCredentialProviderFor(agentTool)} 'member' was requested but no active ${agentCredentialProviderFor(agentTool)} ` +
-          'credential is connected for your account — connect it under Settings → Connections, ' +
-          "or launch with the node credential ('node')",
-        'conflict',
-        { agentTool, provider: agentCredentialProviderFor(agentTool) },
-      );
-    }
-    if (source === 'member' && home && isApiKeyCredentialProvider(home.provider)
-      && home.apiKey === undefined) {
-      throw new SpawnError(
-        `credentialSources.${home.provider} 'member' was requested and a ${home.provider} ` +
-          'credential is connected, but its stored key could not be read — reconnect it ' +
-          "under Settings → Connections, or launch with the node credential ('node')",
-        'conflict',
-        // The ACTUAL provider, not the tool's native one, so the member is
-        // pointed at the credential that is the problem.
-        { agentTool, provider: home.provider },
-      );
-    }
-    return home;
+    return resolveMemberCredentialHome(this.credentialHome, auth, agentTool, model, source);
   }
 
   /**
@@ -827,6 +844,19 @@ export class SpawnService {
       (!override || override === 'codex')
     ) {
       await this.codexNetworkPreflight(resolved, env);
+    }
+
+    // The node's own login, only when this session will run on it. A
+    // TM8_AGENT_CMD override is a test or wrapper agent, not the vendor CLI,
+    // so there is no vendor login to ask about.
+    const provider = nodeAgentLoginProvider(launch.agentTool);
+    if (
+      this.nodeAgentLogin
+      && provider !== null
+      && launch.credentialSources[provider] === 'node'
+      && !override
+    ) {
+      await this.nodeAgentLogin.assertUsable({ provider, env, cwd: env.HOME ?? process.cwd() });
     }
   }
 
@@ -1297,10 +1327,17 @@ export class SpawnService {
     if (!primary) return { codeGraph };
     const load = this.graph.loadTaskContextSnapshot?.bind(this.graph);
     if (!load) return { codeGraph, taskContext: { taskId: primary.id, unavailable: 'not_supported' } };
+    // The DTO gets the §5.3 cap or what the rest of the prompt leaves of the
+    // combined ceiling, whichever is smaller: measured on the degraded frame,
+    // less a margin for the header and the JSON escaping that swaps in with it.
+    const degraded = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl, codeGraph });
+    const room = BYTE_BUDGETS.combinedInitialInjection - utf8Bytes(`${degraded.system}\n\n${degraded.task}`) - TASK_CONTEXT_MARGIN_BYTES;
+    const totalBytes = Math.min(primaryContextBudgetV2(manifest.tasks), room);
+    if (totalBytes <= 0) return { codeGraph, taskContext: { taskId: primary.id, unavailable: 'over_budget' } };
     let timer: NodeJS.Timeout | undefined;
     try {
       const dto = await Promise.race([
-        load(auth, { sessionId, taskId: primary.id, totalBytes: primaryContextBudgetV2(manifest.tasks) }),
+        load(auth, { sessionId, taskId: primary.id, totalBytes }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(Object.assign(new Error('context render timed out'), { code: 'timeout' })), TASK_CONTEXT_RENDER_TIMEOUT_MS);
         }),
@@ -1319,7 +1356,7 @@ export class SpawnService {
   }
 
   /**
-   * Spawn-on-story: the story the primary task belongs to, for every frame.
+   * The session story anchor or primary task story, for every prompt frame.
    * Bounded by the same render timeout as the v2 task context, and fail-soft:
    * a story that cannot be read costs the prompt its story block, never the
    * launch.
@@ -1331,17 +1368,47 @@ export class SpawnService {
   ): Promise<PromptStoryContext | null> {
     const primary = manifest.tasks[0];
     const load = this.graph.loadStoryContext?.bind(this.graph);
-    if (!primary || !load) return null;
+    if (!load) return null;
     let timer: NodeJS.Timeout | undefined;
     try {
       return await Promise.race([
-        load(auth, { taskId: primary.id }),
+        load(auth, { ...(primary ? { taskId: primary.id } : {}), sessionId }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error('story context read timed out')), TASK_CONTEXT_RENDER_TIMEOUT_MS);
         }),
       ]);
     } catch (error) {
-      this.logger?.warn?.('spawn: story context read failed', { sessionId, taskId: primary.id, error: String(error) });
+      this.logger?.warn?.('spawn: story context read failed', { sessionId, taskId: primary?.id, error: String(error) });
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
+   * The design the primary task was derived from (Run on a design, 304), for
+   * every prompt frame. Same timeout and fail-soft rule as the story: a
+   * design that cannot be read costs the prompt its design block, never the
+   * launch.
+   */
+  private async designContext(
+    auth: GraphAuth,
+    manifest: Tm8Manifest,
+    sessionId: string,
+  ): Promise<PromptDesignContext | null> {
+    const primary = manifest.tasks[0];
+    const load = this.graph.loadDesignContext?.bind(this.graph);
+    if (!load || !primary) return null;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        load(auth, { taskId: primary.id }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('design context read timed out')), TASK_CONTEXT_RENDER_TIMEOUT_MS);
+        }),
+      ]);
+    } catch (error) {
+      this.logger?.warn?.('spawn: design context read failed', { sessionId, taskId: primary.id, error: String(error) });
       return null;
     } finally {
       if (timer) clearTimeout(timer);
@@ -1404,7 +1471,14 @@ export class SpawnService {
     }
   }
 
-  async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
+  /**
+   * @param server FACTS THE SERVER ESTABLISHED — see {@link SpawnServerFacts}.
+   * A separate parameter precisely because `SpawnRequest` is assembled from the
+   * wire input by the public `execution.spawn` handler: a caller cannot reach
+   * an argument that handler never passes. Only the in-process loop executor
+   * fills it.
+   */
+  async spawn(auth: GraphAuth, request: SpawnRequest, server?: SpawnServerFacts): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
     let bootExit: PtyExitInfo | undefined;
     let firstPromptDeliveryId: string | undefined;
@@ -1521,6 +1595,15 @@ export class SpawnService {
         confirmUntrusted: request.confirmUntrusted ?? false,
         clientMutationId: request.clientMutationId ?? null,
         ...(request.newTask ? { newTaskTitle: request.newTask.title } : {}),
+        ...(request.storyId ? { storyId: request.storyId } : {}),
+        ...(request.aboutEntityId ? { aboutEntityId: request.aboutEntityId } : {}),
+        ...(request.aboutFromChatId ? { aboutFromChatId: request.aboutFromChatId } : {}),
+        ...(request.sourceWorkSessionId ? { sourceWorkSessionId: request.sourceWorkSessionId } : {}),
+        // 348: from `server`, never from `request`. `execution_spawn` writes
+        // the session -> loop `triggered_by` edge in THIS transaction, because
+        // the MCP bind below runs inside this spawn and reads the schedule
+        // provenance root off that edge.
+        ...(server?.triggeredByLoopId ? { triggeredByLoopId: server.triggeredByLoopId } : {}),
       });
     } catch (error) {
       // The row was refused, so nothing references the checkout just created
@@ -1676,6 +1759,12 @@ export class SpawnService {
         request.teamMemberId,
       );
       agentTokenIssued = true;
+      if (this.mcpBindings) launch.mcpSelections = await this.mcpBindings.bind(auth, {
+        sessionId, spaceId: request.spaceId, teamMemberId: request.teamMemberId,
+        targetIds: context.tasks.map(task => task.id), agentToken,
+        ...(request.mcpSelections !== undefined ? { mcpSelections: request.mcpSelections } : {}),
+      });
+      else if (request.mcpSelections?.length) throw new Error('MCP launch bindings are unavailable');
       // The base command is built FIRST and recorded in the manifest; the system
       // prompt is then derived FROM that manifest and appended to produce the
       // line the PTY actually runs. See `withAgentPrompt` for why this is two
@@ -1733,6 +1822,8 @@ export class SpawnService {
 
       const story = await this.storyContext(auth, manifest, sessionId);
       if (story) manifest.story = story;
+      const design = await this.designContext(auth, manifest, sessionId);
+      if (design) manifest.design = design;
 
       // Compose the agent's briefing IN-PROCESS and embed it in the command.
       //
@@ -1742,11 +1833,12 @@ export class SpawnService {
       // failure mode designed out rather than handled. `tm8 worker init` remains
       // for an agent that wants to re-read its own briefing, and shares this
       // exact composer (`@tm8/prompt`) so the two can never drift.
-      const envelope = composePrompt(manifest, {
+      const runtime: PromptRuntime = {
         sessionId,
         baseUrl: this.baseUrl,
         ...(await this.promptV2Runtime(auth, manifest, sessionId, cwd)),
-      });
+      };
+      const envelope = composeLaunchPrompt(manifest, runtime);
       // The two halves stay SEPARATE all the way to the argv. `envelope.system`
       // configures the agent; `envelope.task` is its first user turn, and is
       // what actually makes it start. Concatenating them here is what left every
@@ -1845,7 +1937,10 @@ export class SpawnService {
       if (launch.agentTool === 'claude-code') {
         await this.seedClaudeTrust(sessionId, cwd, workdir.mode, manifest.project, env);
       }
-      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
+      if (launch.agentTool === 'codex') {
+        await isolateCodexMcpHome(manifestPath, env);
+        await trustCodexWorkspace(cwd, env);
+      }
 
       // R1 (W10a): the manifest was recorded under the recorder's lock, but a
       // credential can be revoked or switched to private between that commit
@@ -1895,13 +1990,40 @@ export class SpawnService {
       // after that await creates a gap where the PTY entry and its exit evidence
       // have already been removed before we begin watching.
       const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
+      // A claude with no login boots into its first-run onboarding, where the
+      // first prompt can never land: the settlement wait below would run its
+      // whole budget and the lane would sit there. Watch for that screen WHILE
+      // waiting, and fail by name the moment it is up.
+      const onboarding = launch.agentTool === 'claude-code' && !reused
+        ? this.detectClaudeOnboarding(sessionId)
+        : null;
       await this.assertSpaceCredentialsStillActive(auth, sessionId, spaceCredentialIds);
-      const [earlyExit, promptOutcome] = await Promise.all([
-        bootSettlement,
-        firstPromptDeliveryId && firstPromptOutcome
-          ? this.waitForFirstPromptSettlement(firstPromptDeliveryId, firstPromptOutcome)
-          : Promise.resolve<PromptSettlementResult>({ outcome: 'delivered' }),
-      ]);
+      let earlyExit: Awaited<typeof bootSettlement>;
+      let promptOutcome: PromptSettlementResult | 'onboarding';
+      try {
+        [earlyExit, promptOutcome] = await Promise.all([
+          bootSettlement,
+          Promise.race([
+            firstPromptDeliveryId && firstPromptOutcome
+              ? this.waitForFirstPromptSettlement(firstPromptDeliveryId, firstPromptOutcome)
+              : Promise.resolve<PromptSettlementResult>({ outcome: 'delivered' }),
+            ...(onboarding
+              ? [onboarding.seen.then((seen) => (seen ? ('onboarding' as const) : new Promise<never>(() => {})))]
+              : []),
+          ]),
+        ]);
+      } finally {
+        onboarding?.stop();
+      }
+      if (promptOutcome === 'onboarding') {
+        throw new SpawnError(
+          `${AGENT_ONBOARDING_SCREEN}: Claude Code started its first-run onboarding (theme picker / login), ` +
+            `so the login this session runs on is missing. Log in as the server's OS user ` +
+            `(claude auth login), or launch on a member or space credential.`,
+          'invalid_input',
+          { sessionId, reason: AGENT_ONBOARDING_SCREEN },
+        );
+      }
       if (earlyExit) {
         bootExit = earlyExit;
         throw new SpawnError(
@@ -2009,6 +2131,12 @@ export class SpawnService {
    * and the honest report for it is the same exit transition every other death
    * takes rather than a synthesized launch error.
    */
+  /** Capture server-derived claims before a tool PTY can produce an exit event. */
+  adoptToolSession(auth: GraphAuth, sessionId: string): void {
+    this.sessionAuth.set(sessionId, auth);
+    this.toolSessions.add(sessionId);
+  }
+
   async startShell(auth: GraphAuth, request: ShellSessionRequest): Promise<ShellSessionResult> {
     const context = await this.graph.loadShellContext(auth, {
       spaceId: request.spaceId,
@@ -2149,7 +2277,7 @@ export class SpawnService {
    *   6. transition to `running`
    */
   async resume(auth: GraphAuth, request: ResumeRequest): Promise<SpawnResult> {
-    const info = await this.graph.loadWorkSessionForResume(auth, request.sessionId);
+    let info = await this.graph.loadWorkSessionForResume(auth, request.sessionId);
     const sessionId = info.sessionId;
     let bootExit: PtyExitInfo | undefined;
     // Cleanup owns only a child THIS invocation created. `spawnIfAbsent` can
@@ -2167,9 +2295,28 @@ export class SpawnService {
         { sessionId },
       );
     }
+    // A STALE session — the record says running/idle, this node owns it and
+    // holds no PTY for it (checked just above) — is a ghost the reaper would
+    // mark lost after `staleAfterMs`. Resuming it is the user asking for that
+    // verdict now, so record it first (`failed / lost`, the same process fact
+    // "Mark lost" writes) and carry on as for any failed session. A session
+    // another node owns is NOT ours to call lost: its PTY may be live there.
+    // `spawning` is excluded too — that is a launch between its row and its
+    // first PTY, and calling it lost would race the very spawn in flight.
+    if (
+      (info.status === 'running' || info.status === 'idle')
+      && (info.nodeId == null || this.nodeId == null || info.nodeId === this.nodeId)
+    ) {
+      await this.markLost(auth, sessionId);
+      this.ghostFirstSeen.delete(sessionId);
+      info = { ...info, status: 'failed' };
+    }
     if (info.status !== 'exited' && info.status !== 'failed') {
       throw new SpawnError(
-        `work session ${sessionId} is '${info.status}' — only exited or failed sessions can be resumed`,
+        `work session ${sessionId} is '${info.status}' — only exited, failed or stale sessions can be resumed`
+          + (info.status === 'running' || info.status === 'idle'
+            ? ` (it is owned by node ${String(info.nodeId)}, not this one)`
+            : ''),
         'conflict',
         { sessionId, status: info.status },
       );
@@ -2487,6 +2634,10 @@ export class SpawnService {
         info.teamMemberId,
       );
       agentTokenIssued = true;
+      if (this.mcpBindings) launch.mcpSelections = await this.mcpBindings.bind(auth, {
+        sessionId, spaceId: info.spaceId, teamMemberId: info.teamMemberId,
+        targetIds: context.tasks.map(task => task.id), agentToken, resume: true,
+      });
 
       // NO --session-id on a resume invocation: the id is already Claude's, and
       // naming it twice (`--session-id` + `--resume`) is two flags to disagree.
@@ -2587,7 +2738,10 @@ export class SpawnService {
       if (launch.agentTool === 'claude-code') {
         await this.seedClaudeTrust(sessionId, cwd, info.workdirMode, manifest.project, env);
       }
-      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
+      if (launch.agentTool === 'codex') {
+        await isolateCodexMcpHome(manifestPath, env);
+        await trustCodexWorkspace(cwd, env);
+      }
 
       // R1 (W10a): the manifest was recorded under the recorder's lock, but a
       // credential can be revoked or switched to private between that commit
@@ -2627,7 +2781,7 @@ export class SpawnService {
       }
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
-      await this.failSession(auth, sessionId, error, bootExit);
+      await this.failSession(auth, sessionId, error, bootExit, 'resume');
       if (launchedPty) this.pty.kill(sessionId);
       // A PTY this resume merely FOUND is healthy and still reads its key.
       if (!this.pty.hasSession(sessionId)) {
@@ -2708,6 +2862,8 @@ export class SpawnService {
     const start = Date.now();
     let keystrokes = 0;
     let absentReads = 0;
+    let onboardingReads = 0;
+    let bootedAt: number | null = null;
     for (;;) {
       await new Promise<void>((resolve) => {
         setTimeout(resolve, this.trustWatchdogPollMs).unref?.();
@@ -2715,6 +2871,37 @@ export class SpawnService {
       if (epoch === null || this.pty.getEpoch(sessionId) !== epoch) return;
       const screen = await this.pty.readScreen(sessionId);
       if (screen === null) return;
+      // Claude Code's first-run flow (theme picker, login method) means the
+      // config home has no login: nothing tm8 can press gets past it, and the
+      // lane would otherwise sit there forever. Checked before the trust
+      // decision, which stands down for good once the composer banner is up —
+      // so text a working agent prints can never trip this.
+      if (readClaudeOnboarding(screen)) {
+        onboardingReads += 1;
+        if (onboardingReads < ONBOARDING_FAIL_READS) continue;
+        this.loud(
+          `session ${sessionId} booted into Claude Code's first-run onboarding (theme picker / login) — ` +
+            `the agent's config home has no login. Failing it as ${AGENT_ONBOARDING_SCREEN}.`,
+        );
+        await this.killThenRecordEnding(this.sessionAuth.get(sessionId), sessionId, {
+          onNotFound: 'skip',
+          status: 'failed',
+          error: () =>
+            `${AGENT_ONBOARDING_SCREEN}: Claude Code started its first-run onboarding, so the login it ` +
+            `runs on is missing — log in as the server's OS user (claude auth login) or launch on a ` +
+            `member or space credential`,
+          endedKind: 'unknown',
+          endedReason: "Stopped: the agent has no login and was waiting at Claude Code's first-run screen.",
+        });
+        return;
+      }
+      onboardingReads = 0;
+      // Past the banner the trust question is settled; only onboarding, drawn
+      // a frame later under the same banner, is still worth a look.
+      if (bootedAt !== null) {
+        if (Date.now() - bootedAt >= Math.min(ONBOARDING_GRACE_MS, this.trustWatchdogMs)) return;
+        continue;
+      }
       const action = decideTrustWatchdog({
         screen,
         elapsedMs: Date.now() - start,
@@ -2749,6 +2936,10 @@ export class SpawnService {
           });
           return;
         case 'stop':
+          if (action.reason === 'booted') {
+            bootedAt = Date.now();
+            continue;
+          }
           if (action.reason === 'opted_out') {
             this.loud(
               `session ${sessionId} is waiting at Claude Code's workspace-trust prompt and ` +
@@ -2773,6 +2964,35 @@ export class SpawnService {
           return;
       }
     }
+  }
+
+  /**
+   * Resolves true once Claude Code's first-run onboarding has been on screen
+   * for ONBOARDING_FAIL_READS consecutive reads; false when the PTY goes away,
+   * the watch window passes, or `stop()` is called. Never rejects.
+   */
+  private detectClaudeOnboarding(sessionId: string): { seen: Promise<boolean>; stop: () => void } {
+    let stopped = false;
+    const stop = (): void => { stopped = true; };
+    if (typeof (this.pty as Partial<PtyHostService>).readScreen !== 'function' || this.trustWatchdogMs <= 0) {
+      return { seen: Promise.resolve(false), stop };
+    }
+    const seen = (async (): Promise<boolean> => {
+      const start = Date.now();
+      let reads = 0;
+      while (!stopped && Date.now() - start < this.trustWatchdogMs) {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, this.trustWatchdogPollMs).unref?.();
+        });
+        if (stopped) return false;
+        const screen = await this.pty.readScreen(sessionId);
+        if (screen === null) return false;
+        reads = readClaudeOnboarding(screen) ? reads + 1 : 0;
+        if (reads >= ONBOARDING_FAIL_READS) return true;
+      }
+      return false;
+    })().catch(() => false);
+    return { seen, stop };
   }
 
   private async waitForFirstPromptSettlement(
@@ -2824,21 +3044,28 @@ export class SpawnService {
     sessionId: string,
     error: unknown,
     exitInfo?: PtyExitInfo,
+    phase: 'spawn' | 'resume' = 'spawn',
   ): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
+    // A NAMED unknown, never blank: an Error with an empty message would
+    // otherwise write error = '' — a value that PASSES a `NOT NULL`-style
+    // honesty check while saying nothing, which is the exact failure this
+    // whole fix exists to close.
+    const detail = exitInfo
+      ? describePtyExit(exitInfo)
+      : message.trim() !== ''
+        ? message
+        : 'spawn failed for an unspecified reason';
     const transition: TransitionInput = {
       sessionId,
       status: 'failed',
       ...(exitInfo ? { exitCode: exitInfo.exitCode } : {}),
-      // A NAMED unknown, never blank: an Error with an empty message would
-      // otherwise write error = '' — a value that PASSES a `NOT NULL`-style
-      // honesty check while saying nothing, which is the exact failure this
-      // whole fix exists to close.
-      error: exitInfo
-        ? describePtyExit(exitInfo)
-        : message.trim() !== ''
-          ? message
-          : 'spawn failed for an unspecified reason',
+      error: detail,
+      /* SPEC D1 §9 scenario 29: a resume that fails at spawn says so. Resume
+         does not clear the PREVIOUS run's ended kind and reason, so without
+         its own reason the row would repeat the old crash. The UI reads this
+         prefix (`RESUME_FAILED_PREFIX` in tm8-ui session-outcome.ts). */
+      ...(phase === 'resume' ? { endedReason: `${RESUME_FAILED_PREFIX}${detail}` } : {}),
     };
     if (await this.persistFailedTransition(auth, transition, message)) return;
     this.scheduleFailedTransitionRetry(auth, transition, message, 1);
@@ -3135,11 +3362,14 @@ export class SpawnService {
     const ending = CREDENTIAL_CONTAINMENT_ENDINGS[cause];
     let result: { outcome: PtyKillOutcome; recorded: boolean };
     try {
+      // 299 (Spec D1 §3): `credential_revoked` on `failed`. No operator chose
+      // to stop this work — the credential was taken away — so the outcome
+      // stays open and the session can be resumed once it is reconnected.
       result = await this.killThenRecordEnding(auth, sessionId, {
         onNotFound: 'skip',
-        status: 'exited',
+        status: 'failed',
         error: () => ending.error,
-        endedKind: 'stopped_by_operator',
+        endedKind: 'credential_revoked',
         endedReason: ending.endedReason,
       });
     } catch (error) {
@@ -3182,6 +3412,7 @@ export class SpawnService {
   async killRecordedEnding(sessionId: string): Promise<PtyKillOutcome> {
     const outcome = this.pty.kill(sessionId, true);
     this.sessionAuth.delete(sessionId);
+    this.toolSessions.delete(sessionId);
     if (outcome === 'killed') await this.scrubSpaceSecrets(sessionId);
     this.logger?.info('SpawnService: session killed after its membership ended', { sessionId, outcome });
     return outcome;
@@ -3220,6 +3451,7 @@ export class SpawnService {
   ): Promise<{ outcome: PtyKillOutcome; recorded: boolean }> {
     const outcome = this.pty.kill(sessionId, true);
     this.sessionAuth.delete(sessionId);
+    this.toolSessions.delete(sessionId);
     // Even a failed kill must lose graph authority: a process whose lifecycle
     // is no longer under control is the least safe process to leave credentialed.
     if (outcome === 'error') return { outcome, recorded: false };
@@ -3468,6 +3700,125 @@ export class SpawnService {
   }
 
   /**
+   * THE GHOST REAPER (Spec D1 §4.4, 299). The periodic sibling of
+   * `reconcileNodeGhosts`: a session THIS node owns whose record says it is
+   * live (spawning/running/idle) while this node holds no PTY for it, observed
+   * so for `staleAfterMs`, becomes `failed / lost`.
+   *
+   * The first sighting is remembered in memory and the clock starts there, so
+   * a session that is merely between spawn and its first PTY byte, or that a
+   * resume is bringing back, is never reaped on one look. A restart clears the
+   * memory — and the boot reconciliation retires every ghost anyway.
+   *
+   * Writes a PROCESS fact only. The outcome stays open, the claims stay held:
+   * a lost session is unfinished work that needs someone to resume, complete
+   * or stop it. NEVER THROWS.
+   */
+  async reapLostSessions(
+    auth: GraphAuth,
+    opts: { staleAfterMs: number; now?: number },
+  ): Promise<{ reaped: number; errors: Array<{ message: string }> }> {
+    if (!this.nodeId) return { reaped: 0, errors: [] };
+    const now = opts.now ?? Date.now();
+    let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
+    try {
+      candidates = await this.graph.listNodeActiveSessions(auth, this.nodeId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { reaped: 0, errors: [{ message: `could not list this node's sessions: ${message}` }] };
+    }
+    const ghosts = new Set<string>();
+    for (const { sessionId } of candidates) {
+      if (!this.pty.hasSession(sessionId)) ghosts.add(sessionId);
+    }
+    for (const id of [...this.ghostFirstSeen.keys()]) {
+      if (!ghosts.has(id)) this.ghostFirstSeen.delete(id);
+    }
+    let reaped = 0;
+    const errors: Array<{ message: string }> = [];
+    for (const sessionId of ghosts) {
+      const first = this.ghostFirstSeen.get(sessionId);
+      if (first === undefined) {
+        this.ghostFirstSeen.set(sessionId, now);
+        continue;
+      }
+      if (now - first < opts.staleAfterMs) continue;
+      try {
+        await this.markLost(auth, sessionId, now - first);
+        this.ghostFirstSeen.delete(sessionId);
+        reaped += 1;
+      } catch (error) {
+        errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
+      }
+    }
+    return { reaped, errors };
+  }
+
+  /**
+   * Record that a session's process is gone: `failed / lost`. The reaper's
+   * write, and the panel's "Mark lost" (Spec D1 §5.6) — which is refused while
+   * this node still holds a live PTY for the session, because then it is not
+   * lost.
+   */
+  async markLost(auth: GraphAuth, sessionId: string, missingForMs?: number): Promise<{ outcome: string; commandResult: unknown }> {
+    if (this.pty.hasSession(sessionId)) {
+      throw new SpawnError(`work session ${sessionId} has a live process on this node; it is not lost`, 'conflict', {
+        sessionId,
+        reason: 'process_live',
+      });
+    }
+    const minutes = missingForMs === undefined ? null : Math.max(1, Math.round(missingForMs / 60_000));
+    return this.terminate(auth, sessionId, {
+      terminalStatus: 'failed',
+      reason: `marked lost: the record said live, but this node holds no process for it${
+        minutes === null ? '' : ` (missing for ${String(minutes)} min)`}`,
+      endedKind: 'lost',
+      endedReason:
+        minutes === null
+          ? 'Marked lost: its process could not be found. It can be resumed to try again.'
+          : `Lost: its process was gone for ${String(minutes)} minutes. It can be resumed to try again.`,
+    });
+  }
+
+  /**
+   * AUTO-CLOSE (Spec D1, owner ruling Q3). A COMPLETED session's process left
+   * open idles away a slot nobody uses; after its space's window (default 30
+   * min, 0 = never) since completion with no activity, close it. The work is
+   * already done, so the ending is `exited_clean` and the outcome is
+   * untouched. NEVER THROWS.
+   */
+  async closeIdleCompletedSessions(
+    auth: GraphAuth,
+  ): Promise<{ closed: number; errors: Array<{ message: string }> }> {
+    if (!this.nodeId || !this.graph.listCompletedSessionsToClose) return { closed: 0, errors: [] };
+    let due: Array<{ sessionId: string; minutes: number }>;
+    try {
+      due = await this.graph.listCompletedSessionsToClose(auth, this.nodeId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { closed: 0, errors: [{ message: `could not list completed sessions to close: ${message}` }] };
+    }
+    let closed = 0;
+    const errors: Array<{ message: string }> = [];
+    for (const { sessionId, minutes } of due) {
+      try {
+        await this.terminate(auth, sessionId, {
+          reason: `auto-closed: completed and idle for ${String(minutes)} min (space setting)`,
+          endedKind: 'exited_clean',
+          endedReason: `Closed automatically: the work was completed and the session sat idle for ${String(minutes)} minutes.`,
+        });
+        closed += 1;
+      } catch (error) {
+        errors.push({ message: `session ${sessionId}: ${error instanceof Error ? error.message : String(error)}` });
+      }
+    }
+    return { closed, errors };
+  }
+
+  /** First time the reaper saw each live-recorded session with no PTY here. */
+  private readonly ghostFirstSeen = new Map<string, number>();
+
+  /**
    * SHUTDOWN SWEEP — say why, while there is still someone to say it.
    *
    * Called from the server's SIGTERM/SIGINT handler, BEFORE the process exits.
@@ -3640,6 +3991,12 @@ export class SpawnService {
   ): Promise<void> => {
     const auth = this.sessionAuth.get(sessionId);
     this.sessionAuth.delete(sessionId);
+    // Tools report a nonzero command result in tool_exit_code. A wrapper
+    // that exits normally has ended cleanly, including when that result is
+    // nonzero; signal deaths still use the shared failure classification.
+    if (this.toolSessions.delete(sessionId) && exitInfo.signal === null && exitInfo.exitCode !== null) {
+      status = 'completed';
+    }
     // FIRST, before any graph write can fail, and on the ghost path too: the
     // process that read the space key is gone, so the key leaves the disk. A
     // kill (containment) arrives here like any other exit.

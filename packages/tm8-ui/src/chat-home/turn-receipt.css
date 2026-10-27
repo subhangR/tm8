@@ -1,0 +1,410 @@
+/* THE TURN RECEIPT (TurnReceipt.tsx) — proposal 01a14a8d direction B,
+   mockups 01a14a8c. One quiet block per run on a surface tint: no border, no
+   shadow, no rail, no uppercase pill. One ~32px row per entity:
+   [mark] [kind / thumbnail] title …… [meta] [worker pills] [state now].
+   A container query wraps the meta and state under the title on a phone. */
+
+.tch-receipt {
+  container-type: inline-size;
+  max-width: var(--pn-read-measure);
+  padding: 4px 6px;
+  border-radius: var(--pn-r-md);
+  background: var(--pn-surface);
+}
+
+.tch-receipt__rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ── one row ─────────────────────────────────────────────────────────────── */
+
+.tch-rrow {
+  --tch-rrow-depth: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 32px;
+  padding-left: calc(var(--tch-rrow-depth) * 22px);
+  color: var(--pn-ink);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-snug);
+}
+
+.tch-rrow__main {
+  display: grid;
+  grid-template-columns: 14px auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 5px 4px;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.tch-rrow__main {
+  cursor: pointer;
+}
+
+button.tch-rrow__main:hover {
+  background: var(--pn-hover);
+}
+
+button.tch-rrow__main:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+.tch-rrow__mark {
+  color: var(--pn-ink-3);
+  font: 600 var(--pn-fs-label)/1 var(--pn-mono);
+  text-align: center;
+}
+
+.tch-rrow__mark[data-mark='made'] {
+  color: var(--pn-brand-2);
+}
+
+.tch-rrow__mark[data-mark='failed'] {
+  color: var(--pn-block);
+}
+
+.tch-rrow__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pn-ink-3);
+}
+
+.tch-rrow__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tch-rrow__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tch-rrow__title[data-placeholder] {
+  color: var(--pn-ink-3);
+}
+
+.tch-rrow__line {
+  overflow: hidden;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tch-rrow[data-mark='failed'] .tch-rrow__title {
+  color: var(--pn-block);
+}
+
+.tch-rrow[data-mark='pending'] .tch-rrow__title {
+  color: var(--pn-ink-3);
+}
+
+/* A running write: grey words and a shimmer where its state will be. */
+.tch-rrow[data-mark='pending'] .tch-rrow__end::after {
+  content: '';
+  width: 40px;
+  height: 8px;
+  border-radius: var(--pn-r-pill);
+  background: linear-gradient(90deg, var(--pn-line) 0%, var(--pn-card) 50%, var(--pn-line) 100%);
+  background-size: 200% 100%;
+  animation: tch-rrow-shimmer 1.4s linear infinite;
+}
+
+@keyframes tch-rrow-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.tch-rrow__end {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 4px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  white-space: nowrap;
+}
+
+.tch-rrow:not([data-mark='pending']) .tch-rrow__end:empty {
+  display: none;
+}
+
+.tch-rrow__meta {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tch-rrow__fact + .tch-rrow__fact::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--pn-ink-4);
+}
+
+.tch-rrow__rel {
+  color: var(--pn-ink-2);
+}
+
+.tch-rrow__relmark {
+  display: inline-flex;
+  margin-right: 3px;
+  color: var(--pn-ink-3);
+  vertical-align: -1px;
+}
+
+/* Once per row per page session (useEnterOnce), never under reduced motion. */
+.tch-rrow[data-enter] {
+  animation: tch-rrow-rise 0.35s var(--pn-ease-out) both;
+}
+
+@keyframes tch-rrow-rise {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── the state slot: colour plus a dot, never a pill ─────────────────────── */
+
+.tch-rstate {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-micro);
+}
+
+.tch-rstate__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tch-rstate[data-tone='idle'],
+.tch-rstate[data-tone='ended'],
+.tch-rstate[data-tone='stopped'] {
+  color: var(--pn-ink-2);
+}
+
+.tch-rstate[data-tone='idle'] .tch-rstate__dot,
+.tch-rstate[data-tone='ended'] .tch-rstate__dot,
+.tch-rstate[data-tone='stopped'] .tch-rstate__dot {
+  background: var(--pn-ink-3);
+}
+
+.tch-rstate[data-tone='run'],
+.tch-rstate[data-tone='info'] {
+  color: var(--pn-info);
+}
+
+.tch-rstate[data-tone='wait'],
+.tch-rstate[data-tone='waiting'] {
+  color: var(--pn-wait);
+}
+
+.tch-rstate[data-tone='block'],
+.tch-rstate[data-tone='crashed'] {
+  color: var(--pn-block);
+}
+
+.tch-rstate[data-tone='done'],
+.tch-rstate[data-tone='completed'],
+.tch-rstate[data-tone='live'] {
+  color: var(--pn-run);
+}
+
+/* The live dot pulses on the kit's own keyframe (kit.css `pnPulse`). */
+.tch-rstate[data-tone='live'] .tch-rstate__dot {
+  animation: pnPulse 1.6s ease-in-out infinite;
+}
+
+/* ── a worker on the row's task ──────────────────────────────────────────── */
+
+.tch-rpill {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  white-space: nowrap;
+}
+
+button.tch-rpill {
+  cursor: pointer;
+}
+
+button.tch-rpill:hover {
+  border-color: var(--pn-line-2);
+  background: var(--pn-hover);
+}
+
+button.tch-rpill:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+.tch-rpill__icon {
+  display: inline-flex;
+  color: var(--pn-run);
+}
+
+.tch-rpill[data-tone='crashed'] .tch-rpill__icon {
+  color: var(--pn-block);
+}
+
+.tch-rpill__name {
+  color: var(--pn-ink-2);
+}
+
+/* ── thumbnails (doc / artifact / drawing) ───────────────────────────────── */
+
+.tch-rrow__icon[data-thumb] {
+  width: 44px;
+  height: 32px;
+}
+
+.tch-rthumb {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 44px;
+  height: 32px;
+  padding: 4px 5px;
+  overflow: hidden;
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  background: var(--pn-card);
+}
+
+.tch-rthumb__bar {
+  flex: none;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--pn-ink-4);
+}
+
+.tch-rthumb__bar[data-heading] {
+  height: 3px;
+  background: var(--pn-ink-2);
+}
+
+.tch-rthumb[data-kind='drawing'] {
+  padding: 3px;
+}
+
+.tch-rthumb__shape {
+  fill: var(--pn-wait-soft);
+  stroke: var(--pn-wait);
+  stroke-width: 1;
+}
+
+.tch-rthumb__line {
+  stroke: var(--pn-ink-3);
+  stroke-width: 1;
+}
+
+.tch-rthumb[data-kind='artifact'] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 3px 1fr;
+  gap: 3px;
+  padding: 0 0 4px;
+}
+
+.tch-rthumb__chrome {
+  grid-column: 1 / -1;
+  background: var(--pn-ink-2);
+}
+
+.tch-rthumb__block {
+  margin-left: 4px;
+  border-radius: 1px;
+  background: var(--pn-line);
+}
+
+.tch-rthumb__block[data-wide] {
+  margin: 0 4px 0 0;
+}
+
+/* ── the cap ─────────────────────────────────────────────────────────────── */
+
+.tch-receipt__more {
+  display: block;
+  padding: 6px 4px 6px 26px;
+  border: none;
+  background: none;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  cursor: pointer;
+}
+
+.tch-receipt__more:hover {
+  color: var(--pn-ink-2);
+}
+
+/* ── phone: the meta and the state wrap under the title ──────────────────── */
+
+@container (max-width: 480px) {
+  .tch-rrow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding-block: 2px;
+  }
+
+  .tch-rrow__end {
+    justify-content: flex-start;
+    padding: 0 4px 4px 26px;
+    white-space: normal;
+  }
+
+  .tch-rrow__icon[data-thumb] ~ .tch-rrow__text {
+    min-height: 32px;
+    justify-content: center;
+  }
+
+  .tch-rrow:has(.tch-rrow__icon[data-thumb]) .tch-rrow__end {
+    padding-left: 78px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tch-rrow[data-enter],
+  .tch-rstate[data-tone='live'] .tch-rstate__dot,
+  .tch-rrow[data-mark='pending'] .tch-rrow__end::after {
+    animation: none;
+  }
+}

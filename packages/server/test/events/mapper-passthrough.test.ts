@@ -208,11 +208,19 @@ describe('WorkspaceEventMapper passthrough arm', () => {
       expect(RPC_AUTHORED_PASSTHROUGH.has(type)).toBe(false);
     }
     expect([...RPC_AUTHORED_PASSTHROUGH].sort()).toEqual([
+      // 313: mark_entity_seen writes its own recipient-only row; no trigger.
+      'entity.seen',
       'git.commit_recorded',
       'git.pr_state_changed',
       'git.worktree_status_changed',
+      // 284: the three style events are written by the style RPCs themselves
+      // (internal.emit_identity_style_event / the default door), contract-
+      // shaped, so they pass through. No entity row backs them.
+      'identity.style_prefs.updated',
       'menu.updated',
+      'personal_style.updated',
       'space.default_channel.updated',
+      'space.style_default.updated',
     ]);
   });
 

@@ -1,22 +1,16 @@
 /**
- * The SERVER store (W8, migration 261): typed wrappers for the servers.* RPCs,
- * the reachability probe, and the only module that seals or opens a member's
- * gate session on a remote server.
+ * The SERVER store (W8, migration 261): typed wrappers for the servers.* RPCs
+ * and the reachability probe.
  *
- * Sealed as 244's link sessions are: AES-256-GCM under the node key, bound to
- * `server-gate|<home_space_id>|<server_id>|<member_id>`
- * (`ServerGateSecretBinding`). The binding is RECOMPUTED from the row's
- * columns on open, never read from the stored `aad`, so a ciphertext copied to
- * another row or member does not open.
- *
- * The gate token is never logged, never put in an error, and returned only by
- * `openGate` to server-side code. Management is human-only in SQL (the strict
- * `internal.require_human_auth_kind`), and so is `open_server_gate_token`: an
- * agent never holds a member's gate session.
+ * W9c (301) RETIRED the member's stored gate session (`server_gate_tokens`,
+ * finding S4: a retained human session for the remote would bypass its link
+ * and agent policy). `signIn`/`openGate` are gone, the stored rows were
+ * deleted and the two RPCs refuse. Signing in to a space on another server is
+ * the pairing-code claim (remote/link-pairing.ts): what this node keeps is a
+ * `link` session the remote minted for one space, never a human session.
+ * `Server.mine` stays in the response shape and now always reads signed out.
  */
 import type { Db, DbClaims } from '../db/types.js';
-import { loadOrCreateCredentialKey } from '../credentials/credential-key.js';
-import { openSecret, sealSecret, type ServerGateSecretBinding } from '../credentials/secret-box.js';
 import { guardedHttpsRequest, type GuardedHttpsOptions, type GuardedResult } from './guarded-https.js';
 
 export type ServerReachStatus = 'unknown' | 'reachable' | 'unreachable' | 'offline';
@@ -56,16 +50,9 @@ export interface ServerProbe {
   reason?: string;
 }
 
-interface OpenedGate {
-  serverId: string;
-  homeSpaceId: string;
-  memberId: string;
-  ciphertext: string;
-  nonce: string;
-}
-
 export interface DbServerStoreOptions {
   db: Db;
+  /** Kept for callers; unused since W9c retired the sealed gate session. */
   dataDir: string;
   /** Tests only: the guard's resolver and transport. The address policy is not injectable. */
   https?: GuardedHttpsOptions;
@@ -77,13 +64,11 @@ export const SERVER_PROBE_TIMEOUT_MS = 5_000;
 
 export class DbServerStore {
   private readonly db: Db;
-  private readonly dataDir: string;
   private readonly https: GuardedHttpsOptions;
   private readonly probeTimeoutMs: number;
 
   constructor(options: DbServerStoreOptions) {
     this.db = options.db;
-    this.dataDir = options.dataDir;
     this.https = options.https ?? {};
     this.probeTimeoutMs = options.probeTimeoutMs ?? SERVER_PROBE_TIMEOUT_MS;
   }
@@ -115,36 +100,6 @@ export class DbServerStore {
     return this.db.rpc<Server>(claims, 'remove_server', [serverId, clientMutationId ?? null]);
   }
 
-  // TODO(W9c): replace this storage (no retained human gate token). Once remote
-  // is on, M's human session for S2 would bypass S2's link and agent policy
-  // (W9 finding S4). While forwarding is disabled nothing reads it: openGate
-  // has no caller and the probe sends no credential.
-  /** Seal and store the member's gate session for `serverId`. The token is never returned. */
-  async signIn(
-    claims: DbClaims,
-    input: { serverId: string; token: string; expiresAt?: string | null; clientMutationId?: string | null },
-  ): Promise<Server> {
-    const binding = await this.db.rpc<ServerGateSecretBinding>(claims, 'server_gate_seal_context', [input.serverId]);
-    const sealed = sealSecret(await this.key(), input.token, binding);
-    return this.db.rpc<Server>(claims, 'store_server_gate_token', [
-      input.serverId, input.expiresAt ?? null, sealed.ciphertext, sealed.nonce, input.clientMutationId ?? null,
-    ]);
-  }
-
-  signOut(claims: DbClaims, serverId: string, clientMutationId?: string | null): Promise<Server> {
-    return this.db.rpc<Server>(claims, 'sign_out_server', [serverId, clientMutationId ?? null]);
-  }
-
-  /** The member's gate token, in memory, for server-side use only. Never log it. */
-  async openGate(claims: DbClaims, serverId: string): Promise<string> {
-    const row = await this.db.rpc<OpenedGate>(claims, 'open_server_gate_token', [serverId]);
-    return openSecret(
-      await this.key(),
-      { ciphertext: Buffer.from(row.ciphertext, 'base64'), nonce: Buffer.from(row.nonce, 'base64') },
-      { homeSpaceId: row.homeSpaceId, serverId: row.serverId, memberId: row.memberId },
-    );
-  }
-
   /**
    * Reachability: an unauthenticated GET of the server's `/health` through the
    * guarded client. The guard refusing (loopback, private, bad URL, TLS) is
@@ -165,9 +120,5 @@ export class DbServerStore {
       outcome: result.kind,
       ...(result.kind === 'response' ? {} : { reason: result.reason }),
     };
-  }
-
-  private key(): Promise<Buffer> {
-    return loadOrCreateCredentialKey(this.dataDir);
   }
 }

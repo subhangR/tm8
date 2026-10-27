@@ -20,8 +20,10 @@
  *  - Scale honesty: the model's RENDER_CAP truncation renders as a banner,
  *    never a silent cut; filtered-to-nothing teaches, never blanks.
  */
+import { useFreshGlowLookup, withGlowStyle } from '../domain/useFreshGlow';
 import { EntityAttentionChip } from '../attention';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
 import { KindIcon, getKind, type StatusSource } from '../domain';
 import type { SessionLiveness } from '../data/seam';
@@ -53,7 +55,26 @@ export type GraphTimelineStep =
   | { atMs: number; kind: 'activity'; entityId: EntityId; label: string }
   | { atMs: number; kind: 'note'; label: string };
 
+/**
+ * Hosts in the app frame (Observe in the Work shell, Subhang 2026-10-06):
+ * the controls and banner render into the panel beside the rail, the counts
+ * into the top band, zoom/fit/re-layout into the right action strip. Absent
+ * (or null), each renders inline exactly as before.
+ */
+export interface GraphFrameHosts {
+  panel?: HTMLElement | null;
+  top?: HTMLElement | null;
+  strip?: HTMLElement | null;
+}
+
+/** Renders `children` into `host` when there is one, inline otherwise. */
+function Slot({ host, children }: { host: HTMLElement | null | undefined; children: ReactNode }) {
+  return host ? createPortal(children, host) : <>{children}</>;
+}
+
 export interface GraphViewProps {
+  /** Frame hosts for the controls; see `GraphFrameHosts`. */
+  hosts?: GraphFrameHosts | undefined;
   nodes: readonly EntitySummary[];
   edges: readonly EdgeView[];
   /** Scripted fixture replay (labeled in the toolbar). Optional. */
@@ -200,7 +221,7 @@ function edgeMid(e: PlacedEdge, pos: Map<EntityId, PlacedNode>): { x: number; y:
 }
 
 export function GraphView(props: GraphViewProps) {
-  const { now, onSelect, livenessOf, selectedId = null } = props;
+  const { now, onSelect, livenessOf, selectedId = null, hosts } = props;
 
   // Filters store the OFF sets, so kinds/types that appear later default ON.
   const [kindsOff, setKindsOff] = useState<ReadonlySet<string>>(new Set());
@@ -502,6 +523,10 @@ export function GraphView(props: GraphViewProps) {
   // Materialize grammar: a node whose id was not on canvas last render enters
   // with the brass ring. The very first render staggers everything in.
   const prevCanvasIds = useRef<ReadonlySet<string>>(new Set());
+  // Created (or deleted) live in front of this page: a brand stroke that fades
+  // back to the node's own (R40). Distinct from `newIds`, which is "entered
+  // the canvas" — a filter change or a pan brings nodes in that are not new.
+  const freshGlowOf = useFreshGlowLookup();
   const newIds = useMemo(() => {
     const prev = prevCanvasIds.current;
     return new Set(model.placed.filter((p) => !prev.has(p.entity.id)).map((p) => p.entity.id));
@@ -887,8 +912,9 @@ export function GraphView(props: GraphViewProps) {
       : null;
 
   return (
-    <div className="gv-root" data-testid="graph-view">
-      <div className="gv-toolbar">
+    <div className="gv-root" data-testid="graph-view" data-framed={hosts?.panel ? true : undefined}>
+      <Slot host={hosts?.panel}>
+      <div className={hosts?.panel ? 'gv-toolbar gv-toolbar--panel' : 'gv-toolbar'}>
         {/* THE LENS. First control in the bar because it is the first decision:
             what is this canvas about? Everything downstream (filters, search,
             zoom) refines the answer. Each lens says exactly what it seeds on,
@@ -927,6 +953,7 @@ export function GraphView(props: GraphViewProps) {
             </button>
           ))}
         </div>
+        <Slot host={hosts?.top}>
         <span className="gv-toolbar__count">
           {model.placed.length} nodes · {model.edges.length} edges ·{' '}
           {model.groupBy === 'none' ? (
@@ -1004,6 +1031,7 @@ export function GraphView(props: GraphViewProps) {
             </button>
           )}
         </span>
+        </Slot>
         <span className="gv-toolbar__spacer" />
         {/* INTEGRATION(W2): GraphSearch mounted here — before the filter selects
             so search reads left-to-right first. matchCount is null when the query
@@ -1024,7 +1052,7 @@ export function GraphView(props: GraphViewProps) {
             ⌖ focused: {focusTitle} · {focus.hops} hops · show all
           </button>
         ) : null}
-        {model.pendingRelayout > 0 ? (
+        {model.pendingRelayout > 0 && !hosts?.strip ? (
           <button
             type="button"
             className="gv-filter gv-filter--action"
@@ -1097,12 +1125,18 @@ export function GraphView(props: GraphViewProps) {
           onToggle={(id) => setTypesOff((prior) => toggle(prior, id))}
           onShowAll={() => setTypesOff(new Set())}
         />
-        <div className="gv-toolbar__zoom">
-          <IconBtn label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>−</IconBtn>
+        <Slot host={hosts?.strip}>
+        <div className={hosts?.strip ? 'gv-toolbar__zoom gv-toolbar__zoom--strip' : 'gv-toolbar__zoom'}>
           <IconBtn label="Zoom in" onClick={() => zoomBy(1.2)}>+</IconBtn>
+          <IconBtn label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>−</IconBtn>
           <IconBtn label="Fit graph" onClick={fit}>⤢</IconBtn>
+          {hosts?.strip && model.pendingRelayout > 0 ? (
+            <IconBtn label={`Re-layout (${model.pendingRelayout} new)`} onClick={relayout}>⟳</IconBtn>
+          ) : null}
         </div>
+        </Slot>
       </div>
+      </Slot>
 
       {/* THREE EXCLUSIONS, THREE SENTENCES. `outOfWindow` means it is older than
           the window; `outOfLens` means this lens never reached it; `truncated`
@@ -1110,6 +1144,7 @@ export function GraphView(props: GraphViewProps) {
           remedies — widen the window, widen the lens, raise the cap — and saying
           "the canvas holds 150" over either of the other two is a false
           explanation, the exact failure this banner exists to remove. */}
+      <Slot host={hosts?.panel}>
       {(model.truncated > 0 || model.outOfLens > 0 || model.outOfWindow > 0 ||
         props.atCeiling === true) && (
         <div className="gv-banner" role="status">
@@ -1154,6 +1189,7 @@ export function GraphView(props: GraphViewProps) {
           )}
         </div>
       )}
+      </Slot>
 
       {nothingVisible ? (
         <div className="gv-empty">
@@ -1352,11 +1388,13 @@ export function GraphView(props: GraphViewProps) {
                 .join(' ');
               const focused = focus?.id === p.entity.id;
               const relation = relationById.get(p.entity.id);
+              const glow = freshGlowOf(p.entity.id);
               return (
                 // A role=button div (not a <button>) so the focus affordance can
                 // be a REAL nested button — nested <button>s are invalid HTML.
                 // Keyboard: Enter/Space select, matching the old card button.
                 <div
+                  {...glow.attrs}
                   key={p.entity.id}
                   role="button"
                   tabIndex={0}
@@ -1372,9 +1410,10 @@ export function GraphView(props: GraphViewProps) {
                     `${getKind(p.entity.kind).label} · ${p.entity.title}` +
                     (pill ? ` · ${pill.word}` : '') +
                     (liveness === 'live' ? ' · live' : liveness === 'stale' ? ' · stale' : '') +
-                    (relation ? ` · ${relation.label} ${relation.title}` : '')
+                    (relation ? ` · ${relation.label} ${relation.title}` : '') +
+                    (glow.srSuffix ?? '')
                   }
-                  style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H }}
+                  style={withGlowStyle({ left: p.x, top: p.y, width: NODE_W, height: NODE_H }, glow)}
                   onClick={() => onSelect(p.entity.id)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {

@@ -1,3 +1,15 @@
+import { ToolCreateInputSchema, ToolUpdateInputSchema, ToolConfigSetInputSchema, ToolConfigUnsetInputSchema, ToolSecretBindInputSchema, ToolSecretUnbindInputSchema, ToolRunInputSchema } from '@tm8/contract';
+import {
+  WorkspaceCommandInputSchema,
+  WorkspaceCreateInputSchema,
+  WorkspaceDraftPatchInputSchema,
+  WorkspacePromptsResolveInputSchema,
+  CraftWorkspaceCommandInputSchema,
+  WorkspaceReorderInputSchema,
+  WorkspaceSwitchInputSchema,
+  WorkspaceUpdateInputSchema,
+} from '@tm8/contract';
+import { McpCredentialCommandInputSchema, McpCredentialCreateInputSchema, McpCredentialRotateInputSchema, McpCredentialShareInputSchema, McpOAuthBeginInputSchema, McpOAuthCallbackInputSchema, McpProxyRequestInputSchema, McpResolveInputSchema, McpTokenCreateInputSchema, McpTokenRevokeInputSchema, McpServerCreateInputSchema, McpServerDeleteInputSchema, McpServerImportInputSchema, McpServerRequestInputSchema, McpServerTestInputSchema, McpServerUpdateInputSchema, SetChatMcpSelectionsInputSchema } from '@tm8/contract';
 import { SkillCreateInputSchema, SkillEditInputSchema, SkillEquipInputSchema } from '../skills/mutations.js';
 import { SkillScanInputSchema } from '../skills/handlers.js';
 /**
@@ -21,6 +33,15 @@ import { SkillScanInputSchema } from '../skills/handlers.js';
  * or declare it body-less; an omission here is a to-do, not a decision.
  */
 import {
+  PersonalStyleCreateInputSchema,
+  PersonalStyleDeleteInputSchema,
+  PersonalStyleUpdateInputSchema,
+  SpaceStyleDefaultSetInputSchema,
+  StylePrefsSetInputSchema,
+  StylePullInputSchema,
+  StylePushInputSchema,
+  StyleRemoveInputSchema,
+  StylesResolveInputSchema,
   ContainersAttachInputSchema,
   ContainersBrowserEndpointInputSchema,
   ContainersComputerInputSchema,
@@ -72,11 +93,14 @@ import {
   CredentialsSpaceCommandInputSchema,
   CredentialsSpaceDefaultConsentInputSchema,
   CredentialsSpaceSetVisibilityInputSchema,
+  CredentialsSpaceShareInputSchema,
   CredentialsSpaceCreateInputSchema,
   CredentialsSpacePolicySetInputSchema,
   CredentialsSpaceRekeyInputSchema,
   CredentialsSpaceRenameInputSchema,
   NodeCredentialsPolicySetInputSchema,
+  PathGrantCreateInputSchema,
+  PathGrantRevokeInputSchema,
   CredentialsLoginSessionStartInputSchema,
   CreateAttentionRequestInputSchema,
   CorrectProjectAssociationInputSchema,
@@ -101,7 +125,12 @@ import {
   SpaceLinksAddInputSchema,
   SpaceLinksMutationInputSchema,
   SpaceLinksSetSpawnInputSchema,
+  SpaceLinksInboundMutationInputSchema,
+  SpaceLinksInboundGrantInputSchema,
   SpaceLinksInvokeInputSchema,
+  SpaceLinksLoginInputSchema,
+  CrossSpaceRefAddInputSchema,
+  CrossSpaceRefRemoveInputSchema,
   ServersAddInputSchema,
   ServersAdoptInputSchema,
   ServersMutationInputSchema,
@@ -117,6 +146,8 @@ import {
   ExecutionTerminalStartInputSchema,
   ExecutionStreamsAttachInputSchema,
   ExecutionTerminateInputSchema,
+  ExecutionCompleteInputSchema,
+  ReleaseInputSchema,
   FileUploadAbortInputSchema,
   FileUploadCompleteInputSchema,
   FileUploadInitInputSchema,
@@ -143,6 +174,7 @@ import {
   ProjectFolderUploadInitInputSchema,
   ProjectLinkInputSchema,
   SpaceProjectCreateInputSchema,
+  ProjectCloneInputSchema,
   GateFolderCreateInputSchema,
   ProjectUpdateInputSchema,
   PullInputSchema,
@@ -150,7 +182,7 @@ import {
   RemoveMessageAttachmentsInputSchema,
   SavedViewInputSchema,
   SendHandoffInputSchema,
-  SetChatModelInputSchema,
+  SetChatModelInputSchema, SetChatCredentialsInputSchema, InterruptChatInputSchema,
   StartChatInputSchema,
   ResolveEntityAttentionInputSchema,
   RaiseAttentionSignalInputSchema,
@@ -207,9 +239,54 @@ const UndoCommandInputSchema = z.object({
 }).strict();
 
 export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
+  // Workspace remote bridge (Spec C): the window validates `args` itself.
+  'workspace.command': WorkspaceCommandInputSchema,
+  'workspace.drafts.patch': WorkspaceDraftPatchInputSchema,
+  // §5.7–§5.11: names and colours are checked by the handler, for the reason.
+  'workspace.create': WorkspaceCreateInputSchema,
+  'workspace.update': WorkspaceUpdateInputSchema,
+  'workspace.reorder': WorkspaceReorderInputSchema,
+  'workspace.switch': WorkspaceSwitchInputSchema,
+  'workspace.prompts.resolve': WorkspacePromptsResolveInputSchema,
+  'tools.create': ToolCreateInputSchema,
+  'tools.update': ToolUpdateInputSchema,
+  'tools.config.set': ToolConfigSetInputSchema,
+  'tools.config.unset': ToolConfigUnsetInputSchema,
+  'tools.secrets.bind': ToolSecretBindInputSchema,
+  'tools.secrets.unbind': ToolSecretUnbindInputSchema,
+  'tools.run': ToolRunInputSchema,
+  'workspace.crafts.command': CraftWorkspaceCommandInputSchema,
+  'mcp.servers.create': McpServerCreateInputSchema,
+  'mcp.servers.update': McpServerUpdateInputSchema,
+  'mcp.servers.delete': McpServerDeleteInputSchema,
+  'mcp.servers.import': McpServerImportInputSchema,
+  'mcp.servers.request': McpServerRequestInputSchema,
+  'mcp.servers.test': McpServerTestInputSchema,
+  'mcp.resolve': McpResolveInputSchema,
+  'mcp.credentials.create': McpCredentialCreateInputSchema,
+  'mcp.credentials.rotate': McpCredentialRotateInputSchema,
+  'mcp.credentials.revoke': McpCredentialCommandInputSchema,
+  'mcp.credentials.share': McpCredentialShareInputSchema,
+  'mcp.credentials.unshare': McpCredentialCommandInputSchema,
+  'mcp.oauth.begin': McpOAuthBeginInputSchema,
+  'mcp.oauth.callback': McpOAuthCallbackInputSchema,
+  'mcp.proxy.request': McpProxyRequestInputSchema,
+  'mcp.tokens.create': McpTokenCreateInputSchema,
+  'mcp.tokens.revoke': McpTokenRevokeInputSchema,
+
   // identity (v2 Stage 0). The DTO deliberately has no actorId — strictness
   // refuses an actor on the wire rather than ignoring it.
   'identity.profile.update': IdentityProfileUpdateInputSchema,
+  // Styles (284, styles spec §4.1).
+  'styles.personal.create': PersonalStyleCreateInputSchema,
+  'styles.personal.update': PersonalStyleUpdateInputSchema,
+  'styles.personal.delete': PersonalStyleDeleteInputSchema,
+  'styles.push': StylePushInputSchema,
+  'styles.pull': StylePullInputSchema,
+  'styles.remove': StyleRemoveInputSchema,
+  'styles.resolve': StylesResolveInputSchema,
+  'identity.stylePrefs.set': StylePrefsSetInputSchema,
+  'spaces.styleDefault.set': SpaceStyleDefaultSetInputSchema,
 
   // auth (v2 Stage 1). No actorId and no clientMutationId on any of these —
   // authentication has no authoring persona and no idempotency ledger entry.
@@ -252,6 +329,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'credentials.space.rename': CredentialsSpaceRenameInputSchema,
   'credentials.space.delete': CredentialsSpaceCommandInputSchema,
   'credentials.space.setVisibility': CredentialsSpaceSetVisibilityInputSchema,
+  'credentials.space.share': CredentialsSpaceShareInputSchema,
+  'credentials.space.unshare': CredentialsSpaceCommandInputSchema,
   'credentials.space.spaceDefaultConsent': CredentialsSpaceDefaultConsentInputSchema,
   'credentials.space.addMine': CredentialsSpaceAddMineInputSchema,
   'credentials.space.claim': CredentialsSpaceCommandInputSchema,
@@ -259,6 +338,8 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'credentials.space.myDefault.clear': CredentialsSpaceCommandInputSchema,
   'credentials.space.policy.set': CredentialsSpacePolicySetInputSchema,
   'node.credentials.policy.set': NodeCredentialsPolicySetInputSchema,
+  'node.pathGrants.create': PathGrantCreateInputSchema,
+  'node.pathGrants.revoke': PathGrantRevokeInputSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,
@@ -281,13 +362,22 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'accounts.disable': AccountsDisableInputSchema,
   // W6 (250/251): human-only in SQL; the body never carries a secret.
   'spaceLinks.add': SpaceLinksAddInputSchema,
-  'spaceLinks.login': SpaceLinksMutationInputSchema,
-  'spaceLinks.relogin': SpaceLinksMutationInputSchema,
+  'spaceLinks.login': SpaceLinksLoginInputSchema,
+  'spaceLinks.relogin': SpaceLinksLoginInputSchema,
   'spaceLinks.logout': SpaceLinksMutationInputSchema,
   'spaceLinks.remove': SpaceLinksMutationInputSchema,
   'spaceLinks.setSpawn': SpaceLinksSetSpawnInputSchema,
+  // 278 (D2): the target side's two writes, human-only in SQL.
+  'spaceLinks.inbound.revoke': SpaceLinksInboundMutationInputSchema,
+  'spaceLinks.inbound.restore': SpaceLinksInboundMutationInputSchema,
+  'spaceLinks.inbound.grant': SpaceLinksInboundGrantInputSchema,
   // W7: the envelope only; the inner op's own schema runs inside invoke.
   'spaceLinks.invoke': SpaceLinksInvokeInputSchema,
+  // L3 (279): the link and the target; the referencing entity is the path's :id.
+  'entities.refs.add': CrossSpaceRefAddInputSchema,
+  'entities.refs.remove': CrossSpaceRefRemoveInputSchema,
+  // L5 (280): the request envelope; the op's own body is validated against
+  // the op's own schema inside the handler, at create and again at approve.
   // W8 (261): add/adopt/remove human-only in SQL; no body carries a secret.
   'servers.add': ServersAddInputSchema,
   'servers.adopt': ServersAdoptInputSchema,
@@ -327,6 +417,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // entities — closed kind-command namespace
   'entities.commands.complete': CompleteTaskInputSchema,
   'entities.commands.work': WorkInputSchema,
+  'entities.commands.release': ReleaseInputSchema,
   'entities.commands.pull': PullInputSchema,
   'entities.commands.linkPr': LinkPrInputSchema,
   'entities.commands.linkCommit': LinkCommitInputSchema,
@@ -352,6 +443,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'handoffs.withdraw': WithdrawHandoffInputSchema,
   'chat.start': StartChatInputSchema,
   'chat.setModel': SetChatModelInputSchema,
+  'chat.setCredentials': SetChatCredentialsInputSchema,
+  'chat.interrupt': InterruptChatInputSchema,
+  'chat.setMcpSelections': SetChatMcpSelectionsInputSchema,
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,
@@ -377,6 +471,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'projects.update': ProjectUpdateInputSchema,
   'projects.link': ProjectLinkInputSchema,
   'spaces.projects.create': SpaceProjectCreateInputSchema,
+  'spaces.projects.clone': ProjectCloneInputSchema,
   'gate.folders.create': GateFolderCreateInputSchema,
   'projects.unlink': RequiredCommandContextSchema,
   'projects.associations.correct': CorrectProjectAssociationInputSchema,
@@ -413,6 +508,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // inbox / read marks
   'inbox.markRead': InboxMarkReadInputSchema,
   'readMarks.upsert': RequiredCommandContextSchema,
+  'entities.markSeen': RequiredCommandContextSchema,
 
   // saved views
   'savedViews.create': SavedViewInputSchema,
@@ -425,6 +521,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'execution.dispatch': ExecutionDispatchInputSchema,
   'execution.prompt': ExecutionPromptInputSchema,
   'execution.terminate': ExecutionTerminateInputSchema,
+  'execution.complete': ExecutionCompleteInputSchema,
   'execution.streams.attach': ExecutionStreamsAttachInputSchema,
   'execution.sessions.share': ExecutionSessionsShareInputSchema,
   'execution.resume': ExecutionResumeInputSchema,
@@ -523,4 +620,8 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   // schema would refuse every legitimate upload. Its parameters travel in the
   // path and the query.
   'containers.files.put',
+  // multiple workspaces (312): GENUINELY body-less, the first clause above.
+  // `workspace.delete` is a DELETE whose `requestId` and `discard` travel in
+  // the query (API doc §5.10); the handler checks both.
+  'workspace.delete',
 ];

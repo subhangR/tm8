@@ -17,6 +17,9 @@
  *   - dark  = that table, with the `[data-theme='dark']` block of BOTH files
  *             applied over it. This is the inheritance the browser performs
  *             today, computed once instead of at paint.
+ *   - chatgpt-light / chatgpt-dark = the Atelier table of the same mode with
+ *             the `[data-style='chatgpt']` block (and, for dark, the
+ *             `[data-style='chatgpt'][data-theme='dark']` block) laid over it.
  *
  * WHAT IS *NOT* EXTRACTED, and why each exclusion is deliberate:
  *   - `--cv2-status-*`. They are ALIASES (`var(--pn-run)`), they are not in the
@@ -47,7 +50,31 @@ const OUT_DIR = fileURLToPath(new URL('../../contract/src/builtins/', import.met
  * cached resolved style knows to drop it (§2.4). It is NOT the document
  * schemaVersion and not a git count — it is "the Atelier you cached is stale".
  */
-export const BUILTIN_REVISION = 1;
+export const BUILTIN_REVISION = 2;
+
+/**
+ * THE TERMINAL OPTION KEYS (spec v8 §1.7, §10.3). xterm paints a canvas and
+ * reads none of these from CSS, so they have no declaration to extract: they
+ * are today's constants from `src/terminal/terminalTheme.ts:12-21`, restated
+ * as `--pn-term-*` values so a style can override them like any other key.
+ * Two are decisions rather than transcriptions: bold is 600 (the bundled
+ * JetBrains Mono has no 700 face — sign-off §13) and font size is `auto`
+ * (the per-device setting wins until a style names a number — §15.4).
+ * `builtins-parity.test.ts` holds the rest to terminalTheme.ts.
+ */
+export const TERMINAL_DEFAULTS = {
+  '--pn-term-chrome': 'dark',
+  '--pn-term-cursor-style': 'block',
+  '--pn-term-font':
+    '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  '--pn-term-font-size': 'auto',
+  '--pn-term-font-weight': '400',
+  '--pn-term-font-weight-bold': '600',
+  '--pn-term-letter-spacing': '0',
+  '--pn-term-line-height': '1.2',
+  '--pn-term-padding': '0',
+  '--pn-term-scrollback': '5000',
+};
 
 /** Comments can contain braces and `--pn-…:` examples; strip them before parsing. */
 function stripComments(css) {
@@ -114,6 +141,20 @@ const isDarkRoot = (sel) =>
     .split(',')
     .some((s) => /^\.cv2-root\[data-theme=['"]dark['"]\]$/.test(s.trim()));
 
+/**
+ * THE CHATGPT PAIR (tokens.css, last section) is declared as OVERRIDES on the
+ * Atelier table of the same mode, scoped by `data-style='chatgpt'`, so it
+ * inherits every key it has no opinion about (status ramp, spacing, motion,
+ * the diagram wheel) exactly as the browser would.
+ */
+const isChatgptLight = (sel) =>
+  sel.split(',').some((s) => /^\.cv2-root\[data-style=['"]chatgpt['"]\]$/.test(s.trim()));
+
+const isChatgptDark = (sel) =>
+  sel
+    .split(',')
+    .some((s) => /^\.cv2-root\[data-style=['"]chatgpt['"]\]\[data-theme=['"]dark['"]\]$/.test(s.trim()));
+
 export function extractBuiltins() {
   const files = [readFileSync(TOKENS_CSS, 'utf8'), readFileSync(CANVAS_EXTRA_CSS, 'utf8')];
 
@@ -130,6 +171,7 @@ export function extractBuiltins() {
      (the whole type scale, spacing, radii, the terminal ANSI set) and the
      resolver's full-table contract would be a lie. */
   const dark = { ...light };
+  const lightCssKeys = Object.keys(light).length;
   for (const css of files) {
     for (const body of blocksMatching(css, isDarkRoot)) {
       for (const [name, value] of pnDeclarations(body)) dark[name] = value;
@@ -139,11 +181,32 @@ export function extractBuiltins() {
   const sorted = (table) =>
     Object.fromEntries(Object.keys(table).sort().map((k) => [k, table[k]]));
 
-  if (Object.keys(light).length < 60) {
+  if (lightCssKeys < 60) {
     throw new Error(
-      `extract-builtins: only ${Object.keys(light).length} light tokens found — the selector scan is broken, not the palette`,
+      `extract-builtins: only ${lightCssKeys} light tokens found — the selector scan is broken, not the palette`,
     );
   }
+  const overlay = (base, ...matchers) => {
+    const table = { ...base };
+    for (const match of matchers) {
+      for (const css of files) {
+        for (const body of blocksMatching(css, match)) {
+          for (const [name, value] of pnDeclarations(body)) {
+            if (!(name in light)) {
+              throw new Error(`extract-builtins: ${name} is a ChatGPT override with no Atelier key under it`);
+            }
+            table[name] = value;
+          }
+        }
+      }
+    }
+    return table;
+  };
+  const chatgptLight = overlay(light, isChatgptLight);
+  const chatgptDark = overlay(dark, isChatgptLight, isChatgptDark);
+
+  /* The terminal options do not flip with the theme: one set for both. */
+  for (const table of [light, dark, chatgptLight, chatgptDark]) Object.assign(table, TERMINAL_DEFAULTS);
 
   return {
     'atelier-light': {
@@ -162,6 +225,20 @@ export function extractBuiltins() {
          which is why this is a self-reference and not an optional field. */
       darkSibling: 'builtin:atelier-dark',
       tokens: sorted(dark),
+    },
+    'chatgpt-light': {
+      id: 'builtin:chatgpt-light',
+      title: 'ChatGPT Light',
+      builtinRevision: BUILTIN_REVISION,
+      darkSibling: 'builtin:chatgpt-dark',
+      tokens: sorted(chatgptLight),
+    },
+    'chatgpt-dark': {
+      id: 'builtin:chatgpt-dark',
+      title: 'ChatGPT Dark',
+      builtinRevision: BUILTIN_REVISION,
+      darkSibling: 'builtin:chatgpt-dark',
+      tokens: sorted(chatgptDark),
     },
   };
 }

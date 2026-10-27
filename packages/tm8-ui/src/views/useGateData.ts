@@ -89,6 +89,7 @@ import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
 import { terminalActivitySource, useTerminalActivityMap } from '../terminal/activity';
 import { useMessagePulses, type MessagePulse } from '../panels/list/useMessagePulses';
+import { freshEntities } from '../domain/freshEntities';
 import type { BoardSnapshot } from '../panels';
 import {
   CORE_CHAT_LAUNCH_PRESENTATION,
@@ -555,6 +556,8 @@ export interface GateData {
    * entities), so the event stream cannot do this on its own.
    */
   refreshTaskAxes: () => void;
+  /** Re-read the space menu after a successful admin edit. */
+  refreshMenu: () => void;
   /**
    * THE TWO TRIGGER SUBJECTS every rich input in this shell picks from.
    *
@@ -1052,6 +1055,10 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
   );
   const activity = useTerminalActivityMap(terminalActivitySource);
   const messagePulses = useMessagePulses(seam);
+  // Which items glow as new or play their exit (domain/freshEntities.ts). The
+  // domain store applies events on a 16ms batch, so a deleted row is already
+  // marked leaving by the time it drops out of a list.
+  useEffect(() => freshEntities.attach(seam), [seam]);
 
   /**
    * The event stream's own projection, subscribed. `useSyncExternalStore` and
@@ -2084,8 +2091,8 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
 
   /**
    * Counters follow the DURABLE STREAM, which is what makes them live: any
-   * entity event can change a total (a create, a delete) or flip a row back to
-   * unseen (an update to something you had already read).
+   * create/archive can change a total, and a personal entity.seen event
+   * refreshes unseen counts across this member's browsers. Edits never reset seen.
    *
    * Debounced with a TRAILING timer rather than issuing one read per event. A
    * burst is the normal case here — a spawn, a bulk import, or an agent
@@ -2095,20 +2102,27 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
    */
   useEffect(() => {
     if (!spaceId) return undefined;
+    // A same-space resync advances the hydration generation. Recreate this
+    // subscription with bootRevision so future reads use the new generation.
+    const generation = spaceGeneration.current;
+    let active = true;
     const trigger = createCoalescedTrigger({
       quietMs: EVENT_REFRESH_QUIET_MS,
       maxWaitMs: EVENT_REFRESH_MAX_WAIT_MS,
       run: () => Promise.resolve()
         .then(() => seam.counts(spaceId))
-        .then(setKindCounts)
+        .then((counts) => {
+          if (active && generation === spaceGeneration.current) setKindCounts(counts);
+        })
         .catch(() => undefined),
     });
     const unsubscribe = seam.onEvent(() => trigger.note());
     return () => {
+      active = false;
       trigger.dispose();
       unsubscribe();
     };
-  }, [seam, spaceId]);
+  }, [seam, spaceId, bootRevision]);
 
   /**
    * KEEP THE CACHE CURRENT FROM THE DURABLE STREAM.
@@ -2439,8 +2453,9 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       id: project.id,
       name: project.name,
       trusted: project.trust === 'trusted',
+      /* Only a node admin is sent the path (W11); a member's row says trusted alone. */
       detail: project.trust === 'trusted'
-        ? `trusted · ${project.workingDir}`
+        ? (project.workingDir ? `trusted · ${project.workingDir}` : 'trusted')
         : '',
       ...(project.trust === 'untrusted'
         ? { reason: "untrusted — can't host sessions · trust it in Node settings" }
@@ -3178,9 +3193,12 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
 
   const refreshCounts = useCallback(() => {
     if (!spaceId) return;
+    const generation = spaceGeneration.current;
     void Promise.resolve()
       .then(() => seam.counts(spaceId))
-      .then(setKindCounts)
+      .then((counts) => {
+        if (generation === spaceGeneration.current) setKindCounts(counts);
+      })
       .catch(() => undefined);
   }, [seam, spaceId]);
 
@@ -3229,6 +3247,17 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
     [members],
   );
 
+  const menuScope = useRef({ seam, spaceId });
+  menuScope.current = { seam, spaceId };
+  const refreshMenu = useCallback(() => {
+    const current = () => menuScope.current.seam === seam && menuScope.current.spaceId === spaceId;
+    if (!spaceId || !current()) return;
+    const generation = spaceGeneration.current;
+    void seam.spaceSettings(spaceId).then((settings) => {
+      if (current() && generation === spaceGeneration.current) setMenu(resolveMenu(settings.menu ?? null));
+    }).catch(() => undefined);
+  }, [seam, spaceId]);
+
   /** See `GateData.refreshTaskAxes` — axis writes emit no workspace event. */
   const refreshTaskAxes = useCallback(() => {
     if (!spaceId) return;
@@ -3254,6 +3283,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       taskAxes,
       taskWorkflows,
       refreshTaskAxes,
+      refreshMenu,
       mentionOptions,
       skillOptions,
       viewerActor,
@@ -3292,7 +3322,7 @@ export function useGateData(options: GateOptions): GateData & { pull: (id: strin
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, forgetSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
+    [ready, spaceId, spaces, members, taskAxes, taskWorkflows, refreshTaskAxes, refreshMenu, mentionOptions, skillOptions, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, forgetSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, options.serverBaseUrl, domain, pull],
   );
 
   return data;

@@ -121,8 +121,9 @@ describe('chrome strip — the focus-capture contract', () => {
         <TerminalChromeStrip persona="forge" provider="claude-fable-5" presentation={presentation} />,
       );
       const chip = getByTestId('exit-terminal-chip');
-      expect(chip.textContent).toContain('⌃`');
-      expect(chip.getAttribute('aria-label')).toMatch(/backtick/i);
+      // Ctrl+] is the advertised chord (task 01a113aa); Ctrl+` still works.
+      expect(chip.textContent).toContain('⌃]');
+      expect(chip.getAttribute('aria-label')).toMatch(/Control and \]/);
       unmount();
     }
   });
@@ -132,7 +133,7 @@ describe('chrome strip — the focus-capture contract', () => {
       <TerminalChromeStrip persona="forge" presentation="running" compact />,
     );
     const chip = getByTestId('exit-terminal-chip');
-    expect(chip.textContent).toContain('⌃`');
+    expect(chip.textContent).toContain('⌃]');
     expect(chip.textContent).not.toContain('terminal');
   });
 
@@ -335,8 +336,29 @@ describe('fallbacks — each verdict states what is actually known', () => {
     expect(el.textContent).toContain(SENTINEL);
     expect(el.textContent).toContain('Liveness never lies');
     // "reconnect" cannot work — the process is gone. Correcting the record can.
-    expect(el.textContent).toContain('mark exited');
+    // Spec D1 §5.6: "mark exited" became Mark lost — the reaper, now.
+    expect(el.textContent).toContain('Mark lost');
     expect(el.textContent).not.toMatch(/reconnect/i);
+  });
+
+  it('stale offers Resume straight away — no wait for the reaper', () => {
+    const onResume = vi.fn();
+    const { getByTestId, rerender } = render(<StaleFallback onResume={onResume} />);
+    const button = getByTestId('session-stale-resume') as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(onResume).toHaveBeenCalledTimes(1);
+    // In flight: never a second spawn onto the same session id.
+    rerender(<StaleFallback onResume={onResume} resuming />);
+    expect((getByTestId('session-stale-resume') as HTMLButtonElement).disabled).toBe(true);
+    expect(getByTestId('session-stale-resume').textContent).toBe('Resuming…');
+  });
+
+  it('stale Resume unwired renders DISABLED with its reason, never hidden (L6)', () => {
+    const { getByTestId } = render(<StaleFallback />);
+    const button = getByTestId('session-stale-resume') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toContain('not wired');
   });
 
   it('unverified claims neither life nor death', () => {

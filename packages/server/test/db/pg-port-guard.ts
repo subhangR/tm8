@@ -11,12 +11,18 @@
  *   TM8_W1_ADMIN_DATABASE_URL → TM8_MIGRATION_DATABASE_URL → TM8_DATABASE_URL
  *     → 127.0.0.1:$TM8_PG_PORT
  *
+ * db/migrate.mjs does NOT read TM8_W1_ADMIN_DATABASE_URL or
+ * TM8_MIGRATION_DATABASE_URL — those name this harness's ADMIN database. When
+ * one of them is all that is set, migrate.mjs refuses and names it (db/target.mjs).
+ *
  * CI's postgres service is the runner's own container on 5442, which
- * `onGithubRunner` below admits (GITHUB_ACTIONS=true). The product
+ * `onGithubRunner` (db/target.mjs) admits (GITHUB_ACTIONS=true). The product
  * sidecar default (src/sidecar/config.ts) is untouched: this is for tests only.
  */
 
-export const PROD_PG_PORT = '5442';
+import { PROD_PG_PORT, onGithubRunner } from '../../../../db/target.mjs';
+
+export { PROD_PG_PORT };
 export const TEST_PG_PORT = '5443';
 
 export class TestPgPortRefusal extends Error {
@@ -25,15 +31,10 @@ export class TestPgPortRefusal extends Error {
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-/**
- * The ONE exception: on a GitHub Actions runner 5442 is the job's own throwaway
- * postgres service container (.github/workflows/ci.yml publishes it there), not
- * the tm8 host's prod cluster. An unset port is refused there too. Moving the
- * CI service to 5443 needs a token with `workflow` scope — a follow-up.
- */
-function onGithubRunner(env: Env): boolean {
-  return env['GITHUB_ACTIONS'] === 'true';
-}
+// The ONE exception (onGithubRunner, db/target.mjs — shared with db/migrate.mjs):
+// on a GitHub Actions runner 5442 is the job's own throwaway postgres service
+// container (.github/workflows/ci.yml publishes it there), not the tm8 host's
+// prod cluster. An unset port is refused there too.
 
 const URL_VARS = ['TM8_W1_ADMIN_DATABASE_URL', 'TM8_MIGRATION_DATABASE_URL', 'TM8_DATABASE_URL'] as const;
 

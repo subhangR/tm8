@@ -19,10 +19,12 @@
  *     BACK ALWAYS WALKS THE BROWSER HISTORY. THE SCREEN STACK FOLLOWS IT.
  *
  * Back is never intercepted, on either shell. Nothing in this codebase listens
- * for `popstate` or for an Android back gesture, and nothing should: the phone's
- * back gesture IS browser back, and browser back already produces exactly the
- * right screen ONCE the screen stack is derived from the address rather than
- * merely seeded by it.
+ * for `popstate` to change a ROUTE, and nothing should: the phone's back
+ * gesture IS browser back, and browser back already produces exactly the right
+ * screen ONCE the screen stack is derived from the address rather than merely
+ * seeded by it. The one `popstate` listener (`overlayHistory.ts`) closes a
+ * drawer or sheet whose own same-URL marker entry was popped; it never sees a
+ * route change, because the marker has none.
  *
  * WHY THAT IS NOT A DODGE OF THE QUESTION. Every screen-stack transition ALREADY
  * writes a browser history entry — `GateApp`'s screen→URL sync turns a drill-in

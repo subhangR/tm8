@@ -38,11 +38,13 @@ export {
 } from './ServiceKeysBlock';
 export {
   credentialsPortFromSeam,
+  credentialsSharePortFromSeam,
   serviceKeysPortFromSeam,
   disconnectVerdictOf,
   verdictOf,
   type ConnectionVerdict,
   type CredentialsPort,
+  type CredentialsSharePort,
   type DisconnectVerdict,
   type ServiceKeysPort,
 } from './port';
@@ -55,6 +57,13 @@ export {
   NODE_POLICY_ADMIN_ONLY,
   type NodeCredentialsSectionProps,
 } from './NodeCredentialsSection';
+export {
+  BROWSE_IN_SPACE_TEXT,
+  FilesystemAccessSection,
+  NO_GRANT_TEXT,
+  type FilesystemAccessSectionProps,
+} from './FilesystemAccessSection';
+export { filesystemAccessPortFromSeam, type FilesystemAccessPort } from './filesystem-access-port';
 export {
   spaceCredentialsPortFromSeam,
   isSpaceAdminRole,

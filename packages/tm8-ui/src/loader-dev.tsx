@@ -18,8 +18,8 @@ import { BootLoader, BrandMark, type RibbonMotion } from './kit';
  * without a node, credentials, or the boot gate it normally lives behind.
  *
  * Both authored motion variants are mounted side by side because the choice
- * between them is still open, and on both grounds because brass is the one ink
- * that has to hold on each.
+ * between them is still open, and on both grounds because the black/white mark
+ * has to hold on each — the dark theme is its exact mirror.
  *
  * Usage: /loader-dev.html
  */

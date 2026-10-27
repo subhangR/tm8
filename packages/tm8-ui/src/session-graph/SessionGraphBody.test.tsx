@@ -92,7 +92,7 @@ describe('SessionGraphBody', () => {
 
     const headline = await screen.findByTestId('session-graph-headline');
     expect(headline.textContent).toContain('Working on');
-    expect(headline.textContent).toContain('Wrote');
+    expect(headline.textContent).toContain('Made here');
     const canvas = screen.getByTestId('session-graph-canvas');
     expect(canvas.querySelector('.sg-link[data-direction="out"]')?.getAttribute('marker-end')).toContain('#sg-');
     expect(canvas.querySelector('.sg-link[data-direction="in"]')?.getAttribute('marker-start')).toContain('#sg-');

@@ -1,0 +1,42 @@
+/* WEBSITE TESTER (WebTest.tsx): a desktop browser window next to the phone's side panel. */
+.wbt-window {
+  --wbt-w: min(1100px, calc(100vw - 400px));
+  box-sizing: border-box;
+  flex: none;
+  width: var(--wbt-w);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--pn-x-term-bg);
+  box-shadow: 0 0 0 1px color-mix(in srgb, black 70%, white), 0 24px 60px var(--pn-scrim);
+}
+.wbt-bar { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 12px; background: color-mix(in srgb, var(--pn-x-term-bg) 88%, white); }
+.wbt-dots { display: flex; gap: 6px; }
+.wbt-dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--pn-block); }
+.wbt-dots i:nth-child(2) { background: var(--pn-wait); }
+.wbt-dots i:nth-child(3) { background: var(--pn-run); }
+.wbt-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pn-x-term-bg) 80%, black);
+  color: var(--pn-x-term-fg);
+  font-size: 12px;
+}
+/* 1280 x 800, the runner's viewport, so the frame fills it exactly. */
+.wbt-screen { position: relative; width: 100%; aspect-ratio: 1280 / 800; max-height: calc(100vh - 80px); background: black; display: flex; overflow: hidden; }
+.wbt-screen > * { flex: 1; min-width: 0; min-height: 0; }
+.wbt-screen .term-host { zoom: 1; min-height: 0; }
+.wbt-screen .xterm-viewport { scrollbar-width: none; }
+.wbt-screen .xterm-viewport::-webkit-scrollbar { display: none; }
+.wbt-screen > .wbt-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: top; background: white; }
+.wbt-repo { resize: none; height: auto; }
+.tws-astrip-web { color: inherit; }
+@media (max-width: 900px) {
+  .wbt-window { --wbt-w: calc(100vw - 32px); }
+}

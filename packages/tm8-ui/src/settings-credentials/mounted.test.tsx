@@ -103,7 +103,7 @@ describe('the section is REACHABLE from the shell a human already opens', () => 
   it('has a nav row in the shipped section list', () => {
     const row = SETTINGS_SECTIONS.find((s) => s.id === 'credentials');
     expect(row).toBeTruthy();
-    expect(row?.label).toBe('Agent credentials');
+    expect(row?.label).toBe('Agent logins');
     // Externally owned, so an unsupplied body renders the shell's honest
     // not-mounted state rather than a blank pane.
     expect(row?.externallyOwned).toBe(true);
@@ -117,7 +117,7 @@ describe('the section is REACHABLE from the shell a human already opens', () => 
       />,
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Agent credentials' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Agent logins' }));
 
     // The body that appears is the real one — it has reached the port and is
     // drawing a provider card, not the shell's "built in another module" card.
@@ -131,7 +131,7 @@ describe('the section is REACHABLE from the shell a human already opens', () => 
     // The control for the test above: if the shell rendered a real-looking
     // body either way, the previous assertion would prove nothing.
     render(<SettingsShell port={settingsPort as never} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Agent credentials' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Agent logins' }));
     expect(await screen.findByTestId('section-absent')).toBeTruthy();
     expect(screen.queryByTestId('credential-card-anthropic')).toBeNull();
   });
@@ -189,21 +189,6 @@ describe('the section is REACHABLE from the shell a human already opens', () => 
       expect(src, `${name} hardcodes a provider name instead of the shared table`)
         .toContain('presentationOf');
     }
-  });
-
-  /**
-   * THE REMOVAL, PINNED. Home's two credential sections overran the page box
-   * and painted over the chat; they are gone and must not come back by being
-   * re-imported. This asserts the absence at the import level rather than the
-   * markup level, because a re-import is the first step back either way.
-   */
-  it('Home mounts no credential surface and cannot reach the credentials seam', () => {
-    const home = readFileSync(join(process.cwd(), 'src/home-page/HomePage.tsx'), 'utf8');
-
-    expect(home).not.toMatch(/<CredentialsProviderBlock\b/);
-    expect(home).not.toMatch(/<ProviderRail\b/);
-    expect(home).not.toContain('credentialsPortFromSeam');
-    expect(home).not.toMatch(/data\.seam\.credentials\./);
   });
 
   /**

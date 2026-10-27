@@ -25,8 +25,12 @@ import type {
   ServiceKeyProviderName,
   ServiceKeyView,
   SpaceId,
+  SpaceCredentialView,
+  Cursor,
+  EntityKind,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
+import { memberKindRef } from '../settings-space/port';
 import { presentationOf } from './provider-presentation';
 
 /** The narrow surface the credentials components consume. */
@@ -39,6 +43,69 @@ export interface CredentialsPort {
   startLogin(provider: CredentialProviderName): Promise<CredentialsLoginSessionStartResult>;
   /** Harvests the result. `connected` and `stored` are separate answers. */
   finishLogin(workSessionId: string): Promise<CredentialsLoginSessionFinishResult>;
+}
+
+/** Metadata-only adapter for adding a personal connection to a space. */
+export interface CredentialsSharePort {
+  currentSpaceId: string;
+  spaces(): Promise<Array<{ id: string; name: string }>>;
+  members(spaceId: string): Promise<Array<{ id: string; name: string }>>;
+  addMine(spaceId: string, label: string): Promise<SpaceCredentialView>;
+  startPrivateLogin(spaceId: string, provider: 'anthropic' | 'openai', label: string): Promise<CredentialsLoginSessionStartResult>;
+  finishLogin(workSessionId: string): Promise<CredentialsLoginSessionFinishResult>;
+  share(credentialId: string, memberId: string): Promise<void>;
+}
+
+export function credentialsSharePortFromSeam(
+  seam: Pick<Seam, 'credentials' | 'spaces' | 'query' | 'identity'>,
+  currentSpaceId: SpaceId,
+): CredentialsSharePort {
+  return {
+    currentSpaceId,
+    spaces: () => seam.spaces(),
+    async members(spaceId) {
+      const identity = await seam.identity();
+      const self = identity.memberships.find((m) => m.spaceId === spaceId)?.memberId;
+      const members: Array<{ id: string; name: string }> = [];
+      let cursor: Cursor | undefined;
+      do {
+        const result = await seam.query({ spaceId, kinds: [memberKindRef() as EntityKind], limit: 100, ...(cursor ? { cursor } : {}) });
+        for (const row of result.page.items) {
+          const ended = row.state && 'memberStatus' in row.state && row.state.memberStatus;
+          if (row.id !== self && !ended) members.push({ id: row.id, name: row.title });
+        }
+        cursor = result.page.nextCursor ?? undefined;
+      } while (cursor);
+      return members;
+    },
+    addMine: (spaceId, label) => seam.credentials.space.addMine(spaceId, 'github', label),
+    async startPrivateLogin(spaceId, provider, label) {
+      // OAuth refresh tokens must never be copied from the personal home.
+      const started = await seam.credentials.startLogin(spaceId, provider, { label });
+      const id = started.spaceCredential?.id;
+      try {
+        if (!id) throw new Error('The server did not name the new space credential.');
+        await seam.credentials.space.claim(id);
+        await seam.credentials.space.setVisibility(id, 'private');
+        return started;
+      } catch (error) {
+        // The terminal must not be exposed until its pending credential is private.
+        if (id) {
+          try {
+            await seam.credentials.space.remove(id);
+          } catch {
+            throw new Error(`Could not make the new login private or remove it. Delete the pending credential “${label}” in Space credentials before retrying.`);
+          }
+        }
+        throw error;
+      }
+    },
+    finishLogin: (workSessionId) => seam.credentials.finishLogin(workSessionId),
+    async share(credentialId, memberId) {
+      // The RPC resolves a member entity id within this credential's space.
+      await seam.credentials.space.share(credentialId, memberId);
+    },
+  };
 }
 
 export function credentialsPortFromSeam(

@@ -497,16 +497,14 @@ describe('tile lines (F1 two marks, tab 5 roll-up) — through the real EntityLi
     expect(api.counts()).toEqual({ mine: 1, all: 1 });
   });
 
-  it('control-card: a task root reads `n requests · own, via session`', () => {
+  it('control-card: a task root draws no `n requests · own, via` line — its chip says it', () => {
     const task = { ...of('task'), id: TASK };
     panel(fakeApi([
       request({ id: 'a' }),
       request({ id: 'b' }),
       request({ id: 'c', entityId: SESSION_2, sourceWorkSessionId: SESSION_2 }),
     ]), 'task', task);
-    expect(screen.getByTestId('attention-tile-subtitle').textContent).toBe(
-      `3 requests · 2 own, 1 via session ${shortSessionId(SESSION_2)}`,
-    );
+    expect(screen.queryByTestId('attention-tile-subtitle')).toBeNull();
   });
 
   it('standard: any other root with rolled-up requests reads the same line', () => {

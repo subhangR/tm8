@@ -63,8 +63,18 @@ afterEach(() => {
 });
 
 /** A minimal consumer: one row per id, each with a toggle and a read-out. */
-function Harness({ scope, ids, revealed }: { scope: string | null; ids: string[]; revealed?: ReadonlySet<string> }) {
-  const disclosure = useTreeDisclosure(scope, revealed);
+function Harness({
+  scope,
+  ids,
+  revealed,
+  latchReveal,
+}: {
+  scope: string | null;
+  ids: string[];
+  revealed?: ReadonlySet<string>;
+  latchReveal?: boolean;
+}) {
+  const disclosure = useTreeDisclosure(scope, revealed, latchReveal ? { latchReveal } : undefined);
   return (
     <ul>
       {ids.map((id) => (
@@ -183,6 +193,44 @@ describe('useTreeDisclosure', () => {
     expect(view.getByTestId('state-a').textContent).toBe('shut');
     fireEvent.click(view.getByText('toggle a'));
     expect(view.getByTestId('state-a').textContent).toBe('open');
+  });
+});
+
+/**
+ * latchReveal (the Workspace browser's opt-in). A reveal opened by selecting a
+ * child must not shut again when the selection moves elsewhere, and the first
+ * click on a revealed parent must change what is drawn.
+ */
+describe('useTreeDisclosure — latchReveal', () => {
+  it('a revealed parent STAYS open after the selection moves elsewhere', () => {
+    const view = render(<Harness scope="list:task" ids={['parent']} revealed={new Set(['parent'])} latchReveal />);
+    expect(view.getByTestId('state-parent').textContent).toBe('open');
+    view.rerender(<Harness scope="list:task" ids={['parent']} revealed={new Set()} latchReveal />);
+    expect(view.getByTestId('state-parent').textContent).toBe('open');
+  });
+
+  it('ONE click on a revealed parent shuts it, and it stays shut while still revealed', () => {
+    const revealed = new Set(['parent']);
+    const view = render(<Harness scope="list:task" ids={['parent']} revealed={revealed} latchReveal />);
+    fireEvent.click(view.getByText('toggle parent'));
+    expect(view.getByTestId('state-parent').textContent).toBe('shut');
+    view.rerender(<Harness scope="list:task" ids={['parent']} revealed={revealed} latchReveal />);
+    expect(view.getByTestId('state-parent').textContent).toBe('shut');
+  });
+
+  it('a later reveal re-opens a parent the viewer shut, so a deep selection is never hidden', () => {
+    const view = render(<Harness scope="list:task" ids={['parent']} revealed={new Set(['parent'])} latchReveal />);
+    fireEvent.click(view.getByText('toggle parent'));
+    view.rerender(<Harness scope="list:task" ids={['parent']} revealed={new Set()} latchReveal />);
+    expect(view.getByTestId('state-parent').textContent).toBe('shut');
+    view.rerender(<Harness scope="list:task" ids={['parent']} revealed={new Set(['parent'])} latchReveal />);
+    expect(view.getByTestId('state-parent').textContent).toBe('open');
+  });
+
+  it('WITHOUT the opt-in a reveal still lasts only as long as the selection (Home, unchanged)', () => {
+    const view = render(<Harness scope="list:task" ids={['parent']} revealed={new Set(['parent'])} />);
+    view.rerender(<Harness scope="list:task" ids={['parent']} revealed={new Set()} />);
+    expect(view.getByTestId('state-parent').textContent).toBe('shut');
   });
 });
 

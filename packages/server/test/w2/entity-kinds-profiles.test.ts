@@ -298,7 +298,9 @@ describe('W2.G12 entity-kind/profile handlers', () => {
   it('uses the two custom-kind lifecycle RPCs and preserves strict DTOs', async () => {
     const db = new FakeDb(async () => [], async (fn, args) => {
       if (fn === 'w2_create_entity_kind') {
-        expect(args).toEqual([SPACE_ID, 'c:incident', 'siren', KIND.fieldSchema,
+        // fieldSchema crosses the driver as a JSON string: a raw array would be
+        // sent as a Postgres array literal and fail the jsonb parameter.
+        expect(args).toEqual([SPACE_ID, 'c:incident', 'siren', JSON.stringify(KIND.fieldSchema),
           KIND.capabilities, null, 'cmid-kind-create']);
       } else {
         expect(fn).toBe('w2_update_entity_kind');

@@ -84,6 +84,7 @@ export function claimsFor(
   // fallback below can never shed a pin the resolver set.
   const sessionSpaceId = ctx.identity?.sessionSpaceId;
   return {
+    apiScope: ctx.identity?.apiScope ?? 'write',
     identityId: bearer ? bearer.identityId! : owner.identityId,
     // See the file header: unset unless explicitly requested.
     ...(actorId ? { actorId } : {}),
@@ -106,6 +107,10 @@ export function claimsFor(
     // path segment that is not a uuid binds nothing — the handler refuses it
     // as not_found before any SQL — rather than a claim that raises 22P02.
     ...(ctx.identity?.kind === 'auto-owner' ? pathSpacePin(ctx) : {}),
+    // 299 (Spec D1). Only from a verified bearer: the body's `workSessionId`
+    // is a routing hint and never names the claimant.
+    ...(bearer?.workSessionId ? { workSessionId: bearer.workSessionId } : {}),
+    ...(bearer?.sessionId ? { authSessionId: bearer.sessionId } : {}),
   };
 }
 
@@ -135,6 +140,10 @@ export function requireParam(ctx: RequestContext, name: string): string {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
 
 /**
  * Ids are uuids, and a non-uuid must be `not_found` rather than a 500.

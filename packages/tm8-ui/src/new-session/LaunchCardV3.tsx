@@ -126,6 +126,7 @@ export interface DispatchControl {
 }
 
 export interface LaunchCardV3Props extends LaunchCardShellProps {
+  connectors?: ReactNode;
   verb: LaunchVerb;
   onVerbChange(next: LaunchVerb): void;
 
@@ -209,6 +210,7 @@ export function LaunchCardV3(props: LaunchCardV3Props) {
             placeholder={props.notesPlaceholder}
             onChange={(event) => props.onNotesChange(event.target.value)}
           />
+          {props.connectors && <div className="mcp-launch-slot">{props.connectors}</div>}
           <Strip {...props} />
         </div>
       )}

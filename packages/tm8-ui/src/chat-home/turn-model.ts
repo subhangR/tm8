@@ -27,9 +27,23 @@ export type ProjectedTurnPart =
 export function projectTurnParts(parts: readonly ChatTurnPart[]): ProjectedTurnPart[] {
   const projected: ProjectedTurnPart[] = [];
   const toolIndex = new Map<string, number>();
+  const textIndex = new Map<string, number>();
 
   for (const part of [...parts].sort((a, b) => a.seq - b.seq)) {
     if (part.kind === 'done') continue;
+    if (part.kind === 'text' && part.itemId) {
+      const index = textIndex.get(part.itemId);
+      const existing = index === undefined ? undefined : projected[index];
+      if (existing?.kind === 'text') {
+        if (part.revision !== undefined && existing.revision !== undefined && part.revision <= existing.revision) continue;
+        projected[index!] = { ...part, seq: existing.seq,
+          text: part.operation === 'replace' ? part.text : existing.text + part.text };
+      } else {
+        textIndex.set(part.itemId, projected.length);
+        projected.push(part);
+      }
+      continue;
+    }
     if (part.kind === 'tool_call') {
       const index = toolIndex.get(part.toolCallId);
       if (index === undefined) {
@@ -266,4 +280,3 @@ function emptyAssistantTurn(messageId: EntityId, detail: ChatThreadDetail): Chat
 function nextSeq(parts: readonly ChatTurnPart[]): number {
   return parts.reduce((highest, part) => Math.max(highest, part.seq), -1) + 1;
 }
-
