@@ -48,6 +48,8 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 // + 2 W4 session management (249) + 8 spaceLinks writes (6 + 278's revoke and
 // restore) + 7 servers (W8) = 51; + 3 space password (268) and + 2 path-grant
 // writes (282) = 56; + 1 MCP audit read (346). (L5's decision helper left with migration 325.)
+// 01a0db78 (369) then moves start_chat, leave_space and remove_space_member
+// to the permissive variant (PERMISSIVE_GATE_CALLERS below): 3 fewer here.
 // A caller not on this list fails; a listed caller
 // that stops calling the gate fails. Changing this list is a review event.
 // ---------------------------------------------------------------------------
@@ -56,7 +58,6 @@ const SEEN_STATE = 'personal seen state, human-only by design (313): refuses lin
 const CREDENTIAL_READ = 'credential read, on the gate (refuses link)';
 const IDENTITY_WIDE = 'refused for link (identity-wide act)';
 const AUTH_MINTING = 'refused for link (decision 31, auth minting)';
-const PENDING = 'non-credential, refused pending follow-up 01a0db78-f1ab';
 const SESSION_MANAGEMENT = 'session listing/revoke, human-only (W4, 249): refuses link';
 const SPACE_LINKS = 'spaceLinks write, human-only by design (W6)';
 const SPACE_PASSWORD = 'space password, human-only (W5, 268): refuses link';
@@ -146,9 +147,6 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'internal.chat_revoke_legacy_314(uuid)': AUTH_MINTING,
   'issue_agent_runtime_session(uuid,uuid,text,timestamp with time zone,text,jsonb)': AUTH_MINTING,
   'revoke_agent_runtime_session(uuid,bigint,bigint,uuid)': AUTH_MINTING,
-  'leave_space(uuid,text)': PENDING,
-  'remove_space_member(uuid,uuid,text)': PENDING,
-  'start_chat(uuid,uuid,uuid,text,text,text,text,text,uuid,uuid,text,text,text,uuid[],uuid,text)': PENDING,
 
   // W4 (#857, 249:213/249:262), joined at the re-stack onto main: a link session
   // neither lists nor ends sessions, the same answer an agent gets.
@@ -190,6 +188,20 @@ const STRICT_GATE_CALLERS: Readonly<Record<string, string>> = {
   'list_mcp_call_audit(uuid,uuid,uuid,uuid,uuid,text,bigint,integer)': MCP_AUDIT,
 };
 
+// ---------------------------------------------------------------------------
+// THE PERMISSIVE VARIANT'S FULL CALLER SET (01a0db78, lead's sanctioned
+// mechanism): internal.require_human_or_link_auth_kind() admits browser, cli
+// and link (decision 31). Never a credential op (E2). Same rules as above: a
+// caller not listed fails, a listed caller that stops calling it fails.
+// ---------------------------------------------------------------------------
+const MEMBER_OP = 'non-credential member op: admits link (decision 31, 01a0db78)';
+
+const PERMISSIVE_GATE_CALLERS: Readonly<Record<string, string>> = {
+  'leave_space(uuid,text)': MEMBER_OP,
+  'remove_space_member(uuid,uuid,text)': MEMBER_OP,
+  'start_chat(uuid,uuid,uuid,text,text,text,text,text,uuid,uuid,text,text,text,uuid[],uuid,text)': MEMBER_OP,
+};
+
 /** Not gate callers: each admits an explicit kind allow-list and 42501s the rest. */
 const EXPLICIT_KIND_ALLOW_LIST: Readonly<Record<string, string>> = {
   'open_space_link_token(uuid)': 'explicit kind allow-list, not a gate caller',
@@ -203,16 +215,18 @@ const EXPLICIT_KIND_ALLOW_LIST: Readonly<Record<string, string>> = {
  * name anywhere in the body. BEGIN ATOMIC bodies have no prosrc to match; they
  * are found through pg_depend on the gate's oid.
  */
-const GATE_CALLERS_SQL = `
-  with gate as (select 'internal.require_human_auth_kind()'::regprocedure::oid as oid)
+const callersOf = (gate: string, name: string): string => `
+  with gate as (select '${gate}'::regprocedure::oid as oid)
   select p.oid::regprocedure::text as signature
     from pg_proc p, gate
    where p.oid <> gate.oid
-     and (p.prosrc ~* '"?require_human_auth_kind"?'
+     and (p.prosrc ~* '"?${name}"?'
           or exists (select 1 from pg_depend d
                       where d.classid = 'pg_proc'::regclass and d.objid = p.oid
                         and d.refclassid = 'pg_proc'::regclass and d.refobjid = gate.oid))
    order by p.oid::regprocedure::text collate "C"`; // byte order, the same order as the JS .sort() it is compared with
+const GATE_CALLERS_SQL = callersOf('internal.require_human_auth_kind()', 'require_human_auth_kind');
+const PERMISSIVE_CALLERS_SQL = callersOf('internal.require_human_or_link_auth_kind()', 'require_human_or_link_auth_kind');
 
 // ---------------------------------------------------------------------------
 // Fixture and credentials.
@@ -403,17 +417,53 @@ describe('W6 pin — the STRICT gate\'s full caller set (lead ruling 02:08Z; fol
     expect(found).toEqual(Object.keys(STRICT_GATE_CALLERS).sort());
   });
 
-  it('the list is 40 credential management + 1 seen state + 6 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346)', () => {
+  it('the list is 40 credential management + 1 seen state + 3 non-credential + 2 session management + 12 spaceLinks writes + 3 space password + 5 servers (W8, two retired by W9c) + 2 path grants (282) + 1 MCP audit read (346)', () => {
     const labels = Object.values(STRICT_GATE_CALLERS);
     expect(labels.filter((l) => l === CREDENTIAL_MANAGEMENT || l === CREDENTIAL_READ)).toHaveLength(40); // +2 create/take_mcp_oauth_pending (342: §5.4 pending OAuth sign-ins) +1 rekey_mcp_credential (341: API-key rotation moves off rekey_space_credential so ciphertext and key_id land together) +3 tool secret writers (318) +1 set_chat_credentials (314)
     expect(labels.filter((l) => l === SEEN_STATE)).toHaveLength(1); // mark_entity_seen (313)
-    expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING || l === PENDING)).toHaveLength(8); // +2 generation-fenced mint/revoke overloads (332)
+    expect(labels.filter((l) => l === IDENTITY_WIDE || l === AUTH_MINTING)).toHaveLength(5); // +2 generation-fenced mint/revoke overloads (332); -3 moved to the permissive variant (01a0db78, 369)
     expect(labels.filter((l) => l === SESSION_MANAGEMENT)).toHaveLength(2);
     expect(labels.filter((l) => l === SPACE_LINKS)).toHaveLength(12); // +4 W9c (301): add_remote, grant_remote, remote context, store_remote
     expect(labels.filter((l) => l === SPACE_PASSWORD)).toHaveLength(3);
     expect(labels.filter((l) => l === SERVERS)).toHaveLength(5); // -2 W9c (301): store/open_server_gate_token refuse and call no gate
     expect(labels.filter((l) => l === PATH_GRANTS)).toHaveLength(2);
-    expect(labels).toHaveLength(74); // +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+    expect(labels).toHaveLength(71); // -3 start_chat/leave_space/remove_space_member to the permissive variant (01a0db78, 369) +1 list_mcp_call_audit (346, human-only audit read) +2 create/take_mcp_oauth_pending (342) +1 rekey_mcp_credential (341) +2 chat runtime mint/revoke (332; set_chat_configuration replaces set_chat_credentials) -1 the request decision helper (325) +3 tool secret writers (318) +1 set_chat_credentials (314) +1 mark_entity_seen (313)
+  });
+
+  it('01a0db78: the permissive variant admits browser, cli and link only, fail-closed', async () => {
+    const [row] = await database.query<{ src: string }>(
+      `select prosrc as src from pg_proc where oid = 'internal.require_human_or_link_auth_kind()'::regprocedure`);
+    expect(row!.src).toMatch(/kind is null or kind not in \('browser', 'cli', 'link'\)/);
+  });
+
+  it('01a0db78: the permissive variant has the strict gate\'s search_path and security, and no PUBLIC or tm8_app EXECUTE', async () => {
+    const rows = await database.query<{ gate: string; config: string[] | null; secdef: boolean; volatile: string; owner: string; pub: boolean; app: boolean }>(
+      `select p.oid::regprocedure::text as gate, p.proconfig as config, p.prosecdef as secdef,
+              p.provolatile as volatile, pg_get_userbyid(p.proowner) as owner,
+              has_function_privilege('public', p.oid, 'execute') as pub,
+              has_function_privilege('tm8_app', p.oid, 'execute') as app
+         from pg_proc p
+        where p.oid in ('internal.require_human_auth_kind()'::regprocedure,
+                        'internal.require_human_or_link_auth_kind()'::regprocedure)
+        order by 1`);
+    expect(rows).toHaveLength(2);
+    const [strict, permissive] = rows; // byte order: "human_auth" < "human_or_link"
+    expect(permissive!.gate).toBe('internal.require_human_or_link_auth_kind()');
+    expect({ ...permissive, gate: null }).toEqual({ ...strict, gate: null });
+    expect(permissive).toMatchObject({ config: ['search_path=public, internal, pg_temp'], secdef: true, pub: false, app: false });
+  });
+
+  it('01a0db78: every permissive caller is on its labelled list, and every listed function still calls it', async () => {
+    const found = (await database.query<{ signature: string }>(PERMISSIVE_CALLERS_SQL)).map((r) => r.signature);
+    expect(found).toEqual(Object.keys(PERMISSIVE_GATE_CALLERS).sort());
+    expect(Object.keys(PERMISSIVE_GATE_CALLERS)).toHaveLength(3);
+  });
+
+  it('01a0db78: no function is on both gates, and no permissive caller is a credential op', () => {
+    for (const signature of Object.keys(PERMISSIVE_GATE_CALLERS)) {
+      expect(STRICT_GATE_CALLERS[signature]).toBeUndefined();
+      expect(signature).not.toMatch(/credential|service_key|space_link|server|auth_session|runtime_session|disable_account/);
+    }
   });
 
   it('the matcher sees a quoted, mixed-case call and an execute format(...) that names the gate', async () => {

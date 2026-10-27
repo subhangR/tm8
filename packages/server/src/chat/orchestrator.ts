@@ -15,7 +15,7 @@ import { executeFencedTurn, type ActiveChatHarness, type FencedClaim, type Fence
 import type { createChatPreparedLaunchResolver } from './harness-composition.js';
 import type { Db, DbClaims, Querier } from '../db/types.js';
 import { ENTITY_COLUMNS, ENTITY_FROM, titleOf, type EntityRow } from '../facade/entity-read.js';
-import { chatModeLine, chatTeamLine } from './compose.js';
+import { LINK_RUNTIME_REFUSED_CODE, chatModeLine, chatTeamLine } from './compose.js';
 import type { ChatTurnPublisher } from './publisher.js';
 import type {
   AgentRuntime,
@@ -159,6 +159,12 @@ function payloadOf(item: TurnItem): unknown {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** A named launch refusal keeps its own code on the turn; anything else is `runtime_error`. */
+function turnErrorCode(error: unknown): string {
+  const reason = (error as { details?: { reason?: unknown } } | null)?.details?.reason;
+  return reason === LINK_RUNTIME_REFUSED_CODE ? LINK_RUNTIME_REFUSED_CODE : 'runtime_error';
 }
 
 /**
@@ -696,6 +702,7 @@ export class ChatOrchestrator {
     const terminal: {
       reason: 'success' | 'error' | 'interrupted' | 'closed' | null;
     } = { reason: null };
+    let errorCode = 'runtime_error';
 
     const append = async (item: TurnItem): Promise<void> => {
       const stored = await this.options.db.rpc<unknown>(
@@ -745,7 +752,8 @@ export class ChatOrchestrator {
         terminal.reason = 'error';
       }
     } catch (error) {
-      await append({ kind: 'error', code: 'runtime_error', message: errorMessage(error) });
+      errorCode = turnErrorCode(error);
+      await append({ kind: 'error', code: errorCode, message: errorMessage(error) });
       await append({ kind: 'done', reason: 'error' });
       terminal.reason = 'error';
     }
@@ -761,7 +769,7 @@ export class ChatOrchestrator {
         text,
         finalUsage,
         totalCost,
-        terminal.reason === 'error' ? { code: 'runtime_error' } : null,
+        terminal.reason === 'error' ? { code: errorCode } : null,
       ],
     );
 
