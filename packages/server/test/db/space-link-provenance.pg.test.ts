@@ -925,6 +925,7 @@ describe('366 — the remaining credential definers hold a link session to its l
   afterAll(async () => {
     await database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
+      await client.query(`select set_config('tm8.work_session_transition', 'on', true)`);
       await client.query(`update public.work_sessions set status = 'exited' where entity_id = any($1::uuid[])`, [started]);
     });
   });
