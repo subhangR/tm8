@@ -130,7 +130,12 @@ export interface PtyWsServer {
    * Re-check every open socket on `sessionIds` (all sessions when omitted)
    * against the private-credential rule, as each socket's own subject, and
    * close the refused ones. Returns how many were closed. A recheck that
-   * throws leaves its socket open and is logged; the next sweep asks again.
+   * throws FAILS CLOSED: its sockets close with `internalError` and the reason
+   * `credential recheck failed`, and the error's class (never its message) is
+   * logged. There is no retry: a reattach is authorized afresh (the attach
+   * path asks `session_stream_credential_allowed` itself), so a transient DB
+   * error costs the viewer a reconnect, while leaving the socket open would
+   * keep a stream attached that a revoke or switch-to-private should have cut.
    */
   recheckCredentialStreams(sessionIds?: readonly string[]): Promise<number>;
 }
@@ -567,18 +572,25 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
         if (subject === undefined) continue;
         if (!verdicts.has(subject)) {
           verdicts.set(subject, recheck(sessionId, subject).catch((error: unknown) => {
-            logger.warn('PtyWsServer: credential recheck failed; socket left open', {
+            // Fail closed. The class only: a driver message can quote SQL or
+            // parameters, and nothing credential-shaped belongs in this log.
+            logger.warn('PtyWsServer: credential recheck failed; socket closed', {
               sessionId,
-              error: error instanceof Error ? error.message : String(error),
+              error: error instanceof Error ? error.name : typeof error,
             });
             return 'error' as const;
           }));
         }
-        if ((await verdicts.get(subject)) === false) {
+        const verdict = await verdicts.get(subject);
+        if (verdict === false || verdict === 'error') {
           credentialClosed.add(conn);
           // Counted once: a later sweep must not re-close a socket still in its handshake.
           subjectByConnection.delete(conn);
-          conn.close(CLOSE_CODE.policyViolation, 'this session runs on a private credential');
+          if (verdict === false) {
+            conn.close(CLOSE_CODE.policyViolation, 'this session runs on a private credential');
+          } else {
+            conn.close(CLOSE_CODE.internalError, 'credential recheck failed');
+          }
           closedHere += 1;
         }
       }

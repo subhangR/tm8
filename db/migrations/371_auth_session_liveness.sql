@@ -1,5 +1,5 @@
 -- =============================================================================
--- 368 (was 285, renumbered above main 83713cfc9's top 367 at the PR-cleanup merge; earlier provisional 275; renumbered at the refresh onto main 79ca8d50: main holds 275-277 and 283, integration 278-282, #847 takes 284) —
+-- 371 (was 285, renumbered above main fcc49604b's top 370 at the PR-cleanup merge; earlier provisional 275; renumbered at the refresh onto main 79ca8d50: main holds 275-277 and 283, integration 278-282, #847 takes 284) —
 -- which of these sessions have ended (P7, task 01a0db30-b2f9, lane L2a).
 --
 -- An event socket authenticates once, at upgrade. Before this, nothing looked
