@@ -194,6 +194,8 @@ export function identityFromSession(
     // (B20/Q15); for a human row only `auth.space.enter` sets it, and
     // `off` leaves it unbound.
     ...(sessionSpaceId ? { sessionSpaceId } : {}),
+    // P7: the row's space, unconditioned by the mode, for socket closes only.
+    ...(session.spaceId ? { sessionRowSpaceId: session.spaceId } : {}),
     // 256 (W7p). Off the same verified row; NOT gated by the spaces mode —
     // it only narrows, and `off` must not un-bind a link.
     ...(session.viaLinkId ? { viaLinkId: session.viaLinkId } : {}),
