@@ -398,4 +398,8 @@ grant execute on function public.expire_pending_space_credentials() to tm8_app;
 grant execute on function public.space_credential_usage(uuid, integer) to tm8_app;
 grant execute on function public.space_credential_foreign_launches(uuid, integer) to tm8_app;
 
+-- 225: a table this migration creates is analyzed in the same run, so the
+-- wide reads never plan on its never-analyzed (reltuples -1) estimate.
+analyze public.session_space_credential_history;
+
 reset role;
