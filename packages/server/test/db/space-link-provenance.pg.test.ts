@@ -918,7 +918,16 @@ async function sessionWs(id: string): Promise<string> {
 // ---------------------------------------------------------------------------
 describe('366 — the remaining credential definers hold a link session to its link', () => {
   let L: Linked;
+  const started: string[] = [];
   beforeAll(async () => { L = await linked(); });
+  // The live-session cap (8, node-wide) is shared with the W7b block's real
+  // spawns below: end what this block started so it does not fill the cap.
+  afterAll(async () => {
+    await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      await client.query(`update public.work_sessions set status = 'exited' where entity_id = any($1::uuid[])`, [started]);
+    });
+  });
 
   const spacePolicy = (claims: DbClaims, space: string) => db.rpc(claims, 'read_space_credential_policy', [space]);
   const nodePolicy = (claims: DbClaims) => db.rpc(claims, 'read_node_credential_policy', []);
@@ -963,6 +972,7 @@ describe('366 — the remaining credential definers hold a link session to its l
 
   it('repoint (both overloads): a session the link did not start is 42501, and nothing is touched', async () => {
     const ws = await workSession(fixture.spaceB, fixture.personaB, fixture.memberHB);
+    started.push(ws);
     await recordGithub(ws);
     expect(await outcome(() => repoint(L.linkClaims, ws))).toBe('42501');
     expect(await outcome(() => repointFor(L.linkClaims, ws))).toBe('42501');
@@ -977,6 +987,7 @@ describe('366 — the remaining credential definers hold a link session to its l
 
   it('repoint: a session the link started passes the guard (L4 resume)', async () => {
     const child = await mintChild(L.mintClaims);
+    started.push(child.workSessionId);
     expect(await outcome(() => repoint(L.linkClaims, child.workSessionId))).toBe('ok');
     // Past the guard the overload's own resume-window check answers.
     expect(await outcome(() => repointFor(L.linkClaims, child.workSessionId))).toBe('55000');

@@ -14,7 +14,7 @@
 --                                            facade/services/w2/space-credential-catalog.ts:517  link only on its own target (L4)
 --   read_node_credential_policy (206)        space-credential-port.ts:72, catalog.ts:518/543    as above; link with its link claim
 --   repoint_session_space_credentials        credentials/space-credential-port.ts:158 (resume)  browser, cli, agent, agent_runtime;
---     (uuid) 318, (uuid, text[]) 255                                                         link only for a session its link started
+--     (uuid) 318, (uuid, text[]) 318                                                         link only for a session its link started
 --   expire_pending_space_credentials (239)   facade/services/w2/credential-sessions.ts:957,1473  browser, cli (the login opener's
 --                                            (the space-login sweep)                             claims); agent tolerated (206: "any
 --                                                                                                claims"); never link-bound
@@ -121,10 +121,11 @@ end
 $$;
 
 -- -----------------------------------------------------------------------------
--- 3. Resume re-point. 318's body for (uuid) (290's share predicate and its
---    FOR SHARE-then-new-statement race fix, plus 318's tool-session refusal),
---    255's for (uuid, text[]); each first refuses a `link` caller whose link
---    did not start the session.
+-- 3. Resume re-point. 318's body for both overloads, verbatim: for (uuid),
+--    290's share predicate and its FOR SHARE-then-new-statement race fix; for
+--    (uuid, text[]), 309's participates_in persona read; for both, 318's
+--    tool-session refusal. Each first refuses a `link` caller whose link did
+--    not start the session.
 -- -----------------------------------------------------------------------------
 create or replace function internal.require_link_started(p_work_session_id uuid)
 returns void
@@ -217,9 +218,12 @@ begin
 end
 $$;
 
-create or replace function public.repoint_session_space_credentials(p_work_session_id uuid, p_providers text[])
-returns jsonb
-language plpgsql security definer set search_path = public, internal, pg_temp as $$
+CREATE OR REPLACE FUNCTION public.repoint_session_space_credentials(p_work_session_id uuid, p_providers text[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'internal', 'pg_temp'
+AS $function$
 declare
   e public.entities;
   v_status text;
@@ -228,6 +232,9 @@ begin
   perform internal.require_link_started(p_work_session_id);
   e := internal.live_entity(p_work_session_id, 'work_session');
   perform internal.require_space_member(e.space_id);
+  if exists(select 1 from public.work_sessions where entity_id=p_work_session_id and session_kind='tool') then
+    raise exception 'tool sessions cannot be repointed or resumed' using errcode='55000';
+  end if;
   if internal.current_account_id() is null then
     raise exception 'no active account for this identity' using errcode = 'P0002';
   end if;
@@ -245,8 +252,10 @@ begin
   end if;
   -- Resume's authorization, not bare membership: the caller may act as the
   -- session's persona, exactly as execution_resume requires.
-  select dst_id into v_persona from public.edges
-   where src_id = p_work_session_id and type = 'relates_to'
+  -- 309: the session's teammate is `participates_in` (teammate -> session);
+  -- the legacy relates_to duplicate it used to read is gone.
+  select src_id into v_persona from public.edges
+   where dst_id = p_work_session_id and type = 'participates_in'
    limit 1;
   if v_persona is not null and not internal.can_act_as(v_persona, e.space_id) then
     raise exception 'not permitted to resume this persona' using errcode = '42501';
@@ -256,7 +265,8 @@ begin
      and provider <> all (coalesce(p_providers, array[]::text[]));
   return public.repoint_session_space_credentials(p_work_session_id);
 end
-$$;
+$function$
+;
 
 -- -----------------------------------------------------------------------------
 -- 4. The pending-expiry sweep — 239's body; a link-bound caller is refused.
