@@ -110,9 +110,15 @@ one-time call and nothing after it.
 
 ```bash
 PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH \
-TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_cygnus \
+TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5443/tm8_test \
 node db/test/run.mjs
 ```
+
+Never 5442: that is the prod cluster on the tm8 host, and `pg-port-guard.mjs`
+refuses it (and an unset port) before the reset. CI runs the same command in the
+`migrations` job, after the migration gate, with `TM8_APP_VIA_SET_ROLE=1` because
+that cluster does not let `tm8_app` log in (see `helpers.mjs`). Any change under
+`db/` triggers that job.
 
 `run.mjs` resets the target database, applies the whole sequence, then runs every
 `db/test/*.test.mjs` serially (accounts are node-wide with a single owner, so
