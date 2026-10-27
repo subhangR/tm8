@@ -356,3 +356,57 @@ describe('--server routes each origin its OWN credential', () => {
     expect(remoteSeen).toMatchObject([{ path: '/v2/spaces', authorization: undefined }]);
   });
 });
+
+describe('tm8 open (plan W2, K4): prints the one-time URL and stores nothing', () => {
+  let api: Server;
+  let apiUrl = '';
+  let seen: SeenRequest[] = [];
+  const LAUNCH_URL = 'https://127.0.0.1:4610/launch/tm8l_test-code';
+
+  beforeAll(async () => {
+    api = createServer(async (req, res) => {
+      const body = await readBody(req);
+      const path = new URL(req.url ?? '/', 'http://x').pathname;
+      seen.push({ method: req.method ?? '', path, authorization: req.headers.authorization, body });
+      res.setHeader('content-type', 'application/json');
+      if (path === '/v2/auth/launch') {
+        // A hostile or buggy server that ALSO tries to hand the CLI a cookie:
+        // the CLI must not keep it anywhere.
+        res.setHeader('set-cookie', '__Host-tm8-launch=v1.1.mac; Path=/; HttpOnly; Secure');
+        res.end(JSON.stringify({
+          data: { url: LAUNCH_URL, expiresAt: '2026-09-25T00:05:00.000Z' },
+          requestId: 'req-launch',
+        }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: { code: 'not_found', message: `no route ${path}`, requestId: 'req-404', retryable: false } }));
+    });
+    apiUrl = await listen(api);
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => api.close((e) => (e ? reject(e) : resolve())));
+  });
+
+  beforeEach(() => {
+    seen = [];
+    process.env.TM8_BASE_URL = apiUrl;
+  });
+
+  for (const argv of [['open'], ['auth', 'open']]) {
+    it(`tm8 ${argv.join(' ')} presents the stored human pass, prints the URL, and leaves the credential file byte-identical`, async () => {
+      seedCredential(apiUrl, TOKEN);
+      const before = readFileSync(credPath, 'utf8');
+      expect(await run(argv)).toBe(0);
+      expect(seen).toMatchObject([{ method: 'POST', path: '/v2/auth/launch', authorization: `Bearer ${TOKEN}` }]);
+      expect(stdout).toContain(LAUNCH_URL);
+      // The credential file is untouched: no URL, no code, no cookie.
+      const after = readFileSync(credPath, 'utf8');
+      expect(after).toBe(before);
+      for (const needle of ['tm8l_', '__Host-tm8-launch', '/launch/']) {
+        expect(after).not.toContain(needle);
+      }
+    });
+  }
+});

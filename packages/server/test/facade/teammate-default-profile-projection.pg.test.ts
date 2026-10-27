@@ -90,6 +90,8 @@ describeDb('team_member rows carry defaultProfileId', () => {
       uiDir: undefined,
       maxBodyBytes: 8 * 1024 * 1024,
       databaseUrl: DATABASE_URL,
+      // Loopback owner with no credential: opt out of the plan W2 launch cookie.
+      autoOwnerCookie: 'off',
     } as unknown as ServerConfig;
     registerFacadeHandlers(registry, { db, config });
     server = createFacadeServer({ config, registry });

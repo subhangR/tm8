@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:13bee07261a99fc58e0c5ec6fb1d5f3d837b826d1fcdadd0d6edf94d96cadb66",
+  "catalogDigest": "sha256:2a5343c53ae14701d711505d2793d09427ee5872003e02cdab1e48cf62157e3d",
   "catalog": {
-    "total": 382,
-    "v1": 380,
+    "total": 383,
+    "v1": 381,
     "reserved": 2,
-    "http": 380,
+    "http": 381,
     "ws": 1,
-    "registerableV1Http": 378,
+    "registerableV1Http": 379,
     "methods": {
       "GET": 128,
-      "POST": 186,
+      "POST": 187,
       "PATCH": 21,
       "DELETE": 23,
       "PUT": 22,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 134,
-      "command": 246,
+      "command": 247,
       "stream": 2
     },
-    "uniqueNames": 382,
-    "uniqueBindings": 381
+    "uniqueNames": 383,
+    "uniqueBindings": 382
   },
   "reservedOperations": [
     "search.query",
@@ -2441,6 +2441,13 @@
         "source": "server-router"
       },
       {
+        "operation": "auth.launch",
+        "method": "POST",
+        "path": "/v2/auth/launch",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "credentials.status",
         "method": "GET",
         "path": "/v2/identity/credentials",
@@ -3078,7 +3085,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 350
+    "unimplementedV1Http": 351
   },
   "schemas": {
     "additive": {
@@ -8620,6 +8627,22 @@
           "auth",
           "claim",
           "reissue"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.launch",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.launch",
+        "intentTags": [
+          "auth",
+          "launch"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

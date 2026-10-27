@@ -111,6 +111,7 @@ export interface RegisterFacadeHandlersDeps {
   readonly db: Db;
   readonly config: ServerConfig;
   readonly owner?: FacadeDeps['owner'];
+  readonly launchCookie?: FacadeDeps['launchCookie'];
   readonly files?: W2FilesServiceOptions;
   /**
    * projects.folderUploads.* (R7 folder import). Separate from `files` because
@@ -219,6 +220,7 @@ export function registerFacadeHandlers(
     db: deps.db,
     config: deps.config,
     owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
+    ...(deps.launchCookie ? { launchCookie: deps.launchCookie } : {}),
     remoteInvokeForwarder: deps.remoteInvokeForwarder ?? new DisabledRemoteInvokeForwarder(),
   };
 

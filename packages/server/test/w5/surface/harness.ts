@@ -48,7 +48,17 @@ export interface SurfaceServer {
   readonly production: BootstrappedServer;
   readonly appliedMigrations: readonly string[];
   readonly database: W1ScratchDatabase;
-  request(method: string, path: string, body: unknown): Promise<SurfaceResponse>;
+  /**
+   * `headers` is merged over the JSON content type. With none, the request is
+   * node-fetch's own shape: no browser marker, so plan W2 L1 resolves it to the
+   * UNPINNED local-process owner, exactly as on main.
+   */
+  request(
+    method: string,
+    path: string,
+    body: unknown,
+    headers?: Readonly<Record<string, string>>,
+  ): Promise<SurfaceResponse>;
   close(): Promise<void>;
 }
 
@@ -66,6 +76,13 @@ export async function startSurfaceServer(label: string): Promise<SurfaceServer> 
       TM8_PORT: '4610',
       TM8_DATABASE_URL: database.url,
       TM8_DATA_DIR: dataDir,
+      // These suites drive the node as its loopback owner with no credential.
+      // Plan W2 L1: a node-fetch request carries no browser marker, so it is
+      // the local-process owner and needs no cookie. A BROWSER-shaped request
+      // needs the launch cookie by default; the harness opts out so a
+      // browser-shaped cell can reach the pinned owner without minting one.
+      // The cookie gate itself is covered in test/db/cross-space-token.pg.test.ts.
+      TM8_AUTO_OWNER_COOKIE: 'off',
     });
     // `loadConfig` rejects port 0 for operator input by design; the already
     // validated config is amended afterward so the kernel assigns an isolated
@@ -91,12 +108,12 @@ export async function startSurfaceServer(label: string): Promise<SurfaceServer> 
     appliedMigrations: applied,
     database,
 
-    async request(method, path, body): Promise<SurfaceResponse> {
+    async request(method, path, body, headers): Promise<SurfaceResponse> {
       const response = await fetch(new URL(path, server.url), {
         method,
         ...(body === undefined
-          ? {}
-          : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+          ? (headers === undefined ? {} : { headers: { ...headers } })
+          : { headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }),
       });
 
       const text = await response.text();

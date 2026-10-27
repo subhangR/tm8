@@ -176,6 +176,8 @@ export const LOGIN = {
      account here is a node-admin act, not self-serve. */
   gateFooter:
     'No self-serve signup here — a node admin creates accounts. Signing in starts a session on this node (auth.login).',
+  /* GATE COPY — plan W2 L1: shown only on a loopback host of the local node. */
+  openHint: 'Run `tm8 open` in a terminal on this machine.',
 } as const;
 
 /**

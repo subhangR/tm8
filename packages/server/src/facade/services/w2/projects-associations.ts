@@ -833,10 +833,13 @@ export class W2ProjectsAssociationsService {
       workingDir = await canonicalDirectory(input.workingDir);
       requireAllowed(workingDir, await canonicalRoots());
     }
+    // `spaceId` (368): born linked, so a later call pinned to that space sees
+    // it. Without it, the original space-less create.
     const raw = await this.deps.db.rpc<ProjectMutationResult>(
       claims,
-      'create_project',
+      input.spaceId ? 'create_project_in_space' : 'create_project',
       [
+        ...(input.spaceId ? [input.spaceId] : []),
         input.name,
         workingDir,
         input.repoUrl ?? null,

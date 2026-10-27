@@ -65,6 +65,16 @@ const SECRET_OPTION_RE = /(token|secret|password|passwd|credential|api[-_]?key|b
 const REDACTED = '<redacted>';
 
 /**
+ * A one-time launch code (plan W2, K4), wherever it appears in the output
+ * samples. `tm8 open` prints a URL that makes a browser the node owner; the
+ * journal is written into a session's own directory, so a sample carrying the
+ * code would hand it to whatever reads the journal. Redacted at write time,
+ * like the argv secrets above.
+ */
+const LAUNCH_CODE_RE = /tm8l_[A-Za-z0-9_-]+/g;
+const redactSample = (sample: string): string => sample.replace(LAUNCH_CODE_RE, `tm8l_${REDACTED}`);
+
+/**
  * Every bearer-token prefix a tm8 node mints. The CLI prints some of them
  * (`auth login` under --print-token or in agent context, `auth claim`), and
  * the journal is on in exactly the agent context, so the stdout/stderr samples
@@ -249,12 +259,13 @@ class FileJournal implements Journal {
           stdoutChars: this.stdoutChars,
           stderrChars: this.stderrChars,
           // Redacted at WRITE time, like argv. `truncated` below compares the
-          // RAW samples, so a redaction cannot make a sample look cut.
+          // RAW samples, so a redaction cannot make a sample look cut. The one-time
+          // launch code (`redactSample`), then minted bearer tokens (`redactTokens`).
           // Live PTY bytes are not redacted. Tool output can echo a secret;
           // keep exact counts without persisting a second, unredacted tail.
           stdoutSample: outcome.path[0] === 'tool' && outcome.path[1] === 'run'
-            ? '<tool output omitted>' : redactTokens(this.stdoutSample),
-          stderrSample: redactTokens(this.stderrSample),
+            ? '<tool output omitted>' : redactTokens(redactSample(this.stdoutSample)),
+          stderrSample: redactTokens(redactSample(this.stderrSample)),
           truncated: this.stdoutChars > this.stdoutSample.length || this.stderrChars > this.stderrSample.length,
         },
         calls: this.calls,

@@ -593,9 +593,24 @@ const ROWS: Record<OperationName, Row> = {
     side: 'durable',
     tags: ['claim', 'reissue', 'rotate', 'first-run', 'setup', 'token', 'recover'],
     notes: [
-      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
+      'ON-BOX BY CONSTRUCTION: only the loopback auto-owner (a local process, no token; a browser would also need the `tm8 open` launch cookie) may run it, and the fresh token is written to <dataDir>/setup-token (0600) — the file, not the network, is the boundary',
       'an ordinary restart REPRINTS the live token rather than rotating it, so this is the deliberate act that rotates: reissuing invalidates any previously printed token',
       'refused once any account on the node has a password: a claim token is inert on a claimed node, so there is nothing to reissue',
+    ],
+  },
+  'auth.launch': {
+    cmd: ['auth', 'open'],
+    syn: 'tm8 auth open',
+    sum: 'Print a one-time URL that signs this machine\'s browser in as the node owner, no password',
+    authz: 'server',
+    input: 'none',
+    side: 'durable',
+    tags: ['open', 'launch', 'browser', 'cookie', 'no-login', 'owner', 'single-player'],
+    notes: [
+      'the node owner only: a local process with no token (the loopback owner), or the owner\'s own human session (`tm8 auth login`); an agent token is refused, so an agent that uses its token never sees the URL',
+      'the URL works once, for a few minutes, and only from a browser on the node\'s own machine (loopback, no forwarding headers); it sets the HttpOnly cookie a browser needs to be the no-login owner (a local process with no token needs none)',
+      'nothing is written to the CLI credentials file; set TM8_AUTO_OWNER_COOKIE=off to let a loopback browser be the owner without the cookie, as before',
+      '`tm8 open` is the root shorthand for the same command',
     ],
   },
   // ── node accounts (G6, migration 232) ──────────────────────────────────
@@ -4426,6 +4441,7 @@ export const CATALOG_DIGEST =
   // Re-measured (W11, decision 29): + spaces.projects.list/create, gate.folders.list/create; projects.link stays. Read from the failing digest test. Merged onto G6 (232): digest re-measured on the merged tree.
   // Re-measured (G6, 232): + spaces.members.remove, spaces.leave, accounts.disable. Read from the failing digest test.
   // Re-measured (W3-server, on main bd1841bf): + auth.space.enter. Read from the conformance generator.
+  // Re-measured (plan W2 launch cookie on W11, main f94c6adc): + auth.launch. Read from the failing digest test.
   // Rebased onto main d11e0be5 (#848): W11's +4 on top of auth.space.enter; digest re-measured on the rebased tree.
   // Re-measured for node.metrics.get (status strip) — read from the regenerated conformance manifest.
   // +2 auth.sessions.list/revoke (W4, on main 96f6b61e): read from the regenerated conformance manifest.
@@ -4436,6 +4452,9 @@ export const CATALOG_DIGEST =
   // +2 attentionSignals.raise|clear (Attention v2 S6, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // +3 attentionRequests.markSeen|unresolve|withdraw (Attention v2 S4, stacked on tm8/attention-v2-integration): read from the regenerated conformance manifest.
   // Re-measured (W8, 261, rebuilt on main f01b1566): +6 servers.* and the serverConnections create/delete rows. Read from the regenerated conformance manifest.
+  // Re-measured (plan W2 #847, merge of main 79ca8d50): + auth.launch on top of main's chat.setModel, credentials.space.readiness and story rows. Read from the regenerated conformance manifest.
+  // Re-measured (plan W2 #847, merge of main a61f0350): + auth.launch on top of W5 #917's spaces.spacePassword.* and main's rows. Read from the regenerated conformance manifest.
+  // Re-measured (plan W2, merged with main c2e82970): + auth.launch on top of W8. Read from the regenerated conformance manifest.
   // Re-measured (W5 #917, merges of main dd1c8215 and 2fa4999f): +3 spaces.spacePassword.* on top of main's servers.*, spaceLinks, attention and launch v3 rows. Read from the regenerated conformance manifest.
   // Re-measured (#915 merge of main 0be3b796): main's servers.* + spaceLinks.invoke/audit and the five attention rows together. Read from the regenerated conformance manifest.
   // Re-measured for 282 (+node.pathGrants.list/create/revoke, node.accounts.list,
@@ -4454,7 +4473,8 @@ export const CATALOG_DIGEST =
   // Re-measured for Projects add (+spaces.projects.clone|cloneJobs.get, 01a13574) on main 638f6069e — RECOMPUTED, not adjusted.
   // Re-measured for chat.interrupt (chat turn management) — RECOMPUTED from the regenerated conformance manifest.
   // Re-measured for mcp.audit.list (§5.6, 346; humanOnly per the #1321 review) — RECOMPUTED from the regenerated conformance manifest.
-  'sha256:13bee07261a99fc58e0c5ec6fb1d5f3d837b826d1fcdadd0d6edf94d96cadb66';
+  // Re-measured for auth.launch (plan W2 #847, merge of main 83713cfc9) — RECOMPUTED from the regenerated conformance manifest.
+  'sha256:2a5343c53ae14701d711505d2793d09427ee5872003e02cdab1e48cf62157e3d';
 
 export const GRAMMAR_VERSION = '2';
 
